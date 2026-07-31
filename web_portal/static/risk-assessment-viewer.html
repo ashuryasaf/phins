@@ -169,12 +169,12 @@
     <div class="fixed-header" id="fixed-header">
         <div class="fixed-header-inner">
             <div>
-                <h1>🔒 Risk Assessment Report</h1>
+                <h1>Risk Assessment Report</h1>
                 <div class="report-meta" id="header-meta">Loading...</div>
             </div>
             <div class="fixed-header-actions" id="header-actions">
                 <button class="header-btn back" onclick="window.history.back()">← Back</button>
-                <button class="header-btn print" onclick="window.print()">🖨️ Print</button>
+                <button class="header-btn print" onclick="window.print()">Print</button>
             </div>
         </div>
     </div>
@@ -229,11 +229,11 @@
                         container.innerHTML = `
                             <div class="report">
                                 <div class="header">
-                                    <h1>🔒 UNDERWRITING RISK ASSESSMENT REPORT</h1>
+                                    <h1>UNDERWRITING RISK ASSESSMENT REPORT</h1>
                                     <div class="subtitle">AI-Powered Comprehensive Risk Analysis</div>
                                 </div>
                                 <div class="error-box">
-                                    <h3>⚠️ No Application Found</h3>
+                                    <h3>No Application Found</h3>
                                     <p>No underwriting application was found for the specified criteria.</p>
                                     <p style="margin-top: 15px;">
                                         <button onclick="window.history.back()" class="header-btn back" style="background: #6c757d; color: white;">← Go Back</button>
@@ -255,11 +255,11 @@
                 container.innerHTML = `
                     <div class="report">
                         <div class="header">
-                            <h1>🔒 UNDERWRITING RISK ASSESSMENT REPORT</h1>
+                            <h1>UNDERWRITING RISK ASSESSMENT REPORT</h1>
                             <div class="subtitle">AI-Powered Comprehensive Risk Analysis</div>
                         </div>
                         <div class="error-box">
-                            <h3>⚠️ Error Loading Report</h3>
+                            <h3>Error Loading Report</h3>
                             <p>Could not load the risk assessment report. Please try again.</p>
                             <p style="margin-top: 15px;">
                                 <button onclick="loadReport()" class="header-btn download">Retry</button>
@@ -317,11 +317,11 @@
             const headerActions = document.getElementById('header-actions');
             headerActions.innerHTML = `
                 <button class="header-btn back" onclick="window.history.back()">← Back</button>
-                <button class="header-btn print" onclick="window.print()">🖨️ Print</button>
+                <button class="header-btn print" onclick="window.print()">Print</button>
                 ${report.recommendation?.type?.includes('approve') ? `
-                    <button class="header-btn approve" onclick="approveApplication()">✓ Approve</button>
+                    <button class="header-btn approve" onclick="approveApplication()">Approve</button>
                 ` : ''}
-                <button class="header-btn reject" onclick="rejectApplication()">✗ Reject</button>
+                <button class="header-btn reject" onclick="rejectApplication()">Reject</button>
             `;
             
             // Determine risk class for quick stats
@@ -331,7 +331,7 @@
                 <div class="report">
                     <!-- Report Banner -->
                     <div class="report-banner">
-                        <h2>🔒 UNDERWRITING RISK ASSESSMENT</h2>
+                        <h2>UNDERWRITING RISK ASSESSMENT</h2>
                         <div class="subtitle">AI-Powered Comprehensive Risk Analysis | PHINS Platform</div>
                         <div class="report-id">Report ID: ${report.report_id || 'N/A'}</div>
                     </div>
@@ -413,7 +413,7 @@
                             </div>
                             <div class="card">
                                 <div class="card-label">Identity Verified</div>
-                                <div class="card-value">${report.identity_verified ? '✅ Verified' : '⏳ Pending'}</div>
+                                <div class="card-value">${report.identity_verified ? 'Verified' : 'Pending'}</div>
                             </div>
                         </div>
                     </div>
@@ -488,7 +488,7 @@
                                 ${report.documents.map(d => `
                                     <tr>
                                         <td>${formatDocType(d.type)}</td>
-                                        <td><span class="document-status ${d.verified ? 'document-verified' : 'document-pending'}">${d.verified ? '✓ Verified' : '⏳ Pending'}</span></td>
+                                        <td><span class="document-status ${d.verified ? 'document-verified' : 'document-pending'}">${d.verified ? 'Verified' : 'Pending'}</span></td>
                                         <td>${((d.authenticity_score || 0) * 100).toFixed(1)}%</td>
                                         <td>${capitalizeFirst(d.expiry_status || 'N/A')}</td>
                                         <td>${d.flags || '-'}</td>
@@ -501,7 +501,7 @@
                     
                     <!-- AI Recommendation -->
                     <div class="section">
-                        <div class="section-title">🤖 AI Executive Recommendation</div>
+                        <div class="section-title">AI Executive Recommendation</div>
                         
                         <div class="recommendation-box" style="background: ${recColor};">
                             <div class="recommendation-type">${recType}</div>
@@ -524,14 +524,14 @@
                         
                         ${report.recommendation?.exclusions && report.recommendation.exclusions.length > 0 ? `
                         <div class="exclusion-list" style="margin-top: 20px;">
-                            <h4 style="margin-bottom: 15px; color: #721c24;">⚠️ Recommended Exclusions</h4>
+                            <h4 style="margin-bottom: 15px; color: #721c24;">Recommended Exclusions</h4>
                             ${report.recommendation.exclusions.map(e => `<div class="exclusion-item">${e}</div>`).join('')}
                         </div>
                         ` : ''}
                         
                         ${report.recommendation?.monitoring && report.recommendation.monitoring.length > 0 ? `
                         <div class="monitoring-list" style="margin-top: 20px;">
-                            <h4 style="margin-bottom: 15px; color: #0c5460;">📋 Monitoring Requirements</h4>
+                            <h4 style="margin-bottom: 15px; color: #0c5460;">Monitoring Requirements</h4>
                             ${report.recommendation.monitoring.map(m => `<div style="padding: 8px 0; border-bottom: 1px solid rgba(0,0,0,0.1);">${m}</div>`).join('')}
                         </div>
                         ` : ''}
@@ -596,7 +596,7 @@
                         ${c.treatment ? `<div><strong>Treatment:</strong> ${c.treatment}</div>` : ''}
                         <div><strong>Risk Impact:</strong> ${riskImpact}%</div>
                         ${c.loading_percentage > 0 ? `<div><strong>Loading:</strong> +${c.loading_percentage}%</div>` : ''}
-                        ${c.exclusion_recommended ? '<div style="color: #dc3545; margin-top: 5px;">⚠️ Exclusion Recommended</div>' : ''}
+                        ${c.exclusion_recommended ? '<div style="color: #dc3545; margin-top: 5px;">Exclusion Recommended</div>' : ''}
                         ${c.notes ? `<div style="margin-top: 5px; font-style: italic; opacity: 0.8;">${c.notes}</div>` : ''}
                     </div>
                 </div>
@@ -727,14 +727,14 @@
                 });
                 
                 if (response.ok) {
-                    alert('✅ Application approved successfully!');
+                    alert('Application approved successfully!');
                     window.location.href = '/underwriter-dashboard.html';
                 } else {
                     const data = await response.json();
-                    alert('❌ Failed to approve: ' + (data.error || 'Unknown error'));
+                    alert('Failed to approve: ' + (data.error || 'Unknown error'));
                 }
             } catch (error) {
-                alert('❌ Error approving application: ' + error.message);
+                alert('Error approving application: ' + error.message);
             }
         }
         
@@ -767,10 +767,10 @@
                     window.location.href = '/underwriter-dashboard.html';
                 } else {
                     const data = await response.json();
-                    alert('❌ Failed to reject: ' + (data.error || 'Unknown error'));
+                    alert('Failed to reject: ' + (data.error || 'Unknown error'));
                 }
             } catch (error) {
-                alert('❌ Error rejecting application: ' + error.message);
+                alert('Error rejecting application: ' + error.message);
             }
         }
         

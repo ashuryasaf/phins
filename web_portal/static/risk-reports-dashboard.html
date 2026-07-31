@@ -1937,14 +1937,13 @@
   <main class="container">
     <!-- Page Title -->
     <div class="page-title fade-in">
-      <h2>📈 Risk Intelligence & Advanced Reports</h2>
+      <h2>Risk Intelligence & Advanced Reports</h2>
       <p>Generate Mislaka-ready assessments, Swiftness Safe imports, and AI-driven insights</p>
     </div>
 
     <!-- Workbench shortcut -->
     <div style="background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); color: white; border-radius: 14px; padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
-      <div style="font-size: 1.6rem;">🧠</div>
-      <div style="flex: 1; min-width: 200px;">
+<div style="flex: 1; min-width: 200px;">
         <div style="font-weight: 700;">Use any uploaded document for further analysis</div>
         <div style="font-size: 0.85rem; opacity: 0.9;">The Assessment Workbench unifies upload, fact extraction, BI charts, risk scoring and downloadable CSV/XLSX/PDF reports - all in one screen.</div>
       </div>
@@ -1954,15 +1953,14 @@
     <!-- Upload Section -->
     <section class="upload-section fade-in">
       <div class="section-header">
-        <h3>📁 Upload Documents for Analysis</h3>
+        <h3>Upload Documents for Analysis</h3>
         <span style="background: var(--primary); color: white; padding: 6px 14px; border-radius: 20px; font-size: 0.85rem;">
           AI + BI Analysis
         </span>
       </div>
       
       <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
-        <div class="upload-icon">📤</div>
-        <div class="upload-text">
+<div class="upload-text">
           <h4>Drop files here or click to upload</h4>
           <p>Upload documents for AI-powered inductive analysis and report generation</p>
           <p style="margin-top: 8px; font-size: 0.9rem; color: var(--text-muted);">
@@ -1970,12 +1968,12 @@
           </p>
         </div>
         <div class="supported-formats">
-          <span class="format-badge">📄 CSV</span>
-          <span class="format-badge">📊 XLS/XLSX</span>
-          <span class="format-badge">📦 ZIP</span>
-          <span class="format-badge">🧾 XML</span>
-          <span class="format-badge">🖼️ PNG/JPG</span>
-          <span class="format-badge">📕 PDF</span>
+          <span class="format-badge">CSV</span>
+          <span class="format-badge">XLS/XLSX</span>
+          <span class="format-badge">ZIP</span>
+          <span class="format-badge">XML</span>
+          <span class="format-badge">PNG/JPG</span>
+          <span class="format-badge">PDF</span>
         </div>
         <input type="file" id="fileInput" class="file-input" accept=".csv,.xls,.xlsx,.zip,.xml,.png,.jpg,.jpeg,.pdf" multiple>
       </div>
@@ -1984,7 +1982,7 @@
       
       <div class="options-row">
         <div class="option-group">
-          <label for="outputLanguage">🌐 Report Language:</label>
+          <label for="outputLanguage">Report Language:</label>
           <select id="outputLanguage">
             <option value="auto">Auto-detect from files</option>
             <option value="english">English</option>
@@ -1998,7 +1996,7 @@
         </div>
         
         <div class="option-group">
-          <label for="analysisType">📋 Analysis Type:</label>
+          <label for="analysisType">Analysis Type:</label>
           <select id="analysisType">
             <option value="auto">Auto-detect</option>
             <option value="insurance">Insurance Analysis</option>
@@ -2011,12 +2009,12 @@
         </div>
         
         <button class="btn btn-primary" id="analyzeBtn" disabled>
-          🔍 Analyze & Generate
+          Analyze & Generate
         </button>
       </div>
       
       <div class="processing-status" id="processingStatus">
-        <h4>🤖 AI Inductive Analysis in Progress...</h4>
+        <h4>AI Inductive Analysis in Progress...</h4>
         <div class="progress-bar">
           <div class="progress-fill" id="progressFill"></div>
         </div>
@@ -2027,7 +2025,7 @@
     <!-- Mislaka Integration Section -->
     <section class="mislaka-section fade-in" id="mislakaSection">
       <div class="mislaka-header">
-        <h3>🏦 מסלקת הביטוח והפנסיה (Mislaka API)</h3>
+        <h3>מסלקת הביטוח והפנסיה (Mislaka API)</h3>
         <p>Import insurance and pension data directly via Swiftness Safe clearinghouse access</p>
       </div>
       <div class="mislaka-body">
@@ -2048,10 +2046,10 @@
             </select>
           </div>
           <button class="btn-mislaka" id="mislakaImportBtn" onclick="importFromMislaka()">
-            📥 Import & Analyze
+            Import & Analyze
           </button>
           <button class="btn-mislaka" id="mislakaDownloadBtn" onclick="downloadMislakaReport()" style="background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);">
-            📄 Download Report
+            Download Report
           </button>
         </div>
         
@@ -2077,7 +2075,7 @@
       <!-- AI Insights Panel -->
       <div class="insights-panel" id="insightsPanel">
         <div class="insights-header">
-          <h3>🧠 AI Inductive Analysis</h3>
+          <h3>AI Inductive Analysis</h3>
           <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Advanced pattern recognition and statistical insights from your data</p>
         </div>
         <div class="insights-body">
@@ -2095,10 +2093,10 @@
       <!-- Report Panel -->
       <div class="report-panel" id="reportPanel">
         <div class="report-header">
-          <h2 id="reportTitle">📋 Analysis Report</h2>
+          <h2 id="reportTitle">Analysis Report</h2>
           <div class="report-actions">
-            <button class="btn btn-white" onclick="exportReport('pdf')">📥 Export PDF</button>
-            <button class="btn btn-white" onclick="exportReport('excel')">📊 Export Excel</button>
+            <button class="btn btn-white" onclick="exportReport('pdf')">Export PDF</button>
+            <button class="btn btn-white" onclick="exportReport('excel')">Export Excel</button>
           </div>
         </div>
         <div class="report-body" id="reportBody">
@@ -2109,7 +2107,7 @@
       <!-- Recommendations Panel -->
       <div class="recommendations-panel" id="recommendationsPanel">
         <div class="recommendations-header">
-          <h2>💡 AI Recommendations</h2>
+          <h2>AI Recommendations</h2>
         </div>
         <div class="recommendations-list" id="recommendationsList">
           <!-- Recommendations populated dynamically -->
@@ -2120,13 +2118,13 @@
     <!-- Report History Section (Now after results) -->
     <section class="history-section fade-in" id="historySection">
       <div class="history-header">
-        <h3>📚 Your Report History</h3>
+        <h3>Your Report History</h3>
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button class="btn btn-white" onclick="revokeTodayReports()" style="padding: 6px 12px; font-size: 0.85rem;">
-            🧹 Revoke Today
+            Revoke Today
           </button>
           <button class="btn btn-white" onclick="loadReportHistory()" style="padding: 6px 12px; font-size: 0.85rem;">
-            🔄 Refresh
+            Refresh
           </button>
         </div>
       </div>
@@ -2215,7 +2213,7 @@
               <span class="history-card-title">${report.title || 'Analysis Report'}</span>
               <span class="history-card-date">${formatDate(report.generated_at)}</span>
             </div>
-            <div class="history-card-file">📄 ${report.filename || 'Unknown file'}</div>
+            <div class="history-card-file">${report.filename || 'Unknown file'}</div>
             <div class="history-card-tags">
               <span class="history-tag" style="background: var(--primary); color: white;">${report.report_type || 'analysis'}</span>
               ${report.risk_score !== undefined ? `
@@ -2388,8 +2386,8 @@
     }
 
     function getResourceFileIcon(ext) {
-      const icons = { xsd: '📐', xml: '🧾', xlsx: '📊', xls: '📊', pdf: '📕', csv: '📄', zip: '📦', png: '🖼️', jpg: '🖼️', jpeg: '🖼️' };
-      return icons[ext] || '📁';
+      const icons = { xsd: '', xml: '', xlsx: '', xls: '', pdf: '', csv: '', zip: '', png: '', jpg: '', jpeg: '' };
+      return icons[ext] || '';
     }
 
     function renderResourceCards(resources, gridId) {
@@ -2412,7 +2410,7 @@
             ${r.version ? `<span class="rfc-tag version">v${r.version}</span>` : ''}
             ${(r.tags || []).slice(0, 3).map(t => `<span class="rfc-tag">${t}</span>`).join('')}
           </div>
-          <a href="${r.url}" target="_blank" rel="noopener" class="rfc-link">📥 Open on Swiftness &rarr;</a>
+          <a href="${r.url}" target="_blank" rel="noopener" class="rfc-link">Open on Swiftness &rarr;</a>
         </div>
       `).join('');
     }
@@ -2460,7 +2458,7 @@
 
       let html = `
         <div style="background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: white; border-radius: 14px; padding: 1.5rem; margin-bottom: 1.5rem; text-align: center;">
-          <h3 style="font-size: 1.3rem; margin-bottom: 0.5rem;">📊 Mislaka Portfolio Analysis Report Model</h3>
+          <h3 style="font-size: 1.3rem; margin-bottom: 0.5rem;">Mislaka Portfolio Analysis Report Model</h3>
           <p style="opacity: 0.9; font-size: 0.9rem;">${meta.based_on || 'Professional Insurance Portfolio Analysis Format'}</p>
           <div style="display: flex; justify-content: center; gap: 1.5rem; margin-top: 1rem; flex-wrap: wrap;">
             <span style="font-size: 0.85rem;"><strong>${sections.length}</strong> Sections</span>
@@ -2475,9 +2473,9 @@
       if (rules.length) {
         html += `
           <div style="background: #f0fdf4; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; border: 1px solid #a7f3d0;">
-            <h4 style="color: #047857; font-size: 0.95rem; margin-bottom: 0.5rem;">🛡️ Data Integrity Rules</h4>
+            <h4 style="color: #047857; font-size: 0.95rem; margin-bottom: 0.5rem;">Data Integrity Rules</h4>
             <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
-              ${rules.map(r => `<span class="integrity-badge pass">✓ ${r}</span>`).join('')}
+              ${rules.map(r => `<span class="integrity-badge pass">${r}</span>`).join('')}
             </div>
           </div>
         `;
@@ -2491,11 +2489,11 @@
         const sectionTitleEn = getModelSectionTitle(sec, 'en');
         const chartBadges = charts.map(c => {
           if (typeof c === 'string') {
-            return `<span class="rms-chart-badge">📈 ${c}</span>`;
+            return `<span class="rms-chart-badge">${c}</span>`;
           }
           const chartType = c && c.type ? String(c.type).toUpperCase() : 'CHART';
           const chartTitle = c && c.title ? c.title : 'Chart';
-          return `<span class="rms-chart-badge">📈 ${chartType}: ${chartTitle}</span>`;
+          return `<span class="rms-chart-badge">${chartType}: ${chartTitle}</span>`;
         }).join('');
         html += `
           <div class="report-model-section">
@@ -2529,7 +2527,7 @@
       if (companies.length) {
         html += `
           <div style="background: white; border-radius: 12px; padding: 1.25rem; margin-top: 1rem; border: 1px solid #e2e8f0;">
-            <h4 style="color: var(--primary); font-size: 1rem; margin-bottom: 0.75rem;">🏢 Service Index Ratings</h4>
+            <h4 style="color: var(--primary); font-size: 1rem; margin-bottom: 0.75rem;">Service Index Ratings</h4>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem;">
               ${companies.map(company => {
                 const ratings = serviceIndex[company];
@@ -2555,9 +2553,9 @@
       if (features.length) {
         html += `
           <div style="background: #f0f9ff; border-radius: 12px; padding: 1rem 1.25rem; margin-top: 1rem; border: 1px solid #bae6fd;">
-            <h4 style="color: #0369a1; font-size: 0.95rem; margin-bottom: 0.5rem;">✨ Report Features</h4>
+            <h4 style="color: #0369a1; font-size: 0.95rem; margin-bottom: 0.5rem;">Report Features</h4>
             <div style="columns: 2; column-gap: 1.5rem;">
-              ${features.map(f => `<div style="font-size: 0.85rem; color: var(--text-dark); padding: 2px 0; break-inside: avoid;">✓ ${f}</div>`).join('')}
+              ${features.map(f => `<div style="font-size: 0.85rem; color: var(--text-dark); padding: 2px 0; break-inside: avoid;">${f}</div>`).join('')}
             </div>
           </div>
         `;
@@ -2576,7 +2574,7 @@
         const data = await response.json();
         swiftnessSafeBaseUrl = data.base_url || 'https://www.swiftness.co.il';
         swiftnessSafeSnapshot = {
-          status: data.configured ? '✅ Safe Ready' : '⚠️ Safe Not Configured',
+          status: data.configured ? 'Safe Ready' : 'Safe Not Configured',
           message: data.message || 'Swiftness Safe status unavailable',
           configured: Boolean(data.configured)
         };
@@ -2593,7 +2591,7 @@
         }
       } catch (error) {
         swiftnessSafeSnapshot = {
-          status: '❌ Safe Error',
+          status: 'Safe Error',
           message: 'Unable to reach Swiftness Safe status endpoint',
           configured: false
         };
@@ -2734,7 +2732,7 @@
             <div class="file-name">${file.name}</div>
             <div class="file-size">${formatFileSize(file.size)}</div>
           </div>
-          <button class="file-remove" onclick="removeFile(${index})">✕</button>
+          <button class="file-remove" onclick="removeFile(${index})"></button>
         </div>
       `).join('');
     }
@@ -2742,11 +2740,11 @@
     function getFileIcon(filename) {
       const ext = filename.split('.').pop().toLowerCase();
       const icons = {
-        'csv': '📄', 'xls': '📊', 'xlsx': '📊',
-        'zip': '📦', 'xml': '🧾', 'png': '🖼️', 'jpg': '🖼️', 
-        'jpeg': '🖼️', 'pdf': '📕'
+        'csv': '', 'xls': '', 'xlsx': '',
+        'zip': '', 'xml': '', 'png': '', 'jpg': '', 
+        'jpeg': '', 'pdf': ''
       };
-      return icons[ext] || '📁';
+      return icons[ext] || '';
     }
     
     function formatFileSize(bytes) {
@@ -2959,47 +2957,47 @@
       
       document.getElementById('statsGrid').innerHTML = `
         <div class="stat-card fade-in" style="grid-column: span 2; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-          <h5 style="color: white;">👤 פרטי לקוח</h5>
+          <h5 style="color: white;">פרטי לקוח</h5>
           <div class="value" style="font-size: 1.5rem; color: white;">${clientName}</div>
           <small style="color: rgba(255,255,255,0.9);">ת.ז: ${idNumber}</small>
           <small style="color: rgba(255,255,255,0.9);">תאריך לידה: ${birthDate}</small>
         </div>
         <div class="stat-card fade-in" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white;">
-          <h5 style="color: white;">💰 סה״כ צבירה</h5>
+          <h5 style="color: white;">סה״כ צבירה</h5>
           <div class="value" style="font-size: 1.8rem; color: white;">₪${totalBalance.toLocaleString('he-IL')}</div>
           <small style="color: rgba(255,255,255,0.9);">כל הפוליסות</small>
         </div>
         <div class="stat-card fade-in" style="background: linear-gradient(135deg, #ee0979 0%, #ff6a00 100%); color: white;">
-          <h5 style="color: white;">💼 פיצויים</h5>
+          <h5 style="color: white;">פיצויים</h5>
           <div class="value" style="font-size: 1.8rem; color: white;">₪${totalSeverance.toLocaleString('he-IL')}</div>
           <small style="color: rgba(255,255,255,0.9);">סה״כ פיצויים צבורים</small>
         </div>
         <div class="stat-card fade-in">
-          <h5>📊 מספר פוליסות</h5>
+          <h5>מספר פוליסות</h5>
           <div class="value" style="font-size: 2rem;">${accountCount}</div>
           <small>${providers.length} יצרנים</small>
         </div>
         <div class="stat-card fade-in">
-          <h5>🏢 יצרנים</h5>
+          <h5>יצרנים</h5>
           <div class="value" style="font-size: 1rem;">${providers.slice(0, 3).join(', ')}</div>
           <small>${providers.length > 3 ? `ועוד ${providers.length - 3}...` : ''}</small>
         </div>
         ${totalDeathCoverage > 0 ? `
         <div class="stat-card fade-in">
-          <h5>🛡️ ביטוח חיים</h5>
+          <h5>ביטוח חיים</h5>
           <div class="value" style="font-size: 1.3rem;">₪${totalDeathCoverage.toLocaleString('he-IL')}</div>
           <small>סכום כיסוי מוות</small>
         </div>
         ` : ''}
         ${totalDisabilityCoverage > 0 ? `
         <div class="stat-card fade-in">
-          <h5>🏥 אובדן כושר</h5>
+          <h5>אובדן כושר</h5>
           <div class="value" style="font-size: 1.3rem;">₪${totalDisabilityCoverage.toLocaleString('he-IL')}</div>
           <small>פיצוי חודשי</small>
         </div>
         ` : ''}
         <div class="stat-card fade-in" style="background: #f0f9ff; border: 2px solid #0ea5e9;">
-          <h5>📋 מקור נתונים</h5>
+          <h5>מקור נתונים</h5>
           <div class="value" style="font-size: 1rem; color: #0369a1;">מסלקת הביטוח והפנסיה</div>
           <small>נתונים אמיתיים מהקובץ</small>
         </div>
@@ -3017,7 +3015,7 @@
       // Client info card
       html += `
         <div class="insight-card fade-in" style="background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%); border: 2px solid #667eea;">
-          <h5>👤 פרטי המבוטח</h5>
+          <h5>פרטי המבוטח</h5>
           <div class="insight-detail" style="direction: rtl; text-align: right;">
             <div class="stat-detail"><span class="label">שם מלא</span><span class="val">${client.full_name || client.client_name || 'לא זמין'}</span></div>
             <div class="stat-detail"><span class="label">ת.ז</span><span class="val">${client.id_number || 'לא זמין'}</span></div>
@@ -3040,7 +3038,7 @@
         
         html += `
           <div class="insight-card fade-in" style="background: #f8fafc; border: 1px solid #e2e8f0;">
-            <h5 style="color: #1e40af;">📋 פוליסה ${idx + 1}: ${acct.provider || 'לא ידוע'}</h5>
+            <h5 style="color: #1e40af;">פוליסה ${idx + 1}: ${acct.provider || 'לא ידוע'}</h5>
             <div class="insight-detail" style="direction: rtl; text-align: right;">
               <div class="stat-detail"><span class="label">מספר פוליסה</span><span class="val" style="font-family: monospace;">${acct.policy_number || '-'}</span></div>
               <div class="stat-detail"><span class="label">סוג מוצר</span><span class="val">${acct.product_type_name || acct.product_type || '-'}</span></div>
@@ -3053,7 +3051,7 @@
               ${deathCoverage > 0 ? `<div class="stat-detail"><span class="label">ביטוח חיים</span><span class="val">₪${deathCoverage.toLocaleString('he-IL')}</span></div>` : ''}
               ${disabilityCoverage > 0 ? `<div class="stat-detail"><span class="label">אובדן כושר</span><span class="val">₪${disabilityCoverage.toLocaleString('he-IL')}/חודש</span></div>` : ''}
               ${acct.employer_name ? `<div class="stat-detail"><span class="label">מעסיק</span><span class="val">${acct.employer_name}</span></div>` : ''}
-              ${acct.section14 !== undefined ? `<div class="stat-detail"><span class="label">סעיף 14</span><span class="val">${acct.section14 ? '✅ כן' : '❌ לא'}</span></div>` : ''}
+              ${acct.section14 !== undefined ? `<div class="stat-detail"><span class="label">סעיף 14</span><span class="val">${acct.section14 ? 'כן' : 'לא'}</span></div>` : ''}
             </div>
             <span class="insight-badge">${acct.provider || 'פוליסה'}</span>
           </div>
@@ -3064,7 +3062,7 @@
       const totals = pensionData.totals || {};
       html += `
         <div class="insight-card fade-in" style="background: linear-gradient(135deg, #11998e15 0%, #38ef7d15 100%); border: 2px solid #11998e;">
-          <h5 style="color: #065f46;">📊 סיכום כולל</h5>
+          <h5 style="color: #065f46;">סיכום כולל</h5>
           <div class="insight-detail" style="direction: rtl; text-align: right;">
             <div class="stat-detail"><span class="label">סה״כ צבירה</span><span class="val" style="font-size: 1.2rem; color: #059669; font-weight: bold;">₪${(totals.total_balance || 0).toLocaleString('he-IL')}</span></div>
             <div class="stat-detail"><span class="label">סה״כ פיצויים</span><span class="val">₪${(totals.total_severance || 0).toLocaleString('he-IL')}</span></div>
@@ -3109,11 +3107,11 @@
         </div>
         <div class="stat-card fade-in">
           <h5>Data Classification</h5>
-          <div class="value" style="font-size: 1.3rem;">📊 ${capitalizeFirst(analysis.data_classification || 'Unknown')}</div>
+          <div class="value" style="font-size: 1.3rem;">${capitalizeFirst(analysis.data_classification || 'Unknown')}</div>
         </div>
         <div class="stat-card fade-in">
           <h5>Language</h5>
-          <div class="value" style="font-size: 1.3rem;">🌐 ${analysis.language_name || 'Unknown'}</div>
+          <div class="value" style="font-size: 1.3rem;">${analysis.language_name || 'Unknown'}</div>
         </div>
         <div class="stat-card fade-in">
           <h5>AI Confidence</h5>
@@ -3132,24 +3130,24 @@
         </div>
         <div class="stat-card fade-in">
           <h5>Patterns Found</h5>
-          <div class="value">🔍 ${patternCount}</div>
+          <div class="value">${patternCount}</div>
           <small>Inductive analysis</small>
         </div>
         <div class="stat-card fade-in">
           <h5>Anomalies</h5>
-          <div class="value" style="color: ${anomalyCount > 3 ? 'var(--danger)' : anomalyCount > 0 ? 'var(--warning)' : 'var(--success)'}">⚠️ ${anomalyCount}</div>
+          <div class="value" style="color: ${anomalyCount > 3 ? 'var(--danger)' : anomalyCount > 0 ? 'var(--warning)' : 'var(--success)'}">${anomalyCount}</div>
           <small>Requires attention</small>
         </div>
         ${correlationCount > 0 ? `
         <div class="stat-card fade-in">
           <h5>Correlations</h5>
-          <div class="value">🔗 ${correlationCount}</div>
+          <div class="value">${correlationCount}</div>
           <small>${topCorrelation ? `Strongest: ${topCorrelation.strength}` : 'Relationships'}</small>
         </div>
         ` : ''}
         <div class="stat-card fade-in">
           <h5>Key Factors</h5>
-          <div class="value">📈 ${analysis.extracted_factors?.length || 0}</div>
+          <div class="value">${analysis.extracted_factors?.length || 0}</div>
           <small>Insights identified</small>
         </div>
       `;
@@ -3377,12 +3375,12 @@
       // the system's own configuration, not the customer's file.
       statsGrid.innerHTML = `
         <div class="stat-card fade-in" style="grid-column: span 3; background: linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%); color: white;">
-          <h5 style="color: white;">🧭 Mislaka Document Insights</h5>
+          <h5 style="color: white;">Mislaka Document Insights</h5>
           <div class="value" style="font-size: 1.6rem; color: white;">${analysisTypeLabel || 'Auto-detect'}</div>
           <small style="color: rgba(255,255,255,0.9);">Files: ${fileSummary.length} • Language: ${languageLabel}</small>
         </div>
         <div class="stat-card fade-in">
-          <h5>📁 Files</h5>
+          <h5>Files</h5>
           <div class="value">${fileSummary.length}</div>
           <small>${fileTypeLabel}</small>
         </div>
@@ -3390,7 +3388,7 @@
 
       if (insightsHeader) {
         insightsHeader.innerHTML = `
-          <h3>🧠 Mislaka Document Insights</h3>
+          <h3>Mislaka Document Insights</h3>
           <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Smart analysis derived from your uploaded file</p>
         `;
       }
@@ -3401,7 +3399,7 @@
       // confirm which file produced the report.
       insightsGrid.innerHTML = `
         <div class="insight-card fade-in">
-          <h5>📁 Upload Context</h5>
+          <h5>Upload Context</h5>
           <div class="insight-detail">
             <div class="stat-detail"><span class="label">Files</span><span class="val">${fileSummary.length}</span></div>
             <div class="stat-detail"><span class="label">Types</span><span class="val">${fileTypeLabel}</span></div>
@@ -3421,7 +3419,7 @@
       const swiftnessLinksHtml = (swiftnessResources && swiftnessResources.quick_links)
         ? swiftnessResources.quick_links.map(link => `
             <a href="${link.url}" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; gap: 6px; color: #0369a1; text-decoration: none; padding: 6px 12px; background: #e0f2fe; border-radius: 8px; font-size: 0.85rem; margin: 4px;">
-              🔗 ${link.label_he} (${link.label})
+              ${link.label_he} (${link.label})
             </a>
           `).join('')
         : '<p style="color: var(--text-muted);">Swiftness links not available.</p>';
@@ -3436,11 +3434,11 @@
               const titleEnEscaped = escapeInlineJsText(sectionTitleEn);
               const chartTags = (sec.charts || []).map(chart => {
                 if (typeof chart === 'string') {
-                  return `<span style="background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 8px; font-size: 0.65rem;">📈 ${chart}</span>`;
+                  return `<span style="background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 8px; font-size: 0.65rem;">${chart}</span>`;
                 }
                 const chartType = chart && chart.type ? String(chart.type).toUpperCase() : 'CHART';
                 const chartTitle = chart && chart.title ? chart.title : 'Chart';
-                return `<span style="background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 8px; font-size: 0.65rem;">📈 ${chartType}: ${chartTitle}</span>`;
+                return `<span style="background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 8px; font-size: 0.65rem;">${chartType}: ${chartTitle}</span>`;
               }).join('');
               return `
               <div class="minitab-card" style="background: white; border-radius: 10px; padding: 0.75rem; border: 2px solid #e2e8f0; transition: all 0.2s; cursor: pointer; position: relative;" 
@@ -3463,7 +3461,7 @@
                     ${sec.data_fields ? sec.data_fields.length : 0} fields
                   </span>
                   <span style="color: var(--primary); font-size: 0.75rem; font-weight: 600; display: flex; align-items: center; gap: 4px;">
-                    📊 Generate Report
+                    Generate Report
                   </span>
                 </div>
                 ${sec.charts && sec.charts.length > 0 ? `
@@ -3476,7 +3474,7 @@
           </div>
           <div style="margin-top: 1rem; padding: 1rem; background: #f0fdf4; border-radius: 8px; border-left: 3px solid #10b981;">
             <p style="margin: 0; font-size: 0.85rem; color: #047857;">
-              💡 <strong>Interactive Minitabs:</strong> Click any section card above to generate a specific report for that section based on its affiliated source data.
+              <strong>Interactive Minitabs:</strong> Click any section card above to generate a specific report for that section based on its affiliated source data.
             </p>
           </div>`
         : '';
@@ -3484,11 +3482,11 @@
       // Data integrity rules for report
       const integrityHtml = (swiftnessReportModel && swiftnessReportModel.metadata && swiftnessReportModel.metadata.data_integrity_rules)
         ? `<div style="display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem;">
-            ${swiftnessReportModel.metadata.data_integrity_rules.map(r => `<span class="integrity-badge pass">✓ ${r}</span>`).join('')}
+            ${swiftnessReportModel.metadata.data_integrity_rules.map(r => `<span class="integrity-badge pass">${r}</span>`).join('')}
           </div>`
         : '';
 
-      reportTitle.textContent = `🧭 Swiftness Affiliation Report${titleSuffix}`;
+      reportTitle.textContent = `Swiftness Affiliation Report${titleSuffix}`;
       // The user explicitly asked us to drop the platform-internal
       // "Interface & Schema Coverage", "Swiftness Affiliation Snapshot",
       // "Swiftness Data Resources" and "Report Model Structure (Nituach
@@ -3498,7 +3496,7 @@
       // belong in the user-facing report.
       reportBody.innerHTML = `
         <div class="report-section fade-in">
-          <h3>📁 Uploaded Document Context</h3>
+          <h3>Uploaded Document Context</h3>
           <div class="content">
             <p><strong>Analysis Type:</strong> ${analysisTypeLabel || 'Auto-detect'}</p>
             <p><strong>Report Language:</strong> ${languageLabel}</p>
@@ -3506,7 +3504,7 @@
           </div>
         </div>
         <div class="report-section fade-in">
-          <h3>🛡️ Data Integrity</h3>
+          <h3>Data Integrity</h3>
           <div class="content">
             <p><strong>Safe Status:</strong> ${safeSnapshot.status}</p>
             <p>${safeSnapshot.message || 'Data integrity snapshot captured.'}</p>
@@ -3526,11 +3524,11 @@
           
           // Check if this is one of the sections that should be collapsible and default minimized
           const shouldBeMinimized = 
-            headingText.includes('📁 Uploaded Document Context') ||
-            headingText.includes('🧬 Interface & Schema Coverage') ||
-            headingText.includes('📥 Swiftness Data Resources') ||
-            headingText.includes('🧭 Swiftness Affiliation Report') ||
-            headingText.includes('🧭 Swiftness Affiliation Intelligence');
+            headingText.includes('Uploaded Document Context') ||
+            headingText.includes('Interface & Schema Coverage') ||
+            headingText.includes('Swiftness Data Resources') ||
+            headingText.includes('Swiftness Affiliation Report') ||
+            headingText.includes('Swiftness Affiliation Intelligence');
           
           makeCollapsible(section, shouldBeMinimized);
         });
@@ -3564,7 +3562,7 @@
         // PENSION DATA MODE: Show raw pension data, not statistical analysis
         if (insightsHeader) {
           insightsHeader.innerHTML = `
-            <h3>📋 נתוני מסלקה - פירוט פוליסות</h3>
+            <h3>נתוני מסלקה - פירוט פוליסות</h3>
             <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">נתונים אמיתיים מקובץ המסלקה: ת.ז, מספרי פוליסה, יתרות, כיסויים</p>
           `;
         }
@@ -3574,7 +3572,7 @@
         // REGULAR MODE: Show standard analysis
         if (insightsHeader) {
           insightsHeader.innerHTML = `
-            <h3>🧠 AI Inductive Analysis</h3>
+            <h3>AI Inductive Analysis</h3>
             <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Advanced pattern recognition and statistical insights from your data</p>
           `;
         }
@@ -3593,7 +3591,7 @@
       renderCharts(baseCharts);
       
       // Report Title
-      document.getElementById('reportTitle').textContent = `📋 ${report.title || 'Analysis Report'}`;
+      document.getElementById('reportTitle').textContent = `${report.title || 'Analysis Report'}`;
       
       // Report Sections - with enhanced Mislaka/pension-specific rendering
       const reportBody = document.getElementById('reportBody');
@@ -3679,7 +3677,7 @@
 
       reportBody.insertAdjacentHTML('beforeend', `
         <div class="report-section fade-in">
-          <h3>📁 Uploaded Files</h3>
+          <h3>Uploaded Files</h3>
           <div class="content">
             ${fileRows.length ? renderDataTable({ columns: ['File', 'Type', 'Size'], rows: fileRows }) : '<p style="color: var(--text-muted);">No uploaded files available for this run.</p>'}
           </div>
@@ -3732,21 +3730,21 @@
         });
         
         // Section 14 status badges
-        formatted = formatted.replace(/✅ סטטוס: מכוסה תחת סעיף 14/g, 
-          '<span class="mislaka-section14-badge covered">✅ מכוסה תחת סעיף 14</span>');
-        formatted = formatted.replace(/⚠️ סטטוס: לא מכוסה תחת סעיף 14/g, 
-          '<span class="mislaka-section14-badge not-covered">⚠️ לא מכוסה תחת סעיף 14</span>');
+        formatted = formatted.replace(/סטטוס: מכוסה תחת סעיף 14/g, 
+          '<span class="mislaka-section14-badge covered">מכוסה תחת סעיף 14</span>');
+        formatted = formatted.replace(/סטטוס: לא מכוסה תחת סעיף 14/g, 
+          '<span class="mislaka-section14-badge not-covered">לא מכוסה תחת סעיף 14</span>');
         
         // Currency values - make them stand out
         formatted = formatted.replace(/(₪[\d,]+(?:\.\d{2})?)/g, '<strong style="color: #059669;">$1</strong>');
         
         // Priority icons for recommendations
-        formatted = formatted.replace(/🔴 המלצה (\d+): ([^\n]+)\n\s+([^\n]+)/g, 
-          '<div class="mislaka-recommendation high"><span class="priority-icon">🔴</span><div><h5>המלצה $1: $2</h5><p>$3</p></div></div>');
-        formatted = formatted.replace(/🟡 המלצה (\d+): ([^\n]+)\n\s+([^\n]+)/g, 
-          '<div class="mislaka-recommendation medium"><span class="priority-icon">🟡</span><div><h5>המלצה $1: $2</h5><p>$3</p></div></div>');
-        formatted = formatted.replace(/🟢 המלצה (\d+): ([^\n]+)\n\s+([^\n]+)/g, 
-          '<div class="mislaka-recommendation low"><span class="priority-icon">🟢</span><div><h5>המלצה $1: $2</h5><p>$3</p></div></div>');
+        formatted = formatted.replace(/המלצה (\d+): ([^\n]+)\n\s+([^\n]+)/g, 
+          '<div class="mislaka-recommendation high"><span class="priority-icon"></span><div><h5>המלצה $1: $2</h5><p>$3</p></div></div>');
+        formatted = formatted.replace(/המלצה (\d+): ([^\n]+)\n\s+([^\n]+)/g, 
+          '<div class="mislaka-recommendation medium"><span class="priority-icon"></span><div><h5>המלצה $1: $2</h5><p>$3</p></div></div>');
+        formatted = formatted.replace(/המלצה (\d+): ([^\n]+)\n\s+([^\n]+)/g, 
+          '<div class="mislaka-recommendation low"><span class="priority-icon"></span><div><h5>המלצה $1: $2</h5><p>$3</p></div></div>');
         
         // Clean up remaining box characters
         formatted = formatted.replace(/[║│]/g, '');
@@ -3788,7 +3786,7 @@
         if (typeof value === 'object') {
           insightsHTML += `
             <div class="insight-card statistical fade-in">
-              <h5>📊 ${factor.name}</h5>
+              <h5>${factor.name}</h5>
               <div class="insight-detail">
                 <div class="stat-detail">
                   <span class="label">Mean</span>
@@ -3822,7 +3820,7 @@
       if (topCorr) {
         insightsHTML += `
           <div class="insight-card correlation fade-in">
-            <h5>🔗 Key Correlation Discovered</h5>
+            <h5>Key Correlation Discovered</h5>
             <div class="insight-value">${topCorr.fields}</div>
             <div class="insight-detail">
               <p>Correlation Strength: <strong>${topCorr.strength}</strong></p>
@@ -3839,7 +3837,7 @@
       patterns.slice(0, 3).forEach(pattern => {
         insightsHTML += `
           <div class="insight-card pattern fade-in">
-            <h5>🔍 ${capitalizeFirst(pattern.type)} Pattern</h5>
+            <h5>${capitalizeFirst(pattern.type)} Pattern</h5>
             <div class="insight-detail">
               <p>${pattern.description}</p>
             </div>
@@ -3860,7 +3858,7 @@
         insightsHTML += `
           <div class="insight-card anomaly fade-in">
             <h5 style="color: ${severityColors[anomaly.severity] || '#6b7280'}">
-              ⚠️ ${capitalizeFirst(anomaly.severity)} Anomaly
+              ${capitalizeFirst(anomaly.severity)} Anomaly
             </h5>
             <div class="insight-detail">
               <p><strong>Issue:</strong> ${anomaly.description}</p>
@@ -3879,7 +3877,7 @@
         if (typeof factor.value === 'object') {
           insightsHTML += `
             <div class="insight-card fade-in">
-              <h5>🏷️ ${factor.name}</h5>
+              <h5>${factor.name}</h5>
               <div class="insight-detail">
                 ${Object.entries(factor.value).map(([key, val]) => `
                   <div class="stat-detail">
@@ -3897,7 +3895,7 @@
       // Data quality insight
       insightsHTML += `
         <div class="insight-card fade-in">
-          <h5>✅ Data Quality Assessment</h5>
+          <h5>Data Quality Assessment</h5>
           <div class="insight-detail">
             <div class="stat-detail">
               <span class="label">Completeness</span>
@@ -4122,40 +4120,40 @@
     function getSectionIcon(title) {
       const lower = (title || '').toLowerCase();
       // Mislaka-specific icons
-      if (lower.includes('מסלקה') || lower.includes('mislaka')) return '🏛️';
-      if (lower.includes('דו״ח מסלקת') || lower.includes('clearinghouse')) return '📊';
+      if (lower.includes('מסלקה') || lower.includes('mislaka')) return '';
+      if (lower.includes('דו״ח מסלקת') || lower.includes('clearinghouse')) return '';
       // Pension-specific icons
-      if (lower.includes('pension') || lower.includes('פנסיה')) return '💼';
-      if (lower.includes('severance') || lower.includes('פיצויים')) return '💰';
-      if (lower.includes('section 14') || lower.includes('סעיף 14')) return '📌';
-      if (lower.includes('contribution') || lower.includes('הפקדות')) return '📈';
-      if (lower.includes('account') || lower.includes('חשבון') || lower.includes('פוליס')) return '📁';
-      if (lower.includes('insurance') || lower.includes('ביטוח')) return '🏦';
-      if (lower.includes('client') || lower.includes('לקוח') || lower.includes('פרטי')) return '👤';
-      if (lower.includes('recommendation') || lower.includes('המלצ')) return '💡';
-      if (lower.includes('financial') || lower.includes('כספי')) return '💵';
-      if (lower.includes('ai') || lower.includes('בינה')) return '🤖';
-      if (lower.includes('health') || lower.includes('בריאות')) return '🎯';
-      if (lower.includes('provider') || lower.includes('יצרן')) return '🏢';
-      if (lower.includes('holdings') || lower.includes('אחזקות')) return '📦';
-      if (lower.includes('gemel') || lower.includes('גמל')) return '🏧';
-      if (lower.includes('keren') || lower.includes('קרן')) return '🏛️';
-      if (lower.includes('managers') || lower.includes('מנהלים')) return '👔';
-      if (lower.includes('fee') || lower.includes('ניהול') || lower.includes('עמלה')) return '💳';
+      if (lower.includes('pension') || lower.includes('פנסיה')) return '';
+      if (lower.includes('severance') || lower.includes('פיצויים')) return '';
+      if (lower.includes('section 14') || lower.includes('סעיף 14')) return '';
+      if (lower.includes('contribution') || lower.includes('הפקדות')) return '';
+      if (lower.includes('account') || lower.includes('חשבון') || lower.includes('פוליס')) return '';
+      if (lower.includes('insurance') || lower.includes('ביטוח')) return '';
+      if (lower.includes('client') || lower.includes('לקוח') || lower.includes('פרטי')) return '';
+      if (lower.includes('recommendation') || lower.includes('המלצ')) return '';
+      if (lower.includes('financial') || lower.includes('כספי')) return '';
+      if (lower.includes('ai') || lower.includes('בינה')) return '';
+      if (lower.includes('health') || lower.includes('בריאות')) return '';
+      if (lower.includes('provider') || lower.includes('יצרן')) return '';
+      if (lower.includes('holdings') || lower.includes('אחזקות')) return '';
+      if (lower.includes('gemel') || lower.includes('גמל')) return '';
+      if (lower.includes('keren') || lower.includes('קרן')) return '';
+      if (lower.includes('managers') || lower.includes('מנהלים')) return '';
+      if (lower.includes('fee') || lower.includes('ניהול') || lower.includes('עמלה')) return '';
       // General icons
-      if (lower.includes('summary') || lower.includes('תקציר') || lower.includes('סיכום')) return '📝';
-      if (lower.includes('profile') || lower.includes('פרופיל')) return '📊';
-      if (lower.includes('statistic') || lower.includes('סטטיסטי')) return '📈';
-      if (lower.includes('correlation') || lower.includes('מתאמים')) return '🔗';
-      if (lower.includes('metric') || lower.includes('מדדים')) return '📏';
-      if (lower.includes('factor') || lower.includes('גורמים')) return '🔍';
-      if (lower.includes('pattern') || lower.includes('דפוסים')) return '🔄';
-      if (lower.includes('anomal') || lower.includes('חריגות')) return '⚠️';
-      if (lower.includes('risk') || lower.includes('סיכון')) return '🎯';
-      if (lower.includes('strength') || lower.includes('חוזק')) return '✅';
-      if (lower.includes('alert') || lower.includes('אזהרה')) return '⚠️';
-      if (lower.includes('data') || lower.includes('נתונים')) return '📊';
-      return '📋';
+      if (lower.includes('summary') || lower.includes('תקציר') || lower.includes('סיכום')) return '';
+      if (lower.includes('profile') || lower.includes('פרופיל')) return '';
+      if (lower.includes('statistic') || lower.includes('סטטיסטי')) return '';
+      if (lower.includes('correlation') || lower.includes('מתאמים')) return '';
+      if (lower.includes('metric') || lower.includes('מדדים')) return '';
+      if (lower.includes('factor') || lower.includes('גורמים')) return '';
+      if (lower.includes('pattern') || lower.includes('דפוסים')) return '';
+      if (lower.includes('anomal') || lower.includes('חריגות')) return '';
+      if (lower.includes('risk') || lower.includes('סיכון')) return '';
+      if (lower.includes('strength') || lower.includes('חוזק')) return '';
+      if (lower.includes('alert') || lower.includes('אזהרה')) return '';
+      if (lower.includes('data') || lower.includes('נתונים')) return '';
+      return '';
     }
     
     function formatMetricName(name) {
@@ -4190,7 +4188,7 @@
       const statusDiv = document.createElement('div');
       statusDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); z-index: 10000; text-align: center;';
       statusDiv.innerHTML = `
-        <div style="font-size: 2rem; margin-bottom: 1rem;">📊</div>
+        <div style="font-size: 2rem; margin-bottom: 1rem;"></div>
         <div style="font-size: 1.1rem; font-weight: 600; color: var(--primary); margin-bottom: 0.5rem;">Generating Report...</div>
         <div style="color: var(--text-muted); font-size: 0.9rem;">${titleHe}</div>
       `;
@@ -4215,7 +4213,7 @@
         
         const chartsHtml = section.charts && section.charts.length > 0
           ? `<div style="margin-top: 1rem;">
-              <h4 style="color: var(--primary); font-size: 1rem; margin-bottom: 0.5rem;">📈 Recommended Charts</h4>
+              <h4 style="color: var(--primary); font-size: 1rem; margin-bottom: 0.5rem;">Recommended Charts</h4>
               <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
                 ${section.charts.map(chart => {
                   if (typeof chart === 'string') {
@@ -4245,11 +4243,11 @@
             </div>
             <div style="padding: 2rem;">
               <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); padding: 1rem; border-radius: 12px; margin-bottom: 1.5rem; border-left: 4px solid #2563eb;">
-                <p style="margin: 0; color: #1e40af; font-weight: 600;">📊 Section ${section.order} - Detailed Report</p>
+                <p style="margin: 0; color: #1e40af; font-weight: 600;">Section ${section.order} - Detailed Report</p>
                 <p style="margin: 0.5rem 0 0 0; color: #64748b; font-size: 0.85rem;">Generated from Swiftness Mislaka standards with ${section.data_fields?.length || 0} data fields</p>
               </div>
               
-              <h3 style="color: var(--primary); font-size: 1.1rem; margin-bottom: 1rem;">📋 Data Fields</h3>
+              <h3 style="color: var(--primary); font-size: 1.1rem; margin-bottom: 1rem;">Data Fields</h3>
               <div style="display: grid; gap: 0.75rem; margin-bottom: 1.5rem;">
                 ${fieldsHtml}
               </div>
@@ -4258,13 +4256,13 @@
               
               <div style="margin-top: 1.5rem; padding: 1rem; background: #f0fdf4; border-radius: 8px; border-left: 3px solid #10b981;">
                 <p style="margin: 0; font-size: 0.85rem; color: #047857;">
-                  ✅ <strong>Data Source:</strong> This report is generated from ${section.data_fields?.length || 0} affiliated data fields following Mislaka portfolio analysis standards.
+                  <strong>Data Source:</strong> This report is generated from ${section.data_fields?.length || 0} affiliated data fields following Mislaka portfolio analysis standards.
                 </p>
               </div>
               
               <div style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: flex-end;">
                 <button onclick="exportMinitabToPDF(${sectionIndex})" class="btn btn-primary" style="padding: 10px 20px; background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
-                  📥 Download PDF
+                  Download PDF
                 </button>
                 <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-secondary" style="padding: 10px 20px; background: #e2e8f0; color: var(--text-dark); border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
                   Close
@@ -4386,7 +4384,7 @@
       // Show success message
       const successMsg = document.createElement('div');
       successMsg.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #10b981; color: white; padding: 1rem 1.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 10001; font-weight: 600;';
-      successMsg.textContent = '✓ PDF Downloaded Successfully';
+      successMsg.textContent = 'PDF Downloaded Successfully';
       document.body.appendChild(successMsg);
       setTimeout(() => successMsg.remove(), 3000);
     }
@@ -4522,7 +4520,7 @@
           // Show notice that API is not configured
           const notice = document.createElement('div');
           notice.style.cssText = 'padding: 1rem; background: #fef3c7; color: #92400e; border-radius: 8px; margin-top: 1rem;';
-          notice.innerHTML = '⚠️ Mislaka API not configured. Contact administrator to enable this feature.';
+          notice.innerHTML = 'Mislaka API not configured. Contact administrator to enable this feature.';
           document.querySelector('.mislaka-body').appendChild(notice);
           document.getElementById('mislakaImportBtn').disabled = true;
         }
@@ -4542,14 +4540,14 @@
       // Validate ID number
       if (!idNumber || !/^[0-9]{9}$/.test(idNumber)) {
         statusDiv.className = 'mislaka-status active error';
-        statusMsg.textContent = '❌ Please enter a valid 9-digit ID number';
+        statusMsg.textContent = 'Please enter a valid 9-digit ID number';
         return;
       }
       
       // Show loading state
       importBtn.disabled = true;
       statusDiv.className = 'mislaka-status active loading';
-      statusMsg.textContent = '🔄 Connecting to Mislaka API...';
+      statusMsg.textContent = 'Connecting to Mislaka API...';
       resultsDiv.className = 'mislaka-results';
       
       try {
@@ -4574,7 +4572,7 @@
         
         // Show success
         statusDiv.className = 'mislaka-status active success';
-        statusMsg.innerHTML = `✅ Successfully imported ${data.policies_count} policies from Mislaka!`;
+        statusMsg.innerHTML = `Successfully imported ${data.policies_count} policies from Mislaka!`;
         
         // Show summary
         resultsDiv.className = 'mislaka-results active';
@@ -4612,7 +4610,7 @@
       } catch (error) {
         console.error('Mislaka import error:', error);
         statusDiv.className = 'mislaka-status active error';
-        statusMsg.textContent = `❌ ${error.message}`;
+        statusMsg.textContent = `${error.message}`;
       } finally {
         importBtn.disabled = false;
       }
@@ -4627,13 +4625,13 @@
 
       if (!idNumber || !/^[0-9]{9}$/.test(idNumber)) {
         statusDiv.className = 'mislaka-status active error';
-        statusMsg.textContent = '❌ Please enter a valid 9-digit ID number';
+        statusMsg.textContent = 'Please enter a valid 9-digit ID number';
         return;
       }
 
       downloadBtn.disabled = true;
       statusDiv.className = 'mislaka-status active loading';
-      statusMsg.textContent = '📄 Generating Mislaka report...';
+      statusMsg.textContent = 'Generating Mislaka report...';
 
       try {
         const response = await fetch('/api/mislaka/report', {
@@ -4678,11 +4676,11 @@
         window.URL.revokeObjectURL(url);
 
         statusDiv.className = 'mislaka-status active success';
-        statusMsg.textContent = '✅ Report downloaded successfully';
+        statusMsg.textContent = 'Report downloaded successfully';
       } catch (error) {
         console.error('Mislaka report download error:', error);
         statusDiv.className = 'mislaka-status active error';
-        statusMsg.textContent = `❌ ${error.message}`;
+        statusMsg.textContent = `${error.message}`;
       } finally {
         downloadBtn.disabled = false;
       }

@@ -119,7 +119,7 @@
     </a>
     <nav class="phins-nav">
       <a href="/dashboard.html">Dashboard</a>
-      <a href="/unified-workbench.html">⚡ Unified Workbench</a>
+      <a href="/unified-workbench.html">Unified Workbench</a>
       <span data-assessments-nav data-assessments-role="admin"></span>
       <a href="#" class="btn-logout" onclick="logout()">Logout</a>
     </nav>
@@ -127,7 +127,7 @@
 </header>
 
 <div class="page-container">
-  <div class="page-title">🧠 Assessment Workbench</div>
+  <div class="page-title">Assessment Workbench</div>
   <div class="page-subtitle">
     One place to upload any document, run any analysis, and download the
     result. Drop an ID, a medical report and a financial statement, then
@@ -137,7 +137,7 @@
 
   <!-- Backfill banner (admin only) -->
   <div class="card" id="backfill-card" style="display:none; border-left: 5px solid #f57c00;">
-    <div class="card-title">🔁 Backfill previously uploaded documents
+    <div class="card-title">Backfill previously uploaded documents
       <span class="meta" id="backfill-meta">checking…</span>
     </div>
     <p style="font-size: 0.85rem; color: #455a64; margin: 0 0 10px;">
@@ -151,7 +151,7 @@
       <label style="font-size:0.85rem; display:flex; align-items:center; gap:6px;">
         <input type="checkbox" id="backfill-force"> force re-extract
       </label>
-      <button class="warn" id="backfill-run-btn" onclick="runBackfill()">🔁 Run backfill</button>
+      <button class="warn" id="backfill-run-btn" onclick="runBackfill()">Run backfill</button>
       <button class="ghost" onclick="loadBackfillStatus()">↻ Refresh status</button>
       <span id="backfill-status" style="font-size:0.85rem;"></span>
     </div>
@@ -164,7 +164,7 @@
     <!-- ── LEFT: customer + upload + document picker ─────────────────── -->
     <div>
       <div class="card">
-        <div class="card-title">🎯 Customer
+        <div class="card-title">Customer
           <span class="meta" id="picker-meta"></span>
         </div>
         <select id="customer-select" style="width: 100%;">
@@ -176,15 +176,14 @@
       </div>
 
       <div class="card">
-        <div class="card-title">📤 Upload &amp; assess</div>
+        <div class="card-title">Upload &amp; assess</div>
         <div id="upload-context" style="font-size: 0.85rem; color: #455a64; background: #e3f2fd; border-left: 4px solid #1565c0; padding: 8px 10px; border-radius: 6px; margin-bottom: 10px;">Loading session…</div>
         <div class="drop-zone" id="drop-zone"
              onclick="document.getElementById('file-input').click()"
              ondragover="onDragOver(event)"
              ondragleave="onDragLeave(event)"
              ondrop="onDrop(event)">
-          <div class="drop-zone-icon">📂</div>
-          <div class="drop-zone-text">Drop files or click to browse</div>
+<div class="drop-zone-text">Drop files or click to browse</div>
           <div class="drop-zone-hint">PDF, DOC, DOCX, XLS, XLSX, CSV, PNG, JPG, TXT…</div>
         </div>
         <input type="file" id="file-input" multiple
@@ -198,20 +197,20 @@
         </div>
         <div style="display:flex; gap: 8px; flex-wrap: wrap; align-items: center;">
           <select id="upload-doctype" style="flex: 1; min-width: 150px;">
-            <option value="general">📄 General</option>
-            <option value="id">🪪 Identity</option>
-            <option value="medical">🏥 Medical</option>
-            <option value="financial">💰 Financial</option>
-            <option value="receipt">🧾 Receipt</option>
-            <option value="authority">📜 Authority</option>
+            <option value="general">General</option>
+            <option value="id">Identity</option>
+            <option value="medical">Medical</option>
+            <option value="financial">Financial</option>
+            <option value="receipt">Receipt</option>
+            <option value="authority">Authority</option>
           </select>
-          <button id="upload-btn" onclick="uploadFiles()" disabled>📤 Upload &amp; assess</button>
+          <button id="upload-btn" onclick="uploadFiles()" disabled>Upload &amp; assess</button>
         </div>
         <div id="upload-status" style="margin-top: 8px; font-size: 0.85rem;"></div>
       </div>
 
       <div class="card">
-        <div class="card-title">📁 Documents on file
+        <div class="card-title">Documents on file
           <button class="ghost" style="margin-left:auto; padding:4px 10px; font-size:0.75rem;" onclick="loadDocuments()">↻</button>
         </div>
         <div style="font-size: 0.78rem; color: #546e7a; margin-bottom: 6px;">
@@ -233,16 +232,16 @@
       </div>
 
       <div class="card">
-        <div class="card-title">🔬 Analysis
+        <div class="card-title">Analysis
           <span class="meta" id="analysis-meta"></span>
         </div>
         <div style="display:flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px;">
           <select id="analysis-type" style="min-width: 280px;">
-            <option value="describe_data">🗂️ Describe data with data (sorted by category)</option>
-            <option value="customer_360">👤 Customer 360 profile</option>
-            <option value="risk_assessment">⚠️ Risk assessment</option>
-            <option value="bi_summary">📊 BI summary (AI charts + risk)</option>
-            <option value="cross_document">🔀 Cross-document review (selected docs)</option>
+            <option value="describe_data">Describe data with data (sorted by category)</option>
+            <option value="customer_360">Customer 360 profile</option>
+            <option value="risk_assessment">Risk assessment</option>
+            <option value="bi_summary">BI summary (AI charts + risk)</option>
+            <option value="cross_document">Cross-document review (selected docs)</option>
           </select>
           <button class="green" onclick="runAnalysis()">▶ Run analysis</button>
           <span style="margin-left: auto; font-size: 0.85rem; color: #546e7a;">Download:</span>
@@ -278,14 +277,14 @@
             <option value="life_insurance">Life insurance</option>
             <option value="health_insurance">Health insurance</option>
           </select>
-          <button onclick="linkMislaka()">🔗 Link to Customer 360</button>
+          <button onclick="linkMislaka()">Link to Customer 360</button>
           <span id="mislaka-status" style="font-size:0.85rem;"></span>
         </div>
       </div>
 
       <!-- Assessment Center API registry (admin only) -->
       <div class="card" id="registry-card" style="display:none;">
-        <div class="card-title">📡 Assessment Center API endpoints
+        <div class="card-title">Assessment Center API endpoints
           <span class="meta">Live - <code>/api/assessment-center/upload-endpoints</code></span>
         </div>
         <div style="overflow-x:auto;">
@@ -558,7 +557,7 @@
   async function uploadFiles() {
     const btn = document.getElementById('upload-btn');
     btn.disabled = true;
-    btn.textContent = '⏳ Uploading…';
+    btn.textContent = 'Uploading…';
     const docType = document.getElementById('upload-doctype').value;
 
     // Resolve the target customer:
@@ -617,11 +616,11 @@
     }
     SELECTED_FILES = [];
     document.getElementById('file-input').value = '';
-    btn.textContent = '📤 Upload & assess';
+    btn.textContent = 'Upload & assess';
     btn.disabled = true;
     const intel = totalDocs > 0
-      ? `✅ Uploaded ${totalDocs} file(s) for <strong>${escHtml(customerId)}</strong>. 🧠 Extracted ${totalFacts} fact(s) → Customer 360 updated.`
-      : `❌ No files uploaded for <strong>${escHtml(customerId)}</strong>.`;
+      ? `Uploaded ${totalDocs} file(s) for <strong>${escHtml(customerId)}</strong>. Extracted ${totalFacts} fact(s) → Customer 360 updated.`
+      : `No files uploaded for <strong>${escHtml(customerId)}</strong>.`;
     const errBlock = errors.length
       ? `<div style="margin-top:6px;color:#c62828;">${errors.map(e => `• ${escHtml(e)}`).join('<br>')}</div>`
       : '';
@@ -681,7 +680,7 @@
       }
       list.innerHTML = CURRENT_DOCUMENTS.map(d => {
         const tagsBadge = (d.facts_extracted || 0) > 0
-          ? `<span class="doc-facts">🧠 ${d.facts_extracted} facts</span>`
+          ? `<span class="doc-facts">${d.facts_extracted} facts</span>`
           : `<span class="doc-facts" style="color:#90a4ae;">no facts</span>`;
         const checked = SELECTED_DOC_IDS.has(d.id) ? 'checked' : '';
         return `<label class="doc-item${SELECTED_DOC_IDS.has(d.id) ? ' selected' : ''}" data-doc-id="${escHtml(d.id)}">
@@ -691,7 +690,7 @@
           ${tagsBadge}
           <button class="ghost" style="margin-left:6px; padding:2px 8px; font-size:0.72rem;"
                   onclick="event.preventDefault(); rescanDocument('${escHtml(d.id)}'); return false;"
-                  title="Re-run extraction on this document">🔁</button>
+                  title="Re-run extraction on this document">Re-run</button>
         </label>`;
       }).join('');
     } catch (e) {
@@ -705,7 +704,7 @@
   async function rescanDocument(docId) {
     const cid = _resolveCurrentCustomer();
     if (!cid) { setStatus('analysis-status', 'No active customer.', 'error'); return; }
-    setStatus('analysis-status', `🔁 Re-scanning ${docId}…`);
+    setStatus('analysis-status', `Re-scanning ${docId}…`);
     try {
       const body = { document_id: docId };
       // Only attach customer_id for admins; non-admins always use session.
@@ -718,13 +717,13 @@
       if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
       const got = (json.summary && json.summary.facts_extracted) || 0;
       setStatus('analysis-status',
-        got > 0 ? `✅ Re-scan complete: ${got} fact(s) extracted from ${docId}.`
+        got > 0 ? `Re-scan complete: ${got} fact(s) extracted from ${docId}.`
                 : `ℹ️ Re-scan finished but no new text was extracted from ${docId}. Try re-uploading a typed/searchable copy.`,
         got > 0 ? 'ok' : 'error');
       await loadDocuments();
       await onCustomerChange();
     } catch (e) {
-      setStatus('analysis-status', `❌ Re-scan failed: ${e.message}`, 'error');
+      setStatus('analysis-status', `Re-scan failed: ${e.message}`, 'error');
     }
   }
 
@@ -769,14 +768,14 @@
       renderResult(json);
       setStatus('analysis-status', 'Done.', 'ok');
     } catch (e) {
-      setStatus('analysis-status', '❌ ' + e.message, 'error');
+      setStatus('analysis-status', '' + e.message, 'error');
     }
   }
 
   function renderResult(result) {
     show('result-panel', true);
     document.getElementById('result-title').textContent =
-      `🔎 ${result.title || result.analysis_type || 'Result'} ${SELECTED_DOC_IDS.size ? `· scoped to ${SELECTED_DOC_IDS.size} doc(s)` : ''}`;
+      `${result.title || result.analysis_type || 'Result'} ${SELECTED_DOC_IDS.size ? `· scoped to ${SELECTED_DOC_IDS.size} doc(s)` : ''}`;
     const body = document.getElementById('result-body');
     const t = (result.analysis_type || '').toLowerCase();
     if (t === 'describe_data' || t === 'cross_document') {
@@ -829,17 +828,17 @@
 
   function categoryEmoji(cat) {
     const map = {
-      'Identity': '🪪',
-      'Contact': '📍',
-      'Photo / Portrait': '🖼️',
-      'Medical': '🏥',
-      'Insurance': '💼',
-      'Financial': '💰',
-      'Policy / Claim references': '📂',
-      'Risk markers': '⚠️',
-      'External clearinghouse': '🌐',
+      'Identity': '',
+      'Contact': '',
+      'Photo / Portrait': '',
+      'Medical': '',
+      'Insurance': '',
+      'Financial': '',
+      'Policy / Claim references': '',
+      'Risk markers': '',
+      'External clearinghouse': '',
     };
-    return map[cat] || '📄';
+    return map[cat] || '';
   }
   function docTypeChipCls(t) {
     const map = { id: 'chip', medical: 'chip-red', financial: 'chip-green', receipt: 'chip-amber', authority: 'chip-purple' };
@@ -858,17 +857,17 @@
     const sav = (profile.savings_indicators || []).map(i => `<div class="chip chip-green">${escHtml(i.label)}: ${escHtml(i.value)}</div>`).join('') || '<small style="color:#90a4ae;">none</small>';
     return `
       <div class="grid-2">
-        <div class="section-block"><div class="section-block-title">🪪 Identity</div>${idHtml}<div style="margin-top:8px;">${namesHtml}</div></div>
-        <div class="section-block"><div class="section-block-title">📍 Contact</div>
+        <div class="section-block"><div class="section-block-title">Identity</div>${idHtml}<div style="margin-top:8px;">${namesHtml}</div></div>
+        <div class="section-block"><div class="section-block-title">Contact</div>
           <div><strong>Addresses</strong>: ${(contact.addresses || []).map(v => `<span class="chip">${escHtml(v)}</span>`).join('') || '<small>none</small>'}</div>
           <div style="margin-top:6px;"><strong>Phones</strong>: ${(contact.phones || []).map(v => `<span class="chip">${escHtml(v)}</span>`).join('') || '<small>none</small>'}</div>
           <div style="margin-top:6px;"><strong>Emails</strong>: ${(contact.emails || []).map(v => `<span class="chip">${escHtml(v)}</span>`).join('') || '<small>none</small>'}</div>
         </div>
-        <div class="section-block"><div class="section-block-title">🏥 Medical</div>
+        <div class="section-block"><div class="section-block-title">Medical</div>
           <div><strong>Conditions</strong>: ${conds}</div>
           <div style="margin-top:6px;"><strong>Medications</strong>: ${meds}</div>
         </div>
-        <div class="section-block"><div class="section-block-title">💼 Insurance &amp; 💰 Financial</div>
+        <div class="section-block"><div class="section-block-title">Insurance &amp; Financial</div>
           <div><strong>Insurance</strong>: ${ins}</div>
           <div style="margin-top:6px;"><strong>Savings</strong>: ${sav}</div>
         </div>
@@ -889,7 +888,7 @@
             <div class="value">+${(c.weight || 0).toFixed(2)}</div>
           </div>`;
         }).join('');
-    return `<div class="section-block"><div class="section-block-title">⚠️ Risk · ${score}% (${escHtml(lvl)})</div>${bars}</div>`;
+    return `<div class="section-block"><div class="section-block-title">Risk · ${score}% (${escHtml(lvl)})</div>${bars}</div>`;
   }
   function renderCharts(charts) {
     const renderOne = (title, series) => {
@@ -952,7 +951,7 @@
       URL.revokeObjectURL(a.href);
       setStatus('analysis-status', `Downloaded ${fileName}`, 'ok');
     } catch (e) {
-      setStatus('analysis-status', '❌ ' + e.message, 'error');
+      setStatus('analysis-status', '' + e.message, 'error');
     }
   }
 
@@ -972,10 +971,10 @@
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
-      setStatus('mislaka-status', `✓ ${json.policies_received || 0} policies stored as facts`, 'ok');
+      setStatus('mislaka-status', `${json.policies_received || 0} policies stored as facts`, 'ok');
       await onCustomerChange();
     } catch (e) {
-      setStatus('mislaka-status', '❌ ' + e.message, 'error');
+      setStatus('mislaka-status', '' + e.message, 'error');
     }
   }
 
@@ -993,7 +992,7 @@
       const pending = json.pending_total || ((json.without_facts || 0) + (json.legacy_pending || 0));
       meta.innerHTML = pending > 0
         ? `<span style="color:#c62828;font-weight:600;">${pending} document(s) need backfill</span> · ${json.with_facts || 0} already have facts · ${json.legacy_pending || 0} only in legacy store`
-        : `<span style="color:#2e7d32;font-weight:600;">✓ All ${json.total_documents || 0} document(s) have assessment facts</span>`;
+        : `<span style="color:#2e7d32;font-weight:600;">All ${json.total_documents || 0} document(s) have assessment facts</span>`;
     } catch (e) {
       meta.textContent = 'Status check failed: ' + e.message;
     }
@@ -1007,7 +1006,7 @@
     const limitRaw = document.getElementById('backfill-limit').value.trim();
     const limit = limitRaw ? Number(limitRaw) : null;
     const force = document.getElementById('backfill-force').checked;
-    btn.disabled = true; btn.textContent = '⏳ Running…';
+    btn.disabled = true; btn.textContent = 'Running…';
     statusEl.textContent = 'Backfilling…';
     statusEl.style.color = '#546e7a';
     try {
@@ -1025,17 +1024,17 @@
           <div class="stat-tile"><div class="label">Assessed</div><div class="value">${r.assessed || 0}</div><div class="sub">${r.skipped || 0} skipped</div></div>
           <div class="stat-tile ${(r.error_count || 0) > 0 ? 'bad' : 'muted'}"><div class="label">Errors</div><div class="value">${r.error_count || 0}</div><div class="sub">${r.force ? 'force was on' : 'idempotent'}</div></div>
         </div>`;
-      statusEl.textContent = `✓ Done. Assessed ${r.assessed || 0}.`;
+      statusEl.textContent = `Done. Assessed ${r.assessed || 0}.`;
       statusEl.style.color = '#2e7d32';
       await loadBackfillStatus();
       await loadCustomers();
       const sel = document.getElementById('customer-select');
       if (sel.value) await onCustomerChange();
     } catch (e) {
-      statusEl.textContent = '❌ ' + e.message;
+      statusEl.textContent = '' + e.message;
       statusEl.style.color = '#c62828';
     } finally {
-      btn.disabled = false; btn.textContent = '🔁 Run backfill';
+      btn.disabled = false; btn.textContent = 'Run backfill';
     }
   }
 

@@ -433,7 +433,7 @@
   }
 
   function renderEmpty() {
-    document.getElementById('kpi-grid').innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="empty-state-icon">📊</div><div class="empty-state-text">No data available for the selected period.</div></div>';
+    document.getElementById('kpi-grid').innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="empty-state-icon"></div><div class="empty-state-text">No data available for the selected period.</div></div>';
     for (const id of ['claims-donut', 'billing-donut', 'policy-bars', 'ledger-bars', 'credit-section', 'investment-section', 'insights-list', 'timeline-list', 'net-position-section']) {
       const el = document.getElementById(id);
       if (el) el.innerHTML = '';
@@ -470,21 +470,30 @@
 
   function renderKPIs(data) {
     const kpis = [
-      { icon: '📋', label: 'Active Policies', value: (data.policies && data.policies.active) || 0, fmt: 'num' },
-      { icon: '💰', label: 'Total Coverage', value: (data.policies && data.policies.total_coverage) || 0, fmt: 'cur' },
-      { icon: '📝', label: 'Total Claims', value: (data.claims && data.claims.total) || 0, fmt: 'num' },
-      { icon: '⏳', label: 'Pending Claims', value: (data.claims && data.claims.pending) || 0, fmt: 'num' },
-      { icon: '💳', label: 'Outstanding Billing', value: (data.billing && data.billing.outstanding_amount) || 0, fmt: 'cur' },
-      { icon: '✅', label: 'Total Paid', value: (data.billing && data.billing.total_paid) || 0, fmt: 'cur' },
-      { icon: '🏥', label: 'Wallet Balance', value: (data.health_wallet && data.health_wallet.balance) || 0, fmt: 'cur' },
-      { icon: '📈', label: 'Total Assets', value: data.total_assets || 0, fmt: 'cur' },
-      { icon: '📊', label: 'Ledger Entries', value: (data.ledger && data.ledger.total_transactions) || 0, fmt: 'num' },
-      { icon: '🔗', label: 'NFT Tokens', value: data.nft_count || 0, fmt: 'num' },
+      {
+      label: 'Active Policies', value: (data.policies && data.policies.active) || 0, fmt: 'num' },
+      {
+      label: 'Total Coverage', value: (data.policies && data.policies.total_coverage) || 0, fmt: 'cur' },
+      {
+      label: 'Total Claims', value: (data.claims && data.claims.total) || 0, fmt: 'num' },
+      {
+      label: 'Pending Claims', value: (data.claims && data.claims.pending) || 0, fmt: 'num' },
+      {
+      label: 'Outstanding Billing', value: (data.billing && data.billing.outstanding_amount) || 0, fmt: 'cur' },
+      {
+      label: 'Total Paid', value: (data.billing && data.billing.total_paid) || 0, fmt: 'cur' },
+      {
+      label: 'Wallet Balance', value: (data.health_wallet && data.health_wallet.balance) || 0, fmt: 'cur' },
+      {
+      label: 'Total Assets', value: data.total_assets || 0, fmt: 'cur' },
+      {
+      label: 'Ledger Entries', value: (data.ledger && data.ledger.total_transactions) || 0, fmt: 'num' },
+      {
+      label: 'NFT Tokens', value: data.nft_count || 0, fmt: 'num' },
     ];
     const grid = document.getElementById('kpi-grid');
     grid.innerHTML = kpis.map(k => `
       <div class="kpi-card">
-        <div class="kpi-icon">${k.icon}</div>
         <div class="kpi-value">${k.fmt === 'cur' ? formatCurrency(k.value) : k.value}</div>
         <div class="kpi-label">${k.label}</div>
       </div>
@@ -509,7 +518,7 @@
   }
 
   function createDonutSVG(segments, centerText) {
-    if (!segments.length) return '<div class="empty-state"><div class="empty-state-icon">📊</div><div class="empty-state-text">No data</div></div>';
+    if (!segments.length) return '<div class="empty-state"><div class="empty-state-icon"></div><div class="empty-state-text">No data</div></div>';
     const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
     const total = segments.reduce((a, s) => a + s.value, 0) || 1;
     const r = 60, cx = 80, cy = 80, sw = 20;
@@ -542,7 +551,7 @@
     const el = document.getElementById('claims-donut');
     document.getElementById('claims-badge').textContent = (claims ? claims.total : 0) + ' claims';
     if (!claims || !claims.by_status || Object.keys(claims.by_status).length === 0) {
-      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">No claims found</div></div>';
+      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon"></div><div class="empty-state-text">No claims found</div></div>';
       return;
     }
     const segments = Object.entries(claims.by_status).map(([k, v]) => ({ label: k, value: v }));
@@ -553,7 +562,7 @@
     const el = document.getElementById('billing-donut');
     document.getElementById('billing-badge').textContent = (billing ? billing.total : 0) + ' bills';
     if (!billing || !billing.by_status || Object.keys(billing.by_status).length === 0) {
-      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">💳</div><div class="empty-state-text">No billing records</div></div>';
+      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon"></div><div class="empty-state-text">No billing records</div></div>';
       return;
     }
     const segments = Object.entries(billing.by_status).map(([k, v]) => ({ label: k, value: v }));
@@ -563,7 +572,7 @@
   function renderBarChart(container, items, maxVal) {
     const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
     if (!items.length) {
-      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📊</div><div class="empty-state-text">No data</div></div>';
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon"></div><div class="empty-state-text">No data</div></div>';
       return;
     }
     const max = maxVal || Math.max(...items.map(i => i.value)) || 1;
@@ -585,7 +594,7 @@
   function renderPolicyBars(policies) {
     const el = document.getElementById('policy-bars');
     if (!policies || !policies.by_type || Object.keys(policies.by_type).length === 0) {
-      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">No policies found</div></div>';
+      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon"></div><div class="empty-state-text">No policies found</div></div>';
       return;
     }
     const items = Object.entries(policies.by_type).map(([k, v]) => ({ label: k, value: v }));
@@ -595,7 +604,7 @@
   function renderLedgerBars(ledger) {
     const el = document.getElementById('ledger-bars');
     if (!ledger || !ledger.by_type || Object.keys(ledger.by_type).length === 0) {
-      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📊</div><div class="empty-state-text">No ledger activity</div></div>';
+      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon"></div><div class="empty-state-text">No ledger activity</div></div>';
       return;
     }
     const items = Object.entries(ledger.by_type).map(([k, v]) => ({ label: k, value: v.count }));
@@ -641,7 +650,7 @@
     const walBal = (wallet && parseFloat(wallet.balance)) || 0;
 
     if (!bal && !idx && !bonds && !crypto && !walBal) {
-      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📈</div><div class="empty-state-text">No investment data</div></div>';
+      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon"></div><div class="empty-state-text">No investment data</div></div>';
       return;
     }
 
@@ -680,15 +689,15 @@
     const el = document.getElementById('insights-list');
     document.getElementById('insights-badge').textContent = insights.length + ' insight(s)';
     if (!insights.length) {
-      el.innerHTML = '<li class="insight-item info"><span class="insight-icon">💡</span><span>No specific insights for this period. Your account appears to be in good standing.</span></li>';
+      el.innerHTML = '<li class="insight-item info"><span class="insight-icon"></span><span>No specific insights for this period. Your account appears to be in good standing.</span></li>';
       return;
     }
-    const icons = { critical: '🚨', warning: '⚠️', info: 'ℹ️', positive: '✅' };
+    const icons = { critical: '', warning: '', info: 'ℹ️', positive: '' };
     const validSeverities = ['critical', 'warning', 'info', 'positive'];
     el.innerHTML = insights.map(ins => {
       const sev = validSeverities.includes(ins.severity) ? ins.severity : 'info';
       return `<li class="insight-item ${sev}">
-        <span class="insight-icon">${icons[sev] || '💡'}</span>
+        <span class="insight-icon">${icons[sev] || ''}</span>
         <span>${esc(ins.message)}</span>
       </li>`;
     }).join('');
@@ -757,7 +766,7 @@
   function renderTimeline(timeline) {
     const el = document.getElementById('timeline-list');
     if (!timeline.length) {
-      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📅</div><div class="empty-state-text">No activity</div></div>';
+      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon"></div><div class="empty-state-text">No activity</div></div>';
       return;
     }
     const validTypes = ['policy', 'claim', 'billing'];

@@ -1239,13 +1239,12 @@
   <main class="container">
     <!-- Page Title -->
     <div class="page-title fade-in">
-      <h2>🔍 AI-Powered Risk Assessment</h2>
+      <h2>AI-Powered Risk Assessment</h2>
       <p>Upload your documents for intelligent analysis and personalized recommendations</p>
     </div>
 
     <div style="background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); color: white; border-radius: 14px; padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
-      <div style="font-size: 1.6rem;">🧠</div>
-      <div style="flex: 1; min-width: 200px;">
+<div style="flex: 1; min-width: 200px;">
         <div style="font-weight: 700;">One workbench instead of three dashboards</div>
         <div style="font-size: 0.85rem; opacity: 0.9;">Upload, mine facts, run any analysis (Customer 360 / Risk / BI / Describe / Cross-doc) and download CSV/XLSX/PDF without switching screens.</div>
       </div>
@@ -1255,7 +1254,7 @@
     <!-- Assessment Upload Card -->
     <div class="assessment-card fade-in">
       <div class="assessment-header">
-        <h3>📁 Upload Documents for Assessment</h3>
+        <h3>Upload Documents for Assessment</h3>
         <span style="background: rgba(255,255,255,0.2); padding: 6px 14px; border-radius: 20px; font-size: 0.85rem;">
           AI + BI Analysis
         </span>
@@ -1264,18 +1263,17 @@
       <div class="assessment-body">
         <!-- Upload Zone -->
         <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
-          <div class="upload-icon">📤</div>
-          <h4>Drop files here or click to upload</h4>
+<h4>Drop files here or click to upload</h4>
           <p>Upload your insurance, investment, or risk documents for AI analysis</p>
           <p style="font-size: 0.9rem; color: var(--text-muted);">
             <strong>Auto-detects:</strong> Language (Hebrew, English, etc.) • Data type • Risk factors
           </p>
           <div class="file-types">
-            <span class="file-type-badge">📄 CSV</span>
-            <span class="file-type-badge">📊 XLS/XLSX</span>
-            <span class="file-type-badge">📦 ZIP</span>
-            <span class="file-type-badge">🖼️ PNG/JPG</span>
-            <span class="file-type-badge">📕 PDF</span>
+            <span class="file-type-badge">CSV</span>
+            <span class="file-type-badge">XLS/XLSX</span>
+            <span class="file-type-badge">ZIP</span>
+            <span class="file-type-badge">PNG/JPG</span>
+            <span class="file-type-badge">PDF</span>
           </div>
           <input type="file" id="fileInput" class="file-input" accept=".csv,.xls,.xlsx,.zip,.png,.jpg,.jpeg,.pdf" multiple>
         </div>
@@ -1286,7 +1284,7 @@
         <!-- Options Row -->
         <div class="options-row">
           <div class="option-group">
-            <label for="reportLanguage">🌐 Report Language:</label>
+            <label for="reportLanguage">Report Language:</label>
             <select id="reportLanguage">
               <option value="auto">Auto-detect from files</option>
               <option value="english">English</option>
@@ -1299,7 +1297,7 @@
           </div>
           
           <div class="option-group">
-            <label for="assessmentType">📋 Assessment Type:</label>
+            <label for="assessmentType">Assessment Type:</label>
             <select id="assessmentType">
               <option value="auto">Auto-detect</option>
               <option value="insurance">Insurance Analysis</option>
@@ -1311,13 +1309,13 @@
           </div>
           
           <button class="btn btn-primary" id="startAssessmentBtn" disabled onclick="startAssessment()">
-            🚀 Start AI Assessment
+            Start AI Assessment
           </button>
         </div>
         
         <!-- Processing Status -->
         <div class="processing-status" id="processingStatus">
-          <h4>🤖 AI Analysis in Progress...</h4>
+          <h4>AI Analysis in Progress...</h4>
           <div class="progress-bar">
             <div class="progress-fill" id="progressFill"></div>
           </div>
@@ -1347,7 +1345,7 @@
 
         <!-- Risk Gauge -->
         <div class="risk-gauge-container fade-in" id="riskGaugeContainer">
-          <h3 style="margin-bottom: 1.5rem; color: var(--primary);">📊 Overall Risk Score</h3>
+          <h3 style="margin-bottom: 1.5rem; color: var(--primary);">Overall Risk Score</h3>
           <div class="risk-gauge">
             <div class="risk-gauge-circle" id="riskGaugeCircle">
               <div class="risk-gauge-inner">
@@ -1365,7 +1363,7 @@
         <!-- AI Insights Panel -->
         <div class="insights-panel" id="insightsPanel">
           <div class="insights-header">
-            <h3>🧠 AI Inductive Analysis</h3>
+            <h3>AI Inductive Analysis</h3>
             <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Advanced pattern recognition and statistical insights from your data</p>
           </div>
           <div class="insights-body">
@@ -1380,10 +1378,10 @@
       <!-- Report Panel -->
       <div class="report-panel" id="reportPanel">
         <div class="report-header">
-          <h3 id="reportTitle">📋 Assessment Report</h3>
+          <h3 id="reportTitle">Assessment Report</h3>
           <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-            <button class="btn btn-secondary" onclick="exportReport('pdf')">📥 Export PDF</button>
-            <button class="btn btn-secondary" onclick="exportReport('excel')">📊 Export Excel</button>
+            <button class="btn btn-secondary" onclick="exportReport('pdf')">Export PDF</button>
+            <button class="btn btn-secondary" onclick="exportReport('excel')">Export Excel</button>
           </div>
         </div>
         <div class="report-body" id="reportBody"></div>
@@ -1392,7 +1390,7 @@
       <!-- Recommendations Panel -->
       <div class="recommendations-panel" id="recommendationsPanel">
         <div class="recommendations-header">
-          <h3>💡 AI Recommendations</h3>
+          <h3>AI Recommendations</h3>
         </div>
         <div class="recommendations-list" id="recommendationsList"></div>
       </div>
@@ -1457,7 +1455,7 @@
             <div class="file-name">${file.name}</div>
             <div class="file-size">${formatFileSize(file.size)}</div>
           </div>
-          <button class="file-remove" onclick="removeFile(${index})">✕</button>
+          <button class="file-remove" onclick="removeFile(${index})"></button>
         </div>
       `).join('');
     }
@@ -1465,11 +1463,11 @@
     function getFileIcon(filename) {
       const ext = filename.split('.').pop().toLowerCase();
       const icons = {
-        'csv': '📄', 'xls': '📊', 'xlsx': '📊',
-        'zip': '📦', 'png': '🖼️', 'jpg': '🖼️', 
-        'jpeg': '🖼️', 'pdf': '📕'
+        'csv': '', 'xls': '', 'xlsx': '',
+        'zip': '', 'png': '', 'jpg': '', 
+        'jpeg': '', 'pdf': ''
       };
-      return icons[ext] || '📁';
+      return icons[ext] || '';
     }
     
     function formatFileSize(bytes) {
@@ -1699,7 +1697,7 @@
     }
 
     function renderReportSections(report) {
-      document.getElementById('reportTitle').textContent = `📋 ${report.title}`;
+      document.getElementById('reportTitle').textContent = `${report.title}`;
       const visibleSections = (report.sections || []).filter(section => !shouldHideSection(section.title));
       document.getElementById('reportBody').innerHTML = visibleSections.map(section => {
         const isPensionSection = section.title.includes('פנסיה') ||
@@ -1778,7 +1776,7 @@
 
       document.getElementById('affiliatedHeader').innerHTML = `
         <div class="affiliated-assessment-header fade-in">
-          <h2>${isHebrew ? '📋 הערכה מסונפת – ניתוח תיק לקוח' : '📋 Affiliated Assessment – Customer Portfolio Analysis'}</h2>
+          <h2>${isHebrew ? 'הערכה מסונפת – ניתוח תיק לקוח' : 'Affiliated Assessment – Customer Portfolio Analysis'}</h2>
           <p>${isHebrew
             ? `${displayName} | ${accountCount} ${accountCount === 1 ? 'מוצר' : 'מוצרים'} | ${providerCount} ${providerCount === 1 ? 'יצרן' : 'יצרנים'}`
             : `${displayName} | ${accountCount} product${accountCount !== 1 ? 's' : ''} | ${providerCount} provider${providerCount !== 1 ? 's' : ''}`}</p>
@@ -1823,7 +1821,7 @@
       container.innerHTML = `
         <div class="customer-profile-panel fade-in">
           <h3 style="margin-bottom:1.25rem;color:var(--primary);display:flex;align-items:center;gap:10px;">
-            👤 ${isHebrew ? 'פרטי לקוח' : 'Customer Details'}
+            ${isHebrew ? 'פרטי לקוח' : 'Customer Details'}
           </h3>
           <div class="customer-profile-grid">
             ${fields.map(f => `
@@ -1883,7 +1881,7 @@
         </div>
         <div class="financial-card section14 fade-in">
           <div class="fin-label">${isHebrew ? 'סעיף 14' : 'Section 14'}</div>
-          <div class="fin-value" style="color:${section14 ? '#059669' : '#dc2626'};">${section14 ? (isHebrew ? '✅ מכוסה' : '✅ Covered') : (isHebrew ? '⚠️ לא מכוסה' : '⚠️ Not Covered')}</div>
+          <div class="fin-value" style="color:${section14 ? '#059669' : '#dc2626'};">${section14 ? (isHebrew ? 'מכוסה' : 'Covered') : (isHebrew ? 'לא מכוסה' : 'Not Covered')}</div>
           <div class="fin-sub">${section14Accounts > 0 ? (isHebrew ? `${section14Accounts} חשבונות` : `${section14Accounts} account${section14Accounts !== 1 ? 's' : ''}`) : ''}</div>
         </div>
       `;
@@ -1912,7 +1910,7 @@
         <div class="provider-overview fade-in">
           ${Object.entries(providerMap).map(([name, info], idx) => `
             <div class="provider-card" style="border-left-color:${providerColors[idx % providerColors.length]};">
-              <h4>🏦 ${escapeHtml(name)}</h4>
+              <h4>${escapeHtml(name)}</h4>
               <div class="provider-detail">
                 <span class="pd-label">${isHebrew ? 'מוצרים' : 'Products'}</span>
                 <span class="pd-value">${info.count}</span>
@@ -1950,7 +1948,7 @@
         const statusClass = statusLower.includes('active') || statusLower.includes('פעיל') ? 'status-active'
           : (statusLower.includes('frozen') || statusLower.includes('מוקפא') ? 'status-frozen'
           : (statusLower.includes('closed') || statusLower.includes('סגור') ? 'status-closed' : ''));
-        const sec14 = acct.section14 ? (isHebrew ? '✅ כן' : '✅ Yes') : (isHebrew ? '—' : '—');
+        const sec14 = acct.section14 ? (isHebrew ? 'כן' : 'Yes') : (isHebrew ? '—' : '—');
 
         return `<tr>
           <td>${escapeHtml(acct.policy_number || '')}</td>
@@ -1970,7 +1968,7 @@
       container.innerHTML = `
         <div class="affiliated-table-panel fade-in">
           <div class="affiliated-table-header">
-            <h3>📁 ${isHebrew ? 'פירוט מוצרים וחשבונות' : 'Products & Accounts Detail'}</h3>
+            <h3>${isHebrew ? 'פירוט מוצרים וחשבונות' : 'Products & Accounts Detail'}</h3>
             <span class="record-count">${accounts.length} ${isHebrew ? 'רשומות' : 'records'}</span>
           </div>
           <div class="affiliated-table-body">
@@ -2003,7 +2001,7 @@
       container.innerHTML = `
         <div class="affiliated-table-panel fade-in">
           <div class="affiliated-table-header">
-            <h3>📈 ${isHebrew ? 'פירוט הפקדות' : 'Contribution Details'}</h3>
+            <h3>${isHebrew ? 'פירוט הפקדות' : 'Contribution Details'}</h3>
             <span class="record-count">${contributions.length} ${isHebrew ? 'רשומות' : 'records'}</span>
           </div>
           <div class="affiliated-table-body">
@@ -2028,7 +2026,7 @@
           empData.push({
             name,
             id: acct.employer_id || '',
-            section14: acct.section14 ? (isHebrew ? '✅ כן' : '✅ Yes') : (isHebrew ? '—' : '—')
+            section14: acct.section14 ? (isHebrew ? 'כן' : 'Yes') : (isHebrew ? '—' : '—')
           });
         }
       });
@@ -2054,7 +2052,7 @@
       container.innerHTML = `
         <div class="affiliated-table-panel fade-in">
           <div class="affiliated-table-header">
-            <h3>🏢 ${isHebrew ? 'פרטי מעסיקים' : 'Employer Information'}</h3>
+            <h3>${isHebrew ? 'פרטי מעסיקים' : 'Employer Information'}</h3>
             <span class="record-count">${empData.length} ${isHebrew ? 'רשומות' : 'records'}</span>
           </div>
           <div class="affiliated-table-body">
@@ -2094,11 +2092,11 @@
         </div>
         <div class="stat-card fade-in">
           <h5>Data Classification</h5>
-          <div class="value" style="font-size: 1.4rem;">📊 ${capitalizeFirst(analysis.data_classification)}</div>
+          <div class="value" style="font-size: 1.4rem;">${capitalizeFirst(analysis.data_classification)}</div>
         </div>
         <div class="stat-card fade-in">
           <h5>Language Detected</h5>
-          <div class="value" style="font-size: 1.4rem;">🌐 ${analysis.language_name}</div>
+          <div class="value" style="font-size: 1.4rem;">${analysis.language_name}</div>
         </div>
         <div class="stat-card fade-in">
           <h5>AI Confidence</h5>
@@ -2135,7 +2133,7 @@
         if (typeof factor.value === 'object') {
           html += `
             <div class="insight-card fade-in">
-              <h5>🏷️ ${factor.name}</h5>
+              <h5>${factor.name}</h5>
               <div class="insight-detail">
                 ${Object.entries(factor.value).map(([key, val]) => `
                   <div class="stat-detail">
@@ -2152,7 +2150,7 @@
 
       html += `
         <div class="insight-card fade-in">
-          <h5>✅ Data Quality Assessment</h5>
+          <h5>Data Quality Assessment</h5>
           <div class="insight-detail">
             <div class="stat-detail">
               <span class="label">Completeness</span>
@@ -2220,20 +2218,20 @@
     
     function getSectionIcon(title) {
       const lower = title.toLowerCase();
-      if (lower.includes('summary') || lower.includes('תקציר')) return '📝';
-      if (lower.includes('metric') || lower.includes('מדדים')) return '📊';
-      if (lower.includes('factor') || lower.includes('גורמים')) return '🔍';
-      if (lower.includes('pattern') || lower.includes('דפוסים')) return '🔄';
-      if (lower.includes('anomal') || lower.includes('חריגות')) return '⚠️';
-      if (lower.includes('risk') || lower.includes('סיכון')) return '🎯';
-      if (lower.includes('pension') || lower.includes('פנסיה')) return '💼';
-      if (lower.includes('insurance') || lower.includes('ביטוח')) return '🏦';
-      if (lower.includes('severance') || lower.includes('פיצויים')) return '💰';
-      if (lower.includes('section 14') || lower.includes('סעיף 14')) return '📌';
-      if (lower.includes('contribution') || lower.includes('הפקדות')) return '📈';
-      if (lower.includes('account') || lower.includes('חשבון')) return '📁';
-      if (lower.includes('data') || lower.includes('נתונים')) return '📊';
-      return '📋';
+      if (lower.includes('summary') || lower.includes('תקציר')) return '';
+      if (lower.includes('metric') || lower.includes('מדדים')) return '';
+      if (lower.includes('factor') || lower.includes('גורמים')) return '';
+      if (lower.includes('pattern') || lower.includes('דפוסים')) return '';
+      if (lower.includes('anomal') || lower.includes('חריגות')) return '';
+      if (lower.includes('risk') || lower.includes('סיכון')) return '';
+      if (lower.includes('pension') || lower.includes('פנסיה')) return '';
+      if (lower.includes('insurance') || lower.includes('ביטוח')) return '';
+      if (lower.includes('severance') || lower.includes('פיצויים')) return '';
+      if (lower.includes('section 14') || lower.includes('סעיף 14')) return '';
+      if (lower.includes('contribution') || lower.includes('הפקדות')) return '';
+      if (lower.includes('account') || lower.includes('חשבון')) return '';
+      if (lower.includes('data') || lower.includes('נתונים')) return '';
+      return '';
     }
     
     function capitalizeFirst(str) {

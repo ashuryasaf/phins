@@ -258,7 +258,7 @@
     <nav class="phins-nav">
       <a href="/dashboard.html">Dashboard</a>
       <span data-assessments-nav></span>
-      <a href="/admin-agents.html">🧑‍💼 Agents</a>
+      <a href="/admin-agents.html">Agents</a>
       <a href="#" class="btn-logout" onclick="logout()">Logout</a>
     </nav>
   </div>
@@ -279,7 +279,7 @@
   <!-- ── Master control: the ONE button ─────────────────────────────── -->
   <div class="master-control">
     <div>
-      <div class="title">🎯 Target &amp; queue</div>
+      <div class="title">Target &amp; queue</div>
       <div class="subtitle" id="ctx-line">Loading session…</div>
 
       <!-- Admin customer search / picker ─────────────────────────────
@@ -293,7 +293,7 @@
       <div class="customer-picker" id="customer-picker" style="display:none;">
         <div class="customer-picker-row">
           <input type="text" id="customer-search"
-                 placeholder="🔎 Search customers (id, name, email, risk)…"
+                 placeholder="Search customers (id, name, email, risk)…"
                  autocomplete="off"
                  oninput="filterCustomerList()"
                  onkeydown="onCustomerSearchKey(event)">
@@ -309,18 +309,18 @@
 
       <div class="controls-row">
         <select id="analysis-type" title="Pipeline depth">
-          <option value="full" selected>🚀 Full pipeline (360 + risk + BI + report)</option>
-          <option value="customer_360">👤 Customer 360 only</option>
-          <option value="risk_assessment">⚠️ Risk only</option>
-          <option value="bi_summary">📊 BI charts only</option>
-          <option value="describe_data">🗂️ Describe data</option>
+          <option value="full" selected>Full pipeline (360 + risk + BI + report)</option>
+          <option value="customer_360">Customer 360 only</option>
+          <option value="risk_assessment">Risk only</option>
+          <option value="bi_summary">BI charts only</option>
+          <option value="describe_data">Describe data</option>
         </select>
       </div>
 
       <div class="drop-zone" id="drop-zone"
            onclick="document.getElementById('file-input').click()"
            ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
-        <div style="font-size: 1.4rem;">📂 Drop files or click to add to the queue</div>
+        <div style="font-size: 1.4rem;">Drop files or click to add to the queue</div>
         <div class="hint" id="queue-hint">No files queued — the button will just refresh every bar.</div>
         <div class="hint">PDF · DOCX · XLSX · CSV · PNG · JPG · TXT · XML…</div>
       </div>
@@ -332,7 +332,7 @@
     </div>
 
     <button class="btn-unified" id="btn-unified" onclick="runUnified()">
-      ⚡ Run Unified Analysis
+      Run Unified Analysis
       <span class="small">upload · 360 · risk · BI · report</span>
     </button>
   </div>
@@ -340,7 +340,7 @@
   <!-- ── BAR 1: Data Integrity (provenance, dedup, SHA) ─────────────── -->
   <section class="fn-bar integrity" id="bar-integrity">
     <div class="fn-bar-head" onclick="toggleBar('bar-integrity')">
-      <div class="fn-bar-title">🛡️ Data Integrity</div>
+      <div class="fn-bar-title">Data Integrity</div>
       <div class="fn-bar-summary" id="integrity-summary">
         <span class="stat-chip muted">awaiting first run</span>
       </div>
@@ -356,7 +356,7 @@
   <!-- ── BAR 2: Documents ───────────────────────────────────────────── -->
   <section class="fn-bar docs" id="bar-docs">
     <div class="fn-bar-head" onclick="toggleBar('bar-docs')">
-      <div class="fn-bar-title">📁 Documents</div>
+      <div class="fn-bar-title">Documents</div>
       <div class="fn-bar-summary" id="docs-summary">
         <span class="stat-chip muted">—</span>
       </div>
@@ -372,7 +372,7 @@
   <!-- ── BAR 3: Assessment Center (Customer 360 + describe data) ────── -->
   <section class="fn-bar assessment" id="bar-assessment">
     <div class="fn-bar-head" onclick="toggleBar('bar-assessment')">
-      <div class="fn-bar-title">🧠 Assessment Center</div>
+      <div class="fn-bar-title">Assessment Center</div>
       <div class="fn-bar-summary" id="assessment-summary">
         <span class="stat-chip muted">—</span>
       </div>
@@ -431,7 +431,7 @@
   ──────────────────────────────────────────────────────────────────── -->
   <section class="fn-bar comprehensive" id="bar-comprehensive">
     <div class="fn-bar-head" onclick="toggleBar('bar-comprehensive')">
-      <div class="fn-bar-title">🧬 Comprehensive Customer Assessment</div>
+      <div class="fn-bar-title">Comprehensive Customer Assessment</div>
       <div class="fn-bar-summary" id="comprehensive-summary">
         <span class="stat-chip muted">—</span>
       </div>
@@ -447,7 +447,7 @@
   <!-- ── BAR 4: Risk Assessment ─────────────────────────────────────── -->
   <section class="fn-bar risk" id="bar-risk">
     <div class="fn-bar-head" onclick="toggleBar('bar-risk')">
-      <div class="fn-bar-title">⚠️ Risk Assessment</div>
+      <div class="fn-bar-title">Risk Assessment</div>
       <div class="fn-bar-summary" id="risk-summary">
         <span class="stat-chip muted">—</span>
       </div>
@@ -463,7 +463,7 @@
   <!-- ── BAR 5: BI Charts ───────────────────────────────────────────── -->
   <section class="fn-bar charts" id="bar-charts">
     <div class="fn-bar-head" onclick="toggleBar('bar-charts')">
-      <div class="fn-bar-title">📊 BI Charts</div>
+      <div class="fn-bar-title">BI Charts</div>
       <div class="fn-bar-summary" id="charts-summary">
         <span class="stat-chip muted">—</span>
       </div>
@@ -479,7 +479,7 @@
   <!-- ── BAR 6: Reports ─────────────────────────────────────────────── -->
   <section class="fn-bar reports" id="bar-reports">
     <div class="fn-bar-head" onclick="toggleBar('bar-reports')">
-      <div class="fn-bar-title">📄 Reports</div>
+      <div class="fn-bar-title">Reports</div>
       <div class="fn-bar-summary" id="reports-summary">
         <span class="stat-chip muted">—</span>
       </div>
@@ -859,7 +859,7 @@
       const st = PIPELINE_STATE[s.id] || 'pending';
       return `<div class="step ${st}">
         <span class="dot"></span>
-        <span>${escHtml(s.label)}${st === 'done' ? ' ✓' : st === 'error' ? ' ✗' : st === 'active' ? '…' : ''}</span>
+        <span>${escHtml(s.label)}${st === 'done' ? ' ' : st === 'error' ? ' ' : st === 'active' ? '…' : ''}</span>
       </div>`;
     }).join('');
   }
@@ -873,7 +873,7 @@
   async function runUnified() {
     const btn = document.getElementById('btn-unified');
     btn.disabled = true;
-    btn.innerHTML = '⏳ Running…<span class="small">all bars are syncing</span>';
+    btn.innerHTML = 'Running…<span class="small">all bars are syncing</span>';
     PIPELINE_STATE = {};
     paintPipeline();
 
@@ -882,7 +882,7 @@
       stepState('upload', 'error');
       alert('No customer context — pick a customer first.');
       btn.disabled = false;
-      btn.innerHTML = '⚡ Run Unified Analysis<span class="small">upload · 360 · risk · BI · report</span>';
+      btn.innerHTML = 'Run Unified Analysis<span class="small">upload · 360 · risk · BI · report</span>';
       return;
     }
     CURRENT_CUSTOMER = cid;
@@ -1007,7 +1007,7 @@
     paintAllBars(snapshot);
 
     btn.disabled = false;
-    btn.innerHTML = '⚡ Run Unified Analysis<span class="small">upload · 360 · risk · BI · report</span>';
+    btn.innerHTML = 'Run Unified Analysis<span class="small">upload · 360 · risk · BI · report</span>';
   }
 
   async function safeJson(settledRes, _label) {
@@ -1067,8 +1067,8 @@
     const body = document.getElementById('integrity-body');
     const i = s.integrity || {};
     const chip = i.ok
-      ? '<span class="stat-chip ok">✅ cross-bar integrity OK</span>'
-      : `<span class="stat-chip bad">⚠️ ${i.issues.length} issue(s)</span>`;
+      ? '<span class="stat-chip ok">cross-bar integrity OK</span>'
+      : `<span class="stat-chip bad">${i.issues.length} issue(s)</span>`;
     sum.innerHTML = chip +
       ` <span class="stat-chip muted">${i.docs_total || 0} docs</span>` +
       ` <span class="stat-chip muted">${i.facts_total || 0} facts</span>` +
@@ -1318,7 +1318,7 @@
       <div class="ca-grid">
 
         <div class="ca-card">
-          <h4>👤 Demographics</h4>
+          <h4>Demographics</h4>
           <dl class="ca-kv">
             ${kv('Name', demoName, demoName === '—')}
             ${kv('Age', demoAge, demoAge === '—')}
@@ -1333,7 +1333,7 @@
         </div>
 
         <div class="ca-card">
-          <h4>🪪 Identity &amp; documents</h4>
+          <h4>Identity &amp; documents</h4>
           <dl class="ca-kv">
             ${kv('ID numbers on file', idNumbers.length || '—', idNumbers.length === 0)}
             ${kv('Identity docs', identityDocs.length || '—', identityDocs.length === 0)}
@@ -1346,7 +1346,7 @@
         </div>
 
         <div class="ca-card">
-          <h4>🩺 Medical &amp; health status</h4>
+          <h4>Medical &amp; health status</h4>
           <dl class="ca-kv">
             ${kv('Conditions', conds.length || '—', conds.length === 0)}
             ${kv('Medications', (med.medications || []).length || '—', (med.medications || []).length === 0)}
@@ -1358,7 +1358,7 @@
         </div>
 
         <div class="ca-card">
-          <h4>📜 Policies</h4>
+          <h4>Policies</h4>
           <dl class="ca-kv">
             ${kv('Total / active', `${policies.total || 0} / ${policies.active || 0}`)}
             ${kv('Total coverage', fmtMoney(policies.total_coverage || 0))}
@@ -1368,7 +1368,7 @@
         </div>
 
         <div class="ca-card">
-          <h4>💳 Billing</h4>
+          <h4>Billing</h4>
           <dl class="ca-kv">
             ${kv('Bills', `${billing.total || 0} (${billing.outstanding || 0} open · ${billing.overdue || 0} overdue)`)}
             ${kv('Outstanding', fmtMoney(billing.outstanding_amount || 0))}
@@ -1378,7 +1378,7 @@
         </div>
 
         <div class="ca-card">
-          <h4>📋 Claims</h4>
+          <h4>Claims</h4>
           <dl class="ca-kv">
             ${kv('Total', claims.total || 0)}
             ${kv('Pending', claims.pending || 0)}
@@ -1389,7 +1389,7 @@
         </div>
 
         <div class="ca-card">
-          <h4>👛 Health wallet</h4>
+          <h4>Health wallet</h4>
           <dl class="ca-kv">
             ${kv('Balance', fmtMoney(wallet.balance || 0))}
             ${kv('Monthly deposit', fmtMoney(wallet.monthly_deposit || 0))}
@@ -1399,7 +1399,7 @@
         </div>
 
         <div class="ca-card">
-          <h4>📈 Investments</h4>
+          <h4>Investments</h4>
           <dl class="ca-kv">
             ${kv('Cash / general', fmtMoney(invest.balance || 0))}
             ${kv('Index', fmtMoney(invest.index_balance || 0))}
@@ -1411,7 +1411,7 @@
         </div>
 
         <div class="ca-card">
-          <h4>📊 Credit &amp; risk</h4>
+          <h4>Credit &amp; risk</h4>
           <dl class="ca-kv">
             ${kv('Credit score', credit.credit_score || '—', !credit.credit_score)}
             ${kv('Risk score (record)', credit.risk_score || '—', !credit.risk_score)}
@@ -1422,7 +1422,7 @@
         </div>
 
         <div class="ca-card" style="grid-column: 1 / -1;">
-          <h4>💡 AI insights (cross-data)</h4>
+          <h4>AI insights (cross-data)</h4>
           ${insightHtml}
         </div>
 
@@ -1535,12 +1535,12 @@
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
       if (statusEl) {
-        statusEl.textContent = `✓ ${json.policies_received || 0} policies stored as facts`;
+        statusEl.textContent = `${json.policies_received || 0} policies stored as facts`;
       }
       CURRENT_CUSTOMER = cid;
       await refreshAllBars();
     } catch (e) {
-      if (statusEl) statusEl.textContent = '❌ ' + (e.message || e);
+      if (statusEl) statusEl.textContent = '' + (e.message || e);
     }
   }
 
