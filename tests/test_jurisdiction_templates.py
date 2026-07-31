@@ -43,14 +43,14 @@ def test_parameterized_pitch_and_nda_served_with_jurisdiction_query():
     assert "jurisdictions.json" in nda.text
 
 
-def test_admin_and_customer_nav_use_single_assessments_entry():
+def test_admin_and_customer_nav_use_assessments_chooser():
     admin = requests.get(f"{BASE_URL}/admin.html").text
-    # One Assessments entry — not three separate Assessment Center / Assessment / AI Reports links
-    assert 'href="/unified-workbench.html">📋 Assessments</a>' in admin
+    # Chooser host — not three separate top-level Assessment Center / Assessment / AI Reports links
+    assert 'data-assessments-nav' in admin
     assert 'href="/assessment-center.html">🧠 Assessment Center</a>' not in admin
     assert 'href="/risk-dashboard.html">🎯 Assessment</a>' not in admin
     assert 'href="/risk-reports-dashboard.html">📊 AI Reports</a>' not in admin
 
     customer = requests.get(f"{BASE_URL}/dashboard.html").text
-    assert 'href="/unified-workbench.html">📋 Assessments</a>' in customer
+    assert 'data-assessments-nav' in customer
     assert 'href="/customer-ai-report.html">🤖 AI Report</a>' not in customer

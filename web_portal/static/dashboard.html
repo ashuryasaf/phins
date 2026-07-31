@@ -492,7 +492,7 @@
         <a href="/dashboard.html#claims">Claims</a>
         <a href="/dashboard.html#referrals">🎁 Referrals</a>
         <a href="/foundation-dashboard.html">🤝 Community</a>
-        <a href="/unified-workbench.html">📋 Assessments</a>
+        <span data-assessments-nav data-assessments-role="customer"></span>
         <div class="nav-divider"></div>
         <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)" data-no-i18n>
           <option value="en">🌐 English</option>
@@ -9167,6 +9167,7 @@
     // Load billing details on page load
     loadBillingDetails();
   </script>
-  <script src="/ui-clarity.js"></script>
+  <script src="/assessments-nav.js"></script>
+<script src="/ui-clarity.js"></script>
 </body>
 </html>

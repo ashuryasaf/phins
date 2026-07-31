@@ -370,3 +370,100 @@
     gap: 10px !important;
   }
 }
+
+/* ==========================================================================
+   Assessments route chooser (nav dropdown)
+   --------------------------------------------------------------------------
+   Deep-navy glass + gold accents (PR #433 language). Mounted by
+   assessments-nav.js into [data-assessments-nav] hosts.
+   ========================================================================== */
+
+.assessments-nav {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.assessments-nav-toggle {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  color: rgba(234, 241, 255, 0.85) !important;
+  background: transparent;
+  padding: 6px 14px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+.assessments-nav-toggle:hover {
+  background: rgba(127, 178, 255, 0.14) !important;
+  color: #ffffff !important;
+}
+.assessments-nav-toggle.active,
+.assessments-nav.open .assessments-nav-toggle {
+  background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%) !important;
+  color: #071022 !important;
+  font-weight: 600 !important;
+  box-shadow: 0 4px 14px rgba(227, 191, 111, 0.35) !important;
+}
+.assessments-nav-caret {
+  font-size: 0.7em;
+  opacity: 0.85;
+}
+.assessments-nav-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 280px;
+  z-index: 1200;
+  padding: 8px;
+  border-radius: 14px;
+  border: 1px solid var(--phins-line);
+  background:
+    radial-gradient(420px 140px at 90% -30%, rgba(21, 68, 155, 0.55), transparent 70%),
+    rgba(6, 13, 31, 0.98);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 16px 40px rgba(2, 8, 23, 0.5);
+}
+.assessments-nav-item {
+  display: block;
+  text-decoration: none !important;
+  color: var(--phins-ink) !important;
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 2px;
+  transition: background 0.15s ease;
+}
+.assessments-nav-item:hover {
+  background: rgba(127, 178, 255, 0.12) !important;
+}
+.assessments-nav-item.is-active {
+  background: rgba(227, 191, 111, 0.14) !important;
+  box-shadow: inset 0 0 0 1px rgba(227, 191, 111, 0.45);
+}
+.assessments-nav-item-label {
+  display: block;
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 0.92rem;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+}
+.assessments-nav-item-hint {
+  display: block;
+  margin-top: 2px;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.72rem;
+  color: rgba(234, 241, 255, 0.55);
+}
+@media screen and (max-width: 720px) {
+  .assessments-nav-menu {
+    left: auto;
+    right: 0;
+    min-width: 260px;
+  }
+}

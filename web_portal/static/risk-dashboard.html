@@ -1,13 +1,2296 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta http-equiv="refresh" content="0; url=/unified-workbench.html#risk" />
-  <title>Redirecting to Assessments…</title>
-  <script>location.replace('/unified-workbench.html#risk');</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS - Risk Assessment Dashboard</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --primary: #1a237e;
+      --primary-light: #303f9f;
+      --accent: #ff6b35;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --bg-light: #f5f7fa;
+      --text-dark: #1a1a2e;
+      --text-muted: #64748b;
+    }
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg-light);
+      min-height: 100vh;
+      color: var(--text-dark);
+    }
+    
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+      padding: 1rem 2rem;
+      color: white;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    
+    .header h1 {
+      font-size: 1.4rem;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .header-nav {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    
+    .header-nav a {
+      color: white;
+      text-decoration: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.1);
+      transition: all 0.2s;
+      font-size: 0.9rem;
+    }
+    
+    .header-nav a:hover {
+      background: rgba(255,255,255,0.2);
+    }
+    
+    /* Container */
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    
+    /* Page Title */
+    .page-title {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    
+    .page-title h2 {
+      font-size: 2rem;
+      color: var(--primary);
+      margin-bottom: 0.5rem;
+    }
+    
+    .page-title p {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+    }
+    
+    /* Assessment Card */
+    .assessment-card {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+    
+    .assessment-header {
+      background: linear-gradient(135deg, var(--primary) 0%, #0d47a1 100%);
+      color: white;
+      padding: 1.5rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    
+    .assessment-header h3 {
+      font-size: 1.3rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .assessment-body {
+      padding: 2rem;
+    }
+    
+    /* Upload Zone */
+    .upload-zone {
+      border: 3px dashed #cbd5e1;
+      border-radius: 16px;
+      padding: 3rem 2rem;
+      text-align: center;
+      transition: all 0.3s;
+      cursor: pointer;
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+      margin-bottom: 1.5rem;
+    }
+    
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--primary);
+      background: linear-gradient(135deg, #e8eaf6 0%, #c5cae9 100%);
+    }
+    
+    .upload-zone.processing {
+      border-color: var(--warning);
+      background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+    }
+    
+    .upload-icon {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+    }
+    
+    .upload-zone h4 {
+      font-size: 1.2rem;
+      color: var(--text-dark);
+      margin-bottom: 0.5rem;
+    }
+    
+    .upload-zone p {
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+    
+    .file-types {
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    
+    .file-type-badge {
+      background: var(--primary);
+      color: white;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+    
+    .file-input {
+      display: none;
+    }
+    
+    /* File List */
+    .file-list {
+      margin-bottom: 1.5rem;
+    }
+    
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: #f8fafc;
+      border-radius: 10px;
+      margin-bottom: 8px;
+      border: 1px solid #e2e8f0;
+    }
+    
+    .file-icon {
+      font-size: 1.5rem;
+    }
+    
+    .file-info {
+      flex: 1;
+    }
+    
+    .file-name {
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+    
+    .file-size {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    
+    .file-remove {
+      background: none;
+      border: none;
+      color: var(--danger);
+      cursor: pointer;
+      font-size: 1.2rem;
+      padding: 4px;
+    }
+    
+    /* Options Row */
+    .options-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      padding: 1rem;
+      background: #f8fafc;
+      border-radius: 12px;
+      margin-bottom: 1.5rem;
+    }
+    
+    .option-group {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    
+    .option-group label {
+      font-weight: 500;
+      color: var(--text-dark);
+    }
+    
+    .option-group select {
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: 2px solid #e2e8f0;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    
+    .option-group select:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+    
+    /* Buttons */
+    .btn {
+      padding: 12px 24px;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 1rem;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+      color: white;
+      box-shadow: 0 4px 12px rgba(26, 35, 126, 0.3);
+    }
+    
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(26, 35, 126, 0.4);
+    }
+    
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    
+    .btn-secondary {
+      background: #e2e8f0;
+      color: var(--text-dark);
+    }
+    
+    .btn-secondary:hover {
+      background: #cbd5e1;
+    }
+    
+    .btn-success {
+      background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
+      color: white;
+    }
+    
+    /* Processing Status */
+    .processing-status {
+      display: none;
+      padding: 1.5rem;
+      background: linear-gradient(135deg, #e8eaf6 0%, #c5cae9 100%);
+      border-radius: 12px;
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+    
+    .processing-status.active {
+      display: block;
+    }
+    
+    .processing-status h4 {
+      color: var(--primary);
+      margin-bottom: 1rem;
+    }
+    
+    .progress-bar {
+      height: 8px;
+      background: #c5cae9;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 0.75rem;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%);
+      border-radius: 4px;
+      width: 0%;
+      animation: progress-animation 3s ease-in-out infinite;
+    }
+    
+    @keyframes progress-animation {
+      0% { width: 5%; }
+      50% { width: 70%; }
+      100% { width: 95%; }
+    }
+    
+    /* Results Section */
+    .results-section {
+      display: none;
+    }
+    
+    .results-section.active {
+      display: block;
+    }
+    
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    
+    .stat-card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      text-align: center;
+    }
+    
+    .stat-card h5 {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 0.5rem;
+    }
+    
+    .stat-card .value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--text-dark);
+    }
+    
+    .stat-card.risk-low { border-top: 4px solid var(--success); }
+    .stat-card.risk-medium { border-top: 4px solid var(--warning); }
+    .stat-card.risk-high { border-top: 4px solid var(--danger); }
+    
+    /* Risk Gauge */
+    .risk-gauge-container {
+      background: white;
+      border-radius: 16px;
+      padding: 2rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      margin-bottom: 2rem;
+      text-align: center;
+    }
+    
+    .risk-gauge {
+      width: 200px;
+      height: 200px;
+      margin: 0 auto 1rem;
+      position: relative;
+    }
+    
+    .risk-gauge-circle {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+    
+    .risk-gauge-inner {
+      width: 150px;
+      height: 150px;
+      background: white;
+      border-radius: 50%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      box-shadow: inset 0 2px 10px rgba(0,0,0,0.1);
+    }
+    
+    .risk-gauge-value {
+      font-size: 3rem;
+      font-weight: 700;
+    }
+    
+    .risk-gauge-label {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+    
+    .risk-bar {
+      height: 12px;
+      background: linear-gradient(90deg, var(--success) 0%, var(--warning) 50%, var(--danger) 100%);
+      border-radius: 6px;
+      margin-top: 1rem;
+      position: relative;
+      max-width: 300px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    
+    .risk-indicator {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border: 3px solid var(--text-dark);
+      border-radius: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      transition: left 0.5s;
+    }
+    
+    /* Report Panel */
+    .report-panel {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+    
+    .report-header {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+      color: white;
+      padding: 1.5rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    
+    .report-header h3 {
+      font-size: 1.3rem;
+    }
+    
+    .report-body {
+      padding: 2rem;
+    }
+    
+    .report-section {
+      margin-bottom: 2rem;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .report-section:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+    
+    .report-section h4 {
+      color: var(--primary);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .report-section .content {
+      color: var(--text-dark);
+      line-height: 1.8;
+      white-space: pre-line;
+    }
+
+    .data-table-wrap {
+      margin-top: 1rem;
+      overflow-x: auto;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      background: #fff;
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 520px;
+    }
+
+    .data-table th, .data-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #e2e8f0;
+      text-align: left;
+      font-size: 0.88rem;
+      vertical-align: top;
+    }
+
+    .data-table th {
+      background: #f8fafc;
+      color: var(--text-dark);
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    .data-table tr:hover td {
+      background: #f8fafc;
+    }
+    
+    /* Charts */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    
+    .chart-card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    }
+    
+    .chart-card h5 {
+      text-align: center;
+      margin-bottom: 1rem;
+      color: var(--text-dark);
+    }
+    
+    .chart-wrapper {
+      height: 250px;
+      position: relative;
+    }
+    
+    /* Recommendations */
+    .recommendations-panel {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+    
+    .recommendations-header {
+      background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
+      color: white;
+      padding: 1.5rem 2rem;
+    }
+    
+    .recommendations-list {
+      padding: 1.5rem 2rem;
+    }
+    
+    .recommendation-item {
+      background: #f8fafc;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+      border-left: 4px solid var(--primary);
+    }
+    
+    .recommendation-item.urgent {
+      border-left-color: var(--danger);
+      background: #fef2f2;
+    }
+    
+    .recommendation-item.high {
+      border-left-color: var(--warning);
+      background: #fffbeb;
+    }
+    
+    .recommendation-item h5 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 0.5rem;
+    }
+    
+    .priority-badge {
+      font-size: 0.7rem;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
+    .priority-urgent { background: var(--danger); color: white; }
+    .priority-high { background: var(--warning); color: white; }
+    .priority-medium { background: var(--primary); color: white; }
+    .priority-low { background: #94a3b8; color: white; }
+    
+    .recommendation-item p {
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+    
+    /* AI Insights Panel */
+    .insights-panel {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+    
+    .insights-header {
+      background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+      color: white;
+      padding: 1.5rem 2rem;
+    }
+    
+    .insights-header h3 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .insights-body {
+      padding: 2rem;
+    }
+    
+    .insights-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+    
+    .insight-card {
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+      border-radius: 12px;
+      padding: 1.5rem;
+      border-left: 4px solid #7c3aed;
+    }
+    
+    .insight-card.statistical {
+      border-left-color: #3b82f6;
+    }
+    
+    .insight-card.correlation {
+      border-left-color: #10b981;
+    }
+    
+    .insight-card.pattern {
+      border-left-color: #f59e0b;
+    }
+    
+    .insight-card.anomaly {
+      border-left-color: #ef4444;
+    }
+    
+    .insight-card h5 {
+      color: var(--text-dark);
+      margin-bottom: 1rem;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .insight-card .insight-detail {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    
+    .insight-card .insight-value {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin: 0.5rem 0;
+    }
+    
+    .insight-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: rgba(124, 58, 237, 0.1);
+      color: #7c3aed;
+    }
+    
+    .stat-detail {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      border-bottom: 1px dashed #e2e8f0;
+      font-size: 0.85rem;
+    }
+    
+    .stat-detail:last-child {
+      border-bottom: none;
+    }
+    
+    .stat-detail .label {
+      color: var(--text-muted);
+    }
+    
+    .stat-detail .val {
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+    
+    .action-items {
+      margin-left: 1.5rem;
+      color: var(--text-dark);
+    }
+    
+    .action-items li {
+      margin-bottom: 0.5rem;
+    }
+    
+    .expected-impact {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px dashed #e2e8f0;
+      color: var(--success);
+      font-weight: 500;
+    }
+    
+    /* Pension Report Section Styles */
+    .pension-section {
+      background: linear-gradient(135deg, #f8fafc 0%, #e8f5e9 100%);
+      border-left: 4px solid #10b981;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    
+    .pension-section h4 {
+      color: #047857;
+      margin-bottom: 1rem;
+    }
+    
+    .pension-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .pension-stat {
+      background: white;
+      border-radius: 10px;
+      padding: 1rem;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    
+    .pension-stat .label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .pension-stat .value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #047857;
+      margin-top: 0.25rem;
+    }
+    
+    .pension-account {
+      background: white;
+      border-radius: 10px;
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+      border-left: 3px solid #3b82f6;
+    }
+    
+    .pension-account h5 {
+      font-size: 1rem;
+      color: var(--text-dark);
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .pension-account .detail-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      font-size: 0.9rem;
+      border-bottom: 1px dashed #e2e8f0;
+    }
+    
+    .pension-account .detail-row:last-child {
+      border-bottom: none;
+    }
+    
+    .pension-warning {
+      background: #fef3c7;
+      border-left: 4px solid #f59e0b;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-top: 1rem;
+    }
+    
+    .pension-warning h5 {
+      color: #b45309;
+      margin-bottom: 0.5rem;
+    }
+    
+    .section14-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    
+    .section14-status.covered {
+      background: #d1fae5;
+      color: #047857;
+    }
+    
+    .section14-status.not-covered {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+
+    /* Affiliated Assessment Styles */
+    .affiliated-assessment {
+      margin-bottom: 2rem;
+    }
+
+    .affiliated-assessment-header {
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #0277bd 100%);
+      color: white;
+      padding: 2rem;
+      border-radius: 16px 16px 0 0;
+      text-align: center;
+    }
+
+    .affiliated-assessment-header h2 {
+      font-size: 1.6rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .affiliated-assessment-header p {
+      opacity: 0.9;
+      font-size: 0.95rem;
+    }
+
+    .affiliated-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 14px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-top: 0.75rem;
+    }
+
+    .affiliated-badge.mislaka {
+      background: rgba(255,255,255,0.2);
+      color: white;
+    }
+
+    .customer-profile-panel {
+      background: white;
+      border-radius: 0 0 16px 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      padding: 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .customer-profile-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .profile-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .profile-field .field-label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+    }
+
+    .profile-field .field-value {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text-dark);
+      padding: 8px 12px;
+      background: #f8fafc;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      min-height: 38px;
+      display: flex;
+      align-items: center;
+    }
+
+    .financial-overview {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+
+    .financial-card {
+      background: white;
+      border-radius: 14px;
+      padding: 1.5rem;
+      box-shadow: 0 3px 15px rgba(0,0,0,0.07);
+      text-align: center;
+      border-top: 4px solid var(--primary);
+      transition: transform 0.2s;
+    }
+
+    .financial-card:hover {
+      transform: translateY(-3px);
+    }
+
+    .financial-card.savings { border-top-color: #10b981; }
+    .financial-card.severance { border-top-color: #f59e0b; }
+    .financial-card.coverage { border-top-color: #3b82f6; }
+    .financial-card.policies { border-top-color: #7c3aed; }
+    .financial-card.section14 { border-top-color: #059669; }
+    .financial-card.providers { border-top-color: #0891b2; }
+
+    .financial-card .fin-label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 0.5rem;
+    }
+
+    .financial-card .fin-value {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--text-dark);
+      line-height: 1.2;
+    }
+
+    .financial-card .fin-sub {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin-top: 0.3rem;
+    }
+
+    .affiliated-table-panel {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+
+    .affiliated-table-header {
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .affiliated-table-header h3 {
+      font-size: 1.15rem;
+      color: var(--text-dark);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .affiliated-table-header .record-count {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      background: #f1f5f9;
+      padding: 4px 12px;
+      border-radius: 12px;
+    }
+
+    .affiliated-table-body {
+      padding: 0;
+      overflow-x: auto;
+    }
+
+    .affiliated-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 700px;
+    }
+
+    .affiliated-table th {
+      padding: 12px 14px;
+      background: #f8fafc;
+      color: var(--text-dark);
+      font-weight: 600;
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      border-bottom: 2px solid #e2e8f0;
+      text-align: left;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    .affiliated-table td {
+      padding: 11px 14px;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 0.9rem;
+      color: var(--text-dark);
+      vertical-align: top;
+    }
+
+    .affiliated-table tr:hover td {
+      background: #f8fafc;
+    }
+
+    .affiliated-table .currency {
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .affiliated-table .status-active {
+      color: #059669;
+      font-weight: 600;
+    }
+
+    .affiliated-table .status-frozen {
+      color: #d97706;
+      font-weight: 600;
+    }
+
+    .affiliated-table .status-closed {
+      color: #9ca3af;
+    }
+
+    .provider-overview {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+
+    .provider-card {
+      background: white;
+      border-radius: 14px;
+      padding: 1.5rem;
+      box-shadow: 0 3px 15px rgba(0,0,0,0.07);
+      border-left: 4px solid var(--primary);
+    }
+
+    .provider-card h4 {
+      font-size: 1.05rem;
+      color: var(--text-dark);
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .provider-detail {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 0;
+      font-size: 0.88rem;
+      border-bottom: 1px dashed #e2e8f0;
+    }
+
+    .provider-detail:last-child {
+      border-bottom: none;
+    }
+
+    .provider-detail .pd-label {
+      color: var(--text-muted);
+    }
+
+    .provider-detail .pd-value {
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+
+    /* RTL for affiliated assessment */
+    [dir="rtl"] .provider-card {
+      border-left: none;
+      border-right: 4px solid var(--primary);
+    }
+
+    [dir="rtl"] .affiliated-table th,
+    [dir="rtl"] .affiliated-table td {
+      text-align: right;
+    }
+    
+    /* RTL Support */
+    [dir="rtl"] {
+      direction: rtl;
+      text-align: right;
+    }
+    
+    [dir="rtl"] .recommendation-item {
+      border-left: none;
+      border-right: 4px solid var(--primary);
+    }
+    
+    [dir="rtl"] .recommendation-item.urgent { border-right-color: var(--danger); }
+    [dir="rtl"] .recommendation-item.high { border-right-color: var(--warning); }
+    
+    [dir="rtl"] .pension-section {
+      border-left: none;
+      border-right: 4px solid #10b981;
+    }
+    
+    [dir="rtl"] .pension-account {
+      border-left: none;
+      border-right: 3px solid #3b82f6;
+    }
+    
+    [dir="rtl"] .pension-warning {
+      border-left: none;
+      border-right: 4px solid #f59e0b;
+    }
+    
+    [dir="rtl"] .insight-card {
+      border-left: none;
+      border-right: 4px solid #7c3aed;
+    }
+    
+    [dir="rtl"] .insight-card.statistical { border-right-color: #3b82f6; }
+    [dir="rtl"] .insight-card.correlation { border-right-color: #10b981; }
+    [dir="rtl"] .insight-card.pattern { border-right-color: #f59e0b; }
+    [dir="rtl"] .insight-card.anomaly { border-right-color: #ef4444; }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+      .header {
+        flex-direction: column;
+        gap: 1rem;
+        text-align: center;
+      }
+      
+      .container {
+        padding: 1rem;
+      }
+      
+      .upload-zone {
+        padding: 2rem 1rem;
+      }
+      
+      .options-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+    }
+    
+    /* Fade in animation */
+    .fade-in {
+      animation: fadeIn 0.5s ease-out;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+  <link rel="stylesheet" href="/phins-theme.css">
 </head>
 <body>
-  <p>This page has been unified into the Assessments workbench.
-  <a href="/unified-workbench.html#risk">Continue →</a></p>
+  <!-- Header — PR #433 navy/gold chrome -->
+  <header class="phins-header">
+    <div class="phins-header-inner" style="max-width:1400px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:0.75rem 1.5rem;flex-wrap:wrap;gap:0.5rem;">
+      <a href="/dashboard.html" class="phins-logo" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:white;">
+        <div class="phins-logo-icon" style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;">
+          <img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;">
+        </div>
+        <span class="phins-logo-text">PHINS</span>
+      </a>
+      <nav class="phins-nav" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <a href="/dashboard.html">Dashboard</a>
+        <span data-assessments-nav data-assessments-role="admin"></span>
+        <a href="/admin.html">Admin</a>
+      </nav>
+    </div>
+  </header>
+  
+  <main class="container">
+    <!-- Page Title -->
+    <div class="page-title fade-in">
+      <h2>AI-Powered Risk Assessment</h2>
+      <p>Upload your documents for intelligent analysis and personalized recommendations</p>
+    </div>
+
+    <div style="background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); color: white; border-radius: 14px; padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
+<div style="flex: 1; min-width: 200px;">
+        <div style="font-weight: 700;">One workbench instead of three dashboards</div>
+        <div style="font-size: 0.85rem; opacity: 0.9;">Upload, mine facts, run any analysis (Customer 360 / Risk / BI / Describe / Cross-doc) and download CSV/XLSX/PDF without switching screens.</div>
+      </div>
+      <a href="/unified-workbench.html" style="background: white; color: #0b1b3a; padding: 9px 16px; border-radius: 8px; font-weight: 700; text-decoration: none; white-space: nowrap;">Open Unified Workbench →</a>
+    </div>
+    
+    <!-- Assessment Upload Card -->
+    <div class="assessment-card fade-in">
+      <div class="assessment-header">
+        <h3>Upload Documents for Assessment</h3>
+        <span style="background: rgba(255,255,255,0.2); padding: 6px 14px; border-radius: 20px; font-size: 0.85rem;">
+          AI + BI Analysis
+        </span>
+      </div>
+      
+      <div class="assessment-body">
+        <!-- Upload Zone -->
+        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+<h4>Drop files here or click to upload</h4>
+          <p>Upload your insurance, investment, or risk documents for AI analysis</p>
+          <p style="font-size: 0.9rem; color: var(--text-muted);">
+            <strong>Auto-detects:</strong> Language (Hebrew, English, etc.) • Data type • Risk factors
+          </p>
+          <div class="file-types">
+            <span class="file-type-badge">CSV</span>
+            <span class="file-type-badge">XLS/XLSX</span>
+            <span class="file-type-badge">ZIP</span>
+            <span class="file-type-badge">PNG/JPG</span>
+            <span class="file-type-badge">PDF</span>
+          </div>
+          <input type="file" id="fileInput" class="file-input" accept=".csv,.xls,.xlsx,.zip,.png,.jpg,.jpeg,.pdf" multiple>
+        </div>
+        
+        <!-- File List -->
+        <div class="file-list" id="fileList"></div>
+        
+        <!-- Options Row -->
+        <div class="options-row">
+          <div class="option-group">
+            <label for="reportLanguage">Report Language:</label>
+            <select id="reportLanguage">
+              <option value="auto">Auto-detect from files</option>
+              <option value="english">English</option>
+              <option value="hebrew">עברית (Hebrew)</option>
+              <option value="arabic">العربية (Arabic)</option>
+              <option value="spanish">Español</option>
+              <option value="french">Français</option>
+              <option value="german">Deutsch</option>
+            </select>
+          </div>
+          
+          <div class="option-group">
+            <label for="assessmentType">Assessment Type:</label>
+            <select id="assessmentType">
+              <option value="auto">Auto-detect</option>
+              <option value="insurance">Insurance Analysis</option>
+              <option value="investment">Investment Portfolio</option>
+              <option value="risk">Risk Assessment</option>
+              <option value="savings">Savings Analysis</option>
+              <option value="comprehensive">Comprehensive Review</option>
+            </select>
+          </div>
+          
+          <button class="btn btn-primary" id="startAssessmentBtn" disabled onclick="startAssessment()">
+            Start AI Assessment
+          </button>
+        </div>
+        
+        <!-- Processing Status -->
+        <div class="processing-status" id="processingStatus">
+          <h4>AI Analysis in Progress...</h4>
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+          <p id="processingMessage">Parsing uploaded files...</p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Results Section -->
+    <section class="results-section" id="resultsSection">
+
+      <!-- Affiliated Assessment (customer-focused, shown for mislaka/pension data) -->
+      <div id="affiliatedAssessment" style="display:none;">
+        <div id="affiliatedHeader" class="affiliated-assessment"></div>
+        <div id="customerProfilePanel"></div>
+        <div id="financialOverview" class="financial-overview"></div>
+        <div id="providerOverview"></div>
+        <div id="accountsTablePanel"></div>
+        <div id="contributionsTablePanel"></div>
+        <div id="employerTablePanel"></div>
+      </div>
+
+      <!-- Standard stats (shown for non-pension data) -->
+      <div id="standardAssessment">
+        <!-- Stats Grid -->
+        <div class="stats-grid" id="statsGrid"></div>
+
+        <!-- Risk Gauge -->
+        <div class="risk-gauge-container fade-in" id="riskGaugeContainer">
+          <h3 style="margin-bottom: 1.5rem; color: var(--primary);">Overall Risk Score</h3>
+          <div class="risk-gauge">
+            <div class="risk-gauge-circle" id="riskGaugeCircle">
+              <div class="risk-gauge-inner">
+                <div class="risk-gauge-value" id="riskGaugeValue">0</div>
+                <div class="risk-gauge-label">Risk Score</div>
+              </div>
+            </div>
+          </div>
+          <div class="risk-bar">
+            <div class="risk-indicator" id="riskIndicator"></div>
+          </div>
+          <p id="riskSummary" style="margin-top: 1rem; color: var(--text-muted);"></p>
+        </div>
+
+        <!-- AI Insights Panel -->
+        <div class="insights-panel" id="insightsPanel">
+          <div class="insights-header">
+            <h3>AI Inductive Analysis</h3>
+            <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Advanced pattern recognition and statistical insights from your data</p>
+          </div>
+          <div class="insights-body">
+            <div class="insights-grid" id="insightsGrid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="charts-grid" id="chartsGrid"></div>
+
+      <!-- Report Panel -->
+      <div class="report-panel" id="reportPanel">
+        <div class="report-header">
+          <h3 id="reportTitle">Assessment Report</h3>
+          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <button class="btn btn-secondary" onclick="exportReport('pdf')">Export PDF</button>
+            <button class="btn btn-secondary" onclick="exportReport('excel')">Export Excel</button>
+          </div>
+        </div>
+        <div class="report-body" id="reportBody"></div>
+      </div>
+
+      <!-- Recommendations Panel -->
+      <div class="recommendations-panel" id="recommendationsPanel">
+        <div class="recommendations-header">
+          <h3>AI Recommendations</h3>
+        </div>
+        <div class="recommendations-list" id="recommendationsList"></div>
+      </div>
+    </section>
+  </main>
+  
+  <script>
+    // State
+    let uploadedFiles = [];
+    let currentAnalysis = null;
+    let currentReport = null;
+    let charts = {};
+    
+    // DOM Elements
+    const uploadZone = document.getElementById('uploadZone');
+    const fileInput = document.getElementById('fileInput');
+    const fileList = document.getElementById('fileList');
+    const startBtn = document.getElementById('startAssessmentBtn');
+    const processingStatus = document.getElementById('processingStatus');
+    const resultsSection = document.getElementById('resultsSection');
+    
+    // Drag and drop
+    uploadZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadZone.classList.add('dragover');
+    });
+    
+    uploadZone.addEventListener('dragleave', () => {
+      uploadZone.classList.remove('dragover');
+    });
+    
+    uploadZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      handleFiles(e.dataTransfer.files);
+    });
+    
+    fileInput.addEventListener('change', (e) => {
+      handleFiles(e.target.files);
+    });
+    
+    function handleFiles(files) {
+      for (const file of files) {
+        if (!uploadedFiles.find(f => f.name === file.name)) {
+          uploadedFiles.push(file);
+        }
+      }
+      renderFileList();
+      startBtn.disabled = uploadedFiles.length === 0;
+    }
+    
+    function renderFileList() {
+      if (uploadedFiles.length === 0) {
+        fileList.innerHTML = '';
+        return;
+      }
+      
+      fileList.innerHTML = uploadedFiles.map((file, index) => `
+        <div class="file-item fade-in">
+          <span class="file-icon">${getFileIcon(file.name)}</span>
+          <div class="file-info">
+            <div class="file-name">${file.name}</div>
+            <div class="file-size">${formatFileSize(file.size)}</div>
+          </div>
+          <button class="file-remove" onclick="removeFile(${index})"></button>
+        </div>
+      `).join('');
+    }
+    
+    function getFileIcon(filename) {
+      const ext = filename.split('.').pop().toLowerCase();
+      const icons = {
+        'csv': '', 'xls': '', 'xlsx': '',
+        'zip': '', 'png': '', 'jpg': '', 
+        'jpeg': '', 'pdf': ''
+      };
+      return icons[ext] || '';
+    }
+    
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+    
+    function removeFile(index) {
+      uploadedFiles.splice(index, 1);
+      renderFileList();
+      startBtn.disabled = uploadedFiles.length === 0;
+    }
+    
+    async function startAssessment() {
+      if (uploadedFiles.length === 0) return;
+      
+      // Show processing
+      processingStatus.classList.add('active');
+      uploadZone.classList.add('processing');
+      startBtn.disabled = true;
+      resultsSection.classList.remove('active');
+      
+      const progressFill = document.getElementById('progressFill');
+      const processingMessage = document.getElementById('processingMessage');
+      
+      try {
+        let allAnalyses = [];
+        
+        // Process each file
+        for (let i = 0; i < uploadedFiles.length; i++) {
+          const file = uploadedFiles[i];
+          processingMessage.textContent = `Processing ${file.name}... (${i + 1}/${uploadedFiles.length})`;
+          
+          // Read file as base64
+          const content = await readFileAsBase64(file);
+          const fileType = file.name.split('.').pop().toLowerCase();
+          
+          // Upload and parse
+          const uploadResponse = await fetch('/api/reports/upload', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
+            },
+            body: JSON.stringify({
+              filename: file.name,
+              file_type: fileType,
+              content: content
+            })
+          });
+          
+          const uploadResult = await uploadResponse.json();
+          
+          if (uploadResult.error) {
+            console.warn(`Skipping ${file.name}: ${uploadResult.error}`);
+            continue;
+          }
+          
+          // Analyze
+          processingMessage.textContent = `Analyzing ${file.name}...`;
+          
+          const analyzeResponse = await fetch('/api/reports/analyze', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
+            },
+            body: JSON.stringify({
+              document_id: uploadResult.document_id
+            })
+          });
+          
+          const analysis = await analyzeResponse.json();
+          if (analysis.id) {
+            allAnalyses.push(analysis);
+          }
+        }
+        
+        if (allAnalyses.length === 0) {
+          throw new Error('No files could be analyzed');
+        }
+        
+        // Generate report from first successful analysis
+        processingMessage.textContent = 'Generating AI assessment report...';
+        
+        const selectedLanguage = document.getElementById('reportLanguage').value;
+        const language = selectedLanguage === 'auto' ? null : selectedLanguage;
+        
+        const reportResponse = await fetch('/api/reports/generate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
+          },
+          body: JSON.stringify({
+            analysis_id: allAnalyses[0].id,
+            language: language
+          })
+        });
+        
+        currentReport = await reportResponse.json();
+        currentAnalysis = allAnalyses[0];
+        
+        // Display results
+        displayResults(currentAnalysis, currentReport);
+        
+        // Hide processing, show results
+        processingStatus.classList.remove('active');
+        uploadZone.classList.remove('processing');
+        resultsSection.classList.add('active');
+        
+        // Set RTL if Hebrew
+        if (currentReport.language === 'hebrew') {
+          document.body.setAttribute('dir', 'rtl');
+        } else {
+          document.body.removeAttribute('dir');
+        }
+        
+        // Scroll to results
+        resultsSection.scrollIntoView({ behavior: 'smooth' });
+        
+      } catch (error) {
+        console.error('Assessment error:', error);
+        processingMessage.textContent = `Error: ${error.message}`;
+        progressFill.style.background = 'var(--danger)';
+        
+        setTimeout(() => {
+          processingStatus.classList.remove('active');
+          uploadZone.classList.remove('processing');
+          startBtn.disabled = false;
+        }, 3000);
+      }
+      
+      startBtn.disabled = false;
+    }
+    
+    function readFileAsBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = reader.result.split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function stripSourceLinks(content) {
+      const text = String(content ?? '');
+      return text
+        .replace(/https?:\/\/\S+/gi, '[redacted]')
+        .replace(/swiftness\.co\.il/gi, '[redacted]');
+    }
+
+    function shouldHideSection(title) {
+      const lower = String(title || '').toLowerCase();
+      return lower.includes('swiftness') || lower.includes('resource') || lower.includes('credentials');
+    }
+
+    function renderDataTable(dataTable) {
+      if (!dataTable || typeof dataTable !== 'object') return '';
+
+      let columns = Array.isArray(dataTable.columns) ? [...dataTable.columns] : [];
+      let rows = Array.isArray(dataTable.rows) ? [...dataTable.rows] : [];
+
+      if (!rows.length && !columns.length) {
+        const keyValueRows = Object.entries(dataTable)
+          .filter(([key]) => key !== 'columns' && key !== 'rows')
+          .map(([metric, value]) => ({ Metric: metric, Value: value }));
+        if (!keyValueRows.length) return '';
+        columns = ['Metric', 'Value'];
+        rows = keyValueRows;
+      }
+
+      const dictRows = rows.filter(row => row && typeof row === 'object' && !Array.isArray(row));
+      if (!dictRows.length) return '';
+
+      if (!columns.length) {
+        columns = Object.keys(dictRows[0]);
+      }
+
+      const headerHtml = columns.map(col => `<th>${escapeHtml(col)}</th>`).join('');
+      const bodyHtml = dictRows.slice(0, 120).map(row => `
+        <tr>
+          ${columns.map(col => `<td>${escapeHtml(row[col])}</td>`).join('')}
+        </tr>
+      `).join('');
+
+      return `
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead><tr>${headerHtml}</tr></thead>
+            <tbody>${bodyHtml}</tbody>
+          </table>
+        </div>
+      `;
+    }
+    
+    function displayResults(analysis, report) {
+      const meta = report.metadata || {};
+      const isPensionData = meta.is_pension_data && meta.pension_data;
+
+      if (isPensionData) {
+        document.getElementById('affiliatedAssessment').style.display = 'block';
+        document.getElementById('standardAssessment').style.display = 'none';
+        renderAffiliatedAssessment(analysis, report);
+      } else {
+        document.getElementById('affiliatedAssessment').style.display = 'none';
+        document.getElementById('standardAssessment').style.display = 'block';
+        renderStandardAssessment(analysis, report);
+      }
+
+      renderCharts(report.charts);
+      renderReportSections(report);
+      renderRecommendations(report.recommendations);
+    }
+
+    function renderReportSections(report) {
+      document.getElementById('reportTitle').textContent = `${report.title}`;
+      const visibleSections = (report.sections || []).filter(section => !shouldHideSection(section.title));
+      document.getElementById('reportBody').innerHTML = visibleSections.map(section => {
+        const isPensionSection = section.title.includes('פנסיה') ||
+                                 section.title.toLowerCase().includes('pension') ||
+                                 section.title.includes('ביטוח');
+        const sectionClass = isPensionSection ? 'report-section pension-section fade-in' : 'report-section fade-in';
+
+        let content = stripSourceLinks(section.content || '');
+        if (content) {
+          content = escapeHtml(content)
+            .replace(/\n/g, '<br>')
+            .replace(/={2,}/g, '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 0.5rem 0;">')
+            .replace(/-{2,}/g, '<hr style="border: none; border-top: 1px dashed #e2e8f0; margin: 0.5rem 0;">');
+        }
+
+        return `
+          <div class="${sectionClass}">
+            <h4>${getSectionIcon(section.title || '')} ${escapeHtml(section.title || '')}</h4>
+            <div class="content">${content}</div>
+            ${renderDataTable(section.data_table)}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderRecommendations(recommendations) {
+      document.getElementById('recommendationsList').innerHTML = (recommendations || []).map(rec => `
+        <div class="recommendation-item ${rec.priority} fade-in">
+          <h5>
+            <span class="priority-badge priority-${rec.priority}">${rec.priority}</span>
+            ${rec.title}
+          </h5>
+          <p>${rec.description}</p>
+          <ul class="action-items">
+            ${rec.action_items.map(item => `<li>${item}</li>`).join('')}
+          </ul>
+          <div class="expected-impact">
+            <strong>Expected Impact:</strong> ${rec.expected_impact}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // =========================================================================
+    // AFFILIATED ASSESSMENT (Mislaka / Swiftness - customer-focused)
+    // =========================================================================
+
+    function renderAffiliatedAssessment(analysis, report) {
+      const meta = report.metadata || {};
+      const pensionData = meta.pension_data || {};
+      const isHebrew = report.language === 'hebrew';
+
+      let clientData = pensionData.client || {};
+      if (Array.isArray(clientData)) clientData = clientData[0] || {};
+      const totals = pensionData.totals || pensionData.summary || {};
+      const accounts = pensionData.accounts || [];
+      const contributions = pensionData.contributions || [];
+      const employers = pensionData.employers || [];
+
+      renderAffiliatedHeader(clientData, totals, accounts, isHebrew, analysis);
+      renderCustomerProfile(clientData, isHebrew);
+      renderFinancialOverview(totals, accounts, isHebrew);
+      renderProviderOverview(accounts, isHebrew);
+      renderAccountsTable(accounts, isHebrew);
+      renderContributionsTable(contributions, isHebrew);
+      renderEmployerTable(employers, accounts, isHebrew);
+    }
+
+    function renderAffiliatedHeader(client, totals, accounts, isHebrew, analysis) {
+      const name = client.full_name || client.first_name
+        ? `${client.first_name || ''} ${client.last_name || ''}`.trim()
+        : '';
+      const displayName = name || (isHebrew ? 'לקוח' : 'Customer');
+      const providerCount = totals.provider_count || new Set(accounts.map(a => a.provider).filter(Boolean)).size;
+      const accountCount = totals.account_count || accounts.length;
+
+      document.getElementById('affiliatedHeader').innerHTML = `
+        <div class="affiliated-assessment-header fade-in">
+          <h2>${isHebrew ? 'הערכה מסונפת – ניתוח תיק לקוח' : 'Affiliated Assessment – Customer Portfolio Analysis'}</h2>
+          <p>${isHebrew
+            ? `${displayName} | ${accountCount} ${accountCount === 1 ? 'מוצר' : 'מוצרים'} | ${providerCount} ${providerCount === 1 ? 'יצרן' : 'יצרנים'}`
+            : `${displayName} | ${accountCount} product${accountCount !== 1 ? 's' : ''} | ${providerCount} provider${providerCount !== 1 ? 's' : ''}`}</p>
+          <div>
+            <span class="affiliated-badge mislaka">Mislaka + Swiftness</span>
+            <span class="affiliated-badge mislaka" style="margin-left:6px;">${capitalizeFirst(analysis.data_classification)} | ${analysis.language_name}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderCustomerProfile(client, isHebrew) {
+      const container = document.getElementById('customerProfilePanel');
+      if (!client || (!client.id_number && !client.first_name && !client.full_name)) {
+        container.innerHTML = '';
+        return;
+      }
+
+      const fields = [];
+      const addField = (labelHe, labelEn, value) => {
+        if (value && String(value).trim()) {
+          fields.push({ label: isHebrew ? labelHe : labelEn, value: escapeHtml(String(value).trim()) });
+        }
+      };
+
+      const fullName = client.full_name || `${client.first_name || ''} ${client.last_name || ''}`.trim();
+      addField('שם מלא', 'Full Name', fullName);
+      addField('תעודת זהות', 'ID Number', client.id_number);
+      addField('סוג זיהוי', 'ID Type', client.id_type);
+      addField('תאריך לידה', 'Birth Date', client.birth_date);
+      addField('מין', 'Gender', client.gender);
+      addField('כתובת', 'Address', client.address);
+      addField('יישוב', 'City', client.city);
+      addField('טלפון', 'Phone', client.phone);
+      addField('דוא"ל', 'Email', client.email);
+
+      if (fields.length === 0) {
+        container.innerHTML = '';
+        return;
+      }
+
+      container.innerHTML = `
+        <div class="customer-profile-panel fade-in">
+          <h3 style="margin-bottom:1.25rem;color:var(--primary);display:flex;align-items:center;gap:10px;">
+            ${isHebrew ? 'פרטי לקוח' : 'Customer Details'}
+          </h3>
+          <div class="customer-profile-grid">
+            ${fields.map(f => `
+              <div class="profile-field">
+                <span class="field-label">${f.label}</span>
+                <span class="field-value">${f.value}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function formatCurrency(val) {
+      const num = parseFloat(val);
+      if (isNaN(num)) return '₪0';
+      return '₪' + num.toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    }
+
+    function renderFinancialOverview(totals, accounts, isHebrew) {
+      const container = document.getElementById('financialOverview');
+
+      const totalBalance = totals.total_balance || 0;
+      const totalSavings = totals.total_savings || totals.total_savings_balance || 0;
+      const totalSeverance = totals.total_severance || totals.total_severance_balance || 0;
+      const accountCount = totals.account_count || accounts.length;
+      const providerCount = totals.provider_count || new Set(accounts.map(a => a.provider).filter(Boolean)).size;
+      const section14 = totals.section14_coverage;
+      const section14Accounts = totals.section14_accounts || 0;
+      const providers = totals.providers || [...new Set(accounts.map(a => a.provider).filter(Boolean))];
+
+      container.innerHTML = `
+        <div class="financial-card savings fade-in">
+          <div class="fin-label">${isHebrew ? 'סה"כ חסכונות' : 'Total Savings'}</div>
+          <div class="fin-value" style="color:#059669;">${formatCurrency(totalSavings)}</div>
+          <div class="fin-sub">${isHebrew ? 'תגמולים' : 'Accumulated savings'}</div>
+        </div>
+        <div class="financial-card severance fade-in">
+          <div class="fin-label">${isHebrew ? 'סה"כ פיצויים' : 'Total Severance'}</div>
+          <div class="fin-value" style="color:#d97706;">${formatCurrency(totalSeverance)}</div>
+          <div class="fin-sub">${isHebrew ? 'פיצויים צבורים' : 'Accumulated severance'}</div>
+        </div>
+        <div class="financial-card fade-in">
+          <div class="fin-label">${isHebrew ? 'סה"כ יתרה' : 'Total Balance'}</div>
+          <div class="fin-value">${formatCurrency(totalBalance)}</div>
+          <div class="fin-sub">${isHebrew ? 'כל החשבונות' : 'All accounts combined'}</div>
+        </div>
+        <div class="financial-card policies fade-in">
+          <div class="fin-label">${isHebrew ? 'פוליסות / מוצרים' : 'Policies / Products'}</div>
+          <div class="fin-value" style="color:#7c3aed;">${accountCount}</div>
+          <div class="fin-sub">${isHebrew ? 'מוצרים פעילים' : 'Products on file'}</div>
+        </div>
+        <div class="financial-card providers fade-in">
+          <div class="fin-label">${isHebrew ? 'יצרנים' : 'Providers'}</div>
+          <div class="fin-value" style="color:#0891b2;">${providerCount}</div>
+          <div class="fin-sub">${providers.slice(0, 3).join(', ') || '—'}${providers.length > 3 ? '...' : ''}</div>
+        </div>
+        <div class="financial-card section14 fade-in">
+          <div class="fin-label">${isHebrew ? 'סעיף 14' : 'Section 14'}</div>
+          <div class="fin-value" style="color:${section14 ? '#059669' : '#dc2626'};">${section14 ? (isHebrew ? 'מכוסה' : 'Covered') : (isHebrew ? 'לא מכוסה' : 'Not Covered')}</div>
+          <div class="fin-sub">${section14Accounts > 0 ? (isHebrew ? `${section14Accounts} חשבונות` : `${section14Accounts} account${section14Accounts !== 1 ? 's' : ''}`) : ''}</div>
+        </div>
+      `;
+    }
+
+    function renderProviderOverview(accounts, isHebrew) {
+      const container = document.getElementById('providerOverview');
+      if (!accounts || accounts.length === 0) { container.innerHTML = ''; return; }
+
+      const providerMap = {};
+      accounts.forEach(acct => {
+        const prov = acct.provider || (isHebrew ? 'לא ידוע' : 'Unknown');
+        if (!providerMap[prov]) {
+          providerMap[prov] = { count: 0, totalBalance: 0, totalSeverance: 0, products: new Set() };
+        }
+        providerMap[prov].count++;
+        providerMap[prov].totalBalance += parseFloat(acct.total_balance || acct.savings_balance || 0) || 0;
+        providerMap[prov].totalSeverance += parseFloat(acct.severance_balance || 0) || 0;
+        const productType = acct.product_type_name || acct.product_type || '';
+        if (productType) providerMap[prov].products.add(productType);
+      });
+
+      const providerColors = ['#1a237e', '#0d47a1', '#1565c0', '#0277bd', '#00838f', '#00695c', '#2e7d32', '#558b2f'];
+
+      container.innerHTML = `
+        <div class="provider-overview fade-in">
+          ${Object.entries(providerMap).map(([name, info], idx) => `
+            <div class="provider-card" style="border-left-color:${providerColors[idx % providerColors.length]};">
+              <h4>${escapeHtml(name)}</h4>
+              <div class="provider-detail">
+                <span class="pd-label">${isHebrew ? 'מוצרים' : 'Products'}</span>
+                <span class="pd-value">${info.count}</span>
+              </div>
+              <div class="provider-detail">
+                <span class="pd-label">${isHebrew ? 'יתרה כוללת' : 'Total Balance'}</span>
+                <span class="pd-value">${formatCurrency(info.totalBalance)}</span>
+              </div>
+              <div class="provider-detail">
+                <span class="pd-label">${isHebrew ? 'פיצויים' : 'Severance'}</span>
+                <span class="pd-value">${formatCurrency(info.totalSeverance)}</span>
+              </div>
+              ${info.products.size > 0 ? `
+              <div class="provider-detail">
+                <span class="pd-label">${isHebrew ? 'סוגי מוצרים' : 'Product Types'}</span>
+                <span class="pd-value" style="font-size:0.82rem;">${[...info.products].join(', ')}</span>
+              </div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function renderAccountsTable(accounts, isHebrew) {
+      const container = document.getElementById('accountsTablePanel');
+      if (!accounts || accounts.length === 0) { container.innerHTML = ''; return; }
+
+      const headers = isHebrew
+        ? ['מספר פוליסה', 'יצרן', 'סוג מוצר', 'סטטוס', 'יתרה כוללת', 'תגמולים', 'פיצויים', 'דמי ניהול (צבירה)', 'דמי ניהול (הפקדה)', 'מעסיק', 'סעיף 14']
+        : ['Policy #', 'Provider', 'Product Type', 'Status', 'Total Balance', 'Savings', 'Severance', 'Mgmt Fee (Savings)', 'Mgmt Fee (Deposits)', 'Employer', 'Section 14'];
+
+      const rows = accounts.slice(0, 80).map(acct => {
+        const status = acct.status || acct.status_en || '';
+        const statusLower = status.toLowerCase();
+        const statusClass = statusLower.includes('active') || statusLower.includes('פעיל') ? 'status-active'
+          : (statusLower.includes('frozen') || statusLower.includes('מוקפא') ? 'status-frozen'
+          : (statusLower.includes('closed') || statusLower.includes('סגור') ? 'status-closed' : ''));
+        const sec14 = acct.section14 ? (isHebrew ? 'כן' : 'Yes') : (isHebrew ? '—' : '—');
+
+        return `<tr>
+          <td>${escapeHtml(acct.policy_number || '')}</td>
+          <td>${escapeHtml(acct.provider || '')}</td>
+          <td>${escapeHtml(acct.product_type_name || acct.product_type || '')}</td>
+          <td class="${statusClass}">${escapeHtml(status)}</td>
+          <td class="currency">${formatCurrency(acct.total_balance || 0)}</td>
+          <td class="currency">${formatCurrency(acct.savings_balance || 0)}</td>
+          <td class="currency">${formatCurrency(acct.severance_balance || 0)}</td>
+          <td>${acct.management_fee_savings != null ? acct.management_fee_savings + '%' : '—'}</td>
+          <td>${acct.management_fee_deposits != null ? acct.management_fee_deposits + '%' : '—'}</td>
+          <td>${escapeHtml(acct.employer_name || '')}</td>
+          <td>${sec14}</td>
+        </tr>`;
+      });
+
+      container.innerHTML = `
+        <div class="affiliated-table-panel fade-in">
+          <div class="affiliated-table-header">
+            <h3>${isHebrew ? 'פירוט מוצרים וחשבונות' : 'Products & Accounts Detail'}</h3>
+            <span class="record-count">${accounts.length} ${isHebrew ? 'רשומות' : 'records'}</span>
+          </div>
+          <div class="affiliated-table-body">
+            <table class="affiliated-table">
+              <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+              <tbody>${rows.join('')}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderContributionsTable(contributions, isHebrew) {
+      const container = document.getElementById('contributionsTablePanel');
+      if (!contributions || contributions.length === 0) { container.innerHTML = ''; return; }
+
+      const headers = isHebrew
+        ? ['תקופה', 'מעסיק', 'הפקדת עובד', 'הפקדת מעסיק', 'פיצויים', 'סה"כ']
+        : ['Period', 'Employer', 'Employee', 'Employer Contrib.', 'Severance', 'Total'];
+
+      const rows = contributions.slice(0, 120).map(c => `<tr>
+        <td>${escapeHtml(c.period || '')}</td>
+        <td>${escapeHtml(c.employer_name || '')}</td>
+        <td class="currency">${formatCurrency(c.employee_amount || 0)}</td>
+        <td class="currency">${formatCurrency(c.employer_amount || 0)}</td>
+        <td class="currency">${formatCurrency(c.severance_amount || 0)}</td>
+        <td class="currency">${formatCurrency(c.total_amount || 0)}</td>
+      </tr>`);
+
+      container.innerHTML = `
+        <div class="affiliated-table-panel fade-in">
+          <div class="affiliated-table-header">
+            <h3>${isHebrew ? 'פירוט הפקדות' : 'Contribution Details'}</h3>
+            <span class="record-count">${contributions.length} ${isHebrew ? 'רשומות' : 'records'}</span>
+          </div>
+          <div class="affiliated-table-body">
+            <table class="affiliated-table">
+              <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+              <tbody>${rows.join('')}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderEmployerTable(employers, accounts, isHebrew) {
+      const container = document.getElementById('employerTablePanel');
+      const empData = [];
+      const seen = new Set();
+
+      (accounts || []).forEach(acct => {
+        const name = (acct.employer_name || '').trim();
+        if (name && !seen.has(name)) {
+          seen.add(name);
+          empData.push({
+            name,
+            id: acct.employer_id || '',
+            section14: acct.section14 ? (isHebrew ? 'כן' : 'Yes') : (isHebrew ? '—' : '—')
+          });
+        }
+      });
+
+      (employers || []).forEach(emp => {
+        const name = (typeof emp === 'object' ? emp.name : String(emp)).trim();
+        if (name && !seen.has(name)) {
+          seen.add(name);
+          empData.push({
+            name,
+            id: typeof emp === 'object' ? (emp.id || '') : '',
+            section14: '—'
+          });
+        }
+      });
+
+      if (empData.length === 0) { container.innerHTML = ''; return; }
+
+      const headers = isHebrew
+        ? ['שם מעסיק', 'מספר מעסיק', 'סעיף 14']
+        : ['Employer Name', 'Employer ID', 'Section 14'];
+
+      container.innerHTML = `
+        <div class="affiliated-table-panel fade-in">
+          <div class="affiliated-table-header">
+            <h3>${isHebrew ? 'פרטי מעסיקים' : 'Employer Information'}</h3>
+            <span class="record-count">${empData.length} ${isHebrew ? 'רשומות' : 'records'}</span>
+          </div>
+          <div class="affiliated-table-body">
+            <table class="affiliated-table">
+              <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+              <tbody>${empData.map(e => `<tr>
+                <td>${escapeHtml(e.name)}</td>
+                <td>${escapeHtml(e.id)}</td>
+                <td>${e.section14}</td>
+              </tr>`).join('')}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // STANDARD ASSESSMENT (non-pension / generic data)
+    // =========================================================================
+
+    function renderStandardAssessment(analysis) {
+      const riskScore = analysis.risk_score;
+      const riskLevel = riskScore < 30 ? 'low' : (riskScore < 60 ? 'medium' : 'high');
+      const riskColor = riskScore < 30 ? 'var(--success)' : (riskScore < 60 ? 'var(--warning)' : 'var(--danger)');
+      const riskLabel = riskScore < 30 ? 'Low Risk' : (riskScore < 60 ? 'Medium Risk' : 'High Risk');
+
+      const metrics = analysis.key_metrics || {};
+      const numericCols = metrics.numeric_columns || 0;
+      const categoricalCols = metrics.categorical_columns || 0;
+      const dataCompleteness = metrics.data_completeness || 100;
+
+      document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card risk-${riskLevel} fade-in">
+          <h5>Risk Assessment</h5>
+          <div class="value" style="color: ${riskColor}; font-size: 1.8rem;">${riskScore.toFixed(0)}</div>
+          <small style="color: var(--text-muted);">${riskLabel}</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>Data Classification</h5>
+          <div class="value" style="font-size: 1.4rem;">${capitalizeFirst(analysis.data_classification)}</div>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>Language Detected</h5>
+          <div class="value" style="font-size: 1.4rem;">${analysis.language_name}</div>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>AI Confidence</h5>
+          <div class="value">${(analysis.confidence * 100).toFixed(0)}%</div>
+          <small style="color: var(--text-muted);">Analysis accuracy</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>Records Analyzed</h5>
+          <div class="value">${metrics.total_records || 0}</div>
+          <small style="color: var(--text-muted);">${numericCols} numeric, ${categoricalCols} categorical fields</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>Data Quality</h5>
+          <div class="value" style="color: ${dataCompleteness > 90 ? 'var(--success)' : dataCompleteness > 70 ? 'var(--warning)' : 'var(--danger)'}">${dataCompleteness}%</div>
+          <small style="color: var(--text-muted);">Completeness</small>
+        </div>
+      `;
+
+      document.getElementById('riskGaugeValue').textContent = riskScore.toFixed(0);
+      document.getElementById('riskGaugeValue').style.color = riskColor;
+      document.getElementById('riskGaugeCircle').style.background = `conic-gradient(${riskColor} ${riskScore * 3.6}deg, #e2e8f0 0deg)`;
+      document.getElementById('riskIndicator').style.left = `${riskScore}%`;
+      document.getElementById('riskSummary').innerHTML = (analysis.summary || '').replace(/\n/g, '<br>');
+
+      renderInsights(analysis, metrics);
+    }
+
+    function renderInsights(analysis, metrics) {
+      const container = document.getElementById('insightsGrid');
+      let html = '';
+
+      const domainFactors = analysis.extracted_factors?.filter(f => f.category === 'domain') || [];
+      domainFactors.forEach(factor => {
+        if (typeof factor.value === 'object') {
+          html += `
+            <div class="insight-card fade-in">
+              <h5>${factor.name}</h5>
+              <div class="insight-detail">
+                ${Object.entries(factor.value).map(([key, val]) => `
+                  <div class="stat-detail">
+                    <span class="label">${capitalizeFirst(key.replace(/_/g, ' '))}</span>
+                    <span class="val">${val}</span>
+                  </div>
+                `).join('')}
+              </div>
+              <span class="insight-badge">Domain Analysis</span>
+            </div>
+          `;
+        }
+      });
+
+      html += `
+        <div class="insight-card fade-in">
+          <h5>Data Quality Assessment</h5>
+          <div class="insight-detail">
+            <div class="stat-detail">
+              <span class="label">Completeness</span>
+              <span class="val" style="color: ${metrics.data_completeness > 90 ? 'var(--success)' : metrics.data_completeness > 70 ? 'var(--warning)' : 'var(--danger)'}">${metrics.data_completeness || 100}%</span>
+            </div>
+            <div class="stat-detail">
+              <span class="label">Total Fields</span>
+              <span class="val">${metrics.total_columns || 0}</span>
+            </div>
+          </div>
+          <span class="insight-badge">Quality Score</span>
+        </div>
+      `;
+
+      container.innerHTML = html || '<p style="color: var(--text-muted);">No advanced insights available for this analysis.</p>';
+    }
+    
+    function renderCharts(chartConfigs) {
+      const container = document.getElementById('chartsGrid');
+      container.innerHTML = '';
+      
+      // Destroy existing charts
+      Object.values(charts).forEach(chart => chart.destroy());
+      charts = {};
+      
+      chartConfigs.forEach((config, index) => {
+        if (config.type === 'gauge') return; // Skip gauge, we have custom
+        
+        const chartId = `chart-${index}`;
+        const card = document.createElement('div');
+        card.className = 'chart-card fade-in';
+        card.innerHTML = `
+          <h5>${config.title}</h5>
+          <div class="chart-wrapper">
+            <canvas id="${chartId}"></canvas>
+          </div>
+        `;
+        container.appendChild(card);
+        
+        const ctx = document.getElementById(chartId).getContext('2d');
+        charts[chartId] = new Chart(ctx, {
+          type: config.type === 'doughnut' ? 'doughnut' : config.type,
+          data: {
+            labels: config.data.labels,
+            datasets: [{
+              data: config.data.values,
+              backgroundColor: config.options?.colors || [
+                '#1a237e', '#303f9f', '#3f51b5', '#7986cb', '#c5cae9', '#e8eaf6'
+              ],
+              borderWidth: 2,
+              borderColor: '#fff'
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'bottom' }
+            },
+            indexAxis: config.type === 'bar' && config.options?.horizontal ? 'y' : 'x'
+          }
+        });
+      });
+    }
+    
+    function getSectionIcon(title) {
+      const lower = title.toLowerCase();
+      if (lower.includes('summary') || lower.includes('תקציר')) return '';
+      if (lower.includes('metric') || lower.includes('מדדים')) return '';
+      if (lower.includes('factor') || lower.includes('גורמים')) return '';
+      if (lower.includes('pattern') || lower.includes('דפוסים')) return '';
+      if (lower.includes('anomal') || lower.includes('חריגות')) return '';
+      if (lower.includes('risk') || lower.includes('סיכון')) return '';
+      if (lower.includes('pension') || lower.includes('פנסיה')) return '';
+      if (lower.includes('insurance') || lower.includes('ביטוח')) return '';
+      if (lower.includes('severance') || lower.includes('פיצויים')) return '';
+      if (lower.includes('section 14') || lower.includes('סעיף 14')) return '';
+      if (lower.includes('contribution') || lower.includes('הפקדות')) return '';
+      if (lower.includes('account') || lower.includes('חשבון')) return '';
+      if (lower.includes('data') || lower.includes('נתונים')) return '';
+      return '';
+    }
+    
+    function capitalizeFirst(str) {
+      return str ? str.charAt(0).toUpperCase() + str.slice(1) : '';
+    }
+    
+    async function exportReport(format) {
+      if (!currentReport || !currentReport.id) {
+        alert('Generate a report first before exporting.');
+        return;
+      }
+
+      const normalized = String(format || '').toLowerCase();
+      const exportFormat = normalized === 'excel' ? 'excel' : 'pdf';
+      const token = localStorage.getItem('phins_token') || '';
+
+      try {
+        const response = await fetch(
+          `/api/reports/download-summary?report_id=${encodeURIComponent(currentReport.id)}&format=${encodeURIComponent(exportFormat)}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          }
+        );
+
+        if (!response.ok) {
+          let message = `Export failed (${response.status})`;
+          try {
+            const errorPayload = await response.json();
+            if (errorPayload?.error) {
+              message = errorPayload.error;
+            }
+          } catch (_ignore) {}
+          throw new Error(message);
+        }
+
+        const blob = await response.blob();
+        const contentDisposition = response.headers.get('Content-Disposition') || '';
+        const filenameMatch = contentDisposition.match(/filename="([^"]+)"/i);
+        const fallbackExt = exportFormat === 'pdf' ? 'pdf' : 'csv';
+        const fallbackName = `phins_report_summary.${fallbackExt}`;
+        const filename = filenameMatch ? filenameMatch[1] : fallbackName;
+
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+      } catch (error) {
+        console.error('Export error:', error);
+        alert(`Unable to export report: ${error.message}`);
+      }
+    }
+  </script>
+  <script src="/assessments-nav.js"></script>
+<script src="/ui-clarity.js"></script>
 </body>
 </html>

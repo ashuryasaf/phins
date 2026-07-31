@@ -337,7 +337,7 @@
             <nav class="phins-nav" id="mobile-nav">
                 <a href="/admin.html">Admin</a>
                 <a href="/underwriter-dashboard.html" class="active">🔍 Underwriting</a>
-                <a href="/unified-workbench.html">📋 Assessments</a>
+                <span data-assessments-nav data-assessments-role="admin"></span>
                 <a href="/claims-adjuster-dashboard.html">📋 Claims</a>
                 <a href="/billing.html">💳 Billing</a>
                 <a href="/savings-portfolio.html">📈 Investments</a>
@@ -1053,6 +1053,7 @@
         // Refresh every 30 seconds
         setInterval(loadApplications, 30000);
     </script>
-  <script src="/ui-clarity.js"></script>
+  <script src="/assessments-nav.js"></script>
+<script src="/ui-clarity.js"></script>
 </body>
 </html>

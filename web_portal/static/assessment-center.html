@@ -2,12 +2,1157 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="refresh" content="0; url=/unified-workbench.html#assessment" />
-  <title>Redirecting to Assessments…</title>
-  <script>location.replace('/unified-workbench.html#assessment');</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PHINS — Assessment Workbench</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f4f8; color: #1a237e; }
+
+    .phins-header { background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white; box-shadow: 0 2px 12px rgba(13,71,161,0.3); position: sticky; top: 0; z-index: 100; }
+    .phins-header-inner { max-width: 1400px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; flex-wrap: wrap; gap: 0.5rem; }
+    .phins-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: white; }
+    .phins-logo-icon { width: 40px; height: 40px; background: rgba(255,255,255,0.2); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; }
+    .phins-logo-text { font-size: 1.5rem; font-weight: 700; letter-spacing: 1px; }
+    .phins-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .phins-nav a { color: rgba(255,255,255,0.85); text-decoration: none; padding: 6px 14px; border-radius: 8px; font-size: 0.9rem; transition: background 0.2s; }
+    .phins-nav a:hover, .phins-nav a.active { background: rgba(255,255,255,0.2); color: white; }
+    .btn-logout { background: linear-gradient(135deg, #ef5350 0%, #e53935 100%) !important; color: white !important; font-weight: 600 !important; }
+
+    .page-container { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
+    .page-title { font-size: 1.85rem; font-weight: 700; color: #1a237e; margin-bottom: 0.25rem; }
+    .page-subtitle { color: #546e7a; margin-bottom: 1.5rem; font-size: 0.95rem; }
+
+    .card { background: white; border-radius: 16px; box-shadow: 0 2px 16px rgba(0,0,0,0.08); padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; }
+    .card-title { font-size: 1.05rem; font-weight: 600; color: #1a237e; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .card-title .meta { font-size: 0.78rem; color: #78909c; font-weight: 400; margin-left: auto; }
+
+    .layout { display: grid; grid-template-columns: 1fr 2fr; gap: 1.25rem; align-items: start; }
+    @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.25rem; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+    @media (max-width: 900px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+
+    .stat-tile { background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; padding: 1rem; border-radius: 12px; box-shadow: 0 2px 12px rgba(21,101,192,0.25); }
+    .stat-tile.warn  { background: linear-gradient(135deg, #f57c00 0%, #fb8c00 100%); }
+    .stat-tile.bad   { background: linear-gradient(135deg, #c62828 0%, #d32f2f 100%); }
+    .stat-tile.good  { background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); }
+    .stat-tile.muted { background: linear-gradient(135deg, #455a64 0%, #546e7a 100%); }
+    .stat-tile .label { font-size: 0.78rem; opacity: 0.85; text-transform: uppercase; letter-spacing: 1px; }
+    .stat-tile .value { font-size: 1.85rem; font-weight: 700; margin-top: 4px; }
+    .stat-tile .sub   { font-size: 0.78rem; opacity: 0.85; margin-top: 4px; }
+
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 0.72rem; font-weight: 600; background: #eceff1; color: #455a64; }
+    .badge.high     { background: #ffcdd2; color: #b71c1c; }
+    .badge.veryhigh { background: #b71c1c; color: white; }
+    .badge.medium   { background: #fff3e0; color: #ef6c00; }
+    .badge.low      { background: #e8f5e9; color: #2e7d32; }
+    .badge.minimal  { background: #e3f2fd; color: #1565c0; }
+
+    .chip { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 0.78rem; background: #e3f2fd; color: #1565c0; margin: 2px; font-weight: 500; }
+    .chip-red { background: #ffebee; color: #b71c1c; }
+    .chip-green { background: #e8f5e9; color: #2e7d32; }
+    .chip-amber { background: #fff3e0; color: #ef6c00; }
+    .chip-purple { background: #f3e5f5; color: #6a1b9a; }
+
+    .source-pill { display: inline-block; padding: 2px 8px; background: #f3e5f5; color: #6a1b9a; border-radius: 6px; font-size: 0.72rem; font-weight: 600; margin-right: 4px; }
+    .src-mislaka { background: #e8eaf6; color: #283593; }
+    .src-document { background: #e3f2fd; color: #1565c0; }
+    .src-image { background: #fff3e0; color: #e65100; }
+
+    table.list { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    table.list th, table.list td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #eceff1; vertical-align: top; }
+    table.list th { color: #546e7a; font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; }
+    table.list tr:hover td { background: #f8fbff; }
+
+    .bar-row { display: flex; align-items: center; gap: 10px; font-size: 0.82rem; margin: 4px 0; }
+    .bar-row .label { flex: 0 0 200px; color: #455a64; word-break: break-word; }
+    .bar-row .bar { flex: 1; height: 14px; background: #eceff1; border-radius: 7px; overflow: hidden; }
+    .bar-row .bar > span { display: block; height: 100%; background: linear-gradient(90deg, #1565c0, #42a5f5); }
+    .bar-row .value { flex: 0 0 80px; text-align: right; font-weight: 600; color: #1a237e; }
+
+    select, input[type="text"], input[type="number"] { padding: 9px 11px; border: 1px solid #cfd8dc; border-radius: 8px; font-size: 0.9rem; background: white; }
+    button { cursor: pointer; padding: 8px 14px; border-radius: 8px; border: none; background: #1565c0; color: white; font-weight: 600; font-size: 0.85rem; }
+    button.ghost { background: white; color: #1565c0; border: 1px solid #1565c0; }
+    button.warn  { background: #f57c00; }
+    button.green { background: #2e7d32; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .empty { padding: 1.5rem; text-align: center; color: #78909c; border: 2px dashed #cfd8dc; border-radius: 12px; background: #fafbfc; font-size: 0.88rem; }
+
+    .drop-zone { border: 2px dashed #90caf9; border-radius: 12px; padding: 24px; text-align: center; background: #f8fbff; cursor: pointer; transition: all 0.2s; margin-bottom: 12px; }
+    .drop-zone:hover, .drop-zone.dragover { border-color: #1565c0; background: #e3f2fd; }
+    .drop-zone-icon { font-size: 2rem; margin-bottom: 6px; }
+    .drop-zone-text { font-weight: 600; color: #1a237e; font-size: 0.92rem; }
+    .drop-zone-hint { color: #78909c; font-size: 0.78rem; margin-top: 4px; }
+    #file-input, #file-input-quick { display: none; }
+
+    .doc-list { max-height: 320px; overflow-y: auto; border: 1px solid #eceff1; border-radius: 10px; }
+    .doc-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #f5f7fa; font-size: 0.85rem; cursor: pointer; }
+    .doc-item:last-child { border-bottom: none; }
+    .doc-item:hover { background: #f8fbff; }
+    .doc-item.selected { background: #e3f2fd; }
+    .doc-item input[type="checkbox"] { margin: 0 4px 0 0; }
+    .doc-item .doc-name { flex: 1; color: #1a237e; font-weight: 500; word-break: break-all; }
+    .doc-item .doc-facts { font-size: 0.72rem; color: #2e7d32; font-weight: 600; white-space: nowrap; }
+
+    .section-block { border: 1px solid #eceff1; border-radius: 12px; padding: 14px 18px; margin-bottom: 14px; background: #fafbfc; }
+    .section-block-title { font-size: 1rem; font-weight: 700; color: #1a237e; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .section-block-title .badge { font-size: 0.7rem; }
+    .section-block .label-group { padding: 6px 0; border-top: 1px dashed #eceff1; }
+    .section-block .label-group:first-of-type { border-top: none; padding-top: 0; }
+    .section-block .label-name { font-weight: 600; color: #455a64; font-size: 0.83rem; margin-bottom: 4px; }
+    .section-block .entry { display: flex; gap: 8px; font-size: 0.83rem; padding: 2px 0; align-items: center; flex-wrap: wrap; }
+    .section-block .entry .value { color: #1a237e; font-weight: 600; }
+    .section-block .entry .meta { color: #90a4ae; font-size: 0.72rem; }
+  </style>
+  <link rel="stylesheet" href="/phins-theme.css">
 </head>
 <body>
-  <p>This page has been unified into the Assessments workbench.
-  <a href="/unified-workbench.html#assessment">Continue →</a></p>
+
+<header class="phins-header">
+  <div class="phins-header-inner">
+    <a href="/dashboard.html" class="phins-logo">
+      <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
+      <span class="phins-logo-text">PHINS</span>
+    </a>
+    <nav class="phins-nav">
+      <a href="/dashboard.html">Dashboard</a>
+      <a href="/unified-workbench.html">Unified Workbench</a>
+      <span data-assessments-nav data-assessments-role="admin"></span>
+      <a href="#" class="btn-logout" onclick="logout()">Logout</a>
+    </nav>
+  </div>
+</header>
+
+<div class="page-container">
+  <div class="page-title">Assessment Workbench</div>
+  <div class="page-subtitle">
+    One place to upload any document, run any analysis, and download the
+    result. Drop an ID, a medical report and a financial statement, then
+    click <strong>Describe data</strong> to see every fact sorted by category
+    with full provenance back to the source SHA-256.
+  </div>
+
+  <!-- Backfill banner (admin only) -->
+  <div class="card" id="backfill-card" style="display:none; border-left: 5px solid #f57c00;">
+    <div class="card-title">Backfill previously uploaded documents
+      <span class="meta" id="backfill-meta">checking…</span>
+    </div>
+    <p style="font-size: 0.85rem; color: #455a64; margin: 0 0 10px;">
+      Documents uploaded before the Assessment Workbench was wired do not yet
+      have facts in the unified store. Run a backfill to scan every
+      pre-existing document and rebuild Customer 360.
+    </p>
+    <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+      <input type="text" id="backfill-customer" placeholder="Optional customer_id filter" style="width:240px;">
+      <input type="number" id="backfill-limit" placeholder="Limit (optional)" min="1" style="width:140px;">
+      <label style="font-size:0.85rem; display:flex; align-items:center; gap:6px;">
+        <input type="checkbox" id="backfill-force"> force re-extract
+      </label>
+      <button class="warn" id="backfill-run-btn" onclick="runBackfill()">Run backfill</button>
+      <button class="ghost" onclick="loadBackfillStatus()">↻ Refresh status</button>
+      <span id="backfill-status" style="font-size:0.85rem;"></span>
+    </div>
+    <div id="backfill-result" style="display:none; margin-top:12px;"></div>
+  </div>
+
+  <!-- Workbench layout -->
+  <div class="layout">
+
+    <!-- ── LEFT: customer + upload + document picker ─────────────────── -->
+    <div>
+      <div class="card">
+        <div class="card-title">Customer
+          <span class="meta" id="picker-meta"></span>
+        </div>
+        <select id="customer-select" style="width: 100%;">
+          <option value="">— loading customers —</option>
+        </select>
+        <div id="picker-empty" class="empty" style="display:none; margin-top: 10px;">
+          No customers with facts yet. Upload below to seed the first profile.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Upload &amp; assess</div>
+        <div id="upload-context" style="font-size: 0.85rem; color: #455a64; background: #e3f2fd; border-left: 4px solid #1565c0; padding: 8px 10px; border-radius: 6px; margin-bottom: 10px;">Loading session…</div>
+        <div class="drop-zone" id="drop-zone"
+             onclick="document.getElementById('file-input').click()"
+             ondragover="onDragOver(event)"
+             ondragleave="onDragLeave(event)"
+             ondrop="onDrop(event)">
+<div class="drop-zone-text">Drop files or click to browse</div>
+          <div class="drop-zone-hint">PDF, DOC, DOCX, XLS, XLSX, CSV, PNG, JPG, TXT…</div>
+        </div>
+        <input type="file" id="file-input" multiple
+               accept=".pdf,.doc,.docx,.xls,.xlsx,.xsd,.csv,.txt,.json,.xml,.png,.jpg,.jpeg,.tiff,.bmp,.gif"
+               onchange="onFileSelect(event)">
+        <!-- Admin-only override; hidden for customers so the only accepted
+             customer_id is the one bound to their session. -->
+        <div id="upload-target" style="margin-bottom: 10px; display: none;">
+          <label style="font-size: 0.82rem; color: #546e7a;">Override customer_id (admin only)</label>
+          <input type="text" id="upload-customer-id" placeholder="leave empty to use the selected customer" style="width: 100%; margin-top: 4px;">
+        </div>
+        <div style="display:flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+          <select id="upload-doctype" style="flex: 1; min-width: 150px;">
+            <option value="general">General</option>
+            <option value="id">Identity</option>
+            <option value="medical">Medical</option>
+            <option value="financial">Financial</option>
+            <option value="receipt">Receipt</option>
+            <option value="authority">Authority</option>
+          </select>
+          <button id="upload-btn" onclick="uploadFiles()" disabled>Upload &amp; assess</button>
+        </div>
+        <div id="upload-status" style="margin-top: 8px; font-size: 0.85rem;"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Documents on file
+          <button class="ghost" style="margin-left:auto; padding:4px 10px; font-size:0.75rem;" onclick="loadDocuments()">↻</button>
+        </div>
+        <div style="font-size: 0.78rem; color: #546e7a; margin-bottom: 6px;">
+          Select one or more documents to scope the analysis. Empty selection = all customer data.
+        </div>
+        <div id="doc-list" class="doc-list">
+          <div class="empty">No documents yet for this customer.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── RIGHT: analysis + results ─────────────────────────────────── -->
+    <div>
+      <div class="grid-4" id="tiles">
+        <div class="stat-tile"><div class="label">Facts</div><div class="value" id="tile-facts-value">—</div><div class="sub" id="tile-facts-sub">across uploads + clearinghouses</div></div>
+        <div class="stat-tile good" id="tile-risk"><div class="label">Risk score</div><div class="value" id="tile-risk-value">—</div><div class="sub" id="tile-risk-sub">level</div></div>
+        <div class="stat-tile muted"><div class="label">Documents</div><div class="value" id="tile-docs-value">—</div><div class="sub" id="tile-docs-sub">SHA-256 verified</div></div>
+        <div class="stat-tile"><div class="label">External rows</div><div class="value" id="tile-external-value">—</div><div class="sub" id="tile-external-sub">Mislaka + connected</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Analysis
+          <span class="meta" id="analysis-meta"></span>
+        </div>
+        <div style="display:flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px;">
+          <select id="analysis-type" style="min-width: 280px;">
+            <option value="describe_data">Describe data with data (sorted by category)</option>
+            <option value="customer_360">Customer 360 profile</option>
+            <option value="risk_assessment">Risk assessment</option>
+            <option value="bi_summary">BI summary (AI charts + risk)</option>
+            <option value="cross_document">Cross-document review (selected docs)</option>
+          </select>
+          <button class="green" onclick="runAnalysis()">▶ Run analysis</button>
+          <span style="margin-left: auto; font-size: 0.85rem; color: #546e7a;">Download:</span>
+          <button class="ghost" onclick="downloadReport('csv')">⬇ CSV</button>
+          <button class="ghost" onclick="downloadReport('xlsx')">⬇ XLSX</button>
+          <button class="ghost" onclick="downloadReport('pdf')">⬇ PDF</button>
+        </div>
+        <div id="analysis-status" style="font-size: 0.85rem; color: #546e7a;"></div>
+      </div>
+
+      <!-- Result panel (always visible once analysis ran) -->
+      <div id="result-panel" style="display: none;">
+        <div class="card">
+          <div class="card-title" id="result-title">Result</div>
+          <div id="result-body"></div>
+        </div>
+      </div>
+
+      <!-- Mislaka quick action -->
+      <div class="card">
+        <div class="card-title">🇮🇱 Pull Mislaka facts</div>
+        <p style="font-size: 0.85rem; color: #546e7a; margin: 0 0 10px;">
+          The Mislaka clearinghouse already returns authoritative policy rows.
+          Each row is stored as a fact - the workbench is the only place that
+          performs statistical review.
+        </p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+          <input type="text" id="mislaka-id" placeholder="Israeli ID (9 digits)" maxlength="9" style="width:200px;">
+          <select id="mislaka-product">
+            <option value="all">All products</option>
+            <option value="pension">Pension</option>
+            <option value="provident">Provident fund</option>
+            <option value="life_insurance">Life insurance</option>
+            <option value="health_insurance">Health insurance</option>
+          </select>
+          <button onclick="linkMislaka()">Link to Customer 360</button>
+          <span id="mislaka-status" style="font-size:0.85rem;"></span>
+        </div>
+      </div>
+
+      <!-- Assessment Center API registry (admin only) -->
+      <div class="card" id="registry-card" style="display:none;">
+        <div class="card-title">Assessment Center API endpoints
+          <span class="meta">Live - <code>/api/assessment-center/upload-endpoints</code></span>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="list" id="registry-table">
+            <thead><tr><th>Method</th><th>Path</th><th>Module</th><th>Purpose</th><th>Pipeline</th></tr></thead>
+            <tbody id="registry-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const TOKEN = localStorage.getItem('phins_token') || '';
+  const SESSION = (() => { try { return JSON.parse(localStorage.getItem('phins_session') || '{}'); } catch { return {}; } })();
+  const ROLE = String(SESSION.role || '').toLowerCase();
+  const ADMIN_ROLES = new Set(['admin', 'underwriter', 'actuary', 'analyst', 'claims', 'claims_agent', 'claims_manager', 'underwriting_admin']);
+  const IS_ADMIN = ADMIN_ROLES.has(ROLE);
+
+  function logout() {
+    localStorage.removeItem('phins_token');
+    localStorage.removeItem('phins_session');
+    window.location.href = '/login.html';
+  }
+  if (!TOKEN) { window.location.href = '/login.html'; }
+
+  function api(path, opts) {
+    return fetch(path, {
+      headers: {
+        'Authorization': 'Bearer ' + TOKEN,
+        'Content-Type': 'application/json',
+        ...((opts||{}).headers || {})
+      },
+      ...opts
+    });
+  }
+  function apiBlob(path, opts) {
+    return fetch(path, {
+      headers: {
+        'Authorization': 'Bearer ' + TOKEN,
+        'Content-Type': 'application/json',
+        ...((opts||{}).headers || {})
+      },
+      ...opts
+    });
+  }
+  function escHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+  function show(id, on) { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; }
+  function setStatus(id, msg, kind) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = msg || '';
+    el.style.color = kind === 'error' ? '#c62828' : (kind === 'ok' ? '#2e7d32' : '#546e7a');
+  }
+  function urlCustomer() {
+    return new URL(window.location.href).searchParams.get('customer_id') || '';
+  }
+  function setUrlCustomer(cid) {
+    const url = new URL(window.location.href);
+    if (cid) url.searchParams.set('customer_id', cid); else url.searchParams.delete('customer_id');
+    window.history.replaceState({}, '', url);
+  }
+
+  let CURRENT_CUSTOMER = '';
+  let CURRENT_DOCUMENTS = [];      // list from /documents endpoint
+  let SELECTED_DOC_IDS = new Set();
+  let LAST_ANALYSIS = null;
+  // Server-validated session info. Populated by ensureServerSession()
+  // before any UI work happens so we never trust localStorage / URL
+  // params for a customer's own ID. For admins we still allow URL
+  // ?customer_id= so they can deep-link into a specific customer.
+  let SERVER_SESSION = null;
+  let SESSION_CUSTOMER_ID = '';
+  let SESSION_USERNAME = '';
+  let SESSION_ROLE = '';
+  let SESSION_IS_SYNTHETIC = false;
+  let SESSION_DISPLAY_LABEL = '';
+
+  async function _authFetch(path) {
+    return fetch(path, { headers: { 'Authorization': 'Bearer ' + TOKEN } });
+  }
+
+  async function ensureServerSession() {
+    // Source of truth for "who am I and what customer can I access".
+    // Preference order:
+    //   1. /api/assessment-center/me  (always returns the canonical
+    //      customer_id, with the backend recovery chain applied for
+    //      tokens that lost the claim).
+    //   2. /api/session/validate     (legacy fallback if the new
+    //      endpoint isn't deployed yet).
+    //   3. /api/customer/summary     (returns the caller's customer
+    //      record; used to recover customer_id when both above paths
+    //      came back empty).
+    //   4. localStorage              (last-ditch; shouldn't happen on
+    //      a healthy session).
+    try {
+      const meRes = await _authFetch('/api/assessment-center/me');
+      if (meRes.status === 401) {
+        localStorage.removeItem('phins_token');
+        localStorage.removeItem('phins_session');
+        window.location.href = '/login.html';
+        return null;
+      }
+      if (meRes.ok) {
+        const body = await meRes.json();
+        SERVER_SESSION = body;
+        SESSION_CUSTOMER_ID = String(body.customer_id || '').trim();
+        SESSION_USERNAME = String(body.username || '').trim();
+        SESSION_ROLE = String(body.role || '').toLowerCase();
+        SESSION_IS_SYNTHETIC = !!body.customer_id_is_synthetic;
+        SESSION_DISPLAY_LABEL = String(body.display_label || body.username || '').trim();
+        // /me always returns a usable id for an authenticated user
+        // (real, recovered, or synthesised), so we can return early.
+        if (SESSION_CUSTOMER_ID || body.is_admin) return body;
+      }
+    } catch (_) { /* fall through */ }
+
+    try {
+      const validateRes = await _authFetch('/api/session/validate');
+      if (validateRes.status === 401) {
+        localStorage.removeItem('phins_token');
+        localStorage.removeItem('phins_session');
+        window.location.href = '/login.html';
+        return null;
+      }
+      if (validateRes.ok) {
+        const body = await validateRes.json();
+        SESSION_USERNAME = SESSION_USERNAME || String(body.username || '').trim();
+        SESSION_ROLE = SESSION_ROLE || String(body.role || '').toLowerCase();
+        if (!SESSION_CUSTOMER_ID && body.customer_id) {
+          SESSION_CUSTOMER_ID = String(body.customer_id).trim();
+        }
+        if (SESSION_CUSTOMER_ID) return body;
+      }
+    } catch (_) { /* fall through */ }
+
+    try {
+      const summaryRes = await _authFetch('/api/customer/summary');
+      if (summaryRes.ok) {
+        const body = await summaryRes.json();
+        const candidate = String((body && (body.customer_id || (body.customer || {}).id)) || '').trim();
+        if (candidate && !SESSION_CUSTOMER_ID) {
+          SESSION_CUSTOMER_ID = candidate;
+        }
+      }
+    } catch (_) { /* fall through */ }
+
+    if (!SESSION_CUSTOMER_ID) {
+      SESSION_CUSTOMER_ID = String(SESSION.customer_id || '').trim();
+    }
+    if (!SESSION_USERNAME) {
+      SESSION_USERNAME = String(SESSION.username || '').trim();
+    }
+    if (!SESSION_ROLE) {
+      SESSION_ROLE = ROLE;
+    }
+    return SERVER_SESSION;
+  }
+
+  function actingAsAdmin() {
+    return new Set(['admin', 'underwriter', 'actuary', 'analyst', 'claims',
+                    'claims_agent', 'claims_manager', 'underwriting_admin'])
+      .has(SESSION_ROLE || ROLE);
+  }
+
+  // ── Customer picker ─────────────────────────────────────────────────────
+  async function loadCustomers() {
+    const sel = document.getElementById('customer-select');
+    const ctxLabel = document.getElementById('upload-context');
+    if (actingAsAdmin()) {
+      try {
+        const res = await api('/api/assessment-center/customers');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const json = await res.json();
+        const items = json.items || [];
+        if (items.length === 0) {
+          sel.innerHTML = '<option value="">— no customers with facts yet —</option>';
+          show('picker-empty', true);
+        } else {
+          sel.innerHTML = items.map(it => {
+            const lvl = it.risk_level || 'minimal';
+            const score = ((it.risk_score || 0) * 100).toFixed(0);
+            return `<option value="${escHtml(it.customer_id)}">${escHtml(it.customer_id)} · ${it.fact_count} facts · risk ${score}% (${escHtml(lvl)})</option>`;
+          }).join('');
+          show('picker-empty', false);
+          document.getElementById('picker-meta').textContent =
+            `${items.length} customer(s) with facts on file · acting as ${escHtml(SESSION_USERNAME || 'admin')}`;
+        }
+        sel.disabled = false;
+      } catch (e) {
+        sel.innerHTML = '<option value="">— failed to load —</option>';
+      }
+      if (ctxLabel) {
+        ctxLabel.innerHTML = `Acting as <strong>${escHtml(SESSION_USERNAME)}</strong> (${escHtml(SESSION_ROLE)}). Pick a customer below; uploads attach to whoever you select.`;
+      }
+    } else {
+      // Non-admin: the server-validated /me endpoint always gives us
+      // a usable customer_id (real, recovered, or synthesised
+      // USER:<email>), so the dropdown is never empty and the
+      // workbench is never deadlocked on missing customer records.
+      const cid = SESSION_CUSTOMER_ID;
+      const friendlyLabel = SESSION_IS_SYNTHETIC
+        ? `${SESSION_USERNAME || 'me'} (no formal customer record - using your account)`
+        : (cid
+            ? `${cid}${SESSION_USERNAME ? ' · ' + SESSION_USERNAME : ''}`
+            : (SESSION_USERNAME || 'me'));
+      sel.innerHTML = `<option value="${escHtml(cid)}">${escHtml(friendlyLabel)}</option>`;
+      sel.disabled = true;
+      const meta = document.getElementById('picker-meta');
+      if (meta) {
+        meta.textContent = cid
+          ? (SESSION_IS_SYNTHETIC
+              ? `Signed in as ${SESSION_USERNAME} (uploads attach to your account)`
+              : `Signed in as ${SESSION_USERNAME} → ${cid}`)
+          : `Signed in as ${SESSION_USERNAME}`;
+      }
+      if (ctxLabel) {
+        if (SESSION_IS_SYNTHETIC) {
+          ctxLabel.innerHTML =
+            `You are signed in as <strong>${escHtml(SESSION_USERNAME)}</strong>. ` +
+            `Your account is not yet linked to a formal customer record, so all your uploads ` +
+            `and analysis are stored under your username and will be migrated automatically once ` +
+            `the linkage is set up.`;
+        } else if (cid) {
+          ctxLabel.innerHTML =
+            `You are signed in as <strong>${escHtml(SESSION_USERNAME)}</strong>. ` +
+            `All uploads attach to your account: <strong>${escHtml(cid)}</strong>.`;
+        } else {
+          ctxLabel.innerHTML =
+            `You are signed in as <strong>${escHtml(SESSION_USERNAME)}</strong>. ` +
+            `<a href="#" onclick="ensureServerSession().then(loadCustomers).then(()=>onCustomerChange()); return false;" ` +
+            `style="color:#1565c0;font-weight:600;">Try again</a> if the workbench seems stuck.`;
+        }
+      }
+    }
+  }
+
+  // ── Upload ──────────────────────────────────────────────────────────────
+  let SELECTED_FILES = [];
+  function onDragOver(e) { e.preventDefault(); document.getElementById('drop-zone').classList.add('dragover'); }
+  function onDragLeave() { document.getElementById('drop-zone').classList.remove('dragover'); }
+  function onDrop(e) {
+    e.preventDefault();
+    document.getElementById('drop-zone').classList.remove('dragover');
+    addFiles(Array.from(e.dataTransfer.files));
+  }
+  function onFileSelect(e) { addFiles(Array.from(e.target.files)); }
+  function addFiles(files) {
+    files.forEach(f => {
+      if (SELECTED_FILES.length >= 20) return;
+      if (SELECTED_FILES.find(x => x.name === f.name && x.size === f.size)) return;
+      SELECTED_FILES.push(f);
+    });
+    document.getElementById('upload-btn').disabled = SELECTED_FILES.length === 0;
+    setStatus('upload-status', `${SELECTED_FILES.length} file(s) ready`, 'ok');
+  }
+  async function readFileAsBase64(file) {
+    return new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result.split(',')[1]);
+      r.onerror = rej;
+      r.readAsDataURL(file);
+    });
+  }
+  async function uploadFiles() {
+    const btn = document.getElementById('upload-btn');
+    btn.disabled = true;
+    btn.textContent = 'Uploading…';
+    const docType = document.getElementById('upload-doctype').value;
+
+    // Resolve the target customer:
+    //   - non-admin: locked to the server-validated session_customer_id.
+    //                Anything in the optional override input is ignored,
+    //                so a stale URL or pasted ID can never produce
+    //                "Access denied" on the customer's own files.
+    //   - admin:     prefer the picker selection, then the optional
+    //                override field, then the session.
+    let customerId = '';
+    if (actingAsAdmin()) {
+      const override = (document.getElementById('upload-customer-id').value || '').trim();
+      customerId = override || CURRENT_CUSTOMER || SESSION_CUSTOMER_ID;
+    } else {
+      customerId = SESSION_CUSTOMER_ID;
+      // Empty client-side customer_id is fine: the server will try to
+      // recover it from the bearer token's username (mirrors the
+      // recovery chain used by /api/session/validate). If even the
+      // server can't resolve a customer record we surface the
+      // friendlier message returned by the API.
+    }
+
+    let totalFacts = 0;
+    let totalDocs = 0;
+    const errors = [];
+    for (const f of SELECTED_FILES) {
+      try {
+        const b64 = await readFileAsBase64(f);
+        const payload = {
+          file_name: f.name,
+          file_data_b64: b64,
+          mime_type: f.type || 'application/octet-stream',
+          category: docType,
+        };
+        // Only attach customer_id for admins. For non-admins the server
+        // already knows the customer from the session token, and sending
+        // anything else would risk the rejected case.
+        if (actingAsAdmin() && customerId) {
+          payload.customer_id = customerId;
+        }
+        const res = await api('/api/assessment-center/upload', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          // Surface a friendlier message for the common rejection paths.
+          const raw = json.error || ('HTTP ' + res.status);
+          throw new Error(friendlyUploadError(raw, f, customerId));
+        }
+        totalFacts += (json.summary && json.summary.facts_extracted) || 0;
+        totalDocs += 1;
+      } catch (e) {
+        errors.push(`${f.name}: ${e.message}`);
+      }
+    }
+    SELECTED_FILES = [];
+    document.getElementById('file-input').value = '';
+    btn.textContent = 'Upload & assess';
+    btn.disabled = true;
+    const intel = totalDocs > 0
+      ? `Uploaded ${totalDocs} file(s) for <strong>${escHtml(customerId)}</strong>. Extracted ${totalFacts} fact(s) → Customer 360 updated.`
+      : `No files uploaded for <strong>${escHtml(customerId)}</strong>.`;
+    const errBlock = errors.length
+      ? `<div style="margin-top:6px;color:#c62828;">${errors.map(e => `• ${escHtml(e)}`).join('<br>')}</div>`
+      : '';
+    document.getElementById('upload-status').innerHTML = intel + errBlock;
+    document.getElementById('upload-status').style.color = errors.length ? '#c62828' : '#2e7d32';
+
+    // Refresh selectors and analysis on the new customer context.
+    await loadCustomers();
+    if (customerId) {
+      const sel = document.getElementById('customer-select');
+      if ([...sel.options].some(o => o.value === customerId)) {
+        sel.value = customerId;
+      }
+      await onCustomerChange();
+    }
+  }
+
+  function friendlyUploadError(rawMessage, file, customerId) {
+    const msg = String(rawMessage || '').trim();
+    if (/access denied|cross-tenant|customer session invalid/i.test(msg)) {
+      const target = customerId || SESSION_CUSTOMER_ID || 'your account';
+      return `You can only upload to your own account (${target}). Refresh the page if you switched accounts.`;
+    }
+    if (/file type .* not allowed|extension/i.test(msg)) {
+      return `${msg} (rename the file or convert it to PDF/DOCX/CSV/PNG/JPG before re-uploading).`;
+    }
+    if (/exceeds maximum allowed size/i.test(msg)) {
+      return `File too large for one upload. Split it into chunks under 50 MB.`;
+    }
+    if (/invalid base64/i.test(msg)) {
+      return `Browser could not encode "${file.name}". Try a different copy of the file.`;
+    }
+    return msg;
+  }
+
+  // ── Documents picker ────────────────────────────────────────────────────
+  async function loadDocuments() {
+    const cid = _resolveCurrentCustomer();
+    const list = document.getElementById('doc-list');
+    if (!cid) {
+      list.innerHTML = '<div class="empty">'
+        + (actingAsAdmin() ? 'Pick a customer first.' : 'Sign in again - your session has no customer link.')
+        + '</div>';
+      CURRENT_DOCUMENTS = [];
+      return;
+    }
+    CURRENT_CUSTOMER = cid;
+    list.innerHTML = '<div class="empty">Loading…</div>';
+    try {
+      const res = await api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/documents`);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      CURRENT_DOCUMENTS = json.items || [];
+      if (CURRENT_DOCUMENTS.length === 0) {
+        list.innerHTML = '<div class="empty">No documents yet. Upload above.</div>';
+        return;
+      }
+      list.innerHTML = CURRENT_DOCUMENTS.map(d => {
+        const tagsBadge = (d.facts_extracted || 0) > 0
+          ? `<span class="doc-facts">${d.facts_extracted} facts</span>`
+          : `<span class="doc-facts" style="color:#90a4ae;">no facts</span>`;
+        const checked = SELECTED_DOC_IDS.has(d.id) ? 'checked' : '';
+        return `<label class="doc-item${SELECTED_DOC_IDS.has(d.id) ? ' selected' : ''}" data-doc-id="${escHtml(d.id)}">
+          <input type="checkbox" ${checked} onchange="toggleDoc('${escHtml(d.id)}', this.checked)">
+          <span class="doc-name" title="${escHtml(d.sha256 || '')}">${escHtml(d.name || d.id)}</span>
+          <span class="badge">${escHtml(d.document_type || d.category || 'general')}</span>
+          ${tagsBadge}
+          <button class="ghost" style="margin-left:6px; padding:2px 8px; font-size:0.72rem;"
+                  onclick="event.preventDefault(); rescanDocument('${escHtml(d.id)}'); return false;"
+                  title="Re-run extraction on this document">Re-run</button>
+        </label>`;
+      }).join('');
+    } catch (e) {
+      list.innerHTML = `<div class="empty">Failed to load documents: ${escHtml(e.message)}</div>`;
+    }
+  }
+  function toggleDoc(docId, on) {
+    if (on) SELECTED_DOC_IDS.add(docId); else SELECTED_DOC_IDS.delete(docId);
+  }
+
+  async function rescanDocument(docId) {
+    const cid = _resolveCurrentCustomer();
+    if (!cid) { setStatus('analysis-status', 'No active customer.', 'error'); return; }
+    setStatus('analysis-status', `Re-scanning ${docId}…`);
+    try {
+      const body = { document_id: docId };
+      // Only attach customer_id for admins; non-admins always use session.
+      if (actingAsAdmin()) body.customer_id = cid;
+      const res = await api('/api/assessment-center/scan', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+      const got = (json.summary && json.summary.facts_extracted) || 0;
+      setStatus('analysis-status',
+        got > 0 ? `Re-scan complete: ${got} fact(s) extracted from ${docId}.`
+                : `ℹ️ Re-scan finished but no new text was extracted from ${docId}. Try re-uploading a typed/searchable copy.`,
+        got > 0 ? 'ok' : 'error');
+      await loadDocuments();
+      await onCustomerChange();
+    } catch (e) {
+      setStatus('analysis-status', `Re-scan failed: ${e.message}`, 'error');
+    }
+  }
+
+  function _resolveCurrentCustomer() {
+    // Single helper used by every analysis / download / load path.
+    // Order: explicit picker selection > session-resolved id > username
+    // synthetic. Non-admin users always end up with a usable id so the
+    // workbench is never blocked on "Pick a customer first".
+    if (CURRENT_CUSTOMER) return CURRENT_CUSTOMER;
+    if (SESSION_CUSTOMER_ID) return SESSION_CUSTOMER_ID;
+    if (!actingAsAdmin() && SESSION_USERNAME) {
+      return 'USER:' + SESSION_USERNAME.toLowerCase();
+    }
+    return '';
+  }
+
+  // ── Run analysis ────────────────────────────────────────────────────────
+  async function runAnalysis() {
+    const cid = _resolveCurrentCustomer();
+    if (!cid) {
+      setStatus('analysis-status',
+        actingAsAdmin() ? 'Pick a customer from the dropdown above.' : 'Sign in again - your session has no customer link.',
+        'error');
+      return;
+    }
+    CURRENT_CUSTOMER = cid;
+    const type = document.getElementById('analysis-type').value;
+    const docIds = SELECTED_DOC_IDS.size > 0 ? Array.from(SELECTED_DOC_IDS) : null;
+    setStatus('analysis-status', 'Running analysis…');
+    try {
+      const res = await api('/api/assessment-center/analysis', {
+        method: 'POST',
+        body: JSON.stringify({
+          customer_id: CURRENT_CUSTOMER,
+          analysis_type: type,
+          document_ids: docIds,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+      LAST_ANALYSIS = json;
+      renderResult(json);
+      setStatus('analysis-status', 'Done.', 'ok');
+    } catch (e) {
+      setStatus('analysis-status', '' + e.message, 'error');
+    }
+  }
+
+  function renderResult(result) {
+    show('result-panel', true);
+    document.getElementById('result-title').textContent =
+      `${result.title || result.analysis_type || 'Result'} ${SELECTED_DOC_IDS.size ? `· scoped to ${SELECTED_DOC_IDS.size} doc(s)` : ''}`;
+    const body = document.getElementById('result-body');
+    const t = (result.analysis_type || '').toLowerCase();
+    if (t === 'describe_data' || t === 'cross_document') {
+      body.innerHTML = renderDescribe(result.description || {});
+    } else if (t === 'risk_assessment') {
+      body.innerHTML = renderRisk(result.risk || {});
+    } else if (t === 'bi_summary') {
+      body.innerHTML = renderRisk(result.risk || {}) + renderCharts((result.charts || {}).charts || {});
+    } else {
+      // customer_360
+      body.innerHTML = renderProfile(result.profile || {});
+    }
+  }
+
+  function renderDescribe(desc) {
+    const sections = desc.sections || [];
+    if (!sections.length) {
+      return '<div class="empty">No facts on file for this customer yet. Upload a document to begin.</div>';
+    }
+    const docs = (desc.documents || []).map(d => `
+      <span class="chip ${docTypeChipCls(d.document_type)}" title="SHA: ${escHtml(d.sha256 || '')}">
+        ${escHtml(d.name || d.id)} · ${escHtml(d.document_type || d.category || 'general')}
+      </span>
+    `).join('');
+    const docHeader = docs ? `<div style="margin-bottom: 10px;"><strong>Documents in scope:</strong> ${docs}</div>` : '';
+    const sectionsHtml = sections.map(sec => {
+      const labels = Object.entries(sec.by_label || {}).map(([label, entries]) => `
+        <div class="label-group">
+          <div class="label-name">${escHtml(label)}</div>
+          ${entries.slice(0, 30).map(e => {
+            let val = e.value;
+            if (typeof val === 'object' && val !== null) val = JSON.stringify(val);
+            return `<div class="entry">
+              <span class="value">${escHtml(val)}</span>
+              <span class="badge">${escHtml(e.fact_type || '')}</span>
+              <span class="meta">from ${escHtml(e.document_name || e.document_id || '?')} · ${escHtml(e.document_type || 'general')} · conf ${(Number(e.confidence || 0) * 100).toFixed(0)}%</span>
+            </div>`;
+          }).join('')}
+        </div>
+      `).join('');
+      return `<div class="section-block">
+        <div class="section-block-title">${categoryEmoji(sec.category)} ${escHtml(sec.category)}
+          <span class="badge">${sec.fact_count} fact${sec.fact_count === 1 ? '' : 's'}</span>
+        </div>
+        ${labels || '<div class="empty">No entries.</div>'}
+      </div>`;
+    }).join('');
+    return docHeader + sectionsHtml;
+  }
+
+  function categoryEmoji(cat) {
+    const map = {
+      'Identity': '',
+      'Contact': '',
+      'Photo / Portrait': '',
+      'Medical': '',
+      'Insurance': '',
+      'Financial': '',
+      'Policy / Claim references': '',
+      'Risk markers': '',
+      'External clearinghouse': '',
+    };
+    return map[cat] || '';
+  }
+  function docTypeChipCls(t) {
+    const map = { id: 'chip', medical: 'chip-red', financial: 'chip-green', receipt: 'chip-amber', authority: 'chip-purple' };
+    return map[t] || '';
+  }
+
+  function renderProfile(profile) {
+    const id = profile.identity || {};
+    const contact = profile.contact || {};
+    const med = profile.medical || {};
+    const idHtml = (id.id_numbers || []).map(n => `<div><span class="chip">${escHtml(n.country || '?')}</span> <strong>${escHtml(n.value)}</strong> <small style="color:#78909c;">(${escHtml(n.id_type || '')})</small></div>`).join('') || '<div class="empty">No IDs detected.</div>';
+    const namesHtml = (id.full_names || []).map(n => `<span class="chip">${escHtml(n)}</span>`).join('');
+    const conds = (med.conditions || []).map(v => `<span class="chip chip-red">${escHtml(v)}</span>`).join('') || '<small style="color:#90a4ae;">none</small>';
+    const meds = (med.medications || []).map(v => `<span class="chip chip-amber">${escHtml(v)}</span>`).join('') || '<small style="color:#90a4ae;">none</small>';
+    const ins = (profile.insurance_indicators || []).map(i => `<div class="chip">${escHtml(i.label)}: ${escHtml(i.value)}</div>`).join('') || '<small style="color:#90a4ae;">none</small>';
+    const sav = (profile.savings_indicators || []).map(i => `<div class="chip chip-green">${escHtml(i.label)}: ${escHtml(i.value)}</div>`).join('') || '<small style="color:#90a4ae;">none</small>';
+    return `
+      <div class="grid-2">
+        <div class="section-block"><div class="section-block-title">Identity</div>${idHtml}<div style="margin-top:8px;">${namesHtml}</div></div>
+        <div class="section-block"><div class="section-block-title">Contact</div>
+          <div><strong>Addresses</strong>: ${(contact.addresses || []).map(v => `<span class="chip">${escHtml(v)}</span>`).join('') || '<small>none</small>'}</div>
+          <div style="margin-top:6px;"><strong>Phones</strong>: ${(contact.phones || []).map(v => `<span class="chip">${escHtml(v)}</span>`).join('') || '<small>none</small>'}</div>
+          <div style="margin-top:6px;"><strong>Emails</strong>: ${(contact.emails || []).map(v => `<span class="chip">${escHtml(v)}</span>`).join('') || '<small>none</small>'}</div>
+        </div>
+        <div class="section-block"><div class="section-block-title">Medical</div>
+          <div><strong>Conditions</strong>: ${conds}</div>
+          <div style="margin-top:6px;"><strong>Medications</strong>: ${meds}</div>
+        </div>
+        <div class="section-block"><div class="section-block-title">Insurance &amp; Financial</div>
+          <div><strong>Insurance</strong>: ${ins}</div>
+          <div style="margin-top:6px;"><strong>Savings</strong>: ${sav}</div>
+        </div>
+      </div>`;
+  }
+  function renderRisk(risk) {
+    const lvl = risk.risk_level || 'minimal';
+    const score = ((risk.risk_score || 0) * 100).toFixed(0);
+    const contribs = (risk.contributors || []);
+    const max = contribs.reduce((m, c) => Math.max(m, c.weight || 0), 0.01);
+    const bars = contribs.length === 0
+      ? '<div class="empty">No risk contributors yet.</div>'
+      : contribs.sort((a, b) => (b.weight || 0) - (a.weight || 0)).map(c => {
+          const pct = ((c.weight || 0) / max) * 100;
+          return `<div class="bar-row">
+            <div class="label"><span class="badge">${escHtml(c.factor)}</span> ${escHtml(c.value)}</div>
+            <div class="bar"><span style="width:${pct.toFixed(1)}%"></span></div>
+            <div class="value">+${(c.weight || 0).toFixed(2)}</div>
+          </div>`;
+        }).join('');
+    return `<div class="section-block"><div class="section-block-title">Risk · ${score}% (${escHtml(lvl)})</div>${bars}</div>`;
+  }
+  function renderCharts(charts) {
+    const renderOne = (title, series) => {
+      if (!series || !series.length) return `<div class="section-block"><div class="section-block-title">${escHtml(title)}</div><div class="empty">no data</div></div>`;
+      const max = series.reduce((m, e) => Math.max(m, Number(e.value || 0)), 0.01);
+      return `<div class="section-block"><div class="section-block-title">${escHtml(title)}</div>` +
+        series.slice(0, 12).map(e => {
+          const pct = (Number(e.value || 0) / max) * 100;
+          return `<div class="bar-row">
+            <div class="label">${escHtml(e.label)}</div>
+            <div class="bar"><span style="width:${pct.toFixed(1)}%"></span></div>
+            <div class="value">${typeof e.value === 'number' ? e.value.toLocaleString() : escHtml(e.value)}</div>
+          </div>`;
+        }).join('') + '</div>';
+    };
+    return `<div class="grid-2">
+      ${renderOne('Risk breakdown', charts.risk_breakdown)}
+      ${renderOne('Condition distribution', charts.condition_distribution)}
+      ${renderOne('External sources', charts.external_sources)}
+      ${renderOne('Coverage signals', charts.coverage_distribution)}
+      ${renderOne('Savings signals', charts.savings_distribution)}
+    </div>`;
+  }
+
+  // ── Download ────────────────────────────────────────────────────────────
+  async function downloadReport(format) {
+    const cid = _resolveCurrentCustomer();
+    if (!cid) {
+      setStatus('analysis-status',
+        actingAsAdmin() ? 'Pick a customer from the dropdown above.' : 'Sign in again - your session has no customer link.',
+        'error');
+      return;
+    }
+    CURRENT_CUSTOMER = cid;
+    const type = document.getElementById('analysis-type').value;
+    const docIds = SELECTED_DOC_IDS.size > 0 ? Array.from(SELECTED_DOC_IDS) : null;
+    setStatus('analysis-status', `Building ${format.toUpperCase()}…`);
+    try {
+      const res = await apiBlob('/api/assessment-center/export-file', {
+        method: 'POST',
+        body: JSON.stringify({
+          customer_id: CURRENT_CUSTOMER,
+          analysis_type: type,
+          document_ids: docIds,
+          format,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || ('HTTP ' + res.status));
+      }
+      const blob = await res.blob();
+      const disp = res.headers.get('Content-Disposition') || '';
+      const matchName = /filename="?([^";]+)"?/.exec(disp);
+      const fileName = (matchName && matchName[1]) || `${type}_${CURRENT_CUSTOMER}.${format}`;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setStatus('analysis-status', `Downloaded ${fileName}`, 'ok');
+    } catch (e) {
+      setStatus('analysis-status', '' + e.message, 'error');
+    }
+  }
+
+  // ── Mislaka ─────────────────────────────────────────────────────────────
+  async function linkMislaka() {
+    const id = document.getElementById('mislaka-id').value.trim();
+    const product = document.getElementById('mislaka-product').value;
+    if (!/^\d{9}$/.test(id)) {
+      setStatus('mislaka-status', 'ID must be 9 digits', 'error'); return;
+    }
+    const cid = _resolveCurrentCustomer();
+    if (!cid) {
+      setStatus('mislaka-status',
+        actingAsAdmin() ? 'Pick a customer from the dropdown above.' : 'Sign in again - your session has no customer link.',
+        'error');
+      return;
+    }
+    CURRENT_CUSTOMER = cid;
+    setStatus('mislaka-status', 'Linking…');
+    try {
+      const res = await api('/api/assessment-center/mislaka/link', {
+        method: 'POST',
+        body: JSON.stringify({ id_number: id, product_type: product, customer_id: CURRENT_CUSTOMER }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+      setStatus('mislaka-status', `${json.policies_received || 0} policies stored as facts`, 'ok');
+      await onCustomerChange();
+    } catch (e) {
+      setStatus('mislaka-status', '' + e.message, 'error');
+    }
+  }
+
+  // ── Backfill ────────────────────────────────────────────────────────────
+  async function loadBackfillStatus() {
+    if (!IS_ADMIN) return;
+    show('backfill-card', true);
+    const meta = document.getElementById('backfill-meta');
+    const cidInput = document.getElementById('backfill-customer');
+    const cidParam = cidInput && cidInput.value.trim() ? '?customer_id=' + encodeURIComponent(cidInput.value.trim()) : '';
+    try {
+      const res = await api('/api/assessment-center/backfill-status' + cidParam);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      const pending = json.pending_total || ((json.without_facts || 0) + (json.legacy_pending || 0));
+      meta.innerHTML = pending > 0
+        ? `<span style="color:#c62828;font-weight:600;">${pending} document(s) need backfill</span> · ${json.with_facts || 0} already have facts · ${json.legacy_pending || 0} only in legacy store`
+        : `<span style="color:#2e7d32;font-weight:600;">All ${json.total_documents || 0} document(s) have assessment facts</span>`;
+    } catch (e) {
+      meta.textContent = 'Status check failed: ' + e.message;
+    }
+  }
+  async function runBackfill() {
+    if (!IS_ADMIN) return;
+    const btn = document.getElementById('backfill-run-btn');
+    const statusEl = document.getElementById('backfill-status');
+    const resultEl = document.getElementById('backfill-result');
+    const cid = document.getElementById('backfill-customer').value.trim();
+    const limitRaw = document.getElementById('backfill-limit').value.trim();
+    const limit = limitRaw ? Number(limitRaw) : null;
+    const force = document.getElementById('backfill-force').checked;
+    btn.disabled = true; btn.textContent = 'Running…';
+    statusEl.textContent = 'Backfilling…';
+    statusEl.style.color = '#546e7a';
+    try {
+      const body = { include_legacy: true, force };
+      if (cid) body.customer_id = cid;
+      if (limit && Number.isFinite(limit)) body.limit = limit;
+      const res = await api('/api/assessment-center/backfill', { method: 'POST', body: JSON.stringify(body) });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+      const r = json.result || {}, b = json.bridge || {};
+      resultEl.style.display = '';
+      resultEl.innerHTML = `
+        <div class="grid-3">
+          <div class="stat-tile good"><div class="label">Scanned</div><div class="value">${r.scanned || 0}</div><div class="sub">incl. ${b.bridged || 0} bridged from legacy</div></div>
+          <div class="stat-tile"><div class="label">Assessed</div><div class="value">${r.assessed || 0}</div><div class="sub">${r.skipped || 0} skipped</div></div>
+          <div class="stat-tile ${(r.error_count || 0) > 0 ? 'bad' : 'muted'}"><div class="label">Errors</div><div class="value">${r.error_count || 0}</div><div class="sub">${r.force ? 'force was on' : 'idempotent'}</div></div>
+        </div>`;
+      statusEl.textContent = `Done. Assessed ${r.assessed || 0}.`;
+      statusEl.style.color = '#2e7d32';
+      await loadBackfillStatus();
+      await loadCustomers();
+      const sel = document.getElementById('customer-select');
+      if (sel.value) await onCustomerChange();
+    } catch (e) {
+      statusEl.textContent = '' + e.message;
+      statusEl.style.color = '#c62828';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Run backfill';
+    }
+  }
+
+  // ── Registry ────────────────────────────────────────────────────────────
+  async function loadRegistry() {
+    if (!IS_ADMIN) return;
+    show('registry-card', true);
+    try {
+      const res = await api('/api/assessment-center/upload-endpoints');
+      if (!res.ok) return;
+      const json = await res.json();
+      document.getElementById('registry-tbody').innerHTML = (json.endpoints || []).map(e => {
+        const ac = e.assessment_center;
+        const acText = ac === true ? '<span class="chip chip-green">native</span>'
+          : ac === 'delegated' ? '<span class="chip">delegated</span>'
+          : ac === 'supersede' ? '<span class="chip chip-amber">supersede</span>'
+          : '<span class="chip">—</span>';
+        return `<tr><td><span class="badge">${escHtml(e.method)}</span></td>
+          <td><code>${escHtml(e.path)}</code></td>
+          <td><small>${escHtml(e.module)}</small></td>
+          <td>${escHtml(e.purpose)}</td>
+          <td>${acText}</td></tr>`;
+      }).join('');
+    } catch (_) { /* non-fatal */ }
+  }
+
+  // ── Customer change ─────────────────────────────────────────────────────
+  async function onCustomerChange() {
+    const sel = document.getElementById('customer-select');
+    // For a non-admin user the dropdown may render an empty option
+    // value while we await the server-validated id; fall through to
+    // the resolver so we never lose the active customer context.
+    CURRENT_CUSTOMER = sel.value || _resolveCurrentCustomer();
+    setUrlCustomer(CURRENT_CUSTOMER);
+    SELECTED_DOC_IDS.clear();
+    if (!CURRENT_CUSTOMER) {
+      document.getElementById('doc-list').innerHTML =
+        '<div class="empty">'
+        + (actingAsAdmin() ? 'Pick a customer first.' : 'Sign in again - your session has no customer link.')
+        + '</div>';
+      return;
+    }
+    try {
+      const [profileRes, riskRes, chartsRes] = await Promise.all([
+        api(`/api/assessment-center/customer/${encodeURIComponent(CURRENT_CUSTOMER)}/profile`),
+        api(`/api/assessment-center/customer/${encodeURIComponent(CURRENT_CUSTOMER)}/risk-indicators`),
+        api(`/api/assessment-center/customer/${encodeURIComponent(CURRENT_CUSTOMER)}/charts`),
+      ]);
+      if (profileRes.ok) {
+        const profile = await profileRes.json();
+        document.getElementById('tile-facts-value').textContent = profile.fact_count || 0;
+        document.getElementById('tile-docs-value').textContent = (profile.data_integrity && profile.data_integrity.documents || []).length;
+      }
+      if (riskRes.ok) {
+        const risk = await riskRes.json();
+        const lvl = risk.risk_level || 'minimal';
+        document.getElementById('tile-risk-value').textContent = ((risk.risk_score || 0) * 100).toFixed(0) + '%';
+        document.getElementById('tile-risk-sub').textContent = 'level: ' + lvl;
+        const tile = document.getElementById('tile-risk');
+        tile.classList.remove('good', 'warn', 'bad');
+        tile.classList.add(lvl === 'very_high' ? 'bad' : (lvl === 'high' || lvl === 'medium') ? 'warn' : 'good');
+      }
+      if (chartsRes.ok) {
+        const charts = await chartsRes.json();
+        const totals = (charts.totals || {});
+        document.getElementById('tile-external-value').textContent = totals.external_records || 0;
+      }
+    } catch (_) { /* non-fatal */ }
+    await loadDocuments();
+  }
+
+  // ── Init ───────────────────────────────────────────────────────────────
+  (async function init() {
+    await ensureServerSession();
+    if (actingAsAdmin()) {
+      // Show the admin override field for whoever can target arbitrary
+      // customers; customers never see it.
+      const target = document.getElementById('upload-target');
+      if (target) target.style.display = '';
+    }
+    await loadCustomers();
+    const sel = document.getElementById('customer-select');
+    sel.addEventListener('change', onCustomerChange);
+    if (actingAsAdmin()) {
+      // Admins may deep-link with ?customer_id=...
+      const url = urlCustomer();
+      if (url && [...sel.options].some(o => o.value === url)) {
+        sel.value = url;
+      }
+    } else if (SESSION_CUSTOMER_ID) {
+      // Customers always operate on their own customer_id; ignore URL
+      // params so a stale link can't trick the page into a wrong target.
+      sel.value = SESSION_CUSTOMER_ID;
+      setUrlCustomer(SESSION_CUSTOMER_ID);
+    }
+    // Always run onCustomerChange for non-admins so the workbench
+    // commits a usable CURRENT_CUSTOMER (real or synthetic) and the
+    // analysis / download buttons are immediately functional. For
+    // admins we only run when a target is explicitly chosen.
+    if (sel.value || !actingAsAdmin()) {
+      await onCustomerChange();
+    }
+    loadRegistry();
+    loadBackfillStatus();
+  })();
+</script>
+
+<!-- Shared UI helpers (clarity tooling + defensive auth-fetch shim that
+     attaches the bearer token to every same-origin /api/* request). -->
+<script src="/assessments-nav.js"></script>
+<script src="/ui-clarity.js"></script>
+
 </body>
 </html>
