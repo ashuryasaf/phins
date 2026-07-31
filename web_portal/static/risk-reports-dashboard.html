@@ -1914,19 +1914,24 @@
       to { opacity: 1; transform: translateY(0); }
     }
   </style>
+  <link rel="stylesheet" href="/phins-theme.css">
 </head>
 <body>
-  <!-- Header -->
-  <header class="header">
-    <h1>
-      <span style="font-size: 1.8rem;">📊</span>
-      PHINS Swiftness Risk Intelligence
-    </h1>
-    <nav class="header-nav">
-      <a href="/dashboard.html">← Dashboard</a>
-      <a href="/unified-workbench.html">⚡ Unified Workbench</a>
-      <a href="/admin.html">Admin</a>
-    </nav>
+  <!-- Header — PR #433 navy/gold chrome -->
+  <header class="phins-header">
+    <div class="phins-header-inner" style="max-width:1400px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:0.75rem 1.5rem;flex-wrap:wrap;gap:0.5rem;">
+      <a href="/dashboard.html" class="phins-logo" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:white;">
+        <div class="phins-logo-icon" style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;">
+          <img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;">
+        </div>
+        <span class="phins-logo-text">PHINS</span>
+      </a>
+      <nav class="phins-nav" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <a href="/dashboard.html">Dashboard</a>
+        <span data-assessments-nav data-assessments-role="admin"></span>
+        <a href="/admin.html">Admin</a>
+      </nav>
+    </div>
   </header>
   
   <main class="container">
@@ -4688,6 +4693,7 @@
       checkMislakaStatus();
     });
   </script>
-  <script src="/ui-clarity.js"></script>
+  <script src="/assessments-nav.js"></script>
+<script src="/ui-clarity.js"></script>
 </body>
 </html>

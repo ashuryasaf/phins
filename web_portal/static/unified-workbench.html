@@ -24,28 +24,31 @@
        ────────────────────────────────────────────────────────────────── */
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f4f8; color: #1a237e; }
 
-    .phins-header { background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white; box-shadow: 0 2px 12px rgba(13,71,161,0.3); position: sticky; top: 0; z-index: 100; }
+    .phins-header { background: rgba(6, 13, 31, 0.96); color: white; box-shadow: 0 8px 30px rgba(2, 8, 23, 0.35); position: sticky; top: 0; z-index: 100; }
     .phins-header-inner { max-width: 1400px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; flex-wrap: wrap; gap: 0.5rem; }
     .phins-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: white; }
-    .phins-logo-icon { width: 40px; height: 40px; background: rgba(255,255,255,0.2); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; }
-    .phins-logo-text { font-size: 1.5rem; font-weight: 700; letter-spacing: 1px; }
+    .phins-logo-icon { width: 40px; height: 40px; background: transparent; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; }
+    .phins-logo-text { font-size: 1.5rem; font-weight: 700; letter-spacing: 0.22em; }
     .phins-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .phins-nav a { color: rgba(255,255,255,0.85); text-decoration: none; padding: 6px 14px; border-radius: 8px; font-size: 0.9rem; transition: background 0.2s; }
     .phins-nav a:hover, .phins-nav a.active { background: rgba(255,255,255,0.2); color: white; }
-    .btn-logout { background: linear-gradient(135deg, #ef5350 0%, #e53935 100%) !important; color: white !important; font-weight: 600 !important; }
+    .btn-logout { background: transparent !important; border: 1px solid rgba(227,191,111,0.65) !important; color: #e3bf6f !important; font-weight: 600 !important; border-radius: 999px !important; }
 
     .page-container { max-width: 1400px; margin: 0 auto; padding: 1.25rem 1.5rem 2.5rem; }
 
-    .page-title { font-size: 2rem; font-weight: 700; color: #1a237e; margin-bottom: 0.25rem; }
+    .page-title { font-family: 'Space Grotesk', Inter, sans-serif; font-size: 2rem; font-weight: 600; color: #060d1f; margin-bottom: 0.25rem; letter-spacing: 0.02em; }
     .page-subtitle { color: #546e7a; margin-bottom: 1.25rem; font-size: 0.95rem; max-width: 980px; }
 
-    /* ── Master control card with the ONE button ───────────────────── */
+    /* ── Master control — deep-navy glass + gold CTA (PR #433 language) ─ */
     .master-control {
-      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 60%, #1976d2 100%);
-      color: white;
+      background:
+        radial-gradient(700px 180px at 85% -40%, rgba(21, 68, 155, 0.55), transparent 70%),
+        rgba(6, 13, 31, 0.96);
+      color: #eaf1ff;
+      border: 1px solid rgba(127, 178, 255, 0.16);
       border-radius: 18px;
       padding: 1.2rem 1.5rem;
-      box-shadow: 0 8px 32px rgba(13,71,161,0.25);
+      box-shadow: 0 8px 32px rgba(2, 8, 23, 0.35);
       margin-bottom: 1.25rem;
       display: grid;
       grid-template-columns: 1fr auto;
@@ -96,8 +99,8 @@
     @keyframes pickerSpin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
 
     .btn-unified {
-      background: linear-gradient(135deg, #ffc107 0%, #ff8f00 100%);
-      color: #1a237e;
+      background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+      color: #071022;
       border: none;
       padding: 18px 28px;
       border-radius: 14px;
@@ -254,7 +257,7 @@
     </a>
     <nav class="phins-nav">
       <a href="/dashboard.html">Dashboard</a>
-      <a href="/unified-workbench.html" class="active">📋 Assessments</a>
+      <span data-assessments-nav></span>
       <a href="/admin-agents.html">🧑‍💼 Agents</a>
       <a href="#" class="btn-logout" onclick="logout()">Logout</a>
     </nav>
@@ -262,7 +265,7 @@
 </header>
 
 <div class="page-container">
-  <div class="page-title">📋 Assessments</div>
+  <div class="page-title">Assessments</div>
   <div class="page-subtitle">
     One screen unifying <strong>Assessment Center</strong>, <strong>Documents</strong>,
     <strong>Risk Assessment</strong> and <strong>Reports</strong>. Every bar below is fed
@@ -394,8 +397,8 @@
             <option value="health_insurance">Health insurance</option>
           </select>
           <button type="button" onclick="linkMislaka()"
-                  style="background:linear-gradient(135deg,#0d47a1,#1565c0);color:#fff;border:none;padding:8px 14px;border-radius:8px;font-weight:600;cursor:pointer;">
-            🔗 Link to Customer 360
+                  style="background:linear-gradient(135deg,#f7e2a0,#e3bf6f);color:#071022;border:none;padding:8px 14px;border-radius:8px;font-weight:600;cursor:pointer;">
+            Link to Customer 360
           </button>
           <a class="ghost-link" href="/risk-reports-dashboard.html" title="Full Mislaka / Swiftness report library">↗ Mislaka reports library</a>
           <span id="mislaka-status" style="font-size:0.85rem;"></span>
@@ -1594,6 +1597,7 @@
   })();
 </script>
 
+<script src="/assessments-nav.js"></script>
 <script src="/ui-clarity.js"></script>
 </body>
 </html>
