@@ -138,6 +138,51 @@ def _coerce_verified_flag(val) -> bool:
     return bool(val)
 
 
+def optional_int(val):
+    """Convert to int when possible; return None for missing/invalid values.
+
+    Unlike ``safe_int`` this preserves "unknown" (None) instead of forcing a
+    default, which matters for data-integrity-sensitive readers (e.g. risk
+    reports must not treat an unparseable age as 0).
+    """
+    if val is None or (isinstance(val, str) and not val.strip()):
+        return None
+    try:
+        return int(float(val))
+    except (TypeError, ValueError):
+        return None
+
+
+def optional_float(val):
+    """Convert to float when possible; return None for missing/invalid values."""
+    if val is None or (isinstance(val, str) and not val.strip()):
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def coerce_json_container(val, default):
+    """Return dict/list values as-is; parse JSON strings; else return default.
+
+    Fields like ``questionnaire_responses``, ``medical_conditions``, and
+    ``documents`` are stored as JSON text in the database but as native
+    containers in the in-memory store, so readers must accept both shapes.
+    ``default`` also selects the expected container type (``{}`` or ``[]``).
+    """
+    if isinstance(val, (dict, list)):
+        return val
+    if isinstance(val, str) and val.strip():
+        try:
+            parsed = json.loads(val)
+        except (TypeError, ValueError):
+            return default
+        if isinstance(parsed, type(default)):
+            return parsed
+    return default
+
+
 # Premium-related transaction categories used for revenue reconciliation.
 PREMIUM_LEDGER_TX_TYPES = {
     'premium_payment',
@@ -18388,20 +18433,21 @@ For claims or questions, please contact:
             elif customer_id:
                 target_customer = CUSTOMERS.get(customer_id)
                 # Find latest application for this customer
+                # (created_date may be None or a datetime; coerce for a stable sort)
                 customer_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == customer_id]
                 if customer_apps:
-                    target_app = max(customer_apps, key=lambda x: x.get('created_date', ''))
+                    target_app = max(customer_apps, key=lambda x: str(x.get('created_date') or ''))
             elif customer_email:
-                # Find customer by email
+                # Find customer by email (email may be stored as None)
                 for cid, cust in CUSTOMERS.items():
-                    if cust.get('email', '').lower() == customer_email.lower():
+                    if (cust.get('email') or '').lower() == customer_email.lower():
                         target_customer = cust
                         customer_id = cid
                         break
                 if customer_id:
                     customer_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == customer_id]
                     if customer_apps:
-                        target_app = max(customer_apps, key=lambda x: x.get('created_date', ''))
+                        target_app = max(customer_apps, key=lambda x: str(x.get('created_date') or ''))
             
             if not target_app:
                 self._set_json_headers(404)
@@ -18420,17 +18466,21 @@ For claims or questions, please contact:
             # Get claims history for risk assessment (read-only)
             customer_claims = [c for c in CLAIMS.values() if c.get('customer_id') == customer_id]
             
-            # Get questionnaire responses if available (read-only)
-            questionnaire = target_app.get('questionnaire_responses', {}) or target_app.get('questionnaire', {})
+            # Get questionnaire responses if available (read-only).
+            # Stored as a JSON string in the database, as a dict in-memory.
+            questionnaire = coerce_json_container(
+                target_app.get('questionnaire_responses') or target_app.get('questionnaire'), {}
+            )
             
             # ====== EXTRACT ONLY ACTUAL DATA FROM PIPELINE ======
             # Data sources tracking for audit trail
-            data_sources = target_app.get('data_sources', {})
+            data_sources = coerce_json_container(target_app.get('data_sources'), {})
             
-            # Age: from application, questionnaire, or calculated from DOB
-            applicant_age = target_app.get('age')
-            if not applicant_age and questionnaire.get('age'):
-                applicant_age = int(questionnaire.get('age'))
+            # Age: from application, questionnaire, or calculated from DOB.
+            # Values may arrive as strings (HTML forms) — coerce, never crash.
+            applicant_age = optional_int(target_app.get('age'))
+            if not applicant_age:
+                applicant_age = optional_int(questionnaire.get('age'))
             if not applicant_age and target_customer.get('date_of_birth'):
                 try:
                     dob_str = target_customer['date_of_birth'].replace('Z', '+00:00').split('T')[0]
@@ -18438,16 +18488,16 @@ For claims or questions, please contact:
                     applicant_age = (datetime.now() - dob).days // 365
                 except:
                     applicant_age = None  # DO NOT DEFAULT - leave as unknown
-            if not applicant_age and target_customer.get('age'):
-                applicant_age = target_customer.get('age')
+            if not applicant_age:
+                applicant_age = optional_int(target_customer.get('age'))
             
             # Medical data: from application record or questionnaire - NO DEFAULTS
-            disability_pct = target_app.get('disability_percentage')
-            if disability_pct is None and questionnaire.get('disability_percentage'):
-                disability_pct = int(questionnaire.get('disability_percentage'))
+            disability_pct = optional_int(target_app.get('disability_percentage'))
+            if disability_pct is None:
+                disability_pct = optional_int(questionnaire.get('disability_percentage'))
             
             # BMI: from application, or calculate from height/weight in questionnaire
-            bmi = target_app.get('bmi')
+            bmi = optional_float(target_app.get('bmi'))
             if bmi is None:
                 height = target_app.get('height_cm') or questionnaire.get('height')
                 weight = target_app.get('weight_kg') or questionnaire.get('weight')
@@ -18460,17 +18510,20 @@ For claims or questions, please contact:
                     except:
                         pass
             
-            # Smoking status: from application or questionnaire
+            # Smoking status: from application or questionnaire.
+            # Values may be non-string (e.g. a boolean checkbox) — coerce first.
             smoking = target_app.get('smoking_status')
-            if not smoking and questionnaire.get('smoke'):
-                smoke_val = questionnaire.get('smoke', '').lower()
-                if smoke_val in ['yes', 'current', 'smoker']:
+            if smoking is not None and not isinstance(smoking, str):
+                smoking = str(smoking)
+            if not smoking and questionnaire.get('smoke') is not None:
+                smoke_val = str(questionnaire.get('smoke', '')).strip().lower()
+                if smoke_val in ['yes', 'current', 'smoker', 'true']:
                     smoking = 'current'
                 elif smoke_val in ['former', 'ex', 'quit']:
                     smoking = 'former'
-                elif smoke_val in ['no', 'never', 'non-smoker']:
+                elif smoke_val in ['no', 'never', 'non-smoker', 'false']:
                     smoking = 'never'
-                else:
+                elif smoke_val:
                     smoking = smoke_val
             
             # Gender and occupation from application, questionnaire, or customer record
@@ -18479,7 +18532,8 @@ For claims or questions, please contact:
             
             # Build medical conditions from the application's medical_conditions array first
             # This is the primary source of conditions data
-            app_conditions = target_app.get('medical_conditions', [])
+            # (stored as a JSON string in the database, as a list in-memory)
+            app_conditions = coerce_json_container(target_app.get('medical_conditions'), [])
             medical_conditions = []
             
             # Track what condition types we have from the array to avoid duplicates
@@ -18502,8 +18556,9 @@ For claims or questions, please contact:
                             'severity': cond.get('severity', 'moderate'),
                             'status': cond.get('status'),
                             'treatment': cond.get('treatment'),
-                            'risk_impact': cond.get('risk_impact', 0.1),
-                            'loading_percentage': cond.get('loading_percentage', 10),
+                            # Coerce numerics so downstream sums never TypeError
+                            'risk_impact': safe_float(cond.get('risk_impact'), 0.1),
+                            'loading_percentage': safe_int(cond.get('loading_percentage'), 10),
                             'exclusion_recommended': cond.get('exclusion_recommended', False),
                             'notes': cond.get('notes')
                         }
@@ -18762,8 +18817,9 @@ For claims or questions, please contact:
                 })
             
             # Build document list ONLY from what's indicated in application
+            # (stored as a JSON string in the database, as a list in-memory)
             documents = []
-            app_documents = target_app.get('documents', [])
+            app_documents = coerce_json_container(target_app.get('documents'), [])
             if isinstance(app_documents, list) and app_documents:
                 for doc in app_documents:
                     if isinstance(doc, dict):
@@ -18808,7 +18864,9 @@ For claims or questions, please contact:
                     'customer_id': customer_id
                 },
                 'policy_type': target_policy.get('type') or target_app.get('policy_type'),
-                'coverage_amount': target_policy.get('coverage_amount') or target_app.get('coverage_amount', 0),
+                'coverage_amount': safe_float(
+                    target_policy.get('coverage_amount') or target_app.get('coverage_amount'), 0.0
+                ),
                 # Only True when the application explicitly recorded verification.
                 'identity_verified': _coerce_verified_flag(target_app['identity_verified']) if 'identity_verified' in target_app else None,
                 'risk_scores': {

@@ -225,6 +225,27 @@
                         window.location.href = '/login.html';
                         return;
                     }
+                    if (response.status === 403) {
+                        const message = await readServerError(response) ||
+                            'You do not have permission to view risk assessment reports.';
+                        container.innerHTML = `
+                            <div class="report">
+                                <div class="header">
+                                    <h1>UNDERWRITING RISK ASSESSMENT REPORT</h1>
+                                    <div class="subtitle">AI-Powered Comprehensive Risk Analysis</div>
+                                </div>
+                                <div class="error-box">
+                                    <h3>Access Denied</h3>
+                                    <p>${escapeHtml(message)}</p>
+                                    <p style="margin-top: 15px;">
+                                        <button onclick="window.location.href='/login.html'" class="header-btn download">Log In Again</button>
+                                        <button onclick="window.history.back()" class="header-btn back" style="background: #6c757d; color: white;">← Go Back</button>
+                                    </p>
+                                </div>
+                            </div>
+                        `;
+                        return;
+                    }
                     if (response.status === 404) {
                         container.innerHTML = `
                             <div class="report">
@@ -243,7 +264,8 @@
                         `;
                         return;
                     }
-                    throw new Error('Failed to load report');
+                    const serverMessage = await readServerError(response);
+                    throw new Error(serverMessage || `Failed to load report (HTTP ${response.status})`);
                 }
                 
                 const report = await response.json();
@@ -261,6 +283,7 @@
                         <div class="error-box">
                             <h3>Error Loading Report</h3>
                             <p>Could not load the risk assessment report. Please try again.</p>
+                            ${error && error.message ? `<p style="margin-top: 10px; font-size: 13px; opacity: 0.85;">Details: ${escapeHtml(error.message)}</p>` : ''}
                             <p style="margin-top: 15px;">
                                 <button onclick="loadReport()" class="header-btn download">Retry</button>
                                 <button onclick="window.history.back()" class="header-btn back" style="background: #6c757d; color: white;">← Go Back</button>
@@ -701,6 +724,21 @@
         function capitalizeFirst(str) {
             if (!str) return '';
             return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+        }
+        
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = String(str);
+            return div.innerHTML;
+        }
+        
+        async function readServerError(response) {
+            try {
+                const data = await response.json();
+                return data && data.error ? String(data.error) : '';
+            } catch (e) {
+                return '';
+            }
         }
         
         async function approveApplication() {
