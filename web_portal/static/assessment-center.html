@@ -959,15 +959,22 @@
   async function linkMislaka() {
     const id = document.getElementById('mislaka-id').value.trim();
     const product = document.getElementById('mislaka-product').value;
-    const cid = CURRENT_CUSTOMER || id;
     if (!/^\d{9}$/.test(id)) {
       setStatus('mislaka-status', 'ID must be 9 digits', 'error'); return;
     }
+    const cid = _resolveCurrentCustomer();
+    if (!cid) {
+      setStatus('mislaka-status',
+        actingAsAdmin() ? 'Pick a customer from the dropdown above.' : 'Sign in again - your session has no customer link.',
+        'error');
+      return;
+    }
+    CURRENT_CUSTOMER = cid;
     setStatus('mislaka-status', 'Linking…');
     try {
       const res = await api('/api/assessment-center/mislaka/link', {
         method: 'POST',
-        body: JSON.stringify({ id_number: id, product_type: product, customer_id: cid }),
+        body: JSON.stringify({ id_number: id, product_type: product, customer_id: CURRENT_CUSTOMER }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
