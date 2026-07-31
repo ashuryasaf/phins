@@ -178,6 +178,29 @@ def test_report_lookup_by_email_with_null_email_customer_present():
     assert resp.json()["application_id"] == "UW-RPT6"
 
 
+def test_report_internal_error_returns_500_json():
+    """Regression: unhandled exceptions dropped the connection (no HTTP response),
+    so the viewer could only show the generic "Error Loading Report" box.
+    The handler must answer with a JSON 500 body instead."""
+    token = _admin_token()
+    portal.CUSTOMERS["CUST-RPT7"] = {
+        "id": "CUST-RPT7", "name": "Crash Case", "email": "crash@example.com",
+    }
+    portal.UNDERWRITING_APPLICATIONS["UW-RPT7"] = {
+        "id": "UW-RPT7", "customer_id": "CUST-RPT7", "policy_type": "health",
+        # A set is not JSON-serializable, forcing a crash during response
+        # serialization (stand-in for any unanticipated bad data shape).
+        "documents": [{"type": "passport", "authenticity_score": {0.9}}],
+        "created_date": "2026-01-07T00:00:00", "status": "pending",
+    }
+
+    resp = _get_report(token, "?application_id=UW-RPT7")
+    assert resp.status_code == 500, resp.text
+    body = resp.json()
+    assert "error" in body
+    assert "risk assessment report" in body["error"]
+
+
 def test_report_not_found_returns_404_json():
     token = _admin_token()
     resp = _get_report(token, "?application_id=UW-DOES-NOT-EXIST")
