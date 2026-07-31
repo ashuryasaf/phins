@@ -138,6 +138,51 @@ def _coerce_verified_flag(val) -> bool:
     return bool(val)
 
 
+def optional_int(val):
+    """Convert to int when possible; return None for missing/invalid values.
+
+    Unlike ``safe_int`` this preserves "unknown" (None) instead of forcing a
+    default, which matters for data-integrity-sensitive readers (e.g. risk
+    reports must not treat an unparseable age as 0).
+    """
+    if val is None or (isinstance(val, str) and not val.strip()):
+        return None
+    try:
+        return int(float(val))
+    except (TypeError, ValueError):
+        return None
+
+
+def optional_float(val):
+    """Convert to float when possible; return None for missing/invalid values."""
+    if val is None or (isinstance(val, str) and not val.strip()):
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def coerce_json_container(val, default):
+    """Return dict/list values as-is; parse JSON strings; else return default.
+
+    Fields like ``questionnaire_responses``, ``medical_conditions``, and
+    ``documents`` are stored as JSON text in the database but as native
+    containers in the in-memory store, so readers must accept both shapes.
+    ``default`` also selects the expected container type (``{}`` or ``[]``).
+    """
+    if isinstance(val, (dict, list)):
+        return val
+    if isinstance(val, str) and val.strip():
+        try:
+            parsed = json.loads(val)
+        except (TypeError, ValueError):
+            return default
+        if isinstance(parsed, type(default)):
+            return parsed
+    return default
+
+
 # Premium-related transaction categories used for revenue reconciliation.
 PREMIUM_LEDGER_TX_TYPES = {
     'premium_payment',
@@ -5903,6 +5948,23 @@ def _parse_iso_datetime(value: Any) -> Optional[datetime]:
         return datetime.fromisoformat(raw.replace('Z', '+00:00'))
     except Exception:
         return None
+
+
+def _created_date_sort_key(value: Any) -> float:
+    """Chronological, crash-safe sort key for created_date values.
+
+    Handles a mix of ISO strings and datetime objects (which can otherwise
+    sort incorrectly as raw strings, since ``' '`` sorts before ``'T'``) and
+    avoids TypeError from comparing tz-aware and tz-naive datetimes by
+    normalizing to a POSIX timestamp. Unparseable values sort oldest.
+    """
+    parsed = _parse_iso_datetime(value)
+    if parsed is None:
+        return float('-inf')
+    try:
+        return parsed.timestamp()
+    except (OverflowError, OSError, ValueError):
+        return float('-inf')
 
 
 def _normalize_billing_frequency(value: Any) -> str:
@@ -18375,492 +18437,520 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Access denied - requires underwriter, actuary, claims adjuster or admin role'}).encode('utf-8'))
                 return
             
-            application_id = qs.get('application_id', [None])[0] or qs.get('id', [None])[0]
-            customer_id = qs.get('customer_id', [None])[0]
-            customer_email = qs.get('email', [None])[0]
+            try:
+                application_id = qs.get('application_id', [None])[0] or qs.get('id', [None])[0]
+                customer_id = qs.get('customer_id', [None])[0]
+                customer_email = qs.get('email', [None])[0]
             
-            # Find application - by ID or by customer's latest
-            target_app = None
-            target_customer = None
+                # Find application - by ID or by customer's latest
+                target_app = None
+                target_customer = None
             
-            if application_id:
-                target_app = UNDERWRITING_APPLICATIONS.get(application_id)
-            elif customer_id:
-                target_customer = CUSTOMERS.get(customer_id)
-                # Find latest application for this customer
-                customer_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == customer_id]
-                if customer_apps:
-                    target_app = max(customer_apps, key=lambda x: x.get('created_date', ''))
-            elif customer_email:
-                # Find customer by email
-                for cid, cust in CUSTOMERS.items():
-                    if cust.get('email', '').lower() == customer_email.lower():
-                        target_customer = cust
-                        customer_id = cid
-                        break
-                if customer_id:
+                if application_id:
+                    target_app = UNDERWRITING_APPLICATIONS.get(application_id)
+                elif customer_id:
+                    target_customer = CUSTOMERS.get(customer_id)
+                    # Find latest application for this customer
+                    # (created_date may be None, an ISO string, or a datetime)
                     customer_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == customer_id]
                     if customer_apps:
-                        target_app = max(customer_apps, key=lambda x: x.get('created_date', ''))
+                        target_app = max(customer_apps, key=lambda x: _created_date_sort_key(x.get('created_date')))
+                elif customer_email:
+                    # Find customer by email (email may be stored as None)
+                    for cid, cust in CUSTOMERS.items():
+                        if (cust.get('email') or '').lower() == customer_email.lower():
+                            target_customer = cust
+                            customer_id = cid
+                            break
+                    if customer_id:
+                        customer_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == customer_id]
+                        if customer_apps:
+                            target_app = max(customer_apps, key=lambda x: _created_date_sort_key(x.get('created_date')))
             
-            if not target_app:
-                self._set_json_headers(404)
-                self.wfile.write(json.dumps({'error': 'No application found for the specified criteria'}).encode('utf-8'))
-                return
+                if not target_app:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'No application found for the specified criteria'}).encode('utf-8'))
+                    return
             
-            # ====== READ ONLY - PIPELINE DATA INTEGRITY ======
-            # Get customer data (read-only - data integrity preserved)
-            customer_id = target_app.get('customer_id')
-            target_customer = CUSTOMERS.get(customer_id, {})
+                # ====== READ ONLY - PIPELINE DATA INTEGRITY ======
+                # Get customer data (read-only - data integrity preserved)
+                customer_id = target_app.get('customer_id')
+                target_customer = CUSTOMERS.get(customer_id, {})
             
-            # Get policy data (read-only)
-            policy_id = target_app.get('policy_id')
-            target_policy = POLICIES.get(policy_id, {})
+                # Get policy data (read-only)
+                policy_id = target_app.get('policy_id')
+                target_policy = POLICIES.get(policy_id, {})
             
-            # Get claims history for risk assessment (read-only)
-            customer_claims = [c for c in CLAIMS.values() if c.get('customer_id') == customer_id]
+                # Get claims history for risk assessment (read-only)
+                customer_claims = [c for c in CLAIMS.values() if c.get('customer_id') == customer_id]
             
-            # Get questionnaire responses if available (read-only)
-            questionnaire = target_app.get('questionnaire_responses', {}) or target_app.get('questionnaire', {})
+                # Get questionnaire responses if available (read-only).
+                # Stored as a JSON string in the database, as a dict in-memory.
+                questionnaire = coerce_json_container(
+                    target_app.get('questionnaire_responses') or target_app.get('questionnaire'), {}
+                )
             
-            # ====== EXTRACT ONLY ACTUAL DATA FROM PIPELINE ======
-            # Data sources tracking for audit trail
-            data_sources = target_app.get('data_sources', {})
+                # ====== EXTRACT ONLY ACTUAL DATA FROM PIPELINE ======
+                # Data sources tracking for audit trail
+                data_sources = coerce_json_container(target_app.get('data_sources'), {})
             
-            # Age: from application, questionnaire, or calculated from DOB
-            applicant_age = target_app.get('age')
-            if not applicant_age and questionnaire.get('age'):
-                applicant_age = int(questionnaire.get('age'))
-            if not applicant_age and target_customer.get('date_of_birth'):
-                try:
-                    dob_str = target_customer['date_of_birth'].replace('Z', '+00:00').split('T')[0]
-                    dob = datetime.fromisoformat(dob_str)
-                    applicant_age = (datetime.now() - dob).days // 365
-                except:
-                    applicant_age = None  # DO NOT DEFAULT - leave as unknown
-            if not applicant_age and target_customer.get('age'):
-                applicant_age = target_customer.get('age')
-            
-            # Medical data: from application record or questionnaire - NO DEFAULTS
-            disability_pct = target_app.get('disability_percentage')
-            if disability_pct is None and questionnaire.get('disability_percentage'):
-                disability_pct = int(questionnaire.get('disability_percentage'))
-            
-            # BMI: from application, or calculate from height/weight in questionnaire
-            bmi = target_app.get('bmi')
-            if bmi is None:
-                height = target_app.get('height_cm') or questionnaire.get('height')
-                weight = target_app.get('weight_kg') or questionnaire.get('weight')
-                if height and weight:
+                # Age: from application, questionnaire, or calculated from DOB.
+                # Values may arrive as strings (HTML forms) — coerce, never crash.
+                applicant_age = optional_int(target_app.get('age'))
+                if not applicant_age:
+                    applicant_age = optional_int(questionnaire.get('age'))
+                if not applicant_age and target_customer.get('date_of_birth'):
                     try:
-                        height = float(height)
-                        weight = float(weight)
-                        if height > 0 and weight > 0:
-                            bmi = round(weight / ((height / 100) ** 2), 1)
+                        dob_str = target_customer['date_of_birth'].replace('Z', '+00:00').split('T')[0]
+                        dob = datetime.fromisoformat(dob_str)
+                        applicant_age = (datetime.now() - dob).days // 365
                     except:
-                        pass
+                        applicant_age = None  # DO NOT DEFAULT - leave as unknown
+                if not applicant_age:
+                    applicant_age = optional_int(target_customer.get('age'))
             
-            # Smoking status: from application or questionnaire
-            smoking = target_app.get('smoking_status')
-            if not smoking and questionnaire.get('smoke'):
-                smoke_val = questionnaire.get('smoke', '').lower()
-                if smoke_val in ['yes', 'current', 'smoker']:
-                    smoking = 'current'
-                elif smoke_val in ['former', 'ex', 'quit']:
-                    smoking = 'former'
-                elif smoke_val in ['no', 'never', 'non-smoker']:
-                    smoking = 'never'
-                else:
-                    smoking = smoke_val
+                # Medical data: from application record or questionnaire - NO DEFAULTS
+                disability_pct = optional_int(target_app.get('disability_percentage'))
+                if disability_pct is None:
+                    disability_pct = optional_int(questionnaire.get('disability_percentage'))
             
-            # Gender and occupation from application, questionnaire, or customer record
-            gender = target_app.get('gender') or questionnaire.get('gender') or target_customer.get('gender')
-            occupation = target_app.get('occupation') or questionnaire.get('occupation') or target_customer.get('occupation')
+                # BMI: from application, or calculate from height/weight in questionnaire
+                bmi = optional_float(target_app.get('bmi'))
+                if bmi is None:
+                    height = target_app.get('height_cm') or questionnaire.get('height')
+                    weight = target_app.get('weight_kg') or questionnaire.get('weight')
+                    if height and weight:
+                        try:
+                            height = float(height)
+                            weight = float(weight)
+                            if height > 0 and weight > 0:
+                                bmi = round(weight / ((height / 100) ** 2), 1)
+                        except:
+                            pass
             
-            # Build medical conditions from the application's medical_conditions array first
-            # This is the primary source of conditions data
-            app_conditions = target_app.get('medical_conditions', [])
-            medical_conditions = []
+                # Smoking status: from application or questionnaire.
+                # Values may be non-string (e.g. a boolean checkbox) — coerce truthy
+                # values only so falsy inputs (e.g. False) still fall back to the
+                # questionnaire rather than becoming the truthy string "False".
+                smoking = target_app.get('smoking_status')
+                if smoking and not isinstance(smoking, str):
+                    smoking = str(smoking)
+                if not smoking and questionnaire.get('smoke') is not None:
+                    smoke_val = str(questionnaire.get('smoke', '')).strip().lower()
+                    if smoke_val in ['yes', 'current', 'smoker', 'true']:
+                        smoking = 'current'
+                    elif smoke_val in ['former', 'ex', 'quit']:
+                        smoking = 'former'
+                    elif smoke_val in ['no', 'never', 'non-smoker', 'false']:
+                        smoking = 'never'
+                    elif smoke_val:
+                        smoking = smoke_val
             
-            # Track what condition types we have from the array to avoid duplicates
-            has_disability_from_array = False
-            has_obesity_from_array = False
+                # Gender and occupation from application, questionnaire, or customer record
+                gender = target_app.get('gender') or questionnaire.get('gender') or target_customer.get('gender')
+                occupation = target_app.get('occupation') or questionnaire.get('occupation') or target_customer.get('occupation')
             
-            # Process the stored medical_conditions array first (this is the authoritative source)
-            if isinstance(app_conditions, list):
-                for cond in app_conditions:
-                    if isinstance(cond, dict):
-                        cond_name = cond.get('condition', '').lower()
-                        if 'disability' in cond_name or 'mobility' in cond_name or 'impairment' in cond_name:
-                            has_disability_from_array = True
-                        if 'obesity' in cond_name or 'bmi' in cond_name:
-                            has_obesity_from_array = True
+                # Build medical conditions from the application's medical_conditions array first
+                # This is the primary source of conditions data
+                # (stored as a JSON string in the database, as a list in-memory)
+                app_conditions = coerce_json_container(target_app.get('medical_conditions'), [])
+                medical_conditions = []
+            
+                # Track what condition types we have from the array to avoid duplicates
+                has_disability_from_array = False
+                has_obesity_from_array = False
+            
+                # Process the stored medical_conditions array first (this is the authoritative source)
+                if isinstance(app_conditions, list):
+                    for cond in app_conditions:
+                        if isinstance(cond, dict):
+                            cond_name = cond.get('condition', '').lower()
+                            if 'disability' in cond_name or 'mobility' in cond_name or 'impairment' in cond_name:
+                                has_disability_from_array = True
+                            if 'obesity' in cond_name or 'bmi' in cond_name:
+                                has_obesity_from_array = True
                         
-                        processed_cond = {
-                            'condition': cond.get('condition', 'Unknown Condition'),
-                            'icd_code': cond.get('icd_code'),
-                            'severity': cond.get('severity', 'moderate'),
-                            'status': cond.get('status'),
-                            'treatment': cond.get('treatment'),
-                            'risk_impact': cond.get('risk_impact', 0.1),
-                            'loading_percentage': cond.get('loading_percentage', 10),
-                            'exclusion_recommended': cond.get('exclusion_recommended', False),
-                            'notes': cond.get('notes')
-                        }
-                        medical_conditions.append(processed_cond)
-                    elif isinstance(cond, str):
-                        cond_lower = cond.lower()
-                        if 'disability' in cond_lower or 'mobility' in cond_lower:
-                            has_disability_from_array = True
-                        if 'obesity' in cond_lower:
-                            has_obesity_from_array = True
-                        medical_conditions.append({
-                            'condition': cond,
-                            'icd_code': None,
-                            'severity': 'moderate',
-                            'status': None,
-                            'treatment': None,
-                            'risk_impact': 0.1,
-                            'loading_percentage': 10,
-                            'exclusion_recommended': False
-                        })
+                            processed_cond = {
+                                'condition': cond.get('condition', 'Unknown Condition'),
+                                'icd_code': cond.get('icd_code'),
+                                'severity': cond.get('severity', 'moderate'),
+                                'status': cond.get('status'),
+                                'treatment': cond.get('treatment'),
+                                # Coerce numerics so downstream sums never TypeError
+                                'risk_impact': safe_float(cond.get('risk_impact'), 0.1),
+                                'loading_percentage': safe_int(cond.get('loading_percentage'), 10),
+                                'exclusion_recommended': cond.get('exclusion_recommended', False),
+                                'notes': cond.get('notes')
+                            }
+                            medical_conditions.append(processed_cond)
+                        elif isinstance(cond, str):
+                            cond_lower = cond.lower()
+                            if 'disability' in cond_lower or 'mobility' in cond_lower:
+                                has_disability_from_array = True
+                            if 'obesity' in cond_lower:
+                                has_obesity_from_array = True
+                            medical_conditions.append({
+                                'condition': cond,
+                                'icd_code': None,
+                                'severity': 'moderate',
+                                'status': None,
+                                'treatment': None,
+                                'risk_impact': 0.1,
+                                'loading_percentage': 10,
+                                'exclusion_recommended': False
+                            })
             
-            # Only add disability from direct fields if not already in the array
-            if disability_pct is not None and disability_pct > 0 and not has_disability_from_array:
-                disability_type = target_app.get('disability_type', 'Physical')
-                disability_severity = 'severe' if disability_pct >= 50 else 'moderate' if disability_pct >= 25 else 'mild'
-                medical_conditions.append({
-                    'condition': f'Disability ({disability_type})',
-                    'icd_code': 'Z99.89',
-                    'severity': disability_severity,
-                    'status': target_app.get('disability_status', 'chronic'),
-                    'treatment': target_app.get('disability_treatment', 'Ongoing management'),
-                    'risk_impact': disability_pct / 100 * 0.6,
-                    'loading_percentage': min(disability_pct, 50),
-                    'exclusion_recommended': disability_pct >= 50,
-                    'notes': target_app.get('disability_notes')
-                })
-            
-            # Only add obesity from direct fields if not already in the array
-            if bmi is not None and bmi >= 30 and not has_obesity_from_array:
-                bmi_class = 'Class III (Severe)' if bmi >= 40 else 'Class II' if bmi >= 35 else 'Class I'
-                obesity_severity = 'severe' if bmi >= 40 else 'moderate' if bmi >= 35 else 'mild'
-                medical_conditions.append({
-                    'condition': f'Obesity ({bmi_class})',
-                    'icd_code': 'E66.9',
-                    'severity': obesity_severity,
-                    'status': 'active',
-                    'treatment': target_app.get('obesity_treatment', 'Dietary management, exercise program'),
-                    'risk_impact': (bmi - 25) / 100,
-                    'loading_percentage': min(int((bmi - 25) * 2), 40),
-                    'exclusion_recommended': False,
-                    'notes': f'BMI {bmi:.1f}' if bmi else None
-                })
-            
-            
-            # ====== CALCULATE RISK SCORES FROM ACTUAL DATA ======
-            base_risk = 0.10  # Base risk for any applicant
-            
-            # Age risk factor - ONLY if age is known
-            age_risk = 0
-            if applicant_age is not None:
-                if applicant_age > 65:
-                    age_risk = 0.30
-                elif applicant_age > 55:
-                    age_risk = 0.20
-                elif applicant_age > 45:
-                    age_risk = 0.12
-                elif applicant_age > 35:
-                    age_risk = 0.05
-                elif applicant_age < 25:
-                    age_risk = 0.03
-            
-            # Medical risk from conditions
-            medical_risk = sum(c.get('risk_impact', 0) for c in medical_conditions)
-            
-            # Lifestyle risk - ONLY if smoking status is known
-            lifestyle_risk = 0
-            if smoking:
-                if smoking.lower() in ['current', 'smoker', 'yes']:
-                    lifestyle_risk = 0.25
-                elif smoking.lower() in ['former', 'ex-smoker', 'quit']:
-                    lifestyle_risk = 0.10
-            
-            # Claims history risk - from actual claims data
-            claims_risk = min(len(customer_claims) * 0.03, 0.15) if customer_claims else 0
-            
-            # Overall risk calculation
-            overall_risk = min(base_risk + age_risk + medical_risk + lifestyle_risk + claims_risk, 1.0)
-            
-            # Determine risk category
-            if overall_risk <= 0.15:
-                risk_category = 'very_low'
-            elif overall_risk <= 0.25:
-                risk_category = 'low'
-            elif overall_risk <= 0.40:
-                risk_category = 'moderate'
-            elif overall_risk <= 0.55:
-                risk_category = 'elevated'
-            elif overall_risk <= 0.70:
-                risk_category = 'high'
-            else:
-                risk_category = 'very_high'
-            
-            # ====== GENERATE RECOMMENDATION BASED ON ACTUAL RISK ======
-            recommendation_type = 'approve_standard'
-            premium_adjustment = 0
-            exclusions = []
-            monitoring = []
-            conditions_of_approval = []
-            confidence = 0.85
-            
-            total_loading = sum(c.get('loading_percentage', 0) for c in medical_conditions)
-            
-            if risk_category == 'very_low':
-                recommendation_type = 'auto_approve'
-                confidence = 0.95
-                monitoring = ['Standard annual review']
-            elif risk_category == 'low':
-                recommendation_type = 'approve_standard'
-                confidence = 0.90
-                monitoring = ['Standard annual review']
-            elif risk_category == 'moderate':
-                recommendation_type = 'approve_with_loading'
-                premium_adjustment = (15 + total_loading) / 100
-                confidence = 0.82
-                monitoring = ['Annual health declaration']
-                if bmi and bmi >= 30:
-                    monitoring.append('Annual BMI assessment')
-                if disability_pct:
-                    monitoring.append('Annual disability status update')
-                conditions_of_approval = [
-                    f'Premium loading of {int(premium_adjustment * 100)}% applied',
-                    'Annual medical review required'
-                ]
-            elif risk_category == 'elevated':
-                recommendation_type = 'approve_with_exclusions'
-                premium_adjustment = (30 + total_loading) / 100
-                for cond in medical_conditions:
-                    if cond.get('exclusion_recommended'):
-                        exclusions.append(f"Pre-existing condition exclusion: {cond.get('condition')}")
-                confidence = 0.78
-                monitoring = ['Annual health declaration', 'Bi-annual medical assessment']
-                if disability_pct:
-                    monitoring.append('Annual disability status update')
-                monitoring.append('Claims monitoring for adverse patterns')
-                conditions_of_approval = [
-                    f'Premium loading of {int(premium_adjustment * 100)}% applied',
-                    'Annual medical review required'
-                ]
-            elif risk_category == 'high':
-                recommendation_type = 'refer_senior_uw'
-                premium_adjustment = (50 + total_loading) / 100
-                for cond in medical_conditions:
-                    if cond.get('severity') in ['severe', 'moderate']:
-                        exclusions.append(f"Pre-existing condition exclusion: {cond.get('condition')}")
-                confidence = 0.70
-                monitoring = ['Quarterly health check-ins', 'Annual medical review', 'Claims monitoring']
-                conditions_of_approval = [
-                    'Senior underwriter approval required',
-                    f'Premium loading of {int(premium_adjustment * 100)}% if approved'
-                ]
-            else:
-                recommendation_type = 'decline'
-                confidence = 0.75
-                monitoring = ['Applicant may reapply after 12 months with improved health metrics']
-            
-            # Build rationale from ACTUAL data only
-            rationale_parts = []
-            if applicant_age is not None:
-                rationale_parts.append(f"Applicant age of {applicant_age} years")
-            if disability_pct:
-                rationale_parts.append(f"{disability_pct}% disability rating")
-            if bmi and bmi >= 30:
-                rationale_parts.append(f"BMI of {bmi:.1f} (obesity)")
-            if smoking and smoking.lower() in ['current', 'smoker', 'yes']:
-                rationale_parts.append("Current smoker status")
-            if customer_claims:
-                rationale_parts.append(f"{len(customer_claims)} prior claims on record")
-            if medical_conditions:
-                other_conds = [c.get('condition') for c in medical_conditions if 'Disability' not in c.get('condition', '') and 'Obesity' not in c.get('condition', '')]
-                if other_conds:
-                    rationale_parts.append(f"Medical conditions: {', '.join(other_conds[:2])}")
-            
-            if rationale_parts:
-                rationale = f"Based on pipeline data analysis: {'; '.join(rationale_parts)}. "
-            else:
-                rationale = "Risk assessment based on available pipeline data. "
-            
-            if recommendation_type.startswith('approve'):
-                rationale += f"Risk profile is {risk_category.replace('_', ' ')} classification."
-            elif recommendation_type == 'refer_senior_uw':
-                rationale += "Elevated risk profile requires senior underwriter review."
-            else:
-                rationale += "Risk profile exceeds acceptable thresholds for standard approval."
-            
-            # Build risk factors from ACTUAL data
-            risk_factors = []
-            if age_risk > 0 and applicant_age is not None:
-                risk_factors.append({
-                    'name': 'Age',
-                    'category': 'demographic',
-                    'impact': age_risk,
-                    'direction': 'increase',
-                    'explanation': f'Applicant age of {applicant_age} years increases mortality risk'
-                })
-            if disability_pct and disability_pct > 0:
-                risk_factors.append({
-                    'name': 'Disability',
-                    'category': 'medical',
-                    'impact': disability_pct / 100 * 0.6,
-                    'direction': 'increase',
-                    'explanation': f'{disability_pct}% disability rating impacts risk assessment'
-                })
-            for cond in medical_conditions:
-                if 'Obesity' in cond.get('condition', ''):
-                    risk_factors.append({
-                        'name': 'Obesity',
-                        'category': 'medical',
-                        'impact': cond.get('risk_impact', 0),
-                        'direction': 'increase',
-                        'explanation': f"{cond.get('condition')} - {cond.get('status', 'active')}"
+                # Only add disability from direct fields if not already in the array
+                if disability_pct is not None and disability_pct > 0 and not has_disability_from_array:
+                    disability_type = target_app.get('disability_type', 'Physical')
+                    disability_severity = 'severe' if disability_pct >= 50 else 'moderate' if disability_pct >= 25 else 'mild'
+                    medical_conditions.append({
+                        'condition': f'Disability ({disability_type})',
+                        'icd_code': 'Z99.89',
+                        'severity': disability_severity,
+                        'status': target_app.get('disability_status', 'chronic'),
+                        'treatment': target_app.get('disability_treatment', 'Ongoing management'),
+                        'risk_impact': disability_pct / 100 * 0.6,
+                        'loading_percentage': min(disability_pct, 50),
+                        'exclusion_recommended': disability_pct >= 50,
+                        'notes': target_app.get('disability_notes')
                     })
-                elif 'Disability' not in cond.get('condition', ''):
-                    risk_factors.append({
-                        'name': cond.get('condition'),
-                        'category': 'medical',
-                        'impact': cond.get('risk_impact', 0),
-                        'direction': 'increase',
-                        'explanation': f"{cond.get('condition')} ({cond.get('severity', 'unknown')}) - {cond.get('status', 'unknown')}"
-                    })
-            if bmi and bmi >= 25:
-                bmi_category = 'Obese Class I' if bmi >= 30 else 'Overweight'
-                if bmi >= 35: bmi_category = 'Obese Class II'
-                if bmi >= 40: bmi_category = 'Obese Class III'
-                risk_factors.append({
-                    'name': 'BMI Category',
-                    'category': 'medical',
-                    'impact': max(0, (bmi - 25) / 100),
-                    'direction': 'increase',
-                    'explanation': f'BMI category ({bmi_category}) indicates elevated health risk'
-                })
-            if lifestyle_risk > 0 and smoking:
-                risk_factors.append({
-                    'name': 'Smoking Status',
-                    'category': 'lifestyle',
-                    'impact': lifestyle_risk,
-                    'direction': 'increase',
-                    'explanation': f'Smoking status: {smoking}'
-                })
-            if claims_risk > 0:
-                risk_factors.append({
-                    'name': 'Claims History',
-                    'category': 'historical',
-                    'impact': claims_risk,
-                    'direction': 'increase',
-                    'explanation': f'{len(customer_claims)} previous claims filed'
-                })
             
-            # Build document list ONLY from what's indicated in application
-            documents = []
-            app_documents = target_app.get('documents', [])
-            if isinstance(app_documents, list) and app_documents:
-                for doc in app_documents:
-                    if isinstance(doc, dict):
-                        # Preserve only fields that were actually recorded — never
-                        # invent authenticity/verification scores for missing evidence.
-                        entry = {
-                            'type': doc.get('type') or doc.get('document_type') or 'unknown',
-                            'verified': _coerce_verified_flag(doc.get('verified')) if 'verified' in doc else None,
-                            'authenticity_score': doc.get('authenticity_score'),
-                            'expiry_status': doc.get('expiry_status'),
-                            'flags': doc.get('flags'),
-                            'source': doc.get('source') or 'application',
-                        }
-                        documents.append(entry)
-            # When the application has no document records, leave the list empty.
-            # Callers/UI must treat missing evidence as unknown — not verified.
-
-            # Determine BMI category string
-            bmi_category_str = None
-            if bmi is not None:
-                if bmi >= 40:
-                    bmi_category_str = 'Obese Class III (Severe)'
-                elif bmi >= 35:
-                    bmi_category_str = 'Obese Class II'
-                elif bmi >= 30:
-                    bmi_category_str = 'Obese Class I'
-                elif bmi >= 25:
-                    bmi_category_str = 'Overweight'
+                # Only add obesity from direct fields if not already in the array
+                if bmi is not None and bmi >= 30 and not has_obesity_from_array:
+                    bmi_class = 'Class III (Severe)' if bmi >= 40 else 'Class II' if bmi >= 35 else 'Class I'
+                    obesity_severity = 'severe' if bmi >= 40 else 'moderate' if bmi >= 35 else 'mild'
+                    medical_conditions.append({
+                        'condition': f'Obesity ({bmi_class})',
+                        'icd_code': 'E66.9',
+                        'severity': obesity_severity,
+                        'status': 'active',
+                        'treatment': target_app.get('obesity_treatment', 'Dietary management, exercise program'),
+                        'risk_impact': (bmi - 25) / 100,
+                        'loading_percentage': min(int((bmi - 25) * 2), 40),
+                        'exclusion_recommended': False,
+                        'notes': f'BMI {bmi:.1f}' if bmi else None
+                    })
+            
+            
+                # ====== CALCULATE RISK SCORES FROM ACTUAL DATA ======
+                base_risk = 0.10  # Base risk for any applicant
+            
+                # Age risk factor - ONLY if age is known
+                age_risk = 0
+                if applicant_age is not None:
+                    if applicant_age > 65:
+                        age_risk = 0.30
+                    elif applicant_age > 55:
+                        age_risk = 0.20
+                    elif applicant_age > 45:
+                        age_risk = 0.12
+                    elif applicant_age > 35:
+                        age_risk = 0.05
+                    elif applicant_age < 25:
+                        age_risk = 0.03
+            
+                # Medical risk from conditions
+                medical_risk = sum(c.get('risk_impact', 0) for c in medical_conditions)
+            
+                # Lifestyle risk - ONLY if smoking status is known
+                lifestyle_risk = 0
+                if smoking:
+                    if smoking.lower() in ['current', 'smoker', 'yes']:
+                        lifestyle_risk = 0.25
+                    elif smoking.lower() in ['former', 'ex-smoker', 'quit']:
+                        lifestyle_risk = 0.10
+            
+                # Claims history risk - from actual claims data
+                claims_risk = min(len(customer_claims) * 0.03, 0.15) if customer_claims else 0
+            
+                # Overall risk calculation
+                overall_risk = min(base_risk + age_risk + medical_risk + lifestyle_risk + claims_risk, 1.0)
+            
+                # Determine risk category
+                if overall_risk <= 0.15:
+                    risk_category = 'very_low'
+                elif overall_risk <= 0.25:
+                    risk_category = 'low'
+                elif overall_risk <= 0.40:
+                    risk_category = 'moderate'
+                elif overall_risk <= 0.55:
+                    risk_category = 'elevated'
+                elif overall_risk <= 0.70:
+                    risk_category = 'high'
                 else:
-                    bmi_category_str = 'Normal'
+                    risk_category = 'very_high'
             
-            # Build complete report using ONLY actual pipeline data
-            report = {
-                'report_id': f"RR-{target_app.get('id', 'UNKNOWN')}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                'application_id': target_app.get('id'),
-                'applicant': {
-                    'name': target_customer.get('name') or target_customer.get('full_name') or target_app.get('customer_name'),
-                    'age': applicant_age,
-                    'gender': gender,
-                    'occupation': occupation,
-                    'email': target_customer.get('email') or target_app.get('customer_email'),
-                    'customer_id': customer_id
-                },
-                'policy_type': target_policy.get('type') or target_app.get('policy_type'),
-                'coverage_amount': target_policy.get('coverage_amount') or target_app.get('coverage_amount', 0),
-                # Only True when the application explicitly recorded verification.
-                'identity_verified': _coerce_verified_flag(target_app['identity_verified']) if 'identity_verified' in target_app else None,
-                'risk_scores': {
-                    'overall': round(overall_risk, 4),
-                    'category': risk_category,
-                    # Omit fabricated confidence: unknown when not explicitly set.
-                    'identity': (
-                        0.95 if target_app.get('identity_verified') is True
-                        else (0.50 if target_app.get('identity_verified') is False else None)
+                # ====== GENERATE RECOMMENDATION BASED ON ACTUAL RISK ======
+                recommendation_type = 'approve_standard'
+                premium_adjustment = 0
+                exclusions = []
+                monitoring = []
+                conditions_of_approval = []
+                confidence = 0.85
+            
+                total_loading = sum(c.get('loading_percentage', 0) for c in medical_conditions)
+            
+                if risk_category == 'very_low':
+                    recommendation_type = 'auto_approve'
+                    confidence = 0.95
+                    monitoring = ['Standard annual review']
+                elif risk_category == 'low':
+                    recommendation_type = 'approve_standard'
+                    confidence = 0.90
+                    monitoring = ['Standard annual review']
+                elif risk_category == 'moderate':
+                    recommendation_type = 'approve_with_loading'
+                    premium_adjustment = (15 + total_loading) / 100
+                    confidence = 0.82
+                    monitoring = ['Annual health declaration']
+                    if bmi and bmi >= 30:
+                        monitoring.append('Annual BMI assessment')
+                    if disability_pct:
+                        monitoring.append('Annual disability status update')
+                    conditions_of_approval = [
+                        f'Premium loading of {int(premium_adjustment * 100)}% applied',
+                        'Annual medical review required'
+                    ]
+                elif risk_category == 'elevated':
+                    recommendation_type = 'approve_with_exclusions'
+                    premium_adjustment = (30 + total_loading) / 100
+                    for cond in medical_conditions:
+                        if cond.get('exclusion_recommended'):
+                            exclusions.append(f"Pre-existing condition exclusion: {cond.get('condition')}")
+                    confidence = 0.78
+                    monitoring = ['Annual health declaration', 'Bi-annual medical assessment']
+                    if disability_pct:
+                        monitoring.append('Annual disability status update')
+                    monitoring.append('Claims monitoring for adverse patterns')
+                    conditions_of_approval = [
+                        f'Premium loading of {int(premium_adjustment * 100)}% applied',
+                        'Annual medical review required'
+                    ]
+                elif risk_category == 'high':
+                    recommendation_type = 'refer_senior_uw'
+                    premium_adjustment = (50 + total_loading) / 100
+                    for cond in medical_conditions:
+                        if cond.get('severity') in ['severe', 'moderate']:
+                            exclusions.append(f"Pre-existing condition exclusion: {cond.get('condition')}")
+                    confidence = 0.70
+                    monitoring = ['Quarterly health check-ins', 'Annual medical review', 'Claims monitoring']
+                    conditions_of_approval = [
+                        'Senior underwriter approval required',
+                        f'Premium loading of {int(premium_adjustment * 100)}% if approved'
+                    ]
+                else:
+                    recommendation_type = 'decline'
+                    confidence = 0.75
+                    monitoring = ['Applicant may reapply after 12 months with improved health metrics']
+            
+                # Build rationale from ACTUAL data only
+                rationale_parts = []
+                if applicant_age is not None:
+                    rationale_parts.append(f"Applicant age of {applicant_age} years")
+                if disability_pct:
+                    rationale_parts.append(f"{disability_pct}% disability rating")
+                if bmi and bmi >= 30:
+                    rationale_parts.append(f"BMI of {bmi:.1f} (obesity)")
+                if smoking and smoking.lower() in ['current', 'smoker', 'yes']:
+                    rationale_parts.append("Current smoker status")
+                if customer_claims:
+                    rationale_parts.append(f"{len(customer_claims)} prior claims on record")
+                if medical_conditions:
+                    other_conds = [c.get('condition') for c in medical_conditions if 'Disability' not in c.get('condition', '') and 'Obesity' not in c.get('condition', '')]
+                    if other_conds:
+                        rationale_parts.append(f"Medical conditions: {', '.join(other_conds[:2])}")
+            
+                if rationale_parts:
+                    rationale = f"Based on pipeline data analysis: {'; '.join(rationale_parts)}. "
+                else:
+                    rationale = "Risk assessment based on available pipeline data. "
+            
+                if recommendation_type.startswith('approve'):
+                    rationale += f"Risk profile is {risk_category.replace('_', ' ')} classification."
+                elif recommendation_type == 'refer_senior_uw':
+                    rationale += "Elevated risk profile requires senior underwriter review."
+                else:
+                    rationale += "Risk profile exceeds acceptable thresholds for standard approval."
+            
+                # Build risk factors from ACTUAL data
+                risk_factors = []
+                if age_risk > 0 and applicant_age is not None:
+                    risk_factors.append({
+                        'name': 'Age',
+                        'category': 'demographic',
+                        'impact': age_risk,
+                        'direction': 'increase',
+                        'explanation': f'Applicant age of {applicant_age} years increases mortality risk'
+                    })
+                if disability_pct and disability_pct > 0:
+                    risk_factors.append({
+                        'name': 'Disability',
+                        'category': 'medical',
+                        'impact': disability_pct / 100 * 0.6,
+                        'direction': 'increase',
+                        'explanation': f'{disability_pct}% disability rating impacts risk assessment'
+                    })
+                for cond in medical_conditions:
+                    if 'Obesity' in cond.get('condition', ''):
+                        risk_factors.append({
+                            'name': 'Obesity',
+                            'category': 'medical',
+                            'impact': cond.get('risk_impact', 0),
+                            'direction': 'increase',
+                            'explanation': f"{cond.get('condition')} - {cond.get('status', 'active')}"
+                        })
+                    elif 'Disability' not in cond.get('condition', ''):
+                        risk_factors.append({
+                            'name': cond.get('condition'),
+                            'category': 'medical',
+                            'impact': cond.get('risk_impact', 0),
+                            'direction': 'increase',
+                            'explanation': f"{cond.get('condition')} ({cond.get('severity', 'unknown')}) - {cond.get('status', 'unknown')}"
+                        })
+                if bmi and bmi >= 25:
+                    bmi_category = 'Obese Class I' if bmi >= 30 else 'Overweight'
+                    if bmi >= 35: bmi_category = 'Obese Class II'
+                    if bmi >= 40: bmi_category = 'Obese Class III'
+                    risk_factors.append({
+                        'name': 'BMI Category',
+                        'category': 'medical',
+                        'impact': max(0, (bmi - 25) / 100),
+                        'direction': 'increase',
+                        'explanation': f'BMI category ({bmi_category}) indicates elevated health risk'
+                    })
+                if lifestyle_risk > 0 and smoking:
+                    risk_factors.append({
+                        'name': 'Smoking Status',
+                        'category': 'lifestyle',
+                        'impact': lifestyle_risk,
+                        'direction': 'increase',
+                        'explanation': f'Smoking status: {smoking}'
+                    })
+                if claims_risk > 0:
+                    risk_factors.append({
+                        'name': 'Claims History',
+                        'category': 'historical',
+                        'impact': claims_risk,
+                        'direction': 'increase',
+                        'explanation': f'{len(customer_claims)} previous claims filed'
+                    })
+            
+                # Build document list ONLY from what's indicated in application
+                # (stored as a JSON string in the database, as a list in-memory)
+                documents = []
+                app_documents = coerce_json_container(target_app.get('documents'), [])
+                if isinstance(app_documents, list) and app_documents:
+                    for doc in app_documents:
+                        if isinstance(doc, dict):
+                            # Preserve only fields that were actually recorded — never
+                            # invent authenticity/verification scores for missing evidence.
+                            entry = {
+                                'type': doc.get('type') or doc.get('document_type') or 'unknown',
+                                'verified': _coerce_verified_flag(doc.get('verified')) if 'verified' in doc else None,
+                                'authenticity_score': doc.get('authenticity_score'),
+                                'expiry_status': doc.get('expiry_status'),
+                                'flags': doc.get('flags'),
+                                'source': doc.get('source') or 'application',
+                            }
+                            documents.append(entry)
+                # When the application has no document records, leave the list empty.
+                # Callers/UI must treat missing evidence as unknown — not verified.
+
+                # Determine BMI category string
+                bmi_category_str = None
+                if bmi is not None:
+                    if bmi >= 40:
+                        bmi_category_str = 'Obese Class III (Severe)'
+                    elif bmi >= 35:
+                        bmi_category_str = 'Obese Class II'
+                    elif bmi >= 30:
+                        bmi_category_str = 'Obese Class I'
+                    elif bmi >= 25:
+                        bmi_category_str = 'Overweight'
+                    else:
+                        bmi_category_str = 'Normal'
+            
+                # Build complete report using ONLY actual pipeline data
+                report = {
+                    'report_id': f"RR-{target_app.get('id', 'UNKNOWN')}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                    'application_id': target_app.get('id'),
+                    'applicant': {
+                        'name': target_customer.get('name') or target_customer.get('full_name') or target_app.get('customer_name'),
+                        'age': applicant_age,
+                        'gender': gender,
+                        'occupation': occupation,
+                        'email': target_customer.get('email') or target_app.get('customer_email'),
+                        'customer_id': customer_id
+                    },
+                    'policy_type': target_policy.get('type') or target_app.get('policy_type'),
+                    'coverage_amount': safe_float(
+                        target_policy.get('coverage_amount') or target_app.get('coverage_amount'), 0.0
                     ),
-                    'medical': round(min(medical_risk + 0.10, 1.0), 4) if medical_conditions else (
-                        0.10 if medical_conditions == [] else None
-                    ),
-                    'lifestyle': round(1.0 - lifestyle_risk, 4) if lifestyle_risk is not None else None,
-                    # Financial/fraud scores only when evidence exists on the application.
-                    'financial': target_app.get('financial_risk_score'),
-                    'fraud': target_app.get('fraud_risk_score'),
-                },
-                'medical_assessment': {
-                    'disability_percentage': disability_pct or 0,
-                    'disability_type': target_app.get('disability_type') if disability_pct else None,
-                    'bmi_category': bmi_category_str,
-                    'smoking_status': smoking,
-                    'conditions': medical_conditions
-                },
-                'risk_factors': risk_factors,
-                'documents': documents,
-                'recommendation': {
-                    'type': recommendation_type,
-                    'confidence': confidence,
-                    'rationale': rationale,
-                    'premium_adjustment': round(premium_adjustment, 4),
-                    'exclusions': exclusions,
-                    'monitoring': monitoring,
-                    'conditions_of_approval': conditions_of_approval,
-                    'review_period_months': 12 if risk_category in ['very_low', 'low'] else 6
-                },
-                'metadata': {
-                    'assessment_date': datetime.now().isoformat(),
-                    'model_version': '2.0.0',
-                    'assessor_role': session.get('role') if session else 'system',
-                    # Integrity is verified only when document evidence was supplied —
-                    # never claim integrity for inferred/empty document sets.
-                    'data_integrity_verified': bool(documents),
-                    'documents_provided': len(documents),
-                    'data_source': 'application_record',
-                    'unknown_fields_omitted': True,
+                    # Only True when the application explicitly recorded verification.
+                    'identity_verified': _coerce_verified_flag(target_app['identity_verified']) if 'identity_verified' in target_app else None,
+                    'risk_scores': {
+                        'overall': round(overall_risk, 4),
+                        'category': risk_category,
+                        # Omit fabricated confidence: unknown when not explicitly set.
+                        'identity': (
+                            0.95 if target_app.get('identity_verified') is True
+                            else (0.50 if target_app.get('identity_verified') is False else None)
+                        ),
+                        'medical': round(min(medical_risk + 0.10, 1.0), 4) if medical_conditions else (
+                            0.10 if medical_conditions == [] else None
+                        ),
+                        'lifestyle': round(1.0 - lifestyle_risk, 4) if lifestyle_risk is not None else None,
+                        # Financial/fraud scores only when evidence exists on the application.
+                        'financial': target_app.get('financial_risk_score'),
+                        'fraud': target_app.get('fraud_risk_score'),
+                    },
+                    'medical_assessment': {
+                        'disability_percentage': disability_pct or 0,
+                        'disability_type': target_app.get('disability_type') if disability_pct else None,
+                        'bmi_category': bmi_category_str,
+                        'smoking_status': smoking,
+                        'conditions': medical_conditions
+                    },
+                    'risk_factors': risk_factors,
+                    'documents': documents,
+                    'recommendation': {
+                        'type': recommendation_type,
+                        'confidence': confidence,
+                        'rationale': rationale,
+                        'premium_adjustment': round(premium_adjustment, 4),
+                        'exclusions': exclusions,
+                        'monitoring': monitoring,
+                        'conditions_of_approval': conditions_of_approval,
+                        'review_period_months': 12 if risk_category in ['very_low', 'low'] else 6
+                    },
+                    'metadata': {
+                        'assessment_date': datetime.now().isoformat(),
+                        'model_version': '2.0.0',
+                        'assessor_role': session.get('role') if session else 'system',
+                        # Integrity is verified only when document evidence was supplied —
+                        # never claim integrity for inferred/empty document sets.
+                        'data_integrity_verified': bool(documents),
+                        'documents_provided': len(documents),
+                        'data_source': 'application_record',
+                        'unknown_fields_omitted': True,
+                    }
                 }
-            }
             
-            self._set_json_headers()
-            self.wfile.write(json.dumps(report).encode('utf-8'))
+                # Serialize before sending the status line so a serialization
+                # failure can still be answered with a clean JSON 500 below.
+                body = json.dumps(report).encode('utf-8')
+                self._set_json_headers()
+                self.wfile.write(body)
+            except Exception as e:
+                # Catch-all guard: an unhandled exception here would drop the
+                # connection with no HTTP response, leaving the viewer with only
+                # a generic "Error Loading Report" and nothing in the logs.
+                import traceback
+                print(f"Error in /api/risk-assessment/report: {e}")
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': f'Failed to generate risk assessment report: {e}'}).encode('utf-8'))
             return
         
         # ========== LIST ALL RISK ASSESSMENT REPORTS ==========
