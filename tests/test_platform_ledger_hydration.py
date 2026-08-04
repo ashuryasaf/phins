@@ -470,3 +470,189 @@ def test_ensure_hash_chain_is_idempotent_on_valid_chain(sqlite_ledger):
 
     summary2 = reconcile_ledger_entries(memory.values())
     assert summary2["chain_valid"]
+
+
+# ---------------------------------------------------------------------------
+# Chain-repair auditability (F4)
+# ---------------------------------------------------------------------------
+# The boot path may rewrite sequence_no/previous_hash/entry_hash on existing
+# platform_ledger_entries rows to heal divergence. Rewriting audit rows is only
+# acceptable while the pre-repair state stays recoverable and the result is
+# verified, so these tests pin the fail-closed journal and the post-write check.
+
+
+def test_repair_refuses_without_a_backup_path(sqlite_ledger):
+    """No forensic journal → no rewrite. The divergence is left for an operator."""
+    from database.manager import DatabaseManager
+
+    first_memory = {}
+    _seed_sample_ledger(_make_service(first_memory), n_entries=6)
+    _tamper_db_rows()
+
+    with DatabaseManager() as db:
+        before = {
+            row.id: (row.sequence_no, row.previous_hash, row.entry_hash)
+            for row in db.platform_ledger.get_all_by_sequence(limit=1000)
+        }
+
+    memory = {}
+    service = _make_service(memory)
+    assert service.hydrate_from_db() == 6
+    service.ensure_hash_chain()
+
+    summary = service.persist_chain_to_db()  # no backup_path
+    assert summary["applied"] is False
+    assert "forensic journal" in summary["reason"]
+
+    with DatabaseManager() as db:
+        for entry_id, expected in before.items():
+            row = db.platform_ledger.get_by_id(entry_id)
+            assert (row.sequence_no, row.previous_hash, row.entry_hash) == expected, (
+                "audit row mutated without a journal"
+            )
+
+
+def test_repair_refuses_when_the_journal_cannot_be_written(sqlite_ledger, tmp_path):
+    """An unwritable journal destination must abort the repair, not proceed."""
+    from database.manager import DatabaseManager
+
+    _seed_sample_ledger(_make_service({}), n_entries=6)
+    _tamper_db_rows()
+
+    with DatabaseManager() as db:
+        before = {
+            row.id: (row.sequence_no, row.entry_hash)
+            for row in db.platform_ledger.get_all_by_sequence(limit=1000)
+        }
+
+    memory = {}
+    service = _make_service(memory)
+    service.hydrate_from_db()
+    service.ensure_hash_chain()
+
+    # A path whose parent is a regular file can never be created.
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x", encoding="utf-8")
+    summary = service.persist_chain_to_db(backup_path=str(blocker / "journal.json"))
+
+    assert summary["applied"] is False
+    assert "journal write failed" in summary["reason"]
+
+    with DatabaseManager() as db:
+        for entry_id, expected in before.items():
+            row = db.platform_ledger.get_by_id(entry_id)
+            assert (row.sequence_no, row.entry_hash) == expected, (
+                "audit row mutated despite journal failure"
+            )
+
+
+def test_repair_may_proceed_without_journal_when_explicitly_allowed(sqlite_ledger):
+    """The fail-closed default is overridable for deliberate operator use."""
+    _seed_sample_ledger(_make_service({}), n_entries=5)
+    _tamper_db_rows()
+
+    memory = {}
+    service = _make_service(memory)
+    service.hydrate_from_db()
+    service.ensure_hash_chain()
+
+    summary = service.persist_chain_to_db(require_backup=False)
+    assert summary["applied"] is True
+    assert summary["rows_updated"] >= 1
+
+
+def test_repair_journal_records_before_and_after(sqlite_ledger, tmp_path):
+    """The journal must make the pre-repair chain reconstructible."""
+    import json
+
+    _seed_sample_ledger(_make_service({}), n_entries=8)
+    _tamper_db_rows()
+
+    memory = {}
+    service = _make_service(memory)
+    service.hydrate_from_db()
+    service.ensure_hash_chain()
+
+    journal_path = tmp_path / "nested" / "journal.json"  # parent auto-created
+    summary = service.persist_chain_to_db(backup_path=str(journal_path))
+    assert summary["applied"] is True
+    assert journal_path.exists()
+
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    assert journal["schema"] == "phins.ledger.chain_repair.v2"
+    assert journal["rows"], "journal recorded no changed rows"
+    for row in journal["rows"]:
+        assert {"id", "sequence_no", "previous_hash", "entry_hash", "replaced_by"} <= set(row)
+        # The recorded original must differ from what replaced it, otherwise the
+        # row should not have been in the update set at all.
+        assert (
+            row["sequence_no"],
+            row["previous_hash"],
+            row["entry_hash"],
+        ) != (
+            row["replaced_by"]["sequence_no"],
+            row["replaced_by"]["previous_hash"],
+            row["replaced_by"]["entry_hash"],
+        )
+    # The post-repair values in the journal match what is now in memory/DB.
+    for row in journal["rows"]:
+        assert memory[row["id"]]["entry_hash"] == row["replaced_by"]["entry_hash"]
+
+    # No temp file is left behind by the atomic write.
+    assert not (journal_path.parent / (journal_path.name + ".tmp")).exists()
+
+
+def test_repair_reports_verification_success(sqlite_ledger, tmp_path):
+    """A successful repair must be positively verified, not just committed."""
+    _seed_sample_ledger(_make_service({}), n_entries=7)
+    _tamper_db_rows()
+
+    memory = {}
+    service = _make_service(memory)
+    service.hydrate_from_db()
+    service.ensure_hash_chain()
+
+    summary = service.persist_chain_to_db(backup_path=str(tmp_path / "j.json"))
+    assert summary["applied"] is True
+    assert summary["verified"] is True
+    assert not summary.get("verification_mismatches")
+    assert not summary.get("verification_missing")
+
+
+def test_verification_detects_a_divergent_row(sqlite_ledger, tmp_path):
+    """The verifier itself must catch a row that does not match memory."""
+    from database.manager import DatabaseManager
+
+    seeded = _seed_sample_ledger(_make_service({}), n_entries=4)
+
+    memory = {}
+    service = _make_service(memory)
+    service.hydrate_from_db()
+
+    with DatabaseManager() as db:
+        row = db.platform_ledger.get_by_id(seeded[1]["id"])
+        row.entry_hash = "b" * 64
+        db.commit()
+        result = service._verify_db_chain_matches_memory(db)
+
+    assert result["verified"] is False
+    assert seeded[1]["id"] in result["mismatches"]
+
+
+def test_verification_detects_a_missing_row(sqlite_ledger):
+    """A memory entry absent from SQL must fail verification."""
+    from database.manager import DatabaseManager
+
+    seeded = _seed_sample_ledger(_make_service({}), n_entries=4)
+
+    memory = {}
+    service = _make_service(memory)
+    service.hydrate_from_db()
+
+    with DatabaseManager() as db:
+        assert db.platform_ledger.delete(seeded[2]["id"])
+        db.commit()
+        result = service._verify_db_chain_matches_memory(db)
+
+    assert result["verified"] is False
+    assert seeded[2]["id"] in result["missing"]

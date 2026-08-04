@@ -289,21 +289,27 @@ def _is_production_runtime() -> bool:
     ``RAILWAY_ENVIRONMENT_NAME`` / ``NODE_ENV``, so a deployment configured with
     the documented ``PHINS_ENVIRONMENT=production`` (the variable used by
     ``scripts/entrypoint.sh`` and ``security.secrets_policy``) was not detected
-    as production here. Delegate to the shared policy — which also understands
-    ``RAILWAY_ENVIRONMENT``/``RENDER`` and always treats ``PHINS_TEST_MODE`` as
-    non-production — and keep the legacy names as an additional signal so no
-    previously-detected production runtime stops being detected.
+    as production here — and therefore echoed live verification codes back to
+    callers. This widens detection to the shared policy, which also understands
+    ``ENV``/``RAILWAY_ENVIRONMENT``/``RENDER``.
+
+    ``PHINS_TEST_MODE`` is deliberately *not* allowed to mask an explicit
+    production label: this function answers "is this a production runtime", and
+    the test-harness allowance belongs to the individual exposure decisions
+    (see ``_demo_otp_exposure_allowed``) so a mislabelled deployment cannot
+    unlock code exposure by also setting the test flag.
     """
+    if _runtime_environment_name() in _PRODUCTION_ENV_NAMES:
+        return True
     try:
         from security.secrets_policy import _is_production
 
-        if _is_production():
+        environ = {k: v for k, v in os.environ.items() if k != 'PHINS_TEST_MODE'}
+        if _is_production(environ):
             return True
     except Exception:
         pass
-    if PHINS_TEST_MODE:
-        return False
-    return _runtime_environment_name() in _PRODUCTION_ENV_NAMES
+    return False
 
 
 def _demo_otp_exposure_allowed() -> bool:
@@ -328,12 +334,18 @@ def _allow_registration_demo_otp_fallback() -> bool:
     Allow OTP fallback code exposure only for non-production registration flows.
 
     Operators can override with PHINS_ALLOW_REGISTRATION_DEMO_OTP_FALLBACK.
+
+    Production detection goes through ``_is_production_runtime`` rather than
+    ``_runtime_environment_name`` alone: the latter never inspected
+    ``PHINS_ENVIRONMENT`` (or ``RENDER``), so a deployment configured the
+    documented way was treated as development and would echo live registration
+    verification codes back to the caller.
     """
     explicit_override = os.environ.get('PHINS_ALLOW_REGISTRATION_DEMO_OTP_FALLBACK')
     if explicit_override is not None:
         return str(explicit_override).strip().lower() in _TRUTHY_VALUES
 
-    return _runtime_environment_name() not in _PRODUCTION_ENV_NAMES
+    return not _is_production_runtime()
 
 
 def _registration_otp_fallback_eligible(purpose: Optional[str]) -> bool:
