@@ -148,6 +148,54 @@ def handle_revenue_forecast(handler, policies: dict, params: dict = None) -> tup
         return 500, {'error': str(e)}
 
 
+def handle_bi_snapshots(handler, params: dict = None) -> tuple:
+    """Handle GET /api/bi/snapshots (BI-3).
+
+    Lists stored KPI snapshots newest-first, or — with ``?metric=<name>`` —
+    returns the chronological trend series for a single metric.
+    """
+    try:
+        from services.bi_snapshot_service import get_bi_snapshot_service
+        svc = get_bi_snapshot_service()
+        params = params or {}
+        try:
+            limit = int(params.get('limit') or 90)
+        except (TypeError, ValueError):
+            limit = 90
+        metric = str(params.get('metric') or '').strip()
+        if metric:
+            return 200, svc.trend(metric, limit=limit)
+        return 200, svc.list_snapshots(limit=limit)
+    except Exception as e:
+        return 500, {'error': str(e)}
+
+
+def handle_bi_snapshot_capture(handler, data_sources: dict) -> tuple:
+    """Handle POST /api/bi/snapshots/capture (BI-3).
+
+    Computes the executive dashboard from live stores and persists an
+    immutable, checksummed KPI snapshot for trend history.
+    """
+    try:
+        from services.bi_snapshot_service import get_bi_snapshot_service
+        bi_service = get_bi_analytics_service()
+        dashboard = bi_service.get_executive_dashboard(
+            customers=data_sources.get('customers', {}),
+            policies=data_sources.get('policies', {}),
+            claims=data_sources.get('claims', {}),
+            billing=data_sources.get('billing', {}),
+            balance_sheet=data_sources.get('balance_sheet', {}),
+            suppliers=data_sources.get('suppliers', {}),
+            deliveries=data_sources.get('deliveries', {})
+        )
+        record = get_bi_snapshot_service().capture_snapshot(
+            dashboard, source=str(data_sources.get('_snapshot_source') or 'api'),
+        )
+        return 201, record
+    except Exception as e:
+        return 500, {'error': str(e)}
+
+
 def handle_integrity_validation(handler, data_sources: dict) -> tuple:
     """Handle GET /api/integrity/validate"""
     try:
