@@ -35,10 +35,9 @@ import requests
 
 BASE_URL = "https://www.alphavantage.co/query"
 
-ALPHA_VANTAGE_API_KEY = os.environ.get(
-    "ALPHA_VANTAGE_API_KEY",
-    "TPX0B2Z2NKO2Y3Q2",
-)
+# SECURITY: no hardcoded fallback key. When ALPHA_VANTAGE_API_KEY is unset the
+# service degrades gracefully (serves cached data / reports "not configured").
+ALPHA_VANTAGE_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY", "").strip()
 
 _REQUEST_TIMESTAMPS: List[float] = []
 _RATE_LOCK = threading.Lock()

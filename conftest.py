@@ -63,6 +63,10 @@ os.environ.setdefault("USE_DATABASE", "false")
 os.environ.setdefault("USE_SQLITE", "true")
 os.environ.setdefault("SQLITE_PATH", str(Path(tempfile.gettempdir()) / "phins_test.db"))
 os.environ.setdefault("PHINS_TEST_MODE", "true")
+# Keep BI KPI snapshots out of the repo's data/ directory during test runs.
+os.environ.setdefault(
+    "PHINS_BI_SNAPSHOT_DIR", str(Path(tempfile.gettempdir()) / "phins_test_bi_snapshots")
+)
 
 
 _httpd = None
@@ -180,6 +184,20 @@ def pytest_runtest_setup(item):  # type: ignore[no-redef]
     try:
         from services.assessment_center_service import reset_assessment_center
         reset_assessment_center()
+    except Exception:
+        pass
+
+    # Reset assessment records so decision-loop snapshots don't bleed between tests.
+    try:
+        from services.assessment_record_service import reset_assessment_record_service
+        reset_assessment_record_service()
+    except Exception:
+        pass
+
+    # Reset BI snapshot singleton so KPI trend tests stay isolated.
+    try:
+        from services.bi_snapshot_service import reset_bi_snapshot_service
+        reset_bi_snapshot_service()
     except Exception:
         pass
 

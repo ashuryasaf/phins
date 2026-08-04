@@ -68,6 +68,62 @@ _ADMIN_ROLES = {"admin", "underwriter", "actuary", "analyst", "claims",
 _SYNTHETIC_CUSTOMER_PREFIX = "USER:"
 
 
+# Scanner threats that always block an Assessment Center upload. Size and
+# extension policy stay with DocumentProcessingService (its allow-list is
+# broader - DICOM, HTML, media - and its size cap is authoritative), so only
+# genuinely dangerous content categories are blocking here.
+_BLOCKING_THREAT_PREFIXES = (
+    "invalid_base64_encoding",
+    "dangerous_extension",
+    "double_extension_attack",
+    "executable_header",
+    "embedded_script",
+    "macro_or_shell_signature",
+    "null_byte_in_filename",
+    "content_type_mismatch",
+)
+
+
+def _security_scan_upload(
+    file_data_b64: str,
+    file_name: str,
+    declared_mime: str,
+    client_ip: str,
+) -> Optional[str]:
+    """Scan an upload payload; return a threat summary when it must be blocked.
+
+    Returns ``None`` when the payload is safe (or when the scanner is
+    unavailable, preserving the platform's graceful-degradation convention).
+    """
+    try:
+        from security.file_scanner import scan_base64_payload
+    except ImportError:
+        return None
+    try:
+        verdict = scan_base64_payload(
+            file_data_b64,
+            filename=file_name,
+            declared_content_type=declared_mime or "",
+            # Effectively defer size policy to DocumentProcessingService.
+            max_size=1024 * 1024 * 1024,
+        )
+    except Exception as exc:  # pragma: no cover - scanner must never 500 uploads
+        logger.warning("Assessment upload scan errored (allowing): %s", exc)
+        return None
+    blocking = [
+        t for t in verdict.threats
+        if t.startswith(_BLOCKING_THREAT_PREFIXES)
+    ]
+    if not blocking:
+        return None
+    try:
+        from security.intrusion_detector import record_upload_threat
+        record_upload_threat(client_ip, file_name, tuple(blocking))
+    except Exception:
+        pass
+    return "; ".join(blocking)
+
+
 def _synthetic_customer_id(username: str) -> str:
     """Return a stable synthetic customer_id derived from a username.
 
@@ -785,6 +841,71 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
             logger.exception("assessment-center customers GET failed: %s", exc)
             return 500, {"error": "Assessment center error"}
 
+    if path == "/api/assessment-center/records":
+        if not session:
+            return 401, {"error": "Authentication required"}
+        role = str(session.get("role") or "").lower()
+
+        def _qp(name: str) -> Optional[str]:
+            if not isinstance(query_params, dict):
+                return None
+            val = query_params.get(name)
+            if isinstance(val, list):
+                val = val[0] if val else None
+            return (str(val).strip() or None) if val is not None else None
+
+        requested_customer = _qp("customer_id")
+        if role in _ADMIN_ROLES:
+            customer_filter = requested_customer
+        else:
+            # Customers can only ever see their own assessment records.
+            own = (
+                session.get("customer_id")
+                or (session.get("user") or {}).get("customer_id")
+                or ""
+            )
+            if not own:
+                return 403, {"error": "Customer session invalid - no customer_id"}
+            if requested_customer and requested_customer != own:
+                return 403, {"error": "You can only view your own assessment records"}
+            customer_filter = own
+
+        try:
+            from services.assessment_record_service import get_assessment_record_service
+            svc_records = get_assessment_record_service()
+            try:
+                page = int(_qp("page") or 1)
+            except ValueError:
+                page = 1
+            try:
+                page_size = int(_qp("page_size") or 50)
+            except ValueError:
+                page_size = 50
+            return 200, svc_records.list_records(
+                customer_id=customer_filter,
+                subject_type=_qp("subject_type"),
+                subject_id=_qp("subject_id"),
+                assessment_type=_qp("assessment_type"),
+                page=page,
+                page_size=page_size,
+            )
+        except Exception as exc:
+            logger.exception("assessment-center records GET failed: %s", exc)
+            return 500, {"error": "Assessment center error"}
+
+    if path == "/api/assessment-center/records/summary":
+        if not session:
+            return 401, {"error": "Authentication required"}
+        role = str(session.get("role") or "").lower()
+        if role not in _ADMIN_ROLES:
+            return 403, {"error": "Admin role required"}
+        try:
+            from services.assessment_record_service import get_assessment_record_service
+            return 200, get_assessment_record_service().summary()
+        except Exception as exc:
+            logger.exception("assessment-center records summary failed: %s", exc)
+            return 500, {"error": "Assessment center error"}
+
     if path == "/api/assessment-center/backfill-status":
         if not session:
             return 401, {"error": "Authentication required"}
@@ -936,6 +1057,18 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
             cust, err = _resolve_customer(session, requested_customer)
             if err:
                 return 403, {"error": err}
+
+            threat_summary = _security_scan_upload(
+                file_data_b64,
+                file_name,
+                str(body.get("mime_type") or ""),
+                client_ip,
+            )
+            if threat_summary:
+                return 400, {
+                    "error": "File rejected by security scan",
+                    "details": threat_summary,
+                }
 
             svc = _service()
             assessment = svc.upload_and_assess(

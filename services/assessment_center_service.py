@@ -146,6 +146,12 @@ ASSESSMENT_FACT_STORE = _resolve_fact_store_dir()
 # (~120s) and small (512MB-2GB) container memory budgets.
 MAX_FACTS_PER_CUSTOMER = int(os.environ.get("PHINS_MAX_FACTS_PER_CUSTOMER", 5000))
 MAX_FACTS_LOAD_FILES = int(os.environ.get("PHINS_MAX_FACTS_LOAD_FILES", 10000))
+
+# On-disk fact store format marker. v2 files wrap the payload in a vault
+# envelope (Fernet-encrypted when PHINS_ENCRYPTION_KEY is set) and carry a
+# facts_sha256 integrity checksum. Legacy plaintext files (no marker) remain
+# readable and are upgraded to v2 on the next save.
+FACT_STORE_FORMAT_V2 = "phins-assessment-facts-v2"
 MAX_EXPORT_ROWS = int(os.environ.get("PHINS_MAX_EXPORT_ROWS", 50000))
 
 
@@ -2418,23 +2424,92 @@ class AssessmentCenterService:
                 existing = self._facts[customer_id]
             self._persist_customer(customer_id, existing)
 
+    @staticmethod
+    def _facts_checksum(fact_dicts: List[Dict[str, Any]]) -> str:
+        """Deterministic SHA-256 over the serialized fact list (tamper evidence)."""
+        canonical = json.dumps(
+            fact_dicts, sort_keys=True, ensure_ascii=False,
+            separators=(",", ":"), default=str,
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
     def _persist_customer(self, customer_id: str, facts: List[Fact]) -> None:
+        """Persist a customer's facts atomically, encrypted at rest.
+
+        The payload (which contains PII: identity numbers, medical conditions,
+        IBANs) is wrapped in a vault envelope: Fernet-encrypted when
+        ``PHINS_ENCRYPTION_KEY`` is configured, plain-scheme otherwise so
+        development and test environments keep working without a key. A
+        ``facts_sha256`` checksum inside the payload provides tamper evidence
+        that is verified on load. Legacy plaintext files remain readable and
+        are transparently upgraded on the next save.
+        """
         try:
             safe_cid = re.sub(r"[^A-Za-z0-9_-]", "_", customer_id)[:80] or "anonymous"
             target = os.path.join(self._fact_store_dir, f"{safe_cid}.json")
+            fact_dicts = [f.to_dict() for f in facts]
             payload = {
                 "customer_id": customer_id,
                 "saved_at": datetime.utcnow().isoformat() + "Z",
-                "facts": [f.to_dict() for f in facts],
+                "facts": fact_dicts,
+                "facts_sha256": self._facts_checksum(fact_dicts),
             }
+            try:
+                from security.vault import encrypt_json
+                blob = encrypt_json(payload)
+                envelope = {
+                    "format": FACT_STORE_FORMAT_V2,
+                    "scheme": blob.scheme,
+                    "ciphertext": blob.ciphertext,
+                }
+            except ImportError:  # pragma: no cover - vault ships with the repo
+                envelope = payload
             tmp = target + ".tmp"
             with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump(payload, fh, ensure_ascii=False, default=str)
+                json.dump(envelope, fh, ensure_ascii=False, default=str)
                 fh.flush()
                 os.fsync(fh.fileno())
             os.replace(tmp, target)
         except Exception as exc:
             logger.warning("Assessment fact persistence failed for %s: %s", customer_id, exc)
+
+    @staticmethod
+    def _decode_fact_file(payload: Dict[str, Any], path: str) -> Optional[Dict[str, Any]]:
+        """Decode a fact-store file: v2 vault envelope or legacy plaintext.
+
+        Returns the inner payload dict, or ``None`` when the file cannot be
+        decoded (e.g. encrypted with a missing/rotated key). The file itself is
+        never deleted on decode failure so data can be recovered once the
+        correct ``PHINS_ENCRYPTION_KEY`` is restored.
+        """
+        if payload.get("format") == FACT_STORE_FORMAT_V2 and "ciphertext" in payload:
+            from security.vault import decrypt_json
+            inner = decrypt_json(json.dumps({
+                "scheme": payload.get("scheme", "plain"),
+                "ciphertext": payload.get("ciphertext", ""),
+            }))
+            if not isinstance(inner, dict):
+                logger.error(
+                    "Cannot decrypt assessment fact file %s (missing or rotated "
+                    "PHINS_ENCRYPTION_KEY?). File left intact for recovery.",
+                    path,
+                )
+                return None
+            expected = inner.get("facts_sha256")
+            if expected:
+                actual = AssessmentCenterService._facts_checksum(
+                    inner.get("facts", [])
+                )
+                if actual != expected:
+                    logger.error(
+                        "Integrity checksum mismatch for assessment fact file "
+                        "%s (expected %s, got %s). Loading anyway; investigate "
+                        "possible corruption or tampering.",
+                        path, expected[:16], actual[:16],
+                    )
+            return inner
+        # Legacy plaintext payload ({"customer_id": ..., "facts": [...]}).
+        return payload
 
     def _load_from_disk(self) -> None:
         try:
@@ -2455,7 +2530,10 @@ class AssessmentCenterService:
                 path = os.path.join(self._fact_store_dir, name)
                 try:
                     with open(path, "r", encoding="utf-8") as fh:
-                        payload = json.load(fh)
+                        raw_payload = json.load(fh)
+                    payload = self._decode_fact_file(raw_payload, path)
+                    if payload is None:
+                        continue
                     cust = str(payload.get("customer_id") or "").strip()
                     if not cust:
                         continue

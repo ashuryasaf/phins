@@ -943,6 +943,70 @@ class RiskAssessmentReportModel(Base):
         }
 
 
+class AssessmentRecord(Base):
+    """Durable, first-class assessment snapshot (score → decision loop).
+
+    Every time a scoring engine produces a risk/fraud assessment that a human
+    (or automation) acts on, a row is written here so that:
+
+    - scores become auditable and trendable over time,
+    - human decisions can be compared against engine recommendations
+      (``decision_aligned``), building a labeled dataset for future models,
+    - the exact inputs are tamper-evident via ``payload_sha256``.
+
+    This is a NEW table - it does not modify any existing data.
+    """
+    __tablename__ = 'assessment_records'
+
+    id = Column(String(50), primary_key=True)  # ASMT-...
+    customer_id = Column(String(50), index=True, nullable=True)
+    subject_type = Column(String(40), index=True, nullable=False)  # underwriting_application | claim | customer
+    subject_id = Column(String(80), index=True, nullable=False)
+    assessment_type = Column(String(40), index=True, nullable=False)  # underwriting_risk | claims_fraud | customer_risk
+
+    # Engine output
+    score = Column(Float, nullable=True)  # 0.0 to 1.0
+    level = Column(String(30), nullable=True, index=True)  # very_low ... very_high / critical
+    recommendation = Column(String(50), nullable=True)
+    engine = Column(String(60), nullable=False, default='rule_engine')
+    engine_version = Column(String(20), nullable=True)
+    details_json = Column(Text, nullable=True)  # JSON: contributors, components, indicators
+    payload_sha256 = Column(String(64), nullable=True)  # integrity checksum of the record payload
+
+    # Decision loop (filled when a human/automation acts on this assessment)
+    decided_by = Column(String(120), nullable=True)
+    decision = Column(String(40), nullable=True, index=True)  # approved | rejected | paid | referred | auto_approved
+    decision_aligned = Column(Boolean, nullable=True)  # human action matched engine recommendation
+
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    def to_dict(self):
+        """Convert model to dictionary."""
+        import json as _json
+        try:
+            details = _json.loads(self.details_json) if self.details_json else {}
+        except Exception:
+            details = {}
+        return {
+            'record_id': self.id,
+            'customer_id': self.customer_id,
+            'subject_type': self.subject_type,
+            'subject_id': self.subject_id,
+            'assessment_type': self.assessment_type,
+            'score': self.score,
+            'level': self.level,
+            'recommendation': self.recommendation,
+            'engine': self.engine,
+            'engine_version': self.engine_version,
+            'details': details,
+            'payload_sha256': self.payload_sha256,
+            'decided_by': self.decided_by,
+            'decision': self.decision,
+            'decision_aligned': self.decision_aligned,
+            'created_at': self.created_date.isoformat() if self.created_date else None,
+        }
+
+
 class RiskFactorModel(Base):
     """
     Stores individual risk factors identified during assessment.
