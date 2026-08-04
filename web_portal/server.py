@@ -12546,11 +12546,20 @@ class PortalHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return False
 
-        log_malicious_attempt(
-            self.client_address[0] if self.client_address else '-',
-            'Confidential Document Access Denied',
-            {'path': confidential_access.redact_sensitive_query(path), 'reason': decision.reason},
-        )
+        # Deliberately NOT logged via log_malicious_attempt: that counter
+        # permanently blocks an IP after MAX_MALICIOUS_ATTEMPTS, and a missing or
+        # expired access cookie is a normal outcome for an invited counterparty —
+        # banning them (or a whole office behind one NAT address) would be a
+        # self-inflicted denial of service. Brute force is already covered by the
+        # generic request rate limiter plus a 256-bit token. The access log
+        # records the 401 itself, so only the operator-misconfiguration case
+        # needs a dedicated line.
+        if decision.reason == 'not_configured_production':
+            print(
+                "⚠️  [CONFIDENTIAL] Denied "
+                f"{confidential_access.redact_sensitive_query(path)}: no "
+                "PHINS_CONFIDENTIAL_ACCESS_TOKEN configured in production."
+            )
         if wants_json:
             self._set_json_headers(decision.status)
             self.wfile.write(json.dumps(
@@ -13394,6 +13403,12 @@ For claims or questions, please contact:
                 "User-agent: *\n"
                 "Disallow: /api/\n"
                 "Disallow: /internal/\n"
+                # Corporate instruments (cap table, term sheet, agreements) and
+                # the investor deal dashboard. Access control lives in
+                # security/confidential_access.py — this only keeps compliant
+                # crawlers from indexing them.
+                "Disallow: /legal/\n"
+                "Disallow: /pitch-dashboard.html\n"
                 "Disallow: /admin.html\n"
                 "Disallow: /actuary-dashboard.html\n"
                 "Disallow: /media-files/\n"

@@ -258,6 +258,14 @@ def test_shared_legal_assets_are_not_blocked():
         assert r.status_code == 200, asset
 
 
+def test_robots_disallows_the_gated_paths():
+    """Defence in depth: the gate is the control, robots stops indexing."""
+    r = requests.get(f"{BASE_URL}/robots.txt", timeout=10)
+    assert r.status_code == 200
+    for path in ("/internal/", "/legal/", "/pitch-dashboard.html"):
+        assert f"Disallow: {path}" in r.text, path
+
+
 @pytest.fixture
 def gate_token(monkeypatch):
     """Configure a shared access token on the running embedded server.
@@ -345,3 +353,31 @@ def test_http_public_pages_unaffected_by_the_gate(gate_token):
     for path in ("/", "/api/health", "/api/fx/rates"):
         r = requests.get(f"{BASE_URL}{path}", timeout=10)
         assert r.status_code == 200, path
+
+
+def test_repeated_denials_do_not_ban_the_caller(gate_token):
+    """A missing/expired token is not an attack.
+
+    Routing denials through ``log_malicious_attempt`` would count toward the
+    permanent IP block (MAX_MALICIOUS_ATTEMPTS), so an invited counterparty with
+    an expired cookie — or a whole office behind one NAT address — could lock
+    itself out. Denials must stay non-punitive and the caller must still be able
+    to authenticate afterwards.
+    """
+    for _ in range(12):
+        denied = requests.get(
+            f"{BASE_URL}/internal/phins-investor-business-plan.html",
+            timeout=10,
+            allow_redirects=False,
+        )
+        assert denied.status_code == 401
+
+    # Public pages still work...
+    assert requests.get(f"{BASE_URL}/api/health", timeout=10).status_code == 200
+    # ...and presenting the token now succeeds.
+    session = requests.Session()
+    session.cookies.set(ca.ACCESS_COOKIE_NAME, ca.cookie_value_for_token(gate_token))
+    allowed = session.get(
+        f"{BASE_URL}/internal/phins-investor-business-plan.html", timeout=10
+    )
+    assert allowed.status_code == 200
