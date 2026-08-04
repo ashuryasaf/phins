@@ -671,7 +671,7 @@
         <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
           <button onclick="quickAIAction('join_community')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(94,53,177,0.4) 0%, rgba(126,87,194,0.4) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🤝 Join Community</button>
           <button onclick="quickAIAction('show_community')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(94,53,177,0.4) 0%, rgba(126,87,194,0.4) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🏘️ My Community</button>
-          <button onclick="quickAIAction('apply_policy')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(21,101,192,0.4) 0%, rgba(25,118,210,0.4) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📝 Apply New Policy</button>
+          <button onclick="quickAIAction('apply_policy')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(247,226,160,0.92) 0%, rgba(227,191,111,0.92) 100%); border: 1px solid rgba(184,137,59,0.55); color: #071022; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: all 0.2s;">Apply New Policy</button>
           <button onclick="quickAIAction('buy_equipment')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(0,150,136,0.4) 0%, rgba(38,166,154,0.4) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🛒 Medical Equipment</button>
           <button onclick="quickAIAction('book_consultation')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(233,30,99,0.4) 0%, rgba(240,98,146,0.4) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🩺 Book Doctor</button>
           <button onclick="quickAIAction('pharmacy')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(255,152,0,0.4) 0%, rgba(255,183,77,0.4) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">💊 Pharmacy</button>
@@ -1198,13 +1198,13 @@
             <div>
               <label style="display:block; margin-bottom:4px; font-weight:500;">Status</label>
               <select id="edit-policy-status" class="form-select" style="width:100%; padding:10px; border-radius:8px; border:1px solid #ddd;">
-                <option value="draft">📝 Draft</option>
-                <option value="pending_underwriting">⏳ Pending Underwriting</option>
-                <option value="approved">✓ Approved</option>
-                <option value="active">✅ Active</option>
-                <option value="suspended">⚠️ Suspended</option>
-                <option value="cancelled">❌ Cancelled</option>
-                <option value="expired">⏰ Expired</option>
+                <option value="draft">Draft</option>
+                <option value="pending_underwriting">Pending Underwriting</option>
+                <option value="approved">Approved</option>
+                <option value="active">Active</option>
+                <option value="suspended">Suspended</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="expired">Expired</option>
               </select>
             </div>
             
@@ -2971,7 +2971,7 @@
         </div>
 
         <div style="text-align: center; margin-top: 20px;">
-          <button onclick="window.location.href='/apply.html'" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 12px 28px; border-radius: 22px; cursor: pointer; font-weight: 600;">📝 Apply for Missing Coverage</button>
+          <button onclick="window.location.href='/apply.html'" style="background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%); color: #071022; border: none; padding: 12px 28px; border-radius: 22px; cursor: pointer; font-weight: 600; box-shadow: 0 4px 14px rgba(227,191,111,0.35);">Apply for Missing Coverage</button>
         </div>
       `;
       showAIResponse(html);
@@ -3257,10 +3257,10 @@
         case 'apply':
           showAIResponse(`
             <div style="text-align: center; padding: 30px;">
-              <div style="font-size: 4rem; margin-bottom: 16px;">📝</div>
-              <h3 style="color: #333;">Apply for New Policy</h3>
-              <p style="color: #666; margin-bottom: 24px;">You'll be redirected to our application form</p>
-              <button onclick="window.location.href='/apply.html'" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white; border: none; padding: 14px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem;">Start Application →</button>
+              <div style="width: 64px; height: 64px; margin: 0 auto 16px;"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:100%;height:100%;object-fit:contain;display:block;"></div>
+              <h3 style="color: #0d2a5c; font-family: 'Space Grotesk', 'Inter', sans-serif;">Apply for New Policy</h3>
+              <p style="color: #5a6b85; margin-bottom: 24px;">You'll be redirected to our application form</p>
+              <button onclick="window.location.href='/apply.html'" style="background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%); color: #071022; border: none; padding: 14px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem; font-weight: 600; box-shadow: 0 4px 14px rgba(227,191,111,0.35);">Start Application →</button>
             </div>
           `);
           break;
