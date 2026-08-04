@@ -53,6 +53,7 @@ from database.repositories import (
     AgentInvitationRepository,
     AgentAffiliationRepository,
     AgentCommissionRepository,
+    AssessmentRecordRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -122,6 +123,8 @@ class DatabaseManager:
         self._agent_invitations = None
         self._agent_affiliations = None
         self._agent_commissions = None
+        # Assessment loop repositories.
+        self._assessment_records = None
     
     def _ensure_session(self) -> Session:
         """
@@ -177,6 +180,7 @@ class DatabaseManager:
         self._agent_invitations = None
         self._agent_affiliations = None
         self._agent_commissions = None
+        self._assessment_records = None
     
     @property
     def customers(self) -> CustomerRepository:
@@ -446,6 +450,13 @@ class DatabaseManager:
         if self._agent_commissions is None:
             self._agent_commissions = AgentCommissionRepository(self._ensure_session())
         return self._agent_commissions
+
+    @property
+    def assessment_records(self) -> AssessmentRecordRepository:
+        """Get assessment record repository (score → decision loop)."""
+        if self._assessment_records is None:
+            self._assessment_records = AssessmentRecordRepository(self._ensure_session())
+        return self._assessment_records
 
     def commit(self):
         """Commit current transaction"""
