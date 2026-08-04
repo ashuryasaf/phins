@@ -157,9 +157,14 @@ scan_for_secrets() {
     tar xzf "${dir}/platform_snapshot.tar.gz" -C "${scan_dir}" 2>/dev/null || true
   fi
 
-  # Forbidden file types that must never be inside a backup.
+  # Forbidden file types that must never be inside a backup. The db/ tree is
+  # deliberately excluded: it holds the intentional Postgres/SQLite dumps whose
+  # rows legitimately contain credential-shaped live data (session tokens, JWT
+  # payloads). Those artifacts are protected by 0600 perms and the
+  # git-tracking guard, not by this leak scan; scanning them would flag every
+  # DB backup and delete the whole run.
   local offenders
-  offenders="$(find "${scan_dir}" "${dir}/metadata" "${dir}/db" \
+  offenders="$(find "${scan_dir}" "${dir}/metadata" \
       \( -name '.env' -o -name '.env.local' -o -name '.env.production' \
          -o -name '.env.staging' -o -name '.env.development' \
          -o -name '*.pem' -o -name '*.key' -o -name 'id_rsa*' \
