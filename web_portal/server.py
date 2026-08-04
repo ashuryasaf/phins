@@ -11704,6 +11704,214 @@ def filter_suspended_accounts(items: list, customer_id_field: str = 'customer_id
     return [item for item in items if not is_suspended_account(item.get(customer_id_field, ''))]
 
 
+# Engine recommendations that permit automated (unattended) approval. Referral
+# and decline recommendations must always reach a human underwriter.
+AUTO_APPROVABLE_RECOMMENDATIONS = {
+    'auto_approve', 'approve_standard', 'approve_with_loading',
+    'approve_with_exclusions',
+}
+
+
+def snapshot_underwriting_decision_assessment(app, decided_by, decision):
+    """Snapshot the shared underwriting risk score at decision time.
+
+    Loop closure: the same rule engine that powers /api/risk-assessment/report
+    is evaluated when a human (or the admin pipeline) acts on an application,
+    and the score + recommendation + decision are persisted as an immutable
+    assessment record (and mirrored to the AI decision log). Never raises —
+    a snapshot failure must not block the decision itself.
+
+    Returns the assessment record dict, or None on failure.
+    """
+    try:
+        from services.underwriting_risk_scoring import assess_application
+        from services.assessment_record_service import get_assessment_record_service
+
+        customer_id = app.get('customer_id')
+        customer = CUSTOMERS.get(customer_id, {}) if customer_id else {}
+        claims_count = len([
+            c for c in CLAIMS.values() if c.get('customer_id') == customer_id
+        ]) if customer_id else 0
+
+        assessment = assess_application(app, customer, claims_count=claims_count)
+        record = get_assessment_record_service().record_assessment(
+            subject_type='underwriting_application',
+            subject_id=app.get('id') or app.get('application_id') or '',
+            assessment_type='underwriting_risk',
+            customer_id=customer_id,
+            score=assessment.get('overall_risk'),
+            level=assessment.get('risk_category'),
+            recommendation=assessment.get('recommendation_type'),
+            details={
+                'components': {
+                    k: assessment.get(k)
+                    for k in ('base_risk', 'age_risk', 'medical_risk',
+                              'lifestyle_risk', 'claims_risk')
+                },
+                'premium_adjustment': assessment.get('premium_adjustment'),
+                'confidence': assessment.get('confidence'),
+                'claims_count': claims_count,
+            },
+            engine='underwriting_risk_scoring',
+            engine_version=assessment.get('engine_version'),
+            decided_by=decided_by,
+            decision=decision,
+        )
+        # Read-only snapshot on the application for dashboards/audit. The
+        # authoritative durable copy lives in the assessment_records table.
+        app['risk_assessment_snapshot'] = {
+            'record_id': record.get('record_id'),
+            'score': assessment.get('overall_risk'),
+            'category': assessment.get('risk_category'),
+            'recommendation': assessment.get('recommendation_type'),
+            'engine_version': assessment.get('engine_version'),
+            'decision': decision,
+            'decision_aligned': record.get('decision_aligned'),
+            'captured_at': datetime.now().isoformat(),
+        }
+        return record
+    except Exception as snapshot_err:
+        print(f"[ASSESS] Non-fatal: underwriting decision snapshot failed: {snapshot_err}")
+        return None
+
+
+def snapshot_claim_decision_assessment(claim, decided_by, decision):
+    """Snapshot the claims bot fraud/authenticity score at decision time.
+
+    Same loop-closure contract as the underwriting snapshot: advisory only,
+    persisted as an immutable assessment record, never raises.
+
+    Returns the assessment record dict, or None on failure.
+    """
+    try:
+        from services.claims_bot_service import init_claims_bot_service
+        from services.assessment_record_service import get_assessment_record_service
+
+        claim_id = claim.get('id')
+        if not claim_id:
+            return None
+
+        claims_bot = init_claims_bot_service(
+            customers=CUSTOMERS,
+            policies=POLICIES,
+            claims=CLAIMS,
+            underwriting=UNDERWRITING_APPLICATIONS,
+            audit_service=audit if 'audit' in globals() else None,
+        )
+        report = claims_bot.generate_probability_report(claim_id)
+        if report is None:
+            return None
+
+        recommendation = getattr(report.recommendation, 'value', str(report.recommendation))
+        record = get_assessment_record_service().record_assessment(
+            subject_type='claim',
+            subject_id=claim_id,
+            assessment_type='claims_fraud',
+            customer_id=claim.get('customer_id'),
+            score=report.fraud_probability,
+            level=report.risk_level,
+            recommendation=recommendation,
+            details={
+                'authenticity_probability': round(report.authenticity_probability, 4),
+                'fraud_probability': round(report.fraud_probability, 4),
+                'claimed_amount': safe_float(claim.get('claimed_amount'), 0.0),
+            },
+            engine='claims_bot',
+            engine_version='claims-rules-1.0',
+            decided_by=decided_by,
+            decision=decision,
+        )
+        claim['fraud_assessment_snapshot'] = {
+            'record_id': record.get('record_id'),
+            'fraud_probability': round(report.fraud_probability, 4),
+            'authenticity_probability': round(report.authenticity_probability, 4),
+            'risk_level': report.risk_level,
+            'recommendation': recommendation,
+            'decision': decision,
+            'decision_aligned': record.get('decision_aligned'),
+            'captured_at': datetime.now().isoformat(),
+        }
+        return record
+    except Exception as snapshot_err:
+        print(f"[ASSESS] Non-fatal: claim decision snapshot failed: {snapshot_err}")
+        return None
+
+
+def ingest_claim_file_to_assessment(file_id: str, file_record: Dict[str, Any]) -> None:
+    """Route a freshly-attached claim file through the document pipeline.
+
+    Claim attachments historically stayed as base64 blobs in ``CLAIM_FILES``
+    and never reached OCR/fact extraction, so their content could not inform
+    adjudication. This helper (best-effort, never raises):
+
+    1. security-scans the payload (dangerous content flags the record and is
+       reported to the intrusion detector; the claim itself is preserved),
+    2. persists the file through DocumentProcessingService (disk + SHA-256 +
+       optional DB row + text extraction/OCR),
+    3. mines facts into the Assessment Center under the claim's customer.
+
+    The extracted facts then feed the customer risk indicators and the claims
+    bot context on the next assessment.
+    """
+    try:
+        data_b64 = file_record.get('data')
+        if not data_b64:
+            return
+        file_name = file_record.get('name') or file_id
+        mime_type = file_record.get('type') or 'application/octet-stream'
+        customer_id = file_record.get('customer_id')
+        claim_id = file_record.get('claim_id')
+
+        # 1) Security scan (flag, report, and skip ingestion on threats).
+        try:
+            from security.file_scanner import scan_base64_payload
+            verdict = scan_base64_payload(
+                data_b64, filename=file_name, declared_content_type='',
+                max_size=1024 * 1024 * 1024,
+            )
+            dangerous = [
+                t for t in verdict.threats
+                if t.startswith((
+                    'invalid_base64_encoding', 'dangerous_extension',
+                    'double_extension_attack', 'executable_header',
+                    'embedded_script', 'macro_or_shell_signature',
+                    'null_byte_in_filename',
+                ))
+            ]
+            if dangerous:
+                file_record['security_flag'] = '; '.join(dangerous)
+                try:
+                    ids_record_upload_threat('claim_upload', file_name, tuple(dangerous))
+                except Exception:
+                    pass
+                print(f"[CLAIM-FILE] Security flag on {file_id}: {file_record['security_flag']}")
+                return
+        except ImportError:
+            pass
+
+        # 2+3) Persist + assess (reuses the unified Assessment Center path).
+        from services.assessment_center_service import get_assessment_center
+        center = get_assessment_center()
+        assessment = center.upload_and_assess(
+            file_name=file_name,
+            file_data_b64=data_b64,
+            mime_type=mime_type,
+            category='claim',
+            customer_id=customer_id or None,
+            entity_type='claim',
+            entity_id=claim_id,
+            uploaded_by=file_record.get('uploaded_by') or 'claim_submission',
+            uploaded_by_role='customer',
+            description=f"Claim attachment for {claim_id}",
+            source_context='claim_upload',
+        )
+        file_record['persistent_doc_id'] = assessment.document_id
+        file_record['assessed_facts'] = len(assessment.facts)
+    except Exception as ingest_err:
+        # Never fail claim creation because enrichment failed.
+        print(f"[CLAIM-FILE] Non-fatal: assessment ingestion failed for {file_id}: {ingest_err}")
+
+
 def run_pipeline_for_customer(customer_id: str, auto_advance: bool = True) -> Dict[str, Any]:
     """Advance a single customer through their next pipeline stage.
 
@@ -11743,12 +11951,56 @@ def run_pipeline_for_customer(customer_id: str, auto_advance: bool = True) -> Di
 
     if pending_apps and auto_advance:
         result['previous_stage'] = 'underwriting'
+        approved_any = False
 
         for app in pending_apps:
+            # RISK GATE: the pipeline previously approved every pending
+            # application blindly. Now the shared underwriting risk engine is
+            # consulted first; refer/decline recommendations go to a human
+            # underwriter instead of being silently activated.
+            _assessment = {}
+            try:
+                from services.underwriting_risk_scoring import assess_application
+                _customer_claims = [
+                    c for c in CLAIMS.values()
+                    if c.get('customer_id') == customer_id
+                ]
+                _assessment = assess_application(
+                    app, customer, claims_count=len(_customer_claims)
+                )
+                _recommendation = _assessment.get('recommendation_type')
+            except Exception as _gate_err:
+                print(f"[ASSESS] Pipeline risk gate error (referring): {_gate_err}")
+                _recommendation = None
+
+            if _recommendation not in AUTO_APPROVABLE_RECOMMENDATIONS:
+                app['status'] = 'referred'
+                app['decision_date'] = now.isoformat()
+                app['referred_by'] = 'admin_pipeline'
+                app['referral_reason'] = (
+                    f"Risk gate: engine recommendation "
+                    f"'{_recommendation or 'unavailable'}' requires manual review"
+                )
+                _app_id = app.get('id') or app.get('application_id')
+                if _app_id:
+                    UNDERWRITING_APPLICATIONS[_app_id] = app
+                snapshot_underwriting_decision_assessment(
+                    app, 'admin_pipeline', 'referred'
+                )
+                result['actions_taken'].append(
+                    f"Referred application {app.get('id')} for manual review "
+                    f"(risk gate: {_assessment.get('risk_category') or 'unknown'})"
+                )
+                continue
+
             app['status'] = 'approved'
             app['decision_date'] = now.isoformat()
             app['approved_by'] = 'admin_pipeline'
             app['approval_notes'] = 'Auto-approved via pipeline process'
+            approved_any = True
+            snapshot_underwriting_decision_assessment(
+                app, 'admin_pipeline', 'auto_approved'
+            )
 
             app_id = app.get('id') or app.get('application_id')
             if app_id:
@@ -11822,7 +12074,7 @@ def run_pipeline_for_customer(customer_id: str, auto_advance: bool = True) -> Di
             result['actions_taken'].append(f'Approved application {app.get("id")}')
             result['actions_taken'].append(f'Activated policy {policy_id}')
 
-        result['new_stage'] = 'active'
+        result['new_stage'] = 'active' if approved_any else 'underwriting'
 
     elif pending_policies:
         result['previous_stage'] = 'applied'
@@ -14927,6 +15179,7 @@ For claims or questions, please contact:
             '/api/bi/executive-dashboard', '/api/bi/delivery-analytics',
             '/api/bi/customer-analytics', '/api/bi/supplier-analytics',
             '/api/bi/insights', '/api/bi/revenue-forecast',
+            '/api/bi/snapshots',
         ):
             if not require_role(session, ['admin', 'accountant', 'underwriter']):
                 self._set_json_headers(403)
@@ -14960,6 +15213,10 @@ For claims or questions, please contact:
                     status_code, payload = _bi.handle_supplier_analytics(self, data_sources)
                 elif path == '/api/bi/insights':
                     status_code, payload = _bi.handle_ai_insights(self, data_sources)
+                elif path == '/api/bi/snapshots':
+                    snapshot_params = {k: (v[0] if isinstance(v, list) and v else v)
+                                       for k, v in qs.items()}
+                    status_code, payload = _bi.handle_bi_snapshots(self, snapshot_params)
                 else:  # /api/bi/revenue-forecast
                     forecast_params = {k: (v[0] if isinstance(v, list) and v else v)
                                        for k, v in qs.items()}
@@ -18484,265 +18741,47 @@ For claims or questions, please contact:
                 # Get claims history for risk assessment (read-only)
                 customer_claims = [c for c in CLAIMS.values() if c.get('customer_id') == customer_id]
             
-                # Get questionnaire responses if available (read-only).
-                # Stored as a JSON string in the database, as a dict in-memory.
-                questionnaire = coerce_json_container(
-                    target_app.get('questionnaire_responses') or target_app.get('questionnaire'), {}
-                )
-            
                 # ====== EXTRACT ONLY ACTUAL DATA FROM PIPELINE ======
-                # Data sources tracking for audit trail
-                data_sources = coerce_json_container(target_app.get('data_sources'), {})
-            
-                # Age: from application, questionnaire, or calculated from DOB.
-                # Values may arrive as strings (HTML forms) — coerce, never crash.
-                applicant_age = optional_int(target_app.get('age'))
-                if not applicant_age:
-                    applicant_age = optional_int(questionnaire.get('age'))
-                if not applicant_age and target_customer.get('date_of_birth'):
-                    try:
-                        dob_str = target_customer['date_of_birth'].replace('Z', '+00:00').split('T')[0]
-                        dob = datetime.fromisoformat(dob_str)
-                        applicant_age = (datetime.now() - dob).days // 365
-                    except:
-                        applicant_age = None  # DO NOT DEFAULT - leave as unknown
-                if not applicant_age:
-                    applicant_age = optional_int(target_customer.get('age'))
-            
-                # Medical data: from application record or questionnaire - NO DEFAULTS
-                disability_pct = optional_int(target_app.get('disability_percentage'))
-                if disability_pct is None:
-                    disability_pct = optional_int(questionnaire.get('disability_percentage'))
-            
-                # BMI: from application, or calculate from height/weight in questionnaire
-                bmi = optional_float(target_app.get('bmi'))
-                if bmi is None:
-                    height = target_app.get('height_cm') or questionnaire.get('height')
-                    weight = target_app.get('weight_kg') or questionnaire.get('weight')
-                    if height and weight:
-                        try:
-                            height = float(height)
-                            weight = float(weight)
-                            if height > 0 and weight > 0:
-                                bmi = round(weight / ((height / 100) ** 2), 1)
-                        except:
-                            pass
-            
-                # Smoking status: from application or questionnaire.
-                # Values may be non-string (e.g. a boolean checkbox) — coerce truthy
-                # values only so falsy inputs (e.g. False) still fall back to the
-                # questionnaire rather than becoming the truthy string "False".
-                smoking = target_app.get('smoking_status')
-                if smoking and not isinstance(smoking, str):
-                    smoking = str(smoking)
-                if not smoking and questionnaire.get('smoke') is not None:
-                    smoke_val = str(questionnaire.get('smoke', '')).strip().lower()
-                    if smoke_val in ['yes', 'current', 'smoker', 'true']:
-                        smoking = 'current'
-                    elif smoke_val in ['former', 'ex', 'quit']:
-                        smoking = 'former'
-                    elif smoke_val in ['no', 'never', 'non-smoker', 'false']:
-                        smoking = 'never'
-                    elif smoke_val:
-                        smoking = smoke_val
-            
-                # Gender and occupation from application, questionnaire, or customer record
-                gender = target_app.get('gender') or questionnaire.get('gender') or target_customer.get('gender')
-                occupation = target_app.get('occupation') or questionnaire.get('occupation') or target_customer.get('occupation')
-            
-                # Build medical conditions from the application's medical_conditions array first
-                # This is the primary source of conditions data
-                # (stored as a JSON string in the database, as a list in-memory)
-                app_conditions = coerce_json_container(target_app.get('medical_conditions'), [])
-                medical_conditions = []
-            
-                # Track what condition types we have from the array to avoid duplicates
-                has_disability_from_array = False
-                has_obesity_from_array = False
-            
-                # Process the stored medical_conditions array first (this is the authoritative source)
-                if isinstance(app_conditions, list):
-                    for cond in app_conditions:
-                        if isinstance(cond, dict):
-                            cond_name = cond.get('condition', '').lower()
-                            if 'disability' in cond_name or 'mobility' in cond_name or 'impairment' in cond_name:
-                                has_disability_from_array = True
-                            if 'obesity' in cond_name or 'bmi' in cond_name:
-                                has_obesity_from_array = True
-                        
-                            processed_cond = {
-                                'condition': cond.get('condition', 'Unknown Condition'),
-                                'icd_code': cond.get('icd_code'),
-                                'severity': cond.get('severity', 'moderate'),
-                                'status': cond.get('status'),
-                                'treatment': cond.get('treatment'),
-                                # Coerce numerics so downstream sums never TypeError
-                                'risk_impact': safe_float(cond.get('risk_impact'), 0.1),
-                                'loading_percentage': safe_int(cond.get('loading_percentage'), 10),
-                                'exclusion_recommended': cond.get('exclusion_recommended', False),
-                                'notes': cond.get('notes')
-                            }
-                            medical_conditions.append(processed_cond)
-                        elif isinstance(cond, str):
-                            cond_lower = cond.lower()
-                            if 'disability' in cond_lower or 'mobility' in cond_lower:
-                                has_disability_from_array = True
-                            if 'obesity' in cond_lower:
-                                has_obesity_from_array = True
-                            medical_conditions.append({
-                                'condition': cond,
-                                'icd_code': None,
-                                'severity': 'moderate',
-                                'status': None,
-                                'treatment': None,
-                                'risk_impact': 0.1,
-                                'loading_percentage': 10,
-                                'exclusion_recommended': False
-                            })
-            
-                # Only add disability from direct fields if not already in the array
-                if disability_pct is not None and disability_pct > 0 and not has_disability_from_array:
-                    disability_type = target_app.get('disability_type', 'Physical')
-                    disability_severity = 'severe' if disability_pct >= 50 else 'moderate' if disability_pct >= 25 else 'mild'
-                    medical_conditions.append({
-                        'condition': f'Disability ({disability_type})',
-                        'icd_code': 'Z99.89',
-                        'severity': disability_severity,
-                        'status': target_app.get('disability_status', 'chronic'),
-                        'treatment': target_app.get('disability_treatment', 'Ongoing management'),
-                        'risk_impact': disability_pct / 100 * 0.6,
-                        'loading_percentage': min(disability_pct, 50),
-                        'exclusion_recommended': disability_pct >= 50,
-                        'notes': target_app.get('disability_notes')
-                    })
-            
-                # Only add obesity from direct fields if not already in the array
-                if bmi is not None and bmi >= 30 and not has_obesity_from_array:
-                    bmi_class = 'Class III (Severe)' if bmi >= 40 else 'Class II' if bmi >= 35 else 'Class I'
-                    obesity_severity = 'severe' if bmi >= 40 else 'moderate' if bmi >= 35 else 'mild'
-                    medical_conditions.append({
-                        'condition': f'Obesity ({bmi_class})',
-                        'icd_code': 'E66.9',
-                        'severity': obesity_severity,
-                        'status': 'active',
-                        'treatment': target_app.get('obesity_treatment', 'Dietary management, exercise program'),
-                        'risk_impact': (bmi - 25) / 100,
-                        'loading_percentage': min(int((bmi - 25) * 2), 40),
-                        'exclusion_recommended': False,
-                        'notes': f'BMI {bmi:.1f}' if bmi else None
-                    })
+                # Shared extraction (services/underwriting_risk_scoring.py) so the
+                # report and the underwriting decision endpoints read the exact
+                # same inputs — one scorer, no drift.
+                from services.underwriting_risk_scoring import (
+                    extract_risk_inputs,
+                    score_risk_inputs,
+                )
+                _risk_inputs = extract_risk_inputs(target_app, target_customer)
+                applicant_age = _risk_inputs['age']
+                disability_pct = _risk_inputs['disability_percentage']
+                bmi = _risk_inputs['bmi']
+                smoking = _risk_inputs['smoking_status']
+                gender = _risk_inputs['gender']
+                occupation = _risk_inputs['occupation']
+                medical_conditions = _risk_inputs['medical_conditions']
             
             
                 # ====== CALCULATE RISK SCORES FROM ACTUAL DATA ======
-                base_risk = 0.10  # Base risk for any applicant
-            
-                # Age risk factor - ONLY if age is known
-                age_risk = 0
-                if applicant_age is not None:
-                    if applicant_age > 65:
-                        age_risk = 0.30
-                    elif applicant_age > 55:
-                        age_risk = 0.20
-                    elif applicant_age > 45:
-                        age_risk = 0.12
-                    elif applicant_age > 35:
-                        age_risk = 0.05
-                    elif applicant_age < 25:
-                        age_risk = 0.03
-            
-                # Medical risk from conditions
-                medical_risk = sum(c.get('risk_impact', 0) for c in medical_conditions)
-            
-                # Lifestyle risk - ONLY if smoking status is known
-                lifestyle_risk = 0
-                if smoking:
-                    if smoking.lower() in ['current', 'smoker', 'yes']:
-                        lifestyle_risk = 0.25
-                    elif smoking.lower() in ['former', 'ex-smoker', 'quit']:
-                        lifestyle_risk = 0.10
-            
-                # Claims history risk - from actual claims data
-                claims_risk = min(len(customer_claims) * 0.03, 0.15) if customer_claims else 0
-            
-                # Overall risk calculation
-                overall_risk = min(base_risk + age_risk + medical_risk + lifestyle_risk + claims_risk, 1.0)
-            
-                # Determine risk category
-                if overall_risk <= 0.15:
-                    risk_category = 'very_low'
-                elif overall_risk <= 0.25:
-                    risk_category = 'low'
-                elif overall_risk <= 0.40:
-                    risk_category = 'moderate'
-                elif overall_risk <= 0.55:
-                    risk_category = 'elevated'
-                elif overall_risk <= 0.70:
-                    risk_category = 'high'
-                else:
-                    risk_category = 'very_high'
-            
-                # ====== GENERATE RECOMMENDATION BASED ON ACTUAL RISK ======
-                recommendation_type = 'approve_standard'
-                premium_adjustment = 0
-                exclusions = []
-                monitoring = []
-                conditions_of_approval = []
-                confidence = 0.85
-            
-                total_loading = sum(c.get('loading_percentage', 0) for c in medical_conditions)
-            
-                if risk_category == 'very_low':
-                    recommendation_type = 'auto_approve'
-                    confidence = 0.95
-                    monitoring = ['Standard annual review']
-                elif risk_category == 'low':
-                    recommendation_type = 'approve_standard'
-                    confidence = 0.90
-                    monitoring = ['Standard annual review']
-                elif risk_category == 'moderate':
-                    recommendation_type = 'approve_with_loading'
-                    premium_adjustment = (15 + total_loading) / 100
-                    confidence = 0.82
-                    monitoring = ['Annual health declaration']
-                    if bmi and bmi >= 30:
-                        monitoring.append('Annual BMI assessment')
-                    if disability_pct:
-                        monitoring.append('Annual disability status update')
-                    conditions_of_approval = [
-                        f'Premium loading of {int(premium_adjustment * 100)}% applied',
-                        'Annual medical review required'
-                    ]
-                elif risk_category == 'elevated':
-                    recommendation_type = 'approve_with_exclusions'
-                    premium_adjustment = (30 + total_loading) / 100
-                    for cond in medical_conditions:
-                        if cond.get('exclusion_recommended'):
-                            exclusions.append(f"Pre-existing condition exclusion: {cond.get('condition')}")
-                    confidence = 0.78
-                    monitoring = ['Annual health declaration', 'Bi-annual medical assessment']
-                    if disability_pct:
-                        monitoring.append('Annual disability status update')
-                    monitoring.append('Claims monitoring for adverse patterns')
-                    conditions_of_approval = [
-                        f'Premium loading of {int(premium_adjustment * 100)}% applied',
-                        'Annual medical review required'
-                    ]
-                elif risk_category == 'high':
-                    recommendation_type = 'refer_senior_uw'
-                    premium_adjustment = (50 + total_loading) / 100
-                    for cond in medical_conditions:
-                        if cond.get('severity') in ['severe', 'moderate']:
-                            exclusions.append(f"Pre-existing condition exclusion: {cond.get('condition')}")
-                    confidence = 0.70
-                    monitoring = ['Quarterly health check-ins', 'Annual medical review', 'Claims monitoring']
-                    conditions_of_approval = [
-                        'Senior underwriter approval required',
-                        f'Premium loading of {int(premium_adjustment * 100)}% if approved'
-                    ]
-                else:
-                    recommendation_type = 'decline'
-                    confidence = 0.75
-                    monitoring = ['Applicant may reapply after 12 months with improved health metrics']
+                # Shared deterministic scorer (same engine the decision
+                # endpoints snapshot at approve/reject time).
+                _scores = score_risk_inputs(
+                    age=applicant_age,
+                    medical_conditions=medical_conditions,
+                    smoking_status=smoking,
+                    claims_count=len(customer_claims),
+                    bmi=bmi,
+                    disability_pct=disability_pct,
+                )
+                age_risk = _scores['age_risk']
+                medical_risk = _scores['medical_risk']
+                lifestyle_risk = _scores['lifestyle_risk']
+                claims_risk = _scores['claims_risk']
+                overall_risk = _scores['overall_risk']
+                risk_category = _scores['risk_category']
+                recommendation_type = _scores['recommendation_type']
+                premium_adjustment = _scores['premium_adjustment']
+                confidence = _scores['confidence']
+                exclusions = _scores['exclusions']
+                monitoring = _scores['monitoring']
+                conditions_of_approval = _scores['conditions_of_approval']
             
                 # Build rationale from ACTUAL data only
                 rationale_parts = []
@@ -38661,6 +38700,46 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
 
+        # ========== BI KPI SNAPSHOT CAPTURE (BI-3) ==========
+        if path == '/api/bi/snapshots/capture':
+            # Resolve the session locally: the POST dispatcher does not keep a
+            # top-level session variable across path branches.
+            _snap_auth_header = self.headers.get('Authorization', '')
+            _snap_token = _snap_auth_header.replace('Bearer ', '') if _snap_auth_header.startswith('Bearer ') else None
+            session = validate_session(_snap_token) if _snap_token else None
+            if not require_role(session, ['admin', 'accountant', 'underwriter']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            try:
+                try:
+                    from web_portal import api_bi_analytics as _bi
+                except Exception:
+                    import api_bi_analytics as _bi  # fallback when run as a script
+                data_sources = {
+                    'customers': CUSTOMERS,
+                    'policies': POLICIES,
+                    'claims': CLAIMS,
+                    'billing': BILLING,
+                    'balance_sheet': PHINS_BALANCE_SHEET,
+                    'suppliers': SUPPLIERS,
+                    'deliveries': {},
+                    '_snapshot_source': 'api',
+                }
+                status_code, payload = _bi.handle_bi_snapshot_capture(self, data_sources)
+                if audit and status_code == 201:
+                    try:
+                        actor = (session.get('username') if session else None) or 'system'
+                        audit.log(actor, 'capture', 'bi_snapshot',
+                                  payload.get('snapshot_id', ''), {})
+                    except Exception:
+                        pass
+            except Exception as bi_exc:
+                status_code, payload = 500, {'error': str(bi_exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
         # Create Policy Endpoint
         if path == '/api/policies/create':
             try:
@@ -39545,7 +39624,13 @@ For claims or questions, please contact:
                 app['decision_date'] = now.isoformat()
                 app['approved_by'] = data.get('approved_by', 'admin')
                 app['approval_notes'] = data.get('notes', '')
-                
+
+                # LOOP CLOSURE: snapshot the shared risk score at decision
+                # time (durable assessment record + AI decision log).
+                snapshot_underwriting_decision_assessment(
+                    app, data.get('approved_by', 'admin'), 'approved',
+                )
+
                 # PIPELINE STEP: Activate policy
                 policy['status'] = 'active'
                 policy['approval_date'] = now.isoformat()
@@ -39851,7 +39936,12 @@ For claims or questions, please contact:
                     app['status'] = 'rejected'
                     app['decision_date'] = datetime.now().isoformat()
                     app['rejection_reason'] = data.get('reason', 'Risk assessment failed')
-                    
+
+                    # LOOP CLOSURE: snapshot the risk score at decision time.
+                    snapshot_underwriting_decision_assessment(
+                        app, data.get('rejected_by', 'admin'), 'rejected',
+                    )
+
                     # Update policy status
                     policy_id = app.get('policy_id')
                     if policy_id and policy_id in POLICIES:
@@ -39901,6 +39991,11 @@ For claims or questions, please contact:
                     app['referral_reason'] = data.get('notes', 'Requires manual review')
                     app['referred_by'] = data.get('approved_by', 'admin')
                     app['referral_priority'] = data.get('priority', 'normal')
+
+                    # LOOP CLOSURE: snapshot the risk score at decision time.
+                    snapshot_underwriting_decision_assessment(
+                        app, data.get('approved_by', 'admin'), 'referred',
+                    )
                     
                     # Update policy status to pending_manual_review
                     policy_id = app.get('policy_id')
@@ -40031,6 +40126,11 @@ For claims or questions, please contact:
                             'error': file_info.get('error', '')
                         }
                         print(f"   📄 Stored file {file_id}: {file_meta['name']} ({file_meta['size']} bytes)")
+
+                        # LOOP CLOSURE: scan + persist + mine facts from the
+                        # attachment so its content can inform adjudication
+                        # (best-effort; never blocks claim creation).
+                        ingest_claim_file_to_assessment(file_id, CLAIM_FILES[file_id])
                 
                 claim = {
                     'id': claim_id,
@@ -40181,6 +40281,12 @@ For claims or questions, please contact:
                     claim.pop('rejection_reason', None)
                     claim.pop('rejection_date', None)
                     claim.pop('rejected_by', None)
+
+                    # LOOP CLOSURE: snapshot the claims bot fraud score at
+                    # decision time (durable assessment record + decision log).
+                    snapshot_claim_decision_assessment(
+                        claim, claim['approved_by'], 'approved'
+                    )
                     
                     # Persist to database
                     CLAIMS[claim_id] = claim
@@ -40277,7 +40383,13 @@ For claims or questions, please contact:
                         or 'admin'
                     )
                     claim['next_stage'] = 'closed'
-                    
+
+                    # LOOP CLOSURE: snapshot the claims bot fraud score at
+                    # decision time.
+                    snapshot_claim_decision_assessment(
+                        claim, claim['rejected_by'], 'rejected'
+                    )
+
                     # Persist to database
                     CLAIMS[claim_id] = claim
                     persist_claim_update_to_database(claim_id, {
@@ -40455,7 +40567,25 @@ For claims or questions, please contact:
                     claim['customer_tx_id'] = payment_result['customer_tx']['id']
                     claim['nft_token_id'] = payment_result['customer_tx'].get('nft_token_id')
                     claim['next_stage'] = 'completed'
-                    
+
+                    # LOOP CLOSURE: attach the payment decision to the fraud
+                    # assessment taken at approval time (or snapshot fresh if
+                    # this claim predates assessment records).
+                    try:
+                        from services.assessment_record_service import get_assessment_record_service
+                        _snapshot = claim.get('fraud_assessment_snapshot') or {}
+                        _attached = None
+                        if _snapshot.get('record_id'):
+                            _attached = get_assessment_record_service().attach_decision(
+                                _snapshot['record_id'],
+                                decided_by=processed_by,
+                                decision='paid',
+                            )
+                        if _attached is None:
+                            snapshot_claim_decision_assessment(claim, processed_by, 'paid')
+                    except Exception as _assess_err:
+                        print(f"[ASSESS] Non-fatal: claim payment assessment link failed: {_assess_err}")
+
                     # Persist to database
                     CLAIMS[claim_id] = claim
                     persist_claim_update_to_database(claim_id, {
