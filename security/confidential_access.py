@@ -45,6 +45,7 @@ import os
 from dataclasses import dataclass, field
 from http.cookies import SimpleCookie
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
+from urllib.parse import urlencode
 
 # Cookie/query names for the shared-token exchange.
 ACCESS_COOKIE_NAME = "phins_confidential_access"
@@ -267,7 +268,7 @@ def evaluate_access(
                 confidential=True,
                 set_cookie=True,
                 cookie_value=cookie_value_for_token(token),
-                redirect_to=strip_sensitive_query(path),
+                redirect_to=redirect_after_token_exchange(path, query_params),
             )
 
         return AccessDecision(
@@ -318,6 +319,41 @@ def strip_sensitive_query(path: str) -> str:
             continue
         kept.append(part)
     return base + ("?" + "&".join(kept) if kept else "")
+
+
+def redirect_after_token_exchange(
+    path: str, query_params: Optional[Mapping[str, Iterable[str]]] = None
+) -> str:
+    """Build the post-exchange redirect target with the token removed.
+
+    The HTTP handler passes the pathname and the ``parse_qs`` query separately,
+    so non-sensitive parameters (document ids, locale flags, ...) arrive in
+    ``query_params`` rather than embedded in ``path``. Recombine them onto the
+    stripped path so a tokenized deep link keeps its query state across the 302.
+    """
+    base = strip_sensitive_query(path)
+    if not query_params:
+        return base
+    base_path, _sep, existing = base.partition("?")
+    kept = [existing] if existing else []
+    present = {
+        part.split("=", 1)[0].strip().lower()
+        for part in existing.split("&")
+        if part
+    }
+    extra = []
+    for name, values in query_params.items():
+        key = str(name).strip().lower()
+        if key in SENSITIVE_QUERY_PARAMS or key in present:
+            continue
+        if isinstance(values, (list, tuple)):
+            extra.extend((str(name), str(value)) for value in values)
+        elif values is not None:
+            extra.append((str(name), str(values)))
+    if extra:
+        kept.append(urlencode(extra))
+    query = "&".join(part for part in kept if part)
+    return base_path + ("?" + query if query else "")
 
 
 def redact_sensitive_query(path: str) -> str:
