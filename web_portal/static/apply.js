@@ -15,12 +15,12 @@ let phinsAllocation = {
     coverageAmount: 500000
 };
 
-// Card type patterns for validation
+// Card type patterns for validation (text badges — no emoji icons)
 const CARD_PATTERNS = {
-    visa: { regex: /^4/, icon: '💳', name: 'Visa', lengths: [13, 16, 19], cvv: 3 },
-    mastercard: { regex: /^(5[1-5]|2[2-7])/, icon: '🔵', name: 'Mastercard', lengths: [16], cvv: 3 },
-    amex: { regex: /^3[47]/, icon: '💠', name: 'American Express', lengths: [15], cvv: 4 },
-    discover: { regex: /^(6011|65|644|645|646|647|648|649)/, icon: '🟠', name: 'Discover', lengths: [16, 19], cvv: 3 }
+    visa: { regex: /^4/, icon: 'VISA', name: 'Visa', lengths: [13, 16, 19], cvv: 3 },
+    mastercard: { regex: /^(5[1-5]|2[2-7])/, icon: 'MC', name: 'Mastercard', lengths: [16], cvv: 3 },
+    amex: { regex: /^3[47]/, icon: 'AMEX', name: 'American Express', lengths: [15], cvv: 4 },
+    discover: { regex: /^(6011|65|644|645|646|647|648|649)/, icon: 'DISC', name: 'Discover', lengths: [16, 19], cvv: 3 }
 };
 
 // Initialize on page load
@@ -46,15 +46,15 @@ function initializePHINSContract() {
             phinsAllocation.coverageYears = parseInt(this.value);
             updateAllocationDisplay();
             
-            // Update visual selection
+            // Update visual selection (navy/gold theme)
             document.querySelectorAll('.radio-card').forEach(card => {
                 card.classList.remove('selected');
-                card.style.border = '2px solid #e0e0e0';
+                card.style.border = '2px solid #dde7f5';
                 card.style.background = 'white';
             });
             this.closest('.radio-card').classList.add('selected');
-            this.closest('.radio-card').style.border = '2px solid #0d47a1';
-            this.closest('.radio-card').style.background = '#e3f2fd';
+            this.closest('.radio-card').style.border = '2px solid #c9a24b';
+            this.closest('.radio-card').style.background = '#fdf8ec';
         });
     });
     
@@ -83,8 +83,8 @@ function updateAllocationSplit() {
     document.getElementById('protection-pct').textContent = phinsAllocation.protectionPct + '%';
     document.getElementById('savings-pct').textContent = phinsAllocation.savingsPct + '%';
     
-    // Update gradient background
-    slider.style.background = `linear-gradient(to right, #dc3545 0%, #dc3545 ${phinsAllocation.protectionPct}%, #28a745 ${phinsAllocation.protectionPct}%, #28a745 100%)`;
+    // Update gradient background (navy protection / gold savings)
+    slider.style.background = `linear-gradient(to right, #14509e 0%, #14509e ${phinsAllocation.protectionPct}%, #c9a24b ${phinsAllocation.protectionPct}%, #c9a24b 100%)`;
     
     updateAllocationDisplay();
 }
@@ -174,7 +174,7 @@ function updateAllocationBars() {
     const totalEl = document.getElementById('total-allocation');
     if (totalEl) {
         totalEl.textContent = total + '%';
-        totalEl.style.color = total === 100 ? '#0d47a1' : '#dc3545';
+        totalEl.style.color = total === 100 ? '#0d2a5c' : '#c62828';
     }
 }
 
@@ -383,14 +383,14 @@ function updateCoverageDisplay() {
     // Update all allocation displays
     updateAllocationDisplay();
     
-    // Update quick amount button active state
+    // Update quick amount button active state (navy/gold theme)
     document.querySelectorAll('.quick-amount').forEach(btn => {
         if (parseInt(btn.dataset.amount) === amount) {
-            btn.style.border = '2px solid #0d47a1';
-            btn.style.background = '#e3f2fd';
-            btn.style.color = '#0d47a1';
+            btn.style.border = '2px solid #c9a24b';
+            btn.style.background = '#fdf8ec';
+            btn.style.color = '#8a6d2e';
         } else {
-            btn.style.border = '2px solid #e0e0e0';
+            btn.style.border = '2px solid #dde7f5';
             btn.style.background = 'white';
             btn.style.color = '';
         }
@@ -426,16 +426,16 @@ function calculateBMI() {
         
         if (bmi < 18.5) {
             category = 'Underweight';
-            color = '#ffc107';
+            color = '#b8893b';
         } else if (bmi < 25) {
             category = 'Normal';
-            color = '#28a745';
+            color = '#2e7d32';
         } else if (bmi < 30) {
             category = 'Overweight';
-            color = '#ff9800';
+            color = '#e65100';
         } else {
             category = 'Obese';
-            color = '#dc3545';
+            color = '#c62828';
         }
         
         const categoryEl = document.getElementById('bmi-category');
@@ -546,34 +546,34 @@ function validateCardNumber() {
     const cardType = detectCardType(cardNumber);
     
     if (!cardType) {
-        validationDiv.innerHTML = '<span style="color: #dc3545;">❌ Unknown card type</span>';
-        input.style.borderColor = '#dc3545';
+        validationDiv.innerHTML = '<span style="color: #c62828;">Unknown card type</span>';
+        input.style.borderColor = '#c62828';
         return false;
     }
     
     // Mastercard MUST be exactly 16 digits
     if (cardType.type === 'mastercard' && cardNumber.length !== 16) {
-        validationDiv.innerHTML = `<span style="color: #dc3545;">❌ Mastercard must be exactly 16 digits (currently ${cardNumber.length})</span>`;
-        input.style.borderColor = '#dc3545';
+        validationDiv.innerHTML = `<span style="color: #c62828;">Mastercard must be exactly 16 digits (currently ${cardNumber.length})</span>`;
+        input.style.borderColor = '#c62828';
         return false;
     }
     
     // Other cards - check valid lengths
     if (!cardType.lengths.includes(cardNumber.length)) {
-        validationDiv.innerHTML = `<span style="color: #dc3545;">❌ ${cardType.name} must be ${cardType.lengths.join(' or ')} digits</span>`;
-        input.style.borderColor = '#dc3545';
+        validationDiv.innerHTML = `<span style="color: #c62828;">${cardType.name} must be ${cardType.lengths.join(' or ')} digits</span>`;
+        input.style.borderColor = '#c62828';
         return false;
     }
     
     // Luhn check
     if (!luhnCheck(cardNumber)) {
-        validationDiv.innerHTML = '<span style="color: #dc3545;">❌ Invalid card number</span>';
-        input.style.borderColor = '#dc3545';
+        validationDiv.innerHTML = '<span style="color: #c62828;">Invalid card number</span>';
+        input.style.borderColor = '#c62828';
         return false;
     }
     
-    validationDiv.innerHTML = `<span style="color: #28a745;">✅ Valid ${cardType.name} card</span>`;
-    input.style.borderColor = '#28a745';
+    validationDiv.innerHTML = `<span style="color: #2e7d32;">Valid ${cardType.name} card</span>`;
+    input.style.borderColor = '#2e7d32';
     return true;
 }
 
@@ -708,14 +708,14 @@ function validateField(field) {
     
     // Visual feedback
     if (!isValid) {
-        field.style.borderColor = '#dc3545';
+        field.style.borderColor = '#c62828';
         field.style.backgroundColor = '#fff5f5';
         // Show error message if available
         if (errorMessage) {
             field.title = errorMessage;
         }
     } else {
-        field.style.borderColor = '#28a745';
+        field.style.borderColor = '#2e7d32';
         field.style.backgroundColor = '';
         field.title = '';
     }
@@ -924,7 +924,7 @@ function populateReview() {
     const coverageHtml = `
         <div class="review-item">
             <strong>Contract Type</strong>
-            <span>🛡️ PHINS Unified Protection Contract</span>
+            <span>PHINS Unified Protection Contract</span>
         </div>
         <div class="review-item">
             <strong>Coverage Amount</strong>
@@ -936,11 +936,11 @@ function populateReview() {
         </div>
         <div class="review-item">
             <strong>Protection Allocation</strong>
-            <span>🛡️ ${alloc.protectionPct || 25}% Protection / 💰 ${alloc.savingsPct || 75}% Savings</span>
+            <span>${alloc.protectionPct || 25}% Protection / ${alloc.savingsPct || 75}% Savings</span>
         </div>
         <div class="review-item">
             <strong>Savings Distribution</strong>
-            <span>🏥 ${dist.walletPct || 15}% Wallet | 📈 ${dist.investmentPct || 60}% Investment | 🤖 ${dist.algoPct || 25}% Algo Trading</span>
+            <span>${dist.walletPct || 15}% Wallet | ${dist.investmentPct || 60}% Investment | ${dist.algoPct || 25}% Algo Trading</span>
         </div>
     `;
     document.getElementById('review-coverage').innerHTML = coverageHtml;
@@ -975,13 +975,13 @@ function populateReview() {
     document.getElementById('review-health').innerHTML = healthHtml;
     
     // Payment Information
-    const cardIcons = { visa: '💳', mastercard: '🔵', amex: '💠', discover: '🟠' };
+    const cardLabels = { visa: 'Visa', mastercard: 'Mastercard', amex: 'American Express', discover: 'Discover' };
     const billingFreqLabels = { monthly: 'Monthly', quarterly: 'Quarterly (Save 3%)', annual: 'Annual (Save 10%)' };
     
     const paymentHtml = `
         <div class="review-item">
             <strong>Payment Method</strong>
-            <span>${cardIcons[formData.payment?.cardType] || '💳'} ****-****-****-${formData.payment?.cardLast4 || '****'}</span>
+            <span>${cardLabels[formData.payment?.cardType] || 'Card'} ****-****-****-${formData.payment?.cardLast4 || '****'}</span>
         </div>
         <div class="review-item">
             <strong>Cardholder</strong>
@@ -997,11 +997,11 @@ function populateReview() {
         </div>
         <div class="review-item">
             <strong>Auto-Pay</strong>
-            <span>${formData.payment?.autoPay ? '✅ Enabled' : '❌ Disabled'}</span>
+            <span>${formData.payment?.autoPay ? 'Enabled' : 'Disabled'}</span>
         </div>
         <div class="review-item">
             <strong>Health Wallet</strong>
-            <span>${formData.payment?.healthWalletEnabled ? '✅ Enabled' : '❌ Disabled'}</span>
+            <span>${formData.payment?.healthWalletEnabled ? 'Enabled' : 'Disabled'}</span>
         </div>
         ${formData.payment?.healthWalletEnabled && formData.payment?.monthlyDeposit > 0 ? `
         <div class="review-item">
@@ -1246,8 +1246,8 @@ function handleDragOver(e) {
     e.stopPropagation();
     const dropZone = document.getElementById('file-drop-zone');
     if (dropZone) {
-        dropZone.style.borderColor = '#0d47a1';
-        dropZone.style.background = '#e3f2fd';
+        dropZone.style.borderColor = '#c9a24b';
+        dropZone.style.background = '#fdf8ec';
     }
 }
 
@@ -1256,8 +1256,8 @@ function handleDragLeave(e) {
     e.stopPropagation();
     const dropZone = document.getElementById('file-drop-zone');
     if (dropZone) {
-        dropZone.style.borderColor = '#ccc';
-        dropZone.style.background = '#fafafa';
+        dropZone.style.borderColor = '#c4d4ec';
+        dropZone.style.background = '#f8fbff';
     }
 }
 
@@ -1312,17 +1312,17 @@ function updateFilesDisplay() {
     }
     
     container.innerHTML = `
-        <div style="font-weight: 600; margin-bottom: 8px;">📎 ${applicationFiles.length} file(s) selected:</div>
+        <div style="font-weight: 600; margin-bottom: 8px; color: #0d2a5c;">${applicationFiles.length} file(s) selected:</div>
         ${applicationFiles.map((file, index) => `
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background: #f5f5f5; border-radius: 8px; margin-bottom: 8px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background: #f4f7fd; border: 1px solid #e3ecf9; border-radius: 8px; margin-bottom: 8px;">
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 1.5rem;">${getFileIcon(file.type)}</span>
+                    <span style="font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; color: #8a6d2e; background: #fdf8ec; border: 1px solid #ecd9a8; border-radius: 6px; padding: 3px 8px;">${getFileIcon(file.type)}</span>
                     <div>
                         <div style="font-weight: 500;">${file.name}</div>
-                        <div style="font-size: 0.8rem; color: #666;">${formatFileSize(file.size)}</div>
+                        <div style="font-size: 0.8rem; color: #5a6b85;">${formatFileSize(file.size)}</div>
                     </div>
                 </div>
-                <button type="button" onclick="removeApplicationFile(${index})" style="background: #ff5252; color: white; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85rem;">✕ Remove</button>
+                <button type="button" onclick="removeApplicationFile(${index})" style="background: #fff; color: #c62828; border: 1px solid #e5b4b4; padding: 4px 12px; border-radius: 999px; cursor: pointer; font-size: 0.85rem; font-weight: 600;">Remove</button>
             </div>
         `).join('')}
     `;
@@ -1334,10 +1334,10 @@ function removeApplicationFile(index) {
 }
 
 function getFileIcon(mimeType) {
-    if (mimeType.startsWith('image/')) return '🖼️';
-    if (mimeType === 'application/pdf') return '📄';
-    if (mimeType.includes('word')) return '📝';
-    return '📎';
+    if (mimeType.startsWith('image/')) return 'IMG';
+    if (mimeType === 'application/pdf') return 'PDF';
+    if (mimeType.includes('word')) return 'DOC';
+    return 'FILE';
 }
 
 function formatFileSize(bytes) {

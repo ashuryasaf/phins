@@ -13,12 +13,12 @@ PHINS is a Python platform built around:
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`, `api_agent_ecosystem.py`,
   `api_assessment_center.py`)
-- service-layer logic in `services/` (84 modules)
+- service-layer logic in `services/` (81 modules)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (134 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (139 files) and root-level `test_*.py` (11 files)
 
 Runtime defaults are important:
 
@@ -78,7 +78,7 @@ Preferred file-by-task:
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
 |                                        # (includes `static/locales/he.json` Hebrew i18n)
-|- services/                            # 84 service modules
+|- services/                            # 81 service modules
 |- database/
 |  |- config.py
 |  |- manager.py
@@ -106,7 +106,7 @@ Preferred file-by-task:
 |  `- runner.py
 |- scripts/                             # operational utilities
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/db-init)
-|- tests/                               # 134 test files
+|- tests/                               # 139 test files
 |- docs/
 |  |- platform_data_architecture.md
 |  |- health_marketplace_architecture.md
@@ -344,7 +344,7 @@ Important test harness facts:
 - Tests reset in-memory portal state between cases (clears `POLICIES`,
   `CLAIMS`, `CUSTOMERS`, `SESSIONS`, `BILLING`, etc.)
 - Options wheel service and document processing service are also reset per test
-- 134 test files under `tests/`, 11 root-level `test_*.py` files
+- 139 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
