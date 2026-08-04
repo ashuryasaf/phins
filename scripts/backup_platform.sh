@@ -319,6 +319,20 @@ for pattern in "${SENSITIVE_EXCLUDES[@]}"; do
   TAR_EXCLUDES+=("--exclude=${pattern}")
 done
 
+# Never archive the backup destination itself. The default is named "backups"
+# (already excluded), but a custom BACKUP_ROOT inside the workspace would
+# otherwise be read while this very archive is being written into it — tar then
+# reports "file changed as we read it" and fails, and the archive would nest
+# previous backups.
+BACKUP_ROOT_ABS="$(cd "${BACKUP_ROOT}" && pwd -P)"
+WORKSPACE_ABS="$(cd "${WORKSPACE_DIR}" && pwd -P)"
+case "${BACKUP_ROOT_ABS}/" in
+  "${WORKSPACE_ABS}/"*)
+    BACKUP_ROOT_REL="${BACKUP_ROOT_ABS#"${WORKSPACE_ABS}/"}"
+    TAR_EXCLUDES+=("--exclude=./${BACKUP_ROOT_REL}")
+    ;;
+esac
+
 # --exclude-vcs-ignores honours .gitignore, which is where secret-bearing files
 # (.env, *.db, keys) are already listed — belt and braces with the explicit
 # patterns above, and it automatically covers anything added to .gitignore later.
