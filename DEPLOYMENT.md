@@ -214,6 +214,39 @@ variables in Railway (or Render / your hosting platform):
 The trading terminal is accessible at `/trading-terminal.html` and requires the
 Investment AI access key to authenticate API calls.
 
+### Confidential document access (investor / corporate documents)
+
+Investor business plans under `/internal/` and corporate instruments under
+`/legal/` (cap table, term sheet, shareholders/employment agreements, financial
+model) are **not** customer-facing. They are served through an access gate
+(`security/confidential_access.py`), which also protects
+`/api/legal-docs/{registry,sign,verify}` — those endpoints expose anchored
+signer names and the signed content snapshot for a document instance.
+
+| Variable | Required | Description |
+|---|---|---|
+| `PHINS_CONFIDENTIAL_ACCESS_TOKEN` | Yes, in production | Shared access token for confidential documents. Generate with `openssl rand -hex 32`. Alias: `PHINS_INVESTOR_ACCESS_TOKEN` |
+| `PHINS_CONFIDENTIAL_DOCS_PUBLIC` | No | `true` publishes the documents to anyone (explicit, logged opt-out) |
+| `PHINS_CONFIDENTIAL_PATHS` | No | Extra paths to gate. Entries ending in `/` are prefixes, otherwise exact files |
+| `PHINS_CONFIDENTIAL_COOKIE_MAX_AGE` | No | Access cookie lifetime in seconds (default `43200`, 12h) |
+
+Access is granted to a **staff session** (admin/accountant/underwriter/actuary/
+compliance/founder) or to a caller presenting the token. Share a document as:
+
+```text
+https://<host>/internal/phins-investor-business-plan.html?access_token=<token>
+```
+
+The token is accepted once from the query string, exchanged for an
+`HttpOnly; SameSite=Strict` cookie, and the caller is redirected to the bare URL
+so the secret does not persist in browser history, `Referer` headers, or access
+logs. The cookie stores an HMAC of the token, never the token itself.
+
+**In production, if no token is configured these paths return 503** rather than
+being served anonymously. Non-production deployments (and `PHINS_TEST_MODE`)
+stay open so local development and CI are unaffected. The boot log reports the
+gate's state.
+
 ### Monthly auto-pay environment variables
 
 Set these for production auto-pay automation:
@@ -288,6 +321,13 @@ For production deployments:
 4. Enable HTTPS (automatic on most platforms)
 5. Implement rate limiting
 6. Add CORS headers as needed
+7. Set `PHINS_CONFIDENTIAL_ACCESS_TOKEN` so investor/corporate documents are
+   not anonymously reachable (see *Confidential document access* above)
+8. Leave `PHINS_EXPOSE_DEMO_OTP` unset — it returns live verification codes in
+   API responses and is ignored in production, but should not be set at all
+9. Never commit backups: `backups/` is gitignored and
+   `scripts/backup_platform.sh` refuses to write into a tracked path. A snapshot
+   can contain a full database dump (see `BACKUP.md`)
 
 ## Cost Estimates
 
