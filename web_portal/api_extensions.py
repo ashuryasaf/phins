@@ -282,6 +282,47 @@ def _runtime_environment_name() -> str:
     return 'development'
 
 
+def _is_production_runtime() -> bool:
+    """Authoritative production check for OTP-exposure decisions.
+
+    ``_runtime_environment_name`` only inspects ``PHINS_ENV`` / ``ENVIRONMENT`` /
+    ``RAILWAY_ENVIRONMENT_NAME`` / ``NODE_ENV``, so a deployment configured with
+    the documented ``PHINS_ENVIRONMENT=production`` (the variable used by
+    ``scripts/entrypoint.sh`` and ``security.secrets_policy``) was not detected
+    as production here. Delegate to the shared policy — which also understands
+    ``RAILWAY_ENVIRONMENT``/``RENDER`` and always treats ``PHINS_TEST_MODE`` as
+    non-production — and keep the legacy names as an additional signal so no
+    previously-detected production runtime stops being detected.
+    """
+    try:
+        from security.secrets_policy import _is_production
+
+        if _is_production():
+            return True
+    except Exception:
+        pass
+    if PHINS_TEST_MODE:
+        return False
+    return _runtime_environment_name() in _PRODUCTION_ENV_NAMES
+
+
+def _demo_otp_exposure_allowed() -> bool:
+    """Whether a plaintext OTP may be echoed back in an API response.
+
+    ``PHINS_EXPOSE_DEMO_OTP`` is a demo/debug aid: it returns the live
+    verification code to the caller. Without a production guard, setting it on a
+    production deployment (or leaving it set after a demo) hands an attacker the
+    code for any account they can name — including password-reset codes — which
+    is a direct account-takeover path. Test mode stays unconditionally allowed so
+    the pytest harness keeps asserting on ``demo_otp_code``.
+    """
+    if not EXPOSE_DEMO_OTP:
+        return False
+    if PHINS_TEST_MODE:
+        return True
+    return not _is_production_runtime()
+
+
 def _allow_registration_demo_otp_fallback() -> bool:
     """
     Allow OTP fallback code exposure only for non-production registration flows.
@@ -311,7 +352,7 @@ def _apply_registration_demo_otp_fallback(
 
     Returns True when fallback is applied and the request can continue.
     """
-    if not otp_code or EXPOSE_DEMO_OTP:
+    if not otp_code or _demo_otp_exposure_allowed():
         return False
     if not _registration_otp_fallback_eligible(purpose):
         return False
@@ -413,7 +454,7 @@ def _prepare_otp_client_response(
         if safe_data.get('expires_in_seconds') is not None:
             sanitized['expires_in_seconds'] = safe_data.get('expires_in_seconds')
 
-    if EXPOSE_DEMO_OTP and otp_code:
+    if otp_code and _demo_otp_exposure_allowed():
         sanitized['demo_otp_code'] = otp_code
 
     return sanitized, otp_code, delivery_context
@@ -768,7 +809,7 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
             ):
                 return 200, response_data
             # If OTP cannot be delivered and demo OTP is disabled, fail safely.
-            if not EXPOSE_DEMO_OTP:
+            if not _demo_otp_exposure_allowed():
                 response_data['success'] = False
                 response_data['error_code'] = 'OTP_DELIVERY_FAILED'
                 response_data['message'] = (
@@ -856,7 +897,7 @@ def handle_otp_resend(client_ip: str, body_data: Dict, user_agent: str = "") -> 
                     purpose=resend_purpose
                 ):
                     return 200, response_data
-                if not EXPOSE_DEMO_OTP:
+                if not _demo_otp_exposure_allowed():
                     response_data['success'] = False
                     response_data['error_code'] = 'OTP_DELIVERY_FAILED'
                     response_data['message'] = (

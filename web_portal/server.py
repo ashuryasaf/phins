@@ -8116,6 +8116,40 @@ def compute_investor_valuation_sim(params):
 # Test mode (makes API/security behavior deterministic for CI)
 PHINS_TEST_MODE = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y')
 
+
+def _demo_otp_exposure_allowed() -> bool:
+    """Whether a plaintext OTP may be echoed back to the caller.
+
+    ``PHINS_EXPOSE_DEMO_OTP`` returns the live verification code in the API
+    response. On a production deployment that is an account-takeover primitive:
+    anyone who can name an account gets its password-reset code. Test mode stays
+    allowed so the pytest harness keeps asserting on ``demo_otp_code``.
+
+    Delegates to ``web_portal.api_extensions`` so both request paths share one
+    rule, with an equivalent local fallback when extensions are unavailable.
+    """
+    try:
+        from web_portal.api_extensions import _demo_otp_exposure_allowed as _allowed
+        return bool(_allowed())
+    except Exception:
+        pass
+    try:
+        from api_extensions import _demo_otp_exposure_allowed as _allowed  # type: ignore
+        return bool(_allowed())
+    except Exception:
+        pass
+    if str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y'):
+        return True
+    if str(os.environ.get('PHINS_EXPOSE_DEMO_OTP', '')).lower() not in ('1', 'true', 'yes', 'y'):
+        return False
+    try:
+        from security.secrets_policy import _is_production
+        return not _is_production()
+    except Exception:
+        return os.environ.get('PHINS_ENVIRONMENT', '').strip().lower() not in (
+            'production', 'prod', 'live',
+        )
+
 # Add test invitation code when in test mode
 # This allows registration tests to work without manually creating invitation codes
 if PHINS_TEST_MODE:
@@ -9380,6 +9414,17 @@ import base64
 
 from security import auth_tokens as _auth_tokens
 from security.auth_tokens import TokenSecretError
+
+# Confidential-document access gate. Static files are served with path-traversal
+# protection only, so the investor plans under /internal/ and the corporate
+# instruments under /legal/ need an explicit authorisation check.
+try:
+    from security import confidential_access
+    _confidential_access_enabled = True
+except Exception as _conf_exc:  # pragma: no cover - import-time safety net
+    confidential_access = None  # type: ignore[assignment]
+    _confidential_access_enabled = False
+    print(f"Warning: confidential access gate unavailable: {_conf_exc}")
 
 # Security hardening modules — firewall, file scanner, intrusion detection,
 # request sanitisation.  Imported with fallbacks so the server can still
@@ -12144,6 +12189,17 @@ def _should_silence_bot_probe_http_log(path: str, code: object) -> bool:
     return _is_bot_probe_path(path) and str(code) in ('404', '403')
 
 
+def _is_local_request_host(host_header: str) -> bool:
+    """Return True when the request targets a local development host.
+
+    Used to decide whether the confidential-access cookie may be marked
+    ``Secure``: a local ``http://localhost`` run would silently drop a Secure
+    cookie, while any real deployment is served over HTTPS.
+    """
+    host = str(host_header or '').strip().lower().split(':')[0]
+    return host in ('localhost', '127.0.0.1', '::1', '0.0.0.0', '') or host.endswith('.local')
+
+
 def _is_internal_network_ip(ip: str) -> bool:
     """Return True for CGNAT / private IPv4 ranges used by Railway.
 
@@ -12383,6 +12439,23 @@ class PortalHandler(BaseHTTPRequestHandler):
                     pass
         except Exception:
             pass
+        # Never persist a confidential access token in the access log: the
+        # ?access_token= exchange is redirected to a bare URL, but the request
+        # that carried it still passes through here.
+        try:
+            if (
+                _confidential_access_enabled
+                and confidential_access.has_sensitive_query(getattr(self, 'requestline', '') or '')
+            ):
+                original_requestline = self.requestline
+                try:
+                    self.requestline = confidential_access.redact_sensitive_query(original_requestline)
+                    super().log_request(code, size)
+                finally:
+                    self.requestline = original_requestline
+                return
+        except Exception:
+            pass
         super().log_request(code, size)
 
     def _set_json_headers(self, status: int = 200) -> None:
@@ -12400,6 +12473,105 @@ class PortalHandler(BaseHTTPRequestHandler):
         auth_header = self.headers.get('Authorization', '')
         token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
         return validate_session(token) if token else None
+
+    def _request_is_secure(self) -> bool:
+        """Whether the original client request arrived over HTTPS.
+
+        Railway/Render terminate TLS at the edge, so the hop to this process is
+        plain HTTP; the edge records the original scheme in
+        ``X-Forwarded-Proto``. Used to decide whether the access cookie may
+        carry the ``Secure`` attribute (setting it on a plain-HTTP local run
+        would make the cookie unusable).
+        """
+        try:
+            forwarded = str(self.headers.get('X-Forwarded-Proto', '') or '').split(',')[0].strip().lower()
+        except Exception:
+            forwarded = ''
+        if forwarded:
+            return forwarded == 'https'
+        return not _is_local_request_host(self.headers.get('Host', ''))
+
+    def _enforce_confidential_access(self, path: str, qs: Dict[str, Any]) -> bool:
+        """Gate confidential investor/corporate documents and their APIs.
+
+        ``web_portal/static`` is served with path-traversal protection only, so
+        without this check the investor business plans under ``/internal/`` and
+        the corporate instruments under ``/legal/`` (cap table, term sheet,
+        shareholders/employment agreements) are readable by anyone who knows
+        the URL — and ``robots.txt`` advertises ``/internal/``. The same gate
+        covers ``/api/legal-docs/*``, which exposes anchored signer names and
+        the signed content snapshot for a document instance.
+
+        Returns ``True`` when the request may proceed. On denial (or on the
+        token-for-cookie exchange redirect) the response is already written and
+        callers must return immediately.
+        """
+        if not _confidential_access_enabled:
+            return True
+        try:
+            decision = confidential_access.evaluate_access(
+                path,
+                session=self._get_session(),
+                cookie_header=self.headers.get('Cookie', ''),
+                query_params=qs,
+            )
+        except Exception as exc:
+            # Never let a gate failure silently expose the documents: deny and
+            # tell the operator. (Non-confidential paths short-circuit above.)
+            print(f"⚠️  [CONFIDENTIAL] access evaluation failed for {path}: {exc}")
+            if not confidential_access.is_confidential_path(path):
+                return True
+            self._set_json_headers(503)
+            self.wfile.write(json.dumps(
+                {'error': 'Confidential document access check unavailable.'}
+            ).encode('utf-8'))
+            return False
+
+        if decision.allowed and not decision.requires_redirect:
+            return True
+
+        wants_json = path.startswith('/api/')
+
+        if decision.allowed and decision.requires_redirect:
+            # Token accepted from the query string: hand the caller an HttpOnly
+            # cookie and bounce to the bare URL so the shared secret does not
+            # persist in browser history, Referer headers, or access logs.
+            self.send_response(302)
+            self.send_header('Location', decision.redirect_to or path)
+            if decision.set_cookie:
+                self.send_header('Set-Cookie', confidential_access.access_cookie_header(
+                    decision.cookie_value, secure=self._request_is_secure(),
+                ))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            return False
+
+        log_malicious_attempt(
+            self.client_address[0] if self.client_address else '-',
+            'Confidential Document Access Denied',
+            {'path': confidential_access.redact_sensitive_query(path), 'reason': decision.reason},
+        )
+        if wants_json:
+            self._set_json_headers(decision.status)
+            self.wfile.write(json.dumps(
+                confidential_access.denial_payload(decision)
+            ).encode('utf-8'))
+            return False
+
+        body = confidential_access.denial_html(decision).encode('utf-8')
+        self.send_response(decision.status)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-store')
+        try:
+            from security.headers import html_security_headers
+            for name, value in html_security_headers():
+                self.send_header(name, value)
+        except Exception:
+            pass
+        self.end_headers()
+        self.wfile.write(body)
+        return False
 
     def _savings_account_owner(self, account_id: Any) -> Optional[str]:
         """Resolve the customer_id that owns a portfolio/savings ``account_id``.
@@ -13320,6 +13492,12 @@ For claims or questions, please contact:
                     self.end_headers()
                     self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
                     return
+
+        # Confidential-document gate. Placed before the legal-docs registry and
+        # the static file handler below so a single choke point authorises every
+        # GET for investor/corporate material (see security/confidential_access).
+        if not self._enforce_confidential_access(path, qs):
+            return
 
         # Legal/corporate document signature registry (read-only, ledger-anchored)
         if path == '/api/legal-docs/registry':
@@ -28017,6 +28195,13 @@ For claims or questions, please contact:
         # Session-optional: external counterparties (investors/candidates) may
         # sign without a PHINS login; the client IP is recorded for audit.
         if path in ('/api/legal-docs/sign', '/api/legal-docs/verify'):
+            # Same confidential gate as the documents themselves: a counterparty
+            # reaches the signing page through an access-token link (or a staff
+            # session), so their browser already carries the access cookie. This
+            # keeps anonymous internet callers from anchoring or probing
+            # signatures for a document instance they were never given.
+            if not self._enforce_confidential_access(path, qs_post):
+                return
             try:
                 length = int(self.headers.get('Content-Length', 0) or 0)
             except (TypeError, ValueError):
@@ -32329,8 +32514,10 @@ For claims or questions, please contact:
                     if otp_result.data and otp_result.data.get('expires_in_seconds'):
                         response_data['expires_in_seconds'] = otp_result.data['expires_in_seconds']
 
-                    phins_test = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y')
-                    expose_demo = phins_test or str(os.environ.get('PHINS_EXPOSE_DEMO_OTP', '')).lower() in ('1', 'true', 'yes', 'y')
+                    # Never echo a live password-reset code in production, even
+                    # if PHINS_EXPOSE_DEMO_OTP is left set (see
+                    # _demo_otp_exposure_allowed).
+                    expose_demo = _demo_otp_exposure_allowed()
                     if expose_demo and otp_code:
                         response_data['demo_otp_code'] = otp_code
 
@@ -33566,8 +33753,10 @@ For claims or questions, please contact:
                     if otp_result.data and otp_result.data.get('expires_in_seconds'):
                         response_data['expires_in_seconds'] = otp_result.data['expires_in_seconds']
 
-                    phins_test = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y')
-                    expose_demo = phins_test or str(os.environ.get('PHINS_EXPOSE_DEMO_OTP', '')).lower() in ('1', 'true', 'yes', 'y')
+                    # Never echo a live password-reset code in production, even
+                    # if PHINS_EXPOSE_DEMO_OTP is left set (see
+                    # _demo_otp_exposure_allowed).
+                    expose_demo = _demo_otp_exposure_allowed()
                     if expose_demo and otp_code:
                         response_data['demo_otp_code'] = otp_code
 
@@ -49244,6 +49433,24 @@ def _repair_hydrated_ledger_chain(
                         f"{db_summary.get('rows_inserted', 0)} rows inserted"
                         f"{backup_note})"
                     )
+                    # A repair that committed but left rows divergent must be
+                    # loud: downstream BI/actuarial consumers read these rows
+                    # directly.
+                    if db_summary.get('verified') is False:
+                        print(
+                            f"   ⚠️  DB ledger chain verification FAILED after "
+                            f"reconcile: "
+                            f"{len(db_summary.get('verification_mismatches') or [])} "
+                            f"mismatched, "
+                            f"{len(db_summary.get('verification_missing') or [])} "
+                            f"missing rows — operator review required"
+                        )
+                    elif db_summary.get('verified') is None:
+                        print(
+                            "   ⚠️  DB ledger chain reconcile could not be "
+                            "verified; re-run scripts/repair_platform_ledger_chain.py "
+                            "--check to confirm"
+                        )
                 elif db_summary.get('reason') not in (
                     'db chain already consistent', 'database disabled'
                 ):
@@ -50622,6 +50829,17 @@ def run_server(port: int = PORT) -> None:
         raise
     except Exception as _exc:  # pragma: no cover - defensive
         print(f"[SECURITY] secret audit failed: {_exc}")
+
+    # Confidential-document gate status. Investor plans (/internal/) and
+    # corporate instruments (/legal/) are only as protected as this
+    # configuration, so surface it at boot rather than letting an operator
+    # discover the state from a leak.
+    if _confidential_access_enabled:
+        try:
+            for _conf_warning in confidential_access.startup_warnings():
+                print(f"[SECURITY][WARN] {_conf_warning}")
+        except Exception as _conf_exc:  # pragma: no cover - defensive
+            print(f"[SECURITY] confidential access audit failed: {_conf_exc}")
 
     # Load persisted ledger data first
     print("📂 Loading persisted ledger data...")
