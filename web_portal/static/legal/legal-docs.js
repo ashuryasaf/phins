@@ -39,9 +39,22 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
   }
+  // Document instance ids address ledger-anchored signatures, so they must not
+  // be guessable: knowing an id is enough to fetch a document's registry
+  // entries (signer names + the signed content snapshot). Math.random() is not
+  // a CSPRNG, so draw from crypto.getRandomValues and only fall back when the
+  // Web Crypto API is genuinely unavailable. Rejection sampling keeps the
+  // alphabet uniform (256 % 32 == 0, so no modulo bias for this alphabet).
   function rand(n) {
-    var s = '', c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    for (var i = 0; i < (n || 6); i++) s += c[Math.floor(Math.random() * c.length)];
+    var c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', count = n || 6, s = '', i;
+    var crypto = window.crypto || window.msCrypto;
+    if (crypto && crypto.getRandomValues) {
+      var buf = new Uint8Array(count);
+      crypto.getRandomValues(buf);
+      for (i = 0; i < count; i++) s += c[buf[i] % c.length];
+      return s;
+    }
+    for (i = 0; i < count; i++) s += c[Math.floor(Math.random() * c.length)];
     return s;
   }
   function safeNum(v, d) { var n = parseFloat(v); return isFinite(n) ? n : (d || 0); }
@@ -214,7 +227,7 @@
     if (!this.docInstanceId) {
       var stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       this.docInstanceId = 'LGL-' + this.cfg.docType.toUpperCase().replace(/[^A-Z0-9]+/g, '-') +
-        '-' + stamp + '-' + rand(6);
+        '-' + stamp + '-' + rand(10);
     }
     this.storageKey = 'phins.legal.' + this.docInstanceId;
     try { localStorage.setItem(ptrKey, this.docInstanceId); } catch (e) {}

@@ -100,6 +100,17 @@ phins.db
 !schema.sql
 
 # =============================================================================
+# Backups (never commit)
+# =============================================================================
+# Platform snapshots aggregate the entire deployment and may include a database
+# dump. Committing them publishes that payload permanently in git history and to
+# every clone/fork. scripts/backup_platform.sh refuses to write anywhere git
+# would track, so this entry is what keeps the default destination usable.
+backups/
+# Forensic snapshots written before a ledger chain repair (live ledger data).
+phins_ledger_chain_backup_*.json
+
+# =============================================================================
 # IDE and Editor
 # =============================================================================
 

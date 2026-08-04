@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, Iterable, List, MutableMapping, Optional
 import hashlib
 import json
 import logging
+import os
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -336,10 +337,84 @@ class PlatformEventLedgerService:
     def get_integrity_summary(self) -> Dict[str, Any]:
         return reconcile_ledger_entries(self.transaction_ledger.values())
 
+    def _write_repair_journal(
+        self,
+        backup_path: str,
+        updates: List[Any],
+        inserts: List[Dict[str, Any]],
+    ) -> None:
+        """Atomically write the forensic before/after journal for a repair.
+
+        Raises ``OSError`` on failure so the caller can abort before mutating
+        any row: an audit trail that may silently be missing is not an audit
+        trail. The journal records both the original (divergent) chain fields
+        and the values that replace them, plus the ids being inserted, so the
+        pre-repair DB state is fully reconstructible.
+        """
+        journal = {
+            "backed_up_at": datetime.utcnow().isoformat(),
+            "schema": "phins.ledger.chain_repair.v2",
+            "rows": [
+                {
+                    "id": row.id,
+                    "sequence_no": row.sequence_no,
+                    "previous_hash": row.previous_hash,
+                    "entry_hash": row.entry_hash,
+                    "replaced_by": {
+                        "sequence_no": entry.get("sequence_no"),
+                        "previous_hash": entry.get("previous_hash") or "",
+                        "entry_hash": entry.get("entry_hash"),
+                    },
+                }
+                for row, entry in updates
+            ],
+            "inserted_ids": [str(entry.get("id") or "") for entry in inserts],
+        }
+        directory = os.path.dirname(backup_path) or "."
+        os.makedirs(directory, exist_ok=True)
+        tmp_path = f"{backup_path}.tmp"
+        # Write-then-rename with an fsync so a crash mid-write can never leave a
+        # truncated journal that looks complete.
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(journal, fh, indent=2, default=str)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, backup_path)
+
+    def _verify_db_chain_matches_memory(
+        self, db: Any, limit: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Re-read the persisted rows and confirm they match the memory chain.
+
+        Runs after the reconcile commits so a repair can never be reported as
+        successful while the stored chain still diverges (for example if another
+        writer raced the transaction).
+        """
+        result: Dict[str, Any] = {"verified": False, "mismatches": [], "missing": []}
+        rows = db.platform_ledger.get_all_by_sequence(limit=limit) or []
+        by_id = {row.id: row for row in rows if row is not None}
+        for entry in sort_ledger_entries(self.transaction_ledger.values()):
+            entry_id = str(entry.get("id") or "")
+            if not entry_id:
+                continue
+            row = by_id.get(entry_id)
+            if row is None:
+                result["missing"].append(entry_id)
+                continue
+            if (
+                row.sequence_no != entry.get("sequence_no")
+                or (row.previous_hash or "") != str(entry.get("previous_hash") or "")
+                or (row.entry_hash or "") != str(entry.get("entry_hash") or "")
+            ):
+                result["mismatches"].append(entry_id)
+        result["verified"] = not result["mismatches"] and not result["missing"]
+        return result
+
     def persist_chain_to_db(
         self,
         backup_path: Optional[str] = None,
         limit: Optional[int] = None,
+        require_backup: bool = True,
     ) -> Dict[str, Any]:
         """Write the validated in-memory chain back to ``platform_ledger_entries``.
 
@@ -368,12 +443,16 @@ class PlatformEventLedgerService:
         Safety:
 
         * Refuses to run unless the in-memory chain validates cleanly.
-        * When ``backup_path`` is provided, the original chain fields of every
-          row about to change are snapshotted to JSON before mutating
-          (best-effort; failure to write the backup is logged, not fatal,
-          because the overwritten values are precisely the divergent ones).
+        * Fails closed on the audit trail: when ``require_backup`` is set (the
+          default) and any row would be rewritten, a forensic before/after
+          journal must be written successfully first — if it cannot be, nothing
+          is mutated. Rewriting audit rows without a recoverable record of their
+          prior state would make the repair itself unauditable.
         * All mutations commit atomically; on failure the session rolls back
           and the DB is left untouched.
+        * After committing, the persisted rows are re-read and compared against
+          the in-memory chain, so ``applied`` is never reported for a chain that
+          still diverges.
         """
         summary: Dict[str, Any] = {
             "applied": False,
@@ -437,34 +516,39 @@ class PlatformEventLedgerService:
                     summary["reason"] = "db chain already consistent"
                     return summary
 
-                if backup_path and updates:
-                    try:
-                        snapshot = [
-                            {
-                                "id": row.id,
-                                "sequence_no": row.sequence_no,
-                                "previous_hash": row.previous_hash,
-                                "entry_hash": row.entry_hash,
-                            }
-                            for row, _ in updates
-                        ]
-                        with open(backup_path, "w", encoding="utf-8") as fh:
-                            json.dump(
-                                {
-                                    "backed_up_at": datetime.utcnow().isoformat(),
-                                    "rows": snapshot,
-                                },
-                                fh,
-                                indent=2,
-                                default=str,
+                if updates:
+                    # Fail closed: never overwrite audit rows unless the
+                    # before/after journal is safely on disk first.
+                    if not backup_path:
+                        if require_backup:
+                            summary["reason"] = (
+                                "no backup_path supplied; refusing to rewrite "
+                                f"{len(updates)} ledger chain rows without a "
+                                "forensic journal"
                             )
-                        summary["backup_path"] = backup_path
-                    except OSError as backup_exc:
-                        logger.warning(
-                            "Ledger chain backup write failed (%s); proceeding — "
-                            "overwritten values are the divergent ones",
-                            backup_exc,
-                        )
+                            return summary
+                    else:
+                        try:
+                            self._write_repair_journal(backup_path, updates, inserts)
+                            summary["backup_path"] = backup_path
+                        except OSError as backup_exc:
+                            if require_backup:
+                                logger.error(
+                                    "Ledger chain repair journal could not be written "
+                                    "(%s); refusing to rewrite %d rows",
+                                    backup_exc,
+                                    len(updates),
+                                )
+                                summary["reason"] = (
+                                    f"repair journal write failed ({backup_exc}); "
+                                    "no rows were modified"
+                                )
+                                return summary
+                            logger.warning(
+                                "Ledger chain backup write failed (%s); proceeding "
+                                "because require_backup=False",
+                                backup_exc,
+                            )
 
                 session = db.platform_ledger.session
                 for row, entry in updates:
@@ -511,6 +595,27 @@ class PlatformEventLedgerService:
                 summary["applied"] = True
                 summary["rows_updated"] = len(updates)
                 summary["rows_inserted"] = len(inserts)
+
+                # Confirm the persisted chain now matches memory; a repair that
+                # silently left rows divergent must not report success.
+                try:
+                    verification = self._verify_db_chain_matches_memory(db, limit=limit)
+                    summary["verified"] = verification["verified"]
+                    if not verification["verified"]:
+                        summary["verification_mismatches"] = verification["mismatches"][:20]
+                        summary["verification_missing"] = verification["missing"][:20]
+                        logger.error(
+                            "Ledger chain reconcile committed but verification found "
+                            "%d mismatched and %d missing rows",
+                            len(verification["mismatches"]),
+                            len(verification["missing"]),
+                        )
+                except Exception as verify_exc:
+                    summary["verified"] = None
+                    summary["reason"] = f"post-write verification failed: {verify_exc}"
+                    logger.warning(
+                        "Ledger chain post-write verification failed: %s", verify_exc
+                    )
                 return summary
         except Exception as exc:
             logger.warning("Platform ledger DB chain reconcile failed: %s", exc)

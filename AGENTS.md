@@ -100,6 +100,7 @@ Preferred file-by-task:
 |  |- intrusion_detector.py
 |  |- request_sanitizer.py
 |  |- file_scanner.py
+|  |- confidential_access.py            # gate for /internal/ + /legal/ docs
 |  `- migrate_passwords.py
 |- scheduler/
 |  `- runner.py
@@ -378,8 +379,22 @@ referenced files, commands, paths, and ports still exist.
   already does so.
 - Security utilities live in `security/` (`vault.py`, `auth_tokens.py`,
   `headers.py`, `network.py`, `secrets_policy.py`, `firewall.py`,
-  `intrusion_detector.py`, `request_sanitizer.py`, `file_scanner.py`); reuse
-  them rather than rolling custom auth/crypto.
+  `intrusion_detector.py`, `request_sanitizer.py`, `file_scanner.py`,
+  `confidential_access.py`); reuse them rather than rolling custom auth/crypto.
+- Static files under `web_portal/static/` are served with path-traversal
+  protection only — they are **public** unless gated. Confidential material
+  (`/internal/` investor plans, `/legal/` corporate instruments) goes through
+  `security/confidential_access.py`; add new confidential paths there (or via
+  `PHINS_CONFIDENTIAL_PATHS`) rather than relying on an obscure filename.
+- Never return a live OTP to a caller. `PHINS_EXPOSE_DEMO_OTP` is a
+  non-production aid and is refused in production; route any new OTP surface
+  through `_demo_otp_exposure_allowed()`.
+- Never commit backups. `backups/` is gitignored and
+  `scripts/backup_platform.sh` refuses to write into a tracked path; a snapshot
+  can contain a full database dump.
+- Repairs that rewrite ledger/audit rows must write their forensic before/after
+  journal first (fail closed) and verify the result after commit — see
+  `PlatformEventLedgerService.persist_chain_to_db`.
 
 ## 11) Minimal Task Workflow
 
@@ -403,4 +418,4 @@ If you update this file again:
 
 ---
 
-Last updated: August 3, 2026
+Last updated: August 4, 2026

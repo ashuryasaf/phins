@@ -7675,14 +7675,30 @@
       var DOCID_STORE_ID = "phins.investor.nda.docid";
       var SIG_STORE_ID = "phins.investor.nda.sig";
       var ndaDocId = null;
+      // The NDA instance id addresses ledger-anchored signatures, so it must not
+      // be guessable: knowing it is enough to query the signature registry.
+      // Math.random() is not a CSPRNG — draw from Web Crypto and fall back only
+      // when it is unavailable. 256 % 32 == 0, so the modulo is bias-free.
+      function ndaRandomSuffix(count) {
+        var alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789", out = "", i;
+        var cryptoObj = window.crypto || window.msCrypto;
+        if (cryptoObj && cryptoObj.getRandomValues) {
+          var buf = new Uint8Array(count);
+          cryptoObj.getRandomValues(buf);
+          for (i = 0; i < count; i++) out += alphabet[buf[i] % alphabet.length];
+          return out;
+        }
+        for (i = 0; i < count; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+        return out;
+      }
       try {
         ndaDocId = localStorage.getItem(DOCID_STORE_ID);
         if (!ndaDocId) {
           ndaDocId = "INV-NDA-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" +
-            Math.random().toString(36).slice(2, 8).toUpperCase();
+            ndaRandomSuffix(10);
           localStorage.setItem(DOCID_STORE_ID, ndaDocId);
         }
-      } catch (e) { ndaDocId = "INV-NDA-LOCAL"; }
+      } catch (e) { ndaDocId = "INV-NDA-" + ndaRandomSuffix(10); }
 
       function stableStringify(obj) {
         if (obj === null || typeof obj !== "object") return JSON.stringify(obj);

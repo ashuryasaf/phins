@@ -134,7 +134,14 @@ def main() -> int:
         "--backup",
         default=None,
         help="Write a JSON snapshot of every row to PATH before mutating. "
-        "Recommended when --apply is set.",
+        "With --apply a backup is mandatory; when omitted a timestamped file "
+        "is created in the current directory.",
+    )
+    parser.add_argument(
+        "--no-backup",
+        action="store_true",
+        help="Apply without writing a forensic snapshot first (NOT recommended; "
+        "the pre-repair chain values become unrecoverable).",
     )
     parser.add_argument(
         "--limit",
@@ -177,7 +184,18 @@ def main() -> int:
             print("Chain is already valid — nothing to repair.")
             return 0
 
-        if args.backup:
+        # Fail closed on the audit trail: rewriting chain fields without a
+        # recoverable snapshot of the originals makes the repair unauditable.
+        # Only --apply mutates rows, so a dry run needs no snapshot.
+        backup_path = args.backup
+        if args.apply and not backup_path and not args.no_backup:
+            backup_path = (
+                f"phins_ledger_chain_backup_"
+                f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.json"
+            )
+            print(f"No --backup given; defaulting to {backup_path}")
+
+        if backup_path:
             snapshot = [
                 {
                     col.name: _serialize_value(getattr(r, col.name, None))
@@ -185,9 +203,22 @@ def main() -> int:
                 }
                 for r in rows
             ]
-            with open(args.backup, "w", encoding="utf-8") as fh:
-                json.dump(snapshot, fh, indent=2, default=str)
-            print(f"Backup written: {args.backup} ({len(snapshot)} rows)")
+            try:
+                # Write-then-rename so a crash cannot leave a truncated snapshot
+                # that looks complete.
+                tmp_path = f"{backup_path}.tmp"
+                with open(tmp_path, "w", encoding="utf-8") as fh:
+                    json.dump(snapshot, fh, indent=2, default=str)
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                os.replace(tmp_path, backup_path)
+            except OSError as exc:
+                print(f"ERROR: could not write backup {backup_path}: {exc}")
+                if args.apply:
+                    print("Refusing to apply without a forensic snapshot.")
+                    return 2
+            else:
+                print(f"Backup written: {backup_path} ({len(snapshot)} rows)")
 
         sorted_entries = sort_ledger_entries(row_dicts)
         previous_hash = ""
