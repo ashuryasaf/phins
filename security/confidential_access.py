@@ -60,7 +60,11 @@ STAFF_ROLES = ("admin", "accountant", "underwriter", "actuary", "compliance", "f
 DEFAULT_CONFIDENTIAL_PREFIXES = ("/internal/", "/legal/")
 
 # Individually confidential files that do not live under a gated prefix.
-DEFAULT_CONFIDENTIAL_FILES = ("/pitch-dashboard.html",)
+DEFAULT_CONFIDENTIAL_FILES = (
+    "/pitch-dashboard.html",
+    "/phins_business_plan_executive.pdf",
+    "/phins_business_plan_executive.md",
+)
 
 # API endpoints that expose anchored signatures + signed content snapshots.
 DEFAULT_CONFIDENTIAL_API_PATHS = (
@@ -72,8 +76,11 @@ DEFAULT_CONFIDENTIAL_API_PATHS = (
 _TRUTHY = ("1", "true", "yes", "y", "on")
 
 # Static assets that must stay readable even under a gated prefix, otherwise a
-# 401 on the stylesheet would break the rendering of an authorised page.
-_SHARED_ASSET_SUFFIXES = (".css", ".js", ".woff", ".woff2", ".ttf", ".svg", ".ico", ".png")
+# 401 on the stylesheet/script/font would break the rendering of an authorised
+# page. Image formats are deliberately excluded: a confidential diagram or
+# export dropped under a gated prefix must not be served ungated just because it
+# is a ``.png``/``.svg``/``.ico``.
+_SHARED_ASSET_SUFFIXES = (".css", ".js", ".woff", ".woff2", ".ttf")
 
 
 def _env(environ: Optional[Mapping[str, str]] = None) -> Mapping[str, str]:
