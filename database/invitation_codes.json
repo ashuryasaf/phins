@@ -1,84 +1,24 @@
 {
   "version": "1.0",
-  "saved_at": "2026-08-04T13:32:32.243654",
+  "saved_at": "2026-06-06T11:48:57.794033",
   "admin_codes": {
     "TESTCODE2026": {
       "code": "TESTCODE2026",
-      "created_at": "2026-08-04T13:29:50.540820",
+      "created_at": "2026-06-06T11:48:51.314574",
       "created_by": "system",
       "expires_at": null,
       "max_uses": 999999,
-      "used_count": 14,
+      "used_count": 2,
       "used_by": [
         {
-          "email": "ledger_test_customer@example.com",
-          "customer_id": "CUST-78973",
-          "used_at": "2026-08-04T13:30:01.646029"
-        },
-        {
           "email": "newcustomer@example.com",
-          "customer_id": "CUST-63891",
-          "used_at": "2026-08-04T13:30:07.683550"
+          "customer_id": "CUST-19324",
+          "used_at": "2026-06-06T11:48:56.259648"
         },
         {
           "email": "legacyotp@example.com",
-          "customer_id": "CUST-84940",
-          "used_at": "2026-08-04T13:30:08.428844"
-        },
-        {
-          "email": "aitest1@test.com",
-          "customer_id": "CUST-66856",
-          "used_at": "2026-08-04T13:30:38.316996"
-        },
-        {
-          "email": "aitest2@test.com",
-          "customer_id": "CUST-82999",
-          "used_at": "2026-08-04T13:30:39.064381"
-        },
-        {
-          "email": "aitest3@test.com",
-          "customer_id": "CUST-31304",
-          "used_at": "2026-08-04T13:30:39.815875"
-        },
-        {
-          "email": "aitest4@test.com",
-          "customer_id": "CUST-55903",
-          "used_at": "2026-08-04T13:30:40.564069"
-        },
-        {
-          "email": "aitest5@test.com",
-          "customer_id": "CUST-55589",
-          "used_at": "2026-08-04T13:30:41.311321"
-        },
-        {
-          "email": "aitest7@test.com",
-          "customer_id": "CUST-39188",
-          "used_at": "2026-08-04T13:30:42.061928"
-        },
-        {
-          "email": "aitest8@test.com",
-          "customer_id": "CUST-37490",
-          "used_at": "2026-08-04T13:30:42.808885"
-        },
-        {
-          "email": "aitest6@test.com",
-          "customer_id": "CUST-82696",
-          "used_at": "2026-08-04T13:30:43.556060"
-        },
-        {
-          "email": "pipeline_test_133208@example.com",
-          "customer_id": "CUST-71104",
-          "used_at": "2026-08-04T13:32:08.041354"
-        },
-        {
-          "email": "premium_test_133209@example.com",
-          "customer_id": "CUST-76938",
-          "used_at": "2026-08-04T13:32:09.072431"
-        },
-        {
-          "email": "duplicate@example.com",
-          "customer_id": "CUST-33529",
-          "used_at": "2026-08-04T13:32:32.214690"
+          "customer_id": "CUST-15830",
+          "used_at": "2026-06-06T11:48:57.006295"
         }
       ],
       "status": "active",
@@ -95,8 +35,8 @@
       "used_by": [
         {
           "email": "invitation-flow-primary@example.com",
-          "customer_id": "CUST-85587",
-          "used_at": "2026-08-04T13:30:09.152148"
+          "customer_id": "CUST-38734",
+          "used_at": "2026-06-06T11:48:57.730437"
         }
       ]
     },
@@ -111,8 +51,8 @@
       "used_by": [
         {
           "email": "invitation-flow-secondary@example.com",
-          "customer_id": "CUST-59073",
-          "used_at": "2026-08-04T13:30:09.195267"
+          "customer_id": "CUST-12985",
+          "used_at": "2026-06-06T11:48:57.773708"
         }
       ]
     }
