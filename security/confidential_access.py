@@ -177,7 +177,10 @@ def is_confidential_path(
     if not normalized:
         return False
     prefixes, files, api_paths = _confidential_targets(environ)
-    if normalized in api_paths:
+    # API endpoints are matched exactly, but a trailing slash must not skip the
+    # gate: ``/api/legal-docs/registry/`` is the same endpoint as
+    # ``/api/legal-docs/registry`` and stays confidential.
+    if normalized.rstrip("/") in api_paths:
         return True
     if normalized in files:
         return True
