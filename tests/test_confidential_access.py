@@ -645,3 +645,79 @@ def test_http_create_share_rejects_pdf_target(gate_token, share_store, monkeypat
     )
     assert resp.status_code == 400
     assert "download" in resp.json()["error"].lower() or "pdf" in resp.json()["error"].lower() or "html" in resp.json()["error"].lower()
+
+
+def test_cross_worker_single_use_is_atomic(tmp_path):
+    """Two worker-like service instances must not both consume a single-use share.
+
+    Simulates multi-process deployments: each instance keeps its own in-memory
+    map, so only an exclusive file lock + reload-before-mutate keeps
+    ``used_count`` honest across concurrent unlocks.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    from services.confidential_share_service import (
+        ConfidentialShareService,
+        ShareError,
+    )
+
+    data_path = tmp_path / "confidential_shares.json"
+    writer = ConfidentialShareService(data_path=str(data_path))
+    created = writer.create_share(
+        path="/pitch-dashboard.html",
+        password="once-only",
+        max_uses=1,
+        label="cross-worker",
+    )
+
+    worker_a = ConfidentialShareService(data_path=str(data_path))
+    worker_b = ConfidentialShareService(data_path=str(data_path))
+    # Stale caches: both still see used_count=0 until they reacquire the store.
+    assert worker_a.get_share(created["id"])["used_count"] == 0
+    assert worker_b.get_share(created["id"])["used_count"] == 0
+
+    outcomes = []
+
+    def _try_unlock(service: ConfidentialShareService) -> str:
+        try:
+            service.unlock(created["id"], "once-only")
+            return "ok"
+        except ShareError:
+            return "err"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(_try_unlock, worker_a), pool.submit(_try_unlock, worker_b)]
+        for future in as_completed(futures):
+            outcomes.append(future.result())
+
+    assert outcomes.count("ok") == 1, outcomes
+    assert outcomes.count("err") == 1, outcomes
+
+    # A third worker must also see exhaustion after reload.
+    worker_c = ConfidentialShareService(data_path=str(data_path))
+    with pytest.raises(ShareError):
+        worker_c.unlock(created["id"], "once-only")
+    final = worker_c.get_share(created["id"])
+    assert final["used_count"] == 1
+    assert final["status"] == "exhausted"
+
+
+def test_stale_worker_reloads_before_unlock(tmp_path):
+    """A worker that never saw the first unlock must still refuse a second use."""
+    from services.confidential_share_service import (
+        ConfidentialShareService,
+        ShareError,
+    )
+
+    data_path = tmp_path / "confidential_shares.json"
+    worker_a = ConfidentialShareService(data_path=str(data_path))
+    created = worker_a.create_share(
+        path="/legal/cap-table.html",
+        password="relay",
+        max_uses=1,
+    )
+    worker_b = ConfidentialShareService(data_path=str(data_path))
+    worker_a.unlock(created["id"], "relay")
+    with pytest.raises(ShareError):
+        worker_b.unlock(created["id"], "relay")
+    assert worker_b.get_share(created["id"])["used_count"] == 1
