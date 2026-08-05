@@ -5,21 +5,25 @@ confidential pages (pitch dashboard, /internal/, /legal/) after the recipient
 enters a simple open password. Downloadable artefacts (PDF/MD/DOCX/…) are
 intentionally excluded: share cookies never authorise those paths.
 
-Persistence is a locked JSON file under ``database/`` so use counts survive
-restarts and concurrent unlocks remain atomic.
+Persistence is a JSON file under ``database/``. Mutations take an exclusive
+``fcntl.flock`` on a sibling ``.lock`` file and reload from disk first so
+use counts stay correct across multiple app workers (not just threads in one
+process).
 """
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import hmac
 import json
 import os
 import secrets
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 __all__ = [
     "ConfidentialShareService",
@@ -129,40 +133,62 @@ def normalize_share_path(path: str) -> str:
 
 
 class ConfidentialShareService:
-    """Thread-safe, file-backed store for confidential share links."""
+    """Thread- and multi-worker-safe file-backed store for confidential shares."""
 
     def __init__(self, data_path: Optional[str] = None):
         root = Path(__file__).resolve().parent.parent / "database"
         self._path = Path(data_path) if data_path else root / _DEFAULT_DATA_FILE
+        self._lock_path = self._path.with_suffix(self._path.suffix + ".lock")
         self._lock = threading.RLock()
         self._shares: Dict[str, Dict[str, Any]] = {}
-        self._load()
+        with self._exclusive_store():
+            pass  # initial load under the store lock
 
     # ------------------------------------------------------------------
-    # Persistence
+    # Persistence / locking
     # ------------------------------------------------------------------
 
-    def _load(self) -> None:
+    @contextmanager
+    def _exclusive_store(self) -> Iterator[None]:
+        """Exclusive cross-process lock + reload. Caller may then mutate + persist.
+
+        Order: in-process ``RLock`` first, then ``fcntl.flock`` on the sibling
+        lock file, then reload from disk so every worker sees the latest
+        ``used_count`` before deciding whether a single-use link is exhausted.
+        """
         with self._lock:
-            if not self._path.exists():
-                self._shares = {}
-                return
-            try:
-                payload = json.loads(self._path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                self._shares = {}
-                return
-            shares = payload.get("shares") if isinstance(payload, dict) else None
-            if not isinstance(shares, dict):
-                self._shares = {}
-                return
-            self._shares = {
-                str(share_id): dict(record)
-                for share_id, record in shares.items()
-                if isinstance(record, dict)
-            }
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            # Open/create the lock file separately from the JSON payload so
+            # atomic replace of the data file cannot drop the flock.
+            with open(self._lock_path, "a+", encoding="utf-8") as lock_file:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                try:
+                    self._load_from_disk()
+                    yield
+                finally:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+    def _load_from_disk(self) -> None:
+        if not self._path.exists():
+            self._shares = {}
+            return
+        try:
+            payload = json.loads(self._path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            self._shares = {}
+            return
+        shares = payload.get("shares") if isinstance(payload, dict) else None
+        if not isinstance(shares, dict):
+            self._shares = {}
+            return
+        self._shares = {
+            str(share_id): dict(record)
+            for share_id, record in shares.items()
+            if isinstance(record, dict)
+        }
 
     def _persist(self) -> None:
+        """Write the in-memory map. Must be called while holding ``_exclusive_store``."""
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix(self._path.suffix + ".tmp")
         payload = {
@@ -234,33 +260,48 @@ class ConfidentialShareService:
             "status": "active",
             "use_log": [],
         }
-        with self._lock:
+        with self._exclusive_store():
             self._shares[share_id] = record
             self._persist()
             return self._public_view(record)
 
     def list_shares(self, *, include_revoked: bool = True) -> List[Dict[str, Any]]:
-        with self._lock:
-            items = [self._public_view(self._refresh_status(dict(r))) for r in self._shares.values()]
+        with self._exclusive_store():
+            dirty = False
+            items = []
+            for record in self._shares.values():
+                before = record.get("status")
+                refreshed = self._refresh_status(dict(record))
+                if refreshed.get("status") != before:
+                    self._shares[str(refreshed.get("id"))] = refreshed
+                    dirty = True
+                items.append(self._public_view(refreshed))
+            if dirty:
+                self._persist()
         if not include_revoked:
             items = [item for item in items if item.get("status") == "active"]
         items.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
         return items
 
     def get_share(self, share_id: str) -> Optional[Dict[str, Any]]:
-        with self._lock:
+        with self._exclusive_store():
             record = self._shares.get(str(share_id or "").strip())
             if not record:
                 return None
-            return self._public_view(self._refresh_status(dict(record)))
+            before = record.get("status")
+            refreshed = self._refresh_status(dict(record))
+            if refreshed.get("status") != before:
+                self._shares[str(share_id).strip()] = refreshed
+                self._persist()
+            return self._public_view(refreshed)
 
     def get_share_raw(self, share_id: str) -> Optional[Dict[str, Any]]:
-        with self._lock:
+        with self._exclusive_store():
             record = self._shares.get(str(share_id or "").strip())
             return dict(record) if record else None
 
     def revoke_share(self, share_id: str, *, revoked_by: str = "admin") -> Dict[str, Any]:
-        with self._lock:
+        with self._exclusive_store():
             record = self._shares.get(str(share_id or "").strip())
             if not record:
                 raise ShareError("Share link not found.")
@@ -282,7 +323,7 @@ class ConfidentialShareService:
         sid = str(share_id or "").strip()
         if not sid:
             raise ShareError("share_id is required.")
-        with self._lock:
+        with self._exclusive_store():
             record = self._shares.get(sid)
             if not record:
                 # Same message as a bad password — avoid share-id oracle.
@@ -316,6 +357,7 @@ class ConfidentialShareService:
             used = int(record.get("used_count") or 0)
             if max_uses is not None and used >= int(max_uses):
                 record["status"] = "exhausted"
+                self._shares[sid] = record
                 self._persist()
                 raise ShareError("Share link has no remaining uses.")
 
@@ -339,11 +381,11 @@ class ConfidentialShareService:
 
     def share_is_active_for_path(self, share_id: str, path: str) -> bool:
         """True when an existing (already unlocked) share still covers ``path``."""
-        with self._lock:
+        with self._exclusive_store():
             record = self._shares.get(str(share_id or "").strip())
             if not record:
                 return False
-            record = self._refresh_status(dict(record), persist=False)
+            record = self._refresh_status(dict(record))
             # Exhausted shares still honour cookies issued at unlock time, but
             # revoked/expired ones must not.
             if record.get("status") == "revoked":
@@ -363,9 +405,8 @@ class ConfidentialShareService:
     # Internals
     # ------------------------------------------------------------------
 
-    def _refresh_status(
-        self, record: Dict[str, Any], *, persist: bool = True
-    ) -> Dict[str, Any]:
+    def _refresh_status(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Derive expired/exhausted status in-place. Caller persists under store lock."""
         status = str(record.get("status") or "active")
         if status == "revoked":
             return record
@@ -376,17 +417,11 @@ class ConfidentialShareService:
             expiry = None
         if expiry is not None and expiry <= _utc_now():
             record["status"] = "expired"
-            if persist and record.get("id") in self._shares:
-                self._shares[record["id"]] = record
-                self._persist()
             return record
         max_uses = record.get("max_uses")
         used = int(record.get("used_count") or 0)
         if max_uses is not None and used >= int(max_uses):
             record["status"] = "exhausted"
-            if persist and record.get("id") in self._shares:
-                self._shares[record["id"]] = record
-                self._persist()
             return record
         if status != "active":
             # Do not resurrect revoked/expired.
