@@ -97,6 +97,18 @@ DOCUMENTS = [
      'investor-docs/regulatory-meeting-27jul-brief.pdf',
      'PHINS — Regulatory Meeting Brief (27 July 2026) · '
      'Herzog Fox Neeman & Co. Advocates'),
+    ('investor-docs/fintl-vc-meeting-5aug-brief.md',
+     'investor-docs/fintl-vc-meeting-5aug-brief.pdf',
+     'PHINS — Fintl VC Meeting Brief (5 August 2026) · '
+     'Mrs. Orna Carni'),
+    ('investor-docs/fintl-vc-meeting-6aug-brief.md',
+     'investor-docs/fintl-vc-meeting-6aug-brief.pdf',
+     'PHINS — Fintl VC Meeting Brief (6 August 2026) · '
+     'Mrs. Orna Carni'),
+    ('investor-docs/grove-vc-meeting-19aug-brief.md',
+     'investor-docs/grove-vc-meeting-19aug-brief.pdf',
+     'PHINS — Grove VC Meeting Brief (19 August 2026) · '
+     'Mr. Lotan Levkovitch'),
 ]
 
 # Sources rendered right-to-left (Hebrew). RTL documents use a Hebrew-capable
