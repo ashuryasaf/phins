@@ -381,3 +381,267 @@ def test_repeated_denials_do_not_ban_the_caller(gate_token):
         f"{BASE_URL}/internal/phins-investor-business-plan.html", timeout=10
     )
     assert allowed.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Admin password unlock + share links
+# ---------------------------------------------------------------------------
+
+SECRET = "s" * 40
+
+
+def test_denial_page_offers_admin_unlock_form():
+    decision = ca.AccessDecision(
+        allowed=False,
+        reason="not_configured_production",
+        confidential=True,
+        status=503,
+    )
+    html = ca.denial_html(decision, path="/pitch-dashboard.html")
+    assert "admin-unlock-form" in html
+    assert "/api/confidential/admin-unlock" in html
+    assert "Staff / admin unlock" in html
+
+
+def test_staff_unlock_cookie_grants_access_without_global_token():
+    env = {"PHINS_ENVIRONMENT": "production", "SESSION_SECRET_KEY": SECRET}
+    cookie = ca.mint_staff_unlock_cookie(
+        username="admin", role="admin", environ=env
+    )
+    decision = ca.evaluate_access(
+        "/pitch-dashboard.html",
+        cookie_header=f"{ca.STAFF_UNLOCK_COOKIE_NAME}={cookie}",
+        environ=env,
+    )
+    assert decision.allowed is True
+    assert decision.reason == "staff_unlock_cookie"
+
+
+def test_share_cookie_grants_html_but_not_download():
+    env = {"PHINS_ENVIRONMENT": "production", "SESSION_SECRET_KEY": SECRET}
+    share_cookie = ca.mint_share_cookie(
+        share_id="shr_test",
+        path="/pitch-dashboard.html",
+        environ=env,
+    )
+    html_ok = ca.evaluate_access(
+        "/pitch-dashboard.html",
+        cookie_header=f"{ca.SHARE_COOKIE_NAME}={share_cookie}",
+        environ=env,
+    )
+    assert html_ok.allowed is True
+    assert html_ok.reason == "share_cookie"
+
+    download_denied = ca.evaluate_access(
+        "/phins_business_plan_executive.pdf",
+        cookie_header=f"{ca.SHARE_COOKIE_NAME}={share_cookie}",
+        environ=env,
+    )
+    assert download_denied.allowed is False
+    assert download_denied.downloadable is True
+
+
+def test_mint_share_cookie_rejects_download_paths():
+    env = {"SESSION_SECRET_KEY": SECRET}
+    with pytest.raises(ValueError):
+        ca.mint_share_cookie(
+            share_id="shr_x",
+            path="/internal/exec-actuary-briefing.pdf",
+            environ=env,
+        )
+
+
+def test_share_query_requests_password_form_in_production():
+    env = {"PHINS_ENVIRONMENT": "production", "SESSION_SECRET_KEY": SECRET}
+    decision = ca.evaluate_access(
+        "/pitch-dashboard.html",
+        query_params={"share": ["shr_abc"]},
+        environ=env,
+    )
+    assert decision.allowed is False
+    assert decision.reason == "share_password_required"
+    assert decision.share_id == "shr_abc"
+    html = ca.denial_html(decision, path="/pitch-dashboard.html", share_id="shr_abc")
+    assert "share-unlock-form" in html
+    assert "shr_abc" in html
+
+
+@pytest.fixture
+def share_store(tmp_path, monkeypatch):
+    from services import confidential_share_service as css
+
+    css.reset_confidential_share_service_for_tests()
+    path = tmp_path / "confidential_shares.json"
+    service = css.get_confidential_share_service(data_path=str(path))
+    monkeypatch.setenv("SESSION_SECRET_KEY", SECRET)
+    yield service
+    css.reset_confidential_share_service_for_tests()
+
+
+def test_share_service_rejects_downloadable_targets(share_store):
+    from services.confidential_share_service import ShareError
+
+    with pytest.raises(ShareError):
+        share_store.create_share(
+            path="/phins_business_plan_executive.pdf",
+            password="open-sesame",
+            max_uses=1,
+        )
+
+
+def test_share_service_single_use_integrity(share_store):
+    from services.confidential_share_service import ShareError
+
+    created = share_store.create_share(
+        path="/pitch-dashboard.html",
+        password="open-sesame",
+        max_uses=1,
+        label="Once",
+    )
+    assert created["mode"] == "single"
+    public, target = share_store.unlock(created["id"], "open-sesame")
+    assert target == "/pitch-dashboard.html"
+    assert public["used_count"] == 1
+    assert public["status"] == "exhausted"
+    # Cookie holders may still view after exhaustion; new unlocks must fail.
+    assert share_store.share_is_active_for_path(created["id"], "/pitch-dashboard.html")
+    with pytest.raises(ShareError):
+        share_store.unlock(created["id"], "open-sesame")
+
+
+def test_share_service_multi_use_and_wrong_password(share_store):
+    from services.confidential_share_service import ShareError
+
+    created = share_store.create_share(
+        path="/legal/cap-table.html",
+        password="multi-pass",
+        max_uses=3,
+    )
+    assert created["mode"] == "multi"
+    share_store.unlock(created["id"], "multi-pass")
+    share_store.unlock(created["id"], "multi-pass")
+    assert share_store.get_share(created["id"])["remaining_uses"] == 1
+    with pytest.raises(ShareError):
+        share_store.unlock(created["id"], "wrong-password")
+    # Wrong password must not consume a use.
+    assert share_store.get_share(created["id"])["remaining_uses"] == 1
+
+
+def test_http_admin_unlock_and_share_flow(gate_token, share_store, monkeypatch):
+    """End-to-end: admin unlock → create share → recipient opens with password."""
+    monkeypatch.setenv("PHINS_ENVIRONMENT", "production")
+    monkeypatch.setenv("SESSION_SECRET_KEY", SECRET)
+    # Keep the global token configured so the gate stays closed for anonymous
+    # callers in this harness (test mode is otherwise open).
+    monkeypatch.setenv("PHINS_CONFIDENTIAL_ACCESS_TOKEN", TOKEN)
+
+    denied = requests.get(
+        f"{BASE_URL}/pitch-dashboard.html", timeout=10, allow_redirects=False
+    )
+    assert denied.status_code == 401
+    assert "admin-unlock-form" in denied.text
+
+    unlock = requests.post(
+        f"{BASE_URL}/api/confidential/admin-unlock",
+        json={"username": "admin", "password": "admin123", "next": "/pitch-dashboard.html"},
+        timeout=10,
+    )
+    assert unlock.status_code == 200, unlock.text
+    unlock_body = unlock.json()
+    assert unlock_body.get("success") is True
+    assert unlock_body.get("token")
+    assert ca.STAFF_UNLOCK_COOKIE_NAME in unlock.headers.get("Set-Cookie", "")
+
+    admin = requests.Session()
+    admin.headers["Authorization"] = f"Bearer {unlock_body['token']}"
+    # Carry the staff unlock cookie from the unlock response.
+    if unlock.cookies:
+        admin.cookies.update(unlock.cookies)
+
+    create = admin.post(
+        f"{BASE_URL}/api/confidential/shares",
+        json={
+            "path": "/pitch-dashboard.html",
+            "password": "guest-open",
+            "mode": "single",
+            "label": "Guest one-shot",
+        },
+        timeout=10,
+    )
+    assert create.status_code == 201, create.text
+    share = create.json()["share"]
+    assert share["mode"] == "single"
+    assert "password" not in share
+    assert "password_hash" not in share
+
+    # Recipient without auth sees the share password form.
+    share_page = requests.get(
+        f"{BASE_URL}/pitch-dashboard.html",
+        params={"share": share["id"]},
+        timeout=10,
+        allow_redirects=False,
+    )
+    assert share_page.status_code == 401
+    assert "share-unlock-form" in share_page.text
+
+    recipient = requests.Session()
+    opened = recipient.post(
+        f"{BASE_URL}/api/confidential/share-unlock",
+        json={
+            "share_id": share["id"],
+            "password": "guest-open",
+            "path": "/pitch-dashboard.html",
+        },
+        timeout=10,
+    )
+    assert opened.status_code == 200, opened.text
+    assert ca.SHARE_COOKIE_NAME in opened.headers.get("Set-Cookie", "")
+
+    viewed = recipient.get(f"{BASE_URL}/pitch-dashboard.html", timeout=10)
+    assert viewed.status_code == 200
+    assert "Access restricted" not in viewed.text
+
+    # Single-use exhausted for a second recipient.
+    second = requests.post(
+        f"{BASE_URL}/api/confidential/share-unlock",
+        json={
+            "share_id": share["id"],
+            "password": "guest-open",
+            "path": "/pitch-dashboard.html",
+        },
+        timeout=10,
+    )
+    assert second.status_code == 400
+    assert "remaining uses" in second.json()["error"].lower() or "exhausted" in second.json()["error"].lower()
+
+    # Share cookie must not unlock a downloaded PDF.
+    pdf = recipient.get(
+        f"{BASE_URL}/phins_business_plan_executive.pdf",
+        timeout=10,
+        allow_redirects=False,
+    )
+    # File may 401 (gated) or 404 depending on on-disk casing; never 200 via share.
+    assert pdf.status_code != 200
+
+
+def test_http_create_share_rejects_pdf_target(gate_token, share_store, monkeypatch):
+    monkeypatch.setenv("SESSION_SECRET_KEY", SECRET)
+    login = requests.post(
+        f"{BASE_URL}/api/login",
+        json={"username": "admin", "password": "admin123"},
+        timeout=10,
+    )
+    assert login.status_code == 200
+    token = login.json()["token"]
+    resp = requests.post(
+        f"{BASE_URL}/api/confidential/shares",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "path": "/phins_business_plan_executive.pdf",
+            "password": "nope",
+            "max_uses": 1,
+        },
+        timeout=10,
+    )
+    assert resp.status_code == 400
+    assert "download" in resp.json()["error"].lower() or "pdf" in resp.json()["error"].lower() or "html" in resp.json()["error"].lower()

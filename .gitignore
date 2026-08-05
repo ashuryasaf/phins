@@ -194,3 +194,7 @@ docs/_build/
 data/*.json
 data/assessment_center/
 data/documents/
+
+# Runtime confidential share-link store (hashed passwords + use counts)
+database/confidential_shares.json
+database/confidential_shares.json.tmp

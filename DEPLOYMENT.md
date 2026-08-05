@@ -218,20 +218,66 @@ Investment AI access key to authenticate API calls.
 
 Investor business plans under `/internal/` and corporate instruments under
 `/legal/` (cap table, term sheet, shareholders/employment agreements, financial
-model) are **not** customer-facing. They are served through an access gate
-(`security/confidential_access.py`), which also protects
+model) plus `/pitch-dashboard.html` are **not** customer-facing. They are served
+through an access gate (`security/confidential_access.py`), which also protects
 `/api/legal-docs/{registry,sign,verify}` — those endpoints expose anchored
 signer names and the signed content snapshot for a document instance.
 
 | Variable | Required | Description |
 |---|---|---|
-| `PHINS_CONFIDENTIAL_ACCESS_TOKEN` | Yes, in production | Shared access token for confidential documents. Generate with `openssl rand -hex 32`. Alias: `PHINS_INVESTOR_ACCESS_TOKEN` |
+| `PHINS_CONFIDENTIAL_ACCESS_TOKEN` | Recommended in production | Optional global open password / access token. Generate with `openssl rand -hex 32`. Alias: `PHINS_INVESTOR_ACCESS_TOKEN` |
+| `SESSION_SECRET_KEY` | Yes, in production | Used to sign staff-unlock and share-link cookies when no confidential token is set |
 | `PHINS_CONFIDENTIAL_DOCS_PUBLIC` | No | `true` publishes the documents to anyone (explicit, logged opt-out) |
 | `PHINS_CONFIDENTIAL_PATHS` | No | Extra paths to gate. Entries ending in `/` are prefixes, otherwise exact files |
 | `PHINS_CONFIDENTIAL_COOKIE_MAX_AGE` | No | Access cookie lifetime in seconds (default `43200`, 12h) |
 
-Access is granted to a **staff session** (admin/accountant/underwriter/actuary/
-compliance/founder) or to a caller presenting the token. Share a document as:
+Access is granted when any of the following holds:
+
+1. **Staff session** (admin/accountant/underwriter/actuary/compliance/founder)
+2. **Admin password unlock** on the access-restricted page
+   (`POST /api/confidential/admin-unlock`) — enters staff username/password,
+   sets an HttpOnly staff-unlock cookie, and returns a normal auth token
+3. **Share link** (HTML pages only) with a simple open password — single-use or
+   multi-use (`?share=<id>` + `POST /api/confidential/share-unlock`)
+4. **Global access token** via `?access_token=` / access cookie
+
+#### Admin unlock (no shared token required)
+
+When production has no `PHINS_CONFIDENTIAL_ACCESS_TOKEN`, anonymous callers
+still see **Access restricted**, but staff can unlock from that page with their
+admin-level password. This is the supported recovery path for
+`https://www.phins.ai/pitch-dashboard.html` when the shared token was never
+configured.
+
+#### Share links (single / multi use)
+
+Staff create share links after unlocking:
+
+```bash
+curl -X POST https://<host>/api/confidential/shares \
+  -H "Authorization: Bearer <staff-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "/pitch-dashboard.html",
+    "password": "simple-open-password",
+    "mode": "single",
+    "label": "Investor ACME"
+  }'
+```
+
+- `mode`: `single` (one successful open), `multi` / `unlimited`, or set
+  `max_uses` to an integer
+- Recipient URL: `https://<host>/pitch-dashboard.html?share=<id>`
+- Opening prompts for the simple password; success sets a path-scoped HttpOnly
+  share cookie and consumes one use
+- **Downloaded documents are excluded** (`.pdf`, `.md`, `.docx`, …): share
+  links cannot target or unlock exports. Downloads still require staff unlock
+  or the global access token / open password
+- List: `GET /api/confidential/shares` — revoke: `DELETE /api/confidential/shares/<id>`
+- Share metadata (hashed passwords + use counts) persists in
+  `database/confidential_shares.json`
+
+Global token deep link (optional):
 
 ```text
 https://<host>/internal/phins-investor-business-plan.html?access_token=<token>
@@ -242,10 +288,10 @@ The token is accepted once from the query string, exchanged for an
 so the secret does not persist in browser history, `Referer` headers, or access
 logs. The cookie stores an HMAC of the token, never the token itself.
 
-**In production, if no token is configured these paths return 503** rather than
-being served anonymously. Non-production deployments (and `PHINS_TEST_MODE`)
-stay open so local development and CI are unaffected. The boot log reports the
-gate's state.
+**In production, if no token is configured anonymous access returns 503**, but
+admin password unlock and share links remain available. Non-production
+deployments (and `PHINS_TEST_MODE`) stay open so local development and CI are
+unaffected. The boot log reports the gate's state.
 
 ### Monthly auto-pay environment variables
 
