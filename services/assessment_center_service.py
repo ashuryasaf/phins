@@ -630,11 +630,22 @@ class AssessmentCenterService:
         # extracted (scanned PDFs without OCR, image-only IDs, novel
         # binary formats). This guarantees "facts: 0" never happens for
         # a successful upload.
+        try:
+            from services.hebrew_assessment_lexicon import (
+                detect_document_language,
+                hebrew_ratio,
+            )
+            doc_lang = detect_document_language(text or "")
+            he_ratio = round(hebrew_ratio(text or ""), 3)
+        except Exception:
+            doc_lang, he_ratio = "unknown", 0.0
         meta_value = {
             "file_name": record.get("original_file_name") or record.get("file_name") or "",
             "mime_type": mime,
             "size_bytes": record.get("file_size") or len(raw_bytes),
             "extracted_text_chars": len(text or ""),
+            "language": doc_lang,
+            "hebrew_ratio": he_ratio,
             "ocr_required": bool(
                 (mime.startswith("image/") or ext in (".jpg", ".jpeg", ".png", ".tiff", ".bmp"))
                 or (text and text.startswith("[PDF content"))
@@ -644,6 +655,7 @@ class AssessmentCenterService:
             cust, "document_meta", "uploaded", meta_value,
             document_id, sha, source_context or "document_upload",
             confidence=0.99,
+            metadata={"lang": doc_lang},
         ))
 
         # If no real intelligence came out of the file, surface an
@@ -663,6 +675,28 @@ class AssessmentCenterService:
 
         self._store_facts(cust, facts)
         summary = self._summarise(facts)
+
+        # When Hebrew intelligence was mined, snapshot the resulting customer
+        # risk into the durable assessment-record store so the score → decision
+        # loop accumulates training data from non-English documents too.
+        try:
+            hebrew_facts = [
+                f for f in facts
+                if (f.metadata or {}).get("lang") == "he"
+                or (f.metadata or {}).get("extractor") == "hebrew_assessment_lexicon"
+            ]
+            if hebrew_facts:
+                self._snapshot_hebrew_assessment(
+                    customer_id=cust,
+                    document_id=document_id,
+                    hebrew_fact_count=len(hebrew_facts),
+                    language=meta_value.get("language"),
+                )
+                summary["hebrew_facts"] = len(hebrew_facts)
+                summary["document_language"] = meta_value.get("language")
+        except Exception as snap_exc:
+            logger.debug("Hebrew assessment snapshot skipped: %s", snap_exc)
+
         return AssessmentResult(
             customer_id=cust,
             document_id=document_id,
@@ -1723,18 +1757,38 @@ class AssessmentCenterService:
 
     @staticmethod
     def _truthy_smoking(value: Any) -> bool:
-        """Return True only when the UW smoking field clearly indicates smoking."""
+        """Return True only when the UW smoking field clearly indicates smoking.
+
+        Accepts English labels and Hebrew smoking phrases (``מעשן`` / ``עישון``)
+        via the shared Hebrew lexicon so platform-context signals from IL
+        underwriting forms are not silently ignored.
+        """
         if value is True:
             return True
         if value is False or value is None:
             return False
-        text = str(value).strip().lower()
-        if not text or text in ("false", "0", "no", "none", "never", "non-smoker",
-                                "nonsmoker", "non_smoker", "former", "former_smoker",
-                                "ex-smoker", "ex_smoker"):
+        text = str(value).strip()
+        if not text:
             return False
-        return text in ("true", "1", "yes", "y", "smoker", "current", "current_smoker",
-                        "smoking", "active")
+        try:
+            from services.hebrew_assessment_lexicon import is_truthy_smoking_hebrew
+            if is_truthy_smoking_hebrew(text):
+                return True
+            # Explicit Hebrew/English negatives short-circuit before the
+            # English allow-list so "לא מעשן" never becomes a smoker signal.
+            from services.hebrew_assessment_lexicon import smoking_status_from_hebrew
+            he_status = smoking_status_from_hebrew(text)
+            if he_status in ("never", "former"):
+                return False
+        except ImportError:
+            pass
+        lowered = text.lower()
+        if lowered in ("false", "0", "no", "none", "never", "non-smoker",
+                       "nonsmoker", "non_smoker", "former", "former_smoker",
+                       "former smoker", "ex-smoker", "ex_smoker"):
+            return False
+        return lowered in ("true", "1", "yes", "y", "smoker", "current",
+                           "current_smoker", "smoking", "active")
 
     def compute_risk_indicators(
         self,
@@ -1793,6 +1847,14 @@ class AssessmentCenterService:
             if label == "blood_pressure_systolic" and value is not None and value >= 140:
                 score += 0.10
                 contributors.append({"factor": "blood_pressure", "value": value, "weight": 0.10})
+            # Hebrew (and English) disability % from structured form fields.
+            if label == "disability_percentage" and value is not None and value > 50:
+                score += 0.15
+                contributors.append({
+                    "factor": "disability_percentage",
+                    "value": value,
+                    "weight": 0.15,
+                })
 
         # External policy load - many policies but no recent updates raise risk
         external_total = sum(len(rows) for rows in profile["external_sources"].values())
@@ -2171,10 +2233,18 @@ class AssessmentCenterService:
             doc_svc = self.document_service
             if mime.startswith("text/") or ext in (".csv", ".txt", ".json", ".xml", ".html", ".htm"):
                 return raw_bytes.decode("utf-8", errors="replace")[:MAX_TEXT_SCAN]
+            lang_hint = (
+                record.get("original_file_name")
+                or record.get("file_name")
+                or ""
+            )
             if mime == "application/pdf" or ext == ".pdf":
                 pdf_helper = getattr(doc_svc, "_extract_pdf_text", None)
                 if callable(pdf_helper):
-                    return pdf_helper(raw_bytes)[:MAX_TEXT_SCAN]
+                    try:
+                        return pdf_helper(raw_bytes, lang_hint=lang_hint)[:MAX_TEXT_SCAN]
+                    except TypeError:
+                        return pdf_helper(raw_bytes)[:MAX_TEXT_SCAN]
                 return raw_bytes.decode("latin-1", errors="replace")[:MAX_TEXT_SCAN]
             if mime.startswith("image/") or ext in (".png", ".jpg", ".jpeg",
                                                     ".tiff", ".bmp", ".gif", ".webp"):
@@ -2183,7 +2253,10 @@ class AssessmentCenterService:
                 # always feed real text into the assessment center.
                 ocr_helper = getattr(doc_svc, "_ocr_image_bytes", None)
                 if callable(ocr_helper):
-                    return (ocr_helper(raw_bytes) or "")[:MAX_TEXT_SCAN]
+                    try:
+                        return (ocr_helper(raw_bytes, lang_hint=lang_hint) or "")[:MAX_TEXT_SCAN]
+                    except TypeError:
+                        return (ocr_helper(raw_bytes) or "")[:MAX_TEXT_SCAN]
                 return ""
             if ext in (".xlsx", ".xls"):
                 xlsx_helper = getattr(doc_svc, "_extract_spreadsheet_summary", None)
@@ -2272,18 +2345,37 @@ class AssessmentCenterService:
                                     document_id, sha256, source, 0.90))
 
         lower = text.lower()
+        try:
+            from services.hebrew_assessment_lexicon import is_clinically_negated as _clin_neg
+        except ImportError:
+            def _clin_neg(_t: str, _s: int) -> bool:  # type: ignore
+                return False
         for cond in _MEDICAL_CONDITIONS:
-            if cond in lower:
-                facts.append(_make_fact(customer_id, "medical_condition", cond, cond,
-                                        document_id, sha256, source, 0.75))
+            idx = lower.find(cond)
+            if idx < 0:
+                continue
+            # Skip when Hebrew/English negation precedes the term so mixed
+            # IL forms ("שלילי ל-HIV", "negative for diabetes") stay clean.
+            if _clin_neg(text, idx) or _clin_neg(lower, idx):
+                continue
+            facts.append(_make_fact(customer_id, "medical_condition", cond, cond,
+                                    document_id, sha256, source, 0.75))
         for med in _MEDICATIONS:
-            if med in lower:
-                facts.append(_make_fact(customer_id, "medication", med, med,
-                                        document_id, sha256, source, 0.80))
+            idx = lower.find(med)
+            if idx < 0:
+                continue
+            if _clin_neg(text, idx) or _clin_neg(lower, idx):
+                continue
+            facts.append(_make_fact(customer_id, "medication", med, med,
+                                    document_id, sha256, source, 0.80))
         for allergy in _ALLERGIES:
-            if allergy in lower:
-                facts.append(_make_fact(customer_id, "allergy", allergy, allergy,
-                                        document_id, sha256, source, 0.80))
+            idx = lower.find(allergy)
+            if idx < 0:
+                continue
+            if _clin_neg(text, idx) or _clin_neg(lower, idx):
+                continue
+            facts.append(_make_fact(customer_id, "allergy", allergy, allergy,
+                                    document_id, sha256, source, 0.80))
 
         bmi_match = _BMI_RE.search(text)
         if bmi_match:
@@ -2333,7 +2425,129 @@ class AssessmentCenterService:
                 facts.append(_make_fact(customer_id, "risk_indicator", marker, marker,
                                         document_id, sha256, source, 0.80))
 
+        # Hebrew / mixed-language documents: map Hebrew clinical, insurance,
+        # savings and risk phrases onto the same English canonical keys the
+        # rest of the scoring pipeline already understands. Original Hebrew
+        # surface forms are preserved in metadata.raw_match for audit.
+        facts.extend(self._extract_hebrew_facts(
+            text=text,
+            customer_id=customer_id,
+            document_id=document_id,
+            sha256=sha256,
+            source=source,
+        ))
+
         return facts
+
+    def _extract_hebrew_facts(
+        self,
+        *,
+        text: str,
+        customer_id: str,
+        document_id: Optional[str],
+        sha256: Optional[str],
+        source: str,
+    ) -> List[Fact]:
+        """Mine Assessment Center facts from Hebrew (and mixed) document text.
+
+        Returns an empty list when the text has no Hebrew characters so the
+        English-only path pays no overhead. Never raises into the caller.
+        """
+        try:
+            from services.hebrew_assessment_lexicon import (
+                contains_hebrew,
+                extract_hebrew_matches,
+            )
+        except ImportError:
+            return []
+        try:
+            if not contains_hebrew(text):
+                return []
+            matches = extract_hebrew_matches(text)
+        except Exception as exc:
+            logger.warning("Hebrew fact extraction failed (non-fatal): %s", exc)
+            return []
+
+        # Collapse within this pass; cross-pass dedup (English + Hebrew both
+        # emitting ``medical_condition/diabetes``) is handled by _store_facts.
+        seen_local: set = set()
+        out: List[Fact] = []
+        for match in matches:
+            key = (match.fact_type, match.canonical)
+            if key in seen_local:
+                continue
+            seen_local.add(key)
+
+            value: Any
+            if match.amount is not None and match.fact_type in (
+                "insurance", "savings", "vital_sign",
+            ):
+                value = match.amount
+            elif match.fact_type == "insurance" and match.canonical == "policy_number":
+                value = match.metadata.get("policy_number") or match.raw_match
+            elif match.fact_type == "insurance" and match.canonical == "provider":
+                value = match.metadata.get("provider") or match.raw_match
+            elif match.fact_type in ("insurance", "savings") and match.amount is None:
+                # Best-effort: look for a ₪ amount near the Hebrew phrase.
+                amount = _amount_near(text, match.raw_match)
+                value = amount if amount is not None else True
+            else:
+                value = match.canonical
+
+            meta = dict(match.metadata or {})
+            meta.setdefault("lang", "he")
+            meta.setdefault("raw_match", match.raw_match)
+            meta["extractor"] = "hebrew_assessment_lexicon"
+
+            out.append(_make_fact(
+                customer_id, match.fact_type, match.canonical, value,
+                document_id, sha256, source, match.confidence,
+                metadata=meta,
+            ))
+        return out
+
+    def _snapshot_hebrew_assessment(
+        self,
+        *,
+        customer_id: str,
+        document_id: Optional[str],
+        hebrew_fact_count: int,
+        language: Optional[str],
+    ) -> None:
+        """Persist a customer_risk assessment driven by Hebrew document facts.
+
+        Best-effort and never fatal: a durable-write failure must not break
+        document ingestion. The snapshot uses the same risk engine as the
+        English path so Hebrew and English evidence share one scoring model.
+        """
+        try:
+            from services.assessment_record_service import get_assessment_record_service
+        except ImportError:
+            return
+        try:
+            risk = self.compute_risk_indicators(customer_id)
+            get_assessment_record_service().record_assessment(
+                subject_type="customer",
+                subject_id=customer_id,
+                assessment_type="customer_risk",
+                customer_id=customer_id,
+                score=risk.get("risk_score"),
+                level=risk.get("risk_level"),
+                recommendation=None,
+                details={
+                    "source_document_id": document_id,
+                    "document_language": language or "he",
+                    "hebrew_facts": hebrew_fact_count,
+                    "contributors": risk.get("contributors") or [],
+                    "trigger": "hebrew_document_assessment",
+                },
+                engine="assessment_center+hebrew_lexicon",
+                engine_version="he-rules-1.0.0",
+            )
+        except Exception as exc:
+            logger.warning(
+                "Hebrew assessment record snapshot failed (non-fatal): %s", exc,
+            )
 
     def _extract_photo_facts(
         self,
@@ -2570,7 +2784,10 @@ def _new_fact_id() -> str:
     return f"FACT-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8].upper()}"
 
 
-def _make_fact(customer_id, fact_type, label, value, doc_id, sha, source, confidence) -> Fact:
+def _make_fact(
+    customer_id, fact_type, label, value, doc_id, sha, source, confidence,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Fact:
     return Fact(
         fact_id=_new_fact_id(),
         customer_id=customer_id,
@@ -2581,6 +2798,7 @@ def _make_fact(customer_id, fact_type, label, value, doc_id, sha, source, confid
         source_document_id=doc_id,
         source_document_sha256=sha,
         source=source,
+        metadata=dict(metadata) if metadata else {},
     )
 
 

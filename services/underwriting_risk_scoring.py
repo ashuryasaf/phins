@@ -137,16 +137,36 @@ def extract_risk_inputs(app: Dict[str, Any], customer: Optional[Dict[str, Any]] 
     smoking = app.get("smoking_status")
     if smoking and not isinstance(smoking, str):
         smoking = str(smoking)
+    # Hebrew smoking phrases on the application (``מעשן`` / ``עישון``) are
+    # normalised to the English status labels the scorer already understands.
+    if smoking:
+        try:
+            from services.hebrew_assessment_lexicon import smoking_status_from_hebrew
+            he_status = smoking_status_from_hebrew(str(smoking))
+            if he_status:
+                smoking = he_status
+        except ImportError:
+            pass
     if not smoking and questionnaire.get("smoke") is not None:
-        smoke_val = str(questionnaire.get("smoke", "")).strip().lower()
+        smoke_raw = str(questionnaire.get("smoke", "")).strip()
+        smoke_val = smoke_raw.lower()
         if smoke_val in ["yes", "current", "smoker", "true"]:
             smoking = "current"
         elif smoke_val in ["former", "ex", "quit"]:
             smoking = "former"
         elif smoke_val in ["no", "never", "non-smoker", "false"]:
             smoking = "never"
-        elif smoke_val:
-            smoking = smoke_val
+        else:
+            try:
+                from services.hebrew_assessment_lexicon import smoking_status_from_hebrew
+                he_status = smoking_status_from_hebrew(smoke_raw)
+                if he_status:
+                    smoking = he_status
+                elif smoke_val:
+                    smoking = smoke_val
+            except ImportError:
+                if smoke_val:
+                    smoking = smoke_val
 
     gender = app.get("gender") or questionnaire.get("gender") or customer.get("gender")
     occupation = (

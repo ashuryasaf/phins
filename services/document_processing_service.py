@@ -639,10 +639,21 @@ class DocumentProcessingService:
             result['metadata'] = {}
 
         try:
+            # Prefer original filename for OCR language hint (e.g. *_he.pdf).
+            name_hint = ''
+            try:
+                rec = self._inmemory_store.get(doc_id) or {}
+                name_hint = (
+                    rec.get('original_file_name')
+                    or rec.get('file_name')
+                    or ''
+                )
+            except Exception:
+                name_hint = ''
             if mime.startswith('text/') or ext in ('.csv', '.txt', '.json', '.xml', '.html', '.htm'):
                 result['text'] = self._extract_text_content(raw, mime, ext)
             elif mime == 'application/pdf' or ext == '.pdf':
-                result['text'] = self._extract_pdf_text(raw)
+                result['text'] = self._extract_pdf_text(raw, lang_hint=name_hint or None)
             elif ext in ('.xls', '.xlsx'):
                 result['text'] = self._extract_spreadsheet_summary(raw, ext)
         except Exception as e:
@@ -916,20 +927,52 @@ class DocumentProcessingService:
     def _has_meaningful_text(text: str) -> bool:
         """Heuristic: if pypdf returns mostly garbage from a scanned PDF
         we want to fall through to OCR. A real text layer normally has
-        spaces and a high ratio of letters."""
+        spaces and a high ratio of letters.
+
+        Hebrew letters count as alphabetic (``str.isalpha``) so IL text-layer
+        PDFs are not incorrectly escalated to OCR.
+        """
         if not text:
             return False
         sample = text[:5000]
-        letters = sum(1 for c in sample if c.isalpha())
+        letters = sum(1 for c in sample if c.isalpha() or ("\u0590" <= c <= "\u05FF"))
         return letters >= max(20, len(sample) // 4)
 
-    def _ocr_image_bytes(self, raw: bytes) -> str:
+    @classmethod
+    def _ocr_langs_for_hint(cls, hint: Optional[str] = None) -> str:
+        """Return Tesseract ``-l`` language string, preferring Hebrew when hinted.
+
+        Default remains ``heb+eng+ara`` (or ``PHINS_OCR_LANGS``). When the
+        filename / prior text clearly looks Hebrew-dominant, put ``heb`` first
+        so Tesseract's primary script model matches IL medical/insurance scans.
+        """
+        configured = cls._OCR_LANGS or "heb+eng+ara"
+        parts = [p.strip() for p in configured.split("+") if p.strip()]
+        if not parts:
+            parts = ["heb", "eng", "ara"]
+        try:
+            from services.hebrew_assessment_lexicon import (
+                contains_hebrew,
+                hebrew_ratio,
+            )
+            hinted = bool(hint and (contains_hebrew(hint) or hebrew_ratio(hint) >= 0.2
+                                    or any(tok in hint.lower() for tok in (
+                                        "hebrew", "ivrit", "עברית", "_he.", "-he.",
+                                    ))))
+        except Exception:
+            hinted = bool(hint and any("\u0590" <= ch <= "\u05FF" for ch in hint))
+        if hinted and "heb" in parts:
+            parts = ["heb"] + [p for p in parts if p != "heb"]
+        return "+".join(parts)
+
+    def _ocr_image_bytes(self, raw: bytes, *, lang_hint: Optional[str] = None) -> str:
         """Run Tesseract OCR on raw image bytes.
 
         Returns the extracted text, or '' when OCR is unavailable
         (system tesseract / Hebrew language pack missing) or the image
         is too large / corrupt. Languages are configurable via
-        PHINS_OCR_LANGS (default ``heb+eng+ara``).
+        PHINS_OCR_LANGS (default ``heb+eng+ara``); Hebrew-hinted inputs
+        put ``heb`` first for better IL medical/insurance scans.
         """
         if not raw or len(raw) > self._OCR_MAX_IMAGE_BYTES:
             return ''
@@ -938,12 +981,13 @@ class DocumentProcessingService:
             from PIL import Image  # type: ignore
         except ImportError:
             return ''
+        ocr_langs = self._ocr_langs_for_hint(lang_hint)
         try:
             import io as _io
             with Image.open(_io.BytesIO(raw)) as img:
                 if img.mode not in ('RGB', 'L'):
                     img = img.convert('RGB')
-                text = pytesseract.image_to_string(img, lang=self._OCR_LANGS)
+                text = pytesseract.image_to_string(img, lang=ocr_langs)
             return (text or '').strip()
         except pytesseract.TesseractNotFoundError:
             return ''
@@ -951,7 +995,7 @@ class DocumentProcessingService:
             logger.debug('OCR failed: %s', exc)
             return ''
 
-    def _ocr_pdf_pages(self, raw: bytes) -> str:
+    def _ocr_pdf_pages(self, raw: bytes, *, lang_hint: Optional[str] = None) -> str:
         """Rasterise each page of a scanned PDF and OCR it.
 
         Capped at ``PHINS_OCR_MAX_PDF_PAGES`` pages so a 100-page
@@ -969,19 +1013,20 @@ class DocumentProcessingService:
         except Exception as exc:
             logger.debug('pdf2image rasterisation failed: %s', exc)
             return ''
+        ocr_langs = self._ocr_langs_for_hint(lang_hint)
         chunks = []
         for page_img in pages:
             try:
                 if page_img.mode not in ('RGB', 'L'):
                     page_img = page_img.convert('RGB')
-                page_text = pytesseract.image_to_string(page_img, lang=self._OCR_LANGS)
+                page_text = pytesseract.image_to_string(page_img, lang=ocr_langs)
                 if page_text:
                     chunks.append(page_text.strip())
             except Exception as exc:
                 logger.debug('OCR page failed: %s', exc)
         return '\n\n'.join(chunks).strip()
 
-    def _extract_pdf_text(self, raw: bytes) -> str:
+    def _extract_pdf_text(self, raw: bytes, *, lang_hint: Optional[str] = None) -> str:
         """Extract text from a PDF, escalating from cheapest to most powerful.
 
         Order:
@@ -1039,7 +1084,10 @@ class DocumentProcessingService:
                 pass
 
         if not self._has_meaningful_text(text):
-            ocr_text = self._ocr_pdf_pages(raw)
+            # Prefer any partial Hebrew from the weak text layer / filename so
+            # Tesseract loads heb as the primary script for IL scans.
+            ocr_hint = lang_hint or text or None
+            ocr_text = self._ocr_pdf_pages(raw, lang_hint=ocr_hint)
             if ocr_text:
                 text = ocr_text
 
@@ -1094,11 +1142,11 @@ class DocumentProcessingService:
         """Best-effort text extraction dispatcher used by the ZIP walker."""
         mime = mimetypes.guess_type(name)[0] or ''
         if ext == '.pdf' or mime == 'application/pdf':
-            return self._extract_pdf_text(raw)
+            return self._extract_pdf_text(raw, lang_hint=name)
         if ext in ('.xls', '.xlsx'):
             return self._extract_spreadsheet_summary(raw, ext)
         if ext in ('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'):
-            return self._ocr_image_bytes(raw)
+            return self._ocr_image_bytes(raw, lang_hint=name)
         return self._extract_text_content(raw, mime, ext)
 
     def _extract_spreadsheet_summary(self, raw: bytes, ext: str) -> str:
@@ -1327,15 +1375,40 @@ class DocumentProcessingService:
         if text:
             text_lower = text.lower()
             domain_keywords = {
-                'insurance': ['policy', 'premium', 'coverage', 'claim', 'insured', 'underwriting'],
-                'medical': ['patient', 'diagnosis', 'treatment', 'medication', 'clinical'],
-                'legal': ['contract', 'agreement', 'liability', 'clause', 'jurisdiction'],
-                'financial': ['balance', 'transaction', 'payment', 'invoice', 'revenue'],
-                'identity': ['passport', 'license', 'id card', 'identity', 'verification'],
+                'insurance': [
+                    'policy', 'premium', 'coverage', 'claim', 'insured', 'underwriting',
+                    # Hebrew insurance terms (Assessment Center / IL market).
+                    'פוליסה', 'פרמיה', 'ביטוח', 'כיסוי', 'תביעה', 'מבוטח', 'מוטב',
+                ],
+                'medical': [
+                    'patient', 'diagnosis', 'treatment', 'medication', 'clinical',
+                    'סוכרת', 'יתר לחץ דם', 'אבחנה', 'תרופה', 'מטופל', 'רפואי',
+                ],
+                'legal': ['contract', 'agreement', 'liability', 'clause', 'jurisdiction',
+                          'חוזה', 'הסכם'],
+                'financial': [
+                    'balance', 'transaction', 'payment', 'invoice', 'revenue',
+                    'יתרה', 'הפקדה', 'צבירה', 'פנסיה', 'גמל',
+                ],
+                'identity': [
+                    'passport', 'license', 'id card', 'identity', 'verification',
+                    'תעודת זהות', 'ת.ז', 'דרכון',
+                ],
+                'hebrew': [],  # filled below when Hebrew script is detected
             }
             for domain, keywords in domain_keywords.items():
-                if any(kw in text_lower for kw in keywords):
+                if domain == 'hebrew':
+                    continue
+                if any(kw in text_lower or kw in text for kw in keywords):
                     tags.append(domain)
+            # Language tag so dashboards can filter Hebrew-sourced artefacts.
+            try:
+                from services.hebrew_assessment_lexicon import contains_hebrew
+                if contains_hebrew(text):
+                    tags.append('hebrew')
+            except ImportError:
+                if any('\u0590' <= ch <= '\u05FF' for ch in text):
+                    tags.append('hebrew')
         return list(dict.fromkeys(tags))
 
     def _compute_confidence(self, result: Dict[str, Any]) -> float:
