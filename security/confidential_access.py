@@ -213,14 +213,16 @@ def normalize_request_path(path: str) -> str:
 def signing_secret(environ: Optional[Mapping[str, str]] = None) -> str:
     """Secret used to mint staff-unlock and share cookies.
 
-    Prefers the dedicated confidential token, then the session secret. A weak
+    Uses server-only secret material (``SESSION_SECRET_KEY`` then
+    ``PHINS_ENCRYPTION_KEY``). The shared confidential access token is
+    deliberately excluded: it is a widely distributed open password, so signing
+    staff/share cookies with it would let anyone holding the token forge valid
+    staff-unlock or share cookies without a password or use consumption. A weak
     fallback is only returned outside production so local/test flows still work
     when no secrets are configured.
     """
     env = _env(environ)
     for name in (
-        "PHINS_CONFIDENTIAL_ACCESS_TOKEN",
-        "PHINS_INVESTOR_ACCESS_TOKEN",
         "SESSION_SECRET_KEY",
         "PHINS_ENCRYPTION_KEY",
     ):
@@ -946,6 +948,6 @@ def startup_warnings(environ: Optional[Mapping[str, str]] = None) -> list:
     if is_production(env) and not signing_secret(env):
         warnings.append(
             "No signing secret available for confidential staff/share cookies "
-            "(set SESSION_SECRET_KEY or PHINS_CONFIDENTIAL_ACCESS_TOKEN)."
+            "(set SESSION_SECRET_KEY or PHINS_ENCRYPTION_KEY)."
         )
     return warnings

@@ -13028,6 +13028,11 @@ class PortalHandler(BaseHTTPRequestHandler):
                 get_confidential_share_service,
             )
             try:
+                # Confirm a signing secret is available before consuming a use,
+                # so a misconfiguration cannot exhaust a single-use link without
+                # ever issuing the share cookie.
+                if not confidential_access.signing_secret():
+                    raise RuntimeError("No signing secret available for share cookie.")
                 public_share, target_path = get_confidential_share_service().unlock(
                     share_id,
                     password,
@@ -13133,13 +13138,15 @@ class PortalHandler(BaseHTTPRequestHandler):
                         ShareError,
                         get_confidential_share_service,
                     )
-                    max_uses_raw = body_data.get('max_uses', 1)
+                    max_uses_raw = body_data.get('max_uses', None)
                     mode = str(body_data.get('mode') or '').strip().lower()
                     if mode == 'unlimited' or (
-                        max_uses_raw in ('', None) and mode in ('multi', 'unlimited')
+                        mode == 'multi' and max_uses_raw in ('', None)
                     ):
                         max_uses_raw = None
                     elif mode == 'single':
+                        max_uses_raw = 1
+                    elif max_uses_raw in ('', None):
                         max_uses_raw = 1
                     created = get_confidential_share_service().create_share(
                         path=str(body_data.get('path') or ''),

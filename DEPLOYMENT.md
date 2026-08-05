@@ -226,7 +226,7 @@ signer names and the signed content snapshot for a document instance.
 | Variable | Required | Description |
 |---|---|---|
 | `PHINS_CONFIDENTIAL_ACCESS_TOKEN` | Recommended in production | Optional global open password / access token. Generate with `openssl rand -hex 32`. Alias: `PHINS_INVESTOR_ACCESS_TOKEN` |
-| `SESSION_SECRET_KEY` | Yes, in production | Used to sign staff-unlock and share-link cookies when no confidential token is set |
+| `SESSION_SECRET_KEY` | Yes, in production | Server-only secret used to sign staff-unlock and share-link cookies (the shared confidential token is never used for signing) |
 | `PHINS_CONFIDENTIAL_DOCS_PUBLIC` | No | `true` publishes the documents to anyone (explicit, logged opt-out) |
 | `PHINS_CONFIDENTIAL_PATHS` | No | Extra paths to gate. Entries ending in `/` are prefixes, otherwise exact files |
 | `PHINS_CONFIDENTIAL_COOKIE_MAX_AGE` | No | Access cookie lifetime in seconds (default `43200`, 12h) |
