@@ -1675,6 +1675,30 @@
         </p>
       </div>
 
+      <div id="confidential-share-admin" hidden style="margin-top:16px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--bg-card);box-shadow:var(--shadow);">
+        <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--amber-1);margin-bottom:6px;">Staff · Share links</div>
+        <h3 style="margin:0 0 8px 0;font-size:12pt;">Create a single-use or multi-use open link</h3>
+        <p style="font-size:9.5pt;color:var(--text-sub);margin:0 0 12px 0;">Recipients open this HTML page with a simple password. Downloaded PDFs/exports are excluded from share links.</p>
+        <form id="confidential-share-form" style="display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));align-items:end;">
+          <label style="font-size:8.5pt;grid-column:1/-1;">Label
+            <input id="share-label" type="text" placeholder="Investor ACME" style="display:block;width:100%;margin-top:3px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;">
+          </label>
+          <label style="font-size:8.5pt;">Open password
+            <input id="share-password" type="text" required minlength="4" placeholder="simple password" style="display:block;width:100%;margin-top:3px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;">
+          </label>
+          <label style="font-size:8.5pt;">Mode
+            <select id="share-mode" style="display:block;width:100%;margin-top:3px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;">
+              <option value="single">Single use</option>
+              <option value="multi">Multi use (5)</option>
+              <option value="unlimited">Unlimited</option>
+            </select>
+          </label>
+          <button type="submit" class="exec-dl-btn" style="height:34px;">Create share link</button>
+        </form>
+        <p id="confidential-share-msg" style="font-size:9pt;margin:10px 0 0;min-height:1.2em;color:var(--text-sub);"></p>
+        <div id="confidential-share-result" style="display:none;margin-top:10px;padding:10px;border-radius:8px;background:#f4f7fb;font-size:9.5pt;word-break:break-all;"></div>
+      </div>
+
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:18px;">
 
         <div style="background:linear-gradient(135deg,#f3e8ff 0%,#fff 60%);border:2px solid var(--blue-mid);border-radius:14px;padding:18px;box-shadow:var(--shadow);grid-column:1/-1;">
@@ -7822,6 +7846,81 @@
       applyFxBadge();
       recompute();
       fetchFx(false);
+    })();
+  </script>
+  <script>
+    (function () {
+      var panel = document.getElementById("confidential-share-admin");
+      var form = document.getElementById("confidential-share-form");
+      if (!panel || !form) return;
+
+      function authToken() {
+        try { return localStorage.getItem("phins_auth_token") || ""; } catch (e) { return ""; }
+      }
+
+      function revealIfStaff() {
+        var token = authToken();
+        if (!token) return;
+        fetch("/api/confidential/shares", {
+          headers: { "Authorization": "Bearer " + token },
+          credentials: "same-origin"
+        }).then(function (r) {
+          if (r.ok) panel.hidden = false;
+        }).catch(function () {});
+      }
+
+      form.addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        var msg = document.getElementById("confidential-share-msg");
+        var result = document.getElementById("confidential-share-result");
+        var token = authToken();
+        if (!token) {
+          msg.textContent = "Staff unlock required — reload and sign in with an admin password.";
+          return;
+        }
+        var mode = document.getElementById("share-mode").value;
+        var body = {
+          path: "/pitch-dashboard.html",
+          password: document.getElementById("share-password").value,
+          label: document.getElementById("share-label").value || "",
+          mode: mode
+        };
+        if (mode === "multi") body.max_uses = 5;
+        msg.textContent = "Creating…";
+        result.style.display = "none";
+        fetch("/api/confidential/shares", {
+          method: "POST",
+          headers: {
+            "Authorization": "Bearer " + token,
+            "Content-Type": "application/json"
+          },
+          credentials: "same-origin",
+          body: JSON.stringify(body)
+        }).then(function (r) {
+          return r.json().then(function (data) {
+            return { ok: r.ok, data: data || {} };
+          });
+        }).then(function (res) {
+          if (!res.ok) {
+            msg.textContent = (res.data && res.data.error) || "Could not create share link";
+            return;
+          }
+          var share = res.data.share || {};
+          var url = location.origin + (share.share_url_path || ("/pitch-dashboard.html?share=" + share.id));
+          msg.textContent = "Share link created (" + (share.mode || mode) + ").";
+          result.style.display = "block";
+          result.innerHTML = "<strong>Link:</strong> <a href=\"" + url + "\">" + url + "</a><br><strong>Open password:</strong> " +
+            String(body.password).replace(/</g, "&lt;") +
+            "<br><span style=\"color:#666\">Copied to clipboard when supported. Downloads stay excluded.</span>";
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(url + "\nPassword: " + body.password).catch(function () {});
+          }
+        }).catch(function () {
+          msg.textContent = "Network error — try again.";
+        });
+      });
+
+      revealIfStaff();
     })();
   </script>
 </body>
