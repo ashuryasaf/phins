@@ -12510,6 +12510,7 @@ _NEVER_SUPPRESS_PATH_PREFIXES: Tuple[str, ...] = (
     '/api/auth_',          # legacy variants like /api/auth_validate
     '/api/session/',
     '/api/admin/',
+    '/api/confidential/',  # admin unlock + share-link auth
     '/api/security/ids/acknowledge',  # IDS acknowledgements deserve a log
 )
 
@@ -12743,6 +12744,15 @@ class PortalHandler(BaseHTTPRequestHandler):
             return forwarded == 'https'
         return not _is_local_request_host(self.headers.get('Host', ''))
 
+    def _confidential_share_active(self, share_id: str, path: str) -> bool:
+        """Confirm a share cookie still refers to a non-revoked HTML share."""
+        try:
+            from services.confidential_share_service import get_confidential_share_service
+            return get_confidential_share_service().share_is_active_for_path(share_id, path)
+        except Exception as exc:
+            print(f"⚠️  [CONFIDENTIAL] share active-check failed: {exc}")
+            return False
+
     def _enforce_confidential_access(self, path: str, qs: Dict[str, Any]) -> bool:
         """Gate confidential investor/corporate documents and their APIs.
 
@@ -12766,6 +12776,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 session=self._get_session(),
                 cookie_header=self.headers.get('Cookie', ''),
                 query_params=qs,
+                share_active_check=self._confidential_share_active,
             )
         except Exception as exc:
             # Never let a gate failure silently expose the documents: deny and
@@ -12792,7 +12803,10 @@ class PortalHandler(BaseHTTPRequestHandler):
             self.send_header('Location', decision.redirect_to or path)
             if decision.set_cookie:
                 self.send_header('Set-Cookie', confidential_access.access_cookie_header(
-                    decision.cookie_value, secure=self._request_is_secure(),
+                    decision.cookie_value,
+                    secure=self._request_is_secure(),
+                    cookie_name=getattr(decision, 'cookie_name', None)
+                    or confidential_access.ACCESS_COOKIE_NAME,
                 ))
             self.send_header('Cache-Control', 'no-store')
             self.end_headers()
@@ -12810,7 +12824,8 @@ class PortalHandler(BaseHTTPRequestHandler):
             print(
                 "⚠️  [CONFIDENTIAL] Denied "
                 f"{confidential_access.redact_sensitive_query(path)}: no "
-                "PHINS_CONFIDENTIAL_ACCESS_TOKEN configured in production."
+                "PHINS_CONFIDENTIAL_ACCESS_TOKEN configured in production. "
+                "Admin password unlock and share links remain available."
             )
         if wants_json:
             self._set_json_headers(decision.status)
@@ -12819,7 +12834,10 @@ class PortalHandler(BaseHTTPRequestHandler):
             ).encode('utf-8'))
             return False
 
-        body = confidential_access.denial_html(decision).encode('utf-8')
+        share_id = confidential_access.extract_share_id(qs) or decision.share_id
+        body = confidential_access.denial_html(
+            decision, path=path, share_id=share_id
+        ).encode('utf-8')
         self.send_response(decision.status)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
@@ -12833,6 +12851,353 @@ class PortalHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
         return False
+
+    def _authenticate_staff_password(
+        self, username: str, password: str
+    ) -> Optional[Dict[str, Any]]:
+        """Verify staff credentials for confidential admin unlock (no CAPTCHA)."""
+        username = (username or '').strip()
+        password = password or ''
+        if not username or not password or len(password) < 6:
+            return None
+
+        def _from_record(record: Dict[str, Any], source: str) -> Optional[Dict[str, Any]]:
+            if not record:
+                return None
+            role = str(record.get('role') or '').strip().lower()
+            if role not in confidential_access.STAFF_ROLES:
+                return None
+            legacy_ok = (
+                ALLOW_LEGACY_DEMO_PASSWORDS
+                and username in LEGACY_DEMO_PASSWORDS
+                and password == LEGACY_DEMO_PASSWORDS[username]
+            )
+            password_ok = False
+            stored_hash = record.get('hash', '')
+            stored_salt = record.get('salt', '')
+            if stored_hash and stored_salt:
+                try:
+                    password_ok = verify_password(password, stored_hash, stored_salt)
+                except Exception:
+                    password_ok = False
+            if not (password_ok or legacy_ok):
+                return None
+            return {
+                'username': username,
+                'role': role,
+                'name': record.get('name', username),
+                'customer_id': record.get('customer_id'),
+                'source': source,
+            }
+
+        try:
+            staff_user = USERS.get(username)
+            matched = _from_record(staff_user or {}, 'users')
+            if matched:
+                return matched
+        except Exception as exc:
+            print(f"[CONFIDENTIAL] staff user lookup error: {exc}")
+
+        if username in _FALLBACK_USERS:
+            matched = _from_record(_FALLBACK_USERS[username], 'fallback')
+            if matched:
+                return matched
+        return None
+
+    def _handle_confidential_api(self, path: str, body_data: Dict[str, Any]) -> bool:
+        """Handle confidential unlock / share-link management APIs.
+
+        Returns True when the request was handled (response already written).
+        """
+        if not path.startswith('/api/confidential/'):
+            return False
+        if not _confidential_access_enabled:
+            self._set_json_headers(503)
+            self.wfile.write(json.dumps(
+                {'error': 'Confidential access module unavailable.'}
+            ).encode('utf-8'))
+            return True
+
+        client_ip = self.client_address[0]
+        server_port = int(getattr(self.server, 'server_address', ('', 0))[1] or 0)
+
+        # ---- Admin password unlock (works without global access token) ----
+        if path == '/api/confidential/admin-unlock':
+            if not check_login_lockout(client_ip, server_port):
+                lockout_data = FAILED_LOGINS.get(_security_key(client_ip, server_port), {})
+                remaining = int(lockout_data.get('lockout_until', 0) - datetime.now().timestamp())
+                self._set_json_headers(429)
+                self.wfile.write(json.dumps({
+                    'error': f'Too many failed attempts. Try again in {remaining} seconds.',
+                    'lockout_remaining': remaining,
+                }).encode('utf-8'))
+                return True
+
+            username = str(body_data.get('username') or '').strip()
+            password = str(body_data.get('password') or '')
+            next_path = str(body_data.get('next') or '/pitch-dashboard.html').strip() or '/pitch-dashboard.html'
+            if not next_path.startswith('/') or '..' in next_path or '://' in next_path:
+                next_path = '/pitch-dashboard.html'
+
+            is_valid, _error = validate_input_security(username, client_ip, 'username')
+            if not is_valid:
+                record_failed_login(client_ip, server_port)
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid username format'}).encode('utf-8'))
+                return True
+
+            matched = self._authenticate_staff_password(username, password)
+            if not matched:
+                record_failed_login(client_ip, server_port)
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid credentials'}).encode('utf-8'))
+                return True
+
+            with STATE_LOCK:
+                k = _security_key(client_ip, server_port)
+                if k in FAILED_LOGINS:
+                    del FAILED_LOGINS[k]
+
+            try:
+                staff_cookie = confidential_access.mint_staff_unlock_cookie(
+                    username=matched['username'],
+                    role=matched['role'],
+                )
+            except Exception as exc:
+                print(f"[CONFIDENTIAL] staff unlock cookie mint failed: {exc}")
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({
+                    'error': 'Unable to issue unlock cookie. Configure SESSION_SECRET_KEY.'
+                }).encode('utf-8'))
+                return True
+
+            expires = datetime.now() + timedelta(seconds=SESSION_TIMEOUT)
+            token, token_jti = _mint_auth_token(
+                matched['username'], matched['role'], matched.get('customer_id'), expires
+            )
+            _session_payload = {
+                'username': matched['username'],
+                'expires': expires.isoformat(),
+                'customer_id': matched.get('customer_id'),
+                'role': matched['role'],
+                'ip_address': client_ip,
+                'jti': token_jti,
+            }
+            with STATE_LOCK:
+                SESSIONS[token] = _session_payload
+            _persist_session_to_db(token, _session_payload)
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header(
+                'Set-Cookie',
+                confidential_access.access_cookie_header(
+                    staff_cookie,
+                    secure=self._request_is_secure(),
+                    cookie_name=confidential_access.STAFF_UNLOCK_COOKIE_NAME,
+                ),
+            )
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'token': token,
+                'username': matched['username'],
+                'role': matched['role'],
+                'name': matched.get('name'),
+                'redirect_to': next_path.split('?', 1)[0],
+            }).encode('utf-8'))
+            return True
+
+        # ---- Share-link open-password unlock ----
+        if path == '/api/confidential/share-unlock':
+            if not check_login_lockout(client_ip, server_port):
+                lockout_data = FAILED_LOGINS.get(_security_key(client_ip, server_port), {})
+                remaining = int(lockout_data.get('lockout_until', 0) - datetime.now().timestamp())
+                self._set_json_headers(429)
+                self.wfile.write(json.dumps({
+                    'error': f'Too many failed attempts. Try again in {remaining} seconds.',
+                }).encode('utf-8'))
+                return True
+
+            share_id = str(body_data.get('share_id') or '').strip()
+            password = str(body_data.get('password') or '')
+            requested_path = str(body_data.get('path') or '').strip()
+            from services.confidential_share_service import (
+                ShareError,
+                get_confidential_share_service,
+            )
+            try:
+                # Confirm a signing secret is available before consuming a use,
+                # so a misconfiguration cannot exhaust a single-use link without
+                # ever issuing the share cookie.
+                if not confidential_access.signing_secret():
+                    raise RuntimeError("No signing secret available for share cookie.")
+                public_share, target_path = get_confidential_share_service().unlock(
+                    share_id,
+                    password,
+                    client_ip=client_ip,
+                    requested_path=requested_path,
+                )
+                share_cookie = confidential_access.mint_share_cookie(
+                    share_id=public_share['id'],
+                    path=target_path,
+                )
+            except ShareError as exc:
+                msg = str(exc)
+                if 'Invalid share password' in msg or 'not found' in msg.lower():
+                    record_failed_login(client_ip, server_port)
+                    status = 401
+                else:
+                    status = 400
+                self._set_json_headers(status)
+                self.wfile.write(json.dumps({'error': msg}).encode('utf-8'))
+                return True
+            except Exception as exc:
+                print(f"[CONFIDENTIAL] share unlock failed: {exc}")
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({
+                    'error': 'Unable to unlock share link. Try again later.'
+                }).encode('utf-8'))
+                return True
+
+            with STATE_LOCK:
+                k = _security_key(client_ip, server_port)
+                if k in FAILED_LOGINS:
+                    del FAILED_LOGINS[k]
+
+            redirect_to = f"{target_path}?share={public_share['id']}"
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header(
+                'Set-Cookie',
+                confidential_access.access_cookie_header(
+                    share_cookie,
+                    secure=self._request_is_secure(),
+                    cookie_name=confidential_access.SHARE_COOKIE_NAME,
+                ),
+            )
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'share': public_share,
+                'redirect_to': redirect_to,
+            }).encode('utf-8'))
+            return True
+
+        # ---- Share CRUD (staff session required) ----
+        session = self._get_session()
+        staff_cookie_ok = False
+        if not confidential_access.session_is_staff(session):
+            cookies = confidential_access.parse_cookies(self.headers.get('Cookie', ''))
+            staff_cookie_ok = bool(
+                confidential_access.verify_staff_unlock_cookie(
+                    cookies.get(confidential_access.STAFF_UNLOCK_COOKIE_NAME)
+                )
+            )
+            if staff_cookie_ok and not session:
+                # Synthesize a minimal staff context from the unlock cookie.
+                claims = confidential_access.verify_staff_unlock_cookie(
+                    cookies.get(confidential_access.STAFF_UNLOCK_COOKIE_NAME)
+                ) or {}
+                session = {
+                    'username': claims.get('u') or 'staff',
+                    'role': claims.get('r') or 'admin',
+                }
+
+        if path == '/api/confidential/shares':
+            if self.command == 'GET':
+                if not confidential_access.session_is_staff(session) and not staff_cookie_ok:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Staff authorization required.'}).encode('utf-8'))
+                    return True
+                try:
+                    from services.confidential_share_service import get_confidential_share_service
+                    items = get_confidential_share_service().list_shares()
+                except Exception as exc:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                    return True
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'items': items,
+                    'page': 1,
+                    'page_size': len(items),
+                    'total': len(items),
+                }).encode('utf-8'))
+                return True
+
+            if self.command == 'POST':
+                if not confidential_access.session_is_staff(session) and not staff_cookie_ok:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Staff authorization required.'}).encode('utf-8'))
+                    return True
+                try:
+                    from services.confidential_share_service import (
+                        ShareError,
+                        get_confidential_share_service,
+                    )
+                    max_uses_raw = body_data.get('max_uses', None)
+                    mode = str(body_data.get('mode') or '').strip().lower()
+                    if mode == 'unlimited' or (
+                        mode == 'multi' and max_uses_raw in ('', None)
+                    ):
+                        max_uses_raw = None
+                    elif mode == 'single':
+                        max_uses_raw = 1
+                    elif max_uses_raw in ('', None):
+                        max_uses_raw = 1
+                    created = get_confidential_share_service().create_share(
+                        path=str(body_data.get('path') or ''),
+                        password=str(body_data.get('password') or ''),
+                        max_uses=max_uses_raw,
+                        expires_at=body_data.get('expires_at'),
+                        label=str(body_data.get('label') or ''),
+                        created_by=str((session or {}).get('username') or 'admin'),
+                    )
+                except ShareError as exc:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                    return True
+                except Exception as exc:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                    return True
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({'success': True, 'share': created}).encode('utf-8'))
+                return True
+
+        if path.startswith('/api/confidential/shares/') and self.command == 'DELETE':
+            if not confidential_access.session_is_staff(session) and not staff_cookie_ok:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Staff authorization required.'}).encode('utf-8'))
+                return True
+            share_id = path.rstrip('/').split('/')[-1]
+            try:
+                from services.confidential_share_service import (
+                    ShareError,
+                    get_confidential_share_service,
+                )
+                revoked = get_confidential_share_service().revoke_share(
+                    share_id,
+                    revoked_by=str((session or {}).get('username') or 'admin'),
+                )
+            except ShareError as exc:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                return True
+            except Exception as exc:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                return True
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({'success': True, 'share': revoked}).encode('utf-8'))
+            return True
+
+        self._set_json_headers(404)
+        self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
+        return True
 
     def _savings_account_owner(self, account_id: Any) -> Optional[str]:
         """Resolve the customer_id that owns a portfolio/savings ``account_id``.
@@ -13759,6 +14124,12 @@ For claims or questions, please contact:
                     self.end_headers()
                     self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
                     return
+
+        # Confidential share-link management (staff). Listed before the gate so
+        # the JSON API itself is never treated as a confidential HTML document.
+        if path == '/api/confidential/shares':
+            if self._handle_confidential_api(path, {}):
+                return
 
         # Confidential-document gate. Placed before the legal-docs registry and
         # the static file handler below so a single choke point authorises every
@@ -28243,6 +28614,26 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
                     return
+
+        # Confidential unlock + share-link APIs (admin password / share password).
+        if path.startswith('/api/confidential/'):
+            try:
+                length = int(self.headers.get('Content-Length', 0) or 0)
+            except (TypeError, ValueError):
+                length = 0
+            raw_body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                confidential_body = json.loads(raw_body) if raw_body else {}
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            if not isinstance(confidential_body, dict):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request body'}).encode('utf-8'))
+                return
+            if self._handle_confidential_api(path, confidential_body):
+                return
 
         # ── Legal/corporate/funding document signing + verification ──
         # Anchors live signatures into the hash-chained platform event ledger.
@@ -49416,6 +49807,11 @@ For claims or questions, please contact:
         auth_header = self.headers.get('Authorization', '')
         token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
         session = validate_session(token) if token else None
+
+        # Confidential share revoke
+        if path.startswith('/api/confidential/shares/'):
+            if self._handle_confidential_api(path, {}):
+                return
         
         # ========== DELETE /api/media/{id} - Delete media asset ==========
         # Roles: admin, media (media_ad user has 'media' role - restricted to media dashboard only)
