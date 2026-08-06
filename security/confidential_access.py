@@ -763,7 +763,10 @@ def denial_html(
     target_path = normalize_request_path(path) or "/"
     show_share = bool(effective_share) and not decision.downloadable
 
-    if decision.downloadable:
+    if decision.reason == "not_configured_production":
+        lead = "This document is confidential."
+        detail = message
+    elif decision.downloadable:
         lead = "This download is confidential."
         detail = (
             "PDF and export files are not unlocked by share links. "
