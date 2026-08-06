@@ -401,6 +401,12 @@ def test_denial_page_offers_admin_unlock_form():
     assert "admin-unlock-form" in html
     assert "/api/confidential/admin-unlock" in html
     assert "Staff / admin unlock" in html
+    # Branded gate surface — logo + PHINS wordmark, no document body leak.
+    assert "/phins-logo.svg" in html
+    assert "PHINS" in html
+    assert "gate-card" in html
+    assert "Access restricted" in html
+    assert "Pre-launch build budget" not in html
 
 
 def test_staff_unlock_cookie_grants_access_without_global_token():
