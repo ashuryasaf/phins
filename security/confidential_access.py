@@ -713,12 +713,16 @@ def access_cookie_header(
         except ValueError:
             max_age = 43200
     name = str(cookie_name or ACCESS_COOKIE_NAME).strip() or ACCESS_COOKIE_NAME
+    # Lax (not Strict): unlock cookies are issued from a fetch() POST on the
+    # denial page, then the browser navigates to the document. Lax keeps the
+    # cookie available for that same-site follow-up GET across workers/browsers
+    # while still blocking cross-site POST misuse.
     parts = [
         f"{name}={cookie_value}",
         "Path=/",
         f"Max-Age={max(60, int(max_age))}",
         "HttpOnly",
-        "SameSite=Strict",
+        "SameSite=Lax",
     ]
     if secure:
         parts.append("Secure")
@@ -730,8 +734,9 @@ def denial_payload(decision: AccessDecision) -> Dict[str, str]:
     if decision.reason == "not_configured_production":
         return {
             "error": (
-                "Confidential documents are not available: no access token is "
-                "configured on this deployment."
+                "Staff password unlock is required. Enter an admin-level "
+                "username and password below, or open a shared link with its "
+                "simple password."
             )
         }
     if decision.reason == "share_password_required":
@@ -765,7 +770,11 @@ def denial_html(
 
     if decision.reason == "not_configured_production":
         lead = "This document is confidential."
-        detail = message
+        detail = (
+            "Enter your staff username and password to unlock this browser. "
+            "Shared-link recipients should open the link they were given and "
+            "use its simple open password."
+        )
     elif decision.downloadable:
         lead = "This download is confidential."
         detail = (
@@ -778,6 +787,13 @@ def denial_html(
     else:
         lead = "This document is confidential."
         detail = message
+
+    has_open_token = bool(configured_access_token())
+    open_token_hint = (
+        " A deployment open password is also accepted (username may be left as admin)."
+        if has_open_token
+        else ""
+    )
 
     share_block = ""
     if show_share:
@@ -803,16 +819,16 @@ def denial_html(
 <section class="gate-panel{' gate-panel--secondary' if show_share else ' gate-panel--primary'}" aria-labelledby="admin-unlock-title">
   <div class="gate-panel__eyebrow">Staff access</div>
   <h2 id="admin-unlock-title">Staff / admin unlock</h2>
-  <p class="gate-panel__copy">Enter an admin-level staff password to authorise this browser for confidential documents.</p>
+  <p class="gate-panel__copy">Enter an admin-level staff password to authorise this browser for confidential documents.{open_token_hint}</p>
   <form id="admin-unlock-form" class="gate-form" autocomplete="on">
     <input type="hidden" name="next" value="{_html_escape(target_path)}">
     <label class="gate-field">Username
       <input type="text" name="username" required autocomplete="username"
-             placeholder="admin">
+             value="admin" placeholder="admin">
     </label>
     <label class="gate-field">Password
-      <input type="password" name="password" required minlength="6"
-             autocomplete="current-password" placeholder="••••••••">
+      <input type="password" name="password" required minlength="4"
+             autocomplete="current-password" placeholder="••••••••" autofocus>
     </label>
     <button type="submit" class="gate-btn{' gate-btn--ghost' if show_share else ''}">Unlock access</button>
     <p id="admin-unlock-msg" class="gate-msg" role="status" aria-live="polite"></p>

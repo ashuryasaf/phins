@@ -12921,7 +12921,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         client_ip = self.client_address[0]
         server_port = int(getattr(self.server, 'server_address', ('', 0))[1] or 0)
 
-        # ---- Admin password unlock (works without global access token) ----
+        # ---- Admin / open-password unlock (works without a shared query token) ----
         if path == '/api/confidential/admin-unlock':
             if not check_login_lockout(client_ip, server_port):
                 lockout_data = FAILED_LOGINS.get(_security_key(client_ip, server_port), {})
@@ -12933,11 +12933,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                 }).encode('utf-8'))
                 return True
 
-            username = str(body_data.get('username') or '').strip()
+            username = str(body_data.get('username') or '').strip() or 'admin'
             password = str(body_data.get('password') or '')
             next_path = str(body_data.get('next') or '/pitch-dashboard.html').strip() or '/pitch-dashboard.html'
             if not next_path.startswith('/') or '..' in next_path or '://' in next_path:
                 next_path = '/pitch-dashboard.html'
+            redirect_to = next_path.split('?', 1)[0]
 
             is_valid, _error = validate_input_security(username, client_ip, 'username')
             if not is_valid:
@@ -12946,8 +12947,23 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': 'Invalid username format'}).encode('utf-8'))
                 return True
 
+            if not password:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Password required'}).encode('utf-8'))
+                return True
+
+            # 1) Staff password (admin / affiliated roles) — primary unlock path.
             matched = self._authenticate_staff_password(username, password)
-            if not matched:
+
+            # 2) Deployment open password / access token entered in the form.
+            #    Keeps the early-PR ?access_token= flow usable from the branded gate.
+            open_token = confidential_access.configured_access_token()
+            open_token_ok = bool(
+                open_token
+                and confidential_access.token_matches(password, open_token, hashed=False)
+            )
+
+            if not matched and not open_token_ok:
                 record_failed_login(client_ip, server_port)
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid credentials'}).encode('utf-8'))
@@ -12958,55 +12974,82 @@ class PortalHandler(BaseHTTPRequestHandler):
                 if k in FAILED_LOGINS:
                     del FAILED_LOGINS[k]
 
-            try:
-                staff_cookie = confidential_access.mint_staff_unlock_cookie(
-                    username=matched['username'],
-                    role=matched['role'],
-                )
-            except Exception as exc:
-                print(f"[CONFIDENTIAL] staff unlock cookie mint failed: {exc}")
-                self._set_json_headers(503)
-                self.wfile.write(json.dumps({
-                    'error': 'Unable to issue unlock cookie. Configure SESSION_SECRET_KEY.'
-                }).encode('utf-8'))
-                return True
+            secure = self._request_is_secure()
+            set_cookies = []
+            auth_token = None
+            role = None
+            name = None
+            unlock_mode = 'staff'
 
-            expires = datetime.now() + timedelta(seconds=SESSION_TIMEOUT)
-            token, token_jti = _mint_auth_token(
-                matched['username'], matched['role'], matched.get('customer_id'), expires
-            )
-            _session_payload = {
-                'username': matched['username'],
-                'expires': expires.isoformat(),
-                'customer_id': matched.get('customer_id'),
-                'role': matched['role'],
-                'ip_address': client_ip,
-                'jti': token_jti,
-            }
-            with STATE_LOCK:
-                SESSIONS[token] = _session_payload
-            _persist_session_to_db(token, _session_payload)
+            if matched:
+                try:
+                    staff_cookie = confidential_access.mint_staff_unlock_cookie(
+                        username=matched['username'],
+                        role=matched['role'],
+                    )
+                except Exception as exc:
+                    print(f"[CONFIDENTIAL] staff unlock cookie mint failed: {exc}")
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'Unable to issue unlock cookie. Configure SESSION_SECRET_KEY.'
+                    }).encode('utf-8'))
+                    return True
+                set_cookies.append(
+                    confidential_access.access_cookie_header(
+                        staff_cookie,
+                        secure=secure,
+                        cookie_name=confidential_access.STAFF_UNLOCK_COOKIE_NAME,
+                    )
+                )
+                expires = datetime.now() + timedelta(seconds=SESSION_TIMEOUT)
+                auth_token, token_jti = _mint_auth_token(
+                    matched['username'], matched['role'], matched.get('customer_id'), expires
+                )
+                _session_payload = {
+                    'username': matched['username'],
+                    'expires': expires.isoformat(),
+                    'customer_id': matched.get('customer_id'),
+                    'role': matched['role'],
+                    'ip_address': client_ip,
+                    'jti': token_jti,
+                }
+                with STATE_LOCK:
+                    SESSIONS[auth_token] = _session_payload
+                _persist_session_to_db(auth_token, _session_payload)
+                username = matched['username']
+                role = matched['role']
+                name = matched.get('name')
+            else:
+                # Open-password path: issue the shared access cookie (HMAC of token).
+                unlock_mode = 'open_password'
+                set_cookies.append(
+                    confidential_access.access_cookie_header(
+                        confidential_access.cookie_value_for_token(open_token),
+                        secure=secure,
+                        cookie_name=confidential_access.ACCESS_COOKIE_NAME,
+                    )
+                )
+                username = 'open_password'
+                role = 'viewer'
+                name = 'Open password'
 
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
-            self.send_header(
-                'Set-Cookie',
-                confidential_access.access_cookie_header(
-                    staff_cookie,
-                    secure=self._request_is_secure(),
-                    cookie_name=confidential_access.STAFF_UNLOCK_COOKIE_NAME,
-                ),
-            )
+            for cookie_header in set_cookies:
+                self.send_header('Set-Cookie', cookie_header)
             self.send_header('Cache-Control', 'no-store')
             self.end_headers()
-            self.wfile.write(json.dumps({
+            payload = {
                 'success': True,
-                'token': token,
-                'username': matched['username'],
-                'role': matched['role'],
-                'name': matched.get('name'),
-                'redirect_to': next_path.split('?', 1)[0],
-            }).encode('utf-8'))
+                'username': username,
+                'role': role,
+                'name': name,
+                'unlock_mode': unlock_mode,
+                'redirect_to': redirect_to,
+            }
+            if auth_token:
+                payload['token'] = auth_token
+            self.wfile.write(json.dumps(payload).encode('utf-8'))
             return True
 
         # ---- Share-link open-password unlock ----

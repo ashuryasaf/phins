@@ -245,9 +245,18 @@ Access is granted when any of the following holds:
 
 When production has no `PHINS_CONFIDENTIAL_ACCESS_TOKEN`, anonymous callers
 still see **Access restricted**, but staff can unlock from that page with their
-admin-level password. This is the supported recovery path for
-`https://www.phins.ai/pitch-dashboard.html` when the shared token was never
-configured.
+admin-level password (`username` defaults to `admin`, password =
+`PHINS_ADMIN_PASSWORD`). This is the supported path for
+`https://www.phins.ai/pitch-dashboard.html`.
+
+If `PHINS_CONFIDENTIAL_ACCESS_TOKEN` **is** set, the same form also accepts that
+value as an open password (sets the access cookie). Staff unlock still works
+in parallel via `PHINS_ADMIN_PASSWORD`.
+
+Required for password unlock to stick across workers:
+
+- `SESSION_SECRET_KEY` (signs the staff-unlock cookie)
+- `PHINS_ADMIN_PASSWORD` (or another staff role password in `STAFF_ROLES`)
 
 #### Share links (single / multi use)
 
