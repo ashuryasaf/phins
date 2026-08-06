@@ -73,6 +73,8 @@ def test_pitch_document_viewer_return_controls():
     assert "findSourceSectionId" in html
     assert "returnSectionId" in html
     assert "Back to tab" in html
+    assert "showLoadFailureFallback" in html
+    assert "Document unavailable" in html
     # Presentation-only; does not rewrite document contents or bypass the gate.
     assert "Presentation-only intercept" in html
 

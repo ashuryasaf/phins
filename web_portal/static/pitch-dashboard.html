@@ -8906,6 +8906,32 @@
           if (closeBtn) closeBtn.focus();
         }
 
+        function showLoadFailureFallback() {
+          frame.hidden = true;
+          try { frame.removeAttribute("src"); } catch (e) {}
+          fallback.classList.add("is-visible");
+          fallbackHeading.textContent = "Document unavailable";
+          fallbackCopy.textContent =
+            "This file could not be loaded in the viewer. Use Back or × to return to the pitch tab you opened it from, or Open ↗ to try in a new tab.";
+        }
+
+        // Same-origin only: detect bare server 404 pages inside the iframe and
+        // swap to the branded return panel (Back / × still go to the source tab).
+        frame.addEventListener("load", function () {
+          if (frame.hidden || !viewer.classList.contains("is-open")) return;
+          try {
+            var doc = frame.contentDocument;
+            if (!doc) return;
+            var text = (doc.body && (doc.body.innerText || doc.body.textContent)) || "";
+            var title = String(doc.title || "").toLowerCase();
+            if (title.indexOf("error response") !== -1 || /Error code:\s*404/i.test(text)) {
+              showLoadFailureFallback();
+            }
+          } catch (e) {
+            /* Cross-origin frame — leave content as rendered. */
+          }
+        });
+
         ["pitch-doc-back", "pitch-doc-close", "pitch-doc-fallback-back"].forEach(function (id) {
           var btn = document.getElementById(id);
           if (btn) btn.addEventListener("click", function (ev) {
