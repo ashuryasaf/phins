@@ -1,4 +1,7 @@
-"""Static integrity for pitch-dashboard foldable tabs + document return nav."""
+"""Static integrity for pitch-dashboard foldable tabs + document return nav.
+
+Covers per-tab Back controls and the in-page document viewer return flow.
+"""
 
 from pathlib import Path
 
