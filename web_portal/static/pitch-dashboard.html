@@ -4,29 +4,34 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PHINS — Global Pitch Dashboard | Executive Disability &amp; LTC Assessment</title>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --blue-dark: #0d47a1;
-      --blue-mid: #1565c0;
-      --blue-light: #1976d2;
-      --accent-1: #42a5f5;
-      --accent-2: #64b5f6;
+      --blue-dark: #0b1f3f;
+      --blue-mid: #123f82;
+      --blue-light: #1d4ed8;
+      --accent-1: #4fd8ff;
+      --accent-2: #6ea8ff;
       --green-1: #2e7d32;
-      --amber-1: #f59e0b;
+      --amber-1: #e3bf6f;
+      --gold-hi: #f7e2a0;
+      --gold-lo: #b8893b;
       --red-1: #c62828;
-      --gradient-hdr: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
-      --gradient-logo: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
-      --text-main: #1a202c;
+      --gradient-hdr: linear-gradient(135deg, #060d1f 0%, #0b1f3f 40%, #123f82 100%);
+      --gradient-logo: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 55%, #b8893b 100%);
+      --text-main: #0f172a;
       --text-sub: #4a5568;
       --text-soft: #64748b;
       --border: #dbe4f0;
       --bg-light: #f8fafc;
-      --bg-page: #edf3fb;
+      --bg-page: #e8eef8;
       --bg-card: #ffffff;
       --bg-dark-card: #0f274d;
       --shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+      --header-offset: 96px;
     }
 
     * {
@@ -35,9 +40,17 @@
       padding: 0;
     }
 
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: calc(var(--header-offset) + 12px);
+    }
+
     body {
-      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: var(--bg-page);
+      font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(900px 420px at 90% -10%, rgba(30, 82, 170, 0.14), transparent 60%),
+        radial-gradient(700px 380px at 0% 20%, rgba(227, 191, 111, 0.12), transparent 55%),
+        var(--bg-page);
       color: var(--text-main);
       min-height: 100vh;
       line-height: 1.55;
@@ -48,43 +61,65 @@
     }
 
     .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 40;
       background: var(--gradient-hdr);
       color: #fff;
-      padding: 18px 32px;
+      padding: 14px 28px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 10px 28px rgba(6, 13, 31, 0.35);
+      border-bottom: 2px solid rgba(227, 191, 111, 0.55);
+    }
+
+    .header-top {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 16px;
-      box-shadow: 0 2px 12px rgba(13, 71, 161, 0.28);
+      flex-wrap: wrap;
     }
 
     .logo-row {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
     }
 
     .logo-icon {
-      width: 38px;
-      height: 38px;
-      border-radius: 10px;
-      background: var(--gradient-logo);
+      width: 46px;
+      height: 46px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(247, 226, 160, 0.35);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 20px;
-      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+      overflow: hidden;
+    }
+
+    .logo-icon img {
+      width: 82%;
+      height: 82%;
+      object-fit: contain;
+      display: block;
     }
 
     .logo-text {
-      font-size: 20pt;
-      font-weight: 900;
-      letter-spacing: 0.06em;
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 22pt;
+      font-weight: 700;
+      letter-spacing: 0.14em;
     }
 
     .logo-tagline {
-      font-size: 8.5pt;
-      opacity: 0.85;
+      font-size: 8pt;
+      opacity: 0.82;
       letter-spacing: 0.1em;
       text-transform: uppercase;
       margin-top: 1px;
@@ -92,29 +127,66 @@
 
     .header-actions {
       display: flex;
-      gap: 10px;
+      gap: 8px;
       align-items: center;
       flex-wrap: wrap;
       justify-content: flex-end;
     }
 
-    .back-link {
-      color: rgba(255, 255, 255, 0.9);
-      text-decoration: none;
-      font-size: 9pt;
-      border: 1px solid rgba(255, 255, 255, 0.35);
-      border-radius: 20px;
-      padding: 6px 14px;
-      transition: background 0.2s ease, transform 0.2s ease;
+    .pitch-nav {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
     }
 
-    .back-link:hover {
+    .back-link,
+    .pitch-nav-link {
+      color: rgba(255, 255, 255, 0.92);
+      text-decoration: none;
+      font-size: 8.5pt;
+      font-weight: 600;
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      border-radius: 999px;
+      padding: 6px 12px;
+      transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+      background: rgba(255, 255, 255, 0.04);
+      white-space: nowrap;
+    }
+
+    .back-link:hover,
+    .pitch-nav-link:hover {
       background: rgba(255, 255, 255, 0.14);
       transform: translateY(-1px);
+      border-color: rgba(247, 226, 160, 0.55);
+    }
+
+    .pitch-nav-link.is-active {
+      background: linear-gradient(135deg, rgba(247, 226, 160, 0.95), rgba(227, 191, 111, 0.92));
+      color: #071022;
+      border-color: transparent;
+      box-shadow: 0 6px 16px rgba(227, 191, 111, 0.35);
+    }
+
+    .back-link--primary {
+      background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+      color: #071022;
+      border-color: transparent;
+      font-family: "Space Grotesk", sans-serif;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .back-link--primary:hover {
+      background: linear-gradient(135deg, #ffe9b0 0%, #f0cd7e 100%);
+      color: #071022;
     }
 
     .hero {
-      background: radial-gradient(circle at top left, rgba(100, 181, 246, 0.24), transparent 36%), var(--blue-dark);
+      background:
+        radial-gradient(circle at top left, rgba(79, 216, 255, 0.18), transparent 36%),
+        radial-gradient(circle at 80% 20%, rgba(227, 191, 111, 0.16), transparent 40%),
+        linear-gradient(160deg, #060d1f 0%, #0b1f3f 45%, #123f82 100%);
       color: #fff;
       padding: 42px 32px 34px;
     }
@@ -129,10 +201,12 @@
     }
 
     .hero-copy h1 {
+      font-family: "Space Grotesk", sans-serif;
       font-size: 25pt;
-      font-weight: 850;
+      font-weight: 700;
       margin-bottom: 10px;
       line-height: 1.15;
+      letter-spacing: 0.01em;
     }
 
     .hero-copy p {
@@ -1315,18 +1389,135 @@
     }
 
     .exec-summary-banner {
-      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 40%, #1976d2 100%);
+      background: linear-gradient(135deg, #0b1f3f 0%, #123f82 45%, #1d4ed8 100%);
       color: #fff;
       border-radius: 20px;
-      padding: 32px;
-      margin-bottom: 24px;
-      box-shadow: 0 12px 32px rgba(13, 71, 161, 0.18);
+      padding: 28px 32px;
+      margin-bottom: 0;
+      box-shadow: 0 12px 32px rgba(11, 31, 63, 0.22);
+      border: 1px solid rgba(247, 226, 160, 0.22);
+      position: relative;
     }
 
     .exec-summary-banner h2 {
-      font-size: 18pt;
-      font-weight: 900;
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 17pt;
+      font-weight: 700;
+      letter-spacing: 0.02em;
       margin-bottom: 6px;
+      padding-right: 56px;
+    }
+
+    /* Foldable pitch tabs */
+    .pitch-fold {
+      margin-bottom: 18px;
+      border-radius: 22px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(13, 42, 92, 0.08);
+      background: var(--bg-card);
+      scroll-margin-top: calc(var(--header-offset) + 12px);
+    }
+
+    .pitch-fold > .exec-summary-banner {
+      border-radius: 0;
+      margin-bottom: 0;
+      cursor: pointer;
+      user-select: none;
+      transition: filter 0.2s ease;
+    }
+
+    .pitch-fold > .exec-summary-banner:hover {
+      filter: brightness(1.04);
+    }
+
+    .pitch-fold-toggle {
+      position: absolute;
+      top: 22px;
+      right: 22px;
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+      z-index: 2;
+    }
+
+    .pitch-fold-toggle:hover {
+      background: rgba(247, 226, 160, 0.25);
+      border-color: rgba(247, 226, 160, 0.7);
+      transform: scale(1.04);
+    }
+
+    .pitch-fold-body {
+      display: none;
+      padding: 18px 18px 22px;
+      background: linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
+      border-top: 1px solid var(--border);
+      animation: pitch-fold-open 0.28s ease;
+    }
+
+    .pitch-fold.is-open > .pitch-fold-body {
+      display: block;
+    }
+
+    .pitch-fold.is-open > .exec-summary-banner .pitch-fold-toggle {
+      background: linear-gradient(135deg, #f7e2a0, #e3bf6f);
+      color: #071022;
+      border-color: transparent;
+    }
+
+    @keyframes pitch-fold-open {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    .pitch-back-fab {
+      position: fixed;
+      right: 18px;
+      bottom: 22px;
+      z-index: 45;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border-radius: 999px;
+      text-decoration: none;
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: #071022;
+      background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+      box-shadow: 0 10px 28px rgba(11, 31, 63, 0.28), 0 0 0 1px rgba(184, 137, 59, 0.35);
+      transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .pitch-back-fab.is-visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .pitch-back-fab:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 14px 32px rgba(11, 31, 63, 0.34), 0 0 0 1px rgba(184, 137, 59, 0.5);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .pitch-fold-body { animation: none; }
     }
 
     .exec-summary-banner .exec-subtitle {
@@ -1605,30 +1796,37 @@
   </style>
 </head>
 <body>
-  <header class="site-header">
-    <div class="logo-row">
-      <div class="logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
-      <div>
-        <div class="logo-text">PHINS</div>
-        <div class="logo-tagline">Personal Health Insurance &amp; Savings</div>
+  <header class="site-header" id="pitch-top">
+    <div class="header-top">
+      <a class="logo-row" href="#pitch-top" title="PHINS Pitch Dashboard">
+        <div class="logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem"></div>
+        <div>
+          <div class="logo-text">PHINS</div>
+          <div class="logo-tagline">Pitch Dashboard · Personal Health Insurance &amp; Savings</div>
+        </div>
+      </a>
+      <div class="header-actions">
+        <a href="#pitch-top" class="back-link back-link--primary" id="pitch-back-header">↑ Back to header</a>
+        <a href="/corporate-legal-dashboard.html" class="back-link">Legal &amp; Funding</a>
+        <a href="/nda.html?jurisdiction=dashboard" class="back-link">NDA Documents</a>
+        <a href="/admin.html" class="back-link">← Admin</a>
       </div>
     </div>
-    <div class="header-actions">
-      <a href="#investor-documents-section" class="back-link">📂 Investor Documents</a>
-      <a href="/corporate-legal-dashboard.html" class="back-link">📑 Legal &amp; Funding</a>
-      <a href="#actuary-briefing-section" class="back-link">📑 Actuary Briefing</a>
-      <a href="#investor-meeting-section" class="back-link">🎯 Investor Meeting</a>
-      <a href="#partner-meetings-13jul" class="back-link">🤝 Partner Meetings 13.7</a>
-      <a href="#regulatory-meeting-27jul" class="back-link">⚖️ Regulatory Meeting 27.7</a>
-      <a href="#fintl-vc-meetings-aug" class="back-link">💼 Fintl VC 5–6.8</a>
-      <a href="#grove-vc-meeting-19aug" class="back-link">🌲 Grove VC 19.8</a>
-      <a href="#il-meeting-diary" class="back-link">🗓️ Meeting Diary</a>
-      <a href="/nda.html?jurisdiction=dashboard" class="back-link">📋 NDA Documents →</a>
-      <a href="/admin.html" class="back-link">← Back to Admin</a>
-    </div>
+    <nav class="pitch-nav" id="pitch-nav" aria-label="Pitch sections">
+      <a href="#investor-documents-section" class="pitch-nav-link">Investor Documents</a>
+      <a href="#actuary-briefing-section" class="pitch-nav-link">Actuary Briefing</a>
+      <a href="#investor-meeting-section" class="pitch-nav-link">Investor Meeting</a>
+      <a href="#partner-meetings-13jul" class="pitch-nav-link">Partner Meetings 13.7</a>
+      <a href="#regulatory-meeting-27jul" class="pitch-nav-link">Regulatory Meeting 27.7</a>
+      <a href="#fintl-vc-meetings-aug" class="pitch-nav-link">Fintl VC 5–6.8</a>
+      <a href="#grove-vc-meeting-19aug" class="pitch-nav-link">Grove VC 19.8</a>
+      <a href="#il-meeting-diary" class="pitch-nav-link">Meeting Diary</a>
+      <a href="#exec-summary-section" class="pitch-nav-link">Executive Summary</a>
+      <a href="#scenario-assessment-section" class="pitch-nav-link">Scenario Lab</a>
+    </nav>
   </header>
 
-  <section class="hero">
+  <section class="hero" id="pitch-hero">
     <div class="hero-inner">
       <div class="hero-copy">
         <h1>PHI Permanent 3+ ADL Executive Business Assessment</h1>
@@ -3712,6 +3910,20 @@
       </div>
     </section>
 
+    <section id="scenario-assessment-section" style="margin-bottom:28px;">
+      <div class="exec-summary-banner" style="background: linear-gradient(135deg,#060d1f 0%,#0b1f3f 42%,#123f82 100%); box-shadow: 0 12px 32px rgba(6,13,31,0.28);">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+          <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(247,226,160,0.18);font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">📊 Scenario · Assessment</span>
+          <span style="font-size:8.5pt;opacity:0.85;">Public evidence locked · PHINS assumptions adjustable · local currency preserved</span>
+        </div>
+        <h2>Scenario Lab &amp; Market Assessment</h2>
+        <p class="exec-subtitle">
+          Board-grade market modeling across priority jurisdictions. Reported public statistics stay locked;
+          PHINS planning assumptions remain editable so teams can stress-test TAM, cession, and margins without
+          corrupting source evidence.
+        </p>
+      </div>
+
     <section class="stats-strip">
       <div class="stat-box">
         <div class="stat-val">9</div>
@@ -4682,7 +4894,10 @@
         </div>
       </div>
     </section>
+    </section><!-- /#scenario-assessment-section -->
   </main>
+
+  <a href="#pitch-top" class="pitch-back-fab" id="pitch-back-fab" aria-label="Back to pitch dashboard header">↑ Back</a>
 
   <footer class="site-footer">
     &copy; 2026 PHINS Insurance Company &nbsp;|&nbsp; Executive assessment and scenario lab are confidential working materials &nbsp;|&nbsp; phins.ai
@@ -8207,6 +8422,177 @@
       });
 
       revealIfStaff();
+    })();
+  </script>
+  <script>
+    (function () {
+      var PITCH_FOLD_IDS = [
+        "investor-documents-section",
+        "actuary-briefing-section",
+        "investor-meeting-section",
+        "partner-meetings-13jul",
+        "regulatory-meeting-27jul",
+        "fintl-vc-meetings-aug",
+        "grove-vc-meeting-19aug",
+        "exec-summary-section",
+        "scenario-assessment-section"
+      ];
+      var NESTED_PARENTS = {
+        "il-meeting-diary": "investor-meeting-section",
+        "investor-configurator": "investor-meeting-section",
+        "fintl-5aug-panel": "fintl-vc-meetings-aug",
+        "fintl-6aug-panel": "fintl-vc-meetings-aug",
+        "grove-5m-timeline": "grove-vc-meeting-19aug"
+      };
+
+      function headerOffset() {
+        var header = document.getElementById("pitch-top");
+        return (header ? header.offsetHeight : 96) + 12;
+      }
+
+      function syncHeaderOffset() {
+        document.documentElement.style.setProperty("--header-offset", headerOffset() - 12 + "px");
+      }
+
+      function setOpen(section, open) {
+        if (!section) return;
+        section.classList.toggle("is-open", !!open);
+        var btn = section.querySelector(".pitch-fold-toggle");
+        if (btn) {
+          btn.textContent = open ? "−" : "+";
+          btn.setAttribute("aria-expanded", open ? "true" : "false");
+          btn.setAttribute("aria-label", open ? "Collapse section" : "Expand section");
+        }
+        // Charts/layout measured while collapsed need a reflow when opened.
+        if (open) {
+          requestAnimationFrame(function () {
+            try { window.dispatchEvent(new Event("resize")); } catch (e) {}
+          });
+        }
+      }
+
+      function expandForTarget(id) {
+        var parentId = NESTED_PARENTS[id] || id;
+        var section = document.getElementById(parentId);
+        if (section && section.classList.contains("pitch-fold")) {
+          setOpen(section, true);
+        }
+        return document.getElementById(id) || section;
+      }
+
+      function scrollToId(id) {
+        var el = expandForTarget(id);
+        if (!el) return;
+        var top = el.getBoundingClientRect().top + window.pageYOffset - headerOffset();
+        window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+      }
+
+      function initFolds() {
+        PITCH_FOLD_IDS.forEach(function (id) {
+          var section = document.getElementById(id);
+          if (!section || section.classList.contains("pitch-fold")) return;
+          var banner = null;
+          for (var i = 0; i < section.children.length; i++) {
+            if (section.children[i].classList && section.children[i].classList.contains("exec-summary-banner")) {
+              banner = section.children[i];
+              break;
+            }
+          }
+          if (!banner) return;
+
+          section.classList.add("pitch-fold");
+          var body = document.createElement("div");
+          body.className = "pitch-fold-body";
+          body.id = id + "-body";
+          while (banner.nextSibling) {
+            body.appendChild(banner.nextSibling);
+          }
+          section.appendChild(body);
+
+          var toggle = document.createElement("button");
+          toggle.type = "button";
+          toggle.className = "pitch-fold-toggle";
+          toggle.textContent = "+";
+          toggle.setAttribute("aria-expanded", "false");
+          toggle.setAttribute("aria-controls", body.id);
+          toggle.setAttribute("aria-label", "Expand section");
+          banner.appendChild(toggle);
+
+          function toggleFold(ev) {
+            if (ev) {
+              // Keep in-banner document links working; only toggle on banner/button.
+              var t = ev.target;
+              if (t && t.closest && t.closest("a, input, select, button:not(.pitch-fold-toggle)")) {
+                return;
+              }
+              ev.preventDefault();
+            }
+            setOpen(section, !section.classList.contains("is-open"));
+          }
+
+          toggle.addEventListener("click", function (ev) {
+            ev.stopPropagation();
+            setOpen(section, !section.classList.contains("is-open"));
+          });
+          banner.addEventListener("click", toggleFold);
+        });
+      }
+
+      function wireNav() {
+        document.querySelectorAll('.pitch-nav-link[href^="#"], #pitch-back-header, #pitch-back-fab, a.logo-row[href="#pitch-top"]').forEach(function (link) {
+          link.addEventListener("click", function (ev) {
+            var href = link.getAttribute("href") || "";
+            if (!href || href.charAt(0) !== "#") return;
+            var id = href.slice(1);
+            if (!id) return;
+            ev.preventDefault();
+            if (id === "pitch-top" || id === "pitch-hero") {
+              history.replaceState(null, "", "#pitch-top");
+              window.scrollTo({ top: 0, behavior: "smooth" });
+              document.querySelectorAll(".pitch-nav-link.is-active").forEach(function (n) {
+                n.classList.remove("is-active");
+              });
+              return;
+            }
+            history.replaceState(null, "", "#" + id);
+            scrollToId(id);
+            document.querySelectorAll(".pitch-nav-link").forEach(function (n) {
+              var nh = (n.getAttribute("href") || "").slice(1);
+              n.classList.toggle("is-active", nh === id || NESTED_PARENTS[id] === nh);
+            });
+          });
+        });
+      }
+
+      function openFromHash() {
+        var hash = (location.hash || "").replace(/^#/, "");
+        if (!hash || hash === "pitch-top" || hash === "pitch-hero") return;
+        // Defer so layout/header height is settled.
+        requestAnimationFrame(function () {
+          scrollToId(hash);
+          document.querySelectorAll(".pitch-nav-link").forEach(function (n) {
+            var nh = (n.getAttribute("href") || "").slice(1);
+            n.classList.toggle("is-active", nh === hash || NESTED_PARENTS[hash] === nh);
+          });
+        });
+      }
+
+      function wireFab() {
+        var fab = document.getElementById("pitch-back-fab");
+        if (!fab) return;
+        function onScroll() {
+          fab.classList.toggle("is-visible", window.scrollY > 420);
+        }
+        window.addEventListener("scroll", onScroll, { passive: true });
+        onScroll();
+      }
+
+      syncHeaderOffset();
+      window.addEventListener("resize", syncHeaderOffset);
+      initFolds();
+      wireNav();
+      wireFab();
+      openFromHash();
     })();
   </script>
 </body>
