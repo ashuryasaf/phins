@@ -213,10 +213,10 @@ def test_strip_sensitive_query_preserves_other_params():
     assert ca.strip_sensitive_query("/a.html?doc=1") == "/a.html?doc=1"
 
 
-def test_cookie_is_httponly_and_samesite_strict():
+def test_cookie_is_httponly_and_samesite_lax():
     header = ca.access_cookie_header("abc", secure=True, environ={})
     assert "HttpOnly" in header
-    assert "SameSite=Strict" in header
+    assert "SameSite=Lax" in header
     assert "Secure" in header
     assert header.startswith(f"{ca.ACCESS_COOKIE_NAME}=abc")
     # Plain-HTTP local runs must not receive a Secure cookie they cannot send.
@@ -406,7 +406,29 @@ def test_denial_page_offers_admin_unlock_form():
     assert "PHINS" in html
     assert "gate-card" in html
     assert "Access restricted" in html
+    assert 'value="admin"' in html
+    assert "Staff password unlock is required" in ca.denial_payload(decision)["error"]
     assert "Pre-launch build budget" not in html
+
+
+def test_pitch_dashboard_production_requires_password_unlock():
+    """Live pitch-dashboard must stay fail-closed until staff/share unlock."""
+    env = {"PHINS_ENVIRONMENT": "production", "SESSION_SECRET_KEY": SECRET}
+    denied = ca.evaluate_access("/pitch-dashboard.html", environ=env)
+    assert denied.allowed is False
+    assert denied.reason == "not_configured_production"
+    assert denied.status == 503
+
+    cookie = ca.mint_staff_unlock_cookie(
+        username="admin", role="admin", environ=env
+    )
+    allowed = ca.evaluate_access(
+        "/pitch-dashboard.html",
+        cookie_header=f"{ca.STAFF_UNLOCK_COOKIE_NAME}={cookie}",
+        environ=env,
+    )
+    assert allowed.allowed is True
+    assert allowed.reason == "staff_unlock_cookie"
 
 
 def test_staff_unlock_cookie_grants_access_without_global_token():
@@ -531,6 +553,30 @@ def test_share_service_multi_use_and_wrong_password(share_store):
         share_store.unlock(created["id"], "wrong-password")
     # Wrong password must not consume a use.
     assert share_store.get_share(created["id"])["remaining_uses"] == 1
+
+
+def test_http_open_password_unlock_via_admin_form(gate_token, monkeypatch):
+    """Deployment open password entered on the gate form unlocks pitch-dashboard."""
+    monkeypatch.setenv("PHINS_ENVIRONMENT", "production")
+    monkeypatch.setenv("SESSION_SECRET_KEY", SECRET)
+    monkeypatch.setenv("PHINS_CONFIDENTIAL_ACCESS_TOKEN", TOKEN)
+
+    session = requests.Session()
+    unlock = session.post(
+        f"{BASE_URL}/api/confidential/admin-unlock",
+        json={"username": "admin", "password": TOKEN, "next": "/pitch-dashboard.html"},
+        timeout=10,
+    )
+    assert unlock.status_code == 200, unlock.text
+    body = unlock.json()
+    assert body.get("success") is True
+    assert body.get("unlock_mode") == "open_password"
+    assert ca.ACCESS_COOKIE_NAME in unlock.headers.get("Set-Cookie", "")
+
+    viewed = session.get(f"{BASE_URL}/pitch-dashboard.html", timeout=10)
+    assert viewed.status_code == 200
+    assert "Access restricted" not in viewed.text
+    assert "pitch-top" in viewed.text or "PHINS" in viewed.text
 
 
 def test_http_admin_unlock_and_share_flow(gate_token, share_store, monkeypatch):
