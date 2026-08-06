@@ -752,63 +752,327 @@ def denial_html(
     path: str = "",
     share_id: str = "",
 ) -> str:
-    """HTML denial page with admin password unlock and optional share unlock."""
+    """Branded HTML denial page with admin / share unlock forms.
+
+    Visual language matches the portal login surface (navy gradient, gold
+    accent, PHINS emblem). Form ids and unlock endpoints are unchanged so
+    access integrity stays identical.
+    """
     message = denial_payload(decision)["error"]
     effective_share = (share_id or decision.share_id or "").strip()
     target_path = normalize_request_path(path) or "/"
     show_share = bool(effective_share) and not decision.downloadable
-    download_note = ""
-    if decision.downloadable:
-        download_note = (
-            "<p style=\"color:#666;font-size:.9rem\">Downloaded documents "
-            "(PDF/exports) are not unlocked by share links. Sign in with a "
-            "staff password or use the deployment open password / access "
-            "token.</p>"
+
+    if decision.reason == "not_configured_production":
+        lead = "This document is confidential."
+        detail = message
+    elif decision.downloadable:
+        lead = "This download is confidential."
+        detail = (
+            "PDF and export files are not unlocked by share links. "
+            "Use a staff password or the deployment open password."
         )
+    elif show_share:
+        lead = "You have a shared confidential link."
+        detail = "Enter the open password you were given to continue."
+    else:
+        lead = "This document is confidential."
+        detail = message
 
     share_block = ""
     if show_share:
         share_block = f"""
-<section style="margin:1.5rem 0;padding:1rem;border:1px solid #ddd;border-radius:8px">
-  <h2 style="font-size:1.05rem;margin:0 0 .5rem">Open shared link</h2>
-  <p style="color:#555;font-size:.9rem;margin:0 0 .75rem">
-    Enter the simple password you were given for this link.
-  </p>
-  <form id="share-unlock-form" style="display:grid;gap:.5rem;max-width:22rem">
+<section class="gate-panel gate-panel--primary" aria-labelledby="share-unlock-title">
+  <div class="gate-panel__eyebrow">Shared link</div>
+  <h2 id="share-unlock-title">Open shared link</h2>
+  <p class="gate-panel__copy">Enter the simple password you were given for this link.</p>
+  <form id="share-unlock-form" class="gate-form" autocomplete="on">
     <input type="hidden" name="share_id" value="{_html_escape(effective_share)}">
     <input type="hidden" name="path" value="{_html_escape(target_path)}">
-    <label style="font-size:.85rem">Link password
+    <label class="gate-field">Link password
       <input type="password" name="password" required minlength="4"
-             autocomplete="current-password"
-             style="display:block;width:100%;padding:.45rem;margin-top:.2rem">
+             autocomplete="current-password" placeholder="••••••••">
     </label>
-    <button type="submit" style="padding:.5rem .8rem;cursor:pointer">Open document</button>
-    <p id="share-unlock-msg" style="color:#b00020;font-size:.85rem;min-height:1.2em;margin:0"></p>
+    <button type="submit" class="gate-btn">Open document</button>
+    <p id="share-unlock-msg" class="gate-msg" role="status" aria-live="polite"></p>
   </form>
 </section>
 """
 
     admin_block = f"""
-<section style="margin:1.5rem 0;padding:1rem;border:1px solid #ddd;border-radius:8px">
-  <h2 style="font-size:1.05rem;margin:0 0 .5rem">Staff / admin unlock</h2>
-  <p style="color:#555;font-size:.9rem;margin:0 0 .75rem">
-    Enter an admin-level staff password to authorise this browser for confidential documents.
-  </p>
-  <form id="admin-unlock-form" style="display:grid;gap:.5rem;max-width:22rem">
+<section class="gate-panel{' gate-panel--secondary' if show_share else ' gate-panel--primary'}" aria-labelledby="admin-unlock-title">
+  <div class="gate-panel__eyebrow">Staff access</div>
+  <h2 id="admin-unlock-title">Staff / admin unlock</h2>
+  <p class="gate-panel__copy">Enter an admin-level staff password to authorise this browser for confidential documents.</p>
+  <form id="admin-unlock-form" class="gate-form" autocomplete="on">
     <input type="hidden" name="next" value="{_html_escape(target_path)}">
-    <label style="font-size:.85rem">Username
+    <label class="gate-field">Username
       <input type="text" name="username" required autocomplete="username"
-             style="display:block;width:100%;padding:.45rem;margin-top:.2rem">
+             placeholder="admin">
     </label>
-    <label style="font-size:.85rem">Password
+    <label class="gate-field">Password
       <input type="password" name="password" required minlength="6"
-             autocomplete="current-password"
-             style="display:block;width:100%;padding:.45rem;margin-top:.2rem">
+             autocomplete="current-password" placeholder="••••••••">
     </label>
-    <button type="submit" style="padding:.5rem .8rem;cursor:pointer">Unlock access</button>
-    <p id="admin-unlock-msg" style="color:#b00020;font-size:.85rem;min-height:1.2em;margin:0"></p>
+    <button type="submit" class="gate-btn{' gate-btn--ghost' if show_share else ''}">Unlock access</button>
+    <p id="admin-unlock-msg" class="gate-msg" role="status" aria-live="polite"></p>
   </form>
 </section>
+"""
+
+    styles = """
+<style>
+  :root {
+    --gate-navy: #060d1f;
+    --gate-ink: #0d2a5c;
+    --gate-muted: #5a6b85;
+    --gate-line: #dde7f5;
+    --gate-gold: #e3bf6f;
+    --gate-gold-hi: #f7e2a0;
+    --gate-gold-lo: #b8893b;
+    --gate-card: rgba(249, 251, 255, 0.97);
+    --gate-field: #f8fbff;
+    --gate-danger: #b42318;
+    --gate-ok: #0f766e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    color: var(--gate-ink);
+    background: var(--gate-navy);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 28px 16px 40px;
+    position: relative;
+    overflow-x: hidden;
+  }
+  .gate-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(1000px 600px at 80% -10%, rgba(21, 68, 155, 0.55), transparent 60%),
+      radial-gradient(800px 520px at 8% 110%, rgba(11, 92, 130, 0.4), transparent 60%),
+      radial-gradient(600px 400px at 50% 45%, rgba(30, 82, 170, 0.22), transparent 65%),
+      linear-gradient(165deg, #081428 0%, #060d1f 45%, #0a1834 100%);
+  }
+  .gate-backdrop::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(127, 178, 255, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(127, 178, 255, 0.05) 1px, transparent 1px);
+    background-size: 72px 72px;
+    mask-image: radial-gradient(900px 620px at 50% 40%, rgba(0,0,0,0.85), transparent 78%);
+    -webkit-mask-image: radial-gradient(900px 620px at 50% 40%, rgba(0,0,0,0.85), transparent 78%);
+    animation: gate-grid-drift 28s linear infinite;
+  }
+  @keyframes gate-grid-drift {
+    from { transform: translate3d(0, 0, 0); }
+    to { transform: translate3d(-36px, -36px, 0); }
+  }
+  .gate-shell {
+    width: min(100%, 460px);
+    position: relative;
+    z-index: 1;
+    animation: gate-rise 0.7s cubic-bezier(.22, 1, .36, 1) both;
+  }
+  @keyframes gate-rise {
+    from { opacity: 0; transform: translateY(18px) scale(0.985); }
+    to { opacity: 1; transform: none; }
+  }
+  .gate-card {
+    background: var(--gate-card);
+    border-radius: 22px;
+    padding: 40px 36px 28px;
+    box-shadow: 0 30px 80px rgba(2, 8, 23, 0.65), 0 0 0 1px rgba(127, 178, 255, 0.22);
+    border-top: 3px solid var(--gate-gold);
+  }
+  .gate-brand {
+    text-align: center;
+    margin-bottom: 22px;
+  }
+  .gate-brand a {
+    display: inline-block;
+    text-decoration: none;
+  }
+  .gate-brand img {
+    width: 78px;
+    height: 78px;
+    display: block;
+    margin: 0 auto 14px;
+    filter: drop-shadow(0 8px 24px rgba(18, 63, 130, 0.35));
+    animation: gate-logo-in 0.9s cubic-bezier(.22, 1, .36, 1) 0.08s both;
+  }
+  @keyframes gate-logo-in {
+    from { opacity: 0; transform: translateY(-10px) scale(0.92); }
+    to { opacity: 1; transform: none; }
+  }
+  .gate-wordmark {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 1.65rem;
+    letter-spacing: 0.14em;
+    color: var(--gate-ink);
+    margin: 0 0 6px;
+  }
+  .gate-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: 1.15rem;
+    letter-spacing: 0.02em;
+    margin: 0 0 8px;
+    color: var(--gate-ink);
+  }
+  .gate-lead {
+    margin: 0;
+    color: var(--gate-muted);
+    font-size: 0.95rem;
+    line-height: 1.45;
+  }
+  .gate-detail {
+    margin: 14px 0 0;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #eef4fc;
+    border: 1px solid var(--gate-line);
+    color: #334155;
+    font-size: 0.88rem;
+    line-height: 1.45;
+  }
+  .gate-panel {
+    margin-top: 18px;
+    padding: 16px 16px 14px;
+    border-radius: 14px;
+    border: 1px solid var(--gate-line);
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  }
+  .gate-panel--primary {
+    border-color: rgba(201, 162, 75, 0.45);
+    box-shadow: 0 0 0 3px rgba(227, 191, 111, 0.12);
+  }
+  .gate-panel--secondary { opacity: 0.98; }
+  .gate-panel__eyebrow {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gate-gold-lo);
+    margin-bottom: 6px;
+  }
+  .gate-panel h2 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 0 0 6px;
+    color: var(--gate-ink);
+  }
+  .gate-panel__copy {
+    margin: 0 0 12px;
+    color: var(--gate-muted);
+    font-size: 0.88rem;
+    line-height: 1.4;
+  }
+  .gate-form { display: grid; gap: 12px; }
+  .gate-field {
+    display: grid;
+    gap: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--gate-ink);
+  }
+  .gate-field input {
+    width: 100%;
+    padding: 12px 14px;
+    border: 2px solid var(--gate-line);
+    border-radius: 10px;
+    font-size: 1rem;
+    font-family: inherit;
+    background: var(--gate-field);
+    color: var(--gate-ink);
+    transition: border-color 0.25s, box-shadow 0.25s, background 0.25s;
+  }
+  .gate-field input:focus {
+    outline: none;
+    border-color: var(--gate-gold);
+    box-shadow: 0 0 0 4px rgba(201, 162, 75, 0.14);
+    background: #fff;
+  }
+  .gate-btn {
+    width: 100%;
+    padding: 14px 16px;
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #071022;
+    background: linear-gradient(135deg, var(--gate-gold-hi) 0%, var(--gate-gold) 100%);
+    box-shadow: 0 0 0 1px rgba(184, 137, 59, 0.35), 0 8px 26px rgba(227, 191, 111, 0.35);
+    transition: transform 0.25s, box-shadow 0.25s;
+  }
+  .gate-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0 0 1px rgba(184, 137, 59, 0.55), 0 12px 34px rgba(227, 191, 111, 0.5);
+  }
+  .gate-btn:active { transform: translateY(0); }
+  .gate-btn--ghost {
+    background: #fff;
+    color: var(--gate-ink);
+    border: 1.5px solid var(--gate-line);
+    box-shadow: none;
+    letter-spacing: 0.04em;
+  }
+  .gate-btn--ghost:hover {
+    border-color: #b7c9e6;
+    box-shadow: 0 6px 18px rgba(13, 42, 92, 0.08);
+  }
+  .gate-msg {
+    min-height: 1.2em;
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--gate-danger);
+  }
+  .gate-msg.is-ok { color: var(--gate-ok); }
+  .gate-footnote {
+    margin: 18px 0 0;
+    color: var(--gate-muted);
+    font-size: 0.82rem;
+    line-height: 1.45;
+    text-align: center;
+  }
+  .gate-foot {
+    margin-top: 18px;
+    text-align: center;
+    color: rgba(199, 214, 240, 0.72);
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    animation: gate-rise 0.8s cubic-bezier(.22, 1, .36, 1) 0.15s both;
+  }
+  .gate-foot a {
+    color: var(--gate-gold-hi);
+    text-decoration: none;
+  }
+  .gate-foot a:hover { text-decoration: underline; }
+  @media (max-width: 480px) {
+    .gate-card { padding: 32px 22px 22px; border-radius: 18px; }
+    .gate-brand img { width: 68px; height: 68px; }
+    .gate-wordmark { font-size: 1.4rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .gate-shell, .gate-brand img, .gate-foot, .gate-backdrop::before {
+      animation: none !important;
+    }
+  }
+</style>
 """
 
     script = """
@@ -829,12 +1093,20 @@ def denial_html(
     });
   }
 
+  function setMsg(el, text, ok) {
+    if (!el) return;
+    el.textContent = text || "";
+    el.classList.toggle("is-ok", !!ok);
+  }
+
   var adminForm = document.getElementById("admin-unlock-form");
   if (adminForm) {
     adminForm.addEventListener("submit", function (ev) {
       ev.preventDefault();
       var msg = document.getElementById("admin-unlock-msg");
-      msg.textContent = "Checking…";
+      var btn = adminForm.querySelector('button[type="submit"]');
+      setMsg(msg, "Checking…", true);
+      if (btn) btn.disabled = true;
       var fd = new FormData(adminForm);
       postJson("/api/confidential/admin-unlock", {
         username: fd.get("username"),
@@ -842,16 +1114,19 @@ def denial_html(
         next: fd.get("next")
       }).then(function (res) {
         if (!res.ok) {
-          msg.textContent = (res.data && res.data.error) || "Unlock failed";
+          setMsg(msg, (res.data && res.data.error) || "Unlock failed", false);
+          if (btn) btn.disabled = false;
           return;
         }
         if (res.data && res.data.token) {
           try { localStorage.setItem("phins_auth_token", res.data.token); } catch (e) {}
         }
+        setMsg(msg, "Access granted — opening…", true);
         var next = (res.data && res.data.redirect_to) || fd.get("next") || "/";
         window.location.replace(next);
       }).catch(function () {
-        msg.textContent = "Network error — try again";
+        setMsg(msg, "Network error — try again", false);
+        if (btn) btn.disabled = false;
       });
     });
   }
@@ -861,7 +1136,9 @@ def denial_html(
     shareForm.addEventListener("submit", function (ev) {
       ev.preventDefault();
       var msg = document.getElementById("share-unlock-msg");
-      msg.textContent = "Checking…";
+      var btn = shareForm.querySelector('button[type="submit"]');
+      setMsg(msg, "Checking…", true);
+      if (btn) btn.disabled = true;
       var fd = new FormData(shareForm);
       postJson("/api/confidential/share-unlock", {
         share_id: fd.get("share_id"),
@@ -869,13 +1146,16 @@ def denial_html(
         path: fd.get("path")
       }).then(function (res) {
         if (!res.ok) {
-          msg.textContent = (res.data && res.data.error) || "Unlock failed";
+          setMsg(msg, (res.data && res.data.error) || "Unlock failed", false);
+          if (btn) btn.disabled = false;
           return;
         }
+        setMsg(msg, "Access granted — opening…", true);
         var next = (res.data && res.data.redirect_to) || fd.get("path") || "/";
         window.location.replace(next);
       }).catch(function () {
-        msg.textContent = "Network error — try again";
+        setMsg(msg, "Network error — try again", false);
+        if (btn) btn.disabled = false;
       });
     });
   }
@@ -883,26 +1163,45 @@ def denial_html(
 </script>
 """
 
-    return (
-        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
-        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-        "<meta name=\"robots\" content=\"noindex,nofollow\">"
-        "<title>Access restricted</title></head><body "
-        "style=\"font-family:Georgia,'Times New Roman',serif;padding:2rem;max-width:40rem;"
-        "background:linear-gradient(165deg,#f7f3ea 0%,#e8eef2 55%,#f4efe6 100%);"
-        "min-height:100vh;margin:0;color:#1c2430\">"
-        "<h1 style=\"font-size:1.35rem;letter-spacing:.02em\">Access restricted</h1>"
-        f"<p>{_html_escape(message)}</p>"
-        f"{download_note}"
-        f"{share_block}"
-        f"{admin_block}"
-        "<p style=\"color:#666;font-size:.9rem\">If you were given a shared "
-        "document link, open it with the link password. Staff can unlock with "
-        "an admin-level password. Downloaded exports are excluded from share "
-        "links.</p>"
-        f"{script}"
-        "</body></html>"
-    )
+    # Share form first when the visitor arrived via a share link — primary path.
+    panels = f"{share_block}{admin_block}" if show_share else f"{admin_block}"
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="theme-color" content="#060d1f">
+  <title>Access restricted · PHINS</title>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  {styles}
+</head>
+<body>
+  <div class="gate-backdrop" aria-hidden="true"></div>
+  <div class="gate-shell">
+    <main class="gate-card">
+      <header class="gate-brand">
+        <a href="/" title="PHINS home">
+          <img src="/phins-logo.svg" width="78" height="78" alt="PHINS emblem">
+        </a>
+        <p class="gate-wordmark">PHINS</p>
+        <h1 class="gate-title">Access restricted</h1>
+        <p class="gate-lead">{_html_escape(lead)}</p>
+      </header>
+      <p class="gate-detail">{_html_escape(detail)}</p>
+      {panels}
+      <p class="gate-footnote">If you were given a shared document link, open it with the link password. Staff can unlock with an admin-level password. Downloaded exports are excluded from share links.</p>
+    </main>
+    <p class="gate-foot"><a href="/">phins.ai</a> · Confidential workspace</p>
+  </div>
+  {script}
+</body>
+</html>
+"""
 
 
 def _html_escape(value: str) -> str:
