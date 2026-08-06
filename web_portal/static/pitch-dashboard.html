@@ -1482,6 +1482,40 @@
       to { opacity: 1; transform: none; }
     }
 
+    .pitch-tab-back-row {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 10px;
+      margin: 0 0 14px;
+      padding: 0 0 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .pitch-tab-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      text-decoration: none;
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: #0d2a5c;
+      background: #eef3fb;
+      border: 1px solid #c9d7ec;
+      transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    }
+
+    .pitch-tab-back:hover {
+      background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+      border-color: #d4b46a;
+      color: #071022;
+      transform: translateY(-1px);
+    }
+
     .pitch-back-fab {
       position: fixed;
       right: 18px;
@@ -1513,6 +1547,142 @@
     .pitch-back-fab:hover {
       transform: translateY(-2px);
       box-shadow: 0 14px 32px rgba(11, 31, 63, 0.34), 0 0 0 1px rgba(184, 137, 59, 0.5);
+    }
+
+    /* In-page document viewer — return to the tab that opened the file */
+    .pitch-doc-viewer {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      display: none;
+      flex-direction: column;
+      background: #060d1f;
+    }
+
+    .pitch-doc-viewer.is-open {
+      display: flex;
+    }
+
+    .pitch-doc-viewer__bar {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: linear-gradient(135deg, #0b1f3f 0%, #163a6b 55%, #0d2a5c 100%);
+      border-bottom: 1px solid rgba(227, 191, 111, 0.35);
+      color: #f4f7fb;
+    }
+
+    .pitch-doc-viewer__title {
+      flex: 1 1 auto;
+      min-width: 0;
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 0.92rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pitch-doc-viewer__btn {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 36px;
+      padding: 8px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.2s ease, border-color 0.2s ease;
+    }
+
+    .pitch-doc-viewer__btn:hover {
+      background: rgba(247, 226, 160, 0.22);
+      border-color: rgba(247, 226, 160, 0.7);
+    }
+
+    .pitch-doc-viewer__btn--primary {
+      background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+      border-color: transparent;
+      color: #071022;
+    }
+
+    .pitch-doc-viewer__btn--primary:hover {
+      filter: brightness(1.05);
+      background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+    }
+
+    .pitch-doc-viewer__btn--close {
+      width: 40px;
+      padding: 0;
+      font-size: 1.35rem;
+      line-height: 1;
+    }
+
+    .pitch-doc-viewer__frame {
+      flex: 1 1 auto;
+      width: 100%;
+      border: 0;
+      background: #fff;
+    }
+
+    .pitch-doc-viewer__fallback {
+      flex: 1 1 auto;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 20px;
+      background: linear-gradient(180deg, #0b1f3f 0%, #122a52 100%);
+      color: #e8eef8;
+      text-align: center;
+    }
+
+    .pitch-doc-viewer__fallback.is-visible {
+      display: flex;
+    }
+
+    .pitch-doc-viewer__fallback-card {
+      max-width: 480px;
+      padding: 28px 24px;
+      border-radius: 18px;
+      background: rgba(249, 251, 255, 0.96);
+      color: #0d2a5c;
+      border: 1px solid #d5e0f0;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+    }
+
+    .pitch-doc-viewer__fallback-card h3 {
+      margin: 0 0 8px;
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 1.15rem;
+    }
+
+    .pitch-doc-viewer__fallback-card p {
+      margin: 0 0 16px;
+      font-size: 0.92rem;
+      color: #5a6b85;
+      line-height: 1.45;
+    }
+
+    .pitch-doc-viewer__fallback-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    body.pitch-doc-open {
+      overflow: hidden;
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -1806,7 +1976,6 @@
         </div>
       </a>
       <div class="header-actions">
-        <a href="#pitch-top" class="back-link back-link--primary" id="pitch-back-header">↑ Back to header</a>
         <a href="/corporate-legal-dashboard.html" class="back-link">Legal &amp; Funding</a>
         <a href="/nda.html?jurisdiction=dashboard" class="back-link">NDA Documents</a>
         <a href="/admin.html" class="back-link">← Admin</a>
@@ -4898,6 +5067,26 @@
   </main>
 
   <a href="#pitch-top" class="pitch-back-fab" id="pitch-back-fab" aria-label="Back to pitch dashboard header">↑ Back</a>
+
+  <div id="pitch-doc-viewer" class="pitch-doc-viewer" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="pitch-doc-title">
+    <div class="pitch-doc-viewer__bar">
+      <button type="button" class="pitch-doc-viewer__btn pitch-doc-viewer__btn--primary" id="pitch-doc-back">← Back to tab</button>
+      <div class="pitch-doc-viewer__title" id="pitch-doc-title">Document</div>
+      <a class="pitch-doc-viewer__btn" id="pitch-doc-external" href="#" target="_blank" rel="noopener">Open ↗</a>
+      <button type="button" class="pitch-doc-viewer__btn pitch-doc-viewer__btn--close" id="pitch-doc-close" aria-label="Close document">×</button>
+    </div>
+    <iframe class="pitch-doc-viewer__frame" id="pitch-doc-frame" title="Opened document" hidden></iframe>
+    <div class="pitch-doc-viewer__fallback" id="pitch-doc-fallback">
+      <div class="pitch-doc-viewer__fallback-card">
+        <h3 id="pitch-doc-fallback-heading">Document ready</h3>
+        <p id="pitch-doc-fallback-copy">This file is downloading or opens outside the in-page viewer. Return to the pitch tab you came from, or open the file directly.</p>
+        <div class="pitch-doc-viewer__fallback-actions">
+          <button type="button" class="pitch-doc-viewer__btn pitch-doc-viewer__btn--primary" id="pitch-doc-fallback-back">← Back to tab</button>
+          <a class="pitch-doc-viewer__btn" id="pitch-doc-fallback-open" href="#" target="_blank" rel="noopener">Open file ↗</a>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <footer class="site-footer">
     &copy; 2026 PHINS Insurance Company &nbsp;|&nbsp; Executive assessment and scenario lab are confidential working materials &nbsp;|&nbsp; phins.ai
@@ -8444,6 +8633,10 @@
         "fintl-6aug-panel": "fintl-vc-meetings-aug",
         "grove-5m-timeline": "grove-vc-meeting-19aug"
       };
+      var VIEWABLE_EXT = /\.(pdf|html?|md|txt|csv)$/i;
+      var DOWNLOADISH_EXT = /\.(xlsx?|docx?|pptx?|zip)$/i;
+      var DOC_PATH_HINT = /^\/(investor-docs|internal|legal)\//i;
+      var DOC_PAGE_HINT = /\/(unicorn-|seed-|capital-markets|corporate-legal|nda\.html|actuary-dashboard|agent-portal|phins_business_plan|PHINS_Business_Plan)/i;
 
       function headerOffset() {
         var header = document.getElementById("pitch-top");
@@ -8487,6 +8680,28 @@
         window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
       }
 
+      function goToHeader(ev) {
+        if (ev) ev.preventDefault();
+        history.replaceState(null, "", "#pitch-top");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        document.querySelectorAll(".pitch-nav-link.is-active").forEach(function (n) {
+          n.classList.remove("is-active");
+        });
+      }
+
+      function injectTabBack(body) {
+        if (!body || body.querySelector(".pitch-tab-back-row")) return;
+        var row = document.createElement("div");
+        row.className = "pitch-tab-back-row";
+        var link = document.createElement("a");
+        link.href = "#pitch-top";
+        link.className = "pitch-tab-back";
+        link.textContent = "↑ Back to header";
+        link.addEventListener("click", goToHeader);
+        row.appendChild(link);
+        body.insertBefore(row, body.firstChild);
+      }
+
       function initFolds() {
         PITCH_FOLD_IDS.forEach(function (id) {
           var section = document.getElementById(id);
@@ -8507,6 +8722,8 @@
           while (banner.nextSibling) {
             body.appendChild(banner.nextSibling);
           }
+          // Back control lives on each tab body (not the sticky header).
+          injectTabBack(body);
           section.appendChild(body);
 
           var toggle = document.createElement("button");
@@ -8539,7 +8756,7 @@
       }
 
       function wireNav() {
-        document.querySelectorAll('.pitch-nav-link[href^="#"], #pitch-back-header, #pitch-back-fab, a.logo-row[href="#pitch-top"]').forEach(function (link) {
+        document.querySelectorAll('.pitch-nav-link[href^="#"], #pitch-back-fab, a.logo-row[href="#pitch-top"], .pitch-tab-back').forEach(function (link) {
           link.addEventListener("click", function (ev) {
             var href = link.getAttribute("href") || "";
             if (!href || href.charAt(0) !== "#") return;
@@ -8547,11 +8764,7 @@
             if (!id) return;
             ev.preventDefault();
             if (id === "pitch-top" || id === "pitch-hero") {
-              history.replaceState(null, "", "#pitch-top");
-              window.scrollTo({ top: 0, behavior: "smooth" });
-              document.querySelectorAll(".pitch-nav-link.is-active").forEach(function (n) {
-                n.classList.remove("is-active");
-              });
+              goToHeader();
               return;
             }
             history.replaceState(null, "", "#" + id);
@@ -8587,11 +8800,206 @@
         onScroll();
       }
 
+      function findSourceSectionId(fromEl) {
+        var node = fromEl;
+        while (node && node !== document.body) {
+          if (node.id && (PITCH_FOLD_IDS.indexOf(node.id) !== -1 || NESTED_PARENTS[node.id])) {
+            return NESTED_PARENTS[node.id] || node.id;
+          }
+          if (node.classList && node.classList.contains("pitch-fold") && node.id) {
+            return node.id;
+          }
+          node = node.parentElement;
+        }
+        return "investor-documents-section";
+      }
+
+      function classifyDocUrl(href) {
+        try {
+          var url = new URL(href, window.location.href);
+          if (url.origin !== window.location.origin) return null;
+          if (url.pathname === "/pitch-dashboard.html" || url.pathname === "/") return null;
+          var path = url.pathname || "";
+          var downloadish = DOWNLOADISH_EXT.test(path);
+          var viewable = VIEWABLE_EXT.test(path) || DOC_PATH_HINT.test(path) || DOC_PAGE_HINT.test(path);
+          if (!downloadish && !viewable) return null;
+          return {
+            href: url.href,
+            path: path,
+            downloadish: downloadish,
+            viewable: viewable && !downloadish
+          };
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function triggerDownload(href, filenameHint) {
+        var a = document.createElement("a");
+        a.href = href;
+        a.setAttribute("download", filenameHint || "");
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+
+      function wireDocViewer() {
+        var viewer = document.getElementById("pitch-doc-viewer");
+        var frame = document.getElementById("pitch-doc-frame");
+        var fallback = document.getElementById("pitch-doc-fallback");
+        var titleEl = document.getElementById("pitch-doc-title");
+        var external = document.getElementById("pitch-doc-external");
+        var fallbackOpen = document.getElementById("pitch-doc-fallback-open");
+        var fallbackHeading = document.getElementById("pitch-doc-fallback-heading");
+        var fallbackCopy = document.getElementById("pitch-doc-fallback-copy");
+        if (!viewer || !frame || !fallback) return;
+
+        var returnSectionId = "investor-documents-section";
+        var lastFocus = null;
+
+        function closeViewer() {
+          viewer.classList.remove("is-open");
+          viewer.hidden = true;
+          viewer.setAttribute("aria-hidden", "true");
+          document.body.classList.remove("pitch-doc-open");
+          try { frame.removeAttribute("src"); } catch (e) {}
+          frame.hidden = true;
+          fallback.classList.remove("is-visible");
+          var dest = returnSectionId || "investor-documents-section";
+          history.replaceState(null, "", "#" + dest);
+          scrollToId(dest);
+          document.querySelectorAll(".pitch-nav-link").forEach(function (n) {
+            var nh = (n.getAttribute("href") || "").slice(1);
+            n.classList.toggle("is-active", nh === dest || NESTED_PARENTS[dest] === nh);
+          });
+          if (lastFocus && lastFocus.focus) {
+            try { lastFocus.focus(); } catch (e2) {}
+          }
+        }
+
+        function openViewer(opts) {
+          returnSectionId = opts.returnSectionId || returnSectionId;
+          lastFocus = document.activeElement;
+          titleEl.textContent = opts.title || "Document";
+          external.href = opts.href;
+          fallbackOpen.href = opts.href;
+          viewer.hidden = false;
+          viewer.classList.add("is-open");
+          viewer.setAttribute("aria-hidden", "false");
+          document.body.classList.add("pitch-doc-open");
+
+          if (opts.mode === "view") {
+            fallback.classList.remove("is-visible");
+            frame.hidden = false;
+            frame.src = opts.href;
+          } else {
+            frame.hidden = true;
+            try { frame.removeAttribute("src"); } catch (e) {}
+            fallback.classList.add("is-visible");
+            fallbackHeading.textContent = opts.mode === "download" ? "Download started" : "Open outside viewer";
+            fallbackCopy.textContent = opts.mode === "download"
+              ? "Your browser is saving this file. Use Back or × to return to the pitch tab you opened it from."
+              : "This file type is best opened directly. Use Back or × to return to the pitch tab, or open the file in a new tab.";
+          }
+          var closeBtn = document.getElementById("pitch-doc-close");
+          if (closeBtn) closeBtn.focus();
+        }
+
+        function showLoadFailureFallback() {
+          frame.hidden = true;
+          try { frame.removeAttribute("src"); } catch (e) {}
+          fallback.classList.add("is-visible");
+          fallbackHeading.textContent = "Document unavailable";
+          fallbackCopy.textContent =
+            "This file could not be loaded in the viewer. Use Back or × to return to the pitch tab you opened it from, or Open ↗ to try in a new tab.";
+        }
+
+        // Same-origin only: detect bare server 404 pages inside the iframe and
+        // swap to the branded return panel (Back / × still go to the source tab).
+        frame.addEventListener("load", function () {
+          if (frame.hidden || !viewer.classList.contains("is-open")) return;
+          try {
+            var doc = frame.contentDocument;
+            if (!doc) return;
+            var text = (doc.body && (doc.body.innerText || doc.body.textContent)) || "";
+            var title = String(doc.title || "").toLowerCase();
+            if (title.indexOf("error response") !== -1 || /Error code:\s*404/i.test(text)) {
+              showLoadFailureFallback();
+            }
+          } catch (e) {
+            /* Cross-origin frame — leave content as rendered. */
+          }
+        });
+
+        ["pitch-doc-back", "pitch-doc-close", "pitch-doc-fallback-back"].forEach(function (id) {
+          var btn = document.getElementById(id);
+          if (btn) btn.addEventListener("click", function (ev) {
+            ev.preventDefault();
+            closeViewer();
+          });
+        });
+
+        document.addEventListener("keydown", function (ev) {
+          if (ev.key === "Escape" && viewer.classList.contains("is-open")) {
+            ev.preventDefault();
+            closeViewer();
+          }
+        });
+
+        document.addEventListener("click", function (ev) {
+          if (viewer.classList.contains("is-open")) return;
+          var anchor = ev.target && ev.target.closest ? ev.target.closest("a[href]") : null;
+          if (!anchor) return;
+          if (anchor.closest("#pitch-doc-viewer")) return;
+          if (anchor.classList.contains("pitch-tab-back") || anchor.id === "pitch-back-fab") return;
+          if ((anchor.getAttribute("href") || "").charAt(0) === "#") return;
+
+          var info = classifyDocUrl(anchor.getAttribute("href"));
+          if (!info) return;
+
+          // Presentation-only intercept — document bytes and server gate stay untouched.
+          ev.preventDefault();
+          var sourceId = findSourceSectionId(anchor);
+          var label = (anchor.textContent || "").replace(/\s+/g, " ").trim() || info.path.split("/").pop();
+          var wantsDownload = anchor.hasAttribute("download") || info.downloadish;
+
+          if (wantsDownload) {
+            triggerDownload(info.href, anchor.getAttribute("download") || "");
+            openViewer({
+              href: info.href,
+              title: label,
+              returnSectionId: sourceId,
+              mode: "download"
+            });
+            return;
+          }
+
+          if (info.viewable) {
+            openViewer({
+              href: info.href,
+              title: label,
+              returnSectionId: sourceId,
+              mode: "view"
+            });
+            return;
+          }
+
+          openViewer({
+            href: info.href,
+            title: label,
+            returnSectionId: sourceId,
+            mode: "external"
+          });
+        }, true);
+      }
+
       syncHeaderOffset();
       window.addEventListener("resize", syncHeaderOffset);
       initFolds();
       wireNav();
       wireFab();
+      wireDocViewer();
       openFromHash();
     })();
   </script>
