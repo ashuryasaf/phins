@@ -1,4 +1,4 @@
-"""Static integrity for pitch-dashboard foldable tabs + header nav."""
+"""Static integrity for pitch-dashboard foldable tabs + document return nav."""
 
 from pathlib import Path
 
@@ -28,9 +28,11 @@ def test_pitch_header_branding_and_back_controls():
     html = _html()
     assert 'id="pitch-top"' in html
     assert 'src="/phins-logo.svg"' in html
-    assert 'id="pitch-back-header"' in html
+    # Back-to-header lives on each tab body (injected), not the sticky header.
+    assert 'id="pitch-back-header"' not in html
+    assert "pitch-tab-back" in html
+    assert "↑ Back to header" in html
     assert 'id="pitch-back-fab"' in html
-    assert "Back to header" in html
     assert "Space Grotesk" in html
     assert "pitch-nav" in html
 
@@ -47,6 +49,7 @@ def test_pitch_fold_script_registers_sections():
     assert "PITCH_FOLD_IDS" in html
     assert "pitch-fold-toggle" in html
     assert "scrollToId" in html
+    assert "injectTabBack" in html
     for section_id in (
         "investor-documents-section",
         "fintl-vc-meetings-aug",
@@ -56,8 +59,23 @@ def test_pitch_fold_script_registers_sections():
         assert f'"{section_id}"' in html
 
 
+def test_pitch_document_viewer_return_controls():
+    """Opened/downloaded docs expose Back / × that return to the source tab."""
+    html = _html()
+    assert 'id="pitch-doc-viewer"' in html
+    assert 'id="pitch-doc-back"' in html
+    assert 'id="pitch-doc-close"' in html
+    assert 'id="pitch-doc-fallback-back"' in html
+    assert "wireDocViewer" in html
+    assert "findSourceSectionId" in html
+    assert "returnSectionId" in html
+    assert "Back to tab" in html
+    # Presentation-only; does not rewrite document contents or bypass the gate.
+    assert "Presentation-only intercept" in html
+
+
 def test_pitch_fold_preserves_data_integrity_notices():
-    """Folding is presentation-only — integrity copy must remain in the HTML."""
+    """Folding / viewer is presentation-only — integrity copy must remain."""
     html = _html()
     assert "Data integrity notice" in html
     assert "hash-chained" in html or "append-only" in html
