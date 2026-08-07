@@ -95,6 +95,10 @@ def load_actuarial_store(store: Any, path: Optional[str] = None) -> bool:
             kwargs.setdefault("life_share_of_coverage", 1.0)
             kwargs.setdefault("life_share_of_coverage_post65", 0.25)
             kwargs.setdefault("disability_band_age", 65)
+            kwargs.setdefault("pre65_disability_continues_policy", True)
+            kwargs.setdefault("post_disability_life_share_of_face", 0.75)
+            kwargs.setdefault("post_disability_premium_factor", 1.0)
+            kwargs.setdefault("post65_claims_mutually_exclusive", True)
             for _k in (
                 "smoker_mortality_factor", "smoker_disability_factor",
                 "former_smoker_mortality_factor", "former_smoker_disability_factor",

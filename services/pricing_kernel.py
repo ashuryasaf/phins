@@ -201,6 +201,13 @@ class PricingConfig:
     life_share_of_coverage: float = 1.0
     life_share_of_coverage_post65: float = 0.25
     disability_band_age: int = 65
+    # Post-disability administration (does not change healthy-life quote PV
+    # while claim_model stays MUTUALLY_EXCLUSIVE). Default premium factor
+    # 1.0 = continue charging 100% of the pre-claim combined premium.
+    pre65_disability_continues_policy: bool = True
+    post_disability_life_share_of_face: float = 0.75
+    post_disability_premium_factor: float = 1.0
+    post65_claims_mutually_exclusive: bool = True
     # Demographic rate multipliers (dashboard-adjustable). Defaults are 1.0
     # (neutral) so existing unisex/unismoker pricing is unchanged until the
     # actuary tunes them. Applied separately to mortality (life) and
@@ -557,6 +564,12 @@ class PremiumComponents:
     disability_sum_used: float = 0.0
     life_share_used: float = 1.0
     life_sum_used: float = 0.0
+    # Post-disability administration knobs stamped for audit (quote PV
+    # remains mutually exclusive by default — combined premium unchanged).
+    post_disability_premium_factor: float = 1.0
+    post_disability_life_share_of_face: float = 0.75
+    pre65_disability_continues_policy: bool = True
+    post65_claims_mutually_exclusive: bool = True
     # Composite demographic multipliers actually applied to this price
     # (smoking × sex × ethnicity), plus the resolved attribute labels.
     demographic_mortality_factor: float = 1.0
@@ -1130,6 +1143,18 @@ def price_policy(
         disability_sum_used=round(float(disability_sum_used), 2),
         life_share_used=round(float(resolved_life_share), 6),
         life_sum_used=round(float(life_sum_used), 2),
+        post_disability_premium_factor=round(
+            float(getattr(config, "post_disability_premium_factor", 1.0)), 6
+        ),
+        post_disability_life_share_of_face=round(
+            float(getattr(config, "post_disability_life_share_of_face", 0.75)), 6
+        ),
+        pre65_disability_continues_policy=bool(
+            getattr(config, "pre65_disability_continues_policy", True)
+        ),
+        post65_claims_mutually_exclusive=bool(
+            getattr(config, "post65_claims_mutually_exclusive", True)
+        ),
         demographic_mortality_factor=round(float(demo["mortality_factor"]), 6),
         demographic_disability_factor=round(float(demo["disability_factor"]), 6),
         smoking_status_used=demo.get("smoking"),
@@ -1229,6 +1254,18 @@ def price_policy(
             "life_sum": _round6(life_sum_used),
             "disability_sum": _round6(disability_sum_used),
             "disability_band_age": int(getattr(config, "disability_band_age", 65) or 65),
+            "pre65_disability_continues_policy": bool(
+                getattr(config, "pre65_disability_continues_policy", True)
+            ),
+            "post_disability_life_share_of_face": _round6(
+                float(getattr(config, "post_disability_life_share_of_face", 0.75))
+            ),
+            "post_disability_premium_factor": _round6(
+                float(getattr(config, "post_disability_premium_factor", 1.0))
+            ),
+            "post65_claims_mutually_exclusive": bool(
+                getattr(config, "post65_claims_mutually_exclusive", True)
+            ),
             "demographic_mortality_factor": _round6(float(demo["mortality_factor"])),
             "demographic_disability_factor": _round6(float(demo["disability_factor"])),
             "smoking_status": demo.get("smoking"),
@@ -1356,6 +1393,18 @@ def pricing_config_from_underwriting(uw_config: Any,
         life_share_of_coverage=float(resolved_life),
         life_share_of_coverage_post65=float(resolved_life_post),
         disability_band_age=int(band),
+        pre65_disability_continues_policy=bool(
+            getattr(uw_config, "pre65_disability_continues_policy", True)
+        ),
+        post_disability_life_share_of_face=max(
+            0.0, min(1.0, float(getattr(uw_config, "post_disability_life_share_of_face", 0.75)))
+        ),
+        post_disability_premium_factor=max(
+            0.0, min(5.0, float(getattr(uw_config, "post_disability_premium_factor", 1.0)))
+        ),
+        post65_claims_mutually_exclusive=bool(
+            getattr(uw_config, "post65_claims_mutually_exclusive", True)
+        ),
         smoker_mortality_factor=_f("smoker_mortality_factor"),
         smoker_disability_factor=_f("smoker_disability_factor"),
         former_smoker_mortality_factor=_f("former_smoker_mortality_factor"),

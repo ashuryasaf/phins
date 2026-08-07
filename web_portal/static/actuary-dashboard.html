@@ -1758,6 +1758,45 @@
               </div>
             </div>
           </div>
+
+          <div class="card">
+            <div class="card-title">Claim Interaction &amp; Post-Disability Premium</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              <strong>Before 65:</strong> disability pays D = life÷4; policy continues with remaining life
+              (default 75% of face). <strong>From 65:</strong> one of life / disability pays at the
+              stepped-down sum (mutually exclusive by default).
+              Healthy-life <em>combined premium quotes are unchanged</em>. After a pre-65 disability
+              claim, ongoing premium = factor × pre-claim combined (default <strong>100%</strong> = no change).
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Post-disability premium (% of combined)</label>
+                <input type="number" id="post-disability-premium-factor" class="form-input" value="100" min="0" max="500" step="1"
+                       oninput="updatePostDisabilityPremiumDisplay()">
+                <small id="post-disability-premium-display" style="color:var(--text-light);">Default 100% — keep charging the full combined premium after disability</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Remaining life after pre-65 disability (% of face)</label>
+                <input type="number" id="post-disability-life-share" class="form-input" value="75" min="0" max="100" step="1"
+                       oninput="updatePostDisabilityPremiumDisplay()">
+                <small id="post-disability-life-display" style="color:var(--text-light);">Default 75% — acceleration of one quarter of face</small>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;gap:8px;">
+                  <input type="checkbox" id="pre65-disability-continues" checked>
+                  Pre-65 disability continues the policy (acceleration)
+                </label>
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;gap:8px;">
+                  <input type="checkbox" id="post65-claims-exclusive" checked>
+                  Post-65 claims mutually exclusive (one of life / disability)
+                </label>
+              </div>
+            </div>
+          </div>
           
           <div class="card">
             <div class="card-title">Demographic Risk Factors (Life &amp; Disability)</div>
@@ -3576,7 +3615,20 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (lifeSharePostInput) {
         lifeSharePostInput.value = (lifeSharePost * 100).toFixed(2);
       }
+      const premFactor = (typeof currentConfig.post_disability_premium_factor === 'number')
+        ? currentConfig.post_disability_premium_factor : 1.0;
+      const lifeRemain = (typeof currentConfig.post_disability_life_share_of_face === 'number')
+        ? currentConfig.post_disability_life_share_of_face : 0.75;
+      const premEl = document.getElementById('post-disability-premium-factor');
+      if (premEl) premEl.value = (premFactor * 100).toFixed(0);
+      const lifeRemainEl = document.getElementById('post-disability-life-share');
+      if (lifeRemainEl) lifeRemainEl.value = (lifeRemain * 100).toFixed(0);
+      const contEl = document.getElementById('pre65-disability-continues');
+      if (contEl) contEl.checked = currentConfig.pre65_disability_continues_policy !== false;
+      const exclEl = document.getElementById('post65-claims-exclusive');
+      if (exclEl) exclEl.checked = currentConfig.post65_claims_mutually_exclusive !== false;
       updateDisabilityRatioDisplay();
+      updatePostDisabilityPremiumDisplay();
       
       if (currentConfig.loadings) {
         document.getElementById('loading-6').value = (currentConfig.loadings['6'] || 0.15) * 100;
@@ -4051,6 +4103,18 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (!Number.isNaN(lifeSharePost)) {
         config.life_share_of_coverage_post65 = lifeSharePost / 100;
       }
+      const postPremPct = parseFloat(document.getElementById('post-disability-premium-factor')?.value);
+      if (!Number.isNaN(postPremPct)) {
+        config.post_disability_premium_factor = postPremPct / 100;
+      }
+      const postLifePct = parseFloat(document.getElementById('post-disability-life-share')?.value);
+      if (!Number.isNaN(postLifePct)) {
+        config.post_disability_life_share_of_face = postLifePct / 100;
+      }
+      const contEl = document.getElementById('pre65-disability-continues');
+      if (contEl) config.pre65_disability_continues_policy = !!contEl.checked;
+      const exclEl = document.getElementById('post65-claims-exclusive');
+      if (exclEl) config.post65_claims_mutually_exclusive = !!exclEl.checked;
       
       try {
         const res = await fetch('/api/actuarial/config', {
@@ -6056,6 +6120,23 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
     }
 
+    function updatePostDisabilityPremiumDisplay() {
+      const pct = parseFloat(document.getElementById('post-disability-premium-factor')?.value || '100');
+      const lifePct = parseFloat(document.getElementById('post-disability-life-share')?.value || '75');
+      const premDisp = document.getElementById('post-disability-premium-display');
+      const lifeDisp = document.getElementById('post-disability-life-display');
+      if (premDisp) {
+        if (Math.abs(pct - 100) < 0.5) {
+          premDisp.textContent = 'Default 100% — keep charging the full combined premium after disability';
+        } else {
+          premDisp.textContent = `After pre-65 disability, ongoing premium = ${pct.toFixed(0)}% of pre-claim combined`;
+        }
+      }
+      if (lifeDisp) {
+        lifeDisp.textContent = `Remaining life = ${lifePct.toFixed(0)}% of face after pre-65 disability payment`;
+      }
+    }
+
     function updateDisabilityRatioDisplay() {
       function fmtRatio(raw, prefix) {
         if (!raw || raw <= 0) return `${prefix}: Disability ÷ Life = 0`;
@@ -6608,6 +6689,14 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         disability_share_of_life_post65: disabilitySharePost,
         life_share_of_coverage: lifeShare,
         life_share_of_coverage_post65: lifeSharePost,
+        pre65_disability_continues_policy: kernel.pre65_disability_continues_policy !== false,
+        post_disability_life_share_of_face: Number(
+          kernel.post_disability_life_share_of_face != null ? kernel.post_disability_life_share_of_face : 0.75
+        ),
+        post_disability_premium_factor: Number(
+          kernel.post_disability_premium_factor != null ? kernel.post_disability_premium_factor : 1.0
+        ),
+        post65_claims_mutually_exclusive: kernel.post65_claims_mutually_exclusive !== false,
         expense_loading_pct: expenseLoadingPct,
         profit_margin_pct: profitMarginPct,
         savings_rate: savingsRate,
@@ -7069,21 +7158,56 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           target.status = 'paid';
           target.paid_amount = target.approved_amount || target.amount;
           target.paid_at = ts;
-          // A paid mortality (death) claim terminates the policy: no further
-          // premium is collected and no further claim can arise.
           const owner = customers.find(c => c.id === target.customer_id);
           if (owner && target.type === 'mortality') {
+            // Death always ends the policy.
             owner.policy_status = 'terminated';
             owner.terminated_at = ts;
-            // Void any still-outstanding premium bills for the terminated policy.
             sb.bills.forEach(b => {
               if (b.customer_id === owner.id && (b.status === 'outstanding' || b.status === 'overdue')) {
                 b.status = 'voided';
               }
             });
             sandboxLogEvent('claim', `Death claim ${target.id} paid ${sandboxFmtMoney(target.paid_amount)} — policy ${target.policy_id} terminated.`, 'breaking');
-          } else {
-            sandboxLogEvent('claim', `Disability claim ${target.id} paid out ${sandboxFmtMoney(target.paid_amount)} (${target.cause || 'permanent disability'}).`, 'info');
+          } else if (owner && target.type === 'disability') {
+            // Pre-65: acceleration — pay D, continue with remaining life and
+            // ongoing premium = factor × pre-claim combined (default 100%).
+            // Post-65: mutually exclusive — one claim settles (policy ends).
+            const bandAge = Number(contract.disability_band_age != null ? contract.disability_band_age : disabilityBandAge);
+            const continues = contract.pre65_disability_continues_policy !== false;
+            const exclusivePost = contract.post65_claims_mutually_exclusive !== false;
+            const lifeRemainShare = Number(contract.post_disability_life_share_of_face != null ? contract.post_disability_life_share_of_face : 0.75);
+            const premFactor = Number(contract.post_disability_premium_factor != null ? contract.post_disability_premium_factor : 1.0);
+            const face = Number(owner.coverage_amount) || 0;
+            const combinedMonthly = Number(owner.monthly_premium) || 0;
+            const ageAtClaim = Number(owner.age) || 0;
+            if (ageAtClaim < bandAge && continues) {
+              const remaining = Math.round(face * lifeRemainShare);
+              const ongoingMonthly = Math.round(combinedMonthly * premFactor * 100) / 100;
+              owner.coverage_amount = remaining;
+              owner.pre_disability_combined_monthly = combinedMonthly;
+              owner.post_disability_premium_factor = premFactor;
+              owner.monthly_premium = ongoingMonthly;
+              owner.annual_premium = Math.round(ongoingMonthly * 12);
+              owner.disability_layer_closed = true;
+              owner.disability_eligible = false;
+              sandboxLogEvent(
+                'claim',
+                `Disability claim ${target.id} paid ${sandboxFmtMoney(target.paid_amount)}; policy continues with life ${sandboxFmtMoney(remaining)} and premium ${sandboxFmtMoney(ongoingMonthly)}/mo (${(premFactor * 100).toFixed(0)}% of prior combined).`,
+                'info'
+              );
+            } else if (ageAtClaim >= bandAge && exclusivePost) {
+              owner.policy_status = 'terminated';
+              owner.terminated_at = ts;
+              sb.bills.forEach(b => {
+                if (b.customer_id === owner.id && (b.status === 'outstanding' || b.status === 'overdue')) {
+                  b.status = 'voided';
+                }
+              });
+              sandboxLogEvent('claim', `Post-65 disability claim ${target.id} paid ${sandboxFmtMoney(target.paid_amount)} — mutually exclusive settlement; policy terminated.`, 'breaking');
+            } else {
+              sandboxLogEvent('claim', `Disability claim ${target.id} paid out ${sandboxFmtMoney(target.paid_amount)} (${target.cause || 'permanent disability'}).`, 'info');
+            }
           }
         }
         return;

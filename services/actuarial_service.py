@@ -101,6 +101,19 @@ class UnderwritingConfig:
     life_share_of_coverage: float = 1.0
     life_share_of_coverage_post65: float = 0.25
     disability_band_age: int = 65
+    # Claim interaction (benefit administration). Healthy-life *combined*
+    # premium quoting stays on the mutually-exclusive PV model by default
+    # (no quote change). After a paid disability claim before the band age
+    # the policy may continue with a reduced life sum; the ongoing premium
+    # is ``post_disability_premium_factor × pre-claim combined premium``.
+    # Default factor 1.0 = keep charging 100% of combined (no premium change
+    # at the disability event). Actuaries may lower/raise the factor for a
+    # newer product version or regulatory filing without touching the quote
+    # basis for healthy lives.
+    pre65_disability_continues_policy: bool = True
+    post_disability_life_share_of_face: float = 0.75
+    post_disability_premium_factor: float = 1.0
+    post65_claims_mutually_exclusive: bool = True
     # Demographic rate multipliers (life = mortality, disability = incidence).
     # Defaults 1.0 = neutral / unisex / unismoker until actuary tunes them.
     smoker_mortality_factor: float = 1.0
@@ -554,6 +567,10 @@ class ActuarialTablesStore:
             life_share_of_coverage=1.0,
             life_share_of_coverage_post65=0.25,
             disability_band_age=65,
+            pre65_disability_continues_policy=True,
+            post_disability_life_share_of_face=0.75,
+            post_disability_premium_factor=1.0,
+            post65_claims_mutually_exclusive=True,
             smoker_mortality_factor=1.0,
             smoker_disability_factor=1.0,
             former_smoker_mortality_factor=1.0,
@@ -716,6 +733,27 @@ class ActuarialTablesStore:
             )
         if 'disability_band_age' in updates:
             self.config.disability_band_age = max(1, min(120, int(updates['disability_band_age'])))
+        if 'pre65_disability_continues_policy' in updates:
+            self.config.pre65_disability_continues_policy = bool(
+                updates['pre65_disability_continues_policy']
+            )
+        if 'post_disability_life_share_of_face' in updates:
+            raw = float(updates['post_disability_life_share_of_face'])
+            self.config.post_disability_life_share_of_face = _clamp(
+                raw / 100.0 if raw > 1.0 else raw, 0.0, 1.0,
+            )
+        if 'post_disability_premium_factor' in updates:
+            # Absolute factor (1.0 = 100% of combined). Also accept percent > 1
+            # when clearly a percentage input (e.g. 100 → 1.0, 75 → 0.75).
+            raw = float(updates['post_disability_premium_factor'])
+            if raw > 10.0:
+                # e.g. 100 meaning 100%
+                raw = raw / 100.0
+            self.config.post_disability_premium_factor = _clamp(raw, 0.0, 5.0)
+        if 'post65_claims_mutually_exclusive' in updates:
+            self.config.post65_claims_mutually_exclusive = bool(
+                updates['post65_claims_mutually_exclusive']
+            )
 
         # Demographic multipliers: accept absolute factors (e.g. 1.75) only.
         # Clamp to [0, 10] to keep integrity and avoid runaway premiums.
@@ -859,6 +897,10 @@ class ActuarialTablesStore:
             'life_share_of_coverage': 1.0,
             'life_share_of_coverage_post65': 0.25,
             'disability_band_age': 65,
+            'pre65_disability_continues_policy': True,
+            'post_disability_life_share_of_face': 0.75,
+            'post_disability_premium_factor': 1.0,
+            'post65_claims_mutually_exclusive': True,
             'smoker_mortality_factor': 1.0,
             'smoker_disability_factor': 1.0,
             'former_smoker_mortality_factor': 1.0,
@@ -970,6 +1012,18 @@ class ActuarialTablesStore:
             life_share_of_coverage=defaults.get('life_share_of_coverage', 1.0),
             life_share_of_coverage_post65=defaults.get('life_share_of_coverage_post65', 0.25),
             disability_band_age=int(defaults.get('disability_band_age', 65)),
+            pre65_disability_continues_policy=bool(
+                defaults.get('pre65_disability_continues_policy', True)
+            ),
+            post_disability_life_share_of_face=float(
+                defaults.get('post_disability_life_share_of_face', 0.75)
+            ),
+            post_disability_premium_factor=float(
+                defaults.get('post_disability_premium_factor', 1.0)
+            ),
+            post65_claims_mutually_exclusive=bool(
+                defaults.get('post65_claims_mutually_exclusive', True)
+            ),
             smoker_mortality_factor=float(defaults.get('smoker_mortality_factor', 1.0)),
             smoker_disability_factor=float(defaults.get('smoker_disability_factor', 1.0)),
             former_smoker_mortality_factor=float(defaults.get('former_smoker_mortality_factor', 1.0)),
@@ -1516,6 +1570,30 @@ class PortfolioSimulator:
                 # priced customer in this snapshot used the same value;
                 # changing the actuary table changes every algorithm.
                 'disability_share_of_life': float(self.tables.config.disability_share_of_life),
+                'disability_share_of_life_post65': float(
+                    getattr(self.tables.config, 'disability_share_of_life_post65', 1.0)
+                ),
+                'life_share_of_coverage': float(
+                    getattr(self.tables.config, 'life_share_of_coverage', 1.0)
+                ),
+                'life_share_of_coverage_post65': float(
+                    getattr(self.tables.config, 'life_share_of_coverage_post65', 0.25)
+                ),
+                'disability_band_age': int(
+                    getattr(self.tables.config, 'disability_band_age', 65) or 65
+                ),
+                'pre65_disability_continues_policy': bool(
+                    getattr(self.tables.config, 'pre65_disability_continues_policy', True)
+                ),
+                'post_disability_life_share_of_face': float(
+                    getattr(self.tables.config, 'post_disability_life_share_of_face', 0.75)
+                ),
+                'post_disability_premium_factor': float(
+                    getattr(self.tables.config, 'post_disability_premium_factor', 1.0)
+                ),
+                'post65_claims_mutually_exclusive': bool(
+                    getattr(self.tables.config, 'post65_claims_mutually_exclusive', True)
+                ),
             },
         }
         result['reinsurance_program'] = calculate_reinsurance_program(result, self.tables)
@@ -1959,12 +2037,16 @@ CONTRACT_SPECIFICATION: Dict[str, Any] = {
         'the age-related adjustable risk premium, PHINS provides before age 65: '
         '(a) a Life benefit equal to the contracted face amount (e.g. $500k); and '
         '(b) a Disability benefit equal to life ÷ 4 (e.g. $125k), subject to the '
-        'medical and ADL trigger definitions of the policy. From age 65 the life '
-        'sum steps down to face ÷ 4 (e.g. $125k) and disability equals that '
-        'reduced life sum (D = life, both $125k). The base product carries no '
-        'wallet, no savings, no investment and no other service — only adjustable '
-        'risk cover. A savings add-on may be elected separately and is priced as '
-        'a markup on the risk premium.'
+        'medical and ADL trigger definitions of the policy. A paid disability '
+        'claim before 65 accelerates one quarter of face; the policy continues '
+        'with remaining life at 75% of face, and by default the ongoing premium '
+        'stays at 100% of the pre-claim combined premium (adjustable via Pricing '
+        'Parameters). From age 65 the life sum steps down to face ÷ 4 (e.g. $125k) '
+        'and disability equals that reduced life sum (D = life, both $125k); by '
+        'default only one of death or disability pays at that sum. The base '
+        'product carries no wallet, no savings, no investment and no other '
+        'service — only adjustable risk cover. A savings add-on may be elected '
+        'separately and is priced as a markup on the risk premium.'
     ),
     'reference_policyholder_example': (
         'Reference policyholder: age 35 at issue · standard underwriting class · '
@@ -2022,6 +2104,10 @@ def get_contract_specification() -> Dict[str, Any]:
             return '25% of face (÷4)'
         return f'{s * 100:.1f}% of face'
 
+    prem_factor = float(getattr(cfg, 'post_disability_premium_factor', 1.0))
+    life_remain = float(getattr(cfg, 'post_disability_life_share_of_face', 0.75))
+    continues = bool(getattr(cfg, 'pre65_disability_continues_policy', True))
+    exclusive_post = bool(getattr(cfg, 'post65_claims_mutually_exclusive', True))
     spec['contract_ratios'] = {
         'disability_share_of_life': round(share, 6),
         'disability_share_of_life_post65': round(post, 6),
@@ -2039,6 +2125,31 @@ def get_contract_specification() -> Dict[str, Any]:
         'example_post65_disability': round(500000 * life_post * post, 2),
         'config_version': getattr(cfg, 'config_version', 'cfg_v1'),
         'source': 'UnderwritingConfig age-banded life and disability shares',
+        'adjustable_from_dashboard': True,
+        'persisted': True,
+    }
+    spec['claim_interaction'] = {
+        'pre65_disability_continues_policy': continues,
+        'post_disability_life_share_of_face': round(life_remain, 6),
+        'post_disability_premium_factor': round(prem_factor, 6),
+        'post_disability_premium_factor_display': f'{prem_factor * 100:.1f}% of combined',
+        'post65_claims_mutually_exclusive': exclusive_post,
+        'healthy_life_quote_model': 'mutually_exclusive (combined premium unchanged by default)',
+        'example_pre65': {
+            'face': 500000,
+            'disability_paid': round(500000 * life_pre * share, 2),
+            'remaining_life': round(500000 * life_remain, 2) if continues else 0.0,
+            'ongoing_premium_vs_combined': (
+                f'{prem_factor * 100:.1f}% of pre-claim combined'
+                if continues else 'policy ends'
+            ),
+        },
+        'example_post65': {
+            'face': 500000,
+            'life_or_disability_paid': round(500000 * life_post, 2),
+            'policy_continues': (not exclusive_post),
+            'note': 'One of life / disability at the stepped-down sum (default)',
+        },
         'adjustable_from_dashboard': True,
         'persisted': True,
     }
@@ -2207,6 +2318,103 @@ def contract_benefit_sums_from_config(face_amount: float, age: int,
         disability_share_post=float(getattr(cfg, 'disability_share_of_life_post65', 1.0) if cfg else 1.0),
         band_age=int(getattr(cfg, 'disability_band_age', 65) if cfg else 65),
     )
+
+
+def resolve_disability_claim_outcome(
+    face_amount: float,
+    age: int,
+    combined_premium: float,
+    config: Any = None,
+) -> Dict[str, Any]:
+    """Resolve benefit administration after a qualifying disability claim.
+
+    Pre-65 (default): acceleration — pay D = face×life_share×d_share, policy
+    continues with remaining life = face × ``post_disability_life_share_of_face``
+    (default 0.75). Ongoing premium =
+    ``post_disability_premium_factor × combined_premium`` (default 1.0 = 100%
+    of combined — no premium change at the disability event).
+
+    From 65 (default): mutually exclusive — pay D (= stepped-down life),
+    policy ends (no remaining life / no ongoing premium).
+
+    Healthy-life combined premium quoting is unchanged: this helper is for
+    claim settlement / post-claim billing only.
+    """
+    cfg = config
+    if cfg is None:
+        try:
+            cfg = get_actuarial_store().config
+        except Exception:
+            cfg = None
+    face = float(face_amount)
+    age_i = int(age)
+    band = int(getattr(cfg, 'disability_band_age', 65) if cfg else 65)
+    sums = contract_benefit_sums_from_config(face, age_i, cfg)
+    combined = max(0.0, float(combined_premium))
+    factor = float(getattr(cfg, 'post_disability_premium_factor', 1.0) if cfg else 1.0)
+    if factor < 0:
+        factor = 0.0
+    life_remain_share = float(
+        getattr(cfg, 'post_disability_life_share_of_face', 0.75) if cfg else 0.75
+    )
+    continues_pre = bool(
+        getattr(cfg, 'pre65_disability_continues_policy', True) if cfg else True
+    )
+    exclusive_post = bool(
+        getattr(cfg, 'post65_claims_mutually_exclusive', True) if cfg else True
+    )
+
+    if age_i < band and continues_pre:
+        remaining_life = face * life_remain_share
+        ongoing = round(combined * factor, 2)
+        mode = 'acceleration_pre65'
+        policy_continues = True
+    else:
+        # Post-65 (or pre-65 continuation disabled): one claim settles the risk.
+        remaining_life = 0.0
+        ongoing = 0.0
+        mode = 'mutually_exclusive_post65' if age_i >= band else 'single_claim_pre65'
+        policy_continues = False
+        if age_i >= band and not exclusive_post and continues_pre:
+            # Optional override: allow continuation at post-65 life sum.
+            remaining_life = float(sums['life_sum'])
+            ongoing = round(combined * factor, 2)
+            mode = 'continuation_post65'
+            policy_continues = True
+
+    disability_paid = float(sums['disability_sum'])
+    integrity = {
+        'disability_paid_matches_age_band': abs(
+            disability_paid - float(sums['disability_sum'])
+        ) < 0.01,
+        'ongoing_premium_equals_factor_times_combined': (
+            abs(ongoing - round(combined * factor, 2)) < 0.01
+            if policy_continues else ongoing == 0.0
+        ),
+        'pre65_remaining_is_face_times_share': (
+            abs(remaining_life - face * life_remain_share) < 0.01
+            if (age_i < band and continues_pre and policy_continues) else True
+        ),
+        'default_premium_factor_is_unity_preserving_combined': abs(factor - 1.0) < 1e-9,
+    }
+    return {
+        'face_amount': face,
+        'age': age_i,
+        'band_age': band,
+        'mode': mode,
+        'disability_paid': round(disability_paid, 2),
+        'life_sum_at_claim': round(float(sums['life_sum']), 2),
+        'remaining_life_sum': round(remaining_life, 2),
+        'policy_continues': policy_continues,
+        'pre_claim_combined_premium': round(combined, 2),
+        'post_disability_premium_factor': round(factor, 6),
+        'ongoing_premium': ongoing,
+        'premium_unchanged_vs_combined': (
+            policy_continues and abs(ongoing - combined) < 0.01
+        ),
+        'post_disability_life_share_of_face': round(life_remain_share, 6),
+        'data_integrity': integrity,
+    }
 
 # Backwards-compatibility alias — previous callers held a reference to this name.
 PHINS_FEFFERMAN_MODEL: Dict[str, Any] = RISK_REFERENCE_PROFILES['phins_published_v1']
