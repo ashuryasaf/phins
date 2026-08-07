@@ -1076,6 +1076,10 @@ async function handleSubmit(e) {
         const alloc = formData.coverage?.allocation || {};
         const dist = alloc.distribution || {};
         
+        const tobaccoRaw = formData.health.tobacco || 'no';
+        const smokingStatus = tobaccoRaw === 'yes' ? 'smoker'
+            : tobaccoRaw === 'former' ? 'former'
+            : 'nonsmoker';
         submissionData = {
             customer_name: `${formData.personal.firstName || ''} ${formData.personal.lastName || ''}`.trim(),
             customer_email: formData.personal.email || '',
@@ -1084,11 +1088,17 @@ async function handleSubmit(e) {
             type: 'phins_unified',
             coverage_amount: formData.coverage?.coverageAmount || 500000,
             coverage_years: formData.coverage?.coverageYears || 20,
+            term_years: formData.coverage?.coverageYears || 20,
             age: formData.personal.dob ? calculateAge(formData.personal.dob) : 30,
+            gender: formData.personal.gender || '',
+            smoking_status: smokingStatus,
+            ethnicity: formData.personal.ethnicity || formData.health.ethnicity || '',
             risk_score: calculateRiskScore(),
             medical_exam_required: formData.health.medicalConditions === 'yes' || formData.health.surgery === 'yes',
             questionnaire: {
-                smoke: formData.health.tobacco || 'no',
+                smoke: tobaccoRaw,
+                tobacco: tobaccoRaw,
+                gender: formData.personal.gender || '',
                 medical_conditions: formData.health.medicalConditions || 'no',
                 conditions_list: formData.health.conditionsList || '',
                 surgery: formData.health.surgery || 'no',

@@ -1695,6 +1695,70 @@
             </div>
           </div>
 
+          <button class="btn btn-success" onclick="saveUnderwritingConfig()">💾 Save Underwriting Rules</button>
+          <button class="btn btn-outline" onclick="resetUnderwritingConfig()">↻ Reset to Defaults</button>
+        </section>
+        
+        <!-- Pricing Parameters Section -->
+        <section id="section-pricing" class="section">
+          <h2 class="section-title">Pricing Parameters</h2>
+          
+          <div class="card">
+            <div class="card-title">Margin Settings</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Expense Loading (%)</label>
+                <input type="number" id="expense-loading" class="form-input" value="15" min="0" max="50" step="0.5">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Profit Margin (%)</label>
+                <input type="number" id="profit-margin" class="form-input" value="10" min="0" max="30" step="0.5">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Discount Rate (%)</label>
+                <input type="number" id="discount-rate" class="form-input" value="3.5" min="0" max="10" step="0.1">
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Contract Ratios (Life &amp; Disability) — age-banded</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              Settled risk product on a $500k face:
+              <strong>before 65</strong> life $500k &amp; disability $125k (D = life÷4);
+              <strong>from 65</strong> life steps to $125k (face÷4) &amp; disability = life ($125k).
+              All bands are adjustable and persisted with the actuarial config version.
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Pre-65 Life (% of Face)</label>
+                <input type="number" id="life-share" class="form-input" value="100" min="0" max="100" step="0.1"
+                       oninput="updateDisabilityRatioDisplay()">
+                <small id="life-share-display" style="color:var(--text-light);">Until 65: Life = 100% of face</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Post-65 Life (% of Face)</label>
+                <input type="number" id="life-share-post65" class="form-input" value="25" min="0" max="100" step="0.1"
+                       oninput="updateDisabilityRatioDisplay()">
+                <small id="life-share-post65-display" style="color:var(--text-light);">After 65: Life = 25% of face (÷4)</small>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Pre-65 Disability (% of Life Sum)</label>
+                <input type="number" id="disability-share" class="form-input" value="25" min="0" max="100" step="0.1"
+                       oninput="updateDisabilityRatioDisplay()">
+                <small id="disability-ratio-display" style="color:var(--text-light);">Until 65: Disability ÷ Life = 1 : 4</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Post-65 Disability (% of Life Sum)</label>
+                <input type="number" id="disability-share-post65" class="form-input" value="100" min="0" max="100" step="0.1"
+                       oninput="updateDisabilityRatioDisplay()">
+                <small id="disability-ratio-post65-display" style="color:var(--text-light);">After 65: Disability ÷ Life = 1 : 1</small>
+              </div>
+            </div>
+          </div>
+          
           <div class="card">
             <div class="card-title">Demographic Risk Factors (Life &amp; Disability)</div>
             <p style="color:var(--text-light);margin-bottom:12px;">
@@ -1782,70 +1846,6 @@
                 </tr>
               </tbody>
             </table>
-          </div>
-          
-          <button class="btn btn-success" onclick="saveUnderwritingConfig()">💾 Save Underwriting Rules</button>
-          <button class="btn btn-outline" onclick="resetUnderwritingConfig()">↻ Reset to Defaults</button>
-        </section>
-        
-        <!-- Pricing Parameters Section -->
-        <section id="section-pricing" class="section">
-          <h2 class="section-title">Pricing Parameters</h2>
-          
-          <div class="card">
-            <div class="card-title">Margin Settings</div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Expense Loading (%)</label>
-                <input type="number" id="expense-loading" class="form-input" value="15" min="0" max="50" step="0.5">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Profit Margin (%)</label>
-                <input type="number" id="profit-margin" class="form-input" value="10" min="0" max="30" step="0.5">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Discount Rate (%)</label>
-                <input type="number" id="discount-rate" class="form-input" value="3.5" min="0" max="10" step="0.1">
-              </div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-title">Contract Ratios (Life &amp; Disability) — age-banded</div>
-            <p style="color:var(--text-light);margin-bottom:12px;">
-              Settled risk product on a $500k face:
-              <strong>before 65</strong> life $500k &amp; disability $125k (D = life÷4);
-              <strong>from 65</strong> life steps to $125k (face÷4) &amp; disability = life ($125k).
-              All bands are adjustable and persisted with the actuarial config version.
-            </p>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Pre-65 Life (% of Face)</label>
-                <input type="number" id="life-share" class="form-input" value="100" min="0" max="100" step="0.1"
-                       oninput="updateDisabilityRatioDisplay()">
-                <small id="life-share-display" style="color:var(--text-light);">Until 65: Life = 100% of face</small>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Post-65 Life (% of Face)</label>
-                <input type="number" id="life-share-post65" class="form-input" value="25" min="0" max="100" step="0.1"
-                       oninput="updateDisabilityRatioDisplay()">
-                <small id="life-share-post65-display" style="color:var(--text-light);">After 65: Life = 25% of face (÷4)</small>
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Pre-65 Disability (% of Life Sum)</label>
-                <input type="number" id="disability-share" class="form-input" value="25" min="0" max="100" step="0.1"
-                       oninput="updateDisabilityRatioDisplay()">
-                <small id="disability-ratio-display" style="color:var(--text-light);">Until 65: Disability ÷ Life = 1 : 4</small>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Post-65 Disability (% of Life Sum)</label>
-                <input type="number" id="disability-share-post65" class="form-input" value="100" min="0" max="100" step="0.1"
-                       oninput="updateDisabilityRatioDisplay()">
-                <small id="disability-ratio-post65-display" style="color:var(--text-light);">After 65: Disability ÷ Life = 1 : 1</small>
-              </div>
-            </div>
           </div>
           
           <button class="btn btn-success" onclick="savePricingParams()">💾 Save Pricing Parameters</button>
@@ -1966,7 +1966,7 @@
               </div>
             </div>
 
-            <h4 style="margin:20px 0 12px;">Demographics (Reporting Only)</h4>
+            <h4 style="margin:20px 0 12px;">Demographics (priced via Pricing Parameters factors)</h4>
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Male %</label>
@@ -1976,9 +1976,21 @@
                 <label class="form-label">Female %</label>
                 <input type="number" id="sim-female" class="form-input" value="51" min="0" max="100">
               </div>
+              <div class="form-group">
+                <label class="form-label">Current smokers %</label>
+                <input type="number" id="sim-smoker" class="form-input" value="15" min="0" max="100" step="0.1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Former smokers %</label>
+                <input type="number" id="sim-former-smoker" class="form-input" value="10" min="0" max="100" step="0.1">
+              </div>
             </div>
+            <p style="color:var(--text-light);margin:0 0 12px;">
+              Remaining share = nonsmokers. Smoking / sex / ethnicity multipliers come from
+              <em>Pricing Parameters → Demographic Risk Factors</em> (persisted).
+            </p>
             
-            <h4 style="margin:20px 0 12px;">Ethnicity Distribution (Reporting Only)</h4>
+            <h4 style="margin:20px 0 12px;">Ethnicity Distribution</h4>
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Caucasian %</label>
@@ -3951,10 +3963,6 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     
     // Save functions
     async function saveUnderwritingConfig() {
-      const num = (id, fallback = 1.0) => {
-        const v = parseFloat(document.getElementById(id)?.value);
-        return Number.isFinite(v) ? v : fallback;
-      };
       const config = {
         decline_threshold: parseInt(document.getElementById('decline-threshold').value),
         disability_exclusion_threshold: parseInt(document.getElementById('disability-exclusion').value),
@@ -3967,31 +3975,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           6: parseFloat(document.getElementById('limit-6').value),
           7: parseFloat(document.getElementById('limit-7').value),
           8: parseFloat(document.getElementById('limit-8').value)
-        },
-        smoker_mortality_factor: num('factor-smoker-mort'),
-        smoker_disability_factor: num('factor-smoker-dis'),
-        former_smoker_mortality_factor: num('factor-former-mort'),
-        former_smoker_disability_factor: num('factor-former-dis'),
-        nonsmoker_mortality_factor: num('factor-nonsmoker-mort'),
-        nonsmoker_disability_factor: num('factor-nonsmoker-dis'),
-        male_mortality_factor: num('factor-male-mort'),
-        male_disability_factor: num('factor-male-dis'),
-        female_mortality_factor: num('factor-female-mort'),
-        female_disability_factor: num('factor-female-dis'),
-        ethnicity_mortality_factors: {
-          caucasian: num('eth-mort-caucasian'),
-          african: num('eth-mort-african'),
-          hispanic: num('eth-mort-hispanic'),
-          asian: num('eth-mort-asian'),
-          other: num('eth-mort-other'),
-        },
-        ethnicity_disability_factors: {
-          caucasian: num('eth-dis-caucasian'),
-          african: num('eth-dis-african'),
-          hispanic: num('eth-dis-hispanic'),
-          asian: num('eth-dis-asian'),
-          other: num('eth-dis-other'),
-        },
+        }
       };
       
       try {
@@ -4017,6 +4001,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     }
     
     async function savePricingParams() {
+      const num = (id, fallback = 1.0) => {
+        const v = parseFloat(document.getElementById(id)?.value);
+        return Number.isFinite(v) ? v : fallback;
+      };
       const dShareInput = parseFloat(document.getElementById('disability-share')?.value);
       const dSharePost = parseFloat(document.getElementById('disability-share-post65')?.value);
       const lifeShareInput = parseFloat(document.getElementById('life-share')?.value);
@@ -4025,6 +4013,30 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         expense_loading_pct: parseFloat(document.getElementById('expense-loading').value) / 100,
         profit_margin_pct: parseFloat(document.getElementById('profit-margin').value) / 100,
         discount_rate: parseFloat(document.getElementById('discount-rate').value) / 100,
+        smoker_mortality_factor: num('factor-smoker-mort'),
+        smoker_disability_factor: num('factor-smoker-dis'),
+        former_smoker_mortality_factor: num('factor-former-mort'),
+        former_smoker_disability_factor: num('factor-former-dis'),
+        nonsmoker_mortality_factor: num('factor-nonsmoker-mort'),
+        nonsmoker_disability_factor: num('factor-nonsmoker-dis'),
+        male_mortality_factor: num('factor-male-mort'),
+        male_disability_factor: num('factor-male-dis'),
+        female_mortality_factor: num('factor-female-mort'),
+        female_disability_factor: num('factor-female-dis'),
+        ethnicity_mortality_factors: {
+          caucasian: num('eth-mort-caucasian'),
+          african: num('eth-mort-african'),
+          hispanic: num('eth-mort-hispanic'),
+          asian: num('eth-mort-asian'),
+          other: num('eth-mort-other'),
+        },
+        ethnicity_disability_factors: {
+          caucasian: num('eth-dis-caucasian'),
+          african: num('eth-dis-african'),
+          hispanic: num('eth-dis-hispanic'),
+          asian: num('eth-dis-asian'),
+          other: num('eth-dis-other'),
+        },
       };
       if (!Number.isNaN(dShareInput)) {
         // Field is entered as a percentage of life sum (e.g. 25 for 1:4)
@@ -4437,6 +4449,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         policy_term_fixed: parseInt(document.getElementById('sim-term-fixed').value),
         male_pct: parseFloat(document.getElementById('sim-male').value),
         female_pct: parseFloat(document.getElementById('sim-female').value),
+        smoker_pct: parseFloat(document.getElementById('sim-smoker')?.value || '15'),
+        former_smoker_pct: parseFloat(document.getElementById('sim-former-smoker')?.value || '10'),
         ethnicity: {
           caucasian: parseFloat(document.getElementById('eth-caucasian').value),
           african: parseFloat(document.getElementById('eth-african').value),

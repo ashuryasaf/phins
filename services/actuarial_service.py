@@ -139,6 +139,10 @@ class SimulationParams:
     policy_term_max: int = 30
     male_pct: float = 49.0
     female_pct: float = 51.0
+    # Smoking mix for simulated portfolio (remainder = nonsmoker).
+    # Priced through Pricing Parameters demographic multipliers.
+    smoker_pct: float = 15.0
+    former_smoker_pct: float = 10.0
     ethnicity: Dict[str, float] = field(default_factory=lambda: {
         'caucasian': 60, 'african': 13, 'hispanic': 18, 'asian': 6, 'other': 3
     })
@@ -1272,6 +1276,7 @@ class PortfolioSimulator:
         demographics = {
             'age_distribution': {},
             'gender': {'male': 0, 'female': 0},
+            'smoking': {'smoker': 0, 'former': 0, 'nonsmoker': 0},
             'ethnicity': {k: 0 for k in params.ethnicity.keys()},
             'adl_distribution': {i: 0 for i in range(1, 11)},
             'coverage_distribution': {},
@@ -1331,6 +1336,10 @@ class PortfolioSimulator:
             demographics['age_distribution'][age_bracket] = \
                 demographics['age_distribution'].get(age_bracket, 0) + 1
             demographics['gender'][customer['gender']] += 1
+            smoke_key = str(customer.get('smoking_status') or 'nonsmoker')
+            if smoke_key not in demographics['smoking']:
+                demographics['smoking'][smoke_key] = 0
+            demographics['smoking'][smoke_key] += 1
             demographics['ethnicity'][customer['ethnicity']] += 1
             demographics['adl_distribution'][customer['adl']] += 1
             
@@ -1546,8 +1555,23 @@ class PortfolioSimulator:
         
         # Gender
         gender = 'male' if random.random() * 100 < params.male_pct else 'female'
+
+        # Smoking status (uses Pricing Parameters demographic multipliers when priced)
+        smoker_pct = max(0.0, float(getattr(params, 'smoker_pct', 0.0) or 0.0))
+        former_pct = max(0.0, float(getattr(params, 'former_smoker_pct', 0.0) or 0.0))
+        if smoker_pct + former_pct > 100.0:
+            scale = 100.0 / (smoker_pct + former_pct)
+            smoker_pct *= scale
+            former_pct *= scale
+        smoke_roll = random.random() * 100.0
+        if smoke_roll < smoker_pct:
+            smoking_status = 'smoker'
+        elif smoke_roll < smoker_pct + former_pct:
+            smoking_status = 'former'
+        else:
+            smoking_status = 'nonsmoker'
         
-        # Ethnicity (for reporting only)
+        # Ethnicity (priced via ethnicity multipliers when non-neutral)
         eth_roll = random.random() * 100
         cumulative = 0
         ethnicity = 'other'
@@ -1563,6 +1587,7 @@ class PortfolioSimulator:
         return {
             'age': age,
             'gender': gender,
+            'smoking_status': smoking_status,
             'ethnicity': ethnicity,
             'coverage': coverage,
             'term': term,
