@@ -92,6 +92,8 @@ def load_actuarial_store(store: Any, path: Optional[str] = None) -> bool:
             # Ensure new band fields exist even on older snapshots
             kwargs.setdefault("disability_share_of_life", 0.25)
             kwargs.setdefault("disability_share_of_life_post65", 1.0)
+            kwargs.setdefault("life_share_of_coverage", 1.0)
+            kwargs.setdefault("life_share_of_coverage_post65", 0.25)
             kwargs.setdefault("disability_band_age", 65)
             kwargs.setdefault("config_version", "cfg_v1")
             store.config = UnderwritingConfig(**kwargs)

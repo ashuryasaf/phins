@@ -85,9 +85,11 @@ class UnderwritingConfig:
     profit_margin_pct: float = 0.10
     discount_rate: float = 0.035
     # Age-banded contract ratios (adjustable from the actuary dashboard).
-    # Pre-65: disability = L ÷ 4 → 0.25 (1:4). Post-65: disability = L → 1.0 (1:1).
+    # Pre-65: life = face, disability = life/4. Post-65: life = face/4, D = life.
     disability_share_of_life: float = 0.25
     disability_share_of_life_post65: float = 1.0
+    life_share_of_coverage: float = 1.0
+    life_share_of_coverage_post65: float = 0.25
     disability_band_age: int = 65
     # Bumped on every durable dashboard save so priced snapshots pin a revision.
     config_version: str = 'cfg_v1'
@@ -521,6 +523,8 @@ class ActuarialTablesStore:
             discount_rate=0.035,
             disability_share_of_life=0.25,
             disability_share_of_life_post65=1.0,
+            life_share_of_coverage=1.0,
+            life_share_of_coverage_post65=0.25,
             disability_band_age=65,
             config_version='cfg_v1',
             last_modified=datetime.now().isoformat(),
@@ -660,6 +664,16 @@ class ActuarialTablesStore:
             self.config.disability_share_of_life_post65 = _clamp(
                 raw / 100.0 if raw > 1.0 else raw, 0.0, 1.0,
             )
+        if 'life_share_of_coverage' in updates:
+            raw = float(updates['life_share_of_coverage'])
+            self.config.life_share_of_coverage = _clamp(
+                raw / 100.0 if raw > 1.0 else raw, 0.0, 1.0,
+            )
+        if 'life_share_of_coverage_post65' in updates:
+            raw = float(updates['life_share_of_coverage_post65'])
+            self.config.life_share_of_coverage_post65 = _clamp(
+                raw / 100.0 if raw > 1.0 else raw, 0.0, 1.0,
+            )
         if 'disability_band_age' in updates:
             self.config.disability_band_age = max(1, min(120, int(updates['disability_band_age'])))
 
@@ -783,6 +797,8 @@ class ActuarialTablesStore:
             'discount_rate': 0.035,
             'disability_share_of_life': 0.25,
             'disability_share_of_life_post65': 1.0,
+            'life_share_of_coverage': 1.0,
+            'life_share_of_coverage_post65': 0.25,
             'disability_band_age': 65,
             'config_version': 'cfg_v1',
         }
@@ -880,6 +896,8 @@ class ActuarialTablesStore:
             discount_rate=defaults['discount_rate'],
             disability_share_of_life=defaults.get('disability_share_of_life', 0.25),
             disability_share_of_life_post65=defaults.get('disability_share_of_life_post65', 1.0),
+            life_share_of_coverage=defaults.get('life_share_of_coverage', 1.0),
+            life_share_of_coverage_post65=defaults.get('life_share_of_coverage_post65', 0.25),
             disability_band_age=int(defaults.get('disability_band_age', 65)),
             config_version=str(defaults.get('config_version', 'cfg_v1')),
             last_modified=datetime.now().isoformat(),
@@ -1754,28 +1772,28 @@ CONTRACT_SPECIFICATION: Dict[str, Any] = {
     'effective_date': '2026-05-12',
     'covered_risks': [
         {
-            'risk_factor': 'Death — natural or accidental',
-            'benefit_formula': 'L · 100% sum insured',
-            'trigger_age': '3 – ∞',
-        },
-        {
-            'risk_factor': 'Permanent total disability (3+ ADL)',
-            'benefit_formula': 'L ÷ 4 · 25% of life sum',
+            'risk_factor': 'Death — natural or accidental (pre-65)',
+            'benefit_formula': 'Face · 100% (e.g. $500k)',
             'trigger_age': '3 – 65',
         },
         {
-            'risk_factor': 'Long-term loss of earning capacity',
-            'benefit_formula': 'L ÷ 4 · capped at life sum ÷ 4',
+            'risk_factor': 'Permanent total disability (3+ ADL) pre-65',
+            'benefit_formula': 'D = life ÷ 4 (e.g. $125k when face=$500k)',
             'trigger_age': '3 – 65',
         },
         {
-            'risk_factor': 'Age 65+ — Disability sum steps to full life sum (1:1)',
-            'benefit_formula': 'D = L · 100% of life sum insured',
+            'risk_factor': 'Long-term loss of earning capacity (pre-65)',
+            'benefit_formula': 'D = life ÷ 4 · capped at then-current life ÷ 4',
+            'trigger_age': '3 – 65',
+        },
+        {
+            'risk_factor': 'Age 65+ — Life sum steps down to face ÷ 4',
+            'benefit_formula': 'Life = face ÷ 4 (e.g. $125k when face=$500k)',
             'trigger_age': '65 – ∞',
         },
         {
-            'risk_factor': 'Death — natural or accidental (continues after 65)',
-            'benefit_formula': 'L × age-adj · age-adjusted sum',
+            'risk_factor': 'Age 65+ — Disability equals reduced life sum (1:1)',
+            'benefit_formula': 'D = life · 100% (e.g. $125k = $125k)',
             'trigger_age': '65 – ∞',
         },
     ],
@@ -1809,8 +1827,8 @@ CONTRACT_SPECIFICATION: Dict[str, Any] = {
         'age-adjusted adjustable-risk premium is required to maintain both the '
         'Life and Disability benefits.',
         'Premium payment liability ages 65+. Premium must continue to maintain '
-        'the age-adjusted death benefit and the post-65 disability layer at '
-        'D = L (1:1 disability to life).',
+        'the stepped-down life sum (face ÷ 4) and disability equal to that '
+        'life sum (D = life, both e.g. $125k on a $500k face).',
         'Disclosure liability. Customer must disclose all material health, '
         'occupational and lifestyle facts at underwriting; non-disclosure voids '
         'the claim.',
@@ -1825,23 +1843,24 @@ CONTRACT_SPECIFICATION: Dict[str, Any] = {
     ],
     'policy_disclaimer': (
         'In the event of underwriting approval, and assuming the customer pays '
-        'the age-related adjustable risk premium from age 3 to age 65 (the '
-        'maximum payment age for the disability benefit), PHINS provides '
-        '(a) a Life benefit equal to the contracted sum insured L; and '
-        '(b) a Disability benefit equal to L ÷ 4 (one quarter of the life sum), '
-        'subject to the medical and ADL trigger definitions of the policy. '
-        'After age 65 the disability sum steps up to D = L (1:1 with the life '
-        'sum) while life cover continues on the age-adjusted curve. The base '
-        'product carries no wallet, no savings, no investment and no other '
-        'service — only adjustable risk cover. A savings add-on may be elected '
-        'separately and is priced as a markup on the risk premium.'
+        'the age-related adjustable risk premium, PHINS provides before age 65: '
+        '(a) a Life benefit equal to the contracted face amount (e.g. $500k); and '
+        '(b) a Disability benefit equal to life ÷ 4 (e.g. $125k), subject to the '
+        'medical and ADL trigger definitions of the policy. From age 65 the life '
+        'sum steps down to face ÷ 4 (e.g. $125k) and disability equals that '
+        'reduced life sum (D = life, both $125k). The base product carries no '
+        'wallet, no savings, no investment and no other service — only adjustable '
+        'risk cover. A savings add-on may be elected separately and is priced as '
+        'a markup on the risk premium.'
     ),
     'reference_policyholder_example': (
         'Reference policyholder: age 35 at issue · standard underwriting class · '
-        'sum insured L = US$500,000 · disability benefit D = L ÷ 4 = US$125,000. '
-        'Premium re-prices each anniversary on the published age curve. Expected '
-        'loss derived from PHINS Actuarial Simulation Tables (life mortality + '
-        'permanent disability incidence, OECD-aligned).'
+        'face = US$500,000 · pre-65 life = $500,000 · disability D = life ÷ 4 = '
+        'US$125,000. From age 65: life steps to $125,000 and disability stays '
+        'equal to life ($125,000). Premium re-prices each anniversary on the '
+        'published age curve. Expected loss derived from PHINS Actuarial '
+        'Simulation Tables (life mortality + permanent disability incidence, '
+        'OECD-aligned).'
     ),
     'savings_addon': {
         'available': True,
@@ -1868,27 +1887,45 @@ def get_contract_specification() -> Dict[str, Any]:
     cfg = get_actuarial_store().config
     share = float(cfg.disability_share_of_life)
     post = float(getattr(cfg, 'disability_share_of_life_post65', 1.0))
+    life_pre = float(getattr(cfg, 'life_share_of_coverage', 1.0))
+    life_post = float(getattr(cfg, 'life_share_of_coverage_post65', 0.25))
     band = int(getattr(cfg, 'disability_band_age', 65) or 65)
 
     def _ratio_display(s: float) -> str:
         if s <= 0:
             return '0'
+        if abs(s - 1.0) < 1e-9:
+            return '1:1'
         inv = 1.0 / s
         rounded = round(inv)
         if abs(inv - rounded) < 0.01:
             return f'1:{int(rounded)}'
-        if abs(s - 1.0) < 1e-9:
-            return '1:1'
         return f'{s:.4f}'
+
+    def _life_display(s: float) -> str:
+        if abs(s - 1.0) < 1e-9:
+            return '100% of face'
+        if abs(s - 0.25) < 1e-9:
+            return '25% of face (÷4)'
+        return f'{s * 100:.1f}% of face'
 
     spec['contract_ratios'] = {
         'disability_share_of_life': round(share, 6),
         'disability_share_of_life_post65': round(post, 6),
+        'life_share_of_coverage': round(life_pre, 6),
+        'life_share_of_coverage_post65': round(life_post, 6),
         'disability_band_age': band,
         'disability_to_life_ratio_display': _ratio_display(share),
         'disability_to_life_ratio_post65_display': _ratio_display(post),
+        'life_share_display': _life_display(life_pre),
+        'life_share_post65_display': _life_display(life_post),
+        'example_face': 500000,
+        'example_pre65_life': round(500000 * life_pre, 2),
+        'example_pre65_disability': round(500000 * life_pre * share, 2),
+        'example_post65_life': round(500000 * life_post, 2),
+        'example_post65_disability': round(500000 * life_post * post, 2),
         'config_version': getattr(cfg, 'config_version', 'cfg_v1'),
-        'source': 'UnderwritingConfig age-banded disability shares',
+        'source': 'UnderwritingConfig age-banded life and disability shares',
         'adjustable_from_dashboard': True,
         'persisted': True,
     }

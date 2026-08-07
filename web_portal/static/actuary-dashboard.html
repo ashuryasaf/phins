@@ -1722,11 +1722,27 @@
           </div>
 
           <div class="card">
-            <div class="card-title">Contract Ratios (Life : Disability) — age-banded</div>
+            <div class="card-title">Contract Ratios (Life &amp; Disability) — age-banded</div>
             <p style="color:var(--text-light);margin-bottom:12px;">
-              Settled risk product: <strong>1:4 until age 65</strong> (D = L÷4), then <strong>1:1 after 65</strong> (D = L).
-              Both bands are adjustable and persisted with the actuarial config version.
+              Settled risk product on a $500k face:
+              <strong>before 65</strong> life $500k &amp; disability $125k (D = life÷4);
+              <strong>from 65</strong> life steps to $125k (face÷4) &amp; disability = life ($125k).
+              All bands are adjustable and persisted with the actuarial config version.
             </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Pre-65 Life (% of Face)</label>
+                <input type="number" id="life-share" class="form-input" value="100" min="0" max="100" step="0.1"
+                       oninput="updateDisabilityRatioDisplay()">
+                <small id="life-share-display" style="color:var(--text-light);">Until 65: Life = 100% of face</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Post-65 Life (% of Face)</label>
+                <input type="number" id="life-share-post65" class="form-input" value="25" min="0" max="100" step="0.1"
+                       oninput="updateDisabilityRatioDisplay()">
+                <small id="life-share-post65-display" style="color:var(--text-light);">After 65: Life = 25% of face (÷4)</small>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Pre-65 Disability (% of Life Sum)</label>
@@ -3439,6 +3455,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         ? currentConfig.disability_share_of_life : 0.25;
       const dSharePost = (typeof currentConfig.disability_share_of_life_post65 === 'number')
         ? currentConfig.disability_share_of_life_post65 : 1.0;
+      const lifeShare = (typeof currentConfig.life_share_of_coverage === 'number')
+        ? currentConfig.life_share_of_coverage : 1.0;
+      const lifeSharePost = (typeof currentConfig.life_share_of_coverage_post65 === 'number')
+        ? currentConfig.life_share_of_coverage_post65 : 0.25;
       const dShareInput = document.getElementById('disability-share');
       if (dShareInput) {
         dShareInput.value = (dShare * 100).toFixed(2);
@@ -3446,6 +3466,14 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const dSharePostInput = document.getElementById('disability-share-post65');
       if (dSharePostInput) {
         dSharePostInput.value = (dSharePost * 100).toFixed(2);
+      }
+      const lifeShareInput = document.getElementById('life-share');
+      if (lifeShareInput) {
+        lifeShareInput.value = (lifeShare * 100).toFixed(2);
+      }
+      const lifeSharePostInput = document.getElementById('life-share-post65');
+      if (lifeSharePostInput) {
+        lifeSharePostInput.value = (lifeSharePost * 100).toFixed(2);
       }
       updateDisabilityRatioDisplay();
       
@@ -3853,6 +3881,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     async function savePricingParams() {
       const dShareInput = parseFloat(document.getElementById('disability-share')?.value);
       const dSharePost = parseFloat(document.getElementById('disability-share-post65')?.value);
+      const lifeShareInput = parseFloat(document.getElementById('life-share')?.value);
+      const lifeSharePost = parseFloat(document.getElementById('life-share-post65')?.value);
       const config = {
         expense_loading_pct: parseFloat(document.getElementById('expense-loading').value) / 100,
         profit_margin_pct: parseFloat(document.getElementById('profit-margin').value) / 100,
@@ -3864,6 +3894,12 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
       if (!Number.isNaN(dSharePost)) {
         config.disability_share_of_life_post65 = dSharePost / 100;
+      }
+      if (!Number.isNaN(lifeShareInput)) {
+        config.life_share_of_coverage = lifeShareInput / 100;
+      }
+      if (!Number.isNaN(lifeSharePost)) {
+        config.life_share_of_coverage_post65 = lifeSharePost / 100;
       }
       
       try {
@@ -5877,12 +5913,24 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         if (Math.abs(inv - rounded) < 0.01) return `${prefix}: Disability ÷ Life = 1 : ${rounded}`;
         return `${prefix}: Disability ÷ Life = ${raw.toFixed(4)}`;
       }
+      function fmtLife(raw, prefix) {
+        if (!raw || raw <= 0) return `${prefix}: Life = 0% of face`;
+        if (Math.abs(raw - 1) < 1e-9) return `${prefix}: Life = 100% of face`;
+        if (Math.abs(raw - 0.25) < 1e-9) return `${prefix}: Life = 25% of face (÷4)`;
+        return `${prefix}: Life = ${(raw * 100).toFixed(1)}% of face`;
+      }
       const display = document.getElementById('disability-ratio-display');
       const raw = parseFloat(document.getElementById('disability-share')?.value || '0') / 100;
       if (display) display.textContent = fmtRatio(raw, 'Until 65');
       const displayPost = document.getElementById('disability-ratio-post65-display');
       const rawPost = parseFloat(document.getElementById('disability-share-post65')?.value || '100') / 100;
       if (displayPost) displayPost.textContent = fmtRatio(rawPost, 'After 65');
+      const lifeDisplay = document.getElementById('life-share-display');
+      const lifeRaw = parseFloat(document.getElementById('life-share')?.value || '100') / 100;
+      if (lifeDisplay) lifeDisplay.textContent = fmtLife(lifeRaw, 'Until 65');
+      const lifeDisplayPost = document.getElementById('life-share-post65-display');
+      const lifeRawPost = parseFloat(document.getElementById('life-share-post65')?.value || '25') / 100;
+      if (lifeDisplayPost) lifeDisplayPost.textContent = fmtLife(lifeRawPost, 'After 65');
     }
 
     async function loadContractSpec() {
@@ -5907,8 +5955,15 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         body.innerHTML = `
           <p><strong>${c.name || 'PHINS Contract'}</strong> · ${c.version || ''} · effective ${c.effective_date || ''} · product <code>${c.product_id || ''}</code></p>
           <p style="color:var(--text-light);">
-            <strong>Contract ratio (actuary-table driven):</strong>
-            Disability ÷ Life = <strong>${cr.disability_to_life_ratio_display || '1:4'}</strong>
+            <strong>Contract bands (actuary-table driven):</strong>
+            pre-65 life <strong>${cr.life_share_display || '100% of face'}</strong>,
+            D÷Life = <strong>${cr.disability_to_life_ratio_display || '1:4'}</strong>
+            → post-65 life <strong>${cr.life_share_post65_display || '25% of face (÷4)'}</strong>,
+            D÷Life = <strong>${cr.disability_to_life_ratio_post65_display || '1:1'}</strong>
+            (e.g. $${Number(cr.example_pre65_life || 500000).toLocaleString()} /
+            $${Number(cr.example_pre65_disability || 125000).toLocaleString()}
+            → $${Number(cr.example_post65_life || 125000).toLocaleString()} /
+            $${Number(cr.example_post65_disability || 125000).toLocaleString()})
             ${cr.adjustable_from_dashboard ? '· editable in <em>Pricing Parameters → Contract Ratios</em>' : ''}
           </p>
           <h4 style="margin-top:8px;">1. Risk Factors — what is covered</h4>
