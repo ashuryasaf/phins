@@ -571,7 +571,7 @@
 
       <div class="doc-title">Executive 1-Pager — Risk Factors, Customer Rights &amp; Liabilities</div>
       <div class="doc-subtitle">
-        PHINS adjustable-risk cover (Life + Disability ages 3–65; Life-only 65+). Pure risk product —
+        PHINS adjustable-risk cover (pre-65: life=face & D=life÷4; from 65: life=face÷4 & D=life). Pure risk product —
         <strong>no wallets, no savings, no investments, no ancillary services</strong> are described, offered or implied
         in this document. All numbers below derive from a single locked actuarial source block; the integrity hash
         below confirms zero downstream mutation.
@@ -610,24 +610,29 @@
             </thead>
             <tbody>
               <tr>
-                <td>Death — natural or accidental</td>
-                <td class="num"><strong>L</strong> · 100% sum insured</td>
-                <td class="num age-band-3-65">3 – ∞</td>
-              </tr>
-              <tr>
-                <td>Permanent total disability (3+ ADL)</td>
-                <td class="num"><strong>L ÷ 4</strong> · 25% of life sum</td>
+                <td>Death — natural or accidental (pre-65)</td>
+                <td class="num"><strong>Face</strong> · 100% sum insured</td>
                 <td class="num age-band-3-65">3 – 65</td>
               </tr>
               <tr>
-                <td>Long-term loss of earning capacity</td>
-                <td class="num"><strong>L ÷ 4</strong> · capped at life sum ÷ 4</td>
+                <td>Permanent total disability (3+ ADL) pre-65</td>
+                <td class="num"><strong>Life ÷ 4</strong> · e.g. $125k on $500k</td>
                 <td class="num age-band-3-65">3 – 65</td>
               </tr>
-              <tr class="split-row"><td colspan="3">Age 65+ — Disability cover ceases automatically</td></tr>
               <tr>
-                <td>Death — natural or accidental (Life-only mode)</td>
-                <td class="num"><strong>L × age-adj</strong> · age-adjusted sum</td>
+                <td>Long-term loss of earning capacity (pre-65)</td>
+                <td class="num"><strong>Life ÷ 4</strong> · capped at life ÷ 4</td>
+                <td class="num age-band-3-65">3 – 65</td>
+              </tr>
+              <tr class="split-row"><td colspan="3">Age 65+ — Life steps to face÷4; disability continues at D=life</td></tr>
+              <tr>
+                <td>Death — natural or accidental (life = face÷4)</td>
+                <td class="num"><strong>Face ÷ 4</strong> · e.g. $125k</td>
+                <td class="num age-band-65">65 – ∞</td>
+              </tr>
+              <tr>
+                <td>Permanent disability 3+ ADL (D = life)</td>
+                <td class="num"><strong>Face ÷ 4</strong> · = stepped-down life</td>
                 <td class="num age-band-65">65 – ∞</td>
               </tr>
             </tbody>
@@ -655,7 +660,7 @@
           <h3><span class="num">3</span>Customer Liabilities</h3>
           <ul>
             <li><strong>Premium payment liability ages 3 – 65.</strong> Continuous payment of the age-adjusted adjustable-risk premium is required to maintain both the Life and Disability benefits.</li>
-            <li><strong>Premium payment liability ages 65+.</strong> Life-only premium must continue to maintain the age-adjusted death benefit; <strong>Disability cover terminates automatically at age 65</strong> and no premium is collected for it thereafter.</li>
+            <li><strong>Premium payment liability ages 65+.</strong> Premium continues for the stepped-down life sum (face÷4) and disability equal to that life sum (D = life).</li>
             <li><strong>Disclosure liability.</strong> Customer must disclose all material health, occupational and lifestyle facts at underwriting; non-disclosure voids the claim.</li>
             <li><strong>Anniversary re-pricing acceptance.</strong> Customer accepts the published age-curve adjustments as a condition of cover continuity.</li>
             <li><strong>No investment / savings claim.</strong> Customer expressly waives any expectation of cash value, surrender, dividend, savings or investment yield — this is a <em>pure risk</em> product.</li>
@@ -667,15 +672,14 @@
           <h3><span class="num">4</span>Policy Disclaimer</h3>
           <div class="disclaimer-block" style="margin-bottom:0;">
             In the event of <strong>underwriting approval</strong>, and assuming the customer pays the
-            <strong>age-related adjustable risk premium</strong> from <strong>age 3 to age 65</strong> (the maximum
-            payment age for the disability benefit), PHINS provides:
+            <strong>age-related adjustable risk premium</strong>, PHINS provides before age 65:
             <br><br>
-            (a) a <strong>Life benefit</strong> equal to the contracted sum insured <em>L</em>; and
-            (b) a <strong>Disability benefit</strong> equal to <em>L ÷ 4</em> (one quarter of the life sum), subject to
+            (a) a <strong>Life benefit</strong> equal to the contracted face amount (e.g. US$500,000); and
+            (b) a <strong>Disability benefit</strong> equal to life ÷ 4 (e.g. US$125,000), subject to
             the medical and ADL trigger definitions of the policy.
             <br><br>
-            <strong>After age 65</strong> the cover automatically converts to a <strong>life-only risk cover</strong> with
-            an age-adjusted benefit; the disability layer ceases and no further disability premium is collected. The
+            <strong>From age 65</strong> the life sum steps down to <strong>face ÷ 4</strong> (e.g. US$125,000) and
+            disability continues equal to that reduced life sum (<strong>D = life</strong>, both US$125,000). The
             product carries <strong>no wallet, no savings, no investment and no other service</strong> — only adjustable
             risk cover.
           </div>
@@ -687,8 +691,9 @@
       <div class="forecast">
         <h3>5-Year Forecast — Reference Policyholder · Adjustable Risk Only</h3>
         <p class="lead">
-          Reference policyholder: <strong>age 35 at issue · standard underwriting class · sum insured L = US$500,000 ·
-          disability benefit D = L ÷ 4 = US$125,000</strong>. Premium re-prices each anniversary on the published age curve.
+          Reference policyholder: <strong>age 35 at issue · standard underwriting class · face = US$500,000 ·
+          pre-65 life = $500,000 · disability D = life ÷ 4 = US$125,000</strong>. From age 65: life steps to $125,000 and
+          disability stays equal to life ($125,000). Premium re-prices each anniversary on the published age curve.
           Expected loss derived from PHINS Actuarial Simulation Tables v3 (life mortality + permanent disability incidence, OECD-aligned).
         </p>
         <div class="forecast-grid" id="forecast-grid"></div>
@@ -752,7 +757,7 @@
         Reference sum insured: <strong>L = US$500,000 (Life)</strong> ·
         <strong>D = US$125,000 (Disability = L ÷ 4)</strong>.
         Premium = monthly base × age factor × policy-line load. Ages 3–65 carry combined Life + Disability;
-        ages 65+ carry Life-only with disability cover terminated.
+        from age 65 life steps to face÷4 and disability equals that reduced life sum.
       </div>
 
       <table class="premium-table" id="premium-table">
@@ -771,15 +776,15 @@
       </table>
 
       <div class="legend-row">
-        <span class="legend-chip"><span class="swatch combined"></span> Combined Life + Disability (ages 3–64)</span>
-        <span class="legend-chip"><span class="swatch cutoff"></span> Disability cut-off (age 65)</span>
-        <span class="legend-chip"><span class="swatch life-only"></span> Life-only adjustable risk (age 65+)</span>
+        <span class="legend-chip"><span class="swatch combined"></span> Combined Life + Disability 1:4 (ages 3–64)</span>
+        <span class="legend-chip"><span class="swatch cutoff"></span> Life steps to face÷4 (age 65)</span>
+        <span class="legend-chip"><span class="swatch life-only"></span> Life÷4 + D=life (age 65+)</span>
       </div>
 
       <div class="actuarial-note">
         <strong>Actuarial simulation methodology.</strong> Age factor is anchored at <em>1.000 at age 25</em> with a
         slope of <em>+0.015 per year</em> through age 65; ages 3–24 use the PHINS youth-curve (linear from 0.30 at age 3
-        to 1.00 at age 25); ages 65+ use the senior-curve (post-disability cut-off, accelerating mortality slope of
+        to 1.00 at age 25); ages 65+ use the senior-curve (life stepped to face÷4 with D=life, accelerating mortality slope of
         +0.05/yr to age 75 then +0.08/yr to age 80). <strong>Life base rate:</strong> US$0.25 per US$1,000 sum
         insured per month. <strong>Disability base rate:</strong> US$0.20 per US$1,000 disability sum per month.
         These coefficients align with the unified actuarial pricing model used across the PHINS underwriting,
@@ -848,7 +853,11 @@
       adultAnchorFactor: 1.00,
       seniorSlope1: 0.05,        // ages 65 -> 75
       seniorSlope2: 0.08,        // ages 75 -> 80+
-      disabilityCutOffAge: 65,
+      bandAge: 65,
+      lifeSharePre: 1.0,
+      lifeSharePost: 0.25,
+      disabilitySharePre: 0.25,
+      disabilitySharePost: 1.0,
       // Mortality table q(x) — OECD healthy insured males, ages 35-39
       mortality: Object.freeze({ 35: 0.00133, 36: 0.00141, 37: 0.00150, 38: 0.00160, 39: 0.00171 }),
       // Permanent 3+ ADL incidence i(x)
@@ -868,29 +877,37 @@
         const a = Math.max(M.youthAnchorAge, age);
         return +(M.youthAnchorFactor + (a - M.youthAnchorAge) * (rise / span)).toFixed(4);
       }
-      if (age <= M.disabilityCutOffAge) {
+      if (age <= M.bandAge) {
         return +(M.adultAnchorFactor + (age - M.adultAnchorAge) * M.coreSlope).toFixed(4);
       }
       // Senior curve
-      let f = ageFactor(M.disabilityCutOffAge);
+      let f = ageFactor(M.bandAge);
       const a = Math.min(age, 80);
       if (a <= 75) {
-        f = f + (a - M.disabilityCutOffAge) * M.seniorSlope1;
+        f = f + (a - M.bandAge) * M.seniorSlope1;
       } else {
-        f = f + (75 - M.disabilityCutOffAge) * M.seniorSlope1 + (a - 75) * M.seniorSlope2;
+        f = f + (75 - M.bandAge) * M.seniorSlope1 + (a - 75) * M.seniorSlope2;
       }
       return +f.toFixed(4);
     }
 
-    function lifeMonthly(age, L) {
-      return (L / 1000) * PHINS_RISK_MODEL.lifeBaseRate * ageFactor(age);
+    function benefitSums(age, face) {
+      const M = PHINS_RISK_MODEL;
+      const post = age >= M.bandAge;
+      const lifeSum = face * (post ? M.lifeSharePost : M.lifeSharePre);
+      const dShare = post ? M.disabilitySharePost : M.disabilitySharePre;
+      return { lifeSum: lifeSum, disabilitySum: lifeSum * dShare, post: post };
     }
-    function disabilityMonthly(age, D) {
-      if (age >= PHINS_RISK_MODEL.disabilityCutOffAge) return 0;
-      return (D / 1000) * PHINS_RISK_MODEL.disabilityBaseRate * ageFactor(age);
+    function lifeMonthly(age, face) {
+      const s = benefitSums(age, face);
+      return (s.lifeSum / 1000) * PHINS_RISK_MODEL.lifeBaseRate * ageFactor(age);
     }
-    function totalMonthly(age, L, D) {
-      return lifeMonthly(age, L) + disabilityMonthly(age, D);
+    function disabilityMonthly(age, face) {
+      const s = benefitSums(age, face);
+      return (s.disabilitySum / 1000) * PHINS_RISK_MODEL.disabilityBaseRate * ageFactor(age);
+    }
+    function totalMonthly(age, face) {
+      return lifeMonthly(age, face) + disabilityMonthly(age, face);
     }
 
     function fmtUSD(v, d) {
@@ -909,20 +926,21 @@
       const tbody = document.querySelector('#premium-table tbody');
       ages.forEach(function (age) {
         const factor = ageFactor(age);
+        const sums = benefitSums(age, M.L);
         const lm = lifeMonthly(age, M.L);
-        const dm = disabilityMonthly(age, M.D);
+        const dm = disabilityMonthly(age, M.L);
         const tm = lm + dm;
         const ta = tm * 12;
-        const isSenior = age >= M.disabilityCutOffAge;
-        const isCutoff = age === M.disabilityCutOffAge;
+        const isSenior = age >= M.bandAge;
+        const isCutoff = age === M.bandAge;
         const tr = document.createElement('tr');
         tr.className = isCutoff ? 'cutoff-row' : (isSenior ? 'life-only' : 'combined');
         tr.innerHTML =
-          '<td>Age ' + age + (isCutoff ? ' · Disability cut-off' : '') + '</td>' +
-          '<td>' + (isSenior ? 'Life-only · adjustable' : 'Life + Disability · adjustable') + '</td>' +
+          '<td>Age ' + age + (isCutoff ? ' · Life steps to face÷4' : '') + '</td>' +
+          '<td>' + (isSenior ? 'Life÷4 + D=life · adjustable' : 'Life + Disability (1:4) · adjustable') + '</td>' +
           '<td>' + factor.toFixed(3) + '</td>' +
-          '<td>' + fmtUSD(lm, 2) + '</td>' +
-          '<td>' + (isSenior ? '— (terminated)' : fmtUSD(dm, 2)) + '</td>' +
+          '<td>' + fmtUSD(lm, 2) + ' <small>(L=' + fmtUSD(sums.lifeSum, 0) + ')</small></td>' +
+          '<td>' + fmtUSD(dm, 2) + ' <small>(D=' + fmtUSD(sums.disabilitySum, 0) + ')</small></td>' +
           '<td>' + fmtUSD(tm, 2) + '</td>' +
           '<td>' + fmtUSD(ta, 2) + '</td>';
         tbody.appendChild(tr);
@@ -944,7 +962,8 @@
         const annual = monthly * 12;
         const qx = M.mortality[age] || 0;
         const ix = M.disabilityIncidence[age] || 0;
-        const eLoss = qx * M.L * M.mortalitySeverity + ix * M.D * M.disabilitySeverity;
+        const sums = benefitSums(age, M.L);
+        const eLoss = qx * sums.lifeSum * M.mortalitySeverity + ix * sums.disabilitySum * M.disabilitySeverity;
         const lr = eLoss / annual;
         totalPremium += annual;
         totalELoss += eLoss;
@@ -1047,7 +1066,7 @@
         const docHash = (document.getElementById('doc-hash') ? document.getElementById('doc-hash').textContent : '').trim();
         pdf.setProperties({
           title:    'PHINS Executive 1-Pager \u2014 Risk Brief (Goldsobel)',
-          subject:  'PHINS adjustable-risk cover \u00B7 Life + Disability ages 3-65 / Life-only 65+',
+          subject:  'PHINS adjustable-risk cover \u00B7 pre-65 L & D=L/4 / post-65 L=face/4 & D=L',
           author:   'PHINS',
           keywords: 'PHINS, risk, life, disability, adjustable, confidential, ' + docId + ', ' + docHash,
           creator:  'PHINS Pitch Dashboard'

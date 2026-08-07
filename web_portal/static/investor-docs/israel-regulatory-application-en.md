@@ -1,8 +1,8 @@
 # PHINS — Regulatory Application Memorandum (Israel)
 
 **To:** The Commissioner of the Capital Market, Insurance and Savings Authority (רשות שוק ההון, ביטוח וחיסכון), Jerusalem
-**Re:** Application framework for approval of a new insurance plan under Section 40 of the Supervision of Financial Services (Insurance) Law, 5741-1981 — **PHINS Adjustable Risk Contract: Life Insurance with a Lifelong Permanent-Disability Mechanism (contract ratio 1:4 below age 65; 1:1 from age 65)**
-**Version:** Draft 3.0 (supersedes Draft 2.0, in which the disability layer terminated at age 65; the redesign extends disability cover to insureds aged 65+ and introduces post-claim policy continuation with a one-quarter cover deduction)
+**Re:** Application framework for approval of a new insurance plan under Section 40 of the Supervision of Financial Services (Insurance) Law, 5741-1981 — **PHINS Adjustable Risk Contract: Life Insurance with a Lifelong Permanent-Disability Mechanism (pre-65: life = face & D = life ÷ 4; from 65: life = face ÷ 4 & D = life)**
+**Version:** Draft 3.1 (supersedes Draft 3.0, in which the post-65 disability sum equalled the full face at 1:1; Draft 3.1 keeps lifelong disability but steps the life sum to face ÷ 4 from age 65 so that D = life at the reduced life sum — e.g. face ₪500,000 → life ₪125,000 and disability ₪125,000 — and retains post-claim continuation with a one-quarter cover deduction on the pre-65 face)
 **Status:** Regulatory positioning and actuarial filing base. This memorandum is a drafting framework, not a substitute for formal legal advice or a pre-ruling from the Authority.
 
 ---
@@ -11,9 +11,9 @@
 
 PHINS applies for approval of a single life-insurance plan — the **PHINS Adjustable Risk Contract** — that bundles two benefits in one policy:
 
-1. **Mortality benefit.** On death of the insured at any age, the policy pays the in-force sum insured **L** (100% of the life sum, subject to the post-claim deduction in item 3), as a lump sum. Maximum sum insured at issue below age 65: **₪1,000,000**.
-2. **Permanent-disability benefit — lifelong, age-banded ratio.** On the first occurrence of a permanent long-term-care-grade disability — inability to perform at least **3 Activities of Daily Living (3+ ADL)** or an equivalent cognitive impairment (תשישות נפש) — the policy pays a lump sum of **D(x)**, where x is the attained age at the insured event: **D(x) = L ÷ 4** below age 65 (contract ratio **1 : 4**, capped at **₪250,000**); **D(x) = L** from age 65 (contract ratio **1 : 1**). The disability layer attaches from age 3 and — unlike Draft 2.0 — **does not terminate at age 65**: it continues for insureds aged 65+ for as long as premiums are paid, with a separately identified premium charged for each risk (Section 5.1).
-3. **Post-claim continuation with cover deduction.** Payment of the disability benefit does not terminate the policy. Where disability occurs before death, the policy **may continue**: the life sum insured is reduced by **one quarter** — L′ = 0.75 × L — with effect from the first premium due date following the disability payment, and every subsequent premium is charged on the reduced sum L′ (life risk only; the disability layer terminates upon its single payment). Below age 65 the disability benefit (L ÷ 4) therefore operates as an acceleration of one quarter of the life sum, so the lifetime aggregate below 65 never exceeds L.
+1. **Mortality benefit — age-banded life sum.** Let **F** be the contracted face amount at issue (maximum **₪1,000,000** below age 65). On death at attained age x the policy pays the in-force life sum **L(x)**: **L(x) = F** below age 65; **L(x) = F ÷ 4** from age 65 (subject to the post-claim deduction in item 3), as a lump sum.
+2. **Permanent-disability benefit — lifelong, age-banded ratio.** On the first occurrence of a permanent long-term-care-grade disability — inability to perform at least **3 Activities of Daily Living (3+ ADL)** or an equivalent cognitive impairment (תשישות נפש) — the policy pays a lump sum of **D(x)** at the attained age of the insured event: **D(x) = L(x) ÷ 4 = F ÷ 4** below age 65 (contract ratio **1 : 4**, capped at **₪250,000**); **D(x) = L(x) = F ÷ 4** from age 65 (contract ratio **1 : 1** at the stepped-down life sum). Worked example on F = ₪500,000: below 65 → life ₪500,000 / disability ₪125,000; from 65 → life ₪125,000 / disability ₪125,000. The disability layer attaches from age 3 and **does not terminate at age 65**: it continues for insureds aged 65+ for as long as premiums are paid, with a separately identified premium charged for each risk (Section 5.1).
+3. **Post-claim continuation with cover deduction.** Payment of the disability benefit does not terminate the policy. Where disability occurs before death, the policy **may continue**: below age 65 the life sum is reduced by **one quarter of face** — L′ = 0.75 × F — from the first premium due date following the disability payment; from age 65 the then-current stepped-down life sum L(x) = F ÷ 4 continues (life risk only). The disability layer terminates upon its single payment. Below age 65 the disability benefit (F ÷ 4) therefore operates as an acceleration of one quarter of face, so the lifetime aggregate below 65 never exceeds F.
 
 The plan is a **pure-risk product**: no savings component, no cash value, no surrender value, no dividend, and no investment component. An optional savings add-on exists in the PHINS platform as a separately administered deposit product and is **excluded from this filing**; if offered in Israel it will be filed separately through a properly licensed entity (Section 9.2).
 
@@ -31,23 +31,23 @@ Unlike the framework addressed by the Authority's consolidated circular, Gate 6,
 | Hebrew working name | פינס — ביטוח חיים משולב פיצוי נכות תפקודית קבועה |
 | Legal classification | Life insurance (ביטוח חיים) with a permanent-disability benefit mechanism |
 | Benefit form | Fixed indemnity, lump sum; independent of actual care expenses |
-| Life benefit | L (100% of in-force sum insured), death at any age from entry; reduced to 0.75 × L after a paid disability claim |
-| Disability benefit | D(x) = L ÷ 4 below age 65 (ratio 1:4); D(x) = L from age 65 (ratio 1:1); single payment on first qualifying event |
+| Life benefit | L(x) = F below 65; L(x) = F ÷ 4 from 65; after a paid disability claim below 65 reduced to 0.75 × F |
+| Disability benefit | D(x) = L(x) ÷ 4 = F ÷ 4 below age 65 (ratio 1:4); D(x) = L(x) = F ÷ 4 from age 65 (ratio 1:1 at reduced life); single payment on first qualifying event |
 | Disability trigger | Permanent 3+ ADL dependency or equivalent cognitive impairment |
 | Disability cover window | From age 3, lifelong while premiums are paid (no age-65 termination) |
 | Sum-insured caps (issue below 65) | Life: ₪1,000,000 maximum; disability: ₪250,000 maximum (= cap ÷ 4) |
 | Entry ages | 3–65; both layers continue beyond 65 |
 | Premium | Age-related adjustable risk premium, re-priced at each policy anniversary on a published age curve; a separately identified premium is charged for each risk (life / disability) at every age |
 | Savings / investment | None. Pure risk. |
-| Claim interaction | Disability accelerates one quarter of cover; policy continues at 0.75 × L; one disability claim per lifetime (Section 5.4) |
+| Claim interaction | Disability accelerates one quarter of face below 65 (policy continues at 0.75 × F); from 65 disability equals the stepped-down life sum; one disability claim per lifetime (Section 5.4) |
 
 ### 2.2 Benefit interaction (claims model)
 
 The contract prices and administers the two benefits as a **three-state continuation model** (Section 5.4):
 
 1. **Death without prior disability** pays the full in-force life sum L; the policy terminates.
-2. **Disability before death** pays D(x) — L ÷ 4 below age 65, L from age 65 — and the policy **continues**: the life sum is reduced by one quarter to L′ = 0.75 × L, effective from the first premium due date after the disability payment, and subsequent premiums are charged on L′ (life risk only). The disability layer terminates with its single payment; no second disability claim is possible.
-3. **Death after a paid disability claim** pays the reduced life sum 0.75 × L; the policy terminates.
+2. **Disability before death** pays D(x) — F ÷ 4 below age 65, F ÷ 4 from age 65 — and the policy **continues**: below 65 the life sum becomes L′ = 0.75 × F from the next premium due date; from 65 the stepped-down life sum L(x) = F ÷ 4 continues (life risk only). The disability layer terminates with its single payment; no second disability claim is possible.
+3. **Death after a paid disability claim** pays the then-current reduced life sum (0.75 × F if the disability claim was below 65; otherwise the stepped-down L(x)); the policy terminates.
 
 The three-state present-value model in Section 5.4 is the binding pricing method; the policy wording will state the post-claim sum insured, premium basis, and termination rules explicitly.
 
@@ -77,11 +77,11 @@ The six contractual ADL activities follow the standard Israeli LTC definitions: 
 |---|---|
 | Trigger — life | Death of the insured, any cause, subject to policy exclusions |
 | Trigger — disability | Permanent 3+ ADL / cognitive equivalent, confirmed by medical and functional assessment |
-| Benefit type | Lump sum: L on death (0.75 × L after a paid disability claim); D(x) on qualifying disability — L ÷ 4 below 65, L from 65 |
+| Benefit type | Lump sum: L(x) on death (0.75 × F after a paid disability claim below 65; F ÷ 4 from 65); D(x) on qualifying disability — F ÷ 4 at every age (1:4 to face below 65; 1:1 to stepped-down life from 65) |
 | Waiting period (disability) | 60–90 days from event, per actuarial filing; no waiting period on death benefit |
 | Entry age | 3–65; both layers lifelong while premiums are paid |
 | Sum-insured caps (issue below 65) | Life ₪1,000,000; disability ₪250,000 |
-| Maximum liability | One disability payment of D(x) plus one death payment of the in-force life sum; below 65 the aggregate never exceeds L (acceleration structure); from 65 the aggregate never exceeds 1.75 × L |
+| Maximum liability | One disability payment of D(x) plus one death payment of the in-force life sum; below 65 the aggregate never exceeds F (acceleration structure); from 65 the aggregate never exceeds F ÷ 2 (life F÷4 + disability F÷4) |
 | Premium | Adjustable, age-banded, unisex or gender-based per final filing; re-priced annually on the published age curve (Section 5.2); separately identified premium per risk at every age |
 | Underwriting | Simplified issue with ADL-severity scoring 1–10; declines at severity ≥ 9; loadings per Section 5.7 |
 | Claims assessment | Medical documentation + independent functional assessment |
@@ -95,19 +95,22 @@ All tables below are the canonical PHINS actuarial tables (central tables versio
 
 | Layer | Base rate (per 1,000 sum insured, monthly) |
 |---|---|
-| Life (sum L; 0.75 × L after a paid disability claim) | 0.25 |
-| Disability (sum D(x): L ÷ 4 below 65; L from 65) | 0.20 |
+| Life (sum L(x); 0.75 × F after a paid disability claim below 65) | 0.25 |
+| Disability (sum D(x): F ÷ 4 at every age under Draft 3.1) | 0.20 |
 
 Monthly gross premium at attained age x — a separately identified premium is charged for each risk at every age:
 
 ```
-Premium(x) = (L / 1,000) × 0.25 × f(x)  +  (D(x) / 1,000) × 0.20 × f(x)
-D(x) = L / 4   [x < 65]        D(x) = L   [x >= 65]
-After a paid disability claim (from the next premium due date):
-Premium(x) = (0.75 × L / 1,000) × 0.25 × f(x)          [life risk only]
+L(x) = F          [x < 65] ;  L(x) = F / 4   [x >= 65]
+D(x) = L(x) / 4   [x < 65] ;  D(x) = L(x)    [x >= 65]   (= F / 4 at every age)
+Premium(x) = (L(x) / 1,000) × 0.25 × f(x)  +  (D(x) / 1,000) × 0.20 × f(x)
+After a paid disability claim below 65 (from the next premium due date):
+Premium(x) = (0.75 × F / 1,000) × 0.25 × f(x)          [life risk only]
+After a paid disability claim from 65:
+Premium(x) = (L(x) / 1,000) × 0.25 × f(x)              [life risk only on F/4]
 ```
 
-where f(x) is the published age-factor curve in Section 5.2. Because D = L ÷ 4 below 65, the combined pre-65 rate equals 0.30 per 1,000 of L per month; from age 65 the 1:1 disability layer raises the combined rate to 0.45 per 1,000 of L per month, with each component disclosed separately on the premium notice.
+where f(x) is the published age-factor curve in Section 5.2. Because D = F ÷ 4 below 65, the combined pre-65 rate equals 0.30 per 1,000 of F per month; from age 65 both sums equal F ÷ 4 so the combined rate equals 0.1125 per 1,000 of F per month (equivalently 0.45 per 1,000 of the stepped-down life sum), with each component disclosed separately on the premium notice.
 
 ### 5.2 Age-factor curve f(x) — published re-pricing curve
 
@@ -147,23 +150,25 @@ Underwriting-severity multipliers applied to the table rates by the applicant's 
 | 9 | 1.50 | 5.00 |
 | 10 | 1.80 | 8.00 |
 
-On a qualifying claim the contract pays the **full** disability sum D(x) — L ÷ 4 below age 65, L from age 65 — with the benefit percentage fixed at 100% of D(x) once the permanent 3+ ADL trigger fires. There is no fractional or graded scoring of the paid benefit — this removes the "hidden quantitative manipulation" risk flagged in consumer-protection guidance.
+On a qualifying claim the contract pays the **full** disability sum D(x) — F ÷ 4 below age 65 and F ÷ 4 from age 65 (equal to the stepped-down life sum) — with the benefit percentage fixed at 100% of D(x) once the permanent 3+ ADL trigger fires. There is no fractional or graded scoring of the paid benefit — this removes the "hidden quantitative manipulation" risk flagged in consumer-protection guidance.
 
 ### 5.4 Claim-interaction model (present value of claims)
 
-The redesigned contract is priced on a **three-state continuation model** — healthy → disabled (policy continues at 0.75 × L) → dead — instead of the mutually-exclusive model of Draft 2.0. For each policy year t at attained age x, with P_h = probability the insured is alive with no prior disability claim and P_d = probability the insured is alive after a paid disability claim:
+The redesigned contract is priced on a **three-state continuation model** — healthy → disabled (policy continues at the post-claim life sum) → dead — instead of the mutually-exclusive model of Draft 2.0. For each policy year t at attained age x, with P_h = probability the insured is alive with no prior disability claim and P_d = probability the insured is alive after a paid disability claim:
 
 ```
 PV_disability  = Σ  D(x+t−1) × P_h(t−1) × (1 − q(x+t−1)) × i(x+t−1) × v^t
-PV_mortality   = Σ  [ L × P_h(t−1) × q(x+t−1)
-                      + 0.75 × L × P_d(t−1) × q_d(x+t−1) ] × v^t
+PV_mortality   = Σ  [ L(x+t−1) × P_h(t−1) × q(x+t−1)
+                      + L_post(x+t−1) × P_d(t−1) × q_d(x+t−1) ] × v^t
 Risk premium   = (PV_mortality + PV_disability) / term
 
-D(x) = L / 4  [x < 65] ;  D(x) = L  [x >= 65]
+L(x) = F      [x < 65] ;  L(x) = F / 4  [x >= 65]
+D(x) = L(x)/4 [x < 65] ;  D(x) = L(x)   [x >= 65]
+L_post(x) = 0.75 × F if disability claimed below 65; else L(x)
 q_d(x) = q(x) × 1.80    (disabled-lives mortality: filed ADL-10 multiplier, Section 5.3)
 ```
 
-with discount factor v = 1 / (1 + 3.5%). State transitions: the healthy state is depleted by death (pays L) and by disability incidence (pays D(x) and moves the insured to the disabled state); the disabled state is depleted by death, which pays the reduced life sum 0.75 × L. Premiums collected in the disabled state are the life-risk component only, computed on 0.75 × L.
+with discount factor v = 1 / (1 + 3.5%). State transitions: the healthy state is depleted by death (pays L(x)) and by disability incidence (pays D(x) and moves the insured to the disabled state); the disabled state is depleted by death, which pays L_post(x). Premiums collected in the disabled state are the life-risk component only, computed on L_post(x).
 
 ### 5.5 Lapse assumptions
 
@@ -197,11 +202,11 @@ with discount factor v = 1 / (1 + 3.5%). State transitions: the healthy state is
 | 8 | Accept with loading; disability layer excluded | +50% | 500,000 |
 | 9–10 | Decline | — | — |
 
-For issue below age 65 the plan-level maxima are **₪1,000,000 life** and **₪250,000 disability** (the 1:4 ratio applied to the life cap); the severity-based caps above apply within those maxima. From age 65 the disability sum follows the 1:1 ratio to the in-force life sum.
+For issue below age 65 the plan-level maxima are **₪1,000,000 face / life** and **₪250,000 disability** (the 1:4 ratio applied to the life cap); the severity-based caps above apply within those maxima. From age 65 the in-force life sum steps to face ÷ 4 and the disability sum equals that reduced life sum (1:1).
 
 ### 5.8 Specimen premium schedule (reference policyholder)
 
-Reference case: L = ₪500,000 (within the ₪1,000,000 cap). Below age 65: D = L ÷ 4 = ₪125,000 (within the ₪250,000 cap); combined monthly premium = 150 × f(x). From age 65: D = L = ₪500,000 (1:1); combined monthly premium = 225 × f(x), with each risk premium disclosed separately. Amounts in ₪.
+Reference case: face F = ₪500,000 (within the ₪1,000,000 cap). Below age 65: life L = F = ₪500,000 and D = L ÷ 4 = ₪125,000 (within the ₪250,000 cap); combined monthly premium = 150 × f(x). From age 65: life steps to F ÷ 4 = ₪125,000 and D = life = ₪125,000 (1:1 at the reduced life sum); combined monthly premium = 56.25 × f(x), with each risk premium disclosed separately. Amounts in ₪.
 
 | Attained age | f(x) | Life premium / month | Disability premium / month | Total / month |
 |---|---|---|---|---|
@@ -211,12 +216,12 @@ Reference case: L = ₪500,000 (within the ₪1,000,000 cap). Below age 65: D = 
 | 45 | 1.30 | 162.50 | 32.50 | 195.00 |
 | 55 | 1.45 | 181.25 | 36.25 | 217.50 |
 | 64 | 1.585 | 198.13 | 39.62 | 237.75 |
-| 65 | 1.60 | 200.00 | 160.00 (D = L, 1:1) | 360.00 |
-| 70 | 1.85 | 231.25 | 185.00 | 416.25 |
-| 75 | 2.10 | 262.50 | 210.00 | 472.50 |
-| 80 | 2.50 | 312.50 | 250.00 | 562.50 |
+| 65 | 1.60 | 50.00 (L = F÷4) | 40.00 (D = L, 1:1) | 90.00 |
+| 70 | 1.85 | 57.81 | 46.25 | 104.06 |
+| 75 | 2.10 | 65.63 | 52.50 | 118.13 |
+| 80 | 2.50 | 78.13 | 62.50 | 140.63 |
 
-**Post-claim continuation example.** If the disability benefit is paid at age 68 (D = ₪500,000 at the 1:1 ratio), the policy continues with L′ = 0.75 × 500,000 = ₪375,000; from the next premium due date the monthly premium is the life component only, e.g. at age 70: (375,000 / 1,000) × 0.25 × 1.85 = ₪173.44. If the disability benefit is paid at age 60 (D = ₪125,000), the aggregate exposure remains L: ₪125,000 paid plus ₪375,000 in-force death benefit.
+**Post-claim continuation example.** If the disability benefit is paid at age 68 (D = ₪125,000 = F ÷ 4 at the post-65 1:1 ratio), the policy continues with the stepped-down life sum L = ₪125,000; from the next premium due date the monthly premium is the life component only, e.g. at age 70: (125,000 / 1,000) × 0.25 × 1.85 = ₪57.81. If the disability benefit is paid at age 60 (D = ₪125,000), the aggregate exposure remains F: ₪125,000 paid plus ₪375,000 in-force death benefit (0.75 × F).
 
 ### 5.9 Actuarial filing package
 
@@ -240,13 +245,13 @@ PHINS shall not market, sell, or collect premiums before the properly regulated 
 ## 7. Claims Governance
 
 1. **Principle.** Claims are decided on objective functional criteria, medical documentation, and — where needed — independent functional assessment. The insured receives a written, reasoned decision (approval, partial approval, request for documents, or rejection) within the time limits in the claims-handling circulars.
-2. **No hidden scoring.** The disability benefit is binary at the contractual trigger: once permanent 3+ ADL dependency is confirmed, the full D(x) is paid — L ÷ 4 below age 65, L from age 65. Internal severity scores affect underwriting only, never the paid benefit.
+2. **No hidden scoring.** The disability benefit is binary at the contractual trigger: once permanent 3+ ADL dependency is confirmed, the full D(x) is paid — F ÷ 4 below age 65 and F ÷ 4 from age 65 (D = stepped-down life). Internal severity scores affect underwriting only, never the paid benefit.
 3. **Appeals.** Internal appeal right; right to submit additional medical evidence; review by a senior claims officer; escalation to the insurer's ombudsman and to the Authority.
 4. **Audit trail.** Every underwriting and claims decision is recorded on the platform's append-only, hash-chained ledger; AI tools recommend but never post a binding decision.
 
 ## 8. Consumer Disclosure
 
-The pre-sale consumer summary (Hebrew, plain language) states: what is covered and what is not; the exact insured-event definitions (death; permanent 3+ ADL); the age-banded contract ratio with worked examples (below 65: L = ₪500,000 → D = ₪125,000 at 1:4; from 65: D = L = ₪500,000 at 1:1); the sum-insured caps at issue below 65 (life ₪1,000,000; disability ₪250,000); the waiting period; that the benefit is a lump sum; that premiums re-price annually on a published age curve and that a separate premium is charged for each risk; that after a paid disability claim the policy continues with the life sum reduced by one quarter (to 0.75 × L) from the next premium due date, with the premium recalculated accordingly; that the policy has **no cash, surrender or savings value**; underwriting requirements; claim documents required; who carries the insurance risk; and PHINS's non-insurer platform role. Prohibited representations: "guaranteed approval", "bank-like savings", "government-approved", "covers every disability".
+The pre-sale consumer summary (Hebrew, plain language) states: what is covered and what is not; the exact insured-event definitions (death; permanent 3+ ADL); the age-banded contract sums with worked examples (below 65: face F = ₪500,000 → life ₪500,000 and D = ₪125,000 at 1:4; from 65: life = F ÷ 4 = ₪125,000 and D = life = ₪125,000 at 1:1); the sum-insured caps at issue below 65 (life ₪1,000,000; disability ₪250,000); the waiting period; that the benefit is a lump sum; that premiums re-price annually on a published age curve and that a separate premium is charged for each risk; that after a paid disability claim below 65 the policy continues with the life sum reduced by one quarter of face (to 0.75 × F) from the next premium due date, with the premium recalculated accordingly; that the policy has **no cash, surrender or savings value**; underwriting requirements; claim documents required; who carries the insurance risk; and PHINS's non-insurer platform role. Prohibited representations: "guaranteed approval", "bank-like savings", "government-approved", "covers every disability".
 
 ## 9. Adjacent Products (Out of Scope of This Filing)
 
@@ -276,7 +281,7 @@ AI tools support onboarding, ADL-severity scoring, claims triage and customer se
 | Claims disputes over ADL determination | High | Objective 3-of-6 ADL wording; independent assessment; binary benefit |
 | AI discrimination / privacy | High | Governance per Section 11; human review; audit trail |
 | Misleading marketing | High | Pre-approved scripts; prohibited-representations list (Section 8) |
-| Senior 1:1 disability layer — morbidity accumulation and anti-selection at 65+ | Medium–High | Separately identified senior risk premium; disabled-lives mortality basis (Section 5.4); senior morbidity monitoring; reinsurance of the senior layer (Section 10) |
+| Senior life step-down with 1:1 disability at F÷4 — morbidity accumulation and anti-selection at 65+ | Medium | Separately identified senior risk premium on the reduced sums; disabled-lives mortality basis (Section 5.4); senior morbidity monitoring; reinsurance of the senior layer (Section 10) |
 | Reinsurance not recognized for capital relief | Medium | Solvency review with insurer and reinsurer before filing |
 
 ## 13. Filing Package Checklist
@@ -289,4 +294,4 @@ A. Legal product memorandum (this document, finalized). B. Full policy wording i
 
 ---
 
-*Prepared on the PHINS platform. The rate tables in Section 5 (mortality, disability incidence, ADL multipliers, lapse, age curve, loadings) are the platform's central tables version V2.0, applied by its single deterministic pricing kernel. The Draft 3.0 contract features — the lifelong senior disability layer at the 1:1 ratio, the ₪1,000,000 / ₪250,000 issue caps, and post-claim continuation at 0.75 × L — shall be implemented as a versioned product configuration of the same kernel prior to launch, so every marketed premium reconciles to this filing.*
+*Prepared on the PHINS platform. The rate tables in Section 5 (mortality, disability incidence, ADL multipliers, lapse, age curve, loadings) are the platform's central tables version V2.0, applied by its single deterministic pricing kernel. The Draft 3.1 contract features — lifelong disability with life stepping to face ÷ 4 from age 65 (D = life at the reduced sum), the ₪1,000,000 / ₪250,000 issue caps, and post-claim continuation at 0.75 × F below 65 — are implemented as the versioned product configuration of the same kernel, so every marketed premium reconciles to this filing.*

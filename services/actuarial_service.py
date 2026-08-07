@@ -2115,16 +2115,22 @@ RISK_REFERENCE_PROFILES: Dict[str, Dict[str, Any]] = {
     'phins_published_v1': {
         'id': 'phins_published_v1',
         'name': 'PHINS Published Risk Reference (Life + Permanent ADL Disability)',
-        'version': 'v1.0',
-        'doc_date': '2026-05-07',
+        'version': 'v2.0',
+        'doc_date': '2026-08-07',
         'doc_url': 'https://www.phins.ai/phins-risk-1pager-fefferman.html',
         'doc_title': 'PHINS Executive 1-Pager - Risk Factors',
         'age_curve_id': 'risk_reference_v1',
+        # Face amount at issue; attained-age life/disability sums use age bands.
         'reference_life_sum': 500000.0,
+        'life_share_of_coverage': 1.0,
+        'life_share_of_coverage_post65': 0.25,
         'disability_share_of_life': 0.25,
+        'disability_share_of_life_post65': 1.0,
+        'disability_band_age': 65,
         'life_base_rate_per_1000_monthly': 0.25,
         'disability_base_rate_per_1000_monthly': 0.20,
-        'disability_cut_off_age': 65,
+        # Kept for back-compat readers; no longer zeros disability at 65.
+        'disability_cut_off_age': None,
         'mortality_qx': {
             35: 0.00133, 36: 0.00141, 37: 0.00150, 38: 0.00160, 39: 0.00171,
         },
@@ -2136,8 +2142,71 @@ RISK_REFERENCE_PROFILES: Dict[str, Dict[str, Any]] = {
         'reference_start_age': 35,
         'reference_projection_years': 5,
         'covered_risks': ['mortality', 'permanent_adl_disability'],
+        'contract_rule': (
+            'pre65: life=face & D=life/4; post65: life=face/4 & D=life '
+            '(e.g. $500k face → $125k/$125k)'
+        ),
     },
 }
+
+
+def contract_benefit_sums_at_age(
+    face_amount: float,
+    age: int,
+    *,
+    life_share_pre: float = 1.0,
+    life_share_post: float = 0.25,
+    disability_share_pre: float = 0.25,
+    disability_share_post: float = 1.0,
+    band_age: int = 65,
+) -> Dict[str, float]:
+    """Canonical attained-age life and disability sums (settled product rule).
+
+    Used by risk-reference, valuations, and documentation so every surface
+    agrees: before ``band_age`` life=face & D=life/4; from ``band_age`` life
+    steps to face×life_share_post and D=life (1:1 at the reduced life sum).
+    """
+    face = float(face_amount)
+    age_i = int(age)
+    band = int(band_age or 65)
+    if age_i >= band:
+        life_share = float(life_share_post)
+        d_share = float(disability_share_post)
+    else:
+        life_share = float(life_share_pre)
+        d_share = float(disability_share_pre)
+    life_sum = face * life_share
+    disability_sum = life_sum * d_share
+    return {
+        'face_amount': face,
+        'age': age_i,
+        'band_age': band,
+        'life_share': life_share,
+        'disability_share': d_share,
+        'life_sum': life_sum,
+        'disability_sum': disability_sum,
+        'post_band': age_i >= band,
+    }
+
+
+def contract_benefit_sums_from_config(face_amount: float, age: int,
+                                      config: Any = None) -> Dict[str, float]:
+    """Resolve benefit sums using UnderwritingConfig (dashboard Pricing Parameters)."""
+    cfg = config
+    if cfg is None:
+        try:
+            cfg = get_actuarial_store().config
+        except Exception:
+            cfg = None
+    return contract_benefit_sums_at_age(
+        face_amount,
+        age,
+        life_share_pre=float(getattr(cfg, 'life_share_of_coverage', 1.0) if cfg else 1.0),
+        life_share_post=float(getattr(cfg, 'life_share_of_coverage_post65', 0.25) if cfg else 0.25),
+        disability_share_pre=float(getattr(cfg, 'disability_share_of_life', 0.25) if cfg else 0.25),
+        disability_share_post=float(getattr(cfg, 'disability_share_of_life_post65', 1.0) if cfg else 1.0),
+        band_age=int(getattr(cfg, 'disability_band_age', 65) if cfg else 65),
+    )
 
 # Backwards-compatibility alias — previous callers held a reference to this name.
 PHINS_FEFFERMAN_MODEL: Dict[str, Any] = RISK_REFERENCE_PROFILES['phins_published_v1']
@@ -2187,25 +2256,57 @@ def risk_reference_monthly_premiums(age: int,
                                     life_sum: Optional[float] = None,
                                     profile_id: Optional[str] = None,
                                     disability_share_of_life: Optional[float] = None) -> Dict[str, float]:
-    """Monthly life + permanent ADL disability premium for the reference policyholder."""
+    """Monthly life + permanent ADL disability premium for the reference policyholder.
+
+    Uses settled age bands (life step-down + D=life post-65). Prefer live
+    UnderwritingConfig shares when available so dashboard Pricing Parameters
+    flow into risk-reference valuations.
+    """
     profile = get_risk_reference_profile(profile_id)
-    life = float(life_sum if life_sum is not None else profile['reference_life_sum'])
-    if disability_share_of_life is None:
-        disability_share_of_life = float(profile['disability_share_of_life'])
-    disability = life * float(disability_share_of_life)
+    face = float(life_sum if life_sum is not None else profile['reference_life_sum'])
+    try:
+        cfg = get_actuarial_store().config
+        sums = contract_benefit_sums_from_config(face, age, cfg)
+        if disability_share_of_life is not None and not sums['post_band']:
+            # Explicit pre-65 override for scenario analysis
+            sums = dict(sums)
+            sums['disability_share'] = float(disability_share_of_life)
+            sums['disability_sum'] = sums['life_sum'] * float(disability_share_of_life)
+    except Exception:
+        sums = contract_benefit_sums_at_age(
+            face,
+            age,
+            life_share_pre=float(profile.get('life_share_of_coverage', 1.0)),
+            life_share_post=float(profile.get('life_share_of_coverage_post65', 0.25)),
+            disability_share_pre=float(
+                disability_share_of_life
+                if disability_share_of_life is not None
+                else profile.get('disability_share_of_life', 0.25)
+            ),
+            disability_share_post=float(profile.get('disability_share_of_life_post65', 1.0)),
+            band_age=int(profile.get('disability_band_age', 65) or 65),
+        )
     factor = risk_reference_age_factor(age, profile_id)
-    life_premium = (life / 1000.0) * float(profile['life_base_rate_per_1000_monthly']) * factor
+    life_premium = (
+        (sums['life_sum'] / 1000.0)
+        * float(profile['life_base_rate_per_1000_monthly'])
+        * factor
+    )
     disability_premium = 0.0
-    cutoff = int(profile.get('disability_cut_off_age', 65))
-    if age < cutoff:
+    if float(sums['disability_share']) > 0.0:
         disability_premium = (
-            (disability / 1000.0)
+            (sums['disability_sum'] / 1000.0)
             * float(profile['disability_base_rate_per_1000_monthly'])
             * factor
         )
     return {
         'age': age,
         'age_factor': round(factor, 4),
+        'face_amount': round(face, 2),
+        'life_sum': round(float(sums['life_sum']), 2),
+        'disability_sum': round(float(sums['disability_sum']), 2),
+        'life_share': round(float(sums['life_share']), 6),
+        'disability_share': round(float(sums['disability_share']), 6),
         'life_monthly': round(life_premium, 2),
         'disability_monthly': round(disability_premium, 2),
         'total_monthly': round(life_premium + disability_premium, 2),
@@ -2235,7 +2336,7 @@ def build_risk_reference(start_age: Optional[int] = None,
     profile = get_risk_reference_profile(profile_id)
     start_age = int(start_age if start_age is not None else profile['reference_start_age'])
     projection_years = int(projection_years if projection_years is not None else profile['reference_projection_years'])
-    life = float(life_sum if life_sum is not None else profile['reference_life_sum'])
+    face = float(life_sum if life_sum is not None else profile['reference_life_sum'])
     if disability_share_of_life is None:
         try:
             disability_share_of_life = float(
@@ -2243,7 +2344,6 @@ def build_risk_reference(start_age: Optional[int] = None,
             )
         except Exception:
             disability_share_of_life = float(profile['disability_share_of_life'])
-    disability = life * float(disability_share_of_life)
     mortality_qx = profile.get('mortality_qx', {})
     disability_ix = profile.get('disability_incidence_ix', {})
 
@@ -2253,15 +2353,17 @@ def build_risk_reference(start_age: Optional[int] = None,
     for offset in range(projection_years):
         age = start_age + offset
         premiums = risk_reference_monthly_premiums(
-            age, life_sum=life, profile_id=profile_id,
+            age, life_sum=face, profile_id=profile_id,
             disability_share_of_life=disability_share_of_life,
         )
         annual = premiums['annual_premium']
+        life_at_age = float(premiums.get('life_sum') or face)
+        disability_at_age = float(premiums.get('disability_sum') or 0.0)
         qx = float(mortality_qx.get(age, mortality_qx.get(str(age), 0.0)))
         ix = float(disability_ix.get(age, disability_ix.get(str(age), 0.0)))
         expected_loss = (
-            qx * life * float(profile['mortality_severity'])
-            + ix * disability * float(profile['disability_severity'])
+            qx * life_at_age * float(profile['mortality_severity'])
+            + ix * disability_at_age * float(profile['disability_severity'])
         )
         loss_ratio = (expected_loss / annual) if annual > 0 else 0.0
         cumulative_premium += annual
@@ -2270,7 +2372,11 @@ def build_risk_reference(start_age: Optional[int] = None,
             'year': offset + 1,
             'age': age,
             'age_factor': premiums['age_factor'],
+            'life_sum': life_at_age,
+            'disability_sum': disability_at_age,
             'annual_premium': round(annual, 2),
+            'life_monthly': premiums.get('life_monthly'),
+            'disability_monthly': premiums.get('disability_monthly'),
             'mortality_qx': qx,
             'disability_ix': ix,
             'expected_loss': round(expected_loss, 2),
@@ -2362,32 +2468,51 @@ def build_risk_reference(start_age: Optional[int] = None,
             },
         }
 
+    issue_sums = contract_benefit_sums_from_config(face, start_age)
+    post_sums = contract_benefit_sums_from_config(face, max(start_age, int(issue_sums['band_age'])))
+    band_ok = True
+    for r in yearly:
+        expected_share = (
+            float(disability_share_of_life)
+            if int(r['age']) < int(issue_sums['band_age'])
+            else float(post_sums['disability_share'])
+        )
+        if abs(float(r['disability_sum']) - float(r['life_sum']) * expected_share) >= 0.01:
+            band_ok = False
+            break
+
     payload = {
         'profile_id': profile['id'],
         'source': {
             'document': profile.get('doc_title', 'PHINS Risk Reference'),
             'url': profile.get('doc_url', ''),
-            'version': profile.get('version', 'v1.0'),
+            'version': profile.get('version', 'v2.0'),
             'doc_date': profile.get('doc_date', ''),
         },
         'reference': {
-            'life_sum': life,
-            'disability_sum': round(disability, 2),
+            'face_amount': face,
+            'life_sum': round(float(issue_sums['life_sum']), 2),
+            'disability_sum': round(float(issue_sums['disability_sum']), 2),
+            'life_sum_post65': round(float(post_sums['life_sum']), 2),
+            'disability_sum_post65': round(float(post_sums['disability_sum']), 2),
             'life_base_rate_per_1000_monthly': float(profile['life_base_rate_per_1000_monthly']),
             'disability_base_rate_per_1000_monthly': float(profile['disability_base_rate_per_1000_monthly']),
-            'disability_cut_off_age': int(profile.get('disability_cut_off_age', 65)),
+            'disability_band_age': int(issue_sums['band_age']),
+            'disability_cut_off_age': None,  # settled rule: disability continues post-65
             'start_age': start_age,
             'projection_years': projection_years,
             'covered_risks': list(profile.get('covered_risks', ['mortality', 'permanent_adl_disability'])),
             'age_curve_id': profile.get('age_curve_id', 'risk_reference_v1'),
-            # Contract L:D ratio actually applied to this forecast — pulled
-            # from the actuary table by default so the risk reference always
-            # agrees with the production pricing kernel.
             'disability_share_of_life': float(disability_share_of_life),
+            'disability_share_of_life_post65': float(post_sums['disability_share']),
+            'life_share_of_coverage_post65': float(post_sums['life_share']),
             'disability_to_life_ratio_display': (
                 f'1:{int(round(1.0 / disability_share_of_life))}'
                 if disability_share_of_life and abs(1.0 / disability_share_of_life - round(1.0 / disability_share_of_life)) < 0.01
                 else f'{disability_share_of_life:.4f}'
+            ),
+            'contract_rule': profile.get('contract_rule') or (
+                'pre65: life=face & D=life/4; post65: life=face/4 & D=life'
             ),
         },
         'yearly_projection': yearly,
@@ -2408,10 +2533,10 @@ def build_risk_reference(start_age: Optional[int] = None,
                 'mortality_severity': float(profile['mortality_severity']),
                 'disability_severity': float(profile['disability_severity']),
             },
-            # Prove the disability sum equals life_sum × disability_share to
-            # the cent so the contract L:D ratio is preserved in the forecast.
-            'disability_sum_matches_ratio': abs(
-                disability - life * float(disability_share_of_life)
+            'disability_sum_matches_age_band': band_ok,
+            'issue_age_disability_sum_matches_ratio': abs(
+                float(issue_sums['disability_sum'])
+                - float(issue_sums['life_sum']) * float(disability_share_of_life)
             ) < 0.01,
         },
     }
