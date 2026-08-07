@@ -1694,6 +1694,95 @@
               </select>
             </div>
           </div>
+
+          <div class="card">
+            <div class="card-title">Demographic Risk Factors (Life &amp; Disability)</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              Multipliers applied by the pricing kernel to <strong>mortality (life)</strong> and
+              <strong>disability incidence</strong> rates. Composition: smoking × sex × ethnicity.
+              Default <strong>1.0 = neutral</strong> (unisex / unismoker). Changes persist with
+              <code>config_version</code> and are integrity-hashed on every priced policy.
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Smoker — Life (mortality)</label>
+                <input type="number" id="factor-smoker-mort" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Smoker — Disability</label>
+                <input type="number" id="factor-smoker-dis" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Former smoker — Life</label>
+                <input type="number" id="factor-former-mort" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Former smoker — Disability</label>
+                <input type="number" id="factor-former-dis" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Nonsmoker — Life</label>
+                <input type="number" id="factor-nonsmoker-mort" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Nonsmoker — Disability</label>
+                <input type="number" id="factor-nonsmoker-dis" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Male — Life</label>
+                <input type="number" id="factor-male-mort" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Male — Disability</label>
+                <input type="number" id="factor-male-dis" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Female — Life</label>
+                <input type="number" id="factor-female-mort" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Female — Disability</label>
+                <input type="number" id="factor-female-dis" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+            </div>
+            <p style="margin:12px 0 8px;"><strong>Ethnicity multipliers</strong> (life / disability)</p>
+            <table class="data-table">
+              <thead>
+                <tr><th>Ethnicity</th><th>Life (mortality)</th><th>Disability</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Caucasian</td>
+                  <td><input type="number" id="eth-mort-caucasian" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                  <td><input type="number" id="eth-dis-caucasian" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                </tr>
+                <tr>
+                  <td>African</td>
+                  <td><input type="number" id="eth-mort-african" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                  <td><input type="number" id="eth-dis-african" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                </tr>
+                <tr>
+                  <td>Hispanic</td>
+                  <td><input type="number" id="eth-mort-hispanic" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                  <td><input type="number" id="eth-dis-hispanic" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                </tr>
+                <tr>
+                  <td>Asian</td>
+                  <td><input type="number" id="eth-mort-asian" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                  <td><input type="number" id="eth-dis-asian" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                </tr>
+                <tr>
+                  <td>Other</td>
+                  <td><input type="number" id="eth-mort-other" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                  <td><input type="number" id="eth-dis-other" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           
           <button class="btn btn-success" onclick="saveUnderwritingConfig()">💾 Save Underwriting Rules</button>
           <button class="btn btn-outline" onclick="resetUnderwritingConfig()">↻ Reset to Defaults</button>
@@ -3488,6 +3577,27 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         document.getElementById('limit-7').value = currentConfig.coverage_limits['7'] || 750000;
         document.getElementById('limit-8').value = currentConfig.coverage_limits['8'] || 500000;
       }
+
+      const setFactor = (id, value, fallback = 1.0) => {
+        const el = document.getElementById(id);
+        if (el) el.value = Number(value != null ? value : fallback).toFixed(2);
+      };
+      setFactor('factor-smoker-mort', currentConfig.smoker_mortality_factor);
+      setFactor('factor-smoker-dis', currentConfig.smoker_disability_factor);
+      setFactor('factor-former-mort', currentConfig.former_smoker_mortality_factor);
+      setFactor('factor-former-dis', currentConfig.former_smoker_disability_factor);
+      setFactor('factor-nonsmoker-mort', currentConfig.nonsmoker_mortality_factor);
+      setFactor('factor-nonsmoker-dis', currentConfig.nonsmoker_disability_factor);
+      setFactor('factor-male-mort', currentConfig.male_mortality_factor);
+      setFactor('factor-male-dis', currentConfig.male_disability_factor);
+      setFactor('factor-female-mort', currentConfig.female_mortality_factor);
+      setFactor('factor-female-dis', currentConfig.female_disability_factor);
+      const ethMort = currentConfig.ethnicity_mortality_factors || {};
+      const ethDis = currentConfig.ethnicity_disability_factors || {};
+      ['caucasian', 'african', 'hispanic', 'asian', 'other'].forEach((key) => {
+        setFactor('eth-mort-' + key, ethMort[key]);
+        setFactor('eth-dis-' + key, ethDis[key]);
+      });
     }
 
     function fmtNumber(value, digits = 0) {
@@ -3841,6 +3951,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     
     // Save functions
     async function saveUnderwritingConfig() {
+      const num = (id, fallback = 1.0) => {
+        const v = parseFloat(document.getElementById(id)?.value);
+        return Number.isFinite(v) ? v : fallback;
+      };
       const config = {
         decline_threshold: parseInt(document.getElementById('decline-threshold').value),
         disability_exclusion_threshold: parseInt(document.getElementById('disability-exclusion').value),
@@ -3853,7 +3967,31 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           6: parseFloat(document.getElementById('limit-6').value),
           7: parseFloat(document.getElementById('limit-7').value),
           8: parseFloat(document.getElementById('limit-8').value)
-        }
+        },
+        smoker_mortality_factor: num('factor-smoker-mort'),
+        smoker_disability_factor: num('factor-smoker-dis'),
+        former_smoker_mortality_factor: num('factor-former-mort'),
+        former_smoker_disability_factor: num('factor-former-dis'),
+        nonsmoker_mortality_factor: num('factor-nonsmoker-mort'),
+        nonsmoker_disability_factor: num('factor-nonsmoker-dis'),
+        male_mortality_factor: num('factor-male-mort'),
+        male_disability_factor: num('factor-male-dis'),
+        female_mortality_factor: num('factor-female-mort'),
+        female_disability_factor: num('factor-female-dis'),
+        ethnicity_mortality_factors: {
+          caucasian: num('eth-mort-caucasian'),
+          african: num('eth-mort-african'),
+          hispanic: num('eth-mort-hispanic'),
+          asian: num('eth-mort-asian'),
+          other: num('eth-mort-other'),
+        },
+        ethnicity_disability_factors: {
+          caucasian: num('eth-dis-caucasian'),
+          african: num('eth-dis-african'),
+          hispanic: num('eth-dis-hispanic'),
+          asian: num('eth-dis-asian'),
+          other: num('eth-dis-other'),
+        },
       };
       
       try {

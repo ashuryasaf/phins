@@ -115,6 +115,12 @@ class PricingCustomer:
     term_years: int
     adl_level: int = 5
     gender: Optional[str] = None
+    # Smoking status: never/nonsmoker | former | current/smoker. When unset,
+    # demographic smoking multipliers stay neutral (1.0).
+    smoking_status: Optional[str] = None
+    # Ethnicity key matched against PricingConfig.ethnicity_*_factors
+    # (e.g. caucasian/african/hispanic/asian/other). Also read from cohort.
+    ethnicity: Optional[str] = None
     cohort: Dict[str, str] = field(default_factory=dict)
     # When ``annual_premium_target`` is set, the kernel still returns the
     # decomposed components but uses this as a sanity hint for downstream
@@ -195,6 +201,34 @@ class PricingConfig:
     life_share_of_coverage: float = 1.0
     life_share_of_coverage_post65: float = 0.25
     disability_band_age: int = 65
+    # Demographic rate multipliers (dashboard-adjustable). Defaults are 1.0
+    # (neutral) so existing unisex/unismoker pricing is unchanged until the
+    # actuary tunes them. Applied separately to mortality (life) and
+    # disability incidence rates, then stamped into the integrity hash.
+    smoker_mortality_factor: float = 1.0
+    smoker_disability_factor: float = 1.0
+    former_smoker_mortality_factor: float = 1.0
+    former_smoker_disability_factor: float = 1.0
+    nonsmoker_mortality_factor: float = 1.0
+    nonsmoker_disability_factor: float = 1.0
+    male_mortality_factor: float = 1.0
+    male_disability_factor: float = 1.0
+    female_mortality_factor: float = 1.0
+    female_disability_factor: float = 1.0
+    ethnicity_mortality_factors: Dict[str, float] = field(default_factory=lambda: {
+        "caucasian": 1.0,
+        "african": 1.0,
+        "hispanic": 1.0,
+        "asian": 1.0,
+        "other": 1.0,
+    })
+    ethnicity_disability_factors: Dict[str, float] = field(default_factory=lambda: {
+        "caucasian": 1.0,
+        "african": 1.0,
+        "hispanic": 1.0,
+        "asian": 1.0,
+        "other": 1.0,
+    })
     version: str = "kernel_v1"
 
 
@@ -523,6 +557,14 @@ class PremiumComponents:
     disability_sum_used: float = 0.0
     life_share_used: float = 1.0
     life_sum_used: float = 0.0
+    # Composite demographic multipliers actually applied to this price
+    # (smoking × sex × ethnicity), plus the resolved attribute labels.
+    demographic_mortality_factor: float = 1.0
+    demographic_disability_factor: float = 1.0
+    smoking_status_used: Optional[str] = None
+    gender_used: Optional[str] = None
+    ethnicity_used: Optional[str] = None
+    demographic_factors_applied: Dict[str, Any] = field(default_factory=dict)
     integrity_hash: str = ""
     integrity_checks: Dict[str, bool] = field(default_factory=dict)
 
@@ -628,6 +670,121 @@ def _resolve_disability_share(product: Product, config: PricingConfig,
     return float(post) if age_i >= band else pre
 
 
+def _normalize_smoking_status(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    s = str(raw).strip().lower().replace("-", "_").replace(" ", "_")
+    if s in ("current", "smoker", "yes", "true", "1", "y"):
+        return "smoker"
+    if s in ("former", "ex", "ex_smoker", "exsmoker"):
+        return "former"
+    if s in ("never", "nonsmoker", "non_smoker", "no", "false", "0", "n"):
+        return "nonsmoker"
+    return None
+
+
+def _normalize_sex(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    s = str(raw).strip().lower()
+    if s in ("m", "male", "man"):
+        return "male"
+    if s in ("f", "female", "woman"):
+        return "female"
+    return None
+
+
+def _normalize_ethnicity(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    s = str(raw).strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "caucasian": "caucasian",
+        "white": "caucasian",
+        "african": "african",
+        "black": "african",
+        "african_american": "african",
+        "hispanic": "hispanic",
+        "latino": "hispanic",
+        "latina": "hispanic",
+        "asian": "asian",
+        "other": "other",
+    }
+    return aliases.get(s)
+
+
+def resolve_demographic_rate_factors(
+    customer: PricingCustomer,
+    config: PricingConfig,
+) -> Dict[str, Any]:
+    """Resolve smoking × sex × ethnicity multipliers for life and disability.
+
+    Missing attributes stay neutral (factor 1.0). Config defaults are also 1.0
+    so enabling a factor requires an explicit actuary dashboard change.
+    """
+    cohort = customer.cohort or {}
+    smoking = _normalize_smoking_status(
+        customer.smoking_status
+        or cohort.get("smoker")
+        or cohort.get("smoking")
+        or cohort.get("smoking_status")
+    )
+    sex = _normalize_sex(
+        customer.gender or cohort.get("gender") or cohort.get("sex")
+    )
+    ethnicity = _normalize_ethnicity(
+        customer.ethnicity or cohort.get("ethnicity") or cohort.get("race")
+    )
+
+    smoke_mort = 1.0
+    smoke_dis = 1.0
+    if smoking == "smoker":
+        smoke_mort = float(config.smoker_mortality_factor)
+        smoke_dis = float(config.smoker_disability_factor)
+    elif smoking == "former":
+        smoke_mort = float(config.former_smoker_mortality_factor)
+        smoke_dis = float(config.former_smoker_disability_factor)
+    elif smoking == "nonsmoker":
+        smoke_mort = float(config.nonsmoker_mortality_factor)
+        smoke_dis = float(config.nonsmoker_disability_factor)
+
+    sex_mort = 1.0
+    sex_dis = 1.0
+    if sex == "male":
+        sex_mort = float(config.male_mortality_factor)
+        sex_dis = float(config.male_disability_factor)
+    elif sex == "female":
+        sex_mort = float(config.female_mortality_factor)
+        sex_dis = float(config.female_disability_factor)
+
+    eth_mort_map = dict(config.ethnicity_mortality_factors or {})
+    eth_dis_map = dict(config.ethnicity_disability_factors or {})
+    eth_mort = float(eth_mort_map.get(ethnicity, 1.0)) if ethnicity else 1.0
+    eth_dis = float(eth_dis_map.get(ethnicity, 1.0)) if ethnicity else 1.0
+
+    mort = max(0.0, smoke_mort * sex_mort * eth_mort)
+    dis = max(0.0, smoke_dis * sex_dis * eth_dis)
+    applied = {
+        "smoking": smoking,
+        "sex": sex,
+        "ethnicity": ethnicity,
+        "smoking_mortality": _round6(smoke_mort),
+        "smoking_disability": _round6(smoke_dis),
+        "sex_mortality": _round6(sex_mort),
+        "sex_disability": _round6(sex_dis),
+        "ethnicity_mortality": _round6(eth_mort),
+        "ethnicity_disability": _round6(eth_dis),
+    }
+    return {
+        "mortality_factor": mort,
+        "disability_factor": dis,
+        "applied": applied,
+        "smoking": smoking,
+        "sex": sex,
+        "ethnicity": ethnicity,
+    }
+
+
 def _benefit_sums_for_age(coverage: float, product: Product, config: PricingConfig,
                           age: int) -> Dict[str, float]:
     """Return life_sum and disability_sum for an attained age.
@@ -667,6 +824,9 @@ def _pv_claims_mutually_exclusive(
     coverage = float(customer.coverage)
     term = int(customer.term_years)
     discount_rate = float(config.discount_rate)
+    demo = resolve_demographic_rate_factors(customer, config)
+    demo_mort = float(demo["mortality_factor"])
+    demo_dis = float(demo["disability_factor"])
 
     pv_mortality = 0.0
     pv_disability = 0.0
@@ -674,7 +834,7 @@ def _pv_claims_mutually_exclusive(
 
     for year in range(1, term + 1):
         current_age = age + year - 1
-        qx = tables.mortality_qx(current_age, customer.cohort) * adl_mort_mult
+        qx = tables.mortality_qx(current_age, customer.cohort) * adl_mort_mult * demo_mort
         sums = _benefit_sums_for_age(coverage, product, config, current_age)
         share = sums["disability_share"]
         life_sum = sums["life_sum"]
@@ -686,7 +846,7 @@ def _pv_claims_mutually_exclusive(
             and share > 0.0
         )
         dx = (
-            tables.disability_ix(current_age, customer.cohort) * adl_dis_mult
+            tables.disability_ix(current_age, customer.cohort) * adl_dis_mult * demo_dis
             if disability_active
             else 0.0
         )
@@ -726,15 +886,21 @@ def _pv_claims_independent(
     coverage = float(customer.coverage)
     term = int(customer.term_years)
     discount_rate = float(config.discount_rate)
+    demo = resolve_demographic_rate_factors(customer, config)
+    demo_mort = float(demo["mortality_factor"])
+    demo_dis = float(demo["disability_factor"])
 
     pv_mortality = 0.0
     for year in range(1, term + 1):
         current_age = age + year - 1
-        qx = tables.mortality_qx(current_age, customer.cohort) * adl_mort_mult
+        qx = tables.mortality_qx(current_age, customer.cohort) * adl_mort_mult * demo_mort
         life_sum = _benefit_sums_for_age(coverage, product, config, current_age)["life_sum"]
         px_prev = 1.0
         for y in range(year - 1):
-            px_prev *= max(0.0, 1.0 - tables.mortality_qx(age + y, customer.cohort) * adl_mort_mult)
+            px_prev *= max(
+                0.0,
+                1.0 - tables.mortality_qx(age + y, customer.cohort) * adl_mort_mult * demo_mort,
+            )
         death_prob = px_prev * qx
         discount = (1.0 + discount_rate) ** (-year)
         if config.apply_lapse_adjustment:
@@ -757,9 +923,11 @@ def _pv_claims_independent(
             for y in range(year - 1):
                 survival *= max(
                     0.0,
-                    1.0 - tables.mortality_qx(age + y, customer.cohort) * adl_mort_mult,
+                    1.0 - tables.mortality_qx(age + y, customer.cohort) * adl_mort_mult * demo_mort,
                 )
-            dis_rate = tables.disability_ix(current_age, customer.cohort) * adl_dis_mult
+            dis_rate = (
+                tables.disability_ix(current_age, customer.cohort) * adl_dis_mult * demo_dis
+            )
             discount = (1.0 + discount_rate) ** (-year)
             if config.apply_lapse_adjustment:
                 lapse_survival = 1.0
@@ -859,6 +1027,7 @@ def price_policy(
     resolved_disability_share = issue_sums["disability_share"]
     life_sum_used = issue_sums["life_sum"]
     disability_sum_used = issue_sums["disability_sum"]
+    demo = resolve_demographic_rate_factors(customer, config)
 
     pv_payload = (
         _pv_claims_mutually_exclusive
@@ -961,6 +1130,12 @@ def price_policy(
         disability_sum_used=round(float(disability_sum_used), 2),
         life_share_used=round(float(resolved_life_share), 6),
         life_sum_used=round(float(life_sum_used), 2),
+        demographic_mortality_factor=round(float(demo["mortality_factor"]), 6),
+        demographic_disability_factor=round(float(demo["disability_factor"]), 6),
+        smoking_status_used=demo.get("smoking"),
+        gender_used=demo.get("sex"),
+        ethnicity_used=demo.get("ethnicity"),
+        demographic_factors_applied=dict(demo.get("applied") or {}),
         integrity_checks={
             "components_sum_to_total": abs(
                 annual_premium
@@ -1007,6 +1182,10 @@ def price_policy(
             ),
             "disability_share_within_bounds": 0.0 <= resolved_disability_share <= 1.0,
             "life_share_within_bounds": 0.0 <= resolved_life_share <= 1.0,
+            "demographic_factors_non_negative": (
+                float(demo["mortality_factor"]) >= 0.0
+                and float(demo["disability_factor"]) >= 0.0
+            ),
         },
     )
 
@@ -1050,6 +1229,30 @@ def price_policy(
             "life_sum": _round6(life_sum_used),
             "disability_sum": _round6(disability_sum_used),
             "disability_band_age": int(getattr(config, "disability_band_age", 65) or 65),
+            "demographic_mortality_factor": _round6(float(demo["mortality_factor"])),
+            "demographic_disability_factor": _round6(float(demo["disability_factor"])),
+            "smoking_status": demo.get("smoking"),
+            "gender": demo.get("sex"),
+            "ethnicity": demo.get("ethnicity"),
+            "demographic_factors_applied": demo.get("applied") or {},
+            "smoker_mortality_factor": _round6(float(config.smoker_mortality_factor)),
+            "smoker_disability_factor": _round6(float(config.smoker_disability_factor)),
+            "former_smoker_mortality_factor": _round6(float(config.former_smoker_mortality_factor)),
+            "former_smoker_disability_factor": _round6(float(config.former_smoker_disability_factor)),
+            "nonsmoker_mortality_factor": _round6(float(config.nonsmoker_mortality_factor)),
+            "nonsmoker_disability_factor": _round6(float(config.nonsmoker_disability_factor)),
+            "male_mortality_factor": _round6(float(config.male_mortality_factor)),
+            "male_disability_factor": _round6(float(config.male_disability_factor)),
+            "female_mortality_factor": _round6(float(config.female_mortality_factor)),
+            "female_disability_factor": _round6(float(config.female_disability_factor)),
+            "ethnicity_mortality_factors": {
+                str(k): _round6(float(v))
+                for k, v in sorted((config.ethnicity_mortality_factors or {}).items())
+            },
+            "ethnicity_disability_factors": {
+                str(k): _round6(float(v))
+                for k, v in sorted((config.ethnicity_disability_factors or {}).items())
+            },
         }
     )
     return components
@@ -1117,6 +1320,23 @@ def pricing_config_from_underwriting(uw_config: Any,
     if band is None:
         band = int(getattr(uw_config, "disability_band_age", 65) or 65)
     cfg_version = str(getattr(uw_config, "config_version", None) or "kernel_v1")
+
+    def _f(name: str, default: float = 1.0) -> float:
+        return float(getattr(uw_config, name, default))
+
+    def _eth_map(name: str) -> Dict[str, float]:
+        raw = getattr(uw_config, name, None) or {}
+        out = {
+            "caucasian": 1.0,
+            "african": 1.0,
+            "hispanic": 1.0,
+            "asian": 1.0,
+            "other": 1.0,
+        }
+        for k, v in dict(raw).items():
+            out[str(k).lower()] = float(v)
+        return out
+
     return PricingConfig(
         expense_loading_pct=float(getattr(uw_config, "expense_loading_pct", 0.15)),
         profit_margin_pct=float(getattr(uw_config, "profit_margin_pct", 0.10)),
@@ -1136,6 +1356,18 @@ def pricing_config_from_underwriting(uw_config: Any,
         life_share_of_coverage=float(resolved_life),
         life_share_of_coverage_post65=float(resolved_life_post),
         disability_band_age=int(band),
+        smoker_mortality_factor=_f("smoker_mortality_factor"),
+        smoker_disability_factor=_f("smoker_disability_factor"),
+        former_smoker_mortality_factor=_f("former_smoker_mortality_factor"),
+        former_smoker_disability_factor=_f("former_smoker_disability_factor"),
+        nonsmoker_mortality_factor=_f("nonsmoker_mortality_factor"),
+        nonsmoker_disability_factor=_f("nonsmoker_disability_factor"),
+        male_mortality_factor=_f("male_mortality_factor"),
+        male_disability_factor=_f("male_disability_factor"),
+        female_mortality_factor=_f("female_mortality_factor"),
+        female_disability_factor=_f("female_disability_factor"),
+        ethnicity_mortality_factors=_eth_map("ethnicity_mortality_factors"),
+        ethnicity_disability_factors=_eth_map("ethnicity_disability_factors"),
         version=cfg_version,
     )
 
@@ -1157,6 +1389,7 @@ __all__ = [
     "pricing_config_from_underwriting",
     "register_age_curve",
     "register_product",
+    "resolve_demographic_rate_factors",
     "risk_reference_v1_factor",
     "table_set_from_store",
 ]

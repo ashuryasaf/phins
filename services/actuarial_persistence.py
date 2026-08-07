@@ -95,6 +95,22 @@ def load_actuarial_store(store: Any, path: Optional[str] = None) -> bool:
             kwargs.setdefault("life_share_of_coverage", 1.0)
             kwargs.setdefault("life_share_of_coverage_post65", 0.25)
             kwargs.setdefault("disability_band_age", 65)
+            for _k in (
+                "smoker_mortality_factor", "smoker_disability_factor",
+                "former_smoker_mortality_factor", "former_smoker_disability_factor",
+                "nonsmoker_mortality_factor", "nonsmoker_disability_factor",
+                "male_mortality_factor", "male_disability_factor",
+                "female_mortality_factor", "female_disability_factor",
+            ):
+                kwargs.setdefault(_k, 1.0)
+            kwargs.setdefault(
+                "ethnicity_mortality_factors",
+                {"caucasian": 1.0, "african": 1.0, "hispanic": 1.0, "asian": 1.0, "other": 1.0},
+            )
+            kwargs.setdefault(
+                "ethnicity_disability_factors",
+                {"caucasian": 1.0, "african": 1.0, "hispanic": 1.0, "asian": 1.0, "other": 1.0},
+            )
             kwargs.setdefault("config_version", "cfg_v1")
             store.config = UnderwritingConfig(**kwargs)
         except Exception as exc:

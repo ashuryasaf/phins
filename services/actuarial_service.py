@@ -75,6 +75,16 @@ class ADLFactor:
     value: float
 
 
+def _default_ethnicity_factors() -> Dict[str, float]:
+    return {
+        'caucasian': 1.0,
+        'african': 1.0,
+        'hispanic': 1.0,
+        'asian': 1.0,
+        'other': 1.0,
+    }
+
+
 @dataclass
 class UnderwritingConfig:
     decline_threshold: int = 9  # ADL 9+ declined by default
@@ -91,6 +101,20 @@ class UnderwritingConfig:
     life_share_of_coverage: float = 1.0
     life_share_of_coverage_post65: float = 0.25
     disability_band_age: int = 65
+    # Demographic rate multipliers (life = mortality, disability = incidence).
+    # Defaults 1.0 = neutral / unisex / unismoker until actuary tunes them.
+    smoker_mortality_factor: float = 1.0
+    smoker_disability_factor: float = 1.0
+    former_smoker_mortality_factor: float = 1.0
+    former_smoker_disability_factor: float = 1.0
+    nonsmoker_mortality_factor: float = 1.0
+    nonsmoker_disability_factor: float = 1.0
+    male_mortality_factor: float = 1.0
+    male_disability_factor: float = 1.0
+    female_mortality_factor: float = 1.0
+    female_disability_factor: float = 1.0
+    ethnicity_mortality_factors: Dict[str, float] = field(default_factory=_default_ethnicity_factors)
+    ethnicity_disability_factors: Dict[str, float] = field(default_factory=_default_ethnicity_factors)
     # Bumped on every durable dashboard save so priced snapshots pin a revision.
     config_version: str = 'cfg_v1'
     last_modified: str = ''
@@ -526,6 +550,18 @@ class ActuarialTablesStore:
             life_share_of_coverage=1.0,
             life_share_of_coverage_post65=0.25,
             disability_band_age=65,
+            smoker_mortality_factor=1.0,
+            smoker_disability_factor=1.0,
+            former_smoker_mortality_factor=1.0,
+            former_smoker_disability_factor=1.0,
+            nonsmoker_mortality_factor=1.0,
+            nonsmoker_disability_factor=1.0,
+            male_mortality_factor=1.0,
+            male_disability_factor=1.0,
+            female_mortality_factor=1.0,
+            female_disability_factor=1.0,
+            ethnicity_mortality_factors=_default_ethnicity_factors(),
+            ethnicity_disability_factors=_default_ethnicity_factors(),
             config_version='cfg_v1',
             last_modified=datetime.now().isoformat(),
             modified_by='system'
@@ -677,6 +713,25 @@ class ActuarialTablesStore:
         if 'disability_band_age' in updates:
             self.config.disability_band_age = max(1, min(120, int(updates['disability_band_age'])))
 
+        # Demographic multipliers: accept absolute factors (e.g. 1.75) only.
+        # Clamp to [0, 10] to keep integrity and avoid runaway premiums.
+        _demo_scalar_keys = (
+            'smoker_mortality_factor', 'smoker_disability_factor',
+            'former_smoker_mortality_factor', 'former_smoker_disability_factor',
+            'nonsmoker_mortality_factor', 'nonsmoker_disability_factor',
+            'male_mortality_factor', 'male_disability_factor',
+            'female_mortality_factor', 'female_disability_factor',
+        )
+        for key in _demo_scalar_keys:
+            if key in updates:
+                setattr(self.config, key, _clamp(float(updates[key]), 0.0, 10.0))
+        for key in ('ethnicity_mortality_factors', 'ethnicity_disability_factors'):
+            if key in updates and isinstance(updates[key], dict):
+                base = _default_ethnicity_factors()
+                for eth_key, eth_val in updates[key].items():
+                    base[str(eth_key).lower()] = _clamp(float(eth_val), 0.0, 10.0)
+                setattr(self.config, key, base)
+
         # Bump config revision so priced policies can pin dashboard saves.
         try:
             ver = str(self.config.config_version or 'cfg_v1')
@@ -800,6 +855,18 @@ class ActuarialTablesStore:
             'life_share_of_coverage': 1.0,
             'life_share_of_coverage_post65': 0.25,
             'disability_band_age': 65,
+            'smoker_mortality_factor': 1.0,
+            'smoker_disability_factor': 1.0,
+            'former_smoker_mortality_factor': 1.0,
+            'former_smoker_disability_factor': 1.0,
+            'nonsmoker_mortality_factor': 1.0,
+            'nonsmoker_disability_factor': 1.0,
+            'male_mortality_factor': 1.0,
+            'male_disability_factor': 1.0,
+            'female_mortality_factor': 1.0,
+            'female_disability_factor': 1.0,
+            'ethnicity_mortality_factors': _default_ethnicity_factors(),
+            'ethnicity_disability_factors': _default_ethnicity_factors(),
             'config_version': 'cfg_v1',
         }
     
@@ -899,6 +966,22 @@ class ActuarialTablesStore:
             life_share_of_coverage=defaults.get('life_share_of_coverage', 1.0),
             life_share_of_coverage_post65=defaults.get('life_share_of_coverage_post65', 0.25),
             disability_band_age=int(defaults.get('disability_band_age', 65)),
+            smoker_mortality_factor=float(defaults.get('smoker_mortality_factor', 1.0)),
+            smoker_disability_factor=float(defaults.get('smoker_disability_factor', 1.0)),
+            former_smoker_mortality_factor=float(defaults.get('former_smoker_mortality_factor', 1.0)),
+            former_smoker_disability_factor=float(defaults.get('former_smoker_disability_factor', 1.0)),
+            nonsmoker_mortality_factor=float(defaults.get('nonsmoker_mortality_factor', 1.0)),
+            nonsmoker_disability_factor=float(defaults.get('nonsmoker_disability_factor', 1.0)),
+            male_mortality_factor=float(defaults.get('male_mortality_factor', 1.0)),
+            male_disability_factor=float(defaults.get('male_disability_factor', 1.0)),
+            female_mortality_factor=float(defaults.get('female_mortality_factor', 1.0)),
+            female_disability_factor=float(defaults.get('female_disability_factor', 1.0)),
+            ethnicity_mortality_factors=dict(
+                defaults.get('ethnicity_mortality_factors') or _default_ethnicity_factors()
+            ),
+            ethnicity_disability_factors=dict(
+                defaults.get('ethnicity_disability_factors') or _default_ethnicity_factors()
+            ),
             config_version=str(defaults.get('config_version', 'cfg_v1')),
             last_modified=datetime.now().isoformat(),
             modified_by=user
@@ -1573,9 +1656,14 @@ class PortfolioSimulator:
                 term_years=int(customer['term']),
                 adl_level=int(customer['adl']),
                 gender=customer.get('gender'),
+                smoking_status=customer.get('smoking_status') or customer.get('smoker'),
+                ethnicity=customer.get('ethnicity'),
                 cohort={
                     'gender': str(customer.get('gender') or '').lower(),
                     'ethnicity': str(customer.get('ethnicity') or '').lower(),
+                    'smoker': str(
+                        customer.get('smoking_status') or customer.get('smoker') or ''
+                    ).lower(),
                 },
             ),
             product, tables, config,
@@ -1928,6 +2016,30 @@ def get_contract_specification() -> Dict[str, Any]:
         'source': 'UnderwritingConfig age-banded life and disability shares',
         'adjustable_from_dashboard': True,
         'persisted': True,
+    }
+    spec['demographic_risk_factors'] = {
+        'smoker_mortality_factor': float(getattr(cfg, 'smoker_mortality_factor', 1.0)),
+        'smoker_disability_factor': float(getattr(cfg, 'smoker_disability_factor', 1.0)),
+        'former_smoker_mortality_factor': float(getattr(cfg, 'former_smoker_mortality_factor', 1.0)),
+        'former_smoker_disability_factor': float(getattr(cfg, 'former_smoker_disability_factor', 1.0)),
+        'nonsmoker_mortality_factor': float(getattr(cfg, 'nonsmoker_mortality_factor', 1.0)),
+        'nonsmoker_disability_factor': float(getattr(cfg, 'nonsmoker_disability_factor', 1.0)),
+        'male_mortality_factor': float(getattr(cfg, 'male_mortality_factor', 1.0)),
+        'male_disability_factor': float(getattr(cfg, 'male_disability_factor', 1.0)),
+        'female_mortality_factor': float(getattr(cfg, 'female_mortality_factor', 1.0)),
+        'female_disability_factor': float(getattr(cfg, 'female_disability_factor', 1.0)),
+        'ethnicity_mortality_factors': dict(
+            getattr(cfg, 'ethnicity_mortality_factors', None) or _default_ethnicity_factors()
+        ),
+        'ethnicity_disability_factors': dict(
+            getattr(cfg, 'ethnicity_disability_factors', None) or _default_ethnicity_factors()
+        ),
+        'applies_to': ['mortality_qx (life)', 'disability_ix (disability)'],
+        'composition': 'smoking × sex × ethnicity (independent multipliers)',
+        'default_neutral': 1.0,
+        'adjustable_from_dashboard': True,
+        'persisted': True,
+        'integrity_hashed': True,
     }
     return spec
 
