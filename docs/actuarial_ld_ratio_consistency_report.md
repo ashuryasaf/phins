@@ -1,36 +1,50 @@
 # Risk Product L:D Consistency Report
 
 **Status:** Analysis only — no code changes  
-**Date:** 2026-08-07  
-**Scope:** Confirm risk product = life + disability at **1:4 until age 65**, **life 1:1 (disability off) after 65**, **no health mechanism**; compare kernel vs issuance; assess adjustability via tables/versions.
+**Date:** 2026-08-07 (updated with settled product decision)  
+**Scope:** Confirm risk product L:D bands, no health mechanism, table/version adjustability, and **persistence of dashboard actuarial adjustments**; compare kernel vs issuance.
 
 ---
 
-## 1. Intended product rule (as checked)
+## 0. Settled product decision (2026-08-07)
+
+Session-settled by product owner:
 
 | Band | Disability : Life | Meaning |
 |---|---|---|
-| Ages 3–65 | **1 : 4** | Disability sum \(D = L/4\) |
-| Ages 65+ | **Life 1 : 1, disability 0** | Full life sum \(L\) continues; disability cover ceases |
+| Until age 65 | **1 : 4** | \(D = L/4\) |
+| After age 65 | **1 : 1** | \(D = L\) (disability equals life) |
+| Pricing source | **Table / actuary-config pricing** | Kernel + versioned tables/config — not flat `$0.25/$1000` |
+| Dashboard edits | **Must persist** | Actuarial adjustments from the dashboard survive restart and remain the active pricing source |
+| Health | **No health mechanism** on the base risk product | |
 
-Reading of “1:1 disability / life after age 65” used here (aligned with `CONTRACT_SPECIFICATION`): after 65 the contract is **life-only at full L** (1:1 with sum insured), not “disability equals life.” If the literal intent were \(D=L\) after 65, that would be a **different product** — see §6.
+This **supersedes** the earlier provisional reading that “1:1 after 65” meant life-only / disability off. Current `CONTRACT_SPECIFICATION` and kernel cutoff behavior still encode the *old* “disability ceases at 65” rule — that is now a **documented mismatch**, not the target.
+
+---
+
+## 1. Target rule (authoritative)
+
+| Band | Disability : Life | Meaning |
+|---|---|---|
+| Ages &lt; 65 | **1 : 4** | Disability sum \(D = L/4\) |
+| Ages ≥ 65 | **1 : 1** | Disability sum \(D = L\) |
 
 **No health mechanism** means the base risk contract must not be a medical/health insurance product and must not require health-wallet / medical-expense machinery for pricing or benefits.
 
 ---
 
-## 2. Kernel / contract — mostly consistent with the rule
+## 2. Kernel / contract — **FAIL** vs settled 1:1-after-65 rule
 
-### 2.1 Contract draft (`CONTRACT_SPECIFICATION` v1.0)
+### 2.1 Contract draft (`CONTRACT_SPECIFICATION` v1.0) — stale vs decision
 
 Source: `services/actuarial_service.py`
 
-- Disability benefit: \(L \div 4\), trigger ages **3–65**
-- Age 65+: “Disability cover ceases automatically”
-- Life-only mode 65–∞: age-adjusted death benefit
-- Disclaimer: base product = adjustable risk only — **no wallet, no savings, no investment** (savings add-on optional and separate)
+- Disability benefit: \(L \div 4\), trigger ages **3–65** only
+- Age 65+: “Disability cover ceases automatically” ← **conflicts with settled \(D=L\) after 65**
+- Life-only mode 65–∞: age-adjusted death benefit, disability off
+- Disclaimer: base product = adjustable risk only — **no wallet, no savings, no investment** (aligned with “no health mechanism”)
 
-Live API enrichment via `get_contract_specification()`:
+Live API enrichment still exposes a **single** global ratio:
 
 ```text
 contract_ratios = {
@@ -41,34 +55,34 @@ contract_ratios = {
 }
 ```
 
+There is **no** age-banded `disability_share_of_life_pre65` / `post65` in config today.
+
 ### 2.2 Product registry (`pricing_kernel.PRODUCT_REGISTRY`)
 
-| Product id | `disability_share` | `disability_cutoff_age` | Notes |
+| Product id | `disability_share` | `disability_cutoff_age` | vs settled rule |
 |---|---|---|---|
-| `phins_pure_risk_adjustable` | 0.25 | 65 | Canonical; `fixed_disability_benefit_pct=1.0` (full \(D\) on trigger) |
-| `phins_pure_risk` | 0.25 | 65 | Alias |
-| `phins_life_only_post65` | 0.0 | 65 | Senior life-only helper |
-| `phins_hybrid_savings` | 0.25 | 65 | Risk + savings add-on (not pure base) |
+| `phins_pure_risk_adjustable` | 0.25 | **65 (zeros disability ≥65)** | Pre-65 OK; **post-65 wrong** (should be 1.0, not cut off) |
+| `phins_pure_risk` | 0.25 | 65 | Same |
+| `phins_life_only_post65` | 0.0 | 65 | Explicit life-only — **wrong** for settled rule |
+| `phins_hybrid_savings` | 0.25 | 65 | Same cutoff issue + savings add-on |
 
-Caveat: product `line` is still labeled `life_health` / `life_health_savings` — naming only, but it blurs “no health mechanism.”
+Caveat: product `line` is still labeled `life_health` — blurs “no health mechanism.”
 
 ### 2.3 Live kernel probe (L = $500,000, term 20, ADL 5, tables V2.0)
 
-| Issue age | `disability_share_used` | `disability_sum_used` | Disability premium | Mortality premium | Annual total |
-|---|---|---|---|---|---|
-| 35 | 0.25 (1:4) | $125,000 | $649.36 | $826.40 | $15,616.84 |
-| 64 | 0.25 (1:4) | $125,000 | $178.99 | $7,924.57 | $24,000.99 |
-| **65** | 0.25* | $125,000* | **$0.00** | $8,724.18 | $24,786.09 |
-| 66 | 0.25* | $125,000* | **$0.00** | $9,283.93 | $25,494.18 |
-| 80 | 0.25* | $125,000* | **$0.00** | $15,243.95 | $33,033.59 |
+| Issue age | Target D:L | Actual share / D sum | Disability premium | Verdict |
+|---|---|---|---|---|
+| 35 | 1:4 → D=$125k | 0.25 / $125,000 | $649.36 | PASS |
+| 64 | 1:4 → D=$125k | 0.25 / $125,000 | $178.99 | PASS |
+| **65** | **1:1 → D=$500k** | stamped 0.25 / $125k; **prem $0** | **$0.00** | **FAIL** (should price disability at \(D=L\)) |
+| 66 | 1:1 → D=$500k | same zero-disability path | **$0.00** | **FAIL** |
+| 80 | 1:1 → D=$500k | same | **$0.00** | **FAIL** |
 
-\*Stamp fields: for issue ages ≥65, PV logic correctly **zeros disability premium** (`current_age < disability_cutoff_age`), but `disability_share_used` / `disability_sum_used` still echo the config ratio \(0.25\) / \(L/4\). Benefit **economics** match “disability off”; **metadata** still looks like 1:4.
+Root cause: PV loops skip disability when `current_age >= disability_cutoff_age` (65). That implements “disability ceases,” not “disability steps up to 1:1.”
 
-For ages &lt;65 with multi-year terms that cross 65, disability incidence is only accrued while `current_age < 65` inside the PV loop — consistent with the cliff.
+Dashboard UI binds a **single** slider to `disability_share_of_life` (`Disability ÷ Life = 1 : 4`) — cannot express a post-65 1:1 band without a schema change.
 
-Dashboard UI shows `Disability ÷ Life = 1 : 4` bound to `disability_share_of_life`.
-
-**Kernel verdict vs intended rule:** **PASS** on economics (1:4 until 65; disability premium off at/after 65; life continues). Soft fails: `line=life_health` naming; post-65 stamp fields still show 1:4; no separate version id when only the ratio changes (see §4).
+**Kernel verdict vs settled rule:** **FAIL** after 65. Pre-65 1:4 matches.
 
 ---
 
@@ -111,75 +125,93 @@ Contract draft forbids wallet/savings/investment on the **base** risk product; i
 
 ---
 
-## 4. Adjustability via tables and versions
+## 4. Adjustability + **persistence** of dashboard actuarial changes
 
 ### 4.1 What *is* adjustable today (kernel / actuary world)
 
-| Knob | Where | Effect | Versioned? |
-|---|---|---|---|
-| `UnderwritingConfig.disability_share_of_life` (default 0.25) | Actuary dashboard UW config → `PricingConfig` | Changes \(D/L\) for all kernel prices; integrity hash changes | **Config value only** — does **not** bump `tables_version` (stays e.g. `V2.0`) or `config_version` (`kernel_v1`) |
-| Mortality / disability rate tables | `ActuarialTablesStore` versions (`V2.0`, uploads) | Changes incidence → premiums | Yes — `tables_version` on `PremiumComponents` |
-| Product registry shares / cutoff | Code constants | Structural product rules | Code deploy only — not a durable SPV row |
-| `CONTRACT_SPECIFICATION.version` | `'v1.0'` constant | Document identity | Not linked to issued policies |
+| Knob | Where | Effect | Versioned? | Persists across restart? |
+|---|---|---|---|---|
+| `UnderwritingConfig.disability_share_of_life` (default 0.25) | Dashboard → `POST /api/actuarial/config` → `ActuarialTablesStore.update_config` | Single global \(D/L\) for all ages; integrity hash changes | Config only — does **not** bump `tables_version` / `config_version` | **No** — in-process memory + change log only |
+| Mortality / disability rate tables | Store versions / uploads | Changes incidence → premiums | Yes — `tables_version` | Partial — uploads can hit `actuarial_tables` ORM; **active** store is still the singleton |
+| Product cutoff / shares | Code constants | Structural rules | Code deploy | N/A |
+| `CONTRACT_SPECIFICATION.version` | `'v1.0'` constant | Document identity | Not on policies | N/A |
 
-Probe: setting `disability_share_of_life=1.0` at age 35 → `disability_sum=$500,000`, new integrity hash, **same** `tables_version=V2.0` / `config_version=kernel_v1`.
+`update_config` (see `actuarial_service.py`) mutates `self.config`, stamps `last_modified` / `modified_by`, and `_log_change` — it does **not** write UW config to Postgres/SQLite. `database/` has **no** model for actuarial underwriting config. Comment elsewhere notes simulations/fee schedules “DB schema not yet extended.”
 
-So the L:D ratio **is** actuary-adjustable and hashed on each price, but **ratio changes are not first-class version artifacts** the way rate-table uploads are. Issuance never reads the knob.
+**Settled requirement:** “keep changes persistence after actuarial adjustments from dashboard” → **FAIL today**. A process restart (or multi-worker) loses dashboard L:D / UW knobs unless re-entered. Table uploads have a better (but still incomplete) persistence story than config.
 
-### 4.2 What issuance cannot adjust
+### 4.2 Age-band gap for 1:1 after 65
 
-- No path from dashboard L:D slider → `calculate_premium` / `apply.js`
-- No pin of `disability_share_of_life` + `tables_version` + `contract_version` on `Policy`
-- Changing tables V2.0 → V2.1 does not re-label in-force flat premiums (they were never kernel-priced)
+Even if the global slider were persisted at `1.0`, that would set **all ages** to 1:1, breaking pre-65 1:4. Target needs an **age-banded** (or schedule) control, e.g.:
 
-### 4.3 Target adjustability (report-only recommendation)
+```text
+disability_share_schedule = [
+  { age_min: 3,  age_max: 64, share: 0.25 },   # 1:4
+  { age_min: 65, age_max: null, share: 1.0 },  # 1:1
+]
+```
 
-For the risk product to stay “adjustable with relevant tables and versions” while preserving integrity:
+…versioned with `tables_version` / `config_version`, applied inside kernel PV by attained age (instead of `disability_cutoff_age` zeroing), and persisted from the dashboard.
+
+### 4.3 What issuance cannot adjust
+
+- No path from dashboard L:D → `calculate_premium` / `apply.js`
+- No pin of age-banded shares + `tables_version` + `contract_version` on `Policy`
+- Flat premiums ignore all actuarial persistence anyway
+
+### 4.4 Target adjustability + persistence (report-only)
 
 ```text
 Stable Product Version (SPV) should freeze at least:
-  product_id              = phins_pure_risk_adjustable
-  contract_version        = v1.0 (or successor)
-  disability_share_of_life / L:D band rules (1:4 to 65; life-only after 65)
-  disability_cutoff_age   = 65
-  tables_version          = V2.x (mortality + disability incidence)
-  config_version          = kernel_v1 + hash of UW knobs
-  integrity_hash          = PremiumComponents hash
+  product_id                 = phins_pure_risk_adjustable
+  contract_version           = successor of v1.0 (text must say D=L after 65)
+  disability_share_schedule  = 1:4 until 65; 1:1 after 65 (dashboard-editable)
+  tables_version             = V2.x (mortality + disability incidence)
+  config_version             = explicit revision id bumped on dashboard save
+  integrity_hash             = PremiumComponents hash
 ```
 
-Ratio edits should either (a) require a new `contract_version` / config revision id, or (b) be recorded on every `PremiumSnapshot` so history is reconstructible even if `tables_version` is unchanged.
+Persistence requirements (settled):
+
+1. Dashboard `update_config` / table activate → durable store (DB or versioned artifact), reloadable on boot.
+2. Each save bumps a visible `config_version` (or SPV id), not only `last_modified`.
+3. Kernel prices from the **persisted active** version; shadow/issue snapshots pin that version.
+4. Restart / redeploy must restore the last actuary-published ratios and tables without manual re-entry.
 
 ---
 
-## 5. Consistency matrix
+## 5. Consistency matrix (after settled decision)
 
-| Requirement | Kernel / contract | Issuance / billing | Adjustable via tables/versions |
+| Requirement | Kernel / contract | Issuance / billing | Dashboard persist + versions |
 |---|---|---|---|
-| 1:4 disability/life until 65 | Yes (share 0.25, D=L/4) | No | Kernel: yes via `disability_share_of_life`; issuance: no |
-| Life full L after 65; disability off | Yes economically (dis prem = 0); stamp fields still show 0.25 | No age-65 benefit cliff | Cutoff is code constant (65), not table-versioned |
-| No health mechanism | Contract text yes; product `line` still `life_health` | **No** — health type, wallet, 25/75 wealth split | N/A |
-| Version pin on issued policy | Hash + versions on `PremiumComponents` only | Missing | Gap |
+| 1:4 until 65 | Yes | No | Global slider only; not age-banded; not durable |
+| **1:1 (D=L) after 65** | **No** — cutoff zeros disability | No | Cannot express post-65 band |
+| Table pricing as source of truth | Kernel yes; contract text stale | Flat formula | Active store mostly in-memory |
+| Persist dashboard actuarial adjustments | Change log in memory | N/A | **FAIL** — no UW-config DB row |
+| No health mechanism | Contract text yes; `line=life_health` | **No** — wallet / unified wealth UI | N/A |
+| Pin on issued policy | Components hash only (ephemeral) | Missing | Gap |
 
 ---
 
-## 6. Ambiguity to confirm before any implementation
+## 6. Ambiguity — resolved
 
-**Q (blocking for product wording only):** Does “1:1 disability / life after age 65” mean:
+Settled as **(2)**: after 65, **disability sum equals life sum** (\(D:L = 1:1\)).  
+Not life-only. Kernel/contract “disability ceases at 65” is now explicitly **out of date** relative to product intent.
 
-1. **Life-only at 1:1 with L** (disability ceases) — matches current contract + kernel economics, **or**
-2. **Disability sum equals life sum after 65** (\(D:L = 1:1\)) — kernel does **not** do this today (disability goes to 0).
+Remaining non-blocking design choices for a future implementation plan (not decided here):
 
-This report assumes **(1)**. If **(2)** is intended, kernel, contract draft, dashboard copy, and tests (`test_disability_share_from_config_drives_priced_disability`, cutoff behavior) would all need a deliberate product-change plan — still not done here.
+- Q-A: Is post-65 1:1 a fixed product constant, or a dashboard-editable band defaulting to 1.0?
+- Q-B: When term crosses 65, does each future year reprice disability sum on attained age (schedule), or lock issue-age band for the whole term?
+- Q-C: Persistence backend — extend `actuarial_tables` / new `actuarial_config_versions` table vs file artifact (recommendation: versioned DB row + boot load into store).
 
 ---
 
 ## 7. Bottom line
 
-- The **actuarial kernel + contract draft** already encode the risk product as **1:4 to 65 / life-only after 65 / no base health-wallet product**, with L:D adjustable from the actuary config (hashed, but not given its own version bump).
-- The **issuance and billing path** does **not** implement that product: flat `$0.25/$1000`, no L:D, no disability cliff at 65, and active **health/wealth** mechanisms on apply (`phins_unified`, health wallet, savings split).
-- Until issuance pins SPV fields (`product_id`, `disability_share_of_life`, `tables_version`, `contract_version`, `integrity_hash`) and stops treating health/wallet as the risk contract, the “central” risk product is governance-only.
-
-**No code was changed for this report.** Follow-on work (when approved) should stay behind shadow dual-run / SPV pins before any billed cutover.
+- **Target risk product:** 1:4 until 65, **1:1 (D=L) after 65**, table/kernel priced, **dashboard adjustments must persist**, no health mechanism on the base contract.
+- **Kernel today:** implements 1:4 then **turns disability off** at 65 — opposite of the settled post-65 rule; single global L:D knob; config edits are **not durable**.
+- **Issuance today:** flat `$0.25/$1000` with health/wealth UI — neither L:D band nor persistence applies.
+- **No code was changed for this report.** Next implementation slice (when approved) should include: age-banded share schedule + remove/repurpose cutoff-to-zero, durable config/table versioning from dashboard, then shadow SPV pins before any billed cutover.
 
 ### Sources
 
