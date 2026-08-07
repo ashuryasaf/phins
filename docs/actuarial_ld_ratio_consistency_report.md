@@ -1,7 +1,7 @@
 # Risk Product L:D Consistency Report
 
-**Status:** Analysis only — no code changes  
-**Date:** 2026-08-07 (updated with settled product decision)  
+**Status:** Target rule settled; **implementation landed** for age-banded kernel + durable dashboard config + shadow dual-run (issuance billed amounts still flat until cutover)  
+**Date:** 2026-08-07 (updated with settled product decision + implementation note)  
 **Scope:** Confirm risk product L:D bands, no health mechanism, table/version adjustability, and **persistence of dashboard actuarial adjustments**; compare kernel vs issuance.
 
 ---
