@@ -2536,7 +2536,7 @@ def build_risk_reference(start_age: Optional[int] = None,
             'disability_sum_matches_age_band': band_ok,
             'issue_age_disability_sum_matches_ratio': abs(
                 float(issue_sums['disability_sum'])
-                - float(issue_sums['life_sum']) * float(disability_share_of_life)
+                - float(issue_sums['life_sum']) * float(issue_sums['disability_share'])
             ) < 0.01,
         },
     }
