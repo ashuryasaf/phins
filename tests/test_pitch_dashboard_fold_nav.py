@@ -1,6 +1,7 @@
-"""Static integrity for pitch-dashboard foldable tabs + document return nav.
+"""Static integrity for pitch-dashboard foldable tabs + document viewer.
 
-Covers per-tab Back controls and the in-page document viewer return flow.
+Covers per-tab Back-to-header controls and the in-page document viewer
+(close via × — no Back-to-tab / ← Admin header chrome).
 """
 
 from pathlib import Path
@@ -63,16 +64,18 @@ def test_pitch_fold_script_registers_sections():
 
 
 def test_pitch_document_viewer_return_controls():
-    """Opened/downloaded docs expose Back / × that return to the source tab."""
+    """Opened/downloaded docs expose × (not Back to tab) to close the viewer."""
     html = _html()
     assert 'id="pitch-doc-viewer"' in html
-    assert 'id="pitch-doc-back"' in html
     assert 'id="pitch-doc-close"' in html
-    assert 'id="pitch-doc-fallback-back"' in html
     assert "wireDocViewer" in html
     assert "findSourceSectionId" in html
     assert "returnSectionId" in html
-    assert "Back to tab" in html
+    # Unintended Back-to-tab / ← Admin header chrome must not ship.
+    assert "Back to tab" not in html
+    assert 'id="pitch-doc-back"' not in html
+    assert 'id="pitch-doc-fallback-back"' not in html
+    assert "← Admin" not in html
     assert "showLoadFailureFallback" in html
     assert "Document unavailable" in html
     # Presentation-only; does not rewrite document contents or bypass the gate.

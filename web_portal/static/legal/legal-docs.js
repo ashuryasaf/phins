@@ -393,7 +393,6 @@
       '<div class="ld-header-links">' +
       '<a class="ld-link" href="/corporate-legal-dashboard.html">← Legal &amp; Funding Center</a>' +
       '<a class="ld-link" href="/pitch-dashboard.html">📂 Investor Documents</a>' +
-      '<a class="ld-link" href="/admin.html">← Admin</a>' +
       '</div>';
     return h;
   };
