@@ -2971,6 +2971,18 @@ def reconcile_simulation_with_kernel(simulation: Dict[str, Any]) -> Dict[str, An
             pricing_meta.get('disability_share_of_life',
                               get_actuarial_store().config.disability_share_of_life)
         ),
+        disability_share_of_life_post65=float(
+            pricing_meta.get('disability_share_of_life_post65',
+                             store.config.disability_share_of_life_post65)
+        ),
+        life_share_of_coverage=float(
+            pricing_meta.get('life_share_of_coverage',
+                             store.config.life_share_of_coverage)
+        ),
+        life_share_of_coverage_post65=float(
+            pricing_meta.get('life_share_of_coverage_post65',
+                             store.config.life_share_of_coverage_post65)
+        ),
     )
     tables = table_set_from_store(
         store,
