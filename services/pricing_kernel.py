@@ -196,10 +196,14 @@ class PricingConfig:
     # Post-band D/life ratio. Default 1.0 → disability equals the post-65 life
     # sum (both $125k when coverage=$500k and life_share_post65=0.25).
     disability_share_of_life_post65: Optional[float] = 1.0
-    # Life sum as a fraction of coverage. Pre-65 default 1.0 (full L);
-    # post-65 default 0.25 (life steps down to L/4).
+    # Life sum as a fraction of coverage. Pre-65 default 1.0 (full L).
+    # ``life_share_of_coverage_post65`` is ``None`` by default so the post-65
+    # life sum follows the pre-65 share (full coverage) unless a caller opts
+    # into the adjustable-risk step-down (the underwriting/dashboard path sets
+    # it to 0.25 → life steps down to L/4). This keeps bare ``PricingConfig``
+    # builds from silently quartering the post-65 life sum.
     life_share_of_coverage: float = 1.0
-    life_share_of_coverage_post65: float = 0.25
+    life_share_of_coverage_post65: Optional[float] = None
     disability_band_age: int = 65
     # Post-disability administration (does not change healthy-life quote PV
     # while claim_model stays MUTUALLY_EXCLUSIVE). Default premium factor
@@ -641,7 +645,8 @@ def _resolve_life_share(product: Product, config: PricingConfig,
         pre = float(product.life_share or 1.0)
     else:
         pre = float(configured_pre)
-    post = float(getattr(config, "life_share_of_coverage_post65", 0.25))
+    post_raw = getattr(config, "life_share_of_coverage_post65", None)
+    post = pre if post_raw is None else float(post_raw)
     if age is None:
         return pre
     return post if int(age) >= _band_age(config) else pre
@@ -1250,7 +1255,11 @@ def price_policy(
             ),
             "life_share": _round6(resolved_life_share),
             "life_share_pre65": _round6(float(config.life_share_of_coverage)),
-            "life_share_post65": _round6(float(config.life_share_of_coverage_post65)),
+            "life_share_post65": (
+                None
+                if config.life_share_of_coverage_post65 is None
+                else _round6(float(config.life_share_of_coverage_post65))
+            ),
             "life_sum": _round6(life_sum_used),
             "disability_sum": _round6(disability_sum_used),
             "disability_band_age": int(getattr(config, "disability_band_age", 65) or 65),
