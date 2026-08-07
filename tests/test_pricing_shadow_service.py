@@ -1,0 +1,66 @@
+"""Shadow dual-run: kernel snapshot beside flat premiums, fail-open."""
+
+from __future__ import annotations
+
+import os
+
+import pytest
+
+from services.pricing_shadow_service import (
+    build_shadow_snapshot,
+    is_shadow_enabled,
+    map_policy_type_to_product,
+    record_shadow_snapshot,
+    reset_shadow_store_for_tests,
+)
+
+
+@pytest.fixture(autouse=True)
+def _clean_shadow(monkeypatch, tmp_path):
+    reset_shadow_store_for_tests()
+    monkeypatch.setenv("PHINS_PRICING_SHADOW_ENABLED", "1")
+    monkeypatch.setenv("PHINS_ACTUARIAL_STATE_PATH", str(tmp_path / "act.json"))
+    yield
+    reset_shadow_store_for_tests()
+
+
+def test_map_policy_types():
+    assert map_policy_type_to_product("life") == "phins_pure_risk_adjustable"
+    assert map_policy_type_to_product("auto") is None
+
+
+def test_build_shadow_snapshot_preserves_flat_and_records_kernel():
+    policy = {
+        "id": "POL-TEST-1",
+        "customer_id": "CUST-1",
+        "type": "life",
+        "coverage_amount": 500000,
+        "age": 35,
+        "term_years": 20,
+        "adl_level": 5,
+        "annual_premium": 1725.0,
+        "monthly_premium": 143.75,
+    }
+    flat = {"annual": 1725.0, "monthly": 143.75, "quarterly": 418.31}
+    snap = build_shadow_snapshot(policy, flat)
+    assert snap is not None
+    assert snap["flat_annual"] == 1725.0
+    assert snap["kernel_annual"] > snap["flat_annual"]
+    assert snap["product_id"] == "phins_pure_risk_adjustable"
+    assert snap["integrity_hash"]
+    assert snap["disability_share_used"] == pytest.approx(0.25)
+    assert len(snap["payload_sha256"]) == 64
+
+
+def test_record_respects_flag_off(monkeypatch):
+    monkeypatch.setenv("PHINS_PRICING_SHADOW_ENABLED", "0")
+    assert is_shadow_enabled() is False
+    snap = record_shadow_snapshot(
+        {"id": "P1", "type": "life", "coverage_amount": 100000, "age": 40},
+        {"annual": 100.0, "monthly": 10.0},
+    )
+    assert snap is None
+
+
+def test_unmapped_type_skips():
+    assert build_shadow_snapshot({"id": "P", "type": "auto", "coverage_amount": 1, "age": 30}, {"annual": 1}) is None

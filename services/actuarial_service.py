@@ -84,12 +84,13 @@ class UnderwritingConfig:
     expense_loading_pct: float = 0.15
     profit_margin_pct: float = 0.10
     discount_rate: float = 0.035
-    # Contract ratio between the disability benefit and the life sum (L).
-    # The PHINS adjustable risk contract sets disability = L ÷ 4 → 0.25.
-    # Adjustable from the actuary dashboard so every priced policy, every
-    # risk-reference forecast, every reinsurance program and every
-    # reconciliation share a single value.
+    # Age-banded contract ratios (adjustable from the actuary dashboard).
+    # Pre-65: disability = L ÷ 4 → 0.25 (1:4). Post-65: disability = L → 1.0 (1:1).
     disability_share_of_life: float = 0.25
+    disability_share_of_life_post65: float = 1.0
+    disability_band_age: int = 65
+    # Bumped on every durable dashboard save so priced snapshots pin a revision.
+    config_version: str = 'cfg_v1'
     last_modified: str = ''
     modified_by: str = ''
 
@@ -519,6 +520,9 @@ class ActuarialTablesStore:
             profit_margin_pct=0.10,
             discount_rate=0.035,
             disability_share_of_life=0.25,
+            disability_share_of_life_post65=1.0,
+            disability_band_age=65,
+            config_version='cfg_v1',
             last_modified=datetime.now().isoformat(),
             modified_by='system'
         )
@@ -617,6 +621,12 @@ class ActuarialTablesStore:
             'new_version': new_version,
             'effective_date': effective_date
         })
+
+        try:
+            from services.actuarial_persistence import persist_actuarial_store
+            persist_actuarial_store(self)
+        except Exception:
+            pass
         
         return {'success': True, 'version': new_version}
     
@@ -645,6 +655,23 @@ class ActuarialTablesStore:
             self.config.disability_share_of_life = _clamp(
                 raw / 100.0 if raw > 1.0 else raw, 0.0, 1.0,
             )
+        if 'disability_share_of_life_post65' in updates:
+            raw = float(updates['disability_share_of_life_post65'])
+            self.config.disability_share_of_life_post65 = _clamp(
+                raw / 100.0 if raw > 1.0 else raw, 0.0, 1.0,
+            )
+        if 'disability_band_age' in updates:
+            self.config.disability_band_age = max(1, min(120, int(updates['disability_band_age'])))
+
+        # Bump config revision so priced policies can pin dashboard saves.
+        try:
+            ver = str(self.config.config_version or 'cfg_v1')
+            if ver.startswith('cfg_v') and ver[4:].isdigit():
+                self.config.config_version = f'cfg_v{int(ver[4:]) + 1}'
+            else:
+                self.config.config_version = f'{ver}+1'
+        except Exception:
+            self.config.config_version = 'cfg_v2'
 
         self.config.last_modified = datetime.now().isoformat()
         self.config.modified_by = user
@@ -654,8 +681,20 @@ class ActuarialTablesStore:
             'old_config': old_config,
             'new_config': asdict(self.config)
         })
+
+        try:
+            from services.actuarial_persistence import persist_actuarial_store
+            persist_actuarial_store(self)
+        except Exception as persist_err:
+            # Persistence is best-effort relative to in-memory success, but
+            # surface the failure so operators see it on the API response.
+            return {
+                'success': True,
+                'config': asdict(self.config),
+                'persistence_warning': str(persist_err),
+            }
         
-        return {'success': True, 'config': asdict(self.config)}
+        return {'success': True, 'config': asdict(self.config), 'persisted': True}
     
     def update_current_tables(self, table_type: str, table_data: List[Dict], user: str) -> Dict:
         """Update a specific table within the current version without creating a new version.
@@ -719,6 +758,12 @@ class ActuarialTablesStore:
             'old_data': old_data,
             'new_data': table_data
         })
+
+        try:
+            from services.actuarial_persistence import persist_actuarial_store
+            persist_actuarial_store(self)
+        except Exception:
+            pass
         
         return {'success': True, 'table_type': table_type, 'data': table_data}
     
@@ -737,6 +782,9 @@ class ActuarialTablesStore:
             'profit_margin_pct': 0.10,
             'discount_rate': 0.035,
             'disability_share_of_life': 0.25,
+            'disability_share_of_life_post65': 1.0,
+            'disability_band_age': 65,
+            'config_version': 'cfg_v1',
         }
     
     def get_default_tables(self) -> Dict:
@@ -831,6 +879,9 @@ class ActuarialTablesStore:
             profit_margin_pct=defaults['profit_margin_pct'],
             discount_rate=defaults['discount_rate'],
             disability_share_of_life=defaults.get('disability_share_of_life', 0.25),
+            disability_share_of_life_post65=defaults.get('disability_share_of_life_post65', 1.0),
+            disability_band_age=int(defaults.get('disability_band_age', 65)),
+            config_version=str(defaults.get('config_version', 'cfg_v1')),
             last_modified=datetime.now().isoformat(),
             modified_by=user
         )
@@ -840,6 +891,11 @@ class ActuarialTablesStore:
             'old_config': old_config,
             'new_config': asdict(self.config)
         })
+        try:
+            from services.actuarial_persistence import persist_actuarial_store
+            persist_actuarial_store(self)
+        except Exception:
+            pass
         
         return {'success': True, 'config': asdict(self.config)}
     
@@ -1644,6 +1700,11 @@ def get_actuarial_store() -> ActuarialTablesStore:
     global _actuarial_store
     if _actuarial_store is None:
         _actuarial_store = ActuarialTablesStore()
+        try:
+            from services.actuarial_persistence import load_actuarial_store
+            load_actuarial_store(_actuarial_store)
+        except Exception:
+            pass
     return _actuarial_store
 
 
@@ -1708,12 +1769,12 @@ CONTRACT_SPECIFICATION: Dict[str, Any] = {
             'trigger_age': '3 – 65',
         },
         {
-            'risk_factor': 'Age 65+ — Disability cover ceases automatically',
-            'benefit_formula': '—',
-            'trigger_age': '—',
+            'risk_factor': 'Age 65+ — Disability sum steps to full life sum (1:1)',
+            'benefit_formula': 'D = L · 100% of life sum insured',
+            'trigger_age': '65 – ∞',
         },
         {
-            'risk_factor': 'Death — natural or accidental (Life-only mode)',
+            'risk_factor': 'Death — natural or accidental (continues after 65)',
             'benefit_formula': 'L × age-adj · age-adjusted sum',
             'trigger_age': '65 – ∞',
         },
@@ -1747,9 +1808,9 @@ CONTRACT_SPECIFICATION: Dict[str, Any] = {
         'Premium payment liability ages 3 – 65. Continuous payment of the '
         'age-adjusted adjustable-risk premium is required to maintain both the '
         'Life and Disability benefits.',
-        'Premium payment liability ages 65+. Life-only premium must continue to '
-        'maintain the age-adjusted death benefit; Disability cover terminates '
-        'automatically at age 65 and no premium is collected for it thereafter.',
+        'Premium payment liability ages 65+. Premium must continue to maintain '
+        'the age-adjusted death benefit and the post-65 disability layer at '
+        'D = L (1:1 disability to life).',
         'Disclosure liability. Customer must disclose all material health, '
         'occupational and lifestyle facts at underwriting; non-disclosure voids '
         'the claim.',
@@ -1769,12 +1830,11 @@ CONTRACT_SPECIFICATION: Dict[str, Any] = {
         '(a) a Life benefit equal to the contracted sum insured L; and '
         '(b) a Disability benefit equal to L ÷ 4 (one quarter of the life sum), '
         'subject to the medical and ADL trigger definitions of the policy. '
-        'After age 65 the cover automatically converts to a life-only risk cover '
-        'with an age-adjusted benefit; the disability layer ceases and no '
-        'further disability premium is collected. The base product carries no '
-        'wallet, no savings, no investment and no other service — only '
-        'adjustable risk cover. A savings add-on may be elected separately and '
-        'is priced as a markup on the risk premium.'
+        'After age 65 the disability sum steps up to D = L (1:1 with the life '
+        'sum) while life cover continues on the age-adjusted curve. The base '
+        'product carries no wallet, no savings, no investment and no other '
+        'service — only adjustable risk cover. A savings add-on may be elected '
+        'separately and is priced as a markup on the risk premium.'
     ),
     'reference_policyholder_example': (
         'Reference policyholder: age 35 at issue · standard underwriting class · '
@@ -1805,18 +1865,32 @@ def get_contract_specification() -> Dict[str, Any]:
     """
     import copy
     spec = copy.deepcopy(CONTRACT_SPECIFICATION)
-    share = float(get_actuarial_store().config.disability_share_of_life)
-    inv = (1.0 / share) if share > 0 else 0.0
-    rounded = round(inv)
-    ratio_display = (
-        f'1:{int(rounded)}' if share > 0 and abs(inv - rounded) < 0.01
-        else f'{share:.4f}'
-    )
+    cfg = get_actuarial_store().config
+    share = float(cfg.disability_share_of_life)
+    post = float(getattr(cfg, 'disability_share_of_life_post65', 1.0))
+    band = int(getattr(cfg, 'disability_band_age', 65) or 65)
+
+    def _ratio_display(s: float) -> str:
+        if s <= 0:
+            return '0'
+        inv = 1.0 / s
+        rounded = round(inv)
+        if abs(inv - rounded) < 0.01:
+            return f'1:{int(rounded)}'
+        if abs(s - 1.0) < 1e-9:
+            return '1:1'
+        return f'{s:.4f}'
+
     spec['contract_ratios'] = {
         'disability_share_of_life': round(share, 6),
-        'disability_to_life_ratio_display': ratio_display,
-        'source': 'UnderwritingConfig.disability_share_of_life',
+        'disability_share_of_life_post65': round(post, 6),
+        'disability_band_age': band,
+        'disability_to_life_ratio_display': _ratio_display(share),
+        'disability_to_life_ratio_post65_display': _ratio_display(post),
+        'config_version': getattr(cfg, 'config_version', 'cfg_v1'),
+        'source': 'UnderwritingConfig age-banded disability shares',
         'adjustable_from_dashboard': True,
+        'persisted': True,
     }
     return spec
 

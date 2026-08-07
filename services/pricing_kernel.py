@@ -183,13 +183,15 @@ class PricingConfig:
     apply_min_risk_floor: bool = False
     expense_basis: str = "risk_premium"  # 'risk_premium' or 'gross_premium'
     profit_basis: str = "risk_savings_expense"  # 'risk_savings_expense' or 'gross_premium'
-    # Contract ratio between the disability benefit and the life sum. When
-    # not None, this value overrides Product.disability_share so every
-    # caller — simulator, quote/billing, FinancialReportingService, risk
-    # reference, reinsurance, reconciler — uses the single
-    # actuary-table-driven ratio. The PHINS adjustable risk contract
-    # default is 0.25 (L ÷ 4).
+    # Contract ratio between the disability benefit and the life sum for
+    # attained ages below ``disability_band_age``. When not None, overrides
+    # Product.disability_share. Default contract band is 0.25 (L ÷ 4 / 1:4).
     disability_share_of_life: Optional[float] = None
+    # Post-band ratio (attained age >= disability_band_age). Settled product
+    # rule: 1.0 (D = L / 1:1) after age 65. When None, legacy cutoff behavior
+    # applies (disability zeros at Product.disability_cutoff_age).
+    disability_share_of_life_post65: Optional[float] = 1.0
+    disability_band_age: int = 65
     version: str = "kernel_v1"
 
 
@@ -388,27 +390,27 @@ PRODUCT_REGISTRY: Dict[str, Product] = {
     # L/4 on trigger, no savings/cash-value/surrender/investment component.
     "phins_pure_risk_adjustable": Product(
         id="phins_pure_risk_adjustable",
-        name="PHINS Adjustable Risk (Life 3-∞ + Permanent ADL Disability 3-65)",
+        name="PHINS Adjustable Risk (Life 3-∞ + Disability 1:4 then 1:1)",
         line="life_health",
         life_share=1.0,
         disability_share=0.25,
-        disability_cutoff_age=65,
+        disability_cutoff_age=65,  # band age; post-65 share from PricingConfig (default 1.0)
         savings_rate=0.0,
         disability_benefit_on_disability_sum=True,
         fixed_disability_benefit_pct=1.0,
         description=(
             "PHINS Adjustable Risk contract. Life benefit L paid on death at any age "
-            "(3-∞). Permanent total disability (3+ ADL) or long-term loss of earning "
-            "capacity pays L/4 once triggered (age 3-65). Disability layer terminates "
-            "automatically at age 65. Pure risk product — no savings, cash value, "
-            "surrender, dividend or investment component."
+            "(3-∞). Permanent total disability (3+ ADL) pays D=L/4 until attained age 65 "
+            "(1:4), then D=L (1:1) at/after 65 — age-banded shares from actuary config. "
+            "Pure risk product — no savings, cash value, surrender, dividend or "
+            "investment component."
         ),
     ),
     # Back-compat alias: the previous 'phins_pure_risk' product id is now an
     # alias for the contract-draft-aligned product.
     "phins_pure_risk": Product(
         id="phins_pure_risk",
-        name="PHINS Adjustable Risk (Life 3-∞ + Permanent ADL Disability 3-65)",
+        name="PHINS Adjustable Risk (Life 3-∞ + Disability 1:4 then 1:1)",
         line="life_health",
         life_share=1.0,
         disability_share=0.25,
@@ -565,19 +567,44 @@ def _compute_savings_premium(
     return target_value / float(term_years)
 
 
-def _resolve_disability_share(product: Product, config: PricingConfig) -> float:
-    """Resolve the contract ratio between the disability sum and the life sum.
+def _resolve_disability_share(product: Product, config: PricingConfig,
+                              age: Optional[int] = None) -> float:
+    """Resolve D/L share for an attained age (age-banded contract).
 
-    Order of precedence (highest first):
-      1. ``PricingConfig.disability_share_of_life`` — the actuary-table
-         value. This is the single source of truth across simulator,
-         quote/billing, reports, reinsurance, and reconciler.
-      2. ``Product.disability_share`` — product-level fallback used when
-         a caller explicitly bypasses the actuary config (rare).
+    Bands (settled product rule):
+      * age < ``disability_band_age`` (default 65) → pre-65 share (default 0.25 = 1:4)
+      * age >= band → post-65 share (default 1.0 = 1:1, D = L)
+
+    When ``disability_share_of_life_post65`` is None, legacy behavior is kept:
+    a single global share, with ``Product.disability_cutoff_age`` zeroing
+    disability at/after the cutoff.
+
+    Products with ``disability_share <= 0`` (e.g. life-only) stay at 0 unless
+    the caller forces a config pre-65 share while still respecting product
+    disability_active checks in the PV loops.
     """
-    if config.disability_share_of_life is not None:
-        return float(config.disability_share_of_life)
-    return float(product.disability_share)
+    if float(product.disability_share) <= 0.0 and config.disability_share_of_life is None:
+        return 0.0
+
+    pre = (
+        float(config.disability_share_of_life)
+        if config.disability_share_of_life is not None
+        else float(product.disability_share)
+    )
+    post = config.disability_share_of_life_post65
+    band = int(getattr(config, "disability_band_age", 65) or 65)
+
+    if age is None:
+        return pre
+
+    age_i = int(age)
+    if post is None:
+        # Legacy single-share + cutoff-to-zero
+        if product.disability_cutoff_age is not None and age_i >= int(product.disability_cutoff_age):
+            return 0.0
+        return pre
+
+    return float(post) if age_i >= band else pre
 
 
 def _pv_claims_mutually_exclusive(
@@ -595,12 +622,6 @@ def _pv_claims_mutually_exclusive(
     coverage = float(customer.coverage)
     term = int(customer.term_years)
     discount_rate = float(config.discount_rate)
-    disability_share = _resolve_disability_share(product, config)
-    disability_sum = (
-        coverage * product.life_share * disability_share
-        if product.disability_benefit_on_disability_sum
-        else coverage
-    )
 
     pv_mortality = 0.0
     pv_disability = 0.0
@@ -609,11 +630,17 @@ def _pv_claims_mutually_exclusive(
     for year in range(1, term + 1):
         current_age = age + year - 1
         qx = tables.mortality_qx(current_age, customer.cohort) * adl_mort_mult
+        share = _resolve_disability_share(product, config, current_age)
+        disability_sum = (
+            coverage * product.life_share * share
+            if product.disability_benefit_on_disability_sum
+            else coverage
+        )
 
         disability_active = (
             not exclude_disability
-            and (product.disability_cutoff_age is None or current_age < product.disability_cutoff_age)
             and product.disability_share > 0.0
+            and share > 0.0
         )
         dx = (
             tables.disability_ix(current_age, customer.cohort) * adl_dis_mult
@@ -656,12 +683,6 @@ def _pv_claims_independent(
     coverage = float(customer.coverage)
     term = int(customer.term_years)
     discount_rate = float(config.discount_rate)
-    disability_share = _resolve_disability_share(product, config)
-    disability_sum = (
-        coverage * product.life_share * disability_share
-        if product.disability_benefit_on_disability_sum
-        else coverage
-    )
 
     pv_mortality = 0.0
     for year in range(1, term + 1):
@@ -683,11 +704,14 @@ def _pv_claims_independent(
     if not exclude_disability and product.disability_share > 0.0:
         for year in range(1, term + 1):
             current_age = age + year - 1
-            if (
-                product.disability_cutoff_age is not None
-                and current_age >= product.disability_cutoff_age
-            ):
+            share = _resolve_disability_share(product, config, current_age)
+            if share <= 0.0:
                 continue
+            disability_sum = (
+                coverage * product.life_share * share
+                if product.disability_benefit_on_disability_sum
+                else coverage
+            )
             survival = 1.0
             for y in range(year - 1):
                 survival *= max(
@@ -788,7 +812,8 @@ def price_policy(
     adl_mort_mult = tables.adl_mortality_multiplier(adl)
     adl_dis_mult = tables.adl_disability_multiplier(adl)
     benefit_pct = _benefit_pct_for(adl, tables, exclude_disability, product)
-    resolved_disability_share = _resolve_disability_share(product, config)
+    # Stamp the issue-age band (attained-age schedule still applies inside PV).
+    resolved_disability_share = _resolve_disability_share(product, config, int(customer.age))
     disability_sum_used = (
         coverage * product.life_share * resolved_disability_share
         if product.disability_benefit_on_disability_sum
@@ -924,14 +949,14 @@ def price_policy(
             # mortality (a sanity bound for the contract's "L · 100% sum
             # insured" clause).
             "pv_mortality_within_coverage_bound": pv_mortality <= coverage * 1.01,
-            # Verify the contract ratio between the disability sum and the
-            # life sum (L) is what the kernel actually applied. When the
-            # config-driven actuary-table value is set, the priced policy
-            # MUST use it (not the product fallback). This is the "L ÷ 4"
-            # invariant the user asked us to police end-to-end.
+            # Issue-age band must match the age-banded schedule (1:4 pre-65 /
+            # 1:1 post-65 by default).
             "disability_share_matches_config": (
-                config.disability_share_of_life is None
-                or abs(resolved_disability_share - float(config.disability_share_of_life)) < 1e-9
+                abs(
+                    resolved_disability_share
+                    - _resolve_disability_share(product, config, int(customer.age))
+                )
+                < 1e-9
             ),
             "disability_share_within_bounds": 0.0 <= resolved_disability_share <= 1.0,
         },
@@ -961,6 +986,17 @@ def price_policy(
             "underwriting_loading": _round6(underwriting_loading),
             "exclude_disability": bool(exclude_disability),
             "disability_share": _round6(resolved_disability_share),
+            "disability_share_pre65": _round6(
+                float(config.disability_share_of_life)
+                if config.disability_share_of_life is not None
+                else float(product.disability_share)
+            ),
+            "disability_share_post65": (
+                None
+                if config.disability_share_of_life_post65 is None
+                else _round6(float(config.disability_share_of_life_post65))
+            ),
+            "disability_band_age": int(getattr(config, "disability_band_age", 65) or 65),
         }
     )
     return components
@@ -1000,19 +1036,26 @@ def pricing_config_from_underwriting(uw_config: Any,
                                      apply_min_risk_floor: bool = False,
                                      savings_formula: SavingsFormula = SavingsFormula.STRAIGHT_LINE,
                                      disability_share_of_life: Optional[float] = None,
+                                     disability_share_of_life_post65: Optional[float] = None,
+                                     disability_band_age: Optional[int] = None,
                                      ) -> PricingConfig:
     """Build a :class:`PricingConfig` from an existing :class:`UnderwritingConfig`.
 
-    The actuary-table value of ``disability_share_of_life`` (the L÷4
-    contract ratio) flows in via the UnderwritingConfig by default. Callers
-    can pass an override to evaluate hypothetical contracts.
+    Age-banded L:D ratios flow from UnderwritingConfig by default
+    (pre-65 1:4 / post-65 1:1). Callers may override bands for scenarios.
     """
     resolved_share = disability_share_of_life
     if resolved_share is None:
-        # Pull from the actuary-table-driven UnderwritingConfig so simulator,
-        # billing, financial-reporting, risk reference and reconciler all
-        # share one source of truth for the L:D ratio.
         resolved_share = getattr(uw_config, "disability_share_of_life", 0.25)
+    resolved_post = disability_share_of_life_post65
+    if resolved_post is None and not hasattr(uw_config, "disability_share_of_life_post65"):
+        resolved_post = 1.0
+    elif resolved_post is None:
+        resolved_post = getattr(uw_config, "disability_share_of_life_post65", 1.0)
+    band = disability_band_age
+    if band is None:
+        band = int(getattr(uw_config, "disability_band_age", 65) or 65)
+    cfg_version = str(getattr(uw_config, "config_version", None) or "kernel_v1")
     return PricingConfig(
         expense_loading_pct=float(getattr(uw_config, "expense_loading_pct", 0.15)),
         profit_margin_pct=float(getattr(uw_config, "profit_margin_pct", 0.10)),
@@ -1026,6 +1069,11 @@ def pricing_config_from_underwriting(uw_config: Any,
         disability_share_of_life=(
             float(resolved_share) if resolved_share is not None else None
         ),
+        disability_share_of_life_post65=(
+            None if resolved_post is None else float(resolved_post)
+        ),
+        disability_band_age=int(band),
+        version=cfg_version,
     )
 
 

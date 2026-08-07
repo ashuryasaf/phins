@@ -1722,16 +1722,23 @@
           </div>
 
           <div class="card">
-            <div class="card-title">Contract Ratios (Life : Disability)</div>
+            <div class="card-title">Contract Ratios (Life : Disability) — age-banded</div>
             <p style="color:var(--text-light);margin-bottom:12px;">
-              The PHINS adjustable risk contract pays a Disability benefit of <strong>L ÷ 4</strong> (1:4 with the life sum). Adjust the ratio below — every algorithm (pricing kernel, simulator, risk reference, reinsurance program, reconciler) picks up the new value automatically.
+              Settled risk product: <strong>1:4 until age 65</strong> (D = L÷4), then <strong>1:1 after 65</strong> (D = L).
+              Both bands are adjustable and persisted with the actuarial config version.
             </p>
             <div class="form-row">
               <div class="form-group">
-                <label class="form-label">Disability Benefit (% of Life Sum)</label>
+                <label class="form-label">Pre-65 Disability (% of Life Sum)</label>
                 <input type="number" id="disability-share" class="form-input" value="25" min="0" max="100" step="0.1"
                        oninput="updateDisabilityRatioDisplay()">
-                <small id="disability-ratio-display" style="color:var(--text-light);">Disability ÷ Life = 1 : 4</small>
+                <small id="disability-ratio-display" style="color:var(--text-light);">Until 65: Disability ÷ Life = 1 : 4</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Post-65 Disability (% of Life Sum)</label>
+                <input type="number" id="disability-share-post65" class="form-input" value="100" min="0" max="100" step="0.1"
+                       oninput="updateDisabilityRatioDisplay()">
+                <small id="disability-ratio-post65-display" style="color:var(--text-light);">After 65: Disability ÷ Life = 1 : 1</small>
               </div>
             </div>
           </div>
@@ -3430,20 +3437,17 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
       const dShare = (typeof currentConfig.disability_share_of_life === 'number')
         ? currentConfig.disability_share_of_life : 0.25;
+      const dSharePost = (typeof currentConfig.disability_share_of_life_post65 === 'number')
+        ? currentConfig.disability_share_of_life_post65 : 1.0;
       const dShareInput = document.getElementById('disability-share');
       if (dShareInput) {
         dShareInput.value = (dShare * 100).toFixed(2);
       }
-      const ratioDisplay = document.getElementById('disability-ratio-display');
-      if (ratioDisplay) {
-        const inv = dShare > 0 ? (1 / dShare) : 0;
-        const rounded = Math.round(inv);
-        if (dShare > 0 && Math.abs(inv - rounded) < 0.01) {
-          ratioDisplay.textContent = `Disability ÷ Life = 1 : ${rounded}`;
-        } else {
-          ratioDisplay.textContent = `Disability ÷ Life = ${dShare.toFixed(4)}`;
-        }
+      const dSharePostInput = document.getElementById('disability-share-post65');
+      if (dSharePostInput) {
+        dSharePostInput.value = (dSharePost * 100).toFixed(2);
       }
+      updateDisabilityRatioDisplay();
       
       if (currentConfig.loadings) {
         document.getElementById('loading-6').value = (currentConfig.loadings['6'] || 0.15) * 100;
@@ -3848,6 +3852,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     
     async function savePricingParams() {
       const dShareInput = parseFloat(document.getElementById('disability-share')?.value);
+      const dSharePost = parseFloat(document.getElementById('disability-share-post65')?.value);
       const config = {
         expense_loading_pct: parseFloat(document.getElementById('expense-loading').value) / 100,
         profit_margin_pct: parseFloat(document.getElementById('profit-margin').value) / 100,
@@ -3856,6 +3861,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (!Number.isNaN(dShareInput)) {
         // Field is entered as a percentage of life sum (e.g. 25 for 1:4)
         config.disability_share_of_life = dShareInput / 100;
+      }
+      if (!Number.isNaN(dSharePost)) {
+        config.disability_share_of_life_post65 = dSharePost / 100;
       }
       
       try {
@@ -3870,7 +3878,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         
         const data = await res.json();
         if (data.success) {
-          alert('✅ Pricing parameters saved successfully!');
+          const ver = data.config?.config_version || '';
+          const persistNote = data.persisted ? ' (persisted)' : (data.persistence_warning ? ' (memory only: ' + data.persistence_warning + ')' : '');
+          alert('✅ Pricing parameters saved' + (ver ? ' [' + ver + ']' : '') + persistNote);
           loadConfig();
         } else {
           alert('❌ Error: ' + (data.error || 'Unknown error'));
@@ -5859,20 +5869,20 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     }
 
     function updateDisabilityRatioDisplay() {
+      function fmtRatio(raw, prefix) {
+        if (!raw || raw <= 0) return `${prefix}: Disability ÷ Life = 0`;
+        if (Math.abs(raw - 1) < 1e-9) return `${prefix}: Disability ÷ Life = 1 : 1`;
+        const inv = 1 / raw;
+        const rounded = Math.round(inv);
+        if (Math.abs(inv - rounded) < 0.01) return `${prefix}: Disability ÷ Life = 1 : ${rounded}`;
+        return `${prefix}: Disability ÷ Life = ${raw.toFixed(4)}`;
+      }
       const display = document.getElementById('disability-ratio-display');
-      if (!display) return;
       const raw = parseFloat(document.getElementById('disability-share')?.value || '0') / 100;
-      if (!raw || raw <= 0) {
-        display.textContent = 'Disability ÷ Life = 0 (no disability cover)';
-        return;
-      }
-      const inv = 1 / raw;
-      const rounded = Math.round(inv);
-      if (Math.abs(inv - rounded) < 0.01) {
-        display.textContent = `Disability ÷ Life = 1 : ${rounded}`;
-      } else {
-        display.textContent = `Disability ÷ Life = ${raw.toFixed(4)}`;
-      }
+      if (display) display.textContent = fmtRatio(raw, 'Until 65');
+      const displayPost = document.getElementById('disability-ratio-post65-display');
+      const rawPost = parseFloat(document.getElementById('disability-share-post65')?.value || '100') / 100;
+      if (displayPost) displayPost.textContent = fmtRatio(rawPost, 'After 65');
     }
 
     async function loadContractSpec() {

@@ -39704,6 +39704,49 @@ For claims or questions, please contact:
                                                    data.get('payment_setup', {}).get('savings_percentage', 0))
                     }
                 }
+
+                # Shadow dual-run: kernel PremiumSnapshot beside flat billed amounts.
+                # Never mutates annual/monthly/quarterly premiums. Fail-open.
+                pricing_shadow = None
+                try:
+                    from services.pricing_shadow_service import record_shadow_snapshot
+                    shadow_policy = dict(policy)
+                    shadow_policy['age'] = data.get('age') or data.get('customer_age')
+                    if not shadow_policy.get('age'):
+                        # Fall back to DOB-derived age when present on payload
+                        shadow_policy['age'] = data.get('personal_info', {}).get('age')
+                    shadow_policy['term_years'] = (
+                        data.get('term_years')
+                        or (data.get('coverage') or {}).get('coverageYears')
+                        or 20
+                    )
+                    shadow_policy['adl_level'] = data.get('adl_level') or 5
+                    pricing_shadow = record_shadow_snapshot(shadow_policy, premium_data)
+                    if pricing_shadow:
+                        try:
+                            if 'platform_event_ledger' in globals() and platform_event_ledger:
+                                platform_event_ledger.append_event(
+                                    event_type='premium.priced',
+                                    entity_type='policy',
+                                    entity_id=policy_id,
+                                    customer_id=customer_id,
+                                    actor=(session.get('username') if session else 'system'),
+                                    amount=0.0,
+                                    status='shadow',
+                                    payload={
+                                        'snapshot_id': pricing_shadow.get('id'),
+                                        'integrity_hash': pricing_shadow.get('integrity_hash'),
+                                        'product_id': pricing_shadow.get('product_id'),
+                                        'tables_version': pricing_shadow.get('tables_version'),
+                                        'config_version': pricing_shadow.get('config_version'),
+                                        'delta_annual': pricing_shadow.get('delta_annual'),
+                                        'disability_share_used': pricing_shadow.get('disability_share_used'),
+                                    },
+                                )
+                        except Exception:
+                            pass
+                except Exception:
+                    pricing_shadow = None
                 
                 POLICIES[policy_id] = policy
                 if audit:
@@ -39729,6 +39772,19 @@ For claims or questions, please contact:
                     'underwriting': UNDERWRITING_APPLICATIONS[uw_id],
                     'customer': customer_data
                 }
+                if pricing_shadow:
+                    response_data['pricing_shadow'] = {
+                        'enabled': True,
+                        'snapshot_id': pricing_shadow.get('id'),
+                        'integrity_hash': pricing_shadow.get('integrity_hash'),
+                        'delta_annual': pricing_shadow.get('delta_annual'),
+                        'product_id': pricing_shadow.get('product_id'),
+                        'tables_version': pricing_shadow.get('tables_version'),
+                        'config_version': pricing_shadow.get('config_version'),
+                        'disability_share_used': pricing_shadow.get('disability_share_used'),
+                        'kernel_annual': pricing_shadow.get('kernel_annual'),
+                        'flat_annual': pricing_shadow.get('flat_annual'),
+                    }
                 
                 # Only include provisioned_login if this is a new customer with temp password
                 if temp_password:
