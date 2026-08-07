@@ -123,3 +123,23 @@ def test_contract_spec_exposes_life_and_disability_bands():
     assert ratios.get("disability_to_life_ratio_post65_display") in ("1:1", "1.0000") or ratios.get(
         "disability_share_of_life_post65"
     ) == pytest.approx(1.0)
+
+
+def test_bare_pricing_config_keeps_legacy_hybrid_cutoff(fresh_store):
+    """FRS / bare PricingConfig must not silently adopt Draft 3.1 post-65 shares."""
+    store, _ = fresh_store
+    tables = table_set_from_store(store)
+    cfg = PricingConfig()  # both post65 shares default to None
+    assert cfg.life_share_of_coverage_post65 is None
+    assert cfg.disability_share_of_life_post65 is None
+    product = get_product("phins_hybrid_savings")
+    senior = price_policy(
+        PricingCustomer(age=65, coverage=500_000, term_years=10, adl_level=5),
+        product,
+        tables,
+        cfg,
+    )
+    # Legacy: full life cover, disability cut off at product.disability_cutoff_age.
+    assert senior.life_sum_used == pytest.approx(500_000.0)
+    assert senior.disability_sum_used == pytest.approx(0.0)
+    assert senior.disability_premium_annual == pytest.approx(0.0)

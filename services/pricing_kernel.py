@@ -193,9 +193,11 @@ class PricingConfig:
     # sum* for ages below ``disability_band_age``. Default 0.25 → D = life/4
     # while life = full coverage (pre-65: L=$500k, D=$125k).
     disability_share_of_life: Optional[float] = None
-    # Post-band D/life ratio. Default 1.0 → disability equals the post-65 life
-    # sum (both $125k when coverage=$500k and life_share_post65=0.25).
-    disability_share_of_life_post65: Optional[float] = 1.0
+    # Post-band D/life ratio. ``None`` preserves legacy product cutoff-to-zero
+    # when ``Product.disability_cutoff_age`` is set. The underwriting/dashboard
+    # path opts in to 1.0 (D = stepped-down life) via
+    # ``pricing_config_from_underwriting``.
+    disability_share_of_life_post65: Optional[float] = None
     # Life sum as a fraction of coverage. Pre-65 default 1.0 (full L).
     # ``life_share_of_coverage_post65`` is ``None`` by default so the post-65
     # life sum follows the pre-65 share (full coverage) unless a caller opts
@@ -204,6 +206,8 @@ class PricingConfig:
     # builds from silently quartering the post-65 life sum.
     life_share_of_coverage: float = 1.0
     life_share_of_coverage_post65: Optional[float] = None
+    # NOTE: both post-65 share defaults are None for legacy/FRS callers.
+    # Adjustable-risk issuance always goes through pricing_config_from_underwriting.
     disability_band_age: int = 65
     # Post-disability administration (does not change healthy-life quote PV
     # while claim_model stays MUTUALLY_EXCLUSIVE). Default premium factor
@@ -1087,7 +1091,9 @@ def price_policy(
             mortality_premium = risk_premium
             disability_premium = 0.0
 
-    if underwriting_loading > 0:
+    # Apply positive loadings and negative discounts (aligned with flat
+    # calculate_premium risk_score factors such as very_low=0.85 → -0.15).
+    if float(underwriting_loading) != 0.0:
         risk_premium *= 1.0 + float(underwriting_loading)
         mortality_premium *= 1.0 + float(underwriting_loading)
         disability_premium *= 1.0 + float(underwriting_loading)

@@ -108,3 +108,23 @@ def test_percent_input_normalizes_to_factor():
     assert store.config.post_disability_premium_factor == pytest.approx(1.0)
     store.update_config({"post_disability_premium_factor": 80}, user="test")
     assert store.config.post_disability_premium_factor == pytest.approx(0.80)
+
+
+def test_pre65_continuation_off_terminates_policy():
+    store = get_actuarial_store()
+    store.update_config({"pre65_disability_continues_policy": False}, user="test")
+    out = resolve_disability_claim_outcome(500_000, 50, 172.50, store.config)
+    assert out["mode"] == "single_claim_pre65"
+    assert out["policy_continues"] is False
+    assert out["ongoing_premium"] == 0.0
+    assert out["remaining_life_sum"] == 0.0
+
+
+def test_post65_non_exclusive_continues_at_post65_life_sum():
+    store = get_actuarial_store()
+    store.update_config({"post65_claims_mutually_exclusive": False}, user="test")
+    out = resolve_disability_claim_outcome(500_000, 70, 104.06, store.config)
+    assert out["mode"] == "continuation_post65"
+    assert out["policy_continues"] is True
+    assert out["remaining_life_sum"] == pytest.approx(125_000.0)
+    assert out["ongoing_premium"] == pytest.approx(104.06)

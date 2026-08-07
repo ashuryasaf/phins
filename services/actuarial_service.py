@@ -2745,6 +2745,8 @@ def build_risk_reference(start_age: Optional[int] = None,
                 'disability_severity': float(profile['disability_severity']),
             },
             'disability_sum_matches_age_band': band_ok,
+            # Compare against the share that applies at the issue attained age
+            # (pre-65 share before the band; post-65 share at/after the band).
             'issue_age_disability_sum_matches_ratio': abs(
                 float(issue_sums['disability_sum'])
                 - float(issue_sums['life_sum']) * float(issue_sums['disability_share'])

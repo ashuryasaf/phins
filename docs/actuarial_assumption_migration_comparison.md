@@ -35,7 +35,7 @@ This document lists every surface that previously carried a stale assumption (Dr
 | Benefit-sum helper | `contract_benefit_sums_at_age()` / `_from_config()` | *(new)* | Canonical attained-age L/D for every consumer |
 | Risk-reference valuations | `risk_reference_monthly_premiums`, `build_risk_reference` | Disability monthly **0** at age 65 | Disability continues; age-65 monthly **life $50 / disability $40 / total $90** on $500k face (rates 0.25 / 0.20 × f=1.60) |
 | Risk-reference profile | `RISK_REFERENCE_PROFILES['phins_published_v1']` | `disability_cut_off_age: 65` | `disability_cut_off_age: None`; post-65 life share 0.25 |
-| Shadow / application pricing | `services/pricing_shadow_service.py`, `web_portal/server.py` | Legacy billing formula | Kernel path when `PHINS_KERNEL_BILLING_ENABLED`; demographics on create |
+| Shadow / application pricing | `services/pricing_shadow_service.py`, `web_portal/server.py` | Legacy billing formula | Shadow dual-run always available; **billed** kernel path opt-in via `PHINS_KERNEL_BILLING_ENABLED` (default off); demographics on create |
 
 ### B. Meetings / presentations / 1-pagers
 
@@ -99,7 +99,7 @@ Draft 2.0 at 65 would have been life-only ≈ 200.00 with disability 0 — also 
 |---|---|
 | `PHINS_ACTUARIAL_STATE_PATH` | Durable Pricing Parameters (default `data/actuarial_store_state.json`) |
 | `PHINS_PRICING_SHADOW_ENABLED` | Dual-run shadow snapshots on create |
-| `PHINS_KERNEL_BILLING_ENABLED` | Bill from kernel (default off under `PHINS_TEST_MODE`) |
+| `PHINS_KERNEL_BILLING_ENABLED` | Bill from kernel (**opt-in**; default off — flat formula remains production billing) |
 
 ---
 

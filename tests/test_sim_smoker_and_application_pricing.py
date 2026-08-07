@@ -111,3 +111,25 @@ def test_kernel_billing_off_under_test_mode(monkeypatch):
     monkeypatch.setenv("PHINS_TEST_MODE", "1")
     monkeypatch.delenv("PHINS_KERNEL_BILLING_ENABLED", raising=False)
     assert is_kernel_billing_enabled() is False
+
+
+def test_kernel_applies_risk_score_loading(isolated_store, monkeypatch):
+    monkeypatch.setenv("PHINS_KERNEL_BILLING_ENABLED", "1")
+    import services.actuarial_service as asvc
+    monkeypatch.setattr(asvc, "get_actuarial_store", lambda: isolated_store)
+
+    base = {
+        "type": "life",
+        "coverage_amount": 500000,
+        "age": 40,
+        "term_years": 20,
+        "adl_level": 5,
+    }
+    medium = price_application_with_kernel({**base, "risk_score": "medium"})
+    high = price_application_with_kernel({**base, "risk_score": "high"})
+    low = price_application_with_kernel({**base, "risk_score": "very_low"})
+    assert medium and high and low
+    assert high["annual"] > medium["annual"]
+    assert low["annual"] < medium["annual"]
+    assert high["components"]["underwriting_loading"] == pytest.approx(0.35)
+    assert low["components"]["underwriting_loading"] == pytest.approx(-0.15)

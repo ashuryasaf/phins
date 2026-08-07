@@ -102,6 +102,8 @@ def test_risk_reference_is_modular_for_any_age_term_lifesum():
             assert row['disability_monthly'] > 0
             assert row['disability_ix'] >= 0
     assert senior_ref['data_integrity']['disability_sum_matches_age_band']
+    # Senior issue age must compare D to the post-65 share (1.0), not pre-65 0.25.
+    assert senior_ref['data_integrity']['issue_age_disability_sum_matches_ratio'] is True
     assert ref['data_integrity']['cumulative_premium_check']
     assert ref['data_integrity']['cumulative_loss_check']
 

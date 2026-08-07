@@ -7181,10 +7181,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             const face = Number(owner.coverage_amount) || 0;
             const combinedMonthly = Number(owner.monthly_premium) || 0;
             const ageAtClaim = Number(owner.age) || 0;
-            if (ageAtClaim < bandAge && continues) {
-              const remaining = Math.round(face * lifeRemainShare);
+            const applyContinuation = (remainingLife, label) => {
               const ongoingMonthly = Math.round(combinedMonthly * premFactor * 100) / 100;
-              owner.coverage_amount = remaining;
+              owner.coverage_amount = remainingLife;
               owner.pre_disability_combined_monthly = combinedMonthly;
               owner.post_disability_premium_factor = premFactor;
               owner.monthly_premium = ongoingMonthly;
@@ -7193,10 +7192,11 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
               owner.disability_eligible = false;
               sandboxLogEvent(
                 'claim',
-                `Disability claim ${target.id} paid ${sandboxFmtMoney(target.paid_amount)}; policy continues with life ${sandboxFmtMoney(remaining)} and premium ${sandboxFmtMoney(ongoingMonthly)}/mo (${(premFactor * 100).toFixed(0)}% of prior combined).`,
+                `Disability claim ${target.id} paid ${sandboxFmtMoney(target.paid_amount)}; ${label} life ${sandboxFmtMoney(remainingLife)} and premium ${sandboxFmtMoney(ongoingMonthly)}/mo (${(premFactor * 100).toFixed(0)}% of prior combined).`,
                 'info'
               );
-            } else if (ageAtClaim >= bandAge && exclusivePost) {
+            };
+            const terminatePolicy = (label) => {
               owner.policy_status = 'terminated';
               owner.terminated_at = ts;
               sb.bills.forEach(b => {
@@ -7204,9 +7204,20 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
                   b.status = 'voided';
                 }
               });
-              sandboxLogEvent('claim', `Post-65 disability claim ${target.id} paid ${sandboxFmtMoney(target.paid_amount)} — mutually exclusive settlement; policy terminated.`, 'breaking');
+              sandboxLogEvent('claim', `${label} ${target.id} paid ${sandboxFmtMoney(target.paid_amount)} — policy terminated.`, 'breaking');
+            };
+            // Mirror resolve_disability_claim_outcome modes for all toggle combos.
+            if (ageAtClaim < bandAge && continues) {
+              applyContinuation(Math.round(face * lifeRemainShare), 'policy continues with');
+            } else if (ageAtClaim < bandAge && !continues) {
+              terminatePolicy('Pre-65 disability claim (continuation off)');
+            } else if (ageAtClaim >= bandAge && exclusivePost) {
+              terminatePolicy('Post-65 disability claim (mutually exclusive)');
+            } else if (ageAtClaim >= bandAge && !exclusivePost && continues) {
+              const sums = sandboxBenefitSums(ageAtClaim, face);
+              applyContinuation(Math.round(sums.lifeSum), 'post-65 continuation with');
             } else {
-              sandboxLogEvent('claim', `Disability claim ${target.id} paid out ${sandboxFmtMoney(target.paid_amount)} (${target.cause || 'permanent disability'}).`, 'info');
+              terminatePolicy('Disability claim');
             }
           }
         }

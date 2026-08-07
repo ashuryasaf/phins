@@ -66,8 +66,25 @@ def _map_tobacco_to_smoking(raw: Any) -> Optional[str]:
     return s or None
 
 
+def _coalesce_int(*candidates: Any, default: int) -> int:
+    """Return the first candidate that is an explicit int-like value (incl. 0)."""
+    for raw in candidates:
+        if raw is None:
+            continue
+        if isinstance(raw, str) and not str(raw).strip():
+            continue
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            continue
+    return int(default)
+
+
 def extract_application_pricing_inputs(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Pull age/term/ADL/gender/smoking/ethnicity from a new-application payload."""
+    """Pull age/term/ADL/gender/smoking/ethnicity from a new-application payload.
+
+    Age default matches flat ``calculate_premium`` (30). Explicit ``0`` is kept.
+    """
     personal = payload.get("personal_info") or payload.get("personal") or {}
     health = payload.get("health") or {}
     questionnaire = payload.get("questionnaire") or {}
@@ -90,19 +107,24 @@ def extract_application_pricing_inputs(payload: Dict[str, Any]) -> Dict[str, Any
         or personal.get("ethnicity")
         or questionnaire.get("ethnicity")
     )
-    age = payload.get("age") or payload.get("customer_age") or personal.get("age") or 35
-    term = (
-        payload.get("term_years")
-        or payload.get("coverage_years")
-        or coverage.get("coverageYears")
-        or coverage.get("term_years")
-        or 20
+    age = _coalesce_int(
+        payload.get("age"),
+        payload.get("customer_age"),
+        personal.get("age"),
+        default=30,
     )
-    adl = payload.get("adl_level") or payload.get("adl") or 5
+    term = _coalesce_int(
+        payload.get("term_years"),
+        payload.get("coverage_years"),
+        coverage.get("coverageYears"),
+        coverage.get("term_years"),
+        default=20,
+    )
+    adl = _coalesce_int(payload.get("adl_level"), payload.get("adl"), default=5)
     return {
-        "age": int(age or 35),
-        "term_years": int(term or 20),
-        "adl_level": int(adl or 5),
+        "age": age,
+        "term_years": term,
+        "adl_level": adl,
         "gender": gender,
         "smoking_status": _map_tobacco_to_smoking(smoking),
         "ethnicity": ethnicity,
@@ -113,18 +135,21 @@ def extract_application_pricing_inputs(payload: Dict[str, Any]) -> Dict[str, Any
             or 0
         ),
         "type": payload.get("type") or "life",
+        "risk_score": payload.get("risk_score") or payload.get("risk") or "medium",
     }
 
 
 def is_kernel_billing_enabled() -> bool:
-    """Kernel bills new life policies outside test mode unless explicitly disabled."""
+    """Kernel billed premiums are opt-in via ``PHINS_KERNEL_BILLING_ENABLED``.
+
+    Default off so production stays on the flat formula (shadow dual-run can
+    still compare kernel quotes without changing issued premiums). Explicit
+    ``1``/``true`` enables kernel billing; test mode also stays off.
+    """
     raw = os.environ.get("PHINS_KERNEL_BILLING_ENABLED")
     if raw is not None and str(raw).strip() != "":
         return _truthy(raw)
-    # Preserve flat-formula expectations under pytest / PHINS_TEST_MODE.
-    if _truthy(os.environ.get("PHINS_TEST_MODE")):
-        return False
-    return True
+    return False
 
 
 def price_application_with_kernel(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -185,7 +210,26 @@ def price_application_with_kernel(payload: Dict[str, Any]) -> Optional[Dict[str,
                 "smoker": str(smoking or "").lower(),
             },
         )
-        components = price_policy(customer, product, tables, cfg)
+        # Map application risk_score into underwriting loading so kernel and
+        # flat paths stay aligned when kernel billing is enabled.
+        risk_score = str(inputs.get("risk_score") or "medium").strip().lower()
+        risk_loadings = {
+            "very_low": -0.15,
+            "low": -0.10,
+            "medium": 0.0,
+            "moderate": 0.15,
+            "elevated": 0.25,
+            "high": 0.35,
+            "very_high": 0.50,
+        }
+        underwriting_loading = float(risk_loadings.get(risk_score, 0.0))
+        components = price_policy(
+            customer,
+            product,
+            tables,
+            cfg,
+            underwriting_loading=underwriting_loading,
+        )
         monthly = float(components.monthly_premium)
         return {
             "annual": float(components.annual_premium),
@@ -222,13 +266,18 @@ def build_shadow_snapshot(
     from services.actuarial_service import get_contract_specification
 
     # Merge application demographics into the policy view for kernel pricing.
+    # Do not treat numeric 0 as "missing" (age 0 must remain age 0).
     merged = dict(policy)
     inputs = extract_application_pricing_inputs(policy)
-    for key in ("age", "term_years", "adl_level", "gender", "smoking_status", "ethnicity"):
-        if inputs.get(key) is not None and merged.get(key) in (None, "", 0):
-            merged[key] = inputs[key]
-        elif key in ("gender", "smoking_status", "ethnicity") and inputs.get(key):
-            merged[key] = inputs[key]
+    for key in ("age", "term_years", "adl_level", "gender", "smoking_status", "ethnicity", "risk_score"):
+        if key in ("gender", "smoking_status", "ethnicity", "risk_score"):
+            if inputs.get(key) and merged.get(key) in (None, ""):
+                merged[key] = inputs[key]
+            elif inputs.get(key) and key in ("gender", "smoking_status", "ethnicity"):
+                merged[key] = inputs[key]
+        else:
+            if merged.get(key) is None or merged.get(key) == "":
+                merged[key] = inputs[key]
 
     kernel_price = price_application_with_kernel(merged)
     if not kernel_price:

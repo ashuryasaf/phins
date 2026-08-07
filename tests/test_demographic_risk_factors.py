@@ -120,6 +120,23 @@ def test_dashboard_update_persists_demographic_factors(store_tables):
     assert restored.config.ethnicity_mortality_factors["african"] == pytest.approx(1.1)
 
 
+def test_partial_ethnicity_update_merges_not_resets(store_tables):
+    """Omitted ethnicity keys must keep previously tuned multipliers."""
+    store, _, _ = store_tables
+    store.update_config(
+        {"ethnicity_mortality_factors": {"asian": 0.9, "african": 1.2}},
+        user="pytest",
+    )
+    store.update_config(
+        {"ethnicity_mortality_factors": {"asian": 0.95}},
+        user="pytest",
+    )
+    factors = store.config.ethnicity_mortality_factors
+    assert factors["asian"] == pytest.approx(0.95)
+    assert factors["african"] == pytest.approx(1.2)
+    assert factors["caucasian"] == pytest.approx(1.0)
+
+
 def test_contract_spec_exposes_demographic_factors():
     spec = get_contract_specification()
     demo = spec.get("demographic_risk_factors") or {}
