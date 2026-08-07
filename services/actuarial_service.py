@@ -727,10 +727,13 @@ class ActuarialTablesStore:
                 setattr(self.config, key, _clamp(float(updates[key]), 0.0, 10.0))
         for key in ('ethnicity_mortality_factors', 'ethnicity_disability_factors'):
             if key in updates and isinstance(updates[key], dict):
-                base = _default_ethnicity_factors()
+                # Merge onto the current map so ethnicities omitted from a
+                # partial payload keep their previously tuned multipliers
+                # instead of reverting to the 1.0 defaults.
+                merged = dict(getattr(self.config, key, None) or _default_ethnicity_factors())
                 for eth_key, eth_val in updates[key].items():
-                    base[str(eth_key).lower()] = _clamp(float(eth_val), 0.0, 10.0)
-                setattr(self.config, key, base)
+                    merged[str(eth_key).lower()] = _clamp(float(eth_val), 0.0, 10.0)
+                setattr(self.config, key, merged)
 
         # Bump config revision so priced policies can pin dashboard saves.
         try:
