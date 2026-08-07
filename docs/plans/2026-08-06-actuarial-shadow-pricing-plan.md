@@ -152,6 +152,7 @@ Without a pinned kernel snapshot at issue time, PHINS cannot prove which product
 - Shadow uses live `get_actuarial_store()` tables (same as simulator), recording `tables_version` on the snapshot — freeze-at-issue of table bytes can come later if needed.
 - `calculate_age_adjusted_premium`'s savings override must **not** be reused for shadow truth; call `price_policy` directly so snapshot matches actuary contract semantics.
 - Env flag pattern matches `PHINS_ASSESSMENT_AI_ENABLED` (`_truthy`), not static `FEATURES` dict alone.
+- Session-settled product economics (see `docs/actuarial_ld_ratio_consistency_report.md` §0): **1:4 D:L until 65; 1:1 (D=L) after 65**; table/kernel pricing; dashboard actuarial adjustments must **persist**. Shadow Phase A–B may still snapshot *current* kernel behavior (which zeros disability ≥65) for parity evidence; correcting the post-65 band + durable config is a **prerequisite/sibling** plan before cutover, not silently in scope of billed-amount freeze work.
 
 ### Key Technical Decisions
 
