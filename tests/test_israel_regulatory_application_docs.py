@@ -72,18 +72,22 @@ def test_markdown_preserves_real_product_parameters():
     for needle in ("L ÷ 4", "1:4", "1 : 1", "3+ ADL", "Section 40", "0.25", "0.20",
                    "age 65", "f(3) = 0.30", "f(25) = 1.00", "f(80) = 2.50",
                    "3.5%", "15%", "10%", "V2.0", "500,000", "125,000",
-                   # Draft 3.0 redesign: lifelong disability layer, 1:1 from 65,
-                   # post-claim continuation at 0.75 × L, issue caps in ₪
-                   "₪1,000,000", "₪250,000", "0.75 × L",
-                   "does not terminate at age 65"):
+                   # Draft 3.1: lifelong disability, life steps to face÷4 from 65,
+                   # D=life at reduced sum, post-claim 0.75 × F below 65
+                   "Draft 3.1", "F ÷ 4", "₪1,000,000", "₪250,000", "0.75 × F",
+                   "56.25", "does not terminate at age 65"):
         assert needle in en, f"EN memo missing canonical parameter {needle!r}"
+    assert "D = L = ₪500,000" not in en
+    assert "225 × f(x)" not in en
 
     for needle in ("L ÷ 4", "1:4", "1 : 1", "3+ ADL", "סעיף 40", "רשות שוק ההון",
                    "ביטוח חיים", "גיל 65", "f(3) = 0.30", "f(80) = 2.50",
                    "V2.0", "500,000", "125,000",
-                   "1,000,000 ₪", "250,000 ₪", "0.75 × L",
-                   "אינה פוקעת בגיל 65"):
+                   "טיוטה 3.1", "F ÷ 4", "1,000,000 ₪", "250,000 ₪", "0.75 × F",
+                   "56.25", "אינה פוקעת בגיל 65"):
         assert needle in he, f"HE memo missing canonical parameter {needle!r}"
+    assert "D = L = ‏500,000" not in he
+    assert "225 × f(x)" not in he
 
     # pure-risk statement (no savings / surrender value) present in both
     assert "no cash or surrender value" in en.lower() or "no cash" in en.lower()

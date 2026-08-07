@@ -115,6 +115,12 @@ class PricingCustomer:
     term_years: int
     adl_level: int = 5
     gender: Optional[str] = None
+    # Smoking status: never/nonsmoker | former | current/smoker. When unset,
+    # demographic smoking multipliers stay neutral (1.0).
+    smoking_status: Optional[str] = None
+    # Ethnicity key matched against PricingConfig.ethnicity_*_factors
+    # (e.g. caucasian/african/hispanic/asian/other). Also read from cohort.
+    ethnicity: Optional[str] = None
     cohort: Dict[str, str] = field(default_factory=dict)
     # When ``annual_premium_target`` is set, the kernel still returns the
     # decomposed components but uses this as a sanity hint for downstream
@@ -183,13 +189,61 @@ class PricingConfig:
     apply_min_risk_floor: bool = False
     expense_basis: str = "risk_premium"  # 'risk_premium' or 'gross_premium'
     profit_basis: str = "risk_savings_expense"  # 'risk_savings_expense' or 'gross_premium'
-    # Contract ratio between the disability benefit and the life sum. When
-    # not None, this value overrides Product.disability_share so every
-    # caller — simulator, quote/billing, FinancialReportingService, risk
-    # reference, reinsurance, reconciler — uses the single
-    # actuary-table-driven ratio. The PHINS adjustable risk contract
-    # default is 0.25 (L ÷ 4).
+    # Contract ratio between the disability benefit and the *attained-age life
+    # sum* for ages below ``disability_band_age``. Default 0.25 → D = life/4
+    # while life = full coverage (pre-65: L=$500k, D=$125k).
     disability_share_of_life: Optional[float] = None
+    # Post-band D/life ratio. ``None`` preserves legacy product cutoff-to-zero
+    # when ``Product.disability_cutoff_age`` is set. The underwriting/dashboard
+    # path opts in to 1.0 (D = stepped-down life) via
+    # ``pricing_config_from_underwriting``.
+    disability_share_of_life_post65: Optional[float] = None
+    # Life sum as a fraction of coverage. Pre-65 default 1.0 (full L).
+    # ``life_share_of_coverage_post65`` is ``None`` by default so the post-65
+    # life sum follows the pre-65 share (full coverage) unless a caller opts
+    # into the adjustable-risk step-down (the underwriting/dashboard path sets
+    # it to 0.25 → life steps down to L/4). This keeps bare ``PricingConfig``
+    # builds from silently quartering the post-65 life sum.
+    life_share_of_coverage: float = 1.0
+    life_share_of_coverage_post65: Optional[float] = None
+    # NOTE: both post-65 share defaults are None for legacy/FRS callers.
+    # Adjustable-risk issuance always goes through pricing_config_from_underwriting.
+    disability_band_age: int = 65
+    # Post-disability administration (does not change healthy-life quote PV
+    # while claim_model stays MUTUALLY_EXCLUSIVE). Default premium factor
+    # 1.0 = continue charging 100% of the pre-claim combined premium.
+    pre65_disability_continues_policy: bool = True
+    post_disability_life_share_of_face: float = 0.75
+    post_disability_premium_factor: float = 1.0
+    post65_claims_mutually_exclusive: bool = True
+    # Demographic rate multipliers (dashboard-adjustable). Defaults are 1.0
+    # (neutral) so existing unisex/unismoker pricing is unchanged until the
+    # actuary tunes them. Applied separately to mortality (life) and
+    # disability incidence rates, then stamped into the integrity hash.
+    smoker_mortality_factor: float = 1.0
+    smoker_disability_factor: float = 1.0
+    former_smoker_mortality_factor: float = 1.0
+    former_smoker_disability_factor: float = 1.0
+    nonsmoker_mortality_factor: float = 1.0
+    nonsmoker_disability_factor: float = 1.0
+    male_mortality_factor: float = 1.0
+    male_disability_factor: float = 1.0
+    female_mortality_factor: float = 1.0
+    female_disability_factor: float = 1.0
+    ethnicity_mortality_factors: Dict[str, float] = field(default_factory=lambda: {
+        "caucasian": 1.0,
+        "african": 1.0,
+        "hispanic": 1.0,
+        "asian": 1.0,
+        "other": 1.0,
+    })
+    ethnicity_disability_factors: Dict[str, float] = field(default_factory=lambda: {
+        "caucasian": 1.0,
+        "african": 1.0,
+        "hispanic": 1.0,
+        "asian": 1.0,
+        "other": 1.0,
+    })
     version: str = "kernel_v1"
 
 
@@ -388,27 +442,26 @@ PRODUCT_REGISTRY: Dict[str, Product] = {
     # L/4 on trigger, no savings/cash-value/surrender/investment component.
     "phins_pure_risk_adjustable": Product(
         id="phins_pure_risk_adjustable",
-        name="PHINS Adjustable Risk (Life 3-∞ + Permanent ADL Disability 3-65)",
+        name="PHINS Adjustable Risk (pre-65 L/D=4:1; post-65 life÷4 & D=life)",
         line="life_health",
         life_share=1.0,
         disability_share=0.25,
-        disability_cutoff_age=65,
+        disability_cutoff_age=65,  # band age; post-65 shares from PricingConfig
         savings_rate=0.0,
         disability_benefit_on_disability_sum=True,
         fixed_disability_benefit_pct=1.0,
         description=(
-            "PHINS Adjustable Risk contract. Life benefit L paid on death at any age "
-            "(3-∞). Permanent total disability (3+ ADL) or long-term loss of earning "
-            "capacity pays L/4 once triggered (age 3-65). Disability layer terminates "
-            "automatically at age 65. Pure risk product — no savings, cash value, "
-            "surrender, dividend or investment component."
+            "PHINS Adjustable Risk contract. Before 65: life = face (e.g. $500k) and "
+            "disability = life/4 ($125k). From age 65+: life steps down to face/4 "
+            "($125k) and disability equals that reduced life sum ($125k). Shares are "
+            "age-banded from actuary config. Pure risk — no savings/cash value."
         ),
     ),
     # Back-compat alias: the previous 'phins_pure_risk' product id is now an
     # alias for the contract-draft-aligned product.
     "phins_pure_risk": Product(
         id="phins_pure_risk",
-        name="PHINS Adjustable Risk (Life 3-∞ + Permanent ADL Disability 3-65)",
+        name="PHINS Adjustable Risk (pre-65 L/D=4:1; post-65 life÷4 & D=life)",
         line="life_health",
         life_share=1.0,
         disability_share=0.25,
@@ -517,6 +570,22 @@ class PremiumComponents:
     # the same actuary-table-driven ratio.
     disability_share_used: float = 0.25
     disability_sum_used: float = 0.0
+    life_share_used: float = 1.0
+    life_sum_used: float = 0.0
+    # Post-disability administration knobs stamped for audit (quote PV
+    # remains mutually exclusive by default — combined premium unchanged).
+    post_disability_premium_factor: float = 1.0
+    post_disability_life_share_of_face: float = 0.75
+    pre65_disability_continues_policy: bool = True
+    post65_claims_mutually_exclusive: bool = True
+    # Composite demographic multipliers actually applied to this price
+    # (smoking × sex × ethnicity), plus the resolved attribute labels.
+    demographic_mortality_factor: float = 1.0
+    demographic_disability_factor: float = 1.0
+    smoking_status_used: Optional[str] = None
+    gender_used: Optional[str] = None
+    ethnicity_used: Optional[str] = None
+    demographic_factors_applied: Dict[str, Any] = field(default_factory=dict)
     integrity_hash: str = ""
     integrity_checks: Dict[str, bool] = field(default_factory=dict)
 
@@ -565,19 +634,201 @@ def _compute_savings_premium(
     return target_value / float(term_years)
 
 
-def _resolve_disability_share(product: Product, config: PricingConfig) -> float:
-    """Resolve the contract ratio between the disability sum and the life sum.
+def _band_age(config: PricingConfig) -> int:
+    return int(getattr(config, "disability_band_age", 65) or 65)
 
-    Order of precedence (highest first):
-      1. ``PricingConfig.disability_share_of_life`` — the actuary-table
-         value. This is the single source of truth across simulator,
-         quote/billing, reports, reinsurance, and reconciler.
-      2. ``Product.disability_share`` — product-level fallback used when
-         a caller explicitly bypasses the actuary config (rare).
+
+def _resolve_life_share(product: Product, config: PricingConfig,
+                        age: Optional[int] = None) -> float:
+    """Life sum as a fraction of coverage for an attained age.
+
+    Pre-65 default 1.0 (full L). Post-65 default 0.25 (life steps to face/4).
     """
-    if config.disability_share_of_life is not None:
-        return float(config.disability_share_of_life)
-    return float(product.disability_share)
+    configured_pre = getattr(config, "life_share_of_coverage", None)
+    if configured_pre is None:
+        pre = float(product.life_share or 1.0)
+    else:
+        pre = float(configured_pre)
+    post_raw = getattr(config, "life_share_of_coverage_post65", None)
+    post = pre if post_raw is None else float(post_raw)
+    if age is None:
+        return pre
+    return post if int(age) >= _band_age(config) else pre
+
+
+def _resolve_disability_share(product: Product, config: PricingConfig,
+                              age: Optional[int] = None) -> float:
+    """Resolve D / life_sum share for an attained age (age-banded contract).
+
+    Bands (current product rule):
+      * age < band → D = life/4 (share 0.25) with life = full coverage
+        → e.g. L=$500k, D=$125k
+      * age >= band → life = coverage/4 and D = life (share 1.0)
+        → e.g. life=$125k, D=$125k
+
+    When ``disability_share_of_life_post65`` is None, legacy cutoff-to-zero
+    behavior is kept.
+    """
+    if float(product.disability_share) <= 0.0 and config.disability_share_of_life is None:
+        return 0.0
+
+    pre = (
+        float(config.disability_share_of_life)
+        if config.disability_share_of_life is not None
+        else float(product.disability_share)
+    )
+    post = config.disability_share_of_life_post65
+    band = _band_age(config)
+
+    if age is None:
+        return pre
+
+    age_i = int(age)
+    if post is None:
+        if product.disability_cutoff_age is not None and age_i >= int(product.disability_cutoff_age):
+            return 0.0
+        return pre
+
+    return float(post) if age_i >= band else pre
+
+
+def _normalize_smoking_status(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    s = str(raw).strip().lower().replace("-", "_").replace(" ", "_")
+    if s in ("current", "smoker", "yes", "true", "1", "y"):
+        return "smoker"
+    if s in ("former", "ex", "ex_smoker", "exsmoker"):
+        return "former"
+    if s in ("never", "nonsmoker", "non_smoker", "no", "false", "0", "n"):
+        return "nonsmoker"
+    return None
+
+
+def _normalize_sex(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    s = str(raw).strip().lower()
+    if s in ("m", "male", "man"):
+        return "male"
+    if s in ("f", "female", "woman"):
+        return "female"
+    return None
+
+
+def _normalize_ethnicity(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    s = str(raw).strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "caucasian": "caucasian",
+        "white": "caucasian",
+        "african": "african",
+        "black": "african",
+        "african_american": "african",
+        "hispanic": "hispanic",
+        "latino": "hispanic",
+        "latina": "hispanic",
+        "asian": "asian",
+        "other": "other",
+    }
+    return aliases.get(s)
+
+
+def resolve_demographic_rate_factors(
+    customer: PricingCustomer,
+    config: PricingConfig,
+) -> Dict[str, Any]:
+    """Resolve smoking × sex × ethnicity multipliers for life and disability.
+
+    Missing attributes stay neutral (factor 1.0). Config defaults are also 1.0
+    so enabling a factor requires an explicit actuary dashboard change.
+    """
+    cohort = customer.cohort or {}
+    smoking = _normalize_smoking_status(
+        customer.smoking_status
+        or cohort.get("smoker")
+        or cohort.get("smoking")
+        or cohort.get("smoking_status")
+    )
+    sex = _normalize_sex(
+        customer.gender or cohort.get("gender") or cohort.get("sex")
+    )
+    ethnicity = _normalize_ethnicity(
+        customer.ethnicity or cohort.get("ethnicity") or cohort.get("race")
+    )
+
+    smoke_mort = 1.0
+    smoke_dis = 1.0
+    if smoking == "smoker":
+        smoke_mort = float(config.smoker_mortality_factor)
+        smoke_dis = float(config.smoker_disability_factor)
+    elif smoking == "former":
+        smoke_mort = float(config.former_smoker_mortality_factor)
+        smoke_dis = float(config.former_smoker_disability_factor)
+    elif smoking == "nonsmoker":
+        smoke_mort = float(config.nonsmoker_mortality_factor)
+        smoke_dis = float(config.nonsmoker_disability_factor)
+
+    sex_mort = 1.0
+    sex_dis = 1.0
+    if sex == "male":
+        sex_mort = float(config.male_mortality_factor)
+        sex_dis = float(config.male_disability_factor)
+    elif sex == "female":
+        sex_mort = float(config.female_mortality_factor)
+        sex_dis = float(config.female_disability_factor)
+
+    eth_mort_map = dict(config.ethnicity_mortality_factors or {})
+    eth_dis_map = dict(config.ethnicity_disability_factors or {})
+    eth_mort = float(eth_mort_map.get(ethnicity, 1.0)) if ethnicity else 1.0
+    eth_dis = float(eth_dis_map.get(ethnicity, 1.0)) if ethnicity else 1.0
+
+    mort = max(0.0, smoke_mort * sex_mort * eth_mort)
+    dis = max(0.0, smoke_dis * sex_dis * eth_dis)
+    applied = {
+        "smoking": smoking,
+        "sex": sex,
+        "ethnicity": ethnicity,
+        "smoking_mortality": _round6(smoke_mort),
+        "smoking_disability": _round6(smoke_dis),
+        "sex_mortality": _round6(sex_mort),
+        "sex_disability": _round6(sex_dis),
+        "ethnicity_mortality": _round6(eth_mort),
+        "ethnicity_disability": _round6(eth_dis),
+    }
+    return {
+        "mortality_factor": mort,
+        "disability_factor": dis,
+        "applied": applied,
+        "smoking": smoking,
+        "sex": sex,
+        "ethnicity": ethnicity,
+    }
+
+
+def _benefit_sums_for_age(coverage: float, product: Product, config: PricingConfig,
+                          age: int) -> Dict[str, float]:
+    """Return life_sum and disability_sum for an attained age.
+
+    When ``disability_benefit_on_disability_sum`` is True (canonical contract),
+    disability_sum = life_sum × D/life share. When False (legacy graded mode),
+    disability_sum = life_sum and the ADL benefit % is applied later — matching
+    the historical "percentage of full coverage" path.
+    """
+    life_share = _resolve_life_share(product, config, age)
+    dis_share = _resolve_disability_share(product, config, age)
+    life_sum = coverage * life_share
+    if product.disability_benefit_on_disability_sum:
+        disability_sum = life_sum * dis_share
+    else:
+        disability_sum = life_sum
+    return {
+        "life_share": life_share,
+        "disability_share": dis_share,
+        "life_sum": life_sum,
+        "disability_sum": disability_sum,
+    }
 
 
 def _pv_claims_mutually_exclusive(
@@ -595,12 +846,9 @@ def _pv_claims_mutually_exclusive(
     coverage = float(customer.coverage)
     term = int(customer.term_years)
     discount_rate = float(config.discount_rate)
-    disability_share = _resolve_disability_share(product, config)
-    disability_sum = (
-        coverage * product.life_share * disability_share
-        if product.disability_benefit_on_disability_sum
-        else coverage
-    )
+    demo = resolve_demographic_rate_factors(customer, config)
+    demo_mort = float(demo["mortality_factor"])
+    demo_dis = float(demo["disability_factor"])
 
     pv_mortality = 0.0
     pv_disability = 0.0
@@ -608,15 +856,19 @@ def _pv_claims_mutually_exclusive(
 
     for year in range(1, term + 1):
         current_age = age + year - 1
-        qx = tables.mortality_qx(current_age, customer.cohort) * adl_mort_mult
+        qx = tables.mortality_qx(current_age, customer.cohort) * adl_mort_mult * demo_mort
+        sums = _benefit_sums_for_age(coverage, product, config, current_age)
+        share = sums["disability_share"]
+        life_sum = sums["life_sum"]
+        disability_sum = sums["disability_sum"]
 
         disability_active = (
             not exclude_disability
-            and (product.disability_cutoff_age is None or current_age < product.disability_cutoff_age)
             and product.disability_share > 0.0
+            and share > 0.0
         )
         dx = (
-            tables.disability_ix(current_age, customer.cohort) * adl_dis_mult
+            tables.disability_ix(current_age, customer.cohort) * adl_dis_mult * demo_dis
             if disability_active
             else 0.0
         )
@@ -632,7 +884,7 @@ def _pv_claims_mutually_exclusive(
         prob_survive_death = prob_alive_not_disabled * max(0.0, 1.0 - qx)
         prob_disable_this_year = prob_survive_death * dx
 
-        pv_mortality += coverage * prob_die_this_year * discount
+        pv_mortality += life_sum * prob_die_this_year * discount
         if disability_active and benefit_pct > 0:
             pv_disability += disability_sum * benefit_pct * prob_disable_this_year * discount
 
@@ -656,20 +908,21 @@ def _pv_claims_independent(
     coverage = float(customer.coverage)
     term = int(customer.term_years)
     discount_rate = float(config.discount_rate)
-    disability_share = _resolve_disability_share(product, config)
-    disability_sum = (
-        coverage * product.life_share * disability_share
-        if product.disability_benefit_on_disability_sum
-        else coverage
-    )
+    demo = resolve_demographic_rate_factors(customer, config)
+    demo_mort = float(demo["mortality_factor"])
+    demo_dis = float(demo["disability_factor"])
 
     pv_mortality = 0.0
     for year in range(1, term + 1):
         current_age = age + year - 1
-        qx = tables.mortality_qx(current_age, customer.cohort) * adl_mort_mult
+        qx = tables.mortality_qx(current_age, customer.cohort) * adl_mort_mult * demo_mort
+        life_sum = _benefit_sums_for_age(coverage, product, config, current_age)["life_sum"]
         px_prev = 1.0
         for y in range(year - 1):
-            px_prev *= max(0.0, 1.0 - tables.mortality_qx(age + y, customer.cohort) * adl_mort_mult)
+            px_prev *= max(
+                0.0,
+                1.0 - tables.mortality_qx(age + y, customer.cohort) * adl_mort_mult * demo_mort,
+            )
         death_prob = px_prev * qx
         discount = (1.0 + discount_rate) ** (-year)
         if config.apply_lapse_adjustment:
@@ -677,24 +930,26 @@ def _pv_claims_independent(
             for y in range(1, year + 1):
                 lapse_survival *= max(0.0, 1.0 - tables.lapse_rate(y))
             discount *= lapse_survival
-        pv_mortality += coverage * death_prob * discount
+        pv_mortality += life_sum * death_prob * discount
 
     pv_disability = 0.0
     if not exclude_disability and product.disability_share > 0.0:
         for year in range(1, term + 1):
             current_age = age + year - 1
-            if (
-                product.disability_cutoff_age is not None
-                and current_age >= product.disability_cutoff_age
-            ):
+            sums = _benefit_sums_for_age(coverage, product, config, current_age)
+            share = sums["disability_share"]
+            if share <= 0.0:
                 continue
+            disability_sum = sums["disability_sum"]
             survival = 1.0
             for y in range(year - 1):
                 survival *= max(
                     0.0,
-                    1.0 - tables.mortality_qx(age + y, customer.cohort) * adl_mort_mult,
+                    1.0 - tables.mortality_qx(age + y, customer.cohort) * adl_mort_mult * demo_mort,
                 )
-            dis_rate = tables.disability_ix(current_age, customer.cohort) * adl_dis_mult
+            dis_rate = (
+                tables.disability_ix(current_age, customer.cohort) * adl_dis_mult * demo_dis
+            )
             discount = (1.0 + discount_rate) ** (-year)
             if config.apply_lapse_adjustment:
                 lapse_survival = 1.0
@@ -788,12 +1043,13 @@ def price_policy(
     adl_mort_mult = tables.adl_mortality_multiplier(adl)
     adl_dis_mult = tables.adl_disability_multiplier(adl)
     benefit_pct = _benefit_pct_for(adl, tables, exclude_disability, product)
-    resolved_disability_share = _resolve_disability_share(product, config)
-    disability_sum_used = (
-        coverage * product.life_share * resolved_disability_share
-        if product.disability_benefit_on_disability_sum
-        else coverage
-    )
+    # Stamp the issue-age band (attained-age schedule still applies inside PV).
+    issue_sums = _benefit_sums_for_age(coverage, product, config, int(customer.age))
+    resolved_life_share = issue_sums["life_share"]
+    resolved_disability_share = issue_sums["disability_share"]
+    life_sum_used = issue_sums["life_sum"]
+    disability_sum_used = issue_sums["disability_sum"]
+    demo = resolve_demographic_rate_factors(customer, config)
 
     pv_payload = (
         _pv_claims_mutually_exclusive
@@ -835,7 +1091,9 @@ def price_policy(
             mortality_premium = risk_premium
             disability_premium = 0.0
 
-    if underwriting_loading > 0:
+    # Apply positive loadings and negative discounts (aligned with flat
+    # calculate_premium risk_score factors such as very_low=0.85 → -0.15).
+    if float(underwriting_loading) != 0.0:
         risk_premium *= 1.0 + float(underwriting_loading)
         mortality_premium *= 1.0 + float(underwriting_loading)
         disability_premium *= 1.0 + float(underwriting_loading)
@@ -894,6 +1152,26 @@ def price_policy(
         savings_yield_used=config.savings_yield_pct,
         disability_share_used=round(float(resolved_disability_share), 6),
         disability_sum_used=round(float(disability_sum_used), 2),
+        life_share_used=round(float(resolved_life_share), 6),
+        life_sum_used=round(float(life_sum_used), 2),
+        post_disability_premium_factor=round(
+            float(getattr(config, "post_disability_premium_factor", 1.0)), 6
+        ),
+        post_disability_life_share_of_face=round(
+            float(getattr(config, "post_disability_life_share_of_face", 0.75)), 6
+        ),
+        pre65_disability_continues_policy=bool(
+            getattr(config, "pre65_disability_continues_policy", True)
+        ),
+        post65_claims_mutually_exclusive=bool(
+            getattr(config, "post65_claims_mutually_exclusive", True)
+        ),
+        demographic_mortality_factor=round(float(demo["mortality_factor"]), 6),
+        demographic_disability_factor=round(float(demo["disability_factor"]), 6),
+        smoking_status_used=demo.get("smoking"),
+        gender_used=demo.get("sex"),
+        ethnicity_used=demo.get("ethnicity"),
+        demographic_factors_applied=dict(demo.get("applied") or {}),
         integrity_checks={
             "components_sum_to_total": abs(
                 annual_premium
@@ -919,21 +1197,31 @@ def price_policy(
                 config.savings_formula != SavingsFormula.RISK_PREMIUM_MARKUP
                 or abs(savings_premium - risk_premium * config.savings_rate) < 1e-6
             ),
-            # The mortality severity claim is L on death — verify the kernel
-            # never priced more than the coverage amount per-year as PV of
-            # mortality (a sanity bound for the contract's "L · 100% sum
-            # insured" clause).
-            "pv_mortality_within_coverage_bound": pv_mortality <= coverage * 1.01,
-            # Verify the contract ratio between the disability sum and the
-            # life sum (L) is what the kernel actually applied. When the
-            # config-driven actuary-table value is set, the priced policy
-            # MUST use it (not the product fallback). This is the "L ÷ 4"
-            # invariant the user asked us to police end-to-end.
+            # Mortality PV is bounded by the issue-age life sum (which may be
+            # face/4 after the post-65 life step-down), not always full face.
+            "pv_mortality_within_coverage_bound": pv_mortality <= max(coverage, life_sum_used) * 1.01,
+            # Issue-age bands must match the age-banded schedule
+            # (pre-65: life=face & D=life/4; post-65: life=face/4 & D=life).
+            "life_share_matches_config": (
+                abs(
+                    resolved_life_share
+                    - _resolve_life_share(product, config, int(customer.age))
+                )
+                < 1e-9
+            ),
             "disability_share_matches_config": (
-                config.disability_share_of_life is None
-                or abs(resolved_disability_share - float(config.disability_share_of_life)) < 1e-9
+                abs(
+                    resolved_disability_share
+                    - _resolve_disability_share(product, config, int(customer.age))
+                )
+                < 1e-9
             ),
             "disability_share_within_bounds": 0.0 <= resolved_disability_share <= 1.0,
+            "life_share_within_bounds": 0.0 <= resolved_life_share <= 1.0,
+            "demographic_factors_non_negative": (
+                float(demo["mortality_factor"]) >= 0.0
+                and float(demo["disability_factor"]) >= 0.0
+            ),
         },
     )
 
@@ -961,6 +1249,62 @@ def price_policy(
             "underwriting_loading": _round6(underwriting_loading),
             "exclude_disability": bool(exclude_disability),
             "disability_share": _round6(resolved_disability_share),
+            "disability_share_pre65": _round6(
+                float(config.disability_share_of_life)
+                if config.disability_share_of_life is not None
+                else float(product.disability_share)
+            ),
+            "disability_share_post65": (
+                None
+                if config.disability_share_of_life_post65 is None
+                else _round6(float(config.disability_share_of_life_post65))
+            ),
+            "life_share": _round6(resolved_life_share),
+            "life_share_pre65": _round6(float(config.life_share_of_coverage)),
+            "life_share_post65": (
+                None
+                if config.life_share_of_coverage_post65 is None
+                else _round6(float(config.life_share_of_coverage_post65))
+            ),
+            "life_sum": _round6(life_sum_used),
+            "disability_sum": _round6(disability_sum_used),
+            "disability_band_age": int(getattr(config, "disability_band_age", 65) or 65),
+            "pre65_disability_continues_policy": bool(
+                getattr(config, "pre65_disability_continues_policy", True)
+            ),
+            "post_disability_life_share_of_face": _round6(
+                float(getattr(config, "post_disability_life_share_of_face", 0.75))
+            ),
+            "post_disability_premium_factor": _round6(
+                float(getattr(config, "post_disability_premium_factor", 1.0))
+            ),
+            "post65_claims_mutually_exclusive": bool(
+                getattr(config, "post65_claims_mutually_exclusive", True)
+            ),
+            "demographic_mortality_factor": _round6(float(demo["mortality_factor"])),
+            "demographic_disability_factor": _round6(float(demo["disability_factor"])),
+            "smoking_status": demo.get("smoking"),
+            "gender": demo.get("sex"),
+            "ethnicity": demo.get("ethnicity"),
+            "demographic_factors_applied": demo.get("applied") or {},
+            "smoker_mortality_factor": _round6(float(config.smoker_mortality_factor)),
+            "smoker_disability_factor": _round6(float(config.smoker_disability_factor)),
+            "former_smoker_mortality_factor": _round6(float(config.former_smoker_mortality_factor)),
+            "former_smoker_disability_factor": _round6(float(config.former_smoker_disability_factor)),
+            "nonsmoker_mortality_factor": _round6(float(config.nonsmoker_mortality_factor)),
+            "nonsmoker_disability_factor": _round6(float(config.nonsmoker_disability_factor)),
+            "male_mortality_factor": _round6(float(config.male_mortality_factor)),
+            "male_disability_factor": _round6(float(config.male_disability_factor)),
+            "female_mortality_factor": _round6(float(config.female_mortality_factor)),
+            "female_disability_factor": _round6(float(config.female_disability_factor)),
+            "ethnicity_mortality_factors": {
+                str(k): _round6(float(v))
+                for k, v in sorted((config.ethnicity_mortality_factors or {}).items())
+            },
+            "ethnicity_disability_factors": {
+                str(k): _round6(float(v))
+                for k, v in sorted((config.ethnicity_disability_factors or {}).items())
+            },
         }
     )
     return components
@@ -1000,19 +1344,51 @@ def pricing_config_from_underwriting(uw_config: Any,
                                      apply_min_risk_floor: bool = False,
                                      savings_formula: SavingsFormula = SavingsFormula.STRAIGHT_LINE,
                                      disability_share_of_life: Optional[float] = None,
+                                     disability_share_of_life_post65: Optional[float] = None,
+                                     life_share_of_coverage: Optional[float] = None,
+                                     life_share_of_coverage_post65: Optional[float] = None,
+                                     disability_band_age: Optional[int] = None,
                                      ) -> PricingConfig:
     """Build a :class:`PricingConfig` from an existing :class:`UnderwritingConfig`.
 
-    The actuary-table value of ``disability_share_of_life`` (the L÷4
-    contract ratio) flows in via the UnderwritingConfig by default. Callers
-    can pass an override to evaluate hypothetical contracts.
+    Age-banded life and D/life shares flow from UnderwritingConfig by default
+    (pre-65: life=face & D=life/4; post-65: life=face/4 & D=life).
     """
     resolved_share = disability_share_of_life
     if resolved_share is None:
-        # Pull from the actuary-table-driven UnderwritingConfig so simulator,
-        # billing, financial-reporting, risk reference and reconciler all
-        # share one source of truth for the L:D ratio.
         resolved_share = getattr(uw_config, "disability_share_of_life", 0.25)
+    resolved_post = disability_share_of_life_post65
+    if resolved_post is None and not hasattr(uw_config, "disability_share_of_life_post65"):
+        resolved_post = 1.0
+    elif resolved_post is None:
+        resolved_post = getattr(uw_config, "disability_share_of_life_post65", 1.0)
+    resolved_life = life_share_of_coverage
+    if resolved_life is None:
+        resolved_life = getattr(uw_config, "life_share_of_coverage", 1.0)
+    resolved_life_post = life_share_of_coverage_post65
+    if resolved_life_post is None:
+        resolved_life_post = getattr(uw_config, "life_share_of_coverage_post65", 0.25)
+    band = disability_band_age
+    if band is None:
+        band = int(getattr(uw_config, "disability_band_age", 65) or 65)
+    cfg_version = str(getattr(uw_config, "config_version", None) or "kernel_v1")
+
+    def _f(name: str, default: float = 1.0) -> float:
+        return float(getattr(uw_config, name, default))
+
+    def _eth_map(name: str) -> Dict[str, float]:
+        raw = getattr(uw_config, name, None) or {}
+        out = {
+            "caucasian": 1.0,
+            "african": 1.0,
+            "hispanic": 1.0,
+            "asian": 1.0,
+            "other": 1.0,
+        }
+        for k, v in dict(raw).items():
+            out[str(k).lower()] = float(v)
+        return out
+
     return PricingConfig(
         expense_loading_pct=float(getattr(uw_config, "expense_loading_pct", 0.15)),
         profit_margin_pct=float(getattr(uw_config, "profit_margin_pct", 0.10)),
@@ -1026,6 +1402,37 @@ def pricing_config_from_underwriting(uw_config: Any,
         disability_share_of_life=(
             float(resolved_share) if resolved_share is not None else None
         ),
+        disability_share_of_life_post65=(
+            None if resolved_post is None else float(resolved_post)
+        ),
+        life_share_of_coverage=float(resolved_life),
+        life_share_of_coverage_post65=float(resolved_life_post),
+        disability_band_age=int(band),
+        pre65_disability_continues_policy=bool(
+            getattr(uw_config, "pre65_disability_continues_policy", True)
+        ),
+        post_disability_life_share_of_face=max(
+            0.0, min(1.0, float(getattr(uw_config, "post_disability_life_share_of_face", 0.75)))
+        ),
+        post_disability_premium_factor=max(
+            0.0, min(5.0, float(getattr(uw_config, "post_disability_premium_factor", 1.0)))
+        ),
+        post65_claims_mutually_exclusive=bool(
+            getattr(uw_config, "post65_claims_mutually_exclusive", True)
+        ),
+        smoker_mortality_factor=_f("smoker_mortality_factor"),
+        smoker_disability_factor=_f("smoker_disability_factor"),
+        former_smoker_mortality_factor=_f("former_smoker_mortality_factor"),
+        former_smoker_disability_factor=_f("former_smoker_disability_factor"),
+        nonsmoker_mortality_factor=_f("nonsmoker_mortality_factor"),
+        nonsmoker_disability_factor=_f("nonsmoker_disability_factor"),
+        male_mortality_factor=_f("male_mortality_factor"),
+        male_disability_factor=_f("male_disability_factor"),
+        female_mortality_factor=_f("female_mortality_factor"),
+        female_disability_factor=_f("female_disability_factor"),
+        ethnicity_mortality_factors=_eth_map("ethnicity_mortality_factors"),
+        ethnicity_disability_factors=_eth_map("ethnicity_disability_factors"),
+        version=cfg_version,
     )
 
 
@@ -1046,6 +1453,7 @@ __all__ = [
     "pricing_config_from_underwriting",
     "register_age_curve",
     "register_product",
+    "resolve_demographic_rate_factors",
     "risk_reference_v1_factor",
     "table_set_from_store",
 ]

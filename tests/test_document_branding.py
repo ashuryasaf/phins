@@ -288,11 +288,12 @@ def test_series_reflects_agentos_v1_and_momentum():
     assert "AgentOS v1" in deck
     assert 'data-i18n="prod_momentum"' in deck
     for anchor in ("ledger-anchored commission", "actuarial appraisal simulation",
-                   "regulatory application memorandum", "Draft 3.0"):
+                   "regulatory application memorandum", "Draft 3.1"):
         assert anchor in deck, f"unicorn deck missing momentum anchor: {anchor}"
     summary = _read(STATIC / "unicorn-executive-summary.html")
     assert "AgentOS v1" in summary
     assert "regulatory application memorandum" in summary
+    assert "Draft 3.1" in summary
     seed = _read(STATIC / "seed-investor-deck.html")
     assert "AgentOS v1" in seed
 

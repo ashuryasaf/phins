@@ -12206,34 +12206,61 @@ def generate_customer_id() -> str:
 def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
     """
     Calculate premium based on policy type and customer data.
-    
-    PRICING MODEL (aligned with frontend apply.js):
+
+    Prefer the actuarial pricing kernel (persisted Pricing Parameters +
+    application demographics: smoking / sex / ethnicity / age / term) for
+    life / health / phins_unified when kernel billing is enabled.
+
+    Fail-open fallback (also used under PHINS_TEST_MODE by default):
     - Base rate: $0.25 per $1,000 coverage per month
-    - Age factor: 1.0 + (age - 25) * 0.015 (1.5% per year over 25)
-    - Risk factor: varies by underwriting assessment
-    - Policy type modifier: adjusts for different risk profiles
-    
-    This ensures the premium shown on application matches billing.
+    - Age factor: 1.0 + (age - 25) * 0.015
+    - Risk factor from underwriting assessment
     """
+    try:
+        from services.pricing_shadow_service import (
+            is_kernel_billing_enabled,
+            map_policy_type_to_product,
+            price_application_with_kernel,
+        )
+        if (
+            is_kernel_billing_enabled()
+            and map_policy_type_to_product(policy_data.get('type') or '')
+        ):
+            kernel = price_application_with_kernel(policy_data)
+            if kernel and float(kernel.get('annual') or 0) > 0:
+                return {
+                    'annual': round(float(kernel['annual']), 2),
+                    'monthly': round(float(kernel['monthly']), 2),
+                    'quarterly': round(float(kernel['quarterly']), 2),
+                    'pricing_source': 'pricing_kernel',
+                    'integrity_hash': kernel.get('integrity_hash'),
+                    'product_id': kernel.get('product_id'),
+                    'tables_version': kernel.get('tables_version'),
+                    'config_version': kernel.get('config_version'),
+                    'demographic_mortality_factor': kernel.get('demographic_mortality_factor'),
+                    'demographic_disability_factor': kernel.get('demographic_disability_factor'),
+                    'smoking_status_used': kernel.get('smoking_status_used'),
+                    'gender_used': kernel.get('gender_used'),
+                    'ethnicity_used': kernel.get('ethnicity_used'),
+                }
+    except Exception as _kern_err:
+        print(f"Kernel premium fallback to flat: {_kern_err}")
+
     coverage = policy_data.get('coverage_amount', 100000)
-    
-    # Policy type base rate multipliers (per $1000 coverage per month)
-    # These are multiplicative adjustments to the base rate
+
     policy_type_rates = {
-        'life': 0.25,           # Base rate: $0.25 per $1000/month
-        'health': 0.25,         # Same as life for unified pricing
-        'phins_unified': 0.25,  # PHINS unified contract
-        'auto': 0.15,           # Lower risk profile
-        'property': 0.20,       # Property coverage
-        'business': 0.40        # Higher commercial rates
+        'life': 0.25,
+        'health': 0.25,
+        'phins_unified': 0.25,
+        'auto': 0.15,
+        'property': 0.20,
+        'business': 0.40
     }
     base_rate = policy_type_rates.get(policy_data.get('type', 'life'), 0.25)
-    
-    # Age factor: 1.5% increase per year over 25 (matches frontend)
+
     age = policy_data.get('age', 30)
     age_factor = 1.0 + (max(0, age - 25) * 0.015)
-    
-    # Risk factor based on underwriting assessment
+
     risk_score = policy_data.get('risk_score', 'medium')
     risk_factors = {
         'very_low': 0.85,
@@ -12245,20 +12272,16 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
         'very_high': 1.50
     }
     risk_factor = risk_factors.get(risk_score, 1.0)
-    
-    # Calculate monthly premium: (coverage / 1000) * base_rate * age_factor * risk_factor
+
     monthly_premium = (coverage / 1000) * base_rate * age_factor * risk_factor
-    
-    # Annual premium
     annual_premium = monthly_premium * 12
-    
-    # Quarterly with 3% discount
     quarterly_premium = monthly_premium * 3 * 0.97
-    
+
     return {
         'annual': round(annual_premium, 2),
         'monthly': round(monthly_premium, 2),
-        'quarterly': round(quarterly_premium, 2)
+        'quarterly': round(quarterly_premium, 2),
+        'pricing_source': 'flat_formula',
     }
 
 def get_bi_data_actuary() -> Dict[str, Any]:
@@ -29481,6 +29504,8 @@ For claims or questions, please contact:
                     policy_term_max=int(data.get('policy_term_max', 30)),
                     male_pct=float(data.get('male_pct', 49.0)),
                     female_pct=float(data.get('female_pct', 51.0)),
+                    smoker_pct=float(data.get('smoker_pct', 15.0)),
+                    former_smoker_pct=float(data.get('former_smoker_pct', 10.0)),
                     ethnicity=data.get('ethnicity', {
                         'caucasian': 60, 'african': 13, 'hispanic': 18, 'asian': 6, 'other': 3
                     })
@@ -39666,7 +39691,21 @@ For claims or questions, please contact:
                     }
                 }
                 
-                # Calculate premium
+                # Application demographics for kernel pricing (smoking / sex / ethnicity)
+                try:
+                    from services.pricing_shadow_service import extract_application_pricing_inputs
+                    _app_inputs = extract_application_pricing_inputs(data)
+                except Exception:
+                    _app_inputs = {
+                        'age': data.get('age') or data.get('customer_age') or 35,
+                        'term_years': data.get('term_years') or data.get('coverage_years') or 20,
+                        'adl_level': data.get('adl_level') or 5,
+                        'gender': data.get('gender'),
+                        'smoking_status': data.get('smoking_status'),
+                        'ethnicity': data.get('ethnicity'),
+                    }
+
+                # Calculate premium (kernel + pricing params when enabled; else flat)
                 premium_data = calculate_premium(data)
                 
                 # Create policy
@@ -39685,6 +39724,17 @@ For claims or questions, please contact:
                     'created_date': submitted_at,
                     'application_date': submitted_at,  # Date application was filed
                     'issuance_date': submitted_at,  # Issuance date = application date
+                    'age': _app_inputs.get('age'),
+                    'term_years': _app_inputs.get('term_years'),
+                    'adl_level': _app_inputs.get('adl_level'),
+                    'gender': _app_inputs.get('gender'),
+                    'smoking_status': _app_inputs.get('smoking_status'),
+                    'ethnicity': _app_inputs.get('ethnicity'),
+                    'pricing_source': premium_data.get('pricing_source', 'flat_formula'),
+                    'integrity_hash': premium_data.get('integrity_hash'),
+                    'product_id': premium_data.get('product_id'),
+                    'tables_version': premium_data.get('tables_version'),
+                    'config_version': premium_data.get('config_version'),
                     # Billing configuration (from application Step 4)
                     'billing': {
                         'frequency': billing_frequency,
@@ -39704,6 +39754,42 @@ For claims or questions, please contact:
                                                    data.get('payment_setup', {}).get('savings_percentage', 0))
                     }
                 }
+
+                # Shadow dual-run: kernel PremiumSnapshot (always uses application demographics).
+                # When kernel billing is on, billed amounts already match kernel; shadow still
+                # records the integrity snapshot. Fail-open.
+                pricing_shadow = None
+                try:
+                    from services.pricing_shadow_service import record_shadow_snapshot
+                    shadow_policy = dict(policy)
+                    shadow_policy['questionnaire'] = data.get('questionnaire') or {}
+                    shadow_policy['personal_info'] = data.get('personal_info') or data.get('personal') or {}
+                    pricing_shadow = record_shadow_snapshot(shadow_policy, premium_data)
+                    if pricing_shadow:
+                        try:
+                            if 'platform_event_ledger' in globals() and platform_event_ledger:
+                                platform_event_ledger.append_event(
+                                    event_type='premium.priced',
+                                    entity_type='policy',
+                                    entity_id=policy_id,
+                                    customer_id=customer_id,
+                                    actor=(session.get('username') if session else 'system'),
+                                    amount=0.0,
+                                    status='shadow',
+                                    payload={
+                                        'snapshot_id': pricing_shadow.get('id'),
+                                        'integrity_hash': pricing_shadow.get('integrity_hash'),
+                                        'product_id': pricing_shadow.get('product_id'),
+                                        'tables_version': pricing_shadow.get('tables_version'),
+                                        'config_version': pricing_shadow.get('config_version'),
+                                        'delta_annual': pricing_shadow.get('delta_annual'),
+                                        'disability_share_used': pricing_shadow.get('disability_share_used'),
+                                    },
+                                )
+                        except Exception:
+                            pass
+                except Exception:
+                    pricing_shadow = None
                 
                 POLICIES[policy_id] = policy
                 if audit:
@@ -39729,6 +39815,19 @@ For claims or questions, please contact:
                     'underwriting': UNDERWRITING_APPLICATIONS[uw_id],
                     'customer': customer_data
                 }
+                if pricing_shadow:
+                    response_data['pricing_shadow'] = {
+                        'enabled': True,
+                        'snapshot_id': pricing_shadow.get('id'),
+                        'integrity_hash': pricing_shadow.get('integrity_hash'),
+                        'delta_annual': pricing_shadow.get('delta_annual'),
+                        'product_id': pricing_shadow.get('product_id'),
+                        'tables_version': pricing_shadow.get('tables_version'),
+                        'config_version': pricing_shadow.get('config_version'),
+                        'disability_share_used': pricing_shadow.get('disability_share_used'),
+                        'kernel_annual': pricing_shadow.get('kernel_annual'),
+                        'flat_annual': pricing_shadow.get('flat_annual'),
+                    }
                 
                 # Only include provisioned_login if this is a new customer with temp password
                 if temp_password:

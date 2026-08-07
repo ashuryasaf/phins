@@ -1694,7 +1694,7 @@
               </select>
             </div>
           </div>
-          
+
           <button class="btn btn-success" onclick="saveUnderwritingConfig()">💾 Save Underwriting Rules</button>
           <button class="btn btn-outline" onclick="resetUnderwritingConfig()">↻ Reset to Defaults</button>
         </section>
@@ -1722,18 +1722,169 @@
           </div>
 
           <div class="card">
-            <div class="card-title">Contract Ratios (Life : Disability)</div>
+            <div class="card-title">Contract Ratios (Life &amp; Disability) — age-banded</div>
             <p style="color:var(--text-light);margin-bottom:12px;">
-              The PHINS adjustable risk contract pays a Disability benefit of <strong>L ÷ 4</strong> (1:4 with the life sum). Adjust the ratio below — every algorithm (pricing kernel, simulator, risk reference, reinsurance program, reconciler) picks up the new value automatically.
+              Settled risk product on a $500k face:
+              <strong>before 65</strong> life $500k &amp; disability $125k (D = life÷4);
+              <strong>from 65</strong> life steps to $125k (face÷4) &amp; disability = life ($125k).
+              All bands are adjustable and persisted with the actuarial config version.
             </p>
             <div class="form-row">
               <div class="form-group">
-                <label class="form-label">Disability Benefit (% of Life Sum)</label>
-                <input type="number" id="disability-share" class="form-input" value="25" min="0" max="100" step="0.1"
+                <label class="form-label">Pre-65 Life (% of Face)</label>
+                <input type="number" id="life-share" class="form-input" value="100" min="0" max="100" step="0.1"
                        oninput="updateDisabilityRatioDisplay()">
-                <small id="disability-ratio-display" style="color:var(--text-light);">Disability ÷ Life = 1 : 4</small>
+                <small id="life-share-display" style="color:var(--text-light);">Until 65: Life = 100% of face</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Post-65 Life (% of Face)</label>
+                <input type="number" id="life-share-post65" class="form-input" value="25" min="0" max="100" step="0.1"
+                       oninput="updateDisabilityRatioDisplay()">
+                <small id="life-share-post65-display" style="color:var(--text-light);">After 65: Life = 25% of face (÷4)</small>
               </div>
             </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Pre-65 Disability (% of Life Sum)</label>
+                <input type="number" id="disability-share" class="form-input" value="25" min="0" max="100" step="0.1"
+                       oninput="updateDisabilityRatioDisplay()">
+                <small id="disability-ratio-display" style="color:var(--text-light);">Until 65: Disability ÷ Life = 1 : 4</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Post-65 Disability (% of Life Sum)</label>
+                <input type="number" id="disability-share-post65" class="form-input" value="100" min="0" max="100" step="0.1"
+                       oninput="updateDisabilityRatioDisplay()">
+                <small id="disability-ratio-post65-display" style="color:var(--text-light);">After 65: Disability ÷ Life = 1 : 1</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Claim Interaction &amp; Post-Disability Premium</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              <strong>Before 65:</strong> disability pays D = life÷4; policy continues with remaining life
+              (default 75% of face). <strong>From 65:</strong> one of life / disability pays at the
+              stepped-down sum (mutually exclusive by default).
+              Healthy-life <em>combined premium quotes are unchanged</em>. After a pre-65 disability
+              claim, ongoing premium = factor × pre-claim combined (default <strong>100%</strong> = no change).
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Post-disability premium (% of combined)</label>
+                <input type="number" id="post-disability-premium-factor" class="form-input" value="100" min="0" max="500" step="1"
+                       oninput="updatePostDisabilityPremiumDisplay()">
+                <small id="post-disability-premium-display" style="color:var(--text-light);">Default 100% — keep charging the full combined premium after disability</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Remaining life after pre-65 disability (% of face)</label>
+                <input type="number" id="post-disability-life-share" class="form-input" value="75" min="0" max="100" step="1"
+                       oninput="updatePostDisabilityPremiumDisplay()">
+                <small id="post-disability-life-display" style="color:var(--text-light);">Default 75% — acceleration of one quarter of face</small>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;gap:8px;">
+                  <input type="checkbox" id="pre65-disability-continues" checked>
+                  Pre-65 disability continues the policy (acceleration)
+                </label>
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;gap:8px;">
+                  <input type="checkbox" id="post65-claims-exclusive" checked>
+                  Post-65 claims mutually exclusive (one of life / disability)
+                </label>
+              </div>
+            </div>
+          </div>
+          
+          <div class="card">
+            <div class="card-title">Demographic Risk Factors (Life &amp; Disability)</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              Multipliers applied by the pricing kernel to <strong>mortality (life)</strong> and
+              <strong>disability incidence</strong> rates. Composition: smoking × sex × ethnicity.
+              Default <strong>1.0 = neutral</strong> (unisex / unismoker). Changes persist with
+              <code>config_version</code> and are integrity-hashed on every priced policy.
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Smoker — Life (mortality)</label>
+                <input type="number" id="factor-smoker-mort" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Smoker — Disability</label>
+                <input type="number" id="factor-smoker-dis" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Former smoker — Life</label>
+                <input type="number" id="factor-former-mort" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Former smoker — Disability</label>
+                <input type="number" id="factor-former-dis" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Nonsmoker — Life</label>
+                <input type="number" id="factor-nonsmoker-mort" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Nonsmoker — Disability</label>
+                <input type="number" id="factor-nonsmoker-dis" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Male — Life</label>
+                <input type="number" id="factor-male-mort" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Male — Disability</label>
+                <input type="number" id="factor-male-dis" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Female — Life</label>
+                <input type="number" id="factor-female-mort" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Female — Disability</label>
+                <input type="number" id="factor-female-dis" class="form-input" value="1.0" min="0" max="10" step="0.01">
+              </div>
+            </div>
+            <p style="margin:12px 0 8px;"><strong>Ethnicity multipliers</strong> (life / disability)</p>
+            <table class="data-table">
+              <thead>
+                <tr><th>Ethnicity</th><th>Life (mortality)</th><th>Disability</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Caucasian</td>
+                  <td><input type="number" id="eth-mort-caucasian" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                  <td><input type="number" id="eth-dis-caucasian" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                </tr>
+                <tr>
+                  <td>African</td>
+                  <td><input type="number" id="eth-mort-african" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                  <td><input type="number" id="eth-dis-african" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                </tr>
+                <tr>
+                  <td>Hispanic</td>
+                  <td><input type="number" id="eth-mort-hispanic" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                  <td><input type="number" id="eth-dis-hispanic" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                </tr>
+                <tr>
+                  <td>Asian</td>
+                  <td><input type="number" id="eth-mort-asian" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                  <td><input type="number" id="eth-dis-asian" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                </tr>
+                <tr>
+                  <td>Other</td>
+                  <td><input type="number" id="eth-mort-other" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                  <td><input type="number" id="eth-dis-other" value="1.0" min="0" max="10" step="0.01" style="width:90px;"></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
           
           <button class="btn btn-success" onclick="savePricingParams()">💾 Save Pricing Parameters</button>
@@ -1854,7 +2005,7 @@
               </div>
             </div>
 
-            <h4 style="margin:20px 0 12px;">Demographics (Reporting Only)</h4>
+            <h4 style="margin:20px 0 12px;">Demographics (priced via Pricing Parameters factors)</h4>
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Male %</label>
@@ -1864,9 +2015,21 @@
                 <label class="form-label">Female %</label>
                 <input type="number" id="sim-female" class="form-input" value="51" min="0" max="100">
               </div>
+              <div class="form-group">
+                <label class="form-label">Current smokers %</label>
+                <input type="number" id="sim-smoker" class="form-input" value="15" min="0" max="100" step="0.1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Former smokers %</label>
+                <input type="number" id="sim-former-smoker" class="form-input" value="10" min="0" max="100" step="0.1">
+              </div>
             </div>
+            <p style="color:var(--text-light);margin:0 0 12px;">
+              Remaining share = nonsmokers. Smoking / sex / ethnicity multipliers come from
+              <em>Pricing Parameters → Demographic Risk Factors</em> (persisted).
+            </p>
             
-            <h4 style="margin:20px 0 12px;">Ethnicity Distribution (Reporting Only)</h4>
+            <h4 style="margin:20px 0 12px;">Ethnicity Distribution</h4>
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Caucasian %</label>
@@ -2810,7 +2973,7 @@
                   <tr><td colspan="7" class="muted-text" style="text-align:center;color:var(--text-light);">No sandbox claims yet.</td></tr>
                 </tbody>
               </table>
-              <p class="micro-copy" style="margin-top:8px;">Per the <strong>Contract Being Priced</strong>, claims are limited to <strong>Death</strong> (benefit = sum insured L) and <strong>Permanent disability 3+ ADL</strong> (benefit = L × contract ratio, ceasing at age 65). Showing first 50 of <span id="sandbox-claims-grand-total">0</span> sandbox claims.</p>
+              <p class="micro-copy" style="margin-top:8px;">Per the <strong>Contract Being Priced</strong>, claims are limited to <strong>Death</strong> (benefit = attained-age life sum) and <strong>Permanent disability 3+ ADL</strong> (benefit = life × age-banded ratio: 1:4 until 65, then life steps to face÷4 and D=life). Showing first 50 of <span id="sandbox-claims-grand-total">0</span> sandbox claims.</p>
             </div>
 
             <div id="sandbox-tab-billing" class="sandbox-tab-panel">
@@ -3430,20 +3593,42 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
       const dShare = (typeof currentConfig.disability_share_of_life === 'number')
         ? currentConfig.disability_share_of_life : 0.25;
+      const dSharePost = (typeof currentConfig.disability_share_of_life_post65 === 'number')
+        ? currentConfig.disability_share_of_life_post65 : 1.0;
+      const lifeShare = (typeof currentConfig.life_share_of_coverage === 'number')
+        ? currentConfig.life_share_of_coverage : 1.0;
+      const lifeSharePost = (typeof currentConfig.life_share_of_coverage_post65 === 'number')
+        ? currentConfig.life_share_of_coverage_post65 : 0.25;
       const dShareInput = document.getElementById('disability-share');
       if (dShareInput) {
         dShareInput.value = (dShare * 100).toFixed(2);
       }
-      const ratioDisplay = document.getElementById('disability-ratio-display');
-      if (ratioDisplay) {
-        const inv = dShare > 0 ? (1 / dShare) : 0;
-        const rounded = Math.round(inv);
-        if (dShare > 0 && Math.abs(inv - rounded) < 0.01) {
-          ratioDisplay.textContent = `Disability ÷ Life = 1 : ${rounded}`;
-        } else {
-          ratioDisplay.textContent = `Disability ÷ Life = ${dShare.toFixed(4)}`;
-        }
+      const dSharePostInput = document.getElementById('disability-share-post65');
+      if (dSharePostInput) {
+        dSharePostInput.value = (dSharePost * 100).toFixed(2);
       }
+      const lifeShareInput = document.getElementById('life-share');
+      if (lifeShareInput) {
+        lifeShareInput.value = (lifeShare * 100).toFixed(2);
+      }
+      const lifeSharePostInput = document.getElementById('life-share-post65');
+      if (lifeSharePostInput) {
+        lifeSharePostInput.value = (lifeSharePost * 100).toFixed(2);
+      }
+      const premFactor = (typeof currentConfig.post_disability_premium_factor === 'number')
+        ? currentConfig.post_disability_premium_factor : 1.0;
+      const lifeRemain = (typeof currentConfig.post_disability_life_share_of_face === 'number')
+        ? currentConfig.post_disability_life_share_of_face : 0.75;
+      const premEl = document.getElementById('post-disability-premium-factor');
+      if (premEl) premEl.value = (premFactor * 100).toFixed(0);
+      const lifeRemainEl = document.getElementById('post-disability-life-share');
+      if (lifeRemainEl) lifeRemainEl.value = (lifeRemain * 100).toFixed(0);
+      const contEl = document.getElementById('pre65-disability-continues');
+      if (contEl) contEl.checked = currentConfig.pre65_disability_continues_policy !== false;
+      const exclEl = document.getElementById('post65-claims-exclusive');
+      if (exclEl) exclEl.checked = currentConfig.post65_claims_mutually_exclusive !== false;
+      updateDisabilityRatioDisplay();
+      updatePostDisabilityPremiumDisplay();
       
       if (currentConfig.loadings) {
         document.getElementById('loading-6').value = (currentConfig.loadings['6'] || 0.15) * 100;
@@ -3456,6 +3641,27 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         document.getElementById('limit-7').value = currentConfig.coverage_limits['7'] || 750000;
         document.getElementById('limit-8').value = currentConfig.coverage_limits['8'] || 500000;
       }
+
+      const setFactor = (id, value, fallback = 1.0) => {
+        const el = document.getElementById(id);
+        if (el) el.value = Number(value != null ? value : fallback).toFixed(2);
+      };
+      setFactor('factor-smoker-mort', currentConfig.smoker_mortality_factor);
+      setFactor('factor-smoker-dis', currentConfig.smoker_disability_factor);
+      setFactor('factor-former-mort', currentConfig.former_smoker_mortality_factor);
+      setFactor('factor-former-dis', currentConfig.former_smoker_disability_factor);
+      setFactor('factor-nonsmoker-mort', currentConfig.nonsmoker_mortality_factor);
+      setFactor('factor-nonsmoker-dis', currentConfig.nonsmoker_disability_factor);
+      setFactor('factor-male-mort', currentConfig.male_mortality_factor);
+      setFactor('factor-male-dis', currentConfig.male_disability_factor);
+      setFactor('factor-female-mort', currentConfig.female_mortality_factor);
+      setFactor('factor-female-dis', currentConfig.female_disability_factor);
+      const ethMort = currentConfig.ethnicity_mortality_factors || {};
+      const ethDis = currentConfig.ethnicity_disability_factors || {};
+      ['caucasian', 'african', 'hispanic', 'asian', 'other'].forEach((key) => {
+        setFactor('eth-mort-' + key, ethMort[key]);
+        setFactor('eth-dis-' + key, ethDis[key]);
+      });
     }
 
     function fmtNumber(value, digits = 0) {
@@ -3847,16 +4053,68 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     }
     
     async function savePricingParams() {
+      const num = (id, fallback = 1.0) => {
+        const v = parseFloat(document.getElementById(id)?.value);
+        return Number.isFinite(v) ? v : fallback;
+      };
       const dShareInput = parseFloat(document.getElementById('disability-share')?.value);
+      const dSharePost = parseFloat(document.getElementById('disability-share-post65')?.value);
+      const lifeShareInput = parseFloat(document.getElementById('life-share')?.value);
+      const lifeSharePost = parseFloat(document.getElementById('life-share-post65')?.value);
       const config = {
         expense_loading_pct: parseFloat(document.getElementById('expense-loading').value) / 100,
         profit_margin_pct: parseFloat(document.getElementById('profit-margin').value) / 100,
         discount_rate: parseFloat(document.getElementById('discount-rate').value) / 100,
+        smoker_mortality_factor: num('factor-smoker-mort'),
+        smoker_disability_factor: num('factor-smoker-dis'),
+        former_smoker_mortality_factor: num('factor-former-mort'),
+        former_smoker_disability_factor: num('factor-former-dis'),
+        nonsmoker_mortality_factor: num('factor-nonsmoker-mort'),
+        nonsmoker_disability_factor: num('factor-nonsmoker-dis'),
+        male_mortality_factor: num('factor-male-mort'),
+        male_disability_factor: num('factor-male-dis'),
+        female_mortality_factor: num('factor-female-mort'),
+        female_disability_factor: num('factor-female-dis'),
+        ethnicity_mortality_factors: {
+          caucasian: num('eth-mort-caucasian'),
+          african: num('eth-mort-african'),
+          hispanic: num('eth-mort-hispanic'),
+          asian: num('eth-mort-asian'),
+          other: num('eth-mort-other'),
+        },
+        ethnicity_disability_factors: {
+          caucasian: num('eth-dis-caucasian'),
+          african: num('eth-dis-african'),
+          hispanic: num('eth-dis-hispanic'),
+          asian: num('eth-dis-asian'),
+          other: num('eth-dis-other'),
+        },
       };
       if (!Number.isNaN(dShareInput)) {
         // Field is entered as a percentage of life sum (e.g. 25 for 1:4)
         config.disability_share_of_life = dShareInput / 100;
       }
+      if (!Number.isNaN(dSharePost)) {
+        config.disability_share_of_life_post65 = dSharePost / 100;
+      }
+      if (!Number.isNaN(lifeShareInput)) {
+        config.life_share_of_coverage = lifeShareInput / 100;
+      }
+      if (!Number.isNaN(lifeSharePost)) {
+        config.life_share_of_coverage_post65 = lifeSharePost / 100;
+      }
+      const postPremPct = parseFloat(document.getElementById('post-disability-premium-factor')?.value);
+      if (!Number.isNaN(postPremPct)) {
+        config.post_disability_premium_factor = postPremPct / 100;
+      }
+      const postLifePct = parseFloat(document.getElementById('post-disability-life-share')?.value);
+      if (!Number.isNaN(postLifePct)) {
+        config.post_disability_life_share_of_face = postLifePct / 100;
+      }
+      const contEl = document.getElementById('pre65-disability-continues');
+      if (contEl) config.pre65_disability_continues_policy = !!contEl.checked;
+      const exclEl = document.getElementById('post65-claims-exclusive');
+      if (exclEl) config.post65_claims_mutually_exclusive = !!exclEl.checked;
       
       try {
         const res = await fetch('/api/actuarial/config', {
@@ -3870,7 +4128,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         
         const data = await res.json();
         if (data.success) {
-          alert('✅ Pricing parameters saved successfully!');
+          const ver = data.config?.config_version || '';
+          const persistNote = data.persisted ? ' (persisted)' : (data.persistence_warning ? ' (memory only: ' + data.persistence_warning + ')' : '');
+          alert('✅ Pricing parameters saved' + (ver ? ' [' + ver + ']' : '') + persistNote);
           loadConfig();
         } else {
           alert('❌ Error: ' + (data.error || 'Unknown error'));
@@ -4253,6 +4513,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         policy_term_fixed: parseInt(document.getElementById('sim-term-fixed').value),
         male_pct: parseFloat(document.getElementById('sim-male').value),
         female_pct: parseFloat(document.getElementById('sim-female').value),
+        smoker_pct: parseFloat(document.getElementById('sim-smoker')?.value || '15'),
+        former_smoker_pct: parseFloat(document.getElementById('sim-former-smoker')?.value || '10'),
         ethnicity: {
           caucasian: parseFloat(document.getElementById('eth-caucasian').value),
           african: parseFloat(document.getElementById('eth-african').value),
@@ -5858,21 +6120,50 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
     }
 
+    function updatePostDisabilityPremiumDisplay() {
+      const pct = parseFloat(document.getElementById('post-disability-premium-factor')?.value || '100');
+      const lifePct = parseFloat(document.getElementById('post-disability-life-share')?.value || '75');
+      const premDisp = document.getElementById('post-disability-premium-display');
+      const lifeDisp = document.getElementById('post-disability-life-display');
+      if (premDisp) {
+        if (Math.abs(pct - 100) < 0.5) {
+          premDisp.textContent = 'Default 100% — keep charging the full combined premium after disability';
+        } else {
+          premDisp.textContent = `After pre-65 disability, ongoing premium = ${pct.toFixed(0)}% of pre-claim combined`;
+        }
+      }
+      if (lifeDisp) {
+        lifeDisp.textContent = `Remaining life = ${lifePct.toFixed(0)}% of face after pre-65 disability payment`;
+      }
+    }
+
     function updateDisabilityRatioDisplay() {
+      function fmtRatio(raw, prefix) {
+        if (!raw || raw <= 0) return `${prefix}: Disability ÷ Life = 0`;
+        if (Math.abs(raw - 1) < 1e-9) return `${prefix}: Disability ÷ Life = 1 : 1`;
+        const inv = 1 / raw;
+        const rounded = Math.round(inv);
+        if (Math.abs(inv - rounded) < 0.01) return `${prefix}: Disability ÷ Life = 1 : ${rounded}`;
+        return `${prefix}: Disability ÷ Life = ${raw.toFixed(4)}`;
+      }
+      function fmtLife(raw, prefix) {
+        if (!raw || raw <= 0) return `${prefix}: Life = 0% of face`;
+        if (Math.abs(raw - 1) < 1e-9) return `${prefix}: Life = 100% of face`;
+        if (Math.abs(raw - 0.25) < 1e-9) return `${prefix}: Life = 25% of face (÷4)`;
+        return `${prefix}: Life = ${(raw * 100).toFixed(1)}% of face`;
+      }
       const display = document.getElementById('disability-ratio-display');
-      if (!display) return;
       const raw = parseFloat(document.getElementById('disability-share')?.value || '0') / 100;
-      if (!raw || raw <= 0) {
-        display.textContent = 'Disability ÷ Life = 0 (no disability cover)';
-        return;
-      }
-      const inv = 1 / raw;
-      const rounded = Math.round(inv);
-      if (Math.abs(inv - rounded) < 0.01) {
-        display.textContent = `Disability ÷ Life = 1 : ${rounded}`;
-      } else {
-        display.textContent = `Disability ÷ Life = ${raw.toFixed(4)}`;
-      }
+      if (display) display.textContent = fmtRatio(raw, 'Until 65');
+      const displayPost = document.getElementById('disability-ratio-post65-display');
+      const rawPost = parseFloat(document.getElementById('disability-share-post65')?.value || '100') / 100;
+      if (displayPost) displayPost.textContent = fmtRatio(rawPost, 'After 65');
+      const lifeDisplay = document.getElementById('life-share-display');
+      const lifeRaw = parseFloat(document.getElementById('life-share')?.value || '100') / 100;
+      if (lifeDisplay) lifeDisplay.textContent = fmtLife(lifeRaw, 'Until 65');
+      const lifeDisplayPost = document.getElementById('life-share-post65-display');
+      const lifeRawPost = parseFloat(document.getElementById('life-share-post65')?.value || '25') / 100;
+      if (lifeDisplayPost) lifeDisplayPost.textContent = fmtLife(lifeRawPost, 'After 65');
     }
 
     async function loadContractSpec() {
@@ -5897,8 +6188,15 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         body.innerHTML = `
           <p><strong>${c.name || 'PHINS Contract'}</strong> · ${c.version || ''} · effective ${c.effective_date || ''} · product <code>${c.product_id || ''}</code></p>
           <p style="color:var(--text-light);">
-            <strong>Contract ratio (actuary-table driven):</strong>
-            Disability ÷ Life = <strong>${cr.disability_to_life_ratio_display || '1:4'}</strong>
+            <strong>Contract bands (actuary-table driven):</strong>
+            pre-65 life <strong>${cr.life_share_display || '100% of face'}</strong>,
+            D÷Life = <strong>${cr.disability_to_life_ratio_display || '1:4'}</strong>
+            → post-65 life <strong>${cr.life_share_post65_display || '25% of face (÷4)'}</strong>,
+            D÷Life = <strong>${cr.disability_to_life_ratio_post65_display || '1:1'}</strong>
+            (e.g. $${Number(cr.example_pre65_life || 500000).toLocaleString()} /
+            $${Number(cr.example_pre65_disability || 125000).toLocaleString()}
+            → $${Number(cr.example_post65_life || 125000).toLocaleString()} /
+            $${Number(cr.example_post65_disability || 125000).toLocaleString()})
             ${cr.adjustable_from_dashboard ? '· editable in <em>Pricing Parameters → Contract Ratios</em>' : ''}
           </p>
           <h4 style="margin-top:8px;">1. Risk Factors — what is covered</h4>
@@ -6355,22 +6653,24 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const expenseLoadingPct = Number(kernel.expense_loading_pct != null ? kernel.expense_loading_pct : 0.15);
       const profitMarginPct = Number(kernel.profit_margin_pct != null ? kernel.profit_margin_pct : 0.10);
       const productId = String(kernel.product_id || params.product_id || 'phins_pure_risk_adjustable');
-      // Contract ratio: disability benefit is L x disability_share_of_life
-      // (default 1:4 -> 0.25). Single source of truth from the simulation's
-      // pricing kernel so claims price against the same Contract Being Priced.
+      // Age-banded contract ratios (Draft 3.1): pre-65 life=face & D=life×share;
+      // from band age life=face×lifeSharePost & D=life×dSharePost. Single source
+      // of truth from the simulation's pricing kernel / Pricing Parameters.
       const disabilityShare = Number(kernel.disability_share_of_life != null ? kernel.disability_share_of_life : 0.25);
+      const disabilitySharePost = Number(kernel.disability_share_of_life_post65 != null ? kernel.disability_share_of_life_post65 : 1.0);
+      const lifeShare = Number(kernel.life_share_of_coverage != null ? kernel.life_share_of_coverage : 1.0);
+      const lifeSharePost = Number(kernel.life_share_of_coverage_post65 != null ? kernel.life_share_of_coverage_post65 : 0.25);
       // Claim cause split from the simulation's risk metrics (mortality vs
       // permanent disability share of expected claims).
       const rm = sim.risk_metrics || {};
       let mortalityShare = rm.mortality_pct_of_claims != null ? Number(rm.mortality_pct_of_claims) / 100 : 0.6;
       if (!(mortalityShare >= 0 && mortalityShare <= 1)) mortalityShare = 0.6;
       const lossRatioPct = Number(rm.loss_ratio || 0);
-      // Contract disability cover ceases automatically at this attained age
-      // (PHINS Adjustable Risk Contract: disability trigger age 3–65); death
-      // cover continues for life. The acceptance band comes straight from the
-      // simulation's Age Parameters, so if max acceptance age is 55 every
-      // materialized life — and therefore every claim — stays inside 3–55.
-      const disabilityMaxAge = 65;
+      // Age band where life steps down and D becomes 1:1 with the reduced life
+      // sum. Disability does NOT terminate — both layers continue for life.
+      // Acceptance ages still come from the simulation Age Parameters.
+      const disabilityBandAge = Number(kernel.disability_band_age != null ? kernel.disability_band_age : 65);
+      const disabilityMaxAge = disabilityBandAge; // retained key for older report readers
       const acceptedAgeMin = ageMin;
       const acceptedAgeMax = ageMax;
 
@@ -6386,6 +6686,17 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       window.actuarySandbox.contract = {
         product_id: productId,
         disability_share_of_life: disabilityShare,
+        disability_share_of_life_post65: disabilitySharePost,
+        life_share_of_coverage: lifeShare,
+        life_share_of_coverage_post65: lifeSharePost,
+        pre65_disability_continues_policy: kernel.pre65_disability_continues_policy !== false,
+        post_disability_life_share_of_face: Number(
+          kernel.post_disability_life_share_of_face != null ? kernel.post_disability_life_share_of_face : 0.75
+        ),
+        post_disability_premium_factor: Number(
+          kernel.post_disability_premium_factor != null ? kernel.post_disability_premium_factor : 1.0
+        ),
+        post65_claims_mutually_exclusive: kernel.post65_claims_mutually_exclusive !== false,
         expense_loading_pct: expenseLoadingPct,
         profit_margin_pct: profitMarginPct,
         savings_rate: savingsRate,
@@ -6393,6 +6704,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         mortality_share: mortalityShare,
         loss_ratio: lossRatioPct,
         avg_term_years: Number(rm.avg_term_years || 0),
+        disability_band_age: disabilityBandAge,
         disability_max_age: disabilityMaxAge,
         age_min: acceptedAgeMin,
         age_max: acceptedAgeMax,
@@ -6486,12 +6798,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           term_years: term,
           risk_score: risk,
           uw_status,
-          // Disability cover ceases automatically at the contract ceiling
-          // (default age 65); death cover continues for life. Because the age
-          // was drawn from the accepted band, an age-55 cohort can never
-          // produce an out-of-band claim.
-          disability_eligible: age < disabilityMaxAge,
+          // Disability is lifelong (Draft 3.1); benefit sums use age bands.
+          disability_eligible: true,
           disability_share_of_life: disabilityShare,
+          disability_share_of_life_post65: disabilitySharePost,
+          life_share_of_coverage: lifeShare,
+          life_share_of_coverage_post65: lifeSharePost,
+          disability_band_age: disabilityBandAge,
           disability_max_age: disabilityMaxAge,
           policy_status: uw_status === 'approved' ? 'active' : uw_status,
           has_claim: false,
@@ -6533,7 +6846,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         `Contract priced: ${productId} · disability benefit ${ratioDisplay} of life sum · ` +
           `savings add-on ${(savingsRate * 100).toFixed(1)}% of risk premium · ` +
           `claim split ${(mortalityShare * 100).toFixed(0)}% mortality / ${((1 - mortalityShare) * 100).toFixed(0)}% disability · ` +
-          `accepted ages ${acceptedAgeMin}–${acceptedAgeMax}, disability ceases at ${disabilityMaxAge}.`,
+          `accepted ages ${acceptedAgeMin}–${acceptedAgeMax}; from age ${disabilityMaxAge} life steps to face÷4 and disability equals life.`,
         'info'
       );
       // Seed the 5-year (60-month) forecast + adjustable charts immediately so
@@ -6718,19 +7031,29 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
       const now = sandboxNow();
       const ts = now.toISOString();
-      // Contract being priced — single source of truth for claim causes,
-      // benefit amounts and the disability cut-off captured at Generate.
+      // Contract being priced — single source of truth for claim causes and
+      // age-banded benefit amounts captured at Generate (Draft 3.1).
       const contract = sb.contract || {};
       const disabilityShare = Number(contract.disability_share_of_life != null ? contract.disability_share_of_life : 0.25);
+      const disabilitySharePost = Number(contract.disability_share_of_life_post65 != null ? contract.disability_share_of_life_post65 : 1.0);
+      const lifeShare = Number(contract.life_share_of_coverage != null ? contract.life_share_of_coverage : 1.0);
+      const lifeSharePost = Number(contract.life_share_of_coverage_post65 != null ? contract.life_share_of_coverage_post65 : 0.25);
       const mortalityShare = Number(contract.mortality_share != null ? contract.mortality_share : 0.6);
       const savingsRate = Number(contract.savings_rate || 0);
       const expenseLoadingPct = Number(contract.expense_loading_pct != null ? contract.expense_loading_pct : 0.15);
       const profitMarginPct = Number(contract.profit_margin_pct != null ? contract.profit_margin_pct : 0.10);
-      const disabilityMaxAge = Number(contract.disability_max_age != null ? contract.disability_max_age : 65);
+      const disabilityBandAge = Number(contract.disability_band_age != null ? contract.disability_band_age : (contract.disability_max_age != null ? contract.disability_max_age : 65));
+      const disabilityMaxAge = disabilityBandAge;
       const bandMin = Number(contract.age_min != null ? contract.age_min : 20);
       const bandMax = Number(contract.age_max != null ? contract.age_max : 65);
       const MORTALITY_CAUSE = 'Death — natural or accidental';
       const DISABILITY_CAUSE = 'Permanent total disability (3+ ADL)';
+      function sandboxBenefitSums(age, face) {
+        const post = Number(age) >= disabilityBandAge;
+        const life = face * (post ? lifeSharePost : lifeShare);
+        const dShare = post ? disabilitySharePost : disabilityShare;
+        return { lifeSum: life, disabilitySum: life * dShare, postBand: post };
+      }
 
       if (action === 'new_customer' && customers.length < 100000) {
         const idx = customers.length + 1;
@@ -6763,8 +7086,12 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           term_years: sandboxRandInt(5, 30),
           risk_score: risk,
           uw_status,
-          disability_eligible: age < disabilityMaxAge,
+          disability_eligible: true,
           disability_share_of_life: disabilityShare,
+          disability_share_of_life_post65: disabilitySharePost,
+          life_share_of_coverage: lifeShare,
+          life_share_of_coverage_post65: lifeSharePost,
+          disability_band_age: disabilityBandAge,
           disability_max_age: disabilityMaxAge,
           policy_status: uw_status === 'approved' ? 'active' : uw_status,
           has_claim: false,
@@ -6781,24 +7108,25 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
       // ----- Contract-aware claim creation -----
       // Only two insured causes exist on the PHINS Adjustable Risk Contract:
-      //   • Death (mortality)            -> benefit = full sum insured L
-      //   • Permanent disability (3+ADL) -> benefit = L x disability_share (1:4)
+      //   • Death (mortality)            -> benefit = attained-age life sum
+      //   • Permanent disability (3+ADL) -> benefit = age-banded disability sum
       // Each customer can have EITHER a mortality OR a disability claim, never
       // both (mutual exclusivity); a paid mortality claim terminates the
-      // policy. Disability cover ceases automatically at age 65.
+      // policy. Disability continues for life; from the band age life=face÷4
+      // and D=life (Draft 3.1).
       if (action === 'new_claim'
           && cust.uw_status === 'approved'
           && cust.policy_status !== 'terminated'
           && cust.policy_status !== 'cancelled'
           && !cust.has_claim) {
-        const canDisable = cust.disability_eligible !== false && Number(cust.age) < disabilityMaxAge;
+        const canDisable = cust.disability_eligible !== false;
         const isMortality = !canDisable || (Math.random() < mortalityShare);
-        const share = Number(cust.disability_share_of_life != null ? cust.disability_share_of_life : disabilityShare);
+        const sums = sandboxBenefitSums(cust.age, Number(cust.coverage_amount) || 0);
         const claimType = isMortality ? 'mortality' : 'disability';
         const cause = isMortality ? MORTALITY_CAUSE : DISABILITY_CAUSE;
         const amount = isMortality
-          ? Math.round(cust.coverage_amount)
-          : Math.round(cust.coverage_amount * share);
+          ? Math.round(sums.lifeSum)
+          : Math.round(sums.disabilitySum);
         const seq = cust.id.split('-').pop();
         const id = `CLM-TESTSIM-${Date.now()}-${sandboxRandInt(1000, 9999)}`;
         sb.claims.push({
@@ -6830,21 +7158,67 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           target.status = 'paid';
           target.paid_amount = target.approved_amount || target.amount;
           target.paid_at = ts;
-          // A paid mortality (death) claim terminates the policy: no further
-          // premium is collected and no further claim can arise.
           const owner = customers.find(c => c.id === target.customer_id);
           if (owner && target.type === 'mortality') {
+            // Death always ends the policy.
             owner.policy_status = 'terminated';
             owner.terminated_at = ts;
-            // Void any still-outstanding premium bills for the terminated policy.
             sb.bills.forEach(b => {
               if (b.customer_id === owner.id && (b.status === 'outstanding' || b.status === 'overdue')) {
                 b.status = 'voided';
               }
             });
             sandboxLogEvent('claim', `Death claim ${target.id} paid ${sandboxFmtMoney(target.paid_amount)} — policy ${target.policy_id} terminated.`, 'breaking');
-          } else {
-            sandboxLogEvent('claim', `Disability claim ${target.id} paid out ${sandboxFmtMoney(target.paid_amount)} (${target.cause || 'permanent disability'}).`, 'info');
+          } else if (owner && target.type === 'disability') {
+            // Pre-65: acceleration — pay D, continue with remaining life and
+            // ongoing premium = factor × pre-claim combined (default 100%).
+            // Post-65: mutually exclusive — one claim settles (policy ends).
+            const bandAge = Number(contract.disability_band_age != null ? contract.disability_band_age : disabilityBandAge);
+            const continues = contract.pre65_disability_continues_policy !== false;
+            const exclusivePost = contract.post65_claims_mutually_exclusive !== false;
+            const lifeRemainShare = Number(contract.post_disability_life_share_of_face != null ? contract.post_disability_life_share_of_face : 0.75);
+            const premFactor = Number(contract.post_disability_premium_factor != null ? contract.post_disability_premium_factor : 1.0);
+            const face = Number(owner.coverage_amount) || 0;
+            const combinedMonthly = Number(owner.monthly_premium) || 0;
+            const ageAtClaim = Number(owner.age) || 0;
+            const applyContinuation = (remainingLife, label) => {
+              const ongoingMonthly = Math.round(combinedMonthly * premFactor * 100) / 100;
+              owner.coverage_amount = remainingLife;
+              owner.pre_disability_combined_monthly = combinedMonthly;
+              owner.post_disability_premium_factor = premFactor;
+              owner.monthly_premium = ongoingMonthly;
+              owner.annual_premium = Math.round(ongoingMonthly * 12);
+              owner.disability_layer_closed = true;
+              owner.disability_eligible = false;
+              sandboxLogEvent(
+                'claim',
+                `Disability claim ${target.id} paid ${sandboxFmtMoney(target.paid_amount)}; ${label} life ${sandboxFmtMoney(remainingLife)} and premium ${sandboxFmtMoney(ongoingMonthly)}/mo (${(premFactor * 100).toFixed(0)}% of prior combined).`,
+                'info'
+              );
+            };
+            const terminatePolicy = (label) => {
+              owner.policy_status = 'terminated';
+              owner.terminated_at = ts;
+              sb.bills.forEach(b => {
+                if (b.customer_id === owner.id && (b.status === 'outstanding' || b.status === 'overdue')) {
+                  b.status = 'voided';
+                }
+              });
+              sandboxLogEvent('claim', `${label} ${target.id} paid ${sandboxFmtMoney(target.paid_amount)} — policy terminated.`, 'breaking');
+            };
+            // Mirror resolve_disability_claim_outcome modes for all toggle combos.
+            if (ageAtClaim < bandAge && continues) {
+              applyContinuation(Math.round(face * lifeRemainShare), 'policy continues with');
+            } else if (ageAtClaim < bandAge && !continues) {
+              terminatePolicy('Pre-65 disability claim (continuation off)');
+            } else if (ageAtClaim >= bandAge && exclusivePost) {
+              terminatePolicy('Post-65 disability claim (mutually exclusive)');
+            } else if (ageAtClaim >= bandAge && !exclusivePost && continues) {
+              const sums = sandboxBenefitSums(ageAtClaim, face);
+              applyContinuation(Math.round(sums.lifeSum), 'post-65 continuation with');
+            } else {
+              terminatePolicy('Disability claim');
+            }
           }
         }
         return;
@@ -7711,7 +8085,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
       if (paidClaims) {
         const deathPct = mort.count + dis.count > 0 ? (mort.count / (mort.count + dis.count) * 100) : 0;
-        out.push(`Claim experience splits ${deathPct.toFixed(0)}% death / ${(100 - deathPct).toFixed(0)}% permanent disability by count, consistent with the contract being priced (death pays the full sum insured L; disability pays L × the contract ratio and ceases at age ${ix.contract.disability_max_age || 65}).`);
+        out.push(`Claim experience splits ${deathPct.toFixed(0)}% death / ${(100 - deathPct).toFixed(0)}% permanent disability by count, consistent with the contract being priced (death pays the attained-age life sum; disability pays life × the age-banded ratio — 1:4 until ${ix.contract.disability_max_age || 65}, then life=face÷4 and D=life).`);
       }
       if (months > 0) {
         const savingsPctOfCollected = s.collected > 0 ? (s.savingsCollected / s.collected * 100) : 0;
@@ -8923,7 +9297,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       out.business = {
         product_id: productId,
         product_name: 'PHINS Adjustable Risk Contract — life-and-disability composite',
-        contract_summary: 'A single policy bundles (i) a guaranteed-issue mortality benefit equal to the contracted sum insured L, and (ii) a permanent-disability benefit equal to L × contract ratio (default 1:4), paid on a 3-of-10 ADL trigger and ceasing automatically at age 65. A pure-risk premium is computed deterministically from the published mortality and ADL tables; an optional savings add-on is collected as a fixed percentage of the risk premium and held in a segregated AUM that earns yield for the policyholder.',
+        contract_summary: 'A single policy bundles (i) a mortality benefit equal to the attained-age life sum (100% of face until 65; face÷4 from 65), and (ii) a permanent-disability benefit equal to life × the age-banded ratio (default 1:4 until 65, then D=life at the reduced life sum), paid on a 3-of-10 ADL trigger. A pure-risk premium is computed deterministically from the published mortality and ADL tables plus Pricing Parameters; an optional savings add-on is collected as a fixed percentage of the risk premium and held in a segregated AUM that earns yield for the policyholder.',
         distribution: 'Direct-to-customer digital onboarding via the PHINS web portal and partner channels. Underwriting is fully automated for low-risk applicants and triaged to manual review above the published risk-score thresholds. No tied-agent commission liability.',
         technology: 'A single deterministic actuarial pricing kernel flows from pricing through reserving, valuation and the regulator filings without manual override. The kernel is versioned (tables_version) so every figure in this report is reproducible from the bound simulation snapshot.',
         operations: `End-to-end automation rate of ${annualFmtPct(automationRate)} across underwriting, claims and billing, with manual review reserved for risk scores in the contested band. Auto-pay billing is the default; policies unpaid past the 30-day grace are cancelled and outstanding bills voided.`,
@@ -8933,7 +9307,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // ===== Risk Factors =====
       const rfCcy = ccy;
       const riskFactors = [];
-      riskFactors.push({ category: 'Underwriting & mortality risk', text: `Loss-ratio sensitivity. A 100 bps adverse movement in the realized loss ratio against the priced ${annualFmtPct(lossRatio)} would reduce annual underwriting profit by approximately ${annualFmtMoney(grossPremium * 0.01, rfCcy)}. Mortality experience is dominated by the ${annualFmtPct(mortalityShare)} of claims attributable to death cover; longevity is not a material driver because the disability benefit ceases at age 65.` });
+      riskFactors.push({ category: 'Underwriting & mortality risk', text: `Loss-ratio sensitivity. A 100 bps adverse movement in the realized loss ratio against the priced ${annualFmtPct(lossRatio)} would reduce annual underwriting profit by approximately ${annualFmtMoney(grossPremium * 0.01, rfCcy)}. Mortality experience is dominated by the ${annualFmtPct(mortalityShare)} of claims attributable to death cover; from age 65 the life sum steps down to face÷4 while disability continues at D=life, moderating senior exposure.` });
       riskFactors.push({ category: 'Persistency & lapse risk', text: sandboxStats ? `Realized cancellation rate of ${annualFmtPct((sandboxCancelled / Math.max(1, sandboxTotalCustomers)) * 100)} from non-payment past the 30-day grace, alongside a ${annualFmtPct((sandboxTerminated / Math.max(1, sandboxTotalCustomers)) * 100)} mortality-driven termination rate. Persistency below the pricing assumption depresses future CSM release and operating profit.` : 'Persistency risk arises from policyholder cancellation past the 30-day non-payment grace and from claim-driven termination of death cover. The Company prices conservatively against these channels but realized experience is not yet bound to this report.' });
       riskFactors.push({ category: 'Capital & solvency risk', text: `Solvency II ratio computed at ${annualFmtPct((solvencyRatio || 0) * 100)} on Own Funds of ${annualFmtMoney(ownFunds, rfCcy)} against SCR of ${annualFmtMoney(scr, rfCcy)}. A 25% adverse capital shock would reduce the ratio to ${annualFmtPct(((ownFunds * 0.75) / Math.max(1, scr)) * 100)}.` });
       riskFactors.push({ category: 'Interest-rate & investment risk', text: `The reserve and the segregated savings AUM are invested in fixed-income instruments. A 100 bps parallel rate shock would change the BEL by approximately ${annualFmtMoney(closingReserve * 0.05, rfCcy)} (duration-five assumption). The Company does not assume any market beta on the savings AUM in the priced contract.` });
@@ -9024,7 +9398,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
       // ===== Narrative (long-form MD&A) -----
       const par = [];
-      par.push(`<strong>Business overview.</strong> The Company underwrites the PHINS Adjustable Risk Contract — a single policy that bundles mortality cover paying the sum insured L on death, and a permanent-disability benefit equal to L × the contract ratio (default 1:4) paid on a 3-of-10 ADL trigger and ceasing automatically at age 65. Customers may elect a savings add-on, recognised as a deposit liability rather than revenue, accumulating in a segregated AUM that earns market yield for the policyholder.`);
+      par.push(`<strong>Business overview.</strong> The Company underwrites the PHINS Adjustable Risk Contract — a single policy that bundles mortality cover paying the attained-age life sum on death (face until 65; face÷4 thereafter), and a permanent-disability benefit equal to life × the age-banded ratio (default 1:4 until 65, then D=life) paid on a 3-of-10 ADL trigger. Customers may elect a savings add-on, recognised as a deposit liability rather than revenue, accumulating in a segregated AUM that earns market yield for the policyholder.`);
       par.push(`<strong>Pricing &amp; reserving.</strong> A single deterministic actuarial kernel (tables version <code>${annualEsc(ctx.tablesVersion || '—')}</code>, product <code>${annualEsc(productId)}</code>) drives premium, reserves, valuation and the figures in this report. The kernel reconciles each contract through the identity <code>N × avg premium = total premium</code> and <code>risk + savings + expense + profit = gross premium</code>; the bound simulation snapshot ${recon.all_identities_pass ? 'passed' : 'did not pass'} all premium identities. Savings add-on is computed as ${savingsRatePct.toFixed(2)}% of risk premium; expense loading is ${expenseLoadingPct.toFixed(2)}% and profit margin is ${profitMarginPctKernel.toFixed(2)}% of the loaded risk-and-savings base.`);
       par.push(`<strong>Distribution &amp; customer relations.</strong> The Company onboards policyholders direct-to-customer through its web portal, removing the tied-agent commission channel and the mis-selling risk that comes with it. During the reporting period, ${annualFmtCount(applied)} applications were received, of which ${annualFmtCount(accepted)} (${annualFmtPct(acceptanceRate)}) were accepted into the book; ${annualFmtCount(declined)} were declined per the published underwriting guidelines. Of the active book, the realized 12-month persistency observed in the sandbox lifecycle is ${sandboxTotalCustomers ? annualFmtPct((sandboxActivePolicies / sandboxTotalCustomers) * 100) : 'not yet available'}, with non-payment-driven cancellation of ${sandboxTotalCustomers ? annualFmtPct((sandboxCancelled / sandboxTotalCustomers) * 100) : '—'} after the 30-day grace and claim-driven termination of ${sandboxTotalCustomers ? annualFmtPct((sandboxTerminated / sandboxTotalCustomers) * 100) : '—'}.`);
       par.push(`<strong>Underwriting performance.</strong> Gross written premium of ${annualFmtMoney(grossPremium, ccy)} translated to an annualized loss ratio of ${annualFmtPct(lossRatio)} (claims / risk premium), an expense ratio of ${expRatio.toFixed(2)}% and a combined ratio of ${combinedRatio.toFixed(2)}%. Mortality contributed ${annualFmtPct(mortalityShare)} of expected claims and permanent-disability ${annualFmtPct(disabilityShare)}. The book was processed at an end-to-end automation rate of ${annualFmtPct(automationRate)}; manual review is reserved for risk-score bands that fall outside the published auto-decision corridor. Average premium per customer was ${annualFmtMoney(avgPremiumPerCustomer, ccy)} on average coverage of ${annualFmtMoney(avgCoveragePerCustomer, ccy)} over an average term of ${avgTermYears.toFixed(1)} years. Return on equity is ${roeBase.toFixed(2)}% and return on assets is ${roaBase.toFixed(2)}%.`);

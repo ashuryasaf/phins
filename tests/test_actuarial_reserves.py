@@ -70,12 +70,17 @@ def test_risk_reference_matches_published_anchors():
     # Cumulative premium reconciles to the sum of yearly premiums
     cum = sum(row['annual_premium'] for row in ref['yearly_projection'])
     assert abs(cum - ref['totals']['cumulative_premium']) < 0.5
-    # Disability cuts off at 65 (sanity check on senior curve)
+    # Draft 3.1: disability continues at 65 with life stepped to face÷4
     age65 = risk_reference_monthly_premiums(65)
-    assert age65['disability_monthly'] == 0
+    assert age65['disability_monthly'] > 0
+    assert age65['life_sum'] == 125000.0
+    assert age65['disability_sum'] == 125000.0
+    assert abs(age65['life_monthly'] - 50.0) < 0.01
+    assert abs(age65['disability_monthly'] - 40.0) < 0.01
     # Integrity checks must all be True
     assert ref['data_integrity']['cumulative_premium_check']
     assert ref['data_integrity']['cumulative_loss_check']
+    assert ref['data_integrity']['disability_sum_matches_age_band']
 
 
 def test_risk_reference_is_modular_for_any_age_term_lifesum():
@@ -86,12 +91,19 @@ def test_risk_reference_is_modular_for_any_age_term_lifesum():
     assert ref['reference']['projection_years'] == 10
     assert ref['reference']['life_sum'] == 1_500_000.0
     assert len(ref['yearly_projection']) == 10
-    # Senior-curve sanity: a row at age 65 must report zero disability premium
+    # Senior-curve sanity (Draft 3.1): from 65 life=face÷4 and disability continues at D=life
     senior_ref = build_risk_reference(start_age=65, projection_years=3)
+    assert senior_ref['reference']['life_sum'] == 125000.0
+    assert senior_ref['reference']['disability_sum'] == 125000.0
     for row in senior_ref['yearly_projection']:
         if row['age'] >= 65:
-            # disability annual premium is 12*disability_monthly, which is zero
-            assert row['disability_ix'] >= 0  # tables can still report q(x)/i(x), but cover is off
+            assert row['life_sum'] == 125000.0
+            assert row['disability_sum'] == 125000.0
+            assert row['disability_monthly'] > 0
+            assert row['disability_ix'] >= 0
+    assert senior_ref['data_integrity']['disability_sum_matches_age_band']
+    # Senior issue age must compare D to the post-65 share (1.0), not pre-65 0.25.
+    assert senior_ref['data_integrity']['issue_age_disability_sum_matches_ratio'] is True
     assert ref['data_integrity']['cumulative_premium_check']
     assert ref['data_integrity']['cumulative_loss_check']
 
