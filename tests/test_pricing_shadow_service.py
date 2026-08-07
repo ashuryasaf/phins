@@ -49,7 +49,7 @@ def test_build_shadow_snapshot_preserves_flat_and_records_kernel():
     # below the legacy flat life-only $0.25/1000 quote — both must be recorded.
     assert snap["kernel_annual"] > 0
     assert snap["flat_annual"] > 0
-    assert "delta_annual" in snap or abs(snap["kernel_annual"] - snap["flat_annual"]) >= 0
+    assert snap["delta_annual"] == pytest.approx(snap["kernel_annual"] - snap["flat_annual"], abs=0.01)
     assert snap["product_id"] == "phins_pure_risk_adjustable"
     assert snap["integrity_hash"]
     assert snap["disability_share_used"] == pytest.approx(0.25)
