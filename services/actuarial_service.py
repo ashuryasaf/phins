@@ -466,6 +466,9 @@ class ActuarialTablesStore:
         self.versions: Dict[str, Dict] = {}
         self.config = UnderwritingConfig()
         self.audit_log: List[Dict] = []
+        # Monotonic revision stamped into every persisted snapshot so
+        # operators can correlate file/DB copies of the pricing state.
+        self.state_revision = 0
         
         # Initialize with default V2.0 tables
         self._initialize_default_tables()
@@ -645,11 +648,53 @@ class ActuarialTablesStore:
                 return item['rate']
         return 0.01
     
+    @staticmethod
+    def _version_major_minor(version_key: str) -> float:
+        """Parse ``V2.0`` / ``V2.0.3`` (sub-version) keys to their major.minor float."""
+        try:
+            parts = str(version_key).upper().lstrip('V').split('.')
+            return float('.'.join(parts[:2])) if parts and parts[0] else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _next_sub_version(self) -> str:
+        """Next sub-version key under the current major.minor (e.g. V2.0 → V2.0.1)."""
+        parts = str(self.current_version).split('.')
+        base = '.'.join(parts[:2]) if len(parts) >= 2 else str(self.current_version)
+        max_sub = 0
+        prefix = f'{base}.'
+        for key in self.versions.keys():
+            if str(key).startswith(prefix):
+                suffix = str(key)[len(prefix):]
+                if suffix.isdigit():
+                    max_sub = max(max_sub, int(suffix))
+        return f'{base}.{max_sub + 1}'
+
+    def _promote_sub_version(self, updated_tables: Dict, user: str) -> str:
+        """Clone current tables into a new active sub-version (audit-safe).
+
+        In-place edits would leave priced policies pinned to a version key
+        whose contents silently changed; a sub-version keeps every priced
+        integrity hash resolvable to the exact rates used.
+        """
+        new_version = self._next_sub_version()
+        snapshot = dict(updated_tables)
+        snapshot['version'] = new_version
+        snapshot['parent_version'] = self.current_version
+        snapshot['effective_date'] = datetime.now().isoformat()
+        snapshot['created_by'] = user
+        snapshot['status'] = 'active'
+        if self.current_version in self.versions:
+            self.versions[self.current_version]['status'] = 'archived'
+        self.versions[new_version] = snapshot
+        self.current_version = new_version
+        return new_version
+
     def upload_new_tables(self, tables: Dict, user: str, effective_date: str = None) -> Dict:
         """Upload a new version of actuarial tables"""
-        # Generate new version number
+        # Generate new version number (tolerates sub-version keys like V2.0.3)
         versions = list(self.versions.keys())
-        max_version = max([float(v.replace('V', '')) for v in versions]) if versions else 2.0
+        max_version = max([self._version_major_minor(v) for v in versions]) if versions else 2.0
         new_version = f'V{max_version + 0.1:.1f}'
         
         # Validate tables
@@ -683,13 +728,9 @@ class ActuarialTablesStore:
             'effective_date': effective_date
         })
 
-        try:
-            from services.actuarial_persistence import persist_actuarial_store
-            persist_actuarial_store(self)
-        except Exception:
-            pass
-        
-        return {'success': True, 'version': new_version}
+        result = {'success': True, 'version': new_version}
+        self._persist_with_report(result)
+        return result
     
     def update_config(self, updates: Dict, user: str) -> Dict:
         """Update underwriting configuration"""
@@ -796,23 +837,38 @@ class ActuarialTablesStore:
             'new_config': asdict(self.config)
         })
 
+        result = {'success': True, 'config': asdict(self.config)}
+        self._persist_with_report(result)
+        return result
+
+    def _persist_with_report(self, result: Dict) -> None:
+        """Persist the store and annotate ``result`` with the durable outcome.
+
+        In-memory success is preserved even when persistence fails, but any
+        degradation is surfaced as ``persistence_warning`` so the dashboard
+        can tell the operator their save may not survive a restart/redeploy.
+        """
         try:
             from services.actuarial_persistence import persist_actuarial_store
-            persist_actuarial_store(self)
+            report = persist_actuarial_store(self)
         except Exception as persist_err:
-            # Persistence is best-effort relative to in-memory success, but
-            # surface the failure so operators see it on the API response.
-            return {
-                'success': True,
-                'config': asdict(self.config),
-                'persistence_warning': str(persist_err),
-            }
-        
-        return {'success': True, 'config': asdict(self.config), 'persisted': True}
-    
+            result['persisted'] = False
+            result['persistence_warning'] = str(persist_err)
+            return
+        result['persisted'] = True
+        result['state_revision'] = report.get('state_revision')
+        result['persisted_to_database'] = bool(report.get('db_persisted'))
+        if report.get('warning'):
+            result['persistence_warning'] = report['warning']
+
     def update_current_tables(self, table_type: str, table_data: List[Dict], user: str) -> Dict:
-        """Update a specific table within the current version without creating a new version.
-        
+        """Update a specific rate table, promoting the change to a new sub-version.
+
+        The edit is cloned into an active sub-version (e.g. ``V2.0`` →
+        ``V2.0.1``) so previously priced policies keep resolving their pinned
+        ``tables_version`` to the exact rates used, and the save is durably
+        persisted (file + database snapshot).
+
         Args:
             table_type: One of 'mortality_rates', 'disability_incidence_rates', 
                        'adl_mortality_multipliers', 'adl_disability_multipliers', 
@@ -821,7 +877,7 @@ class ActuarialTablesStore:
             user: Username making the change
             
         Returns:
-            Dict with success status and updated table
+            Dict with success status, updated table, and new sub-version
         """
         valid_types = [
             'mortality_rates', 'disability_incidence_rates',
@@ -863,23 +919,30 @@ class ActuarialTablesStore:
                 if pct < 0 or pct > 1:
                     return {'success': False, 'error': f'{table_type}: benefit_pct must be 0.0-1.0 (decimal, where 1.0 = 100%), got {pct}'}
         
-        # Update the table
-        current_tables[table_type] = table_data
-        
+        # Promote the edit to a new active sub-version (never mutate a
+        # version other pricing snapshots may be pinned to).
+        updated_tables = dict(current_tables)
+        updated_tables[table_type] = table_data
+        old_version = self.current_version
+        new_version = self._promote_sub_version(updated_tables, user)
+
         # Audit log
         self._log_change('update_table', user, {
             'table_type': table_type,
+            'old_version': old_version,
+            'new_version': new_version,
             'old_data': old_data,
             'new_data': table_data
         })
 
-        try:
-            from services.actuarial_persistence import persist_actuarial_store
-            persist_actuarial_store(self)
-        except Exception:
-            pass
-        
-        return {'success': True, 'table_type': table_type, 'data': table_data}
+        result = {
+            'success': True,
+            'table_type': table_type,
+            'data': table_data,
+            'version': new_version,
+        }
+        self._persist_with_report(result)
+        return result
     
     def get_default_config(self) -> Dict:
         """Get the original default underwriting configuration values.
@@ -1053,13 +1116,10 @@ class ActuarialTablesStore:
             'old_config': old_config,
             'new_config': asdict(self.config)
         })
-        try:
-            from services.actuarial_persistence import persist_actuarial_store
-            persist_actuarial_store(self)
-        except Exception:
-            pass
-        
-        return {'success': True, 'config': asdict(self.config)}
+
+        result = {'success': True, 'config': asdict(self.config)}
+        self._persist_with_report(result)
+        return result
     
     def reset_tables_to_default(self, table_type: str, user: str) -> Dict:
         """Reset a specific table to its default values.
@@ -1081,16 +1141,31 @@ class ActuarialTablesStore:
             return {'success': False, 'error': 'No current version found'}
         
         old_data = current_tables.get(table_type, [])
-        current_tables[table_type] = defaults[table_type]
-        
+
+        # Promote the reset to a new active sub-version and persist durably,
+        # matching update_current_tables semantics.
+        updated_tables = dict(current_tables)
+        updated_tables[table_type] = defaults[table_type]
+        old_version = self.current_version
+        new_version = self._promote_sub_version(updated_tables, user)
+
         # Audit log
         self._log_change('reset_table', user, {
             'table_type': table_type,
+            'old_version': old_version,
+            'new_version': new_version,
             'old_data': old_data,
             'new_data': defaults[table_type]
         })
-        
-        return {'success': True, 'table_type': table_type, 'data': defaults[table_type]}
+
+        result = {
+            'success': True,
+            'table_type': table_type,
+            'data': defaults[table_type],
+            'version': new_version,
+        }
+        self._persist_with_report(result)
+        return result
     
     def _validate_tables(self, tables: Dict) -> Dict:
         """Validate table structure and values"""

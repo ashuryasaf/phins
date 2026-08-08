@@ -4129,8 +4129,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         const data = await res.json();
         if (data.success) {
           const ver = data.config?.config_version || '';
-          const persistNote = data.persisted ? ' (persisted)' : (data.persistence_warning ? ' (memory only: ' + data.persistence_warning + ')' : '');
-          alert('✅ Pricing parameters saved' + (ver ? ' [' + ver + ']' : '') + persistNote);
+          alert('✅ Pricing parameters saved' + (ver ? ' [' + ver + ']' : '') + persistNoteFor(data));
           loadConfig();
         } else {
           alert('❌ Error: ' + (data.error || 'Unknown error'));
@@ -4139,7 +4138,20 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         alert('❌ Error saving params: ' + err.message);
       }
     }
-    
+
+    // Durable-save note shared by config + rate-table saves. A warning is
+    // shown even when a partial save succeeded (e.g. file cache saved but the
+    // database snapshot failed → the change may not survive a redeploy).
+    function persistNoteFor(result) {
+      if (result.persistence_warning) {
+        return (result.persisted ? ' ⚠️ ' : ' (memory only: ') + result.persistence_warning + (result.persisted ? '' : ')');
+      }
+      if (result.persisted) {
+        return result.persisted_to_database ? ' (persisted — survives restart & redeploy)' : ' (persisted)';
+      }
+      return '';
+    }
+
     // Save mortality rates table
     async function saveMortalityRates() {
       if (!currentTables || !currentTables.mortality_rates) {
@@ -4176,7 +4188,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         
         const result = await res.json();
         if (result.success) {
-          alert('✅ Mortality rates saved successfully!');
+          alert('✅ Mortality rates saved' + (result.version ? ' as ' + result.version : '') + persistNoteFor(result));
           loadTables();
         } else {
           alert('❌ Error: ' + (result.error || 'Unknown error'));
@@ -4222,7 +4234,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         
         const result = await res.json();
         if (result.success) {
-          alert('✅ Disability incidence rates saved successfully!');
+          alert('✅ Disability incidence rates saved' + (result.version ? ' as ' + result.version : '') + persistNoteFor(result));
           loadTables();
         } else {
           alert('❌ Error: ' + (result.error || 'Unknown error'));
@@ -4241,6 +4253,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       
       let allSuccess = true;
       let errors = [];
+      let lastAdlResult = null;  // carries version + persistence info for the summary alert
       
       // Collect ADL Mortality multipliers
       const mortInputs = document.querySelectorAll('.adl-mort-input');
@@ -4290,6 +4303,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           if (!result1.success) {
             allSuccess = false;
             errors.push('ADL Mortality: ' + (result1.error || 'Unknown error'));
+          } else {
+            lastAdlResult = result1;
           }
         }
         
@@ -4310,6 +4325,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           if (!result2.success) {
             allSuccess = false;
             errors.push('ADL Disability: ' + (result2.error || 'Unknown error'));
+          } else {
+            lastAdlResult = result2;
           }
         }
         
@@ -4330,11 +4347,15 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           if (!result3.success) {
             allSuccess = false;
             errors.push('ADL Benefits: ' + (result3.error || 'Unknown error'));
+          } else {
+            lastAdlResult = result3;
           }
         }
         
         if (allSuccess) {
-          alert('✅ All ADL tables saved successfully!');
+          const note = lastAdlResult ? persistNoteFor(lastAdlResult) : '';
+          const ver = lastAdlResult && lastAdlResult.version ? ' as ' + lastAdlResult.version : '';
+          alert('✅ All ADL tables saved' + ver + note);
           loadTables();
         } else {
           alert('❌ Some errors occurred:\n' + errors.join('\n'));

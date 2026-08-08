@@ -29281,11 +29281,17 @@ For claims or questions, please contact:
                 result = store.update_config(data, session.get('username', 'admin'))
                 
                 self._set_json_headers(200)
-                self.wfile.write(json.dumps({
+                response = {
                     'success': True,
                     'message': 'Underwriting configuration updated',
-                    'config': result['config']
-                }).encode('utf-8'))
+                    'config': result['config'],
+                    'persisted': result.get('persisted'),
+                    'persisted_to_database': result.get('persisted_to_database'),
+                    'state_revision': result.get('state_revision'),
+                }
+                if result.get('persistence_warning'):
+                    response['persistence_warning'] = result['persistence_warning']
+                self.wfile.write(json.dumps(response).encode('utf-8'))
                 return
             except Exception as e:
                 self._set_json_headers(500)
@@ -29366,12 +29372,19 @@ For claims or questions, please contact:
                 
                 if result['success']:
                     self._set_json_headers(200)
-                    self.wfile.write(json.dumps({
+                    response = {
                         'success': True,
                         'message': f"Table {table_type} updated successfully",
                         'table_type': result['table_type'],
-                        'data': result['data']
-                    }).encode('utf-8'))
+                        'data': result['data'],
+                        'version': result.get('version'),
+                        'persisted': result.get('persisted'),
+                        'persisted_to_database': result.get('persisted_to_database'),
+                        'state_revision': result.get('state_revision'),
+                    }
+                    if result.get('persistence_warning'):
+                        response['persistence_warning'] = result['persistence_warning']
+                    self.wfile.write(json.dumps(response).encode('utf-8'))
                 else:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({
@@ -29403,11 +29416,17 @@ For claims or questions, please contact:
                 
                 if result['success']:
                     self._set_json_headers(200)
-                    self.wfile.write(json.dumps({
+                    response = {
                         'success': True,
                         'message': 'Configuration reset to defaults',
-                        'config': result['config']
-                    }).encode('utf-8'))
+                        'config': result['config'],
+                        'persisted': result.get('persisted'),
+                        'persisted_to_database': result.get('persisted_to_database'),
+                        'state_revision': result.get('state_revision'),
+                    }
+                    if result.get('persistence_warning'):
+                        response['persistence_warning'] = result['persistence_warning']
+                    self.wfile.write(json.dumps(response).encode('utf-8'))
                 else:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({
@@ -29450,12 +29469,19 @@ For claims or questions, please contact:
                 
                 if result['success']:
                     self._set_json_headers(200)
-                    self.wfile.write(json.dumps({
+                    response = {
                         'success': True,
                         'message': f"Table {table_type} reset to defaults",
                         'table_type': result['table_type'],
-                        'data': result['data']
-                    }).encode('utf-8'))
+                        'data': result['data'],
+                        'version': result.get('version'),
+                        'persisted': result.get('persisted'),
+                        'persisted_to_database': result.get('persisted_to_database'),
+                        'state_revision': result.get('state_revision'),
+                    }
+                    if result.get('persistence_warning'):
+                        response['persistence_warning'] = result['persistence_warning']
+                    self.wfile.write(json.dumps(response).encode('utf-8'))
                 else:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({
