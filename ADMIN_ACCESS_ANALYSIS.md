@@ -10,7 +10,7 @@ This document analyzes the access control system across all PHINS dashboards and
 
 **Credentials:**
 - Username: `admin`
-- Password: `PDadmin123@`
+- Password: `$PHINS_ADMIN_PASSWORD`
 
 **Dashboard Access:**
 - ✅ Admin Dashboard (`/admin.html`)
@@ -39,7 +39,7 @@ This document analyzes the access control system across all PHINS dashboards and
 
 **Credentials:**
 - Username: `underwriter`
-- Password: `PDadmin123@`
+- Password: `$PHINS_UNDERWRITER_PASSWORD`
 
 **Dashboard Access:**
 - ✅ Underwriter Dashboard (`/underwriter-dashboard.html`)
@@ -70,7 +70,7 @@ This document analyzes the access control system across all PHINS dashboards and
 
 **Credentials:**
 - Username: `claims_adjuster`
-- Password: `PDadmin123@`
+- Password: `$PHINS_CLAIMS_PASSWORD`
 
 **Dashboard Access:**
 - ✅ Claims Adjuster Dashboard (`/claims-adjuster-dashboard.html`)
@@ -98,7 +98,7 @@ This document analyzes the access control system across all PHINS dashboards and
 
 **Credentials:**
 - Username: `accountant`
-- Password: `PDadmin123@`
+- Password: `$PHINS_ACCOUNTANT_PASSWORD`
 
 **Dashboard Access:**
 - ✅ Billing Dashboard (`/billing.html`)

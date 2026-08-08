@@ -118,7 +118,7 @@ class TestCustomerBillingDashboard:
         # Login as admin
         login_resp = self._post('/api/login', {
             'username': 'admin',
-            'password': 'PDadmin123@'
+            'password': os.environ.get('PHINS_ADMIN_PASSWORD', '')
         })
         
         if login_resp.get('status') != 200 or not login_resp.get('body', {}).get('token'):
@@ -349,8 +349,8 @@ class TestCustomerBillingDashboard:
         # Note: This test uses the admin session which should still work
         
         resp = self._post('/api/customer/change-password', {
-            'current_password': 'PDadmin123@',
-            'new_password': 'NewPass123@'
+            'current_password': os.environ.get('PHINS_ADMIN_PASSWORD', ''),
+            'new_password': os.environ.get('PHINS_ADMIN_PASSWORD_NEW', '')
         })
         
         if resp.get('status') == 200:
@@ -360,8 +360,8 @@ class TestCustomerBillingDashboard:
                 
                 # Change back for other tests
                 self._post('/api/customer/change-password', {
-                    'current_password': 'NewPass123@',
-                    'new_password': 'PDadmin123@'
+                    'current_password': os.environ.get('PHINS_ADMIN_PASSWORD_NEW', ''),
+                    'new_password': os.environ.get('PHINS_ADMIN_PASSWORD', '')
                 })
                 return True
         

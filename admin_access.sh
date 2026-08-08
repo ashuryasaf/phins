@@ -31,12 +31,10 @@ if ps aux | grep -q "[p]ython3 web_portal/server.py"; then
     fi
     
     echo ""
-    echo "🔑 Demo Login Credentials:"
+    echo "🔑 Login Credentials:"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Username: admin         | Password: admin123"
-    echo "Username: underwriter   | Password: under123"
-    echo "Username: claims_adjuster | Password: claims123"
-    echo "Username: accountant    | Password: acct123"
+    echo "Credentials are configured via environment variables."
+    echo "See SECURITY.md for the required environment variable names."
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 else
     echo "❌ Server is NOT running"

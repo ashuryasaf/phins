@@ -263,7 +263,7 @@ Supported: ^SPX (S&P 500), ^NDQ (NASDAQ), ^DJI (Dow Jones)
 Provider: Any PostgreSQL 12+ host
 Status: ✅ Fully supported
 Config Required:
-  - DATABASE_URL=postgresql://user:pass@host:5432/dbname
+  - DATABASE_URL=postgresql://<user>:<password>@<host>:5432/<dbname>
   - USE_DATABASE=1
 Connection Pool: 20 connections + 10 overflow
 ```
@@ -333,7 +333,7 @@ File: phins.db in workspace root
 ```bash
 # ============ DATABASE ============
 USE_DATABASE=1
-DATABASE_URL=postgresql://user:password@host:5432/phins
+DATABASE_URL=postgresql://<user>:<password>@<host>:5432/phins
 
 # ============ SECURITY ============
 SECRET_KEY=<64-character-random-string>
@@ -347,7 +347,7 @@ SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USE_TLS=true
 SMTP_USERNAME=your_username
-SMTP_PASSWORD=your_password
+SMTP_PASSWORD=<your_smtp_password>
 EMAIL_FROM_ADDRESS=noreply@phins.ai
 EMAIL_FROM_NAME=PHINS Insurance
 

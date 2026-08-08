@@ -31,10 +31,10 @@ The server is running at: `http://localhost:8000`
 
    | Username | Password | Role | Access Level |
    |----------|----------|------|--------------|
-   | `admin` | `admin123` | Admin | Full Access - All Divisions |
-   | `underwriter` | `under123` | Underwriter | Underwriting Division |
-   | `claims_adjuster` | `claims123` | Claims | Claims Division |
-   | `accountant` | `acct123` | Accountant | Accounting Division |
+   | `admin` | `$PHINS_ADMIN_PASSWORD` | Admin | Full Access - All Divisions |
+   | `underwriter` | `$PHINS_UNDERWRITER_PASSWORD` | Underwriter | Underwriting Division |
+   | `claims_adjuster` | `$PHINS_CLAIMS_PASSWORD` | Claims | Claims Division |
+   | `accountant` | `$PHINS_ACCOUNTANT_PASSWORD` | Accountant | Accounting Division |
 
 ### Option 2: Local Machine
 

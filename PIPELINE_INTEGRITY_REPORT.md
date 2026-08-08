@@ -44,7 +44,7 @@ The PHINS Insurance Platform pipeline has been analyzed, optimized, and verified
 | Customer ID | `CUST-ASAF-001` |
 | Name | Asaf Assurance |
 | Email | asaf@assurance.co.il |
-| Password | Assurance2024! |
+| Password | `$PHINS_CUSTOMER_PASSWORD` |
 | Portal Active | ✅ Yes |
 
 ### Policies for `asaf@assurance.co.il`:
@@ -153,19 +153,19 @@ Customer files claim against active policy
 
 | Username | Password | Role |
 |----------|----------|------|
-| admin | admin123 | Full Access |
-| underwriter | under123 | Underwriting |
-| claims_adjuster | claims123 | Claims |
-| accountant | acct123 | Accounting |
+| admin | `$PHINS_ADMIN_PASSWORD` | Full Access |
+| underwriter | `$PHINS_UNDERWRITER_PASSWORD` | Underwriting |
+| claims_adjuster | `$PHINS_CLAIMS_PASSWORD` | Claims |
+| accountant | `$PHINS_ACCOUNTANT_PASSWORD` | Accounting |
 
 ### Customer Accounts (Client Portal):
 
 | Email | Password | Customer ID |
 |-------|----------|-------------|
-| asaf@assurance.co.il | Assurance2024! | CUST-ASAF-001 |
-| sarah.cohen@test.com | Test123! | CUST-TEST-100 |
-| david.levy@test.com | Test123! | CUST-TEST-101 |
-| rachel.green@test.com | Test123! | CUST-TEST-102 |
+| asaf@assurance.co.il | `$PHINS_CUSTOMER_PASSWORD` | CUST-ASAF-001 |
+| sarah.cohen@test.com | `$PHINS_TEST_CUSTOMER_PASSWORD` | CUST-TEST-100 |
+| david.levy@test.com | `$PHINS_TEST_CUSTOMER_PASSWORD` | CUST-TEST-101 |
+| rachel.green@test.com | `$PHINS_TEST_CUSTOMER_PASSWORD` | CUST-TEST-102 |
 
 ---
 
