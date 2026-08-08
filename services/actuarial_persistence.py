@@ -78,6 +78,14 @@ def _snapshot_core(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _snapshot_revision(payload: Dict[str, Any]) -> int:
+    """Best-effort monotonic revision of a snapshot (0 when absent/invalid)."""
+    try:
+        return int(payload.get("state_revision", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def compute_snapshot_checksum(payload: Dict[str, Any]) -> str:
     """SHA-256 over the canonical JSON of the snapshot's pricing core."""
     canonical = json.dumps(
@@ -386,9 +394,12 @@ def load_actuarial_store(store: Any, path: Optional[str] = None) -> bool:
     """Load persisted state into an existing store instance.
 
     With an explicit ``path``, only that file is considered (test isolation).
-    Otherwise the newest DATABASE snapshot wins (it survives redeploys),
-    falling back to the local file cache. Snapshots failing checksum or
-    table-sanity validation are skipped. Returns True if state was applied.
+    Otherwise the DATABASE and file snapshots are both verified and the one
+    with the higher ``state_revision`` wins (the DB wins on ties since it
+    survives redeploys); this keeps a same-host restart from reverting to an
+    older DB snapshot after a partial save left the file ahead. Snapshots
+    failing checksum or table-sanity validation are skipped. Returns True if
+    state was applied.
     """
     if path is not None:
         payload = _load_file_payload(Path(path))
@@ -401,27 +412,41 @@ def load_actuarial_store(store: Any, path: Optional[str] = None) -> bool:
                     getattr(store.config, "config_version", "?"))
         return True
 
+    # Gather the verified snapshot from each durable layer, then apply the one
+    # with the higher state_revision. A partial save can leave the on-disk file
+    # ahead of the DB (file write succeeded but the DB snapshot failed, surfaced
+    # as a persistence warning); a restart on that host must not silently revert
+    # to the older DB snapshot. The DB wins on ties since it survives redeploys.
+    db_payload: Optional[Dict[str, Any]] = None
     if _database_persistence_enabled():
         try:
-            payload = _load_from_database()
+            db_payload = _load_from_database()
         except Exception as exc:
             logger.warning("Database snapshot load failed: %s", exc)
-            payload = None
-        if payload is not None and _verify_snapshot(payload, "database"):
-            if _apply_snapshot(store, payload):
-                logger.info(
-                    "Loaded actuarial store from database snapshot r%s "
-                    "(tables=%s config=%s)",
-                    payload.get("state_revision", "?"), store.current_version,
-                    getattr(store.config, "config_version", "?"),
-                )
-                return True
+            db_payload = None
+        if db_payload is not None and not _verify_snapshot(db_payload, "database"):
+            db_payload = None
 
     target = _state_path()
-    payload = _load_file_payload(target)
-    if payload is None or not _verify_snapshot(payload, f"file {target}"):
-        return False
-    if not _apply_snapshot(store, payload):
+    file_payload = _load_file_payload(target)
+    if file_payload is not None and not _verify_snapshot(file_payload, f"file {target}"):
+        file_payload = None
+
+    if db_payload is not None and (
+        file_payload is None
+        or _snapshot_revision(file_payload) <= _snapshot_revision(db_payload)
+    ):
+        if _apply_snapshot(store, db_payload):
+            logger.info(
+                "Loaded actuarial store from database snapshot r%s "
+                "(tables=%s config=%s)",
+                db_payload.get("state_revision", "?"), store.current_version,
+                getattr(store.config, "config_version", "?"),
+            )
+            return True
+        # DB snapshot could not be applied; fall back to the file if present.
+
+    if file_payload is None or not _apply_snapshot(store, file_payload):
         return False
     logger.info("Loaded actuarial store from %s (tables=%s config=%s)",
                 target, store.current_version,
