@@ -594,6 +594,32 @@ class ActuarialTablesStore:
     def get_current_tables(self) -> Dict:
         """Get the currently active tables"""
         return self.versions.get(self.current_version, {})
+
+    def public_config_dict(self) -> Dict[str, Any]:
+        """Full Pricing Parameters payload for the actuary dashboard / APIs.
+
+        Must include every durable field (age bands, claim interaction,
+        demographic risk factors, config_version) so a GET after Save
+        never silently drops UI values back to HTML defaults.
+        """
+        cfg = asdict(self.config) if hasattr(self.config, "__dataclass_fields__") else dict(self.config or {})
+        # JSON keys for loadings / coverage_limits are strings after wire
+        # transport; normalize here so clients can rely on str keys either way.
+        loadings = cfg.get("loadings") or {}
+        cfg["loadings"] = {str(k): float(v) for k, v in dict(loadings).items()}
+        limits = cfg.get("coverage_limits") or {}
+        cfg["coverage_limits"] = {str(k): float(v) for k, v in dict(limits).items()}
+        eth_m = cfg.get("ethnicity_mortality_factors") or _default_ethnicity_factors()
+        eth_d = cfg.get("ethnicity_disability_factors") or _default_ethnicity_factors()
+        cfg["ethnicity_mortality_factors"] = {
+            str(k).lower(): float(v) for k, v in dict(eth_m).items()
+        }
+        cfg["ethnicity_disability_factors"] = {
+            str(k).lower(): float(v) for k, v in dict(eth_d).items()
+        }
+        cfg["tables_version"] = self.current_version
+        cfg["state_revision"] = int(getattr(self, "state_revision", 0) or 0)
+        return cfg
     
     def get_mortality_rate(self, age: int) -> float:
         """Get mortality rate for age (per 1000)"""
@@ -1672,6 +1698,52 @@ class PortfolioSimulator:
                 'post65_claims_mutually_exclusive': bool(
                     getattr(self.tables.config, 'post65_claims_mutually_exclusive', True)
                 ),
+                # Demographic risk factors (life & disability) from Pricing
+                # Parameters — same multipliers applied to every priced life
+                # in this snapshot via pricing_config_from_underwriting.
+                'config_version': str(
+                    getattr(self.tables.config, 'config_version', 'cfg_v1') or 'cfg_v1'
+                ),
+                'demographic_risk_factors': {
+                    'smoker_mortality_factor': float(
+                        getattr(self.tables.config, 'smoker_mortality_factor', 1.0)
+                    ),
+                    'smoker_disability_factor': float(
+                        getattr(self.tables.config, 'smoker_disability_factor', 1.0)
+                    ),
+                    'former_smoker_mortality_factor': float(
+                        getattr(self.tables.config, 'former_smoker_mortality_factor', 1.0)
+                    ),
+                    'former_smoker_disability_factor': float(
+                        getattr(self.tables.config, 'former_smoker_disability_factor', 1.0)
+                    ),
+                    'nonsmoker_mortality_factor': float(
+                        getattr(self.tables.config, 'nonsmoker_mortality_factor', 1.0)
+                    ),
+                    'nonsmoker_disability_factor': float(
+                        getattr(self.tables.config, 'nonsmoker_disability_factor', 1.0)
+                    ),
+                    'male_mortality_factor': float(
+                        getattr(self.tables.config, 'male_mortality_factor', 1.0)
+                    ),
+                    'male_disability_factor': float(
+                        getattr(self.tables.config, 'male_disability_factor', 1.0)
+                    ),
+                    'female_mortality_factor': float(
+                        getattr(self.tables.config, 'female_mortality_factor', 1.0)
+                    ),
+                    'female_disability_factor': float(
+                        getattr(self.tables.config, 'female_disability_factor', 1.0)
+                    ),
+                    'ethnicity_mortality_factors': dict(
+                        getattr(self.tables.config, 'ethnicity_mortality_factors', None)
+                        or _default_ethnicity_factors()
+                    ),
+                    'ethnicity_disability_factors': dict(
+                        getattr(self.tables.config, 'ethnicity_disability_factors', None)
+                        or _default_ethnicity_factors()
+                    ),
+                },
             },
         }
         result['reinsurance_program'] = calculate_reinsurance_program(result, self.tables)
@@ -3023,8 +3095,9 @@ def reconcile_simulation_with_kernel(simulation: Dict[str, Any]) -> Dict[str, An
 
     # Lazy import to avoid module-load circular import.
     from services.pricing_kernel import (
-        ClaimModel, PricingConfig, PricingCustomer, SavingsFormula,
-        get_product, price_policy, table_set_from_store,
+        ClaimModel, PricingCustomer, SavingsFormula,
+        get_product, price_policy, pricing_config_from_underwriting,
+        table_set_from_store,
     )
     store = get_actuarial_store()
     formula_label = str(pricing_meta.get('savings_formula', 'risk_premium_markup')).lower()
@@ -3034,29 +3107,38 @@ def reconcile_simulation_with_kernel(simulation: Dict[str, Any]) -> Dict[str, An
         savings_formula = SavingsFormula.STRAIGHT_LINE
     else:
         savings_formula = SavingsFormula.RISK_PREMIUM_MARKUP
-    config = PricingConfig(
-        expense_loading_pct=float(pricing_meta.get('expense_loading_pct', 0.15)),
-        profit_margin_pct=float(pricing_meta.get('profit_margin_pct', 0.10)),
-        discount_rate=float(pricing_meta.get('discount_rate', 0.035)),
+    # Build from the durable central store so demographic risk factors,
+    # age bands, and claim-interaction knobs flow into valuation / forecast
+    # reconciliation the same way they do for new-policy pricing.
+    config = pricing_config_from_underwriting(
+        store.config,
         savings_rate=float(pricing_meta.get('savings_rate', 0.0)),
         savings_yield_pct=float(pricing_meta.get('savings_yield_pct', 0.0)),
-        savings_formula=savings_formula,
         claim_model=ClaimModel.MUTUALLY_EXCLUSIVE,
+        savings_formula=savings_formula,
         disability_share_of_life=float(
-            pricing_meta.get('disability_share_of_life',
-                              get_actuarial_store().config.disability_share_of_life)
+            pricing_meta.get(
+                'disability_share_of_life',
+                store.config.disability_share_of_life,
+            )
         ),
         disability_share_of_life_post65=float(
-            pricing_meta.get('disability_share_of_life_post65',
-                             store.config.disability_share_of_life_post65)
+            pricing_meta.get(
+                'disability_share_of_life_post65',
+                store.config.disability_share_of_life_post65,
+            )
         ),
         life_share_of_coverage=float(
-            pricing_meta.get('life_share_of_coverage',
-                             store.config.life_share_of_coverage)
+            pricing_meta.get(
+                'life_share_of_coverage',
+                store.config.life_share_of_coverage,
+            )
         ),
         life_share_of_coverage_post65=float(
-            pricing_meta.get('life_share_of_coverage_post65',
-                             store.config.life_share_of_coverage_post65)
+            pricing_meta.get(
+                'life_share_of_coverage_post65',
+                store.config.life_share_of_coverage_post65,
+            )
         ),
     )
     tables = table_set_from_store(
