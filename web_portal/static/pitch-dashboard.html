@@ -1978,7 +1978,6 @@
       <div class="header-actions">
         <a href="/corporate-legal-dashboard.html" class="back-link">Legal &amp; Funding</a>
         <a href="/nda.html?jurisdiction=dashboard" class="back-link">NDA Documents</a>
-        <a href="/admin.html" class="back-link">← Admin</a>
       </div>
     </div>
     <nav class="pitch-nav" id="pitch-nav" aria-label="Pitch sections">
@@ -5070,7 +5069,6 @@
 
   <div id="pitch-doc-viewer" class="pitch-doc-viewer" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="pitch-doc-title">
     <div class="pitch-doc-viewer__bar">
-      <button type="button" class="pitch-doc-viewer__btn pitch-doc-viewer__btn--primary" id="pitch-doc-back">← Back to tab</button>
       <div class="pitch-doc-viewer__title" id="pitch-doc-title">Document</div>
       <a class="pitch-doc-viewer__btn" id="pitch-doc-external" href="#" target="_blank" rel="noopener">Open ↗</a>
       <button type="button" class="pitch-doc-viewer__btn pitch-doc-viewer__btn--close" id="pitch-doc-close" aria-label="Close document">×</button>
@@ -5079,9 +5077,8 @@
     <div class="pitch-doc-viewer__fallback" id="pitch-doc-fallback">
       <div class="pitch-doc-viewer__fallback-card">
         <h3 id="pitch-doc-fallback-heading">Document ready</h3>
-        <p id="pitch-doc-fallback-copy">This file is downloading or opens outside the in-page viewer. Return to the pitch tab you came from, or open the file directly.</p>
+        <p id="pitch-doc-fallback-copy">This file is downloading or opens outside the in-page viewer. Close the viewer to return to the pitch dashboard, or open the file directly.</p>
         <div class="pitch-doc-viewer__fallback-actions">
-          <button type="button" class="pitch-doc-viewer__btn pitch-doc-viewer__btn--primary" id="pitch-doc-fallback-back">← Back to tab</button>
           <a class="pitch-doc-viewer__btn" id="pitch-doc-fallback-open" href="#" target="_blank" rel="noopener">Open file ↗</a>
         </div>
       </div>
@@ -8633,10 +8630,15 @@
         "fintl-6aug-panel": "fintl-vc-meetings-aug",
         "grove-5m-timeline": "grove-vc-meeting-19aug"
       };
-      var VIEWABLE_EXT = /\.(pdf|html?|md|txt|csv)$/i;
+      // Documents only — never treat app/dashboard HTML as in-page viewer
+      // targets (admin / underwriting / billing were incorrectly iframed under
+      // the pitch chrome bar with Open / close controls).
+      var VIEWABLE_EXT = /\.(pdf|md|txt|csv)$/i;
       var DOWNLOADISH_EXT = /\.(xlsx?|docx?|pptx?|zip)$/i;
       var DOC_PATH_HINT = /^\/(investor-docs|internal|legal)\//i;
-      var DOC_PAGE_HINT = /\/(unicorn-|seed-|capital-markets|corporate-legal|nda\.html|actuary-dashboard|agent-portal|phins_business_plan|PHINS_Business_Plan)/i;
+      var DOC_PAGE_HINT = /\/(unicorn-|seed-|capital-markets-pitch|phins_business_plan|PHINS_Business_Plan)/i;
+      // Root-level app destinations only (does not match /legal/nda.html etc.).
+      var APP_NAV_EXCLUDE = /^\/(admin(?:-[a-z0-9-]+)?|[a-z0-9-]+-dashboard|billing|unified-workbench|agent-portal|assessment-center|cyber-security|video-agents|customer-management|login|settings|apply|forgot-password|supplier-login|supplier-register|trading-terminal|nda)\.html?$/i;
 
       function headerOffset() {
         var header = document.getElementById("pitch-top");
@@ -8820,6 +8822,8 @@
           if (url.origin !== window.location.origin) return null;
           if (url.pathname === "/pitch-dashboard.html" || url.pathname === "/") return null;
           var path = url.pathname || "";
+          // Full-page app destinations must navigate normally — never iframe.
+          if (APP_NAV_EXCLUDE.test(path)) return null;
           var downloadish = DOWNLOADISH_EXT.test(path);
           var viewable = VIEWABLE_EXT.test(path) || DOC_PATH_HINT.test(path) || DOC_PAGE_HINT.test(path);
           if (!downloadish && !viewable) return null;
@@ -8899,8 +8903,8 @@
             fallback.classList.add("is-visible");
             fallbackHeading.textContent = opts.mode === "download" ? "Download started" : "Open outside viewer";
             fallbackCopy.textContent = opts.mode === "download"
-              ? "Your browser is saving this file. Use Back or × to return to the pitch tab you opened it from."
-              : "This file type is best opened directly. Use Back or × to return to the pitch tab, or open the file in a new tab.";
+              ? "Your browser is saving this file. Use × to close the viewer and return to the pitch dashboard."
+              : "This file type is best opened directly. Use × to close the viewer, or open the file in a new tab.";
           }
           var closeBtn = document.getElementById("pitch-doc-close");
           if (closeBtn) closeBtn.focus();
@@ -8912,11 +8916,11 @@
           fallback.classList.add("is-visible");
           fallbackHeading.textContent = "Document unavailable";
           fallbackCopy.textContent =
-            "This file could not be loaded in the viewer. Use Back or × to return to the pitch tab you opened it from, or Open ↗ to try in a new tab.";
+            "This file could not be loaded in the viewer. Use × to close, or Open ↗ to try in a new tab.";
         }
 
         // Same-origin only: detect bare server 404 pages inside the iframe and
-        // swap to the branded return panel (Back / × still go to the source tab).
+        // swap to the branded unavailable panel (× still returns to the source tab).
         frame.addEventListener("load", function () {
           if (frame.hidden || !viewer.classList.contains("is-open")) return;
           try {
@@ -8932,13 +8936,13 @@
           }
         });
 
-        ["pitch-doc-back", "pitch-doc-close", "pitch-doc-fallback-back"].forEach(function (id) {
-          var btn = document.getElementById(id);
-          if (btn) btn.addEventListener("click", function (ev) {
+        var closeBtnWire = document.getElementById("pitch-doc-close");
+        if (closeBtnWire) {
+          closeBtnWire.addEventListener("click", function (ev) {
             ev.preventDefault();
             closeViewer();
           });
-        });
+        }
 
         document.addEventListener("keydown", function (ev) {
           if (ev.key === "Escape" && viewer.classList.contains("is-open")) {
