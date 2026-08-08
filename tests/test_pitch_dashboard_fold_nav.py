@@ -1,6 +1,7 @@
-"""Static integrity for pitch-dashboard foldable tabs + document return nav.
+"""Static integrity for pitch-dashboard foldable tabs + document viewer.
 
-Covers per-tab Back controls and the in-page document viewer return flow.
+Covers per-tab Back-to-header controls and the in-page document viewer
+(close via × — no Back-to-tab chrome; app/dashboard links navigate normally).
 """
 
 from pathlib import Path
@@ -38,6 +39,10 @@ def test_pitch_header_branding_and_back_controls():
     assert 'id="pitch-back-fab"' in html
     assert "Space Grotesk" in html
     assert "pitch-nav" in html
+    # Header actions must not ship the admin back-link that the viewer hijacked.
+    header = html.split('<nav class="pitch-nav"', 1)[0]
+    assert "← Admin" not in header
+    assert 'href="/admin.html"' not in header
 
 
 def test_pitch_nav_links_cover_all_tabs():
@@ -63,16 +68,18 @@ def test_pitch_fold_script_registers_sections():
 
 
 def test_pitch_document_viewer_return_controls():
-    """Opened/downloaded docs expose Back / × that return to the source tab."""
+    """Docs open in-viewer with × close; app pages are never intercepted."""
     html = _html()
     assert 'id="pitch-doc-viewer"' in html
-    assert 'id="pitch-doc-back"' in html
     assert 'id="pitch-doc-close"' in html
-    assert 'id="pitch-doc-fallback-back"' in html
     assert "wireDocViewer" in html
     assert "findSourceSectionId" in html
     assert "returnSectionId" in html
-    assert "Back to tab" in html
+    assert "APP_NAV_EXCLUDE" in html
+    viewer = html.split('id="pitch-doc-viewer"', 1)[1].split("</div>\n\n  <footer", 1)[0]
+    assert "Back to tab" not in viewer
+    assert 'id="pitch-doc-back"' not in html
+    assert 'id="pitch-doc-fallback-back"' not in html
     assert "showLoadFailureFallback" in html
     assert "Document unavailable" in html
     # Presentation-only; does not rewrite document contents or bypass the gate.
