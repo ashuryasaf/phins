@@ -5070,7 +5070,6 @@
 
   <div id="pitch-doc-viewer" class="pitch-doc-viewer" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="pitch-doc-title">
     <div class="pitch-doc-viewer__bar">
-      <button type="button" class="pitch-doc-viewer__btn pitch-doc-viewer__btn--primary" id="pitch-doc-back">← Back to tab</button>
       <div class="pitch-doc-viewer__title" id="pitch-doc-title">Document</div>
       <a class="pitch-doc-viewer__btn" id="pitch-doc-external" href="#" target="_blank" rel="noopener">Open ↗</a>
       <button type="button" class="pitch-doc-viewer__btn pitch-doc-viewer__btn--close" id="pitch-doc-close" aria-label="Close document">×</button>
@@ -5079,9 +5078,8 @@
     <div class="pitch-doc-viewer__fallback" id="pitch-doc-fallback">
       <div class="pitch-doc-viewer__fallback-card">
         <h3 id="pitch-doc-fallback-heading">Document ready</h3>
-        <p id="pitch-doc-fallback-copy">This file is downloading or opens outside the in-page viewer. Return to the pitch tab you came from, or open the file directly.</p>
+        <p id="pitch-doc-fallback-copy">This file is downloading or opens outside the in-page viewer. Close the viewer to return to the pitch dashboard, or open the file directly.</p>
         <div class="pitch-doc-viewer__fallback-actions">
-          <button type="button" class="pitch-doc-viewer__btn pitch-doc-viewer__btn--primary" id="pitch-doc-fallback-back">← Back to tab</button>
           <a class="pitch-doc-viewer__btn" id="pitch-doc-fallback-open" href="#" target="_blank" rel="noopener">Open file ↗</a>
         </div>
       </div>
@@ -8899,8 +8897,8 @@
             fallback.classList.add("is-visible");
             fallbackHeading.textContent = opts.mode === "download" ? "Download started" : "Open outside viewer";
             fallbackCopy.textContent = opts.mode === "download"
-              ? "Your browser is saving this file. Use Back or × to return to the pitch tab you opened it from."
-              : "This file type is best opened directly. Use Back or × to return to the pitch tab, or open the file in a new tab.";
+              ? "Your browser is saving this file. Use × to close the viewer and return to the pitch dashboard."
+              : "This file type is best opened directly. Use × to close the viewer, or open the file in a new tab.";
           }
           var closeBtn = document.getElementById("pitch-doc-close");
           if (closeBtn) closeBtn.focus();
@@ -8912,11 +8910,11 @@
           fallback.classList.add("is-visible");
           fallbackHeading.textContent = "Document unavailable";
           fallbackCopy.textContent =
-            "This file could not be loaded in the viewer. Use Back or × to return to the pitch tab you opened it from, or Open ↗ to try in a new tab.";
+            "This file could not be loaded in the viewer. Use × to close, or Open ↗ to try in a new tab.";
         }
 
         // Same-origin only: detect bare server 404 pages inside the iframe and
-        // swap to the branded return panel (Back / × still go to the source tab).
+        // swap to the branded unavailable panel (× still returns to the source tab).
         frame.addEventListener("load", function () {
           if (frame.hidden || !viewer.classList.contains("is-open")) return;
           try {
@@ -8932,13 +8930,13 @@
           }
         });
 
-        ["pitch-doc-back", "pitch-doc-close", "pitch-doc-fallback-back"].forEach(function (id) {
-          var btn = document.getElementById(id);
-          if (btn) btn.addEventListener("click", function (ev) {
+        var closeBtnWire = document.getElementById("pitch-doc-close");
+        if (closeBtnWire) {
+          closeBtnWire.addEventListener("click", function (ev) {
             ev.preventDefault();
             closeViewer();
           });
-        });
+        }
 
         document.addEventListener("keydown", function (ev) {
           if (ev.key === "Escape" && viewer.classList.contains("is-open")) {
