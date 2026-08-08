@@ -1800,11 +1800,16 @@
           
           <div class="card">
             <div class="card-title">Demographic Risk Factors (Life &amp; Disability)</div>
-            <p style="color:var(--text-light);margin-bottom:12px;">
+            <p style="color:var(--text-light);margin-bottom:8px;">
               Multipliers applied by the pricing kernel to <strong>mortality (life)</strong> and
               <strong>disability incidence</strong> rates. Composition: smoking × sex × ethnicity.
-              Default <strong>1.0 = neutral</strong> (unisex / unismoker). Changes persist with
-              <code>config_version</code> and are integrity-hashed on every priced policy.
+              Default <strong>1.0 = neutral</strong> (unisex / unismoker). Click
+              <strong>Save Pricing Parameters</strong> to persist — values then drive new-policy
+              premiums, portfolio simulation, valuations/forecasts, shadow pricing, and the
+              contract-spec API. Integrity-hashed on every priced policy.
+            </p>
+            <p id="demo-factors-status" style="margin:0 0 12px;font-size:0.9rem;color:var(--text-light);">
+              Loaded: neutral defaults (1.0)
             </p>
             <div class="form-row">
               <div class="form-group">
@@ -3489,7 +3494,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         
         // Load data
         loadTables();
-        loadConfig();
+        loadConfig().then(() => wirePricingParamsDirtyTracking()).catch(() => wirePricingParamsDirtyTracking());
         loadVersions();
         loadAuditLog();
         loadIntegrations();
@@ -3570,8 +3575,11 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         if (!res.ok) throw new Error('Failed to load config');
         
         const data = await res.json();
-        currentConfig = data.config;
+        // Prefer full config payload; never leave currentConfig half-populated
+        // or demographic inputs will snap back to HTML defaults (1.0).
+        currentConfig = data.config || {};
         updateConfigDisplay();
+        markPricingParamsClean();
         
       } catch (err) {
         console.error('Error loading config:', err);
@@ -3661,6 +3669,62 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       ['caucasian', 'african', 'hispanic', 'asian', 'other'].forEach((key) => {
         setFactor('eth-mort-' + key, ethMort[key]);
         setFactor('eth-dis-' + key, ethDis[key]);
+      });
+      updateDemographicFactorsStatus(false);
+    }
+
+    let pricingParamsDirty = false;
+
+    function updateDemographicFactorsStatus(dirty) {
+      const el = document.getElementById('demo-factors-status');
+      if (!el) return;
+      const ver = currentConfig?.config_version || '—';
+      const rev = currentConfig?.state_revision != null ? currentConfig.state_revision : '—';
+      const smoker = Number(currentConfig?.smoker_mortality_factor != null ? currentConfig.smoker_mortality_factor : 1);
+      const male = Number(currentConfig?.male_mortality_factor != null ? currentConfig.male_mortality_factor : 1);
+      const female = Number(currentConfig?.female_mortality_factor != null ? currentConfig.female_mortality_factor : 1);
+      if (dirty) {
+        el.style.color = 'var(--warning, #b45309)';
+        el.textContent = 'Unsaved edits — click Save Pricing Parameters to apply across the platform.';
+        return;
+      }
+      el.style.color = 'var(--text-light)';
+      el.textContent = `Persisted config ${ver} · rev ${rev} · smoker life ×${smoker.toFixed(2)} · male life ×${male.toFixed(2)} · female life ×${female.toFixed(2)}`;
+    }
+
+    function markPricingParamsDirty() {
+      pricingParamsDirty = true;
+      updateDemographicFactorsStatus(true);
+    }
+
+    function markPricingParamsClean() {
+      pricingParamsDirty = false;
+      updateDemographicFactorsStatus(false);
+    }
+
+    function wirePricingParamsDirtyTracking() {
+      const ids = [
+        'expense-loading', 'profit-margin', 'discount-rate',
+        'disability-share', 'disability-share-post65', 'life-share', 'life-share-post65',
+        'post-disability-premium-factor', 'post-disability-life-share',
+        'pre65-disability-continues', 'post65-claims-exclusive',
+        'factor-smoker-mort', 'factor-smoker-dis',
+        'factor-former-mort', 'factor-former-dis',
+        'factor-nonsmoker-mort', 'factor-nonsmoker-dis',
+        'factor-male-mort', 'factor-male-dis',
+        'factor-female-mort', 'factor-female-dis',
+        'eth-mort-caucasian', 'eth-dis-caucasian',
+        'eth-mort-african', 'eth-dis-african',
+        'eth-mort-hispanic', 'eth-dis-hispanic',
+        'eth-mort-asian', 'eth-dis-asian',
+        'eth-mort-other', 'eth-dis-other',
+      ];
+      ids.forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el || el.dataset.dirtyWired === '1') return;
+        el.dataset.dirtyWired = '1';
+        el.addEventListener('input', markPricingParamsDirty);
+        el.addEventListener('change', markPricingParamsDirty);
       });
     }
 
@@ -4128,9 +4192,22 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         
         const data = await res.json();
         if (data.success) {
+          // Apply the full saved config from the POST response immediately so
+          // demographic fields never flash back to 1.0 while a GET is in flight
+          // (and even if an older server returned a partial GET payload).
+          if (data.config && typeof data.config === 'object') {
+            currentConfig = data.config;
+            updateConfigDisplay();
+            markPricingParamsClean();
+          }
           const ver = data.config?.config_version || '';
           alert('✅ Pricing parameters saved' + (ver ? ' [' + ver + ']' : '') + persistNoteFor(data));
-          loadConfig();
+          // Re-fetch to confirm durability, then push to contract-spec /
+          // simulator surfaces that read the central store.
+          await loadConfig();
+          if (typeof loadContractSpec === 'function') {
+            try { await loadContractSpec(); } catch (_) { /* non-fatal */ }
+          }
         } else {
           alert('❌ Error: ' + (data.error || 'Unknown error'));
         }
@@ -6206,6 +6283,14 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         `).join('');
         const sa = c.savings_addon || {};
         const cr = c.contract_ratios || {};
+        const demo = c.demographic_risk_factors || {};
+        const ethMort = demo.ethnicity_mortality_factors || {};
+        const demoLine = [
+          `smoker life ×${Number(demo.smoker_mortality_factor != null ? demo.smoker_mortality_factor : 1).toFixed(2)}`,
+          `male life ×${Number(demo.male_mortality_factor != null ? demo.male_mortality_factor : 1).toFixed(2)}`,
+          `female life ×${Number(demo.female_mortality_factor != null ? demo.female_mortality_factor : 1).toFixed(2)}`,
+          `asian life ×${Number(ethMort.asian != null ? ethMort.asian : 1).toFixed(2)}`,
+        ].join(' · ');
         body.innerHTML = `
           <p><strong>${c.name || 'PHINS Contract'}</strong> · ${c.version || ''} · effective ${c.effective_date || ''} · product <code>${c.product_id || ''}</code></p>
           <p style="color:var(--text-light);">
@@ -6219,6 +6304,11 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             → $${Number(cr.example_post65_life || 125000).toLocaleString()} /
             $${Number(cr.example_post65_disability || 125000).toLocaleString()})
             ${cr.adjustable_from_dashboard ? '· editable in <em>Pricing Parameters → Contract Ratios</em>' : ''}
+          </p>
+          <p style="color:var(--text-light);">
+            <strong>Demographic risk factors (persisted):</strong> ${demoLine}
+            ${demo.adjustable_from_dashboard ? '· editable in <em>Pricing Parameters → Demographic Risk Factors</em>' : ''}
+            · composition ${demo.composition || 'smoking × sex × ethnicity'}
           </p>
           <h4 style="margin-top:8px;">1. Risk Factors — what is covered</h4>
           <table class="data-table">

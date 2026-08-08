@@ -16499,16 +16499,9 @@ For claims or questions, please contact:
                     'success': True,
                     'current_version': store.current_version,
                     'tables': tables,
-                    'config': {
-                        'decline_threshold': store.config.decline_threshold,
-                        'loadings': store.config.loadings,
-                        'coverage_limits': store.config.coverage_limits,
-                        'disability_exclusion_threshold': store.config.disability_exclusion_threshold,
-                        'expense_loading_pct': store.config.expense_loading_pct,
-                        'profit_margin_pct': store.config.profit_margin_pct,
-                        'discount_rate': store.config.discount_rate,
-                        'disability_share_of_life': store.config.disability_share_of_life,
-                    }
+                    # Full Pricing Parameters (incl. demographic risk factors)
+                    # so the dashboard never reloads a stripped subset.
+                    'config': store.public_config_dict(),
                 }).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
@@ -16516,7 +16509,7 @@ For claims or questions, please contact:
             return
         
         if path == '/api/actuarial/config':
-            # Get underwriting configuration
+            # Get underwriting / Pricing Parameters configuration
             if not require_role(session, ['admin', 'actuary']):
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
@@ -16524,22 +16517,16 @@ For claims or questions, please contact:
             try:
                 from services.actuarial_service import get_actuarial_store
                 store = get_actuarial_store()
-                config = store.config
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
                     'success': True,
-                    'config': {
-                        'decline_threshold': config.decline_threshold,
-                        'loadings': config.loadings,
-                        'coverage_limits': config.coverage_limits,
-                        'disability_exclusion_threshold': config.disability_exclusion_threshold,
-                        'expense_loading_pct': config.expense_loading_pct,
-                        'profit_margin_pct': config.profit_margin_pct,
-                        'discount_rate': config.discount_rate,
-                        'disability_share_of_life': config.disability_share_of_life,
-                        'last_modified': config.last_modified,
-                        'modified_by': config.modified_by
-                    }
+                    # Full durable config: age bands, claim interaction,
+                    # demographic risk factors (life & disability), versions.
+                    # A partial payload would make Save appear to "forget"
+                    # demographics after reload.
+                    'config': store.public_config_dict(),
+                    'current_version': store.current_version,
+                    'state_revision': int(getattr(store, 'state_revision', 0) or 0),
                 }).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
@@ -29281,13 +29268,17 @@ For claims or questions, please contact:
                 result = store.update_config(data, session.get('username', 'admin'))
                 
                 self._set_json_headers(200)
+                # Always return the full public config (incl. demographics)
+                # so Save Pricing Parameters can re-hydrate the UI without a
+                # second GET that might historically have been a partial subset.
                 response = {
                     'success': True,
                     'message': 'Underwriting configuration updated',
-                    'config': result['config'],
+                    'config': store.public_config_dict(),
                     'persisted': result.get('persisted'),
                     'persisted_to_database': result.get('persisted_to_database'),
                     'state_revision': result.get('state_revision'),
+                    'current_version': store.current_version,
                 }
                 if result.get('persistence_warning'):
                     response['persistence_warning'] = result['persistence_warning']
@@ -29419,10 +29410,11 @@ For claims or questions, please contact:
                     response = {
                         'success': True,
                         'message': 'Configuration reset to defaults',
-                        'config': result['config'],
+                        'config': store.public_config_dict(),
                         'persisted': result.get('persisted'),
                         'persisted_to_database': result.get('persisted_to_database'),
                         'state_revision': result.get('state_revision'),
+                        'current_version': store.current_version,
                     }
                     if result.get('persistence_warning'):
                         response['persistence_warning'] = result['persistence_warning']
