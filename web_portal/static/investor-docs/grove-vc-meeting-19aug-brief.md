@@ -1,29 +1,30 @@
-# PHINS — Grove VC Meeting Brief (19 August 2026)
+# PHINS — Grove VC Investor Evening Brief (19 August 2026)
 
-> **Internal · Confidential** — preparation brief for the stage presentation
-> of PHINS to a ~30-person audience hosted by Mr. Lotan Levkovitch (Partner,
-> Grove VC). This is a room, not a 1-on-1. Do not share internal drafts before
-> the meeting.
+> **Internal · Confidential** — public-speaking brief for presenting PHINS
+> from the stage to a ~30-person audience at the Grove VC investor evening,
+> hosted by Mr. Lotan Levkovitch (Partner, Grove VC). This is public speaking
+> to a room — **not a 1-on-1 introduction meeting**. Do not share internal
+> drafts before the event.
 
-## Meeting facts
+## Event facts
 
 | Item | Detail |
 |---|---|
 | Date | 19 August 2026 |
 | Time | 19:00 |
 | Duration | 25 minutes (20 on stage + 5 Q&A — hard timebox) |
-| Format | Audience presentation — ~30 attendees (partners, LPs, portfolio founders, guests) |
+| Format | Public presentation — one speaker, slides, ~30 in the audience (partners, LPs, portfolio founders, guests) |
 | Host | Mr. Lotan Levkovitch — Partner, Grove VC |
 | Location | TBC |
 | Status | Scheduled |
-| Pack | Pitch dashboard — Grove VC Meeting 19.8 section |
+| Pack | Pitch dashboard — Grove VC 19.8 section |
 
-**Purpose:** present PHINS to the room — the **global problem** it is built to
-solve (shrinking long-term covers, national insurance systems under predicted
-strain worldwide), the **founder** and **technology**, the
-**technology-vs-human-touch** economics across underwriting, billing, claims
-and agents, **regulation**, and **funding** — and convert audience interest
-into booked follow-up meetings.
+**Purpose:** a public presentation of PHINS to the room — the **global
+problem** it is built to solve (shrinking long-term covers, national
+insurance systems under predicted strain worldwide), the **founder** and
+**technology**, the **technology-vs-human-touch** economics across
+underwriting, billing, claims and agents, **regulation**, and **funding** —
+converting audience interest into booked follow-up meetings.
 
 ## Elevator pitch — 30 seconds
 
@@ -69,7 +70,7 @@ the Scenario Lab). Humans stay exactly where they add judgment: edge-case
 underwriting, complex claims, and governance — **AI recommends, the ledger
 decides, people supervise**.
 
-## 25-minute run of show — hard timeboxes
+## 25-minute stage talk — run of show, hard timeboxes
 
 | Minutes | Segment | Talking points & source |
 |---|---|---|

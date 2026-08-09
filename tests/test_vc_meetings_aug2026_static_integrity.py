@@ -6,10 +6,11 @@ Three meetings are pinned to the IL pitch dashboard:
   (founder, technology, regulation)
 - 6 August 2026 (13:00, 20 min) with Mrs. Orna Carni — Partner, Fintl VC
   (technology, regulation, funding, actuary)
-- 19 August 2026 (19:00, 25 min) — stage presentation of PHINS to a
-  ~30-person audience hosted by Mr. Lotan Levkovitch — Partner, Grove VC
-  (global long-term cover gap / national insurance strain, founder,
-  technology vs human touch savings, regulation, funding)
+- 19 August 2026 (19:00, 25 min) — Grove VC investor evening: public
+  presentation of PHINS from the stage to a ~30-person audience, hosted by
+  Mr. Lotan Levkovitch — Partner, Grove VC (global long-term cover gap /
+  national insurance strain, founder, technology vs human touch savings,
+  regulation, funding)
 
 These tests read the shipped static assets (no server required) and assert:
 - the pitch dashboard carries short presentation sections for each meeting,
@@ -66,16 +67,18 @@ def test_pitch_dashboard_grove_vc_section():
     pd = _read(STATIC / "pitch-dashboard.html")
     assert 'id="grove-vc-meeting-19aug"' in pd
     assert "#grove-vc-meeting-19aug" in pd
-    assert "Grove VC Meeting — 19 August 2026" in pd
+    assert "Grove VC Investor Evening — 19 August 2026" in pd
+    assert "Public Presentation of PHINS" in pd
     assert "Lotan Levkovitch" in pd
     assert "Grove VC" in pd
     assert 'id="grove-presentation-timeline"' in pd
     assert 'id="grove-global-problem"' in pd
     assert 'id="grove-automation-vs-human"' in pd
-    # Audience presentation, not a 1-on-1 pitch.
+    # Public speaking to a room, not a 1-on-1 introduction pitch.
     grove = pd[pd.index('id="grove-vc-meeting-19aug"'):pd.index('id="exec-summary-section"')]
     assert "~30" in grove
     assert "audience" in grove.lower()
+    assert "public" in grove.lower()
     assert "not a 1-on-1" in grove
     assert "25 minutes" in grove or "25-minute" in grove
 
