@@ -108,7 +108,7 @@ DOCUMENTS = [
     ('investor-docs/grove-vc-meeting-19aug-brief.md',
      'investor-docs/grove-vc-meeting-19aug-brief.pdf',
      'PHINS — Grove VC Meeting Brief (19 August 2026) · '
-     'Mr. Lotan Levkovitch'),
+     'Audience Presentation hosted by Mr. Lotan Levkovitch'),
 ]
 
 # Sources rendered right-to-left (Hebrew). RTL documents use a Hebrew-capable
