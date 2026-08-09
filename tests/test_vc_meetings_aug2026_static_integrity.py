@@ -6,8 +6,11 @@ Three meetings are pinned to the IL pitch dashboard:
   (founder, technology, regulation)
 - 6 August 2026 (13:00, 20 min) with Mrs. Orna Carni — Partner, Fintl VC
   (technology, regulation, funding, actuary)
-- 19 August 2026 (19:00, 5 min) with Mr. Lotan Levkovitch — Partner, Grove VC
-  (founder, technology, regulation, funding)
+- 19 August 2026 (19:00, 25 min) — Grove VC investor evening: public
+  presentation of PHINS from the stage to a ~30-person audience, hosted by
+  Mr. Lotan Levkovitch — Partner, Grove VC (global long-term cover gap /
+  national insurance strain, founder, technology vs human touch savings,
+  regulation, funding)
 
 These tests read the shipped static assets (no server required) and assert:
 - the pitch dashboard carries short presentation sections for each meeting,
@@ -64,11 +67,20 @@ def test_pitch_dashboard_grove_vc_section():
     pd = _read(STATIC / "pitch-dashboard.html")
     assert 'id="grove-vc-meeting-19aug"' in pd
     assert "#grove-vc-meeting-19aug" in pd
-    assert "Grove VC Meeting — 19 August 2026" in pd
+    assert "Grove VC Investor Evening — 19 August 2026" in pd
+    assert "Public Presentation of PHINS" in pd
     assert "Lotan Levkovitch" in pd
     assert "Grove VC" in pd
-    assert 'id="grove-5m-timeline"' in pd
-    assert "5-minute" in pd or "5 minutes" in pd
+    assert 'id="grove-presentation-timeline"' in pd
+    assert 'id="grove-global-problem"' in pd
+    assert 'id="grove-automation-vs-human"' in pd
+    # Public speaking to a room, not a 1-on-1 introduction pitch.
+    grove = pd[pd.index('id="grove-vc-meeting-19aug"'):pd.index('id="exec-summary-section"')]
+    assert "~30" in grove
+    assert "audience" in grove.lower()
+    assert "public" in grove.lower()
+    assert "not a 1-on-1" in grove
+    assert "25 minutes" in grove or "25-minute" in grove
 
 
 def test_fintl_meeting_scope_topics():
@@ -82,7 +94,13 @@ def test_fintl_meeting_scope_topics():
 def test_grove_meeting_scope_topics():
     pd = _read(STATIC / "pitch-dashboard.html")
     grove = pd[pd.index('id="grove-vc-meeting-19aug"'):pd.index('id="exec-summary-section"')]
-    for topic in ("founder", "technology", "regulation", "funding"):
+    for topic in (
+        "founder", "technology", "regulation", "funding",
+        # global-problem narrative
+        "national insurance", "long-term",
+        # technology-vs-human-touch cost centres
+        "underwriting", "billing", "claims", "agent",
+    ):
         assert topic in grove.lower(), f"missing Grove scope topic: {topic}"
 
 
@@ -96,10 +114,11 @@ def test_fintl_20_minute_run_of_show():
         assert timebox in pd, f"missing 6 Aug timebox: {timebox}"
 
 
-def test_grove_5_minute_run_of_show():
+def test_grove_25_minute_run_of_show():
     pd = _read(STATIC / "pitch-dashboard.html")
-    for timebox in ("00–01", "01–02:30", "02:30–03:30", "03:30–04:30", "04:30–05:00"):
-        assert timebox in pd, f"missing Grove timebox: {timebox}"
+    grove = pd[pd.index('id="grove-vc-meeting-19aug"'):pd.index('id="exec-summary-section"')]
+    for timebox in ("00–02", "02–06", "06–10", "10–14", "14–17", "17–19", "19–20", "20–25"):
+        assert timebox in grove, f"missing Grove timebox: {timebox}"
 
 
 # ---------------------------------------------------------------------------
@@ -114,12 +133,12 @@ def test_diary_seeds_aug_vc_meetings():
     assert "Mrs. Orna Carni — Partner, Fintl VC" in pd
     assert "Mr. Lotan Levkovitch — Partner, Grove VC" in pd
     assert "13:00 · 20 min" in pd
-    assert "19:00 · 5 min" in pd
+    assert "19:00 · 25 min" in pd
     assert "fintl-vc-meeting-5aug-brief.pdf" in pd
     assert "fintl-vc-meeting-6aug-brief.pdf" in pd
     assert "grove-vc-meeting-19aug-brief.pdf" in pd
     # bumped storage key so returning browsers pick up the new seeded rows
-    assert "phins.il.meeting.diary.v2" in pd
+    assert "phins.il.meeting.diary.v3" in pd
 
 
 # ---------------------------------------------------------------------------
