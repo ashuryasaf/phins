@@ -8,17 +8,17 @@ override this document.
 
 PHINS is a Python platform built around:
 
-- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~50k lines)
-- optional extension routing in `web_portal/api_extensions.py` (~3450 lines)
+- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~52k lines)
+- optional extension routing in `web_portal/api_extensions.py` (~3500 lines)
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`, `api_agent_ecosystem.py`,
   `api_assessment_center.py`)
-- service-layer logic in `services/` (81 modules)
+- service-layer logic in `services/` (88 modules)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (139 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (160 files) and root-level `test_*.py` (11 files)
 
 Runtime defaults are important:
 
@@ -78,7 +78,7 @@ Preferred file-by-task:
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
 |                                        # (includes `static/locales/he.json` Hebrew i18n)
-|- services/                            # 81 service modules
+|- services/                            # 88 service modules
 |- database/
 |  |- config.py
 |  |- manager.py
@@ -89,7 +89,7 @@ Preferred file-by-task:
 |  |- seeds.py
 |  |- migrate_data.py
 |  |- migrations/
-|  |- repositories/                     # 15 *_repository.py + base.py
+|  |- repositories/                     # 16 *_repository.py + base.py
 |- security/
 |  |- vault.py
 |  |- auth_tokens.py
@@ -106,7 +106,7 @@ Preferred file-by-task:
 |  `- runner.py
 |- scripts/                             # operational utilities
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/db-init)
-|- tests/                               # 139 test files
+|- tests/                               # 160 test files
 |- docs/
 |  |- platform_data_architecture.md
 |  |- health_marketplace_architecture.md
@@ -174,6 +174,7 @@ Database patterns:
   `remittances`, `payer_receivables`, `idempotency`, `outbox`
 - Agent ecosystem: `agents`, `agent_invitations`, `agent_affiliations`,
   `agent_commissions`
+- Assessment center: `assessment_records`
 
 Common ID prefixes:
 
@@ -189,6 +190,7 @@ Common ID prefixes:
 - Credit: `CREDIT`
 - Agent: `AGT` (invitation `AGI`, affiliation `AFF`, commission `COMM`,
   agent ledger `AGLEDGER`)
+- Assessment record: `ASMT`
 
 ## 5) API Task Playbook
 
@@ -237,13 +239,14 @@ When changing persistence or schema behavior:
 Key facts:
 
 - Storage modes include in-memory, SQLite, and PostgreSQL.
-- `DatabaseManager` exposes 37 repository properties (see §4 for the full list).
-- Repository modules (15 `*_repository.py` + `base.py`):
+- `DatabaseManager` exposes 38 repository properties (see §4 for the full list).
+- Repository modules (16 `*_repository.py` + `base.py`):
   `customer_repository.py`, `policy_repository.py`, `claim_repository.py`,
   `underwriting_repository.py`, `billing_repository.py`,
   `user_repository.py`, `session_repository.py`, `audit_repository.py`,
   `platform_ledger_repository.py`, `actuarial_repository.py`,
-  `token_repository.py`, `document_repository.py`, `supplier_repository.py`
+  `token_repository.py`, `document_repository.py`,
+  `assessment_record_repository.py`, `supplier_repository.py`
   (bundles supplier, invitation, offer, order, document, and supply-chain
   ledger repositories), `marketplace_repository.py` (bundles wallet,
   payment-intent, refund, journal, settlement, external-payer,
@@ -344,7 +347,7 @@ Important test harness facts:
 - Tests reset in-memory portal state between cases (clears `POLICIES`,
   `CLAIMS`, `CUSTOMERS`, `SESSIONS`, `BILLING`, etc.)
 - Options wheel service and document processing service are also reset per test
-- 139 test files under `tests/`, 11 root-level `test_*.py` files
+- 160 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -418,4 +421,4 @@ If you update this file again:
 
 ---
 
-Last updated: August 4, 2026
+Last updated: August 10, 2026
