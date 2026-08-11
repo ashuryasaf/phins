@@ -2770,10 +2770,61 @@
           </table>
         </div>
         <p style="font-size:7.5pt;color:var(--text-soft);margin-top:8px;" id="diary-status">Cells are editable inline. Use <strong>Add meeting</strong> for new entries; <strong>Reset</strong> restores the seeded diary.</p>
+
+        <!-- Staff-only meeting summary notes (server-backed, revealed by staff auth) -->
+        <div id="meeting-notes-admin" hidden style="margin-top:16px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--bg-card);box-shadow:var(--shadow);">
+          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--amber-1);margin-bottom:6px;">Staff · Meeting summary notes</div>
+          <h3 style="margin:0 0 8px 0;font-size:12pt;">📝 Draft a summary note from a meeting</h3>
+          <p style="font-size:9.5pt;color:var(--text-sub);margin:0 0 12px 0;">Notes are saved server-side (not this browser) so they can be referred to in the future — for <strong>BI</strong> queries, <strong>adjustments for further regulatory requirements</strong>, and <strong>AI-affiliated use</strong>. Tag each note so future consumers can filter it. AI/BI may read notes but never post.</p>
+          <form id="meeting-note-form" style="display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));align-items:end;">
+            <label style="font-size:8.5pt;grid-column:1/-1;">From diary meeting (optional — prefills the fields below)
+              <select id="note-diary-select" style="display:block;width:100%;margin-top:3px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;">
+                <option value="">— pick a diary meeting —</option>
+              </select>
+            </label>
+            <label style="font-size:8.5pt;grid-column:1/-1;">Title
+              <input id="note-title" type="text" required maxlength="160" placeholder="Authority pre-ruling — outcomes &amp; agreed path" style="display:block;width:100%;margin-top:3px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;">
+            </label>
+            <label style="font-size:8.5pt;">Meeting date
+              <input id="note-date" type="text" maxlength="40" placeholder="2026-08-19 or TBA" style="display:block;width:100%;margin-top:3px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;">
+            </label>
+            <label style="font-size:8.5pt;grid-column:span 2;">Counterparty
+              <input id="note-counterparty" type="text" maxlength="200" placeholder="Mr. Avi Ovadia — Capital Market, Insurance &amp; Savings Authority" style="display:block;width:100%;margin-top:3px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;">
+            </label>
+            <label style="font-size:8.5pt;grid-column:1/-1;">Summary — what was said / agreed
+              <textarea id="note-summary" required rows="4" placeholder="Key points, positions, and outcomes from the meeting…" style="display:block;width:100%;margin-top:3px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;resize:vertical;"></textarea>
+            </label>
+            <label style="font-size:8.5pt;grid-column:1/-1;">Decisions &amp; action items
+              <textarea id="note-decisions" rows="2" placeholder="Decisions taken; who owns which follow-up…" style="display:block;width:100%;margin-top:3px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;resize:vertical;"></textarea>
+            </label>
+            <label style="font-size:8.5pt;grid-column:1/-1;">Adjustments for further regulatory requirements
+              <textarea id="note-regulatory" rows="2" placeholder="What must change in product / actuarial methods / contracts to meet the regulator's requirements…" style="display:block;width:100%;margin-top:3px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;resize:vertical;"></textarea>
+            </label>
+            <fieldset style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:8.5pt;grid-column:span 2;">
+              <legend style="font-size:8pt;padding:0 4px;">Reference tags</legend>
+              <label style="margin-right:10px;"><input type="checkbox" id="note-tag-bi" checked> BI</label>
+              <label style="margin-right:10px;"><input type="checkbox" id="note-tag-regulatory" checked> Regulatory</label>
+              <label><input type="checkbox" id="note-tag-ai" checked> AI</label>
+            </fieldset>
+            <label style="font-size:8.5pt;">Status
+              <select id="note-status" style="display:block;width:100%;margin-top:3px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;">
+                <option value="draft">Draft</option>
+                <option value="final">Final</option>
+              </select>
+            </label>
+            <button type="submit" class="exec-dl-btn" id="note-save-btn" style="height:34px;">Save note</button>
+            <button type="button" class="exec-dl-btn" id="note-cancel-btn" hidden style="height:34px;">Cancel edit</button>
+          </form>
+          <p id="meeting-note-msg" style="font-size:9pt;margin:10px 0 0;min-height:1.2em;color:var(--text-sub);"></p>
+          <div style="margin-top:12px;">
+            <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--blue-dark);margin-bottom:6px;">Saved notes <span id="meeting-notes-count" style="font-weight:400;color:var(--text-soft);"></span></div>
+            <div id="meeting-notes-list" style="display:grid;gap:8px;"></div>
+          </div>
+        </div>
       </div>
 
       <div class="exec-integrity-note">
-        <strong>Data integrity notice:</strong> All financials in this section are forward-looking planning assumptions in ₪ (ILS), the canonical base; $ / € equivalents convert at a live exchange rate (<span id="inv-integrity-fx">live FX — loading…</span>) and every display currency derives from a single USD snapshot so the numbers stay consistent. They are not commitments or guidance. The build budget reconciles exactly to the ₪6.0M round; the income model derives every line from the tested-assumptions table (₪3,600 average premium, 25% take rate, stated in-force counts); and all deal structures price or convert on a single ₪24M pre-money / ₪30M post-money basis so stakes remain comparable. PHINS is modelled as a digital MGA / platform earning a take rate on premium, so claims reserves are not booked as PHINS revenue. The meeting diary is an operational admin tool stored locally in the browser and does not write to the platform ledger.
+        <strong>Data integrity notice:</strong> All financials in this section are forward-looking planning assumptions in ₪ (ILS), the canonical base; $ / € equivalents convert at a live exchange rate (<span id="inv-integrity-fx">live FX — loading…</span>) and every display currency derives from a single USD snapshot so the numbers stay consistent. They are not commitments or guidance. The build budget reconciles exactly to the ₪6.0M round; the income model derives every line from the tested-assumptions table (₪3,600 average premium, 25% take rate, stated in-force counts); and all deal structures price or convert on a single ₪24M pre-money / ₪30M post-money basis so stakes remain comparable. PHINS is modelled as a digital MGA / platform earning a take rate on premium, so claims reserves are not booked as PHINS revenue. The meeting diary is an operational admin tool stored locally in the browser and does not write to the platform ledger. Meeting summary notes are a staff-gated admin record stored server-side (JSON store, not the ledger) so they can be referred to later for BI, regulatory-requirement adjustments, and AI-affiliated use — AI/BI layers may read notes but never post.
       </div>
     </section>
 
@@ -8090,6 +8141,272 @@
       }
 
       render();
+    })();
+  </script>
+
+  <!-- Staff meeting summary notes (server-backed admin record for future BI /
+       regulatory-adjustment / AI-affiliated reference; revealed by staff auth) -->
+  <script>
+    (function () {
+      var panel = document.getElementById("meeting-notes-admin");
+      var form = document.getElementById("meeting-note-form");
+      if (!panel || !form) return;
+
+      var API = "/api/meetings/notes";
+      var msgEl = document.getElementById("meeting-note-msg");
+      var listEl = document.getElementById("meeting-notes-list");
+      var countEl = document.getElementById("meeting-notes-count");
+      var cancelBtn = document.getElementById("note-cancel-btn");
+      var saveBtn = document.getElementById("note-save-btn");
+      var editingId = null;
+
+      function authToken() {
+        try { return localStorage.getItem("phins_auth_token") || ""; } catch (e) { return ""; }
+      }
+
+      function headers(json) {
+        var h = { "Authorization": "Bearer " + authToken() };
+        if (json) h["Content-Type"] = "application/json";
+        return h;
+      }
+
+      function setMsg(text, isError) {
+        if (!msgEl) return;
+        msgEl.textContent = text || "";
+        msgEl.style.color = isError ? "var(--red-1)" : "var(--text-sub)";
+      }
+
+      // Prefill options from the diary rows stored in this browser so a note
+      // can reference the same meeting the admin sees in the table above.
+      function populateDiarySelect() {
+        var select = document.getElementById("note-diary-select");
+        if (!select) return;
+        var rows = [];
+        try {
+          rows = JSON.parse(localStorage.getItem("phins.il.meeting.diary.v4") || "[]") || [];
+        } catch (e) { rows = []; }
+        rows.forEach(function (rec, idx) {
+          if (!rec || typeof rec !== "object") return;
+          var opt = document.createElement("option");
+          opt.value = String(idx);
+          opt.textContent = (rec.date || "?") + " — " + (rec.counterparty || "meeting");
+          opt.setAttribute("data-date", rec.date || "");
+          opt.setAttribute("data-counterparty", rec.counterparty || "");
+          opt.setAttribute("data-purpose", rec.purpose || "");
+          select.appendChild(opt);
+        });
+        select.addEventListener("change", function () {
+          var opt = select.options[select.selectedIndex];
+          if (!opt || !opt.value) return;
+          document.getElementById("note-date").value = opt.getAttribute("data-date") || "";
+          document.getElementById("note-counterparty").value = opt.getAttribute("data-counterparty") || "";
+          var title = document.getElementById("note-title");
+          if (!title.value) {
+            title.value = "Summary — " + (opt.getAttribute("data-counterparty") || "meeting");
+          }
+        });
+      }
+
+      function tagsFromForm() {
+        var tags = [];
+        if (document.getElementById("note-tag-bi").checked) tags.push("bi");
+        if (document.getElementById("note-tag-regulatory").checked) tags.push("regulatory");
+        if (document.getElementById("note-tag-ai").checked) tags.push("ai");
+        return tags;
+      }
+
+      function resetForm() {
+        editingId = null;
+        form.reset();
+        document.getElementById("note-tag-bi").checked = true;
+        document.getElementById("note-tag-regulatory").checked = true;
+        document.getElementById("note-tag-ai").checked = true;
+        saveBtn.textContent = "Save note";
+        cancelBtn.hidden = true;
+      }
+
+      function startEdit(note) {
+        editingId = note.id;
+        document.getElementById("note-title").value = note.title || "";
+        document.getElementById("note-date").value = note.meeting_date || "";
+        document.getElementById("note-counterparty").value = note.counterparty || "";
+        document.getElementById("note-summary").value = note.summary || "";
+        document.getElementById("note-decisions").value = note.decisions || "";
+        document.getElementById("note-regulatory").value = note.regulatory_adjustments || "";
+        document.getElementById("note-status").value = note.status === "final" ? "final" : "draft";
+        var tags = note.tags || [];
+        document.getElementById("note-tag-bi").checked = tags.indexOf("bi") >= 0;
+        document.getElementById("note-tag-regulatory").checked = tags.indexOf("regulatory") >= 0;
+        document.getElementById("note-tag-ai").checked = tags.indexOf("ai") >= 0;
+        saveBtn.textContent = "Update note";
+        cancelBtn.hidden = false;
+        setMsg("Editing “" + (note.title || note.id) + "” — save to store a new revision.", false);
+        panel.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      function smallBtn(label, title) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = label;
+        btn.title = title;
+        btn.style.cssText = "border:1px solid var(--border);background:#fff;border-radius:8px;padding:3px 9px;cursor:pointer;font-size:8pt;";
+        return btn;
+      }
+
+      function renderList(items) {
+        listEl.innerHTML = "";
+        countEl.textContent = "· " + items.length + " note(s)";
+        if (!items.length) {
+          var empty = document.createElement("p");
+          empty.style.cssText = "font-size:9pt;color:var(--text-soft);margin:0;";
+          empty.textContent = "No notes yet — draft the first summary above.";
+          listEl.appendChild(empty);
+          return;
+        }
+        items.forEach(function (note) {
+          var card = document.createElement("div");
+          card.className = "meeting-note-card";
+          card.style.cssText = "border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:#f8fafc;";
+
+          var head = document.createElement("div");
+          head.style.cssText = "display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;";
+          var title = document.createElement("strong");
+          title.style.fontSize = "9.5pt";
+          title.textContent = note.title || "(untitled)";
+          head.appendChild(title);
+
+          var badges = document.createElement("span");
+          badges.style.cssText = "display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center;";
+          var status = document.createElement("span");
+          var isFinal = note.status === "final";
+          status.style.cssText = "font-size:7.6pt;font-weight:700;border-radius:20px;padding:2px 8px;" +
+            (isFinal ? "background:#dcfce7;color:#15803d;" : "background:#fef9c3;color:#a16207;");
+          status.textContent = (isFinal ? "Final" : "Draft") + " · rev " + (note.revision || 1);
+          badges.appendChild(status);
+          (note.tags || []).forEach(function (tag) {
+            var chip = document.createElement("span");
+            chip.style.cssText = "font-size:7.6pt;font-weight:700;border-radius:20px;padding:2px 8px;background:#dbeafe;color:#1565c0;text-transform:uppercase;";
+            chip.textContent = tag;
+            badges.appendChild(chip);
+          });
+          head.appendChild(badges);
+          card.appendChild(head);
+
+          var meta = document.createElement("div");
+          meta.style.cssText = "font-size:8pt;color:var(--text-soft);margin-top:2px;";
+          meta.textContent = [note.meeting_date, note.counterparty].filter(Boolean).join(" · ") || "—";
+          card.appendChild(meta);
+
+          var body = document.createElement("p");
+          body.style.cssText = "font-size:8.6pt;margin:6px 0 0;white-space:pre-wrap;";
+          body.textContent = note.summary || "";
+          card.appendChild(body);
+
+          if (note.regulatory_adjustments) {
+            var reg = document.createElement("p");
+            reg.style.cssText = "font-size:8.2pt;margin:6px 0 0;padding:6px 8px;border-left:3px solid #b45309;background:#fffbeb;white-space:pre-wrap;";
+            reg.textContent = "Regulatory adjustments: " + note.regulatory_adjustments;
+            card.appendChild(reg);
+          }
+
+          var actions = document.createElement("div");
+          actions.style.cssText = "display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;";
+          var editBtn = smallBtn("✏️ Edit", "Edit this note (stores a new revision)");
+          editBtn.addEventListener("click", function () { startEdit(note); });
+          actions.appendChild(editBtn);
+          if (!isFinal) {
+            var finalizeBtn = smallBtn("✅ Finalize", "Mark this note final");
+            finalizeBtn.addEventListener("click", function () {
+              fetch(API + "/" + encodeURIComponent(note.id), {
+                method: "PUT", headers: headers(true), credentials: "same-origin",
+                body: JSON.stringify({ status: "final" })
+              }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+                .then(function (res) {
+                  if (!res.ok) { setMsg((res.data && res.data.error) || "Could not finalize note", true); return; }
+                  setMsg("Note finalized.", false);
+                  loadNotes();
+                }).catch(function () { setMsg("Network error — try again.", true); });
+            });
+            actions.appendChild(finalizeBtn);
+          }
+          var archiveBtn = smallBtn("🗄 Archive", "Archive this note (kept for audit/BI, hidden from the default list)");
+          archiveBtn.addEventListener("click", function () {
+            fetch(API + "/" + encodeURIComponent(note.id), {
+              method: "DELETE", headers: headers(false), credentials: "same-origin"
+            }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+              .then(function (res) {
+                if (!res.ok) { setMsg((res.data && res.data.error) || "Could not archive note", true); return; }
+                setMsg("Note archived (kept server-side for audit/BI).", false);
+                if (editingId === note.id) resetForm();
+                loadNotes();
+              }).catch(function () { setMsg("Network error — try again.", true); });
+          });
+          actions.appendChild(archiveBtn);
+          card.appendChild(actions);
+          listEl.appendChild(card);
+        });
+      }
+
+      function loadNotes() {
+        return fetch(API, { headers: headers(false), credentials: "same-origin" })
+          .then(function (r) {
+            if (!r.ok) throw new Error("unauthorized");
+            return r.json();
+          })
+          .then(function (data) {
+            renderList((data && data.items) || []);
+            return true;
+          });
+      }
+
+      function revealIfStaff() {
+        if (!authToken()) return;
+        loadNotes().then(function () {
+          panel.hidden = false;
+          populateDiarySelect();
+        }).catch(function () {});
+      }
+
+      cancelBtn.addEventListener("click", function () {
+        resetForm();
+        setMsg("Edit cancelled.", false);
+      });
+
+      form.addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        if (!authToken()) {
+          setMsg("Staff unlock required — reload and sign in with an admin password.", true);
+          return;
+        }
+        var body = {
+          title: document.getElementById("note-title").value,
+          meeting_date: document.getElementById("note-date").value,
+          counterparty: document.getElementById("note-counterparty").value,
+          summary: document.getElementById("note-summary").value,
+          decisions: document.getElementById("note-decisions").value,
+          regulatory_adjustments: document.getElementById("note-regulatory").value,
+          tags: tagsFromForm(),
+          status: document.getElementById("note-status").value
+        };
+        var url = editingId ? API + "/" + encodeURIComponent(editingId) : API;
+        var method = editingId ? "PUT" : "POST";
+        setMsg(editingId ? "Updating…" : "Saving…", false);
+        fetch(url, {
+          method: method, headers: headers(true), credentials: "same-origin",
+          body: JSON.stringify(body)
+        }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (res) {
+            if (!res.ok) {
+              setMsg((res.data && res.data.error) || "Could not save note", true);
+              return;
+            }
+            setMsg(editingId ? "Note updated — new revision stored." : "Summary note saved for future BI / regulatory / AI reference.", false);
+            resetForm();
+            loadNotes();
+          }).catch(function () { setMsg("Network error — try again.", true); });
+      });
+
+      revealIfStaff();
     })();
   </script>
 
