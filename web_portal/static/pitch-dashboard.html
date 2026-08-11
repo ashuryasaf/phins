@@ -8140,6 +8140,11 @@
         });
       }
 
+      // Read-only view of the live diary rows for sibling admin tools (the
+      // meeting summary-notes form prefills from it). Seeded defaults are
+      // included even before the first localStorage save.
+      window.phinsDiaryRows = function () { return rows.slice(); };
+
       render();
     })();
   </script>
@@ -8161,7 +8166,13 @@
       var editingId = null;
 
       function authToken() {
-        try { return localStorage.getItem("phins_auth_token") || ""; } catch (e) { return ""; }
+        // phins_token is what the login flow stores; phins_auth_token is the
+        // key the older staff tools on this page read. Accept either.
+        try {
+          return localStorage.getItem("phins_auth_token") ||
+                 localStorage.getItem("phins_token") ||
+                 sessionStorage.getItem("phins_token") || "";
+        } catch (e) { return ""; }
       }
 
       function headers(json) {
@@ -8176,14 +8187,18 @@
         msgEl.style.color = isError ? "var(--red-1)" : "var(--text-sub)";
       }
 
-      // Prefill options from the diary rows stored in this browser so a note
-      // can reference the same meeting the admin sees in the table above.
+      // Prefill options from the live diary rows (seeded defaults included)
+      // so a note can reference the same meeting the admin sees in the table.
       function populateDiarySelect() {
         var select = document.getElementById("note-diary-select");
         if (!select) return;
         var rows = [];
         try {
-          rows = JSON.parse(localStorage.getItem("phins.il.meeting.diary.v4") || "[]") || [];
+          if (typeof window.phinsDiaryRows === "function") {
+            rows = window.phinsDiaryRows() || [];
+          } else {
+            rows = JSON.parse(localStorage.getItem("phins.il.meeting.diary.v4") || "[]") || [];
+          }
         } catch (e) { rows = []; }
         rows.forEach(function (rec, idx) {
           if (!rec || typeof rec !== "object") return;
