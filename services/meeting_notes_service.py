@@ -304,7 +304,8 @@ class MeetingNotesService:
         include_archived: bool = False,
     ) -> List[Dict[str, Any]]:
         """Structured note list (newest first) — the BI/AI read surface."""
-        tag_filter = normalize_tags([tag])[0] if tag else None
+        tag_tokens = normalize_tags([tag]) if tag else []
+        tag_filter = tag_tokens[0] if tag_tokens else None
         status_filter = _clean_status(status) if status else None
         ref_filter = str(meeting_ref or "").strip().lower() or None
         with self._exclusive_store():
