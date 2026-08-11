@@ -20,6 +20,7 @@ SECTION_IDS = [
     "investor-meeting-section",
     "partner-meetings-13jul",
     "regulatory-meeting-27jul",
+    "regulatory-preruling-avi-ovadia",
     "fintl-vc-meetings-aug",
     "grove-vc-meeting-19aug",
     "exec-summary-section",

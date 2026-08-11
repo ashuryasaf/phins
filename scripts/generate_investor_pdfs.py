@@ -97,6 +97,10 @@ DOCUMENTS = [
      'investor-docs/regulatory-meeting-27jul-brief.pdf',
      'PHINS — Regulatory Meeting Brief (27 July 2026) · '
      'Herzog Fox Neeman & Co. Advocates'),
+    ('investor-docs/regulatory-preruling-avi-ovadia-brief.md',
+     'investor-docs/regulatory-preruling-avi-ovadia-brief.pdf',
+     'PHINS — Regulatory Pre-Ruling Meeting Brief (Date TBA) · '
+     'Mr. Avi Ovadia, Capital Market, Insurance & Savings Authority'),
     ('investor-docs/fintl-vc-meeting-5aug-brief.md',
      'investor-docs/fintl-vc-meeting-5aug-brief.pdf',
      'PHINS — Fintl VC Meeting Brief (5 August 2026) · '
