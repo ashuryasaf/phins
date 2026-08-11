@@ -13265,6 +13265,150 @@ class PortalHandler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
         return True
 
+    def _handle_meeting_notes_api(
+        self,
+        path: str,
+        body_data: Dict[str, Any],
+        query_params: Optional[Dict[str, List[str]]] = None,
+    ) -> bool:
+        """Staff-gated meeting summary-notes admin API.
+
+        Admins draft summary notes from meetings (pinned to the pitch-dashboard
+        Meeting Diary) so they can be referred to later for BI, adjustments for
+        further regulatory requirements, and AI-affiliated use. Notes are an
+        operational admin record in a server-side JSON store — AI/BI layers may
+        read them but never post; nothing here writes to the platform ledger.
+
+        Routes (all staff-only, same gate as the confidential share admin):
+          GET    /api/meetings/notes            list (?tag=&status=&meeting_ref=&include_archived=1)
+          POST   /api/meetings/notes            create a note (draft or final)
+          PUT    /api/meetings/notes/<id>       partial update / finalize
+          DELETE /api/meetings/notes/<id>       archive (soft delete, stays queryable)
+        """
+        if not path.startswith('/api/meetings/notes'):
+            return False
+        query_params = query_params or {}
+
+        # Same staff gating as the confidential share admin: a staff session
+        # (Bearer token) or a valid staff unlock cookie.
+        session = self._get_session()
+        staff_cookie_ok = False
+        if not confidential_access.session_is_staff(session):
+            cookies = confidential_access.parse_cookies(self.headers.get('Cookie', ''))
+            claims = confidential_access.verify_staff_unlock_cookie(
+                cookies.get(confidential_access.STAFF_UNLOCK_COOKIE_NAME)
+            )
+            staff_cookie_ok = bool(claims)
+            if staff_cookie_ok and not session:
+                session = {
+                    'username': (claims or {}).get('u') or 'staff',
+                    'role': (claims or {}).get('r') or 'admin',
+                }
+        if not confidential_access.session_is_staff(session) and not staff_cookie_ok:
+            self._set_json_headers(401)
+            self.wfile.write(json.dumps({'error': 'Staff authorization required.'}).encode('utf-8'))
+            return True
+
+        actor = str((session or {}).get('username') or 'admin')
+
+        try:
+            from services.meeting_notes_service import (
+                MeetingNoteError,
+                get_meeting_notes_service,
+            )
+        except Exception as exc:  # pragma: no cover - import failure is fatal misconfig
+            print(f"[MEETING-NOTES] service unavailable: {exc}")
+            self._set_json_headers(503)
+            self.wfile.write(json.dumps({'error': 'Meeting notes unavailable. Try again later.'}).encode('utf-8'))
+            return True
+
+        try:
+            service = get_meeting_notes_service()
+
+            if path == '/api/meetings/notes':
+                if self.command == 'GET':
+                    def _qp(name: str) -> str:
+                        return str((query_params.get(name) or [''])[0] or '').strip()
+
+                    include_archived = _qp('include_archived').lower() in ('1', 'true', 'yes')
+                    items = service.list_notes(
+                        tag=_qp('tag') or None,
+                        status=_qp('status') or None,
+                        meeting_ref=_qp('meeting_ref') or None,
+                        include_archived=include_archived,
+                    )
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'items': items,
+                        'page': 1,
+                        'page_size': len(items),
+                        'total': len(items),
+                    }).encode('utf-8'))
+                    return True
+
+                if self.command == 'POST':
+                    created = service.create_note(
+                        title=str(body_data.get('title') or ''),
+                        summary=str(body_data.get('summary') or ''),
+                        meeting_ref=str(body_data.get('meeting_ref') or ''),
+                        meeting_date=str(body_data.get('meeting_date') or ''),
+                        counterparty=str(body_data.get('counterparty') or ''),
+                        decisions=str(body_data.get('decisions') or ''),
+                        action_items=str(body_data.get('action_items') or ''),
+                        regulatory_adjustments=str(
+                            body_data.get('regulatory_adjustments') or ''
+                        ),
+                        tags=body_data.get('tags'),
+                        status=str(body_data.get('status') or 'draft'),
+                        created_by=actor,
+                    )
+                    self._set_json_headers(201)
+                    self.wfile.write(json.dumps({'success': True, 'note': created}).encode('utf-8'))
+                    return True
+
+            if path.startswith('/api/meetings/notes/'):
+                note_id = path.rstrip('/').split('/')[-1]
+
+                if self.command == 'PUT':
+                    updated = service.update_note(note_id, body_data, updated_by=actor)
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({'success': True, 'note': updated}).encode('utf-8'))
+                    return True
+
+                if self.command == 'DELETE':
+                    archived = service.archive_note(note_id, archived_by=actor)
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({'success': True, 'note': archived}).encode('utf-8'))
+                    return True
+
+        except MeetingNoteError as exc:
+            status = 404 if 'not found' in str(exc).lower() else 400
+            self._set_json_headers(status)
+            self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+            return True
+        except Exception as exc:
+            print(f"[MEETING-NOTES] API error: {exc}")
+            self._set_json_headers(500)
+            self.wfile.write(json.dumps({'error': 'Meeting notes unavailable. Try again later.'}).encode('utf-8'))
+            return True
+
+        self._set_json_headers(404)
+        self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
+        return True
+
+    def _read_meeting_notes_body(self) -> Optional[Dict[str, Any]]:
+        """Parse a JSON object body for the meeting-notes API (None on error)."""
+        try:
+            length = int(self.headers.get('Content-Length', 0) or 0)
+        except (TypeError, ValueError):
+            length = 0
+        raw_body = self.rfile.read(length).decode('utf-8') if length else '{}'
+        try:
+            body = json.loads(raw_body) if raw_body else {}
+        except json.JSONDecodeError:
+            return None
+        return body if isinstance(body, dict) else None
+
     def _savings_account_owner(self, account_id: Any) -> Optional[str]:
         """Resolve the customer_id that owns a portfolio/savings ``account_id``.
 
@@ -14195,6 +14339,12 @@ For claims or questions, please contact:
         # the JSON API itself is never treated as a confidential HTML document.
         if path == '/api/confidential/shares':
             if self._handle_confidential_api(path, {}):
+                return
+
+        # Meeting summary-notes admin API (staff) — list for future reference
+        # (BI queries, regulatory-requirement adjustments, AI-affiliated use).
+        if path == '/api/meetings/notes':
+            if self._handle_meeting_notes_api(path, {}, qs):
                 return
 
         # Confidential-document gate. Placed before the legal-docs registry and
@@ -28686,6 +28836,17 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Invalid request body'}).encode('utf-8'))
                 return
             if self._handle_confidential_api(path, confidential_body):
+                return
+
+        # Meeting summary-notes admin API (staff) — draft a summary note from a
+        # meeting for future BI / regulatory-adjustment / AI-affiliated reference.
+        if path.startswith('/api/meetings/notes'):
+            notes_body = self._read_meeting_notes_body()
+            if notes_body is None:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            if self._handle_meeting_notes_api(path, notes_body):
                 return
 
         # ── Legal/corporate/funding document signing + verification ──
@@ -49888,7 +50049,17 @@ For claims or questions, please contact:
         token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
         session = validate_session(token) if token else None
         user_agent = self.headers.get('User-Agent', '')
-        
+
+        # Meeting summary-notes admin API (staff) — edit / finalize a note.
+        if path.startswith('/api/meetings/notes/'):
+            notes_body = self._read_meeting_notes_body()
+            if notes_body is None:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            if self._handle_meeting_notes_api(path, notes_body):
+                return
+
         # =====================================================================
         # API EXTENSIONS - Community Foundations (PUT)
         # =====================================================================
@@ -49971,6 +50142,11 @@ For claims or questions, please contact:
         # Confidential share revoke
         if path.startswith('/api/confidential/shares/'):
             if self._handle_confidential_api(path, {}):
+                return
+
+        # Meeting summary-notes admin API (staff) — archive (soft delete).
+        if path.startswith('/api/meetings/notes/'):
+            if self._handle_meeting_notes_api(path, {}):
                 return
         
         # ========== DELETE /api/media/{id} - Delete media asset ==========
