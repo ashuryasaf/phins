@@ -2349,6 +2349,85 @@
         </div>
       </div>
     </section>
+
+    <!-- ==================== BUSINESS RELATIONS (public inquiries) ==================== -->
+    <section id="business-relations" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: radial-gradient(700px 280px at 85% -20%, rgba(21, 68, 155, 0.55), transparent 65%), linear-gradient(135deg, #060d1f 0%, #0d1b3e 100%); color: #eaf1ff; border-radius: 16px; padding: 28px; margin-top: 24px; border: 1px solid rgba(227, 191, 111, 0.35); box-shadow: 0 8px 30px rgba(2, 8, 23, 0.45);">
+      <div class="section-header" style="margin-bottom: 24px;">
+        <div>
+          <h2 style="color: #f7e2a0; margin: 0;">🤝 Business Relations</h2>
+          <p style="opacity: 0.85; margin: 4px 0 0 0; font-size: 0.9rem;">Contact &amp; demo inquiries from the public solutions page — viewers, investors and business collaborators</p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button onclick="loadBusinessInquiries()" style="background: rgba(227,191,111,0.15); border: 1px solid rgba(227,191,111,0.5); color: #f7e2a0; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">🔄 Refresh</button>
+        </div>
+      </div>
+
+      <!-- Pipeline stats -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px;">
+        <div style="background: rgba(127,178,255,0.08); border: 1px solid rgba(127,178,255,0.2); border-radius: 12px; padding: 14px; text-align: center;">
+          <div style="font-size: 1.7rem; font-weight: 700; color: #ffffff;" id="bri-stat-total">0</div>
+          <div style="font-size: 0.78rem; opacity: 0.7;">Total Inquiries</div>
+        </div>
+        <div style="background: rgba(79,216,255,0.08); border: 1px solid rgba(79,216,255,0.3); border-radius: 12px; padding: 14px; text-align: center;">
+          <div style="font-size: 1.7rem; font-weight: 700; color: #4fd8ff;" id="bri-stat-new">0</div>
+          <div style="font-size: 0.78rem; opacity: 0.7;">New</div>
+        </div>
+        <div style="background: rgba(255,190,118,0.08); border: 1px solid rgba(255,190,118,0.3); border-radius: 12px; padding: 14px; text-align: center;">
+          <div style="font-size: 1.7rem; font-weight: 700; color: #ffbe76;" id="bri-stat-contacted">0</div>
+          <div style="font-size: 0.78rem; opacity: 0.7;">Contacted</div>
+        </div>
+        <div style="background: rgba(111,224,184,0.08); border: 1px solid rgba(111,224,184,0.3); border-radius: 12px; padding: 14px; text-align: center;">
+          <div style="font-size: 1.7rem; font-weight: 700; color: #6fe0b8;" id="bri-stat-qualified">0</div>
+          <div style="font-size: 0.78rem; opacity: 0.7;">Qualified</div>
+        </div>
+        <div style="background: rgba(234,241,255,0.05); border: 1px solid rgba(234,241,255,0.15); border-radius: 12px; padding: 14px; text-align: center;">
+          <div style="font-size: 1.7rem; font-weight: 700; color: rgba(234,241,255,0.7);" id="bri-stat-closed">0</div>
+          <div style="font-size: 0.78rem; opacity: 0.7;">Closed</div>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 16px;">
+        <select id="bri-filter-status" onchange="loadBusinessInquiries()" style="padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(227,191,111,0.4); background: rgba(6,13,31,0.7); color: #eaf1ff;">
+          <option value="">All statuses</option>
+          <option value="new">New</option>
+          <option value="contacted">Contacted</option>
+          <option value="qualified">Qualified</option>
+          <option value="closed">Closed</option>
+        </select>
+        <select id="bri-filter-type" onchange="loadBusinessInquiries()" style="padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(227,191,111,0.4); background: rgba(6,13,31,0.7); color: #eaf1ff;">
+          <option value="">All types</option>
+          <option value="demo">Demo requests</option>
+          <option value="contact">Contact</option>
+        </select>
+        <div class="section-search" style="flex: 1; min-width: 220px; margin: 0;">
+          <input type="text" class="section-search-input" id="bri-search" placeholder="Search by name, email, organization..." oninput="filterTableRowsBySearch('business-inquiries-list', this.value, 'bri-search-count')">
+          <span class="section-search-count" id="bri-search-count"></span>
+        </div>
+      </div>
+
+      <!-- Inquiries table -->
+      <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(127,178,255,0.15); border-radius: 12px; padding: 16px; max-height: 420px; overflow-y: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
+          <thead>
+            <tr style="border-bottom: 2px solid rgba(227,191,111,0.35);">
+              <th style="text-align: left; padding: 10px 8px;">Received</th>
+              <th style="text-align: center; padding: 10px 8px;">Type</th>
+              <th style="text-align: left; padding: 10px 8px;">Name / Contact</th>
+              <th style="text-align: left; padding: 10px 8px;">Organization</th>
+              <th style="text-align: center; padding: 10px 8px;">Audience</th>
+              <th style="text-align: left; padding: 10px 8px;">Interest</th>
+              <th style="text-align: left; padding: 10px 8px;">Message</th>
+              <th style="text-align: center; padding: 10px 8px;">Status</th>
+              <th style="text-align: center; padding: 10px 8px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="business-inquiries-list">
+            <tr><td colspan="9" style="text-align: center; padding: 20px; opacity: 0.7;">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   </main>
 
   <footer class="footer">
@@ -8088,6 +8167,122 @@
     // Load invitation codes on page load
     document.addEventListener('DOMContentLoaded', () => {
       loadInvitationCodes();
+    });
+
+    // ==================== BUSINESS RELATIONS (public inquiries) ====================
+    const BRI_STATUS_STYLES = {
+      new:       'background: rgba(79,216,255,0.15); color: #4fd8ff; border: 1px solid rgba(79,216,255,0.45);',
+      contacted: 'background: rgba(255,190,118,0.15); color: #ffbe76; border: 1px solid rgba(255,190,118,0.45);',
+      qualified: 'background: rgba(111,224,184,0.15); color: #6fe0b8; border: 1px solid rgba(111,224,184,0.45);',
+      closed:    'background: rgba(234,241,255,0.08); color: rgba(234,241,255,0.6); border: 1px solid rgba(234,241,255,0.25);'
+    };
+    const BRI_INTEREST_LABELS = {
+      underwriting: 'Underwriting',
+      assessments: 'Assessments',
+      billing: 'Billing & Payments',
+      claims: 'Claims',
+      actuarial_investments: 'Actuarial & Investments',
+      smart_contracts: 'Smart Contracts',
+      mga_solutions: 'MGA Solutions',
+      platform: 'Platform Overall'
+    };
+
+    async function loadBusinessInquiries() {
+      const tbody = document.getElementById('business-inquiries-list');
+      if (!tbody) return;
+      const authToken = localStorage.getItem('phins_token');
+      const params = new URLSearchParams();
+      const statusFilter = document.getElementById('bri-filter-status')?.value || '';
+      const typeFilter = document.getElementById('bri-filter-type')?.value || '';
+      if (statusFilter) params.set('status', statusFilter);
+      if (typeFilter) params.set('inquiry_type', typeFilter);
+      try {
+        const res = await fetch('/api/admin/business-inquiries' + (params.toString() ? '?' + params.toString() : ''), {
+          headers: { 'Authorization': 'Bearer ' + authToken }
+        });
+        if (!res.ok) {
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:#ff8a80;">Failed to load inquiries (' + res.status + ')</td></tr>';
+          return;
+        }
+        const data = await res.json();
+        renderBusinessInquiries(data.items || []);
+      } catch (err) {
+        console.error('Failed to load business inquiries:', err);
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:#ff8a80;">Failed to load inquiries</td></tr>';
+      }
+    }
+
+    function renderBusinessInquiries(items) {
+      const tbody = document.getElementById('business-inquiries-list');
+      if (!tbody) return;
+
+      const counts = { new: 0, contacted: 0, qualified: 0, closed: 0 };
+      items.forEach(i => { if (counts[i.status] !== undefined) counts[i.status]++; });
+      const setStat = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+      setStat('bri-stat-total', items.length);
+      setStat('bri-stat-new', counts.new);
+      setStat('bri-stat-contacted', counts.contacted);
+      setStat('bri-stat-qualified', counts.qualified);
+      setStat('bri-stat-closed', counts.closed);
+
+      if (!items.length) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;opacity:0.7;">No inquiries yet — they will appear here as visitors submit the solutions-page form.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = items.map(i => {
+        const esc = adminAssistantEscapeHtml;
+        const received = (i.created_at || '').replace('T', ' ').slice(0, 16);
+        const typeBadge = i.inquiry_type === 'demo'
+          ? '<span style="padding:3px 10px;border-radius:999px;font-size:0.72rem;font-weight:600;background:rgba(227,191,111,0.18);color:#f7e2a0;border:1px solid rgba(227,191,111,0.45);">DEMO</span>'
+          : '<span style="padding:3px 10px;border-radius:999px;font-size:0.72rem;font-weight:600;background:rgba(127,178,255,0.15);color:#7fb2ff;border:1px solid rgba(127,178,255,0.4);">CONTACT</span>';
+        const statusStyle = BRI_STATUS_STYLES[i.status] || BRI_STATUS_STYLES.closed;
+        const message = (i.message || '');
+        const messageCell = message
+          ? '<span title="' + esc(message) + '">' + esc(message.length > 60 ? message.slice(0, 60) + '…' : message) + '</span>'
+          : '<span style="opacity:0.5;">—</span>';
+        const actions = ['contacted', 'qualified', 'closed']
+          .filter(s => s !== i.status)
+          .map(s => '<button onclick="setBusinessInquiryStatus(\'' + esc(i.id) + '\', \'' + s + '\')" style="background:transparent;border:1px solid rgba(234,241,255,0.3);color:rgba(234,241,255,0.85);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.72rem;margin:2px;">' + s.charAt(0).toUpperCase() + s.slice(1) + '</button>')
+          .join('');
+        return '<tr style="border-bottom:1px solid rgba(127,178,255,0.1);">' +
+          '<td style="padding:10px 8px;white-space:nowrap;opacity:0.85;">' + esc(received) + '<div style="font-size:0.7rem;opacity:0.55;">' + esc(i.id) + '</div></td>' +
+          '<td style="padding:10px 8px;text-align:center;">' + typeBadge + '</td>' +
+          '<td style="padding:10px 8px;"><strong>' + esc(i.name) + '</strong><div style="font-size:0.78rem;opacity:0.7;">' + esc(i.email) + '</div></td>' +
+          '<td style="padding:10px 8px;">' + (i.organization ? esc(i.organization) : '<span style="opacity:0.5;">—</span>') + '</td>' +
+          '<td style="padding:10px 8px;text-align:center;text-transform:capitalize;">' + esc(i.audience) + '</td>' +
+          '<td style="padding:10px 8px;">' + esc(BRI_INTEREST_LABELS[i.interest] || i.interest) + '</td>' +
+          '<td style="padding:10px 8px;max-width:220px;">' + messageCell + '</td>' +
+          '<td style="padding:10px 8px;text-align:center;"><span style="padding:3px 10px;border-radius:999px;font-size:0.72rem;font-weight:600;text-transform:uppercase;' + statusStyle + '">' + esc(i.status) + '</span></td>' +
+          '<td style="padding:10px 8px;text-align:center;white-space:nowrap;">' + actions + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    async function setBusinessInquiryStatus(inquiryId, newStatus) {
+      const authToken = localStorage.getItem('phins_token');
+      const note = prompt('Optional note for this status change (e.g., "Intro call scheduled"):', '');
+      if (note === null) return; // cancelled
+      try {
+        const res = await fetch('/api/admin/business-inquiries/' + encodeURIComponent(inquiryId) + '/status', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + authToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus, note: note || '' })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          alert('Failed to update inquiry: ' + (data.error || res.status));
+          return;
+        }
+        loadBusinessInquiries();
+      } catch (err) {
+        alert('Failed to update inquiry: ' + err.message);
+      }
+    }
+
+    // Load business inquiries on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(loadBusinessInquiries, 800);
     });
     
     // ==================== INVITATION CODE MANAGEMENT ====================

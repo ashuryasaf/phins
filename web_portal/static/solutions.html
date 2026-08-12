@@ -1,0 +1,1189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#060d1f" />
+  <meta name="description" content="PHINS — an AI-native insurance platform: underwriting, assessments, billing, claims, actuarial &amp; investments, for individuals and enterprises." />
+  <title>PHINS — Solutions | AI-Native Insurance Platform</title>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <link rel="apple-touch-icon" href="/phins-logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ds-primary: #0d47a1;
+      --ds-accent: #e3bf6f;
+      --ds-accent-strong: #f7e2a0;
+      --ds-accent-shadow: rgba(227, 191, 111, 0.35);
+      --ds-accent-shadow-hover: rgba(227, 191, 111, 0.5);
+      --ink: #eaf1ff;
+      --ink-dim: rgba(234, 241, 255, 0.62);
+      --ink-faint: rgba(234, 241, 255, 0.45);
+      --line: rgba(127, 178, 255, 0.16);
+      --card-bg: rgba(7, 15, 34, 0.82);
+      --card-glow: rgba(21, 68, 155, 0.38);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #060d1f;
+      color: var(--ink);
+      min-height: 100vh;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ===== Ambient backdrop (shared landing language) ===== */
+    .backdrop {
+      position: fixed; inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(1000px 600px at 80% -10%, rgba(21, 68, 155, 0.55), transparent 60%),
+        radial-gradient(800px 520px at 8% 110%, rgba(11, 92, 130, 0.4), transparent 60%),
+        radial-gradient(600px 400px at 50% 45%, rgba(30, 82, 170, 0.22), transparent 65%),
+        #060d1f;
+    }
+    .backdrop::before {
+      content: '';
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(127, 178, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(127, 178, 255, 0.05) 1px, transparent 1px);
+      background-size: 72px 72px;
+      mask-image: radial-gradient(1100px 700px at 50% 20%, rgba(0,0,0,0.85), transparent 80%);
+      -webkit-mask-image: radial-gradient(1100px 700px at 50% 20%, rgba(0,0,0,0.85), transparent 80%);
+    }
+    .backdrop::after {
+      content: '';
+      position: absolute; inset: -30%;
+      background: conic-gradient(from 180deg at 50% 50%,
+        transparent 0deg, rgba(79, 216, 255, 0.05) 90deg,
+        transparent 180deg, rgba(227, 191, 111, 0.04) 270deg, transparent 360deg);
+      animation: slow-spin 60s linear infinite;
+    }
+    @keyframes slow-spin { to { transform: rotate(360deg); } }
+
+    /* ===== Header ===== */
+    .landing-header {
+      position: fixed; top: 0; left: 0; right: 0;
+      z-index: 1000;
+      background: rgba(6, 13, 31, 0.72);
+      backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+      border-bottom: 1px solid var(--line);
+    }
+    .header-inner {
+      max-width: 1160px; margin: 0 auto;
+      padding: 14px 28px;
+      display: flex; justify-content: space-between; align-items: center; gap: 14px;
+    }
+    .logo {
+      display: flex; align-items: center; gap: 14px;
+      text-decoration: none; color: var(--ink);
+    }
+    .logo-icon { width: 42px; height: 42px; filter: drop-shadow(0 4px 16px rgba(79, 216, 255, 0.3)); }
+    .logo-icon img { width: 100%; height: 100%; display: block; }
+    .logo-text {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.35rem; font-weight: 600; letter-spacing: 0.34em;
+    }
+    .top-nav { display: flex; align-items: center; gap: 6px; }
+    .top-nav a.nav-item {
+      color: rgba(234, 241, 255, 0.85);
+      text-decoration: none;
+      font-size: 0.88rem;
+      padding: 8px 14px;
+      border-radius: 999px;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+    .top-nav a.nav-item:hover { background: rgba(127, 178, 255, 0.14); color: #fff; }
+    .btn-gold {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 11px 26px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.88rem; font-weight: 600; letter-spacing: 0.12em;
+      text-transform: uppercase;
+      text-decoration: none;
+      color: #071022;
+      background: linear-gradient(135deg, var(--ds-accent-strong) 0%, var(--ds-accent) 100%);
+      border-radius: 999px;
+      border: none; cursor: pointer;
+      box-shadow: 0 0 0 1px rgba(247, 226, 160, 0.35), 0 8px 28px var(--ds-accent-shadow);
+      transition: transform 0.25s ease, box-shadow 0.25s ease;
+    }
+    .btn-gold:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 0 1px rgba(247, 226, 160, 0.55), 0 14px 38px var(--ds-accent-shadow-hover);
+    }
+    .btn-ghost {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 11px 26px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.88rem; font-weight: 600; letter-spacing: 0.12em;
+      text-transform: uppercase;
+      text-decoration: none;
+      color: var(--ink);
+      background: rgba(127, 178, 255, 0.06);
+      border: 1px solid rgba(127, 178, 255, 0.35);
+      border-radius: 999px;
+      backdrop-filter: blur(8px);
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+    .btn-ghost:hover { border-color: rgba(227, 191, 111, 0.75); box-shadow: 0 0 30px rgba(127, 178, 255, 0.2); transform: translateY(-2px); }
+
+    /* ===== Layout ===== */
+    main { position: relative; z-index: 1; }
+    .wrap { max-width: 1160px; margin: 0 auto; padding: 0 28px; }
+    section { padding: 84px 0; }
+    .kicker {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.76rem; font-weight: 600;
+      letter-spacing: 0.42em; text-transform: uppercase;
+      color: var(--ds-accent);
+      margin-bottom: 16px;
+    }
+    h2.section-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(1.7rem, 4.4vw, 2.5rem);
+      font-weight: 600; letter-spacing: 0.02em;
+      background: linear-gradient(180deg, #ffffff 0%, #b7d3ff 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 14px;
+    }
+    .section-sub { color: var(--ink-dim); max-width: 680px; line-height: 1.7; font-size: 0.98rem; }
+
+    /* ===== Hero ===== */
+    .hero {
+      padding: 172px 0 96px;
+      text-align: center;
+    }
+    .hero-logo {
+      width: 128px; height: 128px;
+      margin: 0 auto 30px;
+      filter: drop-shadow(0 24px 70px rgba(79, 216, 255, 0.32));
+      animation: float 5s ease-in-out infinite;
+    }
+    .hero-logo img { width: 100%; height: 100%; display: block; }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+    .hero h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(2.1rem, 6vw, 3.6rem);
+      font-weight: 700; line-height: 1.16;
+      max-width: 880px; margin: 0 auto;
+      background: linear-gradient(180deg, #ffffff 0%, #b7d3ff 70%, #7fa8e8 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero .lede {
+      margin: 22px auto 0;
+      max-width: 640px;
+      color: var(--ink-dim);
+      font-size: 1.02rem; line-height: 1.75;
+    }
+    .hero-divider {
+      width: 120px; height: 1px;
+      margin: 38px auto;
+      background: linear-gradient(90deg, transparent, rgba(227, 191, 111, 0.7), transparent);
+      position: relative;
+    }
+    .hero-divider::after {
+      content: '';
+      position: absolute; left: 50%; top: 50%;
+      width: 5px; height: 5px;
+      transform: translate(-50%, -50%) rotate(45deg);
+      background: var(--ds-accent);
+      box-shadow: 0 0 12px var(--ds-accent);
+    }
+    .hero-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+    .hero-strip {
+      margin-top: 58px;
+      display: flex; justify-content: center; gap: 10px 26px; flex-wrap: wrap;
+      color: var(--ink-faint);
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.74rem; font-weight: 500;
+      letter-spacing: 0.22em; text-transform: uppercase;
+    }
+    .hero-strip span { display: inline-flex; align-items: center; gap: 8px; }
+    .hero-strip span::before {
+      content: '';
+      width: 4px; height: 4px; transform: rotate(45deg);
+      background: rgba(227, 191, 111, 0.6);
+    }
+
+    /* ===== Cards ===== */
+    .card-grid {
+      margin-top: 44px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+    }
+    .sol-card {
+      position: relative; overflow: hidden;
+      background:
+        radial-gradient(130% 110% at 100% 0%, var(--card-glow), transparent 62%),
+        var(--card-bg);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 26px 26px 24px;
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .sol-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--tile-accent, #7fb2ff) 0%, transparent 88%);
+      opacity: 0.9;
+    }
+    .sol-card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(127, 178, 255, 0.4);
+      box-shadow: 0 14px 34px rgba(2, 8, 23, 0.5);
+    }
+    .sol-card .glyph {
+      width: 44px; height: 44px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(127, 178, 255, 0.06);
+      margin-bottom: 18px;
+      color: var(--tile-accent, #7fb2ff);
+    }
+    .sol-card .glyph svg { width: 22px; height: 22px; }
+    .sol-card h3 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.08rem; font-weight: 600;
+      color: #fff; margin-bottom: 10px;
+    }
+    .sol-card p { color: var(--ink-dim); font-size: 0.9rem; line-height: 1.65; }
+    .sol-card .card-tag {
+      display: inline-block;
+      margin-top: 16px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.64rem; font-weight: 600;
+      letter-spacing: 0.16em; text-transform: uppercase;
+      color: var(--tile-accent, #7fb2ff);
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      padding: 4px 12px;
+      opacity: 0.85;
+    }
+
+    /* ===== Expandable solution tabs ===== */
+    .sol-card { cursor: pointer; }
+    .sol-card .sol-caret {
+      position: absolute; top: 24px; right: 22px;
+      width: 26px; height: 26px;
+      display: flex; align-items: center; justify-content: center;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--tile-accent, #7fb2ff);
+      font-size: 0.72rem;
+      transition: transform 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+    }
+    .sol-card.open .sol-caret {
+      transform: rotate(180deg);
+      border-color: var(--tile-accent, #7fb2ff);
+      background: rgba(127, 178, 255, 0.08);
+    }
+    .sol-card.open {
+      border-color: var(--tile-accent, #7fb2ff);
+      box-shadow: 0 14px 34px rgba(2, 8, 23, 0.5);
+    }
+    .sol-detail {
+      max-height: 0;
+      overflow: hidden;
+      opacity: 0;
+      transition: max-height 0.45s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.35s ease, margin-top 0.35s ease;
+      margin-top: 0;
+    }
+    .sol-card.open .sol-detail {
+      max-height: 420px;
+      opacity: 1;
+      margin-top: 18px;
+    }
+    .sol-detail .sol-detail-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.68rem; font-weight: 600;
+      letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--tile-accent, #7fb2ff);
+      margin-bottom: 10px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .sol-detail .sol-detail-title::after {
+      content: '';
+      flex: 1; height: 1px;
+      background: linear-gradient(90deg, var(--line), transparent);
+    }
+    .sol-detail ul { list-style: none; }
+    .sol-detail li {
+      position: relative;
+      padding: 6px 0 6px 20px;
+      color: var(--ink-dim);
+      font-size: 0.84rem; line-height: 1.55;
+    }
+    .sol-detail li::before {
+      content: '';
+      position: absolute; left: 2px; top: 12px;
+      width: 5px; height: 5px; transform: rotate(45deg);
+      background: var(--tile-accent, #7fb2ff);
+      opacity: 0.75;
+    }
+    .sol-detail .sol-walkthrough {
+      display: inline-flex; align-items: center; gap: 8px;
+      margin-top: 12px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.76rem; font-weight: 600;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--ds-accent);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(227, 191, 111, 0.4);
+      padding-bottom: 3px;
+      transition: color 0.2s ease, border-color 0.2s ease;
+    }
+    .sol-detail .sol-walkthrough:hover {
+      color: var(--ds-accent-strong);
+      border-color: var(--ds-accent-strong);
+    }
+    .card-grid > *:nth-child(6n + 1) { --tile-accent: #4fd8ff; }
+    .card-grid > *:nth-child(6n + 2) { --tile-accent: #7fb2ff; }
+    .card-grid > *:nth-child(6n + 3) { --tile-accent: #9d8cff; }
+    .card-grid > *:nth-child(6n + 4) { --tile-accent: #6fe0b8; }
+    .card-grid > *:nth-child(6n + 5) { --tile-accent: #ffbe76; }
+    .card-grid > *:nth-child(6n + 6) { --tile-accent: #e3bf6f; }
+
+    /* ===== Crown section ===== */
+    .crown-section {
+      position: relative;
+    }
+    .crown-grid {
+      margin-top: 44px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 16px;
+    }
+    .crown-card {
+      position: relative; overflow: hidden;
+      background:
+        radial-gradient(140% 120% at 100% 0%, rgba(227, 191, 111, 0.12), transparent 60%),
+        var(--card-bg);
+      border: 1px solid rgba(227, 191, 111, 0.35);
+      border-radius: 16px;
+      padding: 28px 26px 26px;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    .crown-card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(247, 226, 160, 0.65);
+      box-shadow: 0 16px 44px rgba(227, 191, 111, 0.16);
+    }
+    .crown-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--ds-accent-strong), var(--ds-accent) 55%, transparent 95%);
+    }
+    .crown-card .crown-mark {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.68rem; font-weight: 600;
+      letter-spacing: 0.3em; text-transform: uppercase;
+      color: var(--ds-accent);
+      margin-bottom: 16px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .crown-card .crown-mark::before {
+      content: '';
+      width: 22px; height: 1px;
+      background: linear-gradient(90deg, var(--ds-accent), transparent);
+    }
+    .crown-card h3 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.22rem; font-weight: 600;
+      color: var(--ds-accent-strong);
+      margin-bottom: 12px;
+    }
+    .crown-card p { color: var(--ink-dim); font-size: 0.9rem; line-height: 1.7; }
+    .crown-note {
+      margin-top: 30px;
+      display: flex; align-items: flex-start; gap: 12px;
+      color: var(--ink-faint);
+      font-size: 0.82rem; line-height: 1.65;
+      border: 1px dashed rgba(227, 191, 111, 0.35);
+      border-radius: 12px;
+      padding: 16px 18px;
+      max-width: 760px;
+    }
+    .crown-note svg { width: 18px; height: 18px; flex: none; margin-top: 1px; color: var(--ds-accent); }
+
+    /* ===== Audience split ===== */
+    .audience-grid {
+      margin-top: 44px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 16px;
+    }
+    .aud-card {
+      background:
+        radial-gradient(130% 110% at 0% 0%, var(--card-glow), transparent 62%),
+        var(--card-bg);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 30px 28px;
+    }
+    .aud-card h3 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.2rem; font-weight: 600; color: #fff;
+      margin-bottom: 6px;
+    }
+    .aud-card .aud-sub { color: var(--ink-faint); font-size: 0.84rem; margin-bottom: 20px; }
+    .aud-card ul { list-style: none; }
+    .aud-card li {
+      position: relative;
+      padding: 9px 0 9px 26px;
+      color: var(--ink-dim);
+      font-size: 0.9rem; line-height: 1.55;
+      border-bottom: 1px solid rgba(127, 178, 255, 0.08);
+    }
+    .aud-card li:last-child { border-bottom: none; }
+    .aud-card li::before {
+      content: '';
+      position: absolute; left: 4px; top: 16px;
+      width: 6px; height: 6px; transform: rotate(45deg);
+      background: var(--ds-accent);
+      opacity: 0.75;
+    }
+
+    /* ===== Invitation band ===== */
+    .invite-band {
+      margin-top: 10px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background:
+        radial-gradient(700px 300px at 85% -20%, rgba(21, 68, 155, 0.5), transparent 65%),
+        radial-gradient(500px 260px at 5% 120%, rgba(227, 191, 111, 0.08), transparent 60%),
+        var(--card-bg);
+      padding: 46px 40px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 26px; flex-wrap: wrap;
+    }
+    .invite-band h3 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.4rem; font-weight: 600; color: #fff;
+      margin-bottom: 8px;
+    }
+    .invite-band p { color: var(--ink-dim); font-size: 0.92rem; line-height: 1.65; max-width: 560px; }
+
+    /* ===== Contact / demo form ===== */
+    .contact-panel {
+      margin-top: 44px;
+      display: grid;
+      grid-template-columns: minmax(280px, 5fr) minmax(340px, 7fr);
+      gap: 18px;
+    }
+    .contact-side {
+      background:
+        radial-gradient(130% 110% at 0% 0%, var(--card-glow), transparent 62%),
+        var(--card-bg);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 32px 28px;
+      display: flex; flex-direction: column; gap: 20px;
+    }
+    .contact-side h3 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.16rem; font-weight: 600; color: #fff;
+    }
+    .contact-side p { color: var(--ink-dim); font-size: 0.88rem; line-height: 1.7; }
+    .contact-points { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+    .contact-points li {
+      display: flex; gap: 12px; align-items: flex-start;
+      color: var(--ink-dim); font-size: 0.86rem; line-height: 1.6;
+    }
+    .contact-points svg { width: 17px; height: 17px; flex: none; margin-top: 2px; color: var(--ds-accent); }
+    .contact-form {
+      background:
+        radial-gradient(130% 110% at 100% 0%, var(--card-glow), transparent 62%),
+        var(--card-bg);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 32px 28px;
+    }
+    .type-toggle {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px;
+      margin-bottom: 24px;
+      background: rgba(6, 13, 31, 0.5);
+    }
+    .type-toggle button {
+      border: none; cursor: pointer;
+      background: transparent;
+      color: var(--ink-dim);
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.78rem; font-weight: 600;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      padding: 9px 22px;
+      border-radius: 999px;
+      transition: all 0.2s ease;
+    }
+    .type-toggle button.active {
+      background: linear-gradient(135deg, var(--ds-accent-strong) 0%, var(--ds-accent) 100%);
+      color: #071022;
+      box-shadow: 0 4px 14px var(--ds-accent-shadow);
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .form-field { display: flex; flex-direction: column; gap: 7px; }
+    .form-field.full { grid-column: 1 / -1; }
+    .form-field label {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.7rem; font-weight: 600;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+    .form-field label .req { color: var(--ds-accent); }
+    .form-field input,
+    .form-field select,
+    .form-field textarea {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.92rem;
+      color: var(--ink);
+      background: rgba(6, 13, 31, 0.6);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 14px;
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      width: 100%;
+    }
+    .form-field select option { background: #0a1530; color: var(--ink); }
+    .form-field textarea { resize: vertical; min-height: 110px; }
+    .form-field input:focus,
+    .form-field select:focus,
+    .form-field textarea:focus {
+      border-color: rgba(227, 191, 111, 0.6);
+      box-shadow: 0 0 0 3px rgba(227, 191, 111, 0.12);
+    }
+    .form-actions { margin-top: 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .form-hint { color: var(--ink-faint); font-size: 0.78rem; line-height: 1.5; max-width: 320px; }
+    .form-status {
+      margin-top: 18px;
+      padding: 14px 16px;
+      border-radius: 10px;
+      font-size: 0.88rem; line-height: 1.6;
+      display: none;
+    }
+    .form-status.ok {
+      display: block;
+      background: rgba(111, 224, 184, 0.1);
+      border: 1px solid rgba(111, 224, 184, 0.4);
+      color: #9befd4;
+    }
+    .form-status.err {
+      display: block;
+      background: rgba(255, 138, 128, 0.08);
+      border: 1px solid rgba(255, 138, 128, 0.4);
+      color: #ffb3ab;
+    }
+    .form-status .ref { font-family: 'Space Grotesk', monospace; letter-spacing: 0.08em; color: var(--ds-accent-strong); }
+
+    /* ===== Footer ===== */
+    .landing-footer {
+      position: relative; z-index: 1;
+      padding: 34px 24px;
+      border-top: 1px solid var(--line);
+    }
+    .footer-inner {
+      max-width: 1160px; margin: 0 auto;
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 16px; flex-wrap: wrap;
+    }
+    .footer-copyright { color: var(--ink-dim); font-size: 0.82rem; letter-spacing: 0.18em; }
+    .footer-links { display: flex; gap: 20px; flex-wrap: wrap; }
+    .footer-links a {
+      color: var(--ink-faint); text-decoration: none; font-size: 0.82rem;
+      transition: color 0.2s ease;
+    }
+    .footer-links a:hover { color: var(--ds-accent); }
+
+    /* Entrance choreography */
+    .rise { opacity: 0; transform: translateY(22px); animation: rise-in 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) forwards; }
+    .rise.d1 { animation-delay: 0.12s; }
+    .rise.d2 { animation-delay: 0.24s; }
+    .rise.d3 { animation-delay: 0.36s; }
+    .rise.d4 { animation-delay: 0.48s; }
+    @keyframes rise-in { to { opacity: 1; transform: translateY(0); } }
+    .reveal { opacity: 0; transform: translateY(26px); transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1); }
+    .reveal.in { opacity: 1; transform: translateY(0); }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .backdrop::after, .hero-logo, .rise { animation: none; }
+      .rise { opacity: 1; transform: none; }
+      .reveal { opacity: 1; transform: none; transition: none; }
+    }
+    @media screen and (max-width: 900px) {
+      .contact-panel { grid-template-columns: 1fr; }
+      .top-nav a.nav-item { display: none; }
+    }
+    @media screen and (max-width: 600px) {
+      .header-inner { padding: 12px 18px; }
+      .logo-text { letter-spacing: 0.22em; font-size: 1.1rem; }
+      section { padding: 60px 0; }
+      .hero { padding: 140px 0 70px; }
+      .form-grid { grid-template-columns: 1fr; }
+      .invite-band { padding: 32px 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="backdrop" aria-hidden="true"></div>
+
+  <!-- Header -->
+  <header class="landing-header">
+    <div class="header-inner">
+      <a href="/" class="logo">
+        <div class="logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem"></div>
+        <span class="logo-text">PHINS</span>
+      </a>
+      <nav class="top-nav">
+        <a href="#solutions" class="nav-item">Solutions</a>
+        <a href="#crown" class="nav-item">The Edge</a>
+        <a href="#audience" class="nav-item">Who It Serves</a>
+        <a href="#contact" class="nav-item">Contact</a>
+        <a href="/login.html" class="btn-gold">Login</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- ===== Hero ===== -->
+    <section class="hero wrap">
+      <div class="hero-logo rise"><img src="/phins-logo.svg" alt="PHINS emblem"></div>
+      <h1 class="rise d1">The AI-native platform where insurance is underwritten, assessed, billed, invested and settled — end to end.</h1>
+      <p class="lede rise d2">
+        PHINS unifies underwriting, assessments, billing, claims and actuarial
+        investment operations on one intelligent platform — built for
+        individuals, enterprises and the partners who serve them.
+      </p>
+      <div class="hero-divider rise d3"></div>
+      <div class="hero-actions rise d4">
+        <a href="#contact" class="btn-gold" data-inquiry="demo">Request a Demo</a>
+        <a href="#solutions" class="btn-ghost">Explore Solutions</a>
+      </div>
+      <div class="hero-strip rise d4" aria-label="Platform pillars">
+        <span>Underwriting</span>
+        <span>Assessments</span>
+        <span>Billing</span>
+        <span>Claims</span>
+        <span>Actuary &amp; Investments</span>
+      </div>
+    </section>
+
+    <!-- ===== Solutions ===== -->
+    <section id="solutions">
+      <div class="wrap">
+        <div class="reveal">
+          <div class="kicker">Solutions</div>
+          <h2 class="section-title">One platform. Every stage of the policy lifecycle.</h2>
+          <p class="section-sub">
+            Each pillar below is a live, working surface of the PHINS platform.
+            We publish the outline — the depth is demonstrated in person.
+          </p>
+        </div>
+        <div class="card-grid">
+          <div class="sol-card reveal" data-interest="underwriting" role="button" tabindex="0" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▾</span>
+            <div class="glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l7 4v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-4z"/><path d="M9 12l2 2 4-4"/></svg>
+            </div>
+            <h3>AI-Assisted Underwriting</h3>
+            <p>
+              Applications move through a structured underwriting workbench where
+              risk signals, demographics and policy terms are evaluated with
+              AI-assisted decision support — keeping the underwriter in command
+              of every approval.
+            </p>
+            <span class="card-tag">Individuals &amp; Enterprises</span>
+            <div class="sol-detail">
+              <div class="sol-detail-title">Inside the solution</div>
+              <ul>
+                <li>Guided digital application intake feeding a live underwriting pipeline</li>
+                <li>AI-assisted risk evaluation aware of demographics and policy terms</li>
+                <li>An underwriter decision workbench — approval authority stays human</li>
+                <li>Premium pricing connected to actuarial parameters at the point of decision</li>
+              </ul>
+              <a href="#contact" class="sol-walkthrough" data-walkthrough="underwriting">Request a walkthrough →</a>
+            </div>
+          </div>
+          <div class="sol-card reveal" data-interest="assessments" role="button" tabindex="0" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▾</span>
+            <div class="glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+            </div>
+            <h3>Assessment Center</h3>
+            <p>
+              A dedicated assessment environment builds a 360° customer view from
+              imported facts and documents, producing risk-aware insights that
+              feed underwriting, servicing and portfolio decisions.
+            </p>
+            <span class="card-tag">Decision Intelligence</span>
+            <div class="sol-detail">
+              <div class="sol-detail-title">Inside the solution</div>
+              <ul>
+                <li>360° customer view assembled from imported facts and documents</li>
+                <li>Risk-level classification feeding underwriting and servicing decisions</li>
+                <li>Assessment records that keep every decision loop auditable</li>
+              </ul>
+              <a href="#contact" class="sol-walkthrough" data-walkthrough="assessments">Request a walkthrough →</a>
+            </div>
+          </div>
+          <div class="sol-card reveal" data-interest="billing" role="button" tabindex="0" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▾</span>
+            <div class="glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>
+            </div>
+            <h3>Billing &amp; Payments</h3>
+            <p>
+              Premium billing, payment collection and auto-pay scheduling run on
+              an integrated billing engine with full accounting alignment — so
+              every charge reconciles, every time.
+            </p>
+            <span class="card-tag">Automated Operations</span>
+            <div class="sol-detail">
+              <div class="sol-detail-title">Inside the solution</div>
+              <ul>
+                <li>Premium billing engine aligned with the accounting ledger</li>
+                <li>Flexible payment methods with monthly auto-pay scheduling</li>
+                <li>Reconciliation designed so every charge stays traceable</li>
+              </ul>
+              <a href="#contact" class="sol-walkthrough" data-walkthrough="billing">Request a walkthrough →</a>
+            </div>
+          </div>
+          <div class="sol-card reveal" data-interest="claims" role="button" tabindex="0" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▾</span>
+            <div class="glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6z"/><path d="M14 3v6h6"/><path d="M9 14l2 2 4-4"/></svg>
+            </div>
+            <h3>Claims Management</h3>
+            <p>
+              Claims intake, adjudication and settlement flow through a
+              transparent pipeline with document handling and adjuster
+              dashboards — built for speed without sacrificing control.
+            </p>
+            <span class="card-tag">Straight-Through Processing</span>
+            <div class="sol-detail">
+              <div class="sol-detail-title">Inside the solution</div>
+              <ul>
+                <li>Structured claims intake with integrated document handling</li>
+                <li>Adjuster dashboards for review and adjudication</li>
+                <li>Settlement approval flow with clear separation of duties</li>
+              </ul>
+              <a href="#contact" class="sol-walkthrough" data-walkthrough="claims">Request a walkthrough →</a>
+            </div>
+          </div>
+          <div class="sol-card reveal" data-interest="actuarial_investments" role="button" tabindex="0" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▾</span>
+            <div class="glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg>
+            </div>
+            <h3>Actuarial &amp; Investments</h3>
+            <p>
+              Actuarial tables, reserve modeling and simulation tooling sit
+              beside savings and investment portfolio management — connecting
+              the pricing of risk to the performance of capital.
+            </p>
+            <span class="card-tag">Capital Intelligence</span>
+            <div class="sol-detail">
+              <div class="sol-detail-title">Inside the solution</div>
+              <ul>
+                <li>Actuarial tables, reserve forecasting and portfolio simulations</li>
+                <li>Pricing parameters managed as first-class platform data</li>
+                <li>Savings and investment allocation connected to coverage</li>
+              </ul>
+              <a href="#contact" class="sol-walkthrough" data-walkthrough="actuarial_investments">Request a walkthrough →</a>
+            </div>
+          </div>
+          <div class="sol-card reveal" data-interest="platform" role="button" tabindex="0" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▾</span>
+            <div class="glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            </div>
+            <h3>Trust, Security &amp; Auditability</h3>
+            <p>
+              Defense-in-depth security, role-scoped access and tamper-evident
+              event trails run underneath every workflow — the platform is built
+              to be examined.
+            </p>
+            <span class="card-tag">Integrity by Design</span>
+            <div class="sol-detail">
+              <div class="sol-detail-title">Inside the solution</div>
+              <ul>
+                <li>Role-scoped access across every operations desk</li>
+                <li>Layered network and request defenses</li>
+                <li>Tamper-evident event trails built for examination</li>
+              </ul>
+              <a href="#contact" class="sol-walkthrough" data-walkthrough="platform">Request a walkthrough →</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Crown ===== -->
+    <section id="crown" class="crown-section">
+      <div class="wrap">
+        <div class="reveal">
+          <div class="kicker">The Jeweled Crown</div>
+          <h2 class="section-title">Where PHINS goes beyond the market.</h2>
+          <p class="section-sub">
+            Three capabilities crown the platform. We describe them in outline
+            only — the working depth is reserved for qualified conversations.
+          </p>
+        </div>
+        <div class="crown-grid">
+          <div class="crown-card reveal">
+            <div class="crown-mark">Crown Capability</div>
+            <h3>Smart Contracts Development</h3>
+            <p>
+              Programmable, ledger-anchored agreements bring verifiable execution
+              to insurance and marketplace flows — signatures, settlements and
+              entitlements recorded on tamper-evident rails.
+            </p>
+          </div>
+          <div class="crown-card reveal">
+            <div class="crown-mark">Crown Capability</div>
+            <h3>MGA Solutions</h3>
+            <p>
+              A managing-general-agent operating layer for insurers and program
+              partners: distribution, underwriting authority, supplier and agent
+              ecosystems — orchestrated from a single platform.
+            </p>
+          </div>
+          <div class="crown-card reveal">
+            <div class="crown-mark">Crown Capability</div>
+            <h3>Actuarial Force</h3>
+            <p>
+              An actuarial engine-room where pricing kernels, reserve forecasts
+              and portfolio simulations are first-class platform citizens — not
+              spreadsheets at the edge of the business.
+            </p>
+          </div>
+        </div>
+        <div class="crown-note reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+          <span>
+            This page intentionally shares outlines, not implementations. Deeper
+            technical and commercial materials are made available to qualified
+            investors and partners under NDA.
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Audience ===== -->
+    <section id="audience">
+      <div class="wrap">
+        <div class="reveal">
+          <div class="kicker">Who It Serves</div>
+          <h2 class="section-title">Built for individuals. Engineered for enterprises.</h2>
+        </div>
+        <div class="audience-grid">
+          <div class="aud-card reveal">
+            <h3>For Individuals</h3>
+            <div class="aud-sub">A personal insurance experience that respects your time and your data.</div>
+            <ul>
+              <li>A self-service client portal for policies, claims and documents</li>
+              <li>Transparent billing with flexible payment and auto-pay options</li>
+              <li>Savings and investment allocation connected to your coverage</li>
+              <li>AI-assisted guidance across application and servicing journeys</li>
+            </ul>
+          </div>
+          <div class="aud-card reveal">
+            <h3>For Enterprises &amp; Partners</h3>
+            <div class="aud-sub">Operate insurance programs, not just policies.</div>
+            <ul>
+              <li>Role-based operations desks: underwriting, claims, billing, actuary, accounting</li>
+              <li>MGA and program-partner tooling with supplier and agent ecosystems</li>
+              <li>BI analytics and portfolio views for management and oversight</li>
+              <li>Audit-ready event trails and security controls across every workflow</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Invitation ===== -->
+    <section id="invitation" style="padding-top: 0;">
+      <div class="wrap">
+        <div class="invite-band reveal">
+          <div>
+            <h3>An open invitation — with the edge kept sharp.</h3>
+            <p>
+              Viewers, investors and business collaborators are welcome to see
+              the platform in motion. We demonstrate live, we answer directly,
+              and we keep the deep intellectual property where it belongs:
+              behind the demo, under NDA.
+            </p>
+          </div>
+          <a href="#contact" class="btn-gold" data-inquiry="demo">Book a Live Demo</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Contact / Demo ===== -->
+    <section id="contact" style="padding-top: 40px;">
+      <div class="wrap">
+        <div class="reveal">
+          <div class="kicker">Business Relations</div>
+          <h2 class="section-title">Start the conversation.</h2>
+          <p class="section-sub">
+            Tell us who you are and what you want to see. Your inquiry goes
+            straight to the PHINS business relations desk — nothing more is
+            collected than what you type here.
+          </p>
+        </div>
+        <div class="contact-panel">
+          <div class="contact-side reveal">
+            <h3>What happens next</h3>
+            <ul class="contact-points">
+              <li>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+                <span>Your inquiry is registered with a reference ID and reviewed by our team.</span>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+                <span>We reply personally — no automated funnels, no mailing lists.</span>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                <span>Demos are live and interactive; deeper materials follow under NDA.</span>
+              </li>
+            </ul>
+            <p>
+              Prefer to keep it brief? Choose <strong>Contact</strong>. Want to
+              see the platform working? Choose <strong>Demo</strong> and tell us
+              which solution area interests you most.
+            </p>
+          </div>
+          <form class="contact-form reveal" id="inquiry-form" novalidate>
+            <div class="type-toggle" role="tablist" aria-label="Inquiry type">
+              <button type="button" id="toggle-contact" class="active" aria-selected="true">Contact</button>
+              <button type="button" id="toggle-demo" aria-selected="false">Demo Request</button>
+            </div>
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="inq-name">Full Name <span class="req">*</span></label>
+                <input type="text" id="inq-name" name="name" maxlength="100" autocomplete="name" required>
+              </div>
+              <div class="form-field">
+                <label for="inq-email">Email <span class="req">*</span></label>
+                <input type="email" id="inq-email" name="email" maxlength="254" autocomplete="email" required>
+              </div>
+              <div class="form-field">
+                <label for="inq-organization">Organization</label>
+                <input type="text" id="inq-organization" name="organization" maxlength="150" autocomplete="organization">
+              </div>
+              <div class="form-field">
+                <label for="inq-audience">I am a… <span class="req">*</span></label>
+                <select id="inq-audience" name="audience" required>
+                  <option value="" disabled selected>Select…</option>
+                  <option value="individual">Individual</option>
+                  <option value="enterprise">Enterprise</option>
+                  <option value="investor">Investor</option>
+                  <option value="partner">Business Partner</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div class="form-field full">
+                <label for="inq-interest">Primary Interest <span class="req">*</span></label>
+                <select id="inq-interest" name="interest" required>
+                  <option value="" disabled selected>Select a solution area…</option>
+                  <option value="underwriting">AI-Assisted Underwriting</option>
+                  <option value="assessments">Assessment Center</option>
+                  <option value="billing">Billing &amp; Payments</option>
+                  <option value="claims">Claims Management</option>
+                  <option value="actuarial_investments">Actuarial &amp; Investments</option>
+                  <option value="smart_contracts">Smart Contracts Development</option>
+                  <option value="mga_solutions">MGA Solutions</option>
+                  <option value="platform">The Platform Overall</option>
+                </select>
+              </div>
+              <div class="form-field full">
+                <label for="inq-message">Message</label>
+                <textarea id="inq-message" name="message" maxlength="2000" placeholder="Tell us what you'd like to see or discuss…"></textarea>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn-gold" id="inq-submit">Send Inquiry</button>
+              <span class="form-hint">
+                Only the fields above are transmitted. We never resell or share
+                your contact details.
+              </span>
+            </div>
+            <div class="form-status" id="inq-status" role="status" aria-live="polite"></div>
+          </form>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="landing-footer">
+    <div class="footer-inner">
+      <p class="footer-copyright">&copy; 2026 PHINS — Safe Assurance</p>
+      <nav class="footer-links">
+        <a href="/">Home</a>
+        <a href="/login.html">Login</a>
+        <a href="/privacy-policy.html">Privacy Policy</a>
+        <a href="/terms-of-use.html">Terms of Use</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script>
+    // ===== Scroll reveal =====
+    (function initReveal() {
+      var els = document.querySelectorAll('.reveal');
+      if (!('IntersectionObserver' in window)) {
+        els.forEach(function (el) { el.classList.add('in'); });
+        return;
+      }
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('in');
+            io.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.12 });
+      els.forEach(function (el) { io.observe(el); });
+    })();
+
+    // ===== Expandable solution tabs =====
+    (function initSolutionTabs() {
+      var cards = document.querySelectorAll('.sol-card[data-interest]');
+      function setOpen(card, open) {
+        card.classList.toggle('open', open);
+        card.setAttribute('aria-expanded', String(open));
+      }
+      cards.forEach(function (card) {
+        card.addEventListener('click', function (e) {
+          if (e.target.closest('.sol-walkthrough')) return; // link handles itself
+          var isOpen = card.classList.contains('open');
+          cards.forEach(function (c) { setOpen(c, false); }); // accordion
+          setOpen(card, !isOpen);
+        });
+        card.addEventListener('keydown', function (e) {
+          if (e.target.closest('.sol-walkthrough')) return; // link handles itself
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            card.click();
+          }
+        });
+      });
+    })();
+
+    // "Request a walkthrough" links preselect the demo tab + interest area.
+    document.querySelectorAll('[data-walkthrough]').forEach(function (link) {
+      link.addEventListener('click', function () {
+        setInquiryType('demo');
+        var interestSelect = document.getElementById('inq-interest');
+        if (interestSelect) interestSelect.value = link.getAttribute('data-walkthrough');
+      });
+    });
+
+    // ===== Inquiry type toggle =====
+    var inquiryType = 'contact';
+    var toggleContact = document.getElementById('toggle-contact');
+    var toggleDemo = document.getElementById('toggle-demo');
+    function setInquiryType(type) {
+      inquiryType = type;
+      var isDemo = type === 'demo';
+      toggleContact.classList.toggle('active', !isDemo);
+      toggleDemo.classList.toggle('active', isDemo);
+      toggleContact.setAttribute('aria-selected', String(!isDemo));
+      toggleDemo.setAttribute('aria-selected', String(isDemo));
+      document.getElementById('inq-submit').textContent = isDemo ? 'Request Demo' : 'Send Inquiry';
+    }
+    toggleContact.addEventListener('click', function () { setInquiryType('contact'); });
+    toggleDemo.addEventListener('click', function () { setInquiryType('demo'); });
+
+    // Hero / invite "demo" CTAs preselect the demo tab.
+    document.querySelectorAll('[data-inquiry="demo"]').forEach(function (el) {
+      el.addEventListener('click', function () { setInquiryType('demo'); });
+    });
+
+    // ===== Form submission =====
+    var form = document.getElementById('inquiry-form');
+    var statusBox = document.getElementById('inq-status');
+    function showStatus(kind, html) {
+      statusBox.className = 'form-status ' + kind;
+      statusBox.innerHTML = html;
+    }
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      statusBox.className = 'form-status';
+      statusBox.innerHTML = '';
+
+      var name = document.getElementById('inq-name').value.trim();
+      var email = document.getElementById('inq-email').value.trim();
+      var audience = document.getElementById('inq-audience').value;
+      var interest = document.getElementById('inq-interest').value;
+
+      if (name.length < 2) { showStatus('err', 'Please enter your full name.'); return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { showStatus('err', 'Please enter a valid email address.'); return; }
+      if (!audience) { showStatus('err', 'Please tell us who you are.'); return; }
+      if (!interest) { showStatus('err', 'Please choose a primary interest.'); return; }
+
+      var payload = {
+        inquiry_type: inquiryType,
+        name: name,
+        email: email,
+        organization: document.getElementById('inq-organization').value.trim(),
+        audience: audience,
+        interest: interest,
+        message: document.getElementById('inq-message').value.trim()
+      };
+
+      var submitBtn = document.getElementById('inq-submit');
+      var originalLabel = submitBtn.textContent;
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Sending…';
+      try {
+        var res = await fetch('/api/business/inquiries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        var data = await res.json().catch(function () { return {}; });
+        if (res.ok && data.success) {
+          var refId = (data.inquiry && data.inquiry.id) || '';
+          var note = data.duplicate
+            ? 'We already have your request on file — our team will be in touch shortly.'
+            : 'Thank you — our business relations team will contact you shortly.';
+          showStatus('ok', note + (refId ? ' Your reference: <span class="ref">' + refId + '</span>' : ''));
+          if (!data.duplicate) form.reset();
+        } else {
+          showStatus('err', (data && data.error) ? data.error : 'Something went wrong. Please try again.');
+        }
+      } catch (err) {
+        showStatus('err', 'Network error — please try again in a moment.');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalLabel;
+      }
+    });
+  </script>
+</body>
+</html>

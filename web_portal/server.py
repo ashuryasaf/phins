@@ -8289,6 +8289,36 @@ except ImportError as e:
 SUPPLIER_INVITATIONS: Dict[str, Dict[str, Any]] = {}  # code -> invitation data
 SUPPLY_CHAIN_LEDGER: Dict[str, Dict[str, Any]] = {}  # entry_id -> ledger entry
 
+# ============ BUSINESS RELATIONS (public solutions-page inquiries) ============
+# Contact + demo inquiries submitted from the public /solutions.html intro page.
+# Reviewed by admins in the "Business Relations" bar of the admin portal.
+# Records hold only what the visitor typed (no IP / fingerprinting) and a
+# status history so every state change stays traceable.
+BUSINESS_INQUIRIES: Dict[str, Dict[str, Any]] = {}  # inquiry_id -> inquiry data
+
+BUSINESS_INQUIRY_TYPES = ('contact', 'demo')
+BUSINESS_INQUIRY_AUDIENCES = ('individual', 'enterprise', 'investor', 'partner', 'other')
+# Interest areas mirror the platform's actual solution surfaces (public outline
+# only; nothing here exposes internal implementation detail).
+BUSINESS_INQUIRY_INTERESTS = (
+    'underwriting',
+    'assessments',
+    'billing',
+    'claims',
+    'actuarial_investments',
+    'smart_contracts',
+    'mga_solutions',
+    'platform',
+)
+BUSINESS_INQUIRY_STATUSES = ('new', 'contacted', 'qualified', 'closed')
+
+
+def generate_business_inquiry_id() -> str:
+    """Generate a unique business-relations inquiry ID (BRI prefix)."""
+    timestamp = datetime.now().strftime('%Y%m')
+    random_part = secrets.token_hex(4).upper()
+    return f"BRI-{timestamp}-{random_part}"
+
 supply_chain_service = None
 supply_chain_enabled = False
 try:
@@ -17867,6 +17897,50 @@ For claims or questions, please contact:
         # ============ ADMIN SUPPLIER MANAGEMENT ENDPOINTS ============
         
         # Admin: List all suppliers (with filters)
+        # Admin: Business Relations — list public contact/demo inquiries
+        if path == '/api/admin/business-inquiries':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+
+            status_filter = (qs.get('status', [None])[0] or '').strip().lower() or None
+            audience_filter = (qs.get('audience', [None])[0] or '').strip().lower() or None
+            interest_filter = (qs.get('interest', [None])[0] or '').strip().lower() or None
+            type_filter = (qs.get('inquiry_type', [None])[0] or '').strip().lower() or None
+            search = (qs.get('search', [None])[0] or '').strip().lower() or None
+
+            with STATE_LOCK:
+                items = [dict(rec) for rec in BUSINESS_INQUIRIES.values()]
+
+            if status_filter:
+                statuses = [st.strip() for st in status_filter.split(',')]
+                items = [i for i in items if i.get('status') in statuses]
+            if audience_filter:
+                items = [i for i in items if i.get('audience') == audience_filter]
+            if interest_filter:
+                items = [i for i in items if i.get('interest') == interest_filter]
+            if type_filter:
+                items = [i for i in items if i.get('inquiry_type') == type_filter]
+            if search:
+                items = [
+                    i for i in items
+                    if search in (i.get('name', '') or '').lower()
+                    or search in (i.get('email', '') or '').lower()
+                    or search in (i.get('organization', '') or '').lower()
+                ]
+
+            items = sorted(items, key=lambda x: x.get('created_at', ''), reverse=True)
+            new_count = sum(1 for i in items if i.get('status') == 'new')
+
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'items': items,
+                'total': len(items),
+                'new_count': new_count,
+            }).encode('utf-8'))
+            return
+
         if path == '/api/admin/suppliers':
             if not require_role(session, ['admin']):
                 self._set_json_headers(403)
@@ -29091,6 +29165,172 @@ For claims or questions, please contact:
                     self._set_json_headers(500)
                     self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
                     return
+
+        # =====================================================================
+        # BUSINESS RELATIONS - public contact / demo inquiry intake (POST)
+        # Submitted from the public /solutions.html intro page. No auth needed;
+        # rate limiting + firewall checks above already apply. Only whitelisted,
+        # sanitized fields are stored to keep the record integrity flawless.
+        # =====================================================================
+        if path == '/api/business/inquiries':
+            try:
+                length = int(self.headers.get('Content-Length', 0) or 0)
+            except (TypeError, ValueError):
+                length = 0
+            raw_body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                inquiry_body = json.loads(raw_body) if raw_body else {}
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            if not isinstance(inquiry_body, dict):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request body'}).encode('utf-8'))
+                return
+
+            name = sanitize_input(str(inquiry_body.get('name') or ''), 100)
+            email = sanitize_input(str(inquiry_body.get('email') or ''), 254).lower()
+            organization = sanitize_input(str(inquiry_body.get('organization') or ''), 150)
+            message = sanitize_input(str(inquiry_body.get('message') or ''), 2000)
+            inquiry_type = sanitize_input(str(inquiry_body.get('inquiry_type') or 'contact'), 20).lower()
+            audience = sanitize_input(str(inquiry_body.get('audience') or ''), 30).lower()
+            interest = sanitize_input(str(inquiry_body.get('interest') or ''), 40).lower()
+
+            if len(name) < 2:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Name is required (2-100 characters)'}).encode('utf-8'))
+                return
+            if not validate_email(email):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'A valid email address is required'}).encode('utf-8'))
+                return
+            if inquiry_type not in BUSINESS_INQUIRY_TYPES:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'inquiry_type must be one of: ' + ', '.join(BUSINESS_INQUIRY_TYPES)}).encode('utf-8'))
+                return
+            if audience not in BUSINESS_INQUIRY_AUDIENCES:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'audience must be one of: ' + ', '.join(BUSINESS_INQUIRY_AUDIENCES)}).encode('utf-8'))
+                return
+            if interest not in BUSINESS_INQUIRY_INTERESTS:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'interest must be one of: ' + ', '.join(BUSINESS_INQUIRY_INTERESTS)}).encode('utf-8'))
+                return
+
+            now_iso = datetime.now().isoformat()
+            with STATE_LOCK:
+                # Idempotency guard: an identical open inquiry (same email,
+                # type and interest, still awaiting first contact) is returned
+                # instead of duplicated, so the admin queue stays clean.
+                for existing in BUSINESS_INQUIRIES.values():
+                    if (existing.get('email') == email
+                            and existing.get('inquiry_type') == inquiry_type
+                            and existing.get('interest') == interest
+                            and existing.get('status') == 'new'):
+                        self._set_json_headers(200)
+                        self.wfile.write(json.dumps({
+                            'success': True,
+                            'duplicate': True,
+                            'inquiry': {
+                                'id': existing['id'],
+                                'status': existing['status'],
+                                'created_at': existing['created_at'],
+                            },
+                            'message': 'We already have your request on file — our team will be in touch.',
+                        }).encode('utf-8'))
+                        return
+
+                inquiry_id = generate_business_inquiry_id()
+                while inquiry_id in BUSINESS_INQUIRIES:
+                    inquiry_id = generate_business_inquiry_id()
+                record = {
+                    'id': inquiry_id,
+                    'inquiry_type': inquiry_type,
+                    'name': name,
+                    'email': email,
+                    'organization': organization,
+                    'audience': audience,
+                    'interest': interest,
+                    'message': message,
+                    'status': 'new',
+                    'created_at': now_iso,
+                    'updated_at': now_iso,
+                    'status_history': [
+                        {'status': 'new', 'changed_at': now_iso, 'changed_by': 'public_form'},
+                    ],
+                }
+                BUSINESS_INQUIRIES[inquiry_id] = record
+
+            print(f"[BUSINESS-RELATIONS] New {inquiry_type} inquiry {inquiry_id} ({audience}/{interest})")
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'success': True,
+                'inquiry': {
+                    'id': inquiry_id,
+                    'status': 'new',
+                    'created_at': now_iso,
+                },
+                'message': 'Thank you — our business relations team will contact you shortly.',
+            }).encode('utf-8'))
+            return
+
+        # Admin: update a business-relations inquiry status (with history trail).
+        if path.startswith('/api/admin/business-inquiries/') and path.endswith('/status'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+
+            inquiry_id = path[len('/api/admin/business-inquiries/'):-len('/status')].strip('/')
+            try:
+                length = int(self.headers.get('Content-Length', 0) or 0)
+            except (TypeError, ValueError):
+                length = 0
+            raw_body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                status_body = json.loads(raw_body) if raw_body else {}
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            if not isinstance(status_body, dict):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request body'}).encode('utf-8'))
+                return
+
+            new_status = sanitize_input(str(status_body.get('status') or ''), 20).lower()
+            note = sanitize_input(str(status_body.get('note') or ''), 500)
+            if new_status not in BUSINESS_INQUIRY_STATUSES:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'status must be one of: ' + ', '.join(BUSINESS_INQUIRY_STATUSES)}).encode('utf-8'))
+                return
+
+            with STATE_LOCK:
+                record = BUSINESS_INQUIRIES.get(inquiry_id)
+                if not record:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Inquiry not found'}).encode('utf-8'))
+                    return
+                now_iso = datetime.now().isoformat()
+                record['status'] = new_status
+                record['updated_at'] = now_iso
+                history_entry = {
+                    'status': new_status,
+                    'changed_at': now_iso,
+                    'changed_by': (session or {}).get('username', 'admin'),
+                }
+                if note:
+                    history_entry['note'] = note
+                record.setdefault('status_history', []).append(history_entry)
+                response_record = dict(record)
+
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({'success': True, 'inquiry': response_record}).encode('utf-8'))
+            return
 
         # =====================================================================
         # ASSESSMENT CENTER (POST) - upload, scan, mislaka link, fact import,

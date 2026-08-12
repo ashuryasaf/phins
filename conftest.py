@@ -145,6 +145,7 @@ def pytest_runtest_setup(item):  # type: ignore[no-redef]
         "FAILED_LOGINS",
         "BLOCKED_IPS",
         "SUSPICIOUS_PATTERNS",
+        "BUSINESS_INQUIRIES",
     ]:
         try:
             obj = getattr(portal, attr, None)
