@@ -1085,6 +1085,7 @@
           setOpen(card, !isOpen);
         });
         card.addEventListener('keydown', function (e) {
+          if (e.target.closest('.sol-walkthrough')) return; // link handles itself
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             card.click();
