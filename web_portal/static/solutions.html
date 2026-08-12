@@ -275,6 +275,83 @@
       padding: 4px 12px;
       opacity: 0.85;
     }
+
+    /* ===== Expandable solution tabs ===== */
+    .sol-card { cursor: pointer; }
+    .sol-card .sol-caret {
+      position: absolute; top: 24px; right: 22px;
+      width: 26px; height: 26px;
+      display: flex; align-items: center; justify-content: center;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--tile-accent, #7fb2ff);
+      font-size: 0.72rem;
+      transition: transform 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+    }
+    .sol-card.open .sol-caret {
+      transform: rotate(180deg);
+      border-color: var(--tile-accent, #7fb2ff);
+      background: rgba(127, 178, 255, 0.08);
+    }
+    .sol-card.open {
+      border-color: var(--tile-accent, #7fb2ff);
+      box-shadow: 0 14px 34px rgba(2, 8, 23, 0.5);
+    }
+    .sol-detail {
+      max-height: 0;
+      overflow: hidden;
+      opacity: 0;
+      transition: max-height 0.45s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.35s ease, margin-top 0.35s ease;
+      margin-top: 0;
+    }
+    .sol-card.open .sol-detail {
+      max-height: 420px;
+      opacity: 1;
+      margin-top: 18px;
+    }
+    .sol-detail .sol-detail-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.68rem; font-weight: 600;
+      letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--tile-accent, #7fb2ff);
+      margin-bottom: 10px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .sol-detail .sol-detail-title::after {
+      content: '';
+      flex: 1; height: 1px;
+      background: linear-gradient(90deg, var(--line), transparent);
+    }
+    .sol-detail ul { list-style: none; }
+    .sol-detail li {
+      position: relative;
+      padding: 6px 0 6px 20px;
+      color: var(--ink-dim);
+      font-size: 0.84rem; line-height: 1.55;
+    }
+    .sol-detail li::before {
+      content: '';
+      position: absolute; left: 2px; top: 12px;
+      width: 5px; height: 5px; transform: rotate(45deg);
+      background: var(--tile-accent, #7fb2ff);
+      opacity: 0.75;
+    }
+    .sol-detail .sol-walkthrough {
+      display: inline-flex; align-items: center; gap: 8px;
+      margin-top: 12px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.76rem; font-weight: 600;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--ds-accent);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(227, 191, 111, 0.4);
+      padding-bottom: 3px;
+      transition: color 0.2s ease, border-color 0.2s ease;
+    }
+    .sol-detail .sol-walkthrough:hover {
+      color: var(--ds-accent-strong);
+      border-color: var(--ds-accent-strong);
+    }
     .card-grid > *:nth-child(6n + 1) { --tile-accent: #4fd8ff; }
     .card-grid > *:nth-child(6n + 2) { --tile-accent: #7fb2ff; }
     .card-grid > *:nth-child(6n + 3) { --tile-accent: #9d8cff; }
@@ -625,7 +702,8 @@
           </p>
         </div>
         <div class="card-grid">
-          <div class="sol-card reveal">
+          <div class="sol-card reveal" data-interest="underwriting" role="button" tabindex="0" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▾</span>
             <div class="glyph" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l7 4v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-4z"/><path d="M9 12l2 2 4-4"/></svg>
             </div>
@@ -637,8 +715,19 @@
               of every approval.
             </p>
             <span class="card-tag">Individuals &amp; Enterprises</span>
+            <div class="sol-detail">
+              <div class="sol-detail-title">Inside the solution</div>
+              <ul>
+                <li>Guided digital application intake feeding a live underwriting pipeline</li>
+                <li>AI-assisted risk evaluation aware of demographics and policy terms</li>
+                <li>An underwriter decision workbench — approval authority stays human</li>
+                <li>Premium pricing connected to actuarial parameters at the point of decision</li>
+              </ul>
+              <a href="#contact" class="sol-walkthrough" data-walkthrough="underwriting">Request a walkthrough →</a>
+            </div>
           </div>
-          <div class="sol-card reveal">
+          <div class="sol-card reveal" data-interest="assessments" role="button" tabindex="0" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▾</span>
             <div class="glyph" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
             </div>
@@ -649,8 +738,18 @@
               feed underwriting, servicing and portfolio decisions.
             </p>
             <span class="card-tag">Decision Intelligence</span>
+            <div class="sol-detail">
+              <div class="sol-detail-title">Inside the solution</div>
+              <ul>
+                <li>360° customer view assembled from imported facts and documents</li>
+                <li>Risk-level classification feeding underwriting and servicing decisions</li>
+                <li>Assessment records that keep every decision loop auditable</li>
+              </ul>
+              <a href="#contact" class="sol-walkthrough" data-walkthrough="assessments">Request a walkthrough →</a>
+            </div>
           </div>
-          <div class="sol-card reveal">
+          <div class="sol-card reveal" data-interest="billing" role="button" tabindex="0" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▾</span>
             <div class="glyph" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>
             </div>
@@ -661,8 +760,18 @@
               every charge reconciles, every time.
             </p>
             <span class="card-tag">Automated Operations</span>
+            <div class="sol-detail">
+              <div class="sol-detail-title">Inside the solution</div>
+              <ul>
+                <li>Premium billing engine aligned with the accounting ledger</li>
+                <li>Flexible payment methods with monthly auto-pay scheduling</li>
+                <li>Reconciliation designed so every charge stays traceable</li>
+              </ul>
+              <a href="#contact" class="sol-walkthrough" data-walkthrough="billing">Request a walkthrough →</a>
+            </div>
           </div>
-          <div class="sol-card reveal">
+          <div class="sol-card reveal" data-interest="claims" role="button" tabindex="0" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▾</span>
             <div class="glyph" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6z"/><path d="M14 3v6h6"/><path d="M9 14l2 2 4-4"/></svg>
             </div>
@@ -673,8 +782,18 @@
               dashboards — built for speed without sacrificing control.
             </p>
             <span class="card-tag">Straight-Through Processing</span>
+            <div class="sol-detail">
+              <div class="sol-detail-title">Inside the solution</div>
+              <ul>
+                <li>Structured claims intake with integrated document handling</li>
+                <li>Adjuster dashboards for review and adjudication</li>
+                <li>Settlement approval flow with clear separation of duties</li>
+              </ul>
+              <a href="#contact" class="sol-walkthrough" data-walkthrough="claims">Request a walkthrough →</a>
+            </div>
           </div>
-          <div class="sol-card reveal">
+          <div class="sol-card reveal" data-interest="actuarial_investments" role="button" tabindex="0" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▾</span>
             <div class="glyph" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg>
             </div>
@@ -685,8 +804,18 @@
               the pricing of risk to the performance of capital.
             </p>
             <span class="card-tag">Capital Intelligence</span>
+            <div class="sol-detail">
+              <div class="sol-detail-title">Inside the solution</div>
+              <ul>
+                <li>Actuarial tables, reserve forecasting and portfolio simulations</li>
+                <li>Pricing parameters managed as first-class platform data</li>
+                <li>Savings and investment allocation connected to coverage</li>
+              </ul>
+              <a href="#contact" class="sol-walkthrough" data-walkthrough="actuarial_investments">Request a walkthrough →</a>
+            </div>
           </div>
-          <div class="sol-card reveal">
+          <div class="sol-card reveal" data-interest="platform" role="button" tabindex="0" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▾</span>
             <div class="glyph" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
             </div>
@@ -697,6 +826,15 @@
               to be examined.
             </p>
             <span class="card-tag">Integrity by Design</span>
+            <div class="sol-detail">
+              <div class="sol-detail-title">Inside the solution</div>
+              <ul>
+                <li>Role-scoped access across every operations desk</li>
+                <li>Layered network and request defenses</li>
+                <li>Tamper-evident event trails built for examination</li>
+              </ul>
+              <a href="#contact" class="sol-walkthrough" data-walkthrough="platform">Request a walkthrough →</a>
+            </div>
           </div>
         </div>
       </div>
@@ -931,6 +1069,38 @@
       }, { threshold: 0.12 });
       els.forEach(function (el) { io.observe(el); });
     })();
+
+    // ===== Expandable solution tabs =====
+    (function initSolutionTabs() {
+      var cards = document.querySelectorAll('.sol-card[data-interest]');
+      function setOpen(card, open) {
+        card.classList.toggle('open', open);
+        card.setAttribute('aria-expanded', String(open));
+      }
+      cards.forEach(function (card) {
+        card.addEventListener('click', function (e) {
+          if (e.target.closest('.sol-walkthrough')) return; // link handles itself
+          var isOpen = card.classList.contains('open');
+          cards.forEach(function (c) { setOpen(c, false); }); // accordion
+          setOpen(card, !isOpen);
+        });
+        card.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            card.click();
+          }
+        });
+      });
+    })();
+
+    // "Request a walkthrough" links preselect the demo tab + interest area.
+    document.querySelectorAll('[data-walkthrough]').forEach(function (link) {
+      link.addEventListener('click', function () {
+        setInquiryType('demo');
+        var interestSelect = document.getElementById('inq-interest');
+        if (interestSelect) interestSelect.value = link.getAttribute('data-walkthrough');
+      });
+    });
 
     // ===== Inquiry type toggle =====
     var inquiryType = 'contact';
