@@ -28,12 +28,13 @@ def test_admin_assistant_minimize_keeps_query_input_available():
     assert 'id="admin-ai-panel-minimize-btn"' in content
     assert 'id="admin-ai-query-row"' in content
     assert '#admin-ai-assistant-panel[data-minimized="true"] #admin-ai-help-panel' in content
-    assert '#admin-ai-assistant-panel[data-minimized="true"] #admin-ai-voice-recording-indicator' in content
-    assert '#admin-ai-assistant-panel[data-minimized="true"] #admin-ai-tab-bar' in content
     assert '#admin-ai-assistant-panel[data-minimized="true"] #admin-ai-quick-actions' in content
     assert '#admin-ai-assistant-panel[data-minimized="true"] #admin-ai-response-area' in content
     assert '#admin-ai-assistant-panel[data-minimized="true"] #admin-ai-query-row' in content
+    # The AI assistance tab strip was removed; it must not come back as
+    # minimized-only chrome either.
+    assert "admin-ai-tab-bar" not in content
     assert "function toggleAdminAIPanel()" in content
-    assert "toggleButton.textContent = '🎤➕';" in content
-    assert "toggleButton.textContent = '➖';" in content
+    assert "toggleButton.textContent = '+';" in content
+    assert "toggleButton.textContent = '−';" in content
     assert "stopAdminAssistantVoiceInput()" in content

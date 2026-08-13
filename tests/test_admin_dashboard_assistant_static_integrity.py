@@ -18,12 +18,17 @@ def test_admin_ai_mic_panel_present_without_branded_assistant_title():
     assert "Use voice, text, or buttons to run existing dashboard functions with built-in integrity safeguards." in content
 
 
-def test_admin_ai_mic_positioned_under_admin_dashboard_header():
+def test_admin_dashboard_hero_text_removed_and_mic_leads_main():
     content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
 
+    # The old hero heading and subtitle are gone.
+    assert "<h1>Admin Dashboard</h1>" not in content
+    assert "Comprehensive system management and oversight" not in content
+    assert '<div class="welcome-section">' not in content
+
+    # The Admin AI Mic panel is the first element inside <main>.
     placement_pattern = re.compile(
-        r'<div class="welcome-section">.*?<h1>Admin Dashboard</h1>.*?'
-        r'<p class="muted-text">Comprehensive system management and oversight</p>.*?</div>\s*'
+        r'<main class="container"[^>]*>\s*'
         r'<!--\s*=+\s*ADMIN AI MIC\s*=+\s*-->\s*'
         r'<!--.*?-->\s*'
         r'<div id="admin-ai-assistant-panel"[^>]*data-minimized="true"[^>]*>',
@@ -47,7 +52,6 @@ def test_admin_ai_mic_stays_visible_when_panel_minimized():
     # Expanded chrome stays collapsed until the user expands the panel.
     for selector in (
         "#admin-ai-help-panel",
-        "#admin-ai-tab-bar",
         "#admin-ai-quick-actions",
         "#admin-ai-response-area",
     ):
@@ -56,10 +60,17 @@ def test_admin_ai_mic_stays_visible_when_panel_minimized():
         )
 
 
-def test_admin_ai_assistant_tabs_and_wiring_cover_core_admin_domains():
+def test_admin_ai_assistant_tab_bar_removed_but_domain_routing_kept():
     content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
 
-    expected_tabs = {
+    # The visible AI assistance tab strip is removed.
+    assert 'id="admin-ai-tab-bar"' not in content
+    assert "admin-ai-tab-btn" not in content
+    assert 'data-tab="' not in content
+
+    # Internal domain routing still covers every admin domain so voice/text
+    # commands keep working.
+    expected_domains = {
         "overview",
         "customers",
         "policies",
@@ -72,8 +83,10 @@ def test_admin_ai_assistant_tabs_and_wiring_cover_core_admin_domains():
         "growth",
         "operations",
     }
-    found_tabs = set(re.findall(r'data-tab="([^"]+)"', content))
-    assert expected_tabs.issubset(found_tabs)
+    tabs_block = re.search(r"const ADMIN_ASSISTANT_TABS = \{(.*?)\n    \};", content, flags=re.S)
+    assert tabs_block
+    declared = set(re.findall(r"^\s{6}(\w+): \{", tabs_block.group(1), flags=re.M))
+    assert expected_domains.issubset(declared)
 
     required_functions = [
         "function initAdminAssistant()",
@@ -112,6 +125,40 @@ def test_admin_ai_assistant_tabs_and_wiring_cover_core_admin_domains():
         assert function_name in content
 
 
+def test_admin_ai_assistant_covers_newer_admin_functions():
+    content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
+
+    # Newer admin dashboard functions must be reachable through the AI mic.
+    action_to_function = {
+        "export_customer_data": "exportCustomerData",
+        "sync_policy_ledgers": "syncPolicyLedgers",
+        "sync_claims_ledger": "syncClaimsLedger",
+        "allocate_all_savings": "allocateAllSavings",
+        "generate_missing_billing": "generateMissingBilling",
+        "refresh_business_inquiries": "loadBusinessInquiries",
+        "run_batch_probability_analysis": "runBatchProbabilityAnalysis",
+        "batch_generate_marketing_videos": "batchGenerateMarketingVideos",
+        "view_test_data": "toggleTestDataPanel",
+    }
+    for action_id, function_name in action_to_function.items():
+        assert f"{action_id}:" in content, action_id
+        assert f"{function_name}(" in content, function_name
+
+    # Voice/text keyword routing exists for the new actions.
+    for keyword in [
+        "allocate savings",
+        "missing bills",
+        "export customers",
+        "sync policy ledger",
+        "sync claims ledger",
+        "probability analysis",
+        "business inquiries",
+        "test data",
+        "generate all videos",
+    ]:
+        assert keyword in content, keyword
+
+
 def test_admin_ai_assistant_integrity_guards_and_section_ids_present():
     content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
 
@@ -126,6 +173,7 @@ def test_admin_ai_assistant_integrity_guards_and_section_ids_present():
     assert "confirm: '⚠️ Execute bill-all for eligible active policies?" in content
     assert "confirm: '📐 Run portfolio actuarial simulation?" in content
     assert "confirm: '⚠️ Approve all pending underwriting applications?" in content
+    assert "confirm: '⚠️ Queue AI video generation for every campaign blueprint?" in content
     assert "integrity: 'guarded'" in content
     assert "⚠️ High-impact actions are confirmation-gated for data integrity." in content
 
@@ -148,8 +196,8 @@ def test_admin_ai_assistant_voice_and_quick_action_controls_present():
     assert 'id="admin-ai-quick-actions"' in content
     assert 'id="admin-ai-more-actions"' in content
     assert 'id="admin-ai-more-toggle"' in content
-    assert "⬇️ Show More Actions" in content
-    assert "🤖📊 AI + BI Insights" in content
+    assert ">Show More Actions<" in content
+    assert ">AI + BI Insights<" in content
 
     assert 'title="Help"' in content
     assert 'title="Expand"' in content
@@ -189,3 +237,41 @@ def test_admin_ai_mic_command_keywords_cover_core_functionality():
     ]
     for keyword in action_keyword_groups:
         assert keyword in content
+
+
+def test_admin_overview_unified_phins_gradient_and_clean_labels():
+    content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
+
+    # Unified PHINS gradient across dark sections and the AI mic panel.
+    unified_gradient = "linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%)"
+    assert content.count(unified_gradient) >= 6
+
+    # Legacy non-PHINS section gradients are gone.
+    for legacy in [
+        "#ff6b35 0%, #f7931e 100%",   # orange invitations
+        "#1a237e 0%, #283593 50%",    # indigo analytics
+        "#060d1f 0%, #0d1b3e 100%",   # navy/gold business relations
+        "#1e3a5f 0%, #2d5a87 100%",   # slate AI claims bot
+    ]:
+        assert legacy not in content, legacy
+
+    # Section headers read as clean text without decorative emoji icons.
+    for header in [
+        "<h2>Customer Management — Recent Activity</h2>",
+        "<h2>Sales Division — Policy Management</h2>",
+        "<h2>Underwriting Division — Risk Assessment</h2>",
+        "<h2>Claims Division — ADL-Based Disability Claims</h2>",
+        "<h2>Accounting Division — Billing & Payments</h2>",
+        "<h2>Reinsurance Division — Partner Management</h2>",
+        "<h2>Legal Division — Compliance & Disputes</h2>",
+        "<h2>Marketplace Division — Services & Products</h2>",
+    ]:
+        assert header in content, header
+    assert "Insurance Pipeline Overview</h3>" in content
+    assert "General Reserves — Balance Sheet</h3>" in content
+
+    # Nav operational tabs are emoji-free.
+    nav = re.search(r'<nav class="phins-nav"[^>]*>(.*?)</nav>', content, flags=re.S)
+    assert nav
+    emoji_re = re.compile(r"[\U0001F000-\U0001FAFF\u2600-\u27BF]")
+    assert not emoji_re.search(nav.group(1))

@@ -350,19 +350,15 @@
       box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
     }
 
-    /* ==================== ADMIN AI ASSISTANT (Customer-style) ==================== */
-    /* Deep-navy glass with a violet-blue aurora; complements the gold/spectrum
-       overview tiles instead of the old solid purple gradient. */
+    /* ==================== ADMIN AI MIC ==================== */
+    /* Unified PHINS gradient panel matching the header spectrum. */
     #admin-ai-assistant-panel {
-      background:
-        radial-gradient(820px 240px at 88% -40%, rgba(123, 97, 255, 0.38), transparent 65%),
-        radial-gradient(640px 220px at 6% 120%, rgba(21, 68, 155, 0.5), transparent 70%),
-        rgba(9, 17, 38, 0.97);
-      border: 1px solid rgba(127, 178, 255, 0.16);
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      border: 1px solid rgba(255, 255, 255, 0.14);
       border-radius: 20px;
       padding: 24px;
       margin-bottom: 24px;
-      box-shadow: 0 12px 40px rgba(2, 8, 23, 0.4);
+      box-shadow: 0 12px 40px rgba(13, 71, 161, 0.32);
       color: white;
     }
     #admin-ai-assistant-panel[data-minimized="true"] {
@@ -373,40 +369,12 @@
     }
     /* Minimized: keep ask bar + mic visible; hide expanded chrome only. */
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-help-panel,
-    #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-tab-bar,
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-quick-actions,
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-response-area {
       display: none !important;
     }
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-query-row {
       margin-bottom: 0 !important;
-    }
-    .admin-ai-tab-bar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 14px;
-    }
-    .admin-ai-tab-btn {
-      background: rgba(255,255,255,0.14);
-      border: 1px solid rgba(255,255,255,0.3);
-      color: white;
-      padding: 7px 12px;
-      border-radius: 16px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      transition: all 0.2s ease;
-    }
-    .admin-ai-tab-btn:hover {
-      background: rgba(255,255,255,0.24);
-      transform: translateY(-1px);
-    }
-    .admin-ai-tab-btn.active {
-      background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
-      color: #071022;
-      border-color: transparent;
-      font-weight: 700;
-      box-shadow: 0 6px 20px rgba(227, 191, 111, 0.4);
     }
     .admin-ai-action-btn {
       background: rgba(255,255,255,0.12);
@@ -477,7 +445,6 @@
     }
     @media (max-width: 768px) {
       #admin-ai-assistant-panel { padding: 16px; }
-      .admin-ai-tab-btn { font-size: 0.72rem; padding: 6px 10px; }
       .admin-ai-action-btn { width: 100%; justify-content: center; display: inline-flex; }
       .admin-ai-quick-btn { padding: 6px 10px; font-size: 0.74rem; }
     }
@@ -678,14 +645,14 @@
       padding-top: 18px !important;
       padding-bottom: 18px !important;
     }
-    /* Per-division accents */
-    #customers[data-framed="auto"]    { --frame-accent-start: #00695c; --frame-accent-end: #4db6ac; }
+    /* Per-division accents — unified PHINS blue spectrum */
+    #customers[data-framed="auto"]    { --frame-accent-start: #0d47a1; --frame-accent-end: #42a5f5; }
     #policies[data-framed="auto"]     { --frame-accent-start: #1565c0; --frame-accent-end: #64b5f6; }
-    #underwriting[data-framed="auto"] { --frame-accent-start: #6a1b9a; --frame-accent-end: #ab47bc; }
-    #claims[data-framed="auto"]       { --frame-accent-start: #d84315; --frame-accent-end: #ff8a65; }
-    #billing[data-framed="auto"]      { --frame-accent-start: #2e7d32; --frame-accent-end: #81c784; }
-    #reinsurance[data-framed="auto"]  { --frame-accent-start: #00838f; --frame-accent-end: #4dd0e1; }
-    #legal[data-framed="auto"]        { --frame-accent-start: #455a64; --frame-accent-end: #90a4ae; }
+    #underwriting[data-framed="auto"] { --frame-accent-start: #0d47a1; --frame-accent-end: #1e88e5; }
+    #claims[data-framed="auto"]       { --frame-accent-start: #1565c0; --frame-accent-end: #42a5f5; }
+    #billing[data-framed="auto"]      { --frame-accent-start: #1976d2; --frame-accent-end: #64b5f6; }
+    #reinsurance[data-framed="auto"]  { --frame-accent-start: #0d47a1; --frame-accent-end: #64b5f6; }
+    #legal[data-framed="auto"]        { --frame-accent-start: #1565c0; --frame-accent-end: #90caf9; }
     /* Tighter spacing on small screens so the frames don't crowd the page */
     @media (max-width: 768px) {
       .section-content[data-framed="auto"] {
@@ -705,7 +672,6 @@
     html[data-embed] body > #admin-console-panel,
     html[data-embed] body > footer,
     html[data-embed] body > .footer,
-    html[data-embed] body > main > .welcome-section,
     html[data-embed] body > main > #admin-ai-assistant-panel,
     html[data-embed] body > main > section.section-content:not(.embed-visible),
     html[data-embed] body > main > div.section-content:not(.embed-visible),
@@ -756,31 +722,31 @@
         <button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
         <div class="phins-utility">
           <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)">
-            <option value="en">🌐 EN</option>
-            <option value="es">🌐 ES</option>
-            <option value="fr">🌐 FR</option>
-            <option value="de">🌐 DE</option>
-            <option value="zh">🌐 中文</option>
-            <option value="he">🌐 עב</option>
+            <option value="en">EN</option>
+            <option value="es">ES</option>
+            <option value="fr">FR</option>
+            <option value="de">DE</option>
+            <option value="zh">中文</option>
+            <option value="he">עב</option>
           </select>
-          <a href="javascript:void(0)" onclick="toggleAdminConsole()" class="btn-console">⌨️ Console</a>
+          <a href="javascript:void(0)" onclick="toggleAdminConsole()" class="btn-console">Console</a>
           <a href="/" class="btn-logout">Logout</a>
         </div>
       </div>
       <nav class="phins-nav" id="mobile-nav">
-        <a href="/admin.html" class="active">🏠 Overview</a>
-        <a href="/underwriter-dashboard.html">🔍 Underwriting</a>
-        <a href="/claims-adjuster-dashboard.html">📋 Claims</a>
-        <a href="/billing.html">💳 Billing</a>
-        <a href="/savings-portfolio.html">📈 Investments</a>
-        <a href="/actuary-dashboard.html">📐 Actuary</a>
-        <a href="/admin-supplier-dashboard.html">🏪 Suppliers</a>
-        <a href="/admin-agents.html">🧑‍💼 Agents</a>
-        <a href="/admin-foundations.html">🤝 Community</a>
-        <a href="/admin-media.html">📁 Media</a>
+        <a href="/admin.html" class="active">Overview</a>
+        <a href="/underwriter-dashboard.html">Underwriting</a>
+        <a href="/claims-adjuster-dashboard.html">Claims</a>
+        <a href="/billing.html">Billing</a>
+        <a href="/savings-portfolio.html">Investments</a>
+        <a href="/actuary-dashboard.html">Actuary</a>
+        <a href="/admin-supplier-dashboard.html">Suppliers</a>
+        <a href="/admin-agents.html">Agents</a>
+        <a href="/admin-foundations.html">Community</a>
+        <a href="/admin-media.html">Media</a>
         <span data-assessments-nav data-assessments-role="admin"></span>
-        <a href="/cyber-security.html">🛡️ Cyber Security</a>
-        <a href="/pitch-dashboard.html" target="_blank">📋 IL Pitch</a>
+        <a href="/cyber-security.html">Cyber Security</a>
+        <a href="/pitch-dashboard.html" target="_blank">IL Pitch</a>
       </nav>
     </div>
   </header>
@@ -788,7 +754,7 @@
   <!-- Admin Console Panel -->
   <div id="admin-console-panel" style="display:none; position:fixed; bottom:0; left:0; right:0; z-index:9999; background:#1a1f36; border-top:2px solid #4facfe; box-shadow:0 -4px 20px rgba(0,0,0,0.4); font-family:monospace; font-size:13px;">
     <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 12px; background:linear-gradient(135deg,#2d3561,#1a1f36); border-bottom:1px solid rgba(255,255,255,0.1);">
-      <span style="color:#4facfe; font-weight:700;">⌨️ PHINS Admin Console</span>
+      <span style="color:#4facfe; font-weight:700;">PHINS Admin Console</span>
       <div style="display:flex; gap:8px; align-items:center;">
         <button onclick="clearConsoleOutput()" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:#ccc; padding:2px 8px; border-radius:4px; font-size:11px; cursor:pointer;">Clear</button>
         <button onclick="toggleAdminConsole()" style="background:rgba(239,83,80,0.2); border:1px solid rgba(239,83,80,0.4); color:#ef5350; padding:2px 8px; border-radius:4px; font-size:11px; cursor:pointer;">✕ Close</button>
@@ -879,22 +845,21 @@
   </script>
 
   <main class="container" style="padding-top:32px">
-    <div class="welcome-section">
-      <h1>Admin Dashboard</h1>
-      <p class="muted-text">Comprehensive system management and oversight</p>
-    </div>
-
     <!-- ==================== ADMIN AI MIC ==================== -->
-    <!-- Compact by default: ask bar + mic stay visible; expand for tabs/actions. -->
+    <!-- Compact by default: ask bar + mic stay visible; expand for quick actions. -->
     <div id="admin-ai-assistant-panel" data-minimized="true" aria-label="Admin AI Mic">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
         <div style="display:flex;align-items:center;gap:12px;">
           <div style="width:46px;height:46px;background:linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.4rem;animation:pulse-ai 2s ease-in-out infinite;" aria-hidden="true">🎤</div>
+          <div>
+            <div style="font-weight:700;font-size:1.02rem;line-height:1.2;">Admin AI Mic</div>
+            <div style="font-size:0.78rem;opacity:0.85;">Voice and text commands for every admin function</div>
+          </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           <span id="admin-ai-status-chip" class="admin-ai-status-chip">🟡 Ready</span>
-          <button onclick="toggleAdminAIHelp()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Help">❓</button>
-          <button id="admin-ai-panel-minimize-btn" onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Expand">➕</button>
+          <button onclick="toggleAdminAIHelp()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Help">?</button>
+          <button id="admin-ai-panel-minimize-btn" onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Expand">+</button>
         </div>
       </div>
 
@@ -904,6 +869,9 @@
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Run actuary simulation"<br>• "Open console"<br>• "System health check"</div>
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Reconcile balance sheet"<br>• "Run AI BI insights"<br>• "Process all claims"</div>
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Refresh customers"<br>• "Approve all underwriting"<br>• "Bill all policies"</div>
+          <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Allocate savings"<br>• "Generate missing bills"<br>• "Export customers"</div>
+          <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Sync policy ledgers"<br>• "Sync claims ledger"<br>• "Probability analysis"</div>
+          <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Business inquiries"<br>• "Show test data"<br>• "Generate all videos"</div>
         </div>
         <p style="margin:10px 0 0 0;font-size:0.78rem;opacity:0.9;">⚠️ High-impact actions are confirmation-gated for data integrity.</p>
       </div>
@@ -925,8 +893,8 @@
             disabled
           >🎤</button>
         </div>
-        <button onclick="adminAssistantProcessQuery()" style="background:linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);border:none;color:#071022;padding:12px 18px;border-radius:12px;cursor:pointer;font-weight:700;">⚡ Ask</button>
-        <button onclick="adminAssistantRunAction('refresh_active_tab')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:white;padding:12px 16px;border-radius:12px;cursor:pointer;font-weight:700;">🔄 Refresh Tab</button>
+        <button onclick="adminAssistantProcessQuery()" style="background:linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);border:none;color:#071022;padding:12px 18px;border-radius:12px;cursor:pointer;font-weight:700;">Ask</button>
+        <button onclick="adminAssistantRunAction('refresh_active_tab')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:white;padding:12px 16px;border-radius:12px;cursor:pointer;font-weight:700;">Refresh</button>
       </div>
 
       <div id="admin-ai-voice-recording-indicator" style="display:none;background:rgba(244,67,54,0.2);border:2px solid #f44336;border-radius:12px;padding:14px;margin-bottom:12px;text-align:center;color:white;">
@@ -938,37 +906,32 @@
         <p id="admin-ai-voice-transcript" style="margin:8px 0 0 0;font-style:italic;opacity:0.9;"></p>
       </div>
 
-      <div class="admin-ai-tab-bar" id="admin-ai-tab-bar">
-        <button class="admin-ai-tab-btn active" data-tab="overview" onclick="adminAssistantSwitchTab('overview')">🏠 Overview</button>
-        <button class="admin-ai-tab-btn" data-tab="customers" onclick="adminAssistantSwitchTab('customers')">👥 Customers</button>
-        <button class="admin-ai-tab-btn" data-tab="policies" onclick="adminAssistantSwitchTab('policies')">📋 Policies</button>
-        <button class="admin-ai-tab-btn" data-tab="underwriting" onclick="adminAssistantSwitchTab('underwriting')">🔍 Underwriting</button>
-        <button class="admin-ai-tab-btn" data-tab="claims" onclick="adminAssistantSwitchTab('claims')">📝 Claims</button>
-        <button class="admin-ai-tab-btn" data-tab="billing" onclick="adminAssistantSwitchTab('billing')">💰 Billing</button>
-        <button class="admin-ai-tab-btn" data-tab="marketplace" onclick="adminAssistantSwitchTab('marketplace')">🛒 Marketplace</button>
-        <button class="admin-ai-tab-btn" data-tab="analytics" onclick="adminAssistantSwitchTab('analytics')">📊 Analytics</button>
-        <button class="admin-ai-tab-btn" data-tab="invitations" onclick="adminAssistantSwitchTab('invitations')">🎟️ Invitations</button>
-        <button class="admin-ai-tab-btn" data-tab="growth" onclick="adminAssistantSwitchTab('growth')">🚀 Growth/Media</button>
-        <button class="admin-ai-tab-btn" data-tab="operations" onclick="adminAssistantSwitchTab('operations')">⚙️ Operations</button>
-      </div>
-
       <div id="admin-ai-quick-actions" style="margin-bottom:12px;">
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
-          <button onclick="adminAssistantQuickAction('refresh_overview')" class="admin-ai-quick-btn">🔄 Refresh All</button>
-          <button onclick="adminAssistantQuickAction('run_ai_bi_insights')" class="admin-ai-quick-btn" style="background:linear-gradient(135deg, rgba(123,97,255,0.36) 0%, rgba(25,118,210,0.36) 100%);border:1px solid rgba(255,255,255,0.45);">🤖📊 AI + BI Insights</button>
-          <button onclick="adminAssistantQuickAction('run_actuary_simulation')" class="admin-ai-quick-btn" style="background:linear-gradient(135deg, rgba(13,71,161,0.36) 0%, rgba(66,165,245,0.36) 100%);border:1px solid rgba(255,255,255,0.45);">📐 Actuary Simulation</button>
-          <button onclick="adminAssistantQuickAction('open_console')" class="admin-ai-quick-btn" style="background:rgba(79,172,254,0.22);border:1px solid rgba(79,172,254,0.45);">⌨️ Console</button>
-          <button onclick="adminAssistantQuickAction('system_health')" class="admin-ai-quick-btn" style="background:rgba(76,175,80,0.22);">🏥 System Health</button>
+          <button onclick="adminAssistantQuickAction('refresh_overview')" class="admin-ai-quick-btn">Refresh All</button>
+          <button onclick="adminAssistantQuickAction('run_ai_bi_insights')" class="admin-ai-quick-btn" style="background:linear-gradient(135deg, rgba(13,71,161,0.4) 0%, rgba(25,118,210,0.4) 100%);border:1px solid rgba(255,255,255,0.45);">AI + BI Insights</button>
+          <button onclick="adminAssistantQuickAction('run_actuary_simulation')" class="admin-ai-quick-btn" style="background:linear-gradient(135deg, rgba(13,71,161,0.4) 0%, rgba(66,165,245,0.4) 100%);border:1px solid rgba(255,255,255,0.45);">Actuary Simulation</button>
+          <button onclick="adminAssistantQuickAction('open_console')" class="admin-ai-quick-btn" style="background:rgba(79,172,254,0.22);border:1px solid rgba(79,172,254,0.45);">Console</button>
+          <button onclick="adminAssistantQuickAction('system_health')" class="admin-ai-quick-btn" style="background:rgba(76,175,80,0.22);">System Health</button>
         </div>
         <div id="admin-ai-more-actions" style="display:none;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
-          <button onclick="adminAssistantQuickAction('validate_all_customer_pipelines')" class="admin-ai-quick-btn">🧪 Validate Pipelines</button>
-          <button onclick="adminAssistantQuickAction('activate_approved_policies')" class="admin-ai-quick-btn">✅ Activate Policies</button>
-          <button onclick="adminAssistantQuickAction('process_all_claims')" class="admin-ai-quick-btn">⚡ Process Claims</button>
-          <button onclick="adminAssistantQuickAction('reconcile_balance_sheet')" class="admin-ai-quick-btn" style="background:rgba(76,175,80,0.28);">✅ Reconcile</button>
-          <button onclick="adminAssistantQuickAction('bill_all_policies')" class="admin-ai-quick-btn" style="background:rgba(255,152,0,0.28);">⚠️ Bill All</button>
-          <button onclick="adminAssistantQuickAction('cleanup_demo_data')" class="admin-ai-quick-btn" style="background:rgba(244,67,54,0.28);">🧹 Clean Demo Data</button>
+          <button onclick="adminAssistantQuickAction('validate_all_customer_pipelines')" class="admin-ai-quick-btn">Validate Pipelines</button>
+          <button onclick="adminAssistantQuickAction('activate_approved_policies')" class="admin-ai-quick-btn">Activate Policies</button>
+          <button onclick="adminAssistantQuickAction('process_all_claims')" class="admin-ai-quick-btn">Process Claims</button>
+          <button onclick="adminAssistantQuickAction('allocate_all_savings')" class="admin-ai-quick-btn">Allocate Savings</button>
+          <button onclick="adminAssistantQuickAction('generate_missing_billing')" class="admin-ai-quick-btn">Generate Missing Bills</button>
+          <button onclick="adminAssistantQuickAction('export_customer_data')" class="admin-ai-quick-btn">Export Customers</button>
+          <button onclick="adminAssistantQuickAction('sync_policy_ledgers')" class="admin-ai-quick-btn">Sync Policy Ledgers</button>
+          <button onclick="adminAssistantQuickAction('sync_claims_ledger')" class="admin-ai-quick-btn">Sync Claims Ledger</button>
+          <button onclick="adminAssistantQuickAction('run_batch_probability_analysis')" class="admin-ai-quick-btn">Probability Analysis</button>
+          <button onclick="adminAssistantQuickAction('refresh_business_inquiries')" class="admin-ai-quick-btn">Business Inquiries</button>
+          <button onclick="adminAssistantQuickAction('view_test_data')" class="admin-ai-quick-btn">Test Data</button>
+          <button onclick="adminAssistantQuickAction('batch_generate_marketing_videos')" class="admin-ai-quick-btn">Generate All Videos</button>
+          <button onclick="adminAssistantQuickAction('reconcile_balance_sheet')" class="admin-ai-quick-btn" style="background:rgba(76,175,80,0.28);">Reconcile</button>
+          <button onclick="adminAssistantQuickAction('bill_all_policies')" class="admin-ai-quick-btn" style="background:rgba(255,152,0,0.28);">Bill All</button>
+          <button onclick="adminAssistantQuickAction('cleanup_demo_data')" class="admin-ai-quick-btn" style="background:rgba(244,67,54,0.28);">Clean Demo Data</button>
         </div>
-        <button onclick="toggleAdminAssistantMoreActions()" id="admin-ai-more-toggle" class="admin-ai-more-toggle">⬇️ Show More Actions</button>
+        <button onclick="toggleAdminAssistantMoreActions()" id="admin-ai-more-toggle" class="admin-ai-more-toggle">Show More Actions</button>
       </div>
 
       <div id="admin-ai-response-area" style="background:white;border-radius:14px;padding:18px;color:#263238;">
@@ -1078,71 +1041,71 @@
     </script>
     
     <!-- Pipeline Overview -->
-    <div id="pipeline-overview" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" style="margin-top: 24px; background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); border-radius: 12px; padding: 20px;">
+    <div id="pipeline-overview" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" style="margin-top: 24px; background: linear-gradient(135deg, #f5f9ff 0%, #e3f2fd 100%); border: 1px solid rgba(21, 101, 192, 0.12); border-radius: 12px; padding: 20px;">
       <div class="section-header" style="margin-bottom: 16px;">
-        <h3 style="margin: 0;">📊 Insurance Pipeline Overview</h3>
+        <h3 style="margin: 0; color: #0d47a1;">Insurance Pipeline Overview</h3>
       </div>
       <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
         <div style="text-align: center; flex: 1; min-width: 80px; padding: 12px; background: white; border-radius: 8px;">
-          <div style="font-size: 24px; font-weight: bold; color: #667eea;" id="pipe-registered">0</div>
+          <div style="font-size: 24px; font-weight: bold; color: #0d47a1;" id="pipe-registered">0</div>
           <div style="font-size: 12px; color: #666;">Registered</div>
         </div>
         <div style="font-size: 20px; color: #999;">→</div>
         <div style="text-align: center; flex: 1; min-width: 80px; padding: 12px; background: white; border-radius: 8px;">
-          <div style="font-size: 24px; font-weight: bold; color: #ffc107;" id="pipe-applied">0</div>
+          <div style="font-size: 24px; font-weight: bold; color: #1565c0;" id="pipe-applied">0</div>
           <div style="font-size: 12px; color: #666;">Applied</div>
         </div>
         <div style="font-size: 20px; color: #999;">→</div>
         <div style="text-align: center; flex: 1; min-width: 80px; padding: 12px; background: white; border-radius: 8px;">
-          <div style="font-size: 24px; font-weight: bold; color: #fd7e14;" id="pipe-underwriting">0</div>
+          <div style="font-size: 24px; font-weight: bold; color: #1976d2;" id="pipe-underwriting">0</div>
           <div style="font-size: 12px; color: #666;">Underwriting</div>
         </div>
         <div style="font-size: 20px; color: #999;">→</div>
         <div style="text-align: center; flex: 1; min-width: 80px; padding: 12px; background: white; border-radius: 8px;">
-          <div style="font-size: 24px; font-weight: bold; color: #28a745;" id="pipe-approved">0</div>
+          <div style="font-size: 24px; font-weight: bold; color: #1e88e5;" id="pipe-approved">0</div>
           <div style="font-size: 12px; color: #666;">Approved</div>
         </div>
         <div style="font-size: 20px; color: #999;">→</div>
         <div style="text-align: center; flex: 1; min-width: 80px; padding: 12px; background: white; border-radius: 8px;">
-          <div style="font-size: 24px; font-weight: bold; color: #20c997;" id="pipe-active">0</div>
+          <div style="font-size: 24px; font-weight: bold; color: #2196f3;" id="pipe-active">0</div>
           <div style="font-size: 12px; color: #666;">Active</div>
         </div>
         <div style="font-size: 20px; color: #999;">→</div>
         <div style="text-align: center; flex: 1; min-width: 80px; padding: 12px; background: white; border-radius: 8px;">
-          <div style="font-size: 24px; font-weight: bold; color: #17a2b8;" id="pipe-billing">0</div>
+          <div style="font-size: 24px; font-weight: bold; color: #42a5f5;" id="pipe-billing">0</div>
           <div style="font-size: 12px; color: #666;">Billing</div>
         </div>
         <div style="font-size: 20px; color: #999;">→</div>
         <div style="text-align: center; flex: 1; min-width: 80px; padding: 12px; background: white; border-radius: 8px;">
-          <div style="font-size: 24px; font-weight: bold; color: #dc3545;" id="pipe-claims">0</div>
+          <div style="font-size: 24px; font-weight: bold; color: #64b5f6;" id="pipe-claims">0</div>
           <div style="font-size: 12px; color: #666;">Claims</div>
         </div>
       </div>
     </div>
     
     <!-- PHINS Balance Sheet / General Reserves Section -->
-    <div id="balance-sheet-section" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="margin-top: 24px; background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); border-radius: 12px; padding: 20px; color: white;">
+    <div id="balance-sheet-section" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="margin-top: 24px; background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%); border-radius: 12px; padding: 20px; color: white;">
       <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-        <h3 style="color: white; margin: 0;">🏦 PHINS General Reserves (Balance Sheet)</h3>
+        <h3 style="color: white; margin: 0;">General Reserves — Balance Sheet</h3>
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-          <button onclick="loadAIInsights()" class="btn" style="background: rgba(156,39,176,0.4); color: white; border: 1px solid rgba(156,39,176,0.6); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="AI-powered financial analysis">🤖 AI Insights</button>
-          <button onclick="reconcileBalanceSheet()" class="btn" style="background: rgba(76,175,80,0.3); color: white; border: 1px solid rgba(76,175,80,0.5); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="Verify data integrity">✅ Reconcile Balance Sheet</button>
-          <button onclick="toggleTestDataPanel()" class="btn" style="background: rgba(255,193,7,0.25); color: white; border: 1px solid rgba(255,193,7,0.5); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="View suspended test accounts and actuarial sandbox (TESTSIM) data currently in the pipeline">🧪 Test Data</button>
-          <button onclick="cleanupDemoData()" class="btn" style="background: rgba(239,154,154,0.3); color: white; border: 1px solid rgba(239,154,154,0.5); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="Remove demo/test data while preserving real customers">🧹 Clean Demo Data</button>
-          <button onclick="loadBalanceSheet()" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 16px; border-radius: 8px; cursor: pointer;">🔄 Refresh</button>
+          <button onclick="loadAIInsights()" class="btn" style="background: rgba(255,255,255,0.16); color: white; border: 1px solid rgba(255,255,255,0.35); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="AI-powered financial analysis">AI Insights</button>
+          <button onclick="reconcileBalanceSheet()" class="btn" style="background: rgba(76,175,80,0.3); color: white; border: 1px solid rgba(76,175,80,0.5); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="Verify data integrity">Reconcile Balance Sheet</button>
+          <button onclick="toggleTestDataPanel()" class="btn" style="background: rgba(255,193,7,0.25); color: white; border: 1px solid rgba(255,193,7,0.5); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="View suspended test accounts and actuarial sandbox (TESTSIM) data currently in the pipeline">Test Data</button>
+          <button onclick="cleanupDemoData()" class="btn" style="background: rgba(239,154,154,0.3); color: white; border: 1px solid rgba(239,154,154,0.5); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="Remove demo/test data while preserving real customers">Clean Demo Data</button>
+          <button onclick="loadBalanceSheet()" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 16px; border-radius: 8px; cursor: pointer;">Refresh</button>
         </div>
       </div>
       
       <!-- Test / sandbox data panel (populated by toggleTestDataPanel) -->
       <div id="test-data-panel" style="display:none; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,193,7,0.4); border-radius: 12px; padding: 16px; margin-bottom: 20px;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
-          <div style="font-weight:bold;">🧪 Test &amp; Sandbox Data in Pipeline</div>
+          <div style="font-weight:bold;">Test &amp; Sandbox Data in Pipeline</div>
           <div id="test-data-summary" style="font-size:12px; color: rgba(255,255,255,0.85);">Loading…</div>
         </div>
         <div style="font-size:12px; color: rgba(255,255,255,0.75); margin-bottom:10px;">
           Accounts pushed from the Actuarial Sandbox (<code style="color:#ffd54f;">CUST-TESTSIM-*</code>) are suspended
           (hidden from BI and reports) while present, and are <strong>fully deleted</strong> — with their policies,
-          claims and bills — by <strong>🧹 Clean Demo Data</strong>.
+          claims and bills — by <strong>Clean Demo Data</strong>.
         </div>
         <div style="max-height: 260px; overflow-y: auto;">
           <table style="width:100%; border-collapse: collapse; font-size: 12px; color: white;">
@@ -1167,22 +1130,22 @@
       <!-- Reserve Balances -->
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px;">
         <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
-          <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">💰 Claims Reserve</div>
+          <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">Claims Reserve</div>
           <div style="font-size: 28px; font-weight: bold;" id="bs-claims-reserve">$0</div>
           <div style="font-size: 11px; color: rgba(255,255,255,0.7);">Available for Claims</div>
         </div>
         <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
-          <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">🏢 Operating Reserve</div>
+          <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">Operating Reserve</div>
           <div style="font-size: 28px; font-weight: bold;" id="bs-operating-reserve">$0</div>
           <div style="font-size: 11px; color: rgba(255,255,255,0.7);">Operating Funds</div>
         </div>
         <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
-          <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">📊 Total Revenue</div>
+          <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">Total Revenue</div>
           <div style="font-size: 28px; font-weight: bold; color: #81c784;" id="bs-total-revenue">$0</div>
           <div style="font-size: 11px; color: rgba(255,255,255,0.7);">All-time Earnings</div>
         </div>
         <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
-          <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">📉 Claims Paid</div>
+          <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">Claims Paid</div>
           <div style="font-size: 28px; font-weight: bold; color: #ef9a9a;" id="bs-claims-paid">$0</div>
           <div style="font-size: 11px; color: rgba(255,255,255,0.7);">Total Paid Out</div>
         </div>
@@ -1192,7 +1155,7 @@
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px;">
         <!-- Revenue Breakdown -->
         <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 16px;">
-          <h4 style="color: #81c784; margin-bottom: 12px; font-size: 14px;">📈 Revenue Breakdown</h4>
+          <h4 style="color: #81c784; margin-bottom: 12px; font-size: 14px;">Revenue Breakdown</h4>
           <div id="bs-revenue-breakdown" style="font-size: 13px;">
             <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
               <span>Premium Income</span><span id="bs-premium-income">$0</span>
@@ -1217,7 +1180,7 @@
         
         <!-- Expense Breakdown -->
         <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 16px;">
-          <h4 style="color: #ef9a9a; margin-bottom: 12px; font-size: 14px;">📉 Expense Breakdown</h4>
+          <h4 style="color: #ef9a9a; margin-bottom: 12px; font-size: 14px;">Expense Breakdown</h4>
           <div id="bs-expense-breakdown" style="font-size: 13px;">
             <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
               <span>Claims Paid</span><span id="bs-exp-claims-paid">$0</span>
@@ -1248,9 +1211,9 @@
       
       <!-- AI/BI Insights Panel -->
       <div id="ai-insights-panel" style="margin-top: 16px; display: none;">
-        <div style="background: linear-gradient(135deg, rgba(156,39,176,0.3) 0%, rgba(103,58,183,0.3) 100%); border-radius: 12px; padding: 20px; border: 1px solid rgba(156,39,176,0.5);">
+        <div style="background: linear-gradient(135deg, rgba(13,71,161,0.35) 0%, rgba(66,165,245,0.3) 100%); border-radius: 12px; padding: 20px; border: 1px solid rgba(144,202,249,0.5);">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-            <h4 style="color: white; margin: 0;">🤖 AI-Powered Financial Intelligence</h4>
+            <h4 style="color: white; margin: 0;">AI-Powered Financial Intelligence</h4>
             <button onclick="document.getElementById('ai-insights-panel').style.display='none'" style="background: none; border: none; color: white; cursor: pointer; font-size: 18px;">✕</button>
           </div>
           
@@ -1280,7 +1243,7 @@
           
           <!-- AI Insights -->
           <div id="ai-insights-list" style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 16px; margin-bottom: 16px;">
-            <h5 style="color: #ce93d8; margin: 0 0 12px 0;">💡 AI Insights</h5>
+            <h5 style="color: #90caf9; margin: 0 0 12px 0;">AI Insights</h5>
             <div id="ai-insights-content" style="font-size: 13px; line-height: 1.6;">
               Loading insights...
             </div>
@@ -1288,7 +1251,7 @@
           
           <!-- Recommendations -->
           <div id="ai-recommendations-list" style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 16px; margin-bottom: 16px;">
-            <h5 style="color: #81c784; margin: 0 0 12px 0;">✅ Recommendations</h5>
+            <h5 style="color: #81c784; margin: 0 0 12px 0;">Recommendations</h5>
             <div id="ai-recommendations-content" style="font-size: 13px; line-height: 1.6;">
               Loading recommendations...
             </div>
@@ -1296,7 +1259,7 @@
           
           <!-- Billing Validation -->
           <div id="ai-billing-validation" style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 16px; margin-bottom: 16px; display: none;">
-            <h5 style="color: #ffb74d; margin: 0 0 12px 0;">🔍 Billing Validation</h5>
+            <h5 style="color: #ffb74d; margin: 0 0 12px 0;">Billing Validation</h5>
             <div id="ai-billing-validation-content" style="font-size: 13px; line-height: 1.6;">
               Loading validation...
             </div>
@@ -1304,7 +1267,7 @@
           
           <!-- 12-Month Projections -->
           <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 16px;">
-            <h5 style="color: #64b5f6; margin: 0 0 12px 0;">📊 12-Month Financial Projections</h5>
+            <h5 style="color: #64b5f6; margin: 0 0 12px 0;">12-Month Financial Projections</h5>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; font-size: 13px;">
               <div>
                 <span style="color: rgba(255,255,255,0.7);">Projected Revenue:</span>
@@ -1333,34 +1296,34 @@
     <!-- Customer Management Section -->
     <section id="customers" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" data-framed="auto">
       <div class="section-header">
-        <h2>👥 Customer Management — Recent Activity</h2>
+        <h2>Customer Management — Recent Activity</h2>
         <div style="display: flex; gap: 12px; align-items: center;">
           <span class="badge badge-success" id="customer-count-badge">0 Customers</span>
-          <button class="btn btn-primary" onclick="window.location.href='/customer-management.html'">📋 Full Customer List</button>
+          <button class="btn btn-primary" onclick="window.location.href='/customer-management.html'">Full Customer List</button>
         </div>
       </div>
       
       <!-- Quick Pipeline Actions for Customer Management -->
-      <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 1px solid rgba(16, 185, 129, 0.2);">
-        <h4 style="margin: 0 0 12px 0; display: flex; align-items: center; gap: 8px;">
-          <span>⚡</span> Quick Customer Actions
+      <div style="background: linear-gradient(135deg, #f5f9ff 0%, #e3f2fd 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 1px solid rgba(21, 101, 192, 0.15);">
+        <h4 style="margin: 0 0 12px 0; display: flex; align-items: center; gap: 8px; color: #0d47a1;">
+          Quick Customer Actions
           <span id="customer-pipeline-status" style="font-size: 12px; font-weight: normal; margin-left: auto; color: #666;"></span>
         </h4>
         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;" onclick="validateAllCustomerPipelines()" title="Validate all customer pipelines">
-            🔍 Validate All Pipelines
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white;" onclick="validateAllCustomerPipelines()" title="Validate all customer pipelines">
+            Validate All Pipelines
           </button>
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;" onclick="activateAllWallets()" title="Activate health wallets for all eligible customers">
-            💳 Activate All Wallets
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #1565c0 0%, #1e88e5 100%); color: white;" onclick="activateAllWallets()" title="Activate health wallets for all eligible customers">
+            Activate All Wallets
           </button>
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;" onclick="syncCustomerLedgers()" title="Sync all customer ledger entries">
-            📒 Sync Ledgers
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #1565c0 0%, #1e88e5 100%); color: white;" onclick="syncCustomerLedgers()" title="Sync all customer ledger entries">
+            Sync Ledgers
           </button>
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white;" onclick="exportCustomerData()" title="Export customer data">
-            📊 Export Data
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%); color: white;" onclick="exportCustomerData()" title="Export customer data">
+            Export Data
           </button>
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); color: white;" onclick="refreshCustomerList()" title="Refresh customer list">
-            🔃 Refresh
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%); color: white;" onclick="refreshCustomerList()" title="Refresh customer list">
+            Refresh
           </button>
         </div>
       </div>
@@ -1402,7 +1365,7 @@
     <!-- Sales Division -->
     <section id="policies" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" data-framed="auto">
       <div class="section-header">
-        <h2>📊 Sales Division — Policy Management</h2>
+        <h2>Sales Division — Policy Management</h2>
         <div style="display: flex; gap: 12px; align-items: center;">
           <span class="badge badge-success" id="policy-active-badge">0 Active</span>
           <span class="badge badge-orange" id="policy-pending-badge">0 Pending</span>
@@ -1411,32 +1374,32 @@
       </div>
       
       <!-- Quick Pipeline Actions for Sales Division -->
-      <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 1px solid rgba(59, 130, 246, 0.2);">
-        <h4 style="margin: 0 0 12px 0; display: flex; align-items: center; gap: 8px;">
-          <span>⚡</span> Quick Sales Actions
+      <div style="background: linear-gradient(135deg, #f5f9ff 0%, #e3f2fd 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 1px solid rgba(21, 101, 192, 0.15);">
+        <h4 style="margin: 0 0 12px 0; display: flex; align-items: center; gap: 8px; color: #0d47a1;">
+          Quick Sales Actions
           <span id="sales-pipeline-status" style="font-size: 12px; font-weight: normal; margin-left: auto; color: #666;"></span>
         </h4>
         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;" onclick="activateAllPendingPolicies()" title="Activate all policies with approved underwriting">
-            ✅ Activate Approved
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white;" onclick="activateAllPendingPolicies()" title="Activate all policies with approved underwriting">
+            Activate Approved
           </button>
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;" onclick="generateAllPremiums()" title="Generate premium calculations for all policies">
-            💰 Calculate Premiums
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #1565c0 0%, #1e88e5 100%); color: white;" onclick="generateAllPremiums()" title="Generate premium calculations for all policies">
+            Calculate Premiums
           </button>
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;" onclick="syncPolicyLedgers()" title="Sync policy transactions to ledger">
-            📒 Sync Ledgers
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #1565c0 0%, #1e88e5 100%); color: white;" onclick="syncPolicyLedgers()" title="Sync policy transactions to ledger">
+            Sync Ledgers
           </button>
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white;" onclick="generatePolicyReport()" title="Generate policy performance report">
-            📊 Generate Report
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%); color: white;" onclick="generatePolicyReport()" title="Generate policy performance report">
+            Generate Report
           </button>
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); color: white;" onclick="loadPolicies()" title="Refresh policy list">
-            🔃 Refresh
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%); color: white;" onclick="loadPolicies()" title="Refresh policy list">
+            Refresh
           </button>
         </div>
       </div>
       
-      <div style="background: #e7f3ff; border-left: 4px solid #667eea; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px;">
-        <strong>✨ Enhanced Policy Creation Available!</strong><br>
+      <div style="background: #e7f3ff; border-left: 4px solid #1565c0; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px;">
+        <strong>Enhanced Policy Creation Available</strong><br>
         <span style="font-size: 0.9em; color: #555;">Click "New Policy" to access the comprehensive underwriting questionnaire, risk assessment, and automated premium calculation system.</span>
       </div>
       
@@ -1484,57 +1447,57 @@
     <!-- Underwriting Division -->
     <section id="underwriting" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" data-framed="auto">
       <div class="section-header">
-        <h2>🔍 Underwriting Division — Risk Assessment</h2>
+        <h2>Underwriting Division — Risk Assessment</h2>
         <div style="display: flex; gap: 12px; align-items: center;">
           <span class="badge badge-orange" id="uw-pending-badge">0 Pending Reviews</span>
-          <button class="btn btn-small btn-success" onclick="approveAllPending()" title="Approve all pending applications and activate policies">
-            ✅ Approve All Pending
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white;" onclick="approveAllPending()" title="Approve all pending applications and activate policies">
+            Approve All Pending
           </button>
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white;" onclick="validateAllCustomers()" title="Run full pipeline validation on all customers">
-            🔍 Validate All Customers
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #1565c0 0%, #1e88e5 100%); color: white;" onclick="validateAllCustomers()" title="Run full pipeline validation on all customers">
+            Validate All Customers
           </button>
         </div>
       </div>
       
       <!-- Quick Actions Panel -->
-      <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 1px solid rgba(59, 130, 246, 0.2);">
-        <h4 style="margin: 0 0 12px 0; display: flex; align-items: center; gap: 8px;">
-          <span>⚡</span> Quick Pipeline Actions
+      <div style="background: linear-gradient(135deg, #f5f9ff 0%, #e3f2fd 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 1px solid rgba(21, 101, 192, 0.15);">
+        <h4 style="margin: 0 0 12px 0; display: flex; align-items: center; gap: 8px; color: #0d47a1;">
+          Quick Pipeline Actions
           <span id="pipeline-status" style="font-size: 12px; font-weight: normal; margin-left: auto; color: #666;"></span>
         </h4>
         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-          <button id="btn-process-pipelines" class="btn btn-small" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;" onclick="processAllPipelines()">
-            🔄 Process All Pipelines
+          <button id="btn-process-pipelines" class="btn btn-small" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white;" onclick="processAllPipelines()">
+            Process All Pipelines
           </button>
-          <button id="btn-allocate-savings" class="btn btn-small" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;" onclick="allocateAllSavings()">
-            💰 Allocate All Savings
+          <button id="btn-allocate-savings" class="btn btn-small" style="background: linear-gradient(135deg, #1565c0 0%, #1e88e5 100%); color: white;" onclick="allocateAllSavings()">
+            Allocate All Savings
           </button>
-          <button id="btn-generate-bills" class="btn btn-small" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;" onclick="generateMissingBilling()">
-            📄 Generate Missing Bills
+          <button id="btn-generate-bills" class="btn btn-small" style="background: linear-gradient(135deg, #1565c0 0%, #1e88e5 100%); color: white;" onclick="generateMissingBilling()">
+            Generate Missing Bills
           </button>
-          <button id="btn-refresh-all" class="btn btn-small" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white;" onclick="refreshAllData()">
-            🔃 Refresh All Data
+          <button id="btn-refresh-all" class="btn btn-small" style="background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%); color: white;" onclick="refreshAllData()">
+            Refresh All Data
           </button>
-          <a href="/underwriter-dashboard.html" class="btn btn-small" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: white; text-decoration: none;">
-            📋 Full Underwriter Dashboard
+          <a href="/underwriter-dashboard.html" class="btn btn-small" style="background: linear-gradient(135deg, #0d47a1 0%, #1976d2 100%); color: white; text-decoration: none;">
+            Full Underwriter Dashboard
           </a>
-          <a href="/unified-workbench.html" class="btn btn-small" style="background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); color: white; text-decoration: none;">
-            📋 Assessments Workbench
+          <a href="/unified-workbench.html" class="btn btn-small" style="background: linear-gradient(135deg, #0d47a1 0%, #1976d2 100%); color: white; text-decoration: none;">
+            Assessments Workbench
           </a>
-          <a href="/risk-assessment-viewer.html" class="btn btn-small" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; text-decoration: none;">
-            🔒 Application Risk Viewer
+          <a href="/risk-assessment-viewer.html" class="btn btn-small" style="background: linear-gradient(135deg, #0d47a1 0%, #1976d2 100%); color: white; text-decoration: none;">
+            Application Risk Viewer
           </a>
-          <a href="/admin-media.html" class="btn btn-small" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none;">
-            📁 Media Dashboard
+          <a href="/admin-media.html" class="btn btn-small" style="background: linear-gradient(135deg, #0d47a1 0%, #1976d2 100%); color: white; text-decoration: none;">
+            Media Dashboard
           </a>
-          <a href="#invitation-management" class="btn btn-small" style="background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%); color: white; text-decoration: none;">
-            🎟️ Invitation Codes
+          <a href="#invitation-management" class="btn btn-small" style="background: linear-gradient(135deg, #0d47a1 0%, #1976d2 100%); color: white; text-decoration: none;">
+            Invitation Codes
           </a>
         </div>
         <!-- Progress indicator -->
         <div id="pipeline-progress" style="display: none; margin-top: 12px;">
           <div style="background: #e5e7eb; border-radius: 4px; height: 6px; overflow: hidden;">
-            <div id="pipeline-progress-bar" style="background: linear-gradient(90deg, #10b981, #3b82f6); height: 100%; width: 0%; transition: width 0.3s;"></div>
+            <div id="pipeline-progress-bar" style="background: linear-gradient(90deg, #1565c0, #42a5f5); height: 100%; width: 0%; transition: width 0.3s;"></div>
           </div>
           <div id="pipeline-progress-text" style="font-size: 12px; color: #666; margin-top: 4px;"></div>
         </div>
@@ -1570,7 +1533,7 @@
     <!-- Claims Division -->
     <section id="claims" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" data-framed="auto">
       <div class="section-header">
-        <h2>📝 Claims Division — ADL-Based Disability Claims</h2>
+        <h2>Claims Division — ADL-Based Disability Claims</h2>
         <div style="display: flex; gap: 12px; align-items: center;">
           <span class="badge badge-orange" id="claims-pending-badge">0 ADL Assessments Pending</span>
           <span class="badge badge-success" id="claims-approved-badge">0 Approved</span>
@@ -1578,47 +1541,47 @@
       </div>
       
       <!-- Quick Pipeline Actions for Claims Division -->
-      <div style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 1px solid rgba(245, 158, 11, 0.2);">
-        <h4 style="margin: 0 0 12px 0; display: flex; align-items: center; gap: 8px;">
-          <span>⚡</span> Quick Claims Actions
+      <div style="background: linear-gradient(135deg, #f5f9ff 0%, #e3f2fd 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 1px solid rgba(21, 101, 192, 0.15);">
+        <h4 style="margin: 0 0 12px 0; display: flex; align-items: center; gap: 8px; color: #0d47a1;">
+          Quick Claims Actions
           <span id="claims-pipeline-status" style="font-size: 12px; font-weight: normal; margin-left: auto; color: #666;"></span>
         </h4>
         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;" onclick="processAllClaims()" title="Process all pending claims">
-            ✅ Process All Pending
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white;" onclick="processAllClaims()" title="Process all pending claims">
+            Process All Pending
           </button>
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;" onclick="validateADLAssessments()" title="Validate all ADL assessments">
-            🔍 Validate ADL Assessments
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #1565c0 0%, #1e88e5 100%); color: white;" onclick="validateADLAssessments()" title="Validate all ADL assessments">
+            Validate ADL Assessments
           </button>
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;" onclick="syncClaimsLedger()" title="Sync claims to transaction ledger">
-            📒 Sync Ledgers
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #1565c0 0%, #1e88e5 100%); color: white;" onclick="syncClaimsLedger()" title="Sync claims to transaction ledger">
+            Sync Ledgers
           </button>
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white;" onclick="generateClaimsReport()" title="Generate claims performance report">
-            📊 Generate Report
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%); color: white;" onclick="generateClaimsReport()" title="Generate claims performance report">
+            Generate Report
           </button>
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); color: white;" onclick="loadClaims()" title="Refresh claims list">
-            🔃 Refresh
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%); color: white;" onclick="loadClaims()" title="Refresh claims list">
+            Refresh
           </button>
         </div>
       </div>
       
       <!-- AI Claims Bot Section -->
-      <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; color: white;">
+      <div style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; color: white;">
         <h4 style="margin: 0 0 12px 0; display: flex; align-items: center; gap: 10px;">
-          🤖 AI Claims Bot (Claimer) — Fraud Detection & Probability Assessment
+          AI Claims Bot (Claimer) — Fraud Detection & Probability Assessment
         </h4>
         <p style="margin: 0 0 16px 0; opacity: 0.9; font-size: 0.95rem;">
           Analyze claims for authenticity, detect hidden conditions from underwriting data, and generate AI-powered probability reports for fraud detection.
         </p>
         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 12px 20px;" onclick="openClaimsAdjusterDashboard()" title="Open full Claims Adjuster Dashboard">
-            📋 Claims Adjuster Dashboard
+          <button class="btn btn-small" style="background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.35); color: white; padding: 12px 20px;" onclick="openClaimsAdjusterDashboard()" title="Open full Claims Adjuster Dashboard">
+            Claims Adjuster Dashboard
           </button>
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); color: white; padding: 12px 20px;" onclick="runBatchProbabilityAnalysis()" title="Run probability analysis on all pending claims">
-            🔬 Batch Probability Analysis
+          <button class="btn btn-small" style="background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.35); color: white; padding: 12px 20px;" onclick="runBatchProbabilityAnalysis()" title="Run probability analysis on all pending claims">
+            Batch Probability Analysis
           </button>
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; padding: 12px 20px;" onclick="viewFraudAlerts()" title="View fraud alerts and suspicious claims">
-            🚨 Fraud Alerts
+          <button class="btn btn-small" style="background: rgba(239,83,80,0.35); border: 1px solid rgba(239,83,80,0.6); color: white; padding: 12px 20px;" onclick="viewFraudAlerts()" title="View fraud alerts and suspicious claims">
+            Fraud Alerts
           </button>
         </div>
       </div>
@@ -1655,7 +1618,7 @@
     <!-- Accounting/Billing Division -->
     <section id="billing" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" data-framed="auto">
       <div class="section-header">
-        <h2>💰 Accounting Division — Billing & Payments</h2>
+        <h2>Accounting Division — Billing & Payments</h2>
       </div>
       
       <div class="billing-stats">
@@ -1709,7 +1672,7 @@
     <!-- Reinsurance Division -->
     <section id="reinsurance" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" data-framed="auto">
       <div class="section-header">
-        <h2>🤝 Reinsurance Division — Partner Management</h2>
+        <h2>Reinsurance Division — Partner Management</h2>
       </div>
       
       <div class="table-card">
@@ -1740,7 +1703,7 @@
     <!-- Legal Division -->
     <section id="legal" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" data-framed="auto">
       <div class="section-header">
-        <h2>⚖️ Legal Division — Compliance & Disputes</h2>
+        <h2>Legal Division — Compliance & Disputes</h2>
       </div>
       
       <div class="legal-stats">
@@ -1767,30 +1730,26 @@
     </section>
     
     <!-- Marketplace & Services Division -->
-    <section id="marketplace" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 16px; padding: 28px; border: 1px solid rgba(21, 101, 192, 0.1);">
+    <section id="marketplace" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" style="background: linear-gradient(135deg, #f5f9ff 0%, #e3f2fd 100%); border-radius: 16px; padding: 28px; border: 1px solid rgba(21, 101, 192, 0.12);">
       <div class="section-header">
-        <h2>🛒 Marketplace Division — Services & Products</h2>
+        <h2>Marketplace Division — Services & Products</h2>
         <span class="badge badge-success" id="marketplace-status">NFT-Verified</span>
       </div>
       
       <div class="dashboard-stats" style="margin-bottom: 24px;">
-        <div class="stat-box" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
-          <div class="stat-icon">💰</div>
+        <div class="stat-box" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white;">
           <div class="stat-value" id="mp-total-volume">$0</div>
           <div class="stat-label">Total Volume</div>
         </div>
-        <div class="stat-box" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);">
-          <div class="stat-icon">🏥</div>
+        <div class="stat-box" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white;">
           <div class="stat-value" id="mp-insurance-covered">$0</div>
           <div class="stat-label">Insurance Covered</div>
         </div>
-        <div class="stat-box" style="background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);">
-          <div class="stat-icon">⏳</div>
+        <div class="stat-box" style="background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%); color: white;">
           <div class="stat-value" id="mp-pending">0</div>
           <div class="stat-label">Open Orders</div>
         </div>
-        <div class="stat-box" style="background: linear-gradient(135deg, #6f42c1 0%, #5a32a3 100%);">
-          <div class="stat-icon">🔗</div>
+        <div class="stat-box" style="background: linear-gradient(135deg, #1e88e5 0%, #64b5f6 100%); color: white;">
           <div class="stat-value" id="mp-nfts">0</div>
           <div class="stat-label">NFT Tokens Issued</div>
         </div>
@@ -1834,17 +1793,17 @@
       
       <div style="margin-top: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px;">
         <div class="card" style="background: white;">
-          <h3>🩺 Top Service Categories</h3>
+          <h3>Top Service Categories</h3>
           <div id="top-services"><div class="muted-text">Loading live marketplace categories...</div></div>
         </div>
         
         <div class="card" style="background: white;">
-          <h3>📦 Top Product Categories</h3>
+          <h3>Top Product Categories</h3>
           <div id="top-products"><div class="muted-text">Loading live marketplace categories...</div></div>
         </div>
         
         <div class="card" style="background: white;">
-          <h3>🔗 NFT Integrity Status</h3>
+          <h3>NFT Integrity Status</h3>
           <div id="nft-status">
             <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
               <span>Tokens Verified</span>
@@ -1865,30 +1824,26 @@
       <div class="card" style="background: white; margin-top: 24px;">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
           <div>
-            <h3 style="margin:0;">🛡️ Marketplace Integrity Report</h3>
+            <h3 style="margin:0;">Marketplace Integrity Report</h3>
             <div class="muted-text" id="marketplace-integrity-summary">Loading integrity diagnostics...</div>
           </div>
           <button class="btn btn-small" onclick="loadMarketplaceIntegrityReport()">Refresh Integrity</button>
         </div>
 
         <div class="dashboard-stats" style="margin-bottom: 16px;">
-          <div class="stat-box" style="background: #fff8e1; color:#5d4037;">
-            <div class="stat-icon">🏢</div>
+          <div class="stat-box" style="background: #e3f2fd; color:#0d47a1;">
             <div class="stat-value" id="mp-integrity-missing-suppliers">0</div>
             <div class="stat-label">Approved Suppliers Missing Visible Offers</div>
           </div>
-          <div class="stat-box" style="background: #e8f5e9; color:#1b5e20;">
-            <div class="stat-icon">💼</div>
+          <div class="stat-box" style="background: #e3f2fd; color:#0d47a1;">
             <div class="stat-value" id="mp-integrity-wallet-gaps">0</div>
             <div class="stat-label">Visible Offers Missing Wallet Compatibility</div>
           </div>
-          <div class="stat-box" style="background: #fce4ec; color:#880e4f;">
-            <div class="stat-icon">🧾</div>
+          <div class="stat-box" style="background: #e3f2fd; color:#0d47a1;">
             <div class="stat-value" id="mp-integrity-ledger-gaps">0</div>
             <div class="stat-label">Purchases Missing Ledger / NFT Links</div>
           </div>
           <div class="stat-box" style="background: #e3f2fd; color:#0d47a1;">
-            <div class="stat-icon">🔄</div>
             <div class="stat-value" id="mp-integrity-drift">0</div>
             <div class="stat-label">Orders With Marketplace Drift</div>
           </div>
@@ -1913,19 +1868,19 @@
     </section>
     
     <!-- Marketing + Sales Agent (AI + BI) -->
-    <section id="growth-agent-section" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: linear-gradient(135deg, #0b1f4d 0%, #173f8a 50%, #1e5ec8 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 10px 30px rgba(11, 31, 77, 0.28);">
+    <section id="growth-agent-section" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 10px 30px rgba(13, 71, 161, 0.28);">
       <div class="section-header" style="margin-bottom: 18px;">
         <div>
-          <h2 style="color: white; margin: 0;">🚀 AI + BI Marketing & Sales Agent</h2>
+          <h2 style="color: white; margin: 0;">AI + BI Marketing & Sales Agent</h2>
           <p style="opacity: 0.88; margin: 6px 0 0 0; font-size: 0.92rem;">
             Advanced growth playbooks for Insurance, Investments, and Health Wallet. Includes stories, article briefs, AI video blueprints, and social-network plans.
           </p>
         </div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-          <button onclick="generateMarketingSalesCampaign()" style="background: #42a5f5; color: white; border: none; padding: 9px 14px; border-radius: 8px; cursor: pointer; font-weight: 700;">🤖 Generate Agent Plan</button>
-          <button onclick="publishMarketingSalesCampaign()" style="background: #4caf50; color: white; border: none; padding: 9px 14px; border-radius: 8px; cursor: pointer; font-weight: 700;">📁 Publish to Media</button>
-          <a href="/admin-media.html#growth-agent" target="_top" style="background: rgba(255,255,255,0.2); color: white; text-decoration: none; border: 1px solid rgba(255,255,255,0.3); padding: 9px 14px; border-radius: 8px; font-weight: 700;">🔗 Open in Media Dashboard</a>
-          <a href="/admin-media.html#video-agents" target="_top" style="background: rgba(255,255,255,0.2); color: white; text-decoration: none; border: 1px solid rgba(255,255,255,0.3); padding: 9px 14px; border-radius: 8px; font-weight: 700;">🎬 Video Agents (Media)</a>
+          <button onclick="generateMarketingSalesCampaign()" style="background: #42a5f5; color: white; border: none; padding: 9px 14px; border-radius: 8px; cursor: pointer; font-weight: 700;">Generate Agent Plan</button>
+          <button onclick="publishMarketingSalesCampaign()" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 9px 14px; border-radius: 8px; cursor: pointer; font-weight: 700;">Publish to Media</button>
+          <a href="/admin-media.html#growth-agent" target="_top" style="background: rgba(255,255,255,0.2); color: white; text-decoration: none; border: 1px solid rgba(255,255,255,0.3); padding: 9px 14px; border-radius: 8px; font-weight: 700;">Open in Media Dashboard</a>
+          <a href="/admin-media.html#video-agents" target="_top" style="background: rgba(255,255,255,0.2); color: white; text-decoration: none; border: 1px solid rgba(255,255,255,0.3); padding: 9px 14px; border-radius: 8px; font-weight: 700;">Video Agents (Media)</a>
         </div>
       </div>
 
@@ -2024,11 +1979,11 @@
           <input id="mkt-video-auto-hero" type="checkbox" checked>
           Auto-publish generated video to landing-page hero
         </label>
-        <button onclick="batchGenerateMarketingVideos()" style="background:#26a69a;color:white;border:none;padding:7px 12px;border-radius:8px;cursor:pointer;font-weight:700;">
-          🎬 Generate All Blueprints
+        <button onclick="batchGenerateMarketingVideos()" style="background:#42a5f5;color:white;border:none;padding:7px 12px;border-radius:8px;cursor:pointer;font-weight:700;">
+          Generate All Blueprints
         </button>
         <button onclick="loadMarketingVideoJobs({ silent: false })" style="background:rgba(255,255,255,0.14);color:white;border:1px solid rgba(255,255,255,0.25);padding:7px 12px;border-radius:8px;cursor:pointer;font-weight:700;">
-          🔄 Refresh Video Jobs
+          Refresh Video Jobs
         </button>
       </div>
 
@@ -2053,62 +2008,62 @@
 
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px;">
         <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 12px;">
-          <h4 style="margin: 0 0 8px 0;">🎯 Sales Playbooks</h4>
+          <h4 style="margin: 0 0 8px 0;">Sales Playbooks</h4>
           <div id="mkt-sales-playbooks" style="font-size: 0.85rem; line-height: 1.45;">Generate a campaign to view playbooks.</div>
         </div>
         <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 12px;">
-          <h4 style="margin: 0 0 8px 0;">📚 Story Outlines</h4>
+          <h4 style="margin: 0 0 8px 0;">Story Outlines</h4>
           <div id="mkt-story-outlines" style="font-size: 0.85rem; line-height: 1.45;">Generate a campaign to view story arcs.</div>
         </div>
         <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 12px;">
-          <h4 style="margin: 0 0 8px 0;">📰 Targeted Articles</h4>
+          <h4 style="margin: 0 0 8px 0;">Targeted Articles</h4>
           <div id="mkt-article-briefs" style="font-size: 0.85rem; line-height: 1.45;">Generate a campaign to view article briefs.</div>
         </div>
         <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 12px;">
-          <h4 style="margin: 0 0 8px 0;">🎬 AI Video Blueprints</h4>
+          <h4 style="margin: 0 0 8px 0;">AI Video Blueprints</h4>
           <div id="mkt-video-briefs" style="font-size: 0.85rem; line-height: 1.45;">Generate a campaign to view video blueprint scripts.</div>
         </div>
         <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 12px;">
-          <h4 style="margin: 0 0 8px 0;">📣 Social Network Plan</h4>
+          <h4 style="margin: 0 0 8px 0;">Social Network Plan</h4>
           <div id="mkt-social-plan" style="font-size: 0.85rem; line-height: 1.45;">Generate a campaign to view channel strategy.</div>
         </div>
       </div>
     </section>
     
     <!-- Platform Ledger Analytics Section -->
-    <section id="platform-analytics" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #3949ab 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 8px 30px rgba(26, 35, 126, 0.25);">
+    <section id="platform-analytics" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 8px 30px rgba(13, 71, 161, 0.25);">
       <div class="section-header" style="margin-bottom: 24px;">
         <div>
-          <h2 style="color: white; margin: 0;">📊 Platform Ledger Analytics</h2>
+          <h2 style="color: white; margin: 0;">Platform Ledger Analytics</h2>
           <p style="opacity: 0.8; margin: 4px 0 0 0; font-size: 0.9rem;">Aggregated data from all customers for BI predictions & statistics</p>
         </div>
-        <button onclick="loadPlatformAnalytics()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">🔄 Refresh</button>
+        <button onclick="loadPlatformAnalytics()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Refresh</button>
       </div>
       
       <!-- Platform Totals Row -->
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px;">
         <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; border: 1px solid rgba(255,255,255,0.15);">
-          <div style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 4px;">👥 Total Customers</div>
+          <div style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 4px;">Total Customers</div>
           <div id="analytics-customers" style="font-size: 1.8rem; font-weight: 700;">0</div>
         </div>
         <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; border: 1px solid rgba(255,255,255,0.15);">
-          <div style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 4px;">💰 Total Deposits</div>
+          <div style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 4px;">Total Deposits</div>
           <div id="analytics-deposits" style="font-size: 1.8rem; font-weight: 700;">$0</div>
         </div>
         <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; border: 1px solid rgba(255,255,255,0.15);">
-          <div style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 4px;">💊 Medical Purchases</div>
+          <div style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 4px;">Medical Purchases</div>
           <div id="analytics-medical" style="font-size: 1.8rem; font-weight: 700;">$0</div>
         </div>
         <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; border: 1px solid rgba(255,255,255,0.15);">
-          <div style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 4px;">📈 Investment Volume</div>
+          <div style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 4px;">Investment Volume</div>
           <div id="analytics-investments" style="font-size: 1.8rem; font-weight: 700;">$0</div>
         </div>
         <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; border: 1px solid rgba(255,255,255,0.15);">
-          <div style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 4px;">🤖 Algo Trading</div>
+          <div style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 4px;">Algo Trading</div>
           <div id="analytics-algo" style="font-size: 1.8rem; font-weight: 700;">$0</div>
         </div>
-        <div style="background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); border-radius: 12px; padding: 16px;">
-          <div style="font-size: 0.8rem; opacity: 0.9; margin-bottom: 4px;">💎 Total AUM</div>
+        <div style="background: linear-gradient(135deg, #1e88e5 0%, #64b5f6 100%); border-radius: 12px; padding: 16px;">
+          <div style="font-size: 0.8rem; opacity: 0.9; margin-bottom: 4px;">Total AUM</div>
           <div id="analytics-aum" style="font-size: 1.8rem; font-weight: 700;">$0</div>
         </div>
       </div>
@@ -2119,7 +2074,6 @@
         <!-- Medical Purchases by Category -->
         <div style="background: rgba(255,255,255,0.08); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.1);">
           <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
-            <span style="background: #f44336; padding: 6px 10px; border-radius: 8px;">💊</span>
             Medical Purchases by Category
           </h4>
           <div id="analytics-medical-categories" style="max-height: 200px; overflow-y: auto;">
@@ -2130,7 +2084,6 @@
         <!-- Investments by Asset -->
         <div style="background: rgba(255,255,255,0.08); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.1);">
           <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
-            <span style="background: #2196f3; padding: 6px 10px; border-radius: 8px;">📈</span>
             Investments by Asset Type
           </h4>
           <div id="analytics-investments-assets" style="max-height: 200px; overflow-y: auto;">
@@ -2141,7 +2094,6 @@
         <!-- Algo Trading Stats -->
         <div style="background: rgba(255,255,255,0.08); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.1);">
           <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
-            <span style="background: #9c27b0; padding: 6px 10px; border-radius: 8px;">🤖</span>
             Algo Trading Statistics
           </h4>
           <div id="analytics-algo-stats">
@@ -2152,7 +2104,6 @@
         <!-- Ledger Integrity -->
         <div style="background: rgba(255,255,255,0.08); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.1);">
           <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
-            <span style="background: #4caf50; padding: 6px 10px; border-radius: 8px;">⛓️</span>
             Ledger Integrity
           </h4>
           <div id="analytics-ledger-integrity">
@@ -2163,7 +2114,6 @@
         <!-- Top Products -->
         <div style="background: rgba(255,255,255,0.08); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.1);">
           <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
-            <span style="background: #ff9800; padding: 6px 10px; border-radius: 8px;">🏆</span>
             Top Products Purchased
           </h4>
           <div id="analytics-top-products" style="max-height: 200px; overflow-y: auto;">
@@ -2172,9 +2122,8 @@
         </div>
         
         <!-- Predictions / BI Metrics -->
-        <div style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.2) 0%, rgba(129, 199, 132, 0.2) 100%); border-radius: 12px; padding: 20px; border: 1px solid rgba(76, 175, 80, 0.3);">
+        <div style="background: linear-gradient(135deg, rgba(66, 165, 245, 0.2) 0%, rgba(144, 202, 249, 0.2) 100%); border-radius: 12px; padding: 20px; border: 1px solid rgba(144, 202, 249, 0.35);">
           <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
-            <span style="background: #4caf50; padding: 6px 10px; border-radius: 8px;">🔮</span>
             BI Predictions
           </h4>
           <div id="analytics-predictions">
@@ -2185,41 +2134,41 @@
     </section>
     
     <!-- ==================== INVITATION CODE MANAGEMENT ==================== -->
-    <section id="invitation-management" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 8px 30px rgba(255, 107, 53, 0.25);">
+    <section id="invitation-management" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 8px 30px rgba(13, 71, 161, 0.25);">
       <div class="section-header" style="margin-bottom: 24px;">
         <div>
-          <h2 style="color: white; margin: 0;">🎟️ Invitation Code Management</h2>
+          <h2 style="color: white; margin: 0;">Invitation Code Management</h2>
           <p style="opacity: 0.9; margin: 4px 0 0 0; font-size: 0.9rem;">Generate and manage registration invitation codes (Admin + Customer Referrals)</p>
         </div>
         <div style="display: flex; gap: 8px;">
-          <button onclick="loadInvitationStats()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">📊 Stats</button>
-          <button onclick="loadInvitationCodes()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">🔄 Refresh</button>
+          <button onclick="loadInvitationStats()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Stats</button>
+          <button onclick="loadInvitationCodes()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Refresh</button>
         </div>
       </div>
       
       <!-- Invitation Statistics Panel (hidden by default) -->
       <div id="invitation-stats-panel" style="display: none; background: rgba(255,255,255,0.95); color: #333; border-radius: 12px; padding: 24px; margin-bottom: 20px;">
-        <h3 style="margin: 0 0 16px 0; color: #ff6b35;">📊 Invitation Statistics</h3>
+        <h3 style="margin: 0 0 16px 0; color: #0d47a1;">Invitation Statistics</h3>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 20px;">
           <div style="background: #e3f2fd; border-radius: 12px; padding: 16px; text-align: center;">
             <div style="font-size: 2rem; font-weight: 700; color: #1565c0;" id="stats-admin-total">0</div>
             <div style="font-size: 0.85rem; color: #666;">Admin Codes</div>
           </div>
-          <div style="background: #fff3e0; border-radius: 12px; padding: 16px; text-align: center;">
-            <div style="font-size: 2rem; font-weight: 700; color: #ff6b35;" id="stats-customer-total">0</div>
+          <div style="background: #e3f2fd; border-radius: 12px; padding: 16px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: 700; color: #1976d2;" id="stats-customer-total">0</div>
             <div style="font-size: 0.85rem; color: #666;">Customer Referrals</div>
           </div>
-          <div style="background: #e8f5e9; border-radius: 12px; padding: 16px; text-align: center;">
-            <div style="font-size: 2rem; font-weight: 700; color: #28a745;" id="stats-registrations">0</div>
+          <div style="background: #e3f2fd; border-radius: 12px; padding: 16px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: 700; color: #1e88e5;" id="stats-registrations">0</div>
             <div style="font-size: 0.85rem; color: #666;">Total Registrations</div>
           </div>
-          <div style="background: #fce4ec; border-radius: 12px; padding: 16px; text-align: center;">
-            <div style="font-size: 2rem; font-weight: 700; color: #e91e63;" id="stats-unique-referrers">0</div>
+          <div style="background: #e3f2fd; border-radius: 12px; padding: 16px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: 700; color: #42a5f5;" id="stats-unique-referrers">0</div>
             <div style="font-size: 0.85rem; color: #666;">Unique Referrers</div>
           </div>
         </div>
         <div style="margin-top: 16px;">
-          <h4 style="margin: 0 0 12px 0; font-size: 1rem;">🏆 Top Referrers</h4>
+          <h4 style="margin: 0 0 12px 0; font-size: 1rem;">Top Referrers</h4>
           <div id="top-referrers-list" style="display: flex; flex-wrap: wrap; gap: 8px;">
             <span style="color: #666;">Loading...</span>
           </div>
@@ -2229,7 +2178,7 @@
       
       <!-- Generate New Code -->
       <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
-        <h3 style="margin: 0 0 16px 0; font-size: 1.1rem;">✨ Generate New Invitation Code</h3>
+        <h3 style="margin: 0 0 16px 0; font-size: 1.1rem;">Generate New Invitation Code</h3>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 16px;">
           <div>
             <label style="display: block; margin-bottom: 6px; font-size: 0.9rem; opacity: 0.9;">Max Uses</label>
@@ -2257,12 +2206,12 @@
           </div>
         </div>
         <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-          <button onclick="generateInvitationCode()" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); border: none; color: white; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 1rem;">🎫 Generate Code</button>
+          <button onclick="generateInvitationCode()" style="background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%); border: none; color: white; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 1rem;">Generate Code</button>
         </div>
         
         <!-- Generated Code Display with QR -->
         <div id="invitation-result-panel" style="display: none; margin-top: 20px; background: rgba(255,255,255,0.95); color: #333; border-radius: 12px; padding: 24px;">
-          <h4 style="margin: 0 0 16px 0; color: #28a745; font-size: 1.1rem;">✅ Invitation Code Generated!</h4>
+          <h4 style="margin: 0 0 16px 0; color: #1565c0; font-size: 1.1rem;">Invitation Code Generated</h4>
           
           <div style="display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: start;">
             <!-- Left: Code Details -->
@@ -2278,14 +2227,14 @@
               </div>
               
               <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;">
-                <button onclick="copyGeneratedCode()" style="background: #0d47a1; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">📋 Copy Code</button>
-                <button onclick="copyInvitationLink()" style="background: #1976d2; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">🔗 Copy Link</button>
-                <button onclick="downloadInvitationQR()" style="background: #6c757d; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">⬇️ Download QR</button>
+                <button onclick="copyGeneratedCode()" style="background: #0d47a1; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">Copy Code</button>
+                <button onclick="copyInvitationLink()" style="background: #1976d2; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">Copy Link</button>
+                <button onclick="downloadInvitationQR()" style="background: #6c757d; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">Download QR</button>
               </div>
               
               <!-- Social Share Buttons -->
               <div style="border-top: 1px solid #ddd; padding-top: 16px;">
-                <label style="display: block; font-size: 0.85rem; color: #666; margin-bottom: 10px;">📤 Share via:</label>
+                <label style="display: block; font-size: 0.85rem; color: #666; margin-bottom: 10px;">Share via:</label>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                   <button onclick="shareViaWhatsApp()" style="background: #25D366; color: white; border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 6px;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
@@ -2323,7 +2272,7 @@
       <!-- Active Codes List -->
       <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 20px;">
         <h3 style="margin: 0 0 16px 0; font-size: 1.1rem; display: flex; justify-content: space-between; align-items: center;">
-          📋 Invitation Codes
+          Invitation Codes
           <span id="codes-count" style="font-size: 0.9rem; opacity: 0.8;">Loading...</span>
         </h3>
         <div class="section-search">
@@ -2351,14 +2300,14 @@
     </section>
 
     <!-- ==================== BUSINESS RELATIONS (public inquiries) ==================== -->
-    <section id="business-relations" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: radial-gradient(700px 280px at 85% -20%, rgba(21, 68, 155, 0.55), transparent 65%), linear-gradient(135deg, #060d1f 0%, #0d1b3e 100%); color: #eaf1ff; border-radius: 16px; padding: 28px; margin-top: 24px; border: 1px solid rgba(227, 191, 111, 0.35); box-shadow: 0 8px 30px rgba(2, 8, 23, 0.45);">
+    <section id="business-relations" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%); color: #eaf1ff; border-radius: 16px; padding: 28px; margin-top: 24px; border: 1px solid rgba(255, 255, 255, 0.18); box-shadow: 0 8px 30px rgba(13, 71, 161, 0.3);">
       <div class="section-header" style="margin-bottom: 24px;">
         <div>
-          <h2 style="color: #f7e2a0; margin: 0;">🤝 Business Relations</h2>
+          <h2 style="color: white; margin: 0;">Business Relations</h2>
           <p style="opacity: 0.85; margin: 4px 0 0 0; font-size: 0.9rem;">Contact &amp; demo inquiries from the public solutions page — viewers, investors and business collaborators</p>
         </div>
         <div style="display: flex; gap: 8px;">
-          <button onclick="loadBusinessInquiries()" style="background: rgba(227,191,111,0.15); border: 1px solid rgba(227,191,111,0.5); color: #f7e2a0; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">🔄 Refresh</button>
+          <button onclick="loadBusinessInquiries()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.35); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Refresh</button>
         </div>
       </div>
 
@@ -2388,14 +2337,14 @@
 
       <!-- Filters -->
       <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 16px;">
-        <select id="bri-filter-status" onchange="loadBusinessInquiries()" style="padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(227,191,111,0.4); background: rgba(6,13,31,0.7); color: #eaf1ff;">
+        <select id="bri-filter-status" onchange="loadBusinessInquiries()" style="padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.35); background: rgba(13,71,161,0.7); color: #eaf1ff;">
           <option value="">All statuses</option>
           <option value="new">New</option>
           <option value="contacted">Contacted</option>
           <option value="qualified">Qualified</option>
           <option value="closed">Closed</option>
         </select>
-        <select id="bri-filter-type" onchange="loadBusinessInquiries()" style="padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(227,191,111,0.4); background: rgba(6,13,31,0.7); color: #eaf1ff;">
+        <select id="bri-filter-type" onchange="loadBusinessInquiries()" style="padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.35); background: rgba(13,71,161,0.7); color: #eaf1ff;">
           <option value="">All types</option>
           <option value="demo">Demo requests</option>
           <option value="contact">Contact</option>
@@ -2410,7 +2359,7 @@
       <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(127,178,255,0.15); border-radius: 12px; padding: 16px; max-height: 420px; overflow-y: auto;">
         <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
           <thead>
-            <tr style="border-bottom: 2px solid rgba(227,191,111,0.35);">
+            <tr style="border-bottom: 2px solid rgba(255,255,255,0.3);">
               <th style="text-align: left; padding: 10px 8px;">Received</th>
               <th style="text-align: center; padding: 10px 8px;">Type</th>
               <th style="text-align: left; padding: 10px 8px;">Name / Contact</th>
@@ -2719,31 +2668,31 @@
       },
       customers: {
         title: 'Customers',
-        description: 'Customer records, pipeline validations, wallets and ledger sync.',
+        description: 'Customer records, pipeline validations, wallets, exports and ledger sync.',
         sectionId: 'customers',
         defaultAction: 'refresh_customers',
-        actions: ['refresh_customers', 'validate_all_customer_pipelines', 'activate_all_wallets', 'sync_customer_ledgers']
+        actions: ['refresh_customers', 'validate_all_customer_pipelines', 'activate_all_wallets', 'sync_customer_ledgers', 'export_customer_data']
       },
       policies: {
         title: 'Policies',
-        description: 'Policy operations, premium generation and reports.',
+        description: 'Policy operations, premium generation, ledger sync and reports.',
         sectionId: 'policies',
         defaultAction: 'refresh_policies',
-        actions: ['refresh_policies', 'activate_approved_policies', 'generate_premiums', 'generate_policy_report']
+        actions: ['refresh_policies', 'activate_approved_policies', 'generate_premiums', 'sync_policy_ledgers', 'generate_policy_report']
       },
       underwriting: {
         title: 'Underwriting',
-        description: 'Risk assessments, pending approvals and pipeline processing.',
+        description: 'Risk assessments, pending approvals, pipeline processing and bulk operations.',
         sectionId: 'underwriting',
         defaultAction: 'refresh_underwriting',
-        actions: ['refresh_underwriting', 'approve_all_pending_underwriting', 'validate_all_customers', 'process_all_pipelines']
+        actions: ['refresh_underwriting', 'approve_all_pending_underwriting', 'validate_all_customers', 'process_all_pipelines', 'allocate_all_savings', 'generate_missing_billing']
       },
       claims: {
         title: 'Claims',
-        description: 'ADL claims processing, validation, and intelligence.',
+        description: 'ADL claims processing, validation, ledger sync and intelligence.',
         sectionId: 'claims',
         defaultAction: 'refresh_claims',
-        actions: ['refresh_claims', 'process_all_claims', 'validate_adl_assessments', 'generate_claims_report']
+        actions: ['refresh_claims', 'process_all_claims', 'validate_adl_assessments', 'sync_claims_ledger', 'run_batch_probability_analysis', 'generate_claims_report']
       },
       billing: {
         title: 'Billing',
@@ -2775,100 +2724,124 @@
       },
       growth: {
         title: 'Growth/Media',
-        description: 'Marketing AI campaigns and media orchestration.',
+        description: 'Marketing AI campaigns, video generation and media orchestration.',
         sectionId: 'growth-agent-section',
         defaultAction: 'refresh_growth_media',
-        actions: ['refresh_growth_media', 'refresh_marketing_media', 'refresh_video_jobs']
+        actions: ['refresh_growth_media', 'refresh_marketing_media', 'refresh_video_jobs', 'batch_generate_marketing_videos']
       },
       operations: {
         title: 'Operations',
-        description: 'System health, actuary simulation, console, and admin tools.',
+        description: 'System health, actuary simulation, console, business inquiries and admin tools.',
         sectionId: null,
         defaultAction: 'system_health',
-        actions: ['system_health', 'run_actuary_simulation', 'open_console', 'reconcile_balance_sheet', 'refresh_financials', 'refresh_reinsurance', 'refresh_legal', 'cleanup_demo_data']
+        actions: ['system_health', 'run_actuary_simulation', 'open_console', 'reconcile_balance_sheet', 'refresh_financials', 'refresh_reinsurance', 'refresh_legal', 'refresh_business_inquiries', 'view_test_data', 'cleanup_demo_data']
       }
     };
 
     const ADMIN_ASSISTANT_ACTIONS = {
-      refresh_overview: { label: '🔄 Refresh Overview', fn: async () => { await loadDashboardStats(); await loadPipelineStats(); }, integrity: 'safe' },
-      refresh_all_core: { label: '🧭 Refresh Core Dashboard', fn: async () => { await refreshAllData(); }, integrity: 'safe' },
-      refresh_financials: { label: '🏦 Refresh Financials', fn: async () => { await loadBalanceSheet(); }, integrity: 'safe' },
-      refresh_ai_insights: { label: '🤖 Refresh AI Insights', fn: async () => { await loadAIInsights(); }, integrity: 'safe' },
-      run_ai_bi_insights: { label: '🤖📊 Run AI + BI Insights', fn: async () => { await loadPlatformAnalytics(); await loadAIInsights(); }, integrity: 'safe' },
+      refresh_overview: { label: 'Refresh Overview', fn: async () => { await loadDashboardStats(); await loadPipelineStats(); }, integrity: 'safe' },
+      refresh_all_core: { label: 'Refresh Core Dashboard', fn: async () => { await refreshAllData(); }, integrity: 'safe' },
+      refresh_financials: { label: 'Refresh Financials', fn: async () => { await loadBalanceSheet(); }, integrity: 'safe' },
+      refresh_ai_insights: { label: 'Refresh AI Insights', fn: async () => { await loadAIInsights(); }, integrity: 'safe' },
+      run_ai_bi_insights: { label: 'Run AI + BI Insights', fn: async () => { await loadPlatformAnalytics(); await loadAIInsights(); }, integrity: 'safe' },
       reconcile_balance_sheet: {
-        label: '✅ Reconcile Balance Sheet',
+        label: 'Reconcile Balance Sheet',
         confirm: '⚠️ Reconcile balance sheet now?\n\nThis verifies financial integrity across reserves and ledgers.',
         fn: async () => { await reconcileBalanceSheet(); },
         integrity: 'guarded'
       },
       cleanup_demo_data: {
-        label: '🧹 Clean Demo Data',
+        label: 'Clean Demo Data',
         confirm: '⚠️ Clean demo/test data now?\n\nThis is a high-impact operation. Continue only if intended.',
         fn: async () => { await cleanupDemoData(); },
         integrity: 'guarded'
       },
-      refresh_customers: { label: '👥 Refresh Customers', fn: async () => { await loadCustomerList(); }, integrity: 'safe' },
-      validate_all_customer_pipelines: { label: '🔍 Validate Customer Pipelines', fn: async () => { await validateAllCustomerPipelines(); }, integrity: 'safe' },
-      activate_all_wallets: { label: '💳 Activate Wallets', fn: async () => { await activateAllWallets(); }, integrity: 'safe' },
-      sync_customer_ledgers: { label: '📒 Sync Customer Ledgers', fn: async () => { await syncCustomerLedgers(); }, integrity: 'safe' },
-      refresh_policies: { label: '📋 Refresh Policies', fn: async () => { await loadPolicies(); }, integrity: 'safe' },
-      activate_approved_policies: { label: '✅ Activate Approved Policies', fn: async () => { await activateAllPendingPolicies(); }, integrity: 'safe' },
-      generate_premiums: { label: '💰 Generate Premiums', fn: async () => { await generateAllPremiums(); }, integrity: 'safe' },
-      generate_policy_report: { label: '📊 Generate Policy Report', fn: async () => { await generatePolicyReport(); }, integrity: 'safe' },
-      refresh_underwriting: { label: '🔍 Refresh Underwriting', fn: async () => { await loadUnderwritingApplications(); }, integrity: 'safe' },
+      refresh_customers: { label: 'Refresh Customers', fn: async () => { await loadCustomerList(); }, integrity: 'safe' },
+      validate_all_customer_pipelines: { label: 'Validate Customer Pipelines', fn: async () => { await validateAllCustomerPipelines(); }, integrity: 'safe' },
+      activate_all_wallets: { label: 'Activate Wallets', fn: async () => { await activateAllWallets(); }, integrity: 'safe' },
+      sync_customer_ledgers: { label: 'Sync Customer Ledgers', fn: async () => { await syncCustomerLedgers(); }, integrity: 'safe' },
+      export_customer_data: { label: 'Export Customer Data', fn: async () => { await exportCustomerData(); }, integrity: 'safe' },
+      refresh_policies: { label: 'Refresh Policies', fn: async () => { await loadPolicies(); }, integrity: 'safe' },
+      activate_approved_policies: { label: 'Activate Approved Policies', fn: async () => { await activateAllPendingPolicies(); }, integrity: 'safe' },
+      generate_premiums: { label: 'Generate Premiums', fn: async () => { await generateAllPremiums(); }, integrity: 'safe' },
+      sync_policy_ledgers: { label: 'Sync Policy Ledgers', fn: async () => { await syncPolicyLedgers(); }, integrity: 'safe' },
+      generate_policy_report: { label: 'Generate Policy Report', fn: async () => { await generatePolicyReport(); }, integrity: 'safe' },
+      refresh_underwriting: { label: 'Refresh Underwriting', fn: async () => { await loadUnderwritingApplications(); }, integrity: 'safe' },
       approve_all_pending_underwriting: {
-        label: '✅ Approve All Pending',
+        label: 'Approve All Pending',
         confirm: '⚠️ Approve all pending underwriting applications?\n\nThis changes policy/application states.',
         fn: async () => { await approveAllPending(); },
         integrity: 'guarded'
       },
-      validate_all_customers: { label: '🔍 Validate All Customers', fn: async () => { await validateAllCustomers(); }, integrity: 'safe' },
-      process_all_pipelines: { label: '⚡ Process All Pipelines', fn: async () => { await processAllPipelines(); }, integrity: 'safe' },
-      refresh_claims: { label: '📝 Refresh Claims', fn: async () => { await loadClaims(); }, integrity: 'safe' },
-      process_all_claims: { label: '✅ Process All Claims', fn: async () => { await processAllClaims(); }, integrity: 'safe' },
-      validate_adl_assessments: { label: '🧪 Validate ADL Assessments', fn: async () => { await validateADLAssessments(); }, integrity: 'safe' },
-      generate_claims_report: { label: '📊 Generate Claims Report', fn: async () => { await generateClaimsReport(); }, integrity: 'safe' },
-      refresh_billing: { label: '💰 Refresh Billing', fn: async () => { await loadBillingData(); }, integrity: 'safe' },
-      refresh_transactions: { label: '🧾 Refresh Transactions', fn: async () => { await loadTransactions(); }, integrity: 'safe' },
+      validate_all_customers: { label: 'Validate All Customers', fn: async () => { await validateAllCustomers(); }, integrity: 'safe' },
+      process_all_pipelines: { label: 'Process All Pipelines', fn: async () => { await processAllPipelines(); }, integrity: 'safe' },
+      allocate_all_savings: {
+        // allocateAllSavings() shows its own confirm dialog before mutating funds.
+        label: 'Allocate All Savings',
+        fn: async () => { await allocateAllSavings(); },
+        integrity: 'guarded'
+      },
+      generate_missing_billing: {
+        // generateMissingBilling() shows its own confirm dialog before creating bills.
+        label: 'Generate Missing Bills',
+        fn: async () => { await generateMissingBilling(); },
+        integrity: 'guarded'
+      },
+      refresh_claims: { label: 'Refresh Claims', fn: async () => { await loadClaims(); }, integrity: 'safe' },
+      process_all_claims: { label: 'Process All Claims', fn: async () => { await processAllClaims(); }, integrity: 'safe' },
+      validate_adl_assessments: { label: 'Validate ADL Assessments', fn: async () => { await validateADLAssessments(); }, integrity: 'safe' },
+      sync_claims_ledger: { label: 'Sync Claims Ledger', fn: async () => { await syncClaimsLedger(); }, integrity: 'safe' },
+      run_batch_probability_analysis: { label: 'Batch Probability Analysis', fn: async () => { await runBatchProbabilityAnalysis(); }, integrity: 'safe' },
+      generate_claims_report: { label: 'Generate Claims Report', fn: async () => { await generateClaimsReport(); }, integrity: 'safe' },
+      refresh_billing: { label: 'Refresh Billing', fn: async () => { await loadBillingData(); }, integrity: 'safe' },
+      refresh_transactions: { label: 'Refresh Transactions', fn: async () => { await loadTransactions(); }, integrity: 'safe' },
       bill_all_policies: {
-        label: '⚡ Bill All Policies',
+        label: 'Bill All Policies',
         confirm: '⚠️ Execute bill-all for eligible active policies?\n\nThis creates billing records and should be run intentionally.',
         fn: async () => { await executeBillAll(); },
         integrity: 'guarded'
       },
-      refresh_marketplace: { label: '🛒 Refresh Marketplace', fn: async () => { await loadMarketplaceData(); }, integrity: 'safe' },
-      refresh_analytics: { label: '📊 Refresh Platform Analytics', fn: async () => { await loadPlatformAnalytics(); }, integrity: 'safe' },
-      refresh_invitations: { label: '🎟️ Refresh Invitation Codes', fn: async () => { await loadInvitationCodes(); }, integrity: 'safe' },
-      load_invitation_stats: { label: '📈 Load Invitation Stats', fn: async () => { await loadInvitationStats(); }, integrity: 'safe' },
-      refresh_reinsurance: { label: '🤝 Refresh Reinsurance', fn: async () => { await loadReinsuranceData(); }, integrity: 'safe' },
-      refresh_legal: { label: '⚖️ Refresh Legal', fn: async () => { await loadLegalData(); }, integrity: 'safe' },
-      refresh_growth_media: { label: '🚀 Refresh Growth Campaign', fn: async () => { await loadLatestMarketingCampaign(); }, integrity: 'safe' },
-      refresh_marketing_media: { label: '🗂️ Refresh Media Assets', fn: async () => { await loadMarketingMediaAssets(); }, integrity: 'safe' },
-      refresh_video_jobs: { label: '🎬 Refresh Video Jobs', fn: async () => { await loadMarketingVideoJobs({ silent: false }); if (latestMarketingCampaignPayload?.campaign) renderMarketingCampaign(latestMarketingCampaignPayload); }, integrity: 'safe' },
-      refresh_active_tab: { label: '🔄 Refresh Active Tab', dynamic: true, integrity: 'safe' },
+      refresh_marketplace: { label: 'Refresh Marketplace', fn: async () => { await loadMarketplaceData(); }, integrity: 'safe' },
+      refresh_analytics: { label: 'Refresh Platform Analytics', fn: async () => { await loadPlatformAnalytics(); }, integrity: 'safe' },
+      refresh_invitations: { label: 'Refresh Invitation Codes', fn: async () => { await loadInvitationCodes(); }, integrity: 'safe' },
+      load_invitation_stats: { label: 'Load Invitation Stats', fn: async () => { await loadInvitationStats(); }, integrity: 'safe' },
+      refresh_reinsurance: { label: 'Refresh Reinsurance', fn: async () => { await loadReinsuranceData(); }, integrity: 'safe' },
+      refresh_legal: { label: 'Refresh Legal', fn: async () => { await loadLegalData(); }, integrity: 'safe' },
+      refresh_business_inquiries: { label: 'Refresh Business Inquiries', fn: async () => { await loadBusinessInquiries(); }, integrity: 'safe' },
+      view_test_data: { label: 'View Test Data', fn: async () => { await toggleTestDataPanel(); }, integrity: 'safe' },
+      refresh_growth_media: { label: 'Refresh Growth Campaign', fn: async () => { await loadLatestMarketingCampaign(); }, integrity: 'safe' },
+      refresh_marketing_media: { label: 'Refresh Media Assets', fn: async () => { await loadMarketingMediaAssets(); }, integrity: 'safe' },
+      refresh_video_jobs: { label: 'Refresh Video Jobs', fn: async () => { await loadMarketingVideoJobs({ silent: false }); if (latestMarketingCampaignPayload?.campaign) renderMarketingCampaign(latestMarketingCampaignPayload); }, integrity: 'safe' },
+      batch_generate_marketing_videos: {
+        label: 'Generate All Blueprint Videos',
+        confirm: '⚠️ Queue AI video generation for every campaign blueprint?\n\nThis submits provider video jobs for the latest campaign.',
+        fn: async () => { await batchGenerateMarketingVideos(); },
+        integrity: 'guarded'
+      },
+      refresh_active_tab: { label: 'Refresh Active Domain', dynamic: true, integrity: 'safe' },
       run_actuary_simulation: {
-        label: '📐 Run Actuary Simulation',
+        label: 'Run Actuary Simulation',
         confirm: '📐 Run portfolio actuarial simulation?\n\nThis generates a full portfolio simulation using actuarial tables.\nDefault: 100k customers, age 3-55, standard demographics.',
         fn: async () => { await adminRunActuarySimulation(); },
         integrity: 'guarded'
       },
       open_console: {
-        label: '⌨️ Open Console',
+        label: 'Open Console',
         fn: async () => { toggleAdminConsole(); },
         integrity: 'safe'
       },
       open_actuary_dashboard: {
-        label: '📐 Actuary Dashboard',
+        label: 'Actuary Dashboard',
         fn: async () => { window.open('/actuary-dashboard.html', '_blank'); },
         integrity: 'safe'
       },
       system_health: {
-        label: '🏥 System Health Check',
+        label: 'System Health Check',
         fn: async () => { await adminRunSystemHealth(); },
         integrity: 'safe'
       },
       navigate_section: {
-        label: '📍 Go to Section',
+        label: 'Go to Section',
         fn: async () => { adminAssistantNavigateToTabSection(); },
         integrity: 'safe'
       }
@@ -2882,8 +2855,14 @@
       run_ai_bi_insights: 'analytics',
       refresh_analytics: 'analytics',
       validate_all_customer_pipelines: 'customers',
+      export_customer_data: 'customers',
       activate_approved_policies: 'policies',
+      sync_policy_ledgers: 'policies',
       process_all_claims: 'claims',
+      sync_claims_ledger: 'claims',
+      run_batch_probability_analysis: 'claims',
+      allocate_all_savings: 'underwriting',
+      generate_missing_billing: 'underwriting',
       refresh_marketplace: 'marketplace',
       refresh_invitations: 'invitations',
       refresh_growth_media: 'growth',
@@ -2891,6 +2870,7 @@
       refresh_transactions: 'billing',
       load_invitation_stats: 'invitations',
       refresh_video_jobs: 'growth',
+      batch_generate_marketing_videos: 'growth',
       reconcile_balance_sheet: 'operations',
       bill_all_policies: 'billing',
       cleanup_demo_data: 'operations',
@@ -2899,7 +2879,9 @@
       system_health: 'operations',
       refresh_financials: 'operations',
       refresh_reinsurance: 'operations',
-      refresh_legal: 'operations'
+      refresh_legal: 'operations',
+      refresh_business_inquiries: 'operations',
+      view_test_data: 'operations'
     };
 
     function initAdminAssistant() {
@@ -2924,7 +2906,7 @@
       panel.dataset.minimized = minimized ? 'false' : 'true';
       if (minimized) {
         if (toggleButton) {
-          toggleButton.textContent = '➖';
+          toggleButton.textContent = '−';
           toggleButton.title = 'Minimize';
         }
         return;
@@ -2934,7 +2916,7 @@
         stopAdminAssistantVoiceInput();
       }
       if (toggleButton) {
-        toggleButton.textContent = '➕';
+        toggleButton.textContent = '+';
         toggleButton.title = 'Expand';
       }
     }
@@ -2945,15 +2927,12 @@
       if (!moreActions || !toggle) return;
       const isVisible = moreActions.style.display === 'flex';
       moreActions.style.display = isVisible ? 'none' : 'flex';
-      toggle.textContent = isVisible ? '⬇️ Show More Actions' : '⬆️ Show Less Actions';
+      toggle.textContent = isVisible ? 'Show More Actions' : 'Show Less Actions';
     }
 
     function adminAssistantSwitchTab(tabId) {
       if (!ADMIN_ASSISTANT_TABS[tabId]) return;
       adminAssistantState.activeTab = tabId;
-      document.querySelectorAll('.admin-ai-tab-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.tab === tabId);
-      });
       adminAssistantRenderTabCard();
     }
 
@@ -2976,7 +2955,7 @@
             <div style="font-size:1.02rem;font-weight:700;margin-bottom:4px;">${tab.title}</div>
             <div style="font-size:0.9rem;color:#546e7a;">${tab.description}</div>
           </div>
-          <button class="admin-ai-action-btn" onclick="adminAssistantNavigateToTabSection()">📍 Open Section</button>
+          <button class="admin-ai-action-btn" onclick="adminAssistantNavigateToTabSection()">Open Section</button>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
           ${actionButtons || '<span style="color:#546e7a;font-size:0.86rem;">No actions configured for this tab.</span>'}
@@ -3080,6 +3059,15 @@
         { test: ['validate adl', 'adl assessment'], action: 'validate_adl_assessments' },
         { test: ['approve all pending', 'approve all underwriting'], action: 'approve_all_pending_underwriting' },
         { test: ['process pipelines', 'run pipelines'], action: 'process_all_pipelines' },
+        { test: ['allocate savings', 'allocate all savings', 'distribute savings'], action: 'allocate_all_savings' },
+        { test: ['missing bills', 'missing billing', 'generate bills'], action: 'generate_missing_billing' },
+        { test: ['export customers', 'export customer data', 'download customers'], action: 'export_customer_data' },
+        { test: ['sync policy ledger', 'policy ledger'], action: 'sync_policy_ledgers' },
+        { test: ['sync claims ledger', 'claims ledger'], action: 'sync_claims_ledger' },
+        { test: ['probability analysis', 'batch probability', 'fraud analysis'], action: 'run_batch_probability_analysis' },
+        { test: ['business inquiries', 'business relations', 'demo inquiries'], action: 'refresh_business_inquiries' },
+        { test: ['test data', 'sandbox data', 'suspended accounts'], action: 'view_test_data' },
+        { test: ['generate all videos', 'batch videos', 'generate blueprints', 'blueprint videos'], action: 'batch_generate_marketing_videos' },
         { test: ['sync ledger', 'customer ledger'], action: 'sync_customer_ledgers' },
         { test: ['activate wallet', 'health wallet'], action: 'activate_all_wallets' }
       ];
@@ -3101,7 +3089,7 @@
         { test: ['analytics', 'bi', 'ledger analytics'], tab: 'analytics' },
         { test: ['invitation', 'referral code'], tab: 'invitations' },
         { test: ['growth', 'marketing', 'media'], tab: 'growth' },
-        { test: ['operations', 'system', 'console', 'actuary', 'financial', 'balance sheet', 'reserve', 'reinsurance', 'legal', 'compliance'], tab: 'operations' }
+        { test: ['operations', 'system', 'console', 'actuary', 'financial', 'balance sheet', 'reserve', 'reinsurance', 'legal', 'compliance', 'inquiries'], tab: 'operations' }
       ];
 
       for (const item of tabKeywords) {
@@ -5346,7 +5334,7 @@
       // Show processing indicator
       const processingDiv = document.createElement('div');
       processingDiv.id = 'bill-all-processing';
-      processingDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: linear-gradient(135deg, #1e3a5f 0%, #2d4a6f 100%); padding: 30px 40px; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); z-index: 10000; text-align: center; color: white; border: 1px solid rgba(255,255,255,0.1);';
+      processingDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); padding: 30px 40px; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); z-index: 10000; text-align: center; color: white; border: 1px solid rgba(255,255,255,0.1);';
       processingDiv.innerHTML = `
         <div style="font-size: 48px; margin-bottom: 16px;">⏳</div>
         <div style="font-size: 18px; font-weight: bold; margin-bottom: 8px;">Processing Bulk Billing...</div>
@@ -7929,7 +7917,7 @@
   <div id="customer-detail-modal" style="display:none;position:fixed;z-index:2000;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);">
     <div style="background:white;margin:5% auto;padding:30px;width:90%;max-width:700px;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-height:80vh;overflow-y:auto;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-        <h2 style="margin:0;">👤 Customer Details</h2>
+        <h2 style="margin:0;">Customer Details</h2>
         <span onclick="closeCustomerModal()" style="font-size:28px;cursor:pointer;color:#999;">&times;</span>
       </div>
       <div id="customer-modal-content">
@@ -7941,10 +7929,10 @@
   <!-- AI Claims Bot Probability Report Modal -->
   <div id="claim-probability-modal" style="display:none;position:fixed;z-index:2000;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);">
     <div style="background:white;margin:3% auto;padding:0;width:95%;max-width:950px;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-height:90vh;overflow-y:auto;">
-      <div style="background:linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);color:white;padding:24px;border-radius:16px 16px 0 0;">
+      <div style="background:linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);color:white;padding:24px;border-radius:16px 16px 0 0;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <div>
-            <h2 style="margin:0;display:flex;align-items:center;gap:12px;">🤖 AI Claims Bot - Probability Report</h2>
+            <h2 style="margin:0;display:flex;align-items:center;gap:12px;">AI Claims Bot — Probability Report</h2>
             <p style="margin:8px 0 0 0;opacity:0.8;" id="prob-modal-claim-info">Fraud Detection & Authenticity Analysis</p>
           </div>
           <span onclick="closeClaimProbabilityModal()" style="font-size:32px;cursor:pointer;color:white;opacity:0.8;">&times;</span>
