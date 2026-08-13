@@ -3192,7 +3192,14 @@
         stream.getTracks().forEach(track => track.stop());
         return true;
       } catch (err) {
-        return false;
+        // Only an explicit permission denial should surface the "blocked"
+        // guidance. Other failures (missing device, device in use, etc.)
+        // fall through to recognition.start() so its onerror can report the
+        // specific problem (e.g. audio-capture).
+        if (err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')) {
+          return false;
+        }
+        return true;
       }
     }
 

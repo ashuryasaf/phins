@@ -2036,7 +2036,14 @@
         stream.getTracks().forEach(track => track.stop());
         return true;
       } catch (e) {
-        return false;
+        // Only an explicit permission denial should surface the "blocked"
+        // guidance. Other failures (missing device, device in use, etc.)
+        // fall through to recognition.start() so its onerror can report the
+        // specific problem (e.g. audio-capture).
+        if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) {
+          return false;
+        }
+        return true;
       }
     }
 
@@ -2053,6 +2060,13 @@
       
       if (!recognition) {
         showAIError('Voice recognition not supported in this browser. Please use Chrome or Edge.');
+        return;
+      }
+      
+      // A second tap while listening acts as the stop control; never
+      // request the mic again while recognition already holds it.
+      if (isListening) {
+        stopVoiceInput();
         return;
       }
       
