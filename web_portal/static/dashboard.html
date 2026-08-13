@@ -14,6 +14,15 @@
   <link rel="stylesheet" href="/i18n-rtl.css">
   <script src="/i18n.js"></script>
   <style>
+    /* ========== BRAND DISPLAY TYPE ========== */
+    /* Space Grotesk headings — the PHINS text treatment introduced with the
+       logo redesign (landing/auth pages, phins-theme.css chrome). */
+    main h1,
+    main h2 {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      letter-spacing: 0.02em;
+    }
+
     /* ========== SPLASH SCREEN ========== */
     #splash-screen {
       position: fixed;
@@ -486,17 +495,17 @@
       <nav class="phins-nav">
         <a href="/dashboard.html" class="active">Dashboard</a>
         <a href="/dashboard.html#policies">Policies</a>
-        <a href="/savings-portfolio.html">📈 Investments</a>
-        <a href="/dashboard.html#billing-settings">💳 Billing</a>
-        <a href="/dashboard.html#health-wallet">🏥 Wallet</a>
+        <a href="/savings-portfolio.html">Investments</a>
+        <a href="/dashboard.html#billing-settings">Billing</a>
+        <a href="/dashboard.html#health-wallet">Wallet</a>
         <a href="/dashboard.html#claims">Claims</a>
-        <a href="/dashboard.html#referrals">🎁 Referrals</a>
-        <a href="/foundation-dashboard.html">🤝 Community</a>
+        <a href="/dashboard.html#referrals">Referrals</a>
+        <a href="/foundation-dashboard.html">Community</a>
         <span data-assessments-nav data-assessments-role="customer"></span>
         <div class="nav-divider"></div>
         <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)" data-no-i18n>
-          <option value="en">🌐 English</option>
-          <option value="he">🌐 עברית</option>
+          <option value="en">English</option>
+          <option value="he">עברית</option>
         </select>
         <a href="/" class="btn-logout">Logout</a>
       </nav>
@@ -505,14 +514,13 @@
 
   <main class="container" style="padding-top:32px">
     <!-- Customer Account Info Panel -->
-    <div id="customer-info-panel" style="background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #303f9f 100%); border-radius: 16px; padding: 24px; margin-bottom: 24px; color: white; box-shadow: 0 8px 32px rgba(26, 35, 126, 0.3);">
+    <div id="customer-info-panel" style="background: radial-gradient(700px 280px at 85% -20%, rgba(21, 68, 155, 0.55), transparent 65%), linear-gradient(135deg, #060d1f 0%, #0d1b3e 100%); border: 1px solid rgba(127, 178, 255, 0.16); border-radius: 16px; padding: 24px; margin-bottom: 24px; color: white; box-shadow: 0 8px 32px rgba(2, 8, 23, 0.4);">
       <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
         <div>
           <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
-            <div style="width: 48px; height: 48px; background: linear-gradient(135deg, #4fc3f7 0%, #29b6f6 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">👤</div>
             <div>
-              <h1 style="margin: 0; font-size: 1.6rem; font-weight: 700;">Welcome back, <span id="username">Customer</span>! 👋</h1>
-              <p style="margin: 4px 0 0 0; opacity: 0.85; font-size: 0.95rem;">Your personal insurance dashboard</p>
+              <h1 style="margin: 0; font-size: 1.6rem; font-weight: 700;">Welcome back, <span id="username">Customer</span></h1>
+              <p style="margin: 4px 0 0 0; color: #e3bf6f; font-size: 0.9rem; letter-spacing: 0.04em;">Your personal insurance dashboard</p>
             </div>
           </div>
         </div>
@@ -821,7 +829,7 @@
     <!-- Health Wallet & Medical Products Section -->
     <section id="health-wallet" class="section-content" style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(21, 101, 192, 0.1);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
-        <h2 style="margin: 0;">🏥 My Health Wallet</h2>
+        <h2 style="margin: 0; color: #12203f;">My Health Wallet</h2>
         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
           <span style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 10px 18px; border-radius: 20px; font-weight: 600; box-shadow: 0 4px 12px rgba(40, 167, 69, 0.25);">
             💊 Wallet: <span id="wallet-balance-display">$0.00</span>
@@ -876,7 +884,7 @@
         <button onclick="showMedicalCategory('homecare')" class="wallet-quick-btn" style="background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2);">
           🏠 Home Care
         </button>
-        <button onclick="showTransferModal()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(123, 31, 162, 0.2);">
+        <button onclick="showTransferModal()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(123, 31, 162, 0.2);">
           🔄 Transfer Funds
         </button>
         <button onclick="openHealthWalletAISearch()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #00897b 0%, #26a69a 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(0, 137, 123, 0.2);">
@@ -888,7 +896,7 @@
     <!-- Medical Products Marketplace -->
     <section id="medical-marketplace" class="section-content" style="display: none;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h2 id="marketplace-title">🛒 Medical Products & Services</h2>
+        <h2 id="marketplace-title">Medical Products & Services</h2>
         <button onclick="closeMarketplace()" style="background: none; border: none; font-size: 24px; cursor: pointer;">✕</button>
       </div>
       
@@ -901,7 +909,7 @@
     <section id="health-wallet-ai-search" class="section-content" style="display: none; background: linear-gradient(135deg, #f3fbfa 0%, #d7f3ef 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(0, 137, 123, 0.16);">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
         <div>
-          <h2 style="margin: 0; color: #00695c;">🤖 AI Search: Products, Services & Supplier Offers</h2>
+          <h2 style="margin: 0; color: #12203f;">AI Search: Products, Services & Supplier Offers</h2>
           <p style="margin: 6px 0 0 0; color: #4e6a67; font-size: 0.92rem;">
             Search all available offers from registered suppliers and purchase through the same wallet, billing, ledger, and marketplace integrity pipeline.
           </p>
@@ -955,7 +963,7 @@
     <section id="activity-log" class="section-content" style="background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(0,0,0,0.08);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <div>
-          <h2 style="margin: 0; color: #1a237e;">📋 My Activity Log</h2>
+          <h2 style="margin: 0; color: #12203f;">My Activity Log</h2>
           <p style="margin: 4px 0 0 0; color: #546e7a; font-size: 0.9rem;">Your personal transactions: deposits, purchases, investments & trading</p>
         </div>
         <div style="display: flex; gap: 12px; align-items: center;">
@@ -1016,7 +1024,7 @@
     <section id="purchase-history" class="section-content" style="background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(255, 193, 7, 0.2);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <div>
-          <h2 style="margin: 0; color: #f57c00;">🧾 My Medical Purchases</h2>
+          <h2 style="margin: 0; color: #12203f;">My Medical Purchases</h2>
           <p style="margin: 4px 0 0 0; color: #666; font-size: 0.9rem;">Your purchases validated and stored on your personal NFT & Transaction Ledgers</p>
         </div>
         <div id="purchase-validation-badge" style="background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); color: white; padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">
@@ -1059,7 +1067,7 @@
     <section id="nft-ledger" class="section-content" style="background: linear-gradient(135deg, #f5f9fc 0%, #e8f4fc 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(21, 101, 192, 0.15);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <div>
-          <h2 style="margin: 0; color: #0d47a1;">🔗 My Transaction Ledger (NFT)</h2>
+          <h2 style="margin: 0; color: #12203f;">My Transaction Ledger (NFT)</h2>
           <p style="margin: 4px 0 0 0; color: #546e7a; font-size: 0.9rem;">Your immutable blockchain record of all transactions on PHINS-CHAIN</p>
         </div>
         <div style="display: flex; gap: 12px; align-items: center;">
@@ -1461,11 +1469,11 @@
     <section id="billing-settings" class="section-content" style="background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(123, 31, 162, 0.15);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
         <div>
-          <h2 style="margin: 0; color: #7b1fa2;">💳 My Billing & Settings</h2>
+          <h2 style="margin: 0; color: #12203f;">My Billing & Settings</h2>
           <p style="margin: 4px 0 0 0; color: #546e7a; font-size: 0.9rem;">Your payments, premium allocations, and account settings</p>
         </div>
         <div style="display: flex; gap: 12px;">
-          <span id="billing-status-badge" style="background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">
+          <span id="billing-status-badge" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">
             ✓ Up to Date
           </span>
         </div>
@@ -1502,7 +1510,7 @@
       
       <!-- Billing Quick Actions -->
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px;">
-        <button onclick="showPaymentModal()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(123, 31, 162, 0.2);">
+        <button onclick="showPaymentModal()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(123, 31, 162, 0.2);">
           💳 Pay Premium
         </button>
         <button onclick="showInvestmentDeposit()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #1565c0 0%, #42a5f5 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(21, 101, 192, 0.2);">
@@ -1665,15 +1673,15 @@
     </section>
 
     <!-- ==================== REFERRAL PROGRAM SECTION ==================== -->
-    <section id="referrals" class="section-content" style="background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(255, 107, 53, 0.2); color: white;">
+    <section id="referrals" class="section-content" style="background: radial-gradient(700px 280px at 85% -20%, rgba(21, 68, 155, 0.55), transparent 65%), linear-gradient(135deg, #060d1f 0%, #0d1b3e 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(127, 178, 255, 0.16); color: white;">
       <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 24px;">
         <div>
-          <h2 style="color: white; margin: 0;">🎁 Referral Program</h2>
+          <h2 style="color: white; margin: 0;">Referral Program</h2>
           <p style="opacity: 0.9; margin: 8px 0 0 0;">Invite friends and earn rewards! Generate up to 10 referral codes.</p>
         </div>
         <div style="display: flex; gap: 12px;">
-          <button onclick="loadReferralData()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">🔄 Refresh</button>
-          <button onclick="generateReferralCode()" id="generate-referral-btn" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); border: none; color: white; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);">🎫 Generate Code</button>
+          <button onclick="loadReferralData()" style="background: rgba(227,191,111,0.14); color: #f7e2a0; border: 1px solid rgba(227,191,111,0.55); padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Refresh</button>
+          <button onclick="generateReferralCode()" id="generate-referral-btn" style="background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%); border: none; color: #071022; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; box-shadow: 0 4px 12px rgba(227, 191, 111, 0.3);">Generate Code</button>
         </div>
       </div>
 
@@ -1931,9 +1939,11 @@
           stopVoiceInput();
           if (event.error === 'no-speech') {
             showAIError('No speech detected. Please try again and speak clearly.');
-          } else if (event.error === 'not-allowed') {
-            showAIError('Microphone access denied. Please allow microphone permissions.');
-          } else {
+          } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+            showAIError('Microphone blocked — click the padlock/mic icon in the address bar, allow microphone access, then retry.');
+          } else if (event.error === 'audio-capture') {
+            showAIError('No microphone found — connect a microphone and retry.');
+          } else if (event.error !== 'aborted') {
             showAIError('Voice recognition error: ' + event.error);
           }
         };
@@ -2015,8 +2025,23 @@
       }, 1500);
     }
     
+    // Ask the browser for microphone permission up front so speech
+    // recognition never fails with a bare "not-allowed" error. Returns true
+    // when permission is granted (or the API is unavailable, in which case
+    // recognition.start() performs its own prompt).
+    async function ensureMicPermission() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return true;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
     // Start voice input
-    function startVoiceInput() {
+    async function startVoiceInput() {
       const voiceBtn = document.getElementById('voice-btn');
       if (voiceBtn?.disabled) {
         showAIError('Voice input becomes available after your session is validated.');
@@ -2028,6 +2053,12 @@
       
       if (!recognition) {
         showAIError('Voice recognition not supported in this browser. Please use Chrome or Edge.');
+        return;
+      }
+      
+      const micAllowed = await ensureMicPermission();
+      if (!micAllowed) {
+        showAIError('Microphone blocked — click the padlock/mic icon in the address bar, allow microphone access, then retry.');
         return;
       }
       
@@ -2400,7 +2431,7 @@
                 <button onclick="quickAIAction('join_community')" style="background: linear-gradient(135deg, #5e35b1 0%, #7e57c2 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">🤝 Join Community</button>
                 <button onclick="quickAIAction('apply_policy')" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">📝 Apply Policy</button>
                 <button onclick="quickAIAction('buy_equipment')" style="background: linear-gradient(135deg, #009688 0%, #26a69a 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">🛒 Medical Equipment</button>
-                <button onclick="quickAIAction('billing_report')" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">📊 Billing Report</button>
+                <button onclick="quickAIAction('billing_report')" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">📊 Billing Report</button>
                 <button onclick="document.getElementById('claims').scrollIntoView({behavior:'smooth'})" style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">🆘 File Claim</button>
                 <button onclick="quickAIAction('contact_support')" style="background: linear-gradient(135deg, #607d8b 0%, #78909c 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">📞 Get Support</button>
               </div>
@@ -2489,7 +2520,7 @@
       const totalMonthlyPremium = policies.reduce((sum, p) => sum + (parseFloat(p.monthly_premium) || parseFloat(p.annual_premium) / 12 || 0), 0);
       
       const html = `
-        <div style="border-bottom: 3px solid #667eea; padding-bottom: 16px; margin-bottom: 20px;">
+        <div style="border-bottom: 3px solid #1565c0; padding-bottom: 16px; margin-bottom: 20px;">
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
               <h3 style="margin: 0; color: #333; font-size: 1.4rem;">📊 Billing Report</h3>
@@ -2503,7 +2534,7 @@
         </div>
         
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 24px;">
-          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+          <div style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
             <div style="font-size: 1.8rem; font-weight: bold;">${formatCurrency(totalMonthlyPremium)}</div>
             <div style="font-size: 0.85rem; opacity: 0.9;">Monthly Premium</div>
           </div>
@@ -2558,7 +2589,7 @@
       const profile = customerDataCache.profile || {};
       
       const html = `
-        <div style="border-bottom: 3px solid #667eea; padding-bottom: 16px; margin-bottom: 20px;">
+        <div style="border-bottom: 3px solid #1565c0; padding-bottom: 16px; margin-bottom: 20px;">
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
               <h3 style="margin: 0; color: #333; font-size: 1.4rem;">👤 Personal Data Report</h3>
@@ -2570,7 +2601,7 @@
         
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
           <div style="background: #f8f9fa; border-radius: 12px; padding: 20px;">
-            <h4 style="margin: 0 0 16px 0; color: #667eea;">📋 Account Details</h4>
+            <h4 style="margin: 0 0 16px 0; color: #1565c0;">📋 Account Details</h4>
             <div style="display: grid; gap: 12px;">
               <div><strong>Customer ID:</strong> ${profile.customer_id || profile.id || customerId || '-'}</div>
               <div><strong>Name:</strong> ${profile.name || profile.full_name || '-'}</div>
@@ -2592,7 +2623,7 @@
           </div>
         </div>
         
-        <div style="margin-top: 20px; background: #e7f3ff; border-left: 4px solid #667eea; padding: 16px; border-radius: 0 8px 8px 0;">
+        <div style="margin-top: 20px; background: #e7f3ff; border-left: 4px solid #1565c0; padding: 16px; border-radius: 0 8px 8px 0;">
           <strong>🔒 Data Privacy:</strong> Your personal information is protected under our privacy policy. You can request data export or deletion at any time.
         </div>
       `;
@@ -2657,7 +2688,7 @@
         <div style="text-align: center; padding: 30px;">
           <div style="font-size: 4rem; margin-bottom: 16px;">💳</div>
           <h3 style="color: #333; margin-bottom: 8px;">Your Monthly Insurance Cost</h3>
-          <div style="font-size: 3rem; font-weight: bold; color: #667eea; margin: 20px 0;">${formatCurrency(totalMonthlyPremium)}</div>
+          <div style="font-size: 3rem; font-weight: bold; color: #1565c0; margin: 20px 0;">${formatCurrency(totalMonthlyPremium)}</div>
           <p style="color: #666;">per month for ${policies.length} policy(ies)</p>
           
           <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 30px; max-width: 500px; margin-left: auto; margin-right: auto;">
@@ -2675,7 +2706,7 @@
             </div>
           </div>
           
-          <button onclick="document.getElementById('billing-settings').scrollIntoView({behavior:'smooth'})" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 30px; border-radius: 25px; cursor: pointer; margin-top: 24px; font-size: 1rem;">💳 Pay Now</button>
+          <button onclick="document.getElementById('billing-settings').scrollIntoView({behavior:'smooth'})" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 12px 30px; border-radius: 25px; cursor: pointer; margin-top: 24px; font-size: 1rem;">💳 Pay Now</button>
         </div>
       `;
       
@@ -2744,7 +2775,7 @@
               <div style="font-size: 2rem; font-weight: bold;">${formatCurrency(walletBalance)}</div>
               <div style="font-size: 0.85rem; opacity: 0.9; margin-top: 8px;">Health Wallet</div>
             </div>
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 24px; border-radius: 16px;">
+            <div style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; padding: 24px; border-radius: 16px;">
               <div style="font-size: 2rem; font-weight: bold;">${formatCurrency(customerDataCache.savings?.investment || walletBalance * 1.5)}</div>
               <div style="font-size: 0.85rem; opacity: 0.9; margin-top: 8px;">Investment Portfolio</div>
             </div>
@@ -2752,7 +2783,7 @@
           
           <div style="display: flex; gap: 12px; justify-content: center; margin-top: 24px; flex-wrap: wrap;">
             <button onclick="window.location.href='/savings-portfolio.html'" style="background: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer;">📈 View Investments</button>
-            <button onclick="quickAIAction('savings_calc')" style="background: #667eea; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer;">🧮 Calculate Projections</button>
+            <button onclick="quickAIAction('savings_calc')" style="background: #1565c0; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer;">🧮 Calculate Projections</button>
           </div>
         </div>
       `;
@@ -3270,10 +3301,10 @@
             <div style="text-align: center; padding: 30px;">
               <div style="font-size: 4rem; margin-bottom: 16px;">💳</div>
               <h3 style="color: #333;">Pay Your Bills</h3>
-              <div style="font-size: 2.5rem; font-weight: bold; color: #667eea; margin: 16px 0;">${formatCurrency(totalDue)}</div>
+              <div style="font-size: 2.5rem; font-weight: bold; color: #1565c0; margin: 16px 0;">${formatCurrency(totalDue)}</div>
               <p style="color: #666; margin-bottom: 24px;">Amount due this month</p>
               <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
-                <button onclick="window.location.href='/billing.html'" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 14px 30px; border-radius: 25px; cursor: pointer; font-size: 1rem;">💳 Pay Now</button>
+                <button onclick="window.location.href='/billing.html'" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 14px 30px; border-radius: 25px; cursor: pointer; font-size: 1rem;">💳 Pay Now</button>
                 <button onclick="document.getElementById('billing-settings').scrollIntoView({behavior:'smooth'})" style="background: #f5f5f5; color: #333; border: none; padding: 14px 30px; border-radius: 25px; cursor: pointer; font-size: 1rem;">📜 View History</button>
               </div>
             </div>
@@ -3306,7 +3337,7 @@
               <div style="font-size: 4rem; margin-bottom: 16px;">⚙️</div>
               <h3 style="color: #333;">Update Your Information</h3>
               <p style="color: #666; margin-bottom: 24px;">Manage your account settings</p>
-              <button onclick="document.getElementById('billing-settings').scrollIntoView({behavior:'smooth'})" style="background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; border: none; padding: 14px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem;">⚙️ Go to Settings</button>
+              <button onclick="document.getElementById('billing-settings').scrollIntoView({behavior:'smooth'})" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 14px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem;">⚙️ Go to Settings</button>
             </div>
           `);
           break;
@@ -3343,7 +3374,7 @@
               </div>
               
               <div style="text-align: center;">
-                <button onclick="document.getElementById('referrals').scrollIntoView({behavior:'smooth'})" style="background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%); color: white; border: none; padding: 16px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem; font-weight: 600;">🎁 Go to Referrals</button>
+                <button onclick="document.getElementById('referrals').scrollIntoView({behavior:'smooth'})" style="background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%); color: #071022; border: none; padding: 16px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem; font-weight: 600;">Go to Referrals</button>
               </div>
             </div>
           `);
@@ -3406,7 +3437,7 @@
               <div style="font-size: 4rem; margin-bottom: 16px;">🔄</div>
               <h3 style="color: #333;">Transfer Funds</h3>
               <p style="color: #666; margin-bottom: 24px;">Move funds between your accounts</p>
-              <button onclick="document.getElementById('health-wallet').scrollIntoView({behavior:'smooth'}); setTimeout(() => showTransferModal(), 500);" style="background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; border: none; padding: 14px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem;">🔄 Transfer Now</button>
+              <button onclick="document.getElementById('health-wallet').scrollIntoView({behavior:'smooth'}); setTimeout(() => showTransferModal(), 500);" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 14px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem;">🔄 Transfer Now</button>
             </div>
           `);
           recordCustomerAction('ai_transfer_view', 0, 'Viewed transfer options via AI assistant');
@@ -3768,7 +3799,7 @@
     function showAILoading() {
       showAIResponse(`
         <div style="text-align: center; padding: 40px;">
-          <div style="width: 50px; height: 50px; border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px;"></div>
+          <div style="width: 50px; height: 50px; border: 4px solid #f3f3f3; border-top: 4px solid #1565c0; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px;"></div>
           <p style="color: #666;">Processing your request...</p>
         </div>
         <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
@@ -5764,7 +5795,7 @@
                 ` : ''}
                 
                 ${!hasEnoughWallet && hasEnoughTotal && balances.health_wallet > 0 ? `
-                <button onclick="processCartPayment('split')" style="background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; border: none; padding: 12px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                <button onclick="processCartPayment('split')" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 12px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px;">
                   🔄 Smart Split ($${balances.health_wallet.toFixed(2)} wallet + $${shortfall.toFixed(2)} transfer)
                 </button>
                 ` : ''}
@@ -6065,7 +6096,7 @@
                   🛒 Add to Cart
                 </button>
               <button onclick="purchaseProduct('${product.id}', '${product.name.replace(/'/g, "\\'")}', ${product.price}, '${category}')" 
-                      style="background: #667eea; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px;">
+                      style="background: #1565c0; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px;">
                 ⚡ Buy Now
               </button>
             </div>
@@ -6243,13 +6274,13 @@
               
               <!-- Option 4: Add Funds -->
               <div onclick="selectPaymentOption('add_funds')" id="pay-option-add" class="payment-option"
-                   style="border: 2px dashed #667eea; border-radius: 12px; padding: 16px; margin-bottom: 12px; cursor: pointer; transition: all 0.2s;">
+                   style="border: 2px dashed #1565c0; border-radius: 12px; padding: 16px; margin-bottom: 12px; cursor: pointer; transition: all 0.2s;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                   <div>
-                    <div style="font-weight: 600; color: #667eea;">➕ Add Funds First</div>
+                    <div style="font-weight: 600; color: #1565c0;">➕ Add Funds First</div>
                     <div style="font-size: 0.85rem; color: #666; margin-top: 4px;">Credit Card, Apple Pay, PayPal, Crypto</div>
                   </div>
-                  <div style="color: #667eea; font-size: 1.5rem;">→</div>
+                  <div style="color: #1565c0; font-size: 1.5rem;">→</div>
                 </div>
               </div>
               
@@ -6578,7 +6609,7 @@
           <div style="background: white; border-radius: 20px; max-width: 450px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
             
             <!-- Header -->
-            <div style="background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; padding: 24px; border-radius: 20px 20px 0 0;">
+            <div style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; padding: 24px; border-radius: 20px 20px 0 0;">
               <div style="display: flex; justify-content: space-between; align-items: center;">
                 <h2 style="margin: 0; font-size: 1.4rem;">🔄 Transfer Funds</h2>
                 <button onclick="closeTransferModal()" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; font-size: 20px; cursor: pointer;">×</button>
@@ -6624,7 +6655,7 @@
               
               <!-- Transfer Button -->
               <button onclick="executeTransfer()" 
-                      style="width: 100%; background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; border: none; padding: 16px; border-radius: 12px; font-size: 1.1rem; font-weight: 700; cursor: pointer; box-shadow: 0 4px 15px rgba(123, 31, 162, 0.3);">
+                      style="width: 100%; background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 16px; border-radius: 12px; font-size: 1.1rem; font-weight: 700; cursor: pointer; box-shadow: 0 4px 15px rgba(123, 31, 162, 0.3);">
                 🔄 Transfer Funds
               </button>
               
@@ -6854,7 +6885,7 @@
           <p style="color: #888; font-size: 12px; margin: 0 0 12px 0;">🏷️ ${p.pricing_tier}</p>
           <div style="display: flex; gap: 8px;">
             <button onclick="bookProvider('${p.provider_id}', '${p.name}')" 
-                    style="flex:1;background: #667eea; color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer;">
+                    style="flex:1;background: #1565c0; color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer;">
               Book Now
             </button>
           </div>
@@ -8180,7 +8211,7 @@
           </select>
         </div>
         
-        <button onclick="processPayment()" style="width: 100%; background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; border: none; padding: 14px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">
+        <button onclick="processPayment()" style="width: 100%; background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 14px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">
           Process Payment
         </button>
         

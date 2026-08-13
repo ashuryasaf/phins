@@ -11,7 +11,7 @@
   <style>
     /* PHINS Unified Header - Elegant Gradient Blue */
     .phins-header {
-      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      background: radial-gradient(700px 280px at 85% -20%, rgba(21, 68, 155, 0.55), transparent 65%), linear-gradient(135deg, #060d1f 0%, #0d1b3e 100%);
       border-bottom: 1px solid rgba(255,255,255,0.15);
       padding: 0;
       position: sticky;
@@ -350,15 +350,30 @@
       box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
     }
 
+    /* ==================== BRAND DISPLAY TYPE ==================== */
+    /* Space Grotesk headings — the PHINS text treatment introduced with the
+       logo redesign (landing/auth pages, phins-theme.css chrome). */
+    .section-header h2,
+    .section-header h3,
+    .admin-ai-mic-title {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
     /* ==================== ADMIN AI MIC ==================== */
-    /* Unified PHINS gradient panel matching the header spectrum. */
+    /* Deep-navy aurora glass — the PHINS brand chrome introduced with the
+       logo redesign (matches the customer dashboard assistant panel). */
     #admin-ai-assistant-panel {
-      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
-      border: 1px solid rgba(255, 255, 255, 0.14);
+      background:
+        radial-gradient(820px 240px at 88% -40%, rgba(123, 97, 255, 0.38), transparent 65%),
+        radial-gradient(640px 220px at 6% 120%, rgba(21, 68, 155, 0.5), transparent 70%),
+        rgba(9, 17, 38, 0.97);
+      border: 1px solid rgba(127, 178, 255, 0.16);
       border-radius: 20px;
       padding: 24px;
       margin-bottom: 24px;
-      box-shadow: 0 12px 40px rgba(13, 71, 161, 0.32);
+      box-shadow: 0 12px 40px rgba(2, 8, 23, 0.4);
       color: white;
     }
     #admin-ai-assistant-panel[data-minimized="true"] {
@@ -645,14 +660,17 @@
       padding-top: 18px !important;
       padding-bottom: 18px !important;
     }
-    /* Per-division accents — unified PHINS blue spectrum */
-    #customers[data-framed="auto"]    { --frame-accent-start: #0d47a1; --frame-accent-end: #42a5f5; }
-    #policies[data-framed="auto"]     { --frame-accent-start: #1565c0; --frame-accent-end: #64b5f6; }
-    #underwriting[data-framed="auto"] { --frame-accent-start: #0d47a1; --frame-accent-end: #1e88e5; }
-    #claims[data-framed="auto"]       { --frame-accent-start: #1565c0; --frame-accent-end: #42a5f5; }
-    #billing[data-framed="auto"]      { --frame-accent-start: #1976d2; --frame-accent-end: #64b5f6; }
-    #reinsurance[data-framed="auto"]  { --frame-accent-start: #0d47a1; --frame-accent-end: #64b5f6; }
-    #legal[data-framed="auto"]        { --frame-accent-start: #1565c0; --frame-accent-end: #90caf9; }
+    /* Per-division accents — unified brand navy/gold (logo redesign language) */
+    #customers[data-framed="auto"],
+    #policies[data-framed="auto"],
+    #underwriting[data-framed="auto"],
+    #claims[data-framed="auto"],
+    #billing[data-framed="auto"],
+    #reinsurance[data-framed="auto"],
+    #legal[data-framed="auto"] {
+      --frame-accent-start: #12203f;
+      --frame-accent-end: #e3bf6f;
+    }
     /* Tighter spacing on small screens so the frames don't crowd the page */
     @media (max-width: 768px) {
       .section-content[data-framed="auto"] {
@@ -852,8 +870,8 @@
         <div style="display:flex;align-items:center;gap:12px;">
           <div style="width:46px;height:46px;background:linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.4rem;animation:pulse-ai 2s ease-in-out infinite;" aria-hidden="true">🎤</div>
           <div>
-            <div style="font-weight:700;font-size:1.02rem;line-height:1.2;">Admin AI Mic</div>
-            <div style="font-size:0.78rem;opacity:0.85;">Voice and text commands for every admin function</div>
+            <div class="admin-ai-mic-title" style="font-weight:700;font-size:1.02rem;line-height:1.2;">Admin AI Mic</div>
+            <div style="font-size:0.78rem;color:#e3bf6f;letter-spacing:0.04em;">Voice and text commands for every admin function</div>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
@@ -894,7 +912,7 @@
           >🎤</button>
         </div>
         <button onclick="adminAssistantProcessQuery()" style="background:linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);border:none;color:#071022;padding:12px 18px;border-radius:12px;cursor:pointer;font-weight:700;">Ask</button>
-        <button onclick="adminAssistantRunAction('refresh_active_tab')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:white;padding:12px 16px;border-radius:12px;cursor:pointer;font-weight:700;">Refresh</button>
+        <button onclick="adminAssistantRunAction('refresh_active_tab')" style="background:rgba(227,191,111,0.14);border:1px solid rgba(227,191,111,0.55);color:#f7e2a0;padding:12px 16px;border-radius:12px;cursor:pointer;font-weight:700;">Refresh</button>
       </div>
 
       <div id="admin-ai-voice-recording-indicator" style="display:none;background:rgba(244,67,54,0.2);border:2px solid #f44336;border-radius:12px;padding:14px;margin-bottom:12px;text-align:center;color:white;">
@@ -1084,15 +1102,15 @@
     </div>
     
     <!-- PHINS Balance Sheet / General Reserves Section -->
-    <div id="balance-sheet-section" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="margin-top: 24px; background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%); border-radius: 12px; padding: 20px; color: white;">
+    <div id="balance-sheet-section" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="margin-top: 24px; background: radial-gradient(700px 280px at 85% -20%, rgba(21, 68, 155, 0.55), transparent 65%), linear-gradient(135deg, #060d1f 0%, #0d1b3e 100%); border-radius: 12px; padding: 20px; color: white;">
       <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <h3 style="color: white; margin: 0;">General Reserves — Balance Sheet</h3>
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-          <button onclick="loadAIInsights()" class="btn" style="background: rgba(255,255,255,0.16); color: white; border: 1px solid rgba(255,255,255,0.35); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="AI-powered financial analysis">AI Insights</button>
+          <button onclick="loadAIInsights()" class="btn" style="background: rgba(227,191,111,0.14); color: #f7e2a0; border: 1px solid rgba(227,191,111,0.55); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="AI-powered financial analysis">AI Insights</button>
           <button onclick="reconcileBalanceSheet()" class="btn" style="background: rgba(76,175,80,0.3); color: white; border: 1px solid rgba(76,175,80,0.5); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="Verify data integrity">Reconcile Balance Sheet</button>
           <button onclick="toggleTestDataPanel()" class="btn" style="background: rgba(255,193,7,0.25); color: white; border: 1px solid rgba(255,193,7,0.5); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="View suspended test accounts and actuarial sandbox (TESTSIM) data currently in the pipeline">Test Data</button>
           <button onclick="cleanupDemoData()" class="btn" style="background: rgba(239,154,154,0.3); color: white; border: 1px solid rgba(239,154,154,0.5); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="Remove demo/test data while preserving real customers">Clean Demo Data</button>
-          <button onclick="loadBalanceSheet()" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 16px; border-radius: 8px; cursor: pointer;">Refresh</button>
+          <button onclick="loadBalanceSheet()" class="btn" style="background: rgba(227,191,111,0.14); color: #f7e2a0; border: 1px solid rgba(227,191,111,0.55); padding: 8px 16px; border-radius: 8px; cursor: pointer;">Refresh</button>
         </div>
       </div>
       
@@ -1566,7 +1584,7 @@
       </div>
       
       <!-- AI Claims Bot Section -->
-      <div style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; color: white;">
+      <div style="background: radial-gradient(700px 280px at 85% -20%, rgba(21, 68, 155, 0.55), transparent 65%), linear-gradient(135deg, #060d1f 0%, #0d1b3e 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; color: white;">
         <h4 style="margin: 0 0 12px 0; display: flex; align-items: center; gap: 10px;">
           AI Claims Bot (Claimer) — Fraud Detection & Probability Assessment
         </h4>
@@ -1574,10 +1592,10 @@
           Analyze claims for authenticity, detect hidden conditions from underwriting data, and generate AI-powered probability reports for fraud detection.
         </p>
         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-          <button class="btn btn-small" style="background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.35); color: white; padding: 12px 20px;" onclick="openClaimsAdjusterDashboard()" title="Open full Claims Adjuster Dashboard">
+          <button class="btn btn-small" style="background: rgba(227,191,111,0.14); color: #f7e2a0; border: 1px solid rgba(227,191,111,0.55); padding: 12px 20px;" onclick="openClaimsAdjusterDashboard()" title="Open full Claims Adjuster Dashboard">
             Claims Adjuster Dashboard
           </button>
-          <button class="btn btn-small" style="background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.35); color: white; padding: 12px 20px;" onclick="runBatchProbabilityAnalysis()" title="Run probability analysis on all pending claims">
+          <button class="btn btn-small" style="background: rgba(227,191,111,0.14); color: #f7e2a0; border: 1px solid rgba(227,191,111,0.55); padding: 12px 20px;" onclick="runBatchProbabilityAnalysis()" title="Run probability analysis on all pending claims">
             Batch Probability Analysis
           </button>
           <button class="btn btn-small" style="background: rgba(239,83,80,0.35); border: 1px solid rgba(239,83,80,0.6); color: white; padding: 12px 20px;" onclick="viewFraudAlerts()" title="View fraud alerts and suspicious claims">
@@ -1736,20 +1754,20 @@
         <span class="badge badge-success" id="marketplace-status">NFT-Verified</span>
       </div>
       
-      <div class="dashboard-stats" style="margin-bottom: 24px;">
-        <div class="stat-box" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white;">
+      <div class="dashboard-stats phins-spectrum-stats" style="margin-bottom: 24px;">
+        <div class="stat-box">
           <div class="stat-value" id="mp-total-volume">$0</div>
           <div class="stat-label">Total Volume</div>
         </div>
-        <div class="stat-box" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white;">
+        <div class="stat-box">
           <div class="stat-value" id="mp-insurance-covered">$0</div>
           <div class="stat-label">Insurance Covered</div>
         </div>
-        <div class="stat-box" style="background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%); color: white;">
+        <div class="stat-box">
           <div class="stat-value" id="mp-pending">0</div>
           <div class="stat-label">Open Orders</div>
         </div>
-        <div class="stat-box" style="background: linear-gradient(135deg, #1e88e5 0%, #64b5f6 100%); color: white;">
+        <div class="stat-box">
           <div class="stat-value" id="mp-nfts">0</div>
           <div class="stat-label">NFT Tokens Issued</div>
         </div>
@@ -1868,7 +1886,7 @@
     </section>
     
     <!-- Marketing + Sales Agent (AI + BI) -->
-    <section id="growth-agent-section" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 10px 30px rgba(13, 71, 161, 0.28);">
+    <section id="growth-agent-section" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: radial-gradient(700px 280px at 85% -20%, rgba(21, 68, 155, 0.55), transparent 65%), linear-gradient(135deg, #060d1f 0%, #0d1b3e 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 10px 30px rgba(2, 8, 23, 0.45);">
       <div class="section-header" style="margin-bottom: 18px;">
         <div>
           <h2 style="color: white; margin: 0;">AI + BI Marketing & Sales Agent</h2>
@@ -1877,10 +1895,10 @@
           </p>
         </div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-          <button onclick="generateMarketingSalesCampaign()" style="background: #42a5f5; color: white; border: none; padding: 9px 14px; border-radius: 8px; cursor: pointer; font-weight: 700;">Generate Agent Plan</button>
-          <button onclick="publishMarketingSalesCampaign()" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 9px 14px; border-radius: 8px; cursor: pointer; font-weight: 700;">Publish to Media</button>
-          <a href="/admin-media.html#growth-agent" target="_top" style="background: rgba(255,255,255,0.2); color: white; text-decoration: none; border: 1px solid rgba(255,255,255,0.3); padding: 9px 14px; border-radius: 8px; font-weight: 700;">Open in Media Dashboard</a>
-          <a href="/admin-media.html#video-agents" target="_top" style="background: rgba(255,255,255,0.2); color: white; text-decoration: none; border: 1px solid rgba(255,255,255,0.3); padding: 9px 14px; border-radius: 8px; font-weight: 700;">Video Agents (Media)</a>
+          <button onclick="generateMarketingSalesCampaign()" style="background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%); color: #071022; border: none; padding: 9px 14px; border-radius: 8px; cursor: pointer; font-weight: 700;">Generate Agent Plan</button>
+          <button onclick="publishMarketingSalesCampaign()" style="background: rgba(227,191,111,0.14); color: #f7e2a0; border: 1px solid rgba(227,191,111,0.55); padding: 9px 14px; border-radius: 8px; cursor: pointer; font-weight: 700;">Publish to Media</button>
+          <a href="/admin-media.html#growth-agent" target="_top" style="background: rgba(227,191,111,0.14); color: #f7e2a0; border: 1px solid rgba(227,191,111,0.55); text-decoration: none; padding: 9px 14px; border-radius: 8px; font-weight: 700;">Open in Media Dashboard</a>
+          <a href="/admin-media.html#video-agents" target="_top" style="background: rgba(227,191,111,0.14); color: #f7e2a0; border: 1px solid rgba(227,191,111,0.55); text-decoration: none; padding: 9px 14px; border-radius: 8px; font-weight: 700;">Video Agents (Media)</a>
         </div>
       </div>
 
@@ -1979,10 +1997,10 @@
           <input id="mkt-video-auto-hero" type="checkbox" checked>
           Auto-publish generated video to landing-page hero
         </label>
-        <button onclick="batchGenerateMarketingVideos()" style="background:#42a5f5;color:white;border:none;padding:7px 12px;border-radius:8px;cursor:pointer;font-weight:700;">
+        <button onclick="batchGenerateMarketingVideos()" style="background:linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);color:#071022;border:none;padding:7px 12px;border-radius:8px;cursor:pointer;font-weight:700;">
           Generate All Blueprints
         </button>
-        <button onclick="loadMarketingVideoJobs({ silent: false })" style="background:rgba(255,255,255,0.14);color:white;border:1px solid rgba(255,255,255,0.25);padding:7px 12px;border-radius:8px;cursor:pointer;font-weight:700;">
+        <button onclick="loadMarketingVideoJobs({ silent: false })" style="background:rgba(227,191,111,0.14);color:#f7e2a0;border:1px solid rgba(227,191,111,0.55);padding:7px 12px;border-radius:8px;cursor:pointer;font-weight:700;">
           Refresh Video Jobs
         </button>
       </div>
@@ -2031,13 +2049,13 @@
     </section>
     
     <!-- Platform Ledger Analytics Section -->
-    <section id="platform-analytics" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 8px 30px rgba(13, 71, 161, 0.25);">
+    <section id="platform-analytics" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: radial-gradient(700px 280px at 85% -20%, rgba(21, 68, 155, 0.55), transparent 65%), linear-gradient(135deg, #060d1f 0%, #0d1b3e 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 8px 30px rgba(2, 8, 23, 0.45);">
       <div class="section-header" style="margin-bottom: 24px;">
         <div>
           <h2 style="color: white; margin: 0;">Platform Ledger Analytics</h2>
           <p style="opacity: 0.8; margin: 4px 0 0 0; font-size: 0.9rem;">Aggregated data from all customers for BI predictions & statistics</p>
         </div>
-        <button onclick="loadPlatformAnalytics()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Refresh</button>
+        <button onclick="loadPlatformAnalytics()" style="background: rgba(227,191,111,0.14); color: #f7e2a0; border: 1px solid rgba(227,191,111,0.55); padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Refresh</button>
       </div>
       
       <!-- Platform Totals Row -->
@@ -2062,8 +2080,8 @@
           <div style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 4px;">Algo Trading</div>
           <div id="analytics-algo" style="font-size: 1.8rem; font-weight: 700;">$0</div>
         </div>
-        <div style="background: linear-gradient(135deg, #1e88e5 0%, #64b5f6 100%); border-radius: 12px; padding: 16px;">
-          <div style="font-size: 0.8rem; opacity: 0.9; margin-bottom: 4px;">Total AUM</div>
+        <div style="background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%); color: #071022; border-radius: 12px; padding: 16px;">
+          <div style="font-size: 0.8rem; opacity: 0.85; margin-bottom: 4px;">Total AUM</div>
           <div id="analytics-aum" style="font-size: 1.8rem; font-weight: 700;">$0</div>
         </div>
       </div>
@@ -2134,15 +2152,15 @@
     </section>
     
     <!-- ==================== INVITATION CODE MANAGEMENT ==================== -->
-    <section id="invitation-management" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 8px 30px rgba(13, 71, 161, 0.25);">
+    <section id="invitation-management" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: radial-gradient(700px 280px at 85% -20%, rgba(21, 68, 155, 0.55), transparent 65%), linear-gradient(135deg, #060d1f 0%, #0d1b3e 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 8px 30px rgba(2, 8, 23, 0.45);">
       <div class="section-header" style="margin-bottom: 24px;">
         <div>
           <h2 style="color: white; margin: 0;">Invitation Code Management</h2>
           <p style="opacity: 0.9; margin: 4px 0 0 0; font-size: 0.9rem;">Generate and manage registration invitation codes (Admin + Customer Referrals)</p>
         </div>
         <div style="display: flex; gap: 8px;">
-          <button onclick="loadInvitationStats()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Stats</button>
-          <button onclick="loadInvitationCodes()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Refresh</button>
+          <button onclick="loadInvitationStats()" style="background: rgba(227,191,111,0.14); color: #f7e2a0; border: 1px solid rgba(227,191,111,0.55); padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Stats</button>
+          <button onclick="loadInvitationCodes()" style="background: rgba(227,191,111,0.14); color: #f7e2a0; border: 1px solid rgba(227,191,111,0.55); padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Refresh</button>
         </div>
       </div>
       
@@ -2206,7 +2224,7 @@
           </div>
         </div>
         <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-          <button onclick="generateInvitationCode()" style="background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%); border: none; color: white; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 1rem;">Generate Code</button>
+          <button onclick="generateInvitationCode()" style="background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%); border: none; color: #071022; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 1rem;">Generate Code</button>
         </div>
         
         <!-- Generated Code Display with QR -->
@@ -2300,14 +2318,14 @@
     </section>
 
     <!-- ==================== BUSINESS RELATIONS (public inquiries) ==================== -->
-    <section id="business-relations" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%); color: #eaf1ff; border-radius: 16px; padding: 28px; margin-top: 24px; border: 1px solid rgba(255, 255, 255, 0.18); box-shadow: 0 8px 30px rgba(13, 71, 161, 0.3);">
+    <section id="business-relations" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: radial-gradient(700px 280px at 85% -20%, rgba(21, 68, 155, 0.55), transparent 65%), linear-gradient(135deg, #060d1f 0%, #0d1b3e 100%); color: #eaf1ff; border-radius: 16px; padding: 28px; margin-top: 24px; border: 1px solid rgba(255, 255, 255, 0.18); box-shadow: 0 8px 30px rgba(2, 8, 23, 0.45);">
       <div class="section-header" style="margin-bottom: 24px;">
         <div>
           <h2 style="color: white; margin: 0;">Business Relations</h2>
           <p style="opacity: 0.85; margin: 4px 0 0 0; font-size: 0.9rem;">Contact &amp; demo inquiries from the public solutions page — viewers, investors and business collaborators</p>
         </div>
         <div style="display: flex; gap: 8px;">
-          <button onclick="loadBusinessInquiries()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.35); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Refresh</button>
+          <button onclick="loadBusinessInquiries()" style="background: rgba(227,191,111,0.14); color: #f7e2a0; border: 1px solid rgba(227,191,111,0.55); padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Refresh</button>
         </div>
       </div>
 
@@ -3151,11 +3169,34 @@
         const indicator = document.getElementById('admin-ai-voice-recording-indicator');
         if (indicator) indicator.style.display = 'none';
         adminAssistantState.isListening = false;
-        adminAssistantSetStatus('warning', `⚠️ Voice error: ${event.error}`);
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          adminAssistantSetStatus('warning', '⚠️ Microphone blocked — click the padlock/mic icon in the address bar, allow microphone access, then retry');
+        } else if (event.error === 'no-speech') {
+          adminAssistantSetStatus('warning', '⚠️ No speech detected — tap the mic and speak clearly');
+        } else if (event.error === 'audio-capture') {
+          adminAssistantSetStatus('warning', '⚠️ No microphone found — connect a microphone and retry');
+        } else if (event.error !== 'aborted') {
+          adminAssistantSetStatus('warning', `⚠️ Voice error: ${event.error}`);
+        }
       };
     }
 
-    function startAdminAssistantVoiceInput() {
+    // Ask the browser for microphone permission up front so speech
+    // recognition never fails with a bare "not-allowed" error. Returns true
+    // when permission is granted (or the API is unavailable, in which case
+    // recognition.start() performs its own prompt).
+    async function ensureAdminAssistantMicPermission() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return true;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+        return true;
+      } catch (err) {
+        return false;
+      }
+    }
+
+    async function startAdminAssistantVoiceInput() {
       const voiceBtn = document.getElementById('admin-ai-voice-btn');
       if (voiceBtn && voiceBtn.disabled) {
         adminAssistantSetStatus('warning', '⚠️ Voice commands are available after login validation completes');
@@ -3168,6 +3209,11 @@
       }
       if (adminAssistantState.isListening) {
         stopAdminAssistantVoiceInput();
+        return;
+      }
+      const micAllowed = await ensureAdminAssistantMicPermission();
+      if (!micAllowed) {
+        adminAssistantSetStatus('warning', '⚠️ Microphone blocked — click the padlock/mic icon in the address bar, allow microphone access, then retry');
         return;
       }
       try {
@@ -5334,7 +5380,7 @@
       // Show processing indicator
       const processingDiv = document.createElement('div');
       processingDiv.id = 'bill-all-processing';
-      processingDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); padding: 30px 40px; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); z-index: 10000; text-align: center; color: white; border: 1px solid rgba(255,255,255,0.1);';
+      processingDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: linear-gradient(135deg, #060d1f 0%, #0d1b3e 100%); padding: 30px 40px; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); z-index: 10000; text-align: center; color: white; border: 1px solid rgba(127, 178, 255, 0.16);';
       processingDiv.innerHTML = `
         <div style="font-size: 48px; margin-bottom: 16px;">⏳</div>
         <div style="font-size: 18px; font-weight: bold; margin-bottom: 8px;">Processing Bulk Billing...</div>
@@ -7929,7 +7975,7 @@
   <!-- AI Claims Bot Probability Report Modal -->
   <div id="claim-probability-modal" style="display:none;position:fixed;z-index:2000;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);">
     <div style="background:white;margin:3% auto;padding:0;width:95%;max-width:950px;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-height:90vh;overflow-y:auto;">
-      <div style="background:linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);color:white;padding:24px;border-radius:16px 16px 0 0;">
+      <div style="background:radial-gradient(700px 280px at 85% -20%, rgba(21, 68, 155, 0.55), transparent 65%), linear-gradient(135deg, #060d1f 0%, #0d1b3e 100%);color:white;padding:24px;border-radius:16px 16px 0 0;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <div>
             <h2 style="margin:0;display:flex;align-items:center;gap:12px;">AI Claims Bot — Probability Report</h2>

@@ -242,18 +242,24 @@ def test_admin_ai_mic_command_keywords_cover_core_functionality():
 def test_admin_overview_unified_phins_gradient_and_clean_labels():
     content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
 
-    # Unified PHINS gradient across dark sections and the AI mic panel.
-    unified_gradient = "linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%)"
-    assert content.count(unified_gradient) >= 6
+    # Unified deep-navy brand gradient (logo redesign design language) across
+    # dark sections and the AI mic panel.
+    navy_gradient = "linear-gradient(135deg, #060d1f 0%, #0d1b3e 100%)"
+    assert content.count(navy_gradient) >= 6
+    # The AI mic panel uses the aurora glass shared with the customer panel.
+    assert "rgba(9, 17, 38, 0.97)" in content
 
-    # Legacy non-PHINS section gradients are gone.
+    # Legacy non-brand section gradients are gone.
     for legacy in [
-        "#ff6b35 0%, #f7931e 100%",   # orange invitations
-        "#1a237e 0%, #283593 50%",    # indigo analytics
-        "#060d1f 0%, #0d1b3e 100%",   # navy/gold business relations
-        "#1e3a5f 0%, #2d5a87 100%",   # slate AI claims bot
+        "#ff6b35 0%, #f7931e 100%",                # orange invitations
+        "#1a237e 0%, #283593 50%",                 # indigo analytics
+        "#1e3a5f 0%, #2d5a87 100%",                # slate AI claims bot
+        "#0d47a1 0%, #1565c0 50%, #1976d2 100%",   # interim light-blue pass
     ]:
         assert legacy not in content, legacy
+
+    # Brand display type for section headings.
+    assert "font-family: 'Space Grotesk', 'Inter', sans-serif;" in content
 
     # Section headers read as clean text without decorative emoji icons.
     for header in [
