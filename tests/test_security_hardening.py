@@ -557,8 +557,14 @@ def test_html_csp_forbids_objects_and_allows_same_origin_frames():
 def test_permissions_policy_blocks_sensitive_features():
     from security.headers import PERMISSIONS_POLICY
 
-    for feature in ("camera=()", "microphone=()", "geolocation=()", "payment=()", "usb=()"):
+    for feature in ("camera=()", "geolocation=()", "payment=()", "usb=()"):
         assert feature in PERMISSIONS_POLICY
+    # Microphone stays same-origin only: the voice assistants (Admin AI Mic,
+    # customer AI assistant) need it, while third-party frames stay blocked.
+    # A fully-disabled policy (microphone=()) breaks SpeechRecognition with
+    # "not-allowed" for every user.
+    assert "microphone=(self)" in PERMISSIONS_POLICY
+    assert "microphone=()" not in PERMISSIONS_POLICY.replace("microphone=(self)", "")
 
 
 # ---------------------------------------------------------------------------
