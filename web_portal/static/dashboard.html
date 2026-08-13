@@ -3789,6 +3789,12 @@
     
     // Show AI response
     function showAIResponse(html) {
+      // Auto-expand the assistant panel; while minimized the response area is
+      // force-hidden, which would swallow voice errors and other feedback.
+      const panel = document.getElementById('ai-assistant-panel');
+      if (panel && panel.dataset.minimized === 'true' && typeof toggleAIPanel === 'function') {
+        toggleAIPanel();
+      }
       const responseArea = document.getElementById('ai-response-area');
       responseArea.innerHTML = html;
       responseArea.style.display = 'block';

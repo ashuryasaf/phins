@@ -41,6 +41,13 @@ def test_customer_voice_input_primes_mic_permission_and_maps_not_allowed():
     assert "event.error === 'audio-capture'" in content
     assert "event.error !== 'aborted'" in content
 
+    # Voice errors surface even when the assistant panel is minimized: the
+    # response renderer auto-expands the panel before writing feedback.
+    assert (
+        "if (panel && panel.dataset.minimized === 'true' && typeof toggleAIPanel === 'function') {"
+        in content
+    )
+
 
 def test_customer_dashboard_uses_brand_navy_and_clean_labels():
     content = DASHBOARD_PATH.read_text(encoding="utf-8")
