@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#060d1f">
+    <title>Apply with Phin - PHINS Chat Application</title>
+    <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+    <link rel="apple-touch-icon" href="/phins-logo.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="apply-chat.css">
+    <link rel="stylesheet" href="/i18n-rtl.css">
+    <script src="/i18n.js"></script>
+</head>
+<body class="chat-apply-page">
+    <div class="chat-backdrop" aria-hidden="true"></div>
+
+    <header class="chat-header">
+        <a href="/" class="chat-brand">
+            <img src="/phins-logo.svg" alt="PHINS emblem">
+            <span>PHINS</span>
+        </a>
+        <div class="chat-progress-wrap" id="progress-wrap" hidden>
+            <div class="chat-progress-track"><div class="chat-progress-fill" id="progress-fill"></div></div>
+            <span class="chat-progress-label" id="progress-label">0%</span>
+        </div>
+        <div class="chat-header-actions">
+            <button type="button" class="resume-pill" id="resume-pill" hidden title="Your private resume code - keep it safe">
+                <span class="resume-pill-label">Resume code</span>
+                <span class="resume-pill-code" id="resume-pill-code"></span>
+            </button>
+            <button type="button" class="btn-ghost" id="pause-btn" hidden>Save &amp; finish later</button>
+            <a href="/apply.html" class="btn-ghost btn-ghost-quiet" title="Prefer the classic form?">Classic form</a>
+        </div>
+    </header>
+
+    <main class="chat-shell">
+        <!-- Welcome / entry screen -->
+        <section class="chat-welcome" id="welcome-screen">
+            <div class="welcome-card">
+                <div class="welcome-avatar">
+                    <img src="/phins-logo.svg" alt="Phin, your PHINS broker">
+                    <span class="welcome-avatar-dot" aria-hidden="true"></span>
+                </div>
+                <h1>Meet <span class="gold">Phin</span></h1>
+                <p class="welcome-sub">Your licensed AI underwriting broker. Apply for PHINS coverage
+                   in one conversation - verified, assessed, priced by our actuarial center,
+                   and sealed on the ledger.</p>
+                <div class="welcome-points">
+                    <div class="welcome-point"><strong>~3 min</strong><span>guided chat</span></div>
+                    <div class="welcome-point"><strong>OTP</strong><span>secured identity</span></div>
+                    <div class="welcome-point"><strong>Live quote</strong><span>actuarial kernel</span></div>
+                    <div class="welcome-point"><strong>Pause any time</strong><span>unique resume code</span></div>
+                </div>
+                <div class="welcome-invite" id="welcome-invite" hidden></div>
+                <button type="button" class="btn-gold btn-lg" id="start-btn">Start my application</button>
+                <button type="button" class="link-btn" id="show-resume-btn">I have a resume code</button>
+                <form class="resume-form" id="resume-form" hidden>
+                    <input type="text" id="resume-code-input" placeholder="PHINS-CHAT-XXXXXXXX" autocomplete="off" spellcheck="false">
+                    <input type="email" id="resume-email-input" placeholder="Email you applied with" autocomplete="email">
+                    <button type="submit" class="btn-gold">Continue application</button>
+                    <div class="resume-error" id="resume-error" hidden></div>
+                </form>
+            </div>
+        </section>
+
+        <!-- Chat screen -->
+        <section class="chat-screen" id="chat-screen" hidden>
+            <div class="chat-scroll" id="chat-scroll" aria-live="polite"></div>
+
+            <div class="chat-dock" id="chat-dock">
+                <!-- input widgets are rendered here by apply-chat.js -->
+            </div>
+        </section>
+    </main>
+
+    <!-- video recording modal -->
+    <div class="video-modal" id="video-modal" hidden>
+        <div class="video-modal-card">
+            <h3>Record a video message</h3>
+            <video id="video-preview" autoplay muted playsinline></video>
+            <div class="video-modal-actions">
+                <button type="button" class="btn-gold" id="video-record-btn">Start recording</button>
+                <button type="button" class="btn-ghost" id="video-cancel-btn">Cancel</button>
+            </div>
+            <div class="video-modal-hint" id="video-modal-hint">Up to 30 seconds - introduce yourself to your underwriter.</div>
+        </div>
+    </div>
+
+    <input type="file" id="doc-file-input" hidden multiple
+           accept="image/*,application/pdf,.doc,.docx">
+
+    <script src="apply-chat.js"></script>
+</body>
+</html>
