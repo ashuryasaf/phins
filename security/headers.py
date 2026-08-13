@@ -47,7 +47,10 @@ HTML_CSP = (
 
 # ``Permissions-Policy`` explicitly turns off browser features the portal does
 # not use; this limits blast radius of any XSS by denying access to sensors,
-# payment APIs, camera, etc.
+# payment APIs, camera, etc. ``microphone=(self)`` stays enabled for the
+# same-origin voice assistants (Admin AI Mic, customer AI assistant, floating
+# voice quick actions) — ``microphone=()`` made every SpeechRecognition /
+# getUserMedia call fail with "not-allowed" regardless of user consent.
 PERMISSIONS_POLICY = (
     "accelerometer=(), "
     "autoplay=(), "
@@ -60,7 +63,7 @@ PERMISSIONS_POLICY = (
     "gyroscope=(), "
     "keyboard-map=(), "
     "magnetometer=(), "
-    "microphone=(), "
+    "microphone=(self), "
     "midi=(), "
     "payment=(), "
     "picture-in-picture=(), "
