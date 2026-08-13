@@ -2096,12 +2096,17 @@
     function setVoiceButtonEnabled(enabled) {
       const voiceBtn = document.getElementById('voice-btn');
       if (!voiceBtn) return;
-      voiceBtn.disabled = !enabled;
-      voiceBtn.style.opacity = enabled ? '1' : '0.55';
-      voiceBtn.style.cursor = enabled ? 'pointer' : 'not-allowed';
-      voiceBtn.title = enabled
-        ? 'Voice Input'
-        : 'Voice input available after login validation';
+      if (enabled) {
+        voiceBtn.disabled = false;
+        voiceBtn.style.opacity = '1';
+        voiceBtn.style.cursor = 'pointer';
+        voiceBtn.title = 'Voice Input';
+      } else {
+        voiceBtn.disabled = true;
+        voiceBtn.style.opacity = '0.55';
+        voiceBtn.style.cursor = 'not-allowed';
+        voiceBtn.title = 'Voice input available after login validation';
+      }
     }
     
     // Toggle AI help panel
@@ -4023,6 +4028,13 @@
         }
       }
       
+      // Authenticated session resolved (unauthenticated visitors were
+      // redirected to login above) — arm the AI mic voice button. Without
+      // this call the button stayed permanently disabled, so mic clicks
+      // silently did nothing.
+      initVoiceRecognition();
+      setVoiceButtonEnabled(true);
+
       try {
         // Check database health before loading data
         try {

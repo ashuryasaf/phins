@@ -48,6 +48,18 @@ def test_customer_voice_input_primes_mic_permission_and_maps_not_allowed():
         in content
     )
 
+    # The voice button is actually armed once the session resolves; it used to
+    # stay permanently disabled because setVoiceButtonEnabled was never called.
+    assert "setVoiceButtonEnabled(true);" in content
+
+
+def test_permissions_policy_allows_same_origin_microphone():
+    from security.headers import PERMISSIONS_POLICY
+
+    # microphone=() disabled the feature for the whole document, which made
+    # every SpeechRecognition/getUserMedia call fail with "not-allowed".
+    assert "microphone=(self)" in PERMISSIONS_POLICY
+
 
 def test_customer_dashboard_uses_brand_navy_and_clean_labels():
     content = DASHBOARD_PATH.read_text(encoding="utf-8")
