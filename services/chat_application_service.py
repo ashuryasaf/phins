@@ -1390,6 +1390,25 @@ class ChatPolicyApplicationService:
             return {"ok": True, "payload": payload, "checksum": checksum,
                     "session": session}
 
+    def abort_reverify(self, application_id: str) -> None:
+        """Roll back a resume re-challenge whose OTP could not be delivered.
+
+        ``resume_session`` flips a verified session to ``pending_reverify``
+        with ``email_verified = False`` before the code is sent. If delivery
+        fails we must restore the previous state: leaving ``email_verified``
+        False would let the *next* resume attempt skip the OTP re-challenge
+        entirely (it would take the unverified branch), and leaving the
+        status ``pending_reverify`` would brick the session. Restoring
+        ``paused`` + verified keeps the re-challenge guarantee intact for
+        the next resume.
+        """
+        with self._lock:
+            session = self._get(application_id)
+            if session and session["status"] == "pending_reverify":
+                session["status"] = "paused"
+                session["email_verified"] = True
+                session["otp"] = {}
+
     def clear_finalizing(self, application_id: str) -> None:
         """Release the in-flight finalize guard (e.g. when the loopback fails)."""
         with self._lock:
