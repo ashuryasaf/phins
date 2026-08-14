@@ -69,9 +69,12 @@ def _effective_client_ip(socket_ip: str, handler: Any) -> str:
     ``self.client_address`` is the proxy's private/loopback address for every
     visitor. Rate limits keyed on that shared address would lock the whole
     site after a handful of OTP requests (10/hour/IP in production). When the
-    socket peer is a private/loopback hop, trust the first entry of
-    ``X-Forwarded-For`` (set by the edge); a direct public connection keeps
-    its socket address, so the header cannot be spoofed to escape limits.
+    socket peer is a private/loopback hop, trust the address the trusted edge
+    appended to ``X-Forwarded-For`` - the *last* (rightmost) entry, which is
+    the peer the edge actually observed. A caller can prepend arbitrary
+    leftmost hops (``$proxy_add_x_forwarded_for`` preserves them), so the first
+    hop is client-controlled and must never be trusted for rate limiting; a
+    direct public connection keeps its socket address.
     """
     try:
         peer = ipaddress.ip_address(str(socket_ip or "").strip())
@@ -82,13 +85,19 @@ def _effective_client_ip(socket_ip: str, handler: Any) -> str:
     headers = getattr(handler, "headers", None)
     if not headers:
         return socket_ip
-    forwarded = str(headers.get("X-Forwarded-For")
-                    or headers.get("X-Real-IP") or "")
-    first_hop = forwarded.split(",")[0].strip()
-    if first_hop:
+    hops = [h.strip() for h in str(headers.get("X-Forwarded-For") or "").split(",")]
+    last_hop = next((h for h in reversed(hops) if h), "")
+    if last_hop:
         try:
-            ipaddress.ip_address(first_hop)
-            return first_hop
+            ipaddress.ip_address(last_hop)
+            return last_hop
+        except ValueError:
+            pass
+    real_ip = str(headers.get("X-Real-IP") or "").strip()
+    if real_ip:
+        try:
+            ipaddress.ip_address(real_ip)
+            return real_ip
         except ValueError:
             pass
     return socket_ip
