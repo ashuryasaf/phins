@@ -10799,7 +10799,7 @@ def _password_reset_provider_deliverability() -> Tuple[bool, bool]:
     Reflects whether the active email/SMS providers can actually send (not a
     NoOp/unconfigured stub). Used to route the password-reset OTP onto a
     channel that will actually deliver — e.g. when SMTP is unconfigured but
-    Telesign SMS is available on Railway. Failures default to ``True`` so a
+    Infobip SMS is available. Failures default to ``True`` so a
     transient diagnostics issue never blocks a reset attempt.
     """
     try:
@@ -33289,7 +33289,7 @@ For claims or questions, please contact:
                 from services.otp_security_service import mask_email as _mask_email, _mask_phone
 
                 # Resolve which channels can actually deliver in this deployment
-                # so a reset is routed onto a working provider (e.g. Telesign SMS
+                # so a reset is routed onto a working provider (e.g. Infobip SMS
                 # when SMTP is unconfigured). Computed once and shared by the
                 # decoy so non-existent accounts mirror the real channel choice.
                 email_deliverable, sms_provider_deliverable = _password_reset_provider_deliverability()
@@ -33363,7 +33363,7 @@ For claims or questions, please contact:
                 # requested channel's provider is unconfigured but the other is
                 # available, so a reset still reaches the account owner instead of
                 # failing with "Delivery issue detected" (e.g. SMTP unconfigured
-                # but Telesign SMS configured on Railway).
+                # but Infobip SMS configured).
                 effective_phone = str((customer or {}).get('phone') or '').strip()
                 effective_channel = _resolve_password_reset_channel(
                     requested_channel,

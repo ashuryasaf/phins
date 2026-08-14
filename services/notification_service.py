@@ -139,7 +139,9 @@ class NotificationConfig:
     INFOBIP_SMS_SENDER = os.environ.get('INFOBIP_SMS_SENDER', 'InfoSMS')
 
     # ========== SMS Configuration ==========
-    # Supported providers: twilio, sns, vonage, messagebird, telesign, infobip
+    # Supported providers: twilio, sns, vonage, messagebird, infobip.
+    # (Telesign was retired; its credentials/env vars are ignored so OTP
+    # traffic can never be routed to the decommissioned account.)
     SMS_PROVIDER = os.environ.get('SMS_PROVIDER', 'twilio')
     TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
     TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
@@ -149,19 +151,6 @@ class NotificationConfig:
     VONAGE_API_KEY = os.environ.get('VONAGE_API_KEY', '')
     VONAGE_API_SECRET = os.environ.get('VONAGE_API_SECRET', '')
     MESSAGEBIRD_API_KEY = os.environ.get('MESSAGEBIRD_API_KEY', '')
-
-    # Telesign Engage / Messaging API. Credentials are issued at
-    # https://my.telesign.com → Settings → API authentication.
-    TELESIGN_CUSTOMER_ID = os.environ.get('TELESIGN_CUSTOMER_ID', '')
-    TELESIGN_API_KEY = os.environ.get('TELESIGN_API_KEY', '')
-    TELESIGN_BASE_URL = os.environ.get(
-        'TELESIGN_BASE_URL', 'https://rest-api.telesign.com'
-    )
-    TELESIGN_SEND_PATH = os.environ.get('TELESIGN_SEND_PATH', '/v1/messaging')
-    # Default OTP traffic class. Telesign accepts OTP, ARN, or MKT.
-    TELESIGN_MESSAGE_TYPE = os.environ.get('TELESIGN_MESSAGE_TYPE', 'OTP')
-    # Optional alphanumeric sender ID (must be pre-approved by Telesign).
-    TELESIGN_SENDER_ID = os.environ.get('TELESIGN_SENDER_ID', '')
     
     # ========== OTP Configuration ==========
     OTP_LENGTH = int(os.environ.get('OTP_LENGTH', '6'))
@@ -2265,158 +2254,6 @@ class MessageBirdSMSProvider(SMSProvider):
             return False, None, str(e)
 
 
-class TelesignSMSProvider(SMSProvider):
-    """Telesign Engage / Messaging API SMS provider.
-
-    Auth is HTTP Basic with the Customer ID as the username and the API
-    key (issued at https://my.telesign.com → Settings → API
-    authentication) as the password. The Engage endpoint accepts
-    ``application/x-www-form-urlencoded`` and returns a Telesign-specific
-    status code in ``status.code`` (290 == "Message in progress").
-    """
-
-    # Telesign considers any 2xx HTTP status with status.code in this set
-    # an in-flight message. Anything else is treated as a delivery
-    # failure so the caller's fallback chain can react.
-    _SUCCESS_STATUS_CODES = {290, 291, 295}
-
-    def send(
-        self,
-        to: str,
-        message: str,
-        from_number: Optional[str] = None
-    ) -> Tuple[bool, Optional[str], Optional[str]]:
-        """Send SMS via Telesign's /v1/messaging endpoint."""
-        try:
-            import base64
-            import urllib.error
-            import urllib.parse
-            import urllib.request
-
-            customer_id = (
-                _first_non_empty_env('TELESIGN_CUSTOMER_ID')
-                or NotificationConfig.TELESIGN_CUSTOMER_ID
-            )
-            api_key = (
-                _first_non_empty_env('TELESIGN_API_KEY')
-                or NotificationConfig.TELESIGN_API_KEY
-            )
-
-            if not customer_id or not api_key:
-                missing = []
-                if not customer_id:
-                    missing.append('TELESIGN_CUSTOMER_ID')
-                if not api_key:
-                    missing.append('TELESIGN_API_KEY')
-                logger.error(
-                    "Telesign selected but missing %s; SMS verification will not be delivered.",
-                    ', '.join(missing),
-                )
-                return False, None, (
-                    f"Telesign not configured: set {' and '.join(missing)} "
-                    "from https://my.telesign.com → Settings → API authentication."
-                )
-
-            base_url = (
-                _first_non_empty_env('TELESIGN_BASE_URL')
-                or str(NotificationConfig.TELESIGN_BASE_URL or '').strip()
-                or 'https://rest-api.telesign.com'
-            ).rstrip('/')
-            send_path = (
-                _first_non_empty_env('TELESIGN_SEND_PATH')
-                or str(NotificationConfig.TELESIGN_SEND_PATH or '').strip()
-                or '/v1/messaging'
-            )
-            message_type = (
-                _first_non_empty_env('TELESIGN_MESSAGE_TYPE')
-                or str(NotificationConfig.TELESIGN_MESSAGE_TYPE or '').strip()
-                or 'OTP'
-            ).upper()
-            sender_id = (
-                from_number
-                or _first_non_empty_env('TELESIGN_SENDER_ID')
-                or str(NotificationConfig.TELESIGN_SENDER_ID or '').strip()
-            )
-
-            # Telesign expects the phone number with country code and no
-            # leading '+'; e.g. '15555550100'.
-            phone_digits = re.sub(r'\D', '', normalize_phone(to))
-            if not phone_digits:
-                return False, None, "Telesign: invalid phone number"
-
-            payload: Dict[str, str] = {
-                'phone_number': phone_digits,
-                'message': message,
-                'message_type': message_type,
-            }
-            if sender_id:
-                payload['sender_id'] = sender_id
-
-            encoded_data = urllib.parse.urlencode(payload).encode('utf-8')
-
-            request_url = f"{base_url}/{send_path.lstrip('/')}"
-            auth_header = base64.b64encode(
-                f"{customer_id}:{api_key}".encode('utf-8')
-            ).decode('ascii')
-
-            req = urllib.request.Request(request_url, data=encoded_data, method='POST')
-            req.add_header('Authorization', f'Basic {auth_header}')
-            req.add_header('Content-Type', 'application/x-www-form-urlencoded')
-            req.add_header('Accept', 'application/json')
-
-            try:
-                with validated_urlopen(req, timeout=30, allowed_schemes=('https',)) as response:
-                    body = response.read().decode('utf-8') or '{}'
-                    try:
-                        result = json.loads(body)
-                    except ValueError:
-                        result = {}
-
-                    status_block = result.get('status') or {}
-                    status_code = status_block.get('code')
-                    description = status_block.get('description') or ''
-                    reference_id = result.get('reference_id') or generate_id('TS')
-
-                    if response.status in (200, 202) and status_code in self._SUCCESS_STATUS_CODES:
-                        return True, str(reference_id), None
-
-                    return False, None, (
-                        f"Telesign error: status {response.status}, "
-                        f"code {status_code}, {description or 'unknown error'}"
-                    )
-            except urllib.error.HTTPError as e:
-                error_body = ''
-                try:
-                    if e.fp is not None:
-                        error_body = e.read().decode('utf-8')
-                except Exception:
-                    pass
-                logger.error(
-                    "Telesign API error: %s - %s",
-                    e.code, error_body or str(e),
-                )
-                # Try to surface the Telesign status.code/description so
-                # operators can map it to the published error table.
-                error_detail = f"HTTP {e.code}"
-                if error_body:
-                    try:
-                        parsed = json.loads(error_body)
-                        status_block = (parsed or {}).get('status') or {}
-                        if status_block:
-                            error_detail = (
-                                f"HTTP {e.code} (Telesign code "
-                                f"{status_block.get('code')}: "
-                                f"{status_block.get('description', 'unknown')})"
-                            )
-                    except ValueError:
-                        pass
-                return False, None, f"Telesign error: {error_detail}"
-
-        except Exception as e:
-            logger.error(f"Telesign send error: {str(e)}")
-            return False, None, str(e)
-
-
 class InfobipSMSProvider(SMSProvider):
     """Infobip SMS provider (``POST {base}/sms/2/text/advanced``).
 
@@ -4068,7 +3905,12 @@ def should_use_mock_notifications() -> bool:
     )
 
 
-_SMS_PROVIDER_TYPES = {'twilio', 'sns', 'vonage', 'messagebird', 'telesign', 'infobip'}
+_SMS_PROVIDER_TYPES = {'twilio', 'sns', 'vonage', 'messagebird', 'infobip'}
+
+# Providers that were removed from the platform. Selecting one of these via
+# SMS_PROVIDER must never route traffic to the decommissioned account;
+# delivery falls back to a configured, supported provider instead.
+_RETIRED_SMS_PROVIDERS = {'telesign'}
 
 
 def _sms_provider_is_configured(provider_type: str) -> bool:
@@ -4081,17 +3923,6 @@ def _sms_provider_is_configured(provider_type: str) -> bool:
     that SDK is importable, because the send path hard-fails without it.
     """
     provider_type = (provider_type or '').strip().lower()
-    if provider_type == 'telesign':
-        return bool(
-            (
-                _first_non_empty_env('TELESIGN_CUSTOMER_ID')
-                or NotificationConfig.TELESIGN_CUSTOMER_ID
-            )
-            and (
-                _first_non_empty_env('TELESIGN_API_KEY')
-                or NotificationConfig.TELESIGN_API_KEY
-            )
-        )
     if provider_type == 'twilio':
         return bool(
             (_first_non_empty_env('TWILIO_ACCOUNT_SID') or NotificationConfig.TWILIO_ACCOUNT_SID)
@@ -4123,13 +3954,13 @@ def _sms_provider_is_configured(provider_type: str) -> bool:
 def _detect_configured_sms_provider() -> Optional[str]:
     """Return the best SMS provider that is actually deliverable, if any.
 
-    Telesign is preferred first because it authenticates with a simple
-    Customer ID + API key over HTTPS (no optional SDK), which matches the
-    Railway deployment where Telesign credentials are provided. The remaining
+    Infobip is preferred first because it authenticates with a simple API
+    key + account base URL over HTTPS (no optional SDK), which matches the
+    current deployment where Infobip credentials are provided. The remaining
     providers follow so any fully-configured channel is used rather than
     silently failing on an unconfigured default.
     """
-    for provider_type in ('telesign', 'infobip', 'twilio', 'messagebird', 'vonage', 'sns'):
+    for provider_type in ('infobip', 'twilio', 'messagebird', 'vonage', 'sns'):
         if _sms_provider_is_configured(provider_type):
             return provider_type
     return None
@@ -4141,12 +3972,24 @@ def _select_sms_provider_type() -> str:
     Mirrors ``_select_email_provider_type``: honour an explicitly configured
     ``SMS_PROVIDER`` when it can deliver, but fall back to any other fully
     configured provider when it cannot. This fixes the common production
-    misconfiguration where Telesign credentials are present (e.g. on Railway)
-    but ``SMS_PROVIDER`` is left at the ``twilio`` default, which would
+    misconfiguration where Infobip credentials are present but
+    ``SMS_PROVIDER`` is left at the ``twilio`` default, which would
     otherwise make SMS verification codes silently fail to deliver.
+
+    A retired provider (e.g. ``telesign``) left in ``SMS_PROVIDER`` is never
+    honoured: it is treated as unconfigured so OTP traffic re-routes to a
+    supported provider instead of a decommissioned account.
     """
     configured = (NotificationConfig.SMS_PROVIDER or 'twilio').strip().lower()
-    if configured not in _SMS_PROVIDER_TYPES:
+    if configured in _RETIRED_SMS_PROVIDERS:
+        logger.warning(
+            "SMS_PROVIDER='%s' is retired and no longer supported; "
+            "auto-selecting a configured provider instead. Update SMS_PROVIDER "
+            "(e.g. to 'infobip') and remove stale credentials.",
+            configured,
+        )
+        configured = 'twilio'
+    elif configured not in _SMS_PROVIDER_TYPES:
         logger.warning("Unknown SMS_PROVIDER '%s'; falling back to twilio", configured)
         configured = 'twilio'
 
@@ -4196,14 +4039,14 @@ def create_notification_service(
         - 'sns': AWS SNS (Simple Notification Service)
         - 'vonage': Vonage (formerly Nexmo) SMS API
         - 'messagebird': MessageBird SMS API
-        - 'telesign': Telesign Engage / Messaging API
         - 'infobip': Infobip SMS API (shares INFOBIP_* credentials)
 
     When the configured SMS_PROVIDER cannot deliver (missing credentials or
     an uninstalled optional SDK) but another provider is fully configured,
-    that provider is auto-selected (Telesign first). This prevents verification
-    codes from silently failing when, for example, Telesign credentials are set
-    on Railway but SMS_PROVIDER was left at the 'twilio' default.
+    that provider is auto-selected (Infobip first). This prevents verification
+    codes from silently failing when, for example, Infobip credentials are set
+    but SMS_PROVIDER was left at the 'twilio' default. Retired providers
+    (e.g. 'telesign') are never selected.
     """
     if use_mock:
         email = MockEmailProvider()
@@ -4244,8 +4087,6 @@ def create_notification_service(
                 sms = VonageSMSProvider()
             elif provider_type == 'messagebird':
                 sms = MessageBirdSMSProvider()
-            elif provider_type == 'telesign':
-                sms = TelesignSMSProvider()
             elif provider_type == 'infobip':
                 sms = InfobipSMSProvider()
             else:  # default to Twilio
@@ -4342,7 +4183,7 @@ def get_active_sms_provider_type() -> str:
 
     Honours the same auto-selection as ``create_notification_service`` so the
     reported provider matches what actually sends: when the configured
-    ``SMS_PROVIDER`` cannot deliver but another provider (e.g. Telesign) is
+    ``SMS_PROVIDER`` cannot deliver but another provider (e.g. Infobip) is
     fully configured, that provider is reported instead of ``noop``.
     """
     if should_use_mock_notifications():
@@ -4432,8 +4273,8 @@ def get_notification_provider_diagnostics() -> Dict[str, Any]:
         'active_provider': sms_active,
         'will_deliver': sms_active not in ('mock', 'noop'),
         # True when delivery falls back to a different (deliverable) provider
-        # than the one named by SMS_PROVIDER — e.g. Telesign creds present but
-        # SMS_PROVIDER left at the 'twilio' default.
+        # than the one named by SMS_PROVIDER — e.g. Infobip creds present but
+        # SMS_PROVIDER left at the 'twilio' default or at a retired provider.
         'auto_selected': (
             sms_active not in ('mock', 'noop')
             and sms_active != sms_configured_provider
@@ -4456,31 +4297,6 @@ def get_notification_provider_diagnostics() -> Dict[str, Any]:
             },
             'messagebird': {
                 'configured': bool(NotificationConfig.MESSAGEBIRD_API_KEY)
-            },
-            'telesign': {
-                'configured': bool(
-                    (
-                        _first_non_empty_env('TELESIGN_CUSTOMER_ID')
-                        or NotificationConfig.TELESIGN_CUSTOMER_ID
-                    )
-                    and (
-                        _first_non_empty_env('TELESIGN_API_KEY')
-                        or NotificationConfig.TELESIGN_API_KEY
-                    )
-                ),
-                'base_url': (
-                    _first_non_empty_env('TELESIGN_BASE_URL')
-                    or NotificationConfig.TELESIGN_BASE_URL
-                ),
-                'message_type': (
-                    _first_non_empty_env('TELESIGN_MESSAGE_TYPE')
-                    or NotificationConfig.TELESIGN_MESSAGE_TYPE
-                    or 'OTP'
-                ),
-                'has_sender_id': bool(
-                    _first_non_empty_env('TELESIGN_SENDER_ID')
-                    or NotificationConfig.TELESIGN_SENDER_ID
-                ),
             },
             'infobip': {
                 'configured': bool(
@@ -4547,20 +4363,17 @@ def _provider_diagnostics_recommendation(
                 "'pip install twilio'."
             )
         else:
-            telesign_info = sms_status.get('providers', {}).get('telesign', {})
-            if (
-                sms_status.get('configured_provider') == 'telesign'
-                and not telesign_info.get('configured')
-            ):
+            if sms_status.get('configured_provider') in _RETIRED_SMS_PROVIDERS:
                 hints.append(
-                    "Telesign is selected but TELESIGN_CUSTOMER_ID and/or "
-                    "TELESIGN_API_KEY are missing. Copy them from "
-                    "https://my.telesign.com → Settings → API authentication."
+                    f"SMS_PROVIDER='{sms_status.get('configured_provider')}' is retired and "
+                    "no longer supported, and no other SMS provider is configured. "
+                    "Set SMS_PROVIDER=infobip with INFOBIP_API_KEY+INFOBIP_BASE_URL "
+                    "(https://portal.infobip.com → Developer Tools → API Keys)."
                 )
             else:
                 hints.append(
                     "No SMS provider configured. Verification codes will NOT be delivered via SMS. "
-                    "Set TELESIGN_CUSTOMER_ID+TELESIGN_API_KEY (with SMS_PROVIDER=telesign), "
+                    "Set INFOBIP_API_KEY+INFOBIP_BASE_URL (with SMS_PROVIDER=infobip), "
                     "TWILIO_ACCOUNT_SID+TWILIO_AUTH_TOKEN+TWILIO_FROM_NUMBER, AWS credentials "
                     "for SNS, VONAGE_API_KEY+VONAGE_API_SECRET, or MESSAGEBIRD_API_KEY."
                 )
@@ -4621,6 +4434,7 @@ __all__ = [
     'AWSSESEmailProvider',
     'MailgunEmailProvider',
     'ResendEmailProvider',
+    'InfobipEmailProvider',
     'ActiveNotificationsEmailProvider',
     
     # SMS Providers
@@ -4630,7 +4444,7 @@ __all__ = [
     'AWSSNSProvider',
     'VonageSMSProvider',
     'MessageBirdSMSProvider',
-    'TelesignSMSProvider',
+    'InfobipSMSProvider',
     
     # Utilities
     'RateLimiter',

@@ -411,11 +411,12 @@ class TestPasswordResetNotificationReporting:
         assert portal.verify_password("TrackedReset1!", new_hash, portal.USERS[username]["salt"])
 
 
-# ---------- Channel fallback when email is unconfigured (Railway/Telesign) ----------
+# ---------- Channel fallback when email is unconfigured (SMS-only deploys) ----------
 
 class TestPasswordResetEmailToSmsFallback:
-    """When SMTP is unconfigured but Telesign SMS is, an 'email' request for an
-    account with a registered phone must fall back to SMS instead of failing.
+    """When SMTP is unconfigured but SMS (e.g. Infobip) is, an 'email' request
+    for an account with a registered phone must fall back to SMS instead of
+    failing.
     """
 
     def setup_method(self):
@@ -445,7 +446,7 @@ class TestPasswordResetEmailToSmsFallback:
         return "phoneuser", "phone@example.com"
 
     def test_email_request_falls_back_to_sms_when_email_unconfigured(self):
-        # Simulate: email provider NoOp, SMS provider deliverable (Telesign).
+        # Simulate: email provider NoOp, SMS provider deliverable (Infobip).
         portal._password_reset_provider_deliverability = lambda: (False, True)
         # Warm up the port: the first request after conftest resets the
         # per-port init tracker triggers _ensure_test_port_state, which wipes

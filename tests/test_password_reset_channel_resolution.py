@@ -2,8 +2,8 @@
 
 These cover ``_resolve_password_reset_channel``, which routes the reset OTP
 onto a channel that can actually deliver in the current deployment. The key
-production scenario: SMTP is unconfigured (NoOp email) but Telesign SMS is
-configured on Railway, so an ``email`` request for an account with a phone on
+production scenario: SMTP is unconfigured (NoOp email) but Infobip SMS is
+configured, so an ``email`` request for an account with a phone on
 file should fall back to SMS instead of failing with
 "Delivery issue detected.".
 
@@ -32,7 +32,7 @@ def test_email_stays_email_when_email_deliverable():
 
 
 def test_email_falls_back_to_sms_when_email_unconfigured_and_phone_on_file():
-    # The Railway case: SMTP NoOp, Telesign SMS configured, phone on file.
+    # SMS-only deploy: SMTP NoOp, Infobip SMS configured, phone on file.
     assert _resolve('email', has_phone=True, email_ok=False, sms_ok=True) == 'sms'
 
 
