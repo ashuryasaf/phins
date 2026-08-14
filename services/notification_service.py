@@ -2457,10 +2457,11 @@ class InfobipSMSProvider(SMSProvider):
                 or str(NotificationConfig.INFOBIP_SMS_SENDER or '').strip()
                 or 'InfoSMS'
             )
+            phone = normalize_phone(to)
             payload = json.dumps({
                 'messages': [{
                     'from': sender,
-                    'destinations': [{'to': to}],
+                    'destinations': [{'to': phone}],
                     'text': message,
                 }]
             }).encode('utf-8')
