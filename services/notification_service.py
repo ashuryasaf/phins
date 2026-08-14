@@ -68,7 +68,7 @@ class NotificationConfig:
     EMAIL_REPLY_TO = os.environ.get('EMAIL_REPLY_TO', 'support@phins.ai')
     
     # Email provider selection
-    EMAIL_PROVIDER = os.environ.get('EMAIL_PROVIDER', 'smtp')  # smtp, sendgrid, ses, mailgun, resend, active_notifications
+    EMAIL_PROVIDER = os.environ.get('EMAIL_PROVIDER', 'smtp')  # smtp, sendgrid, ses, mailgun, resend, active_notifications, infobip
     SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY', '')
     AWS_SES_REGION = os.environ.get('AWS_SES_REGION', 'us-east-1')
     MAILGUN_API_KEY = os.environ.get('MAILGUN_API_KEY', '')
@@ -125,9 +125,21 @@ class NotificationConfig:
             os.environ.get('NOTIFICATIONAPI_CLIENT_ID_HEADER', '')
         )
     )
-    
+
+    # Infobip omnichannel API (email + SMS). The API key is created in the
+    # Infobip portal (https://portal.infobip.com → Developer Tools → API Keys)
+    # and the base URL is account-specific (shown next to the key, e.g.
+    # https://xxxxx.api.infobip.com) — both are required.
+    INFOBIP_API_KEY = os.environ.get('INFOBIP_API_KEY', '')
+    INFOBIP_BASE_URL = os.environ.get('INFOBIP_BASE_URL', '')
+    INFOBIP_EMAIL_SEND_PATH = os.environ.get('INFOBIP_EMAIL_SEND_PATH', '/email/3/send')
+    INFOBIP_SMS_SEND_PATH = os.environ.get('INFOBIP_SMS_SEND_PATH', '/sms/2/text/advanced')
+    # SMS sender: a number or registered alphanumeric sender ID. Infobip trial
+    # accounts can use the shared default sender.
+    INFOBIP_SMS_SENDER = os.environ.get('INFOBIP_SMS_SENDER', 'InfoSMS')
+
     # ========== SMS Configuration ==========
-    # Supported providers: twilio, sns, vonage, messagebird, telesign
+    # Supported providers: twilio, sns, vonage, messagebird, telesign, infobip
     SMS_PROVIDER = os.environ.get('SMS_PROVIDER', 'twilio')
     TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
     TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
@@ -785,8 +797,13 @@ _EMAIL_PROVIDER_NAME_ALIASES = {
     'pingram': 'active_notifications',
     'notificationapi': 'active_notifications',
     'notification_api': 'active_notifications',
+    'info_bip': 'infobip',
+    'info-bip': 'infobip',
+    'infobip_api': 'infobip',
+    'infobip_email': 'infobip',
 }
-_SUPPORTED_EMAIL_PROVIDERS = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend', 'active_notifications'}
+_SUPPORTED_EMAIL_PROVIDERS = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend',
+                              'active_notifications', 'infobip'}
 _DEFAULT_NOTIFICATION_FROM_ADDRESS = 'noreply@phins.ai'
 _DEFAULT_NOTIFICATION_FROM_NAME = 'PHINS Insurance'
 _PROVIDER_FROM_ADDRESS_ENV_VARS = {
@@ -806,6 +823,7 @@ _PROVIDER_FROM_ADDRESS_ENV_VARS = {
         'PINGRAM_FROM_ADDRESS',
         'PINGRAM_FROM_EMAIL',
     ),
+    'infobip': ('INFOBIP_FROM_ADDRESS', 'INFOBIP_FROM_EMAIL'),
 }
 _PROVIDER_FROM_NAME_ENV_VARS = {
     'smtp': ('SMTP_FROM_NAME',),
@@ -817,6 +835,7 @@ _PROVIDER_FROM_NAME_ENV_VARS = {
         'ACTIVE_NOTIFICATIONS_FROM_NAME',
         'PINGRAM_FROM_NAME',
     ),
+    'infobip': ('INFOBIP_FROM_NAME',),
 }
 _GLOBAL_FROM_ADDRESS_ENV_VARS = (
     'NOTIFICATION_FROM_ADDRESS',
@@ -1643,6 +1662,152 @@ class ResendEmailProvider(EmailProvider):
             return False, None, str(e)
 
 
+def _infobip_credentials() -> Tuple[str, str, Optional[str]]:
+    """Resolve Infobip API key + account base URL, with a setup-error message.
+
+    Both values come from the Infobip portal (https://portal.infobip.com):
+    the API key from Developer Tools → API Keys, and the account-specific
+    base URL (e.g. ``https://xxxxx.api.infobip.com``) shown alongside it.
+    Returns ``(api_key, base_url, error)`` where ``error`` is ``None`` when
+    both are usable.
+    """
+    api_key = (
+        _first_non_empty_env('INFOBIP_API_KEY')
+        or str(NotificationConfig.INFOBIP_API_KEY or '').strip()
+    )
+    base_url = (
+        _first_non_empty_env('INFOBIP_BASE_URL')
+        or str(NotificationConfig.INFOBIP_BASE_URL or '').strip()
+    ).rstrip('/')
+    if base_url and not base_url.lower().startswith(('http://', 'https://')):
+        base_url = f'https://{base_url}'
+    missing = []
+    if not api_key:
+        missing.append('INFOBIP_API_KEY')
+    if not base_url:
+        missing.append('INFOBIP_BASE_URL (your account URL, e.g. https://xxxxx.api.infobip.com)')
+    if missing:
+        return api_key, base_url, (
+            "Infobip not configured: set " + ' and '.join(missing) +
+            " from https://portal.infobip.com → Developer Tools → API Keys."
+        )
+    return api_key, base_url, None
+
+
+class InfobipEmailProvider(EmailProvider):
+    """Infobip Email API provider (``POST {base}/email/3/send``).
+
+    Auth is ``Authorization: App <api_key>``. The v3 send endpoint accepts
+    ``multipart/form-data``; the sender address must belong to a domain that
+    is registered and verified in the Infobip portal (Channels → Email →
+    Domains), otherwise Infobip rejects the message.
+    """
+
+    @staticmethod
+    def _multipart_body(fields: Dict[str, str]) -> Tuple[bytes, str]:
+        boundary = f'phinsform{uuid.uuid4().hex}'
+        lines: List[bytes] = []
+        for name, value in fields.items():
+            if value is None or value == '':
+                continue
+            lines.append(f'--{boundary}'.encode('utf-8'))
+            lines.append(
+                f'Content-Disposition: form-data; name="{name}"'.encode('utf-8')
+            )
+            lines.append(b'')
+            lines.append(str(value).encode('utf-8'))
+        lines.append(f'--{boundary}--'.encode('utf-8'))
+        lines.append(b'')
+        return b'\r\n'.join(lines), boundary
+
+    def send(
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        html_body: Optional[str] = None,
+        from_address: Optional[str] = None,
+        from_name: Optional[str] = None,
+        reply_to: Optional[str] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None
+    ) -> Tuple[bool, Optional[str], Optional[str]]:
+        """Send email via the Infobip Email API."""
+        try:
+            import urllib.error
+            import urllib.request
+
+            api_key, base_url, config_error = _infobip_credentials()
+            if config_error:
+                logger.error(
+                    "Infobip selected but not configured; verification email "
+                    "will not be delivered. %s", config_error
+                )
+                return False, None, config_error
+
+            send_path = (
+                _first_non_empty_env('INFOBIP_EMAIL_SEND_PATH')
+                or str(NotificationConfig.INFOBIP_EMAIL_SEND_PATH or '').strip()
+                or '/email/3/send'
+            )
+            from_addr, from_display = _resolve_email_sender(
+                provider_type='infobip',
+                from_address=from_address,
+                from_name=from_name
+            )
+            reply_to_address = _resolve_reply_to_address(reply_to)
+
+            fields: Dict[str, str] = {
+                'from': f'{from_display} <{from_addr}>' if from_display else from_addr,
+                'to': to,
+                'subject': subject,
+                'text': body,
+            }
+            if html_body:
+                fields['html'] = html_body
+            if reply_to_address:
+                fields['replyTo'] = reply_to_address
+
+            payload, boundary = self._multipart_body(fields)
+            req = urllib.request.Request(
+                f'{base_url}{send_path}', data=payload, method='POST'
+            )
+            req.add_header('Authorization', f'App {api_key}')
+            req.add_header(
+                'Content-Type', f'multipart/form-data; boundary={boundary}'
+            )
+            req.add_header('Accept', 'application/json')
+
+            try:
+                with validated_urlopen(req, timeout=30, allowed_schemes=('https',)) as response:
+                    if response.status not in [200, 201, 202]:
+                        return False, None, f"Unexpected status: {response.status}"
+                    result = json.loads(response.read().decode('utf-8') or '{}')
+                    messages = result.get('messages') or []
+                    first = messages[0] if messages else {}
+                    message_id = first.get('messageId') or generate_id('IB')
+                    status_group = str(
+                        ((first.get('status') or {}).get('groupName')) or ''
+                    ).upper()
+                    if status_group == 'REJECTED':
+                        status_desc = (first.get('status') or {}).get('description') or 'rejected'
+                        logger.error("Infobip email rejected: %s", status_desc)
+                        return False, None, f"Infobip rejected the message: {status_desc}"
+                    return True, message_id, None
+            except urllib.error.HTTPError as e:
+                error_body = e.read().decode() if e.fp else str(e)
+                logger.error(f"Infobip email API error: {e.code} - {error_body}")
+                hint = ''
+                if e.code == 401:
+                    hint = ' (check INFOBIP_API_KEY and INFOBIP_BASE_URL)'
+                elif e.code == 403:
+                    hint = ' (verify the sender domain in Infobip → Channels → Email)'
+                return False, None, f"Infobip error: {e.code}{hint}"
+
+        except Exception as e:
+            logger.error(f"Infobip email send error: {str(e)}")
+            return False, None, str(e)
+
+
 class ActiveNotificationsEmailProvider(EmailProvider):
     """Active Notifications / Pingram API email provider."""
 
@@ -2249,6 +2414,89 @@ class TelesignSMSProvider(SMSProvider):
 
         except Exception as e:
             logger.error(f"Telesign send error: {str(e)}")
+            return False, None, str(e)
+
+
+class InfobipSMSProvider(SMSProvider):
+    """Infobip SMS provider (``POST {base}/sms/2/text/advanced``).
+
+    Shares credentials with :class:`InfobipEmailProvider` (``INFOBIP_API_KEY``
+    + account-specific ``INFOBIP_BASE_URL``). The sender defaults to Infobip's
+    shared ``InfoSMS`` id (works on trial accounts); production traffic should
+    register a dedicated number or alphanumeric sender and set
+    ``INFOBIP_SMS_SENDER``.
+    """
+
+    def send(
+        self,
+        to: str,
+        message: str,
+        from_number: Optional[str] = None
+    ) -> Tuple[bool, Optional[str], Optional[str]]:
+        """Send SMS via the Infobip SMS API."""
+        try:
+            import urllib.error
+            import urllib.request
+
+            api_key, base_url, config_error = _infobip_credentials()
+            if config_error:
+                logger.error(
+                    "Infobip SMS selected but not configured; SMS will not be "
+                    "delivered. %s", config_error
+                )
+                return False, None, config_error
+
+            send_path = (
+                _first_non_empty_env('INFOBIP_SMS_SEND_PATH')
+                or str(NotificationConfig.INFOBIP_SMS_SEND_PATH or '').strip()
+                or '/sms/2/text/advanced'
+            )
+            sender = (
+                from_number
+                or _first_non_empty_env('INFOBIP_SMS_SENDER')
+                or str(NotificationConfig.INFOBIP_SMS_SENDER or '').strip()
+                or 'InfoSMS'
+            )
+            payload = json.dumps({
+                'messages': [{
+                    'from': sender,
+                    'destinations': [{'to': to}],
+                    'text': message,
+                }]
+            }).encode('utf-8')
+            req = urllib.request.Request(
+                f'{base_url}{send_path}', data=payload, method='POST'
+            )
+            req.add_header('Authorization', f'App {api_key}')
+            req.add_header('Content-Type', 'application/json')
+            req.add_header('Accept', 'application/json')
+
+            try:
+                with validated_urlopen(req, timeout=30, allowed_schemes=('https',)) as response:
+                    if response.status not in [200, 201, 202]:
+                        return False, None, f"Unexpected status: {response.status}"
+                    result = json.loads(response.read().decode('utf-8') or '{}')
+                    messages = result.get('messages') or []
+                    first = messages[0] if messages else {}
+                    message_id = first.get('messageId') or generate_id('IBSMS')
+                    status_group = str(
+                        ((first.get('status') or {}).get('groupName')) or ''
+                    ).upper()
+                    if status_group == 'REJECTED':
+                        status_desc = (first.get('status') or {}).get('description') or 'rejected'
+                        logger.error("Infobip SMS rejected: %s", status_desc)
+                        return False, None, f"Infobip rejected the SMS: {status_desc}"
+                    return True, message_id, None
+            except urllib.error.HTTPError as e:
+                error_body = e.read().decode() if e.fp else str(e)
+                logger.error(f"Infobip SMS API error: {e.code} - {error_body}")
+                hint = ''
+                if e.code == 401:
+                    hint = ' (check INFOBIP_API_KEY and INFOBIP_BASE_URL)'
+                return False, None, f"Infobip error: {e.code}{hint}"
+
+        except Exception as e:
+            logger.error(f"Infobip SMS send error: {str(e)}")
             return False, None, str(e)
 
 
@@ -3615,7 +3863,8 @@ class ClientVerificationService:
 # FACTORY FUNCTION
 # ============================================================================
 
-_EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend', 'active_notifications'}
+_EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend',
+                         'active_notifications', 'infobip'}
 _SMTP_PLACEHOLDER_HOSTS = {
     '',
     'localhost',
@@ -3725,6 +3974,12 @@ def _detect_configured_api_email_provider() -> Optional[str]:
     if _env_or_default('RESEND_API_KEY', NotificationConfig.RESEND_API_KEY):
         return 'resend'
 
+    if (
+        _env_or_default('INFOBIP_API_KEY', NotificationConfig.INFOBIP_API_KEY)
+        and _env_or_default('INFOBIP_BASE_URL', NotificationConfig.INFOBIP_BASE_URL)
+    ):
+        return 'infobip'
+
     if _aws_identity_configured():
         return 'ses'
 
@@ -3786,6 +4041,8 @@ def _build_email_provider(provider_type: str) -> EmailProvider:
         return MailgunEmailProvider()
     if provider_type == 'resend':
         return ResendEmailProvider()
+    if provider_type == 'infobip':
+        return InfobipEmailProvider()
     if provider_type == 'active_notifications':
         return ActiveNotificationsEmailProvider()
     if _smtp_looks_unconfigured():
@@ -3810,7 +4067,7 @@ def should_use_mock_notifications() -> bool:
     )
 
 
-_SMS_PROVIDER_TYPES = {'twilio', 'sns', 'vonage', 'messagebird', 'telesign'}
+_SMS_PROVIDER_TYPES = {'twilio', 'sns', 'vonage', 'messagebird', 'telesign', 'infobip'}
 
 
 def _sms_provider_is_configured(provider_type: str) -> bool:
@@ -3852,6 +4109,11 @@ def _sms_provider_is_configured(provider_type: str) -> bool:
         return bool(
             _first_non_empty_env('MESSAGEBIRD_API_KEY') or NotificationConfig.MESSAGEBIRD_API_KEY
         )
+    if provider_type == 'infobip':
+        return bool(
+            (_first_non_empty_env('INFOBIP_API_KEY') or NotificationConfig.INFOBIP_API_KEY)
+            and (_first_non_empty_env('INFOBIP_BASE_URL') or NotificationConfig.INFOBIP_BASE_URL)
+        )
     if provider_type == 'sns':
         return _aws_identity_configured() and _module_available('boto3')
     return False
@@ -3866,7 +4128,7 @@ def _detect_configured_sms_provider() -> Optional[str]:
     providers follow so any fully-configured channel is used rather than
     silently failing on an unconfigured default.
     """
-    for provider_type in ('telesign', 'twilio', 'messagebird', 'vonage', 'sns'):
+    for provider_type in ('telesign', 'infobip', 'twilio', 'messagebird', 'vonage', 'sns'):
         if _sms_provider_is_configured(provider_type):
             return provider_type
     return None
@@ -3926,6 +4188,7 @@ def create_notification_service(
         - 'mailgun': Mailgun API
         - 'resend': Resend API
         - 'active_notifications': Active Notifications / Pingram sender API
+        - 'infobip': Infobip Email API (INFOBIP_API_KEY + INFOBIP_BASE_URL)
     
     SMS providers (set via SMS_PROVIDER env var):
         - 'twilio' (default): Twilio SMS API
@@ -3933,6 +4196,7 @@ def create_notification_service(
         - 'vonage': Vonage (formerly Nexmo) SMS API
         - 'messagebird': MessageBird SMS API
         - 'telesign': Telesign Engage / Messaging API
+        - 'infobip': Infobip SMS API (shares INFOBIP_* credentials)
 
     When the configured SMS_PROVIDER cannot deliver (missing credentials or
     an uninstalled optional SDK) but another provider is fully configured,
@@ -3981,6 +4245,8 @@ def create_notification_service(
                 sms = MessageBirdSMSProvider()
             elif provider_type == 'telesign':
                 sms = TelesignSMSProvider()
+            elif provider_type == 'infobip':
+                sms = InfobipSMSProvider()
             else:  # default to Twilio
                 sms = TwilioSMSProvider()
     
@@ -4031,6 +4297,11 @@ def _email_api_provider_has_credentials(provider_type: str) -> bool:
     if provider_type == 'resend':
         return bool(
             _first_non_empty_env('RESEND_API_KEY') or NotificationConfig.RESEND_API_KEY
+        )
+    if provider_type == 'infobip':
+        return bool(
+            (_first_non_empty_env('INFOBIP_API_KEY') or NotificationConfig.INFOBIP_API_KEY)
+            and (_first_non_empty_env('INFOBIP_BASE_URL') or NotificationConfig.INFOBIP_BASE_URL)
         )
     if provider_type == 'active_notifications':
         return bool(
@@ -4139,6 +4410,18 @@ def get_notification_provider_diagnostics() -> Dict[str, Any]:
                     or NotificationConfig.ACTIVE_NOTIFICATIONS_API_KEY
                 )
             },
+            'infobip': {
+                'configured': bool(
+                    (_first_non_empty_env('INFOBIP_API_KEY')
+                     or NotificationConfig.INFOBIP_API_KEY)
+                    and (_first_non_empty_env('INFOBIP_BASE_URL')
+                         or NotificationConfig.INFOBIP_BASE_URL)
+                ),
+                'has_base_url': bool(
+                    _first_non_empty_env('INFOBIP_BASE_URL')
+                    or NotificationConfig.INFOBIP_BASE_URL
+                ),
+            },
         },
     }
 
@@ -4196,6 +4479,19 @@ def get_notification_provider_diagnostics() -> Dict[str, Any]:
                 'has_sender_id': bool(
                     _first_non_empty_env('TELESIGN_SENDER_ID')
                     or NotificationConfig.TELESIGN_SENDER_ID
+                ),
+            },
+            'infobip': {
+                'configured': bool(
+                    (_first_non_empty_env('INFOBIP_API_KEY')
+                     or NotificationConfig.INFOBIP_API_KEY)
+                    and (_first_non_empty_env('INFOBIP_BASE_URL')
+                         or NotificationConfig.INFOBIP_BASE_URL)
+                ),
+                'sender': (
+                    _first_non_empty_env('INFOBIP_SMS_SENDER')
+                    or NotificationConfig.INFOBIP_SMS_SENDER
+                    or 'InfoSMS'
                 ),
             },
         },
