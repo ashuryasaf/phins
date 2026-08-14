@@ -326,6 +326,8 @@ def _handle_finalize(application_id: str, handler) -> Tuple[int, Dict[str, Any]]
     checksum = prep["checksum"]
     status, created = _loopback_policy_create(handler, payload)
     if status not in (200, 201):
+        # Release the in-flight guard so the applicant can retry submission.
+        svc.clear_finalizing(application_id)
         return status if status >= 400 else 502, {
             "error": created.get("error") or "Application submission failed"}
 
@@ -339,6 +341,10 @@ def _handle_finalize(application_id: str, handler) -> Tuple[int, Dict[str, Any]]
         customer_id=customer.get("id"),
         checksum=checksum,
     )
+    if not outcome.get("ok"):
+        return outcome.get("status_code", 409), {
+            "error": outcome.get("error"),
+            "submission": outcome.get("submission")}
     _pop_and_write_events(outcome)
     return 201, {
         "success": True,
@@ -497,6 +503,13 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]],
     if not match:
         return 404, {"error": "Not found"}
     application_id, tail = match.group(1), (match.group(2) or "")
+
+    # Every id-scoped mutation (advance answers, attach media, request/verify
+    # OTP, pause, finalize) must prove possession of the resume code (or be a
+    # staff session). Application ids are low-entropy, so without this an
+    # enumerated id would be enough to drive someone else's application.
+    if not svc.authorize_access(application_id, body.get("resume_code"), _is_staff(session)):
+        return 403, {"error": "A valid resume code (or staff session) is required"}
 
     if tail == "/message":
         result = svc.submit_answer(application_id, body.get("value"),

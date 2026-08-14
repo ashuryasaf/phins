@@ -616,6 +616,7 @@ class ChatPolicyApplicationService:
                 "quote": None,
                 "customer_id": None,
                 "submission": None,
+                "finalizing": False,
             }
             self._sessions[app_id] = session
             self._resume_index[resume_code] = app_id
@@ -683,6 +684,12 @@ class ChatPolicyApplicationService:
                 return {"ok": False, "status_code": 403, "error": "OTP_REQUIRED",
                         "message": "Please verify the fresh security code first."}
             if session["status"] == "paused":
+                if session["email_verified"]:
+                    # A verified, paused session must go back through the
+                    # resume + fresh-OTP gate; it must never silently unlock
+                    # by writing an answer.
+                    return {"ok": False, "status_code": 403, "error": "OTP_REQUIRED",
+                            "message": "Please resume with a fresh security code before continuing."}
                 session["status"] = "in_progress"
 
             step = self._next_step(session)
@@ -1033,6 +1040,10 @@ class ChatPolicyApplicationService:
             if not session:
                 return {"ok": False, "status_code": 404, "error": "Application not found"}
             was_reverify = session["status"] == "pending_reverify"
+            # Snapshot the conversation captured so far *before* appending the
+            # welcome-back messages, so a secure (OTP-gated) resume can restore
+            # the full history only after identity is re-proven.
+            prior_transcript = list(session["transcript"]) if was_reverify else None
             session["email_verified"] = True
             session["otp"] = {}
             events: List[Dict[str, Any]] = []
@@ -1055,8 +1066,11 @@ class ChatPolicyApplicationService:
                                                      kind="question",
                                                      meta={"step": step_pub["id"]}))
             events.extend(self._ledger_for_message(session, m) for m in bot_msgs)
-            return {"ok": True, "messages": bot_msgs, "step": step_pub,
-                    "progress": self._progress(session), "ledger_events": events}
+            result = {"ok": True, "messages": bot_msgs, "step": step_pub,
+                      "progress": self._progress(session), "ledger_events": events}
+            if prior_transcript is not None:
+                result["transcript"] = prior_transcript
+            return result
 
     # ------------------------------------------------------------------
     # media
@@ -1165,10 +1179,17 @@ class ChatPolicyApplicationService:
             code = str(resume_code or "").strip().upper()
             app_id = self._resume_index.get(code)
             session = self._sessions.get(app_id) if app_id else None
-            claimed = str(email or "").strip().lower()
-            if (not session or not claimed
-                    or (session["contact"].get("email") or "").lower() != claimed):
+            if not session:
                 # One generic error avoids resume-code / email enumeration.
+                return {"ok": False, "status_code": 404,
+                        "error": "We couldn't match that resume code and email."}
+            stored_email = (session["contact"].get("email") or "").strip().lower()
+            claimed = str(email or "").strip().lower()
+            # Once an email is on file, resuming requires it to match (this
+            # blocks resume-code enumeration). Before the email step there is
+            # nothing to match, so a valid resume code alone reopens the
+            # (pre-contact) session the bot promised was saved.
+            if stored_email and stored_email != claimed:
                 return {"ok": False, "status_code": 404,
                         "error": "We couldn't match that resume code and email."}
 
@@ -1348,6 +1369,12 @@ class ChatPolicyApplicationService:
                 return {"ok": False, "status_code": 409,
                         "error": "This application was already submitted.",
                         "submission": session.get("submission")}
+            if session.get("finalizing"):
+                # A submission is already in flight for this session; refuse a
+                # concurrent finalize so two loopbacks can't each create a
+                # policy (the lock is released during the loopback request).
+                return {"ok": False, "status_code": 409,
+                        "error": "This application is already being submitted."}
             if not session["email_verified"]:
                 return {"ok": False, "status_code": 403,
                         "error": "Please verify your email before submitting."}
@@ -1359,8 +1386,16 @@ class ChatPolicyApplicationService:
             payload = self.build_submission_payload(session)
             checksum = _checksum_payload(payload)
             session["pending_submission_checksum"] = checksum
+            session["finalizing"] = True
             return {"ok": True, "payload": payload, "checksum": checksum,
                     "session": session}
+
+    def clear_finalizing(self, application_id: str) -> None:
+        """Release the in-flight finalize guard (e.g. when the loopback fails)."""
+        with self._lock:
+            session = self._get(application_id)
+            if session and session["status"] != "submitted":
+                session["finalizing"] = False
 
     def mark_submitted(self, application_id: str, *, policy_id: str,
                        underwriting_id: str, customer_id: Optional[str],
@@ -1370,8 +1405,26 @@ class ChatPolicyApplicationService:
             session = self._get(application_id)
             if not session:
                 return {"ok": False, "status_code": 404, "error": "Application not found"}
+            if session["status"] == "submitted":
+                # Idempotent guard: never overwrite an existing submission (and
+                # its policy ids) if a second finalize somehow reaches here.
+                return {"ok": False, "status_code": 409,
+                        "error": "This application was already submitted.",
+                        "submission": session.get("submission")}
             session["status"] = "submitted"
+            session["finalizing"] = False
             session["customer_id"] = customer_id
+            # PCI DSS: the card was needed only for the one-shot policy-create
+            # loopback (already tokenized downstream, which keeps last4). Never
+            # retain the PAN or the CVV on the session after authorization.
+            card = session["answers"].get("payment_card")
+            if isinstance(card, dict):
+                session["answers"]["payment_card"] = {
+                    "card_last4": card.get("card_last4"),
+                    "cardholder_name": card.get("cardholder_name"),
+                    "expiry_month": card.get("expiry_month"),
+                    "expiry_year": card.get("expiry_year"),
+                }
             session["submission"] = {
                 "policy_id": policy_id,
                 "underwriting_id": underwriting_id,
@@ -1416,7 +1469,10 @@ class ChatPolicyApplicationService:
                 if stage in seen:
                     stages[stage] += 1
             if s["status"] == "paused":
-                stages["paused"] += 0  # counted via journey 'stopped'
+                # Pause records the journey stage as 'stopped', so the
+                # journey-key loop above never sees 'paused'; count it here by
+                # the live session status instead.
+                stages["paused"] += 1
             items.append({
                 "application_id": s["id"],
                 "status": s["status"],

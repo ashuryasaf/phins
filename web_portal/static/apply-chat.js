@@ -543,6 +543,7 @@
             `<span class="media-chip"><span class="kind-tag">${escapeHtml(kind.toUpperCase())}</span>${escapeHtml(name)}</span>`);
         const { status, data } = await api('POST', `/${state.appId}/media`, {
             kind, name, mime_type: blob.type || 'application/octet-stream', data_b64: b64,
+            resume_code: state.resumeCode,
         });
         if (status !== 200) {
             dockError(data.error || 'Upload failed');
@@ -555,7 +556,7 @@
     // ---- OTP ------------------------------------------------------------
 
     async function requestOtp() {
-        const { status, data } = await api('POST', `/${state.appId}/otp/request`, {});
+        const { status, data } = await api('POST', `/${state.appId}/otp/request`, { resume_code: state.resumeCode });
         if (status !== 200) {
             addBubble('bot', richText(data.error || 'I could not send the code - give it a moment and try again.'));
             renderOtpDock(true);
@@ -613,6 +614,7 @@
         const { status, data } = await api('POST', `/${state.appId}/otp/verify`, {
             verification_id: state.otp && state.otp.verification_id,
             otp_code: code,
+            resume_code: state.resumeCode,
         });
         if (status !== 200) {
             const t = addTyping(); await sleep(500); t.remove();
@@ -622,6 +624,11 @@
         }
         state.otp = null;
         setProgress(data.progress);
+        // On a secure resume the server returns the prior conversation only
+        // after the fresh OTP passes - replay it so the chat is restored.
+        if (data.transcript && data.transcript.length) {
+            await playMessages(data.transcript, { instant: true });
+        }
         await playMessages(data.messages);
         renderStep(data.step);
     }
@@ -634,7 +641,7 @@
         clearDock();
         addBubble('user', richText(displayText !== undefined ? displayText : String(value)));
         try {
-            const { status, data } = await api('POST', `/${state.appId}/message`, { value });
+            const { status, data } = await api('POST', `/${state.appId}/message`, { value, resume_code: state.resumeCode });
             setProgress(data.progress);
             await playMessages(data.messages);
             if (status >= 400 && !data.messages) {
@@ -663,7 +670,7 @@
 
     async function finalize() {
         const t = addTyping();
-        const { status, data } = await api('POST', `/${state.appId}/finalize`, {});
+        const { status, data } = await api('POST', `/${state.appId}/finalize`, { resume_code: state.resumeCode });
         t.remove();
         if (status !== 201) {
             addBubble('bot', richText(data.error || 'Submission failed - let me try that again in a moment.'));
@@ -767,7 +774,7 @@
 
     async function pauseApplication() {
         if (!state.appId || state.submitted) return;
-        const { status, data } = await api('POST', `/${state.appId}/pause`, {});
+        const { status, data } = await api('POST', `/${state.appId}/pause`, { resume_code: state.resumeCode });
         if (status === 200) {
             await playMessages(data.messages);
             clearDock();
