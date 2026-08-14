@@ -37,6 +37,7 @@ Error responses use the platform's ``{"error": "..."}`` convention.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import re
@@ -59,6 +60,47 @@ _start_tracker: Dict[str, list] = {}
 def _service():
     from services.chat_application_service import get_chat_application_service
     return get_chat_application_service()
+
+
+def _effective_client_ip(socket_ip: str, handler: Any) -> str:
+    """Resolve the real applicant IP behind a reverse proxy.
+
+    In production the server sits behind an edge proxy (Railway/Render), so
+    ``self.client_address`` is the proxy's private/loopback address for every
+    visitor. Rate limits keyed on that shared address would lock the whole
+    site after a handful of OTP requests (10/hour/IP in production). When the
+    socket peer is a private/loopback hop, trust the address the trusted edge
+    appended to ``X-Forwarded-For`` - the *last* (rightmost) entry, which is
+    the peer the edge actually observed. A caller can prepend arbitrary
+    leftmost hops (``$proxy_add_x_forwarded_for`` preserves them), so the first
+    hop is client-controlled and must never be trusted for rate limiting; a
+    direct public connection keeps its socket address.
+    """
+    try:
+        peer = ipaddress.ip_address(str(socket_ip or "").strip())
+        if not (peer.is_private or peer.is_loopback):
+            return socket_ip
+    except ValueError:
+        return socket_ip
+    headers = getattr(handler, "headers", None)
+    if not headers:
+        return socket_ip
+    hops = [h.strip() for h in str(headers.get("X-Forwarded-For") or "").split(",")]
+    last_hop = next((h for h in reversed(hops) if h), "")
+    if last_hop:
+        try:
+            ipaddress.ip_address(last_hop)
+            return last_hop
+        except ValueError:
+            pass
+    real_ip = str(headers.get("X-Real-IP") or "").strip()
+    if real_ip:
+        try:
+            ipaddress.ip_address(real_ip)
+            return real_ip
+        except ValueError:
+            pass
+    return socket_ip
 
 
 def _is_staff(session: Optional[Dict[str, Any]]) -> bool:
@@ -168,12 +210,55 @@ def _rate_limit_start(client_ip: str) -> bool:
 # OTP helpers (reuse the platform OTP service + delivery from api_extensions)
 # ---------------------------------------------------------------------------
 
+_OTP_UNAVAILABLE_MESSAGE = (
+    "Our verification service is temporarily unavailable. Your progress is "
+    "saved under your resume code - please try again in a few minutes, or "
+    "use the classic application form at /apply.html."
+)
+
+
+def _otp_delivery_ready() -> Tuple[bool, str]:
+    """Pre-flight: can this deployment actually deliver an OTP email?
+
+    Production refuses demo-code exposure (correctly), so when no email
+    provider is configured (``active provider == 'noop'``) every OTP request
+    is doomed. Detecting that before minting a verification keeps the OTP
+    service's per-IP counters and the session state clean.
+    """
+    try:
+        from web_portal.api_extensions import _demo_otp_exposure_allowed
+    except ImportError:  # pragma: no cover
+        from api_extensions import _demo_otp_exposure_allowed  # type: ignore
+    if _demo_otp_exposure_allowed():
+        return True, "demo_exposure"
+    try:
+        from services.notification_service import get_active_email_provider_type
+        provider = get_active_email_provider_type()
+    except Exception as exc:  # pragma: no cover - diagnostics must fail open
+        logger.warning("OTP delivery pre-flight failed: %s", exc)
+        return True, "unknown"
+    if provider == "noop":
+        return False, provider
+    return True, provider
+
+
 def _handle_otp_request(application_id: str, client_ip: str,
                         user_agent: str) -> Tuple[int, Dict[str, Any]]:
     svc = _service()
     email = svc.contact_email(application_id)
     if not email:
         return 409, {"error": "I need your email before I can send a verification code."}
+
+    ready, provider = _otp_delivery_ready()
+    if not ready:
+        logger.error(
+            "Chat application OTP blocked: no email provider configured "
+            "(active provider '%s'). Set EMAIL_PROVIDER plus its credentials "
+            "(e.g. SENDGRID_API_KEY / MAILGUN_API_KEY / RESEND_API_KEY or "
+            "SMTP_HOST + SMTP_USERNAME + SMTP_PASSWORD).", provider)
+        return 503, {"error": _OTP_UNAVAILABLE_MESSAGE,
+                     "error_code": "OTP_DELIVERY_UNAVAILABLE",
+                     "retryable": True}
 
     from services.otp_security_service import OTPPurpose, get_otp_security_service
     otp_service = get_otp_security_service()
@@ -224,8 +309,9 @@ def _handle_otp_request(application_id: str, client_ip: str,
         response["demo_otp_code"] = otp_code
     elif not delivered:
         logger.error("Chat application OTP delivery failed: %s", delivery_error)
-        return 503, {"error": "We couldn't deliver your verification code right now. Please try again.",
-                     "error_code": "OTP_DELIVERY_FAILED"}
+        return 503, {"error": _OTP_UNAVAILABLE_MESSAGE,
+                     "error_code": "OTP_DELIVERY_FAILED",
+                     "retryable": True}
 
     _write_ledger_events([{
         "event_type": "chat.otp_requested",
@@ -428,7 +514,12 @@ def dispatch_get(path: str, session: Optional[Dict[str, Any]],
     if path == "/api/chat-application/admin/funnel":
         if not _is_staff(session):
             return 403, {"error": "Staff access required"}
-        return 200, _service().funnel_snapshot()
+        snapshot = _service().funnel_snapshot()
+        # Ops visibility: the OTP gate is the funnel's hardest dependency, so
+        # surface whether this deployment can actually deliver codes.
+        ready, provider = _otp_delivery_ready()
+        snapshot["otp_delivery"] = {"ready": ready, "email_provider": provider}
+        return 200, snapshot
 
     match = _ID_RE.match(path)
     if not match:
@@ -465,6 +556,9 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]],
         return None
     body = body_data or {}
     svc = _service()
+    # Behind the production edge proxy every visitor shares one socket IP;
+    # key rate limits on the forwarded applicant address instead.
+    client_ip = _effective_client_ip(client_ip, handler)
 
     if path == "/api/chat-application/start":
         if not _rate_limit_start(client_ip):
@@ -495,6 +589,10 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]],
             application_id = result["application_id"]
             status, otp_response = _handle_otp_request(application_id, client_ip, user_agent)
             if status != 200:
+                # The session was already flipped to pending_reverify; roll
+                # that back so a failed code delivery neither bricks the
+                # session nor lets a later resume skip the OTP re-challenge.
+                svc.abort_reverify(application_id)
                 return status, otp_response
             result["otp"] = otp_response
         return 200, result

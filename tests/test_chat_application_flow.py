@@ -22,12 +22,14 @@ def _base() -> str:
     return os.environ.get("TEST_BASE_URL", "http://localhost:8000").rstrip("/")
 
 
-def _request(method: str, path: str, data=None, token=None):
+def _request(method: str, path: str, data=None, token=None, extra_headers=None):
     url = _base() + path
     body = json.dumps(data).encode("utf-8") if data is not None else None
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    if extra_headers:
+        headers.update(extra_headers)
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
@@ -39,8 +41,8 @@ def _request(method: str, path: str, data=None, token=None):
             return exc.code, {}
 
 
-def _post(path, data=None, token=None):
-    return _request("POST", path, data or {}, token)
+def _post(path, data=None, token=None, extra_headers=None):
+    return _request("POST", path, data or {}, token, extra_headers)
 
 
 def _get(path, token=None):
@@ -406,6 +408,134 @@ def test_staff_funnel_endpoint():
     status, state = _get(f"/api/chat-application/{app_id}", token=token)
     assert status == 200
     assert "resume_code" in state  # staff view exposes the code for support
+
+
+def _start_with_contact(email, phone="+1-555-0166"):
+    """Start a session and complete contact capture (stop at the OTP gate)."""
+    status, body = _post("/api/chat-application/start", {})
+    assert status == 201, body
+    app_id = body["application_id"]
+    resume_code = body["resume_code"]
+    _answer(app_id, "Noa Barak", resume_code=resume_code)
+    _answer(app_id, email, resume_code=resume_code)
+    reply = _answer(app_id, phone, resume_code=resume_code)
+    assert reply.get("otp_required") is True
+    return app_id, resume_code
+
+
+def test_otp_delivery_failure_is_retryable_and_keeps_session_consistent():
+    """Production-like delivery outage: clear 503, session stays workable."""
+    from unittest.mock import patch
+
+    app_id, resume_code = _start_with_contact("chat.applicant.outage@example.com")
+
+    # Simulate production: demo exposure refused + email send fails.
+    with patch("web_portal.api_extensions._demo_otp_exposure_allowed",
+               return_value=False), \
+         patch("web_portal.api_extensions._send_otp_via_channel",
+               return_value=(False, "simulated provider outage")):
+        status, failed = _post(f"/api/chat-application/{app_id}/otp/request",
+                               {"resume_code": resume_code})
+    assert status == 503, failed
+    assert failed["error_code"] == "OTP_DELIVERY_FAILED"
+    assert failed["retryable"] is True
+    assert "resume code" in failed["error"]
+
+    # Simulate production with NO provider at all: pre-flight refuses before
+    # minting a verification (keeps OTP counters/state clean).
+    with patch("web_portal.api_extensions._demo_otp_exposure_allowed",
+               return_value=False), \
+         patch("services.notification_service.get_active_email_provider_type",
+               return_value="noop"):
+        status, blocked = _post(f"/api/chat-application/{app_id}/otp/request",
+                                {"resume_code": resume_code})
+    assert status == 503, blocked
+    assert blocked["error_code"] == "OTP_DELIVERY_UNAVAILABLE"
+    assert blocked["retryable"] is True
+
+    # Recovery: once delivery works again the same session verifies and
+    # continues exactly where it stopped.
+    status, otp = _post(f"/api/chat-application/{app_id}/otp/request",
+                        {"resume_code": resume_code})
+    assert status == 200, otp
+    status, verified = _post(f"/api/chat-application/{app_id}/otp/verify", {
+        "verification_id": otp["verification_id"],
+        "otp_code": otp["demo_otp_code"],
+        "resume_code": resume_code,
+    })
+    assert status == 200, verified
+    assert verified["step"]["id"] == "dob"
+
+
+def test_resume_otp_failure_rolls_back_reverify_state():
+    """A failed re-challenge delivery must not brick or silently unlock."""
+    from unittest.mock import patch
+
+    email = "chat.applicant.rechallenge@example.com"
+    app_id, resume_code = _start_and_verify(email)
+    _answer(app_id, "1988-11-30", resume_code=resume_code)  # dob answered
+    status, paused = _post(f"/api/chat-application/{app_id}/pause",
+                           {"resume_code": resume_code})
+    assert status == 200, paused
+
+    # Resume while OTP delivery is down -> clear retryable failure.
+    with patch("web_portal.api_extensions._demo_otp_exposure_allowed",
+               return_value=False), \
+         patch("web_portal.api_extensions._send_otp_via_channel",
+               return_value=(False, "simulated provider outage")):
+        status, failed = _post("/api/chat-application/resume",
+                               {"resume_code": resume_code, "email": email})
+    assert status == 503, failed
+    assert failed["error_code"] == "OTP_DELIVERY_FAILED"
+
+    # Consistency: answers stay blocked (no silent unlock)...
+    status, blocked = _post(f"/api/chat-application/{app_id}/message",
+                            {"value": "male", "resume_code": resume_code})
+    assert status == 403, blocked
+
+    # ...and the NEXT resume still demands the OTP re-challenge (the failed
+    # attempt must not have downgraded the session to "unverified").
+    status, resumed = _post("/api/chat-application/resume",
+                            {"resume_code": resume_code, "email": email})
+    assert status == 200, resumed
+    assert resumed["status"] == "pending_reverify"
+    assert resumed["otp_required"] is True
+    otp = resumed["otp"]
+    assert "demo_otp_code" in otp
+
+    status, verified = _post(f"/api/chat-application/{app_id}/otp/verify", {
+        "verification_id": otp["verification_id"],
+        "otp_code": otp["demo_otp_code"],
+        "resume_code": resume_code,
+    })
+    assert status == 200, verified
+    assert verified["step"]["id"] == "gender"  # continues where it stopped
+
+
+def test_start_rate_limit_uses_forwarded_client_ip():
+    """Behind the edge proxy, limits must key on X-Forwarded-For, not the
+    shared socket address - otherwise a few applicants lock the whole site."""
+    from unittest.mock import patch
+
+    import web_portal.api_chat_application as chat_api
+
+    chat_api._start_tracker.clear()
+    try:
+        with patch.object(chat_api, "_MAX_STARTS_PER_IP_PER_HOUR", 2):
+            hdr_a = {"X-Forwarded-For": "203.0.113.50"}
+            hdr_b = {"X-Forwarded-For": "203.0.113.51, 100.64.0.9"}
+            status, _ = _post("/api/chat-application/start", {}, extra_headers=hdr_a)
+            assert status == 201
+            status, _ = _post("/api/chat-application/start", {}, extra_headers=hdr_a)
+            assert status == 201
+            # Same forwarded applicant is now over the limit...
+            status, limited = _post("/api/chat-application/start", {}, extra_headers=hdr_a)
+            assert status == 429, limited
+            # ...but a different applicant behind the same proxy still works.
+            status, _ = _post("/api/chat-application/start", {}, extra_headers=hdr_b)
+            assert status == 201
+    finally:
+        chat_api._start_tracker.clear()
 
 
 if __name__ == "__main__":
