@@ -1370,6 +1370,28 @@ except ImportError:
         api_ac_post = None
         print("Warning: Assessment Center API not available.")
 
+# Import API extensions for the chat-style New Policy Application ("Phin")
+try:
+    from web_portal.api_chat_application import (
+        dispatch_get as api_chat_app_get,
+        dispatch_post as api_chat_app_post,
+    )
+    chat_application_enabled = True
+    print("✓ Chat Application API loaded")
+except ImportError:
+    try:
+        from api_chat_application import (
+            dispatch_get as api_chat_app_get,
+            dispatch_post as api_chat_app_post,
+        )
+        chat_application_enabled = True
+        print("✓ Chat Application API loaded")
+    except ImportError:
+        chat_application_enabled = False
+        api_chat_app_get = None
+        api_chat_app_post = None
+        print("Warning: Chat Application API not available.")
+
 # Database support - ENABLED BY DEFAULT for data persistence
 # Set USE_DATABASE=false to use volatile in-memory storage (not recommended)
 USE_DATABASE = os.environ.get('USE_DATABASE', 'true').lower() not in ('false', '0', 'no')
@@ -14744,6 +14766,25 @@ For claims or questions, please contact:
                     return
             except Exception as e:
                 print(f"Assessment Center error (GET {path}): {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
+
+        # =====================================================================
+        # CHAT APPLICATION (GET) - conversational new-policy flow state,
+        # journey (A-Z pipeline), staff funnel. Session optional (resume-code
+        # scoped for applicants, role-gated for staff views).
+        # =====================================================================
+        if chat_application_enabled and api_chat_app_get and path.startswith('/api/chat-application'):
+            try:
+                chat_result = api_chat_app_get(path, session, qs, client_ip)
+                if chat_result is not None:
+                    status_code, response_data = chat_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+            except Exception as e:
+                print(f"Chat Application error (GET {path}): {e}")
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
                 return
@@ -29165,6 +29206,43 @@ For claims or questions, please contact:
                     self._set_json_headers(500)
                     self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
                     return
+
+        # =====================================================================
+        # CHAT APPLICATION (POST) - conversational new-policy flow ("Phin").
+        # Public endpoints: applicants have no session yet; access is scoped
+        # by application id + resume code + OTP inside the dispatcher.
+        # =====================================================================
+        if chat_application_enabled and api_chat_app_post and path.startswith('/api/chat-application'):
+            try:
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                session = validate_session(token) if token else None
+                user_agent = self.headers.get('User-Agent', '')
+
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length).decode('utf-8') if length else '{}'
+                try:
+                    body_data = json.loads(body)
+                except json.JSONDecodeError:
+                    body_data = {}
+
+                chat_result = api_chat_app_post(
+                    path, session, body_data, client_ip, user_agent, handler=self)
+                if chat_result is not None:
+                    status_code, response_data = chat_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
+                return
+            except Exception as e:
+                print(f"Chat Application error (POST {path}): {e}")
+                import traceback
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
 
         # =====================================================================
         # BUSINESS RELATIONS - public contact / demo inquiry intake (POST)
