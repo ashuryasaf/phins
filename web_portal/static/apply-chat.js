@@ -19,6 +19,7 @@
         email: null,
         step: null,          // current step descriptor from the API
         otp: null,           // {verification_id}
+        otpRestoreTranscript: false, // replay transcript after OTP only on a fresh-page resume
         busy: false,
         mediaCount: 0,
         submitted: false,
@@ -624,11 +625,14 @@
         }
         state.otp = null;
         setProgress(data.progress);
-        // On a secure resume the server returns the prior conversation only
-        // after the fresh OTP passes - replay it so the chat is restored.
-        if (data.transcript && data.transcript.length) {
+        // On a secure fresh-page resume the server returns the prior
+        // conversation only after the fresh OTP passes - replay it so the chat
+        // is restored. Skip it on the same-tab continue path where the live
+        // conversation is already rendered, to avoid duplicating history.
+        if (state.otpRestoreTranscript && data.transcript && data.transcript.length) {
             await playMessages(data.transcript, { instant: true });
         }
+        state.otpRestoreTranscript = false;
         await playMessages(data.messages);
         renderStep(data.step);
     }
@@ -754,6 +758,10 @@
             return;
         }
         if (data.otp_required) {
+            // Only rebuild history from the transcript when it is not already
+            // on screen (fresh-page resume). The same-tab continue path still
+            // shows the live conversation, so replaying would duplicate it.
+            state.otpRestoreTranscript = chatScroll().childElementCount === 0;
             addBubble('bot', richText(
                 `Welcome back! Since your session is verified, I sent a fresh security code to **${data.masked_email || 'your email'}** - enter it and we'll continue.`));
             state.otp = { verification_id: (data.otp || {}).verification_id };
