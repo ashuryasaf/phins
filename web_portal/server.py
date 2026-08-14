@@ -10807,8 +10807,8 @@ def _password_reset_provider_deliverability() -> Tuple[bool, bool]:
             get_active_email_provider_type,
             get_active_sms_provider_type,
         )
-        email_deliverable = get_active_email_provider_type() != 'noop'
-        sms_deliverable = get_active_sms_provider_type() != 'noop'
+        email_deliverable = get_active_email_provider_type() not in ('noop', 'mock')
+        sms_deliverable = get_active_sms_provider_type() not in ('noop', 'mock')
         return email_deliverable, sms_deliverable
     except Exception:
         return True, True
@@ -33496,11 +33496,20 @@ For claims or questions, please contact:
                             pass
 
                     if effective_channel == 'sms':
-                        reset_message = 'If the account exists, a verification code has been sent to the registered phone number.'
+                        if notification_sent:
+                            reset_message = 'If the account exists, a verification code has been sent to the registered phone number.'
+                        else:
+                            reset_message = 'If the account exists, we could not deliver a verification code to the registered phone. Please try again or use another channel.'
                     elif effective_channel == 'both':
-                        reset_message = 'If the account exists, a verification code has been sent to the registered email and phone number.'
+                        if notification_sent:
+                            reset_message = 'If the account exists, a verification code has been sent to the registered email and phone number.'
+                        else:
+                            reset_message = 'If the account exists, we could not deliver a verification code. Please try again or use the resend option.'
                     else:
-                        reset_message = 'If the account exists, a verification code has been sent to the registered email.'
+                        if notification_sent:
+                            reset_message = 'If the account exists, a verification code has been sent to the registered email.'
+                        else:
+                            reset_message = 'If the account exists, we could not deliver a verification code to the registered email. Please try again or use the resend option.'
 
                     response_data = {
                         'success': True,

@@ -237,7 +237,7 @@ def _otp_delivery_ready() -> Tuple[bool, str]:
     except Exception as exc:  # pragma: no cover - diagnostics must fail open
         logger.warning("OTP delivery pre-flight failed: %s", exc)
         return True, "unknown"
-    if provider == "noop":
+    if provider in ("noop", "mock"):
         return False, provider
     return True, provider
 
@@ -254,8 +254,10 @@ def _handle_otp_request(application_id: str, client_ip: str,
         logger.error(
             "Chat application OTP blocked: no email provider configured "
             "(active provider '%s'). Set EMAIL_PROVIDER plus its credentials "
-            "(e.g. SENDGRID_API_KEY / MAILGUN_API_KEY / RESEND_API_KEY or "
-            "SMTP_HOST + SMTP_USERNAME + SMTP_PASSWORD).", provider)
+            "(e.g. INFOBIP_API_KEY+INFOBIP_BASE_URL, SENDGRID_API_KEY, "
+            "MAILGUN_API_KEY, RESEND_API_KEY, or SMTP_HOST + SMTP_USERNAME + "
+            "SMTP_PASSWORD). Disable PHINS_TEST_MODE / "
+            "PHINS_USE_MOCK_NOTIFICATIONS in production.", provider)
         return 503, {"error": _OTP_UNAVAILABLE_MESSAGE,
                      "error_code": "OTP_DELIVERY_UNAVAILABLE",
                      "retryable": True}
