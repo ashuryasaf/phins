@@ -131,8 +131,25 @@ def test_infobip_sms_send_builds_correct_request(infobip_env):
     assert captured["auth"] == f"App {API_KEY}"
     msg = captured["payload"]["messages"][0]
     assert msg["from"] == "PHINS"
-    assert msg["destinations"] == [{"to": "+15550100"}]
+    assert msg["destinations"] == [{"to": "15550100"}]
     assert msg["text"] == "PHINS code: 123456"
+
+
+def test_infobip_sms_strips_plus_and_punctuation(infobip_env):
+    """Infobip docs want international digits without a leading '+'."""
+    captured = {}
+
+    def fake_urlopen(req, timeout=30, allowed_schemes=("https",)):
+        captured["payload"] = json.loads(req.data.decode("utf-8"))
+        return _FakeResponse(200, {"messages": [{
+            "messageId": "ib-sms-digits", "status": {"groupName": "PENDING"}}]})
+
+    with patch.object(ns, "validated_urlopen", side_effect=fake_urlopen):
+        ok, _, error = ns.InfobipSMSProvider().send(
+            to="+1 (555) 123-4567", message="code")
+
+    assert ok is True and error is None
+    assert captured["payload"]["messages"][0]["destinations"] == [{"to": "15551234567"}]
 
 
 def test_infobip_sms_requires_configuration(monkeypatch):
