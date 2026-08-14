@@ -2294,7 +2294,11 @@ class InfobipSMSProvider(SMSProvider):
                 or str(NotificationConfig.INFOBIP_SMS_SENDER or '').strip()
                 or 'InfoSMS'
             )
-            phone = normalize_phone(to)
+            # Infobip expects international digits without a leading '+'.
+            # normalize_phone keeps '+'; strip to digits for the destination.
+            phone = re.sub(r'\D', '', normalize_phone(to))
+            if not phone:
+                return False, None, "Infobip SMS: invalid phone number"
             payload = json.dumps({
                 'messages': [{
                     'from': sender,

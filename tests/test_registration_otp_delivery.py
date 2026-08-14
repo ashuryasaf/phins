@@ -191,12 +191,108 @@ def test_handle_otp_request_keeps_delivery_hard_fail_in_production(monkeypatch):
     assert "demo_otp_code" not in payload
 
 
+def test_configured_email_provider_types_includes_infobip(monkeypatch):
+    monkeypatch.setenv("EMAIL_PROVIDER", "infobip")
+    monkeypatch.setenv("INFOBIP_API_KEY", "ib-key")
+    monkeypatch.setenv("INFOBIP_BASE_URL", "https://abc.api.infobip.com")
+    for var in (
+        "SENDGRID_API_KEY", "MAILGUN_API_KEY", "MAILGUN_DOMAIN", "RESEND_API_KEY",
+        "ACTIVE_NOTIFICATIONS_API_KEY", "PINGRAM_API_KEY", "NOTIFICATIONAPI_API_KEY",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+    providers = api_extensions._configured_email_provider_types()
+    assert providers[0] == "infobip"
+    assert "infobip" in providers
+    assert providers[-1] == "smtp"
+
+
+def test_normalize_email_provider_type_recognizes_infobip():
+    assert api_extensions._normalize_email_provider_type("infobip") == "infobip"
+    assert api_extensions._normalize_email_provider_type("Info-Bip") == "infobip"
+    assert api_extensions._normalize_email_provider_type("INFOBIP_API") == "infobip"
+
+
+def test_create_notification_service_for_provider_builds_infobip(monkeypatch):
+    monkeypatch.setenv("PHINS_TEST_MODE", "false")
+    monkeypatch.setenv("PHINS_USE_MOCK_NOTIFICATIONS", "false")
+    monkeypatch.setenv("INFOBIP_API_KEY", "ib-key")
+    monkeypatch.setenv("INFOBIP_BASE_URL", "https://abc.api.infobip.com")
+
+    service = api_extensions._create_notification_service_for_provider(
+        use_mock_notifications=False,
+        provider_type="infobip",
+    )
+    from services.notification_service import InfobipEmailProvider
+    assert isinstance(service._email_provider, InfobipEmailProvider)
+
+
+def test_send_otp_email_falls_back_to_infobip(monkeypatch):
+    """When auto/SMTP fail, Infobip must be in the email OTP fallback chain."""
+    monkeypatch.setattr(api_extensions, "PHINS_TEST_MODE", False)
+    monkeypatch.setenv("PHINS_TEST_MODE", "false")
+    monkeypatch.setenv("PHINS_USE_MOCK_NOTIFICATIONS", "false")
+    monkeypatch.setattr(
+        api_extensions,
+        "_configured_email_provider_types",
+        lambda: ["smtp", "infobip"],
+    )
+    # Make the configured default look like smtp so Infobip is a non-default fallback.
+    monkeypatch.setattr(
+        api_extensions,
+        "_normalize_email_provider_type",
+        lambda raw, default="smtp": "smtp" if not raw or raw == "smtp" else (
+            "infobip" if "infobip" in str(raw).lower() else "smtp"
+        ),
+    )
+    monkeypatch.setenv("EMAIL_PROVIDER", "smtp")
+
+    attempts = []
+
+    class _FakeNotificationService:
+        def __init__(self, label, success, error_message):
+            self.label = label
+            self.success = success
+            self.error_message = error_message
+
+        def send(self, _request):
+            attempts.append(self.label)
+            return SimpleNamespace(
+                success=self.success,
+                error_message=self.error_message,
+            )
+
+    def _factory(use_mock_notifications, provider_type=None):
+        assert not use_mock_notifications
+        if provider_type is None:
+            return _FakeNotificationService("auto", False, "auto failed")
+        if provider_type == "infobip":
+            return _FakeNotificationService("infobip", True, None)
+        return _FakeNotificationService(str(provider_type), False, f"{provider_type} failed")
+
+    monkeypatch.setattr(api_extensions, "_create_notification_service_for_provider", _factory)
+
+    sent, error = api_extensions._send_otp_email(
+        email="fallback@example.com",
+        otp_code="123456",
+        expiry_seconds=300,
+        purpose="registration",
+        ip_address="127.0.0.1",
+    )
+
+    assert sent is True
+    assert error is None
+    assert "infobip" in attempts
+
+
 def test_configured_email_provider_types_supports_aliases_and_resend(monkeypatch):
     monkeypatch.setenv("EMAIL_PROVIDER", "aws_ses")
     monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
     monkeypatch.delenv("SENDGRID_API_KEY", raising=False)
     monkeypatch.delenv("MAILGUN_API_KEY", raising=False)
     monkeypatch.delenv("MAILGUN_DOMAIN", raising=False)
+    monkeypatch.delenv("INFOBIP_API_KEY", raising=False)
+    monkeypatch.delenv("INFOBIP_BASE_URL", raising=False)
 
     providers = api_extensions._configured_email_provider_types()
     assert providers[0] == "ses"

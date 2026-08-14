@@ -121,7 +121,9 @@ PHINS_TEST_MODE = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 't
 EXPOSE_DEMO_OTP = PHINS_TEST_MODE or str(os.environ.get('PHINS_EXPOSE_DEMO_OTP', '')).lower() in (
     '1', 'true', 'yes', 'y'
 )
-_EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend', 'active_notifications'}
+_EMAIL_PROVIDER_TYPES = {
+    'smtp', 'sendgrid', 'ses', 'mailgun', 'resend', 'active_notifications', 'infobip',
+}
 _EMAIL_PROVIDER_ALIASES = {
     'send_grid': 'sendgrid',
     'sendgrid_api': 'sendgrid',
@@ -141,6 +143,11 @@ _EMAIL_PROVIDER_ALIASES = {
     'pingram': 'active_notifications',
     'notificationapi': 'active_notifications',
     'notification_api': 'active_notifications',
+    # Infobip (shared credentials with SMS OTP delivery).
+    'info_bip': 'infobip',
+    'info-bip': 'infobip',
+    'infobip_api': 'infobip',
+    'infobip_email': 'infobip',
 }
 _TRUTHY_VALUES = {'1', 'true', 'yes', 'y', 'on'}
 _PRODUCTION_ENV_NAMES = {'prod', 'production', 'live'}
@@ -240,6 +247,11 @@ def _configured_email_provider_types() -> List[str]:
         or _env_or_notification_default('NOTIFICATIONAPI_API_KEY')
     ):
         provider_types.append('active_notifications')
+    if (
+        _env_or_notification_default('INFOBIP_API_KEY')
+        and _env_or_notification_default('INFOBIP_BASE_URL')
+    ):
+        provider_types.append('infobip')
     if _aws_identity_configured():
         provider_types.append('ses')
 
@@ -397,6 +409,7 @@ def _create_notification_service_for_provider(
         MailgunEmailProvider,
         ResendEmailProvider,
         ActiveNotificationsEmailProvider,
+        InfobipEmailProvider,
         should_use_mock_notifications,
     )
 
@@ -417,6 +430,8 @@ def _create_notification_service_for_provider(
         provider = ResendEmailProvider()
     elif normalized == 'active_notifications':
         provider = ActiveNotificationsEmailProvider()
+    elif normalized == 'infobip':
+        provider = InfobipEmailProvider()
     else:
         provider = SMTPEmailProvider()
 
