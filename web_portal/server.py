@@ -10110,6 +10110,7 @@ DOCUMENT_ADMIN_ROLES = {
     'claims',
     'claims_adjuster',
     'adjuster',  # legacy alias
+    'accountant',  # billing / invoice document access
 }
 
 # Roles permitted to review and decide claims.
@@ -10345,6 +10346,16 @@ def store_policy_document(
     doc_id = f"DOC-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8].upper()}"
     checksum = hashlib.sha256(raw_bytes).hexdigest()
 
+    from services.customer_document_vault_service import (
+        format_process_tag,
+        infer_process_hashtag,
+    )
+    process_hashtag = infer_process_hashtag(
+        document_type=document_type,
+        entity_type=entity_type,
+        name=file_name,
+    )
+
     doc = {
         'id': doc_id,
         'name': file_name,
@@ -10356,6 +10367,8 @@ def store_policy_document(
         'entity_type': (entity_type or 'general'),
         'entity_id': entity_id or '',
         'document_type': document_type or 'general',
+        'process_hashtag': process_hashtag,
+        'process_tag': format_process_tag(process_hashtag),
         'description': description or '',
         'uploaded_at': uploaded_at,
         'uploaded_by': uploaded_by or 'system',
@@ -20375,13 +20388,13 @@ For claims or questions, please contact:
 
         # ========== ADMIN: LIST CUSTOMERS FOR DOCUMENT FILTERING ==========
         # GET /api/admin/customers-for-documents - Returns customer list for admin doc filtering
-        # Access: admin, underwriter, actuary, claims roles only
+        # Access: admin, underwriter, actuary, claims, accountant roles only
         if path == '/api/admin/customers-for-documents':
             if not session:
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
                 return
-            if not require_role(session, ['admin', 'underwriter', 'actuary', 'claims', 'claims_adjuster', 'adjuster']):
+            if not require_role(session, ['admin', 'underwriter', 'actuary', 'claims', 'claims_adjuster', 'adjuster', 'accountant']):
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
                 return
@@ -20452,6 +20465,11 @@ For claims or questions, please contact:
                 else:
                     entity_type = (qs.get('entity_type', [None])[0] or '').strip() or None
                     document_type = (qs.get('document_type', [None])[0] or '').strip() or None
+                    process_hashtag = (
+                        (qs.get('process_hashtag', [None])[0] or qs.get('hashtag', [None])[0] or '')
+                        .strip()
+                        or None
+                    )
                     # SECURITY: cap the page size so a caller cannot ask for an
                     # unbounded payload. The vault iterates the customer's own
                     # documents, so this is a self-DoS at worst, but a hard cap
@@ -20468,9 +20486,66 @@ For claims or questions, please contact:
                         target_customer_id,
                         entity_type=entity_type,
                         document_type=document_type,
+                        process_hashtag=process_hashtag,
                         limit=limit,
                     )
                 payload['is_admin'] = is_admin
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        # ========== PLATFORM DOCUMENT ARCHIVE (staff) ==========
+        # GET /api/documents/archive?process_hashtag=medical&limit=500
+        # Every historical upload across POLICY_DOCUMENTS / CLAIM_FILES /
+        # UNDERWRITING_FILES / persistent store, tagged with process hashtags
+        # (#identity, #medical, #risk_assessment, #claim, #billing, …).
+        # Staff/admin hierarchy only — customers use durable-objects instead.
+        if path == '/api/documents/archive':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                eff_role = get_effective_role(session)
+                if not is_document_admin_role(eff_role):
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({
+                        'error': 'Staff document access required'
+                    }).encode('utf-8'))
+                    return
+                process_hashtag = (
+                    (qs.get('process_hashtag', [None])[0] or qs.get('hashtag', [None])[0] or '')
+                    .strip()
+                    or None
+                )
+                entity_type = (qs.get('entity_type', [None])[0] or '').strip() or None
+                document_type = (qs.get('document_type', [None])[0] or '').strip() or None
+                ARCHIVE_MAX_LIMIT = 1000
+                try:
+                    limit = max(0, int(qs.get('limit', ['500'])[0]))
+                except (TypeError, ValueError):
+                    limit = 500
+                if limit > ARCHIVE_MAX_LIMIT:
+                    limit = ARCHIVE_MAX_LIMIT
+                try:
+                    offset = max(0, int(qs.get('offset', ['0'])[0]))
+                except (TypeError, ValueError):
+                    offset = 0
+                vault = _build_customer_document_vault()
+                payload = vault.get_platform_archive(
+                    process_hashtag=process_hashtag,
+                    entity_type=entity_type,
+                    document_type=document_type,
+                    limit=limit,
+                    offset=offset,
+                    verify_integrity=True,
+                )
+                payload['is_staff'] = True
+                payload['viewer_role'] = eff_role
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
                 return
