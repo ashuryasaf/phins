@@ -202,6 +202,339 @@ class CustomerDocumentVault:
             "generated_at": vault["generated_at"],
         }
 
+    def get_entity_documents(
+        self,
+        entity_type: str,
+        entity_id: str,
+        *,
+        verify_integrity: bool = True,
+        reconcile_index: bool = True,
+    ) -> Dict[str, Any]:
+        """List every document attached to one underwriting application or claim.
+
+        Used by underwriters / claims / admin (and the owning customer) to open
+        the full attachment set for a specific application or claim without
+        walking the whole customer vault.
+
+        Integrity:
+        * Never mutates file bytes.
+        * When ``reconcile_index`` is True, rebuilds the parent record's
+          lightweight ``files`` / ``files_count`` metadata from the live
+          attachment store so the index cannot drift from reality.
+        * Recomputes SHA-256 from in-memory payloads when present so
+          ``integrity_status`` reflects byte-level consistency even without
+          the persistent document service.
+        """
+        entity_type_l = _norm_lower(entity_type)
+        entity_id = _norm_str(entity_id)
+        if entity_type_l not in ("underwriting", "claim"):
+            return {
+                "success": False,
+                "error": "entity_type must be 'underwriting' or 'claim'",
+                "status_code": 400,
+            }
+        if not entity_id:
+            return {
+                "success": False,
+                "error": "entity_id is required",
+                "status_code": 400,
+            }
+
+        if entity_type_l == "underwriting":
+            parent = self._underwriting_applications.get(entity_id)
+            if not parent:
+                return {
+                    "success": False,
+                    "error": f"Application {entity_id} not found",
+                    "status_code": 404,
+                }
+            owner = _norm_str(parent.get("customer_id"))
+            records = self._collect_entity_underwriting(entity_id, owner)
+            consistency = (
+                self.reconcile_underwriting_file_index(entity_id)
+                if reconcile_index
+                else self._underwriting_index_snapshot(entity_id)
+            )
+        else:
+            parent = self._claims.get(entity_id)
+            if not parent:
+                return {
+                    "success": False,
+                    "error": f"Claim {entity_id} not found",
+                    "status_code": 404,
+                }
+            owner = _norm_str(parent.get("customer_id"))
+            records = self._collect_entity_claim(entity_id, owner)
+            consistency = (
+                self.reconcile_claim_file_index(entity_id)
+                if reconcile_index
+                else self._claim_index_snapshot(entity_id)
+            )
+
+        # Include general POLICY_DOCUMENTS affiliated to this entity.
+        for doc_id, doc in self._policy_documents.items():
+            if not isinstance(doc, dict):
+                continue
+            if _norm_lower(doc.get("entity_type")) != entity_type_l:
+                continue
+            if _norm_str(doc.get("entity_id")) != entity_id:
+                continue
+            doc_owner = _norm_str(
+                doc.get("uploaded_by_customer") or doc.get("customer_id") or owner
+            )
+            records.append(self._normalize_general_doc(doc_id, doc, doc_owner or owner))
+
+        records = self._dedupe_by_checksum(records)
+        records.sort(key=lambda r: r.get("uploaded_at") or "", reverse=True)
+
+        if verify_integrity:
+            for record in records:
+                record["integrity_status"] = self._verify_entity_record_integrity(
+                    record, entity_type_l
+                )
+        else:
+            for record in records:
+                record.setdefault("integrity_status", "unverified")
+
+        summary = self._build_summary(owner, records)
+        return {
+            "success": True,
+            "entity_type": entity_type_l,
+            "entity_id": entity_id,
+            "customer_id": owner,
+            "vault_type": "entity_document_bundle",
+            "vault_version": "v1",
+            "generated_at": datetime.now().isoformat(),
+            "summary": summary,
+            "consistency": consistency,
+            "documents": records,
+            "total": len(records),
+        }
+
+    def reconcile_underwriting_file_index(self, application_id: str) -> Dict[str, Any]:
+        """Rebuild application ``files`` metadata from ``UNDERWRITING_FILES``.
+
+        File bytes are never touched. Returns a consistency report.
+        """
+        application_id = _norm_str(application_id)
+        app = self._underwriting_applications.get(application_id)
+        if not isinstance(app, dict):
+            return {
+                "parent_found": False,
+                "store_count": 0,
+                "index_count_before": 0,
+                "index_count_after": 0,
+                "reconciled": False,
+            }
+
+        live: List[Dict[str, Any]] = []
+        for fid, finfo in self._underwriting_files.items():
+            if not isinstance(finfo, dict):
+                continue
+            if _norm_str(finfo.get("application_id")) != application_id:
+                continue
+            # Backfill owner on the attachment when the parent has one.
+            owner = _norm_str(app.get("customer_id"))
+            if owner and not _norm_str(finfo.get("customer_id")):
+                finfo["customer_id"] = owner
+            live.append(
+                {
+                    "id": _norm_str(finfo.get("id") or fid),
+                    "name": _norm_str(finfo.get("name")),
+                    "type": _norm_str(finfo.get("type")) or "application/octet-stream",
+                    "size": _safe_size(finfo.get("size")),
+                    "uploaded_at": _coerce_iso(finfo.get("uploaded_at")),
+                    "sha256": _norm_str(finfo.get("sha256")) or _sha256_b64(finfo.get("data")),
+                    "has_data": bool(finfo.get("data")),
+                }
+            )
+        live.sort(key=lambda x: x.get("id") or "")
+
+        before_meta = app.get("files") if isinstance(app.get("files"), list) else []
+        before_count = _safe_size(app.get("files_count"))
+        if before_count <= 0:
+            before_count = len(before_meta)
+
+        after_ids = [x["id"] for x in live]
+        before_ids = [
+            _norm_str(x.get("id")) for x in before_meta if isinstance(x, dict)
+        ]
+        drifted = after_ids != before_ids or before_count != len(live)
+
+        app["files"] = live
+        app["files_count"] = len(live)
+        return {
+            "parent_found": True,
+            "store_count": len(live),
+            "index_count_before": before_count,
+            "index_count_after": len(live),
+            "reconciled": bool(drifted),
+            "drift_detected": bool(drifted),
+        }
+
+    def reconcile_claim_file_index(self, claim_id: str) -> Dict[str, Any]:
+        """Rebuild claim ``files`` metadata from ``CLAIM_FILES`` without touching bytes."""
+        claim_id = _norm_str(claim_id)
+        claim = self._claims.get(claim_id)
+        if not isinstance(claim, dict):
+            return {
+                "parent_found": False,
+                "store_count": 0,
+                "index_count_before": 0,
+                "index_count_after": 0,
+                "reconciled": False,
+            }
+
+        live: List[Dict[str, Any]] = []
+        for fid, finfo in self._claim_files.items():
+            if not isinstance(finfo, dict):
+                continue
+            if _norm_str(finfo.get("claim_id")) != claim_id:
+                continue
+            owner = _norm_str(claim.get("customer_id"))
+            if owner and not _norm_str(finfo.get("customer_id")):
+                finfo["customer_id"] = owner
+            live.append(
+                {
+                    "id": _norm_str(finfo.get("id") or fid),
+                    "name": _norm_str(finfo.get("name")),
+                    "type": _norm_str(finfo.get("type")) or "application/octet-stream",
+                    "size": _safe_size(finfo.get("size")),
+                    "uploaded_at": _coerce_iso(finfo.get("uploaded_at")),
+                    "sha256": _norm_str(finfo.get("sha256")) or _sha256_b64(finfo.get("data")),
+                    "has_data": bool(finfo.get("data")),
+                }
+            )
+        live.sort(key=lambda x: x.get("id") or "")
+
+        before_meta = claim.get("files") if isinstance(claim.get("files"), list) else []
+        before_count = _safe_size(claim.get("files_count"))
+        if before_count <= 0:
+            before_count = len(before_meta)
+
+        after_ids = [x["id"] for x in live]
+        before_ids = [
+            _norm_str(x.get("id")) for x in before_meta if isinstance(x, dict)
+        ]
+        drifted = after_ids != before_ids or before_count != len(live)
+
+        claim["files"] = live
+        claim["files_count"] = len(live)
+        return {
+            "parent_found": True,
+            "store_count": len(live),
+            "index_count_before": before_count,
+            "index_count_after": len(live),
+            "reconciled": bool(drifted),
+            "drift_detected": bool(drifted),
+        }
+
+    def _underwriting_index_snapshot(self, application_id: str) -> Dict[str, Any]:
+        app = self._underwriting_applications.get(application_id) or {}
+        store_count = sum(
+            1
+            for f in self._underwriting_files.values()
+            if isinstance(f, dict)
+            and _norm_str(f.get("application_id")) == _norm_str(application_id)
+        )
+        index_count = _safe_size(app.get("files_count"))
+        if index_count <= 0 and isinstance(app.get("files"), list):
+            index_count = len(app.get("files") or [])
+        return {
+            "parent_found": bool(app),
+            "store_count": store_count,
+            "index_count_before": index_count,
+            "index_count_after": index_count,
+            "reconciled": False,
+            "drift_detected": store_count != index_count,
+        }
+
+    def _claim_index_snapshot(self, claim_id: str) -> Dict[str, Any]:
+        claim = self._claims.get(claim_id) or {}
+        store_count = sum(
+            1
+            for f in self._claim_files.values()
+            if isinstance(f, dict) and _norm_str(f.get("claim_id")) == _norm_str(claim_id)
+        )
+        index_count = _safe_size(claim.get("files_count"))
+        if index_count <= 0 and isinstance(claim.get("files"), list):
+            index_count = len(claim.get("files") or [])
+        return {
+            "parent_found": bool(claim),
+            "store_count": store_count,
+            "index_count_before": index_count,
+            "index_count_after": index_count,
+            "reconciled": False,
+            "drift_detected": store_count != index_count,
+        }
+
+    def _collect_entity_underwriting(
+        self, application_id: str, owner: str
+    ) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for file_id, uf in self._underwriting_files.items():
+            if not isinstance(uf, dict):
+                continue
+            if _norm_str(uf.get("application_id")) != application_id:
+                continue
+            file_owner = _norm_str(uf.get("customer_id")) or owner
+            out.append(self._normalize_underwriting_file(file_id, uf, file_owner))
+        return out
+
+    def _collect_entity_claim(self, claim_id: str, owner: str) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for file_id, cf in self._claim_files.items():
+            if not isinstance(cf, dict):
+                continue
+            if _norm_str(cf.get("claim_id")) != claim_id:
+                continue
+            file_owner = _norm_str(cf.get("customer_id")) or owner
+            out.append(self._normalize_claim_file(file_id, cf, file_owner))
+        return out
+
+    def _verify_entity_record_integrity(
+        self, record: Dict[str, Any], entity_type: str
+    ) -> str:
+        """Integrity for entity bundles: prefer persistent check, else re-hash bytes."""
+        status = self._verify_record_integrity(record)
+        if status in ("ok", "mismatch", "missing"):
+            return status
+
+        # In-memory UW/claim attachments: recompute digest from live store bytes.
+        file_id = _norm_str(record.get("id"))
+        store = (
+            self._underwriting_files
+            if entity_type == "underwriting"
+            else self._claim_files
+        )
+        if record.get("source") == self.SOURCE_GENERAL:
+            live = self._policy_documents.get(file_id) or {}
+            data_b64 = live.get("data") if isinstance(live, dict) else None
+            recorded = _norm_str(
+                (live or {}).get("sha256") if isinstance(live, dict) else ""
+            ) or _norm_str(record.get("sha256"))
+        else:
+            live = store.get(file_id) or {}
+            data_b64 = live.get("data") if isinstance(live, dict) else None
+            recorded = _norm_str(
+                (live or {}).get("sha256") if isinstance(live, dict) else ""
+            ) or _norm_str(record.get("sha256"))
+
+        if not data_b64:
+            return "unverified" if not recorded else "missing"
+        recomputed = _sha256_b64(data_b64)
+        if not recomputed:
+            return "unverified"
+        if recorded and recomputed != recorded:
+            return "mismatch"
+        # Persist recomputed digest on the live record for future reads.
+        if isinstance(live, dict) and not _norm_str(live.get("sha256")):
+            live["sha256"] = recomputed
+            record["sha256"] = recomputed
+        elif not record.get("sha256"):
+            record["sha256"] = recomputed
+        return "ok"
+
     def backfill_customer_attribution(self) -> Dict[str, int]:
         """Walk POLICY_DOCUMENTS and CLAIM_FILES and assign missing customer_id.
 
