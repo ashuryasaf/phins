@@ -10421,6 +10421,70 @@ def _build_customer_document_vault():
     )
 
 
+def _authorize_entity_document_access(
+    session: Optional[Dict[str, Any]],
+    *,
+    entity_type: str,
+    entity_id: str,
+) -> Tuple[int, Optional[Dict[str, Any]], Optional[str]]:
+    """Authorize list/view of documents for one underwriting application or claim.
+
+    Hierarchy:
+    * admin / underwriter / actuary / claims (+ adjuster aliases) → any entity
+    * owning customer (``customer_id`` on the parent record) → own entity only
+    * everyone else → denied
+
+    Returns ``(http_status, context_or_none, error_or_none)``. Context includes
+    ``is_staff``, ``customer_id`` (owner), and the parent record.
+    """
+    if not session:
+        return 401, None, 'Authentication required'
+
+    entity_type_l = str(entity_type or '').strip().lower()
+    entity_id = str(entity_id or '').strip()
+    if entity_type_l not in ('underwriting', 'claim'):
+        return 400, None, "entity_type must be 'underwriting' or 'claim'"
+    if not entity_id:
+        return 400, None, 'entity_id is required'
+
+    if entity_type_l == 'underwriting':
+        parent = UNDERWRITING_APPLICATIONS.get(entity_id)
+        not_found = f'Application {entity_id} not found'
+    else:
+        parent = CLAIMS.get(entity_id)
+        not_found = f'Claim {entity_id} not found'
+    if not parent:
+        return 404, None, not_found
+
+    owner = str(parent.get('customer_id') or '').strip()
+    eff_role = get_effective_role(session)
+    is_staff = is_document_admin_role(eff_role)
+    session_customer_id = get_session_customer_id(session)
+
+    if is_staff:
+        return 200, {
+            'is_staff': True,
+            'role': eff_role,
+            'customer_id': owner,
+            'parent': parent,
+            'entity_type': entity_type_l,
+            'entity_id': entity_id,
+        }, None
+
+    if not session_customer_id:
+        return 403, None, 'Customer session invalid - no customer_id'
+    if not owner or session_customer_id != owner:
+        return 403, None, 'Access denied'
+    return 200, {
+        'is_staff': False,
+        'role': eff_role,
+        'customer_id': owner,
+        'parent': parent,
+        'entity_type': entity_type_l,
+        'entity_id': entity_id,
+    }, None
+
+
 def backfill_customer_document_attribution() -> Dict[str, int]:
     """Run a one-shot backfill so every document is linked to a customer.
 
@@ -20407,6 +20471,76 @@ For claims or questions, please contact:
                         limit=limit,
                     )
                 payload['is_admin'] = is_admin
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        # ========== ENTITY DOCUMENT BUNDLE (application / claim scoped) ==========
+        # GET /api/entity-documents?entity_type=underwriting&entity_id=UW-...
+        # GET /api/entity-documents?entity_type=claim&entity_id=CLM-...
+        # GET /api/underwriting/documents?application_id=UW-...   (alias)
+        # GET /api/claims/documents?claim_id=CLM-...             (alias)
+        #
+        # Returns every attachment for one application or claim with RBAC:
+        # staff (admin/underwriter/actuary/claims) or the owning customer.
+        # Reconciles parent files_count/index metadata against the live store
+        # without mutating file bytes, and reports per-document integrity.
+        if path in (
+            '/api/entity-documents',
+            '/api/underwriting/documents',
+            '/api/claims/documents',
+        ):
+            entity_type = (qs.get('entity_type', [None])[0] or '').strip().lower()
+            entity_id = (qs.get('entity_id', [None])[0] or '').strip()
+            if path == '/api/underwriting/documents':
+                entity_type = 'underwriting'
+                entity_id = (
+                    (qs.get('application_id', [None])[0] or '').strip()
+                    or entity_id
+                )
+            elif path == '/api/claims/documents':
+                entity_type = 'claim'
+                entity_id = (
+                    (qs.get('claim_id', [None])[0] or '').strip()
+                    or entity_id
+                )
+
+            status, ctx, err = _authorize_entity_document_access(
+                session, entity_type=entity_type, entity_id=entity_id
+            )
+            if status != 200:
+                self._set_json_headers(status)
+                self.wfile.write(json.dumps({'error': err or 'Access denied'}).encode('utf-8'))
+                return
+            try:
+                reconcile = str(qs.get('reconcile', ['1'])[0] or '1').strip().lower() not in (
+                    '0', 'false', 'no'
+                )
+                vault = _build_customer_document_vault()
+                payload = vault.get_entity_documents(
+                    entity_type,
+                    entity_id,
+                    verify_integrity=True,
+                    reconcile_index=reconcile,
+                )
+                if not payload.get('success'):
+                    self._set_json_headers(int(payload.get('status_code') or 400))
+                    self.wfile.write(json.dumps({
+                        'error': payload.get('error') or 'Unable to load documents'
+                    }).encode('utf-8'))
+                    return
+                # Persist reconciled index so subsequent reads stay consistent.
+                if reconcile and (payload.get('consistency') or {}).get('reconciled'):
+                    try:
+                        save_ledger_data()
+                    except Exception as persist_err:
+                        print(f"[entity-documents] index persist note: {persist_err}")
+                payload['is_staff'] = bool((ctx or {}).get('is_staff'))
+                payload['viewer_role'] = (ctx or {}).get('role')
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
                 return
@@ -41904,6 +42038,10 @@ For claims or questions, please contact:
         # Retrieve files attached to a claim (for viewing/downloading)
         if path == '/api/claims/files':
             try:
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                session = validate_session(token) if token else None
+
                 data = json.loads(body or '{}')
                 claim_id = data.get('claim_id') or data.get('id')
                 file_id = data.get('file_id')
@@ -41912,8 +42050,16 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Claim ID is required'}).encode('utf-8'))
                     return
+
+                status, ctx, err = _authorize_entity_document_access(
+                    session, entity_type='claim', entity_id=str(claim_id)
+                )
+                if status != 200:
+                    self._set_json_headers(status)
+                    self.wfile.write(json.dumps({'error': err or 'Access denied'}).encode('utf-8'))
+                    return
                 
-                claim = CLAIMS.get(claim_id)
+                claim = (ctx or {}).get('parent') or CLAIMS.get(claim_id)
                 if not claim:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': f'Claim {claim_id} not found'}).encode('utf-8'))
@@ -41953,8 +42099,10 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({
                         'success': True,
                         'claim_id': claim_id,
+                        'customer_id': claim.get('customer_id'),
                         'files': files_list,
-                        'total_files': len(files_list)
+                        'total_files': len(files_list),
+                        'is_staff': bool((ctx or {}).get('is_staff')),
                     }).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
@@ -41965,6 +42113,10 @@ For claims or questions, please contact:
         # Upload or retrieve files attached to underwriting applications
         if path == '/api/underwriting/files':
             try:
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                session = validate_session(token) if token else None
+
                 data = json.loads(body or '{}')
                 app_id = data.get('application_id') or data.get('id')
                 file_id = data.get('file_id')
@@ -41974,12 +42126,22 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Application ID is required'}).encode('utf-8'))
                     return
+
+                status, ctx, err = _authorize_entity_document_access(
+                    session, entity_type='underwriting', entity_id=str(app_id)
+                )
+                if status != 200:
+                    self._set_json_headers(status)
+                    self.wfile.write(json.dumps({'error': err or 'Access denied'}).encode('utf-8'))
+                    return
                 
-                app = UNDERWRITING_APPLICATIONS.get(app_id)
+                app = (ctx or {}).get('parent') or UNDERWRITING_APPLICATIONS.get(app_id)
                 if not app:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': f'Application {app_id} not found'}).encode('utf-8'))
                     return
+
+                owner_customer_id = str(app.get('customer_id') or '').strip()
                 
                 if action == 'upload' and data.get('files'):
                     # Upload new files
@@ -41988,35 +42150,60 @@ For claims or questions, please contact:
                     
                     for i, file_info in enumerate(files_data[:10]):  # Limit to 10 files
                         new_file_id = f"UW-FILE-{app_id}-{i+1:03d}-{random.randint(1000,9999)}"
+                        raw_data = file_info.get('data')
+                        sha256 = ''
+                        try:
+                            import hashlib as _hashlib_uw
+                            import base64 as _b64_uw
+                            if raw_data:
+                                sha256 = _hashlib_uw.sha256(
+                                    _b64_uw.b64decode(raw_data, validate=False)
+                                ).hexdigest()
+                        except Exception:
+                            sha256 = ''
                         file_meta = {
                             'id': new_file_id,
                             'application_id': app_id,
+                            'customer_id': owner_customer_id,
                             'name': file_info.get('name', f'file_{i+1}'),
                             'type': file_info.get('type', 'application/octet-stream'),
                             'size': file_info.get('size', 0),
-                            'data': file_info.get('data'),  # Base64 encoded
+                            'data': raw_data,  # Base64 encoded
+                            'sha256': sha256,
                             'uploaded_at': datetime.now().isoformat(),
-                            'uploaded_by': data.get('uploaded_by', 'customer')
+                            'uploaded_by': data.get('uploaded_by') or (
+                                'staff' if (ctx or {}).get('is_staff') else 'customer'
+                            ),
                         }
                         UNDERWRITING_FILES[new_file_id] = file_meta
                         uploaded_files.append({
                             'id': new_file_id,
                             'name': file_meta['name'],
                             'type': file_meta['type'],
-                            'size': file_meta['size']
+                            'size': file_meta['size'],
+                            'sha256': sha256,
+                            'view_url': f'/api/underwriting/files/view?id={new_file_id}',
                         })
                         print(f"   📄 Stored UW file {new_file_id}: {file_meta['name']} ({file_meta['size']} bytes)")
                     
-                    # Update application with file count
-                    app['files_count'] = len([f for f in UNDERWRITING_FILES.values() if f.get('application_id') == app_id])
-                    UNDERWRITING_APPLICATIONS[app_id] = app
+                    try:
+                        vault = _build_customer_document_vault()
+                        vault.reconcile_underwriting_file_index(app_id)
+                    except Exception:
+                        app['files_count'] = len([
+                            f for f in UNDERWRITING_FILES.values()
+                            if f.get('application_id') == app_id
+                        ])
+                        UNDERWRITING_APPLICATIONS[app_id] = app
                     save_ledger_data()
                     
                     self._set_json_headers(200)
                     self.wfile.write(json.dumps({
                         'success': True,
                         'message': f'Uploaded {len(uploaded_files)} files',
-                        'files': uploaded_files
+                        'files': uploaded_files,
+                        'application_id': app_id,
+                        'customer_id': owner_customer_id,
                     }).encode('utf-8'))
                 
                 elif file_id:
@@ -42032,7 +42219,46 @@ For claims or questions, please contact:
                         self._set_json_headers(404)
                         self.wfile.write(json.dumps({'error': f'File {file_id} not found for application {app_id}'}).encode('utf-8'))
                 else:
-                    # Return all files metadata for this application
+                    try:
+                        vault = _build_customer_document_vault()
+                        bundle = vault.get_entity_documents(
+                            'underwriting', app_id,
+                            verify_integrity=True, reconcile_index=True,
+                        )
+                        if bundle.get('success'):
+                            if (bundle.get('consistency') or {}).get('reconciled'):
+                                try:
+                                    save_ledger_data()
+                                except Exception:
+                                    pass
+                            self._set_json_headers(200)
+                            self.wfile.write(json.dumps({
+                                'success': True,
+                                'application_id': app_id,
+                                'customer_id': owner_customer_id,
+                                'files': [
+                                    {
+                                        'id': d.get('id'),
+                                        'name': d.get('name'),
+                                        'type': d.get('type'),
+                                        'size': d.get('size'),
+                                        'uploaded_at': d.get('uploaded_at'),
+                                        'has_data': d.get('has_data'),
+                                        'sha256': d.get('sha256'),
+                                        'integrity_status': d.get('integrity_status'),
+                                        'view_url': d.get('view_url'),
+                                        'source': d.get('source'),
+                                    }
+                                    for d in bundle.get('documents') or []
+                                ],
+                                'total_files': bundle.get('total', 0),
+                                'consistency': bundle.get('consistency'),
+                                'is_staff': bool((ctx or {}).get('is_staff')),
+                            }, default=str).encode('utf-8'))
+                            return
+                    except Exception as bundle_err:
+                        print(f"[underwriting/files] bundle fallback: {bundle_err}")
+
                     files_list = []
                     for fid, finfo in UNDERWRITING_FILES.items():
                         if finfo.get('application_id') == app_id:
@@ -42042,15 +42268,19 @@ For claims or questions, please contact:
                                 'type': finfo.get('type', ''),
                                 'size': finfo.get('size', 0),
                                 'uploaded_at': finfo.get('uploaded_at', ''),
-                                'has_data': bool(finfo.get('data'))
+                                'has_data': bool(finfo.get('data')),
+                                'customer_id': finfo.get('customer_id') or owner_customer_id,
+                                'view_url': f'/api/underwriting/files/view?id={fid}',
                             })
                     
                     self._set_json_headers(200)
                     self.wfile.write(json.dumps({
                         'success': True,
                         'application_id': app_id,
+                        'customer_id': owner_customer_id,
                         'files': files_list,
-                        'total_files': len(files_list)
+                        'total_files': len(files_list),
+                        'is_staff': bool((ctx or {}).get('is_staff')),
                     }).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)

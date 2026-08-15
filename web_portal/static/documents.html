@@ -433,7 +433,7 @@
 
       <!-- Admin: select customer -->
       <div class="admin-panel" id="durable-admin-panel" style="display:none;">
-        <div class="admin-panel-title">🔑 Admin View — Pick a customer</div>
+        <div class="admin-panel-title">🔑 Admin / Underwriter / Claims View</div>
         <div class="form-row">
           <div class="form-group">
             <label for="durable-customer">Customer</label>
@@ -452,6 +452,42 @@
               <option value="billing">Billing</option>
               <option value="general">General</option>
             </select>
+          </div>
+        </div>
+        <div class="form-row" style="margin-top:0.75rem;">
+          <div class="form-group">
+            <label for="entity-doc-type">Open by Application / Claim</label>
+            <select id="entity-doc-type">
+              <option value="underwriting">Underwriting Application</option>
+              <option value="claim">Claim</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="entity-doc-id">Application / Claim ID</label>
+            <input id="entity-doc-id" type="text" placeholder="e.g. UW-… or CLM-…" style="width:100%;padding:0.55rem 0.7rem;border:1px solid #cfd8dc;border-radius:8px;">
+          </div>
+          <div class="form-group" style="align-self:flex-end;">
+            <button type="button" class="btn btn-primary" onclick="loadEntityDocuments()" style="width:100%;">View Entity Documents</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Customers: also allow lookup of their own application/claim by ID -->
+      <div id="entity-lookup-customer" style="display:none;margin-bottom:1rem;">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="entity-doc-type-cust">My Application / Claim</label>
+            <select id="entity-doc-type-cust">
+              <option value="underwriting">Underwriting Application</option>
+              <option value="claim">Claim</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="entity-doc-id-cust">ID</label>
+            <input id="entity-doc-id-cust" type="text" placeholder="Application or claim ID" style="width:100%;padding:0.55rem 0.7rem;border:1px solid #cfd8dc;border-radius:8px;">
+          </div>
+          <div class="form-group" style="align-self:flex-end;">
+            <button type="button" class="btn btn-primary" onclick="loadEntityDocuments()" style="width:100%;">View Documents</button>
           </div>
         </div>
       </div>
@@ -1075,7 +1111,10 @@
     // First call after IS_ADMIN is known — make sure the customer dropdown is populated.
     if (IS_ADMIN) {
       document.getElementById('durable-admin-panel').style.display = 'block';
+      document.getElementById('entity-lookup-customer').style.display = 'none';
       await loadDurableCustomersIfAdmin();
+    } else {
+      document.getElementById('entity-lookup-customer').style.display = 'block';
     }
 
     let customerId = '';
@@ -1083,7 +1122,7 @@
       customerId = document.getElementById('durable-customer').value || '';
       if (!customerId) {
         document.getElementById('durable-container').innerHTML =
-          '<div class="empty-state"><div class="empty-state-icon">👥</div><div>Pick a customer to load their durable vault.</div></div>';
+          '<div class="empty-state"><div class="empty-state-icon">👥</div><div>Pick a customer to load their durable vault, or enter an application/claim ID above.</div></div>';
         document.getElementById('durable-summary').style.display = 'none';
         document.getElementById('durable-count').textContent = '';
         return;
@@ -1107,6 +1146,55 @@
       document.getElementById('durable-list-title').textContent =
         `Customer Document Vault — ${json.customer_id || 'self'}`;
       renderDurableSummary(json.summary || {});
+      renderDurableDocs();
+    } catch (e) {
+      document.getElementById('durable-container').innerHTML =
+        `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Network error: ${escHtml(e.message)}</div></div>`;
+    }
+  }
+
+  async function loadEntityDocuments() {
+    const typeEl = IS_ADMIN
+      ? document.getElementById('entity-doc-type')
+      : document.getElementById('entity-doc-type-cust');
+    const idEl = IS_ADMIN
+      ? document.getElementById('entity-doc-id')
+      : document.getElementById('entity-doc-id-cust');
+    const entityType = (typeEl && typeEl.value) || 'underwriting';
+    const entityId = ((idEl && idEl.value) || '').trim();
+    if (!entityId) {
+      showStatus('error', 'Enter an application or claim ID');
+      return;
+    }
+
+    document.getElementById('durable-container').innerHTML =
+      '<div class="empty-state"><div class="empty-state-icon">⏳</div><div>Loading entity documents…</div></div>';
+
+    try {
+      const params = new URLSearchParams({
+        entity_type: entityType,
+        entity_id: entityId,
+      });
+      const res = await API('/api/entity-documents?' + params.toString());
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        document.getElementById('durable-container').innerHTML =
+          `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>${escHtml(json.error || 'Could not load documents')}</div></div>`;
+        return;
+      }
+      DURABLE_VAULT = json;
+      DURABLE_CUSTOMER_ID = json.customer_id || '';
+      const cons = json.consistency || {};
+      const driftNote = cons.drift_detected
+        ? ` · index reconciled (${cons.index_count_before}→${cons.index_count_after})`
+        : '';
+      document.getElementById('durable-list-title').textContent =
+        `${entityType === 'claim' ? 'Claim' : 'Application'} Documents — ${entityId}` +
+        (json.customer_id ? ` · ${json.customer_id}` : '') + driftNote;
+      renderDurableSummary(json.summary || {});
+      // Clear affiliation filter so the entity bundle is fully visible.
+      const ef = document.getElementById('durable-entity-filter');
+      if (ef) ef.value = '';
       renderDurableDocs();
     } catch (e) {
       document.getElementById('durable-container').innerHTML =
