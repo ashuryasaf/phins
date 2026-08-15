@@ -169,7 +169,68 @@
   }
 
   function isAdminRole(role) {
-    return ["admin", "underwriter", "claims_adjuster", "accountant", "actuary"].includes(role);
+    return [
+      "admin",
+      "underwriter",
+      "claims",
+      "claims_adjuster",
+      "adjuster",
+      "accountant",
+      "actuary",
+    ].includes(role);
+  }
+
+  function canAccessDocuments(role) {
+    const r = String(role || "").toLowerCase();
+    return isAdminRole(r) || r === "customer" || r === "media";
+  }
+
+  function documentsHomeUrl(role) {
+    const r = String(role || "").toLowerCase();
+    if (isAdminRole(r)) {
+      return "/documents.html#archive";
+    }
+    return "/documents.html#durable-objects";
+  }
+
+  function injectDocumentsNavAccess() {
+    try {
+      if (document.getElementById("phins-documents-nav-link")) return;
+      const path = (window.location.pathname || "").toLowerCase();
+      if (path.includes("/documents.html") || path.includes("/login") || path === "/" || path.endsWith("/index.html")) {
+        return;
+      }
+      const role = getSessionRole();
+      if (!canAccessDocuments(role)) return;
+      const nav =
+        document.querySelector(".phins-nav") ||
+        document.querySelector("nav.phins-nav") ||
+        document.querySelector("#mobile-nav");
+      if (!nav) return;
+      const existing = Array.from(nav.querySelectorAll("a")).find((a) =>
+        String(a.getAttribute("href") || "").includes("/documents.html")
+      );
+      if (existing) {
+        existing.id = existing.id || "phins-documents-nav-link";
+        return;
+      }
+      const link = document.createElement("a");
+      link.id = "phins-documents-nav-link";
+      link.href = documentsHomeUrl(role);
+      link.textContent = "Documents";
+      link.setAttribute("data-phins-documents-access", "1");
+      link.title = isAdminRole(role)
+        ? "Platform document archive (process hashtags)"
+        : "Your document vault";
+      const logout = nav.querySelector(".btn-logout, a[href*='login'], a[href='/']");
+      if (logout && logout.parentElement === nav) {
+        nav.insertBefore(link, logout);
+      } else {
+        nav.appendChild(link);
+      }
+    } catch (_) {
+      /* never break host pages */
+    }
   }
 
   function isSupplierRole(role) {
@@ -1136,6 +1197,8 @@
     } else {
       removeFloatingBar();
     }
+    // Hierarchy-aware Documents access button for every authorized role.
+    injectDocumentsNavAccess();
 
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {

@@ -298,6 +298,7 @@
     <button class="tab-btn active" id="tab-upload-btn" onclick="switchTab('upload')">📤 Upload Documents</button>
     <button class="tab-btn" id="tab-docs-btn" onclick="switchTab('docs')">📋 My Uploaded Documents</button>
     <button class="tab-btn" id="tab-durable-btn" onclick="switchTab('durable')">🗄️ Durable Object</button>
+    <button class="tab-btn" id="tab-archive-btn" onclick="switchTab('archive')" style="display:none;">🗂️ Platform Archive</button>
   </div>
 
   <!-- ── Tab: Upload ── -->
@@ -331,10 +332,14 @@
             <label for="document-type">Document Type</label>
             <select id="document-type">
               <option value="general">📄 General</option>
-              <option value="id">🪪 Identity Document (ID / Passport)</option>
-              <option value="receipt">🧾 Receipt / Payment Proof</option>
-              <option value="medical">🏥 Medical Document / Report</option>
-              <option value="authority">📜 Authority Certificate (Death / Disability)</option>
+              <option value="id">🪪 Identity (#identity)</option>
+              <option value="medical">🏥 Medical (#medical)</option>
+              <option value="risk_assessment">📊 Risk Assessment (#risk_assessment)</option>
+              <option value="claim">🆘 Claim Document (#claim)</option>
+              <option value="billing">💳 Billing / Invoice (#billing)</option>
+              <option value="underwriting">🔍 Underwriting (#underwriting)</option>
+              <option value="receipt">🧾 Receipt (#receipt)</option>
+              <option value="authority">📜 Authority Certificate (#authority)</option>
             </select>
           </div>
           <div class="form-group">
@@ -397,10 +402,14 @@
             <label for="filter-doc-type">Filter by Document Type</label>
             <select id="filter-doc-type" onchange="applyFilters()">
               <option value="">— All Doc Types —</option>
-              <option value="id">Identity Document</option>
+              <option value="id">Identity</option>
+              <option value="medical">Medical</option>
+              <option value="risk_assessment">Risk Assessment</option>
+              <option value="claim">Claim</option>
+              <option value="billing">Billing</option>
+              <option value="underwriting">Underwriting</option>
               <option value="receipt">Receipt</option>
-              <option value="medical">Medical Document</option>
-              <option value="authority">Authority Certificate</option>
+              <option value="authority">Authority</option>
               <option value="general">General</option>
             </select>
           </div>
@@ -503,6 +512,48 @@
       </div>
     </div>
   </div>
+
+  <!-- ── Tab: Platform Archive (staff) — every historical upload ── -->
+  <div class="tab-panel" id="tab-archive">
+    <div class="card">
+      <div class="card-title">
+        🗂️ <span id="archive-list-title">Platform Document Archive</span>
+        <span id="archive-count" style="margin-left:auto;font-size:0.8rem;color:#78909c;font-weight:400;"></span>
+      </div>
+      <div style="color:#546e7a;font-size:0.88rem;margin-bottom:0.85rem;line-height:1.45;">
+        Every document uploaded since day one — identity, medical, risk assessment, claims,
+        billing, underwriting, and more — tagged with stable process hashtags for integrity-preserving
+        BI and underwriting review. File bytes are never rewritten; SHA-256 fingerprints are checked on read.
+      </div>
+      <div class="form-row" style="margin-bottom:0.75rem;">
+        <div class="form-group">
+          <label for="archive-hashtag">Process Hashtag</label>
+          <select id="archive-hashtag" onchange="loadPlatformArchive()">
+            <option value="">— All processes —</option>
+            <option value="identity">#identity</option>
+            <option value="medical">#medical</option>
+            <option value="risk_assessment">#risk_assessment</option>
+            <option value="claim">#claim</option>
+            <option value="billing">#billing</option>
+            <option value="underwriting">#underwriting</option>
+            <option value="authority">#authority</option>
+            <option value="receipt">#receipt</option>
+            <option value="general">#general</option>
+          </select>
+        </div>
+        <div class="form-group" style="align-self:flex-end;">
+          <button type="button" class="btn btn-primary" onclick="loadPlatformArchive()" style="width:100%;">Refresh Archive</button>
+        </div>
+      </div>
+      <div id="archive-summary" style="display:none;margin-bottom:1rem;"></div>
+      <div id="archive-container">
+        <div class="empty-state">
+          <div class="empty-state-icon">🗂️</div>
+          <div>Staff archive loads here…</div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -523,9 +574,15 @@
     document.getElementById('tab-' + tab + '-btn').classList.add('active');
     if (tab === 'docs') loadDocuments();
     if (tab === 'durable') loadDurableVault();
+    if (tab === 'archive') loadPlatformArchive();
     // Reflect the active tab in the URL hash so links like
     // /documents.html#durable-objects deep-link directly into the vault view.
-    const hashMap = { upload: '', docs: 'documents', durable: 'durable-objects' };
+    const hashMap = {
+      upload: '',
+      docs: 'documents',
+      durable: 'durable-objects',
+      archive: 'archive',
+    };
     const desired = hashMap[tab] || '';
     const current = (window.location.hash || '').replace(/^#/, '');
     if (current !== desired) {
@@ -571,11 +628,32 @@
   }
 
   function docTypeLabel(t) {
-    const map = { id:'🪪 ID', receipt:'🧾 Receipt', medical:'🏥 Medical', authority:'📜 Authority', general:'📄 General' };
+    const map = {
+      id: '🪪 Identity',
+      identity: '🪪 Identity',
+      receipt: '🧾 Receipt',
+      medical: '🏥 Medical',
+      authority: '📜 Authority',
+      risk_assessment: '📊 Risk Assessment',
+      claim: '🆘 Claim',
+      billing: '💳 Billing',
+      underwriting: '🔍 Underwriting',
+      general: '📄 General',
+    };
     return map[t] || '📄 General';
   }
   function docTypeBadgeClass(t) {
-    const map = { id:'badge-id', receipt:'badge-receipt', medical:'badge-medical', authority:'badge-authority' };
+    const map = {
+      id: 'badge-id',
+      identity: 'badge-id',
+      receipt: 'badge-receipt',
+      medical: 'badge-medical',
+      authority: 'badge-authority',
+      risk_assessment: 'badge-risk-medium',
+      claim: 'badge-risk-high',
+      billing: 'badge-doctype-general',
+      underwriting: 'badge-underwriting',
+    };
     return map[t] || 'badge-doctype-general';
   }
 
@@ -772,6 +850,7 @@
       if (IS_ADMIN) {
         document.getElementById('admin-panel').style.display = 'block';
         document.getElementById('docs-list-title').textContent = 'All Customer Documents';
+        document.getElementById('tab-archive-btn').style.display = '';
         await loadAdminCustomers();
       }
 
@@ -1257,6 +1336,7 @@
           <tr>
             <th>File</th>
             <th>Doc Type</th>
+            <th>Process</th>
             <th>Affiliation</th>
             <th>Record ID</th>
             <th>Source</th>
@@ -1274,6 +1354,7 @@
                 <small style="color:#90a4ae;">${formatSize(d.size)} · sha256 ${escHtml((d.sha256 || '').slice(0, 10))}…</small>
               </td>
               <td><span class="badge ${docTypeBadgeClass(d.document_type)}">${docTypeLabel(d.document_type)}</span></td>
+              <td><span class="badge badge-doctype-general">${escHtml(d.process_tag || ('#' + (d.process_hashtag || 'general')))}</span></td>
               <td><span class="badge badge-${escHtml(d.entity_type || 'general')}">${escHtml(d.entity_type || 'general')}</span></td>
               <td>${escHtml(d.entity_id || '—')}</td>
               <td>${(d.sources || [d.source]).map(s => `<span class="badge badge-doctype-general">${escHtml(s || '')}</span>`).join(' ')}</td>
@@ -1288,6 +1369,87 @@
         </tbody>
       </table>
       </div>`;
+  }
+
+  async function loadPlatformArchive() {
+    if (!IS_ADMIN) {
+      document.getElementById('archive-container').innerHTML =
+        '<div class="empty-state"><div class="empty-state-icon">🔒</div><div>Staff access required for the platform archive.</div></div>';
+      return;
+    }
+    document.getElementById('tab-archive-btn').style.display = '';
+    const tag = (document.getElementById('archive-hashtag') || {}).value || '';
+    document.getElementById('archive-container').innerHTML =
+      '<div class="empty-state"><div class="empty-state-icon">⏳</div><div>Loading platform archive…</div></div>';
+    try {
+      const params = new URLSearchParams({ limit: '500' });
+      if (tag) params.set('process_hashtag', tag);
+      const res = await API('/api/documents/archive?' + params.toString());
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        document.getElementById('archive-container').innerHTML =
+          `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>${escHtml(json.error || 'Could not load archive')}</div></div>`;
+        return;
+      }
+      DURABLE_VAULT = json;
+      document.getElementById('archive-list-title').textContent =
+        tag ? `Platform Archive — #${tag}` : 'Platform Document Archive';
+      const s = json.summary || {};
+      const hashtagChips = Object.entries(s.by_process_hashtag || {})
+        .map(([k, v]) => `<span class="badge badge-doctype-general">#${escHtml(k)}: ${v}</span>`)
+        .join(' ');
+      const el = document.getElementById('archive-summary');
+      el.style.display = 'block';
+      el.innerHTML = `
+        <div class="card" style="margin:0;padding:1rem 1.25rem;background:#f8fbff;border:1px solid #e3f2fd;box-shadow:none;">
+          <div style="display:flex;flex-wrap:wrap;gap:0.4rem 0.75rem;align-items:center;">
+            <strong style="color:#1a237e;">${json.total || 0} document(s) total</strong>
+            <span style="color:#78909c;">· showing ${(json.documents || []).length}</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-top:0.5rem;">${hashtagChips}</div>
+        </div>`;
+      const docs = json.documents || [];
+      document.getElementById('archive-count').textContent =
+        docs.length ? `${docs.length} shown` : '';
+      if (!docs.length) {
+        document.getElementById('archive-container').innerHTML =
+          '<div class="empty-state"><div class="empty-state-icon">📂</div><div>No documents in this archive filter.</div></div>';
+        return;
+      }
+      document.getElementById('archive-container').innerHTML = `
+        <div style="overflow-x:auto;">
+        <table class="docs-table">
+          <thead>
+            <tr>
+              <th>File</th><th>Process</th><th>Customer</th><th>Affiliation</th>
+              <th>Source</th><th>Integrity</th><th>Uploaded</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${docs.map(d => `
+              <tr>
+                <td>
+                  <span>${fileIcon(d.name)}</span>
+                  <span style="font-weight:500;color:#1a237e;">${escHtml(d.name)}</span><br>
+                  <small style="color:#90a4ae;">${formatSize(d.size)}</small>
+                </td>
+                <td><span class="badge badge-doctype-general">${escHtml(d.process_tag || ('#' + (d.process_hashtag || 'general')))}</span></td>
+                <td style="font-size:0.8rem;color:#546e7a;">${escHtml(d.uploaded_by_customer || '—')}</td>
+                <td><span class="badge badge-${escHtml(d.entity_type || 'general')}">${escHtml(d.entity_type || 'general')}</span> ${escHtml(d.entity_id || '')}</td>
+                <td>${escHtml((d.sources || [d.source]).filter(Boolean).join(', '))}</td>
+                <td>${integrityBadge(d.integrity_status)}</td>
+                <td style="white-space:nowrap;font-size:0.78rem;">${formatDate(d.uploaded_at)}</td>
+                <td>${d.has_data
+                  ? `<a class="btn-sm btn-view" href="${escHtml(d.view_url || '#')}" target="_blank" rel="noopener">👁 Open</a>`
+                  : '—'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        </div>`;
+    } catch (e) {
+      document.getElementById('archive-container').innerHTML =
+        `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Network error: ${escHtml(e.message)}</div></div>`;
+    }
   }
 
   function integrityBadge(status) {
@@ -1316,6 +1478,8 @@
       switchTab('durable');
     } else if (hash === 'documents') {
       switchTab('docs');
+    } else if (hash === 'archive' || hash === 'platform-archive') {
+      if (IS_ADMIN) switchTab('archive');
     }
   });
 </script>

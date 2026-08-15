@@ -48,6 +48,106 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
+# Stable process hashtags used across Document Center, BI, and vault APIs.
+# Keys are lowercase without the leading '#'; UI may display ``#medical``.
+PROCESS_HASHTAGS = (
+    "identity",
+    "medical",
+    "risk_assessment",
+    "claim",
+    "billing",
+    "underwriting",
+    "authority",
+    "receipt",
+    "general",
+)
+
+_DOC_TYPE_TO_HASHTAG = {
+    "id": "identity",
+    "identity": "identity",
+    "passport": "identity",
+    "medical": "medical",
+    "health": "medical",
+    "risk": "risk_assessment",
+    "risk_assessment": "risk_assessment",
+    "assessment": "risk_assessment",
+    "claim": "claim",
+    "claims": "claim",
+    "billing": "billing",
+    "invoice": "billing",
+    "payment": "billing",
+    "receipt": "receipt",
+    "underwriting": "underwriting",
+    "authority": "authority",
+    "death": "authority",
+    "disability": "authority",
+}
+
+_NAME_KEYWORD_HASHTAGS = (
+    (("passport", "id card", "identity", "driver", "license", "selfie"), "identity"),
+    (("medical", "lab", "clinic", "physician", "hospital", "rx", "prescription"), "medical"),
+    (("risk", "assessment", "uw score", "underwriting score"), "risk_assessment"),
+    (("claim", "loss run", "fnol"), "claim"),
+    (("invoice", "billing", "premium", "statement", "receipt"), "billing"),
+    (("death cert", "disability cert", "authority"), "authority"),
+)
+
+
+def normalize_process_hashtag(value: Any) -> str:
+    raw = _norm_lower(value).lstrip("#").replace("-", "_").replace(" ", "_")
+    if raw in PROCESS_HASHTAGS and raw != "general":
+        return raw
+    if raw == "general":
+        return ""
+    return _DOC_TYPE_TO_HASHTAG.get(raw, "")
+
+
+def infer_process_hashtag(
+    *,
+    document_type: Any = None,
+    entity_type: Any = None,
+    source: Any = None,
+    name: Any = None,
+    kind: Any = None,
+    explicit: Any = None,
+) -> str:
+    """Infer a stable process hashtag for historical and new uploads.
+
+    Priority: explicit → document_type (non-general) → kind → entity/source →
+    filename keywords → ``general``. Never raises.
+    """
+    explicit_tag = normalize_process_hashtag(explicit)
+    if explicit_tag:
+        return explicit_tag
+
+    from_type = normalize_process_hashtag(document_type)
+    if from_type:
+        return from_type
+
+    from_kind = normalize_process_hashtag(kind)
+    if from_kind:
+        return from_kind
+
+    entity = _norm_lower(entity_type)
+    src = _norm_lower(source)
+    if entity == "claim" or src in ("claim_attachments", "claim"):
+        return "claim"
+    if entity == "underwriting" or src in ("underwriting_attachments", "underwriting"):
+        return "underwriting"
+    if entity == "billing" or src in ("billing",):
+        return "billing"
+
+    blob = f"{_norm_lower(name)} {_norm_lower(kind)} {_norm_lower(document_type)}"
+    for keywords, tag in _NAME_KEYWORD_HASHTAGS:
+        if any(k in blob for k in keywords):
+            return tag
+    return "general"
+
+
+def format_process_tag(hashtag: str) -> str:
+    return f"#{normalize_process_hashtag(hashtag) or 'general'}"
+
+
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 
@@ -142,6 +242,7 @@ class CustomerDocumentVault:
         *,
         entity_type: Optional[str] = None,
         document_type: Optional[str] = None,
+        process_hashtag: Optional[str] = None,
         limit: Optional[int] = None,
         verify_integrity: bool = True,
     ) -> Dict[str, Any]:
@@ -157,6 +258,8 @@ class CustomerDocumentVault:
 
         records = self._collect_records(customer_id)
         records = self._dedupe_by_checksum(records)
+        for record in records:
+            self._annotate_process(record)
 
         if entity_type:
             entity_type_l = _norm_lower(entity_type)
@@ -164,6 +267,9 @@ class CustomerDocumentVault:
         if document_type:
             document_type_l = _norm_lower(document_type)
             records = [r for r in records if _norm_lower(r.get("document_type")) == document_type_l]
+        if process_hashtag:
+            tag = normalize_process_hashtag(process_hashtag) or _norm_lower(process_hashtag).lstrip("#")
+            records = [r for r in records if _norm_lower(r.get("process_hashtag")) == tag]
 
         records.sort(key=lambda r: r.get("uploaded_at") or "", reverse=True)
 
@@ -190,6 +296,133 @@ class CustomerDocumentVault:
             "summary": summary,
             "documents": records,
             "total": total,
+            "process_hashtags": list(PROCESS_HASHTAGS),
+        }
+
+    def get_platform_archive(
+        self,
+        *,
+        process_hashtag: Optional[str] = None,
+        entity_type: Optional[str] = None,
+        document_type: Optional[str] = None,
+        limit: int = 500,
+        offset: int = 0,
+        verify_integrity: bool = True,
+    ) -> Dict[str, Any]:
+        """Staff-only archive of every document across every store.
+
+        Covers historical uploads from day one (general docs, claim attachments,
+        underwriting attachments, persistent store) with stable process
+        hashtags. Never mutates file bytes.
+        """
+        records: List[Dict[str, Any]] = []
+
+        for doc_id, doc in self._policy_documents.items():
+            if not isinstance(doc, dict):
+                continue
+            owner = _norm_str(doc.get("uploaded_by_customer") or doc.get("customer_id"))
+            if not owner:
+                owner = self._resolve_owner(doc)
+            records.append(self._normalize_general_doc(doc_id, doc, owner))
+
+        for file_id, cf in self._claim_files.items():
+            if not isinstance(cf, dict):
+                continue
+            owner = _norm_str(cf.get("customer_id"))
+            claim_id = _norm_str(cf.get("claim_id"))
+            if not owner and claim_id:
+                owner = _norm_str((self._claims.get(claim_id) or {}).get("customer_id"))
+            records.append(self._normalize_claim_file(file_id, cf, owner))
+
+        for file_id, uf in self._underwriting_files.items():
+            if not isinstance(uf, dict):
+                continue
+            owner = _norm_str(uf.get("customer_id"))
+            app_id = _norm_str(uf.get("application_id"))
+            if not owner and app_id:
+                owner = _norm_str(
+                    (self._underwriting_applications.get(app_id) or {}).get("customer_id")
+                )
+            records.append(self._normalize_underwriting_file(file_id, uf, owner))
+
+        # Persistent store: collect per known customer owner, skip mirrors.
+        seen_persistent = {
+            _norm_str(r.get("persistent_doc_id"))
+            for r in records
+            if _norm_str(r.get("persistent_doc_id"))
+        }
+        if self._document_service is not None:
+            customer_ids = {
+                _norm_str(r.get("uploaded_by_customer"))
+                for r in records
+                if _norm_str(r.get("uploaded_by_customer"))
+            }
+            for cid in sorted(customer_ids):
+                try:
+                    page = self._document_service.list_documents(
+                        customer_id=cid, page=1, page_size=self.DEFAULT_LIMIT
+                    )
+                except Exception:
+                    continue
+                for item in (page or {}).get("items", []) or []:
+                    if not isinstance(item, dict):
+                        continue
+                    pid = _norm_str(item.get("id"))
+                    if pid and pid in seen_persistent:
+                        continue
+                    owner = _norm_str(item.get("customer_id")) or cid
+                    records.append(self._normalize_persistent_doc(item, owner))
+                    if pid:
+                        seen_persistent.add(pid)
+
+        records = self._dedupe_by_checksum(records)
+        for record in records:
+            self._annotate_process(record)
+
+        if entity_type:
+            et = _norm_lower(entity_type)
+            records = [r for r in records if _norm_lower(r.get("entity_type")) == et]
+        if document_type:
+            dt = _norm_lower(document_type)
+            records = [r for r in records if _norm_lower(r.get("document_type")) == dt]
+        if process_hashtag:
+            tag = normalize_process_hashtag(process_hashtag) or _norm_lower(
+                process_hashtag
+            ).lstrip("#")
+            records = [r for r in records if _norm_lower(r.get("process_hashtag")) == tag]
+
+        records.sort(key=lambda r: r.get("uploaded_at") or "", reverse=True)
+        total = len(records)
+        offset = max(0, int(offset or 0))
+        limit = max(0, int(limit if limit is not None else 500))
+        page = records[offset: offset + limit] if limit else records[offset:]
+
+        if verify_integrity:
+            for record in page:
+                record["integrity_status"] = self._verify_record_integrity(record)
+        else:
+            for record in page:
+                record.setdefault("integrity_status", "unverified")
+
+        summary = self._build_summary("", page)
+        by_hashtag: Dict[str, int] = {}
+        for r in records:
+            tag = r.get("process_hashtag") or "general"
+            by_hashtag[tag] = by_hashtag.get(tag, 0) + 1
+        summary["by_process_hashtag"] = by_hashtag
+        summary["document_count_total"] = total
+
+        return {
+            "success": True,
+            "vault_type": "platform_document_archive",
+            "vault_version": "v1",
+            "generated_at": datetime.now().isoformat(),
+            "summary": summary,
+            "documents": page,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "process_hashtags": list(PROCESS_HASHTAGS),
         }
 
     def get_summary(self, customer_id: str) -> Dict[str, Any]:
@@ -296,6 +529,9 @@ class CustomerDocumentVault:
             for record in records:
                 record.setdefault("integrity_status", "unverified")
 
+        for record in records:
+            self._annotate_process(record)
+
         summary = self._build_summary(owner, records)
         return {
             "success": True,
@@ -309,6 +545,7 @@ class CustomerDocumentVault:
             "consistency": consistency,
             "documents": records,
             "total": len(records),
+            "process_hashtags": list(PROCESS_HASHTAGS),
         }
 
     def reconcile_underwriting_file_index(self, application_id: str) -> Dict[str, Any]:
@@ -758,7 +995,8 @@ class CustomerDocumentVault:
             "sha256": sha,
             "entity_type": "underwriting",
             "entity_id": app_id,
-            "document_type": "general",
+            "document_type": _norm_lower(uf.get("document_type") or uf.get("kind")) or "general",
+            "kind": _norm_lower(uf.get("kind")),
             "description": _norm_str(uf.get("note")),
             "uploaded_at": _coerce_iso(uf.get("uploaded_at")),
             "uploaded_by": _norm_str(uf.get("uploaded_by")) or "customer",
@@ -902,6 +1140,7 @@ class CustomerDocumentVault:
         by_entity: Dict[str, int] = {}
         by_doc_type: Dict[str, int] = {}
         by_source: Dict[str, int] = {}
+        by_hashtag: Dict[str, int] = {}
         integrity_counts: Dict[str, int] = {}
         total_bytes = 0
         last_upload = ""
@@ -917,6 +1156,8 @@ class CustomerDocumentVault:
                 if not src:
                     continue
                 by_source[src] = by_source.get(src, 0) + 1
+            tag = r.get("process_hashtag") or "general"
+            by_hashtag[tag] = by_hashtag.get(tag, 0) + 1
             integrity_counts[r.get("integrity_status", "unverified")] = (
                 integrity_counts.get(r.get("integrity_status", "unverified"), 0) + 1
             )
@@ -936,11 +1177,28 @@ class CustomerDocumentVault:
             "by_entity_type": by_entity,
             "by_document_type": by_doc_type,
             "by_source": by_source,
+            "by_process_hashtag": by_hashtag,
             "integrity": integrity_counts,
             "with_ai_analysis": with_ai_analysis,
             "with_assessment_summary": with_assessment,
             "last_upload_at": last_upload,
         }
+
+    def _annotate_process(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Attach ``process_hashtag`` / ``process_tag`` without mutating bytes."""
+        if not isinstance(record, dict):
+            return record
+        tag = infer_process_hashtag(
+            document_type=record.get("document_type"),
+            entity_type=record.get("entity_type"),
+            source=record.get("source"),
+            name=record.get("name"),
+            kind=record.get("kind"),
+            explicit=record.get("process_hashtag") or record.get("process_tag"),
+        )
+        record["process_hashtag"] = tag
+        record["process_tag"] = format_process_tag(tag)
+        return record
 
     def _empty_vault(self, customer_id: str) -> Dict[str, Any]:
         return {
@@ -956,6 +1214,7 @@ class CustomerDocumentVault:
                 "by_entity_type": {},
                 "by_document_type": {},
                 "by_source": {},
+                "by_process_hashtag": {},
                 "integrity": {},
                 "with_ai_analysis": 0,
                 "with_assessment_summary": 0,
@@ -963,6 +1222,7 @@ class CustomerDocumentVault:
             },
             "documents": [],
             "total": 0,
+            "process_hashtags": list(PROCESS_HASHTAGS),
         }
 
 
