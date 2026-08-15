@@ -1178,6 +1178,7 @@
       const res = await API('/api/entity-documents?' + params.toString());
       const json = await res.json();
       if (!res.ok || !json.success) {
+        resetDurableSummary();
         document.getElementById('durable-container').innerHTML =
           `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>${escHtml(json.error || 'Could not load documents')}</div></div>`;
         return;
@@ -1197,9 +1198,16 @@
       if (ef) ef.value = '';
       renderDurableDocs();
     } catch (e) {
+      resetDurableSummary();
       document.getElementById('durable-container').innerHTML =
         `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Network error: ${escHtml(e.message)}</div></div>`;
     }
+  }
+
+  function resetDurableSummary() {
+    document.getElementById('durable-summary').style.display = 'none';
+    document.getElementById('durable-count').textContent = '';
+    document.getElementById('durable-list-title').textContent = 'Customer Document Vault';
   }
 
   function renderDurableSummary(s) {

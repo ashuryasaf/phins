@@ -156,6 +156,47 @@ def test_vault_get_entity_documents_reconciles_index():
     assert portal.UNDERWRITING_FILES[file_id]["data"] == base64.b64encode(payload).decode()
 
 
+def test_entity_documents_excludes_cross_customer_general_docs():
+    app_id = "UW-ENT-XCUST-1"
+    owner = "CUST-ENT-XCUST-OWNER"
+    intruder = "CUST-ENT-XCUST-INTRUDER"
+    file_id = "UW-FILE-UW-ENT-XCUST-1-001"
+    _seed_application_with_file(app_id=app_id, customer_id=owner, file_id=file_id)
+
+    policy_documents = {
+        # Legitimately affiliated general doc without an explicit owner.
+        "DOC-UNOWNED": {
+            "id": "DOC-UNOWNED",
+            "name": "unowned.pdf",
+            "entity_type": "underwriting",
+            "entity_id": app_id,
+            "size": 10,
+        },
+        # Mis-affiliated doc stamped with a different customer's ownership.
+        "DOC-CROSS": {
+            "id": "DOC-CROSS",
+            "name": "intruder.pdf",
+            "entity_type": "underwriting",
+            "entity_id": app_id,
+            "size": 20,
+            "uploaded_by_customer": intruder,
+        },
+    }
+
+    vault = CustomerDocumentVault(
+        underwriting_files=portal.UNDERWRITING_FILES,
+        underwriting_applications=portal.UNDERWRITING_APPLICATIONS,
+        policy_documents=policy_documents,
+        claim_files={},
+        claims={},
+    )
+    result = vault.get_entity_documents("underwriting", app_id)
+    assert result["success"] is True
+    names = {doc["name"] for doc in result["documents"]}
+    assert "unowned.pdf" in names
+    assert "intruder.pdf" not in names
+
+
 def test_entity_documents_api_rbac_hierarchy():
     port = 8421
     srv = _ServerThread(port)

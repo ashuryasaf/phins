@@ -279,9 +279,14 @@ class CustomerDocumentVault:
                 continue
             if _norm_str(doc.get("entity_id")) != entity_id:
                 continue
-            doc_owner = _norm_str(
-                doc.get("uploaded_by_customer") or doc.get("customer_id") or owner
+            explicit_owner = _norm_str(
+                doc.get("uploaded_by_customer") or doc.get("customer_id")
             )
+            if explicit_owner and owner and explicit_owner != owner:
+                # A document tagged with this entity but owned by a different
+                # customer must not leak into the owning customer's bundle.
+                continue
+            doc_owner = explicit_owner or owner
             records.append(self._normalize_general_doc(doc_id, doc, doc_owner or owner))
 
         records = self._dedupe_by_checksum(records)
