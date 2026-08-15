@@ -88,7 +88,8 @@ _NAME_KEYWORD_HASHTAGS = (
     (("medical", "lab", "clinic", "physician", "hospital", "rx", "prescription"), "medical"),
     (("risk", "assessment", "uw score", "underwriting score"), "risk_assessment"),
     (("claim", "loss run", "fnol"), "claim"),
-    (("invoice", "billing", "premium", "statement", "receipt"), "billing"),
+    (("receipt",), "receipt"),
+    (("invoice", "billing", "premium", "statement"), "billing"),
     (("death cert", "disability cert", "authority"), "authority"),
 )
 
@@ -395,7 +396,7 @@ class CustomerDocumentVault:
         total = len(records)
         offset = max(0, int(offset or 0))
         limit = max(0, int(limit if limit is not None else 500))
-        page = records[offset: offset + limit] if limit else records[offset:]
+        page = records[offset: offset + limit]
 
         if verify_integrity:
             for record in page:
@@ -935,6 +936,8 @@ class CustomerDocumentVault:
             "entity_type": _norm_lower(doc.get("entity_type")) or "general",
             "entity_id": _norm_str(doc.get("entity_id")),
             "document_type": _norm_lower(doc.get("document_type")) or "general",
+            "process_hashtag": _norm_str(doc.get("process_hashtag")),
+            "process_tag": _norm_str(doc.get("process_tag")),
             "description": _norm_str(doc.get("description")),
             "uploaded_at": _coerce_iso(doc.get("uploaded_at")),
             "uploaded_by": _norm_str(doc.get("uploaded_by")),

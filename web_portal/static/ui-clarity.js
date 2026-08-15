@@ -182,7 +182,7 @@
 
   function canAccessDocuments(role) {
     const r = String(role || "").toLowerCase();
-    return isAdminRole(r) || r === "customer" || r === "media";
+    return isAdminRole(r) || r === "customer";
   }
 
   function documentsHomeUrl(role) {

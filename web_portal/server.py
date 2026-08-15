@@ -20388,13 +20388,13 @@ For claims or questions, please contact:
 
         # ========== ADMIN: LIST CUSTOMERS FOR DOCUMENT FILTERING ==========
         # GET /api/admin/customers-for-documents - Returns customer list for admin doc filtering
-        # Access: admin, underwriter, actuary, claims roles only
+        # Access: admin, underwriter, actuary, claims, accountant roles only
         if path == '/api/admin/customers-for-documents':
             if not session:
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
                 return
-            if not require_role(session, ['admin', 'underwriter', 'actuary', 'claims', 'claims_adjuster', 'adjuster']):
+            if not require_role(session, ['admin', 'underwriter', 'actuary', 'claims', 'claims_adjuster', 'adjuster', 'accountant']):
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
                 return
