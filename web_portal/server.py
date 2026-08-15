@@ -40297,11 +40297,24 @@ For claims or questions, please contact:
                         files_metadata.append(file_meta)
                         
                         # Store full file data in UNDERWRITING_FILES
+                        raw_data = file_info.get('data')
+                        sha256 = ''
+                        try:
+                            if raw_data:
+                                import hashlib as _hashlib_pol
+                                import base64 as _b64_pol
+                                sha256 = _hashlib_pol.sha256(
+                                    _b64_pol.b64decode(raw_data, validate=False)
+                                ).hexdigest()
+                        except Exception:
+                            sha256 = str(file_info.get('sha256') or '')
                         UNDERWRITING_FILES[file_id] = {
                             **file_meta,
                             'application_id': uw_id,
                             'customer_id': customer_id,
-                            'data': file_info.get('data'),  # Base64 encoded
+                            'data': raw_data,  # Base64 encoded
+                            'sha256': sha256 or str(file_info.get('sha256') or ''),
+                            'kind': file_info.get('kind', ''),
                             'note': file_info.get('note', ''),
                             'error': file_info.get('error', '')
                         }
