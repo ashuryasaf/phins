@@ -420,9 +420,29 @@ STEPS: List[Dict[str, Any]] = [
     },
     {
         "id": "medications",
-        "prompt": "Last health question: any medications you take regularly? Type \"none\" if not.",
+        "prompt": "Nearly done with health: any medications you take regularly? Type \"none\" if not.",
         "input": {"type": "text", "placeholder": "e.g. metformin - or \"none\""},
         "validate": _validate_free_text,
+    },
+    {
+        "id": "daily_function",
+        "prompt": (
+            "Last health question, and it matters for your disability cover. "
+            "Our actuaries price the disability benefit on your activities of daily living "
+            "(dressing, bathing, eating, transferring, toileting, continence). "
+            "How would you describe your day-to-day functional independence?"
+        ),
+        "input": {
+            "type": "choice",
+            "options": ["full", "minor", "moderate", "significant"],
+            "labels": {
+                "full": "Fully independent in all activities",
+                "minor": "Minor difficulty with 1 activity",
+                "moderate": "Need help with 1-2 activities",
+                "significant": "Need help with 3 or more activities",
+            },
+        },
+        "validate": _choice_validator(["full", "minor", "moderate", "significant"]),
     },
     # assessment is delivered by the bot right after `medications`.
     {
@@ -438,7 +458,26 @@ STEPS: List[Dict[str, Any]] = [
         "input": {"type": "choice", "options": ["10", "15", "20", "30"], "suffix": "years"},
         "validate": _choice_validator(["10", "15", "20", "30"]),
     },
-    # quote is delivered by the bot right after `coverage_years`.
+    {
+        "id": "savings_addon",
+        "prompt": (
+            "Would you like to add PHINS savings on top of your protection? "
+            "It's priced as a markup on your risk premium and accumulates in your plan - "
+            "pure protection is always an option."
+        ),
+        "input": {
+            "type": "choice",
+            "options": ["none", "light", "balanced", "growth"],
+            "labels": {
+                "none": "Pure protection (no savings)",
+                "light": "Light (+25% of risk premium)",
+                "balanced": "Balanced (+50%)",
+                "growth": "Growth (+100%)",
+            },
+        },
+        "validate": _choice_validator(["none", "light", "balanced", "growth"]),
+    },
+    # quote is delivered by the bot right after `savings_addon`.
     {
         "id": "media_offer",
         "prompt": (
@@ -836,7 +875,19 @@ class ChatPolicyApplicationService:
                 return "Thanks - family history helps our actuaries price fairly, it doesn't disqualify you."
             return "Good genes - noted."
         if step_id == "coverage_amount":
-            return f"${value:,.0f} of coverage - solid choice. Let me get your price from our actuarial pricing center..."
+            return f"${value:,.0f} of coverage - solid choice."
+        if step_id == "daily_function":
+            if value == "full":
+                return "Full independence - that's the standard rating for the disability benefit."
+            return ("Thank you for being precise - our actuaries rate the disability benefit "
+                    "directly off that, so this keeps your cover honest and claimable.")
+        if step_id == "savings_addon":
+            if value == "none":
+                return "Pure protection it is. Let me price it from our actuarial pricing center..."
+            return ("Savings added on top of your protection. Pricing it now through our "
+                    "actuarial pricing center...")
+        if step_id == "coverage_years":
+            return f"{value} years - noted."
         if step_id == "billing_frequency":
             if value == "annual":
                 return "Annual it is - that locks in the 10% saving."
@@ -858,14 +909,16 @@ class ChatPolicyApplicationService:
     def _milestone_messages(self, session: Dict[str, Any], step_id: str,
                             events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         msgs: List[Dict[str, Any]] = []
-        if step_id == "medications":
+        if step_id == "daily_function":
             assessment = self._run_assessment(session)
             events.append(self._journey_add(session, "questions_completed"))
             events.append(self._journey_add(
                 session, "assessed", actor="underwriting_bot",
                 meta={"risk_category": assessment.get("risk_category"),
                       "recommendation": assessment.get("recommendation_type"),
-                      "confidence": assessment.get("confidence")}))
+                      "confidence": assessment.get("confidence"),
+                      "adl_level": assessment.get("adl_level"),
+                      "engine_version": assessment.get("engine_version")}))
             msgs.append(self._transcript_add(
                 session, "bot", self._assessment_narrative(assessment),
                 kind="assessment", meta={"assessment": {
@@ -873,19 +926,56 @@ class ChatPolicyApplicationService:
                     "recommendation_type": assessment.get("recommendation_type"),
                     "confidence": assessment.get("confidence"),
                     "engine_version": assessment.get("engine_version"),
+                    "adl_level": assessment.get("adl_level"),
                 }}))
-        elif step_id == "coverage_years":
+        elif step_id == "savings_addon":
             quote = self._run_quote(session)
+            # Version provenance travels with the journey event so BI can prove
+            # which actuarial tables and pricing config produced this price.
             events.append(self._journey_add(
                 session, "quoted", actor="pricing_kernel",
                 meta={"monthly": quote.get("monthly"),
                       "annual": quote.get("annual"),
                       "pricing_source": quote.get("pricing_source"),
-                      "integrity_hash": quote.get("integrity_hash")}))
+                      "integrity_hash": quote.get("integrity_hash"),
+                      "product_id": quote.get("product_id"),
+                      "tables_version": quote.get("tables_version"),
+                      "config_version": quote.get("config_version"),
+                      "savings_formula": quote.get("savings_formula"),
+                      "savings_rate_used": quote.get("savings_rate_used"),
+                      "adl_level": quote.get("adl_level"),
+                      "underwriting_loading": quote.get("underwriting_loading")}))
             msgs.append(self._transcript_add(
                 session, "bot", self._quote_narrative(quote),
                 kind="quote", meta={"quote": quote}))
         return msgs
+
+    # Functional independence answer -> actuarial ADL severity level.
+    # 5 is the standard/neutral level in the actuary's ADL multiplier tables;
+    # higher levels carry the published loadings and exclusion rules.
+    _ADL_BY_DAILY_FUNCTION = {
+        "full": 5,
+        "minor": 6,
+        "moderate": 7,
+        "significant": 8,
+    }
+
+    # Savings add-on choice -> markup on the risk premium, matching the
+    # actuary dashboard's ``risk_premium_markup`` savings formula.
+    _SAVINGS_RATE_BY_CHOICE = {
+        "none": 0.0,
+        "light": 0.25,
+        "balanced": 0.50,
+        "growth": 1.00,
+    }
+
+    def _adl_level_for(self, session: Dict[str, Any]) -> int:
+        answer = str(session["answers"].get("daily_function") or "full").lower()
+        return int(self._ADL_BY_DAILY_FUNCTION.get(answer, 5))
+
+    def _savings_rate_for(self, session: Dict[str, Any]) -> float:
+        answer = str(session["answers"].get("savings_addon") or "none").lower()
+        return float(self._SAVINGS_RATE_BY_CHOICE.get(answer, 0.0))
 
     def _run_assessment(self, session: Dict[str, Any]) -> Dict[str, Any]:
         answers = session["answers"]
@@ -937,6 +1027,7 @@ class ChatPolicyApplicationService:
         scores["bmi"] = bmi
         scores["age"] = age
         scores["conditions_considered"] = [c["condition"] for c in conditions]
+        scores["adl_level"] = self._adl_level_for(session)
         session["assessment"] = scores
         return scores
 
@@ -975,14 +1066,25 @@ class ChatPolicyApplicationService:
         if not quote:
             age = _calculate_age(answers.get("dob", "")) or 30
             coverage = float(answers.get("coverage_amount") or 500000)
-            risk_mult = {"low": 1.0, "medium": 1.15, "high": 1.35, "very_high": 1.6}.get(
-                self._payload_risk_score(assessment), 1.0)
-            monthly = round((coverage / 1000) * 0.25 * (1.0 + max(0, age - 25) * 0.015) * risk_mult, 2)
+            risk_mult = {
+                "very_low": 0.9, "low": 1.0, "medium": 1.15, "moderate": 1.25,
+                "elevated": 1.35, "high": 1.45, "very_high": 1.6,
+            }.get(self._payload_risk_score(assessment), 1.0)
+            savings_rate = self._savings_rate_for(session)
+            monthly = round(
+                (coverage / 1000) * 0.25
+                * (1.0 + max(0, age - 25) * 0.015)
+                * risk_mult
+                * (1.0 + savings_rate),
+                2,
+            )
             quote = {
                 "monthly": monthly,
                 "quarterly": round(monthly * 3 * 0.97, 2),
                 "annual": round(monthly * 12 * 0.90, 2),
                 "pricing_source": "flat_fallback",
+                "savings_rate_used": savings_rate,
+                "adl_level": self._adl_level_for(session),
             }
         quote["quoted_at"] = _utc_now_iso()
         quote["coverage_amount"] = answers.get("coverage_amount")
@@ -991,21 +1093,48 @@ class ChatPolicyApplicationService:
         return quote
 
     def _quote_narrative(self, quote: Dict[str, Any]) -> str:
+        kernel = quote.get("pricing_source") == "pricing_kernel"
         src = ("our actuarial pricing kernel (versioned mortality and disability tables)"
-               if quote.get("pricing_source") == "pricing_kernel"
-               else "our standard rate card")
+               if kernel else "our standard rate card")
         monthly = quote.get("monthly") or 0
         annual = quote.get("annual") or 0
-        return (f"Here's your personalized quote, priced by {src}: "
-                f"${monthly:,.2f}/month, or ${annual:,.2f}/year if you pay annually (10% off). "
-                "Every figure is hash-sealed on our ledger, so the price you see is the price you get.")
+        parts = [
+            f"Here's your personalized quote, priced by {src}: "
+            f"${monthly:,.2f}/month, or ${annual:,.2f}/year if you pay annually (10% off)."
+        ]
+        if kernel:
+            risk = float(quote.get("risk_premium_annual") or 0)
+            savings = float(quote.get("savings_premium_annual") or 0)
+            if savings > 0:
+                parts.append(
+                    f"That splits into ${risk:,.2f}/year of protection and "
+                    f"${savings:,.2f}/year of savings accumulation."
+                )
+            if quote.get("disability_excluded"):
+                parts.append(
+                    "Because of your current functional needs, this quote covers life "
+                    "protection only - the disability benefit is excluded, and an "
+                    "underwriter will walk you through the options."
+                )
+            parts.append(
+                f"Priced on tables {quote.get('tables_version')} / config "
+                f"{quote.get('config_version')}."
+            )
+        parts.append(
+            "Every figure is hash-sealed on our ledger, so the price you see is the price you get."
+        )
+        return " ".join(parts)
 
     def _payload_risk_score(self, assessment: Dict[str, Any]) -> str:
-        category = str(assessment.get("risk_category") or "moderate")
-        return {
-            "very_low": "low", "low": "low", "moderate": "medium",
-            "elevated": "high", "high": "high", "very_high": "very_high",
-        }.get(category, "medium")
+        """Pass the underwriting band straight through to the pricing kernel.
+
+        The kernel keeps a loading for every band the scoring engine can emit,
+        so collapsing bands here would silently under- or over-price
+        (e.g. ``moderate`` is a +15% band, not a neutral one).
+        """
+        category = str(assessment.get("risk_category") or "moderate").strip().lower()
+        known = {"very_low", "low", "medium", "moderate", "elevated", "high", "very_high"}
+        return category if category in known else "medium"
 
     # ------------------------------------------------------------------
     # OTP integration hooks (state only - delivery lives in the API layer)
@@ -1126,6 +1255,10 @@ class ChatPolicyApplicationService:
                 "duration_seconds": duration_seconds,
                 "uploaded_at": _utc_now_iso(),
             }
+            # Persist the bytes immediately. The chat session is in-memory, so
+            # without this a voice note or video only survives until finalize
+            # (and not at all past a restart).
+            item.update(self._persist_media_blob(session, item, raw_b64))
             session["media"].append(item)
 
             kind_label = {"voice": "voice note", "video": "video message",
@@ -1150,6 +1283,84 @@ class ChatPolicyApplicationService:
             public = {k: v for k, v in item.items() if k != "data_b64"}
             return {"ok": True, "media": public, "messages": [bot_entry],
                     "ledger_events": events}
+
+    _MEDIA_EXTENSIONS = {
+        "voice": ".webm",
+        "video": ".webm",
+        "image": ".png",
+        "document": ".pdf",
+    }
+
+    def _persist_media_blob(self, session: Dict[str, Any], item: Dict[str, Any],
+                            raw_b64: str) -> Dict[str, Any]:
+        """Write chat media to the durable document store.
+
+        Returns the persistence fields to merge onto the media item. Failures
+        are non-fatal: the upload still succeeds and the in-memory copy is
+        used, but ``persistence_status`` records that durability is degraded.
+        """
+        name = str(item.get("name") or "")
+        if "." not in name.rsplit("/", 1)[-1]:
+            name = f"{name or item['id']}{self._MEDIA_EXTENSIONS.get(item['kind'], '.bin')}"
+        try:
+            from services.document_processing_service import get_document_service
+
+            result = get_document_service().upload_document(
+                file_name=name,
+                file_data_b64=raw_b64,
+                mime_type=item.get("mime_type"),
+                document_type=item.get("kind"),
+                description=f"Chat application {item['kind']} attachment",
+                entity_type="chat_application",
+                entity_id=session["id"],
+                uploaded_by=session["contact"].get("email") or session["id"],
+                uploaded_by_role="applicant",
+                skip_processing=True,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Chat media persistence failed for %s (%s): %s",
+                item.get("id"), item.get("kind"), exc,
+            )
+            return {"persistence_status": "memory_only", "persistent_doc_id": None}
+
+        stored_sha = str(getattr(result, "sha256", "") or "")
+        if stored_sha and stored_sha != item.get("sha256"):
+            # Never let a mismatched write masquerade as durable storage.
+            logger.error(
+                "Chat media checksum mismatch for %s: session=%s store=%s",
+                item.get("id"), item.get("sha256"), stored_sha,
+            )
+            return {"persistence_status": "integrity_mismatch", "persistent_doc_id": None}
+
+        return {
+            "persistence_status": (
+                "stored" if getattr(result, "status", "") == "uploaded" else "degraded"
+            ),
+            "persistent_doc_id": getattr(result, "document_id", None),
+            "storage_path": getattr(result, "storage_path", None),
+        }
+
+    def load_media_bytes_b64(self, item: Dict[str, Any]) -> Optional[str]:
+        """Return base64 bytes for a media item, preferring durable storage."""
+        doc_id = item.get("persistent_doc_id")
+        if doc_id:
+            try:
+                from services.document_processing_service import get_document_service
+
+                record = get_document_service().get_document(doc_id, include_data=True)
+                if record and record.get("integrity_warning"):
+                    logger.error(
+                        "Chat media integrity warning on read-back for %s; "
+                        "falling back to session copy", doc_id,
+                    )
+                else:
+                    data_b64 = (record or {}).get("data") or (record or {}).get("data_b64")
+                    if data_b64:
+                        return str(data_b64)
+            except Exception as exc:
+                logger.warning("Chat media read-back failed for %s: %s", doc_id, exc)
+        return item.get("data_b64")
 
     # ------------------------------------------------------------------
     # pause / resume
@@ -1290,6 +1501,9 @@ class ChatPolicyApplicationService:
         smoking_status = {"yes": "smoker", "former": "former"}.get(tobacco, "nonsmoker")
         family = answers.get("family_history") or []
         card = answers.get("payment_card") or {}
+        adl_level = self._adl_level_for(session)
+        savings_rate = self._savings_rate_for(session)
+        quote = session.get("quote") or {}
 
         payload: Dict[str, Any] = {
             "customer_name": contact.get("name") or "",
@@ -1304,6 +1518,12 @@ class ChatPolicyApplicationService:
             "gender": answers.get("gender") or "",
             "smoking_status": smoking_status,
             "risk_score": self._payload_risk_score(assessment),
+            # Actuarial pricing inputs: ADL severity drives the disability
+            # multipliers / benefit table, savings_rate is the risk-premium
+            # markup the actuary's savings formula expects.
+            "adl_level": adl_level,
+            "savings_rate": savings_rate,
+            "savings_formula": "risk_premium_markup",
             "medical_exam_required": (
                 answers.get("medical_conditions") == "yes"
                 or answers.get("surgery") == "yes"
@@ -1322,10 +1542,12 @@ class ChatPolicyApplicationService:
                 "height": str(answers.get("height") or ""),
                 "weight": str(answers.get("weight") or ""),
                 "occupation": answers.get("occupation") or "",
+                "daily_function": answers.get("daily_function") or "full",
+                "adl_level": adl_level,
             },
             "phins_allocation": {
-                "protection_pct": 25,
-                "savings_pct": 75,
+                "protection_pct": int(round(100 / (1 + savings_rate))) if savings_rate else 100,
+                "savings_pct": 100 - (int(round(100 / (1 + savings_rate))) if savings_rate else 100),
                 "distribution": {"wallet_pct": 15, "investment_pct": 60,
                                  "algo_trading_pct": 25},
             },
@@ -1340,21 +1562,54 @@ class ChatPolicyApplicationService:
             },
             "health_wallet": {"enabled": True, "monthly_deposit": 0},
             "pipeline_enabled": True,
-            "savings_pipeline_enabled": True,
+            "savings_pipeline_enabled": bool(savings_rate),
             "application_channel": "chat",
             "chat_application_id": session["id"],
         }
+        # Version consistency: the price the customer accepted is stamped with
+        # the exact actuarial table + config revision that produced it.
+        if quote:
+            payload["quote_provenance"] = {
+                "pricing_source": quote.get("pricing_source"),
+                "product_id": quote.get("product_id"),
+                "tables_version": quote.get("tables_version"),
+                "config_version": quote.get("config_version"),
+                "integrity_hash": quote.get("integrity_hash"),
+                "savings_formula": quote.get("savings_formula"),
+                "savings_rate_used": quote.get("savings_rate_used"),
+                "underwriting_loading": quote.get("underwriting_loading"),
+                "adl_level": quote.get("adl_level"),
+                "quoted_monthly": quote.get("monthly"),
+                "quoted_annual": quote.get("annual"),
+                "quoted_at": quote.get("quoted_at"),
+                "engine_version": (assessment or {}).get("engine_version"),
+            }
         if include_files and session["media"]:
             files = []
             for item in session["media"]:
-                entry = {"name": item["name"], "type": item["mime_type"],
-                         "size": item["size"], "sha256": item["sha256"],
-                         "kind": item["kind"]}
+                entry = {
+                    "name": item["name"],
+                    "type": item["mime_type"],
+                    "size": item["size"],
+                    "sha256": item["sha256"],
+                    "kind": item["kind"],
+                    "duration_seconds": item.get("duration_seconds"),
+                    "persistent_doc_id": item.get("persistent_doc_id"),
+                    "storage_path": item.get("storage_path"),
+                }
                 if item["size"] <= MAX_INLINE_SUBMISSION_BYTES:
-                    entry["data"] = f"data:{item['mime_type']};base64,{item['data_b64']}"
+                    data_b64 = self.load_media_bytes_b64(item) or item.get("data_b64")
+                    entry["data"] = f"data:{item['mime_type']};base64,{data_b64}"
+                elif item.get("persistent_doc_id"):
+                    # Oversized for an inline copy, but the bytes are durable:
+                    # the underwriting record links to the document store.
+                    entry["data"] = None
+                    entry["note"] = (
+                        f"Stored in the document vault as {item['persistent_doc_id']}"
+                    )
                 else:
                     entry["data"] = None
-                    entry["note"] = "Stored with chat application (too large for inline copy)"
+                    entry["note"] = "Attachment bytes unavailable (durable storage failed)"
                 files.append(entry)
             payload["files"] = files
             payload["files_count"] = len(files)

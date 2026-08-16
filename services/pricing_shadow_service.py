@@ -120,7 +120,13 @@ def extract_application_pricing_inputs(payload: Dict[str, Any]) -> Dict[str, Any
         coverage.get("term_years"),
         default=20,
     )
-    adl = _coalesce_int(payload.get("adl_level"), payload.get("adl"), default=5)
+    adl = _coalesce_int(
+        payload.get("adl_level"),
+        payload.get("adl"),
+        health.get("adl_level"),
+        questionnaire.get("adl_level"),
+        default=5,
+    )
     return {
         "age": age,
         "term_years": term,
@@ -136,6 +142,52 @@ def extract_application_pricing_inputs(payload: Dict[str, Any]) -> Dict[str, Any
         ),
         "type": payload.get("type") or "life",
         "risk_score": payload.get("risk_score") or payload.get("risk") or "medium",
+    }
+
+
+def resolve_adl_underwriting(adl_level: int, uw_config: Any) -> Dict[str, Any]:
+    """Apply the actuary's ADL underwriting rules to one applicant.
+
+    Reads the live ``UnderwritingConfig`` (decline threshold, ADL loadings,
+    coverage limits, disability exclusion threshold) rather than duplicating
+    the actuary's numbers here, so pricing follows whatever the actuary
+    dashboard has published.
+    """
+    adl = max(1, min(10, int(adl_level or 5)))
+    decline_threshold = int(getattr(uw_config, "decline_threshold", 9) or 9)
+    exclusion_threshold = int(
+        getattr(uw_config, "disability_exclusion_threshold", 8) or 8
+    )
+    loadings = dict(getattr(uw_config, "loadings", {}) or {})
+    coverage_limits = dict(getattr(uw_config, "coverage_limits", {}) or {})
+
+    adl_loading = 0.0
+    for key, value in loadings.items():
+        try:
+            if adl >= int(key):
+                adl_loading = max(adl_loading, float(value))
+        except (TypeError, ValueError):
+            continue
+
+    coverage_cap: Optional[float] = None
+    for key, value in coverage_limits.items():
+        try:
+            if adl >= int(key):
+                cap = float(value)
+            else:
+                continue
+        except (TypeError, ValueError):
+            continue
+        coverage_cap = cap if coverage_cap is None else min(coverage_cap, cap)
+
+    return {
+        "adl_level": adl,
+        "adl_loading": adl_loading,
+        "declined": adl >= decline_threshold,
+        "exclude_disability": adl >= exclusion_threshold,
+        "coverage_cap": coverage_cap,
+        "decline_threshold": decline_threshold,
+        "disability_exclusion_threshold": exclusion_threshold,
     }
 
 
@@ -175,6 +227,8 @@ def price_application_with_kernel(payload: Dict[str, Any]) -> Optional[Dict[str,
             table_set_from_store,
         )
 
+        from services.pricing_kernel import SavingsFormula
+
         store = get_actuarial_store()
         # Pure-risk default for new applications (savings is an optional add-on).
         savings_rate = float(
@@ -189,10 +243,32 @@ def price_application_with_kernel(payload: Dict[str, Any]) -> Optional[Dict[str,
         # price base risk cover at savings_rate=0 unless explicitly requested.
         if "savings_rate" not in payload:
             savings_rate = 0.0
+        savings_rate = max(0.0, min(2.0, savings_rate))
 
-        cfg = pricing_config_from_underwriting(store.config, savings_rate=savings_rate)
+        # Savings add-ons are priced the way the actuary dashboard prices them:
+        # a markup on the risk premium, not a maturity-value sinking fund.
+        requested_formula = str(
+            payload.get("savings_formula") or "risk_premium_markup"
+        ).strip().lower()
+        try:
+            savings_formula = SavingsFormula(requested_formula)
+        except ValueError:
+            savings_formula = SavingsFormula.RISK_PREMIUM_MARKUP
+
+        cfg = pricing_config_from_underwriting(
+            store.config,
+            savings_rate=savings_rate,
+            savings_formula=savings_formula,
+        )
         tables = table_set_from_store(store)
+        # A savings election moves the applicant onto the actuary's hybrid
+        # product (pure-risk cover + savings add-on). The pure-risk product
+        # caps ``savings_rate_used`` at zero, so pricing a savings election
+        # against it would under-report the elected rate.
+        if savings_rate > 0 and product_id == "phins_pure_risk_adjustable":
+            product_id = "phins_hybrid_savings"
         product = get_product(product_id)
+        adl_rules = resolve_adl_underwriting(inputs.get("adl_level"), store.config)
         gender = inputs.get("gender")
         smoking = inputs.get("smoking_status")
         ethnicity = inputs.get("ethnicity")
@@ -222,13 +298,18 @@ def price_application_with_kernel(payload: Dict[str, Any]) -> Optional[Dict[str,
             "high": 0.35,
             "very_high": 0.50,
         }
-        underwriting_loading = float(risk_loadings.get(risk_score, 0.0))
+        # Health-band loading (application questionnaire) and ADL functional
+        # loading (actuary's underwriting table) are additive: a impaired-ADL
+        # applicant with a clean medical history still carries the ADL load.
+        health_loading = float(risk_loadings.get(risk_score, 0.0))
+        underwriting_loading = health_loading + float(adl_rules["adl_loading"])
         components = price_policy(
             customer,
             product,
             tables,
             cfg,
             underwriting_loading=underwriting_loading,
+            exclude_disability=bool(adl_rules["exclude_disability"]),
         )
         monthly = float(components.monthly_premium)
         return {
@@ -240,6 +321,24 @@ def price_application_with_kernel(payload: Dict[str, Any]) -> Optional[Dict[str,
             "product_id": components.product_id,
             "tables_version": components.tables_version,
             "config_version": components.config_version,
+            "savings_formula": components.savings_formula,
+            "savings_rate_used": components.savings_rate_used,
+            "savings_premium_annual": components.savings_premium_annual,
+            "risk_premium_annual": components.risk_premium_annual,
+            "mortality_premium_annual": components.mortality_premium_annual,
+            "disability_premium_annual": components.disability_premium_annual,
+            "adl_level": components.adl_level,
+            "adl_loading": adl_rules["adl_loading"],
+            "health_loading": health_loading,
+            "underwriting_loading": underwriting_loading,
+            "disability_excluded": bool(adl_rules["exclude_disability"]),
+            "adl_declined": bool(adl_rules["declined"]),
+            "adl_coverage_cap": adl_rules["coverage_cap"],
+            "eligible": bool(components.eligible) and not adl_rules["declined"],
+            "decline_reason": (
+                components.decline_reason
+                or ("adl_above_decline_threshold" if adl_rules["declined"] else None)
+            ),
             "demographic_mortality_factor": components.demographic_mortality_factor,
             "demographic_disability_factor": components.demographic_disability_factor,
             "smoking_status_used": components.smoking_status_used,

@@ -106,7 +106,8 @@ def _complete_questionnaire(app_id, resume_code, medical=False):
     _answer(app_id, "no", resume_code=resume_code)           # surgery
     _answer(app_id, "no", resume_code=resume_code)           # hazardous
     body = _answer(app_id, ["none"], resume_code=resume_code)  # family_history
-    reply = _answer(app_id, "none", resume_code=resume_code)   # medications -> assessment
+    _answer(app_id, "none", resume_code=resume_code)           # medications
+    reply = _answer(app_id, "full", resume_code=resume_code)   # daily_function -> assessment
     assert reply.get("assessment"), reply
     return reply
 
@@ -123,7 +124,8 @@ def test_full_chat_application_happy_path():
     assert 0 < assessment["confidence"] <= 1
 
     _answer(app_id, 500000, resume_code=resume_code)         # coverage_amount
-    quote_reply = _answer(app_id, "20", resume_code=resume_code)  # coverage_years -> quote
+    _answer(app_id, "20", resume_code=resume_code)           # coverage_years
+    quote_reply = _answer(app_id, "none", resume_code=resume_code)  # savings_addon -> quote
     quote = quote_reply["quote"]
     assert quote["monthly"] > 0
     assert quote["annual"] > 0
@@ -363,8 +365,10 @@ def test_validation_and_security_failures():
     _answer(app_id, "no", resume_code=resume_code)
     _answer(app_id, ["none"], resume_code=resume_code)
     _answer(app_id, "none", resume_code=resume_code)
+    _answer(app_id, "full", resume_code=resume_code)         # daily_function
     _answer(app_id, 250000, resume_code=resume_code)
     _answer(app_id, "15", resume_code=resume_code)
+    _answer(app_id, "none", resume_code=resume_code)         # savings_addon
     _answer(app_id, "skip", resume_code=resume_code)
     _answer(app_id, "annual", resume_code=resume_code)
     status, bad = _post(f"/api/chat-application/{app_id}/message", {
@@ -429,9 +433,12 @@ def test_otp_delivery_failure_is_retryable_and_keeps_session_consistent():
 
     app_id, resume_code = _start_with_contact("chat.applicant.outage@example.com")
 
-    # Simulate production: demo exposure refused + email send fails.
+    # Simulate production: a real provider is configured (so the pre-flight
+    # passes) but the send itself fails.
     with patch("web_portal.api_extensions._demo_otp_exposure_allowed",
                return_value=False), \
+         patch("services.notification_service.get_active_email_provider_type",
+               return_value="infobip"), \
          patch("web_portal.api_extensions._send_otp_via_channel",
                return_value=(False, "simulated provider outage")):
         status, failed = _post(f"/api/chat-application/{app_id}/otp/request",
@@ -481,6 +488,8 @@ def test_resume_otp_failure_rolls_back_reverify_state():
     # Resume while OTP delivery is down -> clear retryable failure.
     with patch("web_portal.api_extensions._demo_otp_exposure_allowed",
                return_value=False), \
+         patch("services.notification_service.get_active_email_provider_type",
+               return_value="infobip"), \
          patch("web_portal.api_extensions._send_otp_via_channel",
                return_value=(False, "simulated provider outage")):
         status, failed = _post("/api/chat-application/resume",

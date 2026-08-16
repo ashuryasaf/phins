@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Track My Application</title>
+  <link rel="icon" href="/phins-logo.svg">
+  <style>
+    :root {
+      --navy: #060d1f;
+      --navy-2: #0d1b3e;
+      --gold: #c8a349;
+      --gold-strong: #e0bd63;
+      --ink: #0b1220;
+      --line: rgba(127, 178, 255, 0.18);
+      --muted: #9fb0cc;
+      --ok: #34d399;
+      --err: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background:
+        radial-gradient(900px 420px at 80% -10%, rgba(21, 68, 155, 0.5), transparent 60%),
+        linear-gradient(150deg, var(--navy) 0%, var(--navy-2) 100%);
+      color: #eaf1ff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 28px 16px;
+    }
+    .card {
+      width: 100%;
+      max-width: 520px;
+      background: rgba(6, 13, 31, 0.82);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 30px 28px;
+      box-shadow: 0 24px 60px rgba(2, 8, 23, 0.55);
+    }
+    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+    .brand img { width: 34px; height: 34px; }
+    .brand span { font-weight: 800; letter-spacing: 0.14em; font-size: 0.95rem; }
+    h1 { font-size: 1.45rem; margin: 0 0 6px; }
+    .sub { color: var(--muted); font-size: 0.9rem; line-height: 1.5; margin-bottom: 20px; }
+    label { display: block; font-size: 0.78rem; text-transform: uppercase;
+            letter-spacing: 0.08em; color: var(--muted); margin-bottom: 6px; }
+    input {
+      width: 100%; padding: 12px 14px; margin-bottom: 15px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--line); border-radius: 10px;
+      color: #eaf1ff; font-size: 0.98rem;
+    }
+    input:focus { outline: none; border-color: var(--gold); }
+    button {
+      width: 100%; padding: 13px 16px; border: none; border-radius: 10px;
+      font-weight: 700; font-size: 1rem; cursor: pointer;
+      background: linear-gradient(135deg, var(--gold) 0%, var(--gold-strong) 100%);
+      color: #1a1206;
+    }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .ghost {
+      background: transparent; color: var(--muted);
+      border: 1px solid var(--line); margin-top: 10px;
+    }
+    .msg { padding: 11px 13px; border-radius: 10px; font-size: 0.88rem;
+           margin-bottom: 15px; display: none; line-height: 1.45; }
+    .msg.err { display: block; background: rgba(248, 113, 113, 0.12);
+               border: 1px solid rgba(248, 113, 113, 0.4); color: #fecaca; }
+    .msg.ok { display: block; background: rgba(52, 211, 153, 0.12);
+              border: 1px solid rgba(52, 211, 153, 0.4); color: #bbf7d0; }
+    .summary { border: 1px solid var(--line); border-radius: 12px;
+               padding: 14px 16px; margin-bottom: 18px; background: rgba(255,255,255,0.03); }
+    .summary .row { display: flex; justify-content: space-between; gap: 12px;
+                    font-size: 0.87rem; padding: 4px 0; }
+    .summary .row span:first-child { color: var(--muted); }
+    .summary code { color: var(--gold-strong); font-size: 0.82rem; }
+    .step { display: none; }
+    .step.active { display: block; }
+    .hint { font-size: 0.78rem; color: var(--muted); margin-top: -8px; margin-bottom: 14px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <img src="/phins-logo.svg" alt="PHINS">
+      <span>PHINS</span>
+    </div>
+
+    <div id="msg" class="msg"></div>
+
+    <!-- Step 1: claim code + email -->
+    <div class="step active" id="step-lookup">
+      <h1>Track my application</h1>
+      <p class="sub">
+        Enter the claim code from the end of your application and the email you
+        applied with. We already verified that email during your application,
+        so there's nothing else to fill in.
+      </p>
+      <label for="claim-code">Claim code</label>
+      <input id="claim-code" type="text" placeholder="PHINS-CLAIM-XXXXXXXXXX" autocomplete="off">
+      <label for="email">Email</label>
+      <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
+      <button id="lookup-btn" onclick="doLookup()">Continue</button>
+    </div>
+
+    <!-- Step 2a: set password (new portal account) -->
+    <div class="step" id="step-password">
+      <h1>Choose a password</h1>
+      <p class="sub">
+        Everything else is already carried over from your application. Pick a
+        password and we'll open your account.
+      </p>
+      <div class="summary" id="summary-new"></div>
+      <label for="password">Password</label>
+      <input id="password" type="password" placeholder="At least 8 characters" autocomplete="new-password">
+      <label for="password2">Confirm password</label>
+      <input id="password2" type="password" placeholder="Repeat password" autocomplete="new-password">
+      <button id="activate-btn" onclick="doActivate()">Create account &amp; open my dashboard</button>
+    </div>
+
+    <!-- Step 2b: existing account -->
+    <div class="step" id="step-login">
+      <h1>You already have an account</h1>
+      <p class="sub">
+        This email is already registered with PHINS. Sign in with your existing
+        password and your new application will be waiting in your dashboard.
+      </p>
+      <div class="summary" id="summary-existing"></div>
+      <button onclick="window.location.href='/login.html'">Sign in</button>
+      <button class="ghost" onclick="window.location.href='/login.html#forgot'">I forgot my password</button>
+    </div>
+  </div>
+
+<script>
+  let LOOKUP = null;
+
+  function qs(name) {
+    return new URLSearchParams(window.location.search).get(name) || '';
+  }
+
+  function showMsg(kind, text) {
+    const el = document.getElementById('msg');
+    el.className = 'msg ' + kind;
+    el.textContent = text;
+    el.style.display = text ? 'block' : 'none';
+  }
+
+  function showStep(id) {
+    document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function money(v) {
+    const n = Number(v || 0);
+    return n ? '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+  }
+
+  function renderSummary(targetId, data) {
+    const s = data.summary || {};
+    document.getElementById(targetId).innerHTML = `
+      <div class="row"><span>Name</span><span>${esc(data.customer_name || '—')}</span></div>
+      <div class="row"><span>Email</span><span>${esc(data.email || '—')}</span></div>
+      <div class="row"><span>Application</span><code>${esc(data.application_id || '—')}</code></div>
+      <div class="row"><span>Policy</span><code>${esc(data.policy_id || '—')}</code></div>
+      <div class="row"><span>Coverage</span><span>${s.coverage_amount ? '$' + Number(s.coverage_amount).toLocaleString() : '—'}</span></div>
+      <div class="row"><span>Monthly premium</span><span>${money(s.monthly_premium)}</span></div>
+      <div class="row"><span>Underwriting</span><span>${esc(s.underwriting_status || 'pending')}</span></div>`;
+  }
+
+  async function doLookup() {
+    const btn = document.getElementById('lookup-btn');
+    const claim_code = document.getElementById('claim-code').value.trim().toUpperCase();
+    const email = document.getElementById('email').value.trim().toLowerCase();
+    if (!claim_code || !email) {
+      showMsg('err', 'Enter both your claim code and email.');
+      return;
+    }
+    btn.disabled = true;
+    showMsg('', '');
+    try {
+      const res = await fetch('/api/applications/claim/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ claim_code, email }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showMsg('err', data.error || 'We could not verify that claim code.');
+        return;
+      }
+      LOOKUP = data;
+      if (data.status === 'needs_login') {
+        renderSummary('summary-existing', data);
+        showStep('step-login');
+      } else {
+        renderSummary('summary-new', data);
+        showStep('step-password');
+        document.getElementById('password').focus();
+      }
+    } catch (e) {
+      showMsg('err', 'Network error: ' + e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function doActivate() {
+    const btn = document.getElementById('activate-btn');
+    const password = document.getElementById('password').value;
+    const password2 = document.getElementById('password2').value;
+    if (password.length < 8) {
+      showMsg('err', 'Password must be at least 8 characters.');
+      return;
+    }
+    if (password !== password2) {
+      showMsg('err', 'Passwords do not match.');
+      return;
+    }
+    btn.disabled = true;
+    showMsg('', '');
+    try {
+      const res = await fetch('/api/applications/claim/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          claim_code: document.getElementById('claim-code').value.trim().toUpperCase(),
+          email: document.getElementById('email').value.trim().toLowerCase(),
+          password,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        if (data.status === 'needs_login') {
+          renderSummary('summary-existing', LOOKUP || {});
+          showStep('step-login');
+        }
+        showMsg('err', data.error || 'Could not create your account.');
+        return;
+      }
+      // Match the session keys login.html writes so the dashboard loads clean.
+      localStorage.setItem('phins_token', data.token);
+      sessionStorage.setItem('phins_token', data.token);
+      localStorage.setItem('customer_id', data.customer_id || '');
+      localStorage.setItem('phins_customer_id', data.customer_id || '');
+      sessionStorage.setItem('customer_id', data.customer_id || '');
+      sessionStorage.setItem('username', data.username || '');
+      sessionStorage.setItem('user_role', data.role || 'customer');
+      localStorage.setItem('session', JSON.stringify({
+        customer_id: data.customer_id,
+        username: data.username,
+        role: data.role,
+        token: data.token,
+        login_time: new Date().toISOString(),
+      }));
+      showMsg('ok', 'Account created. Opening your dashboard…');
+      window.location.href = data.redirect || '/dashboard.html';
+    } catch (e) {
+      showMsg('err', 'Network error: ' + e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const code = qs('code');
+    if (code) document.getElementById('claim-code').value = code;
+    const email = qs('email');
+    if (email) document.getElementById('email').value = email;
+    ['claim-code', 'email'].forEach(id => {
+      document.getElementById(id).addEventListener('keydown', e => {
+        if (e.key === 'Enter') doLookup();
+      });
+    });
+    document.getElementById('password2').addEventListener('keydown', e => {
+      if (e.key === 'Enter') doActivate();
+    });
+  });
+</script>
+</body>
+</html>
