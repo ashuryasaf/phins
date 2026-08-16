@@ -26,7 +26,7 @@ from services.actuarial_service import ActuarialTablesStore
 from services.application_claim_service import (
     ApplicationClaimService,
     STATUS_NEEDS_LOGIN,
-    STATUS_NEEDS_PASSWORD,
+    STATUS_NEEDS_CREDENTIALS,
 )
 from services.chat_application_service import get_chat_application_service
 from services.pricing_shadow_service import (
@@ -400,7 +400,7 @@ def test_claim_service_is_single_use_and_email_bound():
 
     ok = svc.lookup(claim_code=code, email="owner@example.com",
                     email_has_login=False)
-    assert ok["status"] == STATUS_NEEDS_PASSWORD
+    assert ok["status"] == STATUS_NEEDS_CREDENTIALS
 
     # An existing account must never be claimable with a code.
     existing = svc.redeem(claim_code=code, email="owner@example.com",
@@ -432,7 +432,7 @@ def test_track_my_application_creates_account_with_chosen_password():
         {"claim_code": claim["claim_code"], "email": email},
     )
     assert status == 200, lookup
-    assert lookup["status"] == STATUS_NEEDS_PASSWORD
+    assert lookup["status"] == STATUS_NEEDS_CREDENTIALS
     assert lookup["customer_name"] == "Maya Cohen"
     assert lookup["policy_id"] == result["policy"]["id"]
     assert lookup["summary"]["coverage_amount"] == 500000

@@ -38,7 +38,7 @@ CLAIM_CODE_PREFIX = "PHINS-CLAIM"
 DEFAULT_TTL_DAYS = 14
 
 # Status values returned by :meth:`ApplicationClaimService.lookup`.
-STATUS_NEEDS_PASSWORD = "needs_password"
+STATUS_NEEDS_CREDENTIALS = "needs_password"
 STATUS_NEEDS_LOGIN = "needs_login"
 
 
@@ -171,7 +171,7 @@ class ApplicationClaimService:
         record = resolved["record"]
         return {
             "ok": True,
-            "status": STATUS_NEEDS_LOGIN if email_has_login else STATUS_NEEDS_PASSWORD,
+            "status": STATUS_NEEDS_LOGIN if email_has_login else STATUS_NEEDS_CREDENTIALS,
             "application_id": record["application_id"],
             "customer_id": record["customer_id"],
             "email": record["email"],
