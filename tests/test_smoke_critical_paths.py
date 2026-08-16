@@ -13,6 +13,7 @@ Quick validation tests for:
 import threading
 import time
 import json
+import uuid
 from http.server import HTTPServer
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
@@ -216,10 +217,13 @@ def test_403_forbidden():
     
     base = f"http://127.0.0.1:{port}"
     
-    # Create customer and login
+    # Create customer and login. The email must be unique to this test: policy
+    # creation refuses to overwrite the login of an email that already has an
+    # account, so a shared address would return existing_account instead of a
+    # provisioned password.
     data = json.dumps({
         "customer_name": "Test Customer",
-        "customer_email": "test@example.com",
+        "customer_email": f"smoke403-{uuid.uuid4().hex[:8]}@example.com",
         "type": "life",
         "coverage_amount": 100000
     }).encode('utf-8')

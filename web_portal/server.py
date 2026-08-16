@@ -20268,8 +20268,13 @@ For claims or questions, please contact:
                 # in the durable document vault instead of inline base64.
                 if not payload_data and file_data.get('persistent_doc_id'):
                     try:
-                        from services.document_processing_service import get_document_service
-                        record = get_document_service().get_document(
+                        # Aliased: a bare ``get_document_service`` import here would
+                        # make the name function-local for the whole of do_GET and
+                        # shadow the module-level import other routes rely on.
+                        from services.document_processing_service import (
+                            get_document_service as _get_doc_service,
+                        )
+                        record = _get_doc_service().get_document(
                             str(file_data['persistent_doc_id']), include_data=True
                         )
                         if record and record.get('integrity_warning'):
