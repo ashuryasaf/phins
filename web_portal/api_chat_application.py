@@ -434,7 +434,37 @@ def _handle_finalize(application_id: str, handler) -> Tuple[int, Dict[str, Any]]
             "error": outcome.get("error"),
             "submission": outcome.get("submission")}
     _pop_and_write_events(outcome)
-    return 201, {
+
+    # Single-use claim code so the applicant can open "Track my application"
+    # and finish account setup with just a password (see
+    # services/application_claim_service.py for the takeover guards).
+    claim: Dict[str, Any] = {}
+    try:
+        from services.application_claim_service import get_application_claim_service
+
+        state = svc.get_state(application_id, staff=True)
+        contact = state.get("contact") or {}
+        claim = get_application_claim_service().issue(
+            application_id=application_id,
+            customer_id=str(customer.get("id") or ""),
+            email=str(contact.get("email") or ""),
+            policy_id=str(policy.get("id") or ""),
+            underwriting_id=str(underwriting.get("id") or ""),
+            customer_name=str(contact.get("name") or ""),
+            phone=str(contact.get("phone") or ""),
+            summary={
+                "coverage_amount": (state.get("quote") or {}).get("coverage_amount"),
+                "coverage_years": (state.get("quote") or {}).get("coverage_years"),
+                "monthly_premium": policy.get("monthly_premium"),
+                "annual_premium": policy.get("annual_premium"),
+                "policy_status": policy.get("status"),
+                "underwriting_status": underwriting.get("status"),
+            },
+        )
+    except Exception as exc:
+        logger.warning("Claim code issue failed for %s: %s", application_id, exc)
+
+    response = {
         "success": True,
         "application_id": application_id,
         "submission": outcome.get("submission"),
@@ -448,6 +478,13 @@ def _handle_finalize(application_id: str, handler) -> Tuple[int, Dict[str, Any]]
         "provisioned_login": created.get("provisioned_login"),
         "payload_checksum": checksum,
     }
+    if claim.get("ok"):
+        response["claim"] = {
+            "claim_code": claim["claim_code"],
+            "expires_at": claim["expires_at"],
+            "track_url": f"/track-application.html?code={claim['claim_code']}",
+        }
+    return 201, response
 
 
 # ---------------------------------------------------------------------------

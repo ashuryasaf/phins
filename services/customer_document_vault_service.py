@@ -1004,11 +1004,13 @@ class CustomerDocumentVault:
             "uploaded_at": _coerce_iso(uf.get("uploaded_at")),
             "uploaded_by": _norm_str(uf.get("uploaded_by")) or "customer",
             "uploaded_by_customer": owner_customer_id,
-            "has_data": bool(uf.get("data")),
+            # Chat voice/video attachments store bytes in the document vault
+            # rather than inline, so a persistent id also counts as retrievable.
+            "has_data": bool(uf.get("data")) or bool(uf.get("persistent_doc_id")),
             "ai_analysis": None,
             "assessment_summary": None,
-            "persistent_doc_id": "",
-            "storage_path": "",
+            "persistent_doc_id": _norm_str(uf.get("persistent_doc_id")),
+            "storage_path": _norm_str(uf.get("storage_path")),
             "source": self.SOURCE_UNDERWRITING,
             "view_url": f"/api/underwriting/files/view?id={uf.get('id') or file_id}",
         }

@@ -686,6 +686,10 @@
         clearLocal();
         await playMessages(data.messages);
         const login = data.provisioned_login || {};
+        const claim = data.claim || {};
+        // With a claim code the applicant finishes account setup by choosing
+        // their own password, so we never print a temporary one on screen.
+        const trackUrl = claim.track_url || '/track-application.html';
         addCard(`
             <div class="success-card">
                 <div class="big-check">&#10003;</div>
@@ -694,12 +698,14 @@
                     <div><span>Policy</span><code>${escapeHtml(data.policy.id || '')}</code></div>
                     <div><span>Underwriting</span><code>${escapeHtml(data.underwriting.id || '')}</code></div>
                     <div><span>Ledger checksum</span><code>${escapeHtml(String(data.payload_checksum || '').slice(0, 16))}&hellip;</code></div>
-                    ${login.username ? `<div><span>Portal username</span><code>${escapeHtml(login.username)}</code></div>` : ''}
-                    ${login.password ? `<div><span>Temporary password</span><code>${escapeHtml(login.password)}</code></div>` : ''}
+                    ${claim.claim_code ? `<div><span>Claim code</span><code>${escapeHtml(claim.claim_code)}</code></div>` : ''}
+                    ${!claim.claim_code && login.username ? `<div><span>Portal username</span><code>${escapeHtml(login.username)}</code></div>` : ''}
+                    ${!claim.claim_code && login.password ? `<div><span>Temporary password</span><code>${escapeHtml(login.password)}</code></div>` : ''}
                     ${login.existing_account ? '<div><span>Account</span><code>Use your existing login</code></div>' : ''}
                 </div>
+                ${claim.claim_code ? `<p class="success-note">Keep this claim code. Open <strong>Track my application</strong> and it will carry everything across from your application &mdash; all you choose is a password.</p>` : ''}
                 <div class="success-actions">
-                    <a class="btn-gold" href="/login.html">Track my application</a>
+                    <a class="btn-gold" href="${escapeHtml(trackUrl)}">Track my application</a>
                     <a class="btn-ghost" href="/">Back to home</a>
                 </div>
             </div>

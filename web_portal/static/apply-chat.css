@@ -471,6 +471,11 @@ body.chat-apply-page {
 }
 .success-card .success-ids span:first-child { color: var(--ink-dim); }
 .success-card .success-ids code { color: var(--gold-strong); font-weight: 600; }
+.success-card .success-note {
+    font-size: 0.82rem; color: var(--ink-dim); line-height: 1.5;
+    margin: 10px 4px 0; text-align: center;
+}
+.success-card .success-note strong { color: var(--gold-strong); }
 .success-actions { display: flex; gap: 10px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
 
 .media-chip {

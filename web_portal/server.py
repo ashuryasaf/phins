@@ -20262,7 +20262,37 @@ For claims or questions, please contact:
                         self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
                         return
 
-                if not file_data.get('data'):
+                payload_data = file_data.get('data')
+                data_source = 'inline'
+                # Large chat attachments (voice notes, video messages) are kept
+                # in the durable document vault instead of inline base64.
+                if not payload_data and file_data.get('persistent_doc_id'):
+                    try:
+                        # Aliased: a bare ``get_document_service`` import here would
+                        # make the name function-local for the whole of do_GET and
+                        # shadow the module-level import other routes rely on.
+                        from services.document_processing_service import (
+                            get_document_service as _get_doc_service,
+                        )
+                        record = _get_doc_service().get_document(
+                            str(file_data['persistent_doc_id']), include_data=True
+                        )
+                        if record and record.get('integrity_warning'):
+                            self._set_json_headers(409)
+                            self.wfile.write(json.dumps({
+                                'error': 'Stored file failed its integrity check'
+                            }).encode('utf-8'))
+                            return
+                        if record and record.get('data'):
+                            payload_data = (
+                                f"data:{record.get('mime_type') or file_data.get('type') or 'application/octet-stream'}"
+                                f";base64,{record['data']}"
+                            )
+                            data_source = 'document_vault'
+                    except Exception as vault_err:
+                        print(f"[uw-files] vault read note: {vault_err}")
+
+                if not payload_data:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'File data not available'}).encode('utf-8'))
                     return
@@ -20274,7 +20304,11 @@ For claims or questions, please contact:
                     'name': file_data.get('name'),
                     'type': file_data.get('type'),
                     'size': file_data.get('size'),
-                    'data': file_data.get('data'),
+                    'kind': file_data.get('kind'),
+                    'sha256': file_data.get('sha256'),
+                    'data': payload_data,
+                    'data_source': data_source,
+                    'persistent_doc_id': file_data.get('persistent_doc_id') or None,
                     parent_field: file_data.get(parent_field),
                     'customer_id': file_owner,
                     'uploaded_at': file_data.get('uploaded_at'),
@@ -33162,6 +33196,179 @@ For claims or questions, please contact:
             }).encode('utf-8'))
             return
         
+        # ========== TRACK MY APPLICATION (claim-code quick registry) ==========
+        # POST /api/applications/claim/lookup   {claim_code, email}
+        # POST /api/applications/claim/activate {claim_code, email, password}
+        #
+        # A claim code is minted when a chat application is submitted and is
+        # bound to that application's OTP-verified email. Lookup pre-fills the
+        # registry; activate only ever creates a *new* login. When the email
+        # already has an account the caller is told to sign in instead, so a
+        # leaked code can never overwrite an existing password.
+        if path in ('/api/applications/claim/lookup', '/api/applications/claim/activate'):
+            client_ip = self.client_address[0]
+            try:
+                data = json.loads(body or '{}')
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+                return
+
+            claim_code = sanitize_input(str(data.get('claim_code') or ''), 64).strip().upper()
+            email = sanitize_input(str(data.get('email') or ''), 254).strip().lower()
+            if not claim_code or not email:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({
+                    'error': 'Claim code and email are required'
+                }).encode('utf-8'))
+                return
+
+            # Brute-force guard: claim codes are bearer secrets.
+            allowed, limit_msg = check_bulk_rate_limit(
+                client_ip, 'application_claim', int(getattr(self.server, 'server_address', ('', 0))[1] or 0)
+            )
+            if not allowed:
+                self._set_json_headers(429)
+                self.wfile.write(json.dumps({
+                    'error': limit_msg or 'Too many attempts. Please try again later.'
+                }).encode('utf-8'))
+                return
+
+            try:
+                from services.application_claim_service import (
+                    get_application_claim_service,
+                )
+            except ImportError:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({
+                    'error': 'Application tracking is unavailable'
+                }).encode('utf-8'))
+                return
+
+            claim_service = get_application_claim_service()
+            email_has_login = email in USERS
+
+            if path == '/api/applications/claim/lookup':
+                result = claim_service.lookup(
+                    claim_code=claim_code, email=email, email_has_login=email_has_login
+                )
+                if not result.get('ok'):
+                    self._set_json_headers(result.get('status_code', 400))
+                    self.wfile.write(json.dumps({'error': result.get('error')}).encode('utf-8'))
+                    return
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'status': result['status'],
+                    'application_id': result['application_id'],
+                    'policy_id': result['policy_id'],
+                    'underwriting_id': result['underwriting_id'],
+                    'customer_name': result['customer_name'],
+                    'email': result['email'],
+                    'phone': result['phone'],
+                    'summary': result['summary'],
+                    'expires_at': result['expires_at'],
+                }).encode('utf-8'))
+                return
+
+            # activate
+            password = str(data.get('password') or '')
+            if len(password) < 8:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({
+                    'error': 'Password must be at least 8 characters'
+                }).encode('utf-8'))
+                return
+
+            redeemed = claim_service.redeem(
+                claim_code=claim_code, email=email, email_has_login=email_has_login
+            )
+            if not redeemed.get('ok'):
+                payload = {'error': redeemed.get('error')}
+                if redeemed.get('status'):
+                    payload['status'] = redeemed['status']
+                self._set_json_headers(redeemed.get('status_code', 400))
+                self.wfile.write(json.dumps(payload).encode('utf-8'))
+                return
+
+            try:
+                customer_id = str(redeemed.get('customer_id') or '')
+                pwd = hash_password(password)
+                with STATE_LOCK:
+                    # Re-check under the lock: a concurrent registration must
+                    # not be clobbered between redeem and write.
+                    if email in USERS:
+                        claim_service.restore(claim_code)
+                        self._set_json_headers(409)
+                        self.wfile.write(json.dumps({
+                            'error': 'An account already exists for this email. Please sign in.',
+                            'status': 'needs_login',
+                        }).encode('utf-8'))
+                        return
+                    USERS[email] = {
+                        'hash': pwd['hash'],
+                        'salt': pwd['salt'],
+                        'role': 'customer',
+                        'name': redeemed.get('customer_name') or email,
+                        'customer_id': customer_id,
+                    }
+                    customer = CUSTOMERS.get(customer_id)
+                    if isinstance(customer, dict):
+                        customer.setdefault('email', email)
+                        customer.setdefault('name', redeemed.get('customer_name') or email)
+                        customer['portal_activated_at'] = datetime.now().isoformat()
+
+                expires = datetime.now() + timedelta(seconds=SESSION_TIMEOUT)
+                token, token_jti = _mint_auth_token(email, 'customer', customer_id, expires)
+                session_payload = {
+                    'username': email,
+                    'role': 'customer',
+                    'customer_id': customer_id,
+                    'expires': expires.isoformat(),
+                }
+                if token_jti:
+                    session_payload['jti'] = token_jti
+                with STATE_LOCK:
+                    SESSIONS[token] = session_payload
+
+                try:
+                    audit.log_action(
+                        user=email,
+                        action='application_claim_activated',
+                        entity_type='application',
+                        entity_id=redeemed.get('application_id'),
+                        details={'customer_id': customer_id,
+                                 'policy_id': redeemed.get('policy_id')},
+                    )
+                except Exception:
+                    pass
+
+                try:
+                    save_ledger_data()
+                except Exception as persist_err:
+                    print(f"[claim-activate] persist note: {persist_err}")
+
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'token': token,
+                    'username': email,
+                    'role': 'customer',
+                    'customer_id': customer_id,
+                    'application_id': redeemed.get('application_id'),
+                    'policy_id': redeemed.get('policy_id'),
+                    'expires': expires.isoformat(),
+                    'redirect': '/dashboard.html',
+                }).encode('utf-8'))
+                return
+            except Exception as exc:
+                # Give the code back so a transient failure doesn't strand the
+                # applicant with a spent claim code.
+                claim_service.restore(claim_code)
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                return
+
         # User Registration Endpoint (INVITATION ONLY)
         if path == '/api/register':
             client_ip = self.client_address[0]
@@ -40193,6 +40400,15 @@ For claims or questions, please contact:
                 # Initialize temp_password to None (will be set if new customer is created)
                 temp_password = None
                 
+                # Chat applications finish account setup through the
+                # "Track my application" claim code, where the applicant picks
+                # their own password. Minting a random temp login here would
+                # occupy the email and force them down the "you already have an
+                # account" path with a password they never chose.
+                defer_login_provisioning = (
+                    str(data.get('application_channel') or '').strip().lower() == 'chat'
+                )
+
                 # Create customer if new (and no existing customer with same email)
                 if not existing_customer and customer_id not in CUSTOMERS:
                     try:
@@ -40206,17 +40422,18 @@ For claims or questions, please contact:
                         }
                         # Provision portal login for the customer
                         cust_email = customer_email or f"{customer_id.lower()}@example.com"
-                        temp_password = f"pw-{uuid.uuid4().hex[:10]}"
-                        
-                        # Hash the password for security
-                        pwd_hash = hash_password(temp_password)
-                        USERS[cust_email] = {
-                            'hash': pwd_hash['hash'],
-                            'salt': pwd_hash['salt'],
-                            'role': 'customer',
-                            'name': customer_name or customer_id,
-                            'customer_id': customer_id
-                        }
+                        if not defer_login_provisioning and cust_email not in USERS:
+                            temp_password = f"pw-{uuid.uuid4().hex[:10]}"
+
+                            # Hash the password for security
+                            pwd_hash = hash_password(temp_password)
+                            USERS[cust_email] = {
+                                'hash': pwd_hash['hash'],
+                                'salt': pwd_hash['salt'],
+                                'role': 'customer',
+                                'name': customer_name or customer_id,
+                                'customer_id': customer_id
+                            }
                     except Exception as e:
                         print(f"Error creating customer: {e}")
                         self._set_json_headers(400)
@@ -40390,6 +40607,11 @@ For claims or questions, please contact:
                             'data': raw_data,  # Base64 encoded
                             'sha256': sha256 or str(file_info.get('sha256') or ''),
                             'kind': file_info.get('kind', ''),
+                            # Durable pointer for attachments too large to inline
+                            # (chat voice notes / video messages live here).
+                            'persistent_doc_id': file_info.get('persistent_doc_id') or '',
+                            'storage_path': file_info.get('storage_path') or '',
+                            'duration_seconds': file_info.get('duration_seconds'),
                             'note': file_info.get('note', ''),
                             'error': file_info.get('error', '')
                         }
@@ -40584,6 +40806,14 @@ For claims or questions, please contact:
                     response_data['provisioned_login'] = {
                         'username': login_username,
                         'password': temp_password  # Return plain password for first login
+                    }
+                elif defer_login_provisioning and login_username not in USERS:
+                    # Chat channel: the applicant sets their own password via
+                    # the claim-code registry, so there is nothing to hand out.
+                    response_data['provisioned_login'] = {
+                        'username': login_username,
+                        'pending_activation': True,
+                        'message': 'Activate the portal account with your application claim code',
                     }
                 else:
                     # Existing customer - indicate they should use existing credentials
