@@ -214,7 +214,13 @@ def _ensure_senior_uw_queue(application_id: str) -> Optional[Dict[str, Any]]:
     uw_id = existing_id or f"UW-CHATREF-{suffix}"
 
     existing = portal.UNDERWRITING_APPLICATIONS.get(uw_id)
-    if existing and str(existing.get("status") or "").lower() in ("approved", "rejected"):
+    # The queue row is created as "pending" and safely refreshed while it stays
+    # pending, but the chat flow keeps re-invoking this helper on every later
+    # message / finalize retry after a declined quote. Once an underwriter has
+    # acted on the row (referred / approved / rejected / any non-pending state)
+    # a wholesale rebuild would wipe their decision and notes and bounce the
+    # case back into the pending queue, so preserve the existing row instead.
+    if existing and str(existing.get("status") or "pending").lower() != "pending":
         return existing
 
     customer_id = (existing or {}).get("customer_id") or _find_or_create_referral_customer(
@@ -255,7 +261,7 @@ def _ensure_senior_uw_queue(application_id: str) -> Optional[Dict[str, Any]]:
         "disability_excluded": bool(quote.get("disability_excluded")),
         "adl_declined": bool(quote.get("adl_declined")),
         "eligible": quote.get("eligible"),
-        "questionnaire": {
+        "questionnaire_responses": {
             "daily_function": answers.get("daily_function"),
             "dob": answers.get("dob"),
             "gender": answers.get("gender"),

@@ -285,7 +285,19 @@ class UnderwritingApplication(Base):
     # Customer info (denormalized for dashboard display)
     customer_name = Column(String(200))
     customer_email = Column(String(254))
-    
+    customer_phone = Column(String(50))
+
+    # Chat "Phin" senior-review referral fields (no policy created yet). These
+    # drive the underwriter dashboard's senior-review banner and Approve guard
+    # for rows opened by services/chat_application_service via
+    # web_portal/api_chat_application._ensure_senior_uw_queue.
+    source = Column(String(50))  # e.g. 'chat_adl_referral'
+    recommendation_type = Column(String(50))  # e.g. 'refer_senior_uw'
+    referral_reason = Column(Text)
+    chat_application_id = Column(String(50), index=True)
+    adl_level = Column(Integer)
+    monthly_premium = Column(Float)
+
     # Policy details
     policy_type = Column(String(50))
     coverage_amount = Column(Float)
@@ -370,6 +382,14 @@ class UnderwritingApplication(Base):
             'customer_id': self.customer_id,
             'customer_name': self.customer_name,
             'customer_email': self.customer_email,
+            'customer_phone': self.customer_phone,
+            # Chat senior-review referral fields
+            'source': self.source,
+            'recommendation_type': self.recommendation_type,
+            'referral_reason': self.referral_reason,
+            'chat_application_id': self.chat_application_id,
+            'adl_level': self.adl_level,
+            'monthly_premium': self.monthly_premium,
             'policy_type': self.policy_type,
             'coverage_amount': self.coverage_amount,
             'age': self.age,
