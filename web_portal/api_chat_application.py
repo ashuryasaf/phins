@@ -32,6 +32,11 @@ GET  ``/api/chat-application/<id>``                  (resume code or staff)
 GET  ``/api/chat-application/<id>/journey``          (resume code or staff)
 GET  ``/api/chat-application/admin/funnel``          (staff only)
 
+When actuarial rules block automated submit (ADL decline / ineligible quote),
+the API opens a durable ``UNDERWRITING_APPLICATIONS`` row
+(``source=chat_adl_referral``) so underwriters see name / email / phone on
+``/underwriter-dashboard.html`` even though no policy was created.
+
 Error responses use the platform's ``{"error": "..."}`` convention.
 """
 
@@ -43,6 +48,8 @@ import logging
 import re
 import urllib.error
 import urllib.request
+import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger("phins.chat_application.api")
@@ -143,6 +150,198 @@ def _pop_and_write_events(result: Dict[str, Any]) -> Dict[str, Any]:
     events = result.pop("ledger_events", None)
     _write_ledger_events(events)
     return result
+
+
+def _portal_module():
+    try:
+        from web_portal import server as portal
+    except ImportError:  # pragma: no cover - flat layout fallback
+        import server as portal  # type: ignore
+    return portal
+
+
+def _find_or_create_referral_customer(portal, contact: Dict[str, Any]) -> str:
+    """Resolve a CUSTOMERS id for staff contact without provisioning a login."""
+    email = str(contact.get("email") or "").strip().lower()
+    phone = str(contact.get("phone") or "").strip()
+    name = str(contact.get("name") or "").strip() or "Chat applicant"
+    if email:
+        for cust_id, cust in list(getattr(portal, "CUSTOMERS", {}).items()):
+            if str((cust or {}).get("email") or "").strip().lower() == email:
+                # Refresh contact fields so underwriters see the latest phone/name.
+                if phone and not cust.get("phone"):
+                    cust["phone"] = phone
+                if name and (not cust.get("name") or cust.get("name") == "Unknown"):
+                    cust["name"] = name
+                cust["updated_date"] = datetime.now(timezone.utc).isoformat()
+                portal.CUSTOMERS[cust_id] = cust
+                return str(cust_id)
+    customer_id = f"CUST-CHATREF-{uuid.uuid4().hex[:10].upper()}"
+    now = datetime.now(timezone.utc).isoformat()
+    portal.CUSTOMERS[customer_id] = {
+        "id": customer_id,
+        "name": name,
+        "email": email,
+        "phone": phone,
+        "created_date": now,
+        "updated_date": now,
+        "source": "chat_adl_referral",
+        "status": "lead",
+    }
+    return customer_id
+
+
+def _ensure_senior_uw_queue(application_id: str) -> Optional[Dict[str, Any]]:
+    """Open (or refresh) a durable underwriting row for a blocked chat file.
+
+    Chat sessions are in-memory; admin/underwriter dashboards read
+    ``UNDERWRITING_APPLICATIONS``. Without this bridge, a senior-review
+    message is shown to the applicant and nobody on staff can see contact
+    details.
+    """
+    svc = _service()
+    snap = svc.senior_referral_snapshot(application_id)
+    if not snap:
+        return None
+    portal = _portal_module()
+    contact = snap.get("contact") or {}
+    quote = snap.get("quote") or {}
+    assessment = snap.get("assessment") or {}
+    answers = snap.get("answers") or {}
+
+    existing_id = snap.get("existing_underwriting_id")
+    suffix = str(application_id).replace("CHAPP-", "")[:24]
+    uw_id = existing_id or f"UW-CHATREF-{suffix}"
+
+    existing = portal.UNDERWRITING_APPLICATIONS.get(uw_id)
+    # The queue row is created as "pending" and safely refreshed while it stays
+    # pending, but the chat flow keeps re-invoking this helper on every later
+    # message / finalize retry after a declined quote. Once an underwriter has
+    # acted on the row (referred / approved / rejected / any non-pending state)
+    # a wholesale rebuild would wipe their decision and notes and bounce the
+    # case back into the pending queue, so preserve the existing row instead.
+    if existing and str(existing.get("status") or "pending").lower() != "pending":
+        return existing
+
+    customer_id = (existing or {}).get("customer_id") or _find_or_create_referral_customer(
+        portal, contact
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    risk = str(
+        assessment.get("risk_category")
+        or assessment.get("risk_assessment")
+        or "high"
+    ).lower()
+    record = {
+        "id": uw_id,
+        "status": "pending",
+        "source": "chat_adl_referral",
+        "application_channel": "chat",
+        "chat_application_id": application_id,
+        "resume_code": snap.get("resume_code"),
+        "recommendation_type": "refer_senior_uw",
+        "referral_reason": (
+            quote.get("decline_reason")
+            or "adl_senior_review_required"
+        ),
+        "customer_id": customer_id,
+        "customer_name": contact.get("name") or "Chat applicant",
+        "customer_email": contact.get("email") or "",
+        "customer_phone": contact.get("phone") or "",
+        "policy_id": None,
+        "policy_status": "not_created",
+        "policy_type": "life",
+        "coverage_amount": quote.get("coverage_amount") or answers.get("coverage_amount") or 0,
+        "coverage_years": quote.get("coverage_years") or answers.get("coverage_years"),
+        "monthly_premium": quote.get("monthly") or 0,
+        "annual_premium": quote.get("annual") or 0,
+        "risk_assessment": risk,
+        "risk_score": risk,
+        "adl_level": quote.get("adl_level") or assessment.get("adl_level"),
+        "disability_excluded": bool(quote.get("disability_excluded")),
+        "adl_declined": bool(quote.get("adl_declined")),
+        "eligible": quote.get("eligible"),
+        "questionnaire_responses": {
+            "daily_function": answers.get("daily_function"),
+            "dob": answers.get("dob"),
+            "gender": answers.get("gender"),
+            "occupation": answers.get("occupation"),
+            "tobacco": answers.get("tobacco"),
+            "medical_conditions": answers.get("medical_conditions"),
+            "conditions_list": answers.get("conditions_list"),
+            "medications": answers.get("medications"),
+            "hazardous": answers.get("hazardous"),
+            "family_history": answers.get("family_history"),
+            "savings_addon": answers.get("savings_addon"),
+        },
+        "assessment": assessment,
+        "quote_summary": quote,
+        "media": snap.get("media") or [],
+        "email_verified": bool(snap.get("email_verified")),
+        "contact_priority": "high",
+        "notes": (
+            "Automated chat submit blocked by actuarial ADL / eligibility rules. "
+            "Senior underwriter must contact the applicant before a policy can be issued."
+        ),
+        "submitted_date": (existing or {}).get("submitted_date") or now,
+        "created_date": (existing or {}).get("created_date") or now,
+        "updated_date": now,
+        "created_by": "chat_policy_application",
+    }
+    portal.UNDERWRITING_APPLICATIONS[uw_id] = record
+
+    # Point any vault-backed chat media at the underwriting id so Details /
+    # file viewers can find attachments without a policy submission.
+    try:
+        files = getattr(portal, "UNDERWRITING_FILES", None)
+        if isinstance(files, dict):
+            for item in snap.get("media") or []:
+                doc_id = item.get("persistent_doc_id") or item.get("sha256")
+                if not doc_id:
+                    continue
+                file_id = f"UWF-{uw_id}-{str(doc_id)[:16]}"
+                if file_id in files:
+                    continue
+                files[file_id] = {
+                    "id": file_id,
+                    "application_id": uw_id,
+                    "chat_application_id": application_id,
+                    "name": item.get("name"),
+                    "type": item.get("mime_type"),
+                    "size": item.get("size"),
+                    "sha256": item.get("sha256"),
+                    "kind": item.get("kind"),
+                    "persistent_doc_id": item.get("persistent_doc_id"),
+                    "storage_path": item.get("storage_path"),
+                    "uploaded_at": now,
+                    "source": "chat_adl_referral",
+                }
+    except Exception as exc:
+        logger.warning("Senior referral media link failed for %s: %s", application_id, exc)
+
+    outcome = svc.mark_senior_referred(application_id, underwriting_id=uw_id)
+    _pop_and_write_events(outcome)
+    return record
+
+
+def _maybe_queue_senior_referral(application_id: str, result: Dict[str, Any]) -> None:
+    """If a quote/result requires senior review, open the staff queue row."""
+    quote = result.get("quote") or {}
+    if not (quote.get("adl_declined") or quote.get("eligible") is False
+            or result.get("needs_senior_referral")):
+        return
+    try:
+        referral = _ensure_senior_uw_queue(application_id)
+    except Exception as exc:
+        logger.warning("Senior UW queue failed for %s: %s", application_id, exc)
+        return
+    if referral:
+        result["senior_referral"] = {
+            "underwriting_id": referral.get("id"),
+            "status": referral.get("status"),
+            "customer_email": referral.get("customer_email"),
+            "customer_phone": referral.get("customer_phone"),
+        }
 
 
 def _validate_invite_code(code: str) -> Optional[Dict[str, Any]]:
@@ -405,9 +604,31 @@ def _handle_finalize(application_id: str, handler) -> Tuple[int, Dict[str, Any]]
     svc = _service()
     prep = svc.prepare_finalize(application_id)
     if not prep.get("ok"):
-        response = {"error": prep.get("error")}
+        response: Dict[str, Any] = {"error": prep.get("error")}
         if prep.get("submission"):
             response["submission"] = prep["submission"]
+        # ADL / eligibility blocks must still land on the underwriter queue
+        # with contact details — otherwise the applicant is told a senior
+        # underwriter will reach out, and staff have nothing to work from.
+        if prep.get("needs_senior_referral") or (
+            "senior underwriter" in str(prep.get("error") or "").lower()
+        ):
+            try:
+                referral = _ensure_senior_uw_queue(application_id)
+            except Exception as exc:
+                logger.warning(
+                    "Senior UW queue on blocked finalize failed for %s: %s",
+                    application_id, exc,
+                )
+                referral = None
+            if referral:
+                response["senior_referral"] = {
+                    "underwriting_id": referral.get("id"),
+                    "status": referral.get("status"),
+                    "customer_email": referral.get("customer_email"),
+                    "customer_phone": referral.get("customer_phone"),
+                }
+                response["underwriting_id"] = referral.get("id")
         return prep.get("status_code", 400), response
 
     payload = prep["payload"]
@@ -652,6 +873,7 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]],
         result = svc.submit_answer(application_id, body.get("value"),
                                    step_id=body.get("step"))
         _pop_and_write_events(result)
+        _maybe_queue_senior_referral(application_id, result)
         status_code = 200 if result.pop("ok", False) else result.pop("status_code", 400)
         if status_code >= 400 and "error" not in result:
             result["error"] = "Invalid answer"

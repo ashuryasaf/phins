@@ -239,6 +239,15 @@ _UPGRADE_NEW_COLUMNS = [
     # Agent ecosystem: referring agent linkage
     ('customers', 'referring_agent_id', 'VARCHAR(50)', None),
     ('suppliers', 'referring_agent_id', 'VARCHAR(50)', None),
+    # Chat "Phin" senior-review referral fields on underwriting applications
+    # (rows opened without a policy by the chat ADL/eligibility bridge).
+    ('underwriting_applications', 'customer_phone', 'VARCHAR(50)', None),
+    ('underwriting_applications', 'source', 'VARCHAR(50)', None),
+    ('underwriting_applications', 'recommendation_type', 'VARCHAR(50)', None),
+    ('underwriting_applications', 'referral_reason', 'TEXT', None),
+    ('underwriting_applications', 'chat_application_id', 'VARCHAR(50)', None),
+    ('underwriting_applications', 'adl_level', 'INTEGER', None),
+    ('underwriting_applications', 'monthly_premium', 'FLOAT', None),
 ]
 # Columns whose declared type must be widened on existing databases
 # (table_name, column_name, new_type).
