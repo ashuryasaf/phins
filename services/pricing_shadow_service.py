@@ -272,9 +272,19 @@ def price_application_with_kernel(payload: Dict[str, Any]) -> Optional[Dict[str,
         gender = inputs.get("gender")
         smoking = inputs.get("smoking_status")
         ethnicity = inputs.get("ethnicity")
+        # Enforce the actuary's ADL coverage caps before pricing, mirroring the
+        # portfolio path (`_check_underwriting`): impaired ADL lives are priced
+        # on the reduced face amount rather than the full requested sum.
+        requested_coverage = float(inputs["coverage_amount"])
+        coverage_cap = adl_rules.get("coverage_cap")
+        priced_coverage = (
+            min(requested_coverage, float(coverage_cap))
+            if coverage_cap is not None
+            else requested_coverage
+        )
         customer = PricingCustomer(
             age=int(inputs["age"]),
-            coverage=float(inputs["coverage_amount"]),
+            coverage=priced_coverage,
             term_years=int(inputs["term_years"]),
             adl_level=int(inputs["adl_level"]),
             gender=gender,

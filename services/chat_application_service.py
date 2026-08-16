@@ -1094,6 +1094,16 @@ class ChatPolicyApplicationService:
 
     def _quote_narrative(self, quote: Dict[str, Any]) -> str:
         kernel = quote.get("pricing_source") == "pricing_kernel"
+        # The pricing kernel declines lives whose ADL meets the actuary's
+        # published decline threshold. Surface that outcome instead of
+        # presenting a purchasable price the underwriting rules forbid.
+        if kernel and (quote.get("adl_declined") or quote.get("eligible") is False):
+            return (
+                "Based on your current functional-needs answers, I can't offer an "
+                "automated quote right now - our underwriting rules refer applications "
+                "at this level to a senior underwriter, who will reach out to review "
+                "your options with you personally."
+            )
         src = ("our actuarial pricing kernel (versioned mortality and disability tables)"
                if kernel else "our standard rate card")
         monthly = quote.get("monthly") or 0
@@ -1638,6 +1648,14 @@ class ChatPolicyApplicationService:
             if missing:
                 return {"ok": False, "status_code": 409,
                         "error": f"Still missing answers for: {', '.join(missing)}"}
+            # Do not submit lives the actuary's underwriting rules decline: the
+            # kernel quote flags these, and the portfolio path skips them.
+            quote = session.get("quote") or {}
+            if quote.get("adl_declined") or quote.get("eligible") is False:
+                return {"ok": False, "status_code": 409,
+                        "error": ("Based on your functional-needs answers, this "
+                                  "application needs a senior underwriter's review "
+                                  "before it can be submitted.")}
             payload = self.build_submission_payload(session)
             checksum = _checksum_payload(payload)
             session["pending_submission_checksum"] = checksum
