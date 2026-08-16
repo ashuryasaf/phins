@@ -84,12 +84,137 @@ def _coerce_json_container(val, default):
 
 # ── input extraction ─────────────────────────────────────────────────────────
 
+def _age_from_dob(dob_value: Any) -> Optional[int]:
+    """Compute whole years from a DOB string / datetime. Unknown → None."""
+    if dob_value in (None, ""):
+        return None
+    try:
+        dob_str = str(dob_value).replace("Z", "+00:00").split("T")[0].strip()
+        dob = datetime.fromisoformat(dob_str)
+        return (datetime.now() - dob).days // 365
+    except Exception:
+        return None
+
+
+def _normalize_smoking_status(raw: Any) -> Optional[str]:
+    """Map chat/classic/Hebrew smoking answers onto scorer labels."""
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raw = str(raw)
+    smoke_raw = raw.strip()
+    if not smoke_raw:
+        return None
+    smoke_val = smoke_raw.lower()
+    if smoke_val in ("yes", "current", "smoker", "true", "tobacco"):
+        return "current"
+    if smoke_val in ("former", "ex", "quit", "ex-smoker", "ex_smoker"):
+        return "former"
+    if smoke_val in ("no", "never", "non-smoker", "nonsmoker", "non_smoker", "false"):
+        return "never"
+    try:
+        from services.hebrew_assessment_lexicon import smoking_status_from_hebrew
+        he_status = smoking_status_from_hebrew(smoke_raw)
+        if he_status:
+            return he_status
+    except ImportError:
+        pass
+    return smoke_val
+
+
+def _adl_level_from_sources(app: Dict[str, Any], questionnaire: Dict[str, Any]) -> Optional[int]:
+    """Resolve ADL severity from denormalized columns or chat answers."""
+    adl = _optional_int(app.get("adl_level"))
+    if adl is not None:
+        return max(1, min(10, adl))
+    adl = _optional_int(questionnaire.get("adl_level"))
+    if adl is not None:
+        return max(1, min(10, adl))
+    daily = str(questionnaire.get("daily_function") or "").strip().lower()
+    mapping = {"full": 5, "minor": 6, "moderate": 7, "significant": 8}
+    if daily in mapping:
+        return mapping[daily]
+    return None
+
+
+def _conditions_from_chat_questionnaire(questionnaire: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Rebuild the same condition loadings the chat underwriter used.
+
+    Chat stores free-text ``conditions_list`` plus family/hazardous/surgery
+    flags rather than a pre-scored ``medical_conditions`` array. Without this
+    reconstruction the risk report sees an empty file and falls back to the
+    base 10% / very_low score.
+    """
+    conditions: List[Dict[str, Any]] = []
+    medical_flag = str(questionnaire.get("medical_conditions") or "").strip().lower()
+    conditions_list = questionnaire.get("conditions_list") or ""
+    if medical_flag in ("yes", "true", "y") or (
+        conditions_list and str(conditions_list).strip().lower() not in
+        ("", "none", "no", "n/a", "na", "-")
+    ):
+        try:
+            from services.chat_application_service import parse_conditions_text
+            conditions.extend(parse_conditions_text(conditions_list))
+        except Exception:
+            raw = str(conditions_list).strip()
+            if raw:
+                conditions.append({
+                    "condition": raw[:120],
+                    "severity": "moderate",
+                    "risk_impact": 0.10,
+                    "loading_percentage": 10,
+                    "exclusion_recommended": False,
+                })
+
+    fam = questionnaire.get("family_history") or []
+    if isinstance(fam, str):
+        fam = [p.strip() for p in fam.split(",") if p.strip()]
+    if isinstance(fam, list):
+        for item in fam:
+            if str(item).strip().lower() not in ("", "none", "no"):
+                conditions.append({
+                    "condition": f"family history: {item}",
+                    "risk_impact": 0.03,
+                    "loading_percentage": 0,
+                    "severity": "family_history",
+                    "exclusion_recommended": False,
+                })
+
+    hazardous = str(questionnaire.get("hazardous")
+                    or questionnaire.get("hazardous_activities") or "").lower()
+    if hazardous == "regular":
+        conditions.append({
+            "condition": "regular hazardous activities",
+            "risk_impact": 0.08, "loading_percentage": 10,
+            "severity": "lifestyle", "exclusion_recommended": False,
+        })
+    elif hazardous == "occasional":
+        conditions.append({
+            "condition": "occasional hazardous activities",
+            "risk_impact": 0.04, "loading_percentage": 5,
+            "severity": "lifestyle", "exclusion_recommended": False,
+        })
+
+    if str(questionnaire.get("surgery") or "").lower() == "yes":
+        surgery_list = str(questionnaire.get("surgery_list") or "")[:120]
+        conditions.append({
+            "condition": f"recent surgery: {surgery_list}" if surgery_list
+            else "recent surgery",
+            "risk_impact": 0.05, "loading_percentage": 5,
+            "severity": "history", "exclusion_recommended": False,
+        })
+    return conditions
+
+
 def extract_risk_inputs(app: Dict[str, Any], customer: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Extract scoring inputs from an application + customer record.
 
     Read-only over pipeline data: values may arrive as strings (HTML forms) or
     JSON text (database rows) and are coerced defensively. Unknown values stay
     ``None`` — never defaulted — so risk is computed only from actual data.
+
+    Understands both the classic apply-form shape and the chat senior-referral
+    questionnaire (``dob``, ``tobacco``, ``conditions_list``, ``daily_function``).
     """
     app = app or {}
     customer = customer or {}
@@ -97,18 +222,28 @@ def extract_risk_inputs(app: Dict[str, Any], customer: Optional[Dict[str, Any]] 
     questionnaire = _coerce_json_container(
         app.get("questionnaire_responses") or app.get("questionnaire"), {}
     )
+    data_sources = _coerce_json_container(app.get("data_sources"), {})
+    stored_assessment = _coerce_json_container(
+        app.get("assessment") or data_sources.get("chat_assessment")
+        or data_sources.get("assessment"),
+        {},
+    )
 
-    # Age: from application, questionnaire, or calculated from DOB.
+    # Age: from application, questionnaire, DOB fields, or customer record.
     age = _optional_int(app.get("age"))
     if not age:
         age = _optional_int(questionnaire.get("age"))
-    if not age and customer.get("date_of_birth"):
-        try:
-            dob_str = str(customer["date_of_birth"]).replace("Z", "+00:00").split("T")[0]
-            dob = datetime.fromisoformat(dob_str)
-            age = (datetime.now() - dob).days // 365
-        except Exception:
-            age = None  # DO NOT DEFAULT - leave as unknown
+    if not age:
+        age = _optional_int(stored_assessment.get("age"))
+    if not age:
+        age = _age_from_dob(
+            questionnaire.get("dob")
+            or questionnaire.get("date_of_birth")
+            or app.get("dob")
+            or app.get("date_of_birth")
+            or customer.get("dob")
+            or customer.get("date_of_birth")
+        )
     if not age:
         age = _optional_int(customer.get("age"))
 
@@ -117,65 +252,48 @@ def extract_risk_inputs(app: Dict[str, Any], customer: Optional[Dict[str, Any]] 
     if disability_pct is None:
         disability_pct = _optional_int(questionnaire.get("disability_percentage"))
 
-    # BMI: from application, or calculate from height/weight in questionnaire
+    # BMI: from application, stored assessment, or height/weight
     bmi = _optional_float(app.get("bmi"))
     if bmi is None:
-        height = app.get("height_cm") or questionnaire.get("height")
-        weight = app.get("weight_kg") or questionnaire.get("weight")
+        bmi = _optional_float(stored_assessment.get("bmi"))
+    if bmi is None:
+        height = (
+            app.get("height_cm") or questionnaire.get("height")
+            or questionnaire.get("height_cm")
+        )
+        weight = (
+            app.get("weight_kg") or questionnaire.get("weight")
+            or questionnaire.get("weight_kg")
+        )
         if height and weight:
             try:
-                height = float(height)
-                weight = float(weight)
-                if height > 0 and weight > 0:
-                    bmi = round(weight / ((height / 100) ** 2), 1)
+                height_f = float(height)
+                weight_f = float(weight)
+                if height_f > 0 and weight_f > 0:
+                    bmi = round(weight_f / ((height_f / 100) ** 2), 1)
             except Exception:
                 pass
 
-    # Smoking status: from application or questionnaire. Coerce truthy
-    # non-string values only so falsy inputs still fall back to the
-    # questionnaire rather than becoming the truthy string "False".
+    # Smoking: classic ``smoke`` + chat ``tobacco`` + denormalized column
     smoking = app.get("smoking_status")
     if smoking and not isinstance(smoking, str):
         smoking = str(smoking)
-    # Hebrew smoking phrases on the application (``מעשן`` / ``עישון``) are
-    # normalised to the English status labels the scorer already understands.
-    if smoking:
-        try:
-            from services.hebrew_assessment_lexicon import smoking_status_from_hebrew
-            he_status = smoking_status_from_hebrew(str(smoking))
-            if he_status:
-                smoking = he_status
-        except ImportError:
-            pass
-    if not smoking and questionnaire.get("smoke") is not None:
-        smoke_raw = str(questionnaire.get("smoke", "")).strip()
-        smoke_val = smoke_raw.lower()
-        if smoke_val in ["yes", "current", "smoker", "true"]:
-            smoking = "current"
-        elif smoke_val in ["former", "ex", "quit"]:
-            smoking = "former"
-        elif smoke_val in ["no", "never", "non-smoker", "false"]:
-            smoking = "never"
-        else:
-            try:
-                from services.hebrew_assessment_lexicon import smoking_status_from_hebrew
-                he_status = smoking_status_from_hebrew(smoke_raw)
-                if he_status:
-                    smoking = he_status
-                elif smoke_val:
-                    smoking = smoke_val
-            except ImportError:
-                if smoke_val:
-                    smoking = smoke_val
+    smoking = _normalize_smoking_status(smoking) if smoking else None
+    if not smoking:
+        for key in ("smoke", "tobacco", "smoking", "smoking_status"):
+            if questionnaire.get(key) is not None:
+                smoking = _normalize_smoking_status(questionnaire.get(key))
+                if smoking:
+                    break
 
     gender = app.get("gender") or questionnaire.get("gender") or customer.get("gender")
     occupation = (
         app.get("occupation") or questionnaire.get("occupation")
         or customer.get("occupation")
     )
+    adl_level = _adl_level_from_sources(app, questionnaire)
 
-    # Medical conditions: the application's medical_conditions array is the
-    # authoritative source (JSON string in DB, list in-memory).
+    # Medical conditions: structured array first, then chat questionnaire rebuild.
     app_conditions = _coerce_json_container(app.get("medical_conditions"), [])
     medical_conditions: List[Dict[str, Any]] = []
     has_disability_from_array = False
@@ -184,9 +302,9 @@ def extract_risk_inputs(app: Dict[str, Any], customer: Optional[Dict[str, Any]] 
     if isinstance(app_conditions, list):
         for cond in app_conditions:
             if isinstance(cond, dict):
-                cond_name = cond.get("condition", "").lower()
+                cond_name = str(cond.get("condition", "")).lower()
                 if ("disability" in cond_name or "mobility" in cond_name
-                        or "impairment" in cond_name):
+                        or "impairment" in cond_name or "adl" in cond_name):
                     has_disability_from_array = True
                 if "obesity" in cond_name or "bmi" in cond_name:
                     has_obesity_from_array = True
@@ -219,6 +337,31 @@ def extract_risk_inputs(app: Dict[str, Any], customer: Optional[Dict[str, Any]] 
                     "loading_percentage": 10,
                     "exclusion_recommended": False,
                 })
+
+    if not medical_conditions:
+        medical_conditions.extend(_conditions_from_chat_questionnaire(questionnaire))
+
+    # ADL functional impairment contributes to the medical risk view used by
+    # underwriters (mirrors actuarial disability exclusion / loadings).
+    if adl_level is not None and adl_level >= 6 and not has_disability_from_array:
+        adl_impact = {6: 0.05, 7: 0.12, 8: 0.20, 9: 0.30, 10: 0.40}.get(adl_level, 0.08)
+        if disability_pct is None:
+            disability_pct = {6: 15, 7: 30, 8: 45, 9: 60, 10: 75}.get(adl_level, 20)
+        medical_conditions.append({
+            "condition": f"ADL functional impairment (level {adl_level})",
+            "icd_code": "Z73.6",
+            "severity": (
+                "severe" if adl_level >= 8
+                else "moderate" if adl_level >= 7 else "mild"
+            ),
+            "status": "active",
+            "treatment": None,
+            "risk_impact": adl_impact,
+            "loading_percentage": int(adl_impact * 100),
+            "exclusion_recommended": adl_level >= 8,
+            "notes": f"daily_function={questionnaire.get('daily_function') or 'n/a'}",
+        })
+        has_disability_from_array = True
 
     # Only add disability from direct fields if not already in the array
     if disability_pct is not None and disability_pct > 0 and not has_disability_from_array:
@@ -267,8 +410,10 @@ def extract_risk_inputs(app: Dict[str, Any], customer: Optional[Dict[str, Any]] 
         "smoking_status": smoking,
         "gender": gender,
         "occupation": occupation,
+        "adl_level": adl_level,
         "medical_conditions": medical_conditions,
         "questionnaire": questionnaire,
+        "stored_assessment": stored_assessment or None,
     }
 
 
@@ -430,6 +575,11 @@ def assess_application(
 
     Never raises: on unexpected data problems it returns a conservative
     "unknown" assessment (score None) so decision paths keep working.
+
+    When the application already carries a chat/engine assessment snapshot and
+    live re-extraction would collapse to the empty-file base score (10% /
+    very_low), prefer the stored snapshot so underwriter reports match what
+    the applicant was told.
     """
     try:
         inputs = extract_risk_inputs(app, customer)
@@ -441,6 +591,7 @@ def assess_application(
             bmi=inputs["bmi"],
             disability_pct=inputs["disability_percentage"],
         )
+        scores = _reconcile_with_stored_assessment(app, inputs, scores)
         return {"inputs": inputs, **scores}
     except Exception as exc:
         logger.warning("Underwriting risk assessment failed: %s", exc)
@@ -452,6 +603,101 @@ def assess_application(
             "engine_version": ENGINE_VERSION,
             "error": str(exc),
         }
+
+
+_RISK_RANK = {
+    "very_low": 0, "low": 1, "medium": 2, "moderate": 3,
+    "elevated": 4, "high": 5, "very_high": 6,
+}
+
+_REC_RANK = {
+    "auto_approve": 0,
+    "approve_standard": 1,
+    "approve_with_loading": 2,
+    "approve_with_exclusions": 3,
+    "refer_senior_uw": 4,
+    "decline": 5,
+}
+
+
+def _reconcile_with_stored_assessment(
+    app: Dict[str, Any],
+    inputs: Dict[str, Any],
+    scores: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Keep report/decision scores aligned with the chat actuarial assessment.
+
+    Prefer live re-score when extraction found real inputs. If the live score
+    is only the empty-file base (0.10 / very_low / auto_approve) while the
+    application record already labels the life as elevated/high or referred
+    for senior review, adopt the stored snapshot instead of fabricating a
+    clean bill of health.
+    """
+    stored = inputs.get("stored_assessment") or {}
+    app_category = str(
+        app.get("risk_assessment") or app.get("risk_score") or ""
+    ).strip().lower()
+    stored_category = str(stored.get("risk_category") or "").strip().lower()
+    stored_overall = stored.get("overall_risk")
+    stored_rec = stored.get("recommendation_type")
+    app_rec = app.get("recommendation_type")
+
+    live_is_base_only = (
+        scores.get("overall_risk") is not None
+        and float(scores["overall_risk"]) <= 0.15
+        and not inputs.get("age")
+        and not inputs.get("medical_conditions")
+        and not inputs.get("smoking_status")
+    )
+    labeled_risky = _RISK_RANK.get(app_category, -1) >= _RISK_RANK["moderate"] or (
+        _RISK_RANK.get(stored_category, -1) >= _RISK_RANK["moderate"]
+    )
+    referred = str(app_rec or stored_rec or "").lower() in (
+        "refer_senior_uw", "decline"
+    ) or bool(app.get("adl_declined")) or app.get("eligible") is False
+
+    if stored and stored_overall is not None and (live_is_base_only or labeled_risky):
+        try:
+            overall = float(stored_overall)
+        except (TypeError, ValueError):
+            overall = scores.get("overall_risk")
+        if overall is not None:
+            scores = dict(scores)
+            scores["overall_risk"] = overall
+            if stored_category:
+                scores["risk_category"] = stored_category
+            if stored.get("confidence") is not None:
+                scores["confidence"] = stored.get("confidence")
+            if stored.get("premium_adjustment") is not None:
+                scores["premium_adjustment"] = stored.get("premium_adjustment")
+            if stored.get("age_risk") is not None:
+                scores["age_risk"] = stored.get("age_risk")
+            if stored.get("medical_risk") is not None:
+                scores["medical_risk"] = stored.get("medical_risk")
+            if stored.get("lifestyle_risk") is not None:
+                scores["lifestyle_risk"] = stored.get("lifestyle_risk")
+            scores["reconciled_from"] = "stored_chat_assessment"
+
+    # Actuarial ADL decline / senior-referral flags always win over a softer
+    # health-only recommendation so the report matches the chat decision.
+    if referred:
+        scores = dict(scores)
+        preferred = str(stored_rec or app_rec or "refer_senior_uw")
+        live_rec = str(scores.get("recommendation_type") or "")
+        # Chat senior-review queue is an explicit human-contact path — keep the
+        # chat/app recommendation (refer_senior_uw) rather than letting the
+        # reconstructed ADL loading silently upgrade it to auto-decline.
+        if str(app.get("source") or "") == "chat_adl_referral":
+            scores["recommendation_type"] = preferred
+        elif _REC_RANK.get(preferred, 0) >= _REC_RANK.get(live_rec, 0):
+            scores["recommendation_type"] = preferred
+        scores["senior_referral"] = True
+
+    if labeled_risky and _RISK_RANK.get(str(scores.get("risk_category") or "").lower(), -1) < _RISK_RANK.get(app_category or stored_category, -1):
+        scores = dict(scores)
+        scores["risk_category"] = app_category or stored_category
+
+    return scores
 
 
 __all__ = [
