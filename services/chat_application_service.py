@@ -98,6 +98,7 @@ JOURNEY_STAGES = [
     "payment_captured",
     "stopped",
     "continued",
+    "referred_senior_uw",
     "submitted",
 ]
 
@@ -1650,12 +1651,20 @@ class ChatPolicyApplicationService:
                         "error": f"Still missing answers for: {', '.join(missing)}"}
             # Do not submit lives the actuary's underwriting rules decline: the
             # kernel quote flags these, and the portfolio path skips them.
+            # Callers MUST queue a senior-UW referral record so staff can
+            # contact the applicant (chat sessions alone are in-memory).
             quote = session.get("quote") or {}
             if quote.get("adl_declined") or quote.get("eligible") is False:
-                return {"ok": False, "status_code": 409,
-                        "error": ("Based on your functional-needs answers, this "
-                                  "application needs a senior underwriter's review "
-                                  "before it can be submitted.")}
+                return {
+                    "ok": False,
+                    "status_code": 409,
+                    "needs_senior_referral": True,
+                    "error": (
+                        "Based on your functional-needs answers, this "
+                        "application needs a senior underwriter's review "
+                        "before it can be submitted."
+                    ),
+                }
             payload = self.build_submission_payload(session)
             checksum = _checksum_payload(payload)
             session["pending_submission_checksum"] = checksum
@@ -1746,15 +1755,108 @@ class ChatPolicyApplicationService:
     # BI / funnel
     # ------------------------------------------------------------------
 
+    def needs_senior_referral(self, session_or_quote: Dict[str, Any]) -> bool:
+        """True when the actuarial quote forbids automated submission."""
+        quote = session_or_quote.get("quote") if "quote" in session_or_quote else session_or_quote
+        quote = quote or {}
+        return bool(quote.get("adl_declined") or quote.get("eligible") is False)
+
+    def senior_referral_snapshot(self, application_id: str) -> Optional[Dict[str, Any]]:
+        """Staff-facing payload used to open a durable underwriting queue row.
+
+        Chat sessions live in process memory; the underwriter dashboard reads
+        ``UNDERWRITING_APPLICATIONS``. This snapshot is the bridge.
+        """
+        with self._lock:
+            session = self._get(application_id)
+            if not session:
+                return None
+            quote = session.get("quote") or {}
+            if not self.needs_senior_referral(quote):
+                return None
+            contact = dict(session.get("contact") or {})
+            assessment = dict(session.get("assessment") or {})
+            answers = dict(session.get("answers") or {})
+            # Never hand payment PAN/CVV to the referral queue.
+            card = answers.get("payment_card")
+            if isinstance(card, dict):
+                answers["payment_card"] = {
+                    "card_last4": card.get("card_last4") or str(card.get("card_number") or "")[-4:],
+                    "cardholder_name": card.get("cardholder_name"),
+                    "expiry_month": card.get("expiry_month"),
+                    "expiry_year": card.get("expiry_year"),
+                }
+            media = [
+                {k: v for k, v in m.items() if k != "data_b64"}
+                for m in (session.get("media") or [])
+            ]
+            return {
+                "chat_application_id": session["id"],
+                "resume_code": session.get("resume_code"),
+                "status": session.get("status"),
+                "email_verified": bool(session.get("email_verified")),
+                "contact": contact,
+                "answers": answers,
+                "assessment": assessment,
+                "quote": {
+                    "pricing_source": quote.get("pricing_source"),
+                    "eligible": quote.get("eligible"),
+                    "adl_declined": quote.get("adl_declined"),
+                    "decline_reason": quote.get("decline_reason"),
+                    "adl_level": quote.get("adl_level"),
+                    "adl_loading": quote.get("adl_loading"),
+                    "disability_excluded": quote.get("disability_excluded"),
+                    "adl_coverage_cap": quote.get("adl_coverage_cap"),
+                    "coverage_amount": quote.get("coverage_amount") or answers.get("coverage_amount"),
+                    "coverage_years": quote.get("coverage_years") or answers.get("coverage_years"),
+                    "monthly": quote.get("monthly"),
+                    "annual": quote.get("annual"),
+                    "tables_version": quote.get("tables_version"),
+                    "config_version": quote.get("config_version"),
+                    "product_id": quote.get("product_id"),
+                    "integrity_hash": quote.get("integrity_hash"),
+                    "quoted_at": quote.get("quoted_at"),
+                },
+                "media": media,
+                "journey": list(session.get("journey") or []),
+                "existing_underwriting_id": (session.get("senior_referral") or {}).get(
+                    "underwriting_id"
+                ),
+            }
+
+    def mark_senior_referred(self, application_id: str, *, underwriting_id: str) -> Dict[str, Any]:
+        """Record that staff now have a durable queue row for this chat file."""
+        with self._lock:
+            session = self._get(application_id)
+            if not session:
+                return {"ok": False, "status_code": 404, "error": "Application not found"}
+            prior = session.get("senior_referral") or {}
+            if prior.get("underwriting_id") == underwriting_id:
+                return {"ok": True, "underwriting_id": underwriting_id, "ledger_events": []}
+            session["senior_referral"] = {
+                "underwriting_id": underwriting_id,
+                "queued_at": _utc_now_iso(),
+            }
+            if session["status"] not in ("submitted", "paused", "pending_reverify"):
+                session["status"] = "referred_senior_uw"
+            events = [self._journey_add(
+                session, "referred_senior_uw", actor="system",
+                meta={"underwriting_id": underwriting_id,
+                      "decline_reason": (session.get("quote") or {}).get("decline_reason"),
+                      "adl_level": (session.get("quote") or {}).get("adl_level")})]
+            return {"ok": True, "underwriting_id": underwriting_id, "ledger_events": events}
+
     def funnel_snapshot(self) -> Dict[str, Any]:
         with self._lock:
             sessions = list(self._sessions.values())
         stages = {
             "started": 0, "contact_captured": 0, "otp_verified": 0,
             "questions_completed": 0, "quoted": 0, "payment_captured": 0,
-            "submitted": 0, "paused": 0, "invited": 0, "media_attached": 0,
+            "referred_senior_uw": 0, "submitted": 0, "paused": 0,
+            "invited": 0, "media_attached": 0,
         }
         items = []
+        senior_queue = []
         for s in sessions:
             seen = {j["stage"] for j in s["journey"]}
             for stage in stages:
@@ -1765,7 +1867,10 @@ class ChatPolicyApplicationService:
                 # journey-key loop above never sees 'paused'; count it here by
                 # the live session status instead.
                 stages["paused"] += 1
-            items.append({
+            quote = s.get("quote") or {}
+            needs_senior = self.needs_senior_referral(quote)
+            contact = s.get("contact") or {}
+            item = {
                 "application_id": s["id"],
                 "status": s["status"],
                 "created_at": s["created_at"],
@@ -1773,12 +1878,26 @@ class ChatPolicyApplicationService:
                 "email_verified": s["email_verified"],
                 "progress": self._progress(s),
                 "invited_by": s.get("invited_by"),
-                "quote_monthly": (s.get("quote") or {}).get("monthly"),
+                "quote_monthly": quote.get("monthly"),
                 "risk_category": (s.get("assessment") or {}).get("risk_category"),
                 "policy_id": (s.get("submission") or {}).get("policy_id"),
                 "customer_id": s.get("customer_id"),
                 "journey_stages": sorted(seen),
-            })
+                "needs_senior_review": needs_senior,
+                "senior_underwriting_id": (s.get("senior_referral") or {}).get(
+                    "underwriting_id"
+                ),
+                "contact_email": contact.get("email"),
+                "contact_phone": contact.get("phone"),
+                "contact_name": contact.get("name"),
+                "adl_level": quote.get("adl_level") or (s.get("assessment") or {}).get(
+                    "adl_level"
+                ),
+                "decline_reason": quote.get("decline_reason"),
+            }
+            items.append(item)
+            if needs_senior and s["status"] != "submitted":
+                senior_queue.append(item)
         total = len(sessions)
         submitted = stages["submitted"]
         return {
@@ -1786,6 +1905,8 @@ class ChatPolicyApplicationService:
             "stage_counts": stages,
             "conversion_rate": round(submitted / total, 3) if total else 0.0,
             "sessions": items,
+            "senior_review_queue": senior_queue,
+            "senior_review_pending": len(senior_queue),
         }
 
     def journey_for(self, application_id: str) -> Optional[Dict[str, Any]]:

@@ -513,3 +513,106 @@ def test_claim_code_cannot_take_over_existing_account():
                        "captcha_fallback": True}
     )
     assert status != 200
+
+
+def test_adl_decline_opens_underwriter_queue_with_contact(isolated_store):
+    """Blocked senior-review chats must appear on /api/underwriting with contact.
+
+    Before this bridge, prepare_finalize refused submit and the applicant was
+    told a senior underwriter would reach out — but UNDERWRITING_APPLICATIONS
+    never received a row, so admin/underwriter dashboards showed nothing.
+    """
+    # Chat "significant" maps to ADL 8; lower the actuary threshold so that
+    # answer is a hard decline (default threshold is 9).
+    isolated_store.config.decline_threshold = 8
+
+    email = "chat.senior.review@example.com"
+    phone = "+1-555-0199"
+    status, body = _post("/api/chat-application/start", {})
+    assert status == 201, body
+    app_id = body["application_id"]
+    resume_code = body["resume_code"]
+
+    _answer(app_id, "Senior Case", resume_code)
+    _answer(app_id, email, resume_code)
+    _answer(app_id, phone, resume_code)
+
+    status, otp = _post(
+        f"/api/chat-application/{app_id}/otp/request", {"resume_code": resume_code}
+    )
+    assert status == 200, otp
+    status, verified = _post(
+        f"/api/chat-application/{app_id}/otp/verify",
+        {
+            "verification_id": otp["verification_id"],
+            "otp_code": otp["demo_otp_code"],
+            "resume_code": resume_code,
+        },
+    )
+    assert status == 200, verified
+
+    for value in (
+        "1975-01-15", "male", "Teacher", 175, 80, "no", "no", "no", "no",
+        ["none"], "none",
+    ):
+        _answer(app_id, value, resume_code)
+    _answer(app_id, "significant", resume_code)  # ADL 8 -> declined
+    _answer(app_id, 500000, resume_code)
+    _answer(app_id, "20", resume_code)
+    quote_reply = _answer(app_id, "none", resume_code)
+    quote = quote_reply.get("quote") or {}
+    assert quote.get("pricing_source") == "pricing_kernel", quote
+    assert quote.get("adl_declined") is True or quote.get("eligible") is False, quote
+
+    # Queue opens as soon as the declined quote is produced.
+    referral = quote_reply.get("senior_referral") or {}
+    assert referral.get("underwriting_id"), quote_reply
+    uw_id = referral["underwriting_id"]
+    queued = portal.UNDERWRITING_APPLICATIONS.get(uw_id)
+    assert queued is not None
+    assert queued["status"] == "pending"
+    assert queued["source"] == "chat_adl_referral"
+    assert queued["customer_email"] == email
+    assert queued["customer_phone"] == phone
+    assert queued["chat_application_id"] == app_id
+    assert queued["customer_name"] == "Senior Case"
+
+    # Finish the chat and confirm finalize still refuses — but keeps the queue.
+    _answer(app_id, "skip", resume_code)
+    _answer(app_id, "monthly", resume_code)
+    _answer(
+        app_id,
+        {
+            "card_number": "4111 1111 1111 1111",
+            "cardholder_name": "SENIOR CASE",
+            "expiry_month": "10",
+            "expiry_year": "2032",
+            "cvv": "321",
+        },
+        resume_code,
+    )
+    _answer(app_id, "yes", resume_code)
+    _answer(app_id, "agree", resume_code)
+
+    status, blocked = _post(
+        f"/api/chat-application/{app_id}/finalize", {"resume_code": resume_code}
+    )
+    assert status == 409, blocked
+    assert "senior underwriter" in (blocked.get("error") or "").lower()
+    assert blocked.get("underwriting_id") == uw_id
+    assert blocked.get("senior_referral", {}).get("customer_email") == email
+
+    # Staff list endpoint (underwriter dashboard) surfaces the contact row.
+    status, login = _post(
+        "/api/login",
+        {"username": "underwriter", "password": "under123", "captcha_fallback": True},
+    )
+    assert status == 200, login
+    token = login.get("token") or login.get("session_token")
+    status, apps = _request("GET", "/api/underwriting", token=token)
+    assert status == 200, apps
+    match = next((a for a in apps if a.get("id") == uw_id), None)
+    assert match is not None
+    assert match["customer_email"] == email
+    assert match["customer_phone"] == phone
+    assert match["status"] == "pending"
