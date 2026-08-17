@@ -19488,6 +19488,263 @@ For claims or questions, please contact:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': f'Failed to generate PDF: {str(e)}'}).encode('utf-8'))
             return
+
+        # Sealed policy contract PDF (AES-256, password = card last4)
+        # GET /api/policies/{id}/contract.pdf — customer (own) or staff hierarchy
+        # GET /api/policies/{id}/contract — metadata only (no password)
+        if path.startswith('/api/policies/') and (
+            path.endswith('/contract.pdf') or path.endswith('/contract')
+        ):
+            parts = [p for p in path.split('/') if p]
+            # api, policies, {id}, contract[.pdf]
+            if len(parts) < 4:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
+                return
+            policy_id = parts[2]
+            want_pdf = path.endswith('/contract.pdf')
+
+            if not session and not PHINS_TEST_MODE:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            user = get_session_user(session) or {}
+            role = (
+                user.get('role')
+                or (session.get('role') if session else '')
+                or ('admin' if (not session and PHINS_TEST_MODE) else '')
+            )
+            role = str(role or '').lower()
+            session_customer_id = get_session_customer_id(session)
+
+            policy = POLICIES.get(policy_id)
+            if not policy:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Policy not found'}).encode('utf-8'))
+                return
+
+            is_staff = is_document_admin_role(role) or role in {
+                'admin', 'underwriter', 'actuary', 'accountant', 'agent'
+            }
+            is_owner = bool(
+                session_customer_id
+                and session_customer_id == str(policy.get('customer_id') or '')
+            )
+            if not is_staff and not is_owner:
+                self._set_json_headers(403)
+                message = (
+                    'Access denied — sealed contracts are only available to the issued customer'
+                    if role == 'customer'
+                    else 'Access denied'
+                )
+                self.wfile.write(json.dumps({'error': message}).encode('utf-8'))
+                return
+
+            from services.underwriting_integrity_service import (
+                build_encrypted_policy_contract_pdf,
+                build_policy_contract,
+                collect_application_media,
+                mint_portal_invite_code,
+                persist_encrypted_contract_document,
+                resolve_card_last4,
+            )
+
+            customer_id = policy.get('customer_id')
+            customer = CUSTOMERS.get(customer_id) or {
+                'id': customer_id,
+                'name': policy.get('customer_name'),
+                'email': policy.get('customer_email'),
+            }
+            uw_id = policy.get('underwriting_id')
+            app = UNDERWRITING_APPLICATIONS.get(uw_id) or {}
+            policy_bills = [
+                b for b in BILLING.values() if b.get('policy_id') == policy_id
+            ]
+            customer_bills = [
+                b for b in BILLING.values() if b.get('customer_id') == customer_id
+            ]
+            bill = policy_bills[0] if policy_bills else (
+                customer_bills[0] if customer_bills else None
+            )
+            card_last4 = resolve_card_last4(policy=policy, app=app, bill=bill)
+
+            contract_meta = (policy.get('policy_contract') or {}) if isinstance(
+                policy.get('policy_contract'), dict
+            ) else {}
+            pdf_meta = contract_meta.get('pdf') if isinstance(contract_meta.get('pdf'), dict) else {}
+
+            if not want_pdf:
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'policy_id': policy_id,
+                    'available': bool(
+                        contract_meta.get('html')
+                        or contract_meta.get('integrity_hash')
+                        or pdf_meta.get('id')
+                        or status_eq(policy, 'active', 'approved')
+                    ),
+                    'download_url': f'/api/policies/{policy_id}/contract.pdf',
+                    'integrity_hash': contract_meta.get('integrity_hash') or pdf_meta.get('integrity_hash'),
+                    'encryption': pdf_meta.get('encryption') or 'AES-256',
+                    'password_hint': (
+                        pdf_meta.get('password_hint')
+                        or 'last_4_digits_of_payment_card_on_file'
+                    ),
+                    'password_ready': bool(card_last4),
+                    'filename': pdf_meta.get('name') or f'PHINS_Policy_{policy_id}_Sealed.pdf',
+                    'access': 'staff' if is_staff else 'customer',
+                }).encode('utf-8'))
+                return
+
+            if not card_last4:
+                self._set_json_headers(409)
+                self.wfile.write(json.dumps({
+                    'error': (
+                        'Cannot lock the sealed contract PDF — payment card last 4 '
+                        'is not on file for this policy'
+                    ),
+                    'password_hint': 'last_4_digits_of_payment_card_on_file',
+                }).encode('utf-8'))
+                return
+
+            # Prefer cached encrypted PDF from the document vault
+            cached_id = pdf_meta.get('id') or f'DOC-CONTRACT-PDF-{policy_id}'
+            cached = POLICY_DOCUMENTS.get(cached_id)
+            pdf_bytes = None
+            filename = f'PHINS_Policy_{policy_id}_Sealed.pdf'
+            integrity_hash = contract_meta.get('integrity_hash')
+            pdf_sha256 = None
+            if cached and cached.get('data') and cached.get('kind') == 'policy_contract_pdf_encrypted':
+                try:
+                    import base64 as _b64
+                    pdf_bytes = _b64.b64decode(cached['data'])
+                    filename = cached.get('name') or filename
+                    integrity_hash = cached.get('integrity_hash') or integrity_hash
+                    pdf_sha256 = cached.get('pdf_sha256')
+                except Exception:
+                    pdf_bytes = None
+
+            if pdf_bytes is None:
+                html = contract_meta.get('html')
+                if not html:
+                    media = collect_application_media(
+                        app=app or policy, underwriting_files=UNDERWRITING_FILES,
+                    )
+                    base_url = (
+                        os.environ.get('BASE_URL')
+                        or os.environ.get('WEBHOOK_BASE_URL')
+                        or 'https://www.phins.ai'
+                    )
+                    rebuilt = build_policy_contract(
+                        policy=policy,
+                        customer=customer,
+                        app=app or {
+                            'id': uw_id,
+                            'payment_setup': (
+                                (policy.get('billing') or {}).get('payment_method')
+                                and {
+                                    'card_last4': card_last4,
+                                    'billing_frequency': (
+                                        (policy.get('billing') or {}).get('frequency') or 'monthly'
+                                    ),
+                                }
+                            ) or {'card_last4': card_last4},
+                        },
+                        bill=bill,
+                        media=media,
+                        base_url=base_url,
+                        invite_or_login_code=(
+                            app.get('portal_invite_code')
+                            or mint_portal_invite_code(str(customer_id or ''))
+                        ),
+                    )
+                    html = rebuilt.get('html')
+                    integrity_hash = rebuilt.get('integrity_hash')
+                    contract_meta = {
+                        'contract_id': rebuilt.get('contract_id'),
+                        'integrity_hash': integrity_hash,
+                        'html': html,
+                        'filename': rebuilt.get('filename'),
+                    }
+                    policy['policy_contract'] = {
+                        **(policy.get('policy_contract') or {}),
+                        **contract_meta,
+                    }
+
+                try:
+                    encrypted = build_encrypted_policy_contract_pdf(
+                        contract={
+                            'html': html,
+                            'integrity_hash': integrity_hash,
+                            'payload': {'policy_id': policy_id},
+                            'contract_id': contract_meta.get('contract_id'),
+                        },
+                        card_last4=card_last4,
+                    )
+                except Exception as pdf_err:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({
+                        'error': f'Failed to generate sealed contract PDF: {pdf_err}'
+                    }).encode('utf-8'))
+                    return
+
+                pdf_bytes = encrypted['pdf_bytes']
+                filename = encrypted['filename']
+                integrity_hash = encrypted['integrity_hash']
+                pdf_sha256 = encrypted['sha256']
+                stored = persist_encrypted_contract_document(
+                    policy_id=policy_id,
+                    customer_id=str(customer_id or ''),
+                    underwriting_id=uw_id,
+                    encrypted_pdf=encrypted,
+                    policy_documents=POLICY_DOCUMENTS,
+                )
+                policy.setdefault('policy_contract', {})
+                policy['policy_contract']['pdf'] = stored
+                try:
+                    save_ledger_data()
+                except Exception:
+                    pass
+
+            # Audit download (never log the password)
+            try:
+                record_transaction(
+                    customer_id=customer_id or 'unknown',
+                    tx_type='policy_contract_pdf_download',
+                    amount=0,
+                    description=f'Sealed contract PDF downloaded for {policy_id}',
+                    metadata={
+                        'policy_id': policy_id,
+                        'integrity_hash': integrity_hash,
+                        'pdf_sha256': pdf_sha256,
+                        'encryption': 'AES-256',
+                        'password_hint': 'last_4_digits_of_payment_card_on_file',
+                        'downloaded_by_role': role or 'unknown',
+                        'staff': bool(is_staff),
+                    },
+                )
+            except Exception:
+                pass
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/pdf')
+            self.send_header(
+                'Content-Disposition',
+                f'attachment; filename="{filename}"',
+            )
+            self.send_header('Content-Length', str(len(pdf_bytes)))
+            self.send_header('X-PHINS-Integrity-Hash', str(integrity_hash or ''))
+            self.send_header('X-PHINS-Encryption', 'AES-256')
+            self.send_header(
+                'X-PHINS-Password-Hint',
+                'last_4_digits_of_payment_card_on_file',
+            )
+            if pdf_sha256:
+                self.send_header('X-PHINS-PDF-SHA256', str(pdf_sha256))
+            self.end_headers()
+            self.wfile.write(pdf_bytes)
+            return
         
         # Claims Management Endpoints
         if path == '/api/claims':
@@ -41962,6 +42219,29 @@ For claims or questions, please contact:
                         'ok': contract_email.get('ok'),
                         'error': contract_email.get('error'),
                     }
+                    # Sealed PDF is generated on first download (AES-256 / card last4)
+                    # so approval stays fast and design-faithful Chrome rendering can
+                    # take the time it needs without blocking the UW decision path.
+                    last4_ready = False
+                    try:
+                        from services.underwriting_integrity_service import resolve_card_last4
+                        last4_ready = bool(resolve_card_last4(policy=policy, app=app, bill=bill))
+                    except Exception:
+                        last4_ready = False
+                    policy['policy_contract']['download_url'] = (
+                        f'/api/policies/{policy_id}/contract.pdf'
+                    )
+                    policy['policy_contract']['password_hint'] = (
+                        'last_4_digits_of_payment_card_on_file'
+                    )
+                    policy['policy_contract']['pdf'] = {
+                        'available': True,
+                        'password_ready': last4_ready,
+                        'encryption': 'AES-256',
+                        'password_hint': 'last_4_digits_of_payment_card_on_file',
+                        'integrity_hash': contract_info.get('integrity_hash'),
+                        'status': 'pending_render',
+                    }
                 except Exception as contract_err:
                     print(f"[UW] Policy contract generation note: {contract_err}")
                 
@@ -41984,6 +42264,20 @@ For claims or questions, please contact:
                             'status': 'issued' if contract_info else 'skipped',
                             'integrity_hash': (contract_info or {}).get('integrity_hash'),
                             'email_ok': (contract_email or {}).get('ok'),
+                            'pdf_encrypted': bool(
+                                ((policy.get('policy_contract') or {}).get('pdf') or {}).get('id')
+                                or ((policy.get('policy_contract') or {}).get('pdf') or {}).get('available')
+                            ),
+                            'download_url': (
+                                (policy.get('policy_contract') or {}).get('download_url')
+                            ),
+                            'password_hint': (
+                                (policy.get('policy_contract') or {}).get('password_hint')
+                                or 'last_4_digits_of_payment_card_on_file'
+                            ),
+                            'password_ready': bool(
+                                ((policy.get('policy_contract') or {}).get('pdf') or {}).get('password_ready')
+                            ),
                         },
                     },
                     'application': app,
