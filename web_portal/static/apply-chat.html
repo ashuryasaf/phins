@@ -27,9 +27,9 @@
             <span class="chat-progress-label" id="progress-label">0%</span>
         </div>
         <div class="chat-header-actions">
-            <button type="button" class="resume-pill" id="resume-pill" hidden title="Your private resume code - keep it safe">
+            <button type="button" class="resume-pill" id="resume-pill" hidden title="Your private resume code - keep it safe" data-no-i18n>
                 <span class="resume-pill-label">Resume code</span>
-                <span class="resume-pill-code" id="resume-pill-code"></span>
+                <span class="resume-pill-code" id="resume-pill-code" translate="no"></span>
             </button>
             <button type="button" class="btn-ghost" id="pause-btn" hidden>Save &amp; finish later</button>
             <a href="/apply.html" class="btn-ghost btn-ghost-quiet" title="Prefer the classic form?">Classic form</a>
@@ -58,7 +58,7 @@
                 <button type="button" class="btn-gold btn-lg" id="start-btn">Start my application</button>
                 <button type="button" class="link-btn" id="show-resume-btn">I have a resume code</button>
                 <form class="resume-form" id="resume-form" hidden>
-                    <input type="text" id="resume-code-input" placeholder="PHINS-CHAT-XXXXXXXX" autocomplete="off" spellcheck="false">
+                    <input type="text" id="resume-code-input" placeholder="PHINS-CHAT-XXXXXXXX" autocomplete="off" spellcheck="false" data-no-i18n translate="no">
                     <input type="email" id="resume-email-input" placeholder="Email you applied with" autocomplete="email">
                     <button type="submit" class="btn-gold">Continue application</button>
                     <div class="resume-error" id="resume-error" hidden></div>

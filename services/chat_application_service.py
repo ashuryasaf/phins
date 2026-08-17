@@ -45,6 +45,29 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("phins.chat_application")
 
+try:
+    from services.chat_application_i18n import (
+        ack as _i18n_ack,
+        is_hebrew,
+        localize_choice_labels,
+        localize_placeholder,
+        msg as _i18n_msg,
+        normalize_language,
+        step_prompt_he,
+        tr_validation,
+    )
+except ImportError:  # pragma: no cover - package layout fallback
+    from chat_application_i18n import (  # type: ignore
+        ack as _i18n_ack,
+        is_hebrew,
+        localize_choice_labels,
+        localize_placeholder,
+        msg as _i18n_msg,
+        normalize_language,
+        step_prompt_he,
+        tr_validation,
+    )
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -103,6 +126,8 @@ JOURNEY_STAGES = [
     "continued",
     "referred_senior_uw",
     "submitted",
+    "uw_approved",
+    "uw_rejected",
 ]
 
 
@@ -288,9 +313,72 @@ def _validate_disclosure_text(value: Any, _s: Dict[str, Any]) -> Tuple[bool, Any
     return True, text
 
 
-def _validate_signature_name(value: Any, session: Dict[str, Any]) -> Tuple[bool, Any]:
-    """Mandatory e-sign: typed legal name must match the contact name on file."""
-    typed = str(value or "").strip()
+def _israeli_id_checksum_ok(value: str) -> bool:
+    """Teudat Zehut Luhn-variant (same algorithm as assessment_center)."""
+    digits = [int(c) for c in value if c.isdigit()]
+    if len(digits) != 9 or len(set(digits)) == 1:
+        return False
+    total = 0
+    for i, digit in enumerate(digits):
+        weighted = digit * (1 if i % 2 == 0 else 2)
+        if weighted > 9:
+            weighted -= 9
+        total += weighted
+    return total % 10 == 0
+
+
+def _validate_id_number(raw: Any) -> Tuple[bool, str]:
+    cleaned = re.sub(r"[\s\-]", "", str(raw or "").strip())
+    if not cleaned:
+        return False, "Please enter your national ID / Teudat Zehut number."
+    digits = re.sub(r"\D", "", cleaned)
+    if len(digits) == 9 and digits == cleaned:
+        if not _israeli_id_checksum_ok(digits):
+            return False, "That ID number does not look valid - please double-check the digits."
+        return True, digits
+    # Non-IL national IDs: keep alphanumeric, 5–20 chars.
+    if not re.fullmatch(r"[A-Za-z0-9]{5,20}", cleaned):
+        return False, "That ID number does not look valid - please double-check the digits."
+    return True, cleaned.upper()
+
+
+def _signature_image_ok(data_url: Any) -> Tuple[bool, str, str]:
+    """Validate a drawn PNG data-URL and return (ok, error_or_empty, sha256)."""
+    raw = str(data_url or "").strip()
+    if not raw.startswith("data:image/png;base64,"):
+        return False, "Please draw your signature in the signature panel.", ""
+    b64 = raw.split(",", 1)[1].strip()
+    if len(b64) < 80:
+        return False, "Please draw your signature in the signature panel.", ""
+    try:
+        blob = base64.b64decode(b64, validate=False)
+    except Exception:
+        return False, "Please draw your signature in the signature panel.", ""
+    if len(blob) < 60:
+        return False, "Please draw your signature in the signature panel.", ""
+    digest = hashlib.sha256(blob).hexdigest()
+    return True, "", digest
+
+
+def _validate_signature(value: Any, session: Dict[str, Any]) -> Tuple[bool, Any]:
+    """Mandatory e-sign: legal name + ID number + drawn signature canvas.
+
+    Accepts a structured object from the signature panel. A bare string is
+    rejected so name/ID/canvas stay bound together for data integrity.
+    """
+    if isinstance(value, str):
+        # Legacy typed-only payloads are no longer enough — keep a clear error.
+        return False, (
+            "Please complete the signature panel "
+            "(legal name, ID number, and drawn signature)."
+        )
+    if not isinstance(value, dict):
+        return False, (
+            "Please complete the signature panel "
+            "(legal name, ID number, and drawn signature)."
+        )
+
+    typed = str(value.get("name") or "").strip()
     if len(typed) < 2 or len(typed) > 120:
         return False, "Please type your full legal name to sign."
     expected = str((session.get("contact") or {}).get("name") or "").strip()
@@ -301,7 +389,28 @@ def _validate_signature_name(value: Any, session: Dict[str, Any]) -> Tuple[bool,
             return False, (
                 f"Signature must match the name on this application ({expected})."
             )
-    return True, typed
+
+    id_ok, id_val = _validate_id_number(value.get("id_number"))
+    if not id_ok:
+        return False, id_val
+
+    img_ok, img_err, img_sha = _signature_image_ok(value.get("signature_data"))
+    if not img_ok:
+        return False, img_err
+
+    method = str(value.get("method") or "drawn_canvas").strip() or "drawn_canvas"
+    if method not in ("drawn_canvas", "drawn"):
+        method = "drawn_canvas"
+
+    # Keep the PNG on the answer only until finalize copies it into the UW
+    # payload; mark_submitted redacts the raw bytes afterward.
+    return True, {
+        "name": typed,
+        "id_number": id_val,
+        "signature_data": str(value.get("signature_data")).strip(),
+        "image_sha256": img_sha,
+        "method": "drawn_canvas",
+    }
 
 
 def _validate_card(value: Any, _s: Dict[str, Any]) -> Tuple[bool, Any]:
@@ -559,10 +668,15 @@ STEPS: List[Dict[str, Any]] = [
         "id": "signature",
         "prompt": (
             "Final step — your electronic signature is mandatory. Type your full legal name "
-            "exactly as it appears on this application to sign and seal your declarations."
+            "exactly as on this application, enter your national ID / Teudat Zehut, "
+            "and draw your signature in the panel to seal your declarations."
         ),
-        "input": {"type": "signature", "placeholder": "Full legal name"},
-        "validate": _validate_signature_name,
+        "input": {
+            "type": "signature",
+            "placeholder": "Full legal name",
+            "id_placeholder": "National ID / Teudat Zehut",
+        },
+        "validate": _validate_signature,
     },
 ]
 
@@ -671,11 +785,53 @@ class ChatPolicyApplicationService:
         prompt = step["prompt"]
         if callable(prompt):
             prompt = prompt(session)
-        public = {"id": step["id"], "prompt": prompt, "input": dict(step["input"])}
+        if is_hebrew(session):
+            first = str(session.get("answers", {}).get("name") or "").split(" ")[0]
+            he = step_prompt_he(step["id"], first=first or "")
+            if he:
+                prompt = he
+        public_input = dict(step["input"])
+        labels = public_input.get("labels") or {}
+        # Ensure choice steps without English labels still get Hebrew labels.
+        if step["id"] == "gender" and not labels:
+            labels = {"male": "male", "female": "female", "other": "other"}
+        if step["id"] == "coverage_years" and not labels:
+            labels = {o: o for o in (public_input.get("options") or [])}
+        if step["id"] in ("medical_conditions", "surgery", "auto_pay") and not labels:
+            labels = {o: o for o in (public_input.get("options") or [])}
+        if step["id"] == "family_history" and not labels:
+            labels = {o: o for o in (public_input.get("options") or [])}
+        if step["id"] == "media_offer" and not labels:
+            labels = {"done": "Done - continue", "skip": "Skip for now"}
+        localized = localize_choice_labels(session, step["id"], labels or None)
+        if localized:
+            public_input["labels"] = localized
+        if public_input.get("placeholder"):
+            public_input["placeholder"] = localize_placeholder(
+                session, step["id"], public_input.get("placeholder")
+            ) or public_input["placeholder"]
+        if public_input.get("id_placeholder"):
+            public_input["id_placeholder"] = localize_placeholder(
+                session, "id_number", public_input.get("id_placeholder")
+            ) or public_input["id_placeholder"]
+        if public_input.get("suffix") and is_hebrew(session):
+            suffix_map = {"years": "שנים", "cm": "ס\"מ", "kg": "ק\"ג"}
+            public_input["suffix"] = suffix_map.get(
+                str(public_input["suffix"]), public_input["suffix"]
+            )
+        public = {"id": step["id"], "prompt": prompt, "input": public_input}
         if step["id"] == "prior_disclosure":
             disclosure = self._build_disclosure_for(session)
-            public["prompt"] = disclosure["prompt"]
+            if is_hebrew(session) and disclosure.get("mode") == "open_disclosure":
+                he = step_prompt_he("prior_disclosure")
+                public["prompt"] = he or disclosure["prompt"]
+            else:
+                public["prompt"] = disclosure["prompt"]
             public["input"]["placeholder"] = disclosure.get("placeholder") or public["input"].get("placeholder")
+            if is_hebrew(session):
+                public["input"]["placeholder"] = localize_placeholder(
+                    session, "prior_disclosure", public["input"].get("placeholder")
+                )
             public["disclosure_mode"] = disclosure.get("mode")
             public["contradictions"] = disclosure.get("contradictions") or []
             session["disclosure_context"] = disclosure
@@ -751,20 +907,35 @@ class ChatPolicyApplicationService:
             session["answers"]["consent_accepted_at"] = _utc_now_iso()
             session["answers"]["consent_version"] = CONSENT_VERSION
         elif step_id == "signature":
-            session["signature_name"] = cleaned
+            # cleaned is the structured signature dict from _validate_signature
+            sig = cleaned if isinstance(cleaned, dict) else {"name": cleaned}
+            session["signature_name"] = sig.get("name")
             session["signature_at"] = _utc_now_iso()
-            session["answers"]["signature_name"] = cleaned
+            session["answers"]["signature_name"] = sig.get("name")
             session["answers"]["signature_at"] = session["signature_at"]
-            session["answers"]["signature_method"] = "typed_legal_name"
+            session["answers"]["signature_method"] = sig.get("method") or "drawn_canvas"
+            session["answers"]["id_number"] = sig.get("id_number")
+            session["answers"]["signature_image_sha256"] = sig.get("image_sha256")
+            # Keep raw PNG until finalize copies it into the UW payload.
+            if sig.get("signature_data"):
+                session["answers"]["signature_data"] = sig.get("signature_data")
             events.append(self._journey_add(
                 session, "signed",
-                meta={"signature_name": cleaned, "signature_at": session["signature_at"]}))
+                meta={
+                    "signature_name": sig.get("name"),
+                    "signature_at": session["signature_at"],
+                    "signature_method": session["answers"]["signature_method"],
+                    "id_number_last4": str(sig.get("id_number") or "")[-4:],
+                    "image_sha256": sig.get("image_sha256"),
+                }))
 
     def start_session(self, *, channel: str = "web_chat",
                       invite: Optional[Dict[str, Any]] = None,
-                      started_by: str = "applicant") -> Dict[str, Any]:
+                      started_by: str = "applicant",
+                      language: str = "en") -> Dict[str, Any]:
         with self._lock:
             app_id, resume_code = self._generate_ids()
+            lang = normalize_language(language)
             session: Dict[str, Any] = {
                 "id": app_id,
                 "resume_code": resume_code,
@@ -774,6 +945,7 @@ class ChatPolicyApplicationService:
                 "channel": channel,
                 "started_by": started_by,
                 "invited_by": invite,
+                "language": lang,
                 "contact": {"name": None, "email": None, "phone": None},
                 "email_verified": False,
                 "otp": {},
@@ -799,23 +971,32 @@ class ChatPolicyApplicationService:
                           "referrer_id": invite.get("referrer_id")},
                 ))
             events.append(self._journey_add(session, "started", actor=started_by,
-                                            meta={"channel": channel}))
+                                            meta={"channel": channel, "language": lang}))
 
-            greeting = (
+            greeting = _i18n_msg(
+                session, "greeting",
                 f"Hi! I'm {BOT_NAME}, your {BOT_TITLE} - I'll personally walk you "
                 "through your PHINS application, just like a broker sitting across the desk. "
-                "It usually takes about 3 minutes."
+                "It usually takes about 3 minutes.",
+                bot_name=BOT_NAME, bot_title=BOT_TITLE,
             )
-            resume_note = (
+            # Resume code stays ASCII in both languages for tracking integrity.
+            resume_note = _i18n_msg(
+                session, "resume_note",
                 f"Your private resume code is {resume_code}. If we get interrupted, come back "
-                "any time - the code plus your email picks up exactly where we left off."
+                "any time - the code plus your email picks up exactly where we left off.",
+                resume_code=resume_code,
             )
             bot_msgs = []
             if invite:
                 who = invite.get("type") or "someone"
                 bot_msgs.append(self._transcript_add(
                     session, "bot",
-                    f"Welcome! I see you were invited by a PHINS {who} - great referrals make great members.",
+                    _i18n_msg(
+                        session, "invite_welcome",
+                        f"Welcome! I see you were invited by a PHINS {who} - great referrals make great members.",
+                        who=who,
+                    ),
                     meta={"invite_code": invite.get("code")}))
             bot_msgs.append(self._transcript_add(session, "bot", greeting))
             bot_msgs.append(self._transcript_add(session, "bot", resume_note, kind="resume_code",
@@ -830,6 +1011,7 @@ class ChatPolicyApplicationService:
                 "ok": True,
                 "application_id": app_id,
                 "resume_code": resume_code,
+                "language": lang,
                 "messages": bot_msgs,
                 "step": step_pub,
                 "progress": self._progress(session),
@@ -883,12 +1065,13 @@ class ChatPolicyApplicationService:
             events.append(self._ledger_for_message(session, user_entry))
 
             if not ok:
-                bot_entry = self._transcript_add(session, "bot", str(cleaned),
+                err_text = tr_validation(session, str(cleaned))
+                bot_entry = self._transcript_add(session, "bot", err_text,
                                                  kind="validation_error",
                                                  meta={"step": step["id"]})
                 events.append(self._ledger_for_message(session, bot_entry))
                 return {
-                    "ok": False, "status_code": 400, "error": str(cleaned),
+                    "ok": False, "status_code": 400, "error": err_text,
                     "messages": [bot_entry],
                     "step": self._step_public(session, step),
                     "progress": self._progress(session),
@@ -915,16 +1098,23 @@ class ChatPolicyApplicationService:
                 events.append(self._journey_add(session, "contact_captured"))
                 otp_msg = self._transcript_add(
                     session, "bot",
-                    f"Perfect. To protect your data I've sent a 6-digit verification code to "
-                    f"{_mask_email(session['contact']['email'])}. Type it here when it arrives.",
+                    _i18n_msg(
+                        session, "otp_challenge",
+                        f"Perfect. To protect your data I've sent a 6-digit verification code to "
+                        f"{_mask_email(session['contact']['email'])}. Type it here when it arrives.",
+                        masked_email=_mask_email(session["contact"]["email"]),
+                    ),
                     kind="otp_challenge")
                 bot_msgs.append(otp_msg)
                 response["otp_required"] = True
             elif next_step is None:
                 done_msg = self._transcript_add(
                     session, "bot",
-                    "That's everything I need! Give me one second to run the final checks, "
-                    "then I'll issue your application to underwriting.",
+                    _i18n_msg(
+                        session, "ready_to_finalize",
+                        "That's everything I need! Give me one second to run the final checks, "
+                        "then I'll issue your application to underwriting.",
+                    ),
                     kind="ready_to_finalize")
                 bot_msgs.append(done_msg)
                 response["ready_to_finalize"] = True
@@ -949,6 +1139,11 @@ class ChatPolicyApplicationService:
         if step_id == "payment_card" and isinstance(value, dict):
             digits = re.sub(r"\D", "", str(value.get("card_number") or ""))
             return f"Card ending in {digits[-4:]}" if digits else "Card details provided"
+        if step_id == "signature" and isinstance(value, dict):
+            name = str(value.get("name") or "").strip()
+            idn = str(value.get("id_number") or "").strip()
+            id_mask = ("••••" + idn[-4:]) if len(idn) >= 4 else "••••"
+            return f"Signed: {name} · ID {id_mask}"
         if isinstance(value, list):
             return ", ".join(str(v) for v in value)
         return str(value)
@@ -960,78 +1155,173 @@ class ChatPolicyApplicationService:
         if step_id == "dob":
             age = _calculate_age(value)
             if age is not None and age < 30:
-                return f"{age} - starting early is the single smartest insurance decision. Locking in your health now keeps premiums low for decades."
+                return _i18n_ack(
+                    session, "dob_young",
+                    f"{age} - starting early is the single smartest insurance decision. "
+                    "Locking in your health now keeps premiums low for decades.",
+                    age=age,
+                )
             if age is not None and age >= 55:
-                return f"Noted, {age}. I'll make sure the plan reflects the protection that matters most at this stage."
-            return "Got it, thanks."
+                return _i18n_ack(
+                    session, "dob_senior",
+                    f"Noted, {age}. I'll make sure the plan reflects the protection that matters most at this stage.",
+                    age=age,
+                )
+            return _i18n_ack(session, "dob_default", "Got it, thanks.")
         if step_id == "tobacco":
             if value == "yes":
-                return ("Thanks for being straight with me - as your broker I have to be straight back: "
-                        "tobacco does raise the premium. The good news? Quit for 12 months and we can re-rate you.")
+                return _i18n_ack(
+                    session, "tobacco_yes",
+                    "Thanks for being straight with me - as your broker I have to be straight back: "
+                    "tobacco does raise the premium. The good news? Quit for 12 months and we can re-rate you.",
+                )
             if value == "former":
-                return "Respect - quitting is hard. Since it's been over a year, the impact on your rate is modest."
-            return "Great - that keeps your rate nice and lean."
+                return _i18n_ack(
+                    session, "tobacco_former",
+                    "Respect - quitting is hard. Since it's been over a year, the impact on your rate is modest.",
+                )
+            return _i18n_ack(session, "tobacco_no", "Great - that keeps your rate nice and lean.")
         if step_id == "weight":
             h = answers.get("height")
             w = answers.get("weight")
             if h and w:
                 bmi = w / ((h / 100) ** 2)
                 if 18.5 <= bmi < 25:
-                    return f"Your BMI comes out at {bmi:.1f} - right in the healthy range. Underwriting loves that."
+                    return _i18n_ack(
+                        session, "bmi_healthy",
+                        f"Your BMI comes out at {bmi:.1f} - right in the healthy range. Underwriting loves that.",
+                        bmi=bmi,
+                    )
                 if bmi >= 30:
-                    return f"Your BMI comes out at {bmi:.1f}. It may add a small loading, but nothing we can't work with."
-                return f"Your BMI comes out at {bmi:.1f} - noted for the assessment."
+                    return _i18n_ack(
+                        session, "bmi_high",
+                        f"Your BMI comes out at {bmi:.1f}. It may add a small loading, but nothing we can't work with.",
+                        bmi=bmi,
+                    )
+                return _i18n_ack(
+                    session, "bmi_other",
+                    f"Your BMI comes out at {bmi:.1f} - noted for the assessment.",
+                    bmi=bmi,
+                )
         if step_id == "medical_conditions" and value == "no":
-            return "Clean bill of health - excellent."
+            return _i18n_ack(session, "medical_clean", "Clean bill of health - excellent.")
         if step_id == "hazardous" and value != "no":
-            return "Adventurous! I'll factor that in - full transparency keeps your claims bulletproof."
+            return _i18n_ack(
+                session, "hazardous",
+                "Adventurous! I'll factor that in - full transparency keeps your claims bulletproof.",
+            )
         if step_id == "family_history":
             if value and value != ["none"]:
-                return "Thanks - family history helps our actuaries price fairly, it doesn't disqualify you."
-            return "Good genes - noted."
+                return _i18n_ack(
+                    session, "family_yes",
+                    "Thanks - family history helps our actuaries price fairly, it doesn't disqualify you.",
+                )
+            return _i18n_ack(session, "family_no", "Good genes - noted.")
         if step_id == "prior_disclosure":
             mode = (session.get("disclosure_context") or {}).get("mode")
             if mode == "contradiction":
-                return ("Thank you - I've sealed that explanation into your file for the senior "
-                        "underwriter. Honesty here protects your future claims.")
+                return _i18n_ack(
+                    session, "disclosure_contradiction",
+                    "Thank you - I've sealed that explanation into your file for the senior "
+                    "underwriter. Honesty here protects your future claims.",
+                )
             if str(value).strip().lower() in ("none", "n/a", "na", "no"):
-                return "Understood - nothing further to disclose. Continuing."
-            return "Recorded. That extra disclosure goes straight to underwriting with your file."
+                return _i18n_ack(
+                    session, "disclosure_none",
+                    "Understood - nothing further to disclose. Continuing.",
+                )
+            return _i18n_ack(
+                session, "disclosure_other",
+                "Recorded. That extra disclosure goes straight to underwriting with your file.",
+            )
         if step_id == "coverage_amount":
-            return f"${value:,.0f} of coverage - solid choice."
+            return _i18n_ack(
+                session, "coverage_amount",
+                f"${value:,.0f} of coverage - solid choice.",
+                value=value,
+            )
         if step_id == "daily_function":
             if value == "full":
-                return "Full independence - that's the standard rating for the disability benefit."
-            return ("Thank you for being precise - our actuaries rate the disability benefit "
-                    "directly off that, so this keeps your cover honest and claimable.")
+                return _i18n_ack(
+                    session, "daily_full",
+                    "Full independence - that's the standard rating for the disability benefit.",
+                )
+            return _i18n_ack(
+                session, "daily_other",
+                "Thank you for being precise - our actuaries rate the disability benefit "
+                "directly off that, so this keeps your cover honest and claimable.",
+            )
         if step_id == "savings_addon":
             if value == "none":
-                return "Pure protection it is. Let me price it from our actuarial pricing center..."
-            return ("Savings added on top of your protection. Pricing it now through our "
-                    "actuarial pricing center...")
+                return _i18n_ack(
+                    session, "savings_none",
+                    "Pure protection it is. Let me price it from our actuarial pricing center...",
+                )
+            return _i18n_ack(
+                session, "savings_other",
+                "Savings added on top of your protection. Pricing it now through our "
+                "actuarial pricing center...",
+            )
         if step_id == "coverage_years":
-            return f"{value} years - noted."
+            return _i18n_ack(
+                session, "coverage_years",
+                f"{value} years - noted.",
+                value=value,
+            )
         if step_id == "billing_frequency":
             if value == "annual":
-                return "Annual it is - that locks in the 10% saving."
+                return _i18n_ack(
+                    session, "billing_annual",
+                    "Annual it is - that locks in the 10% saving.",
+                )
             if value == "quarterly":
-                return "Quarterly - you get the 3% saving."
-            return "Monthly - the most popular option."
+                return _i18n_ack(
+                    session, "billing_quarterly",
+                    "Quarterly - you get the 3% saving.",
+                )
+            return _i18n_ack(
+                session, "billing_monthly",
+                "Monthly - the most popular option.",
+            )
         if step_id == "auto_pay":
-            return ("Auto-pay armed - one less thing to think about." if value == "yes"
-                    else "No problem - I'll send you a reminder before each due date.")
-        if step_id == "consent":
-            return "Legal confirmations recorded - one last step for your signature."
-        if step_id == "signature":
             return (
-                f"Signed by {value} at {session.get('signature_at')}. "
-                "Your declarations are now sealed for underwriting."
+                _i18n_ack(session, "auto_pay_yes", "Auto-pay armed - one less thing to think about.")
+                if value == "yes"
+                else _i18n_ack(
+                    session, "auto_pay_no",
+                    "No problem - I'll send you a reminder before each due date.",
+                )
+            )
+        if step_id == "consent":
+            return _i18n_ack(
+                session, "consent_ack",
+                "Legal confirmations recorded - one last step for your signature.",
+            )
+        if step_id == "signature":
+            sig = value if isinstance(value, dict) else {"name": value}
+            name = sig.get("name") or session.get("signature_name") or ""
+            idn = str(sig.get("id_number") or session["answers"].get("id_number") or "")
+            id_masked = ("••••" + idn[-4:]) if len(idn) >= 4 else "••••"
+            return _i18n_ack(
+                session, "signature_ack",
+                f"Signed by {name} at {session.get('signature_at')}. "
+                "Your declarations are now sealed for underwriting.",
+                name=name,
+                id_masked=id_masked,
+                signed_at=session.get("signature_at"),
             )
         if step_id == "media_offer":
             n = len(session["media"])
             if n:
-                return f"Received {n} attachment{'s' if n > 1 else ''} - our underwriting bot will review them with your file."
-            return "No problem - we can always request documents later if underwriting needs them."
+                return _i18n_ack(
+                    session, "media_with",
+                    f"Received {n} attachment{'s' if n > 1 else ''} - our underwriting bot will review them with your file.",
+                    n=n,
+                )
+            return _i18n_ack(
+                session, "media_none",
+                "No problem - we can always request documents later if underwriting needs them.",
+            )
         return None
 
     def _milestone_messages(self, session: Dict[str, Any], step_id: str,
@@ -1621,6 +1911,8 @@ class ChatPolicyApplicationService:
                 "journey": session["journey"],
                 "invited_by": session.get("invited_by"),
                 "submission": session.get("submission"),
+                "language": session.get("language") or "en",
+                "uw_decision": session.get("uw_decision"),
             }
             if staff:
                 state["answers"] = answers_public
@@ -1686,6 +1978,8 @@ class ChatPolicyApplicationService:
                 "disclosure_mode": answers.get("disclosure_mode") or "open_disclosure",
                 "signature_name": answers.get("signature_name") or "",
                 "signature_at": answers.get("signature_at") or "",
+                "id_number": answers.get("id_number") or "",
+                "signature_image_sha256": answers.get("signature_image_sha256") or "",
             },
             "phins_allocation": {
                 "protection_pct": int(round(100 / (1 + savings_rate))) if savings_rate else 100,
@@ -1717,16 +2011,20 @@ class ChatPolicyApplicationService:
             "signature": {
                 "name": answers.get("signature_name") or "",
                 "signed_at": answers.get("signature_at"),
-                "method": answers.get("signature_method") or "typed_legal_name",
+                "method": answers.get("signature_method") or "drawn_canvas",
+                "id_number": answers.get("id_number") or "",
+                "image_sha256": answers.get("signature_image_sha256") or "",
+                "image_data": answers.get("signature_data") or None,
                 "mandatory": True,
             },
+            "id_number": answers.get("id_number") or "",
             "questionnaire_version": QUESTIONNAIRE_VERSION,
             "acknowledgements": [
                 "I confirm the answers I provided are accurate to the best of my knowledge.",
                 "I understand incomplete or inaccurate information may delay or void coverage.",
                 "I authorize PHINS to use this information for underwriting and claim processing.",
                 "I understand I am waiving medical confidentiality for underwriting analysis of the facts I disclosed.",
-                "I electronically signed this application with my legal name and intend it as my binding signature.",
+                "I electronically signed this application with my legal name and drawn signature and intend it as my binding signature.",
             ],
             "health_wallet": {"enabled": True, "monthly_deposit": 0},
             "pipeline_enabled": True,
@@ -1883,6 +2181,9 @@ class ChatPolicyApplicationService:
                     "expiry_month": card.get("expiry_month"),
                     "expiry_year": card.get("expiry_year"),
                 }
+            # Redact raw signature PNG after submission (hash remains for integrity).
+            if session["answers"].get("signature_data"):
+                session["answers"]["signature_data"] = None
             session["submission"] = {
                 "policy_id": policy_id,
                 "underwriting_id": underwriting_id,
@@ -1895,18 +2196,155 @@ class ChatPolicyApplicationService:
                 meta={"policy_id": policy_id, "underwriting_id": underwriting_id,
                       "customer_id": customer_id, "payload_checksum": checksum})]
             first_name = (session["contact"].get("name") or "").split(" ")[0]
+            name_part = f", {first_name}" if first_name else ""
             bot_entry = self._transcript_add(
                 session, "bot",
-                (f"Congratulations{', ' + first_name if first_name else ''}! Your application "
-                 f"is officially in. Policy {policy_id} is with our underwriting team, "
-                 f"reference {underwriting_id}. I've recorded every step of our conversation "
-                 "on the PHINS ledger, so your file is complete and tamper-proof. "
-                 "You'll hear from us shortly - usually within minutes, not days."),
+                _i18n_msg(
+                    session, "submitted",
+                    (f"Congratulations{name_part}! Your application "
+                     f"is officially in. Policy {policy_id} is with our underwriting team, "
+                     f"reference {underwriting_id}. I've recorded every step of our conversation "
+                     "on the PHINS ledger, so your file is complete and tamper-proof. "
+                     "You'll hear from us shortly - usually within minutes, not days."),
+                    name_part=name_part,
+                    policy_id=policy_id,
+                    underwriting_id=underwriting_id,
+                ),
                 kind="submitted",
                 meta={"policy_id": policy_id, "underwriting_id": underwriting_id})
             events.append(self._ledger_for_message(session, bot_entry))
             return {"ok": True, "messages": [bot_entry],
                     "submission": session["submission"], "ledger_events": events}
+
+    def post_underwriting_decision(
+        self,
+        chat_application_id: str,
+        *,
+        decision: str,
+        policy_id: Optional[str] = None,
+        underwriting_id: Optional[str] = None,
+        monthly_premium: Optional[float] = None,
+        premium_adjustment_pct: Optional[float] = None,
+        reason: Optional[str] = None,
+        notes: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Append an auto bot answer when UW accepts, loads premium, or rejects.
+
+        Called from the shared ``/api/underwriting/approve`` and
+        ``/api/underwriting/reject`` handlers so chat applicants see the same
+        outcome the classic form surfaces via email/portal, without breaking
+        resume-code tracking.
+        """
+        with self._lock:
+            session = self._get(chat_application_id)
+            if not session:
+                return {"ok": False, "status_code": 404, "error": "Application not found"}
+            decision_norm = str(decision or "").strip().lower()
+            if decision_norm not in ("approved", "rejected"):
+                return {"ok": False, "status_code": 400, "error": "Invalid decision"}
+
+            # Idempotent: do not duplicate the same decision message.
+            for entry in reversed(session.get("transcript") or []):
+                if entry.get("kind") != "uw_decision":
+                    continue
+                meta = entry.get("meta") or {}
+                if meta.get("decision") == decision_norm and (
+                    not underwriting_id or meta.get("underwriting_id") == underwriting_id
+                ):
+                    return {
+                        "ok": True,
+                        "duplicate": True,
+                        "messages": [entry],
+                        "ledger_events": [],
+                    }
+
+            first_name = (session["contact"].get("name") or "").split(" ")[0]
+            name_part = f", {first_name}" if first_name else ""
+            events: List[Dict[str, Any]] = []
+            loading = float(premium_adjustment_pct or 0)
+            monthly = float(monthly_premium or 0)
+            pol = policy_id or (session.get("submission") or {}).get("policy_id") or ""
+            uw = underwriting_id or (session.get("submission") or {}).get("underwriting_id") or ""
+
+            if decision_norm == "approved":
+                loading_part = ""
+                if abs(loading) >= 0.5:
+                    loading_part = _i18n_msg(
+                        session, "uw_approved_loading",
+                        f" (including an underwriting adjustment of {loading:.0f}%)",
+                        loading_pct=loading,
+                    )
+                text = _i18n_msg(
+                    session, "uw_approved",
+                    (f"Great news{name_part}! Underwriting **approved** your application. "
+                     f"Policy {pol} is now active. Monthly premium: ${monthly:,.2f}"
+                     f"{loading_part}. Your policy contract has been emailed to you."),
+                    name_part=name_part,
+                    policy_id=pol,
+                    monthly=monthly,
+                    loading_part=loading_part,
+                )
+                stage = "uw_approved"
+            else:
+                reason_part = ""
+                if reason:
+                    reason_part = _i18n_msg(
+                        session, "uw_rejected_reason",
+                        f" — reason: {reason}",
+                        reason=reason,
+                    )
+                text = _i18n_msg(
+                    session, "uw_rejected",
+                    (f"An update on your application{name_part}: after review, underwriting "
+                     f"**did not approve** coverage at this time{reason_part}. "
+                     "A notification was sent to your email. You can contact us with questions."),
+                    name_part=name_part,
+                    reason_part=reason_part,
+                )
+                stage = "uw_rejected"
+
+            bot_entry = self._transcript_add(
+                session, "bot", text, kind="uw_decision",
+                meta={
+                    "decision": decision_norm,
+                    "policy_id": pol,
+                    "underwriting_id": uw,
+                    "monthly_premium": monthly,
+                    "premium_adjustment_pct": loading,
+                    "reason": reason,
+                    "notes": notes,
+                },
+            )
+            events.append(self._journey_add(
+                session, stage, actor="underwriter",
+                meta={
+                    "decision": decision_norm,
+                    "policy_id": pol,
+                    "underwriting_id": uw,
+                    "monthly_premium": monthly,
+                    "premium_adjustment_pct": loading,
+                    "reason": reason,
+                },
+            ))
+            events.append(self._ledger_for_message(session, bot_entry))
+            session["uw_decision"] = {
+                "decision": decision_norm,
+                "policy_id": pol,
+                "underwriting_id": uw,
+                "monthly_premium": monthly,
+                "premium_adjustment_pct": loading,
+                "reason": reason,
+                "decided_at": _utc_now_iso(),
+            }
+            return {
+                "ok": True,
+                "messages": [bot_entry],
+                "uw_decision": session["uw_decision"],
+                "ledger_events": events,
+                "contact_email": (session.get("contact") or {}).get("email"),
+                "contact_name": (session.get("contact") or {}).get("name"),
+                "language": session.get("language") or "en",
+            }
 
     # ------------------------------------------------------------------
     # BI / funnel
