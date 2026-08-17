@@ -154,6 +154,9 @@ def serialize_store(store: Any) -> Dict[str, Any]:
         "current_version": store.current_version,
         "config": asdict(cfg) if hasattr(cfg, "__dataclass_fields__") else dict(cfg or {}),
         "versions": store.versions,
+        # Append-only pricing/underwriting config revision history (versions
+        # bar). Excluded from the checksum core for backward compatibility.
+        "config_history": list(getattr(store, "config_history", None) or []),
     }
     payload["integrity_sha256"] = compute_snapshot_checksum(payload)
     return payload
@@ -336,6 +339,10 @@ def _apply_snapshot(store: Any, payload: Dict[str, Any]) -> bool:
     if current and current in store.versions:
         store.current_version = current
     store.state_revision = int(payload.get("state_revision", 0) or 0)
+
+    history = payload.get("config_history")
+    if isinstance(history, list):
+        store.config_history = history
 
     cfg_data = payload.get("config") or {}
     if cfg_data:

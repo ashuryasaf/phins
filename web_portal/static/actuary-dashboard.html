@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <!-- Build stamp: bumped whenever a substantive pricing change ships so
        cached browsers can tell users they are running an old UI. -->
-  <meta name="phins-actuary-dashboard-build" content="2026-06-04.annual-report-elaborated-v2">
+  <meta name="phins-actuary-dashboard-build" content="2026-08-17.auto-approve-versions-bar-v1">
   <!-- Chart.js for the Annuity Reserves forecast bar/line charts. Loaded
        from the same CDN as risk-reports-dashboard.html for consistency. -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -590,6 +590,12 @@
       background: #fed7d7;
       color: #c53030;
       border: 1px solid #fc8181;
+    }
+
+    .alert-info {
+      background: #ebf8ff;
+      color: #2c5282;
+      border: 1px solid #90cdf4;
     }
 
     .btn-small {
@@ -1693,6 +1699,55 @@
                 <option value="10">ADL 10 Only</option>
               </select>
             </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">🤖 Automatic Approval — Clean Issuance</div>
+            <p style="margin-bottom:16px;">
+              New applications that pass <strong>every</strong> gate below are approved automatically:
+              the policy is issued (activated + first bill generated) and sent to the customer with no
+              underwriter touch. Anything failing a single gate routes to the normal manual queue —
+              automation can only say "yes", never "no". Gates are saved with the underwriting config
+              version, fully audited, and apply to <strong>future applications only</strong>.
+            </p>
+            <div class="form-group" style="margin-bottom:16px;">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" id="auto-approve-enabled">
+                <strong>Enable automatic approval for clean applications</strong>
+              </label>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Max ADL Level</label>
+                <input type="number" id="auto-approve-max-adl" class="form-input" value="3" min="1" max="10" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Min Age</label>
+                <input type="number" id="auto-approve-min-age" class="form-input" value="18" min="0" max="120" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Max Age</label>
+                <input type="number" id="auto-approve-max-age" class="form-input" value="60" min="0" max="120" step="1">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Max Risk Score (%)</label>
+                <input type="number" id="auto-approve-max-risk" class="form-input" value="25" min="0" max="100" step="1">
+                <small style="color:var(--text-light);">Shared risk engine score (0-100%). Engine referral/decline recommendations always go to a human.</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Max Coverage ($)</label>
+                <input type="number" id="auto-approve-max-coverage" class="form-input" value="500000" min="0" step="10000">
+              </div>
+            </div>
+            <div class="form-group">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" id="auto-approve-clean-history" checked>
+                Require clean history (non-smoker, no medical conditions, no prior disclosures)
+              </label>
+            </div>
+            <small id="auto-approve-status" style="color:var(--text-light);"></small>
           </div>
 
           <button class="btn btn-success" onclick="saveUnderwritingConfig()">💾 Save Underwriting Rules</button>
@@ -2805,20 +2860,77 @@
         
         <!-- Versions Section -->
         <section id="section-versions" class="section">
-          <h2 class="section-title">Version History</h2>
-          
+          <h2 class="section-title">Actuarial Versions</h2>
+
+          <div class="alert alert-warning">
+            🔒 Versions are immutable. Restoring an earlier version clones it forward as a
+            <strong>new</strong> version — policies issued under earlier versions keep their original
+            conditions and are never overridden. New versions apply to future underwriting, pricing
+            and billing across the platform.
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">Current Tables Version</div>
+              <div class="stat-value" id="versions-current-tables">—</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Current Config Version</div>
+              <div class="stat-value" id="versions-current-config">—</div>
+            </div>
+            <div class="stat-card success">
+              <div class="stat-label">Policies With Version #</div>
+              <div class="stat-value" id="versions-pinned-policies">—</div>
+            </div>
+            <div class="stat-card warning">
+              <div class="stat-label">State Revision</div>
+              <div class="stat-value" id="versions-state-revision">—</div>
+            </div>
+          </div>
+
           <div class="card">
+            <div class="card-title">Rate Table Versions (mortality / disability / ADL / lapse)</div>
             <table class="data-table" id="versions-table">
               <thead>
                 <tr>
                   <th>Version</th>
+                  <th>Components</th>
                   <th>Effective Date</th>
                   <th>Created By</th>
                   <th>Status</th>
+                  <th>Policies Pinned</th>
+                  <th>Integrity</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody></tbody>
             </table>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Pricing &amp; Underwriting Config Revisions</div>
+            <table class="data-table" id="config-versions-table">
+              <thead>
+                <tr>
+                  <th>Config Version</th>
+                  <th>Saved</th>
+                  <th>By</th>
+                  <th>Change</th>
+                  <th>Policies Pinned</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="card-title">🧠 BI / AI System Insights
+              <button class="btn btn-outline" style="float:right;" onclick="loadVersionInsights()">↻ Refresh</button>
+            </div>
+            <div id="version-insights">
+              <div class="loading"><div class="spinner"></div><p>Loading insights…</p></div>
+            </div>
           </div>
         </section>
         
@@ -3496,6 +3608,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         loadTables();
         loadConfig().then(() => wirePricingParamsDirtyTracking()).catch(() => wirePricingParamsDirtyTracking());
         loadVersions();
+        loadVersionInsights();
         loadAuditLog();
         loadIntegrations();
         loadRiskReference();
@@ -3648,6 +3761,26 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         document.getElementById('limit-6').value = currentConfig.coverage_limits['6'] || 1000000;
         document.getElementById('limit-7').value = currentConfig.coverage_limits['7'] || 750000;
         document.getElementById('limit-8').value = currentConfig.coverage_limits['8'] || 500000;
+      }
+
+      // Automatic approval (clean issuance) gates
+      const aaEnabled = document.getElementById('auto-approve-enabled');
+      if (aaEnabled) {
+        aaEnabled.checked = currentConfig.auto_approve_enabled === true;
+        document.getElementById('auto-approve-max-adl').value = currentConfig.auto_approve_max_adl ?? 3;
+        document.getElementById('auto-approve-min-age').value = currentConfig.auto_approve_min_age ?? 18;
+        document.getElementById('auto-approve-max-age').value = currentConfig.auto_approve_max_age ?? 60;
+        document.getElementById('auto-approve-max-risk').value =
+          Math.round(((currentConfig.auto_approve_max_risk_score ?? 0.25) * 100));
+        document.getElementById('auto-approve-max-coverage').value = currentConfig.auto_approve_max_coverage ?? 500000;
+        document.getElementById('auto-approve-clean-history').checked =
+          currentConfig.auto_approve_require_clean_history !== false;
+        const aaStatus = document.getElementById('auto-approve-status');
+        if (aaStatus) {
+          aaStatus.textContent = currentConfig.auto_approve_enabled
+            ? `Active under config ${currentConfig.config_version || '—'} — qualifying applications are issued automatically.`
+            : 'Disabled — all applications route to the manual underwriting queue.';
+        }
       }
 
       const setFactor = (id, value, fallback = 1.0) => {
@@ -4091,7 +4224,14 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           6: parseFloat(document.getElementById('limit-6').value),
           7: parseFloat(document.getElementById('limit-7').value),
           8: parseFloat(document.getElementById('limit-8').value)
-        }
+        },
+        auto_approve_enabled: document.getElementById('auto-approve-enabled').checked,
+        auto_approve_max_adl: parseInt(document.getElementById('auto-approve-max-adl').value),
+        auto_approve_min_age: parseInt(document.getElementById('auto-approve-min-age').value),
+        auto_approve_max_age: parseInt(document.getElementById('auto-approve-max-age').value),
+        auto_approve_max_risk_score: parseFloat(document.getElementById('auto-approve-max-risk').value) / 100,
+        auto_approve_max_coverage: parseFloat(document.getElementById('auto-approve-max-coverage').value),
+        auto_approve_require_clean_history: document.getElementById('auto-approve-clean-history').checked
       };
       
       try {
@@ -4108,6 +4248,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         if (data.success) {
           alert('✅ Underwriting configuration saved successfully!');
           loadConfig();
+          loadVersions();
         } else {
           alert('❌ Error: ' + (data.error || 'Unknown error'));
         }
@@ -4960,28 +5101,158 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
     }
     
-    // Versions
+    // Versions bar: unified catalog of rate-table versions + config revisions
+    const COMPONENT_LABELS = {
+      mortality_rates: 'Mortality',
+      disability_incidence_rates: 'Disability',
+      adl_mortality_multipliers: 'ADL×Mort',
+      adl_disability_multipliers: 'ADL×Dis',
+      adl_benefit_percentages: 'ADL Benefit',
+      lapse_rates: 'Lapse',
+    };
+
     async function loadVersions() {
       try {
-        const res = await fetch('/api/actuarial/versions', {
+        const res = await fetch('/api/actuarial/versions/catalog', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        
+
         const data = await res.json();
-        
+
         if (data.success) {
+          document.getElementById('versions-current-tables').textContent = data.current_version || '—';
+          document.getElementById('versions-current-config').textContent = data.current_config_version || '—';
+          document.getElementById('versions-state-revision').textContent =
+            data.state_revision != null ? `r${data.state_revision}` : '—';
+          const usage = data.policy_version_usage || {};
+          const total = usage.policies_total || 0;
+          const pinned = total - (usage.unversioned || 0);
+          document.getElementById('versions-pinned-policies').textContent = `${pinned}/${total}`;
+
           const tbody = document.querySelector('#versions-table tbody');
-          tbody.innerHTML = data.versions.map(v => `
+          tbody.innerHTML = (data.table_versions || []).map(v => `
             <tr>
-              <td><span class="version-badge ${v.status}">${v.version}</span> ${v.is_current ? '(Current)' : ''}</td>
+              <td>
+                <span class="version-badge ${v.status}">${v.version}</span>
+                ${v.is_current ? '<strong>(Current)</strong>' : ''}
+                ${v.restored_from ? `<br><small>restored from ${v.restored_from}</small>` : ''}
+              </td>
+              <td><small>${Object.entries(v.components || {}).map(([k, n]) => `${COMPONENT_LABELS[k] || k} (${n})`).join(', ') || '—'}</small></td>
               <td>${v.effective_date ? new Date(v.effective_date).toLocaleString() : 'N/A'}</td>
               <td>${v.created_by || 'system'}</td>
               <td>${v.status}</td>
+              <td>${v.policies_pinned || 0}</td>
+              <td><code style="font-size:0.72rem;" title="${v.integrity_hash || ''}">${(v.integrity_hash || '').substring(0, 12)}…</code></td>
+              <td>${v.restorable
+                ? `<button class="btn btn-outline" style="padding:4px 10px;font-size:0.8rem;" onclick="restoreVersion('${v.version}')">↩ Restore</button>`
+                : '—'}</td>
             </tr>
           `).join('');
+
+          const cfgBody = document.querySelector('#config-versions-table tbody');
+          const revisions = data.config_revisions || [];
+          cfgBody.innerHTML = revisions.length ? revisions.map(c => `
+            <tr>
+              <td><span class="version-badge ${c.is_current ? 'active' : 'archived'}">${c.config_version}</span> ${c.is_current ? '<strong>(Current)</strong>' : ''}</td>
+              <td>${c.saved_at ? new Date(c.saved_at).toLocaleString() : 'N/A'}</td>
+              <td>${c.modified_by || 'system'}</td>
+              <td><small>${c.action || ''}</small></td>
+              <td>${c.policies_pinned || 0}</td>
+              <td>${c.restorable
+                ? `<button class="btn btn-outline" style="padding:4px 10px;font-size:0.8rem;" onclick="restoreConfigVersion('${c.config_version}')">↩ Restore</button>`
+                : '—'}</td>
+            </tr>
+          `).join('') : '<tr><td colspan="6" style="text-align:center;">No saved config revisions yet — save Underwriting Rules or Pricing Parameters to create one.</td></tr>';
         }
       } catch (err) {
         console.error('Error:', err);
+      }
+    }
+
+    async function restoreVersion(version) {
+      if (!confirm(
+        `Restore rate tables ${version}?\n\nThis clones ${version} forward as a NEW active version. ` +
+        `Policies issued under earlier versions keep their original conditions; only future ` +
+        `underwriting, pricing and billing use the restored rates.`
+      )) return;
+      try {
+        const res = await fetch('/api/actuarial/versions/restore', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ version })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert(`✅ ${data.message}`);
+          loadVersions();
+          loadTables();
+          loadAuditLog();
+          loadVersionInsights();
+        } else {
+          alert('❌ Restore failed: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('❌ Restore failed: ' + err.message);
+      }
+    }
+
+    async function restoreConfigVersion(configVersion) {
+      if (!confirm(
+        `Restore pricing/underwriting config ${configVersion}?\n\nThe historical parameters are ` +
+        `applied as a NEW config revision. Previously issued policies keep the config version ` +
+        `pinned at issuance.`
+      )) return;
+      try {
+        const res = await fetch('/api/actuarial/versions/restore', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config_version: configVersion })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert(`✅ ${data.message}`);
+          loadVersions();
+          loadConfig();
+          loadAuditLog();
+        } else {
+          alert('❌ Restore failed: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('❌ Restore failed: ' + err.message);
+      }
+    }
+
+    async function loadVersionInsights() {
+      const container = document.getElementById('version-insights');
+      if (!container) return;
+      try {
+        const res = await fetch('/api/actuarial/version-insights', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Failed to load insights');
+
+        const sevIcon = { positive: '✅', info: 'ℹ️', warning: '⚠️' };
+        const adoption = data.adoption || {};
+        const auto = data.auto_issuance || {};
+        const activity = data.version_activity || {};
+        container.innerHTML = `
+          <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:14px;color:var(--text-light);font-size:0.9rem;">
+            <span>📋 Policies: <strong>${adoption.policies_total || 0}</strong> (${adoption.policies_active || 0} active)</span>
+            <span>📌 Pinned to earlier versions: <strong>${adoption.pinned_to_earlier_versions || 0}</strong></span>
+            <span>🤖 Auto-issued: <strong>${auto.auto_issued || 0}</strong> of ${auto.approved_total || 0} approvals (${((auto.auto_issuance_rate || 0) * 100).toFixed(0)}%)</span>
+            <span>🛠 Table changes (30d): <strong>${activity.table_changes_last_30_days || 0}</strong></span>
+          </div>
+          ${(data.insights || []).map(i => `
+            <div class="alert ${i.severity === 'warning' ? 'alert-warning' : 'alert-info'}" style="margin-bottom:8px;">
+              ${sevIcon[i.severity] || 'ℹ️'} <strong>${i.title}</strong><br>
+              <span style="font-size:0.9rem;">${i.detail}</span>
+            </div>
+          `).join('') || '<p>No insights available.</p>'}
+          <small style="color:var(--text-light);">Generated ${data.generated_at ? new Date(data.generated_at).toLocaleString() : ''} · tables ${data.current_version} · config ${data.current_config_version}</small>
+        `;
+      } catch (err) {
+        container.innerHTML = `<p style="color:var(--danger,#b91c1c);">Failed to load insights: ${err.message}</p>`;
       }
     }
     
