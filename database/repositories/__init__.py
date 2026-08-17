@@ -49,6 +49,7 @@ from .agent_repository import (
     AgentCommissionRepository,
 )
 from .assessment_record_repository import AssessmentRecordRepository
+from .business_inquiry_repository import BusinessInquiryRepository
 
 __all__ = [
     'BaseRepository',
@@ -90,4 +91,5 @@ __all__ = [
     'AgentAffiliationRepository',
     'AgentCommissionRepository',
     'AssessmentRecordRepository',
+    'BusinessInquiryRepository',
 ]

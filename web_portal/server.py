@@ -8316,7 +8316,18 @@ SUPPLY_CHAIN_LEDGER: Dict[str, Dict[str, Any]] = {}  # entry_id -> ledger entry
 # Reviewed by admins in the "Business Relations" bar of the admin portal.
 # Records hold only what the visitor typed (no IP / fingerprinting) and a
 # status history so every state change stays traceable.
+#
+# In DB mode the durable ``business_inquiries`` table is the source of truth.
+# ``BUSINESS_INQUIRIES`` is a short-lived per-instance cache refreshed from the
+# database on read (TTL-coalesced) and force-refreshed on write/decision paths
+# so Send Inquiry / Request Demo survive restarts and stay consistent across
+# app instances for the admin queue.
 BUSINESS_INQUIRIES: Dict[str, Dict[str, Any]] = {}  # inquiry_id -> inquiry data
+_BUSINESS_INQUIRY_LAST_HYDRATE = 0.0
+try:
+    _BUSINESS_INQUIRY_HYDRATE_TTL = float(os.environ.get('PHINS_BUSINESS_INQUIRY_HYDRATE_TTL', '1.5'))
+except (TypeError, ValueError):
+    _BUSINESS_INQUIRY_HYDRATE_TTL = 1.5
 
 BUSINESS_INQUIRY_TYPES = ('contact', 'demo')
 BUSINESS_INQUIRY_AUDIENCES = ('individual', 'enterprise', 'investor', 'partner', 'other')
@@ -8340,6 +8351,55 @@ def generate_business_inquiry_id() -> str:
     timestamp = datetime.now().strftime('%Y%m')
     random_part = secrets.token_hex(4).upper()
     return f"BRI-{timestamp}-{random_part}"
+
+
+def _business_inquiry_db_enabled() -> bool:
+    """True when portal runtime is actually serving from a live database."""
+    return bool(USE_DATABASE and database_enabled)
+
+
+def _hydrate_business_inquiries(force: bool = False) -> None:
+    """Refresh BUSINESS_INQUIRIES from durable tables (DB mode only).
+
+    Full-replace semantics so peer instances' creates/status updates become
+    visible. Read paths coalesce to once per TTL; write/decision paths pass
+    ``force=True``. No-op when DB is disabled (pure in-memory mode).
+    """
+    global _BUSINESS_INQUIRY_LAST_HYDRATE
+    if not _business_inquiry_db_enabled():
+        return
+    now = time.monotonic()
+    if not force and (now - _BUSINESS_INQUIRY_LAST_HYDRATE) < _BUSINESS_INQUIRY_HYDRATE_TTL:
+        return
+    try:
+        from database.manager import DatabaseManager
+        db = DatabaseManager()
+        try:
+            loaded = db.business_inquiries.load_all_as_dicts()
+        finally:
+            db.close()
+        # Build locally first so a mid-refresh failure cannot empty the live cache.
+        BUSINESS_INQUIRIES.clear()
+        BUSINESS_INQUIRIES.update(loaded)
+        _BUSINESS_INQUIRY_LAST_HYDRATE = now
+    except Exception as e:
+        # Best-effort durability; keep serving the current cache and retry later.
+        print(f"Warning: Could not hydrate business inquiries: {e}")
+
+
+def _persist_business_inquiry(inquiry_id: str, data: Dict[str, Any]) -> None:
+    """Write-through persist a single inquiry to the database (best-effort)."""
+    if not _business_inquiry_db_enabled():
+        return
+    try:
+        from database.manager import DatabaseManager
+        db = DatabaseManager()
+        try:
+            db.business_inquiries.upsert_from_dict(inquiry_id, dict(data))
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Warning: Could not persist business inquiry {inquiry_id}: {e}")
 
 supply_chain_service = None
 supply_chain_enabled = False
@@ -18029,6 +18089,7 @@ For claims or questions, please contact:
             search = (qs.get('search', [None])[0] or '').strip().lower() or None
 
             with STATE_LOCK:
+                _hydrate_business_inquiries()
                 items = [dict(rec) for rec in BUSINESS_INQUIRIES.values()]
 
             if status_filter:
@@ -29541,6 +29602,9 @@ For claims or questions, please contact:
 
             now_iso = datetime.now().isoformat()
             with STATE_LOCK:
+                # Force-refresh before idempotency / insert so peer writes and
+                # prior durable rows are visible on this instance.
+                _hydrate_business_inquiries(force=True)
                 # Idempotency guard: an identical open inquiry (same email,
                 # type and interest, still awaiting first contact) is returned
                 # instead of duplicated, so the admin queue stays clean.
@@ -29582,6 +29646,7 @@ For claims or questions, please contact:
                     ],
                 }
                 BUSINESS_INQUIRIES[inquiry_id] = record
+                _persist_business_inquiry(inquiry_id, record)
 
             print(f"[BUSINESS-RELATIONS] New {inquiry_type} inquiry {inquiry_id} ({audience}/{interest})")
             self._set_json_headers(200)
@@ -29631,6 +29696,7 @@ For claims or questions, please contact:
                 return
 
             with STATE_LOCK:
+                _hydrate_business_inquiries(force=True)
                 record = BUSINESS_INQUIRIES.get(inquiry_id)
                 if not record:
                     self._set_json_headers(404)
@@ -29647,6 +29713,7 @@ For claims or questions, please contact:
                 if note:
                     history_entry['note'] = note
                 record.setdefault('status_history', []).append(history_entry)
+                _persist_business_inquiry(inquiry_id, record)
                 response_record = dict(record)
 
             self._set_json_headers(200)

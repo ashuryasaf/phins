@@ -2837,3 +2837,51 @@ class AgentCommission(Base):
             'ledger_entry_id': self.ledger_entry_id,
             'created_at': self.created_at,
         }
+
+
+class BusinessInquiry(Base):
+    """Public contact / demo inquiry from /solutions.html (Business Relations).
+
+    Durable backing so Send Inquiry / Request Demo submissions survive restarts
+    and stay consistent across app instances for the admin review queue.
+    """
+    __tablename__ = 'business_inquiries'
+
+    id = Column(String(50), primary_key=True)  # BRI-YYYYMM-XXXXXXXX
+    inquiry_type = Column(String(20), nullable=False, index=True)  # contact|demo
+    name = Column(String(100), nullable=False)
+    email = Column(String(254), nullable=False, index=True)
+    organization = Column(String(150), nullable=True)
+    audience = Column(String(30), nullable=False, index=True)
+    interest = Column(String(40), nullable=False, index=True)
+    message = Column(Text, nullable=True)
+    status = Column(String(20), default='new', nullable=False, index=True)
+    created_at = Column(String(100), nullable=False)
+    updated_at = Column(String(100), nullable=False)
+    status_history = Column(Text, nullable=True)  # JSON array
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        history = []
+        if self.status_history:
+            try:
+                history = json.loads(self.status_history)
+                if not isinstance(history, list):
+                    history = []
+            except Exception:
+                history = []
+        return {
+            'id': self.id,
+            'inquiry_type': self.inquiry_type,
+            'name': self.name,
+            'email': self.email,
+            'organization': self.organization or '',
+            'audience': self.audience,
+            'interest': self.interest,
+            'message': self.message or '',
+            'status': self.status,
+            'created_at': self.created_at,
+            'updated_at': self.updated_at,
+            'status_history': history,
+        }

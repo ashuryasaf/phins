@@ -233,3 +233,161 @@ def test_admin_status_update_flow_keeps_history():
     assert status == 200
     assert again.get("duplicate") is None
     assert again["inquiry"]["id"] != inquiry_id
+
+
+# ---------------------------------------------------------------------------
+# Durability + cross-instance consistency (DB mode)
+# ---------------------------------------------------------------------------
+def test_db_mode_inquiry_survives_restart(monkeypatch):
+    """Send Inquiry / Request Demo records must survive an in-memory wipe."""
+    from database import init_database
+    from database.manager import DatabaseManager
+
+    monkeypatch.setattr(portal, "USE_DATABASE", True)
+    monkeypatch.setattr(portal, "database_enabled", True)
+    init_database()
+    portal.BUSINESS_INQUIRIES.clear()
+    portal._BUSINESS_INQUIRY_LAST_HYDRATE = 0.0
+
+    body, status = _post(
+        "/api/business/inquiries",
+        _valid_payload(
+            inquiry_type="demo",
+            email="durable.demo@example.com",
+            interest="billing",
+            name="Durable Demo",
+        ),
+    )
+    assert status == 200, body
+    inquiry_id = body["inquiry"]["id"]
+
+    # Confirm write-through landed in the durable table.
+    with DatabaseManager() as db:
+        row = db.business_inquiries.get_by_id(inquiry_id)
+        assert row is not None
+        assert row.inquiry_type == "demo"
+        assert row.email == "durable.demo@example.com"
+        assert row.status == "new"
+
+    # Simulate restart: wipe only the per-instance cache.
+    portal.BUSINESS_INQUIRIES.clear()
+    portal._BUSINESS_INQUIRY_LAST_HYDRATE = 0.0
+
+    admin_token, _ = _login("admin", "admin123")
+    listed, status = _get("/api/admin/business-inquiries", token=admin_token)
+    assert status == 200
+    match = [i for i in listed["items"] if i["id"] == inquiry_id]
+    assert len(match) == 1
+    assert match[0]["email"] == "durable.demo@example.com"
+    assert match[0]["interest"] == "billing"
+    assert match[0]["status_history"][0]["status"] == "new"
+
+
+def test_db_mode_inquiry_cross_instance_visibility(monkeypatch):
+    """A peer instance's durable write must appear on admin after refresh-on-read."""
+    from database import init_database
+    from database.manager import DatabaseManager
+
+    monkeypatch.setattr(portal, "USE_DATABASE", True)
+    monkeypatch.setattr(portal, "database_enabled", True)
+    init_database()
+    portal.BUSINESS_INQUIRIES.clear()
+    portal._BUSINESS_INQUIRY_LAST_HYDRATE = 0.0
+
+    peer_id = "BRI-209901-PEER0001"
+    with DatabaseManager() as db:
+        ok = db.business_inquiries.upsert_from_dict(peer_id, {
+            "id": peer_id,
+            "inquiry_type": "contact",
+            "name": "Peer Writer",
+            "email": "peer@example.com",
+            "organization": "Peer Co",
+            "audience": "partner",
+            "interest": "mga_solutions",
+            "message": "Written by another instance",
+            "status": "new",
+            "created_at": "2099-01-01T00:00:00",
+            "updated_at": "2099-01-01T00:00:00",
+            "status_history": [
+                {"status": "new", "changed_at": "2099-01-01T00:00:00", "changed_by": "public_form"},
+            ],
+        })
+        assert ok is True
+
+    admin_token, _ = _login("admin", "admin123")
+    listed, status = _get("/api/admin/business-inquiries", token=admin_token)
+    assert status == 200
+    match = [i for i in listed["items"] if i["id"] == peer_id]
+    assert len(match) == 1
+    assert match[0]["name"] == "Peer Writer"
+
+    # Peer status change must also become visible after forced refresh.
+    with DatabaseManager() as db:
+        db.business_inquiries.upsert_from_dict(peer_id, {
+            **match[0],
+            "status": "contacted",
+            "updated_at": "2099-01-01T01:00:00",
+            "status_history": match[0]["status_history"] + [
+                {"status": "contacted", "changed_at": "2099-01-01T01:00:00", "changed_by": "peer-admin"},
+            ],
+        })
+
+    portal._BUSINESS_INQUIRY_LAST_HYDRATE = 0.0
+    listed, status = _get(
+        "/api/admin/business-inquiries?status=contacted",
+        token=admin_token,
+    )
+    assert status == 200
+    match = [i for i in listed["items"] if i["id"] == peer_id]
+    assert len(match) == 1
+    assert match[0]["status"] == "contacted"
+
+
+def test_db_mode_status_update_persists(monkeypatch):
+    """Admin triage status changes must write through and reload after cache wipe."""
+    from database import init_database
+    from database.manager import DatabaseManager
+
+    monkeypatch.setattr(portal, "USE_DATABASE", True)
+    monkeypatch.setattr(portal, "database_enabled", True)
+    init_database()
+    portal.BUSINESS_INQUIRIES.clear()
+    portal._BUSINESS_INQUIRY_LAST_HYDRATE = 0.0
+
+    created, status = _post(
+        "/api/business/inquiries",
+        _valid_payload(
+            inquiry_type="contact",
+            email="triage.persist@example.com",
+            interest="claims",
+            name="Triage Persist",
+        ),
+    )
+    assert status == 200, created
+    inquiry_id = created["inquiry"]["id"]
+
+    admin_token, _ = _login("admin", "admin123")
+    body, status = _post(
+        f"/api/admin/business-inquiries/{inquiry_id}/status",
+        {"status": "qualified", "note": "Ready for follow-up"},
+        token=admin_token,
+    )
+    assert status == 200, body
+    assert body["inquiry"]["status"] == "qualified"
+
+    portal.BUSINESS_INQUIRIES.clear()
+    portal._BUSINESS_INQUIRY_LAST_HYDRATE = 0.0
+
+    with DatabaseManager() as db:
+        row = db.business_inquiries.get_by_id(inquiry_id)
+        assert row is not None
+        assert row.status == "qualified"
+        history = row.to_dict()["status_history"]
+        assert [h["status"] for h in history] == ["new", "qualified"]
+        assert history[-1]["note"] == "Ready for follow-up"
+
+    listed, status = _get("/api/admin/business-inquiries", token=admin_token)
+    assert status == 200
+    match = [i for i in listed["items"] if i["id"] == inquiry_id]
+    assert len(match) == 1
+    assert match[0]["status"] == "qualified"
