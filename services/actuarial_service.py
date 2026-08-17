@@ -18,6 +18,7 @@ Author: PHINS Actuarial Team
 Version: 2.0
 """
 
+import copy
 import math
 import random
 import re
@@ -128,6 +129,23 @@ class UnderwritingConfig:
     female_disability_factor: float = 1.0
     ethnicity_mortality_factors: Dict[str, float] = field(default_factory=_default_ethnicity_factors)
     ethnicity_disability_factors: Dict[str, float] = field(default_factory=_default_ethnicity_factors)
+    # ------------------------------------------------------------------
+    # Automatic approval (clean underwriting issuance).
+    #
+    # When enabled, brand-new applications that satisfy EVERY gate below are
+    # approved without a human underwriter and the policy is issued (activated
+    # + billed) immediately. Anything that fails a single gate falls through
+    # to the normal manual underwriting queue — automation may only say
+    # "yes", never "no". All gates are adjustable from the actuary dashboard
+    # and are versioned/audited with the rest of the underwriting config.
+    # ------------------------------------------------------------------
+    auto_approve_enabled: bool = False
+    auto_approve_max_adl: int = 3
+    auto_approve_min_age: int = 18
+    auto_approve_max_age: int = 60
+    auto_approve_max_risk_score: float = 0.25
+    auto_approve_max_coverage: float = 500000.0
+    auto_approve_require_clean_history: bool = True
     # Bumped on every durable dashboard save so priced snapshots pin a revision.
     config_version: str = 'cfg_v1'
     last_modified: str = ''
@@ -465,6 +483,10 @@ class ActuarialTablesStore:
         self.current_version = 'V2.0'
         self.versions: Dict[str, Dict] = {}
         self.config = UnderwritingConfig()
+        # Append-only history of every saved config revision so pricing /
+        # underwriting parameter versions can be inspected and restored just
+        # like rate-table versions. Old entries are never mutated.
+        self.config_history: List[Dict] = []
         self.audit_log: List[Dict] = []
         # Monotonic revision stamped into every persisted snapshot so
         # operators can correlate file/DB copies of the pricing state.
@@ -844,6 +866,28 @@ class ActuarialTablesStore:
                     merged[str(eth_key).lower()] = _clamp(float(eth_val), 0.0, 10.0)
                 setattr(self.config, key, merged)
 
+        # Automatic approval (clean issuance) gates.
+        if 'auto_approve_enabled' in updates:
+            self.config.auto_approve_enabled = bool(updates['auto_approve_enabled'])
+        if 'auto_approve_max_adl' in updates:
+            self.config.auto_approve_max_adl = max(1, min(10, int(updates['auto_approve_max_adl'])))
+        if 'auto_approve_min_age' in updates:
+            self.config.auto_approve_min_age = max(0, min(120, int(updates['auto_approve_min_age'])))
+        if 'auto_approve_max_age' in updates:
+            self.config.auto_approve_max_age = max(0, min(120, int(updates['auto_approve_max_age'])))
+        if 'auto_approve_max_risk_score' in updates:
+            raw = float(updates['auto_approve_max_risk_score'])
+            # Accept either fraction (0..1) or percentage (>1) input.
+            self.config.auto_approve_max_risk_score = _clamp(
+                raw / 100.0 if raw > 1.0 else raw, 0.0, 1.0,
+            )
+        if 'auto_approve_max_coverage' in updates:
+            self.config.auto_approve_max_coverage = max(0.0, float(updates['auto_approve_max_coverage']))
+        if 'auto_approve_require_clean_history' in updates:
+            self.config.auto_approve_require_clean_history = bool(
+                updates['auto_approve_require_clean_history']
+            )
+
         # Bump config revision so priced policies can pin dashboard saves.
         try:
             ver = str(self.config.config_version or 'cfg_v1')
@@ -862,10 +906,31 @@ class ActuarialTablesStore:
             'old_config': old_config,
             'new_config': asdict(self.config)
         })
+        self._snapshot_config_revision('update_config', user)
 
         result = {'success': True, 'config': asdict(self.config)}
         self._persist_with_report(result)
         return result
+
+    def _snapshot_config_revision(self, action: str, user: str) -> None:
+        """Append the just-saved config to the append-only revision history.
+
+        Each entry is an immutable snapshot keyed by ``config_version`` so the
+        versions bar can list and restore any earlier pricing/underwriting
+        parameter set without rewriting history.
+        """
+        try:
+            self.config_history.append({
+                'config_version': str(self.config.config_version),
+                'saved_at': self.config.last_modified or datetime.now().isoformat(),
+                'modified_by': user,
+                'action': action,
+                'tables_version': self.current_version,
+                'config': asdict(self.config),
+            })
+        except Exception:
+            # History is best-effort; a snapshot failure must never block a save.
+            pass
 
     def _persist_with_report(self, result: Dict) -> None:
         """Persist the store and annotate ``result`` with the durable outcome.
@@ -1005,6 +1070,13 @@ class ActuarialTablesStore:
             'female_disability_factor': 1.0,
             'ethnicity_mortality_factors': _default_ethnicity_factors(),
             'ethnicity_disability_factors': _default_ethnicity_factors(),
+            'auto_approve_enabled': False,
+            'auto_approve_max_adl': 3,
+            'auto_approve_min_age': 18,
+            'auto_approve_max_age': 60,
+            'auto_approve_max_risk_score': 0.25,
+            'auto_approve_max_coverage': 500000.0,
+            'auto_approve_require_clean_history': True,
             'config_version': 'cfg_v1',
         }
     
@@ -1132,6 +1204,15 @@ class ActuarialTablesStore:
             ethnicity_disability_factors=dict(
                 defaults.get('ethnicity_disability_factors') or _default_ethnicity_factors()
             ),
+            auto_approve_enabled=bool(defaults.get('auto_approve_enabled', False)),
+            auto_approve_max_adl=int(defaults.get('auto_approve_max_adl', 3)),
+            auto_approve_min_age=int(defaults.get('auto_approve_min_age', 18)),
+            auto_approve_max_age=int(defaults.get('auto_approve_max_age', 60)),
+            auto_approve_max_risk_score=float(defaults.get('auto_approve_max_risk_score', 0.25)),
+            auto_approve_max_coverage=float(defaults.get('auto_approve_max_coverage', 500000.0)),
+            auto_approve_require_clean_history=bool(
+                defaults.get('auto_approve_require_clean_history', True)
+            ),
             config_version=str(defaults.get('config_version', 'cfg_v1')),
             last_modified=datetime.now().isoformat(),
             modified_by=user
@@ -1142,6 +1223,7 @@ class ActuarialTablesStore:
             'old_config': old_config,
             'new_config': asdict(self.config)
         })
+        self._snapshot_config_revision('reset_config', user)
 
         result = {'success': True, 'config': asdict(self.config)}
         self._persist_with_report(result)
@@ -1192,7 +1274,205 @@ class ActuarialTablesStore:
         }
         self._persist_with_report(result)
         return result
-    
+
+    # ------------------------------------------------------------------
+    # Version governance: restore + unified catalog
+    # ------------------------------------------------------------------
+
+    _TABLE_COMPONENT_KEYS = (
+        'mortality_rates', 'disability_incidence_rates',
+        'adl_mortality_multipliers', 'adl_disability_multipliers',
+        'adl_benefit_percentages', 'lapse_rates',
+    )
+
+    def _version_integrity_hash(self, version_key: str) -> str:
+        """Deterministic SHA-256 over a version's rate-table contents."""
+        snapshot = self.versions.get(version_key) or {}
+        core = {k: snapshot.get(k) for k in self._TABLE_COMPONENT_KEYS if snapshot.get(k) is not None}
+        canonical = json.dumps(core, sort_keys=True, separators=(',', ':'), default=str)
+        return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+
+    def restore_version(self, version_key: str, user: str) -> Dict:
+        """Restore an earlier table version by CLONING it forward.
+
+        The restored rates become a brand-new active version (audit-safe):
+        the historical version is never mutated, so policies pinned to it —
+        or to any other earlier version — keep resolving their issued
+        conditions exactly as priced. Only FUTURE underwriting / pricing /
+        billing picks up the restored rates.
+        """
+        source = self.versions.get(version_key)
+        if not source:
+            return {'success': False, 'error': f'Unknown version: {version_key}'}
+        if version_key == self.current_version:
+            return {'success': False, 'error': f'{version_key} is already the current version'}
+
+        tables = {
+            k: copy.deepcopy(source.get(k))
+            for k in self._TABLE_COMPONENT_KEYS if source.get(k) is not None
+        }
+        validation = self._validate_tables(tables)
+        if not validation['valid']:
+            return {'success': False, 'error': '; '.join(validation['errors'])}
+
+        versions = list(self.versions.keys())
+        max_version = max([self._version_major_minor(v) for v in versions]) if versions else 2.0
+        new_version = f'V{max_version + 0.1:.1f}'
+        old_current = self.current_version
+
+        snapshot = dict(tables)
+        snapshot['version'] = new_version
+        snapshot['effective_date'] = datetime.now().isoformat()
+        snapshot['created_by'] = user
+        snapshot['status'] = 'active'
+        snapshot['restored_from'] = version_key
+        snapshot['parent_version'] = old_current
+        self.versions[new_version] = snapshot
+
+        if old_current in self.versions:
+            self.versions[old_current]['status'] = 'archived'
+        self.current_version = new_version
+
+        self._log_change('restore_version', user, {
+            'restored_from': version_key,
+            'new_version': new_version,
+            'previous_current': old_current,
+        })
+
+        result = {
+            'success': True,
+            'version': new_version,
+            'restored_from': version_key,
+            'previous_current': old_current,
+        }
+        self._persist_with_report(result)
+        return result
+
+    def restore_config_version(self, config_version: str, user: str) -> Dict:
+        """Restore an earlier pricing/underwriting config revision.
+
+        The historical revision is applied as a NEW ``config_version`` (the
+        revision counter keeps moving forward), so priced snapshots pinned to
+        any earlier config revision remain untouched.
+        """
+        target = None
+        for entry in reversed(self.config_history):
+            if str(entry.get('config_version')) == str(config_version):
+                target = entry
+                break
+        if target is None:
+            return {'success': False, 'error': f'Unknown config version: {config_version}'}
+
+        cfg_data = dict(target.get('config') or {})
+        fields = getattr(UnderwritingConfig, '__dataclass_fields__', {})
+        kwargs = {k: v for k, v in cfg_data.items() if k in fields}
+
+        old_config = asdict(self.config)
+        current_version_label = str(self.config.config_version or 'cfg_v1')
+        restored = UnderwritingConfig(**kwargs)
+        # Forward-moving revision: never reuse an old version label.
+        try:
+            if current_version_label.startswith('cfg_v') and current_version_label[4:].isdigit():
+                restored.config_version = f'cfg_v{int(current_version_label[4:]) + 1}'
+            else:
+                restored.config_version = f'{current_version_label}+1'
+        except Exception:
+            restored.config_version = f'{current_version_label}+1'
+        restored.last_modified = datetime.now().isoformat()
+        restored.modified_by = user
+        self.config = restored
+
+        self._log_change('restore_config', user, {
+            'restored_from': config_version,
+            'new_config_version': self.config.config_version,
+            'old_config': old_config,
+            'new_config': asdict(self.config),
+        })
+        self._snapshot_config_revision(f'restore_config:{config_version}', user)
+
+        result = {
+            'success': True,
+            'config_version': self.config.config_version,
+            'restored_from': config_version,
+            'config': asdict(self.config),
+        }
+        self._persist_with_report(result)
+        return result
+
+    def get_version_catalog(self) -> Dict:
+        """Unified versions bar: every rate-table version and every saved
+        pricing/underwriting config revision, with integrity hashes and
+        restore metadata. Read-only."""
+        def _sort_key(key: str):
+            parts = []
+            for piece in str(key).upper().lstrip('V').split('.'):
+                try:
+                    parts.append(int(piece))
+                except (TypeError, ValueError):
+                    parts.append(0)
+            return parts
+
+        table_versions = []
+        for v_id in sorted(self.versions.keys(), key=_sort_key, reverse=True):
+            v_data = self.versions.get(v_id) or {}
+            components = {
+                k: len(v_data.get(k) or [])
+                for k in self._TABLE_COMPONENT_KEYS if v_data.get(k)
+            }
+            table_versions.append({
+                'version': v_id,
+                'kind': 'rate_tables',
+                'status': v_data.get('status'),
+                'is_current': v_id == self.current_version,
+                'effective_date': v_data.get('effective_date'),
+                'created_by': v_data.get('created_by'),
+                'parent_version': v_data.get('parent_version'),
+                'restored_from': v_data.get('restored_from'),
+                'components': components,
+                'integrity_hash': self._version_integrity_hash(v_id),
+                'restorable': v_id != self.current_version,
+            })
+
+        config_revisions = []
+        seen_current = False
+        for entry in reversed(self.config_history):
+            is_current = (
+                str(entry.get('config_version')) == str(self.config.config_version)
+                and not seen_current
+            )
+            if is_current:
+                seen_current = True
+            config_revisions.append({
+                'config_version': entry.get('config_version'),
+                'kind': 'pricing_underwriting_config',
+                'saved_at': entry.get('saved_at'),
+                'modified_by': entry.get('modified_by'),
+                'action': entry.get('action'),
+                'tables_version': entry.get('tables_version'),
+                'is_current': is_current,
+                'restorable': not is_current,
+            })
+        if not seen_current:
+            # Live config not yet snapshotted (e.g. pristine store): surface it.
+            config_revisions.insert(0, {
+                'config_version': self.config.config_version,
+                'kind': 'pricing_underwriting_config',
+                'saved_at': self.config.last_modified,
+                'modified_by': self.config.modified_by,
+                'action': 'initial',
+                'tables_version': self.current_version,
+                'is_current': True,
+                'restorable': False,
+            })
+
+        return {
+            'current_version': self.current_version,
+            'current_config_version': self.config.config_version,
+            'state_revision': int(getattr(self, 'state_revision', 0) or 0),
+            'table_versions': table_versions,
+            'config_revisions': config_revisions,
+        }
+
     def _validate_tables(self, tables: Dict) -> Dict:
         """Validate table structure and values"""
         errors = []
@@ -2350,6 +2630,86 @@ def check_underwriting_eligibility(adl: int, coverage: float) -> Dict:
         'loading': config.loadings.get(adl, 0),
         'exclude_disability': adl >= config.disability_exclusion_threshold
     }
+
+
+def evaluate_auto_approval(
+    application: Dict[str, Any],
+    risk_score: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Evaluate the adjustable automatic-approval gates for a new application.
+
+    Pure rule evaluation against the versioned :class:`UnderwritingConfig`
+    (no side effects). Returns a decision payload the caller can persist for
+    audit: every gate is reported with its observed value, its configured
+    limit, and whether it passed. ``auto_approve`` is True only when the
+    feature is enabled AND every gate passed. Any missing/unknown input
+    fails its gate — automation may only approve provably clean cases.
+    """
+    store = get_actuarial_store()
+    cfg = store.config
+    result: Dict[str, Any] = {
+        'auto_approve': False,
+        'enabled': bool(getattr(cfg, 'auto_approve_enabled', False)),
+        'checks': [],
+        'failed': [],
+        'rule_source': 'underwriting_config',
+        'config_version': cfg.config_version,
+        'tables_version': store.current_version,
+        'evaluated_at': datetime.now().isoformat(),
+    }
+    if not result['enabled']:
+        result['failed'].append('auto_approve_disabled')
+        return result
+
+    app = application or {}
+
+    def _num(value):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _gate(name, value, limit, passed):
+        result['checks'].append({
+            'name': name, 'value': value, 'limit': limit, 'passed': bool(passed),
+        })
+        if not passed:
+            result['failed'].append(name)
+
+    age = _num(app.get('age'))
+    _gate('min_age', age, cfg.auto_approve_min_age,
+          age is not None and age >= cfg.auto_approve_min_age)
+    _gate('max_age', age, cfg.auto_approve_max_age,
+          age is not None and age <= cfg.auto_approve_max_age)
+
+    adl = _num(app.get('adl_level'))
+    _gate('max_adl', adl, cfg.auto_approve_max_adl,
+          adl is not None and adl <= cfg.auto_approve_max_adl)
+
+    coverage = _num(app.get('coverage_amount'))
+    _gate('max_coverage', coverage, cfg.auto_approve_max_coverage,
+          coverage is not None and coverage <= cfg.auto_approve_max_coverage)
+
+    score = _num(risk_score if risk_score is not None else app.get('risk_score'))
+    _gate('max_risk_score', score, cfg.auto_approve_max_risk_score,
+          score is not None and score <= cfg.auto_approve_max_risk_score)
+
+    if getattr(cfg, 'auto_approve_require_clean_history', True):
+        smoking = str(app.get('smoking_status') or '').strip().lower()
+        smoker = smoking in ('smoker', 'current', 'current_smoker', 'yes', 'true')
+        _gate('clean_history_nonsmoker', smoking or 'unknown', 'non-smoker', not smoker)
+
+        conditions = app.get('medical_conditions') or []
+        _gate('clean_history_no_medical_conditions', len(conditions), 0, len(conditions) == 0)
+
+        prior = app.get('prior_disclosure')
+        has_prior = bool(str(prior or '').strip()) and str(prior).strip().lower() not in (
+            'none', 'no', 'n/a', 'na', 'false',
+        )
+        _gate('clean_history_no_prior_disclosure', bool(has_prior), False, not has_prior)
+
+    result['auto_approve'] = not result['failed']
+    return result
 
 
 # =============================================================================

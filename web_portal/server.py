@@ -12009,6 +12009,239 @@ def snapshot_underwriting_decision_assessment(app, decided_by, decision):
         return None
 
 
+def maybe_auto_issue_policy(app, policy, customer=None):
+    """Rule-driven automatic clean issuance for a brand-new application.
+
+    Consults the adjustable auto-approve gates on the versioned actuarial
+    UnderwritingConfig (ADL / age / risk score / coverage / clean history)
+    PLUS the shared risk engine recommendation. When every gate passes the
+    application is approved, the policy is activated and billed, and the
+    customer is notified — all stamped ``system_auto_approve`` for audit.
+
+    Anything short of a full pass leaves the application in the normal
+    manual underwriting queue (automation may only say "yes", never "no").
+    Never raises; returns an outcome dict or None when the feature is off.
+    """
+    try:
+        from services.actuarial_service import evaluate_auto_approval, get_actuarial_store
+        store = get_actuarial_store()
+        if not bool(getattr(store.config, 'auto_approve_enabled', False)):
+            return None
+
+        from services.underwriting_risk_scoring import assess_application
+        customer_id = app.get('customer_id')
+        customer = customer or (CUSTOMERS.get(customer_id, {}) if customer_id else {})
+        claims_count = len([
+            c for c in CLAIMS.values() if c.get('customer_id') == customer_id
+        ]) if customer_id else 0
+        assessment = assess_application(app, customer, claims_count=claims_count)
+        inputs = assessment.get('inputs') or {}
+        recommendation = assessment.get('recommendation_type')
+
+        evaluation = evaluate_auto_approval(
+            {
+                'age': app.get('age') or inputs.get('age'),
+                'adl_level': policy.get('adl_level') or app.get('adl_level'),
+                'coverage_amount': app.get('coverage_amount') or policy.get('coverage_amount'),
+                'smoking_status': policy.get('smoking_status') or inputs.get('smoking_status'),
+                'medical_conditions': inputs.get('medical_conditions') or [],
+                'prior_disclosure': app.get('prior_disclosure'),
+            },
+            risk_score=assessment.get('overall_risk'),
+        )
+        evaluation['engine_recommendation'] = recommendation
+        evaluation['engine_risk_score'] = assessment.get('overall_risk')
+        if recommendation not in AUTO_APPROVABLE_RECOMMENDATIONS:
+            evaluation['auto_approve'] = False
+            evaluation.setdefault('failed', []).append(
+                f"engine_recommendation:{recommendation or 'unavailable'}"
+            )
+
+        # Audit trail on the application either way.
+        app['auto_approval_evaluation'] = evaluation
+        if not evaluation.get('auto_approve'):
+            return {'auto_issued': False, 'evaluation': evaluation}
+
+        now = datetime.now()
+        rule_version = evaluation.get('config_version')
+
+        # Approve the application (system actor, durable assessment snapshot).
+        app['status'] = 'approved'
+        app['decision_date'] = now.isoformat()
+        app['approved_by'] = 'system_auto_approve'
+        app['approval_notes'] = (
+            f"Automatic clean issuance under underwriting rule version {rule_version} "
+            f"(tables {evaluation.get('tables_version')})"
+        )
+        decision_history = list(app.get('decision_history') or [])
+        decision_history.append({
+            'id': app.get('id'),
+            'status': 'approved',
+            'decision': 'auto_approved',
+            'approved_by': 'system_auto_approve',
+            'notes': app.get('approval_notes'),
+            'decided_at': now.isoformat(),
+            'policy_id': policy.get('id'),
+            'rule_version': rule_version,
+        })
+        app['decision_history'] = decision_history
+        snapshot_underwriting_decision_assessment(app, 'system_auto_approve', 'auto_approved')
+
+        # Issue (activate) the policy — pinned to the rule/table versions in force.
+        policy['status'] = 'active'
+        policy['approval_date'] = now.isoformat()
+        policy['effective_date'] = now.isoformat()
+        policy['approved_by'] = 'system_auto_approve'
+        policy['auto_issued'] = True
+        policy['underwriting_rule_version'] = rule_version
+
+        # First bill, honoring the application's billing setup.
+        payment_setup = app.get('payment_setup', {}) or {}
+        billing_frequency = payment_setup.get('billing_frequency', 'monthly')
+        auto_pay = payment_setup.get('auto_pay', True)
+        monthly_premium = policy.get('monthly_premium', 0) or (policy.get('annual_premium', 0) / 12)
+        if billing_frequency == 'quarterly':
+            billing_amount = monthly_premium * 3 * 0.97
+            due_days = 90
+        elif billing_frequency == 'annual':
+            billing_amount = monthly_premium * 12 * 0.90
+            due_days = 365
+        else:
+            billing_amount = monthly_premium
+            due_days = 30
+        bill_id = f"BILL-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+        BILLING[bill_id] = {
+            'id': bill_id,
+            'policy_id': policy.get('id'),
+            'customer_id': customer_id,
+            'customer_name': app.get('customer_name', ''),
+            'customer_email': app.get('customer_email', ''),
+            'amount': round(float(billing_amount), 2),
+            'amount_paid': 0.0,
+            'status': 'outstanding',
+            'billing_frequency': billing_frequency,
+            'auto_pay': auto_pay,
+            'payment_method': {
+                'type': 'card',
+                'card_last4': payment_setup.get('card_last4'),
+                'card_type': payment_setup.get('card_type'),
+            } if payment_setup.get('card_last4') else None,
+            'due_date': (now + timedelta(days=due_days)).isoformat(),
+            'billing_period_start': now.isoformat(),
+            'billing_period_end': (now + timedelta(days=due_days)).isoformat(),
+            'created_date': now.isoformat(),
+            'updated_date': now.isoformat(),
+            'description': f"Premium for policy {policy.get('id')} ({billing_frequency})",
+        }
+
+        # Health wallet activation mirrors the manual approve pipeline.
+        health_wallet_info = app.get('health_wallet', {}) or {}
+        if health_wallet_info.get('enabled') and customer_id:
+            if customer_id not in HEALTH_WALLETS:
+                HEALTH_WALLETS[customer_id] = {
+                    'customer_id': customer_id,
+                    'balance': 0,
+                    'monthly_deposit': health_wallet_info.get('monthly_deposit', 0),
+                    'transactions': [],
+                    'created_at': now.isoformat(),
+                }
+            HEALTH_WALLETS[customer_id]['status'] = 'active'
+
+        # Ledger + audit trail (fail-open, like the manual approve path).
+        try:
+            record_transaction(
+                customer_id=customer_id,
+                tx_type='policy_approved',
+                amount=policy.get('coverage_amount', 0),
+                description=(
+                    f"Policy {policy.get('id')} auto-issued (clean underwriting) "
+                    f"under rule version {rule_version}"
+                ),
+                metadata={
+                    'policy_id': policy.get('id'),
+                    'decided_by': 'system_auto_approve',
+                    'underwriting_rule_version': rule_version,
+                    'tables_version': policy.get('tables_version'),
+                    'config_version': policy.get('config_version'),
+                },
+            )
+        except Exception:
+            pass
+        try:
+            if audit:
+                audit.log('system_auto_approve', 'auto_issue', 'policy', policy.get('id'), {
+                    'underwriting_id': app.get('id'),
+                    'rule_version': rule_version,
+                    'checks': evaluation.get('checks'),
+                })
+        except Exception:
+            pass
+        try:
+            if 'platform_event_ledger' in globals() and platform_event_ledger:
+                platform_event_ledger.append_event(
+                    event_type='policy.auto_issued',
+                    entity_type='policy',
+                    entity_id=policy.get('id'),
+                    customer_id=customer_id,
+                    actor='system_auto_approve',
+                    amount=float(policy.get('coverage_amount') or 0),
+                    status='active',
+                    payload={
+                        'underwriting_id': app.get('id'),
+                        'underwriting_rule_version': rule_version,
+                        'tables_version': policy.get('tables_version'),
+                        'config_version': policy.get('config_version'),
+                        'bill_id': bill_id,
+                    },
+                )
+        except Exception:
+            pass
+
+        # Send the newly issued policy to the customer (fail-open).
+        recipient = app.get('customer_email') or customer.get('email')
+        if recipient:
+            try:
+                from services.notification_service import (
+                    NotificationChannel,
+                    NotificationPriority,
+                    NotificationRequest,
+                    get_notification_service,
+                )
+                get_notification_service().send(NotificationRequest(
+                    channel=NotificationChannel.EMAIL,
+                    recipient=recipient,
+                    subject=f"Your PHINS policy {policy.get('id')} has been issued",
+                    content=(
+                        f"Good news {app.get('customer_name', '')}! Your application "
+                        f"{app.get('id')} passed automated clean underwriting and your "
+                        f"policy {policy.get('id')} is now active. Coverage: "
+                        f"${float(policy.get('coverage_amount') or 0):,.0f}. Your first "
+                        f"{billing_frequency} premium bill is available in the portal."
+                    ),
+                    priority=NotificationPriority.HIGH,
+                    metadata={
+                        'category': 'policy_issuance',
+                        'event': 'policy_auto_issued',
+                        'policy_id': policy.get('id'),
+                        'underwriting_rule_version': rule_version,
+                    },
+                ))
+            except Exception:
+                pass
+
+        return {
+            'auto_issued': True,
+            'policy_id': policy.get('id'),
+            'bill_id': bill_id,
+            'issued_by': 'system_auto_approve',
+            'underwriting_rule_version': rule_version,
+            'evaluation': evaluation,
+        }
+    except Exception as auto_err:
+        print(f"[AUTO-ISSUE] Non-fatal: automatic issuance skipped: {auto_err}")
+        return None
+
+
 def snapshot_claim_decision_assessment(claim, decided_by, decision):
     """Snapshot the claims bot fraud/authenticity score at decision time.
 
@@ -12466,12 +12699,22 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
     annual_premium = monthly_premium * 12
     quarterly_premium = monthly_premium * 3 * 0.97
 
-    return {
+    result = {
         'annual': round(annual_premium, 2),
         'monthly': round(monthly_premium, 2),
         'quarterly': round(quarterly_premium, 2),
         'pricing_source': 'flat_formula',
     }
+    # Every issued policy carries its version # — stamp the actuarial
+    # versions in force even on the flat fallback path (fail-open).
+    try:
+        from services.actuarial_service import get_actuarial_store
+        _store = get_actuarial_store()
+        result['tables_version'] = _store.current_version
+        result['config_version'] = _store.config.config_version
+    except Exception:
+        pass
+    return result
 
 def get_bi_data_actuary() -> Dict[str, Any]:
     """Generate actuarial BI data"""
@@ -16939,7 +17182,198 @@ For claims or questions, please contact:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
-        
+
+        if path == '/api/actuarial/versions/catalog':
+            # Unified versions bar: every rate-table version + every saved
+            # pricing/underwriting config revision, enriched with the number
+            # of policies pinned to each version (issued conditions are
+            # immutable — new versions apply to future underwriting only).
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                return
+            try:
+                from services.actuarial_service import get_actuarial_store
+                store = get_actuarial_store()
+                catalog = store.get_version_catalog()
+
+                tables_usage = {}
+                config_usage = {}
+                unversioned = 0
+                for p in POLICIES.values():
+                    tv = p.get('tables_version')
+                    cv = p.get('config_version')
+                    if tv:
+                        tables_usage[tv] = tables_usage.get(tv, 0) + 1
+                    else:
+                        unversioned += 1
+                    if cv:
+                        config_usage[cv] = config_usage.get(cv, 0) + 1
+                for entry in catalog.get('table_versions', []):
+                    entry['policies_pinned'] = tables_usage.get(entry.get('version'), 0)
+                for entry in catalog.get('config_revisions', []):
+                    entry['policies_pinned'] = config_usage.get(entry.get('config_version'), 0)
+                catalog['policy_version_usage'] = {
+                    'policies_total': len(POLICIES),
+                    'by_tables_version': tables_usage,
+                    'by_config_version': config_usage,
+                    'unversioned': unversioned,
+                }
+                catalog['success'] = True
+                self._set_json_headers()
+                self.wfile.write(json.dumps(catalog).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/actuarial/version-insights':
+            # BI + AI assessment of the version governance surface: version
+            # adoption across the policy book, auto-issuance quality, and
+            # rule-based AI insights — available at any time.
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                return
+            try:
+                from services.actuarial_service import get_actuarial_store
+                store = get_actuarial_store()
+                now = datetime.now()
+
+                policies = list(POLICIES.values())
+                active_policies = [p for p in policies if status_eq(p, 'active')]
+                by_tables_version = {}
+                unversioned = 0
+                for p in policies:
+                    tv = p.get('tables_version')
+                    if tv:
+                        by_tables_version[tv] = by_tables_version.get(tv, 0) + 1
+                    else:
+                        unversioned += 1
+                pinned_to_archived = sum(
+                    count for version, count in by_tables_version.items()
+                    if version != store.current_version
+                )
+
+                apps = list(UNDERWRITING_APPLICATIONS.values())
+                approved_apps = [a for a in apps if status_eq(a, 'approved')]
+                auto_issued = [
+                    a for a in approved_apps
+                    if str(a.get('approved_by') or '') == 'system_auto_approve'
+                ]
+                pending_apps = [a for a in apps if status_eq(a, 'pending')]
+                referred_apps = [a for a in apps if status_eq(a, 'referred')]
+                auto_rate = (len(auto_issued) / len(approved_apps)) if approved_apps else 0.0
+
+                recent_version_changes = 0
+                for entry in store.get_audit_log(500):
+                    if entry.get('action') in (
+                        'upload_tables', 'update_table', 'reset_table', 'restore_version',
+                    ):
+                        try:
+                            ts = datetime.fromisoformat(str(entry.get('timestamp')))
+                            if (now - ts).days <= 30:
+                                recent_version_changes += 1
+                        except (TypeError, ValueError):
+                            pass
+
+                cfg = store.config
+                insights = []
+                if not bool(getattr(cfg, 'auto_approve_enabled', False)):
+                    insights.append({
+                        'severity': 'info',
+                        'title': 'Automatic clean issuance is disabled',
+                        'detail': (
+                            'Every application currently routes to the manual '
+                            'underwriting queue. Enable the auto-approve rule in '
+                            'Underwriting Rules to issue provably clean policies instantly.'
+                        ),
+                    })
+                else:
+                    insights.append({
+                        'severity': 'positive',
+                        'title': 'Automatic clean issuance is active',
+                        'detail': (
+                            f"Gates: ADL ≤ {cfg.auto_approve_max_adl}, age "
+                            f"{cfg.auto_approve_min_age}-{cfg.auto_approve_max_age}, risk score ≤ "
+                            f"{cfg.auto_approve_max_risk_score:.2f}, coverage ≤ "
+                            f"${cfg.auto_approve_max_coverage:,.0f}"
+                            + (', clean history required' if cfg.auto_approve_require_clean_history else '')
+                            + f". {len(auto_issued)} of {len(approved_apps)} approvals "
+                            f"({auto_rate * 100:.0f}%) were issued automatically."
+                        ),
+                    })
+                if pinned_to_archived:
+                    insights.append({
+                        'severity': 'info',
+                        'title': f'{pinned_to_archived} policies remain pinned to earlier versions',
+                        'detail': (
+                            'Their issued conditions are preserved under the version in force at '
+                            'issuance and are never overridden by newer actuarial versions; new '
+                            f'versions (current {store.current_version} / {cfg.config_version}) '
+                            'apply to future underwriting, pricing and billing only.'
+                        ),
+                    })
+                if unversioned:
+                    insights.append({
+                        'severity': 'warning',
+                        'title': f'{unversioned} policies lack a pinned version number',
+                        'detail': (
+                            'These policies predate version pinning. Their premiums remain as '
+                            'billed; consider a back-fill so every contract carries its version #.'
+                        ),
+                    })
+                if recent_version_changes >= 5:
+                    insights.append({
+                        'severity': 'warning',
+                        'title': f'High version churn: {recent_version_changes} table changes in 30 days',
+                        'detail': (
+                            'Frequent rate-table changes increase reconciliation load. Review the '
+                            'audit log to confirm every change was intentional.'
+                        ),
+                    })
+                if pending_apps and bool(getattr(cfg, 'auto_approve_enabled', False)):
+                    insights.append({
+                        'severity': 'info',
+                        'title': f'{len(pending_apps)} applications await manual review',
+                        'detail': (
+                            'These applications failed at least one auto-approve gate (or the risk '
+                            'engine recommended review) and require an underwriter decision.'
+                        ),
+                    })
+
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'generated_at': now.isoformat(),
+                    'current_version': store.current_version,
+                    'current_config_version': cfg.config_version,
+                    'adoption': {
+                        'policies_total': len(policies),
+                        'policies_active': len(active_policies),
+                        'by_tables_version': by_tables_version,
+                        'pinned_to_earlier_versions': pinned_to_archived,
+                        'unversioned': unversioned,
+                    },
+                    'auto_issuance': {
+                        'enabled': bool(getattr(cfg, 'auto_approve_enabled', False)),
+                        'auto_issued': len(auto_issued),
+                        'approved_total': len(approved_apps),
+                        'auto_issuance_rate': round(auto_rate, 4),
+                        'pending_manual': len(pending_apps),
+                        'referred': len(referred_apps),
+                    },
+                    'version_activity': {
+                        'table_changes_last_30_days': recent_version_changes,
+                        'audit_log_entries': len(store.audit_log),
+                    },
+                    'insights': insights,
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
         if path == '/api/actuarial/audit-log':
             # Get audit log
             if not require_role(session, ['admin', 'actuary']):
@@ -30609,7 +31043,89 @@ For claims or questions, please contact:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
-        
+
+        # POST /api/actuarial/versions/restore - Restore an earlier version.
+        # Restoring clones the historical snapshot into a NEW forward version:
+        # earlier versions (and the policies pinned to them) are never mutated.
+        if path == '/api/actuarial/versions/restore':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+
+            try:
+                data = json.loads(body)
+                from services.actuarial_service import get_actuarial_store
+                store = get_actuarial_store()
+                username = session.get('username', 'admin')
+
+                version = data.get('version')
+                config_version = data.get('config_version')
+                if not version and not config_version:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'version or config_version is required'
+                    }).encode('utf-8'))
+                    return
+
+                if version:
+                    result = store.restore_version(str(version), username)
+                    kind = 'rate_tables'
+                else:
+                    result = store.restore_config_version(str(config_version), username)
+                    kind = 'pricing_underwriting_config'
+
+                if not result.get('success'):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'success': False,
+                        'error': result.get('error', 'Restore failed'),
+                    }).encode('utf-8'))
+                    return
+
+                if audit:
+                    try:
+                        audit.log(username, 'restore', 'actuarial_version',
+                                  str(version or config_version), {
+                                      'kind': kind,
+                                      'new_version': result.get('version') or result.get('config_version'),
+                                  })
+                    except Exception:
+                        pass
+
+                response = {
+                    'success': True,
+                    'kind': kind,
+                    'restored_from': result.get('restored_from'),
+                    'new_version': result.get('version') or result.get('config_version'),
+                    'current_version': store.current_version,
+                    'current_config_version': store.config.config_version,
+                    'persisted': result.get('persisted'),
+                    'persisted_to_database': result.get('persisted_to_database'),
+                    'state_revision': result.get('state_revision'),
+                    'message': (
+                        f"Restored {version or config_version} as new version "
+                        f"{result.get('version') or result.get('config_version')} — earlier "
+                        f"versions and issued policy conditions remain unchanged"
+                    ),
+                }
+                if result.get('persistence_warning'):
+                    response['persistence_warning'] = result['persistence_warning']
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(response).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
         # POST /api/actuarial/simulate - Run portfolio simulation
         if path == '/api/actuarial/simulate':
             auth_header = self.headers.get('Authorization', '')
@@ -41197,7 +41713,15 @@ For claims or questions, please contact:
                         audit.log(actor, 'create', 'policy', policy_id, {'customer_id': customer_id, 'coverage_amount': policy.get('coverage_amount')})
                     except Exception:
                         pass
-                
+
+                # Automatic clean issuance: when the adjustable auto-approve
+                # rules are enabled and every gate passes, the application is
+                # approved and the policy activated + billed immediately.
+                auto_issuance = maybe_auto_issue_policy(
+                    UNDERWRITING_APPLICATIONS[uw_id], policy,
+                    CUSTOMERS.get(customer_id),
+                )
+
                 self._set_json_headers(201)
                 
                 # Build response - safely get customer data
@@ -41214,6 +41738,8 @@ For claims or questions, please contact:
                     'underwriting': UNDERWRITING_APPLICATIONS[uw_id],
                     'customer': customer_data
                 }
+                if auto_issuance is not None:
+                    response_data['auto_issuance'] = auto_issuance
                 if pricing_shadow:
                     response_data['pricing_shadow'] = {
                         'enabled': True,
@@ -41315,7 +41841,10 @@ For claims or questions, please contact:
                     'risk_score': data.get('risk_score', 'medium'),
                     'start_date': datetime.now().isoformat(),
                     'end_date': (datetime.now() + timedelta(days=365)).isoformat(),
-                    'created_date': datetime.now().isoformat()
+                    'created_date': datetime.now().isoformat(),
+                    'pricing_source': premium_data.get('pricing_source', 'flat_formula'),
+                    'tables_version': premium_data.get('tables_version'),
+                    'config_version': premium_data.get('config_version'),
                 }
                 POLICIES[policy_id] = policy
                 if audit:
