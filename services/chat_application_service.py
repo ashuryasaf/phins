@@ -61,6 +61,9 @@ MAX_INLINE_SUBMISSION_BYTES = 2 * 1024 * 1024
 
 ALLOWED_MEDIA_KINDS = ("voice", "video", "document", "image")
 
+CONSENT_VERSION = "phins-chat-consent-v1"
+QUESTIONNAIRE_VERSION = "phins-chat-uw-v2"
+
 _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _PHONE_RE = re.compile(r"^\+?[\d\s\-().]{7,30}$")
 _NAME_RE = re.compile(r"^[A-Za-z\u0590-\u05FF\s\-'.]{2,100}$")
@@ -278,6 +281,29 @@ def _validate_free_text(value: Any, _s: Dict[str, Any]) -> Tuple[bool, Any]:
     return True, str(value or "").strip()
 
 
+def _validate_disclosure_text(value: Any, _s: Dict[str, Any]) -> Tuple[bool, Any]:
+    text = str(value or "").strip()
+    if len(text) < 1 or len(text) > 4000:
+        return False, "Please provide a disclosure (or type \"none\")."
+    return True, text
+
+
+def _validate_signature_name(value: Any, session: Dict[str, Any]) -> Tuple[bool, Any]:
+    """Mandatory e-sign: typed legal name must match the contact name on file."""
+    typed = str(value or "").strip()
+    if len(typed) < 2 or len(typed) > 120:
+        return False, "Please type your full legal name to sign."
+    expected = str((session.get("contact") or {}).get("name") or "").strip()
+    if expected:
+        def _fold(s: str) -> str:
+            return " ".join(s.lower().split())
+        if _fold(typed) != _fold(expected):
+            return False, (
+                f"Signature must match the name on this application ({expected})."
+            )
+    return True, typed
+
+
 def _validate_card(value: Any, _s: Dict[str, Any]) -> Tuple[bool, Any]:
     if not isinstance(value, dict):
         return False, "I need your card details as a structured object."
@@ -426,6 +452,17 @@ STEPS: List[Dict[str, Any]] = [
         "validate": _validate_free_text,
     },
     {
+        "id": "prior_disclosure",
+        "prompt": (
+            "Before we continue, I check your answers against any earlier PHINS applications "
+            "or claims. If anything conflicts I'll ask you to explain; otherwise I'll ask you "
+            "to disclose any other medical facts now that you are releasing medical "
+            "confidentiality to PHINS underwriting."
+        ),
+        "input": {"type": "text", "placeholder": "Your disclosure"},
+        "validate": _validate_disclosure_text,
+    },
+    {
         "id": "daily_function",
         "prompt": (
             "Last health question, and it matters for your disability cover. "
@@ -445,7 +482,7 @@ STEPS: List[Dict[str, Any]] = [
         },
         "validate": _choice_validator(["full", "minor", "moderate", "significant"]),
     },
-    # assessment is delivered by the bot right after `medications`.
+    # assessment is delivered by the bot right after `daily_function`.
     {
         "id": "coverage_amount",
         "prompt": "Now the fun part - how much coverage would you like? Most members pick $500,000. You can fine-tune it with the slider.",
@@ -511,12 +548,21 @@ STEPS: List[Dict[str, Any]] = [
     {
         "id": "consent",
         "prompt": (
-            "Final step - the legal part. Please confirm that: (1) you agree to the Terms of Use "
+            "Almost done - the legal part. Please confirm that: (1) you agree to the Terms of Use "
             "and Privacy Policy, (2) everything you told me is accurate and complete, and "
             "(3) you authorize PHINS to charge your payment method for premiums."
         ),
         "input": {"type": "consent", "options": ["agree"]},
         "validate": _choice_validator(["agree"]),
+    },
+    {
+        "id": "signature",
+        "prompt": (
+            "Final step — your electronic signature is mandatory. Type your full legal name "
+            "exactly as it appears on this application to sign and seal your declarations."
+        ),
+        "input": {"type": "signature", "placeholder": "Full legal name"},
+        "validate": _validate_signature_name,
     },
 ]
 
@@ -625,11 +671,94 @@ class ChatPolicyApplicationService:
         prompt = step["prompt"]
         if callable(prompt):
             prompt = prompt(session)
-        return {"id": step["id"], "prompt": prompt, "input": step["input"]}
+        public = {"id": step["id"], "prompt": prompt, "input": dict(step["input"])}
+        if step["id"] == "prior_disclosure":
+            disclosure = self._build_disclosure_for(session)
+            public["prompt"] = disclosure["prompt"]
+            public["input"]["placeholder"] = disclosure.get("placeholder") or public["input"].get("placeholder")
+            public["disclosure_mode"] = disclosure.get("mode")
+            public["contradictions"] = disclosure.get("contradictions") or []
+            session["disclosure_context"] = disclosure
+        return public
 
-    # ------------------------------------------------------------------
-    # lifecycle
-    # ------------------------------------------------------------------
+    def _build_disclosure_for(self, session: Dict[str, Any]) -> Dict[str, Any]:
+        """Personalize the medical disclosure / contradiction step."""
+        from services.underwriting_integrity_service import (
+            build_disclosure_prompt,
+            detect_claim_statement_contradictions,
+            detect_statement_contradictions,
+            find_prior_customer_records,
+        )
+        email = (session.get("contact") or {}).get("email")
+        customer_id = session.get("customer_id")
+        underwriting_apps: Dict[str, Any] = {}
+        policies: Dict[str, Any] = {}
+        claims: Dict[str, Any] = {}
+        try:
+            try:
+                from web_portal import server as portal
+            except ImportError:
+                import server as portal  # type: ignore
+            underwriting_apps = dict(getattr(portal, "UNDERWRITING_APPLICATIONS", {}) or {})
+            policies = dict(getattr(portal, "POLICIES", {}) or {})
+            claims = dict(getattr(portal, "CLAIMS", {}) or {})
+        except Exception as exc:
+            logger.warning("Disclosure prior-record lookup failed: %s", exc)
+        prior = find_prior_customer_records(
+            email=email,
+            customer_id=customer_id,
+            underwriting_apps=underwriting_apps,
+            policies=policies,
+            claims=claims,
+            exclude_app_id=None,
+        )
+        contradictions = detect_statement_contradictions(
+            session.get("answers") or {}, prior["applications"]
+        )
+        contradictions.extend(
+            detect_claim_statement_contradictions(session.get("answers") or {}, prior["claims"])
+        )
+        return build_disclosure_prompt(contradictions)
+
+    def _apply_side_effects(self, session: Dict[str, Any], step_id: str,
+                            cleaned: Any, events: List[Dict[str, Any]]) -> None:
+        contact = session["contact"]
+        if step_id == "name":
+            contact["name"] = cleaned
+        elif step_id == "email":
+            contact["email"] = cleaned
+        elif step_id == "phone":
+            contact["phone"] = cleaned
+        elif step_id == "payment_card":
+            # Redact the stored transcript meta; the card details live only in
+            # answers (used once at submission, like the classic form).
+            events.append(self._journey_add(session, "payment_captured",
+                                            meta={"card_last4": cleaned["card_last4"]}))
+        elif step_id == "prior_disclosure":
+            ctx = session.get("disclosure_context") or self._build_disclosure_for(session)
+            session["answers"]["disclosure_mode"] = ctx.get("mode")
+            session["answers"]["prior_disclosure"] = cleaned
+            session["answers"]["prior_disclosure_at"] = _utc_now_iso()
+            session["answers"]["contradiction_codes"] = [
+                c.get("field") for c in (ctx.get("contradictions") or []) if c.get("field")
+            ]
+            session["disclosure_context"] = ctx
+            events.append(self._journey_add(
+                session, "disclosure_captured",
+                meta={"mode": ctx.get("mode"),
+                      "contradiction_count": len(ctx.get("contradictions") or [])}))
+        elif step_id == "consent":
+            session["answers"]["consent_accepted_at"] = _utc_now_iso()
+            session["answers"]["consent_version"] = CONSENT_VERSION
+        elif step_id == "signature":
+            session["signature_name"] = cleaned
+            session["signature_at"] = _utc_now_iso()
+            session["answers"]["signature_name"] = cleaned
+            session["answers"]["signature_at"] = session["signature_at"]
+            session["answers"]["signature_method"] = "typed_legal_name"
+            events.append(self._journey_add(
+                session, "signed",
+                meta={"signature_name": cleaned, "signature_at": session["signature_at"]}))
 
     def start_session(self, *, channel: str = "web_chat",
                       invite: Optional[Dict[str, Any]] = None,
@@ -824,21 +953,6 @@ class ChatPolicyApplicationService:
             return ", ".join(str(v) for v in value)
         return str(value)
 
-    def _apply_side_effects(self, session: Dict[str, Any], step_id: str,
-                            cleaned: Any, events: List[Dict[str, Any]]) -> None:
-        contact = session["contact"]
-        if step_id == "name":
-            contact["name"] = cleaned
-        elif step_id == "email":
-            contact["email"] = cleaned
-        elif step_id == "phone":
-            contact["phone"] = cleaned
-        elif step_id == "payment_card":
-            # Redact the stored transcript meta; the card details live only in
-            # answers (used once at submission, like the classic form).
-            events.append(self._journey_add(session, "payment_captured",
-                                            meta={"card_last4": cleaned["card_last4"]}))
-
     # -- broker persona -------------------------------------------------
 
     def _acknowledge(self, session: Dict[str, Any], step_id: str, value: Any) -> Optional[str]:
@@ -875,6 +989,14 @@ class ChatPolicyApplicationService:
             if value and value != ["none"]:
                 return "Thanks - family history helps our actuaries price fairly, it doesn't disqualify you."
             return "Good genes - noted."
+        if step_id == "prior_disclosure":
+            mode = (session.get("disclosure_context") or {}).get("mode")
+            if mode == "contradiction":
+                return ("Thank you - I've sealed that explanation into your file for the senior "
+                        "underwriter. Honesty here protects your future claims.")
+            if str(value).strip().lower() in ("none", "n/a", "na", "no"):
+                return "Understood - nothing further to disclose. Continuing."
+            return "Recorded. That extra disclosure goes straight to underwriting with your file."
         if step_id == "coverage_amount":
             return f"${value:,.0f} of coverage - solid choice."
         if step_id == "daily_function":
@@ -899,7 +1021,12 @@ class ChatPolicyApplicationService:
             return ("Auto-pay armed - one less thing to think about." if value == "yes"
                     else "No problem - I'll send you a reminder before each due date.")
         if step_id == "consent":
-            return "Signed and sealed."
+            return "Legal confirmations recorded - one last step for your signature."
+        if step_id == "signature":
+            return (
+                f"Signed by {value} at {session.get('signature_at')}. "
+                "Your declarations are now sealed for underwriting."
+            )
         if step_id == "media_offer":
             n = len(session["media"])
             if n:
@@ -1555,6 +1682,10 @@ class ChatPolicyApplicationService:
                 "occupation": answers.get("occupation") or "",
                 "daily_function": answers.get("daily_function") or "full",
                 "adl_level": adl_level,
+                "prior_disclosure": answers.get("prior_disclosure") or "",
+                "disclosure_mode": answers.get("disclosure_mode") or "open_disclosure",
+                "signature_name": answers.get("signature_name") or "",
+                "signature_at": answers.get("signature_at") or "",
             },
             "phins_allocation": {
                 "protection_pct": int(round(100 / (1 + savings_rate))) if savings_rate else 100,
@@ -1571,6 +1702,32 @@ class ChatPolicyApplicationService:
                 "billing_frequency": answers.get("billing_frequency") or "monthly",
                 "auto_pay": answers.get("auto_pay") == "yes",
             },
+            "consent": {
+                "accepted": bool(answers.get("consent")),
+                "accepted_at": answers.get("consent_accepted_at"),
+                "version": answers.get("consent_version") or CONSENT_VERSION,
+            },
+            "prior_disclosure": {
+                "mode": answers.get("disclosure_mode") or "open_disclosure",
+                "text": answers.get("prior_disclosure") or "",
+                "acknowledged_at": answers.get("prior_disclosure_at"),
+                "contradiction_codes": list(answers.get("contradiction_codes") or []),
+                "confidentiality_waiver": True,
+            },
+            "signature": {
+                "name": answers.get("signature_name") or "",
+                "signed_at": answers.get("signature_at"),
+                "method": answers.get("signature_method") or "typed_legal_name",
+                "mandatory": True,
+            },
+            "questionnaire_version": QUESTIONNAIRE_VERSION,
+            "acknowledgements": [
+                "I confirm the answers I provided are accurate to the best of my knowledge.",
+                "I understand incomplete or inaccurate information may delay or void coverage.",
+                "I authorize PHINS to use this information for underwriting and claim processing.",
+                "I understand I am waiving medical confidentiality for underwriting analysis of the facts I disclosed.",
+                "I electronically signed this application with my legal name and intend it as my binding signature.",
+            ],
             "health_wallet": {"enabled": True, "monthly_deposit": 0},
             "pipeline_enabled": True,
             "savings_pipeline_enabled": bool(savings_rate),

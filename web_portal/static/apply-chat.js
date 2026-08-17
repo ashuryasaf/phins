@@ -250,8 +250,11 @@
             case 'consent':
                 renderConsent();
                 break;
+            case 'signature':
+                renderSignature(input);
+                break;
             default:
-                renderTextInput({ type: 'text' });
+                renderTextInput({ type: 'text', placeholder: input.placeholder });
         }
     }
 
@@ -398,7 +401,7 @@
                     <span>I authorize PHINS to charge my payment method for premiums and approved expenses.</span></label>
             </div>
             <div class="dock-row" style="justify-content:flex-end;">
-                <button class="chip chip-go" id="consent-submit" disabled>I agree - submit my application</button>
+                <button class="chip chip-go" id="consent-submit" disabled>I agree - continue to signature</button>
             </div>
         `);
         const boxes = ['c-terms', 'c-accuracy', 'c-billing'].map($);
@@ -406,6 +409,28 @@
         const refresh = () => { btn.disabled = !boxes.every((b) => b.checked); };
         boxes.forEach((b) => b.addEventListener('change', refresh));
         btn.addEventListener('click', () => submitAnswer('agree', 'I agree - all three confirmations'));
+    }
+
+    function renderSignature(input) {
+        dockHtml(`
+            <div class="dock-label">Electronic signature (mandatory)</div>
+            <div class="dock-row">
+                <input class="dock-input" id="dock-field" type="text"
+                       placeholder="${escapeHtml(input.placeholder || 'Full legal name')}"
+                       autocomplete="name">
+                <button class="chip chip-go" id="sign-submit">Sign &amp; seal</button>
+            </div>
+            <div class="dock-hint">Type your full legal name exactly as on this application. This seals your medical declarations.</div>
+        `);
+        const field = $('dock-field');
+        field.focus();
+        const send = () => {
+            const value = field.value.trim();
+            if (!value) return;
+            submitAnswer(value, `Signed: ${value}`);
+        };
+        $('sign-submit').addEventListener('click', send);
+        field.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
     }
 
     function cap(text) {

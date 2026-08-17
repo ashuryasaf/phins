@@ -320,6 +320,11 @@ def _ensure_senior_uw_queue(application_id: str) -> Optional[Dict[str, Any]]:
         "coverage_amount": answers.get("coverage_amount"),
         "coverage_years": answers.get("coverage_years"),
         "adl_level": quote.get("adl_level") or assessment.get("adl_level"),
+        "prior_disclosure": answers.get("prior_disclosure"),
+        "disclosure_mode": answers.get("disclosure_mode"),
+        "signature_name": answers.get("signature_name"),
+        "signature_at": answers.get("signature_at"),
+        "consent": answers.get("consent"),
     }
 
     # Persist the chat assessment + quote inside data_sources (a real DB
@@ -385,6 +390,10 @@ def _ensure_senior_uw_queue(application_id: str) -> Optional[Dict[str, Any]]:
         "email_verified": bool(snap.get("email_verified")),
         "contact_priority": "high",
         "identity_verified": bool(snap.get("email_verified")),
+        "signature_name": answers.get("signature_name"),
+        "signature_at": answers.get("signature_at"),
+        "prior_disclosure": answers.get("prior_disclosure"),
+        "disclosure_mode": answers.get("disclosure_mode"),
         "notes": (
             "Automated chat submit blocked by actuarial ADL / eligibility rules. "
             "Senior underwriter must contact the applicant before a policy can be issued. "
