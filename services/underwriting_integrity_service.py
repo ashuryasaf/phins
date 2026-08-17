@@ -742,7 +742,8 @@ def build_policy_contract(
     background: linear-gradient(180deg, #ffffff 10%, var(--gold-strong) 100%);
     -webkit-background-clip: text;
     background-clip: text;
-    color: transparent;
+    color: var(--gold-strong);
+    -webkit-text-fill-color: transparent;
   }}
   .brand-tag {{
     margin-top: 8px;
@@ -903,7 +904,8 @@ def build_policy_contract(
     background: linear-gradient(90deg, var(--navy-mid), var(--gold-deep));
     -webkit-background-clip: text;
     background-clip: text;
-    color: transparent;
+    color: var(--navy-mid);
+    -webkit-text-fill-color: transparent;
   }}
   .sig-meta {{ font-size: 11px; color: var(--muted); margin-top: 2px; }}
   .portal {{
@@ -977,6 +979,17 @@ def build_policy_contract(
   @media print {{
     body {{ background: #fff; }}
     .sheet {{ box-shadow: none; margin: 0; border: none; }}
+    /* Gradient text (background-clip:text + transparent fill) is invisible in
+       most print/PDF and email renderers — the gradient paints as a block
+       behind transparent glyphs. Restore an opaque fill so the wordmark and
+       electronic signature stay legible. */
+    .brand-word, .sig {{
+      background: none !important;
+      -webkit-background-clip: border-box !important;
+      background-clip: border-box !important;
+      -webkit-text-fill-color: var(--navy-mid) !important;
+      color: var(--navy-mid) !important;
+    }}
   }}
 </style>
 </head>
