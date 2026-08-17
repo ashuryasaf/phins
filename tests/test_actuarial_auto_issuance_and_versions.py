@@ -143,6 +143,10 @@ def test_evaluate_auto_approval_gates(auto_approve_guard):
         ({'adl_level': 7}, 'max_adl'),
         ({'coverage_amount': 5_000_000}, 'max_coverage'),
         ({'smoking_status': 'smoker'}, 'clean_history_nonsmoker'),
+        # Allow-list gate: former or unknown smoking status is not provably
+        # clean and must fail too.
+        ({'smoking_status': 'former_smoker'}, 'clean_history_nonsmoker'),
+        ({'smoking_status': ''}, 'clean_history_nonsmoker'),
         ({'medical_conditions': [{'condition': 'diabetes'}]},
          'clean_history_no_medical_conditions'),
         ({'prior_disclosure': 'heart surgery 2019'},
