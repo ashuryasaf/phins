@@ -1155,66 +1155,143 @@ class ChatPolicyApplicationService:
         if step_id == "dob":
             age = _calculate_age(value)
             if age is not None and age < 30:
-                return f"{age} - starting early is the single smartest insurance decision. Locking in your health now keeps premiums low for decades."
+                return _i18n_ack(
+                    session, "dob_young",
+                    f"{age} - starting early is the single smartest insurance decision. "
+                    "Locking in your health now keeps premiums low for decades.",
+                    age=age,
+                )
             if age is not None and age >= 55:
-                return f"Noted, {age}. I'll make sure the plan reflects the protection that matters most at this stage."
-            return "Got it, thanks."
+                return _i18n_ack(
+                    session, "dob_senior",
+                    f"Noted, {age}. I'll make sure the plan reflects the protection that matters most at this stage.",
+                    age=age,
+                )
+            return _i18n_ack(session, "dob_default", "Got it, thanks.")
         if step_id == "tobacco":
             if value == "yes":
-                return ("Thanks for being straight with me - as your broker I have to be straight back: "
-                        "tobacco does raise the premium. The good news? Quit for 12 months and we can re-rate you.")
+                return _i18n_ack(
+                    session, "tobacco_yes",
+                    "Thanks for being straight with me - as your broker I have to be straight back: "
+                    "tobacco does raise the premium. The good news? Quit for 12 months and we can re-rate you.",
+                )
             if value == "former":
-                return "Respect - quitting is hard. Since it's been over a year, the impact on your rate is modest."
-            return "Great - that keeps your rate nice and lean."
+                return _i18n_ack(
+                    session, "tobacco_former",
+                    "Respect - quitting is hard. Since it's been over a year, the impact on your rate is modest.",
+                )
+            return _i18n_ack(session, "tobacco_no", "Great - that keeps your rate nice and lean.")
         if step_id == "weight":
             h = answers.get("height")
             w = answers.get("weight")
             if h and w:
                 bmi = w / ((h / 100) ** 2)
                 if 18.5 <= bmi < 25:
-                    return f"Your BMI comes out at {bmi:.1f} - right in the healthy range. Underwriting loves that."
+                    return _i18n_ack(
+                        session, "bmi_healthy",
+                        f"Your BMI comes out at {bmi:.1f} - right in the healthy range. Underwriting loves that.",
+                        bmi=bmi,
+                    )
                 if bmi >= 30:
-                    return f"Your BMI comes out at {bmi:.1f}. It may add a small loading, but nothing we can't work with."
-                return f"Your BMI comes out at {bmi:.1f} - noted for the assessment."
+                    return _i18n_ack(
+                        session, "bmi_high",
+                        f"Your BMI comes out at {bmi:.1f}. It may add a small loading, but nothing we can't work with.",
+                        bmi=bmi,
+                    )
+                return _i18n_ack(
+                    session, "bmi_other",
+                    f"Your BMI comes out at {bmi:.1f} - noted for the assessment.",
+                    bmi=bmi,
+                )
         if step_id == "medical_conditions" and value == "no":
-            return "Clean bill of health - excellent."
+            return _i18n_ack(session, "medical_clean", "Clean bill of health - excellent.")
         if step_id == "hazardous" and value != "no":
-            return "Adventurous! I'll factor that in - full transparency keeps your claims bulletproof."
+            return _i18n_ack(
+                session, "hazardous",
+                "Adventurous! I'll factor that in - full transparency keeps your claims bulletproof.",
+            )
         if step_id == "family_history":
             if value and value != ["none"]:
-                return "Thanks - family history helps our actuaries price fairly, it doesn't disqualify you."
-            return "Good genes - noted."
+                return _i18n_ack(
+                    session, "family_yes",
+                    "Thanks - family history helps our actuaries price fairly, it doesn't disqualify you.",
+                )
+            return _i18n_ack(session, "family_no", "Good genes - noted.")
         if step_id == "prior_disclosure":
             mode = (session.get("disclosure_context") or {}).get("mode")
             if mode == "contradiction":
-                return ("Thank you - I've sealed that explanation into your file for the senior "
-                        "underwriter. Honesty here protects your future claims.")
+                return _i18n_ack(
+                    session, "disclosure_contradiction",
+                    "Thank you - I've sealed that explanation into your file for the senior "
+                    "underwriter. Honesty here protects your future claims.",
+                )
             if str(value).strip().lower() in ("none", "n/a", "na", "no"):
-                return "Understood - nothing further to disclose. Continuing."
-            return "Recorded. That extra disclosure goes straight to underwriting with your file."
+                return _i18n_ack(
+                    session, "disclosure_none",
+                    "Understood - nothing further to disclose. Continuing.",
+                )
+            return _i18n_ack(
+                session, "disclosure_other",
+                "Recorded. That extra disclosure goes straight to underwriting with your file.",
+            )
         if step_id == "coverage_amount":
-            return f"${value:,.0f} of coverage - solid choice."
+            return _i18n_ack(
+                session, "coverage_amount",
+                f"${value:,.0f} of coverage - solid choice.",
+                value=value,
+            )
         if step_id == "daily_function":
             if value == "full":
-                return "Full independence - that's the standard rating for the disability benefit."
-            return ("Thank you for being precise - our actuaries rate the disability benefit "
-                    "directly off that, so this keeps your cover honest and claimable.")
+                return _i18n_ack(
+                    session, "daily_full",
+                    "Full independence - that's the standard rating for the disability benefit.",
+                )
+            return _i18n_ack(
+                session, "daily_other",
+                "Thank you for being precise - our actuaries rate the disability benefit "
+                "directly off that, so this keeps your cover honest and claimable.",
+            )
         if step_id == "savings_addon":
             if value == "none":
-                return "Pure protection it is. Let me price it from our actuarial pricing center..."
-            return ("Savings added on top of your protection. Pricing it now through our "
-                    "actuarial pricing center...")
+                return _i18n_ack(
+                    session, "savings_none",
+                    "Pure protection it is. Let me price it from our actuarial pricing center...",
+                )
+            return _i18n_ack(
+                session, "savings_other",
+                "Savings added on top of your protection. Pricing it now through our "
+                "actuarial pricing center...",
+            )
         if step_id == "coverage_years":
-            return f"{value} years - noted."
+            return _i18n_ack(
+                session, "coverage_years",
+                f"{value} years - noted.",
+                value=value,
+            )
         if step_id == "billing_frequency":
             if value == "annual":
-                return "Annual it is - that locks in the 10% saving."
+                return _i18n_ack(
+                    session, "billing_annual",
+                    "Annual it is - that locks in the 10% saving.",
+                )
             if value == "quarterly":
-                return "Quarterly - you get the 3% saving."
-            return "Monthly - the most popular option."
+                return _i18n_ack(
+                    session, "billing_quarterly",
+                    "Quarterly - you get the 3% saving.",
+                )
+            return _i18n_ack(
+                session, "billing_monthly",
+                "Monthly - the most popular option.",
+            )
         if step_id == "auto_pay":
-            return ("Auto-pay armed - one less thing to think about." if value == "yes"
-                    else "No problem - I'll send you a reminder before each due date.")
+            return (
+                _i18n_ack(session, "auto_pay_yes", "Auto-pay armed - one less thing to think about.")
+                if value == "yes"
+                else _i18n_ack(
+                    session, "auto_pay_no",
+                    "No problem - I'll send you a reminder before each due date.",
+                )
+            )
         if step_id == "consent":
             return _i18n_ack(
                 session, "consent_ack",
