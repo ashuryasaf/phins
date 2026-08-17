@@ -381,6 +381,11 @@
                             <span class="quick-stat-label">Smoking:</span>
                             <span class="quick-stat-value">${formatSmokingStatus(report.medical_assessment?.smoking_status)}</span>
                         </div>
+                        ${report.applicant?.adl_level != null || report.medical_assessment?.adl_level != null ? `
+                        <div class="quick-stat">
+                            <span class="quick-stat-label">ADL Level:</span>
+                            <span class="quick-stat-value">${escapeHtml(String(report.applicant?.adl_level ?? report.medical_assessment?.adl_level))}</span>
+                        </div>` : ''}
                         <div class="quick-stat">
                             <span class="quick-stat-label">Risk:</span>
                             <span class="quick-stat-value ${riskClass}">${riskCategory}</span>
@@ -689,7 +694,9 @@
                 'auto': 'Auto Insurance',
                 'property': 'Property Insurance',
                 'disability': 'Disability Insurance',
-                'phins_unified': 'PHINS Unified Coverage',
+                'phins_unified': 'PHINS Unified (Life & Disability)',
+                'phins_pure_risk_adjustable': 'PHINS Pure Risk (Life & Disability)',
+                'phins_hybrid_savings': 'PHINS Hybrid (Life, Disability & Savings)',
                 'comprehensive': 'Comprehensive Coverage'
             };
             return types[type.toLowerCase()] || capitalizeFirst(type.replace(/_/g, ' '));

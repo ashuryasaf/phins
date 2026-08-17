@@ -212,6 +212,7 @@ def _run_application(email: str, *, with_media: bool = True):
     _answer(app_id, "no", resume_code)           # hazardous
     _answer(app_id, ["none"], resume_code)       # family_history
     _answer(app_id, "none", resume_code)         # medications
+    _answer(app_id, "none", resume_code)         # prior_disclosure
     assessment = _answer(app_id, "full", resume_code)   # daily_function
     assert assessment.get("assessment")
 
@@ -255,7 +256,10 @@ def _run_application(email: str, *, with_media: bool = True):
     )                                            # payment_card
     _answer(app_id, "yes", resume_code)          # auto_pay
     consent = _answer(app_id, "agree", resume_code)
-    assert consent.get("ready_to_finalize") is True
+    assert consent.get("ready_to_finalize") is not True
+    assert consent.get("step", {}).get("id") == "signature"
+    sign = _answer(app_id, "Maya Cohen", resume_code)
+    assert sign.get("ready_to_finalize") is True
 
     status, result = _post(
         f"/api/chat-application/{app_id}/finalize", {"resume_code": resume_code}
@@ -553,7 +557,7 @@ def test_adl_decline_opens_underwriter_queue_with_contact(isolated_store):
 
     for value in (
         "1975-01-15", "male", "Teacher", 175, 80, "no", "no", "no", "no",
-        ["none"], "none",
+        ["none"], "none", "none",
     ):
         _answer(app_id, value, resume_code)
     _answer(app_id, "significant", resume_code)  # ADL 8 -> declined
@@ -593,6 +597,7 @@ def test_adl_decline_opens_underwriter_queue_with_contact(isolated_store):
     )
     _answer(app_id, "yes", resume_code)
     _answer(app_id, "agree", resume_code)
+    _answer(app_id, "Senior Case", resume_code)  # mandatory signature
 
     status, blocked = _post(
         f"/api/chat-application/{app_id}/finalize", {"resume_code": resume_code}

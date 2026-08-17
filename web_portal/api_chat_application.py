@@ -160,11 +160,16 @@ def _portal_module():
     return portal
 
 
-def _find_or_create_referral_customer(portal, contact: Dict[str, Any]) -> str:
+def _find_or_create_referral_customer(portal, contact: Dict[str, Any],
+                                      answers: Optional[Dict[str, Any]] = None) -> str:
     """Resolve a CUSTOMERS id for staff contact without provisioning a login."""
     email = str(contact.get("email") or "").strip().lower()
     phone = str(contact.get("phone") or "").strip()
     name = str(contact.get("name") or "").strip() or "Chat applicant"
+    answers = answers or {}
+    dob = str(answers.get("dob") or "").strip() or None
+    gender = answers.get("gender")
+    occupation = answers.get("occupation")
     if email:
         for cust_id, cust in list(getattr(portal, "CUSTOMERS", {}).items()):
             if str((cust or {}).get("email") or "").strip().lower() == email:
@@ -173,6 +178,13 @@ def _find_or_create_referral_customer(portal, contact: Dict[str, Any]) -> str:
                     cust["phone"] = phone
                 if name and (not cust.get("name") or cust.get("name") == "Unknown"):
                     cust["name"] = name
+                if dob and not (cust.get("dob") or cust.get("date_of_birth")):
+                    cust["dob"] = dob
+                    cust["date_of_birth"] = dob
+                if gender and not cust.get("gender"):
+                    cust["gender"] = gender
+                if occupation and not cust.get("occupation"):
+                    cust["occupation"] = occupation
                 cust["updated_date"] = datetime.now(timezone.utc).isoformat()
                 portal.CUSTOMERS[cust_id] = cust
                 return str(cust_id)
@@ -183,6 +195,10 @@ def _find_or_create_referral_customer(portal, contact: Dict[str, Any]) -> str:
         "name": name,
         "email": email,
         "phone": phone,
+        "dob": dob,
+        "date_of_birth": dob,
+        "gender": gender,
+        "occupation": occupation,
         "created_date": now,
         "updated_date": now,
         "source": "chat_adl_referral",
@@ -198,6 +214,10 @@ def _ensure_senior_uw_queue(application_id: str) -> Optional[Dict[str, Any]]:
     ``UNDERWRITING_APPLICATIONS``. Without this bridge, a senior-review
     message is shown to the applicant and nobody on staff can see contact
     details.
+
+    The row is denormalized onto UnderwritingApplication columns (age, BMI,
+    smoking, medical_conditions, data_sources) so risk-assessment reports
+    re-score from real actuarial inputs instead of the empty-file 10% base.
     """
     svc = _service()
     snap = svc.senior_referral_snapshot(application_id)
@@ -224,7 +244,7 @@ def _ensure_senior_uw_queue(application_id: str) -> Optional[Dict[str, Any]]:
         return existing
 
     customer_id = (existing or {}).get("customer_id") or _find_or_create_referral_customer(
-        portal, contact
+        portal, contact, answers
     )
     now = datetime.now(timezone.utc).isoformat()
     risk = str(
@@ -232,6 +252,97 @@ def _ensure_senior_uw_queue(application_id: str) -> Optional[Dict[str, Any]]:
         or assessment.get("risk_assessment")
         or "high"
     ).lower()
+
+    # Prefer the chat engine's structured conditions; fall back to rebuilding
+    # from free-text answers so the risk report never sees an empty file.
+    medical_conditions: list = []
+    try:
+        from services.underwriting_risk_scoring import extract_risk_inputs
+        preview = extract_risk_inputs(
+            {
+                "questionnaire_responses": answers,
+                "adl_level": quote.get("adl_level") or assessment.get("adl_level"),
+                "assessment": assessment,
+            },
+            {"dob": answers.get("dob"), "gender": answers.get("gender")},
+        )
+        medical_conditions = list(preview.get("medical_conditions") or [])
+    except Exception as exc:
+        logger.warning("Chat referral condition rebuild failed for %s: %s",
+                       application_id, exc)
+
+    age = assessment.get("age")
+    if age is None and answers.get("dob"):
+        try:
+            from services.chat_application_service import _calculate_age
+            age = _calculate_age(str(answers.get("dob")))
+        except Exception:
+            age = None
+    bmi = assessment.get("bmi")
+    height = answers.get("height")
+    weight = answers.get("weight")
+    if bmi is None and height and weight:
+        try:
+            h, w = float(height), float(weight)
+            if h > 0 and w > 0:
+                bmi = round(w / ((h / 100) ** 2), 1)
+        except (TypeError, ValueError):
+            bmi = None
+
+    tobacco = str(answers.get("tobacco") or "").strip().lower()
+    smoking_status = {
+        "yes": "current", "smoker": "current", "current": "current",
+        "former": "former", "ex": "former",
+        "no": "never", "never": "never", "nonsmoker": "never",
+    }.get(tobacco)
+
+    product_id = str(quote.get("product_id") or "phins_unified")
+    if product_id.lower() in ("life", "standard", "general", ""):
+        product_id = "phins_unified"
+
+    questionnaire_responses = {
+        "daily_function": answers.get("daily_function"),
+        "dob": answers.get("dob"),
+        "gender": answers.get("gender"),
+        "occupation": answers.get("occupation"),
+        "height": height,
+        "weight": weight,
+        "tobacco": answers.get("tobacco"),
+        "smoke": answers.get("tobacco"),
+        "medical_conditions": answers.get("medical_conditions"),
+        "conditions_list": answers.get("conditions_list"),
+        "medications": answers.get("medications"),
+        "hazardous": answers.get("hazardous"),
+        "surgery": answers.get("surgery"),
+        "surgery_list": answers.get("surgery_list"),
+        "family_history": answers.get("family_history"),
+        "savings_addon": answers.get("savings_addon"),
+        "coverage_amount": answers.get("coverage_amount"),
+        "coverage_years": answers.get("coverage_years"),
+        "adl_level": quote.get("adl_level") or assessment.get("adl_level"),
+        "prior_disclosure": answers.get("prior_disclosure"),
+        "disclosure_mode": answers.get("disclosure_mode"),
+        "signature_name": answers.get("signature_name"),
+        "signature_at": answers.get("signature_at"),
+        "consent": answers.get("consent"),
+    }
+
+    # Persist the chat assessment + quote inside data_sources (a real DB
+    # column). Nested ``assessment`` / ``quote_summary`` keys are stripped by
+    # DatabaseDict and would otherwise vanish in production.
+    data_sources = {
+        "channel": "chat",
+        "chat_application_id": application_id,
+        "chat_assessment": assessment,
+        "quote_summary": quote,
+        "engine_recommendation": assessment.get("recommendation_type"),
+        "overall_risk": assessment.get("overall_risk"),
+        "confidence": assessment.get("confidence"),
+        "adl_declined": bool(quote.get("adl_declined")),
+        "eligible": quote.get("eligible"),
+        "disability_excluded": bool(quote.get("disability_excluded")),
+    }
+
     record = {
         "id": uw_id,
         "status": "pending",
@@ -239,9 +350,12 @@ def _ensure_senior_uw_queue(application_id: str) -> Optional[Dict[str, Any]]:
         "application_channel": "chat",
         "chat_application_id": application_id,
         "resume_code": snap.get("resume_code"),
-        "recommendation_type": "refer_senior_uw",
+        "recommendation_type": (
+            assessment.get("recommendation_type") or "refer_senior_uw"
+        ),
         "referral_reason": (
             quote.get("decline_reason")
+            or assessment.get("recommendation_type")
             or "adl_senior_review_required"
         ),
         "customer_id": customer_id,
@@ -250,38 +364,41 @@ def _ensure_senior_uw_queue(application_id: str) -> Optional[Dict[str, Any]]:
         "customer_phone": contact.get("phone") or "",
         "policy_id": None,
         "policy_status": "not_created",
-        "policy_type": "life",
+        "policy_type": product_id,
         "coverage_amount": quote.get("coverage_amount") or answers.get("coverage_amount") or 0,
         "coverage_years": quote.get("coverage_years") or answers.get("coverage_years"),
         "monthly_premium": quote.get("monthly") or 0,
         "annual_premium": quote.get("annual") or 0,
+        "age": age,
+        "gender": answers.get("gender"),
+        "occupation": answers.get("occupation"),
+        "bmi": bmi,
+        "height_cm": height,
+        "weight_kg": weight,
+        "smoking_status": smoking_status,
+        "medical_conditions": medical_conditions,
         "risk_assessment": risk,
         "risk_score": risk,
+        "premium_adjustment": int(round(float(assessment.get("premium_adjustment") or 0) * 100)),
         "adl_level": quote.get("adl_level") or assessment.get("adl_level"),
         "disability_excluded": bool(quote.get("disability_excluded")),
         "adl_declined": bool(quote.get("adl_declined")),
         "eligible": quote.get("eligible"),
-        "questionnaire_responses": {
-            "daily_function": answers.get("daily_function"),
-            "dob": answers.get("dob"),
-            "gender": answers.get("gender"),
-            "occupation": answers.get("occupation"),
-            "tobacco": answers.get("tobacco"),
-            "medical_conditions": answers.get("medical_conditions"),
-            "conditions_list": answers.get("conditions_list"),
-            "medications": answers.get("medications"),
-            "hazardous": answers.get("hazardous"),
-            "family_history": answers.get("family_history"),
-            "savings_addon": answers.get("savings_addon"),
-        },
-        "assessment": assessment,
-        "quote_summary": quote,
+        "questionnaire_responses": questionnaire_responses,
+        "data_sources": data_sources,
         "media": snap.get("media") or [],
         "email_verified": bool(snap.get("email_verified")),
         "contact_priority": "high",
+        "identity_verified": bool(snap.get("email_verified")),
+        "signature_name": answers.get("signature_name"),
+        "signature_at": answers.get("signature_at"),
+        "prior_disclosure": answers.get("prior_disclosure"),
+        "disclosure_mode": answers.get("disclosure_mode"),
         "notes": (
             "Automated chat submit blocked by actuarial ADL / eligibility rules. "
-            "Senior underwriter must contact the applicant before a policy can be issued."
+            "Senior underwriter must contact the applicant before a policy can be issued. "
+            f"Chat risk={risk}, overall={assessment.get('overall_risk')}, "
+            f"recommendation={assessment.get('recommendation_type')}."
         ),
         "submitted_date": (existing or {}).get("submitted_date") or now,
         "created_date": (existing or {}).get("created_date") or now,

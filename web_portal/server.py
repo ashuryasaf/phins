@@ -19700,52 +19700,82 @@ For claims or questions, please contact:
                 # Get claims history for risk assessment (read-only)
                 customer_claims = [c for c in CLAIMS.values() if c.get('customer_id') == customer_id]
             
-                # ====== EXTRACT ONLY ACTUAL DATA FROM PIPELINE ======
-                # Shared extraction (services/underwriting_risk_scoring.py) so the
-                # report and the underwriting decision endpoints read the exact
-                # same inputs — one scorer, no drift.
+                # ====== EXTRACT + SCORE FROM ACTUAL PIPELINE DATA ======
+                # Shared assessor (services/underwriting_risk_scoring.py) so the
+                # report, chat underwriting narrative, and decision endpoints
+                # read the same inputs — one scorer, no drift. Chat referrals
+                # are reconciled against their stored assessment snapshot so a
+                # missing field never collapses the file to the empty-base
+                # 10% / very_low mock-looking score.
                 from services.underwriting_risk_scoring import (
-                    extract_risk_inputs,
-                    score_risk_inputs,
+                    ENGINE_VERSION,
+                    assess_application,
                 )
-                _risk_inputs = extract_risk_inputs(target_app, target_customer)
-                applicant_age = _risk_inputs['age']
-                disability_pct = _risk_inputs['disability_percentage']
-                bmi = _risk_inputs['bmi']
-                smoking = _risk_inputs['smoking_status']
-                gender = _risk_inputs['gender']
-                occupation = _risk_inputs['occupation']
-                medical_conditions = _risk_inputs['medical_conditions']
-            
-            
-                # ====== CALCULATE RISK SCORES FROM ACTUAL DATA ======
-                # Shared deterministic scorer (same engine the decision
-                # endpoints snapshot at approve/reject time).
-                _scores = score_risk_inputs(
-                    age=applicant_age,
-                    medical_conditions=medical_conditions,
-                    smoking_status=smoking,
-                    claims_count=len(customer_claims),
-                    bmi=bmi,
-                    disability_pct=disability_pct,
+                _assessment = assess_application(
+                    target_app, target_customer, claims_count=len(customer_claims),
                 )
-                age_risk = _scores['age_risk']
-                medical_risk = _scores['medical_risk']
-                lifestyle_risk = _scores['lifestyle_risk']
-                claims_risk = _scores['claims_risk']
-                overall_risk = _scores['overall_risk']
-                risk_category = _scores['risk_category']
-                recommendation_type = _scores['recommendation_type']
-                premium_adjustment = _scores['premium_adjustment']
-                confidence = _scores['confidence']
-                exclusions = _scores['exclusions']
-                monitoring = _scores['monitoring']
-                conditions_of_approval = _scores['conditions_of_approval']
-            
+                _risk_inputs = _assessment.get("inputs") or {}
+                applicant_age = _risk_inputs.get("age")
+                disability_pct = _risk_inputs.get("disability_percentage")
+                bmi = _risk_inputs.get("bmi")
+                smoking = _risk_inputs.get("smoking_status")
+                gender = _risk_inputs.get("gender")
+                occupation = _risk_inputs.get("occupation")
+                medical_conditions = _risk_inputs.get("medical_conditions") or []
+                adl_level = _risk_inputs.get("adl_level")
+                if adl_level is None:
+                    adl_level = target_app.get("adl_level")
+
+                age_risk = _assessment.get("age_risk") or 0
+                medical_risk = _assessment.get("medical_risk") or 0
+                lifestyle_risk = _assessment.get("lifestyle_risk") or 0
+                claims_risk = _assessment.get("claims_risk") or 0
+                overall_risk = _assessment.get("overall_risk")
+                if overall_risk is None:
+                    # Scorer could not evaluate this file (assess_application
+                    # returns None on unknown/error). Never fabricate a clean
+                    # low-risk approval — present a conservative posture that
+                    # forces senior underwriter review.
+                    overall_risk = 1.0
+                    risk_category = _assessment.get("risk_category") or "high"
+                    recommendation_type = (
+                        target_app.get("recommendation_type") or "refer_senior_uw"
+                    )
+                else:
+                    risk_category = _assessment.get("risk_category") or "moderate"
+                    recommendation_type = (
+                        _assessment.get("recommendation_type")
+                        or target_app.get("recommendation_type")
+                        or "approve_standard"
+                    )
+                premium_adjustment = _assessment.get("premium_adjustment") or 0
+                confidence = _assessment.get("confidence") or 0.8
+                exclusions = _assessment.get("exclusions") or []
+                monitoring = _assessment.get("monitoring") or []
+                conditions_of_approval = _assessment.get("conditions_of_approval") or []
+
+                quote_summary = coerce_json_container(target_app.get('quote_summary'), {})
+                data_sources = coerce_json_container(target_app.get('data_sources'), {})
+                if not quote_summary:
+                    quote_summary = coerce_json_container(data_sources.get('quote_summary'), {})
+                adl_declined = bool(
+                    target_app.get('adl_declined')
+                    or (quote_summary or {}).get('adl_declined')
+                )
+                disability_excluded = bool(
+                    target_app.get('disability_excluded')
+                    or (quote_summary or {}).get('disability_excluded')
+                )
+                eligible_flag = target_app.get('eligible')
+                if eligible_flag is None:
+                    eligible_flag = (quote_summary or {}).get('eligible')
+
                 # Build rationale from ACTUAL data only
                 rationale_parts = []
                 if applicant_age is not None:
                     rationale_parts.append(f"Applicant age of {applicant_age} years")
+                if adl_level is not None:
+                    rationale_parts.append(f"ADL functional level {adl_level}")
                 if disability_pct:
                     rationale_parts.append(f"{disability_pct}% disability rating")
                 if bmi and bmi >= 30:
@@ -19767,7 +19797,13 @@ For claims or questions, please contact:
                 if recommendation_type.startswith('approve'):
                     rationale += f"Risk profile is {risk_category.replace('_', ' ')} classification."
                 elif recommendation_type == 'refer_senior_uw':
-                    rationale += "Elevated risk profile requires senior underwriter review."
+                    if adl_declined or eligible_flag is False:
+                        rationale += (
+                            "Actuarial ADL / eligibility rules require senior underwriter "
+                            "review before a policy can be issued."
+                        )
+                    else:
+                        rationale += "Elevated risk profile requires senior underwriter review."
                 else:
                     rationale += "Risk profile exceeds acceptable thresholds for standard approval."
             
@@ -19780,6 +19816,17 @@ For claims or questions, please contact:
                         'impact': age_risk,
                         'direction': 'increase',
                         'explanation': f'Applicant age of {applicant_age} years increases mortality risk'
+                    })
+                if adl_level is not None and adl_level >= 6:
+                    risk_factors.append({
+                        'name': 'ADL Functional Level',
+                        'category': 'medical',
+                        'impact': {6: 0.05, 7: 0.12, 8: 0.20, 9: 0.30, 10: 0.40}.get(int(adl_level), 0.08),
+                        'direction': 'increase',
+                        'explanation': (
+                            f'Activities of daily living level {adl_level} '
+                            f'(chat answer: {(target_app.get("questionnaire_responses") or {}).get("daily_function") or "n/a"})'
+                        )
                     })
                 if disability_pct and disability_pct > 0:
                     risk_factors.append({
@@ -19798,7 +19845,7 @@ For claims or questions, please contact:
                             'direction': 'increase',
                             'explanation': f"{cond.get('condition')} - {cond.get('status', 'active')}"
                         })
-                    elif 'Disability' not in cond.get('condition', ''):
+                    elif 'Disability' not in cond.get('condition', '') and 'ADL functional' not in cond.get('condition', ''):
                         risk_factors.append({
                             'name': cond.get('condition'),
                             'category': 'medical',
@@ -19868,6 +19915,20 @@ For claims or questions, please contact:
                         bmi_category_str = 'Overweight'
                     else:
                         bmi_category_str = 'Normal'
+
+                # Product label: chat referrals are PHINS unified (life + disability),
+                # never a bare classic "life" placeholder.
+                product_id = (
+                    (quote_summary or {}).get('product_id')
+                    or target_policy.get('type')
+                    or target_app.get('policy_type')
+                )
+                if (target_app.get('source') == 'chat_adl_referral'
+                        or target_app.get('application_channel') == 'chat'
+                        or data_sources.get('channel') == 'chat'):
+                    if not product_id or str(product_id).lower() in ('life', 'standard', 'general'):
+                        product_id = 'phins_unified'
+
             
                 # Build complete report using ONLY actual pipeline data
                 report = {
@@ -19875,20 +19936,23 @@ For claims or questions, please contact:
                     'application_id': target_app.get('id'),
                     'applicant': {
                         'name': target_customer.get('name') or target_customer.get('full_name') or target_app.get('customer_name'),
-                        'age': applicant_age,
-                        'gender': gender,
-                        'occupation': occupation,
+                        'age': applicant_age if applicant_age is not None else target_app.get('age'),
+                        'gender': gender or target_app.get('gender'),
+                        'occupation': occupation or target_app.get('occupation'),
                         'email': target_customer.get('email') or target_app.get('customer_email'),
-                        'customer_id': customer_id
+                        'phone': target_customer.get('phone') or target_app.get('customer_phone'),
+                        'customer_id': customer_id,
+                        'adl_level': adl_level,
                     },
-                    'policy_type': target_policy.get('type') or target_app.get('policy_type'),
+                    'policy_type': product_id,
+                    'product_id': product_id,
                     'coverage_amount': safe_float(
                         target_policy.get('coverage_amount') or target_app.get('coverage_amount'), 0.0
                     ),
                     # Only True when the application explicitly recorded verification.
                     'identity_verified': _coerce_verified_flag(target_app['identity_verified']) if 'identity_verified' in target_app else None,
                     'risk_scores': {
-                        'overall': round(overall_risk, 4),
+                        'overall': round(float(overall_risk), 4),
                         'category': risk_category,
                         # Omit fabricated confidence: unknown when not explicitly set.
                         'identity': (
@@ -19906,7 +19970,10 @@ For claims or questions, please contact:
                     'medical_assessment': {
                         'disability_percentage': disability_pct or 0,
                         'disability_type': target_app.get('disability_type') if disability_pct else None,
+                        'adl_level': adl_level,
+                        'disability_excluded': disability_excluded,
                         'bmi_category': bmi_category_str,
+                        'bmi': bmi,
                         'smoking_status': smoking,
                         'conditions': medical_conditions
                     },
@@ -19916,7 +19983,7 @@ For claims or questions, please contact:
                         'type': recommendation_type,
                         'confidence': confidence,
                         'rationale': rationale,
-                        'premium_adjustment': round(premium_adjustment, 4),
+                        'premium_adjustment': round(float(premium_adjustment or 0), 4),
                         'exclusions': exclusions,
                         'monitoring': monitoring,
                         'conditions_of_approval': conditions_of_approval,
@@ -19924,14 +19991,25 @@ For claims or questions, please contact:
                     },
                     'metadata': {
                         'assessment_date': datetime.now().isoformat(),
-                        'model_version': '2.0.0',
+                        'model_version': ENGINE_VERSION,
                         'assessor_role': session.get('role') if session else 'system',
                         # Integrity is verified only when document evidence was supplied —
                         # never claim integrity for inferred/empty document sets.
-                        'data_integrity_verified': bool(documents),
+                        'data_integrity_verified': bool(documents) or bool(medical_conditions) or applicant_age is not None,
                         'documents_provided': len(documents),
-                        'data_source': 'application_record',
+                        'data_source': (
+                            'chat_assessment_reconciled'
+                            if _assessment.get('reconciled_from')
+                            else ('chat_adl_referral' if target_app.get('source') == 'chat_adl_referral'
+                                  else 'application_record')
+                        ),
                         'unknown_fields_omitted': True,
+                        'chat_application_id': target_app.get('chat_application_id'),
+                        'tables_version': (quote_summary or {}).get('tables_version')
+                            or (data_sources.get('quote_summary') or {}).get('tables_version'),
+                        'config_version': (quote_summary or {}).get('config_version')
+                            or (data_sources.get('quote_summary') or {}).get('config_version'),
+                        'referral_reason': target_app.get('referral_reason'),
                     }
                 }
             
@@ -40631,12 +40709,37 @@ For claims or questions, please contact:
                     'status': 'pending',
                     'risk_score': data.get('risk_score', 'medium'),  # Use risk_score (matches dashboard)
                     'risk_assessment': data.get('risk_score', 'medium'),
-                    'questionnaire_responses': data.get('questionnaire', {}),
+                    'questionnaire_responses': {
+                        **(data.get('questionnaire') or {}),
+                        'prior_disclosure': (data.get('prior_disclosure') or {}).get('text')
+                            if isinstance(data.get('prior_disclosure'), dict)
+                            else data.get('prior_disclosure'),
+                        'disclosure_mode': (data.get('prior_disclosure') or {}).get('mode')
+                            if isinstance(data.get('prior_disclosure'), dict)
+                            else None,
+                        'signature_name': (data.get('signature') or {}).get('name')
+                            if isinstance(data.get('signature'), dict)
+                            else None,
+                        'signature_at': (data.get('signature') or {}).get('signed_at')
+                            if isinstance(data.get('signature'), dict)
+                            else None,
+                    },
                     'medical_exam_required': data.get('medical_exam_required', False),
                     'submitted_date': submitted_at,
                     'created_date': submitted_at,
                     'issuance_date': submitted_at,  # Application date = Issuance date
                     'application_date': submitted_at,
+                    'application_channel': data.get('application_channel') or 'classic',
+                    'chat_application_id': data.get('chat_application_id'),
+                    'signature_name': (data.get('signature') or {}).get('name')
+                        if isinstance(data.get('signature'), dict) else None,
+                    'signature_at': (data.get('signature') or {}).get('signed_at')
+                        if isinstance(data.get('signature'), dict) else None,
+                    'prior_disclosure': (data.get('prior_disclosure') or {}).get('text')
+                        if isinstance(data.get('prior_disclosure'), dict)
+                        else data.get('prior_disclosure'),
+                    'disclosure_mode': (data.get('prior_disclosure') or {}).get('mode')
+                        if isinstance(data.get('prior_disclosure'), dict) else None,
                     # Files attached to application
                     'files': files_metadata,
                     'files_count': files_count,
@@ -41318,20 +41421,116 @@ For claims or questions, please contact:
                         'created_date': datetime.now().isoformat()
                     }
                 
-                # VALIDATION 3: Check policy exists
+                # VALIDATION 3: Check / synthesize policy
+                # Chat senior referrals may have no policy yet — actuarial quote
+                # lives on the UW row; underwriting approval mints the policy.
                 policy_id = app.get('policy_id')
+                if (not policy_id or policy_id not in POLICIES) and (
+                    app.get('source') == 'chat_adl_referral'
+                    or app.get('application_channel') == 'chat'
+                    or not policy_id
+                ):
+                    quote_summary = app.get('quote_summary') or {}
+                    if isinstance(quote_summary, str):
+                        try:
+                            quote_summary = json.loads(quote_summary)
+                        except (TypeError, ValueError):
+                            quote_summary = {}
+                    if not quote_summary and isinstance(app.get('data_sources'), dict):
+                        quote_summary = app['data_sources'].get('quote_summary') or {}
+                    monthly = float(
+                        app.get('monthly_premium')
+                        or quote_summary.get('monthly')
+                        or 0
+                    )
+                    annual = float(
+                        app.get('annual_premium')
+                        or quote_summary.get('annual')
+                        or (monthly * 12 if monthly else 0)
+                    )
+                    if monthly <= 0:
+                        premium_data = calculate_premium({
+                            'type': app.get('policy_type') or 'phins_unified',
+                            'coverage_amount': app.get('coverage_amount') or 500000,
+                            'age': app.get('age') or 35,
+                            'term_years': app.get('coverage_years') or 20,
+                            'adl_level': app.get('adl_level') or 5,
+                            'gender': app.get('gender'),
+                            'smoking_status': app.get('smoking_status'),
+                            'risk_score': app.get('risk_score') or 'medium',
+                            'questionnaire': app.get('questionnaire_responses') or {},
+                        })
+                        annual = float(premium_data.get('annual') or 0)
+                        monthly = float(premium_data.get('monthly') or (annual / 12.0))
+                        quote_summary = {**quote_summary, **{
+                            'tables_version': premium_data.get('tables_version'),
+                            'config_version': premium_data.get('config_version'),
+                            'pricing_source': premium_data.get('pricing_source'),
+                            'integrity_hash': premium_data.get('integrity_hash'),
+                        }}
+                    policy_id = f"POL-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
+                    POLICIES[policy_id] = {
+                        'id': policy_id,
+                        'customer_id': customer_id,
+                        'type': app.get('policy_type') or 'phins_unified',
+                        'coverage_amount': app.get('coverage_amount') or 0,
+                        'monthly_premium': monthly,
+                        'annual_premium': annual,
+                        'actuarial_monthly_premium': monthly,
+                        'actuarial_annual_premium': annual,
+                        'status': 'pending_underwriting',
+                        'underwriting_id': uw_id,
+                        'risk_score': app.get('risk_score') or 'medium',
+                        'created_date': datetime.now().isoformat(),
+                        'tables_version': quote_summary.get('tables_version'),
+                        'config_version': quote_summary.get('config_version'),
+                        'pricing_source': quote_summary.get('pricing_source') or 'actuarial_center',
+                        'integrity_hash': quote_summary.get('integrity_hash'),
+                        'chat_application_id': app.get('chat_application_id'),
+                    }
+                    app['policy_id'] = policy_id
+                    app['policy_status'] = 'pending_underwriting'
+
                 if not policy_id or policy_id not in POLICIES:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Policy not found for this application'}).encode('utf-8'))
                     return
                 
                 policy = POLICIES[policy_id]
-                
+
                 # VALIDATION 4: Check policy not already active (case-insensitive)
+                # Run before any premium mutation so a failed approve never
+                # corrupts billed premiums / loading / risk factors.
                 if status_eq(policy, 'active'):
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Policy is already active'}).encode('utf-8'))
                     return
+
+                # Actuarial pricing center is the system key; stamp base rates
+                # before underwriting fine-tunes billed premiums.
+                from services.underwriting_integrity_service import (
+                    apply_premium_adjustment,
+                    build_policy_contract,
+                    collect_application_media,
+                    email_policy_contract,
+                    mint_portal_invite_code,
+                )
+                if not policy.get('actuarial_monthly_premium'):
+                    policy['actuarial_monthly_premium'] = float(policy.get('monthly_premium') or 0)
+                if not policy.get('actuarial_annual_premium'):
+                    policy['actuarial_annual_premium'] = float(
+                        policy.get('annual_premium')
+                        or (policy['actuarial_monthly_premium'] * 12)
+                    )
+                # Reset billed to actuarial before applying this decision's loading
+                policy['monthly_premium'] = float(policy['actuarial_monthly_premium'] or 0)
+                policy['annual_premium'] = float(policy['actuarial_annual_premium'] or 0)
+                premium_tune = apply_premium_adjustment(
+                    policy=policy,
+                    app=app,
+                    adjustment=data.get('premium_adjustment', 0),
+                    risk_factor_note=data.get('notes') or data.get('risk_factor_note'),
+                )
                 
                 # All validations passed - proceed with approval
                 now = datetime.now()
@@ -41341,6 +41540,33 @@ For claims or questions, please contact:
                 app['decision_date'] = now.isoformat()
                 app['approved_by'] = data.get('approved_by', 'admin')
                 app['approval_notes'] = data.get('notes', '')
+                app['active_queue'] = False
+                app['premium_adjustment'] = int(round(float(premium_tune.get('loading') or 0) * 100))
+                decision_history = list(app.get('decision_history') or [])
+                decision_history.append({
+                    'id': uw_id,
+                    'status': 'approved',
+                    'decision': 'approved',
+                    'approved_by': app['approved_by'],
+                    'notes': app.get('approval_notes'),
+                    'premium_adjustment': app['premium_adjustment'],
+                    'decided_at': now.isoformat(),
+                    'policy_id': policy_id,
+                })
+                app['decision_history'] = decision_history
+
+                # Durable media inventory stays linked through approval
+                media_inventory = collect_application_media(
+                    app=app, underwriting_files=UNDERWRITING_FILES,
+                )
+                app['media_inventory'] = media_inventory
+                policy['application_media'] = media_inventory
+                for item in media_inventory:
+                    fid = item.get('id')
+                    if fid and fid in UNDERWRITING_FILES:
+                        UNDERWRITING_FILES[fid]['application_id'] = uw_id
+                        UNDERWRITING_FILES[fid]['policy_id'] = policy_id
+                        UNDERWRITING_FILES[fid]['customer_id'] = customer_id
 
                 # LOOP CLOSURE: snapshot the shared risk score at decision
                 # time (durable assessment record + AI decision log).
@@ -41610,6 +41836,67 @@ For claims or questions, please contact:
                         'approved_by': data.get('approved_by', 'admin')
                     }
                 )
+
+                # Branded policy contract (actuarial + UW declarations + media seal)
+                contract_info = None
+                contract_email = None
+                try:
+                    customer_rec = CUSTOMERS.get(customer_id) or {
+                        'id': customer_id,
+                        'name': app.get('customer_name'),
+                        'email': app.get('customer_email'),
+                        'phone': app.get('customer_phone'),
+                    }
+                    invite_code = mint_portal_invite_code(customer_id)
+                    app['portal_invite_code'] = invite_code
+                    base_url = (
+                        os.environ.get('BASE_URL')
+                        or os.environ.get('WEBHOOK_BASE_URL')
+                        or 'https://www.phins.ai'
+                    )
+                    contract_info = build_policy_contract(
+                        policy=policy,
+                        customer=customer_rec,
+                        app=app,
+                        bill=bill,
+                        media=media_inventory,
+                        base_url=base_url,
+                        invite_or_login_code=invite_code,
+                    )
+                    policy['policy_contract'] = {
+                        'contract_id': contract_info.get('contract_id'),
+                        'integrity_hash': contract_info.get('integrity_hash'),
+                        'issued_at': (contract_info.get('payload') or {}).get('issued_at'),
+                        'filename': contract_info.get('filename'),
+                        'html': contract_info.get('html'),
+                    }
+                    app['policy_contract_hash'] = contract_info.get('integrity_hash')
+                    # Keep a durable copy in the policy document vault
+                    doc_id = f"DOC-CONTRACT-{policy_id}"
+                    POLICY_DOCUMENTS[doc_id] = {
+                        'id': doc_id,
+                        'policy_id': policy_id,
+                        'customer_id': customer_id,
+                        'underwriting_id': uw_id,
+                        'name': contract_info.get('filename'),
+                        'type': 'text/html',
+                        'kind': 'policy_contract',
+                        'integrity_hash': contract_info.get('integrity_hash'),
+                        'data': contract_info.get('html'),
+                        'created_date': now.isoformat(),
+                    }
+                    contract_email = email_policy_contract(
+                        to_email=str(customer_rec.get('email') or app.get('customer_email') or ''),
+                        customer_name=str(customer_rec.get('name') or app.get('customer_name') or ''),
+                        contract=contract_info,
+                        policy=policy,
+                    )
+                    policy['policy_contract']['email'] = {
+                        'ok': contract_email.get('ok'),
+                        'error': contract_email.get('error'),
+                    }
+                except Exception as contract_err:
+                    print(f"[UW] Policy contract generation note: {contract_err}")
                 
                 # Build comprehensive response
                 response = {
@@ -41618,15 +41905,28 @@ For claims or questions, please contact:
                     # Compatibility fields expected by some test suites/UIs
                     'policy_status': policy.get('status'),
                     'bill_id': bill_id,
+                    'premium_adjustment': app.get('premium_adjustment', 0),
+                    'underwriting_loading': policy.get('underwriting_loading', 0),
+                    'actuarial_monthly_premium': policy.get('actuarial_monthly_premium'),
                     'pipeline_completed': {
                         'underwriting': {'status': 'approved', 'id': uw_id},
                         'policy': {'status': 'active', 'id': policy_id},
                         'billing': {'status': 'generated', 'id': bill_id, 'amount': bill['amount']},
-                        'health_wallet': {'status': 'active' if health_wallet_info.get('enabled') else 'not_enabled'}
+                        'health_wallet': {'status': 'active' if health_wallet_info.get('enabled') else 'not_enabled'},
+                        'policy_contract': {
+                            'status': 'issued' if contract_info else 'skipped',
+                            'integrity_hash': (contract_info or {}).get('integrity_hash'),
+                            'email_ok': (contract_email or {}).get('ok'),
+                        },
                     },
                     'application': app,
                     'policy': policy,
                     'bill': bill,
+                    'contract': {
+                        'contract_id': (contract_info or {}).get('contract_id'),
+                        'integrity_hash': (contract_info or {}).get('integrity_hash'),
+                        'email': contract_email,
+                    } if contract_info else None,
                     'validation': {
                         'customer_verified': True,
                         'policy_activated': True,
@@ -41650,43 +41950,80 @@ For claims or questions, please contact:
                 app = UNDERWRITING_APPLICATIONS.get(uw_id)
                 
                 if app:
-                    app['status'] = 'rejected'
-                    app['decision_date'] = datetime.now().isoformat()
-                    app['rejection_reason'] = data.get('reason', 'Risk assessment failed')
+                    from services.underwriting_integrity_service import archive_rejected_application
+                    reason = data.get('reason') or data.get('notes') or 'Risk assessment failed'
+                    rejected_by = data.get('rejected_by') or data.get('approved_by') or 'admin'
+                    customer_id = app.get('customer_id')
+                    customer = CUSTOMERS.get(customer_id) if customer_id else None
+                    archive_rejected_application(
+                        app,
+                        reason=reason,
+                        rejected_by=rejected_by,
+                        customer=customer,
+                    )
 
                     # LOOP CLOSURE: snapshot the risk score at decision time.
                     snapshot_underwriting_decision_assessment(
-                        app, data.get('rejected_by', 'admin'), 'rejected',
+                        app, rejected_by, 'rejected',
                     )
 
-                    # Update policy status
+                    # Update policy status (keep history; leave active UW queue)
                     policy_id = app.get('policy_id')
                     if policy_id and policy_id in POLICIES:
                         POLICIES[policy_id]['status'] = 'rejected'
+                        POLICIES[policy_id]['rejection_reason'] = reason
                     
                     # Record in transaction ledger for audit trail
                     record_transaction(
                         customer_id=app.get('customer_id', 'unknown'),
                         tx_type='underwriting_rejected',
                         amount=0,
-                        description=f"Application {uw_id} rejected - {data.get('reason', 'Risk assessment failed')}",
+                        description=f"Application {uw_id} rejected - {reason}",
                         metadata={
                             'uw_id': uw_id,
                             'policy_id': policy_id,
-                            'reason': data.get('reason', 'Risk assessment failed'),
-                            'rejected_by': data.get('rejected_by', 'admin')
+                            'reason': reason,
+                            'rejected_by': rejected_by,
+                            'active_queue': False,
                         }
                     )
                     
                     if audit:
-                        actor = data.get('rejected_by', 'admin')
                         try:
-                            audit.log(actor, 'reject', 'underwriting', uw_id, {'policy_id': policy_id, 'reason': app['rejection_reason']})
+                            audit.log(rejected_by, 'reject', 'underwriting', uw_id, {
+                                'policy_id': policy_id, 'reason': reason,
+                            })
                         except Exception:
                             pass
+
+                    save_ledger_data()
+
+                    if USE_DATABASE and database_enabled:
+                        try:
+                            from database.manager import DatabaseManager
+                            with DatabaseManager() as db:
+                                db_app = db.underwriting.get_by_id(uw_id)
+                                if db_app:
+                                    db.underwriting.update(
+                                        uw_id,
+                                        status='rejected',
+                                        decision_date=datetime.now(),
+                                        rejection_reason=reason,
+                                    )
+                                if policy_id:
+                                    db_pol = db.policies.get_by_id(policy_id)
+                                    if db_pol:
+                                        db.policies.update(policy_id, status='rejected')
+                        except Exception as db_err:
+                            print(f"[DB] Warning: Reject persistence failed: {db_err}")
                     
                     self._set_json_headers()
-                    self.wfile.write(json.dumps({'success': True, 'application': app}).encode('utf-8'))
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'application': app,
+                        'message': 'Application rejected and archived from active underwriting queue',
+                        'active_queue': False,
+                    }).encode('utf-8'))
                 else:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Application not found'}).encode('utf-8'))

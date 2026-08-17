@@ -653,6 +653,13 @@ body.chat-apply-page {
 }
 .consent-item input { margin-top: 2px; accent-color: #e3bf6f; }
 .consent-item a { color: var(--gold); }
+.dock-label {
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(234, 241, 255, 0.55);
+    margin-bottom: 8px;
+}
 
 .dock-error { color: var(--red); font-size: 0.85rem; margin-top: 8px; }
 .dock-hint { color: var(--ink-dim); font-size: 0.75rem; margin-top: 8px; text-align: center; }

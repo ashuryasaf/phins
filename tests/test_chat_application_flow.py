@@ -107,6 +107,7 @@ def _complete_questionnaire(app_id, resume_code, medical=False):
     _answer(app_id, "no", resume_code=resume_code)           # hazardous
     body = _answer(app_id, ["none"], resume_code=resume_code)  # family_history
     _answer(app_id, "none", resume_code=resume_code)           # medications
+    _answer(app_id, "none", resume_code=resume_code)           # prior_disclosure
     reply = _answer(app_id, "full", resume_code=resume_code)   # daily_function -> assessment
     assert reply.get("assessment"), reply
     return reply
@@ -150,7 +151,10 @@ def test_full_chat_application_happy_path():
     }, resume_code=resume_code)
     _answer(app_id, "yes", resume_code=resume_code)          # auto_pay
     consent_reply = _answer(app_id, "agree", resume_code=resume_code)  # consent
-    assert consent_reply.get("ready_to_finalize") is True
+    assert consent_reply.get("ready_to_finalize") is not True
+    assert consent_reply.get("step", {}).get("id") == "signature"
+    sign_reply = _answer(app_id, "Dana Levi", resume_code=resume_code)  # signature
+    assert sign_reply.get("ready_to_finalize") is True
 
     status, result = _post(f"/api/chat-application/{app_id}/finalize",
                            {"resume_code": resume_code})
@@ -174,6 +178,8 @@ def test_full_chat_application_happy_path():
     assert not card.get("card_number")
     assert not card.get("cvv")
     assert card.get("card_last4") == "4444"
+    assert session["answers"].get("signature_name") == "Dana Levi"
+    assert session["answers"].get("prior_disclosure")
 
     # state readable with the resume code
     status, state = _get(f"/api/chat-application/{app_id}?resume_code={resume_code}")
@@ -188,7 +194,8 @@ def test_full_chat_application_happy_path():
     stages = [j["stage"] for j in journey["journey"]]
     for expected in ("invited", "started", "contact_captured", "otp_verified",
                      "questions_completed", "assessed", "quoted",
-                     "media_attached", "payment_captured", "submitted"):
+                     "media_attached", "payment_captured", "disclosure_captured",
+                     "signed", "submitted"):
         assert expected in stages, f"missing journey stage {expected}: {stages}"
     assert journey["ledger_event_count"] > 0
     types = {e["event_type"] for e in journey["ledger_events"]}
@@ -365,6 +372,7 @@ def test_validation_and_security_failures():
     _answer(app_id, "no", resume_code=resume_code)
     _answer(app_id, ["none"], resume_code=resume_code)
     _answer(app_id, "none", resume_code=resume_code)
+    _answer(app_id, "none", resume_code=resume_code)  # prior_disclosure
     _answer(app_id, "full", resume_code=resume_code)         # daily_function
     _answer(app_id, 250000, resume_code=resume_code)
     _answer(app_id, "15", resume_code=resume_code)

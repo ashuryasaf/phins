@@ -593,7 +593,7 @@
                     </div>
                     
                     <div class="action-group" style="margin-top: 15px; display: flex; flex-wrap: wrap; gap: 10px;">
-                        <button class="btn btn-approve" onclick="${isChatReferral && !app.policy_id ? `alert('This chat referral has no policy yet. Contact the applicant first, then complete a guided application if underwriting accepts the risk.')` : `openAssessment('${app.id}', 'approve')`}">
+                        <button class="btn btn-approve" onclick="openAssessment('${app.id}', 'approve')">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
                             Approve
                         </button>

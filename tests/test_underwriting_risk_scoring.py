@@ -40,6 +40,75 @@ class TestExtraction:
         # BMI >= 35 auto-adds an obesity condition
         assert any("Obesity" in c["condition"] for c in inputs["medical_conditions"])
 
+    def test_chat_questionnaire_dob_tobacco_and_conditions(self):
+        """Chat senior-referral rows store dob/tobacco/conditions_list, not age/smoke."""
+        app = {
+            "source": "chat_adl_referral",
+            "policy_type": "life",
+            "adl_level": 8,
+            "questionnaire_responses": {
+                "dob": "1975-06-01",
+                "tobacco": "yes",
+                "height": 175,
+                "weight": 95,
+                "medical_conditions": "yes",
+                "conditions_list": "type 2 diabetes, high blood pressure",
+                "daily_function": "significant",
+                "family_history": ["none"],
+                "hazardous": "no",
+            },
+        }
+        inputs = extract_risk_inputs(app, {})
+        assert inputs["age"] is not None and inputs["age"] >= 45
+        assert inputs["smoking_status"] == "current"
+        assert inputs["bmi"] is not None and inputs["bmi"] >= 30
+        assert inputs["adl_level"] == 8
+        names = " ".join(c["condition"] for c in inputs["medical_conditions"]).lower()
+        assert "diabetes" in names
+        assert "adl" in names
+
+    def test_chat_referral_report_does_not_collapse_to_base_score(self):
+        """Empty-file 10%/very_low must never replace a stored high chat assessment."""
+        app = {
+            "id": "UW-CHATREF-INTEGRITY",
+            "source": "chat_adl_referral",
+            "policy_type": "life",
+            "risk_assessment": "high",
+            "recommendation_type": "refer_senior_uw",
+            "adl_level": 8,
+            "questionnaire_responses": {
+                "dob": "1975-01-15",
+                "tobacco": "yes",
+                "height": 175,
+                "weight": 95,
+                "medical_conditions": "yes",
+                "conditions_list": "type 2 diabetes, high blood pressure",
+                "daily_function": "significant",
+            },
+            "data_sources": {
+                "channel": "chat",
+                "chat_assessment": {
+                    "risk_category": "high",
+                    "overall_risk": 0.62,
+                    "confidence": 0.7,
+                    "recommendation_type": "refer_senior_uw",
+                    "age": 51,
+                    "bmi": 31.0,
+                },
+                "quote_summary": {
+                    "product_id": "phins_unified",
+                    "adl_declined": True,
+                    "eligible": False,
+                },
+            },
+        }
+        result = assess_application(app, {})
+        assert result["inputs"]["age"] == 51
+        assert result["risk_category"] == "high"
+        assert float(result["overall_risk"]) >= 0.5
+        assert result["recommendation_type"] == "refer_senior_uw"
+        assert result["overall_risk"] != 0.10
+
     def test_json_string_conditions_parse(self):
         app = {"medical_conditions": '[{"condition": "Diabetes", "risk_impact": 0.18}]'}
         inputs = extract_risk_inputs(app, {})
@@ -165,3 +234,88 @@ class TestReportParity:
         assert report["recommendation"]["premium_adjustment"] == round(
             direct["premium_adjustment"], 4
         )
+
+    def test_chat_referral_risk_report_uses_real_inputs_not_base_score(self):
+        import web_portal.server as portal
+
+        headers = self._admin_headers()
+        app_id = "UW-CHATREF-REPORT-001"
+        cust_id = "CUST-CHATREF-REPORT-001"
+        portal.CUSTOMERS[cust_id] = {
+            "id": cust_id, "name": "High Risk Chat", "email": "high.risk@example.com",
+            "dob": "1975-01-15", "phone": "+1-555-0199",
+        }
+        portal.UNDERWRITING_APPLICATIONS[app_id] = {
+            "id": app_id,
+            "customer_id": cust_id,
+            "customer_name": "High Risk Chat",
+            "customer_email": "high.risk@example.com",
+            "customer_phone": "+1-555-0199",
+            "status": "pending",
+            "source": "chat_adl_referral",
+            "policy_type": "life",  # legacy wrong label — report must remap
+            "policy_id": None,
+            "coverage_amount": 500000,
+            "risk_assessment": "high",
+            "risk_score": "high",
+            "recommendation_type": "refer_senior_uw",
+            "adl_level": 8,
+            "age": 51,
+            "bmi": 31.0,
+            "height_cm": 175,
+            "weight_kg": 95,
+            "smoking_status": "current",
+            "gender": "male",
+            "occupation": "Teacher",
+            "questionnaire_responses": {
+                "dob": "1975-01-15",
+                "tobacco": "yes",
+                "height": 175,
+                "weight": 95,
+                "medical_conditions": "yes",
+                "conditions_list": "type 2 diabetes, high blood pressure",
+                "daily_function": "significant",
+            },
+            "medical_conditions": [
+                {"condition": "type 2 diabetes", "risk_impact": 0.15,
+                 "loading_percentage": 15, "severity": "moderate"},
+                {"condition": "high blood pressure", "risk_impact": 0.12,
+                 "loading_percentage": 12, "severity": "moderate"},
+            ],
+            "data_sources": {
+                "channel": "chat",
+                "chat_assessment": {
+                    "risk_category": "high",
+                    "overall_risk": 0.62,
+                    "confidence": 0.7,
+                    "recommendation_type": "refer_senior_uw",
+                    "age": 51,
+                    "bmi": 31.0,
+                },
+                "quote_summary": {
+                    "product_id": "phins_unified",
+                    "adl_declined": True,
+                    "eligible": False,
+                    "tables_version": "mort_v1",
+                    "config_version": "cfg_v1",
+                },
+            },
+        }
+
+        resp = requests.get(
+            f"{BASE_URL}/api/risk-assessment/report",
+            params={"application_id": app_id},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        report = resp.json()
+
+        assert report["applicant"]["age"] == 51
+        assert report["policy_type"] == "phins_unified"
+        assert report["risk_scores"]["category"] == "high"
+        assert float(report["risk_scores"]["overall"]) >= 0.5
+        assert float(report["risk_scores"]["overall"]) != 0.10
+        assert report["recommendation"]["type"] == "refer_senior_uw"
+        assert report["medical_assessment"]["adl_level"] == 8
+        assert report["medical_assessment"]["smoking_status"] == "current"
+        assert len(report["medical_assessment"]["conditions"]) >= 1
