@@ -19732,13 +19732,22 @@ For claims or questions, please contact:
                 claims_risk = _assessment.get("claims_risk") or 0
                 overall_risk = _assessment.get("overall_risk")
                 if overall_risk is None:
-                    overall_risk = 0.0
-                risk_category = _assessment.get("risk_category") or "moderate"
-                recommendation_type = (
-                    _assessment.get("recommendation_type")
-                    or target_app.get("recommendation_type")
-                    or "approve_standard"
-                )
+                    # Scorer could not evaluate this file (assess_application
+                    # returns None on unknown/error). Never fabricate a clean
+                    # low-risk approval — present a conservative posture that
+                    # forces senior underwriter review.
+                    overall_risk = 1.0
+                    risk_category = _assessment.get("risk_category") or "high"
+                    recommendation_type = (
+                        target_app.get("recommendation_type") or "refer_senior_uw"
+                    )
+                else:
+                    risk_category = _assessment.get("risk_category") or "moderate"
+                    recommendation_type = (
+                        _assessment.get("recommendation_type")
+                        or target_app.get("recommendation_type")
+                        or "approve_standard"
+                    )
                 premium_adjustment = _assessment.get("premium_adjustment") or 0
                 confidence = _assessment.get("confidence") or 0.8
                 exclusions = _assessment.get("exclusions") or []
@@ -41489,6 +41498,14 @@ For claims or questions, please contact:
                 
                 policy = POLICIES[policy_id]
 
+                # VALIDATION 4: Check policy not already active (case-insensitive)
+                # Run before any premium mutation so a failed approve never
+                # corrupts billed premiums / loading / risk factors.
+                if status_eq(policy, 'active'):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Policy is already active'}).encode('utf-8'))
+                    return
+
                 # Actuarial pricing center is the system key; stamp base rates
                 # before underwriting fine-tunes billed premiums.
                 from services.underwriting_integrity_service import (
@@ -41514,12 +41531,6 @@ For claims or questions, please contact:
                     adjustment=data.get('premium_adjustment', 0),
                     risk_factor_note=data.get('notes') or data.get('risk_factor_note'),
                 )
-                
-                # VALIDATION 4: Check policy not already active (case-insensitive)
-                if status_eq(policy, 'active'):
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': 'Policy is already active'}).encode('utf-8'))
-                    return
                 
                 # All validations passed - proceed with approval
                 now = datetime.now()

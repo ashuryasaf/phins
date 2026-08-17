@@ -315,14 +315,17 @@ def apply_premium_adjustment(
 ) -> Dict[str, Any]:
     """Fine-tune actuarial/quoted premiums by underwriter loading percentage.
 
-    ``adjustment`` may be a fraction (0.15) or a percent (15). Actuarial base
-    premiums stay on the policy as ``actuarial_*``; billed premiums update.
+    ``adjustment`` may be a fraction (0.15) or a percent (15). Values with an
+    absolute magnitude of at least 1 are treated as percents so an underwriter
+    "1%" loading is billed as 1% (not 100%); only magnitudes strictly below 1
+    are treated as already-fractional. Actuarial base premiums stay on the
+    policy as ``actuarial_*``; billed premiums update.
     """
     try:
         adj = float(adjustment if adjustment is not None else 0)
     except (TypeError, ValueError):
         adj = 0.0
-    if abs(adj) > 1.0:
+    if abs(adj) >= 1.0:
         adj = adj / 100.0
     adj = max(-0.5, min(2.0, adj))
 
