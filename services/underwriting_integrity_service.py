@@ -987,8 +987,17 @@ def build_policy_contract(
       background: none !important;
       -webkit-background-clip: border-box !important;
       background-clip: border-box !important;
+    }}
+    /* .sig sits on the light body; navy is legible there. */
+    .sig {{
       -webkit-text-fill-color: var(--navy-mid) !important;
       color: var(--navy-mid) !important;
+    }}
+    /* .brand-word sits on the dark navy banner (not flattened in print),
+       so navy would be invisible — use a light gold fill instead. */
+    .brand-word {{
+      -webkit-text-fill-color: var(--gold-strong) !important;
+      color: var(--gold-strong) !important;
     }}
   }}
 </style>
