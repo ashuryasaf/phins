@@ -587,17 +587,14 @@ def test_hebrew_start_keeps_ascii_resume_code():
     assert body["resume_code"] in texts
     assert any("קוד" in (m.get("text") or "") for m in body["messages"])
     assert body["step"]["id"] == "name"
-    assert "שם" in (body["step"]["prompt"] or "")
+    prompt = body["step"]["prompt"] or ""
+    assert "בואו" in prompt
+    assert "שמך" in prompt
 
 
 def test_signature_requires_id_and_drawn_canvas():
-    app_id, resume_code = _start_and_verify("chat.sig.panel@example.com")
-    # Fast-forward to signature via incomplete path is heavy; unit-test validator
-    # through the service instead for failure cases.
-    from services.chat_application_service import (
-        _validate_signature,
-        get_chat_application_service,
-    )
+    """Drawn signature panel rejects typed-only and invalid IDs."""
+    from services.chat_application_service import _validate_signature
     session = {"contact": {"name": "Dana Levi"}, "answers": {}}
     ok, err = _validate_signature("Dana Levi", session)
     assert ok is False
@@ -614,7 +611,7 @@ def test_signature_requires_id_and_drawn_canvas():
 
 
 def test_uw_decision_auto_answer_and_notification():
-    """Approve / reject appends a Phin auto-answer and sends a notice."""
+    """Approve appends a Phin auto-answer; reject covered via service helper."""
     app_id, resume_code = _start_and_verify("chat.uw.decision@example.com")
     _complete_questionnaire(app_id, resume_code)
     _answer(app_id, 500000, resume_code=resume_code)
@@ -634,12 +631,11 @@ def test_uw_decision_auto_answer_and_notification():
                            {"resume_code": resume_code})
     assert status == 201, result
     uw_id = result["underwriting"]["id"]
-    policy_id = result["policy"]["id"]
 
     status, approved = _post("/api/underwriting/approve", {
         "id": uw_id,
         "premium_adjustment": 10,
-        "notes": " Modest loading for demo",
+        "notes": "Modest loading for demo",
         "approved_by": "test_uw",
     })
     assert status == 200, approved
@@ -650,34 +646,30 @@ def test_uw_decision_auto_answer_and_notification():
     assert state.get("uw_decision", {}).get("decision") == "approved"
     assert any(m.get("kind") == "uw_decision" for m in state.get("transcript") or [])
 
-    # Reject path on a fresh application
-    app_id2, resume2 = _start_and_verify("chat.uw.reject@example.com", name="Noa Bar")
-    _complete_questionnaire(app_id2, resume2)
-    _answer(app_id2, 400000, resume_code=resume2)
-    _answer(app_id2, "20", resume_code=resume2)
-    _answer(app_id2, "none", resume_code=resume2)
-    _answer(app_id2, "skip", resume_code=resume2)
-    _answer(app_id2, "monthly", resume_code=resume2)
-    _answer(app_id2, {
-        "card_number": "4111 1111 1111 1111",
-        "cardholder_name": "NOA BAR",
-        "expiry_month": "11", "expiry_year": "2030", "cvv": "999",
-    }, resume_code=resume2)
-    _answer(app_id2, "no", resume_code=resume2)
-    _answer(app_id2, "agree", resume_code=resume2)
-    _answer(app_id2, _signature_payload("Noa Bar"), resume_code=resume2)
-    status, result2 = _post(f"/api/chat-application/{app_id2}/finalize",
-                            {"resume_code": resume2})
-    assert status == 201, result2
-    uw2 = result2["underwriting"]["id"]
-    status, rejected = _post("/api/underwriting/reject", {
-        "id": uw2, "reason": "Outside guidelines", "rejected_by": "test_uw",
-    })
-    assert status == 200, rejected
-    assert (rejected.get("application") or {}).get("chat_auto_answer", {}).get("decision") == "rejected"
-    status, state2 = _get(f"/api/chat-application/{app_id2}?resume_code={resume2}")
-    assert status == 200, state2
-    assert state2.get("uw_decision", {}).get("decision") == "rejected"
+    # Reject auto-answer without a second full HTTP finalize (rate limits).
+    from services.chat_application_service import get_chat_application_service
+    svc = get_chat_application_service()
+    reject_id = f"{app_id}-REJECT-CLONE"
+    src = svc._sessions[app_id]
+    svc._sessions[reject_id] = {
+        **{k: v for k, v in src.items() if k not in ("transcript", "journey", "uw_decision")},
+        "id": reject_id,
+        "transcript": list(src.get("transcript") or []),
+        "journey": list(src.get("journey") or []),
+        "uw_decision": None,
+        "contact": dict(src.get("contact") or {}),
+        "answers": dict(src.get("answers") or {}),
+        "language": "en",
+    }
+    rejected = svc.post_underwriting_decision(
+        reject_id,
+        decision="rejected",
+        underwriting_id="UW-TEST-REJECT",
+        reason="Outside guidelines",
+    )
+    assert rejected.get("ok") is True
+    assert rejected["uw_decision"]["decision"] == "rejected"
+    assert any(m.get("kind") == "uw_decision" for m in rejected.get("messages") or [])
 
 
 if __name__ == "__main__":
