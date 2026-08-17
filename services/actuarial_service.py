@@ -2695,8 +2695,10 @@ def evaluate_auto_approval(
 
     if getattr(cfg, 'auto_approve_require_clean_history', True):
         smoking = str(app.get('smoking_status') or '').strip().lower()
-        smoker = smoking in ('smoker', 'current', 'current_smoker', 'yes', 'true')
-        _gate('clean_history_nonsmoker', smoking or 'unknown', 'non-smoker', not smoker)
+        nonsmoker = smoking in (
+            'non-smoker', 'nonsmoker', 'non_smoker', 'never', 'no', 'false',
+        )
+        _gate('clean_history_nonsmoker', smoking or 'unknown', 'non-smoker', nonsmoker)
 
         conditions = app.get('medical_conditions') or []
         _gate('clean_history_no_medical_conditions', len(conditions), 0, len(conditions) == 0)
