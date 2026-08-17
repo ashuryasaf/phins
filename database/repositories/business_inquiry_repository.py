@@ -31,14 +31,20 @@ class BusinessInquiryRepository(BaseRepository[BusinessInquiry]):
         return self.filter_by(status=status)
 
     def load_all_as_dicts(self) -> Dict[str, Dict[str, Any]]:
-        """Load all inquiries into an id-keyed dict compatible with in-memory store."""
-        result: Dict[str, Dict[str, Any]] = {}
+        """Load all inquiries into an id-keyed dict compatible with in-memory store.
+
+        Raises ``SQLAlchemyError`` on a failed read so callers can distinguish a
+        genuine load failure from a legitimately empty table and keep serving
+        their current cache instead of wiping it.
+        """
         try:
+            result: Dict[str, Dict[str, Any]] = {}
             for row in self.session.query(BusinessInquiry).all():
                 result[row.id] = row.to_dict()
+            return result
         except SQLAlchemyError as e:
             logger.error(f"Error loading business inquiries: {e}")
-        return result
+            raise
 
     def upsert_from_dict(self, inquiry_id: str, data: Dict[str, Any]) -> bool:
         """Create or update an inquiry from the in-memory record shape."""
