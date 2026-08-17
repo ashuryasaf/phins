@@ -141,17 +141,19 @@ def test_policy_contract_includes_declarations_billing_and_seal():
     )
     assert contract["integrity_hash"]
     assert "PHINS" in contract["html"]
+    assert "data:image/svg+xml;base64," in contract["html"]
+    assert "Space Grotesk" in contract["html"]
+    assert "logo-mark" in contract["html"]
     assert "Dana Levi" in contract["html"]
     assert "4444" in contract["html"]
     assert "Architect" in contract["html"]
     assert "deadbeef" in contract["html"]
     assert contract["payload"]["integrity_hash"] == contract["integrity_hash"]
-    # Seal is deterministic for the same body
+    # issued_at differs — hashes differ; ensure structure stays sealed
     again = build_policy_contract(
         policy=policy, customer=customer, app=app, bill=bill, media=media,
         invite_or_login_code="PHINS-PORTAL-TEST",
     )
-    # issued_at differs — hashes differ; ensure structure stays sealed
     assert again["payload"]["policy_id"] == "POL-1"
     assert "PHINS-PORTAL-TEST" in contract["html"]
 

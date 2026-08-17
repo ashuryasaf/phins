@@ -480,6 +480,32 @@ def _integrity_hash(payload: Dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _phins_logo_data_uri() -> str:
+    """Embed the PHINS shield emblem so contracts render offline / in email."""
+    import base64
+    from pathlib import Path
+
+    candidates = (
+        Path(__file__).resolve().parent.parent / "web_portal" / "static" / "phins-logo.svg",
+        Path("web_portal/static/phins-logo.svg"),
+        Path("/workspace/web_portal/static/phins-logo.svg"),
+    )
+    for path in candidates:
+        try:
+            raw = path.read_bytes()
+            if raw:
+                return "data:image/svg+xml;base64," + base64.b64encode(raw).decode("ascii")
+        except OSError:
+            continue
+    # Minimal fallback shield if the static asset is unavailable
+    fallback = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">'
+        '<path d="M60 6 L106 22 V57 C106 88 86 108 60 116 C34 108 14 88 14 57 V22 Z" '
+        'fill="#0e2f63" stroke="#e3bf6f" stroke-width="4"/></svg>'
+    )
+    return "data:image/svg+xml;base64," + base64.b64encode(fallback.encode("utf-8")).decode("ascii")
+
+
 def build_policy_contract(
     *,
     policy: Dict[str, Any],
@@ -589,108 +615,458 @@ def build_policy_contract(
     product = html.escape(str(body["product_id"]).replace("_", " ").title())
 
     decl_rows = "".join(
-        f"<tr><td>{html.escape(str(k).replace('_', ' ').title())}</td>"
-        f"<td>{html.escape(str(v) if v not in (None, '') else '—')}</td></tr>"
+        f"<tr><td class='k'>{html.escape(str(k).replace('_', ' ').title())}</td>"
+        f"<td class='v'>{html.escape(str(v) if v not in (None, '') else '—')}</td></tr>"
         for k, v in declarations.items()
     )
     media_rows = "".join(
-        f"<tr><td>{html.escape(str(m.get('kind') or 'file'))}</td>"
-        f"<td>{html.escape(str(m.get('name') or ''))}</td>"
+        f"<tr><td class='k'>{html.escape(str(m.get('kind') or 'file'))}</td>"
+        f"<td class='v'>{html.escape(str(m.get('name') or ''))}</td>"
         f"<td><code>{html.escape(str(m.get('sha256') or m.get('persistent_doc_id') or '')[:16])}</code></td></tr>"
         for m in (media or [])
-    ) or "<tr><td colspan='3'>No supporting media attached</td></tr>"
+    ) or "<tr><td colspan='3' class='muted'>No supporting media attached</td></tr>"
+
+    logo_src = _phins_logo_data_uri()
+    logo_http = f"{base_url.rstrip('/')}/phins-logo.svg"
+    seal_short = html.escape(seal[:16])
+    seal_full = html.escape(seal)
+    issued = html.escape(str(body["issued_at"]))
+    invite_block = ""
+    if invite_or_login_code:
+        invite_block = (
+            "<p class='invite'>Invitation / claim code<br/>"
+            f"<strong>{html.escape(str(invite_or_login_code))}</strong></p>"
+        )
+    portal_href = html.escape(track_url if invite_or_login_code else portal_url)
+    cov = float(body["coverage_amount"] or 0)
+    monthly = float(body["monthly_premium"] or 0)
+    annual = float(body["annual_premium"] or 0)
+    actuarial_annual = float(body.get("actuarial_annual_premium") or risk_annual or 0)
+    loading_pct = float(body.get("underwriting_loading") or 0) * 100
+    tables_v = html.escape(str(body.get("tables_version") or "n/a"))
+    config_v = html.escape(str(body.get("config_version") or "n/a"))
+    card4 = html.escape(str(body.get("card_last4") or "————"))
+    freq = html.escape(str(body.get("billing_frequency") or "monthly").title())
+    due = html.escape(str((bill or {}).get("due_date") or "Per schedule"))
+    bill_id = html.escape(str((bill or {}).get("id") or "—"))
+    sig_name = html.escape(str(declarations.get("signature_name") or "—"))
+    sig_at = html.escape(str(declarations.get("signature_at") or ""))
+    cust_id = html.escape(str(body["customer_id"] or ""))
 
     html_doc = f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"/>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>PHINS Policy Contract {policy_id}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet"/>
 <style>
-  :root {{ --phins-navy:#0d47a1; --phins-deep:#12284c; --phins-gold:#c9a227; --phins-ice:#f4f7fb; }}
-  body {{ font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; color: var(--phins-deep);
-         margin:0; background: linear-gradient(180deg,#e8eef8 0%,#ffffff 40%); }}
-  .sheet {{ max-width: 800px; margin: 24px auto; background:#fff; border:1px solid #d5deee;
-            box-shadow: 0 12px 40px rgba(13,71,161,.08); }}
-  .banner {{ background: linear-gradient(135deg, var(--phins-navy), #1565c0 55%, #0d47a1);
-             color:#fff; padding:28px 32px; display:flex; justify-content:space-between; gap:16px; }}
-  .brand {{ font-size:28px; font-weight:800; letter-spacing:.04em; }}
-  .brand small {{ display:block; font-size:12px; opacity:.85; font-weight:500; letter-spacing:.12em; text-transform:uppercase; }}
-  .seal {{ font-size:11px; background:rgba(255,255,255,.12); padding:8px 10px; border-radius:8px; }}
-  h2 {{ color: var(--phins-navy); border-bottom:2px solid var(--phins-gold); padding-bottom:6px; margin-top:28px; }}
-  .pad {{ padding: 8px 32px 32px; }}
-  table {{ width:100%; border-collapse:collapse; margin:12px 0; }}
-  td, th {{ border:1px solid #e1e8f5; padding:8px 10px; text-align:left; font-size:13px; }}
-  th {{ background: var(--phins-ice); color: var(--phins-navy); }}
-  .grid {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }}
-  .card {{ background: var(--phins-ice); border:1px solid #d7e2f5; border-radius:10px; padding:14px; }}
-  .card .lbl {{ font-size:11px; color:#5a6780; text-transform:uppercase; letter-spacing:.06em; }}
-  .card .val {{ font-size:18px; font-weight:700; color: var(--phins-deep); margin-top:4px; }}
-  .qr {{ text-align:center; }}
-  .foot {{ background:#0f1a2e; color:#9fb0d0; padding:14px 32px; font-size:11px; }}
-  code {{ font-size:11px; }}
-</style></head>
+  :root {{
+    --navy: #060d1f;
+    --navy-mid: #0e2f63;
+    --navy-bright: #123f82;
+    --deep: #12284c;
+    --ink: #1a2740;
+    --muted: #5a6780;
+    --gold: #e3bf6f;
+    --gold-strong: #f7e2a0;
+    --gold-deep: #b8893b;
+    --ice: #f3f7fd;
+    --line: rgba(18, 63, 130, 0.12);
+    --cyan: #4fd8ff;
+  }}
+  * {{ box-sizing: border-box; }}
+  body {{
+    margin: 0;
+    color: var(--ink);
+    font-family: 'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.55;
+    background:
+      radial-gradient(900px 420px at 12% -8%, rgba(79, 216, 255, 0.14), transparent 55%),
+      radial-gradient(800px 380px at 92% 0%, rgba(227, 191, 111, 0.16), transparent 50%),
+      linear-gradient(165deg, #e8eef8 0%, #f7f9fc 42%, #eef3fb 100%);
+    -webkit-font-smoothing: antialiased;
+  }}
+  .sheet {{
+    max-width: 820px;
+    margin: 28px auto 40px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.7) inset,
+      0 24px 60px rgba(6, 13, 31, 0.10);
+  }}
+  .banner {{
+    position: relative;
+    color: #eaf1ff;
+    padding: 30px 36px 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    background:
+      radial-gradient(620px 220px at 88% -40%, rgba(21, 68, 155, 0.55), transparent 70%),
+      radial-gradient(420px 180px at 8% 120%, rgba(79, 216, 255, 0.18), transparent 65%),
+      linear-gradient(135deg, #060d1f 0%, #0e2f63 48%, #123f82 78%, #0a1f4a 100%);
+  }}
+  .banner::after {{
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--gold-deep), var(--gold-strong), var(--gold), var(--cyan));
+  }}
+  .brand-lockup {{
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+  }}
+  .logo-mark {{
+    width: 56px;
+    height: 56px;
+    flex: 0 0 auto;
+    filter: drop-shadow(0 6px 14px rgba(0,0,0,0.28));
+  }}
+  .brand-copy {{ min-width: 0; }}
+  .brand-word {{
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    line-height: 1;
+    background: linear-gradient(180deg, #ffffff 10%, var(--gold-strong) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }}
+  .brand-tag {{
+    margin-top: 8px;
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(234, 241, 255, 0.72);
+  }}
+  .seal {{
+    text-align: right;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    line-height: 1.45;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: linear-gradient(160deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04));
+    border: 1px solid rgba(247, 226, 160, 0.28);
+    backdrop-filter: blur(8px);
+    max-width: 220px;
+  }}
+  .seal strong {{
+    display: block;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gold-strong);
+    margin-bottom: 4px;
+  }}
+  .seal code {{
+    color: #b7d9ff;
+    font-size: 10.5px;
+    word-break: break-all;
+  }}
+  .pad {{ padding: 10px 36px 36px; }}
+  .lede {{
+    margin: 22px 0 18px;
+    color: var(--muted);
+    font-size: 13.5px;
+    max-width: 62ch;
+  }}
+  .grid {{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }}
+  .stat {{
+    position: relative;
+    overflow: hidden;
+    border-radius: 14px;
+    padding: 16px 16px 14px;
+    border: 1px solid var(--line);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.95), rgba(243, 247, 253, 0.92)),
+      linear-gradient(135deg, rgba(18, 63, 130, 0.04), rgba(227, 191, 111, 0.08));
+  }}
+  .stat::before {{
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: linear-gradient(180deg, var(--gold-strong), var(--navy-bright));
+  }}
+  .stat .lbl {{
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }}
+  .stat .val {{
+    margin-top: 6px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--deep);
+    letter-spacing: -0.01em;
+  }}
+  h2 {{
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin: 32px 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--navy-mid);
+  }}
+  h2 .num {{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--navy);
+    background: linear-gradient(135deg, var(--gold-strong), var(--gold));
+  }}
+  table {{
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 0 0 4px;
+    overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+  }}
+  th, td {{
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 13px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }}
+  tr:last-child th, tr:last-child td {{ border-bottom: none; }}
+  th, td.k {{
+    width: 38%;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--navy-mid);
+    background: linear-gradient(90deg, #f5f8fd, #eef3fb);
+  }}
+  thead th {{
+    background: linear-gradient(90deg, #0e2f63, #123f82);
+    color: #eaf1ff;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }}
+  td.v {{ color: var(--ink); }}
+  .muted {{ color: var(--muted); font-style: italic; }}
+  code {{
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: var(--navy-bright);
+    background: rgba(18, 63, 130, 0.06);
+    padding: 2px 6px;
+    border-radius: 5px;
+  }}
+  .sig {{
+    margin-top: 4px;
+    font-family: 'Space Grotesk', cursive, sans-serif;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    background: linear-gradient(90deg, var(--navy-mid), var(--gold-deep));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }}
+  .sig-meta {{ font-size: 11px; color: var(--muted); margin-top: 2px; }}
+  .portal {{
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 16px;
+    align-items: center;
+    padding: 16px;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background:
+      radial-gradient(280px 120px at 100% 0%, rgba(79, 216, 255, 0.10), transparent 70%),
+      linear-gradient(180deg, #f8fafc, #eef3fb);
+  }}
+  .portal p {{ margin: 0 0 10px; color: var(--muted); font-size: 13px; }}
+  .portal a {{
+    color: var(--navy-bright);
+    font-weight: 500;
+    word-break: break-all;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(18, 63, 130, 0.25);
+  }}
+  .invite {{
+    margin-top: 14px !important;
+    font-size: 12px !important;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted) !important;
+  }}
+  .invite strong {{
+    display: inline-block;
+    margin-top: 4px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 15px;
+    letter-spacing: 0.08em;
+    color: var(--navy-mid);
+    text-transform: none;
+  }}
+  .qr {{
+    text-align: center;
+    padding: 10px;
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    box-shadow: 0 8px 20px rgba(6, 13, 31, 0.06);
+  }}
+  .qr img {{ display: block; margin: 0 auto; border-radius: 6px; }}
+  .foot {{
+    padding: 16px 36px;
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    color: #9fb0d0;
+    background:
+      radial-gradient(500px 120px at 80% 0%, rgba(21, 68, 155, 0.35), transparent 70%),
+      linear-gradient(90deg, #060d1f, #0f1a2e 60%, #12284c);
+  }}
+  .foot .seal-line {{
+    margin-top: 6px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 10px;
+    color: #7fe3ff;
+    word-break: break-all;
+  }}
+  @media (max-width: 640px) {{
+    .sheet {{ margin: 0; border-radius: 0; }}
+    .banner, .pad, .foot {{ padding-left: 20px; padding-right: 20px; }}
+    .grid, .portal {{ grid-template-columns: 1fr; }}
+    .brand-word {{ font-size: 24px; letter-spacing: 0.1em; }}
+    .logo-mark {{ width: 46px; height: 46px; }}
+  }}
+  @media print {{
+    body {{ background: #fff; }}
+    .sheet {{ box-shadow: none; margin: 0; border: none; }}
+  }}
+</style>
+</head>
 <body>
   <div class="sheet">
-    <div class="banner">
-      <div class="brand">PHINS<small>Insurance · Life &amp; Disability</small></div>
-      <div class="seal">Policy Contract<br/>Integrity {html.escape(seal[:16])}…</div>
-    </div>
+    <header class="banner">
+      <div class="brand-lockup">
+        <img class="logo-mark" src="{logo_src}" alt="PHINS emblem"
+             onerror="this.onerror=null;this.src='{html.escape(logo_http, quote=True)}'"/>
+        <div class="brand-copy">
+          <div class="brand-word">PHINS</div>
+          <div class="brand-tag">Insurance · Life &amp; Disability</div>
+        </div>
+      </div>
+      <div class="seal">
+        <strong>Policy Contract</strong>
+        Integrity seal<br/><code>{seal_short}…</code>
+      </div>
+    </header>
+
     <div class="pad">
-      <p>This contract is issued from the actuarial pricing center rates, fine-tuned by underwriting
-         for this customer, and hash-sealed for data integrity.</p>
+      <p class="lede">This contract is issued from the actuarial pricing center rates,
+        fine-tuned by underwriting for this customer, and hash-sealed for data integrity.</p>
+
       <div class="grid">
-        <div class="card"><div class="lbl">Policy</div><div class="val">{policy_id}</div></div>
-        <div class="card"><div class="lbl">Product</div><div class="val">{product}</div></div>
-        <div class="card"><div class="lbl">Coverage</div><div class="val">${float(body['coverage_amount'] or 0):,.0f}</div></div>
-        <div class="card"><div class="lbl">Monthly premium</div><div class="val">${float(body['monthly_premium'] or 0):,.2f}</div></div>
+        <div class="stat"><div class="lbl">Policy</div><div class="val">{policy_id}</div></div>
+        <div class="stat"><div class="lbl">Product</div><div class="val">{product}</div></div>
+        <div class="stat"><div class="lbl">Coverage</div><div class="val">${cov:,.0f}</div></div>
+        <div class="stat"><div class="lbl">Monthly premium</div><div class="val">${monthly:,.2f}</div></div>
       </div>
 
-      <h2>1. Policyholder</h2>
+      <h2><span class="num">1</span> Policyholder</h2>
       <table>
-        <tr><th>Name</th><td>{name}</td></tr>
-        <tr><th>Customer ID</th><td>{html.escape(str(body['customer_id'] or ''))}</td></tr>
-        <tr><th>Email</th><td>{email}</td></tr>
-        <tr><th>Phone</th><td>{phone}</td></tr>
-        <tr><th>Electronic signature</th><td>{html.escape(str(declarations.get('signature_name') or '—'))}
-            <div style="font-size:11px;color:#5a6780">{html.escape(str(declarations.get('signature_at') or ''))}</div></td></tr>
+        <tr><td class="k">Name</td><td class="v">{name}</td></tr>
+        <tr><td class="k">Customer ID</td><td class="v">{cust_id}</td></tr>
+        <tr><td class="k">Email</td><td class="v">{email}</td></tr>
+        <tr><td class="k">Phone</td><td class="v">{phone}</td></tr>
+        <tr><td class="k">Electronic signature</td><td class="v">
+          <div class="sig">{sig_name}</div>
+          <div class="sig-meta">{sig_at}</div>
+        </td></tr>
       </table>
 
-      <h2>2. Medical &amp; underwriting declarations</h2>
-      <table><tr><th>Declaration</th><th>Customer statement</th></tr>{decl_rows}</table>
-
-      <h2>3. Premium &amp; savings (actuarial base + underwriting fine-tune)</h2>
+      <h2><span class="num">2</span> Medical &amp; underwriting declarations</h2>
       <table>
-        <tr><th>Actuarial annual (tables {html.escape(str(body.get('tables_version') or 'n/a'))})</th>
-            <td>${float(body.get('actuarial_annual_premium') or risk_annual or 0):,.2f}</td></tr>
-        <tr><th>Risk premium (annual)</th><td>${risk_annual:,.2f}</td></tr>
-        <tr><th>Savings premium (annual)</th><td>${savings_annual:,.2f}</td></tr>
-        <tr><th>Underwriting loading</th><td>{float(body.get('underwriting_loading') or 0)*100:.1f}%</td></tr>
-        <tr><th>Billed monthly / annual</th>
-            <td>${float(body['monthly_premium'] or 0):,.2f} / ${float(body['annual_premium'] or 0):,.2f}</td></tr>
-        <tr><th>Config version</th><td>{html.escape(str(body.get('config_version') or 'n/a'))}</td></tr>
+        <thead><tr><th>Declaration</th><th>Customer statement</th></tr></thead>
+        <tbody>{decl_rows}</tbody>
       </table>
 
-      <h2>4. Billing &amp; payment method</h2>
+      <h2><span class="num">3</span> Premium &amp; savings</h2>
       <table>
-        <tr><th>Billing frequency</th><td>{html.escape(str(body.get('billing_frequency') or 'monthly').title())}</td></tr>
-        <tr><th>Payment card (last 4)</th><td>**** {html.escape(str(body.get('card_last4') or '————'))}</td></tr>
-        <tr><th>Next bill</th><td>{html.escape(str((bill or {}).get('due_date') or 'Per schedule'))}</td></tr>
-        <tr><th>Bill ID</th><td>{html.escape(str((bill or {}).get('id') or '—'))}</td></tr>
+        <tr><td class="k">Actuarial annual (tables {tables_v})</td>
+            <td class="v">${actuarial_annual:,.2f}</td></tr>
+        <tr><td class="k">Risk premium (annual)</td><td class="v">${risk_annual:,.2f}</td></tr>
+        <tr><td class="k">Savings premium (annual)</td><td class="v">${savings_annual:,.2f}</td></tr>
+        <tr><td class="k">Underwriting loading</td><td class="v">{loading_pct:.1f}%</td></tr>
+        <tr><td class="k">Billed monthly / annual</td>
+            <td class="v">${monthly:,.2f} / ${annual:,.2f}</td></tr>
+        <tr><td class="k">Config version</td><td class="v">{config_v}</td></tr>
       </table>
 
-      <h2>5. Supporting media (voice / video / files)</h2>
-      <table><tr><th>Kind</th><th>Name</th><th>Integrity</th></tr>{media_rows}</table>
+      <h2><span class="num">4</span> Billing &amp; payment method</h2>
+      <table>
+        <tr><td class="k">Billing frequency</td><td class="v">{freq}</td></tr>
+        <tr><td class="k">Payment card (last 4)</td><td class="v">**** {card4}</td></tr>
+        <tr><td class="k">Next bill</td><td class="v">{due}</td></tr>
+        <tr><td class="k">Bill ID</td><td class="v">{bill_id}</td></tr>
+      </table>
 
-      <h2>6. Portal registration</h2>
-      <div class="grid">
+      <h2><span class="num">5</span> Supporting media</h2>
+      <table>
+        <thead><tr><th>Kind</th><th>Name</th><th>Integrity</th></tr></thead>
+        <tbody>{media_rows}</tbody>
+      </table>
+
+      <h2><span class="num">6</span> Portal registration</h2>
+      <div class="portal">
         <div>
           <p>Scan to open your PHINS portal / track your application:</p>
-          <p><a href="{html.escape(track_url if invite_or_login_code else portal_url)}">
-            {html.escape(track_url if invite_or_login_code else portal_url)}</a></p>
-          {"<p>Invitation / claim code: <strong>"+html.escape(str(invite_or_login_code))+"</strong></p>" if invite_or_login_code else ""}
+          <p><a href="{portal_href}">{portal_href}</a></p>
+          {invite_block}
         </div>
         <div class="qr"><img src="{qr_url}" alt="PHINS portal QR" width="140" height="140"/></div>
       </div>
     </div>
-    <div class="foot">PHINS · Actuarial pricing center + underwriting fine-tune · Seal {html.escape(seal)} · {html.escape(body['issued_at'])}</div>
+
+    <footer class="foot">
+      PHINS · Actuarial pricing center + underwriting fine-tune · Issued {issued}
+      <div class="seal-line">Seal {seal_full}</div>
+    </footer>
   </div>
 </body></html>"""
 
