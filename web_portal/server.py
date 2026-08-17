@@ -19531,15 +19531,14 @@ For claims or questions, please contact:
                 session_customer_id
                 and session_customer_id == str(policy.get('customer_id') or '')
             )
-            if role == 'customer' and not is_owner:
+            if not is_staff and not is_owner:
                 self._set_json_headers(403)
-                self.wfile.write(json.dumps({
-                    'error': 'Access denied — sealed contracts are only available to the issued customer'
-                }).encode('utf-8'))
-                return
-            if role and role != 'customer' and not is_staff and not is_owner:
-                self._set_json_headers(403)
-                self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                message = (
+                    'Access denied — sealed contracts are only available to the issued customer'
+                    if role == 'customer'
+                    else 'Access denied'
+                )
+                self.wfile.write(json.dumps({'error': message}).encode('utf-8'))
                 return
 
             from services.underwriting_integrity_service import (
@@ -19559,11 +19558,15 @@ For claims or questions, please contact:
             }
             uw_id = policy.get('underwriting_id')
             app = UNDERWRITING_APPLICATIONS.get(uw_id) or {}
-            bills = [
-                b for b in BILLING.values()
-                if b.get('policy_id') == policy_id or b.get('customer_id') == customer_id
+            policy_bills = [
+                b for b in BILLING.values() if b.get('policy_id') == policy_id
             ]
-            bill = bills[0] if bills else None
+            customer_bills = [
+                b for b in BILLING.values() if b.get('customer_id') == customer_id
+            ]
+            bill = policy_bills[0] if policy_bills else (
+                customer_bills[0] if customer_bills else None
+            )
             card_last4 = resolve_card_last4(policy=policy, app=app, bill=bill)
 
             contract_meta = (policy.get('policy_contract') or {}) if isinstance(
