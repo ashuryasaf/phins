@@ -54,6 +54,7 @@ from database.repositories import (
     AgentAffiliationRepository,
     AgentCommissionRepository,
     AssessmentRecordRepository,
+    BusinessInquiryRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,8 @@ class DatabaseManager:
         self._agent_commissions = None
         # Assessment loop repositories.
         self._assessment_records = None
+        # Business Relations (contact / demo inquiries).
+        self._business_inquiries = None
     
     def _ensure_session(self) -> Session:
         """
@@ -181,6 +184,7 @@ class DatabaseManager:
         self._agent_affiliations = None
         self._agent_commissions = None
         self._assessment_records = None
+        self._business_inquiries = None
     
     @property
     def customers(self) -> CustomerRepository:
@@ -457,6 +461,13 @@ class DatabaseManager:
         if self._assessment_records is None:
             self._assessment_records = AssessmentRecordRepository(self._ensure_session())
         return self._assessment_records
+
+    @property
+    def business_inquiries(self) -> BusinessInquiryRepository:
+        """Get business-relations inquiry repository (contact / demo intake)."""
+        if self._business_inquiries is None:
+            self._business_inquiries = BusinessInquiryRepository(self._ensure_session())
+        return self._business_inquiries
 
     def commit(self):
         """Commit current transaction"""

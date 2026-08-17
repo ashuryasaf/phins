@@ -154,6 +154,12 @@ def pytest_runtest_setup(item):  # type: ignore[no-redef]
         except Exception:
             pass
 
+    # Reset business-inquiry hydrate TTL so each test starts with a cold cache.
+    try:
+        portal._BUSINESS_INQUIRY_LAST_HYDRATE = 0.0
+    except Exception:
+        pass
+
     # Reset per-port initialization tracker (so handlers don't unexpectedly wipe state mid-test).
     try:
         init_set = getattr(portal, "_TEST_PORTS_INITIALIZED", None)
