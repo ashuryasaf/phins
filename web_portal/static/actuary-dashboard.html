@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <!-- Build stamp: bumped whenever a substantive pricing change ships so
        cached browsers can tell users they are running an old UI. -->
-  <meta name="phins-actuary-dashboard-build" content="2026-08-17.auto-approve-versions-bar-v1">
+  <meta name="phins-actuary-dashboard-build" content="2026-08-17.annual-report-unified-brand-v1">
   <!-- Chart.js for the Annuity Reserves forecast bar/line charts. Loaded
        from the same CDN as risk-reports-dashboard.html for consistency. -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -804,71 +804,223 @@
        A first-class regulator-grade report that aggregates the
        simulation, sandbox, reserves and valuation pipeline into a
        single jurisdiction-aware filing (US 10-K / NAIC, Canada
-       OSFI/CSA, Israel ISA/CMISA + IFRS 17). */
+       OSFI/CSA, Israel ISA/CMISA + IFRS 17).
+
+       Redesigned on the unified PHINS identity: shield emblem +
+       Space Grotesk wordmark, deep-navy gradients with gold/cyan
+       accents (screen), and the gold #c9a04e / navy #0e2f63
+       letterhead double rule for the document itself. */
+    .annual-brand-banner {
+      position: relative;
+      overflow: hidden;
+      border-radius: 14px;
+      padding: 18px 22px 20px;
+      margin-bottom: 14px;
+      color: #eaf1ff;
+      background:
+        radial-gradient(620px 220px at 88% -40%, rgba(21, 68, 155, 0.55), transparent 70%),
+        radial-gradient(420px 180px at 8% 120%, rgba(79, 216, 255, 0.18), transparent 65%),
+        linear-gradient(135deg, #060d1f 0%, #0e2f63 48%, #123f82 78%, #0a1f4a 100%);
+      box-shadow: 0 10px 26px rgba(2, 8, 23, 0.28);
+    }
+    .annual-brand-banner::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 4px;
+      background: linear-gradient(90deg, #b8893b, #f7e2a0, #e3bf6f, #4fd8ff);
+    }
+    .annual-brand-banner .brand-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .annual-brand-banner .brand-emblem { width: 46px; height: 46px; filter: drop-shadow(0 0 10px rgba(79, 216, 255, 0.35)); }
+    .annual-brand-banner .brand-wordmark {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      background: linear-gradient(180deg, #ffffff 10%, #f7e2a0 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .annual-brand-banner .brand-title {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-size: 1.12rem;
+      font-weight: 600;
+      color: #eaf1ff;
+      letter-spacing: 0.02em;
+    }
+    .annual-brand-banner .brand-tagline {
+      font-size: 0.74rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #9fb6dd;
+      margin-top: 2px;
+    }
+    .annual-brand-banner .brand-divider { width: 1px; height: 38px; background: rgba(127, 178, 255, 0.28); }
+    .annual-brand-banner .header-badge {
+      background: rgba(79, 216, 255, 0.14);
+      color: #7fe3ff;
+      border: 1px solid rgba(79, 216, 255, 0.35);
+      border-radius: 999px;
+      padding: 3px 12px;
+      font-size: 0.74rem;
+      margin-left: auto;
+    }
+    /* Compact flow inside the bar: tighter cards, side-by-side pairs. */
+    #section-annual-report .card { margin-bottom: 12px; padding: 14px 16px; }
+    #section-annual-report .card .card-title { margin-bottom: 8px; }
+    .annual-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: stretch; }
+    .annual-grid-2 > .card { margin-bottom: 12px; }
+    @media (max-width: 1280px) { .annual-grid-2 { grid-template-columns: 1fr; } }
+
     .annual-report-preview {
       background: #fff;
-      color: #1a202c;
-      padding: 28px 32px;
+      color: #1a2740;
+      padding: 22px 26px;
       border: 1px solid #cbd5e0;
-      border-radius: 6px;
-      font-family: 'Times New Roman', Georgia, serif;
-      font-size: 0.95rem;
-      line-height: 1.55;
-      max-height: 720px;
+      border-radius: 10px;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 0.93rem;
+      line-height: 1.5;
+      max-height: 760px;
       overflow-y: auto;
     }
     .annual-report-preview h1,
     .annual-report-preview h2,
     .annual-report-preview h3,
     .annual-report-preview h4 {
-      font-family: 'Times New Roman', Georgia, serif;
-      color: #1a365d;
-      margin-top: 14px;
-      margin-bottom: 8px;
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      color: #0e2f63;
+      margin-top: 12px;
+      margin-bottom: 6px;
     }
-    .annual-report-preview h1 { font-size: 1.6rem; border-bottom: 2px solid #1a365d; padding-bottom: 8px; }
-    .annual-report-preview h2 { font-size: 1.25rem; border-bottom: 1px solid #cbd5e0; padding-bottom: 4px; margin-top: 22px; }
-    .annual-report-preview h3 { font-size: 1.05rem; margin-top: 16px; }
+    .annual-report-preview h1 { font-size: 1.55rem; border-bottom: 2.2px solid #c9a04e; padding-bottom: 8px; }
+    .annual-report-preview h2 {
+      font-size: 1.18rem;
+      border-bottom: 2.2px solid #c9a04e;
+      box-shadow: 0 3.2px 0 -2px #0e2f63;
+      padding-bottom: 4px;
+      margin-top: 16px;
+    }
+    .annual-report-preview h3 { font-size: 1.02rem; margin-top: 12px; }
+    .annual-report-preview h4 { color: #123f82; }
+    .annual-report-preview p { margin: 6px 0; }
     .annual-report-preview table {
       width: 100%;
       border-collapse: collapse;
-      margin: 10px 0;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 0.85rem;
+      margin: 8px 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 0.84rem;
     }
     .annual-report-preview th,
     .annual-report-preview td {
-      border: 1px solid #cbd5e0;
+      border: 1px solid #d7e0ec;
       padding: 5px 8px;
       text-align: left;
     }
     .annual-report-preview th {
-      background: #ebf4ff;
-      color: #1a365d;
+      background: linear-gradient(180deg, #f2f7ff 0%, #e8f0fc 100%);
+      color: #0e2f63;
       font-weight: 600;
     }
+    .annual-report-preview tbody tr:nth-child(even) td { background: #f8fbff; }
     .annual-report-preview td.num,
     .annual-report-preview th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    /* Chart + table side-by-side to keep the filing dense (no dead space).
+       Collapses to a single column on narrow viewports. */
+    .annual-report-preview .annual-duo {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      margin: 8px 0;
+    }
+    .annual-report-preview .annual-duo table,
+    .annual-report-preview .annual-duo .annual-chart-wrap { margin: 0; }
+    @media (max-width: 1100px) { .annual-report-preview .annual-duo { grid-template-columns: 1fr; } }
+    /* Unified PHINS letterhead (gold + navy double rule, per brand tests). */
+    .annual-report-preview .annual-letterhead {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-bottom: 10px;
+      border-bottom: 2.2px solid #c9a04e;
+      position: relative;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    .annual-report-preview .annual-letterhead::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0; bottom: -4px;
+      height: 1px;
+      background: #0e2f63;
+    }
+    .annual-report-preview .annual-letterhead .lh-logo { width: 40px; height: 40px; flex: 0 0 auto; }
+    .annual-report-preview .annual-letterhead .lh-name {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-size: 1.28rem;
+      font-weight: 700;
+      color: #0e2f63;
+      letter-spacing: 0.08em;
+    }
+    .annual-report-preview .annual-letterhead .lh-tag {
+      font-size: 0.68rem;
+      color: #5b6b82;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
     .annual-report-preview .annual-cover {
+      position: relative;
+      overflow: hidden;
       text-align: center;
-      padding: 24px 12px 18px;
-      border-bottom: 1px solid #1a365d;
-      margin-bottom: 18px;
+      color: #eaf1ff;
+      padding: 26px 18px 24px;
+      margin: 12px 0 14px;
+      border-radius: 10px;
+      background:
+        radial-gradient(620px 220px at 88% -40%, rgba(21, 68, 155, 0.55), transparent 70%),
+        radial-gradient(420px 180px at 8% 120%, rgba(79, 216, 255, 0.18), transparent 65%),
+        linear-gradient(135deg, #060d1f 0%, #0e2f63 48%, #123f82 78%, #0a1f4a 100%);
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    .annual-report-preview .annual-cover::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 4px;
+      background: linear-gradient(90deg, #b8893b, #f7e2a0, #e3bf6f, #4fd8ff);
     }
     .annual-report-preview .annual-cover .doc-title {
-      font-size: 1.8rem;
-      color: #1a365d;
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-size: 1.7rem;
       font-weight: 700;
       margin-bottom: 6px;
+      background: linear-gradient(180deg, #ffffff 10%, #f7e2a0 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
     .annual-report-preview .annual-cover .issuer {
-      font-size: 1.2rem;
-      color: #2b6cb0;
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-size: 1.15rem;
+      color: #b7d9ff;
       margin-bottom: 4px;
     }
     .annual-report-preview .annual-cover .meta {
-      color: #4a5568;
-      font-size: 0.95rem;
+      color: #9fb6dd;
+      font-size: 0.88rem;
+    }
+    @media print {
+      .annual-report-preview .annual-cover .doc-title,
+      .annual-brand-banner .brand-wordmark {
+        background: none;
+        -webkit-background-clip: initial;
+        background-clip: initial;
+        -webkit-text-fill-color: #f7e2a0;
+        color: #f7e2a0;
+      }
     }
     .annual-report-preview .integrity {
       background: #f0fff4;
@@ -893,14 +1045,15 @@
     }
     .annual-report-preview .jurisdiction-tag {
       display: inline-block;
-      background: #1a365d;
-      color: #fff;
+      background: linear-gradient(135deg, #0e2f63 0%, #123f82 100%);
+      color: #f7e2a0;
       padding: 2px 8px;
-      border-radius: 3px;
-      font-size: 0.7rem;
+      border-radius: 999px;
+      font-size: 0.68rem;
       font-weight: 600;
       letter-spacing: 0.5px;
       margin-right: 4px;
+      vertical-align: 2px;
     }
     .annual-report-preview .appendix {
       background: #f7fafc;
@@ -931,17 +1084,18 @@
     }
 
     .annual-report-preview .exec-cover {
-      background: linear-gradient(135deg, #f7fafc 0%, #ebf4ff 100%);
-      border: 1px solid #cbd5e0;
-      border-radius: 6px;
-      padding: 18px 22px;
-      margin: 18px 0;
+      background: linear-gradient(135deg, #f7fafc 0%, #eaf2ff 100%);
+      border: 1px solid #cfdcee;
+      border-top: 3px solid #c9a04e;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin: 12px 0;
     }
-    .annual-report-preview .exec-meta { display: flex; flex-wrap: wrap; gap: 14px; margin: 6px 0 14px; font-size: 0.82rem; color: #4a5568; }
-    .annual-report-preview .exec-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-    .annual-report-preview .exec-tile { padding: 10px 12px; border-radius: 6px; background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #1a365d; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    .annual-report-preview .exec-tile-label { font-size: 0.72rem; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }
-    .annual-report-preview .exec-tile-value { font-size: 1.05rem; font-weight: 700; color: #1a365d; margin-top: 3px; }
+    .annual-report-preview .exec-meta { display: flex; flex-wrap: wrap; gap: 14px; margin: 6px 0 10px; font-size: 0.8rem; color: #4a5568; }
+    .annual-report-preview .exec-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .annual-report-preview .exec-tile { padding: 9px 11px; border-radius: 8px; background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #0e2f63; font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .annual-report-preview .exec-tile-label { font-size: 0.7rem; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }
+    .annual-report-preview .exec-tile-value { font-size: 1.02rem; font-weight: 700; color: #0e2f63; margin-top: 3px; font-family: 'Space Grotesk', 'Inter', sans-serif; }
     .annual-report-preview .exec-tile-pos { border-left-color: #38a169; }
     .annual-report-preview .exec-tile-pos .exec-tile-value { color: #2f855a; }
     .annual-report-preview .exec-tile-warn { border-left-color: #d69e2e; }
@@ -950,24 +1104,38 @@
     .annual-report-preview .exec-tile-neg .exec-tile-value { color: #c53030; }
     .annual-report-preview .exec-tile-teal { border-left-color: #319795; }
     .annual-report-preview .exec-tile-teal .exec-tile-value { color: #2c7a7b; }
-    .annual-report-preview .exec-tile-navy { border-left-color: #1a365d; }
-    .annual-report-preview .exec-badges { margin-top: 12px; font-size: 0.8rem; }
-    .annual-report-preview .filing-badge { display: inline-block; background: #2b6cb0; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; margin-right: 4px; margin-bottom: 4px; }
+    .annual-report-preview .exec-tile-navy { border-left-color: #0e2f63; }
+    .annual-report-preview .exec-badges { margin-top: 10px; font-size: 0.8rem; }
+    .annual-report-preview .filing-badge { display: inline-block; background: linear-gradient(135deg, #0e2f63 0%, #123f82 100%); color: #eaf1ff; padding: 2px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 600; margin-right: 4px; margin-bottom: 4px; }
     .annual-report-preview .integrity-ok { color: #2f855a; font-weight: 700; }
     .annual-report-preview .integrity-bad { color: #c53030; font-weight: 700; }
     @media (max-width: 720px) { .annual-report-preview .exec-tiles { grid-template-columns: repeat(2, 1fr); } }
 
     .annual-report-preview .toc {
       background: #f7fafc;
-      border: 1px solid #cbd5e0;
-      padding: 10px 18px;
-      margin: 12px 0;
-      border-radius: 4px;
+      border: 1px solid #d7e0ec;
+      border-left: 3px solid #c9a04e;
+      padding: 8px 16px;
+      margin: 10px 0;
+      border-radius: 6px;
+      columns: 2;
+      column-gap: 24px;
     }
-    .annual-report-preview .toc h3 { margin-top: 0; }
+    .annual-report-preview .toc h3 { margin-top: 0; column-span: all; }
     .annual-report-preview .toc ol { margin: 4px 0 0 18px; padding: 0; }
-    .annual-report-preview .toc li { font-size: 0.85rem; padding: 1px 0; }
+    .annual-report-preview .toc li { font-size: 0.82rem; padding: 1px 0; break-inside: avoid; }
+    .annual-report-preview .toc p { column-span: all; }
+    @media (max-width: 900px) { .annual-report-preview .toc { columns: 1; } }
     .annual-report-preview .annual-chart-wrap { background: #ffffff; }
+    /* Multi-chart rows (e.g. demographics) — keep the numbers and their
+       visual side by side instead of a long stacked column. */
+    .annual-report-preview .annual-charts-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      margin: 8px 0;
+    }
+    .annual-report-preview .annual-charts-row .annual-chart-wrap { margin: 0; }
 
     /* ========== Actuarial Sandbox Testing Bar ==========
        The sandbox is a self-contained "what-if" lab on the actuary
@@ -3242,20 +3410,32 @@
 
         <!-- Annual Regulatory Report Section -->
         <section id="section-annual-report" class="section">
-          <h2 class="section-title">Annual Regulatory Report
-            <span id="annual-report-source-badge" class="header-badge" style="background:rgba(43,108,176,0.12);color:var(--secondary);margin-left:8px;">
-              Pipeline: not bound
-            </span>
-          </h2>
+          <!-- Unified PHINS brand banner (emblem + wordmark + gradient) -->
+          <div class="annual-brand-banner">
+            <div class="brand-row">
+              <img src="/phins-logo.svg" alt="PHINS emblem" class="brand-emblem">
+              <div>
+                <span class="brand-wordmark">PHINS</span>
+                <div class="brand-tagline">Personal Health Insurance &amp; Savings · AI-Operated Insurance Platform</div>
+              </div>
+              <div class="brand-divider"></div>
+              <div>
+                <div class="brand-title">Annual Regulatory Report</div>
+                <div class="brand-tagline">SEC 10-K / NAIC · OSFI LICAT / CSA AIF · ISA / CMISA Solvency II · IFRS 17</div>
+              </div>
+              <span id="annual-report-source-badge" class="header-badge">Pipeline: not bound</span>
+            </div>
+          </div>
 
-          <div class="alert alert-warning">
+          <div class="alert alert-warning" style="margin-bottom:12px;">
             <strong>First-class annual filing.</strong> This bar produces a single, jurisdiction-aware annual report that public insurance issuers in the
             <strong>United States (SEC&nbsp;10-K + NAIC&nbsp;statutory)</strong>, <strong>Canada (OSFI&nbsp;MCT/LICAT + CSA AIF on SEDAR+)</strong>, and
             <strong>Israel (ISA prospectus + CMISA Solvency II + IFRS&nbsp;17)</strong> file with their regulators and stock-exchange chamber.
             Every figure is sourced deterministically from the <em>Simulation</em> bars (portfolio simulator + sandbox lifecycle + reserves + valuation)
-            so the pipeline stays the single source of truth — no figures are invented in this section.
+            and the live actuarial version-governance API — no figures are invented in this section.
           </div>
 
+          <div class="annual-grid-2">
           <!-- ===================== 1. Pipeline data binding ===================== -->
           <div class="card">
             <div class="card-title">Pipeline Data Sources</div>
@@ -3301,6 +3481,12 @@
                   <td><span id="annual-src-reinsurance" class="badge badge-inactive">—</span></td>
                   <td id="annual-src-reinsurance-detail" class="muted-text">No bound reinsurance program.</td>
                   <td><button class="btn-small btn-outline" onclick="showSection('reinsurance')">Open</button></td>
+                </tr>
+                <tr data-source="governance">
+                  <td>Actuarial Version Governance (live)</td>
+                  <td><span id="annual-src-governance" class="badge badge-inactive">—</span></td>
+                  <td id="annual-src-governance-detail" class="muted-text">Version governance not fetched.</td>
+                  <td><button class="btn-small btn-outline" onclick="showSection('versions')">Open</button></td>
                 </tr>
               </tbody>
             </table>
@@ -3378,6 +3564,7 @@
               </div>
             </div>
           </div>
+          </div><!-- /.annual-grid-2 (pipeline + issuer) -->
 
           <!-- ===================== 3. Standards selector ===================== -->
           <div class="card">
@@ -3410,7 +3597,8 @@
             </div>
           </div>
 
-          <!-- ===================== 4. Capital structure — cap table ===================== -->
+          <!-- ===================== 4. Capital structure — cap table + debt ===================== -->
+          <div class="annual-grid-2">
           <div class="card">
             <div class="card-title">Capital Structure — Cap Table (up to 5 named holders + public float)</div>
             <p style="color:var(--text-light);font-size:0.9rem;margin-bottom:10px;">
@@ -3477,6 +3665,7 @@
               <button class="btn-small btn-outline" onclick="resetAnnualDebtTable()">↺ Clear schedule</button>
             </div>
           </div>
+          </div><!-- /.annual-grid-2 (cap table + debt) -->
 
           <!-- ===================== 6. Adjustable appendix ===================== -->
           <div class="card">
@@ -3496,21 +3685,16 @@ Appendix C — Officer Certifications
 The undersigned Chief Executive Officer and Chief Financial Officer certify that the financial statements present fairly, in all material respects, the financial condition and results of operations of the issuer.</textarea>
           </div>
 
-          <!-- ===================== 7. Build / export bar ===================== -->
+          <!-- ===================== 7. Build / export + preview ===================== -->
           <div class="card">
-            <div class="card-title">Build &amp; Distribute</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <div class="card-title">Build &amp; Distribute — Annual Report Preview</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
               <button class="btn btn-primary" onclick="buildAnnualReportPreview()">📄 Build Report Preview</button>
               <button class="btn btn-success" onclick="downloadAnnualReportPDF()">🧾 Download PDF</button>
               <button class="btn btn-outline" onclick="downloadAnnualReportHTML()">🌐 Download HTML</button>
               <button class="btn btn-outline" onclick="downloadAnnualReportCSV()">📄 Download CSV bundle</button>
               <span id="annual-build-msg" class="muted-text"></span>
             </div>
-          </div>
-
-          <!-- ===================== 8. Preview ===================== -->
-          <div class="card">
-            <div class="card-title">Annual Report Preview</div>
             <div id="annual-report-preview" class="annual-report-preview">
               <p style="color:var(--text-light);">Click <strong>Build Report Preview</strong> to render the annual filing. The preview mirrors the downloadable PDF/HTML one-for-one.</p>
             </div>
@@ -8804,6 +8988,41 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       lastBuilt: null,
     };
 
+    // Live actuarial version-governance snapshot (current tables/config
+    // versions, per-version policy adoption, automated clean-issuance
+    // metrics). Fetched from /api/actuarial/version-insights on every
+    // pipeline re-bind; the report only publishes it when the fetch
+    // succeeded — never invented or defaulted.
+    let currentVersionGovernance = null;
+
+    // Unified PHINS emblem, inlined so the downloaded HTML filing is
+    // self-contained (gradient ids suffixed to avoid DOM collisions).
+    const ANNUAL_BRAND_TAGLINE = 'Personal Health Insurance & Savings · AI-Operated Insurance Platform';
+    const ANNUAL_BRAND_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="PHINS emblem" class="lh-logo">
+      <defs>
+        <linearGradient id="phinsShieldAR" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#0e2f63"/><stop offset="55%" stop-color="#123f82"/><stop offset="100%" stop-color="#081c3f"/>
+        </linearGradient>
+        <linearGradient id="phinsGoldAR" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#f7e2a0"/><stop offset="45%" stop-color="#e3bf6f"/><stop offset="100%" stop-color="#b8893b"/>
+        </linearGradient>
+        <linearGradient id="phinsFinAR" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0%" stop-color="#4fd8ff"/><stop offset="55%" stop-color="#6ea8ff"/><stop offset="100%" stop-color="#b7d9ff"/>
+        </linearGradient>
+        <linearGradient id="phinsWaveAR" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#4fd8ff" stop-opacity="0.15"/><stop offset="50%" stop-color="#7fe3ff"/><stop offset="100%" stop-color="#4fd8ff" stop-opacity="0.15"/>
+        </linearGradient>
+      </defs>
+      <path d="M60 6 L106 22 V57 C106 88 86 108 60 116 C34 108 14 88 14 57 V22 Z" fill="url(#phinsShieldAR)"/>
+      <path d="M60 6 L106 22 V57 C106 88 86 108 60 116 C34 108 14 88 14 57 V22 Z" fill="none" stroke="url(#phinsGoldAR)" stroke-width="4" stroke-linejoin="round"/>
+      <path d="M60 14 L98 27.5 V56.5 C98 83 81 100.5 60 107.5 C39 100.5 22 83 22 56.5 V27.5 Z" fill="none" stroke="#ffffff" stroke-opacity="0.14" stroke-width="1.5"/>
+      <path d="M60 22 L62.2 28.2 L68.5 28.4 L63.5 32.2 L65.3 38.3 L60 34.7 L54.7 38.3 L56.5 32.2 L51.5 28.4 L57.8 28.2 Z" fill="url(#phinsGoldAR)"/>
+      <path d="M40 76 C44.5 57 57 44 80 38.5 C72.5 50.5 70.5 61 73 73.5 C61.5 66.5 49 69 40 76 Z" fill="url(#phinsFinAR)"/>
+      <path d="M46 70 C51 58 60 49 72 44.5 C67 53 65.5 61 66.8 69.5 C59.5 65.5 52 66.5 46 70 Z" fill="#ffffff" fill-opacity="0.16"/>
+      <path d="M32 84 Q42 77.5 52 84 T72 84 T92 84" fill="none" stroke="url(#phinsWaveAR)" stroke-width="3.2" stroke-linecap="round"/>
+      <path d="M40 93 Q49 87.5 58 93 T76 93" fill="none" stroke="url(#phinsWaveAR)" stroke-width="2.4" stroke-linecap="round" opacity="0.7"/>
+    </svg>`;
+
     const ANNUAL_CAP_TYPES = ['Founder', 'Strategic', 'Institutional', 'Treasury', 'Public Float', 'Employee Pool', 'Other'];
     const ANNUAL_DEBT_TYPES = ['Senior Unsecured', 'Senior Secured', 'Subordinated', 'Convertible Note', 'Bank Facility', 'Bond', 'Credit Line', 'Other'];
 
@@ -9040,10 +9259,56 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         ? `${currentReinsuranceProgram.selected_contracts || 0} treaties · hedge ${annualFmtPct(currentReinsuranceProgram.hedge_share_pct || 0)} of book`
         : null);
 
+      set('annual-src-governance', !!currentVersionGovernance, currentVersionGovernance
+        ? `tables ${currentVersionGovernance.current_version} · config ${currentVersionGovernance.current_config_version} · ${annualFmtCount(currentVersionGovernance.adoption?.policies_total)} policies versioned`
+        : null);
+
       const badge = document.getElementById('annual-report-source-badge');
       if (badge) {
         const bound = [!!sim, sandboxBound, reservesBound, valuationBound].filter(Boolean).length;
         badge.textContent = `Pipeline: ${bound}/4 simulation sources bound`;
+      }
+
+      // Fire-and-forget refresh of the live version-governance snapshot
+      // (actuarial tables/config versions, policy pinning, auto-issuance).
+      // The report only discloses what the API actually returned.
+      refreshAnnualVersionGovernance();
+    }
+
+    let _annualGovFetchInFlight = false;
+    async function refreshAnnualVersionGovernance() {
+      if (_annualGovFetchInFlight) return;
+      _annualGovFetchInFlight = true;
+      try {
+        const res = await fetch('/api/actuarial/version-insights', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'insights unavailable');
+        currentVersionGovernance = {
+          generated_at: data.generated_at,
+          current_version: data.current_version,
+          current_config_version: data.current_config_version,
+          adoption: data.adoption || null,
+          auto_issuance: data.auto_issuance || null,
+          version_activity: data.version_activity || null,
+        };
+      } catch (e) {
+        currentVersionGovernance = null;
+      } finally {
+        _annualGovFetchInFlight = false;
+      }
+      const el = document.getElementById('annual-src-governance');
+      if (el) {
+        el.className = 'badge ' + (currentVersionGovernance ? 'badge-success' : 'badge-inactive');
+        el.textContent = currentVersionGovernance ? 'BOUND' : 'not bound';
+      }
+      const detail = document.getElementById('annual-src-governance-detail');
+      if (detail) {
+        detail.textContent = currentVersionGovernance
+          ? `tables ${currentVersionGovernance.current_version} · config ${currentVersionGovernance.current_config_version} · ${annualFmtCount(currentVersionGovernance.adoption?.policies_total)} policies versioned`
+          : 'Version governance not fetched.';
       }
     }
 
@@ -9113,6 +9378,14 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // computed as an explicit arithmetic of those outputs.
       const stmts = buildAnnualFinancialStatements({ sim, sandboxIx: sandboxStmtsIx, reserves, valuation, reinsurance, debtTotalPrincipal, debtWAC, ccy: currency, tablesVersion: (sim && sim.tables_version) || null });
 
+      // Live actuarial version-governance disclosure. Published verbatim
+      // from the last successful /api/actuarial/version-insights fetch —
+      // when the API was not reachable the section reports "not bound"
+      // rather than inventing figures.
+      stmts.version_governance = currentVersionGovernance
+        ? JSON.parse(JSON.stringify(currentVersionGovernance))
+        : null;
+
       // Integrity checks across the pipeline
       const checks = [];
       checks.push({ name: 'Cap table sums to 100%', ok: Math.abs(capTotal - 100) < 0.01, detail: capTotal.toFixed(2) + '%' });
@@ -9120,6 +9393,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       checks.push({ name: 'Sandbox lifecycle bound', ok: !!sandboxIx, detail: sandboxIx ? `${sandboxIx.stats.totalCustomers} lives` : 'missing' });
       checks.push({ name: 'Reserves & IFRS 17 bound', ok: !!reserves, detail: reserves ? `${reserves.projection_years}y` : 'missing' });
       checks.push({ name: 'Portfolio valuation bound', ok: !!valuation, detail: valuation ? valuation.integrity_hash : 'missing' });
+      checks.push({ name: 'Actuarial version governance bound', ok: !!stmts.version_governance, detail: stmts.version_governance ? `tables ${stmts.version_governance.current_version} · config ${stmts.version_governance.current_config_version}` : 'missing' });
       if (sim && stmts.premium_reconciliation_ok != null) {
         checks.push({ name: 'Premium reconciliation (N×avg = total)', ok: stmts.premium_reconciliation_ok, detail: stmts.premium_reconciliation_ok ? 'pass' : 'check Simulator' });
       }
@@ -9140,6 +9414,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         bound: {
           simulation_id: sim?.simulation_id || null,
           tables_version: sim?.tables_version || null,
+          config_version: currentVersionGovernance?.current_config_version || null,
+          live_tables_version: currentVersionGovernance?.current_version || null,
           sandbox_simulation_id: sandboxIx?.simulationId || null,
           reserves_projection_years: reserves?.projection_years || null,
           valuation_hash: valuation?.integrity_hash || null,
@@ -9898,7 +10174,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         'Section H — Demographic &amp; Underwriting Statistics',
         'Section I — Multi-Year Cash-Flow Projection',
         'Section J — Customer Relations &amp; Operational KPIs (incl. Persistency curve)',
-        'Section K — ESG, Governance, Going Concern, Related-Party, Properties &amp; Legal',
+        'Section K — Governance: Actuarial Version Governance &amp; Automated Issuance, ESG, Going Concern, Related-Party, Properties &amp; Legal',
         'Section L — Regulatory Standards Filed Under',
         'Section M — Notes to the Financial Statements (Notes 1–15)',
         'Section N — Appendix — Regulatory Mapping, Auditor\'s Report, Management Responsibility, Issuer Addenda',
@@ -9929,6 +10205,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         <div class="exec-meta">
           <div><strong>Bound simulation</strong> <code>${annualEsc(payload.bound.simulation_id || '—')}</code></div>
           <div><strong>Tables version</strong> <code>${annualEsc(tablesVersion)}</code></div>
+          <div><strong>Config version</strong> <code>${annualEsc(payload.bound.config_version || '—')}</code></div>
           <div><strong>Report hash</strong> <code>${annualEsc(payload.integrity_hash)}</code></div>
           <div><strong>Generated</strong> <code>${annualEsc(payload.generated_at)}</code></div>
           <div><strong>Integrity</strong> <span class="${integrityOk ? 'integrity-ok' : 'integrity-bad'}">${integrityOk ? 'ALL CHECKS PASS' : 'CHECK FAILED'}</span></div>
@@ -9955,7 +10232,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           <strong>Pipeline Integrity:</strong> ${allOk ? 'all checks passed' : 'one or more checks need attention'} ·
           report hash <code>${payload.integrity_hash}</code> ·
           bound to simulation <code>${annualEsc(payload.bound.simulation_id || '—')}</code>
-          (tables ${annualEsc(payload.bound.tables_version || '—')})
+          (tables ${annualEsc(payload.bound.tables_version || '—')} · config ${annualEsc(payload.bound.config_version || '—')})
         </div>
         <table>
           <thead><tr><th>Integrity Check</th><th>Result</th><th>Detail</th></tr></thead>
@@ -9974,12 +10251,12 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const top3 = capRows.slice().sort((a, b) => b.pct - a.pct).slice(0, 3).reduce((s, r) => s + r.pct, 0);
       const capNarrative = `<p>The Company's equity capital is held by <strong>${capRows.length}</strong> disclosed holder(s); named holders account for <strong>${namedPct.toFixed(2)}%</strong> of equity and the public float is <strong>${publicFloatPct.toFixed(2)}%</strong>. ${top1 ? `Controlling shareholder: <strong>${annualEsc(top1.name) || 'unnamed'}</strong> with <strong>${top1.pct.toFixed(2)}%</strong> (${annualEsc(top1.type)}).` : ''} Top-3 holders concentrate <strong>${top3.toFixed(2)}%</strong> of equity. Voting equity follows the percentages disclosed in the cap table; the Board is satisfied no concentration above the regulatory thresholds is undisclosed.</p>`;
       const capSection = annualSubsection('A.1 Capital Structure — Cap Table',
-        capNarrative + `<table>
+        capNarrative + `<div class="annual-duo"><table>
           <thead><tr><th>#</th><th>Holder</th><th>Type</th><th class="num">% Equity</th><th>Voting</th><th>Notes</th></tr></thead>
           <tbody>${capRowsHtml}</tbody>
           <tfoot><tr><th colspan="3" style="text-align:right;">Total</th><th class="num">${capTotal.toFixed(2)}%</th><th colspan="2"></th></tr></tfoot>
         </table>
-        ${annualChartCanvas('annual-chart-cap', 220)}
+        ${annualChartCanvas('annual-chart-cap', 220)}</div>
         ${Math.abs(capTotal - 100) > 0.01 ? '<div class="note">⚠️ Cap table does not balance to 100% — regulator filings require an exact 100% total. Adjust the cap-table editor before re-issuing.</div>' : ''}`);
 
       const debtRowsHtml = debtRows.length
@@ -10068,8 +10345,11 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           : '';
         balanceHtml = `
           <p>Total assets reconcile to <strong>${annualFmtMoney(t.totalAssets, ccy)}</strong>, financed by total liabilities of <strong>${annualFmtMoney(t.totalLiabilities, ccy)}</strong> and shareholders' equity of <strong>${annualFmtMoney(t.totalEquity, ccy)}</strong>. The accounting identity Assets = Liabilities + Equity holds by construction; the equity figure is the balancing residual that the auditor reconciles to the bound valuation snapshot.</p>
-          <h4>C.1 Assets</h4>${annualMoneyTable(statements.balance_sheet.assets, ccy, true)}
-          <h4>C.2 Liabilities &amp; Equity</h4>${annualMoneyTable(statements.balance_sheet.liabilities_equity, ccy, true)}
+          <div class="annual-duo">
+            <div><h4>C.1 Assets</h4>${annualMoneyTable(statements.balance_sheet.assets, ccy, true)}</div>
+            <div><h4>C.2 Liabilities &amp; Equity</h4>${annualMoneyTable(statements.balance_sheet.liabilities_equity, ccy, true)}</div>
+          </div>
+          ${annualChartCanvas('annual-chart-balance', 220)}
           ${eqHtml}`;
       }
       const balanceSection = annualSubsection('C. Statement of Financial Position (Balance Sheet)', balanceHtml);
@@ -10089,11 +10369,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           ${annualMoneyTable(statements.income_statement.rows, ccy, true)}
           <div class="note">Realized layer reflects the sandbox lifecycle; modelled gross premium and expected claims are deterministic outputs of the actuarial pricing kernel. The regulator filing must reconcile to both layers.</div>
           <h4>D.1 Premium composition</h4>
+          <div class="annual-duo">
           <table>
             <thead><tr><th>Component</th><th class="num">Amount</th><th class="num">% of Gross</th></tr></thead>
             <tbody>${pdRows}</tbody>
           </table>
           ${annualChartCanvas('annual-chart-premium-mix', 240)}
+          </div>
           <h4>D.2 Per-customer averages (ARPU)</h4>
           <table>
             <thead><tr><th>Metric</th><th class="num">Per-customer</th></tr></thead>
@@ -10211,20 +10493,26 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         const genderRows = Object.entries(statements.demographics.gender || {}).map(([k, v]) => `<tr><td>${annualEsc(k)}</td><td class="num">${annualFmtCount(v)}</td></tr>`).join('');
         const ethRows = Object.entries(statements.demographics.ethnicity || {}).map(([k, v]) => `<tr><td>${annualEsc(k)}</td><td class="num">${annualFmtCount(v)}</td></tr>`).join('');
         demoHtml = `<h4>H.1 Age distribution</h4>
+        <div class="annual-duo">
         <table>
           <thead><tr><th>Age band</th><th class="num">Lives</th></tr></thead><tbody>${ageRows || '<tr><td colspan="2"><em>n/a</em></td></tr>'}</tbody>
         </table>
         ${annualChartCanvas('annual-chart-age', 220)}
+        </div>
         <h4>H.2 Gender distribution</h4>
+        <div class="annual-duo">
         <table>
           <thead><tr><th>Gender</th><th class="num">Lives</th></tr></thead><tbody>${genderRows || '<tr><td colspan="2"><em>n/a</em></td></tr>'}</tbody>
         </table>
         ${annualChartCanvas('annual-chart-gender', 200)}
+        </div>
         <h4>H.3 Ethnicity distribution</h4>
+        <div class="annual-duo">
         <table>
           <thead><tr><th>Ethnicity</th><th class="num">Lives</th></tr></thead><tbody>${ethRows || '<tr><td colspan="2"><em>n/a</em></td></tr>'}</tbody>
         </table>
-        ${annualChartCanvas('annual-chart-eth', 200)}`;
+        ${annualChartCanvas('annual-chart-eth', 200)}
+        </div>`;
       }
       const demoSection = annualSubsection('H. Demographic &amp; Underwriting Statistics', demoHtml);
 
@@ -10263,13 +10551,16 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         const persistencyTbl = (statements.persistency_curve || []).map(p => `<tr><td>Year ${p.year}</td><td class="num">${p.survival_pct.toFixed(2)}%</td></tr>`).join('');
         const persistencyCurveHtml = statements.persistency_curve?.length ? `
           <h4>J.4 Persistency decay curve (modelled)</h4>
+          <div class="annual-duo">
           <table>
             <thead><tr><th>Year</th><th class="num">Survival %</th></tr></thead>
             <tbody>${persistencyTbl}</tbody>
           </table>
-          ${annualChartCanvas('annual-chart-persistency', 220)}` : '';
+          ${annualChartCanvas('annual-chart-persistency', 220)}
+          </div>` : '';
         crHtml = `
           <h4>J.1 Acquisition funnel</h4>
+          <div class="annual-duo">
           <table>
             <thead><tr><th>Stage</th><th class="num">Lives</th></tr></thead>
             <tbody>
@@ -10282,13 +10573,16 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             </tbody>
           </table>
           ${annualChartCanvas('annual-chart-funnel', 240)}
+          </div>
 
           <h4>J.2 Decline reasons</h4>
+          <div class="annual-duo">
           <table>
             <thead><tr><th>Reason</th><th class="num">Applications</th></tr></thead>
             <tbody>${declinedReasonsHtml}</tbody>
           </table>
           ${annualChartCanvas('annual-chart-decline', 220)}
+          </div>
 
           <h4>J.3 Persistency &amp; service experience</h4>
           <table>
@@ -10309,6 +10603,39 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const crSection = annualSubsection('J. Customer Relations &amp; Operational KPIs', crHtml);
 
       // ----- Section K -----
+      // K.0 — live actuarial version governance & automated clean issuance
+      // (published verbatim from /api/actuarial/version-insights; nothing
+      // is derived or invented client-side).
+      const vg = statements.version_governance;
+      let vgHtml = '<h4>K.0 Actuarial version governance &amp; automated issuance</h4><p><em>Version governance not bound — the live version-insights API was not reachable when this report was built.</em></p>';
+      if (vg) {
+        const adoption = vg.adoption || {};
+        const auto = vg.auto_issuance || {};
+        const act = vg.version_activity || {};
+        const adoptionRows = Object.entries(adoption.by_tables_version || {})
+          .map(([v, n]) => `<tr><td>Policies priced under tables ${annualEsc(v)}</td><td class="num">${annualFmtCount(n)}</td></tr>`)
+          .join('');
+        vgHtml = `<h4>K.0 Actuarial version governance &amp; automated issuance</h4>
+          <p>Every policy carries the actuarial <strong>tables version</strong> and <strong>pricing/underwriting config version</strong> in force at issuance. Versions are immutable: rate or rule changes (including restores) always mint a new forward version, so conditions issued under earlier versions are never overridden — new versions govern future underwriting, pricing and billing only. Where enabled, provably clean applications are approved and issued automatically under the adjustable auto-approve gates of the versioned underwriting config; every automated decision is stamped <code>system_auto_approve</code> and snapshotted for audit.</p>
+          <div class="annual-duo">
+          <table>
+            <thead><tr><th>Disclosure</th><th class="num">Value</th></tr></thead>
+            <tbody>
+              <tr><td>Actuarial tables version in force</td><td class="num">${annualEsc(vg.current_version || '—')}</td></tr>
+              <tr><td>Pricing/underwriting config version in force</td><td class="num">${annualEsc(vg.current_config_version || '—')}</td></tr>
+              <tr><td>Policies carrying a version #</td><td class="num">${annualFmtCount((adoption.policies_total || 0) - (adoption.unversioned || 0))} of ${annualFmtCount(adoption.policies_total)}</td></tr>
+              <tr><td>Policies pinned to earlier (archived) versions</td><td class="num">${annualFmtCount(adoption.pinned_to_earlier_versions)}</td></tr>
+              ${adoptionRows}
+              <tr><td>Automated clean issuance enabled</td><td class="num">${auto.enabled ? 'Yes' : 'No'}</td></tr>
+              <tr><td>Policies issued automatically (of approvals)</td><td class="num">${annualFmtCount(auto.auto_issued)} of ${annualFmtCount(auto.approved_total)} (${((auto.auto_issuance_rate || 0) * 100).toFixed(1)}%)</td></tr>
+              <tr><td>Applications awaiting manual underwriting</td><td class="num">${annualFmtCount(auto.pending_manual)}</td></tr>
+              <tr><td>Rate-table changes in the last 30 days</td><td class="num">${annualFmtCount(act.table_changes_last_30_days)}</td></tr>
+            </tbody>
+          </table>
+          ${annualChartCanvas('annual-chart-version-adoption', 240)}
+          </div>
+          <p style="color:#4a5568;font-size:0.82rem;">Source: live PHINS actuarial version-governance API, captured ${annualEsc(vg.generated_at || '—')} and hashed into this report's integrity hash.</p>`;
+      }
       const gov = statements.governance;
       const govHtml = gov ? `
         <p><strong>Board &amp; committees.</strong> ${annualEsc(gov.board)}</p>
@@ -10320,7 +10647,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         <p><strong>Properties (Item 2).</strong> ${annualEsc(gov.properties)}</p>
         <p><strong>Legal proceedings (Item 3).</strong> ${annualEsc(gov.legal_proceedings)}</p>
       ` : '<p><em>Bind a simulation to publish governance and ESG disclosures.</em></p>';
-      const govSection = annualSubsection('K. ESG, Governance, Going-Concern, Related-Party, Properties &amp; Legal', govHtml);
+      const govSection = annualSubsection('K. Governance — Version Governance, ESG, Going-Concern, Related-Party, Properties &amp; Legal', vgHtml + govHtml);
 
       // ----- Section L -----
       const packsHtml = (packs && packs.length)
@@ -10366,8 +10693,15 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         : '<p><em>No issuer-supplied appendix.</em></p>';
       const appendixSection = annualSubsection('N. Appendix', mappingHtml + auditorHtml + mgmtHtml + appendixIssuerHtml);
 
-      // ----- Cover -----
+      // ----- Cover: unified PHINS letterhead + gradient hero -----
       const cover = `
+        <div class="annual-letterhead">
+          ${ANNUAL_BRAND_LOGO_SVG}
+          <div>
+            <div class="lh-name">PHINS</div>
+            <div class="lh-tag">${annualEsc(ANNUAL_BRAND_TAGLINE)}</div>
+          </div>
+        </div>
         <div class="annual-cover">
           <div class="doc-title">Annual Regulatory Report &amp; Financial Statements</div>
           <div class="issuer">${annualEsc(issuer.name)} ${issuer.ticker ? '(' + annualEsc(issuer.ticker) + ')' : ''}</div>
@@ -10393,7 +10727,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         ${annualSection(['UNDERWRITING'], 'Section H — Demographic & Underwriting Statistics', demoSection)}
         ${annualSection(['CASH FLOW'], 'Section I — Multi-Year Cash-Flow Projection', cfSection)}
         ${annualSection(['CUSTOMER RELATIONS'], 'Section J — Customer Relations & Operational KPIs', crSection)}
-        ${annualSection(['ESG', 'GOVERNANCE'], 'Section K — ESG, Governance, Going Concern, Related-Party, Properties & Legal', govSection)}
+        ${annualSection(['VERSION GOVERNANCE', 'ESG', 'GOVERNANCE'], 'Section K — Governance: Actuarial Versions, Automated Issuance, ESG & Legal', govSection)}
         ${annualSection(['FILINGS'], 'Section L — Regulatory Standards Filed Under', packsSection)}
         ${annualSection(['NOTES'], 'Section M — Notes to the Financial Statements', notesSection)}
         ${annualSection(['APPENDIX', 'MAPPING', 'AUDITOR'], 'Section N — Appendix (Regulatory Mapping, Auditor, Management Responsibility, Issuer Addenda)', appendixSection)}
@@ -10424,7 +10758,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       } catch (e) { return null; }
     }
     function annualPalette() {
-      return ['#1a365d', '#2b6cb0', '#4299e1', '#38a169', '#d69e2e', '#c53030', '#805ad5', '#319795', '#dd6b20', '#718096'];
+      // Unified PHINS brand palette: deep navy, royal blue, fin cyan,
+      // success green, letterhead gold, signal red, then supporting hues.
+      return ['#0e2f63', '#2b6cb0', '#4fd8ff', '#38a169', '#c9a04e', '#c53030', '#805ad5', '#319795', '#dd6b20', '#718096'];
     }
     function renderAnnualReportCharts(payload) {
       if (typeof Chart === 'undefined') return;
@@ -10490,6 +10826,41 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         if (el && el.parentNode) {
           el.parentNode.innerHTML = '<div style="padding:12px;color:#718096;font-size:0.88rem;">No realized lifecycle yet — generate sandbox accounts and run the lifecycle to accumulate the realized layer.</div>';
         }
+      }
+
+      // Balance sheet — assets vs liabilities + equity (Section C)
+      const bs = payload.statements.balance_sheet;
+      if (bs && bs.totals) {
+        const t = bs.totals;
+        annualMakeChart('annual-chart-balance', {
+          type: 'bar',
+          data: {
+            labels: ['Assets', 'Liabilities + Equity'],
+            datasets: [
+              { label: 'Total assets', data: [t.totalAssets || 0, 0], backgroundColor: palette[1] },
+              { label: 'Total liabilities', data: [0, t.totalLiabilities || 0], backgroundColor: palette[5] },
+              { label: 'Shareholders\u2019 equity', data: [0, t.totalEquity || 0], backgroundColor: palette[3] },
+            ],
+          },
+          options: { responsive: true, maintainAspectRatio: false,
+            plugins: { title: { display: true, text: 'Balance sheet identity — Assets = Liabilities + Equity (Section C)' }, tooltip: { callbacks: { label: moneyTooltip } } },
+            scales: { x: { stacked: true }, y: { stacked: true, ticks: { callback: moneyTick } } } },
+        });
+      }
+
+      // Actuarial version adoption (Section K.0) — policies by tables version
+      const vg = payload.statements.version_governance;
+      if (vg && vg.adoption && Object.keys(vg.adoption.by_tables_version || {}).length) {
+        const entries = Object.entries(vg.adoption.by_tables_version);
+        const labels = entries.map(([v]) => 'Tables ' + v);
+        const data = entries.map(([, n]) => n);
+        if (vg.adoption.unversioned) { labels.push('Unversioned (legacy)'); data.push(vg.adoption.unversioned); }
+        annualMakeChart('annual-chart-version-adoption', {
+          type: 'doughnut',
+          data: { labels, datasets: [{ data, backgroundColor: palette.slice(0, labels.length) }] },
+          options: { responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'right' }, title: { display: true, text: 'Policy adoption by actuarial tables version (K.0)' } } },
+        });
       }
 
       // Market risk
@@ -10687,41 +11058,58 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const p = annualEnsureBuilt();
       if (!p) return;
       const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${annualEsc(p.issuer.name)} — Annual Report FY${p.issuer.fy}</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
         <style>
-          body { font-family: 'Times New Roman', Georgia, serif; max-width: 1000px; margin: 32px auto; color: #1a202c; padding: 0 24px; }
-          h1,h2,h3,h4 { color: #1a365d; font-family: 'Times New Roman', Georgia, serif; }
-          h1 { font-size: 1.9rem; border-bottom: 2px solid #1a365d; padding-bottom: 8px; }
-          h2 { font-size: 1.35rem; border-bottom: 1px solid #cbd5e0; padding-bottom: 4px; margin-top: 28px; }
-          h3 { font-size: 1.1rem; margin-top: 18px; }
-          h4 { font-size: 0.98rem; margin-top: 14px; color: #2b6cb0; }
-          table { width: 100%; border-collapse: collapse; margin: 10px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 0.88rem; }
-          th, td { border: 1px solid #cbd5e0; padding: 6px 9px; text-align: left; }
-          th { background: #ebf4ff; color: #1a365d; }
+          body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 1000px; margin: 28px auto; color: #1a2740; padding: 0 24px; line-height: 1.5; }
+          h1,h2,h3,h4 { color: #0e2f63; font-family: 'Space Grotesk', 'Inter', sans-serif; margin-top: 12px; margin-bottom: 6px; }
+          h1 { font-size: 1.8rem; border-bottom: 2.2px solid #c9a04e; padding-bottom: 8px; }
+          h2 { font-size: 1.3rem; border-bottom: 2.2px solid #c9a04e; box-shadow: 0 3.2px 0 -2px #0e2f63; padding-bottom: 4px; margin-top: 20px; }
+          h3 { font-size: 1.08rem; margin-top: 14px; }
+          h4 { font-size: 0.98rem; margin-top: 12px; color: #123f82; }
+          p { margin: 6px 0; }
+          table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 0.88rem; }
+          th, td { border: 1px solid #d7e0ec; padding: 6px 9px; text-align: left; }
+          th { background: #eef4fd; color: #0e2f63; }
+          tbody tr:nth-child(even) td { background: #f8fbff; }
           .num { text-align: right; font-variant-numeric: tabular-nums; }
-          .annual-cover { text-align: center; padding: 28px 12px; border-bottom: 1px solid #1a365d; margin-bottom: 22px; }
-          .annual-cover .doc-title { font-size: 2rem; color: #1a365d; font-weight: 700; margin-bottom: 6px; }
-          .annual-cover .issuer { font-size: 1.3rem; color: #2b6cb0; }
-          .annual-cover .meta { color: #4a5568; }
-          .integrity { background: #f0fff4; border: 1px solid #9ae6b4; padding: 8px 12px; margin: 12px 0; font-family: monospace; font-size: 0.85rem; border-radius: 4px; }
+          .annual-letterhead { display: flex; align-items: center; gap: 12px; padding-bottom: 10px; border-bottom: 2.2px solid #c9a04e; position: relative; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+          .annual-letterhead::after { content: ''; position: absolute; left: 0; right: 0; bottom: -4px; height: 1px; background: #0e2f63; }
+          .annual-letterhead .lh-logo { width: 42px; height: 42px; flex: 0 0 auto; }
+          .annual-letterhead .lh-name { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 1.35rem; font-weight: 700; color: #0e2f63; letter-spacing: 0.08em; }
+          .annual-letterhead .lh-tag { font-size: 0.7rem; color: #5b6b82; letter-spacing: 0.08em; text-transform: uppercase; }
+          .annual-cover { position: relative; overflow: hidden; text-align: center; color: #eaf1ff; padding: 30px 16px 26px; margin: 14px 0 18px; border-radius: 10px;
+            background: radial-gradient(620px 220px at 88% -40%, rgba(21, 68, 155, 0.55), transparent 70%), radial-gradient(420px 180px at 8% 120%, rgba(79, 216, 255, 0.18), transparent 65%), linear-gradient(135deg, #060d1f 0%, #0e2f63 48%, #123f82 78%, #0a1f4a 100%);
+            print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+          .annual-cover::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: linear-gradient(90deg, #b8893b, #f7e2a0, #e3bf6f, #4fd8ff); }
+          .annual-cover .doc-title { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 1.9rem; font-weight: 700; margin-bottom: 6px;
+            background: linear-gradient(180deg, #ffffff 10%, #f7e2a0 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+          .annual-cover .issuer { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 1.25rem; color: #b7d9ff; }
+          .annual-cover .meta { color: #9fb6dd; }
+          @media print { .annual-cover .doc-title { background: none; -webkit-background-clip: initial; background-clip: initial; -webkit-text-fill-color: #f7e2a0; color: #f7e2a0; } }
+          .integrity { background: #f0fff4; border: 1px solid #9ae6b4; padding: 8px 12px; margin: 12px 0; font-family: monospace; font-size: 0.85rem; border-radius: 6px; }
           .integrity.bad { background: #fff5f5; border-color: #fc8181; color: #742a2a; }
-          .note { background: #fffaf0; border-left: 3px solid #d69e2e; padding: 8px 12px; margin: 10px 0; font-size: 0.9rem; }
-          .appendix { background: #f7fafc; border-left: 3px solid #2b6cb0; padding: 10px 14px; white-space: pre-wrap; }
-          .toc { background: #f7fafc; border: 1px solid #cbd5e0; padding: 12px 18px; margin: 12px 0; border-radius: 4px; }
-          .jurisdiction-tag { display: inline-block; background: #1a365d; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; margin-right: 4px; }
+          .note { background: #fffaf0; border-left: 3px solid #c9a04e; padding: 8px 12px; margin: 10px 0; font-size: 0.9rem; }
+          .appendix { background: #f7fafc; border-left: 3px solid #0e2f63; padding: 10px 14px; white-space: pre-wrap; }
+          .toc { background: #f7fafc; border: 1px solid #d7e0ec; border-left: 3px solid #c9a04e; padding: 10px 18px; margin: 12px 0; border-radius: 6px; columns: 2; column-gap: 24px; }
+          .toc h3 { margin-top: 0; column-span: all; }
+          .toc li { break-inside: avoid; font-size: 0.86rem; }
+          .toc p { column-span: all; }
+          .jurisdiction-tag { display: inline-block; background: #0e2f63; color: #f7e2a0; padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; margin-right: 4px; vertical-align: 2px; }
           .annual-chart-wrap { display: none; }
-          .exec-cover { background: linear-gradient(135deg, #f7fafc 0%, #ebf4ff 100%); border: 1px solid #cbd5e0; border-radius: 6px; padding: 18px 22px; margin: 18px 0; }
-          .exec-meta { display: flex; flex-wrap: wrap; gap: 14px; margin: 6px 0 14px; font-size: 0.82rem; color: #4a5568; }
-          .exec-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-          .exec-tile { padding: 10px 12px; border-radius: 6px; background: #fff; border: 1px solid #e2e8f0; }
-          .exec-tile-label { font-size: 0.72rem; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }
-          .exec-tile-value { font-size: 1.05rem; font-weight: 700; color: #1a365d; margin-top: 3px; }
+          .annual-duo { display: block; }
+          .exec-cover { background: linear-gradient(135deg, #f7fafc 0%, #eaf2ff 100%); border: 1px solid #cfdcee; border-top: 3px solid #c9a04e; border-radius: 8px; padding: 14px 18px; margin: 14px 0; }
+          .exec-meta { display: flex; flex-wrap: wrap; gap: 14px; margin: 6px 0 12px; font-size: 0.82rem; color: #4a5568; }
+          .exec-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+          .exec-tile { padding: 9px 11px; border-radius: 8px; background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #0e2f63; }
+          .exec-tile-label { font-size: 0.7rem; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }
+          .exec-tile-value { font-size: 1.02rem; font-weight: 700; color: #0e2f63; margin-top: 3px; font-family: 'Space Grotesk', 'Inter', sans-serif; }
           .exec-tile-pos .exec-tile-value { color: #2f855a; }
           .exec-tile-warn .exec-tile-value { color: #b7791f; }
           .exec-tile-neg .exec-tile-value { color: #c53030; }
           .exec-tile-teal .exec-tile-value { color: #2c7a7b; }
-          .exec-tile-navy .exec-tile-value { color: #1a365d; }
-          .exec-badges { margin-top: 12px; font-size: 0.8rem; }
-          .filing-badge { display: inline-block; background: #2b6cb0; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; margin-right: 4px; margin-bottom: 4px; }
+          .exec-tile-navy .exec-tile-value { color: #0e2f63; }
+          .exec-badges { margin-top: 10px; font-size: 0.8rem; }
+          .filing-badge { display: inline-block; background: #0e2f63; color: #eaf1ff; padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; margin-right: 4px; margin-bottom: 4px; }
           .integrity-ok { color: #2f855a; font-weight: 700; }
           .integrity-bad { color: #c53030; font-weight: 700; }
         </style></head><body>${annualReportHTML(p)}</body></html>`;
@@ -10746,9 +11134,29 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         ['Home Jurisdiction', p.issuer.home_jurisdiction],
         ['Integrity Hash', p.integrity_hash], ['Generated At', p.generated_at],
         ['Simulation ID', p.bound.simulation_id], ['Tables Version', p.bound.tables_version],
+        ['Config Version', p.bound.config_version],
         ['Valuation Hash', p.bound.valuation_hash], ['Reinsurance Contracts', p.bound.reinsurance_contracts],
       ]));
       if (p.statements.exec_summary) sections.push(section('Executive Summary — Tiles', ['Label', 'Value', 'Accent'], p.statements.exec_summary.tiles.map(t => [t.label, t.value, t.accent])));
+      if (p.statements.version_governance) {
+        const vg = p.statements.version_governance;
+        const adoption = vg.adoption || {};
+        const auto = vg.auto_issuance || {};
+        sections.push(section('Actuarial Version Governance (K.0)', ['Field', 'Value'], [
+          ['Tables Version In Force', vg.current_version],
+          ['Config Version In Force', vg.current_config_version],
+          ['Policies Total', adoption.policies_total],
+          ['Policies Unversioned', adoption.unversioned],
+          ['Policies Pinned To Earlier Versions', adoption.pinned_to_earlier_versions],
+          ...Object.entries(adoption.by_tables_version || {}).map(([v, n]) => ['Policies Under Tables ' + v, n]),
+          ['Auto Issuance Enabled', auto.enabled ? 'Yes' : 'No'],
+          ['Auto Issued', auto.auto_issued],
+          ['Approved Total', auto.approved_total],
+          ['Auto Issuance Rate', auto.auto_issuance_rate],
+          ['Pending Manual', auto.pending_manual],
+          ['Governance Captured At', vg.generated_at],
+        ]));
+      }
       sections.push(section('Cap Table', ['#', 'Name', 'Type', 'PctEquity', 'Voting', 'Notes'], p.capRows.map((r, ix) => [ix + 1, r.name, r.type, r.pct, r.voting ? 'Yes' : 'No', r.notes])));
       sections.push(section('Debt Schedule', ['#', 'Name', 'Type', 'Principal', 'PctOfDebt', 'CouponPct', 'Maturity'], p.debtRows.map((r, ix) => [ix + 1, r.name, r.type, r.principal, p.debtTotalPrincipal > 0 ? ((r.principal / p.debtTotalPrincipal) * 100).toFixed(4) : '0', r.coupon, r.maturity])));
       if (p.statements.five_year_highlights) sections.push(section('Five-Year Selected Highlights', ['Year', 'Premium', 'Claims', 'OperatingProfit', 'AfterTaxProfit', 'LossRatioPct', 'ExpenseRatioPct', 'CombinedRatioPct', 'RoEPct', 'ClosingReserve'], p.statements.five_year_highlights.map(r => [r.year, r.premium, r.claims, r.operating_profit, r.after_tax_profit, r.loss_ratio_pct.toFixed(4), r.expense_ratio_pct.toFixed(4), r.combined_ratio_pct.toFixed(4), r.roe_pct.toFixed(4), r.closing_reserve])));
@@ -10791,25 +11199,32 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
       const margin = 40;
-      const NAVY = [26, 54, 93], INK = [33, 37, 41], MUTED = [110, 120, 130], STRIPE = [243, 246, 250], GOLD = [214, 158, 46], TEAL = [44, 122, 123], POS = [47, 133, 90], WARN = [183, 121, 31], NEG = [197, 48, 48];
+      // Unified PHINS brand palette: navy #0e2f63 + letterhead gold #c9a04e.
+      const NAVY = [14, 47, 99], INK = [33, 37, 41], MUTED = [110, 120, 130], STRIPE = [243, 246, 250], GOLD = [201, 160, 78], TEAL = [44, 122, 123], POS = [47, 133, 90], WARN = [183, 121, 31], NEG = [197, 48, 48];
+      const GOLD_STRONG = [247, 226, 160];
       const ccy = p.issuer.currency;
       const incPacks = new Set(p.packs || []);
       let y = margin;
 
-      // ===== COVER PAGE 1: Title strip + Executive Summary tiles =====
-      doc.setFillColor(...NAVY); doc.rect(0, 0, pageW, 130, 'F');
-      doc.setFillColor(...GOLD); doc.rect(0, 130, pageW, 4, 'F');
+      // ===== COVER PAGE 1: PHINS wordmark strip + Executive Summary tiles =====
+      doc.setFillColor(...NAVY); doc.rect(0, 0, pageW, 138, 'F');
+      doc.setFillColor(...GOLD); doc.rect(0, 138, pageW, 4, 'F');
+      doc.setTextColor(...GOLD_STRONG);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
+      doc.text('P H I N S', margin, 34);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(183, 211, 255);
+      doc.text('Personal Health Insurance & Savings · AI-Operated Insurance Platform', margin, 46);
       doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(22);
-      doc.text('Annual Regulatory Report', margin, 54);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(14);
-      doc.text(`${p.issuer.name}${p.issuer.ticker ? ' (' + p.issuer.ticker + ')' : ''}`, margin, 82);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(21);
+      doc.text('Annual Regulatory Report', margin, 72);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(13);
+      doc.text(`${p.issuer.name}${p.issuer.ticker ? ' (' + p.issuer.ticker + ')' : ''}`, margin, 94);
       doc.setFontSize(10);
       const jurisdictionLabel = { israel: 'Israel', usa: 'United States', canada: 'Canada' }[p.issuer.home_jurisdiction] || 'Multi-jurisdiction';
-      doc.text(`FY ${p.issuer.fy} · ${p.issuer.period_start} → ${p.issuer.period_end} · ${jurisdictionLabel} · ${ccy}`, margin, 104);
+      doc.text(`FY ${p.issuer.fy} · ${p.issuer.period_start} → ${p.issuer.period_end} · ${jurisdictionLabel} · ${ccy}`, margin, 112);
       doc.setFontSize(9);
-      doc.text(`Exchange filing: ${p.issuer.exchange_filing}    Auditor: ${p.issuer.auditor}`, margin, 122);
-      y = 160;
+      doc.text(`Exchange filing: ${p.issuer.exchange_filing}    Auditor: ${p.issuer.auditor}`, margin, 128);
+      y = 166;
       doc.setTextColor(...INK);
 
       // Bound info strip
@@ -10955,7 +11370,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         'Section H — Demographic & Underwriting Statistics',
         'Section I — Multi-Year Cash-Flow Projection',
         'Section J — Customer Relations & Operational KPIs (incl. Persistency curve)',
-        'Section K — ESG, Governance, Going Concern, Related-Party, Properties & Legal',
+        'Section K — Governance: Actuarial Versions, Automated Issuance, ESG & Legal',
         'Section L — Regulatory Standards Filed Under',
         'Section M — Notes to the Financial Statements (Notes 1–15)',
         'Section N — Appendix (Regulatory Mapping, Auditor, Management Responsibility, Issuer Addenda)',
@@ -11052,6 +11467,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           p.statements.balance_sheet.liabilities_equity.map(r => [r[0], annualFmtMoney(r[1], ccy)]),
           { columnStyles: { 1: { halign: 'right' } } }));
         afterTable();
+        embedChart('annual-chart-balance', 'Balance sheet identity — Assets = Liabilities + Equity (Section C)', 200);
         if (p.statements.equity_composition) {
           subHeading('C.3 Equity composition');
           doc.autoTable(tableOpts(['Component', 'Value'],
@@ -11268,9 +11684,33 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
 
       // Section K
+      const vgPdf = p.statements.version_governance;
       const gov = p.statements.governance;
+      if (vgPdf || gov) {
+        sectionHeading('Section K — Governance: Actuarial Versions, Automated Issuance, ESG & Legal');
+      }
+      if (vgPdf) {
+        const adoption = vgPdf.adoption || {};
+        const auto = vgPdf.auto_issuance || {};
+        const act = vgPdf.version_activity || {};
+        subHeading('K.0 Actuarial version governance & automated issuance');
+        paragraph('Every policy carries the actuarial tables version and pricing/underwriting config version in force at issuance. Versions are immutable: changes (including restores) mint a new forward version, so conditions issued under earlier versions are never overridden. Where enabled, provably clean applications are issued automatically under the adjustable auto-approve gates of the versioned underwriting config, stamped system_auto_approve.');
+        const vgRows = [
+          ['Actuarial tables version in force', String(vgPdf.current_version || '—')],
+          ['Pricing/underwriting config version in force', String(vgPdf.current_config_version || '—')],
+          ['Policies carrying a version #', `${(adoption.policies_total || 0) - (adoption.unversioned || 0)} of ${adoption.policies_total || 0}`],
+          ['Policies pinned to earlier (archived) versions', String(adoption.pinned_to_earlier_versions || 0)],
+          ...Object.entries(adoption.by_tables_version || {}).map(([v, n]) => [`Policies priced under tables ${v}`, String(n)]),
+          ['Automated clean issuance enabled', auto.enabled ? 'Yes' : 'No'],
+          ['Policies issued automatically (of approvals)', `${auto.auto_issued || 0} of ${auto.approved_total || 0} (${((auto.auto_issuance_rate || 0) * 100).toFixed(1)}%)`],
+          ['Applications awaiting manual underwriting', String(auto.pending_manual || 0)],
+          ['Rate-table changes in the last 30 days', String(act.table_changes_last_30_days || 0)],
+        ];
+        doc.autoTable(tableOpts(['Disclosure', 'Value'], vgRows, { columnStyles: { 1: { halign: 'right' } } }));
+        afterTable();
+        embedChart('annual-chart-version-adoption', 'Policy adoption by actuarial tables version (K.0)', 200);
+      }
       if (gov) {
-        sectionHeading('Section K — ESG, Governance, Going Concern, Related-Party, Properties & Legal');
         subHeading('K.1 Board & committees'); paragraph(gov.board);
         subHeading('K.2 Going-concern statement'); paragraph(gov.going_concern);
         subHeading('K.3 Compensation'); paragraph(gov.compensation);
