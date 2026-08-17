@@ -1162,6 +1162,112 @@ def email_policy_contract(
         return {"ok": False, "error": str(exc)}
 
 
+def email_underwriting_decision_notice(
+    *,
+    to_email: str,
+    customer_name: str,
+    decision: str,
+    policy_id: Optional[str] = None,
+    underwriting_id: Optional[str] = None,
+    monthly_premium: Optional[float] = None,
+    premium_adjustment_pct: Optional[float] = None,
+    reason: Optional[str] = None,
+    language: str = "en",
+) -> Dict[str, Any]:
+    """Notify the applicant when UW accepts (with premium) or rejects."""
+    if not to_email:
+        return {"ok": False, "error": "No customer email"}
+    try:
+        from services.notification_service import (
+            NotificationChannel,
+            NotificationPriority,
+            NotificationRequest,
+            get_notification_service,
+        )
+        svc = get_notification_service()
+        decision_norm = str(decision or "").strip().lower()
+        name = customer_name or "Customer"
+        he = str(language or "").lower().startswith("he")
+        if decision_norm == "approved":
+            loading = float(premium_adjustment_pct or 0)
+            monthly = float(monthly_premium or 0)
+            if he:
+                subject = f"בקשת הביטוח שלך אושרה — {policy_id or ''}"
+                loading_line = (
+                    f"התאמת חיתום: {loading:.0f}%\n" if abs(loading) >= 0.5 else ""
+                )
+                text = (
+                    f"שלום {name},\n\n"
+                    f"שמחים לבשר שהחיתום אישר את הבקשה שלך.\n"
+                    f"פוליסה: {policy_id}\n"
+                    f"אסמכתא חיתום: {underwriting_id}\n"
+                    f"פרמיה חודשית: ${monthly:,.2f}\n"
+                    f"{loading_line}"
+                    "חוזה הפוליסה נשלח בנפרד לדוא\"ל זה.\n\n"
+                    "— צוות החיתום של PHINS\n"
+                )
+            else:
+                subject = f"Your PHINS application was approved — {policy_id or ''}"
+                loading_line = (
+                    f"Underwriting adjustment: {loading:.0f}%\n"
+                    if abs(loading) >= 0.5 else ""
+                )
+                text = (
+                    f"Dear {name},\n\n"
+                    f"Underwriting has approved your application.\n"
+                    f"Policy: {policy_id}\n"
+                    f"Underwriting reference: {underwriting_id}\n"
+                    f"Monthly premium: ${monthly:,.2f}\n"
+                    f"{loading_line}"
+                    "Your full policy contract is sent separately to this email.\n\n"
+                    "— The PHINS Underwriting Team\n"
+                )
+        else:
+            reason_text = reason or "Risk assessment"
+            if he:
+                subject = f"עדכון לגבי בקשת הביטוח שלך — {underwriting_id or ''}"
+                text = (
+                    f"שלום {name},\n\n"
+                    f"לאחר בדיקה, החיתום לא אישר כיסוי בשלב זה.\n"
+                    f"אסמכתא: {underwriting_id}\n"
+                    f"סיבה: {reason_text}\n\n"
+                    "ניתן לפנות אלינו לשאלות נוספות.\n\n"
+                    "— צוות החיתום של PHINS\n"
+                )
+            else:
+                subject = f"Update on your PHINS application — {underwriting_id or ''}"
+                text = (
+                    f"Dear {name},\n\n"
+                    f"After review, underwriting did not approve coverage at this time.\n"
+                    f"Reference: {underwriting_id}\n"
+                    f"Reason: {reason_text}\n\n"
+                    "Please contact us if you have questions.\n\n"
+                    "— The PHINS Underwriting Team\n"
+                )
+        result = svc.send(NotificationRequest(
+            channel=NotificationChannel.EMAIL,
+            recipient=to_email,
+            subject=subject,
+            content=text,
+            customer_id="",
+            priority=NotificationPriority.HIGH,
+            metadata={
+                "type": "underwriting_decision",
+                "decision": decision_norm,
+                "policy_id": policy_id,
+                "underwriting_id": underwriting_id,
+            },
+        ))
+        ok = bool(getattr(result, "success", False))
+        return {
+            "ok": ok,
+            "result": result.to_dict() if hasattr(result, "to_dict") else str(result),
+        }
+    except Exception as exc:
+        logger.warning("Underwriting decision email failed: %s", exc)
+        return {"ok": False, "error": str(exc)}
+
+
 def mint_portal_invite_code(customer_id: str) -> str:
     """Short single-use style portal invite code for the contract QR."""
     return f"PHINS-PORTAL-{str(customer_id or 'CUST')[-6:].upper()}-{secrets.token_hex(3).upper()}"

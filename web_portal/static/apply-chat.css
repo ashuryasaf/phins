@@ -315,7 +315,8 @@ body.chat-apply-page {
     display: flex;
     flex-direction: column;
     gap: 14px;
-    scroll-behavior: smooth;
+    /* Instant programmatic scrolls after OTP / Q&A; avoid smooth fighting layout */
+    scroll-behavior: auto;
 }
 
 .msg-row {
@@ -694,6 +695,68 @@ body.chat-apply-page {
 }
 .video-modal-actions { display: flex; gap: 10px; justify-content: center; }
 .video-modal-hint { margin-top: 10px; font-size: 0.78rem; color: var(--ink-dim); }
+
+.msg-bubble.uw-decision {
+    border-color: rgba(34, 197, 94, 0.45);
+    background: rgba(34, 197, 94, 0.08);
+}
+
+/* ===== signature pad ===== */
+.sig-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+@media (max-width: 640px) {
+    .sig-fields { grid-template-columns: 1fr; }
+}
+.sig-pad-wrap {
+    background: #fff;
+    border: 1px dashed rgba(13, 42, 92, 0.35);
+    border-radius: 12px;
+    padding: 8px;
+}
+.sig-pad {
+    width: 100%;
+    height: 140px;
+    display: block;
+    touch-action: none;
+    cursor: crosshair;
+    background:
+        linear-gradient(180deg, transparent 78%, rgba(13, 42, 92, 0.12) 78%, rgba(13, 42, 92, 0.12) 79%, transparent 79%),
+        #fbfcfe;
+    border-radius: 8px;
+}
+.sig-pad-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 6px;
+    padding: 0 4px;
+}
+
+/* ===== RTL chat layout ===== */
+[dir="rtl"] .msg-row.bot { flex-direction: row-reverse; }
+[dir="rtl"] .msg-row.user { flex-direction: row; }
+[dir="rtl"] .msg-row.bot .msg-bubble {
+    border-bottom-left-radius: var(--radius);
+    border-bottom-right-radius: 6px;
+}
+[dir="rtl"] .msg-row.user .msg-bubble {
+    border-bottom-right-radius: var(--radius);
+    border-bottom-left-radius: 6px;
+}
+[dir="rtl"] .chat-header-actions { flex-direction: row-reverse; }
+[dir="rtl"] .resume-pill { flex-direction: row-reverse; }
+[dir="rtl"] .dock-row { flex-direction: row-reverse; }
+[dir="rtl"] .otp-row { direction: ltr; }
+[dir="rtl"] .resume-pill-code,
+[dir="rtl"] .msg-bubble.resume-note code {
+    direction: ltr;
+    unicode-bidi: isolate;
+}
 
 /* responsive */
 @media (max-width: 640px) {

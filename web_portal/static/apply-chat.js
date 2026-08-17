@@ -78,12 +78,49 @@
         catch (e) { return null; }
     }
 
-    function scrollDown() {
+    function scrollDown(forceInstant) {
         const el = chatScroll();
-        if (el) el.scrollTop = el.scrollHeight + 400;
+        if (!el) return;
+        // Programmatic scrolls must not fight CSS scroll-behavior:smooth —
+        // after OTP / Q&A the dock height changes and smooth mid-scrolls leave
+        // the latest bubble hidden behind the input dock.
+        const prev = el.style.scrollBehavior;
+        el.style.scrollBehavior = 'auto';
+        const run = () => {
+            const last = el.lastElementChild;
+            if (last && typeof last.scrollIntoView === 'function') {
+                try {
+                    last.scrollIntoView({ behavior: 'auto', block: 'end', inline: 'nearest' });
+                } catch (e) {
+                    el.scrollTop = el.scrollHeight + 480;
+                }
+            } else {
+                el.scrollTop = el.scrollHeight + 480;
+            }
+            // Second pass after dock/layout settles (OTP boxes, signature pad).
+            requestAnimationFrame(() => {
+                el.scrollTop = el.scrollHeight + 480;
+                el.style.scrollBehavior = prev || '';
+            });
+        };
+        requestAnimationFrame(run);
+    }
+
+    function afterLayoutScroll() {
+        // Call after renderStep / OTP dock so the newest Q&A stays visible.
+        requestAnimationFrame(() => scrollDown(true));
+        setTimeout(() => scrollDown(true), 60);
+        setTimeout(() => scrollDown(true), 200);
     }
 
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    function currentLanguage() {
+        try {
+            if (window.PhinsI18n && window.PhinsI18n.lang) return window.PhinsI18n.lang;
+            return localStorage.getItem('phins_language') || 'en';
+        } catch (e) { return 'en'; }
+    }
 
     // ---- message rendering ---------------------------------------------
 
@@ -175,11 +212,13 @@
                 await sleep(Math.min(1400, 350 + (msg.text || '').length * 6));
                 t.remove();
             }
-            const cls = msg.kind === 'resume_code' ? 'resume-note' : '';
+            const cls = msg.kind === 'resume_code' ? 'resume-note'
+                : (msg.kind === 'uw_decision' ? 'uw-decision' : '');
             let html = richText(msg.text);
             if (msg.kind === 'resume_code' && msg.meta && msg.meta.resume_code) {
+                // Keep resume code ASCII / untranslated for tracking integrity.
                 html = html.replace(escapeHtml(msg.meta.resume_code),
-                    `<code>${escapeHtml(msg.meta.resume_code)}</code>`);
+                    `<code data-no-i18n translate="no">${escapeHtml(msg.meta.resume_code)}</code>`);
             }
             addBubble('bot', html, cls);
             if (msg.kind === 'assessment' && msg.meta && msg.meta.assessment) {
@@ -189,6 +228,7 @@
                 renderQuoteCard(msg.meta.quote);
             }
         }
+        afterLayoutScroll();
     }
 
     function setProgress(progress) {
@@ -412,22 +452,93 @@
     }
 
     function renderSignature(input) {
+        const namePh = escapeHtml(input.placeholder || 'Full legal name');
+        const idPh = escapeHtml(input.id_placeholder || 'National ID / Teudat Zehut');
         dockHtml(`
             <div class="dock-label">Electronic signature (mandatory)</div>
-            <div class="dock-row">
+            <div class="sig-fields">
                 <input class="dock-input" id="dock-field" type="text"
-                       placeholder="${escapeHtml(input.placeholder || 'Full legal name')}"
-                       autocomplete="name">
+                       placeholder="${namePh}" autocomplete="name">
+                <input class="dock-input" id="dock-id-number" type="text"
+                       placeholder="${idPh}" inputmode="numeric" autocomplete="off"
+                       data-no-i18n>
+            </div>
+            <div class="sig-pad-wrap">
+                <canvas class="sig-pad" id="sig-pad" width="520" height="140"
+                        aria-label="Draw your signature"></canvas>
+                <div class="sig-pad-actions">
+                    <button type="button" class="link-btn" id="sig-clear">Clear signature</button>
+                    <span class="dock-hint" id="sig-hint">Draw your signature above</span>
+                </div>
+            </div>
+            <div class="dock-row" style="justify-content:flex-end; margin-top:10px;">
                 <button class="chip chip-go" id="sign-submit">Sign &amp; seal</button>
             </div>
-            <div class="dock-hint">Type your full legal name exactly as on this application. This seals your medical declarations.</div>
+            <div class="dock-hint">Name must match this application. ID is sealed with your drawn signature for underwriting integrity.</div>
         `);
+        afterLayoutScroll();
+
+        const canvas = $('sig-pad');
+        const ctx = canvas.getContext('2d');
+        let drawing = false;
+        let hasInk = false;
+        const pos = (e) => {
+            const r = canvas.getBoundingClientRect();
+            const src = e.touches ? e.touches[0] : e;
+            return {
+                x: (src.clientX - r.left) * (canvas.width / r.width),
+                y: (src.clientY - r.top) * (canvas.height / r.height),
+            };
+        };
+        const start = (e) => {
+            e.preventDefault();
+            drawing = true;
+            const p = pos(e);
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+        };
+        const move = (e) => {
+            if (!drawing) return;
+            e.preventDefault();
+            const p = pos(e);
+            ctx.lineWidth = 2.2;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = '#0d2a5c';
+            ctx.lineTo(p.x, p.y);
+            ctx.stroke();
+            hasInk = true;
+            $('sig-hint').textContent = 'Signature captured';
+        };
+        const end = () => { drawing = false; };
+        canvas.addEventListener('mousedown', start);
+        canvas.addEventListener('mousemove', move);
+        canvas.addEventListener('mouseup', end);
+        canvas.addEventListener('mouseleave', end);
+        canvas.addEventListener('touchstart', start, { passive: false });
+        canvas.addEventListener('touchmove', move, { passive: false });
+        canvas.addEventListener('touchend', end);
+        $('sig-clear').addEventListener('click', () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            hasInk = false;
+            $('sig-hint').textContent = 'Draw your signature above';
+        });
+
         const field = $('dock-field');
         field.focus();
         const send = () => {
-            const value = field.value.trim();
-            if (!value) return;
-            submitAnswer(value, `Signed: ${value}`);
+            const name = field.value.trim();
+            const idNumber = ($('dock-id-number').value || '').trim();
+            if (!name) { dockError('Please type your full legal name.'); return; }
+            if (!idNumber) { dockError('Please enter your ID number.'); return; }
+            if (!hasInk) { dockError('Please draw your signature in the panel.'); return; }
+            const signatureData = canvas.toDataURL('image/png');
+            submitAnswer({
+                name,
+                id_number: idNumber,
+                signature_data: signatureData,
+                method: 'drawn_canvas',
+            }, `Signed: ${name}`);
         };
         $('sign-submit').addEventListener('click', send);
         field.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
@@ -631,6 +742,7 @@
         if (submitBtn) submitBtn.addEventListener('click', () =>
             verifyOtp(inputs.map((b) => b.value).join('')));
         $('otp-resend').addEventListener('click', requestOtp);
+        afterLayoutScroll();
     }
 
     async function verifyOtp(code) {
@@ -646,6 +758,7 @@
             const t = addTyping(); await sleep(500); t.remove();
             addBubble('bot', richText(data.error || 'That code is not right - try again.'));
             renderOtpDock();
+            afterLayoutScroll();
             return;
         }
         state.otp = null;
@@ -660,6 +773,7 @@
         state.otpRestoreTranscript = false;
         await playMessages(data.messages);
         renderStep(data.step);
+        afterLayoutScroll();
     }
 
     // ---- conversation ----------------------------------------------------
@@ -678,20 +792,24 @@
             }
             if (data.otp_required) {
                 await requestOtp();
+                afterLayoutScroll();
             } else if (data.ready_to_finalize) {
                 await finalize();
             } else if (status >= 400) {
                 renderStep(data.step || state.step);
+                afterLayoutScroll();
             } else {
                 if (state.step && state.step.id === 'email' && status < 400) {
                     state.email = String(value).toLowerCase();
                     saveLocal();
                 }
                 renderStep(data.step);
+                afterLayoutScroll();
             }
         } catch (err) {
             addBubble('bot', 'Connection hiccup - your progress is saved. Try that again.');
             renderStep(state.step);
+            afterLayoutScroll();
         } finally {
             state.busy = false;
         }
@@ -737,6 +855,40 @@
         `);
         clearDock();
         $('pause-btn').hidden = true;
+        startUwDecisionWatch();
+    }
+
+    // ---- UW decision auto-answer watch (post-submit) ----------------------
+
+    let uwWatchTimer = null;
+    let uwLastSeq = 0;
+
+    function startUwDecisionWatch() {
+        if (uwWatchTimer) clearInterval(uwWatchTimer);
+        uwLastSeq = 0;
+        const tick = async () => {
+            if (!state.appId || !state.resumeCode || !state.submitted) return;
+            try {
+                const { status, data } = await api(
+                    'GET',
+                    `/${state.appId}?resume_code=${encodeURIComponent(state.resumeCode)}`
+                );
+                if (status !== 200) return;
+                const msgs = (data.transcript || []).filter((m) => m.kind === 'uw_decision');
+                for (const msg of msgs) {
+                    if (msg.seq <= uwLastSeq) continue;
+                    uwLastSeq = Math.max(uwLastSeq, msg.seq);
+                    await playMessages([msg]);
+                }
+                if (data.uw_decision && data.uw_decision.decision) {
+                    // Decision delivered — keep watching briefly then stop.
+                    clearInterval(uwWatchTimer);
+                    uwWatchTimer = null;
+                }
+            } catch (e) { /* ignore transient */ }
+        };
+        tick();
+        uwWatchTimer = setInterval(tick, 6000);
     }
 
     // ---- start / pause / resume -------------------------------------------
@@ -748,7 +900,7 @@
 
     async function startApplication() {
         $('start-btn').disabled = true;
-        const body = { channel: 'web_chat' };
+        const body = { channel: 'web_chat', language: currentLanguage() };
         const invite = inviteCodeFromUrl();
         if (invite) body.invite_code = invite;
         const { status, data } = await api('POST', '/start', body);
@@ -764,6 +916,7 @@
         setProgress(data.progress);
         await playMessages(data.messages);
         renderStep(data.step);
+        afterLayoutScroll();
     }
 
     async function resumeApplication(code, email) {

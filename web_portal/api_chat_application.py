@@ -948,6 +948,7 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]],
             channel=str(body.get("channel") or "web_chat")[:40],
             invite=invite,
             started_by=started_by,
+            language=str(body.get("language") or body.get("lang") or "en"),
         )
         _pop_and_write_events(result)
         result.pop("ok", None)

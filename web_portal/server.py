@@ -41041,12 +41041,21 @@ For claims or questions, please contact:
                         'disclosure_mode': (data.get('prior_disclosure') or {}).get('mode')
                             if isinstance(data.get('prior_disclosure'), dict)
                             else None,
-                        'signature_name': (data.get('signature') or {}).get('name')
-                            if isinstance(data.get('signature'), dict)
-                            else None,
+                    'signature_name': (data.get('signature') or {}).get('name')
+                        if isinstance(data.get('signature'), dict)
+                        else None,
                         'signature_at': (data.get('signature') or {}).get('signed_at')
+                        if isinstance(data.get('signature'), dict)
+                        else None,
+                        'id_number': (
+                            (data.get('signature') or {}).get('id_number')
                             if isinstance(data.get('signature'), dict)
-                            else None,
+                            else None
+                        ) or data.get('id_number'),
+                        'signature_image_sha256': (
+                            (data.get('signature') or {}).get('image_sha256')
+                            if isinstance(data.get('signature'), dict) else None
+                        ),
                     },
                     'medical_exam_required': data.get('medical_exam_required', False),
                     'submitted_date': submitted_at,
@@ -41059,6 +41068,16 @@ For claims or questions, please contact:
                         if isinstance(data.get('signature'), dict) else None,
                     'signature_at': (data.get('signature') or {}).get('signed_at')
                         if isinstance(data.get('signature'), dict) else None,
+                    'signature_method': (data.get('signature') or {}).get('method')
+                        if isinstance(data.get('signature'), dict) else None,
+                    'signature_image_sha256': (data.get('signature') or {}).get('image_sha256')
+                        if isinstance(data.get('signature'), dict) else None,
+                    'signature_image_data': (data.get('signature') or {}).get('image_data')
+                        if isinstance(data.get('signature'), dict) else None,
+                    'id_number': (
+                        (data.get('signature') or {}).get('id_number')
+                        if isinstance(data.get('signature'), dict) else None
+                    ) or data.get('id_number'),
                     'prior_disclosure': (data.get('prior_disclosure') or {}).get('text')
                         if isinstance(data.get('prior_disclosure'), dict)
                         else data.get('prior_disclosure'),
@@ -42244,6 +42263,74 @@ For claims or questions, please contact:
                     }
                 except Exception as contract_err:
                     print(f"[UW] Policy contract generation note: {contract_err}")
+
+                # Chat applications: auto-answer in the Phin transcript + notify.
+                # Runs outside contract generation so a contract failure still
+                # delivers the UW decision into the chat journey.
+                try:
+                    chat_id = app.get('chat_application_id')
+                    if chat_id:
+                        from services.chat_application_service import (
+                            get_chat_application_service,
+                        )
+                        from services.underwriting_integrity_service import (
+                            email_underwriting_decision_notice,
+                        )
+                        chat_svc = get_chat_application_service()
+                        chat_result = chat_svc.post_underwriting_decision(
+                            chat_id,
+                            decision='approved',
+                            policy_id=policy_id,
+                            underwriting_id=uw_id,
+                            monthly_premium=float(policy.get('monthly_premium') or 0),
+                            premium_adjustment_pct=float(
+                                app.get('premium_adjustment') or 0
+                            ),
+                            notes=data.get('notes'),
+                        )
+                        for ev in (chat_result.get('ledger_events') or []):
+                            try:
+                                platform_event_ledger.append_event(
+                                    event_type=ev.get('event_type'),
+                                    entity_type=ev.get('entity_type', 'policy_application'),
+                                    entity_id=ev.get('entity_id', ''),
+                                    customer_id=ev.get('customer_id'),
+                                    actor=ev.get('actor', 'underwriter'),
+                                    amount=0.0,
+                                    status='recorded',
+                                    source_system='chat_policy_application',
+                                    payload=ev.get('payload') or {},
+                                    entry_id=ev.get('entry_id'),
+                                    ledger_type='event',
+                                )
+                            except Exception:
+                                pass
+                        email_underwriting_decision_notice(
+                            to_email=str(
+                                (CUSTOMERS.get(customer_id) or {}).get('email')
+                                or app.get('customer_email')
+                                or ''
+                            ),
+                            customer_name=str(
+                                (CUSTOMERS.get(customer_id) or {}).get('name')
+                                or app.get('customer_name')
+                                or ''
+                            ),
+                            decision='approved',
+                            policy_id=policy_id,
+                            underwriting_id=uw_id,
+                            monthly_premium=float(policy.get('monthly_premium') or 0),
+                            premium_adjustment_pct=float(
+                                app.get('premium_adjustment') or 0
+                            ),
+                            language=str(chat_result.get('language') or 'en'),
+                        )
+                        app['chat_auto_answer'] = {
+                            'decision': 'approved',
+                            'ok': bool(chat_result.get('ok')),
+                        }
+                except Exception as chat_err:
+                    print(f"[UW] Chat auto-answer (approve) note: {chat_err}")
                 
                 # Build comprehensive response
                 response = {
@@ -42322,6 +42409,65 @@ For claims or questions, please contact:
                         rejected_by=rejected_by,
                         customer=customer,
                     )
+
+                    # Chat applications: auto-answer + rejection notification
+                    try:
+                        chat_id = app.get('chat_application_id')
+                        if chat_id:
+                            from services.chat_application_service import (
+                                get_chat_application_service,
+                            )
+                            from services.underwriting_integrity_service import (
+                                email_underwriting_decision_notice,
+                            )
+                            chat_svc = get_chat_application_service()
+                            chat_result = chat_svc.post_underwriting_decision(
+                                chat_id,
+                                decision='rejected',
+                                policy_id=app.get('policy_id'),
+                                underwriting_id=uw_id,
+                                reason=reason,
+                            )
+                            for ev in (chat_result.get('ledger_events') or []):
+                                try:
+                                    platform_event_ledger.append_event(
+                                        event_type=ev.get('event_type'),
+                                        entity_type=ev.get('entity_type', 'policy_application'),
+                                        entity_id=ev.get('entity_id', ''),
+                                        customer_id=ev.get('customer_id'),
+                                        actor=ev.get('actor', 'underwriter'),
+                                        amount=0.0,
+                                        status='recorded',
+                                        source_system='chat_policy_application',
+                                        payload=ev.get('payload') or {},
+                                        entry_id=ev.get('entry_id'),
+                                        ledger_type='event',
+                                    )
+                                except Exception:
+                                    pass
+                            email_underwriting_decision_notice(
+                                to_email=str(
+                                    (customer or {}).get('email')
+                                    or app.get('customer_email')
+                                    or ''
+                                ),
+                                customer_name=str(
+                                    (customer or {}).get('name')
+                                    or app.get('customer_name')
+                                    or ''
+                                ),
+                                decision='rejected',
+                                policy_id=app.get('policy_id'),
+                                underwriting_id=uw_id,
+                                reason=reason,
+                                language=str(chat_result.get('language') or 'en'),
+                            )
+                            app['chat_auto_answer'] = {
+                                'decision': 'rejected',
+                                'ok': bool(chat_result.get('ok')),
+                            }
+                    except Exception as chat_err:
+                        print(f"[UW] Chat auto-answer (reject) note: {chat_err}")
 
                     # LOOP CLOSURE: snapshot the risk score at decision time.
                     snapshot_underwriting_decision_assessment(

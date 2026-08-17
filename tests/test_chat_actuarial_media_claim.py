@@ -66,6 +66,22 @@ def _post(path, payload=None, token=None):
     return _request("POST", path, payload or {}, token)
 
 
+_SIG_PNG = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+"
+    "FABJADveWkH6oAAAAAElFTkSuQmCC"
+)
+
+
+def _signature_payload(name, id_number="123456782"):
+    return {
+        "name": name,
+        "id_number": id_number,
+        "signature_data": _SIG_PNG,
+        "method": "drawn_canvas",
+    }
+
+
 def _answer(app_id, value, resume_code):
     status, body = _post(
         f"/api/chat-application/{app_id}/message",
@@ -258,7 +274,7 @@ def _run_application(email: str, *, with_media: bool = True):
     consent = _answer(app_id, "agree", resume_code)
     assert consent.get("ready_to_finalize") is not True
     assert consent.get("step", {}).get("id") == "signature"
-    sign = _answer(app_id, "Maya Cohen", resume_code)
+    sign = _answer(app_id, _signature_payload("Maya Cohen"), resume_code)
     assert sign.get("ready_to_finalize") is True
 
     status, result = _post(
@@ -597,7 +613,7 @@ def test_adl_decline_opens_underwriter_queue_with_contact(isolated_store):
     )
     _answer(app_id, "yes", resume_code)
     _answer(app_id, "agree", resume_code)
-    _answer(app_id, "Senior Case", resume_code)  # mandatory signature
+    _answer(app_id, _signature_payload("Senior Case"), resume_code)  # mandatory signature
 
     status, blocked = _post(
         f"/api/chat-application/{app_id}/finalize", {"resume_code": resume_code}

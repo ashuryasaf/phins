@@ -49,6 +49,23 @@ def _get(path, token=None):
     return _request("GET", path, None, token)
 
 
+_SIG_PNG = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+"
+    "FABJADveWkH6oAAAAAElFTkSuQmCC"
+)
+
+
+def _signature_payload(name, id_number="123456782"):
+    """Drawn signature panel payload (name + Israeli ID + PNG)."""
+    return {
+        "name": name,
+        "id_number": id_number,
+        "signature_data": _SIG_PNG,
+        "method": "drawn_canvas",
+    }
+
+
 def _answer(app_id, value, expect_status=200, resume_code=None):
     payload = {"value": value}
     if resume_code is not None:
@@ -153,7 +170,9 @@ def test_full_chat_application_happy_path():
     consent_reply = _answer(app_id, "agree", resume_code=resume_code)  # consent
     assert consent_reply.get("ready_to_finalize") is not True
     assert consent_reply.get("step", {}).get("id") == "signature"
-    sign_reply = _answer(app_id, "Dana Levi", resume_code=resume_code)  # signature
+    sign_reply = _answer(
+        app_id, _signature_payload("Dana Levi"), resume_code=resume_code
+    )  # signature panel
     assert sign_reply.get("ready_to_finalize") is True
 
     status, result = _post(f"/api/chat-application/{app_id}/finalize",
@@ -179,6 +198,9 @@ def test_full_chat_application_happy_path():
     assert not card.get("cvv")
     assert card.get("card_last4") == "4444"
     assert session["answers"].get("signature_name") == "Dana Levi"
+    assert session["answers"].get("id_number") == "123456782"
+    assert session["answers"].get("signature_image_sha256")
+    assert session["answers"].get("signature_data") is None  # redacted after submit
     assert session["answers"].get("prior_disclosure")
 
     # state readable with the resume code
@@ -553,6 +575,109 @@ def test_start_rate_limit_uses_forwarded_client_ip():
             assert status == 201
     finally:
         chat_api._start_tracker.clear()
+
+
+def test_hebrew_start_keeps_ascii_resume_code():
+    status, body = _post("/api/chat-application/start", {"language": "he"})
+    assert status == 201, body
+    assert body["resume_code"].startswith("PHINS-CHAT-")
+    assert body.get("language") == "he"
+    # Resume code itself stays ASCII; surrounding copy is Hebrew.
+    texts = " ".join(m.get("text") or "" for m in body["messages"])
+    assert body["resume_code"] in texts
+    assert any("קוד" in (m.get("text") or "") for m in body["messages"])
+    assert body["step"]["id"] == "name"
+    assert "שם" in (body["step"]["prompt"] or "")
+
+
+def test_signature_requires_id_and_drawn_canvas():
+    app_id, resume_code = _start_and_verify("chat.sig.panel@example.com")
+    # Fast-forward to signature via incomplete path is heavy; unit-test validator
+    # through the service instead for failure cases.
+    from services.chat_application_service import (
+        _validate_signature,
+        get_chat_application_service,
+    )
+    session = {"contact": {"name": "Dana Levi"}, "answers": {}}
+    ok, err = _validate_signature("Dana Levi", session)
+    assert ok is False
+    ok, err = _validate_signature(
+        {"name": "Dana Levi", "id_number": "123456789", "signature_data": _SIG_PNG},
+        session,
+    )
+    assert ok is False  # bad checksum
+    ok, cleaned = _validate_signature(_signature_payload("Dana Levi"), session)
+    assert ok is True
+    assert cleaned["id_number"] == "123456782"
+    assert cleaned["image_sha256"]
+    assert cleaned["method"] == "drawn_canvas"
+
+
+def test_uw_decision_auto_answer_and_notification():
+    """Approve / reject appends a Phin auto-answer and sends a notice."""
+    app_id, resume_code = _start_and_verify("chat.uw.decision@example.com")
+    _complete_questionnaire(app_id, resume_code)
+    _answer(app_id, 500000, resume_code=resume_code)
+    _answer(app_id, "20", resume_code=resume_code)
+    _answer(app_id, "none", resume_code=resume_code)
+    _answer(app_id, "skip", resume_code=resume_code)
+    _answer(app_id, "monthly", resume_code=resume_code)
+    _answer(app_id, {
+        "card_number": "5555 5555 5555 4444",
+        "cardholder_name": "DANA LEVI",
+        "expiry_month": "12", "expiry_year": "2031", "cvv": "123",
+    }, resume_code=resume_code)
+    _answer(app_id, "yes", resume_code=resume_code)
+    _answer(app_id, "agree", resume_code=resume_code)
+    _answer(app_id, _signature_payload("Dana Levi"), resume_code=resume_code)
+    status, result = _post(f"/api/chat-application/{app_id}/finalize",
+                           {"resume_code": resume_code})
+    assert status == 201, result
+    uw_id = result["underwriting"]["id"]
+    policy_id = result["policy"]["id"]
+
+    status, approved = _post("/api/underwriting/approve", {
+        "id": uw_id,
+        "premium_adjustment": 10,
+        "notes": " Modest loading for demo",
+        "approved_by": "test_uw",
+    })
+    assert status == 200, approved
+    assert (approved.get("application") or {}).get("chat_auto_answer", {}).get("decision") == "approved"
+
+    status, state = _get(f"/api/chat-application/{app_id}?resume_code={resume_code}")
+    assert status == 200, state
+    assert state.get("uw_decision", {}).get("decision") == "approved"
+    assert any(m.get("kind") == "uw_decision" for m in state.get("transcript") or [])
+
+    # Reject path on a fresh application
+    app_id2, resume2 = _start_and_verify("chat.uw.reject@example.com", name="Noa Bar")
+    _complete_questionnaire(app_id2, resume2)
+    _answer(app_id2, 400000, resume_code=resume2)
+    _answer(app_id2, "20", resume_code=resume2)
+    _answer(app_id2, "none", resume_code=resume2)
+    _answer(app_id2, "skip", resume_code=resume2)
+    _answer(app_id2, "monthly", resume_code=resume2)
+    _answer(app_id2, {
+        "card_number": "4111 1111 1111 1111",
+        "cardholder_name": "NOA BAR",
+        "expiry_month": "11", "expiry_year": "2030", "cvv": "999",
+    }, resume_code=resume2)
+    _answer(app_id2, "no", resume_code=resume2)
+    _answer(app_id2, "agree", resume_code=resume2)
+    _answer(app_id2, _signature_payload("Noa Bar"), resume_code=resume2)
+    status, result2 = _post(f"/api/chat-application/{app_id2}/finalize",
+                            {"resume_code": resume2})
+    assert status == 201, result2
+    uw2 = result2["underwriting"]["id"]
+    status, rejected = _post("/api/underwriting/reject", {
+        "id": uw2, "reason": "Outside guidelines", "rejected_by": "test_uw",
+    })
+    assert status == 200, rejected
+    assert (rejected.get("application") or {}).get("chat_auto_answer", {}).get("decision") == "rejected"
+    status, state2 = _get(f"/api/chat-application/{app_id2}?resume_code={resume2}")
+    assert status == 200, state2
+    assert state2.get("uw_decision", {}).get("decision") == "rejected"
 
 
 if __name__ == "__main__":
