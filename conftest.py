@@ -63,6 +63,8 @@ os.environ.setdefault("USE_DATABASE", "false")
 os.environ.setdefault("USE_SQLITE", "true")
 os.environ.setdefault("SQLITE_PATH", str(Path(tempfile.gettempdir()) / "phins_test.db"))
 os.environ.setdefault("PHINS_TEST_MODE", "true")
+# Fast/deterministic sealed-contract PDF rendering in tests (Chrome is optional in prod).
+os.environ.setdefault("PHINS_CONTRACT_PDF_BACKEND", "reportlab")
 # Keep BI KPI snapshots out of the repo's data/ directory during test runs.
 os.environ.setdefault(
     "PHINS_BI_SNAPSHOT_DIR", str(Path(tempfile.gettempdir()) / "phins_test_bi_snapshots")

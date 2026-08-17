@@ -6116,6 +6116,7 @@
                 <button class="action-btn view" title="View Details" onclick="viewPolicyDetails('${policy.id || policy.policy_id}')">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                 </button>
+                <button class="action-btn" style="background: linear-gradient(135deg, #0e2f63 0%, #123f82 100%); color: #f7e2a0;" title="Download sealed PDF (password: card last 4)" onclick="downloadSealedContractAdmin('${policy.id || policy.policy_id}')">📄</button>
                 <button class="action-btn edit" title="Edit" onclick="editPolicy('${policy.id || policy.policy_id}')">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                 </button>
@@ -6130,6 +6131,46 @@
       
       // Update badges after displaying
       updatePolicyBadges();
+    }
+
+    async function downloadSealedContractAdmin(policyId) {
+      try {
+        const metaRes = await fetch(`/api/policies/${encodeURIComponent(policyId)}/contract`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const meta = await metaRes.json().catch(() => ({}));
+        if (!metaRes.ok) {
+          alert(meta.error || 'Sealed contract is not available for this policy yet.');
+          return;
+        }
+        if (!confirm(
+          `Download sealed PHINS contract for ${policyId}?\n\n` +
+          `AES-256 encrypted — unlock with the customer payment card last 4.\n` +
+          `Integrity: ${(meta.integrity_hash || '').slice(0, 16)}…`
+        )) {
+          return;
+        }
+        const response = await fetch(`/api/policies/${encodeURIComponent(policyId)}/contract.pdf`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          alert(err.error || 'Failed to download sealed contract PDF.');
+          return;
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = meta.filename || `PHINS_Policy_${policyId}_Sealed.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error('Sealed contract download failed:', err);
+        alert('Failed to download sealed contract PDF.');
+      }
     }
     
     // Load claims dynamically  

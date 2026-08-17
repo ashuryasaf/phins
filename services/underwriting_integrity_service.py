@@ -20,6 +20,7 @@ import hashlib
 import html
 import json
 import logging
+import os
 import secrets
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -1130,7 +1131,10 @@ def email_policy_contract(
             f"Monthly premium: ${float(policy.get('monthly_premium') or 0):,.2f}\n"
             f"Integrity seal: {contract.get('integrity_hash')}\n"
             f"Portal: {contract.get('portal_url')}\n\n"
-            "Your full policy contract is included below.\n\n"
+            "Your full policy contract is included below.\n"
+            "A downloadable AES-256 sealed PDF is available in your PHINS portal "
+            f"at /api/policies/{policy.get('id')}/contract.pdf — unlock it with the "
+            "last 4 digits of the payment card on file for this policy.\n\n"
             "— The PHINS Underwriting Team\n"
         )
         result = svc.send(NotificationRequest(
@@ -1163,6 +1167,317 @@ def mint_portal_invite_code(customer_id: str) -> str:
     return f"PHINS-PORTAL-{str(customer_id or 'CUST')[-6:].upper()}-{secrets.token_hex(3).upper()}"
 
 
+def resolve_card_last4(
+    *,
+    policy: Optional[Dict[str, Any]] = None,
+    app: Optional[Dict[str, Any]] = None,
+    bill: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """Resolve the payment-card last-4 used as the PDF unlock password."""
+    import re
+
+    candidates: List[Any] = []
+    for source in (app or {}, policy or {}, bill or {}):
+        if not isinstance(source, dict):
+            continue
+        payment = source.get("payment_setup") or source.get("payment") or {}
+        if isinstance(payment, str):
+            try:
+                payment = json.loads(payment)
+            except (TypeError, ValueError):
+                payment = {}
+        if isinstance(payment, dict):
+            candidates.append(payment.get("card_last4"))
+            method = payment.get("payment_method")
+            if isinstance(method, dict):
+                candidates.append(method.get("card_last4"))
+        billing = source.get("billing") or {}
+        if isinstance(billing, dict):
+            method = billing.get("payment_method") or {}
+            if isinstance(method, dict):
+                candidates.append(method.get("card_last4"))
+        method = source.get("payment_method")
+        if isinstance(method, dict):
+            candidates.append(method.get("card_last4"))
+        candidates.append(source.get("card_last4"))
+
+    for raw in candidates:
+        digits = re.sub(r"\D", "", str(raw or ""))
+        if len(digits) >= 4:
+            return digits[-4:]
+    return None
+
+
+def _chrome_binaries() -> List[str]:
+    return [
+        os.environ.get("CHROME_BIN") or "",
+        os.environ.get("GOOGLE_CHROME_BIN") or "",
+        "google-chrome",
+        "google-chrome-stable",
+        "chromium",
+        "chromium-browser",
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/local/bin/google-chrome",
+    ]
+
+
+def html_to_pdf_bytes(html: str, *, timeout_seconds: int = 90) -> bytes:
+    """Render contract HTML to PDF via headless Chrome (design-faithful).
+
+    Set ``PHINS_CONTRACT_PDF_BACKEND=reportlab`` to force the lightweight
+    branded fallback (used in automated tests).
+    """
+    backend = (os.environ.get("PHINS_CONTRACT_PDF_BACKEND") or "chrome").strip().lower()
+    if backend in ("reportlab", "stub", "test"):
+        return _reportlab_contract_pdf_bytes(html)
+
+    try:
+        return _chrome_html_to_pdf_bytes(html, timeout_seconds=timeout_seconds)
+    except Exception as chrome_err:
+        logger.warning("Chrome contract PDF failed (%s); using reportlab fallback", chrome_err)
+        return _reportlab_contract_pdf_bytes(html)
+
+
+def _chrome_html_to_pdf_bytes(html: str, *, timeout_seconds: int = 90) -> bytes:
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    html_text = str(html or "")
+    if not html_text.strip():
+        raise ValueError("Contract HTML is empty")
+
+    chrome = next(
+        (c for c in _chrome_binaries() if c and shutil.which(c)),
+        None,
+    )
+    if not chrome:
+        raise RuntimeError("Chrome/Chromium is not available for PDF rendering")
+
+    with tempfile.TemporaryDirectory(prefix="phins-contract-pdf-") as tmp:
+        tmp_path = Path(tmp)
+        html_path = tmp_path / "contract.html"
+        pdf_path = tmp_path / "contract.pdf"
+        profile = tmp_path / "chrome-profile"
+        profile.mkdir(parents=True, exist_ok=True)
+        html_path.write_text(html_text, encoding="utf-8")
+
+        cmd = [
+            chrome,
+            "--headless=new",
+            "--disable-gpu",
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            f"--user-data-dir={profile}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--no-pdf-header-footer",
+            f"--print-to-pdf={pdf_path}",
+            html_path.as_uri(),
+        ]
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Chrome PDF render timed out") from exc
+
+        if not pdf_path.exists() or pdf_path.stat().st_size < 100:
+            err = (proc.stderr or proc.stdout or "").strip()[:500]
+            raise RuntimeError(f"Chrome PDF render failed: {err or 'empty output'}")
+        return pdf_path.read_bytes()
+
+
+def _reportlab_contract_pdf_bytes(html: str) -> bytes:
+    """Branded reportlab fallback preserving PHINS navy/gold + integrity text."""
+    import re
+    from io import BytesIO
+    from pathlib import Path
+
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import inch
+    from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    text = re.sub(r"<script[\s\S]*?</script>", "", html or "", flags=re.I)
+    text = re.sub(r"<style[\s\S]*?</style>", "", text, flags=re.I)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    snippets = [s.strip() for s in re.split(r"(?=\d+\s)", text) if s.strip()][:40]
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=letter,
+        leftMargin=0.7 * inch, rightMargin=0.7 * inch,
+        topMargin=0.6 * inch, bottomMargin=0.6 * inch,
+    )
+    styles = getSampleStyleSheet()
+    title = ParagraphStyle(
+        "PhinsTitle", parent=styles["Heading1"],
+        textColor=colors.HexColor("#0e2f63"), fontSize=18, spaceAfter=8,
+    )
+    body = ParagraphStyle(
+        "PhinsBody", parent=styles["Normal"],
+        textColor=colors.HexColor("#12284c"), fontSize=9, leading=12,
+    )
+    story = []
+    logo_path = Path(__file__).resolve().parent.parent / "web_portal" / "static" / "phins-logo.png"
+    if logo_path.exists():
+        try:
+            story.append(Image(str(logo_path), width=0.55 * inch, height=0.55 * inch))
+        except Exception:
+            pass
+    story.append(Paragraph("PHINS Policy Contract (sealed)", title))
+    story.append(Paragraph(
+        "Actuarial pricing center + underwriting fine-tune · AES-256 encrypted download",
+        body,
+    ))
+    story.append(Spacer(1, 8))
+    rows = [[Paragraph(html_lib_escape(s[:240]), body)] for s in snippets[:25]] or [[Paragraph("PHINS sealed contract", body)]]
+    table = Table(rows, colWidths=[6.5 * inch])
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0e2f63")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#f7e2a0")),
+        ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#f3f7fd")),
+        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#123f82")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#d7e2f5")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(table)
+    doc.build(story)
+    return buf.getvalue()
+
+
+def html_lib_escape(value: str) -> str:
+    return (
+        str(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def encrypt_pdf_with_password(
+    pdf_bytes: bytes,
+    *,
+    user_password: str,
+    owner_password: Optional[str] = None,
+) -> bytes:
+    """AES-256 encrypt a PDF; ``user_password`` is required to open it."""
+    from io import BytesIO
+
+    from pypdf import PdfReader, PdfWriter
+
+    password = str(user_password or "").strip()
+    if len(password) < 4:
+        raise ValueError("PDF password must be at least 4 characters")
+
+    reader = PdfReader(BytesIO(pdf_bytes))
+    writer = PdfWriter()
+    writer.append(reader)
+    writer.encrypt(
+        user_password=password,
+        owner_password=owner_password or f"PHINS-OWNER-{secrets.token_hex(8)}",
+        algorithm="AES-256",
+    )
+    out = BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def build_encrypted_policy_contract_pdf(
+    *,
+    contract: Dict[str, Any],
+    card_last4: str,
+) -> Dict[str, Any]:
+    """Render the sealed HTML contract to an AES-256 PDF locked with card last4."""
+    import re
+
+    last4 = re.sub(r"\D", "", str(card_last4 or ""))[-4:]
+    if len(last4) != 4:
+        raise ValueError("card_last4 is required to lock the policy contract PDF")
+
+    html = contract.get("html") or ""
+    integrity = str(contract.get("integrity_hash") or "")
+    plain_pdf = html_to_pdf_bytes(html)
+    encrypted = encrypt_pdf_with_password(
+        plain_pdf,
+        user_password=last4,
+        owner_password=f"PHINS-OWNER-{integrity[:24] or secrets.token_hex(8)}",
+    )
+    policy_id = (
+        (contract.get("payload") or {}).get("policy_id")
+        or str(contract.get("contract_id") or "POLICY").replace("CONTRACT-", "")
+    )
+    filename = f"PHINS_Policy_{policy_id}_Sealed.pdf"
+    return {
+        "ok": True,
+        "filename": filename,
+        "content_type": "application/pdf",
+        "pdf_bytes": encrypted,
+        "size": len(encrypted),
+        "sha256": hashlib.sha256(encrypted).hexdigest(),
+        "integrity_hash": integrity,
+        "encryption": "AES-256",
+        "password_hint": "last_4_digits_of_payment_card_on_file",
+        # Never return the password itself.
+        "password_source": "card_last4",
+    }
+
+
+def persist_encrypted_contract_document(
+    *,
+    policy_id: str,
+    customer_id: str,
+    underwriting_id: Optional[str],
+    encrypted_pdf: Dict[str, Any],
+    policy_documents: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Store encrypted PDF bytes in the policy document vault (base64)."""
+    import base64
+
+    doc_id = f"DOC-CONTRACT-PDF-{policy_id}"
+    now = _utc_now_iso()
+    record = {
+        "id": doc_id,
+        "policy_id": policy_id,
+        "customer_id": customer_id,
+        "underwriting_id": underwriting_id,
+        "name": encrypted_pdf.get("filename"),
+        "type": "application/pdf",
+        "kind": "policy_contract_pdf_encrypted",
+        "integrity_hash": encrypted_pdf.get("integrity_hash"),
+        "pdf_sha256": encrypted_pdf.get("sha256"),
+        "encryption": encrypted_pdf.get("encryption"),
+        "password_hint": encrypted_pdf.get("password_hint"),
+        "password_source": "card_last4",
+        "size": encrypted_pdf.get("size"),
+        "data": base64.b64encode(encrypted_pdf["pdf_bytes"]).decode("ascii"),
+        "created_date": now,
+        "updated_date": now,
+    }
+    policy_documents[doc_id] = record
+    return {
+        "id": doc_id,
+        "name": record["name"],
+        "integrity_hash": record["integrity_hash"],
+        "pdf_sha256": record["pdf_sha256"],
+        "encryption": record["encryption"],
+        "password_hint": record["password_hint"],
+        "size": record["size"],
+    }
+
+
 __all__ = [
     "detect_statement_contradictions",
     "detect_claim_statement_contradictions",
@@ -1174,4 +1489,9 @@ __all__ = [
     "build_policy_contract",
     "email_policy_contract",
     "mint_portal_invite_code",
+    "resolve_card_last4",
+    "html_to_pdf_bytes",
+    "encrypt_pdf_with_password",
+    "build_encrypted_policy_contract_pdf",
+    "persist_encrypted_contract_document",
 ]

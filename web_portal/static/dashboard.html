@@ -5120,6 +5120,7 @@
             <td>
               <div style="display: flex; gap: 6px;">
                 <button class="btn-small" onclick="viewPolicy('${p.id}')" title="View Details">👁️</button>
+                <button class="btn-small" onclick="downloadSealedContract('${p.id}')" title="Download sealed PDF (password: card last 4)" style="background: #0e2f63; color: #f7e2a0;">📄</button>
                 <button class="btn-small" onclick="editPolicy('${p.id}')" title="Edit Policy" style="background: var(--primary); color: white;">✏️</button>
                 ${p.status === 'draft' ? `<button class="btn-small" onclick="activatePolicy('${p.id}')" title="Activate" style="background: var(--success); color: white;">▶️</button>` : ''}
                 ${p.status === 'active' ? `<button class="btn-small" onclick="suspendPolicy('${p.id}')" title="Suspend" style="background: var(--warning); color: white;">⏸️</button>` : ''}
@@ -5132,6 +5133,49 @@
       // Update filter count
       const countEl = document.getElementById('policy-filter-count');
       countEl.textContent = `${policies.length} total policies`;
+    }
+
+    async function downloadSealedContract(policyId) {
+      try {
+        const metaRes = await fetch(`/api/policies/${encodeURIComponent(policyId)}/contract`, {
+          headers: { 'Authorization': `Bearer ${authToken}` },
+        });
+        const meta = await metaRes.json().catch(() => ({}));
+        if (!metaRes.ok) {
+          alert(meta.error || 'Sealed contract is not available for this policy yet.');
+          return;
+        }
+        const hint = meta.password_hint === 'last_4_digits_of_payment_card_on_file'
+          ? 'the last 4 digits of the payment card on file for this policy'
+          : (meta.password_hint || 'your payment card last 4');
+        if (!confirm(
+          `Download the sealed PHINS policy contract PDF?\n\n` +
+          `It is AES-256 encrypted. Open it with ${hint}.\n` +
+          `Integrity seal: ${(meta.integrity_hash || '').slice(0, 16)}…`
+        )) {
+          return;
+        }
+        const response = await fetch(`/api/policies/${encodeURIComponent(policyId)}/contract.pdf`, {
+          headers: { 'Authorization': `Bearer ${authToken}` },
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          alert(err.error || 'Failed to download sealed contract PDF.');
+          return;
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = meta.filename || `PHINS_Policy_${policyId}_Sealed.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error('Sealed contract download failed:', err);
+        alert('Failed to download sealed contract PDF.');
+      }
     }
     
     // Policy Modal Functions
