@@ -245,6 +245,19 @@ def _clamp(value: float, minimum: float, maximum: float) -> float:
     return max(minimum, min(maximum, value))
 
 
+def _next_config_version(current: Optional[str]) -> str:
+    """Forward-moving ``cfg_vN`` bump; tolerates legacy mangled labels.
+
+    ``cfg_v3`` → ``cfg_v4``. Labels like ``cfg_v1+1`` (produced by an older
+    bump bug) resolve their leading counter and continue cleanly (→ ``cfg_v2``).
+    """
+    label = str(current or 'cfg_v1')
+    match = re.match(r'^cfg_v(\d+)', label)
+    if match:
+        return f'cfg_v{int(match.group(1)) + 1}'
+    return f'{label}+1'
+
+
 def _summarize_age_band_rates(table: List[Dict[str, Any]], age_min: int, age_max: int) -> Dict[str, float]:
     """Summarize a rate table over the requested age band."""
     if age_max <= age_min:
@@ -889,14 +902,7 @@ class ActuarialTablesStore:
             )
 
         # Bump config revision so priced policies can pin dashboard saves.
-        try:
-            ver = str(self.config.config_version or 'cfg_v1')
-            if ver.startswith('cfg_v') and ver[4:].isdigit():
-                self.config.config_version = f'cfg_v{int(ver[4:]) + 1}'
-            else:
-                self.config.config_version = f'{ver}+1'
-        except Exception:
-            self.config.config_version = 'cfg_v2'
+        self.config.config_version = _next_config_version(self.config.config_version)
 
         self.config.last_modified = datetime.now().isoformat()
         self.config.modified_by = user
@@ -1368,16 +1374,9 @@ class ActuarialTablesStore:
         kwargs = {k: v for k, v in cfg_data.items() if k in fields}
 
         old_config = asdict(self.config)
-        current_version_label = str(self.config.config_version or 'cfg_v1')
         restored = UnderwritingConfig(**kwargs)
         # Forward-moving revision: never reuse an old version label.
-        try:
-            if current_version_label.startswith('cfg_v') and current_version_label[4:].isdigit():
-                restored.config_version = f'cfg_v{int(current_version_label[4:]) + 1}'
-            else:
-                restored.config_version = f'{current_version_label}+1'
-        except Exception:
-            restored.config_version = f'{current_version_label}+1'
+        restored.config_version = _next_config_version(self.config.config_version)
         restored.last_modified = datetime.now().isoformat()
         restored.modified_by = user
         self.config = restored
