@@ -742,7 +742,13 @@ class DocumentProcessingService:
             if mime.startswith('text/') or ext in ('.csv', '.txt', '.json', '.xml', '.html', '.htm'):
                 result['text'] = self._extract_text_content(raw, mime, ext)
             elif mime == 'application/pdf' or ext == '.pdf':
-                result['text'] = self._extract_pdf_text(raw, lang_hint=name_hint or None)
+                pdf_text, pdf_pages = self._extract_pdf_text_with_pages(
+                    raw, lang_hint=name_hint or None)
+                result['text'] = pdf_text
+                if pdf_pages:
+                    result.setdefault('metadata', {})['pages'] = pdf_pages
+            elif ext == '.docx':
+                result['text'] = self._extract_docx_text(raw)
             elif ext in ('.xls', '.xlsx'):
                 result['text'] = self._extract_spreadsheet_summary(raw, ext)
         except Exception as e:
@@ -831,6 +837,8 @@ class DocumentProcessingService:
             text = self._extract_pdf_text(raw)
         elif mime.startswith('text/') or ext in ('.csv', '.txt', '.json', '.xml', '.html', '.htm'):
             text = self._extract_text_content(raw, mime, ext)
+        elif ext == '.docx':
+            text = self._extract_docx_text(raw)
         elif ext in ('.xls', '.xlsx'):
             text = self._extract_spreadsheet_summary(raw, ext)
         return {'text': text, 'length': len(text)}
@@ -1085,23 +1093,28 @@ class DocumentProcessingService:
             return ''
 
     def _ocr_pdf_pages(self, raw: bytes, *, lang_hint: Optional[str] = None) -> str:
-        """Rasterise each page of a scanned PDF and OCR it.
+        """Rasterise each page of a scanned PDF and OCR it (joined text)."""
+        return '\n\n'.join(self._ocr_pdf_page_chunks(raw, lang_hint=lang_hint)).strip()
+
+    def _ocr_pdf_page_chunks(self, raw: bytes, *, lang_hint: Optional[str] = None) -> List[str]:
+        """Rasterise each page of a scanned PDF and OCR it, one chunk per page.
 
         Capped at ``PHINS_OCR_MAX_PDF_PAGES`` pages so a 100-page
-        scanned document can't blow the request budget. Returns ''
+        scanned document can't blow the request budget. Returns []
         if pdf2image / poppler / tesseract aren't all available.
+        Empty pages are kept as '' so chunk index == page number - 1.
         """
         try:
             from pdf2image import convert_from_bytes  # type: ignore
             import pytesseract  # type: ignore
         except ImportError:
-            return ''
+            return []
         try:
             pages = convert_from_bytes(raw, dpi=self._OCR_DPI,
                                        first_page=1, last_page=self._OCR_MAX_PDF_PAGES)
         except Exception as exc:
             logger.debug('pdf2image rasterisation failed: %s', exc)
-            return ''
+            return []
         ocr_langs = self._ocr_langs_for_hint(lang_hint)
         chunks = []
         for page_img in pages:
@@ -1109,13 +1122,22 @@ class DocumentProcessingService:
                 if page_img.mode not in ('RGB', 'L'):
                     page_img = page_img.convert('RGB')
                 page_text = pytesseract.image_to_string(page_img, lang=ocr_langs)
-                if page_text:
-                    chunks.append(page_text.strip())
+                chunks.append((page_text or '').strip())
             except Exception as exc:
                 logger.debug('OCR page failed: %s', exc)
-        return '\n\n'.join(chunks).strip()
+                chunks.append('')
+        if not any(chunks):
+            return []
+        return chunks
 
     def _extract_pdf_text(self, raw: bytes, *, lang_hint: Optional[str] = None) -> str:
+        """Extract text from a PDF (see :meth:`_extract_pdf_text_with_pages`)."""
+        text, _pages = self._extract_pdf_text_with_pages(raw, lang_hint=lang_hint)
+        return text
+
+    def _extract_pdf_text_with_pages(
+        self, raw: bytes, *, lang_hint: Optional[str] = None,
+    ) -> Tuple[str, List[Dict[str, int]]]:
         """Extract text from a PDF, escalating from cheapest to most powerful.
 
         Order:
@@ -1125,11 +1147,34 @@ class DocumentProcessingService:
           3. **OCR via pdf2image + tesseract** for scanned PDFs (slow
              but extracts text from images embedded inside the PDF).
 
-        Returns '' or an explanatory marker when nothing could be
-        extracted; the assessment center detects that and surfaces
-        an extraction_hint fact so the user knows OCR is needed.
+        Returns ``(text, pages)`` where ``pages`` maps 1-based page numbers to
+        character offsets in the returned text
+        (``[{'page': 1, 'char_start': 0, 'char_end': 1234}, ...]``) so
+        downstream evidence extraction can cite the exact source page.
+        ``pages`` is empty when per-page boundaries are unknown (regex path).
+        The text is an explanatory marker when nothing could be extracted;
+        the assessment center detects that and surfaces an extraction_hint
+        fact so the user knows OCR is needed.
         """
         text = ''
+        page_offsets: List[Dict[str, int]] = []
+
+        def _join_with_offsets(chunks: List[str], separator: str) -> Tuple[str, List[Dict[str, int]]]:
+            joined_parts: List[str] = []
+            offsets: List[Dict[str, int]] = []
+            cursor = 0
+            for index, chunk in enumerate(chunks):
+                if index:
+                    cursor += len(separator)
+                offsets.append({
+                    'page': index + 1,
+                    'char_start': cursor,
+                    'char_end': cursor + len(chunk),
+                })
+                joined_parts.append(chunk)
+                cursor += len(chunk)
+            return separator.join(joined_parts), offsets
+
         try:
             from pypdf import PdfReader  # type: ignore
             from pypdf.errors import PdfReadError  # type: ignore
@@ -1147,9 +1192,12 @@ class DocumentProcessingService:
                         page_text = page.extract_text() or ''
                     except Exception:
                         page_text = ''
-                    if page_text:
-                        pages_text.append(page_text)
-                text = '\n'.join(pages_text).strip()
+                    # Keep empty pages in the list so page numbers stay true.
+                    pages_text.append(page_text)
+                text, page_offsets = _join_with_offsets(pages_text, '\n')
+                text = text.strip() and text or ''
+                if not text:
+                    page_offsets = []
             except PdfReadError:
                 text = ''
             except Exception as exc:
@@ -1169,6 +1217,7 @@ class DocumentProcessingService:
                 regex_text = ' '.join(parts)
                 if self._has_meaningful_text(regex_text):
                     text = regex_text
+                    page_offsets = []
             except Exception:
                 pass
 
@@ -1176,13 +1225,62 @@ class DocumentProcessingService:
             # Prefer any partial Hebrew from the weak text layer / filename so
             # Tesseract loads heb as the primary script for IL scans.
             ocr_hint = lang_hint or text or None
-            ocr_text = self._ocr_pdf_pages(raw, lang_hint=ocr_hint)
-            if ocr_text:
-                text = ocr_text
+            ocr_chunks = self._ocr_pdf_page_chunks(raw, lang_hint=ocr_hint)
+            if ocr_chunks:
+                text, page_offsets = _join_with_offsets(ocr_chunks, '\n\n')
 
         if not text:
-            return '[PDF content - extraction yielded no text; image-only or encrypted]'
-        return text[:200_000]
+            return '[PDF content - extraction yielded no text; image-only or encrypted]', []
+        if len(text) > 200_000:
+            text = text[:200_000]
+            page_offsets = [
+                {**p, 'char_end': min(p['char_end'], len(text))}
+                for p in page_offsets if p['char_start'] < len(text)
+            ]
+        return text, page_offsets
+
+    def _extract_docx_text(self, raw: bytes) -> str:
+        """Extract paragraph text from a DOCX (OOXML) file.
+
+        Stdlib-only: unzip ``word/document.xml`` and walk the WordprocessingML
+        text nodes (``w:t``), inserting newlines at paragraph boundaries and
+        tabs/breaks where declared. Table cell text is included in document
+        order. Uses defusedxml when available to guard against XML bombs in
+        untrusted uploads. Returns '' when the file is not a valid DOCX.
+        """
+        import io as _io
+        import zipfile as _zip
+        try:
+            from defusedxml import ElementTree as _ET  # type: ignore
+        except ImportError:
+            import xml.etree.ElementTree as _ET  # type: ignore
+        try:
+            with _zip.ZipFile(_io.BytesIO(raw)) as zf:
+                with zf.open('word/document.xml') as fh:
+                    xml_data = fh.read()
+        except Exception as exc:
+            logger.debug('DOCX unzip failed: %s', exc)
+            return ''
+        ns = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+        try:
+            root = _ET.fromstring(xml_data)
+        except Exception as exc:
+            logger.debug('DOCX XML parse failed: %s', exc)
+            return ''
+        paragraphs: List[str] = []
+        for para in root.iter(f'{ns}p'):
+            parts: List[str] = []
+            for node in para.iter():
+                if node.tag == f'{ns}t' and node.text:
+                    parts.append(node.text)
+                elif node.tag == f'{ns}tab':
+                    parts.append('\t')
+                elif node.tag == f'{ns}br':
+                    parts.append('\n')
+            line = ''.join(parts)
+            if line.strip():
+                paragraphs.append(line)
+        return '\n'.join(paragraphs)[:200_000]
 
     def _extract_zip_contents(self, raw: bytes) -> str:
         """Concatenate text from every supported file inside a ZIP.
@@ -1232,6 +1330,8 @@ class DocumentProcessingService:
         mime = mimetypes.guess_type(name)[0] or ''
         if ext == '.pdf' or mime == 'application/pdf':
             return self._extract_pdf_text(raw, lang_hint=name)
+        if ext == '.docx':
+            return self._extract_docx_text(raw)
         if ext in ('.xls', '.xlsx'):
             return self._extract_spreadsheet_summary(raw, ext)
         if ext in ('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'):
