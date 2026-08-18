@@ -11156,6 +11156,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           ['Pending Manual', auto.pending_manual],
           ['Governance Captured At', vg.generated_at],
         ]));
+      } else {
+        sections.push(section('Actuarial Version Governance (K.0)', ['Field', 'Value'], [
+          ['Status', 'Version governance not bound — the live version-insights API was not reachable when this report was built.'],
+        ]));
       }
       sections.push(section('Cap Table', ['#', 'Name', 'Type', 'PctEquity', 'Voting', 'Notes'], p.capRows.map((r, ix) => [ix + 1, r.name, r.type, r.pct, r.voting ? 'Yes' : 'No', r.notes])));
       sections.push(section('Debt Schedule', ['#', 'Name', 'Type', 'Principal', 'PctOfDebt', 'CouponPct', 'Maturity'], p.debtRows.map((r, ix) => [ix + 1, r.name, r.type, r.principal, p.debtTotalPrincipal > 0 ? ((r.principal / p.debtTotalPrincipal) * 100).toFixed(4) : '0', r.coupon, r.maturity])));
@@ -11686,9 +11690,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // Section K
       const vgPdf = p.statements.version_governance;
       const gov = p.statements.governance;
-      if (vgPdf || gov) {
-        sectionHeading('Section K — Governance: Actuarial Versions, Automated Issuance, ESG & Legal');
-      }
+      sectionHeading('Section K — Governance: Actuarial Versions, Automated Issuance, ESG & Legal');
       if (vgPdf) {
         const adoption = vgPdf.adoption || {};
         const auto = vgPdf.auto_issuance || {};
@@ -11709,6 +11711,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         doc.autoTable(tableOpts(['Disclosure', 'Value'], vgRows, { columnStyles: { 1: { halign: 'right' } } }));
         afterTable();
         embedChart('annual-chart-version-adoption', 'Policy adoption by actuarial tables version (K.0)', 200);
+      } else {
+        subHeading('K.0 Actuarial version governance & automated issuance');
+        paragraph('Version governance not bound — the live version-insights API was not reachable when this report was built.');
       }
       if (gov) {
         subHeading('K.1 Board & committees'); paragraph(gov.board);
