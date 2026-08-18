@@ -30782,8 +30782,6 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Inquiry not found'}).encode('utf-8'))
                     return
                 now_iso = datetime.now().isoformat()
-                record['status'] = new_status
-                record['updated_at'] = now_iso
                 history_entry = {
                     'status': new_status,
                     'changed_at': now_iso,
@@ -30791,17 +30789,23 @@ For claims or questions, please contact:
                 }
                 if note:
                     history_entry['note'] = note
-                record.setdefault('status_history', []).append(history_entry)
-                if not _persist_business_inquiry(inquiry_id, record):
-                    # Roll the cache back to the durable snapshot so a failed
-                    # write cannot leave this instance ahead of the database.
-                    _hydrate_business_inquiries(force=True)
+                # Build the mutated record without touching the cached object so a
+                # failed persist cannot leave this instance ahead of the database
+                # — the cache is only advanced after a durable write, mirroring the
+                # public intake path (hydrate fails soft when the DB is down and
+                # therefore cannot be relied on to roll back).
+                updated_record = dict(record)
+                updated_record['status'] = new_status
+                updated_record['updated_at'] = now_iso
+                updated_record['status_history'] = list(record.get('status_history') or []) + [history_entry]
+                if not _persist_business_inquiry(inquiry_id, updated_record):
                     self._set_json_headers(503)
                     self.wfile.write(json.dumps({
                         'error': 'Unable to save inquiry status. Please try again.',
                     }).encode('utf-8'))
                     return
-                response_record = dict(record)
+                BUSINESS_INQUIRIES[inquiry_id] = updated_record
+                response_record = dict(updated_record)
 
             self._set_json_headers(200)
             self.wfile.write(json.dumps({'success': True, 'inquiry': response_record}).encode('utf-8'))
