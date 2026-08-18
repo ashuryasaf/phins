@@ -263,9 +263,17 @@ oversized/invalid MIME, duplicate queue delivery).
 
 ## Cost model (decision inputs)
 
-Assumptions for sizing: 100,000 customers × 2 assessments × 10 documents avg
-= **2M documents lifetime**, bursty. Unit prices below are *indicative
-mid-2026 list prices* — the system stores them as configurable env values and
+Baseline sizing scenario: 100,000 customers × 2 assessments × 10 documents
+avg = **2M documents lifetime**, bursty. The 1–3 assessments/customer figure
+from the external spec is an *estimate, not a design cap* — customers with
+claims events, periodic service reviews, portfolio changes, or repeated
+Mislaka refreshes can generate many more. Nothing in the architecture limits
+assessment count (facts and `assessment_records` are append-only; the queue
+is unbounded), and **all costs below scale linearly per assessment**, so a
+customer with 10 assessments simply costs ~5× the baseline customer. Budget
+from measured assessment volume via `ai_usage_records` aggregation once live,
+not from the lifecycle estimate. Unit prices below are *indicative mid-2026
+list prices* — the system stores them as configurable env values and
 snapshots the price on every usage row.
 
 | Operation | Provider class | Indicative unit price | Cost per 1,000 assessments (10 docs, ~8 pages each) |
