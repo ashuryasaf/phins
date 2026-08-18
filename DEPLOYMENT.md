@@ -195,6 +195,33 @@ PORT = int(os.environ.get('PORT', 8000))
 
 Then set `PORT` environment variable in your hosting platform.
 
+### Document intelligence pipeline environment variables
+
+The document/assessment pipeline is fully functional with **no configuration**
+(synchronous processing, self-hosted OCR, deterministic offline assessments).
+The variables below opt in to async processing, external transcription, and
+advisory LLM features:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PHINS_DOC_ASYNC` | `false` | Uploads enqueue enrichment jobs instead of parsing inline; worker threads run inside the web process |
+| `PHINS_DOC_WORKER_CONCURRENCY` | `2` | Worker threads draining `document_processing_jobs` |
+| `PHINS_DOC_WORKER_POLL_INTERVAL` | `2.0` | Seconds between queue polls |
+| `PHINS_DOC_RETRY_SCHEDULE` | `30,120,600` | Retry backoff seconds; exhausted jobs go to `dead_letter` |
+| `PHINS_DOC_CLAIM_TIMEOUT` | `600` | Claim expiry (crashed-worker recovery) |
+| `PHINS_TRANSCRIPTION_PROVIDER` | `disabled` | `openai_compatible` enables Whisper-style audio transcription |
+| `PHINS_TRANSCRIPTION_ENDPOINT` / `_API_KEY` / `_MODEL` | — | Transcription endpoint configuration |
+| `PHINS_ASSESSMENT_AI_ENABLED` / `_ENDPOINT` / `_API_KEY` / `_MODEL` | off | Advisory LLM (never decides; deterministic offline otherwise) |
+| `PHINS_LLM_ESCALATION_MODEL` | — | Stronger model used when facts contain contradictions |
+| `PHINS_AI_ACCEPT_THRESHOLD` / `PHINS_AI_REVIEW_THRESHOLD` | `0.90` / `0.70` | Confidence → accepted / flagged / needs_review |
+| `PHINS_AI_PRICE_INPUT_PER_MTOK`, `PHINS_AI_PRICE_OUTPUT_PER_MTOK`, `PHINS_AI_PRICE_PARSE_PER_PAGE`, `PHINS_AI_PRICE_TRANSCRIPTION_PER_MIN` | `0` | Cost-accounting unit prices (snapshotted per usage row; never hard-coded) |
+
+Operational surfaces: `GET /api/health` includes `document_processing.queue`
+depth; staff can inspect jobs via `GET /api/doc-service/jobs`, requeue
+dead-letter jobs via `POST /api/doc-service/jobs/requeue`, and review costs
+via `GET /api/ai-usage/summary`. For scale-out, run a dedicated worker
+service with `./scripts/entrypoint.sh worker` (requires `USE_DATABASE=true`).
+
 ### Alpaca Trading Terminal environment variables
 
 To enable the live trading terminal with Alpaca Markets, set these environment
