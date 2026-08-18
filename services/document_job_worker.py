@@ -114,7 +114,7 @@ class DocumentJobWorker:
         """
         if not document_id or not job_type:
             raise ValueError('document_id and job_type are required')
-        resolved_max = max_attempts or (len(self.retry_schedule))
+        resolved_max = max_attempts or (len(self.retry_schedule) + 1)
 
         if idempotency_key:
             existing = self._find_by_idempotency_key(idempotency_key)
@@ -217,7 +217,7 @@ class DocumentJobWorker:
         document_id = job['document_id']
         job_type = job['job_type']
         attempts = int(job.get('attempts') or 0) + 1
-        max_attempts = int(job.get('max_attempts') or len(self.retry_schedule))
+        max_attempts = int(job.get('max_attempts') or (len(self.retry_schedule) + 1))
         start = time.time()
 
         self._emit('DOCUMENT_PROCESSING_STARTED', document_id,

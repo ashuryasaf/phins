@@ -2250,6 +2250,12 @@ class AssessmentCenterService:
                     source=raw.get("source", "imported"),
                     metadata=raw.get("metadata") or {},
                     captured_at=raw.get("captured_at") or datetime.utcnow().isoformat() + "Z",
+                    source_text=raw.get("source_text"),
+                    char_start=raw.get("char_start"),
+                    char_end=raw.get("char_end"),
+                    page=raw.get("page"),
+                    timestamp_start=raw.get("timestamp_start"),
+                    timestamp_end=raw.get("timestamp_end"),
                 ))
             except Exception as exc:
                 logger.warning("Skipping invalid fact in pack import: %s", exc)
