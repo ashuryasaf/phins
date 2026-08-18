@@ -2328,19 +2328,26 @@ class AssessmentCenterService:
                 if callable(zip_helper):
                     return (zip_helper(raw_bytes) or "")[:MAX_TEXT_SCAN]
                 return ""
+            if mime.startswith("audio/") or mime.startswith("video/"):
+                # Media text comes from the enrichment pipeline (transcript /
+                # keyframe OCR) via the stored extracted_text handled above.
+                # Never mine raw media bytes as if they were text.
+                return ""
             return raw_bytes.decode("utf-8", errors="replace")[:MAX_TEXT_SCAN]
         except Exception:
             return ""
 
     @staticmethod
     def _page_map_for_record(record: Dict[str, Any], text: str) -> Optional[List[Dict[str, int]]]:
-        """Return the stored per-page char-offset map when it matches ``text``.
+        """Return the stored provenance map (pages and/or transcript
+        segments) when it matches ``text``.
 
         The document service stores ``pages`` (1-based page number + char
-        offsets) in ``extracted_metadata`` during enrichment. The map is only
-        valid when fact mining runs over that same stored text — when the
-        assessment center re-extracted from raw bytes the offsets may differ,
-        so provenance falls back to offsets/snippets without page numbers.
+        offsets) and ``transcript.segments`` (timestamps + char offsets) in
+        ``extracted_metadata`` during enrichment. The map is only valid when
+        fact mining runs over that same stored text — when the assessment
+        center re-extracted from raw bytes the offsets may differ, so
+        provenance falls back to offsets/snippets without page/timestamp.
         """
         stored_text = record.get("extracted_text") or ""
         if not stored_text or text != stored_text[:MAX_TEXT_SCAN]:
@@ -2353,10 +2360,16 @@ class AssessmentCenterService:
                 return None
         if not isinstance(raw_meta, dict):
             return None
+        entries: List[Dict[str, Any]] = []
         pages = raw_meta.get("pages")
-        if isinstance(pages, list) and pages:
-            return pages
-        return None
+        if isinstance(pages, list):
+            entries.extend(p for p in pages if isinstance(p, dict))
+        transcript = raw_meta.get("transcript")
+        if isinstance(transcript, dict):
+            for seg in transcript.get("segments") or []:
+                if isinstance(seg, dict) and seg.get("char_start") is not None:
+                    entries.append(seg)
+        return entries or None
 
     # ── Cross-document contradiction detection ────────────────────────────
 
@@ -3076,10 +3089,15 @@ def _attach_provenance(
     snippet = " ".join(text[snippet_start:snippet_end].split())
     fact.source_text = snippet[:_PROVENANCE_SNIPPET_MAX] or None
     if page_map:
-        for page_entry in page_map:
+        for map_entry in page_map:
             try:
-                if page_entry.get("char_start", 0) <= start < page_entry.get("char_end", 0):
-                    fact.page = int(page_entry.get("page"))
+                if map_entry.get("char_start", 0) <= start < map_entry.get("char_end", 0):
+                    if map_entry.get("page") is not None:
+                        fact.page = int(map_entry["page"])
+                    if map_entry.get("timestamp_start") is not None:
+                        fact.timestamp_start = float(map_entry["timestamp_start"])
+                    if map_entry.get("timestamp_end") is not None:
+                        fact.timestamp_end = float(map_entry["timestamp_end"])
                     break
             except (TypeError, ValueError):
                 continue

@@ -776,6 +776,12 @@ class DocumentProcessingService:
                 result['text'] = self._extract_docx_text(raw)
             elif ext in ('.xls', '.xlsx'):
                 result['text'] = self._extract_spreadsheet_summary(raw, ext)
+            elif mime.startswith('audio/'):
+                analysis = self._analyze_audio(raw, mime)
+                self._merge_media_analysis(result, analysis)
+            elif mime.startswith('video/'):
+                analysis = self._analyze_video(raw, mime)
+                self._merge_media_analysis(result, analysis)
         except Exception as e:
             logger.error(f"Text extraction failed for {doc_id}: {e}")
 
@@ -787,6 +793,45 @@ class DocumentProcessingService:
             logger.error(f"AI enrichment failed for {doc_id}: {e}")
 
         return result
+
+    @staticmethod
+    def _merge_media_analysis(result: Dict[str, Any], analysis: Dict[str, Any]) -> None:
+        """Fold audio/video analysis into the enrichment result, building a
+        char-offset segment map so mined facts can cite timestamps."""
+        text = analysis.get('text') or ''
+        if text:
+            result['text'] = text
+        transcript = analysis.get('transcript')
+        if not transcript:
+            return
+        meta = result.setdefault('metadata', {})
+        segments_with_offsets = []
+        cursor = 0
+        transcript_text = transcript.get('text', '')
+        for seg in transcript.get('segments') or []:
+            seg_text = seg.get('text', '')
+            if not seg_text:
+                continue
+            idx = transcript_text.find(seg_text, cursor)
+            if idx < 0:
+                idx = transcript_text.find(seg_text)
+            entry = {
+                'timestamp_start': seg.get('start'),
+                'timestamp_end': seg.get('end'),
+                'text': seg_text,
+            }
+            if idx >= 0:
+                entry['char_start'] = idx
+                entry['char_end'] = idx + len(seg_text)
+                cursor = idx + len(seg_text)
+            segments_with_offsets.append(entry)
+        meta['transcript'] = {
+            'language': transcript.get('language'),
+            'provider': transcript.get('provider'),
+            'model': transcript.get('model'),
+            'duration_seconds': transcript.get('duration_seconds'),
+            'segments': segments_with_offsets,
+        }
 
     def _run_job(self, doc_id: str, job_type: str, raw: bytes, mime: str, ext: str) -> ProcessingResult:
         job_id = f"JOB-{uuid.uuid4().hex[:12].upper()}"
@@ -1530,20 +1575,173 @@ class DocumentProcessingService:
         return result
 
     def _analyze_audio(self, raw: bytes, mime: str) -> Dict[str, Any]:
-        return {
+        """Transcribe audio through the configured provider.
+
+        Falls back to the informational stub when no provider is configured
+        (``PHINS_TRANSCRIPTION_PROVIDER=disabled``, the default) so existing
+        deployments keep their current behaviour until an operator opts in.
+        """
+        base = {
             'type': 'audio_analysis',
             'file_size': len(raw),
             'estimated_duration_seconds': max(1, len(raw) // (16 * 1024)),
-            'note': 'Audio transcription requires external ASR service integration',
         }
+        transcript = self._transcribe_media(raw, mime, default_ext='.mp3')
+        if transcript is None:
+            base['note'] = 'Audio transcription requires external ASR service integration'
+            return base
+        base['transcript'] = transcript
+        base['text'] = transcript.get('text', '')
+        base['language'] = transcript.get('language')
+        if transcript.get('duration_seconds'):
+            base['estimated_duration_seconds'] = transcript['duration_seconds']
+        return base
 
     def _analyze_video(self, raw: bytes, mime: str) -> Dict[str, Any]:
-        return {
+        """Extract intelligence from video without sending raw video to LLMs.
+
+        Cost-controlled pipeline (spec §10): the audio track is extracted with
+        ffmpeg and transcribed; sampled keyframes are OCR'd for visible text
+        (documents shown on screen, screen recordings). Degrades gracefully to
+        the informational stub when ffmpeg or the transcription provider is
+        unavailable.
+        """
+        base = {
             'type': 'video_analysis',
             'file_size': len(raw),
             'estimated_duration_seconds': max(1, len(raw) // (500 * 1024)),
-            'note': 'Full video analysis requires external CV service integration',
         }
+        audio_bytes = self._ffmpeg_extract_audio(raw)
+        transcript = None
+        if audio_bytes:
+            transcript = self._transcribe_media(audio_bytes, 'audio/mpeg',
+                                                default_ext='.mp3')
+        if transcript is not None:
+            base['transcript'] = transcript
+            base['language'] = transcript.get('language')
+            if transcript.get('duration_seconds'):
+                base['estimated_duration_seconds'] = transcript['duration_seconds']
+
+        keyframe_text = self._ffmpeg_keyframe_ocr(raw)
+        if keyframe_text:
+            base['visible_text'] = keyframe_text
+
+        combined = '\n'.join(filter(None, [
+            (transcript or {}).get('text', ''),
+            keyframe_text,
+        ])).strip()
+        if combined:
+            base['text'] = combined
+        else:
+            base['note'] = ('Video analysis limited: install ffmpeg and '
+                            'configure PHINS_TRANSCRIPTION_PROVIDER for '
+                            'spoken/visible-text extraction')
+        return base
+
+    def _transcribe_media(self, raw: bytes, mime: str, *,
+                          default_ext: str = '.mp3') -> Optional[Dict[str, Any]]:
+        """Best-effort transcription; None when no provider is configured or
+        the provider call fails (callers keep their stub behaviour)."""
+        try:
+            from services.transcription_providers import (
+                TranscriptionUnavailableError,
+                get_transcription_provider,
+            )
+        except ImportError:
+            return None
+        try:
+            return get_transcription_provider().transcribe(
+                raw, file_name=f'media{default_ext}', mime_type=mime)
+        except TranscriptionUnavailableError:
+            return None
+        except Exception as exc:
+            logger.warning('Transcription failed (non-fatal): %s', exc)
+            return None
+
+    # Video helpers: ffmpeg is optional; every path degrades to ''/None.
+
+    _VIDEO_MAX_BYTES = int(os.environ.get('PHINS_VIDEO_MAX_ANALYSIS_BYTES',
+                                          200 * 1024 * 1024))
+    _VIDEO_KEYFRAME_COUNT = int(os.environ.get('PHINS_VIDEO_KEYFRAMES', '6'))
+
+    @staticmethod
+    def _ffmpeg_available() -> bool:
+        return shutil.which('ffmpeg') is not None
+
+    def _ffmpeg_extract_audio(self, raw: bytes) -> Optional[bytes]:
+        """Extract the audio track as MP3 via ffmpeg; None when unavailable."""
+        if not raw or len(raw) > self._VIDEO_MAX_BYTES or not self._ffmpeg_available():
+            return None
+        import subprocess
+        src = dst = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.video', delete=False) as f:
+                f.write(raw)
+                src = f.name
+            dst = src + '.mp3'
+            result = subprocess.run(
+                ['ffmpeg', '-y', '-i', src, '-vn', '-acodec', 'libmp3lame',
+                 '-b:a', '64k', dst],
+                capture_output=True, timeout=300,
+            )
+            if result.returncode != 0 or not os.path.exists(dst):
+                return None
+            with open(dst, 'rb') as f:
+                return f.read()
+        except Exception as exc:
+            logger.debug('ffmpeg audio extraction failed: %s', exc)
+            return None
+        finally:
+            for path in (src, dst):
+                if path and os.path.exists(path):
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
+
+    def _ffmpeg_keyframe_ocr(self, raw: bytes) -> str:
+        """Sample keyframes and OCR them for visible text; '' when unavailable."""
+        if not raw or len(raw) > self._VIDEO_MAX_BYTES or not self._ffmpeg_available():
+            return ''
+        import subprocess
+        src = None
+        frames_dir = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.video', delete=False) as f:
+                f.write(raw)
+                src = f.name
+            frames_dir = tempfile.mkdtemp(prefix='phins_frames_')
+            result = subprocess.run(
+                ['ffmpeg', '-y', '-i', src, '-vf',
+                 f"select='eq(pict_type\\,I)',scale=1280:-1",
+                 '-vsync', 'vfr', '-frames:v', str(self._VIDEO_KEYFRAME_COUNT),
+                 os.path.join(frames_dir, 'frame_%03d.png')],
+                capture_output=True, timeout=300,
+            )
+            if result.returncode != 0:
+                return ''
+            chunks = []
+            for name in sorted(os.listdir(frames_dir)):
+                frame_path = os.path.join(frames_dir, name)
+                try:
+                    with open(frame_path, 'rb') as f:
+                        frame_text = self._ocr_image_bytes(f.read())
+                    if frame_text:
+                        chunks.append(frame_text)
+                except Exception:
+                    continue
+            return '\n'.join(dict.fromkeys(chunks))[:100_000]
+        except Exception as exc:
+            logger.debug('ffmpeg keyframe OCR failed: %s', exc)
+            return ''
+        finally:
+            if src and os.path.exists(src):
+                try:
+                    os.remove(src)
+                except OSError:
+                    pass
+            if frames_dir and os.path.isdir(frames_dir):
+                shutil.rmtree(frames_dir, ignore_errors=True)
 
     # ── AI enrichment ─────────────────────────────────────────────────────────
 

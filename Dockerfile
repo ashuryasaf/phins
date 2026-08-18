@@ -47,6 +47,9 @@ FROM python:3.12-slim AS runtime
 #   tesseract-ocr-heb - Hebrew language pack
 #   tesseract-ocr-ara - Arabic language pack
 #   poppler-utils     - PDF rasterisation backing pdf2image
+#   ffmpeg            - video audio-track extraction + keyframe sampling
+#                       (multimodal document pipeline; degrades gracefully
+#                       when absent)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         tesseract-ocr \
@@ -54,6 +57,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tesseract-ocr-heb \
         tesseract-ocr-ara \
         poppler-utils \
+        ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
