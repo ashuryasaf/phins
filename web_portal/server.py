@@ -8387,19 +8387,220 @@ def _hydrate_business_inquiries(force: bool = False) -> None:
         print(f"Warning: Could not hydrate business inquiries: {e}")
 
 
-def _persist_business_inquiry(inquiry_id: str, data: Dict[str, Any]) -> None:
-    """Write-through persist a single inquiry to the database (best-effort)."""
+def _persist_business_inquiry(inquiry_id: str, data: Dict[str, Any]) -> bool:
+    """Write-through persist a single inquiry to the database.
+
+    Returns True when the record is durable for the current runtime mode:
+    - DB disabled (pytest / in-memory): always True (the dict store is the store)
+    - DB enabled: True only when the upsert commits successfully
+    """
     if not _business_inquiry_db_enabled():
-        return
+        return True
     try:
         from database.manager import DatabaseManager
         db = DatabaseManager()
         try:
-            db.business_inquiries.upsert_from_dict(inquiry_id, dict(data))
+            return bool(db.business_inquiries.upsert_from_dict(inquiry_id, dict(data)))
         finally:
             db.close()
     except Exception as e:
         print(f"Warning: Could not persist business inquiry {inquiry_id}: {e}")
+        return False
+
+
+def _resolve_business_inquiry_notify_emails() -> List[str]:
+    """Resolve admin recipients for new business-relations inquiry alerts.
+
+    Priority:
+      1. ``PHINS_BUSINESS_INQUIRY_NOTIFY_EMAILS`` (comma-separated)
+      2. Admin users whose username/email looks like a real email address
+      3. ``EMAIL_REPLY_TO`` as a last-resort ops mailbox
+    """
+    recipients: List[str] = []
+    raw = str(os.environ.get('PHINS_BUSINESS_INQUIRY_NOTIFY_EMAILS') or '').strip()
+    if raw:
+        for part in raw.split(','):
+            candidate = sanitize_input(part, 254).lower()
+            if candidate and validate_email(candidate):
+                recipients.append(candidate)
+
+    if not recipients:
+        try:
+            for username, user in (USERS or {}).items():
+                if str((user or {}).get('role') or '').lower() != 'admin':
+                    continue
+                candidate = sanitize_input(
+                    str((user or {}).get('email') or username or ''), 254
+                ).lower()
+                if candidate and validate_email(candidate):
+                    recipients.append(candidate)
+        except Exception:
+            pass
+
+    if not recipients:
+        reply_to = sanitize_input(str(os.environ.get('EMAIL_REPLY_TO') or ''), 254).lower()
+        if reply_to and validate_email(reply_to):
+            recipients.append(reply_to)
+
+    # Preserve order, drop duplicates.
+    unique: List[str] = []
+    for email in recipients:
+        if email not in unique:
+            unique.append(email)
+    return unique
+
+
+def _format_business_inquiry_admin_email(record: Dict[str, Any]) -> Tuple[str, str, str]:
+    """Build subject + plain/HTML bodies for an admin inquiry alert."""
+    import html as _html
+
+    inquiry_type = str(record.get('inquiry_type') or 'contact').strip().lower()
+    type_label = 'Demo request' if inquiry_type == 'demo' else 'Business inquiry'
+    inquiry_id = str(record.get('id') or '')
+    name = str(record.get('name') or '')
+    email = str(record.get('email') or '')
+    organization = str(record.get('organization') or '') or '(not provided)'
+    audience = str(record.get('audience') or '')
+    interest = str(record.get('interest') or '')
+    message = str(record.get('message') or '') or '(no message)'
+    created_at = str(record.get('created_at') or '')
+    status = str(record.get('status') or 'new')
+
+    subject = f"PHINS Business Relations: new {type_label.lower()} — {audience}/{interest} ({inquiry_id})"
+    content = (
+        f"{type_label} received via the public solutions page.\n\n"
+        f"Inquiry ID: {inquiry_id}\n"
+        f"Type: {inquiry_type}\n"
+        f"Status: {status}\n"
+        f"Received: {created_at}\n\n"
+        f"Name: {name}\n"
+        f"Email: {email}\n"
+        f"Organization: {organization}\n"
+        f"Audience: {audience}\n"
+        f"Interest: {interest}\n\n"
+        f"Message:\n{message}\n\n"
+        f"Review and triage in the Admin Portal → Business Relations.\n"
+        f"Reply directly to the visitor at {email}."
+    )
+    # Escape visitor-controlled fields for HTML mail clients.
+    h = {k: _html.escape(v, quote=True) for k, v in {
+        'inquiry_id': inquiry_id,
+        'inquiry_type': inquiry_type,
+        'status': status,
+        'created_at': created_at,
+        'name': name,
+        'email': email,
+        'organization': organization,
+        'audience': audience,
+        'interest': interest,
+        'message': message,
+        'type_label': type_label,
+    }.items()}
+    html_content = (
+        f"<h2>PHINS Business Relations — {h['type_label']}</h2>"
+        f"<p>A new <strong>{h['inquiry_type']}</strong> submission was received from the "
+        f"public solutions page.</p>"
+        f"<table style='border-collapse:collapse;font-family:sans-serif;font-size:14px'>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Inquiry ID</td>"
+        f"<td><code>{h['inquiry_id']}</code></td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Type</td><td>{h['inquiry_type']}</td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Status</td><td>{h['status']}</td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Received</td><td>{h['created_at']}</td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Name</td><td>{h['name']}</td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Email</td><td>"
+        f"<a href='mailto:{h['email']}'>{h['email']}</a></td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Organization</td>"
+        f"<td>{h['organization']}</td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Audience</td><td>{h['audience']}</td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Interest</td><td>{h['interest']}</td></tr>"
+        f"</table>"
+        f"<h3 style='margin-top:16px'>Message</h3>"
+        f"<pre style='white-space:pre-wrap;font-family:sans-serif;background:#f7f7f7;"
+        f"padding:12px;border-radius:6px'>{h['message']}</pre>"
+        f"<p style='margin-top:16px;color:#555'>Review and triage in the Admin Portal → "
+        f"Business Relations. Reply directly to the visitor at "
+        f"<a href='mailto:{h['email']}'>{h['email']}</a>.</p>"
+    )
+    return subject, content, html_content
+
+
+def _notify_business_inquiry_received(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Email admins about a new contact/demo inquiry. Never raises to callers.
+
+    Persistence is the source of truth; email is best-effort so a flaky SMTP
+    provider cannot block public intake after a durable write.
+    """
+    result: Dict[str, Any] = {
+        'attempted': False,
+        'recipients': [],
+        'sent': [],
+        'failed': [],
+    }
+    try:
+        recipients = _resolve_business_inquiry_notify_emails()
+        result['recipients'] = list(recipients)
+        if not recipients:
+            print(
+                "[BUSINESS-RELATIONS] No admin notify recipients configured "
+                "(set PHINS_BUSINESS_INQUIRY_NOTIFY_EMAILS)."
+            )
+            return result
+
+        from services.notification_service import (
+            NotificationChannel,
+            NotificationPriority,
+            NotificationRequest,
+            get_notification_service,
+        )
+
+        subject, content, html_content = _format_business_inquiry_admin_email(record)
+        notification_service = get_notification_service()
+        result['attempted'] = True
+        metadata = {
+            'category': 'business_inquiry',
+            'event': 'inquiry_received',
+            'inquiry_id': record.get('id'),
+            'inquiry_type': record.get('inquiry_type'),
+            'audience': record.get('audience'),
+            'interest': record.get('interest'),
+            'visitor_email': record.get('email'),
+        }
+        for recipient in recipients:
+            try:
+                send_result = notification_service.send(NotificationRequest(
+                    channel=NotificationChannel.EMAIL,
+                    recipient=recipient,
+                    subject=subject,
+                    content=content,
+                    html_content=html_content,
+                    priority=NotificationPriority.HIGH,
+                    metadata=metadata,
+                ))
+                if getattr(send_result, 'success', False):
+                    result['sent'].append(recipient)
+                else:
+                    result['failed'].append({
+                        'recipient': recipient,
+                        'error': getattr(send_result, 'error_message', None) or 'send failed',
+                    })
+            except Exception as exc:
+                result['failed'].append({'recipient': recipient, 'error': str(exc)})
+
+        if result['sent']:
+            print(
+                f"[BUSINESS-RELATIONS] Admin alert sent for {record.get('id')} "
+                f"to {', '.join(result['sent'])}"
+            )
+        if result['failed']:
+            print(
+                f"[BUSINESS-RELATIONS] Admin alert partial/failed for {record.get('id')}: "
+                f"{result['failed']}"
+            )
+    except Exception as exc:
+        print(f"[BUSINESS-RELATIONS] Admin alert error: {exc}")
+        result['failed'].append({'recipient': None, 'error': str(exc)})
+    return result
+
 
 supply_chain_service = None
 supply_chain_enabled = False
@@ -30511,7 +30712,20 @@ For claims or questions, please contact:
                     ],
                 }
                 BUSINESS_INQUIRIES[inquiry_id] = record
-                _persist_business_inquiry(inquiry_id, record)
+                if not _persist_business_inquiry(inquiry_id, record):
+                    BUSINESS_INQUIRIES.pop(inquiry_id, None)
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'Unable to store your inquiry right now. Please try again shortly.',
+                    }).encode('utf-8'))
+                    return
+                notify_record = dict(record)
+
+            # Admin alert after durable write (best-effort; never block the 200).
+            try:
+                _notify_business_inquiry_received(notify_record)
+            except Exception as notify_exc:
+                print(f"[BUSINESS-RELATIONS] Admin notify raised: {notify_exc}")
 
             print(f"[BUSINESS-RELATIONS] New {inquiry_type} inquiry {inquiry_id} ({audience}/{interest})")
             self._set_json_headers(200)
@@ -30578,7 +30792,15 @@ For claims or questions, please contact:
                 if note:
                     history_entry['note'] = note
                 record.setdefault('status_history', []).append(history_entry)
-                _persist_business_inquiry(inquiry_id, record)
+                if not _persist_business_inquiry(inquiry_id, record):
+                    # Roll the cache back to the durable snapshot so a failed
+                    # write cannot leave this instance ahead of the database.
+                    _hydrate_business_inquiries(force=True)
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'Unable to save inquiry status. Please try again.',
+                    }).encode('utf-8'))
+                    return
                 response_record = dict(record)
 
             self._set_json_headers(200)
