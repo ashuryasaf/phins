@@ -391,3 +391,151 @@ def test_db_mode_status_update_persists(monkeypatch):
     match = [i for i in listed["items"] if i["id"] == inquiry_id]
     assert len(match) == 1
     assert match[0]["status"] == "qualified"
+
+
+# ---------------------------------------------------------------------------
+# Admin email alerts on new inquiry / demo request
+# ---------------------------------------------------------------------------
+def test_admin_email_sent_with_full_inquiry_details(monkeypatch):
+    """New non-duplicate inquiries must email configured admins with all fields."""
+    captured = []
+
+    class _FakeResult:
+        success = True
+        error_message = None
+
+        def to_dict(self):
+            return {"success": True}
+
+    class _FakeNotificationService:
+        def send(self, request):
+            captured.append(request)
+            return _FakeResult()
+
+    monkeypatch.setenv("PHINS_BUSINESS_INQUIRY_NOTIFY_EMAILS", "ops@phins.ai,relations@phins.ai")
+    monkeypatch.setattr(
+        portal,
+        "_resolve_business_inquiry_notify_emails",
+        lambda: ["ops@phins.ai", "relations@phins.ai"],
+    )
+    monkeypatch.setattr(
+        "services.notification_service.get_notification_service",
+        lambda: _FakeNotificationService(),
+    )
+
+    body, status = _post(
+        "/api/business/inquiries",
+        _valid_payload(
+            inquiry_type="demo",
+            email="alert.demo@example.com",
+            name="Alert Demo",
+            organization="Alert Org",
+            audience="investor",
+            interest="actuarial_investments",
+            message="Please schedule a platform demo for our investment committee.",
+        ),
+    )
+    assert status == 200, body
+    assert body.get("duplicate") is None
+    inquiry_id = body["inquiry"]["id"]
+
+    assert len(captured) == 2, f"expected 2 admin emails, got {len(captured)}"
+    recipients = {req.recipient for req in captured}
+    assert recipients == {"ops@phins.ai", "relations@phins.ai"}
+
+    sample = captured[0]
+    assert "Business Relations" in sample.subject
+    assert inquiry_id in sample.subject
+    assert "Alert Demo" in sample.content
+    assert "alert.demo@example.com" in sample.content
+    assert "Alert Org" in sample.content
+    assert "investor" in sample.content
+    assert "actuarial_investments" in sample.content
+    assert "investment committee" in sample.content
+    assert sample.html_content and inquiry_id in sample.html_content
+    assert sample.metadata.get("category") == "business_inquiry"
+    assert sample.metadata.get("inquiry_id") == inquiry_id
+    assert sample.metadata.get("inquiry_type") == "demo"
+
+
+def test_admin_email_not_sent_on_duplicate_inquiry(monkeypatch):
+    """Idempotent duplicates must not re-spam admins."""
+    calls = {"count": 0}
+
+    def _spy(record):
+        calls["count"] += 1
+        return {
+            "attempted": True,
+            "sent": ["ops@phins.ai"],
+            "failed": [],
+            "recipients": ["ops@phins.ai"],
+        }
+
+    monkeypatch.setattr(portal, "_notify_business_inquiry_received", _spy)
+
+    first, status = _post(
+        "/api/business/inquiries",
+        _valid_payload(email="dup.alert@example.com", interest="platform"),
+    )
+    assert status == 200
+    assert first.get("duplicate") is None
+    assert calls["count"] == 1
+
+    second, status = _post(
+        "/api/business/inquiries",
+        _valid_payload(
+            email="dup.alert@example.com",
+            interest="platform",
+            message="ping again",
+        ),
+    )
+    assert status == 200
+    assert second.get("duplicate") is True
+    assert calls["count"] == 1
+
+
+def test_resolve_business_inquiry_notify_emails_from_env(monkeypatch):
+    monkeypatch.setenv(
+        "PHINS_BUSINESS_INQUIRY_NOTIFY_EMAILS",
+        " Alpha@Phins.ai , bad-address, beta@phins.ai, alpha@phins.ai ",
+    )
+    emails = portal._resolve_business_inquiry_notify_emails()
+    assert emails == ["alpha@phins.ai", "beta@phins.ai"]
+
+
+def test_format_business_inquiry_admin_email_escapes_html():
+    subject, content, html = portal._format_business_inquiry_admin_email({
+        "id": "BRI-209901-SAFE0001",
+        "inquiry_type": "contact",
+        "name": "Eve <script>",
+        "email": "eve@example.com",
+        "organization": "Org & Co",
+        "audience": "partner",
+        "interest": "claims",
+        "message": "Hello <b>world</b>",
+        "status": "new",
+        "created_at": "2099-01-01T00:00:00",
+    })
+    assert "BRI-209901-SAFE0001" in subject
+    assert "Eve <script>" in content
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+    assert "Org &amp; Co" in html
+    assert "&lt;b&gt;world&lt;/b&gt;" in html
+
+
+def test_db_mode_persist_failure_rejects_public_submission(monkeypatch):
+    """When DB is the durable store, a failed write must not claim success."""
+    monkeypatch.setattr(portal, "USE_DATABASE", True)
+    monkeypatch.setattr(portal, "database_enabled", True)
+    monkeypatch.setattr(portal, "_persist_business_inquiry", lambda *_a, **_k: False)
+    monkeypatch.setattr(portal, "_hydrate_business_inquiries", lambda force=False: None)
+
+    before = len(portal.BUSINESS_INQUIRIES)
+    body, status = _post(
+        "/api/business/inquiries",
+        _valid_payload(email="fail.persist@example.com", interest="smart_contracts"),
+    )
+    assert status == 503
+    assert "error" in body
+    assert len(portal.BUSINESS_INQUIRIES) == before
