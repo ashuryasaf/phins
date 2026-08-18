@@ -222,6 +222,12 @@ dead-letter jobs via `POST /api/doc-service/jobs/requeue`, and review costs
 via `GET /api/ai-usage/summary`. For scale-out, run a dedicated worker
 service with `./scripts/entrypoint.sh worker` (requires `USE_DATABASE=true`).
 
+Video audio-track / keyframe enrichment needs `ffmpeg` on `PATH`. The default
+image does **not** install it (the Debian package blew Railway PR-preview
+build time past ~10 minutes). The pipeline degrades to a stub when ffmpeg is
+missing. To bake ffmpeg into a custom image, rebuild with
+`--build-arg INSTALL_FFMPEG=1` (or set that build argument in Railway).
+
 ### Alpaca Trading Terminal environment variables
 
 To enable the live trading terminal with Alpaca Markets, set these environment

@@ -47,9 +47,12 @@ FROM python:3.12-slim AS runtime
 #   tesseract-ocr-heb - Hebrew language pack
 #   tesseract-ocr-ara - Arabic language pack
 #   poppler-utils     - PDF rasterisation backing pdf2image
-#   ffmpeg            - video audio-track extraction + keyframe sampling
-#                       (multimodal document pipeline; degrades gracefully
-#                       when absent)
+#   ffmpeg            - NOT installed by default. The Debian package pulls a
+#                       large codec tree and exceeded Railway PR-preview
+#                       build timeouts (~10 min) on a cold cache. Video
+#                       enrichment already degrades when ffmpeg is absent
+#                       (see document_processing_service._ffmpeg_available).
+#                       Rebuild with --build-arg INSTALL_FFMPEG=1 to include it.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         tesseract-ocr \
@@ -57,8 +60,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tesseract-ocr-heb \
         tesseract-ocr-ara \
         poppler-utils \
-        ffmpeg \
     && rm -rf /var/lib/apt/lists/*
+
+ARG INSTALL_FFMPEG=0
+RUN if [ "$INSTALL_FFMPEG" = "1" ]; then \
+        apt-get update \
+        && apt-get install -y --no-install-recommends ffmpeg \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 WORKDIR /app
 
