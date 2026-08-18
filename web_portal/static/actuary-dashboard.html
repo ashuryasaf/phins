@@ -10751,6 +10751,11 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const el = document.getElementById(id);
       if (!el || typeof Chart === 'undefined') return null;
       try {
+        // Disable animation so the chart is fully drawn synchronously; the
+        // HTML/PDF exports snapshot canvases via toDataURL right after build,
+        // and the default 1000ms animation would otherwise embed blank frames.
+        config.options = config.options || {};
+        config.options.animation = false;
         const chart = new Chart(el, config);
         window._annualCharts = window._annualCharts || {};
         window._annualCharts[id] = chart;
@@ -11057,11 +11062,15 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     function annualEmbedChartSnapshots(bodyHtml) {
       // Swap live Chart.js canvases for PNG data-URLs so the offline HTML
       // filing keeps the same chart-beside-table duo layout as the preview.
+      // Unbound charts (never instantiated) cannot be snapshotted and would
+      // otherwise leave an empty visible box, so drop the wrap entirely. DOM
+      // fallbacks the preview substitutes for a missing chart (e.g. the B.4
+      // "No realized lifecycle yet" copy) carry no canvas and pass through.
       return bodyHtml.replace(
         /<div class="annual-chart-wrap"[^>]*>\s*<canvas[^>]*\bid="(annual-chart-[a-z0-9-]+)"[^>]*>\s*<\/canvas>\s*<\/div>/gi,
         (full, id) => {
           const snap = annualSnapshotChart(id);
-          if (!snap || !snap.dataUrl) return full;
+          if (!snap || !snap.dataUrl) return '';
           return `<div class="annual-chart-wrap"><img src="${snap.dataUrl}" alt="${id}" class="annual-chart-img"></div>`;
         }
       );
@@ -11084,7 +11093,12 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             </div>
           </div>
         </header>`;
-      let bodyHtml = annualEmbedChartSnapshots(annualReportHTML(p));
+      // Snapshot from the live preview DOM rather than a fresh annualReportHTML
+      // render so any chart wrap the preview replaced with a text fallback
+      // (e.g. the B.4 "No realized lifecycle yet" message) is carried into the
+      // export instead of a stale, snapshot-less canvas.
+      const previewEl = document.getElementById('annual-report-preview');
+      let bodyHtml = annualEmbedChartSnapshots(previewEl ? previewEl.innerHTML : annualReportHTML(p));
       const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${annualEsc(p.issuer.name)} — Annual Report FY${p.issuer.fy}</title>
         <meta name="phins-annual-report-export" content="unified-brand-v2">
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
