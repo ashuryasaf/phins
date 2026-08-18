@@ -141,6 +141,19 @@ class ProcessingJobType(str, Enum):
     INTEGRITY_CHECK = 'integrity_check'
     AI_SUMMARISATION = 'ai_summarisation'
     AI_TAGGING = 'ai_tagging'
+    # Full upload enrichment (metadata + text/OCR + summary/tags/confidence)
+    # run as a single queued unit by the async document worker.
+    DOCUMENT_ENRICHMENT = 'document_enrichment'
+
+
+def async_processing_enabled() -> bool:
+    """True when uploads should enqueue enrichment instead of running inline.
+
+    Controlled by ``PHINS_DOC_ASYNC``. Defaults to off so the synchronous
+    behaviour (and the pytest embedded-server semantics) is unchanged until
+    an operator opts in.
+    """
+    return str(os.environ.get('PHINS_DOC_ASYNC', '')).lower() in ('1', 'true', 'yes', 'y')
 
 
 # ── Data classes ──────────────────────────────────────────────────────────────
@@ -272,18 +285,12 @@ class DocumentProcessingService:
         self._persist_record(doc_record)
 
         extracted = {}
+        queued = False
         if not skip_processing and status == 'uploaded':
-            extracted = self._run_immediate_processing(doc_id, raw_bytes, resolved_mime, ext)
-            self._update_record(doc_id, {
-                'status': 'processed',
-                'processing_status': 'completed',
-                'extracted_metadata': json.dumps(extracted.get('metadata', {})),
-                'extracted_text': extracted.get('text', ''),
-                'ai_summary': extracted.get('summary', ''),
-                'ai_tags': json.dumps(extracted.get('tags', [])),
-                'confidence_score': extracted.get('confidence', None),
-                'processed_date': datetime.now(),
-            })
+            if async_processing_enabled():
+                queued = self._enqueue_enrichment(doc_id, sha256)
+            if not queued:
+                extracted = self._apply_enrichment(doc_id, raw_bytes, resolved_mime, ext)
 
         return UploadResult(
             document_id=doc_id,
@@ -295,8 +302,90 @@ class DocumentProcessingService:
             status='processed' if extracted else status,
             storage_path=storage_path,
             duplicate_of=duplicate_id,
-            metadata=extracted,
+            metadata={'queued': True} if queued else extracted,
         )
+
+    def _enqueue_enrichment(self, doc_id: str, sha256: str) -> bool:
+        """Queue the enrichment job for the async worker. Returns False on any
+        failure so the caller falls back to synchronous processing (a document
+        must never end up unprocessed just because the queue was unavailable)."""
+        try:
+            from services.document_job_worker import get_document_job_worker
+            worker = get_document_job_worker(doc_service=self, db_manager=self.db_manager)
+            worker.enqueue(
+                document_id=doc_id,
+                job_type=ProcessingJobType.DOCUMENT_ENRICHMENT.value,
+                idempotency_key=f"{sha256}:{ProcessingJobType.DOCUMENT_ENRICHMENT.value}",
+            )
+            self._update_record(doc_id, {'processing_status': 'queued'})
+            return True
+        except Exception as exc:
+            logger.error(f"Enqueue failed for {doc_id}, falling back to sync: {exc}")
+            return False
+
+    def _apply_enrichment(self, doc_id: str, raw_bytes: bytes, mime: str, ext: str) -> Dict[str, Any]:
+        """Run full enrichment and persist the results onto the document row."""
+        extracted = self._run_immediate_processing(doc_id, raw_bytes, mime, ext)
+        self._update_record(doc_id, {
+            'status': 'processed',
+            'processing_status': 'completed',
+            'extracted_metadata': json.dumps(extracted.get('metadata', {})),
+            'extracted_text': extracted.get('text', ''),
+            'ai_summary': extracted.get('summary', ''),
+            'ai_tags': json.dumps(extracted.get('tags', [])),
+            'confidence_score': extracted.get('confidence', None),
+            'processed_date': datetime.now(),
+        })
+        return extracted
+
+    def run_enrichment(self, doc_id: str) -> Dict[str, Any]:
+        """Load a stored document and run the full enrichment pipeline.
+
+        Used by the async worker; idempotent — re-running simply recomputes
+        and overwrites the derived fields (extracted text/summary/tags),
+        never the source bytes or checksums.
+        """
+        record = self._load_record(doc_id)
+        if not record:
+            raise ValueError(f'Document {doc_id} not found')
+        path = record.get('storage_path') if isinstance(record, dict) else record.storage_path
+        mime = (record.get('mime_type') if isinstance(record, dict) else record.mime_type) or ''
+        ext = (record.get('file_extension') if isinstance(record, dict) else record.file_extension) or ''
+        expected_sha = record.get('sha256_checksum') if isinstance(record, dict) else record.sha256_checksum
+        raw = self._read_from_disk(path)
+        if raw is None:
+            raise ValueError(f'File not found on disk for {doc_id}')
+        if expected_sha and hashlib.sha256(raw).hexdigest() != expected_sha:
+            raise ValueError(f'Integrity check failed for {doc_id} before enrichment')
+        return self._apply_enrichment(doc_id, raw, mime, ext)
+
+    def execute_job(self, document_id: str, job_type: str) -> Dict[str, Any]:
+        """Execute one processing job payload for the async worker.
+
+        Unlike :meth:`process_document` this does NOT create a new job row —
+        the worker owns the job row lifecycle. Returns the raw result dict;
+        raises on failure so the worker can apply retry/dead-letter handling.
+        """
+        if job_type == ProcessingJobType.DOCUMENT_ENRICHMENT.value:
+            extracted = self.run_enrichment(document_id)
+            return {
+                'text_chars': len(extracted.get('text', '') or ''),
+                'tags': extracted.get('tags', []),
+                'confidence': extracted.get('confidence'),
+            }
+        record = self._load_record(document_id)
+        if not record:
+            raise ValueError(f'Document {document_id} not found')
+        path = record.get('storage_path') if isinstance(record, dict) else record.storage_path
+        mime = (record.get('mime_type') if isinstance(record, dict) else record.mime_type) or ''
+        ext = (record.get('file_extension') if isinstance(record, dict) else record.file_extension) or ''
+        raw = self._read_from_disk(path)
+        if raw is None:
+            raise ValueError(f'File not found on disk for {document_id}')
+        handler = self._job_handlers.get(job_type)
+        if not handler:
+            raise ValueError(f'Unknown job type {job_type}')
+        return handler(self, raw, mime, ext)
 
     def upload_batch(
         self,

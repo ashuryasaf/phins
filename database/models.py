@@ -2637,7 +2637,16 @@ class Document(Base):
 
 
 class DocumentProcessingJob(Base):
-    """Tracks individual processing tasks run against a document."""
+    """Tracks individual processing tasks run against a document.
+
+    Queue semantics (async document pipeline):
+      pending      -> ready to be claimed by a worker
+      claimed      -> currently executing (next_retry_at doubles as the claim
+                      expiry so crashed workers release their jobs)
+      completed    -> finished successfully
+      failed       -> transient failure awaiting retry at next_retry_at
+      dead_letter  -> exhausted max_attempts; requires operator action
+    """
     __tablename__ = 'document_processing_jobs'
 
     id = Column(String(120), primary_key=True)
@@ -2649,6 +2658,12 @@ class DocumentProcessingJob(Base):
     result = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
     processing_time_ms = Column(Integer, nullable=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    max_attempts = Column(Integer, nullable=False, default=3)
+    next_retry_at = Column(DateTime, nullable=True, index=True)
+    priority = Column(Integer, nullable=False, default=100)
+    idempotency_key = Column(String(200), nullable=True, unique=True, index=True)
+    worker_id = Column(String(100), nullable=True)
     created_date = Column(DateTime, default=datetime.utcnow)
     completed_date = Column(DateTime, nullable=True)
 
@@ -2664,6 +2679,12 @@ class DocumentProcessingJob(Base):
             'result': json.loads(self.result) if self.result else None,
             'error_message': self.error_message,
             'processing_time_ms': self.processing_time_ms,
+            'attempts': self.attempts or 0,
+            'max_attempts': self.max_attempts or 3,
+            'next_retry_at': self.next_retry_at.isoformat() if self.next_retry_at else None,
+            'priority': self.priority if self.priority is not None else 100,
+            'idempotency_key': self.idempotency_key,
+            'worker_id': self.worker_id,
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'completed_date': self.completed_date.isoformat() if self.completed_date else None,
         }

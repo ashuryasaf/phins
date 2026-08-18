@@ -12,6 +12,10 @@
 #   serve     - run the production web portal (default)
 #   cron      - run the monthly auto-pay batch (Render cron, Railway cron)
 #   bi-snapshot - capture a daily BI KPI snapshot (BI-3 trend history)
+#   worker    - run the standalone async document-processing worker
+#               (requires USE_DATABASE=true so jobs/documents are shared
+#               with the web process; in-process worker threads inside
+#               "serve" are the default and need no extra service)
 #   db-init   - bootstrap the database (manual; NOT called automatically
 #               from serve to avoid multi-replica race conditions and to
 #               prevent default-admin credentials from being seeded into
@@ -40,6 +44,9 @@ case "$mode" in
         ;;
     bi-snapshot)
         exec python3 scripts/run_bi_snapshot.py "$@"
+        ;;
+    worker)
+        exec python3 scripts/run_document_worker.py "$@"
         ;;
     db-init)
         # Refuse to seed demo data if the deployment looks like production.

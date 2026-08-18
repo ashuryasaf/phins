@@ -14613,6 +14613,20 @@ For claims or questions, please contact:
             except Exception:
                 pass
 
+            # Async document-processing queue depth (when the worker is active)
+            document_processing = {'async_enabled': False}
+            try:
+                from services.document_processing_service import async_processing_enabled
+                if async_processing_enabled():
+                    from services.document_job_worker import get_document_job_worker
+                    worker = get_document_job_worker()
+                    document_processing = {
+                        'async_enabled': True,
+                        'queue': worker.queue_stats(),
+                    }
+            except Exception:
+                pass
+
             health_status = {
                 'status': 'healthy',
                 'service': 'phins-portal',
@@ -14623,6 +14637,7 @@ For claims or questions, please contact:
                 'storage_mode': 'database' if (USE_DATABASE and database_enabled) else 'in-memory',
                 'customers_available': customers_count,
                 'notifications': notification_health,
+                'document_processing': document_processing,
                 'version': '2.0.0'
             }
             
@@ -21248,6 +21263,36 @@ For claims or questions, please contact:
             self._set_json_headers(200)
             types = [{'value': jt.value, 'name': jt.name} for jt in ProcessingJobType]
             self.wfile.write(json.dumps({'processing_types': types}).encode('utf-8'))
+            return
+
+        # GET /api/doc-service/jobs - Async processing queue status (staff only)
+        # Filters: ?status=pending|claimed|completed|failed|dead_letter
+        #          ?document_id=DOC-...
+        if path == '/api/doc-service/jobs':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            if not is_document_admin_role(get_effective_role(session)):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Staff access required'}).encode('utf-8'))
+                return
+            try:
+                from services.document_job_worker import get_document_job_worker
+                worker = get_document_job_worker()
+                jobs = worker.list_jobs(
+                    status=qs.get('status', [None])[0],
+                    document_id=qs.get('document_id', [None])[0],
+                    limit=safe_int(qs.get('limit', ['50'])[0], 50),
+                )
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'jobs': jobs,
+                    'queue': worker.queue_stats(),
+                }, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
 
         # ========== ADMIN: LIST CUSTOMERS FOR DOCUMENT FILTERING ==========
@@ -39287,6 +39332,40 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Delete failed', 'details': str(e)}).encode('utf-8'))
             return
 
+        # POST /api/doc-service/jobs/requeue - Requeue a dead-letter job (admin)
+        if path == '/api/doc-service/jobs/requeue':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body or '{}')
+                job_id = str(data.get('job_id', '') or '').strip()
+                if not job_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'job_id is required'}).encode('utf-8'))
+                    return
+                from services.document_job_worker import get_document_job_worker
+                worker = get_document_job_worker()
+                if worker.requeue_dead_letter(job_id):
+                    audit.log(
+                        (session or {}).get('username', 'admin'),
+                        'document_job_requeued', 'processing_job', job_id,
+                        {'source': 'doc-service-jobs-requeue'},
+                    )
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({'success': True, 'job_id': job_id}).encode('utf-8'))
+                else:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Job not found or not in dead_letter state'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
         # ========== RISK DASHBOARD SAVE ASSESSMENT ENDPOINT ==========
         # Saves AI assessment results to the risk dashboard data store
         # Access: admin, underwriter, actuary roles
@@ -54234,6 +54313,31 @@ def run_server(port: int = PORT) -> None:
 
     # Run post-load integrity validation before serving traffic
     validate_startup_integrity()
+
+    # Async document-processing worker (PHINS_DOC_ASYNC=true). Runs as daemon
+    # threads inside this process; uploads enqueue enrichment jobs instead of
+    # blocking the request on OCR/parsing. Best-effort: a wiring failure falls
+    # back to the synchronous upload path, never blocks serving traffic.
+    try:
+        from services.document_processing_service import async_processing_enabled
+        if async_processing_enabled():
+            from services.document_job_worker import get_document_job_worker
+            _doc_worker = get_document_job_worker(doc_service=get_document_service())
+            _doc_worker.event_hook = lambda event_type, doc_id, payload: (
+                platform_event_ledger.append_event(
+                    event_type=f"document.{event_type.lower()}",
+                    entity_type='document',
+                    entity_id=doc_id,
+                    actor='document_job_worker',
+                    payload=payload,
+                    ledger_type='event',
+                )
+            )
+            _doc_worker.start()
+            print(f"📄 Async document worker started "
+                  f"({_doc_worker.concurrency} threads, retries {_doc_worker.retry_schedule}s)")
+    except Exception as _worker_exc:
+        print(f"   ⚠️  Async document worker not started: {_worker_exc}")
 
     server_address = (HOST, port)
     httpd = ThreadingHTTPServer(server_address, PortalHandler)
