@@ -21295,6 +21295,57 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
 
+        # GET /api/ai-usage/summary - AI/parse cost aggregation (staff only)
+        # Filters: ?group_by=provider|operation|customer|model &customer_id=
+        if path == '/api/ai-usage/summary':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            if not is_document_admin_role(get_effective_role(session)):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Staff access required'}).encode('utf-8'))
+                return
+            try:
+                from services.ai_usage_service import get_ai_usage_service
+                summary = get_ai_usage_service().summarize(
+                    group_by=qs.get('group_by', ['provider'])[0],
+                    customer_id=qs.get('customer_id', [None])[0],
+                )
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(summary, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # GET /api/ai-usage/records - Recent AI/parse usage rows (staff only)
+        if path == '/api/ai-usage/records':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            if not is_document_admin_role(get_effective_role(session)):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Staff access required'}).encode('utf-8'))
+                return
+            try:
+                from services.ai_usage_service import get_ai_usage_service
+                records = get_ai_usage_service().list_records(
+                    customer_id=qs.get('customer_id', [None])[0],
+                    assessment_id=qs.get('assessment_id', [None])[0],
+                    document_id=qs.get('document_id', [None])[0],
+                    provider=qs.get('provider', [None])[0],
+                    operation=qs.get('operation', [None])[0],
+                    limit=safe_int(qs.get('limit', ['100'])[0], 100),
+                )
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'records': records}, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
         # ========== ADMIN: LIST CUSTOMERS FOR DOCUMENT FILTERING ==========
         # GET /api/admin/customers-for-documents - Returns customer list for admin doc filtering
         # Access: admin, underwriter, actuary, claims, accountant roles only

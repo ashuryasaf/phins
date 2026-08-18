@@ -682,11 +682,22 @@
         const tagsBadge = (d.facts_extracted || 0) > 0
           ? `<span class="doc-facts">${d.facts_extracted} facts</span>`
           : `<span class="doc-facts" style="color:#90a4ae;">no facts</span>`;
+        const procMap = {
+          queued: ['⏳ queued', '#f9a825'],
+          pending: ['⏳ pending', '#f9a825'],
+          processing: ['⚙️ processing', '#1565c0'],
+          failed: ['⚠ failed', '#c62828'],
+        };
+        const proc = procMap[(d.processing_status || '').toLowerCase()];
+        const procBadge = proc
+          ? `<span class="badge" style="color:${proc[1]};border:1px solid ${proc[1]};" title="Async processing status">${proc[0]}</span>`
+          : '';
         const checked = SELECTED_DOC_IDS.has(d.id) ? 'checked' : '';
         return `<label class="doc-item${SELECTED_DOC_IDS.has(d.id) ? ' selected' : ''}" data-doc-id="${escHtml(d.id)}">
           <input type="checkbox" ${checked} onchange="toggleDoc('${escHtml(d.id)}', this.checked)">
           <span class="doc-name" title="${escHtml(d.sha256 || '')}">${escHtml(d.name || d.id)}</span>
           <span class="badge">${escHtml(d.document_type || d.category || 'general')}</span>
+          ${procBadge}
           ${tagsBadge}
           <button class="ghost" style="margin-left:6px; padding:2px 8px; font-size:0.72rem;"
                   onclick="event.preventDefault(); rescanDocument('${escHtml(d.id)}'); return false;"
@@ -808,10 +819,25 @@
           ${entries.slice(0, 30).map(e => {
             let val = e.value;
             if (typeof val === 'object' && val !== null) val = JSON.stringify(val);
-            return `<div class="entry">
+            const isConflict = (e.fact_type === 'contradiction');
+            const conflictBadge = isConflict
+              ? '<span class="badge" style="background:#c62828;color:#fff;">CONFLICT · review required</span>'
+              : `<span class="badge">${escHtml(e.fact_type || '')}</span>`;
+            const pagePart = e.page ? ` · page ${e.page}` : '';
+            const evidence = e.source_text
+              ? `<details style="margin-top:4px;">
+                   <summary style="cursor:pointer;font-size:0.72rem;color:#1565c0;">Show source evidence${pagePart}</summary>
+                   <div style="font-size:0.75rem;background:#f5f7fa;border-left:3px solid #1565c0;padding:6px 8px;margin-top:4px;border-radius:4px;">
+                     “…${escHtml(e.source_text)}…”
+                     <div style="color:#78909c;margin-top:3px;">${escHtml(e.document_name || e.document_id || '?')}${pagePart}${(e.char_start != null) ? ` · chars ${e.char_start}–${e.char_end}` : ''}</div>
+                   </div>
+                 </details>`
+              : '';
+            return `<div class="entry"${isConflict ? ' style="border-left:3px solid #c62828;padding-left:6px;"' : ''}>
               <span class="value">${escHtml(val)}</span>
-              <span class="badge">${escHtml(e.fact_type || '')}</span>
-              <span class="meta">from ${escHtml(e.document_name || e.document_id || '?')} · ${escHtml(e.document_type || 'general')} · conf ${(Number(e.confidence || 0) * 100).toFixed(0)}%</span>
+              ${conflictBadge}
+              <span class="meta">from ${escHtml(e.document_name || e.document_id || '?')} · ${escHtml(e.document_type || 'general')} · conf ${(Number(e.confidence || 0) * 100).toFixed(0)}%${pagePart}</span>
+              ${evidence}
             </div>`;
           }).join('')}
         </div>

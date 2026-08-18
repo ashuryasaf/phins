@@ -1024,6 +1024,10 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
                     "sha256": rec.get("sha256_checksum") or rec.get("sha256"),
                     "facts_extracted": summary.get("facts_extracted", 0),
                     "by_type": summary.get("by_type", {}),
+                    # Async pipeline visibility: queued | processing |
+                    # completed | failed (None for legacy rows).
+                    "processing_status": rec.get("processing_status"),
+                    "status": rec.get("status"),
                 })
             return 200, {"customer_id": cust, "items": enriched, "total": len(enriched)}
         if resource == "export":

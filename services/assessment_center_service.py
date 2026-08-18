@@ -1122,9 +1122,11 @@ class AssessmentCenterService:
         "external_contribution": "External clearinghouse",
         "document_meta": "Document metadata",
         "extraction_hint": "Document metadata",
+        "contradiction": "Contradictions",
     }
 
     _CATEGORY_ORDER = (
+        "Contradictions",
         "Identity",
         "Contact",
         "Photo / Portrait",
@@ -1212,6 +1214,11 @@ class AssessmentCenterService:
                 "sha256": f.source_document_sha256,
                 "captured_at": f.captured_at,
                 "metadata": f.metadata,
+                # Evidence drill-down: exactly where the value came from.
+                "source_text": f.source_text,
+                "page": f.page,
+                "char_start": f.char_start,
+                "char_end": f.char_end,
             })
             sec["fact_count"] += 1
             if f.source_document_id:

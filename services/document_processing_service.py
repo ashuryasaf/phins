@@ -325,6 +325,7 @@ class DocumentProcessingService:
 
     def _apply_enrichment(self, doc_id: str, raw_bytes: bytes, mime: str, ext: str) -> Dict[str, Any]:
         """Run full enrichment and persist the results onto the document row."""
+        start = time.time()
         extracted = self._run_immediate_processing(doc_id, raw_bytes, mime, ext)
         self._update_record(doc_id, {
             'status': 'processed',
@@ -336,7 +337,31 @@ class DocumentProcessingService:
             'confidence_score': extracted.get('confidence', None),
             'processed_date': datetime.now(),
         })
+        self._meter_parse_usage(doc_id, extracted, int((time.time() - start) * 1000))
         return extracted
+
+    def _meter_parse_usage(self, doc_id: str, extracted: Dict[str, Any],
+                           duration_ms: int) -> None:
+        """Record parse usage for cost accounting (self-hosted OCR meters $0
+        unless a managed-parser page price is configured). Never fatal."""
+        try:
+            from services.ai_usage_service import get_ai_usage_service
+            record = self._load_record(doc_id)
+            customer_id = None
+            if record is not None:
+                customer_id = (record.get('customer_id') if isinstance(record, dict)
+                               else record.customer_id) or None
+            pages = (extracted.get('metadata') or {}).get('pages')
+            get_ai_usage_service().record_usage(
+                provider='self_hosted',
+                operation='document_parse',
+                customer_id=customer_id,
+                document_id=doc_id,
+                pages=len(pages) if isinstance(pages, list) else None,
+                duration_ms=duration_ms,
+            )
+        except Exception as exc:
+            logger.debug('Parse usage metering skipped: %s', exc)
 
     def run_enrichment(self, doc_id: str) -> Dict[str, Any]:
         """Load a stored document and run the full enrichment pipeline.

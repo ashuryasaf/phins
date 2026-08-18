@@ -185,6 +185,8 @@ class AssessmentAIService:
         mode = "deterministic"
         result: Optional[Dict[str, Any]] = None
         provider = get_llm_provider()
+        provider.usage_hook = self._usage_hook(
+            customer_id=customer_id, prompt_version=template.prompt_id)
         if self.is_llm_enabled():
             try:
                 user_payload = json.dumps({
@@ -522,10 +524,27 @@ class AssessmentAIService:
             "evidence": evidence_for_model,
             "risk": analysis_payload.get("risk"),
         }
-        return get_llm_provider().completion(
+        provider = get_llm_provider()
+        provider.usage_hook = self._usage_hook(
+            customer_id=analysis_payload.get("customer_id"),
+            prompt_version=template.prompt_id,
+        )
+        return provider.completion(
             template.system_prompt,
             json.dumps(user_payload, ensure_ascii=False, default=str),
         )
+
+    @staticmethod
+    def _usage_hook(customer_id: Optional[str], prompt_version: Optional[str]):
+        """Cost-metering hook for LLM calls; never breaks the caller."""
+        try:
+            from services.ai_usage_service import get_ai_usage_service
+            return get_ai_usage_service().usage_hook({
+                "customer_id": customer_id,
+                "prompt_version": prompt_version,
+            })
+        except Exception:
+            return None
 
     # ── Audit ─────────────────────────────────────────────────────────────
 

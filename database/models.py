@@ -1027,6 +1027,70 @@ class AssessmentRecord(Base):
         }
 
 
+class AIUsageRecord(Base):
+    """One row per external AI / parsing operation for cost accounting.
+
+    Answers "what does an assessment cost?" from measured traffic instead of
+    estimates: aggregate by document, assessment, customer, or provider.
+    Unit prices are configurable environment values (never hard-coded) and
+    the price used is snapshotted on the row so later price changes don't
+    rewrite history.
+
+    This is a NEW table - it does not modify any existing data.
+    """
+    __tablename__ = 'ai_usage_records'
+
+    id = Column(String(50), primary_key=True)  # AIUSE-...
+    customer_id = Column(String(50), index=True, nullable=True)
+    assessment_id = Column(String(80), index=True, nullable=True)
+    document_id = Column(String(120), index=True, nullable=True)
+    job_id = Column(String(120), nullable=True)
+
+    provider = Column(String(60), nullable=False, index=True)
+    operation = Column(String(60), nullable=False, index=True)
+    # document_parse | ocr | transcription | llm_completion | video_analysis
+    model = Column(String(120), nullable=True)
+    prompt_version = Column(String(60), nullable=True)
+
+    pages = Column(Integer, nullable=True)
+    input_tokens = Column(Integer, nullable=True)
+    output_tokens = Column(Integer, nullable=True)
+    media_seconds = Column(Float, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+
+    unit_price_snapshot = Column(Text, nullable=True)  # JSON of prices used
+    estimated_cost = Column(Float, nullable=False, default=0.0)
+    currency = Column(String(10), nullable=False, default='USD')
+
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    def to_dict(self):
+        try:
+            prices = json.loads(self.unit_price_snapshot) if self.unit_price_snapshot else {}
+        except Exception:
+            prices = {}
+        return {
+            'id': self.id,
+            'customer_id': self.customer_id,
+            'assessment_id': self.assessment_id,
+            'document_id': self.document_id,
+            'job_id': self.job_id,
+            'provider': self.provider,
+            'operation': self.operation,
+            'model': self.model,
+            'prompt_version': self.prompt_version,
+            'pages': self.pages,
+            'input_tokens': self.input_tokens,
+            'output_tokens': self.output_tokens,
+            'media_seconds': self.media_seconds,
+            'duration_ms': self.duration_ms,
+            'unit_price_snapshot': prices,
+            'estimated_cost': self.estimated_cost,
+            'currency': self.currency,
+            'created_at': self.created_date.isoformat() if self.created_date else None,
+        }
+
+
 class RiskFactorModel(Base):
     """
     Stores individual risk factors identified during assessment.
