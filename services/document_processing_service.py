@@ -141,6 +141,19 @@ class ProcessingJobType(str, Enum):
     INTEGRITY_CHECK = 'integrity_check'
     AI_SUMMARISATION = 'ai_summarisation'
     AI_TAGGING = 'ai_tagging'
+    # Full upload enrichment (metadata + text/OCR + summary/tags/confidence)
+    # run as a single queued unit by the async document worker.
+    DOCUMENT_ENRICHMENT = 'document_enrichment'
+
+
+def async_processing_enabled() -> bool:
+    """True when uploads should enqueue enrichment instead of running inline.
+
+    Controlled by ``PHINS_DOC_ASYNC``. Defaults to off so the synchronous
+    behaviour (and the pytest embedded-server semantics) is unchanged until
+    an operator opts in.
+    """
+    return str(os.environ.get('PHINS_DOC_ASYNC', '')).lower() in ('1', 'true', 'yes', 'y')
 
 
 # ── Data classes ──────────────────────────────────────────────────────────────
@@ -272,18 +285,12 @@ class DocumentProcessingService:
         self._persist_record(doc_record)
 
         extracted = {}
+        queued = False
         if not skip_processing and status == 'uploaded':
-            extracted = self._run_immediate_processing(doc_id, raw_bytes, resolved_mime, ext)
-            self._update_record(doc_id, {
-                'status': 'processed',
-                'processing_status': 'completed',
-                'extracted_metadata': json.dumps(extracted.get('metadata', {})),
-                'extracted_text': extracted.get('text', ''),
-                'ai_summary': extracted.get('summary', ''),
-                'ai_tags': json.dumps(extracted.get('tags', [])),
-                'confidence_score': extracted.get('confidence', None),
-                'processed_date': datetime.now(),
-            })
+            if async_processing_enabled():
+                queued = self._enqueue_enrichment(doc_id, sha256)
+            if not queued:
+                extracted = self._apply_enrichment(doc_id, raw_bytes, resolved_mime, ext)
 
         return UploadResult(
             document_id=doc_id,
@@ -295,8 +302,115 @@ class DocumentProcessingService:
             status='processed' if extracted else status,
             storage_path=storage_path,
             duplicate_of=duplicate_id,
-            metadata=extracted,
+            metadata={'queued': True} if queued else extracted,
         )
+
+    def _enqueue_enrichment(self, doc_id: str, sha256: str) -> bool:
+        """Queue the enrichment job for the async worker. Returns False on any
+        failure so the caller falls back to synchronous processing (a document
+        must never end up unprocessed just because the queue was unavailable)."""
+        try:
+            from services.document_job_worker import get_document_job_worker
+            worker = get_document_job_worker(doc_service=self, db_manager=self.db_manager)
+            worker.enqueue(
+                document_id=doc_id,
+                job_type=ProcessingJobType.DOCUMENT_ENRICHMENT.value,
+                idempotency_key=f"{sha256}:{ProcessingJobType.DOCUMENT_ENRICHMENT.value}",
+            )
+            self._update_record(doc_id, {'processing_status': 'queued'})
+            return True
+        except Exception as exc:
+            logger.error(f"Enqueue failed for {doc_id}, falling back to sync: {exc}")
+            return False
+
+    def _apply_enrichment(self, doc_id: str, raw_bytes: bytes, mime: str, ext: str) -> Dict[str, Any]:
+        """Run full enrichment and persist the results onto the document row."""
+        start = time.time()
+        extracted = self._run_immediate_processing(doc_id, raw_bytes, mime, ext)
+        self._update_record(doc_id, {
+            'status': 'processed',
+            'processing_status': 'completed',
+            'extracted_metadata': json.dumps(extracted.get('metadata', {})),
+            'extracted_text': extracted.get('text', ''),
+            'ai_summary': extracted.get('summary', ''),
+            'ai_tags': json.dumps(extracted.get('tags', [])),
+            'confidence_score': extracted.get('confidence', None),
+            'processed_date': datetime.now(),
+        })
+        self._meter_parse_usage(doc_id, extracted, int((time.time() - start) * 1000))
+        return extracted
+
+    def _meter_parse_usage(self, doc_id: str, extracted: Dict[str, Any],
+                           duration_ms: int) -> None:
+        """Record parse usage for cost accounting (self-hosted OCR meters $0
+        unless a managed-parser page price is configured). Never fatal."""
+        try:
+            from services.ai_usage_service import get_ai_usage_service
+            record = self._load_record(doc_id)
+            customer_id = None
+            if record is not None:
+                customer_id = (record.get('customer_id') if isinstance(record, dict)
+                               else record.customer_id) or None
+            pages = (extracted.get('metadata') or {}).get('pages')
+            get_ai_usage_service().record_usage(
+                provider='self_hosted',
+                operation='document_parse',
+                customer_id=customer_id,
+                document_id=doc_id,
+                pages=len(pages) if isinstance(pages, list) else None,
+                duration_ms=duration_ms,
+            )
+        except Exception as exc:
+            logger.debug('Parse usage metering skipped: %s', exc)
+
+    def run_enrichment(self, doc_id: str) -> Dict[str, Any]:
+        """Load a stored document and run the full enrichment pipeline.
+
+        Used by the async worker; idempotent — re-running simply recomputes
+        and overwrites the derived fields (extracted text/summary/tags),
+        never the source bytes or checksums.
+        """
+        record = self._load_record(doc_id)
+        if not record:
+            raise ValueError(f'Document {doc_id} not found')
+        path = record.get('storage_path') if isinstance(record, dict) else record.storage_path
+        mime = (record.get('mime_type') if isinstance(record, dict) else record.mime_type) or ''
+        ext = (record.get('file_extension') if isinstance(record, dict) else record.file_extension) or ''
+        expected_sha = record.get('sha256_checksum') if isinstance(record, dict) else record.sha256_checksum
+        raw = self._read_from_disk(path)
+        if raw is None:
+            raise ValueError(f'File not found on disk for {doc_id}')
+        if expected_sha and hashlib.sha256(raw).hexdigest() != expected_sha:
+            raise ValueError(f'Integrity check failed for {doc_id} before enrichment')
+        return self._apply_enrichment(doc_id, raw, mime, ext)
+
+    def execute_job(self, document_id: str, job_type: str) -> Dict[str, Any]:
+        """Execute one processing job payload for the async worker.
+
+        Unlike :meth:`process_document` this does NOT create a new job row —
+        the worker owns the job row lifecycle. Returns the raw result dict;
+        raises on failure so the worker can apply retry/dead-letter handling.
+        """
+        if job_type == ProcessingJobType.DOCUMENT_ENRICHMENT.value:
+            extracted = self.run_enrichment(document_id)
+            return {
+                'text_chars': len(extracted.get('text', '') or ''),
+                'tags': extracted.get('tags', []),
+                'confidence': extracted.get('confidence'),
+            }
+        record = self._load_record(document_id)
+        if not record:
+            raise ValueError(f'Document {document_id} not found')
+        path = record.get('storage_path') if isinstance(record, dict) else record.storage_path
+        mime = (record.get('mime_type') if isinstance(record, dict) else record.mime_type) or ''
+        ext = (record.get('file_extension') if isinstance(record, dict) else record.file_extension) or ''
+        raw = self._read_from_disk(path)
+        if raw is None:
+            raise ValueError(f'File not found on disk for {document_id}')
+        handler = self._job_handlers.get(job_type)
+        if not handler:
+            raise ValueError(f'Unknown job type {job_type}')
+        return handler(self, raw, mime, ext)
 
     def upload_batch(
         self,
@@ -653,9 +767,21 @@ class DocumentProcessingService:
             if mime.startswith('text/') or ext in ('.csv', '.txt', '.json', '.xml', '.html', '.htm'):
                 result['text'] = self._extract_text_content(raw, mime, ext)
             elif mime == 'application/pdf' or ext == '.pdf':
-                result['text'] = self._extract_pdf_text(raw, lang_hint=name_hint or None)
+                pdf_text, pdf_pages = self._extract_pdf_text_with_pages(
+                    raw, lang_hint=name_hint or None)
+                result['text'] = pdf_text
+                if pdf_pages:
+                    result.setdefault('metadata', {})['pages'] = pdf_pages
+            elif ext == '.docx':
+                result['text'] = self._extract_docx_text(raw)
             elif ext in ('.xls', '.xlsx'):
                 result['text'] = self._extract_spreadsheet_summary(raw, ext)
+            elif mime.startswith('audio/'):
+                analysis = self._analyze_audio(raw, mime)
+                self._merge_media_analysis(result, analysis)
+            elif mime.startswith('video/'):
+                analysis = self._analyze_video(raw, mime)
+                self._merge_media_analysis(result, analysis)
         except Exception as e:
             logger.error(f"Text extraction failed for {doc_id}: {e}")
 
@@ -667,6 +793,45 @@ class DocumentProcessingService:
             logger.error(f"AI enrichment failed for {doc_id}: {e}")
 
         return result
+
+    @staticmethod
+    def _merge_media_analysis(result: Dict[str, Any], analysis: Dict[str, Any]) -> None:
+        """Fold audio/video analysis into the enrichment result, building a
+        char-offset segment map so mined facts can cite timestamps."""
+        text = analysis.get('text') or ''
+        if text:
+            result['text'] = text
+        transcript = analysis.get('transcript')
+        if not transcript:
+            return
+        meta = result.setdefault('metadata', {})
+        segments_with_offsets = []
+        cursor = 0
+        transcript_text = transcript.get('text', '')
+        for seg in transcript.get('segments') or []:
+            seg_text = seg.get('text', '')
+            if not seg_text:
+                continue
+            idx = transcript_text.find(seg_text, cursor)
+            if idx < 0:
+                idx = transcript_text.find(seg_text)
+            entry = {
+                'timestamp_start': seg.get('start'),
+                'timestamp_end': seg.get('end'),
+                'text': seg_text,
+            }
+            if idx >= 0:
+                entry['char_start'] = idx
+                entry['char_end'] = idx + len(seg_text)
+                cursor = idx + len(seg_text)
+            segments_with_offsets.append(entry)
+        meta['transcript'] = {
+            'language': transcript.get('language'),
+            'provider': transcript.get('provider'),
+            'model': transcript.get('model'),
+            'duration_seconds': transcript.get('duration_seconds'),
+            'segments': segments_with_offsets,
+        }
 
     def _run_job(self, doc_id: str, job_type: str, raw: bytes, mime: str, ext: str) -> ProcessingResult:
         job_id = f"JOB-{uuid.uuid4().hex[:12].upper()}"
@@ -742,6 +907,8 @@ class DocumentProcessingService:
             text = self._extract_pdf_text(raw)
         elif mime.startswith('text/') or ext in ('.csv', '.txt', '.json', '.xml', '.html', '.htm'):
             text = self._extract_text_content(raw, mime, ext)
+        elif ext == '.docx':
+            text = self._extract_docx_text(raw)
         elif ext in ('.xls', '.xlsx'):
             text = self._extract_spreadsheet_summary(raw, ext)
         return {'text': text, 'length': len(text)}
@@ -996,23 +1163,28 @@ class DocumentProcessingService:
             return ''
 
     def _ocr_pdf_pages(self, raw: bytes, *, lang_hint: Optional[str] = None) -> str:
-        """Rasterise each page of a scanned PDF and OCR it.
+        """Rasterise each page of a scanned PDF and OCR it (joined text)."""
+        return '\n\n'.join(self._ocr_pdf_page_chunks(raw, lang_hint=lang_hint)).strip()
+
+    def _ocr_pdf_page_chunks(self, raw: bytes, *, lang_hint: Optional[str] = None) -> List[str]:
+        """Rasterise each page of a scanned PDF and OCR it, one chunk per page.
 
         Capped at ``PHINS_OCR_MAX_PDF_PAGES`` pages so a 100-page
-        scanned document can't blow the request budget. Returns ''
+        scanned document can't blow the request budget. Returns []
         if pdf2image / poppler / tesseract aren't all available.
+        Empty pages are kept as '' so chunk index == page number - 1.
         """
         try:
             from pdf2image import convert_from_bytes  # type: ignore
             import pytesseract  # type: ignore
         except ImportError:
-            return ''
+            return []
         try:
             pages = convert_from_bytes(raw, dpi=self._OCR_DPI,
                                        first_page=1, last_page=self._OCR_MAX_PDF_PAGES)
         except Exception as exc:
             logger.debug('pdf2image rasterisation failed: %s', exc)
-            return ''
+            return []
         ocr_langs = self._ocr_langs_for_hint(lang_hint)
         chunks = []
         for page_img in pages:
@@ -1020,13 +1192,22 @@ class DocumentProcessingService:
                 if page_img.mode not in ('RGB', 'L'):
                     page_img = page_img.convert('RGB')
                 page_text = pytesseract.image_to_string(page_img, lang=ocr_langs)
-                if page_text:
-                    chunks.append(page_text.strip())
+                chunks.append((page_text or '').strip())
             except Exception as exc:
                 logger.debug('OCR page failed: %s', exc)
-        return '\n\n'.join(chunks).strip()
+                chunks.append('')
+        if not any(chunks):
+            return []
+        return chunks
 
     def _extract_pdf_text(self, raw: bytes, *, lang_hint: Optional[str] = None) -> str:
+        """Extract text from a PDF (see :meth:`_extract_pdf_text_with_pages`)."""
+        text, _pages = self._extract_pdf_text_with_pages(raw, lang_hint=lang_hint)
+        return text
+
+    def _extract_pdf_text_with_pages(
+        self, raw: bytes, *, lang_hint: Optional[str] = None,
+    ) -> Tuple[str, List[Dict[str, int]]]:
         """Extract text from a PDF, escalating from cheapest to most powerful.
 
         Order:
@@ -1036,11 +1217,34 @@ class DocumentProcessingService:
           3. **OCR via pdf2image + tesseract** for scanned PDFs (slow
              but extracts text from images embedded inside the PDF).
 
-        Returns '' or an explanatory marker when nothing could be
-        extracted; the assessment center detects that and surfaces
-        an extraction_hint fact so the user knows OCR is needed.
+        Returns ``(text, pages)`` where ``pages`` maps 1-based page numbers to
+        character offsets in the returned text
+        (``[{'page': 1, 'char_start': 0, 'char_end': 1234}, ...]``) so
+        downstream evidence extraction can cite the exact source page.
+        ``pages`` is empty when per-page boundaries are unknown (regex path).
+        The text is an explanatory marker when nothing could be extracted;
+        the assessment center detects that and surfaces an extraction_hint
+        fact so the user knows OCR is needed.
         """
         text = ''
+        page_offsets: List[Dict[str, int]] = []
+
+        def _join_with_offsets(chunks: List[str], separator: str) -> Tuple[str, List[Dict[str, int]]]:
+            joined_parts: List[str] = []
+            offsets: List[Dict[str, int]] = []
+            cursor = 0
+            for index, chunk in enumerate(chunks):
+                if index:
+                    cursor += len(separator)
+                offsets.append({
+                    'page': index + 1,
+                    'char_start': cursor,
+                    'char_end': cursor + len(chunk),
+                })
+                joined_parts.append(chunk)
+                cursor += len(chunk)
+            return separator.join(joined_parts), offsets
+
         try:
             from pypdf import PdfReader  # type: ignore
             from pypdf.errors import PdfReadError  # type: ignore
@@ -1058,9 +1262,12 @@ class DocumentProcessingService:
                         page_text = page.extract_text() or ''
                     except Exception:
                         page_text = ''
-                    if page_text:
-                        pages_text.append(page_text)
-                text = '\n'.join(pages_text).strip()
+                    # Keep empty pages in the list so page numbers stay true.
+                    pages_text.append(page_text)
+                text, page_offsets = _join_with_offsets(pages_text, '\n')
+                text = text.strip() and text or ''
+                if not text:
+                    page_offsets = []
             except PdfReadError:
                 text = ''
             except Exception as exc:
@@ -1080,6 +1287,7 @@ class DocumentProcessingService:
                 regex_text = ' '.join(parts)
                 if self._has_meaningful_text(regex_text):
                     text = regex_text
+                    page_offsets = []
             except Exception:
                 pass
 
@@ -1087,13 +1295,62 @@ class DocumentProcessingService:
             # Prefer any partial Hebrew from the weak text layer / filename so
             # Tesseract loads heb as the primary script for IL scans.
             ocr_hint = lang_hint or text or None
-            ocr_text = self._ocr_pdf_pages(raw, lang_hint=ocr_hint)
-            if ocr_text:
-                text = ocr_text
+            ocr_chunks = self._ocr_pdf_page_chunks(raw, lang_hint=ocr_hint)
+            if ocr_chunks:
+                text, page_offsets = _join_with_offsets(ocr_chunks, '\n\n')
 
         if not text:
-            return '[PDF content - extraction yielded no text; image-only or encrypted]'
-        return text[:200_000]
+            return '[PDF content - extraction yielded no text; image-only or encrypted]', []
+        if len(text) > 200_000:
+            text = text[:200_000]
+            page_offsets = [
+                {**p, 'char_end': min(p['char_end'], len(text))}
+                for p in page_offsets if p['char_start'] < len(text)
+            ]
+        return text, page_offsets
+
+    def _extract_docx_text(self, raw: bytes) -> str:
+        """Extract paragraph text from a DOCX (OOXML) file.
+
+        Stdlib-only: unzip ``word/document.xml`` and walk the WordprocessingML
+        text nodes (``w:t``), inserting newlines at paragraph boundaries and
+        tabs/breaks where declared. Table cell text is included in document
+        order. Uses defusedxml when available to guard against XML bombs in
+        untrusted uploads. Returns '' when the file is not a valid DOCX.
+        """
+        import io as _io
+        import zipfile as _zip
+        try:
+            from defusedxml import ElementTree as _ET  # type: ignore
+        except ImportError:
+            import xml.etree.ElementTree as _ET  # type: ignore
+        try:
+            with _zip.ZipFile(_io.BytesIO(raw)) as zf:
+                with zf.open('word/document.xml') as fh:
+                    xml_data = fh.read()
+        except Exception as exc:
+            logger.debug('DOCX unzip failed: %s', exc)
+            return ''
+        ns = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+        try:
+            root = _ET.fromstring(xml_data)
+        except Exception as exc:
+            logger.debug('DOCX XML parse failed: %s', exc)
+            return ''
+        paragraphs: List[str] = []
+        for para in root.iter(f'{ns}p'):
+            parts: List[str] = []
+            for node in para.iter():
+                if node.tag == f'{ns}t' and node.text:
+                    parts.append(node.text)
+                elif node.tag == f'{ns}tab':
+                    parts.append('\t')
+                elif node.tag == f'{ns}br':
+                    parts.append('\n')
+            line = ''.join(parts)
+            if line.strip():
+                paragraphs.append(line)
+        return '\n'.join(paragraphs)[:200_000]
 
     def _extract_zip_contents(self, raw: bytes) -> str:
         """Concatenate text from every supported file inside a ZIP.
@@ -1143,6 +1400,8 @@ class DocumentProcessingService:
         mime = mimetypes.guess_type(name)[0] or ''
         if ext == '.pdf' or mime == 'application/pdf':
             return self._extract_pdf_text(raw, lang_hint=name)
+        if ext == '.docx':
+            return self._extract_docx_text(raw)
         if ext in ('.xls', '.xlsx'):
             return self._extract_spreadsheet_summary(raw, ext)
         if ext in ('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'):
@@ -1316,20 +1575,173 @@ class DocumentProcessingService:
         return result
 
     def _analyze_audio(self, raw: bytes, mime: str) -> Dict[str, Any]:
-        return {
+        """Transcribe audio through the configured provider.
+
+        Falls back to the informational stub when no provider is configured
+        (``PHINS_TRANSCRIPTION_PROVIDER=disabled``, the default) so existing
+        deployments keep their current behaviour until an operator opts in.
+        """
+        base = {
             'type': 'audio_analysis',
             'file_size': len(raw),
             'estimated_duration_seconds': max(1, len(raw) // (16 * 1024)),
-            'note': 'Audio transcription requires external ASR service integration',
         }
+        transcript = self._transcribe_media(raw, mime, default_ext='.mp3')
+        if transcript is None:
+            base['note'] = 'Audio transcription requires external ASR service integration'
+            return base
+        base['transcript'] = transcript
+        base['text'] = transcript.get('text', '')
+        base['language'] = transcript.get('language')
+        if transcript.get('duration_seconds'):
+            base['estimated_duration_seconds'] = transcript['duration_seconds']
+        return base
 
     def _analyze_video(self, raw: bytes, mime: str) -> Dict[str, Any]:
-        return {
+        """Extract intelligence from video without sending raw video to LLMs.
+
+        Cost-controlled pipeline (spec §10): the audio track is extracted with
+        ffmpeg and transcribed; sampled keyframes are OCR'd for visible text
+        (documents shown on screen, screen recordings). Degrades gracefully to
+        the informational stub when ffmpeg or the transcription provider is
+        unavailable.
+        """
+        base = {
             'type': 'video_analysis',
             'file_size': len(raw),
             'estimated_duration_seconds': max(1, len(raw) // (500 * 1024)),
-            'note': 'Full video analysis requires external CV service integration',
         }
+        audio_bytes = self._ffmpeg_extract_audio(raw)
+        transcript = None
+        if audio_bytes:
+            transcript = self._transcribe_media(audio_bytes, 'audio/mpeg',
+                                                default_ext='.mp3')
+        if transcript is not None:
+            base['transcript'] = transcript
+            base['language'] = transcript.get('language')
+            if transcript.get('duration_seconds'):
+                base['estimated_duration_seconds'] = transcript['duration_seconds']
+
+        keyframe_text = self._ffmpeg_keyframe_ocr(raw)
+        if keyframe_text:
+            base['visible_text'] = keyframe_text
+
+        combined = '\n'.join(filter(None, [
+            (transcript or {}).get('text', ''),
+            keyframe_text,
+        ])).strip()
+        if combined:
+            base['text'] = combined
+        else:
+            base['note'] = ('Video analysis limited: install ffmpeg and '
+                            'configure PHINS_TRANSCRIPTION_PROVIDER for '
+                            'spoken/visible-text extraction')
+        return base
+
+    def _transcribe_media(self, raw: bytes, mime: str, *,
+                          default_ext: str = '.mp3') -> Optional[Dict[str, Any]]:
+        """Best-effort transcription; None when no provider is configured or
+        the provider call fails (callers keep their stub behaviour)."""
+        try:
+            from services.transcription_providers import (
+                TranscriptionUnavailableError,
+                get_transcription_provider,
+            )
+        except ImportError:
+            return None
+        try:
+            return get_transcription_provider().transcribe(
+                raw, file_name=f'media{default_ext}', mime_type=mime)
+        except TranscriptionUnavailableError:
+            return None
+        except Exception as exc:
+            logger.warning('Transcription failed (non-fatal): %s', exc)
+            return None
+
+    # Video helpers: ffmpeg is optional; every path degrades to ''/None.
+
+    _VIDEO_MAX_BYTES = int(os.environ.get('PHINS_VIDEO_MAX_ANALYSIS_BYTES',
+                                          200 * 1024 * 1024))
+    _VIDEO_KEYFRAME_COUNT = int(os.environ.get('PHINS_VIDEO_KEYFRAMES', '6'))
+
+    @staticmethod
+    def _ffmpeg_available() -> bool:
+        return shutil.which('ffmpeg') is not None
+
+    def _ffmpeg_extract_audio(self, raw: bytes) -> Optional[bytes]:
+        """Extract the audio track as MP3 via ffmpeg; None when unavailable."""
+        if not raw or len(raw) > self._VIDEO_MAX_BYTES or not self._ffmpeg_available():
+            return None
+        import subprocess
+        src = dst = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.video', delete=False) as f:
+                f.write(raw)
+                src = f.name
+            dst = src + '.mp3'
+            result = subprocess.run(
+                ['ffmpeg', '-y', '-i', src, '-vn', '-acodec', 'libmp3lame',
+                 '-b:a', '64k', dst],
+                capture_output=True, timeout=300,
+            )
+            if result.returncode != 0 or not os.path.exists(dst):
+                return None
+            with open(dst, 'rb') as f:
+                return f.read()
+        except Exception as exc:
+            logger.debug('ffmpeg audio extraction failed: %s', exc)
+            return None
+        finally:
+            for path in (src, dst):
+                if path and os.path.exists(path):
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
+
+    def _ffmpeg_keyframe_ocr(self, raw: bytes) -> str:
+        """Sample keyframes and OCR them for visible text; '' when unavailable."""
+        if not raw or len(raw) > self._VIDEO_MAX_BYTES or not self._ffmpeg_available():
+            return ''
+        import subprocess
+        src = None
+        frames_dir = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.video', delete=False) as f:
+                f.write(raw)
+                src = f.name
+            frames_dir = tempfile.mkdtemp(prefix='phins_frames_')
+            result = subprocess.run(
+                ['ffmpeg', '-y', '-i', src, '-vf',
+                 f"select='eq(pict_type\\,I)',scale=1280:-1",
+                 '-vsync', 'vfr', '-frames:v', str(self._VIDEO_KEYFRAME_COUNT),
+                 os.path.join(frames_dir, 'frame_%03d.png')],
+                capture_output=True, timeout=300,
+            )
+            if result.returncode != 0:
+                return ''
+            chunks = []
+            for name in sorted(os.listdir(frames_dir)):
+                frame_path = os.path.join(frames_dir, name)
+                try:
+                    with open(frame_path, 'rb') as f:
+                        frame_text = self._ocr_image_bytes(f.read())
+                    if frame_text:
+                        chunks.append(frame_text)
+                except Exception:
+                    continue
+            return '\n'.join(dict.fromkeys(chunks))[:100_000]
+        except Exception as exc:
+            logger.debug('ffmpeg keyframe OCR failed: %s', exc)
+            return ''
+        finally:
+            if src and os.path.exists(src):
+                try:
+                    os.remove(src)
+                except OSError:
+                    pass
+            if frames_dir and os.path.isdir(frames_dir):
+                shutil.rmtree(frames_dir, ignore_errors=True)
 
     # ── AI enrichment ─────────────────────────────────────────────────────────
 

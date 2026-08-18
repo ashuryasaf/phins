@@ -494,6 +494,7 @@ class ClaimsBotService:
         # long-running server; oldest reports are evicted first).
         self.reports[report_id] = report
         self._enforce_report_cap()
+        self._persist_report(report, claim_id=claim_id, customer_id=customer_id)
         
         self._log_event('probability_report_generated', 'claim', claim_id, {
             'report_id': report_id,
@@ -504,6 +505,35 @@ class ClaimsBotService:
         })
         
         return report
+
+    def _persist_report(self, report: 'ClaimProbabilityReport', *,
+                        claim_id: str, customer_id: str) -> None:
+        """Append the generated report to the durable assessment history.
+
+        Reports were previously held only in process memory (``self.reports``)
+        so a restart erased the audit trail. Every generated report is now
+        also written append-only through the assessment record service
+        (assessment_type='claims_probability_report'); the in-memory map
+        stays as the fast read path. Best-effort — a persistence failure
+        never blocks report generation.
+        """
+        try:
+            from services.assessment_record_service import get_assessment_record_service
+            get_assessment_record_service().record_assessment(
+                subject_type="claim",
+                subject_id=claim_id,
+                assessment_type="claims_probability_report",
+                customer_id=customer_id,
+                score=report.fraud_probability,
+                level=getattr(report.risk_level, "value", report.risk_level),
+                recommendation=getattr(report.recommendation, "value",
+                                       report.recommendation),
+                details=report.to_dict(),
+                engine="claims_bot",
+                engine_version="probability-report-1",
+            )
+        except Exception as exc:
+            logger.warning("claims_bot report persistence skipped: %s", exc)
 
     def _enforce_report_cap(self) -> None:
         """Keep at most ``MAX_RETAINED_REPORTS`` reports in memory.

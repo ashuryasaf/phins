@@ -175,7 +175,27 @@ FACT_TYPES = (
     # Always-on metadata so a successful upload always produces ≥1 fact.
     "document_meta",       # file name, mime type, size, ocr_required hint
     "extraction_hint",     # explanatory hint when no text could be mined
+    # Cross-document contradiction: two documents state different values for
+    # the same field. Recorded, never silently resolved (spec: surface, don't
+    # pick a winner) — reviewers decide which source is authoritative.
+    "contradiction",
 )
+
+# (fact_type, label) pairs checked for cross-document contradictions. Only
+# fields with one true value per customer are compared; fields that may
+# legitimately differ across documents (multiple policies, old addresses)
+# are excluded to avoid review noise.
+CONFLICT_SENSITIVE_LABELS = (
+    ("identity", "id_number"),
+    ("identity", "date_of_birth"),
+    ("vital_sign", "bmi"),
+    ("vital_sign", "blood_pressure_systolic"),
+    ("vital_sign", "blood_pressure_diastolic"),
+    ("savings", "iban"),
+)
+# Numeric insurance/savings amounts with the same label also conflict when
+# two documents disagree (e.g. "annual income" 80k vs 120k).
+CONFLICT_NUMERIC_TYPES = ("insurance", "savings")
 
 # Maximum text length we are willing to scan in a single document
 MAX_TEXT_SCAN = 200_000
@@ -497,7 +517,15 @@ def _fact_matches_filters(fact: "Fact", filters: Dict[str, Any]) -> bool:
 
 @dataclass
 class Fact:
-    """A single piece of evidence extracted from an uploaded artefact."""
+    """A single piece of evidence extracted from an uploaded artefact.
+
+    Provenance fields (all optional, additive — old persisted facts stay
+    valid) let reviewers answer "where did this value come from?":
+      * ``source_text``  — the surrounding snippet from the source document
+      * ``char_start`` / ``char_end`` — offsets into the extracted text
+      * ``page``         — 1-based page number (PDFs with a page map)
+      * ``timestamp_start`` / ``timestamp_end`` — seconds, for audio/video
+    """
 
     fact_id: str
     customer_id: str
@@ -510,6 +538,12 @@ class Fact:
     source: str = "document"
     metadata: Dict[str, Any] = field(default_factory=dict)
     captured_at: str = field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    source_text: Optional[str] = None
+    char_start: Optional[int] = None
+    char_end: Optional[int] = None
+    page: Optional[int] = None
+    timestamp_start: Optional[float] = None
+    timestamp_end: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -610,12 +644,14 @@ class AssessmentCenterService:
         raw_bytes = base64.b64decode(raw_b64) if raw_b64 else b""
 
         text = self._extract_searchable_text(record, raw_bytes, mime, ext)
+        page_map = self._page_map_for_record(record, text)
         facts = self._extract_facts_from_text(
             text=text,
             customer_id=cust,
             document_id=document_id,
             sha256=sha,
             source=source_context or "document_upload",
+            page_map=page_map,
         )
         if mime.startswith("image/") or ext in (".jpg", ".jpeg", ".png", ".tiff", ".bmp"):
             facts.extend(self._extract_photo_facts(
@@ -674,7 +710,16 @@ class AssessmentCenterService:
             ))
 
         self._store_facts(cust, facts)
+
+        # Cross-document contradiction pass: when this document states a
+        # different value for a field another document already established,
+        # record an explicit CONFLICT fact instead of silently keeping both
+        # values buried in the fact list.
+        conflict_facts = self.detect_and_store_conflicts(cust)
+
         summary = self._summarise(facts)
+        if conflict_facts:
+            summary["contradictions"] = len(conflict_facts)
 
         # When Hebrew intelligence was mined, snapshot the resulting customer
         # risk into the durable assessment-record store so the score → decision
@@ -1077,9 +1122,11 @@ class AssessmentCenterService:
         "external_contribution": "External clearinghouse",
         "document_meta": "Document metadata",
         "extraction_hint": "Document metadata",
+        "contradiction": "Contradictions",
     }
 
     _CATEGORY_ORDER = (
+        "Contradictions",
         "Identity",
         "Contact",
         "Photo / Portrait",
@@ -1167,6 +1214,11 @@ class AssessmentCenterService:
                 "sha256": f.source_document_sha256,
                 "captured_at": f.captured_at,
                 "metadata": f.metadata,
+                # Evidence drill-down: exactly where the value came from.
+                "source_text": f.source_text,
+                "page": f.page,
+                "char_start": f.char_start,
+                "char_end": f.char_end,
             })
             sec["fact_count"] += 1
             if f.source_document_id:
@@ -2198,6 +2250,12 @@ class AssessmentCenterService:
                     source=raw.get("source", "imported"),
                     metadata=raw.get("metadata") or {},
                     captured_at=raw.get("captured_at") or datetime.utcnow().isoformat() + "Z",
+                    source_text=raw.get("source_text"),
+                    char_start=raw.get("char_start"),
+                    char_end=raw.get("char_end"),
+                    page=raw.get("page"),
+                    timestamp_start=raw.get("timestamp_start"),
+                    timestamp_end=raw.get("timestamp_end"),
                 ))
             except Exception as exc:
                 logger.warning("Skipping invalid fact in pack import: %s", exc)
@@ -2258,6 +2316,11 @@ class AssessmentCenterService:
                     except TypeError:
                         return (ocr_helper(raw_bytes) or "")[:MAX_TEXT_SCAN]
                 return ""
+            if ext == ".docx":
+                docx_helper = getattr(doc_svc, "_extract_docx_text", None)
+                if callable(docx_helper):
+                    return (docx_helper(raw_bytes) or "")[:MAX_TEXT_SCAN]
+                return ""
             if ext in (".xlsx", ".xls"):
                 xlsx_helper = getattr(doc_svc, "_extract_spreadsheet_summary", None)
                 if callable(xlsx_helper):
@@ -2271,9 +2334,194 @@ class AssessmentCenterService:
                 if callable(zip_helper):
                     return (zip_helper(raw_bytes) or "")[:MAX_TEXT_SCAN]
                 return ""
+            if mime.startswith("audio/") or mime.startswith("video/"):
+                # Media text comes from the enrichment pipeline (transcript /
+                # keyframe OCR) via the stored extracted_text handled above.
+                # Never mine raw media bytes as if they were text.
+                return ""
             return raw_bytes.decode("utf-8", errors="replace")[:MAX_TEXT_SCAN]
         except Exception:
             return ""
+
+    @staticmethod
+    def _page_map_for_record(record: Dict[str, Any], text: str) -> Optional[List[Dict[str, int]]]:
+        """Return the stored provenance map (pages and/or transcript
+        segments) when it matches ``text``.
+
+        The document service stores ``pages`` (1-based page number + char
+        offsets) and ``transcript.segments`` (timestamps + char offsets) in
+        ``extracted_metadata`` during enrichment. The map is only valid when
+        fact mining runs over that same stored text — when the assessment
+        center re-extracted from raw bytes the offsets may differ, so
+        provenance falls back to offsets/snippets without page/timestamp.
+        """
+        stored_text = record.get("extracted_text") or ""
+        if not stored_text or text != stored_text[:MAX_TEXT_SCAN]:
+            return None
+        raw_meta = record.get("extracted_metadata")
+        if isinstance(raw_meta, str):
+            try:
+                raw_meta = json.loads(raw_meta)
+            except (ValueError, TypeError):
+                return None
+        if not isinstance(raw_meta, dict):
+            return None
+        entries: List[Dict[str, Any]] = []
+        pages = raw_meta.get("pages")
+        if isinstance(pages, list):
+            entries.extend(p for p in pages if isinstance(p, dict))
+        transcript = raw_meta.get("transcript")
+        if isinstance(transcript, dict):
+            for seg in transcript.get("segments") or []:
+                if isinstance(seg, dict) and seg.get("char_start") is not None:
+                    entries.append(seg)
+        return entries or None
+
+    # ── Cross-document contradiction detection ────────────────────────────
+
+    def detect_fact_conflicts(self, customer_id: str) -> List[Dict[str, Any]]:
+        """Find fields where different documents state different values.
+
+        Never resolves a conflict — returns each one with every claimed value
+        and its source document so a reviewer can decide. Only fields with a
+        single true value per customer (id number, DOB, vitals, IBAN) and
+        numeric insurance/savings amounts with the same label are compared.
+        """
+        with self._lock:
+            facts = list(self._facts.get(customer_id, ()))
+
+        # Each claim: {'keys': frozenset of comparison keys, 'value', 'document_ids'}.
+        # Dates carry multiple interpretation keys (day-first vs month-first)
+        # so "01/05/1980" and "1980-05-01" never produce a false conflict.
+        grouped: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+        for f in facts:
+            if f.fact_type == "contradiction" or not f.source_document_id:
+                continue
+            key = (f.fact_type, f.label)
+            comparable = key in CONFLICT_SENSITIVE_LABELS or (
+                f.fact_type in CONFLICT_NUMERIC_TYPES
+                and isinstance(f.value, (int, float))
+                and not isinstance(f.value, bool)
+            )
+            if not comparable:
+                continue
+            if f.label == "date_of_birth":
+                comparison_keys = self._date_interpretations(f.value)
+            else:
+                normalized = self._normalize_conflict_value(f.value)
+                comparison_keys = frozenset({normalized}) if normalized else frozenset()
+            if not comparison_keys:
+                continue
+            claims = grouped.setdefault(key, [])
+            merged = False
+            for claim in claims:
+                if claim["keys"] & comparison_keys:
+                    claim["keys"] = claim["keys"] | comparison_keys
+                    claim["document_ids"].add(f.source_document_id)
+                    merged = True
+                    break
+            if not merged:
+                claims.append({
+                    "keys": comparison_keys,
+                    "value": f.value,
+                    "document_ids": {f.source_document_id},
+                })
+
+        conflicts: List[Dict[str, Any]] = []
+        for (fact_type, label), claims in grouped.items():
+            if len(claims) < 2:
+                continue
+            all_docs = set()
+            for claim in claims:
+                all_docs |= claim["document_ids"]
+            if len(all_docs) < 2:
+                # Distinct values but all from one document (e.g. a table of
+                # historic readings) — not a cross-document contradiction.
+                continue
+            conflicts.append({
+                "field": f"{fact_type}:{label}",
+                "fact_type": fact_type,
+                "label": label,
+                "status": "CONFLICT",
+                "values": sorted(
+                    (
+                        {
+                            "value": claim["value"],
+                            "document_ids": sorted(claim["document_ids"]),
+                        }
+                        for claim in claims
+                    ),
+                    key=lambda v: str(v["value"]),
+                ),
+            })
+        return conflicts
+
+    @staticmethod
+    def _date_interpretations(value: Any) -> frozenset:
+        """All plausible ISO interpretations of a date string.
+
+        Two date claims are only in conflict when no interpretation of one
+        matches any interpretation of the other, so format differences
+        (day-first vs month-first vs ISO) never create false conflicts.
+        """
+        if not isinstance(value, str) or not value.strip():
+            return frozenset()
+        interpretations = set()
+        try:
+            from dateutil import parser as _date_parser
+            for dayfirst in (True, False):
+                try:
+                    parsed = _date_parser.parse(value, dayfirst=dayfirst, fuzzy=False)
+                    interpretations.add(f"date:{parsed.date().isoformat()}")
+                except (ValueError, OverflowError, TypeError):
+                    continue
+        except ImportError:
+            pass
+        if not interpretations:
+            cleaned = re.sub(r"[\s\-./]", "", value)
+            if cleaned:
+                interpretations.add(f"str:{cleaned.lower()}")
+        return frozenset(interpretations)
+
+    def detect_and_store_conflicts(self, customer_id: str) -> List[Fact]:
+        """Persist a contradiction fact per detected cross-document conflict.
+
+        Idempotent through the fact-store dedupe: the same conflict (same
+        field + same claimed values) is stored once; a new conflicting value
+        produces a new, distinct contradiction fact.
+        """
+        conflict_facts: List[Fact] = []
+        try:
+            for conflict in self.detect_fact_conflicts(customer_id):
+                conflict_facts.append(_make_fact(
+                    customer_id,
+                    "contradiction",
+                    conflict["field"],
+                    {"status": "CONFLICT", "values": conflict["values"]},
+                    None, None, "conflict_detection", 0.90,
+                    metadata={
+                        "fact_type": conflict["fact_type"],
+                        "label": conflict["label"],
+                        "requires_review": True,
+                    },
+                ))
+            if conflict_facts:
+                self._store_facts(customer_id, conflict_facts)
+        except Exception as exc:
+            logger.warning("Conflict detection failed (non-fatal): %s", exc)
+        return conflict_facts
+
+    @staticmethod
+    def _normalize_conflict_value(value: Any) -> Optional[str]:
+        """Canonical comparison key; None when the value is not comparable."""
+        if isinstance(value, bool) or value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return f"num:{round(float(value), 2)}"
+        if isinstance(value, str):
+            cleaned = re.sub(r"[\s\-./]", "", value).lower()
+            return f"str:{cleaned}" if cleaned else None
+        return None
 
     def _extract_facts_from_text(
         self,
@@ -2283,10 +2531,21 @@ class AssessmentCenterService:
         document_id: Optional[str],
         sha256: Optional[str],
         source: str,
+        page_map: Optional[List[Dict[str, int]]] = None,
     ) -> List[Fact]:
         if not text:
             return []
         facts: List[Fact] = []
+
+        def _fact(fact_type, label, value, confidence,
+                  span: Optional[Tuple[int, int]] = None,
+                  metadata: Optional[Dict[str, Any]] = None) -> Fact:
+            new_fact = _make_fact(customer_id, fact_type, label, value,
+                                  document_id, sha256, source, confidence,
+                                  metadata=metadata)
+            if span is not None:
+                _attach_provenance(new_fact, text, span[0], span[1], page_map)
+            return new_fact
 
         for label, country, pattern, validator in _ID_PATTERNS:
             for match in pattern.finditer(text):
@@ -2301,48 +2560,41 @@ class AssessmentCenterService:
                 confidence = 0.95 if validator and ok else (0.70 if validator is None else 0.0)
                 if confidence == 0.0:
                     continue
-                facts.append(Fact(
-                    fact_id=_new_fact_id(),
-                    customer_id=customer_id,
-                    fact_type="identity",
-                    value=cleaned,
-                    label="id_number",
-                    confidence=confidence,
-                    source_document_id=document_id,
-                    source_document_sha256=sha256,
-                    source=source,
+                facts.append(_fact(
+                    "identity", "id_number", cleaned, confidence,
+                    span=match.span(1),
                     metadata={"id_type": label, "country": country, "raw": raw_value},
                 ))
 
         for match in _NAME_RE.finditer(text):
             value = match.group(1).strip().rstrip(",.;:")
             if value:
-                facts.append(_make_fact(customer_id, "identity", "full_name", value,
-                                        document_id, sha256, source, 0.65))
+                facts.append(_fact("identity", "full_name", value, 0.65,
+                                   span=match.span(1)))
 
         for match in _EMAIL_RE.finditer(text):
-            facts.append(_make_fact(customer_id, "contact", "email", match.group(0).lower(),
-                                    document_id, sha256, source, 0.92))
+            facts.append(_fact("contact", "email", match.group(0).lower(), 0.92,
+                               span=match.span(0)))
 
         for match in _PHONE_RE.finditer(text):
             value = re.sub(r"[\s\-.]", "", match.group(0))
             if 7 <= len(re.sub(r"\D", "", value)) <= 16:
-                facts.append(_make_fact(customer_id, "contact", "phone", value,
-                                        document_id, sha256, source, 0.55))
+                facts.append(_fact("contact", "phone", value, 0.55,
+                                   span=match.span(0)))
 
         for match in _DOB_RE.finditer(text):
-            facts.append(_make_fact(customer_id, "identity", "date_of_birth", match.group(1),
-                                    document_id, sha256, source, 0.85))
+            facts.append(_fact("identity", "date_of_birth", match.group(1), 0.85,
+                               span=match.span(1)))
 
         for match in _ADDRESS_RE.finditer(text):
             value = re.split(r"\s{2,}", match.group(1).strip())[0].strip()
             if value:
-                facts.append(_make_fact(customer_id, "contact", "address", value,
-                                        document_id, sha256, source, 0.65))
+                facts.append(_fact("contact", "address", value, 0.65,
+                                   span=match.span(1)))
 
         for match in _IBAN_RE.finditer(text):
-            facts.append(_make_fact(customer_id, "savings", "iban", match.group(1),
-                                    document_id, sha256, source, 0.90))
+            facts.append(_fact("savings", "iban", match.group(1), 0.90,
+                               span=match.span(1)))
 
         lower = text.lower()
         try:
@@ -2358,35 +2610,35 @@ class AssessmentCenterService:
             # IL forms ("שלילי ל-HIV", "negative for diabetes") stay clean.
             if _clin_neg(text, idx) or _clin_neg(lower, idx):
                 continue
-            facts.append(_make_fact(customer_id, "medical_condition", cond, cond,
-                                    document_id, sha256, source, 0.75))
+            facts.append(_fact("medical_condition", cond, cond, 0.75,
+                               span=(idx, idx + len(cond))))
         for med in _MEDICATIONS:
             idx = lower.find(med)
             if idx < 0:
                 continue
             if _clin_neg(text, idx) or _clin_neg(lower, idx):
                 continue
-            facts.append(_make_fact(customer_id, "medication", med, med,
-                                    document_id, sha256, source, 0.80))
+            facts.append(_fact("medication", med, med, 0.80,
+                               span=(idx, idx + len(med))))
         for allergy in _ALLERGIES:
             idx = lower.find(allergy)
             if idx < 0:
                 continue
             if _clin_neg(text, idx) or _clin_neg(lower, idx):
                 continue
-            facts.append(_make_fact(customer_id, "allergy", allergy, allergy,
-                                    document_id, sha256, source, 0.80))
+            facts.append(_fact("allergy", allergy, allergy, 0.80,
+                               span=(idx, idx + len(allergy))))
 
         bmi_match = _BMI_RE.search(text)
         if bmi_match:
-            facts.append(_make_fact(customer_id, "vital_sign", "bmi", float(bmi_match.group(1)),
-                                    document_id, sha256, source, 0.90))
+            facts.append(_fact("vital_sign", "bmi", float(bmi_match.group(1)), 0.90,
+                               span=bmi_match.span(1)))
         bp_match = _BP_RE.search(text)
         if bp_match:
-            facts.append(_make_fact(customer_id, "vital_sign", "blood_pressure_systolic",
-                                    float(bp_match.group(1)), document_id, sha256, source, 0.90))
-            facts.append(_make_fact(customer_id, "vital_sign", "blood_pressure_diastolic",
-                                    float(bp_match.group(2)), document_id, sha256, source, 0.90))
+            facts.append(_fact("vital_sign", "blood_pressure_systolic",
+                               float(bp_match.group(1)), 0.90, span=bp_match.span(1)))
+            facts.append(_fact("vital_sign", "blood_pressure_diastolic",
+                               float(bp_match.group(2)), 0.90, span=bp_match.span(2)))
 
         matched_insurance: List[str] = []
         for keyword in sorted(_INSURANCE_KEYWORDS, key=len, reverse=True):
@@ -2394,13 +2646,13 @@ class AssessmentCenterService:
                 if any(keyword in longer for longer in matched_insurance):
                     continue
                 matched_insurance.append(keyword)
+                idx = lower.find(keyword)
+                span = (idx, idx + len(keyword)) if idx >= 0 else None
                 amount = _amount_near(text, keyword)
                 if amount is not None:
-                    facts.append(_make_fact(customer_id, "insurance", keyword, amount,
-                                            document_id, sha256, source, 0.70))
+                    facts.append(_fact("insurance", keyword, amount, 0.70, span=span))
                 else:
-                    facts.append(_make_fact(customer_id, "insurance", keyword, True,
-                                            document_id, sha256, source, 0.55))
+                    facts.append(_fact("insurance", keyword, True, 0.55, span=span))
 
         matched_savings: List[str] = []
         for keyword in sorted(_SAVINGS_KEYWORDS, key=len, reverse=True):
@@ -2408,13 +2660,13 @@ class AssessmentCenterService:
                 if any(keyword in longer for longer in matched_savings):
                     continue
                 matched_savings.append(keyword)
+                idx = lower.find(keyword)
+                span = (idx, idx + len(keyword)) if idx >= 0 else None
                 amount = _amount_near(text, keyword)
                 if amount is not None:
-                    facts.append(_make_fact(customer_id, "savings", keyword, amount,
-                                            document_id, sha256, source, 0.70))
+                    facts.append(_fact("savings", keyword, amount, 0.70, span=span))
                 else:
-                    facts.append(_make_fact(customer_id, "savings", keyword, True,
-                                            document_id, sha256, source, 0.55))
+                    facts.append(_fact("savings", keyword, True, 0.55, span=span))
 
         matched_risk: List[str] = []
         for marker in sorted(_RISK_KEYWORDS, key=len, reverse=True):
@@ -2422,8 +2674,9 @@ class AssessmentCenterService:
                 if any(marker in longer for longer in matched_risk):
                     continue
                 matched_risk.append(marker)
-                facts.append(_make_fact(customer_id, "risk_indicator", marker, marker,
-                                        document_id, sha256, source, 0.80))
+                idx = lower.find(marker)
+                facts.append(_fact("risk_indicator", marker, marker, 0.80,
+                                   span=(idx, idx + len(marker)) if idx >= 0 else None))
 
         # Hebrew / mixed-language documents: map Hebrew clinical, insurance,
         # savings and risk phrases onto the same English canonical keys the
@@ -2435,6 +2688,7 @@ class AssessmentCenterService:
             document_id=document_id,
             sha256=sha256,
             source=source,
+            page_map=page_map,
         ))
 
         return facts
@@ -2447,6 +2701,7 @@ class AssessmentCenterService:
         document_id: Optional[str],
         sha256: Optional[str],
         source: str,
+        page_map: Optional[List[Dict[str, int]]] = None,
     ) -> List[Fact]:
         """Mine Assessment Center facts from Hebrew (and mixed) document text.
 
@@ -2499,11 +2754,17 @@ class AssessmentCenterService:
             meta.setdefault("raw_match", match.raw_match)
             meta["extractor"] = "hebrew_assessment_lexicon"
 
-            out.append(_make_fact(
+            hebrew_fact = _make_fact(
                 customer_id, match.fact_type, match.canonical, value,
                 document_id, sha256, source, match.confidence,
                 metadata=meta,
-            ))
+            )
+            if match.raw_match:
+                idx = text.find(match.raw_match)
+                if idx >= 0:
+                    _attach_provenance(hebrew_fact, text, idx,
+                                       idx + len(match.raw_match), page_map)
+            out.append(hebrew_fact)
         return out
 
     def _snapshot_hebrew_assessment(
@@ -2766,6 +3027,12 @@ class AssessmentCenterService:
                                 source=raw.get("source", "imported"),
                                 metadata=raw.get("metadata") or {},
                                 captured_at=raw.get("captured_at") or datetime.utcnow().isoformat() + "Z",
+                                source_text=raw.get("source_text"),
+                                char_start=raw.get("char_start"),
+                                char_end=raw.get("char_end"),
+                                page=raw.get("page"),
+                                timestamp_start=raw.get("timestamp_start"),
+                                timestamp_end=raw.get("timestamp_end"),
                             ))
                         except Exception:
                             continue
@@ -2800,6 +3067,47 @@ def _make_fact(
         source=source,
         metadata=dict(metadata) if metadata else {},
     )
+
+
+_PROVENANCE_SNIPPET_CONTEXT = 60
+_PROVENANCE_SNIPPET_MAX = 240
+
+
+def _attach_provenance(
+    fact: Fact,
+    text: str,
+    start: Optional[int],
+    end: Optional[int],
+    page_map: Optional[List[Dict[str, int]]] = None,
+) -> Fact:
+    """Record where in the source text a fact was found.
+
+    Stores char offsets, a surrounding snippet (so reviewers see the value in
+    context without re-opening the document), and — when a page map is
+    available — the 1-based source page.
+    """
+    if start is None or end is None or not text:
+        return fact
+    fact.char_start = int(start)
+    fact.char_end = int(end)
+    snippet_start = max(0, start - _PROVENANCE_SNIPPET_CONTEXT)
+    snippet_end = min(len(text), end + _PROVENANCE_SNIPPET_CONTEXT)
+    snippet = " ".join(text[snippet_start:snippet_end].split())
+    fact.source_text = snippet[:_PROVENANCE_SNIPPET_MAX] or None
+    if page_map:
+        for map_entry in page_map:
+            try:
+                if map_entry.get("char_start", 0) <= start < map_entry.get("char_end", 0):
+                    if map_entry.get("page") is not None:
+                        fact.page = int(map_entry["page"])
+                    if map_entry.get("timestamp_start") is not None:
+                        fact.timestamp_start = float(map_entry["timestamp_start"])
+                    if map_entry.get("timestamp_end") is not None:
+                        fact.timestamp_end = float(map_entry["timestamp_end"])
+                    break
+            except (TypeError, ValueError):
+                continue
+    return fact
 
 
 def _hashable(value: Any) -> Any:

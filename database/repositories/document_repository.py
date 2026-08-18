@@ -256,3 +256,115 @@ class DocumentProcessingJobRepository(BaseRepository):
         except SQLAlchemyError as e:
             logger.error(f"Error fetching jobs by type {job_type}: {e}")
             return []
+
+    def get_by_idempotency_key(self, key: str) -> Optional[DocumentProcessingJob]:
+        try:
+            return (
+                self.session.query(DocumentProcessingJob)
+                .filter(DocumentProcessingJob.idempotency_key == key)
+                .first()
+            )
+        except SQLAlchemyError as e:
+            logger.error(f"Error fetching job by idempotency key: {e}")
+            return None
+
+    def claim_due_jobs(self, worker_id: str, limit: int = 10,
+                       claim_timeout_seconds: int = 600) -> List[DocumentProcessingJob]:
+        """Atomically claim jobs that are ready to run.
+
+        Ready means: status 'pending', or status 'failed' whose retry time has
+        arrived, or status 'claimed' whose claim expired (crashed worker).
+        Claimed jobs get next_retry_at set to the claim expiry so a worker
+        crash automatically releases them to the next claimer.
+        """
+        from datetime import datetime, timedelta
+        now = datetime.utcnow()
+        try:
+            due = (
+                self.session.query(DocumentProcessingJob)
+                .filter(
+                    (DocumentProcessingJob.status == 'pending')
+                    | (
+                        (DocumentProcessingJob.status.in_(('failed', 'claimed')))
+                        & (DocumentProcessingJob.next_retry_at != None)  # noqa: E711
+                        & (DocumentProcessingJob.next_retry_at <= now)
+                    )
+                )
+                .order_by(DocumentProcessingJob.priority,
+                          DocumentProcessingJob.created_date)
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+                .all()
+            )
+            expiry = now + timedelta(seconds=claim_timeout_seconds)
+            for job in due:
+                job.status = 'claimed'
+                job.worker_id = worker_id
+                job.next_retry_at = expiry
+            self.session.commit()
+            return due
+        except SQLAlchemyError as e:
+            logger.error(f"Error claiming due jobs: {e}")
+            self.session.rollback()
+            # SQLite before 3.x row-locking support: retry without FOR UPDATE.
+            try:
+                due = (
+                    self.session.query(DocumentProcessingJob)
+                    .filter(
+                        (DocumentProcessingJob.status == 'pending')
+                        | (
+                            (DocumentProcessingJob.status.in_(('failed', 'claimed')))
+                            & (DocumentProcessingJob.next_retry_at != None)  # noqa: E711
+                            & (DocumentProcessingJob.next_retry_at <= now)
+                        )
+                    )
+                    .order_by(DocumentProcessingJob.priority,
+                              DocumentProcessingJob.created_date)
+                    .limit(limit)
+                    .all()
+                )
+                from datetime import timedelta as _td
+                expiry = now + _td(seconds=claim_timeout_seconds)
+                for job in due:
+                    job.status = 'claimed'
+                    job.worker_id = worker_id
+                    job.next_retry_at = expiry
+                self.session.commit()
+                return due
+            except SQLAlchemyError as e2:
+                logger.error(f"Fallback claim failed: {e2}")
+                self.session.rollback()
+                return []
+
+    def count_by_status(self) -> Dict[str, int]:
+        """Queue depth: number of jobs per status."""
+        from sqlalchemy import func
+        try:
+            rows = (
+                self.session.query(DocumentProcessingJob.status,
+                                   func.count(DocumentProcessingJob.id))
+                .group_by(DocumentProcessingJob.status)
+                .all()
+            )
+            return {status: count for status, count in rows}
+        except SQLAlchemyError as e:
+            logger.error(f"Error counting jobs by status: {e}")
+            return {}
+
+    def requeue_dead_letter(self, job_id: str) -> bool:
+        """Operator action: move a dead-letter job back to pending."""
+        try:
+            job = self.get_by_id(job_id)
+            if not job or job.status != 'dead_letter':
+                return False
+            job.status = 'pending'
+            job.attempts = 0
+            job.next_retry_at = None
+            job.error_message = None
+            job.worker_id = None
+            self.session.commit()
+            return True
+        except SQLAlchemyError as e:
+            logger.error(f"Error requeuing job {job_id}: {e}")
+            self.session.rollback()
+            return False

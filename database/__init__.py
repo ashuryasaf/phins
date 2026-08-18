@@ -248,6 +248,13 @@ _UPGRADE_NEW_COLUMNS = [
     ('underwriting_applications', 'chat_application_id', 'VARCHAR(50)', None),
     ('underwriting_applications', 'adl_level', 'INTEGER', None),
     ('underwriting_applications', 'monthly_premium', 'FLOAT', None),
+    # Async document-processing queue fields (document intelligence pipeline).
+    ('document_processing_jobs', 'attempts', 'INTEGER', '0'),
+    ('document_processing_jobs', 'max_attempts', 'INTEGER', '3'),
+    ('document_processing_jobs', 'next_retry_at', 'TIMESTAMP', None),
+    ('document_processing_jobs', 'priority', 'INTEGER', '100'),
+    ('document_processing_jobs', 'idempotency_key', 'VARCHAR(200)', None),
+    ('document_processing_jobs', 'worker_id', 'VARCHAR(100)', None),
 ]
 # Columns whose declared type must be widened on existing databases
 # (table_name, column_name, new_type).

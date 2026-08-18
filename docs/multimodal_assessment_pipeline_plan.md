@@ -1,9 +1,22 @@
 # PHINS Multimodal Document Intelligence & AI Assessment Pipeline — Pre-Code Implementation Assessment
 
-Status: **PLAN ONLY — no code written.** This document adjusts the external
-ChatGPT specification ("Multimodal Document Intelligence & AI Assessment
-Pipeline") to the real PHINS codebase so cost, effect, and memory impact can
-be evaluated before implementation is approved.
+Status: **IMPLEMENTED (Phases 1–5 + persistence adjustments), August 2026.**
+This document was the pre-code assessment that adjusted the external ChatGPT
+specification ("Multimodal Document Intelligence & AI Assessment Pipeline")
+to the real PHINS codebase. The implementation followed the phase order below;
+deviations from the plan:
+
+* DOCX parsing uses a stdlib OOXML parser (zipfile + defusedxml) instead of
+  adding the `python-docx` dependency — same capability, zero new packages.
+* Fact provenance was added as first-class optional `Fact` fields (page,
+  char offsets, source snippet, timestamps) with a backward-compatible loader.
+* Claims bot probability reports and advisory LLM artifacts are persisted
+  append-only via `AssessmentRecordService`, and
+  `POST /api/assessment-center/freeze` snapshots the live Customer 360
+  (per the store-facts / compute-on-read / snapshot-decisions policy).
+* Phase 6 scale-out is delivered as `./scripts/entrypoint.sh worker`
+  (standalone worker, requires `USE_DATABASE=true`); a dedicated PaaS service
+  entry is left to the operator, as planned.
 
 Scope: all PHINS assessment surfaces that consume uploaded data — application
 / onboarding, underwriting, claims, bills, Mislaka/Customer 360, and future

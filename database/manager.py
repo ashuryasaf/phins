@@ -55,6 +55,7 @@ from database.repositories import (
     AgentCommissionRepository,
     AssessmentRecordRepository,
     BusinessInquiryRepository,
+    AIUsageRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -128,6 +129,8 @@ class DatabaseManager:
         self._assessment_records = None
         # Business Relations (contact / demo inquiries).
         self._business_inquiries = None
+        # AI usage / cost accounting.
+        self._ai_usage = None
     
     def _ensure_session(self) -> Session:
         """
@@ -185,6 +188,7 @@ class DatabaseManager:
         self._agent_commissions = None
         self._assessment_records = None
         self._business_inquiries = None
+        self._ai_usage = None
     
     @property
     def customers(self) -> CustomerRepository:
@@ -468,6 +472,13 @@ class DatabaseManager:
         if self._business_inquiries is None:
             self._business_inquiries = BusinessInquiryRepository(self._ensure_session())
         return self._business_inquiries
+
+    @property
+    def ai_usage(self) -> AIUsageRepository:
+        """Get AI usage / cost-accounting repository."""
+        if self._ai_usage is None:
+            self._ai_usage = AIUsageRepository(self._ensure_session())
+        return self._ai_usage
 
     def commit(self):
         """Commit current transaction"""

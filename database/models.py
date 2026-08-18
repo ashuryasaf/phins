@@ -1027,6 +1027,70 @@ class AssessmentRecord(Base):
         }
 
 
+class AIUsageRecord(Base):
+    """One row per external AI / parsing operation for cost accounting.
+
+    Answers "what does an assessment cost?" from measured traffic instead of
+    estimates: aggregate by document, assessment, customer, or provider.
+    Unit prices are configurable environment values (never hard-coded) and
+    the price used is snapshotted on the row so later price changes don't
+    rewrite history.
+
+    This is a NEW table - it does not modify any existing data.
+    """
+    __tablename__ = 'ai_usage_records'
+
+    id = Column(String(50), primary_key=True)  # AIUSE-...
+    customer_id = Column(String(50), index=True, nullable=True)
+    assessment_id = Column(String(80), index=True, nullable=True)
+    document_id = Column(String(120), index=True, nullable=True)
+    job_id = Column(String(120), nullable=True)
+
+    provider = Column(String(60), nullable=False, index=True)
+    operation = Column(String(60), nullable=False, index=True)
+    # document_parse | ocr | transcription | llm_completion | video_analysis
+    model = Column(String(120), nullable=True)
+    prompt_version = Column(String(60), nullable=True)
+
+    pages = Column(Integer, nullable=True)
+    input_tokens = Column(Integer, nullable=True)
+    output_tokens = Column(Integer, nullable=True)
+    media_seconds = Column(Float, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+
+    unit_price_snapshot = Column(Text, nullable=True)  # JSON of prices used
+    estimated_cost = Column(Float, nullable=False, default=0.0)
+    currency = Column(String(10), nullable=False, default='USD')
+
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    def to_dict(self):
+        try:
+            prices = json.loads(self.unit_price_snapshot) if self.unit_price_snapshot else {}
+        except Exception:
+            prices = {}
+        return {
+            'id': self.id,
+            'customer_id': self.customer_id,
+            'assessment_id': self.assessment_id,
+            'document_id': self.document_id,
+            'job_id': self.job_id,
+            'provider': self.provider,
+            'operation': self.operation,
+            'model': self.model,
+            'prompt_version': self.prompt_version,
+            'pages': self.pages,
+            'input_tokens': self.input_tokens,
+            'output_tokens': self.output_tokens,
+            'media_seconds': self.media_seconds,
+            'duration_ms': self.duration_ms,
+            'unit_price_snapshot': prices,
+            'estimated_cost': self.estimated_cost,
+            'currency': self.currency,
+            'created_at': self.created_date.isoformat() if self.created_date else None,
+        }
+
+
 class RiskFactorModel(Base):
     """
     Stores individual risk factors identified during assessment.
@@ -2637,7 +2701,16 @@ class Document(Base):
 
 
 class DocumentProcessingJob(Base):
-    """Tracks individual processing tasks run against a document."""
+    """Tracks individual processing tasks run against a document.
+
+    Queue semantics (async document pipeline):
+      pending      -> ready to be claimed by a worker
+      claimed      -> currently executing (next_retry_at doubles as the claim
+                      expiry so crashed workers release their jobs)
+      completed    -> finished successfully
+      failed       -> transient failure awaiting retry at next_retry_at
+      dead_letter  -> exhausted max_attempts; requires operator action
+    """
     __tablename__ = 'document_processing_jobs'
 
     id = Column(String(120), primary_key=True)
@@ -2649,6 +2722,12 @@ class DocumentProcessingJob(Base):
     result = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
     processing_time_ms = Column(Integer, nullable=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    max_attempts = Column(Integer, nullable=False, default=3)
+    next_retry_at = Column(DateTime, nullable=True, index=True)
+    priority = Column(Integer, nullable=False, default=100)
+    idempotency_key = Column(String(200), nullable=True, unique=True, index=True)
+    worker_id = Column(String(100), nullable=True)
     created_date = Column(DateTime, default=datetime.utcnow)
     completed_date = Column(DateTime, nullable=True)
 
@@ -2664,6 +2743,12 @@ class DocumentProcessingJob(Base):
             'result': json.loads(self.result) if self.result else None,
             'error_message': self.error_message,
             'processing_time_ms': self.processing_time_ms,
+            'attempts': self.attempts or 0,
+            'max_attempts': self.max_attempts or 3,
+            'next_retry_at': self.next_retry_at.isoformat() if self.next_retry_at else None,
+            'priority': self.priority if self.priority is not None else 100,
+            'idempotency_key': self.idempotency_key,
+            'worker_id': self.worker_id,
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'completed_date': self.completed_date.isoformat() if self.completed_date else None,
         }

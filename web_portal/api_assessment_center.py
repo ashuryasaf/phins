@@ -1024,6 +1024,10 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
                     "sha256": rec.get("sha256_checksum") or rec.get("sha256"),
                     "facts_extracted": summary.get("facts_extracted", 0),
                     "by_type": summary.get("by_type", {}),
+                    # Async pipeline visibility: queued | processing |
+                    # completed | failed (None for legacy rows).
+                    "processing_status": rec.get("processing_status"),
+                    "status": rec.get("status"),
                 })
             return 200, {"customer_id": cust, "items": enriched, "total": len(enriched)}
         if resource == "export":
@@ -1114,6 +1118,65 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
                 source_context=body.get("source_context") or "assessment_rescan",
             )
             return 200, assessment.to_dict()
+
+        if path == "/api/assessment-center/freeze":
+            # Snapshot the live (computed-on-read) Customer 360 into the
+            # append-only assessment history so lifecycle comparisons
+            # ("what changed since onboarding?") have immutable anchors.
+            # The live view stays computed on read; nothing is overwritten.
+            requested_customer = str(body.get("customer_id") or "").strip()
+            cust, err = _resolve_customer(session, requested_customer)
+            if err:
+                return 403, {"error": err}
+            if not cust:
+                return 400, {"error": "customer_id is required"}
+
+            assessment_type = str(
+                body.get("assessment_type") or "customer_risk").strip().lower()
+            allowed_types = ("customer_risk", "onboarding", "service", "termination")
+            if assessment_type not in allowed_types:
+                return 400, {
+                    "error": f"assessment_type must be one of {', '.join(allowed_types)}"
+                }
+
+            svc = _service()
+            if assessment_type in ("onboarding", "service", "termination"):
+                # Lifecycle freeze: structured advisory assessment, schema-
+                # validated and persisted append-only by the AI service
+                # (deterministic offline when no LLM is configured).
+                from services.assessment_ai_service import get_assessment_ai_service
+                analysis = svc.run_analysis(cust, "unified")
+                artifact = get_assessment_ai_service().generate_structured_assessment(
+                    analysis, customer_id=cust, assessment_type=assessment_type)
+                return 201, {"frozen": True, "assessment_type": assessment_type,
+                             "artifact": artifact}
+
+            # customer_risk freeze: deterministic risk snapshot.
+            from services.assessment_record_service import get_assessment_record_service
+            risk = svc.compute_risk_indicators(cust)
+            facts = svc.get_facts(cust)
+            record = get_assessment_record_service().record_assessment(
+                subject_type="customer",
+                subject_id=cust,
+                assessment_type="customer_risk",
+                customer_id=cust,
+                score=risk.get("risk_score"),
+                level=risk.get("risk_level"),
+                recommendation=None,
+                details={
+                    "trigger": "manual_freeze",
+                    "frozen_by": session.get("username", "user"),
+                    "note": str(body.get("note") or "")[:500] or None,
+                    "fact_count": len(facts),
+                    "contributors": risk.get("contributors") or [],
+                    "contradictions": len(svc.detect_fact_conflicts(cust)),
+                },
+                engine="assessment_center",
+                engine_version="freeze-1",
+                decided_by=session.get("username"),
+            )
+            return 201, {"frozen": True, "assessment_type": "customer_risk",
+                         "record": record}
 
         if path == "/api/assessment-center/mislaka/link":
             requested_customer = str(body.get("customer_id") or "").strip()

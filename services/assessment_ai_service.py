@@ -119,6 +119,7 @@ class AssessmentAIService:
             "source": "assessment_ai",
             "mode": mode,
             "model": self.model if mode == "llm" else "deterministic-offline",
+            "prompt_version": self._narrative_prompt_id(),
             "advisory": True,
             "needs_review": True,
             "confidence": _MAX_ADVISORY_CONFIDENCE,
@@ -138,7 +139,235 @@ class AssessmentAIService:
         }
 
         self._record_audit(customer_id, narrative, facts_digest)
+        self._persist_artifact(
+            customer_id=customer_id,
+            assessment_type="ai_narrative",
+            artifact=narrative,
+            level=None,
+            score=None,
+        )
         return narrative
+
+    def generate_structured_assessment(
+        self,
+        analysis_payload: Dict[str, Any],
+        *,
+        customer_id: str,
+        assessment_type: str,
+        prompt_version: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Advisory lifecycle assessment (onboarding / service / termination).
+
+        The structured result is validated against the prompt's JSON schema
+        before it is returned or persisted — unvalidated model output never
+        becomes an artefact. The LLM path is escalated to the configured
+        stronger model when the customer's facts contain contradictions.
+        Deterministic offline construction is used when no LLM is configured
+        (reproducible, network-free), and the artefact is persisted append-only
+        via the assessment record service.
+        """
+        from prompts import get_prompt
+        from services.llm_providers import (
+            LLMUnavailableError,
+            get_llm_provider,
+            review_disposition,
+            validate_json_schema,
+        )
+
+        template = get_prompt(assessment_type, version=prompt_version)
+        if template.response_schema is None:
+            raise ValueError(f"Prompt {template.prompt_id} has no response schema")
+
+        evidence = self._collect_evidence(analysis_payload)
+        facts_digest = self._facts_digest(evidence)
+        contradictions = self._contradiction_summaries(customer_id)
+
+        mode = "deterministic"
+        result: Optional[Dict[str, Any]] = None
+        provider = get_llm_provider()
+        provider.usage_hook = self._usage_hook(
+            customer_id=customer_id, prompt_version=template.prompt_id)
+        if self.is_llm_enabled():
+            try:
+                user_payload = json.dumps({
+                    "customer_id": customer_id,
+                    "analysis_type": analysis_payload.get("analysis_type"),
+                    "risk": analysis_payload.get("risk"),
+                    "evidence": evidence,
+                    "known_contradictions": contradictions,
+                }, ensure_ascii=False, default=str)
+                result = provider.structured_completion(
+                    template.system_prompt,
+                    user_payload,
+                    template.response_schema,
+                    escalate=bool(contradictions),
+                )
+                mode = "llm"
+            except LLMUnavailableError:
+                result = None
+            except Exception as exc:  # noqa: BLE001 - any failure => safe fallback
+                logger.warning(
+                    "Structured assessment LLM path failed, using deterministic "
+                    "fallback: %s", exc)
+                result = None
+
+        if result is None:
+            result = self._deterministic_structured_result(
+                analysis_payload, evidence, contradictions)
+
+        # The deterministic result must satisfy the same contract as the LLM.
+        schema_errors = validate_json_schema(result, template.response_schema)
+        if schema_errors:
+            raise ValueError(
+                "Structured assessment failed schema validation: "
+                + "; ".join(schema_errors[:5]))
+
+        capped_confidence = min(float(result.get("confidence", 0.0)),
+                                _MAX_ADVISORY_CONFIDENCE)
+        artifact = {
+            "source": "assessment_ai",
+            "assessment_type": assessment_type,
+            "mode": mode,
+            "model": self.model if mode == "llm" else "deterministic-offline",
+            "prompt_version": template.prompt_id,
+            "advisory": True,
+            "needs_review": True,
+            "confidence": capped_confidence,
+            "review_disposition": review_disposition(result.get("confidence")),
+            "customer_id": customer_id,
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "result": result,
+            "evidence": evidence,
+            "evidence_count": len(evidence),
+            "facts_digest": facts_digest,
+            "schema_valid": True,
+            "disclaimer": (
+                "AI-generated advisory assessment of existing facts. It "
+                "introduces no new authoritative facts and must be reviewed "
+                "by a human before any decision."
+            ),
+        }
+        self._record_audit(customer_id, {**artifact, "analysis_type": assessment_type},
+                           facts_digest)
+        self._persist_artifact(
+            customer_id=customer_id,
+            assessment_type=assessment_type,
+            artifact=artifact,
+            level=result.get("risk_level"),
+            score=result.get("confidence"),
+        )
+        return artifact
+
+    def _narrative_prompt_id(self) -> str:
+        try:
+            from prompts import get_prompt
+            return get_prompt("narrative").prompt_id
+        except Exception:
+            return "narrative-v1"
+
+    @staticmethod
+    def _contradiction_summaries(customer_id: str) -> List[str]:
+        """Human-readable summaries of stored cross-document conflicts."""
+        try:
+            from services.assessment_center_service import get_assessment_center
+            conflicts = get_assessment_center().detect_fact_conflicts(customer_id)
+        except Exception:
+            return []
+        summaries = []
+        for conflict in conflicts:
+            values = ", ".join(
+                f"{v['value']} (docs: {', '.join(v['document_ids'])})"
+                for v in conflict.get("values", [])
+            )
+            summaries.append(f"{conflict['field']}: {values}")
+        return summaries
+
+    def _deterministic_structured_result(
+        self,
+        analysis_payload: Dict[str, Any],
+        evidence: List[Dict[str, Any]],
+        contradictions: List[str],
+    ) -> Dict[str, Any]:
+        """Offline, reproducible structured result built only from known facts."""
+        risk = analysis_payload.get("risk") or {}
+        level_raw = str(risk.get("risk_level") or "").strip().lower()
+        risk_level = {
+            "low": "LOW", "medium": "MEDIUM", "moderate": "MEDIUM",
+            "high": "HIGH", "critical": "CRITICAL", "very_high": "CRITICAL",
+        }.get(level_raw, "MEDIUM" if evidence else "LOW")
+
+        findings = []
+        for item in self._highlights(analysis_payload, evidence)[:5]:
+            refs = [str(item["document_id"])] if item.get("document_id") else []
+            findings.append({
+                "title": f"{item.get('category')}/{item.get('label')}",
+                "detail": (
+                    f"Recorded with confidence {item.get('confidence')} from "
+                    f"the deterministic extraction pipeline."
+                ),
+                "evidence_refs": refs,
+            })
+
+        missing = []
+        if not evidence:
+            missing.append("No source-linked evidence is on file for this customer.")
+
+        return {
+            "summary": self._deterministic_summary(analysis_payload, evidence),
+            "risk_level": risk_level,
+            "findings": findings,
+            "missing_information": missing,
+            "contradictions": list(contradictions),
+            "recommendations": [
+                "Review the linked source documents before any decision.",
+            ] + (["Resolve the listed cross-document contradictions."]
+                 if contradictions else []),
+            "confidence": _MAX_ADVISORY_CONFIDENCE,
+            "requires_human_review": True,
+        }
+
+    def _persist_artifact(
+        self,
+        *,
+        customer_id: str,
+        assessment_type: str,
+        artifact: Dict[str, Any],
+        level: Optional[str],
+        score: Optional[float],
+    ) -> None:
+        """Append the advisory artefact to the durable assessment history.
+
+        Best-effort and never fatal: generation must succeed even when the
+        record store is unavailable. Artefacts are append-only — previous
+        assessments are never overwritten.
+        """
+        try:
+            from services.assessment_record_service import get_assessment_record_service
+            get_assessment_record_service().record_assessment(
+                subject_type="customer",
+                subject_id=customer_id,
+                assessment_type=assessment_type,
+                customer_id=customer_id,
+                score=score,
+                level=level,
+                recommendation=None,
+                details={
+                    "advisory": True,
+                    "mode": artifact.get("mode"),
+                    "model": artifact.get("model"),
+                    "prompt_version": artifact.get("prompt_version"),
+                    "facts_digest": artifact.get("facts_digest"),
+                    "evidence_count": artifact.get("evidence_count"),
+                    "review_disposition": artifact.get("review_disposition"),
+                    "result": artifact.get("result") or {
+                        "summary_text": artifact.get("summary_text"),
+                    },
+                },
+                engine="assessment_ai",
+                engine_version=str(artifact.get("prompt_version") or "unversioned"),
+            )
+        except Exception as exc:
+            logger.warning("Assessment artefact persistence skipped: %s", exc)
 
     # ── Evidence collection (provenance-preserving) ──────────────────────
 
@@ -272,18 +501,16 @@ class AssessmentAIService:
         analysis_payload: Dict[str, Any],
         evidence: List[Dict[str, Any]],
     ) -> str:
-        """Call an OpenAI-compatible endpoint to summarise the evidence.
+        """Summarise the evidence through the configured LLM provider.
 
         Raises on any failure so the caller falls back to the deterministic
-        path. Only the evidence trail (optionally value-redacted) is sent.
+        path. Only the evidence trail (optionally value-redacted) is sent —
+        never raw documents (AI data minimisation).
         """
-        import requests  # local import: requests is a runtime dependency
+        from prompts import get_prompt
+        from services.llm_providers import get_llm_provider
 
-        endpoint = os.environ["PHINS_ASSESSMENT_AI_ENDPOINT"].strip()
-        api_key = os.environ["PHINS_ASSESSMENT_AI_API_KEY"].strip()
-        timeout = float(os.environ.get("PHINS_ASSESSMENT_AI_TIMEOUT", "20"))
         redact = _truthy(os.environ.get("PHINS_ASSESSMENT_AI_REDACT"))
-
         evidence_for_model = evidence
         if redact:
             evidence_for_model = [
@@ -291,48 +518,33 @@ class AssessmentAIService:
                 for item in evidence
             ]
 
-        system_prompt = (
-            "You are an insurance assessment assistant. You will be given a set "
-            "of already-extracted facts with provenance. Write a concise, "
-            "professional advisory summary. CRITICAL RULES: only use the facts "
-            "provided; never invent numbers, identifiers, conditions, or "
-            "conclusions; do not provide a final underwriting decision; flag "
-            "anything that needs human review."
-        )
+        template = get_prompt("narrative")
         user_payload = {
             "analysis_type": analysis_payload.get("analysis_type"),
             "evidence": evidence_for_model,
             "risk": analysis_payload.get("risk"),
         }
+        provider = get_llm_provider()
+        provider.usage_hook = self._usage_hook(
+            customer_id=analysis_payload.get("customer_id"),
+            prompt_version=template.prompt_id,
+        )
+        return provider.completion(
+            template.system_prompt,
+            json.dumps(user_payload, ensure_ascii=False, default=str),
+        )
 
-        body = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, default=str)},
-            ],
-            "temperature": 0.0,
-        }
-        resp = requests.post(
-            endpoint,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=body,
-            timeout=timeout,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        content = (
-            data.get("choices", [{}])[0]
-            .get("message", {})
-            .get("content", "")
-        )
-        content = (content or "").strip()
-        if not content:
-            raise ValueError("Empty completion from assessment AI endpoint")
-        return content
+    @staticmethod
+    def _usage_hook(customer_id: Optional[str], prompt_version: Optional[str]):
+        """Cost-metering hook for LLM calls; never breaks the caller."""
+        try:
+            from services.ai_usage_service import get_ai_usage_service
+            return get_ai_usage_service().usage_hook({
+                "customer_id": customer_id,
+                "prompt_version": prompt_version,
+            })
+        except Exception:
+            return None
 
     # ── Audit ─────────────────────────────────────────────────────────────
 

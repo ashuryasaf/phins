@@ -13,12 +13,18 @@ PHINS is a Python platform built around:
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`, `api_agent_ecosystem.py`,
   `api_assessment_center.py`)
-- service-layer logic in `services/` (81 modules)
+- service-layer logic in `services/` (97 modules)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (139 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (178 files) and root-level `test_*.py` (11 files)
+- an async document intelligence pipeline: uploads can enqueue enrichment
+ (`PHINS_DOC_ASYNC=true`) into `document_processing_jobs`, drained by
+ `services/document_job_worker.py` (retries, dead-letter, idempotency keys);
+ facts carry evidence provenance (source snippet, char offsets, PDF page,
+ audio/video timestamps) and cross-document contradictions are recorded as
+ `contradiction` facts, never silently resolved
 
 Runtime defaults are important:
 
@@ -78,7 +84,13 @@ Preferred file-by-task:
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
 |                                        # (includes `static/locales/he.json` Hebrew i18n)
-|- services/                            # 81 service modules
+|- prompts/                             # versioned LLM prompt templates
+|  `- assessment/                       # narrative/onboarding/service/termination v1
+|- services/                            # 97 service modules
+|  |- document_job_worker.py            # async doc queue worker (retry/DLQ)
+|  |- llm_providers.py                  # vendor-neutral LLM + schema validation
+|  |- transcription_providers.py        # audio speech-to-text abstraction
+|  `- ai_usage_service.py               # AI/parse cost metering
 |- database/
 |  |- config.py
 |  |- manager.py
@@ -89,7 +101,7 @@ Preferred file-by-task:
 |  |- seeds.py
 |  |- migrate_data.py
 |  |- migrations/
-|  |- repositories/                     # 15 *_repository.py + base.py
+|  |- repositories/                     # 18 *_repository.py + base.py
 |- security/
 |  |- vault.py
 |  |- auth_tokens.py
@@ -105,8 +117,8 @@ Preferred file-by-task:
 |- scheduler/
 |  `- runner.py
 |- scripts/                             # operational utilities
-|  `- entrypoint.sh                     # container dispatcher (serve/cron/db-init)
-|- tests/                               # 139 test files
+|  `- entrypoint.sh                     # container dispatcher (serve/cron/worker/db-init)
+|- tests/                               # 178 test files
 |- docs/
 |  |- platform_data_architecture.md
 |  |- health_marketplace_architecture.md
@@ -266,8 +278,9 @@ When working on deployment or environment configuration:
 3. Confirm how the app starts in production before changing commands or ports.
 4. All manifests dispatch through `scripts/entrypoint.sh`
    (`serve` runs `python3 web_portal/server.py`; other modes: `cron`,
-   `db-init`, `shell`, `exec`). Keep startup behavior compatible with it
-   unless the task explicitly changes the entrypoint.
+   `worker` (standalone async document worker, requires `USE_DATABASE=true`),
+   `bi-snapshot`, `db-init`, `shell`, `exec`). Keep startup behavior
+   compatible with it unless the task explicitly changes the entrypoint.
 5. Document any environment-variable or operator-facing changes.
 
 Railway-specific docs (6 files):
@@ -290,7 +303,21 @@ Environment variables commonly used:
 - **Ledger:** `ENABLE_LEDGER_PERSISTENCE`, `LEDGER_PERSISTENCE_VERBOSE`,
   `LEDGER_PERSISTENCE_LOG_INTERVAL`, `PHINS_LEDGER_DB_AUTOREPAIR`
 - **Media:** `MEDIA_PROVIDER_WEBHOOK_SECRET`, `DEFAULT_MEDIA_SUBTITLE_PROVIDER`,
-  `DEFAULT_MEDIA_VIDEO_PROVIDER`, `PHINS_MEDIA_INLINE_MAX_BYTES`
+ `DEFAULT_MEDIA_VIDEO_PROVIDER`, `PHINS_MEDIA_INLINE_MAX_BYTES`
+- **Document pipeline:** `PHINS_DOC_ASYNC` (enqueue enrichment instead of
+ inline processing; default off), `PHINS_DOC_WORKER_CONCURRENCY`,
+ `PHINS_DOC_WORKER_POLL_INTERVAL`, `PHINS_DOC_RETRY_SCHEDULE`,
+ `PHINS_DOC_CLAIM_TIMEOUT`
+- **Transcription:** `PHINS_TRANSCRIPTION_PROVIDER`
+ (`openai_compatible`|`disabled`), `PHINS_TRANSCRIPTION_ENDPOINT`,
+ `PHINS_TRANSCRIPTION_API_KEY`, `PHINS_TRANSCRIPTION_MODEL`
+- **Advisory LLM:** `PHINS_ASSESSMENT_AI_ENABLED`, `PHINS_ASSESSMENT_AI_ENDPOINT`,
+ `PHINS_ASSESSMENT_AI_API_KEY`, `PHINS_ASSESSMENT_AI_MODEL`,
+ `PHINS_LLM_ESCALATION_MODEL`, `PHINS_AI_ACCEPT_THRESHOLD`,
+ `PHINS_AI_REVIEW_THRESHOLD`
+- **AI cost prices:** `PHINS_AI_PRICE_INPUT_PER_MTOK`,
+ `PHINS_AI_PRICE_OUTPUT_PER_MTOK`, `PHINS_AI_PRICE_PARSE_PER_PAGE`,
+ `PHINS_AI_PRICE_TRANSCRIPTION_PER_MIN`
 - **Auto-pay:** `PHINS_DEFAULT_AUTO_PAY_CARD_NUMBER`,
   `MONTHLY_AUTO_PAY_COMMAND_TOKEN`
 - **Security:** `SESSION_SECRET_KEY`, `PHINS_ENCRYPTION_KEY`,
@@ -344,7 +371,7 @@ Important test harness facts:
 - Tests reset in-memory portal state between cases (clears `POLICIES`,
   `CLAIMS`, `CUSTOMERS`, `SESSIONS`, `BILLING`, etc.)
 - Options wheel service and document processing service are also reset per test
-- 139 test files under `tests/`, 11 root-level `test_*.py` files
+- 178 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -418,4 +445,4 @@ If you update this file again:
 
 ---
 
-Last updated: August 4, 2026
+Last updated: August 18, 2026
