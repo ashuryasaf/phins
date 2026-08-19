@@ -311,13 +311,34 @@ body.chat-apply-page {
 .chat-scroll {
     flex: 1;
     overflow-y: auto;
-    /* Extra 10vh bottom clearance so the latest Q&A stays readable above the dock */
-    padding: 26px 4px calc(18px + 10vh);
+    padding: 26px 4px 18px;
     display: flex;
     flex-direction: column;
     gap: 14px;
     /* Instant programmatic scrolls after OTP / Q&A; avoid smooth fighting layout */
     scroll-behavior: auto;
+    /* Keep scrollIntoView / anchors from burying the last bubble in the dock */
+    scroll-padding-bottom: 12vh;
+}
+
+/*
+ * Permanent bottom spacer (≥10% of page length): keeps the latest
+ * question/answer visibly above the input dock through the whole process.
+ */
+.chat-scroll::after {
+    content: "";
+    display: block;
+    flex: 0 0 auto;
+    flex-shrink: 0;
+    width: 100%;
+    height: 12vh;
+    min-height: 12vh;
+    pointer-events: none;
+}
+
+.msg-row,
+.chat-card {
+    scroll-margin-bottom: 12vh;
 }
 
 .msg-row {

@@ -79,32 +79,23 @@
     }
 
     function scrollClearance(el) {
-        // Match the ~10vh bottom padding on .chat-scroll so programmatic
-        // scrolls leave the latest Q&A readable above the input dock.
-        return Math.round((el.clientHeight || window.innerHeight || 800) * 0.10) + 480;
+        // ≥10% of the chat pane (matches .chat-scroll::after spacer).
+        return Math.max(
+            Math.round((el.clientHeight || window.innerHeight || 800) * 0.12),
+            Math.round((window.innerHeight || 800) * 0.12)
+        );
     }
 
     function scrollDown(forceInstant) {
         const el = chatScroll();
         if (!el) return;
-        // Programmatic scrolls must not fight CSS scroll-behavior:smooth —
-        // after OTP / Q&A the dock height changes and smooth mid-scrolls leave
-        // the latest bubble hidden behind the input dock.
+        // Always scroll to the absolute bottom so the permanent ::after spacer
+        // stays between the latest Q&A and the input dock (scrollIntoView
+        // block:end would pin the bubble flush to the dock and hide the gap).
         const prev = el.style.scrollBehavior;
         el.style.scrollBehavior = 'auto';
         const run = () => {
-            const pad = scrollClearance(el);
-            const last = el.lastElementChild;
-            if (last && typeof last.scrollIntoView === 'function') {
-                try {
-                    last.scrollIntoView({ behavior: 'auto', block: 'end', inline: 'nearest' });
-                } catch (e) {
-                    el.scrollTop = el.scrollHeight + pad;
-                }
-            } else {
-                el.scrollTop = el.scrollHeight + pad;
-            }
-            // Second pass after dock/layout settles (OTP boxes, signature pad).
+            el.scrollTop = el.scrollHeight + scrollClearance(el);
             requestAnimationFrame(() => {
                 el.scrollTop = el.scrollHeight + scrollClearance(el);
                 el.style.scrollBehavior = prev || '';
