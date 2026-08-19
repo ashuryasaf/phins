@@ -1040,8 +1040,12 @@
             // on screen (fresh-page resume). The same-tab continue path still
             // shows the live conversation, so replaying would duplicate it.
             state.otpRestoreTranscript = chatScroll().childElementCount === 0;
-            addBubble('bot', richText(
-                `Welcome back! Since your session is verified, I sent a fresh security code to **${data.masked_email || 'your email'}** - enter it and we'll continue.`));
+            // Masked emails contain literal '*' (e.g. as***@domain) — do not wrap
+            // them in **markdown** or richText will close bold early and leave stray '*'.
+            addBubble('bot',
+                richText('Welcome back! Since your session is verified, I sent a fresh security code to ')
+                + `<strong>${escapeHtml(data.masked_email || 'your email')}</strong>`
+                + richText(" — enter it and we'll continue."));
             state.otp = { verification_id: (data.otp || {}).verification_id };
             if ((data.otp || {}).demo_otp_code) {
                 addBubble('bot',
