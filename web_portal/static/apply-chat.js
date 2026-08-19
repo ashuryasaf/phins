@@ -78,6 +78,12 @@
         catch (e) { return null; }
     }
 
+    function scrollClearance(el) {
+        // Match the ~10vh bottom padding on .chat-scroll so programmatic
+        // scrolls leave the latest Q&A readable above the input dock.
+        return Math.round((el.clientHeight || window.innerHeight || 800) * 0.10) + 480;
+    }
+
     function scrollDown(forceInstant) {
         const el = chatScroll();
         if (!el) return;
@@ -87,19 +93,20 @@
         const prev = el.style.scrollBehavior;
         el.style.scrollBehavior = 'auto';
         const run = () => {
+            const pad = scrollClearance(el);
             const last = el.lastElementChild;
             if (last && typeof last.scrollIntoView === 'function') {
                 try {
                     last.scrollIntoView({ behavior: 'auto', block: 'end', inline: 'nearest' });
                 } catch (e) {
-                    el.scrollTop = el.scrollHeight + 480;
+                    el.scrollTop = el.scrollHeight + pad;
                 }
             } else {
-                el.scrollTop = el.scrollHeight + 480;
+                el.scrollTop = el.scrollHeight + pad;
             }
             // Second pass after dock/layout settles (OTP boxes, signature pad).
             requestAnimationFrame(() => {
-                el.scrollTop = el.scrollHeight + 480;
+                el.scrollTop = el.scrollHeight + scrollClearance(el);
                 el.style.scrollBehavior = prev || '';
             });
         };
