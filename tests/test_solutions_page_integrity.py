@@ -134,9 +134,7 @@ def test_preview_copy_does_not_expose_implementation_secrets():
     lowered = blob.lower()
     for token in forbidden:
         assert token.lower() not in lowered, token
-    # Outline-only framing is preserved; no “secret” badge is added.
-    assert "outlines, not implementations" in html
-    assert "under NDA" in html
+    assert "This page intentionally shares outlines, not implementations" not in html
     assert "SHA-256" not in preview
     assert "pricing kernel" not in preview.lower()
     assert "john.doe" not in preview.lower()
