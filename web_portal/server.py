@@ -8524,19 +8524,229 @@ def _format_business_inquiry_admin_email(record: Dict[str, Any]) -> Tuple[str, s
     return subject, content, html_content
 
 
-def _notify_business_inquiry_received(record: Dict[str, Any]) -> Dict[str, Any]:
-    """Email admins about a new contact/demo inquiry. Never raises to callers.
+_BUSINESS_INQUIRY_AUDIENCE_LABELS = {
+    'individual': 'Individual',
+    'enterprise': 'Enterprise',
+    'investor': 'Investor',
+    'partner': 'Partner / MGA',
+    'other': 'Other',
+}
+_BUSINESS_INQUIRY_INTEREST_LABELS = {
+    'underwriting': 'Underwriting',
+    'assessments': 'Assessments',
+    'billing': 'Billing',
+    'claims': 'Claims',
+    'actuarial_investments': 'Actuarial & Investments',
+    'smart_contracts': 'Smart Contracts',
+    'mga_solutions': 'MGA Solutions',
+    'platform': 'Full Platform',
+}
 
-    Persistence is the source of truth; email is best-effort so a flaky SMTP
-    provider cannot block public intake after a durable write.
+
+def _format_business_inquiry_sender_confirmation_email(
+    record: Dict[str, Any],
+) -> Tuple[str, str, str]:
+    """Build welcome + confirmation email for the inquiry sender."""
+    import html as _html
+
+    inquiry_type = str(record.get('inquiry_type') or 'contact').strip().lower()
+    type_label = 'demo request' if inquiry_type == 'demo' else 'business inquiry'
+    inquiry_id = str(record.get('id') or '')
+    name = str(record.get('name') or '').strip() or 'there'
+    email = str(record.get('email') or '')
+    organization = str(record.get('organization') or '').strip() or '(not provided)'
+    audience = str(record.get('audience') or '')
+    interest = str(record.get('interest') or '')
+    message = str(record.get('message') or '').strip() or '(no message provided)'
+    created_at = str(record.get('created_at') or '')
+    audience_label = _BUSINESS_INQUIRY_AUDIENCE_LABELS.get(audience, audience or '(n/a)')
+    interest_label = _BUSINESS_INQUIRY_INTEREST_LABELS.get(interest, interest or '(n/a)')
+    reply_to = (
+        str(os.environ.get('EMAIL_REPLY_TO') or '').strip()
+        or str(os.environ.get('EMAIL_FROM_ADDRESS') or '').strip()
+        or 'support@phins.ai'
+    )
+
+    subject = f"PHINS confirmation — we received your {type_label} ({inquiry_id})"
+    content = (
+        f"Hello {name},\n\n"
+        f"Thank you for contacting PHINS Business Relations. "
+        f"This email confirms we received your {type_label} and our team will follow up shortly.\n\n"
+        f"Your reference ID: {inquiry_id}\n"
+        f"Submitted: {created_at}\n\n"
+        f"Details we have on file:\n"
+        f"  Type: {inquiry_type}\n"
+        f"  Name: {name}\n"
+        f"  Email: {email}\n"
+        f"  Organization: {organization}\n"
+        f"  Audience: {audience_label}\n"
+        f"  Interest: {interest_label}\n\n"
+        f"Your message:\n{message}\n\n"
+        f"Please keep this reference ID for your records. "
+        f"If anything looks incorrect, reply to this email or contact {reply_to}.\n\n"
+        f"Welcome to PHINS — we look forward to speaking with you.\n\n"
+        f"— PHINS Business Relations\n"
+        f"https://www.phins.ai"
+    )
+    h = {k: _html.escape(v, quote=True) for k, v in {
+        'name': name,
+        'type_label': type_label,
+        'inquiry_id': inquiry_id,
+        'created_at': created_at,
+        'inquiry_type': inquiry_type,
+        'email': email,
+        'organization': organization,
+        'audience_label': audience_label,
+        'interest_label': interest_label,
+        'message': message,
+        'reply_to': reply_to,
+    }.items()}
+    html_content = (
+        f"<div style='font-family:sans-serif;font-size:15px;line-height:1.5;color:#222'>"
+        f"<h2 style='margin:0 0 12px'>Welcome — we received your {h['type_label']}</h2>"
+        f"<p>Hello {h['name']},</p>"
+        f"<p>Thank you for contacting <strong>PHINS Business Relations</strong>. "
+        f"This email confirms we received your {h['type_label']} and our team will "
+        f"follow up shortly.</p>"
+        f"<p><strong>Your reference ID:</strong> <code>{h['inquiry_id']}</code><br>"
+        f"<strong>Submitted:</strong> {h['created_at']}</p>"
+        f"<h3 style='margin:20px 0 8px;font-size:16px'>Details on file</h3>"
+        f"<table style='border-collapse:collapse;font-size:14px'>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Type</td><td>{h['inquiry_type']}</td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Name</td><td>{h['name']}</td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Email</td><td>{h['email']}</td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Organization</td>"
+        f"<td>{h['organization']}</td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Audience</td>"
+        f"<td>{h['audience_label']}</td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Interest</td>"
+        f"<td>{h['interest_label']}</td></tr>"
+        f"</table>"
+        f"<h3 style='margin:20px 0 8px;font-size:16px'>Your message</h3>"
+        f"<pre style='white-space:pre-wrap;font-family:sans-serif;background:#f7f7f7;"
+        f"padding:12px;border-radius:6px'>{h['message']}</pre>"
+        f"<p style='margin-top:16px;color:#555'>Please keep this reference ID for your records. "
+        f"If anything looks incorrect, reply to this email or contact "
+        f"<a href='mailto:{h['reply_to']}'>{h['reply_to']}</a>.</p>"
+        f"<p>Welcome to PHINS — we look forward to speaking with you.</p>"
+        f"<p style='margin-top:24px;color:#555'>— PHINS Business Relations<br>"
+        f"<a href='https://www.phins.ai'>www.phins.ai</a></p>"
+        f"</div>"
+    )
+    return subject, content, html_content
+
+
+def _send_business_inquiry_email(
+    *,
+    recipient: str,
+    subject: str,
+    content: str,
+    html_content: str,
+    metadata: Dict[str, Any],
+    notification_service: Any = None,
+) -> Tuple[bool, Optional[str]]:
+    """Send one business-relations email via the notification service."""
+    try:
+        from services.notification_service import (
+            NotificationChannel,
+            NotificationPriority,
+            NotificationRequest,
+            get_notification_service,
+        )
+        service = notification_service or get_notification_service()
+        send_result = service.send(NotificationRequest(
+            channel=NotificationChannel.EMAIL,
+            recipient=recipient,
+            subject=subject,
+            content=content,
+            html_content=html_content,
+            priority=NotificationPriority.HIGH,
+            metadata=metadata,
+        ))
+        if getattr(send_result, 'success', False):
+            return True, None
+        return False, getattr(send_result, 'error_message', None) or 'send failed'
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _notify_business_inquiry_sender_confirmation(
+    record: Dict[str, Any],
+    notification_service: Any = None,
+) -> Dict[str, Any]:
+    """Send welcome + confirmation email to the inquiry sender. Best-effort."""
+    result: Dict[str, Any] = {
+        'attempted': False,
+        'recipient': None,
+        'sent': False,
+        'error': None,
+    }
+    try:
+        recipient = sanitize_input(str(record.get('email') or ''), 254).lower()
+        result['recipient'] = recipient or None
+        if not recipient or not validate_email(recipient):
+            result['error'] = 'missing_or_invalid_sender_email'
+            return result
+
+        subject, content, html_content = _format_business_inquiry_sender_confirmation_email(record)
+        result['attempted'] = True
+        ok, error = _send_business_inquiry_email(
+            recipient=recipient,
+            subject=subject,
+            content=content,
+            html_content=html_content,
+            metadata={
+                'category': 'business_inquiry',
+                'event': 'inquiry_sender_confirmation',
+                'inquiry_id': record.get('id'),
+                'inquiry_type': record.get('inquiry_type'),
+                'audience': record.get('audience'),
+                'interest': record.get('interest'),
+            },
+            notification_service=notification_service,
+        )
+        result['sent'] = ok
+        result['error'] = error
+        if ok:
+            print(
+                f"[BUSINESS-RELATIONS] Sender confirmation sent for "
+                f"{record.get('id')} to {recipient}"
+            )
+        else:
+            print(
+                f"[BUSINESS-RELATIONS] Sender confirmation failed for "
+                f"{record.get('id')} to {recipient}: {error}"
+            )
+    except Exception as exc:
+        result['error'] = str(exc)
+        print(f"[BUSINESS-RELATIONS] Sender confirmation error: {exc}")
+    return result
+
+
+def _notify_business_inquiry_received(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Notify admins and the inquiry sender after a durable create. Never raises.
+
+    Persistence is the source of truth; email is best-effort so a flaky provider
+    cannot block public intake after a durable write.
     """
     result: Dict[str, Any] = {
         'attempted': False,
         'recipients': [],
         'sent': [],
         'failed': [],
+        'sender_confirmation': None,
     }
     try:
+        from services.notification_service import get_notification_service
+
+        notification_service = get_notification_service()
+
+        # 1) Welcome + confirmation to the visitor (always attempt when email valid).
+        result['sender_confirmation'] = _notify_business_inquiry_sender_confirmation(
+            record, notification_service=notification_service
+        )
+
+        # 2) Admin alert with full inquiry details.
         recipients = _resolve_business_inquiry_notify_emails()
         result['recipients'] = list(recipients)
         if not recipients:
@@ -8546,15 +8756,7 @@ def _notify_business_inquiry_received(record: Dict[str, Any]) -> Dict[str, Any]:
             )
             return result
 
-        from services.notification_service import (
-            NotificationChannel,
-            NotificationPriority,
-            NotificationRequest,
-            get_notification_service,
-        )
-
         subject, content, html_content = _format_business_inquiry_admin_email(record)
-        notification_service = get_notification_service()
         result['attempted'] = True
         metadata = {
             'category': 'business_inquiry',
@@ -8566,25 +8768,18 @@ def _notify_business_inquiry_received(record: Dict[str, Any]) -> Dict[str, Any]:
             'visitor_email': record.get('email'),
         }
         for recipient in recipients:
-            try:
-                send_result = notification_service.send(NotificationRequest(
-                    channel=NotificationChannel.EMAIL,
-                    recipient=recipient,
-                    subject=subject,
-                    content=content,
-                    html_content=html_content,
-                    priority=NotificationPriority.HIGH,
-                    metadata=metadata,
-                ))
-                if getattr(send_result, 'success', False):
-                    result['sent'].append(recipient)
-                else:
-                    result['failed'].append({
-                        'recipient': recipient,
-                        'error': getattr(send_result, 'error_message', None) or 'send failed',
-                    })
-            except Exception as exc:
-                result['failed'].append({'recipient': recipient, 'error': str(exc)})
+            ok, error = _send_business_inquiry_email(
+                recipient=recipient,
+                subject=subject,
+                content=content,
+                html_content=html_content,
+                metadata=metadata,
+                notification_service=notification_service,
+            )
+            if ok:
+                result['sent'].append(recipient)
+            else:
+                result['failed'].append({'recipient': recipient, 'error': error})
 
         if result['sent']:
             print(
@@ -8597,7 +8792,7 @@ def _notify_business_inquiry_received(record: Dict[str, Any]) -> Dict[str, Any]:
                 f"{result['failed']}"
             )
     except Exception as exc:
-        print(f"[BUSINESS-RELATIONS] Admin alert error: {exc}")
+        print(f"[BUSINESS-RELATIONS] Inquiry notification error: {exc}")
         result['failed'].append({'recipient': None, 'error': str(exc)})
     return result
 
@@ -30721,11 +30916,12 @@ For claims or questions, please contact:
                     return
                 notify_record = dict(record)
 
-            # Admin alert after durable write (best-effort; never block the 200).
+            # Admin alert + sender welcome/confirmation after durable write
+            # (best-effort; never block the 200).
             try:
                 _notify_business_inquiry_received(notify_record)
             except Exception as notify_exc:
-                print(f"[BUSINESS-RELATIONS] Admin notify raised: {notify_exc}")
+                print(f"[BUSINESS-RELATIONS] Inquiry notify raised: {notify_exc}")
 
             print(f"[BUSINESS-RELATIONS] New {inquiry_type} inquiry {inquiry_id} ({audience}/{interest})")
             self._set_json_headers(200)

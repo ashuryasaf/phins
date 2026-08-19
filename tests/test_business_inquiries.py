@@ -439,11 +439,17 @@ def test_admin_email_sent_with_full_inquiry_details(monkeypatch):
     assert body.get("duplicate") is None
     inquiry_id = body["inquiry"]["id"]
 
-    assert len(captured) == 2, f"expected 2 admin emails, got {len(captured)}"
+    # 2 admin alerts + 1 sender welcome/confirmation
+    assert len(captured) == 3, f"expected 3 emails, got {len(captured)}"
     recipients = {req.recipient for req in captured}
-    assert recipients == {"ops@phins.ai", "relations@phins.ai"}
+    assert recipients == {"ops@phins.ai", "relations@phins.ai", "alert.demo@example.com"}
 
-    sample = captured[0]
+    admin_mails = [
+        req for req in captured
+        if req.metadata.get("event") == "inquiry_received"
+    ]
+    assert len(admin_mails) == 2
+    sample = admin_mails[0]
     assert "Business Relations" in sample.subject
     assert inquiry_id in sample.subject
     assert "Alert Demo" in sample.content
@@ -456,6 +462,22 @@ def test_admin_email_sent_with_full_inquiry_details(monkeypatch):
     assert sample.metadata.get("category") == "business_inquiry"
     assert sample.metadata.get("inquiry_id") == inquiry_id
     assert sample.metadata.get("inquiry_type") == "demo"
+
+    sender_mails = [
+        req for req in captured
+        if req.metadata.get("event") == "inquiry_sender_confirmation"
+    ]
+    assert len(sender_mails) == 1
+    sender = sender_mails[0]
+    assert sender.recipient == "alert.demo@example.com"
+    assert "confirmation" in sender.subject.lower()
+    assert inquiry_id in sender.subject
+    assert "Welcome" in sender.html_content or "welcome" in sender.content.lower()
+    assert "Alert Demo" in sender.content
+    assert "Alert Org" in sender.content
+    assert "Actuarial & Investments" in sender.content
+    assert "investment committee" in sender.content
+    assert sender.metadata.get("inquiry_id") == inquiry_id
 
 
 def test_admin_email_not_sent_on_duplicate_inquiry(monkeypatch):
@@ -522,6 +544,64 @@ def test_format_business_inquiry_admin_email_escapes_html():
     assert "&lt;script&gt;" in html
     assert "Org &amp; Co" in html
     assert "&lt;b&gt;world&lt;/b&gt;" in html
+
+
+def test_format_sender_confirmation_includes_welcome_and_details():
+    subject, content, html = portal._format_business_inquiry_sender_confirmation_email({
+        "id": "BRI-209901-WELCOME1",
+        "inquiry_type": "demo",
+        "name": "Dana Levi",
+        "email": "dana@example.com",
+        "organization": "Example Health",
+        "audience": "enterprise",
+        "interest": "underwriting",
+        "message": "Looking forward to a walkthrough.",
+        "status": "new",
+        "created_at": "2099-01-01T12:00:00",
+    })
+    assert "confirmation" in subject.lower()
+    assert "BRI-209901-WELCOME1" in subject
+    assert "Hello Dana Levi" in content
+    assert "Welcome" in html
+    assert "Enterprise" in content
+    assert "Underwriting" in content
+    assert "Looking forward to a walkthrough." in content
+    assert "dana@example.com" in content
+    assert "Example Health" in html
+
+
+def test_sender_confirmation_still_sent_without_admin_recipients(monkeypatch):
+    """Visitor confirmation must not depend on admin notify env being set."""
+    captured = []
+
+    class _FakeResult:
+        success = True
+        error_message = None
+
+    class _FakeNotificationService:
+        def send(self, request):
+            captured.append(request)
+            return _FakeResult()
+
+    monkeypatch.setattr(portal, "_resolve_business_inquiry_notify_emails", lambda: [])
+    monkeypatch.setattr(
+        "services.notification_service.get_notification_service",
+        lambda: _FakeNotificationService(),
+    )
+
+    body, status = _post(
+        "/api/business/inquiries",
+        _valid_payload(
+            email="visitor.only@example.com",
+            name="Visitor Only",
+            interest="billing",
+            inquiry_type="contact",
+        ),
+    )
+    assert status == 200, body
+    assert len(captured) == 1
+    assert captured[0].recipient == "visitor.only@example.com"
+    assert captured[0].metadata.get("event") == "inquiry_sender_confirmation"
 
 
 def test_db_mode_persist_failure_rejects_public_submission(monkeypatch):
