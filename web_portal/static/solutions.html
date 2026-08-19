@@ -512,6 +512,12 @@
       border: 1px solid var(--line);
       overflow: hidden;
     }
+    .sol-live-frame {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      border: 0;
+      background: #0b1224;
+    }
     .sol-stage::after {
       content: '';
       position: absolute; inset: 0;
@@ -1507,124 +1513,20 @@
 
     // ===== Enlarged solution theater (11-second visual walkthroughs) =====
     var WALKTHROUGH_MS = 11000;
-    var SCENE_MS = 2750;
+    var PREVIEW_FRAME = '/previews/capability.html';
     var PREVIEW_SCENES = {
-      underwriting: [
-        { caption: 'Application Intake', kind: 'pipeline', steps: ['Apply', 'Review', 'Decide', 'Price'], lit: 1, kpis: ['Pipeline', 'Review', 'Decision'] },
-        { caption: 'Risk Evaluation', kind: 'bars', heights: [42, 68, 54, 80, 47, 72], kpis: ['Signals', 'Demographics', 'Terms'] },
-        { caption: 'Underwriter Workbench', kind: 'desks', tiles: ['Case File', 'Decision', 'Notes', 'Authority'], kpis: ['Queue', 'In Review', 'Approved'] },
-        { caption: 'Pricing Connection', kind: 'curve', kpis: ['Coverage', 'Premium', 'Parameters'] }
-      ],
-      assessments: [
-        { caption: 'Imported Facts', kind: 'bars', heights: [30, 55, 48, 70, 40, 62], kpis: ['Facts', 'Documents', 'Sources'] },
-        { caption: '360° Customer View', kind: 'rings', kpis: ['Profile', 'History', 'Context'] },
-        { caption: 'Risk Classification', kind: 'pipeline', steps: ['Gather', 'Classify', 'Advise', 'Record'], lit: 2, kpis: ['Level', 'Insight', 'Audit'] },
-        { caption: 'Decision Feed', kind: 'desks', tiles: ['Underwriting', 'Servicing', 'Portfolio', 'Record'], kpis: ['Ready', 'Routed', 'Logged'] }
-      ],
-      billing: [
-        { caption: 'Premium Schedule', kind: 'bars', heights: [50, 58, 46, 72, 64, 80], kpis: ['Cycle', 'Amount', 'Status'] },
-        { caption: 'Collection', kind: 'pipeline', steps: ['Invoice', 'Collect', 'Confirm', 'Post'], lit: 2, kpis: ['Due', 'Received', 'Open'] },
-        { caption: 'Auto-Pay', kind: 'desks', tiles: ['Card', 'Schedule', 'Notice', 'Retry'], kpis: ['Enrolled', 'Next Run', 'Method'] },
-        { caption: 'Reconciliation', kind: 'curve', kpis: ['Charge', 'Ledger', 'Trace'] }
-      ],
-      claims: [
-        { caption: 'Claims Intake', kind: 'pipeline', steps: ['Intake', 'Document', 'Review', 'Settle'], lit: 1, kpis: ['New', 'Open', 'Ready'] },
-        { caption: 'Document Handling', kind: 'bars', heights: [36, 60, 44, 78, 52, 66], kpis: ['Files', 'Checks', 'Complete'] },
-        { caption: 'Adjuster Review', kind: 'desks', tiles: ['Case', 'Evidence', 'Opinion', 'Action'], kpis: ['Assigned', 'In Review', 'Hold'] },
-        { caption: 'Settlement Flow', kind: 'curve', kpis: ['Approved', 'Released', 'Closed'] }
-      ],
-      actuarial_investments: [
-        { caption: 'Actuarial Tables', kind: 'bars', heights: [40, 62, 55, 74, 48, 68], kpis: ['Tables', 'Horizon', 'Series'] },
-        { caption: 'Reserve Forecast', kind: 'curve', kpis: ['Reserve', 'Path', 'Range'] },
-        { caption: 'Portfolio View', kind: 'nodes', tiles: ['Cover', 'Save', 'Invest'], kpis: ['Mix', 'Balance', 'Link'] },
-        { caption: 'Capital Connection', kind: 'pipeline', steps: ['Price', 'Reserve', 'Allocate', 'Review'], lit: 3, kpis: ['Risk', 'Capital', 'Cover'] }
-      ],
-      platform: [
-        { caption: 'Role-Scoped Access', kind: 'desks', tiles: ['Underwriter', 'Adjuster', 'Billing', 'Actuary'], kpis: ['Roles', 'Desks', 'Scope'] },
-        { caption: 'Layered Defenses', kind: 'rings', kpis: ['Network', 'Request', 'Session'] },
-        { caption: 'Event Trail', kind: 'bars', heights: [28, 46, 58, 70, 52, 80], kpis: ['Events', 'Order', 'Seal'] },
-        { caption: 'Ready for Examination', kind: 'pipeline', steps: ['Capture', 'Seal', 'Review', 'Attest'], lit: 4, kpis: ['Integrity', 'Access', 'Trail'] }
-      ],
-      smart_contracts: [
-        { caption: 'Agreement Outline', kind: 'pipeline', steps: ['Draft', 'Sign', 'Anchor', 'Execute'], lit: 1, kpis: ['Parties', 'Terms', 'State'] },
-        { caption: 'Verifiable Signature', kind: 'rings', kpis: ['Signers', 'Record', 'Proof'] },
-        { caption: 'Settlement Rail', kind: 'curve', kpis: ['Trigger', 'Settle', 'Confirm'] },
-        { caption: 'Entitlement', kind: 'nodes', tiles: ['Cover', 'Pay', 'Right'], kpis: ['Granted', 'Recorded', 'Visible'] }
-      ],
-      mga_solutions: [
-        { caption: 'Program Layer', kind: 'desks', tiles: ['Insurer', 'Program', 'Partner', 'Desk'], kpis: ['Programs', 'Partners', 'Authority'] },
-        { caption: 'Distribution', kind: 'nodes', tiles: ['Channel', 'Offer', 'Bind'], kpis: ['Reach', 'Flow', 'Bind'] },
-        { caption: 'Supplier Ecosystem', kind: 'bars', heights: [44, 60, 50, 76, 58, 70], kpis: ['Suppliers', 'Orders', 'Offers'] },
-        { caption: 'Agent Network', kind: 'pipeline', steps: ['Invite', 'Affiliate', 'Produce', 'Settle'], lit: 3, kpis: ['Agents', 'Books', 'Commission'] }
-      ],
-      actuarial_force: [
-        { caption: 'Engine Room', kind: 'desks', tiles: ['Pricing', 'Reserve', 'Simulate', 'Review'], kpis: ['Kernels', 'Runs', 'Ready'] },
-        { caption: 'Forecast Path', kind: 'curve', kpis: ['Horizon', 'Path', 'Band'] },
-        { caption: 'Portfolio Simulation', kind: 'bars', heights: [38, 66, 52, 80, 44, 72], kpis: ['Scenarios', 'Mix', 'Outcome'] },
-        { caption: 'First-Class Citizen', kind: 'pipeline', steps: ['Input', 'Model', 'Govern', 'Apply'], lit: 4, kpis: ['Governed', 'Applied', 'Visible'] }
-      ],
-      individuals: [
-        { caption: 'Client Portal', kind: 'desks', tiles: ['Policies', 'Claims', 'Documents', 'Profile'], kpis: ['Cover', 'Open', 'Files'] },
-        { caption: 'Transparent Billing', kind: 'bars', heights: [48, 56, 42, 70, 60, 78], kpis: ['Due', 'Paid', 'Plan'] },
-        { caption: 'Savings Link', kind: 'curve', kpis: ['Cover', 'Save', 'Allocate'] },
-        { caption: 'Guided Journey', kind: 'pipeline', steps: ['Apply', 'Cover', 'Service', 'Renew'], lit: 2, kpis: ['Step', 'Help', 'Next'] }
-      ],
-      enterprises: [
-        { caption: 'Operations Desks', kind: 'desks', tiles: ['Underwriting', 'Claims', 'Billing', 'Actuary'], kpis: ['Desks', 'Roles', 'Load'] },
-        { caption: 'Program Tooling', kind: 'nodes', tiles: ['MGA', 'Supplier', 'Agent'], kpis: ['Programs', 'Partners', 'Flow'] },
-        { caption: 'Portfolio Oversight', kind: 'bars', heights: [40, 64, 50, 78, 46, 70], kpis: ['Books', 'Views', 'Alerts'] },
-        { caption: 'Audit-Ready Controls', kind: 'pipeline', steps: ['Act', 'Record', 'Review', 'Attest'], lit: 4, kpis: ['Controls', 'Trail', 'Ready'] }
-      ]
+      underwriting: 1,
+      assessments: 1,
+      billing: 1,
+      claims: 1,
+      actuarial_investments: 1,
+      platform: 1,
+      smart_contracts: 1,
+      mga_solutions: 1,
+      actuarial_force: 1,
+      individuals: 1,
+      enterprises: 1
     };
-
-    function escapeHtml(value) {
-      return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-    }
-
-    function renderVisual(scene) {
-      var kind = scene.kind;
-      if (kind === 'pipeline') {
-        return '<div class="pipeline">' + (scene.steps || []).map(function (step, idx) {
-          return '<div class="step' + (idx < scene.lit ? ' lit' : '') + '">' + escapeHtml(step) + '</div>';
-        }).join('') + '</div>';
-      }
-      if (kind === 'bars') {
-        return '<div class="bars">' + (scene.heights || [40, 60, 50, 70]).map(function (h) {
-          return '<b style="height:' + h + '%"></b>';
-        }).join('') + '</div>';
-      }
-      if (kind === 'rings') {
-        return '<div class="rings"><span></span><span></span><span></span></div>';
-      }
-      if (kind === 'curve') {
-        return '<svg viewBox="0 0 320 140" preserveAspectRatio="none"><path class="curve" d="M12 110 C 70 108, 90 40, 150 62 S 230 20, 308 28"/></svg>';
-      }
-      if (kind === 'nodes') {
-        return '<div class="nodes">' + (scene.tiles || ['A', 'B', 'C']).map(function (t) {
-          return '<div class="node">' + escapeHtml(t) + '</div>';
-        }).join('') + '</div>';
-      }
-      return '<div class="desks">' + (scene.tiles || ['One', 'Two', 'Three', 'Four']).map(function (t) {
-        return '<article>' + escapeHtml(t) + '</article>';
-      }).join('') + '</div>';
-    }
-
-    function renderScene(scene) {
-      var kpis = scene.kpis || ['View', 'Flow', 'State'];
-      return '<div class="dash" data-caption="' + escapeHtml(scene.caption) + '">' +
-        '<div class="dash-rail" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></div>' +
-        '<div class="dash-main">' +
-          '<div class="dash-caption">' + escapeHtml(scene.caption) + '</div>' +
-          '<div class="dash-kpis">' + kpis.map(function (label) {
-            return '<div class="kpi"><label>' + escapeHtml(label) + '</label><span class="redact"></span></div>';
-          }).join('') + '</div>' +
-          '<div class="dash-visual">' + renderVisual(scene) + '</div>' +
-        '</div></div>';
-    }
 
     (function initSolutionTheater() {
       var theater = document.getElementById('sol-theater');
@@ -1652,17 +1554,25 @@
         if (timer) { window.clearInterval(timer); timer = null; }
       }
 
-      function showScene(index) {
-        var frames = stage.querySelectorAll('.dash');
-        frames.forEach(function (frame, idx) {
-          frame.classList.toggle('active', idx === index);
-        });
+      function mountPreview(previewId) {
+        stage.innerHTML = '';
+        var frame = document.createElement('iframe');
+        frame.className = 'sol-live-frame';
+        frame.title = 'PHINS capability preview';
+        frame.setAttribute('aria-label', 'Live desk preview');
+        frame.src = PREVIEW_FRAME + '?scene=' + encodeURIComponent(previewId) + '&t=' + Date.now();
+        stage.appendChild(frame);
       }
 
-      function playPreview() {
+      function playPreview(reload) {
         stopPlayback();
+        var frame = stage.querySelector('iframe.sol-live-frame');
+        if (reload && frame) {
+          var url = new URL(frame.src, window.location.origin);
+          url.searchParams.set('t', String(Date.now()));
+          frame.src = url.toString();
+        }
         startedAt = Date.now();
-        showScene(0);
         progressEl.style.width = '0%';
         timeEl.textContent = '0:00 / 0:11';
         timer = window.setInterval(function () {
@@ -1670,13 +1580,10 @@
           var pct = Math.min(100, (elapsed / WALKTHROUGH_MS) * 100);
           progressEl.style.width = pct + '%';
           timeEl.textContent = formatClock(elapsed) + ' / 0:11';
-          var sceneIdx = Math.min(3, Math.floor(elapsed / SCENE_MS));
-          showScene(sceneIdx);
           if (elapsed >= WALKTHROUGH_MS) {
             stopPlayback();
             progressEl.style.width = '100%';
             timeEl.textContent = '0:11 / 0:11';
-            showScene(3);
           }
         }, 80);
       }
@@ -1695,8 +1602,7 @@
 
       function openTheater(card) {
         var previewId = card.getAttribute('data-preview');
-        var scenes = PREVIEW_SCENES[previewId];
-        if (!scenes) return;
+        if (!PREVIEW_SCENES[previewId]) return;
         activeCard = card;
         activeInterest = card.getAttribute('data-interest') || '';
         var heading = card.querySelector('h3');
@@ -1712,7 +1618,7 @@
             outlineEl.appendChild(li);
           });
         }
-        stage.innerHTML = scenes.map(renderScene).join('');
+        mountPreview(previewId);
         theater.hidden = false;
         theater.classList.add('open');
         document.body.classList.add('theater-open');
@@ -1733,7 +1639,7 @@
 
       closeBtn.addEventListener('click', closeTheater);
       theater.querySelector('[data-theater-close]').addEventListener('click', closeTheater);
-      replayBtn.addEventListener('click', playPreview);
+      replayBtn.addEventListener('click', function () { playPreview(true); });
       document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape' && theater.classList.contains('open')) closeTheater();
       });
