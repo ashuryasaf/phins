@@ -83,15 +83,26 @@
         return Math.round((window.innerHeight || el.clientHeight || 800) * 0.15);
     }
 
+    function lastChatContent(el) {
+        const nodes = el.querySelectorAll('.msg-row, .chat-card');
+        return nodes.length ? nodes[nodes.length - 1] : null;
+    }
+
     function scrollDown(forceInstant) {
         const el = chatScroll();
         if (!el) return;
-        // Always scroll to the absolute bottom so the permanent ::after spacer
-        // stays between the latest Q&A and the input dock (scrollIntoView
-        // block:end would pin the bubble flush to the dock and hide the gap).
+        // Keep the latest Q&A visible above the dock: scroll the last content
+        // into view (scroll-margin-bottom: 15vh preserves the gap), then pin to
+        // the true bottom so the permanent spacer stays in place.
         const prev = el.style.scrollBehavior;
         el.style.scrollBehavior = 'auto';
         const run = () => {
+            const last = lastChatContent(el);
+            if (last && typeof last.scrollIntoView === 'function') {
+                try {
+                    last.scrollIntoView({ behavior: 'auto', block: 'end', inline: 'nearest' });
+                } catch (e) { /* fall through to scrollTop */ }
+            }
             el.scrollTop = el.scrollHeight + scrollClearance(el);
             requestAnimationFrame(() => {
                 el.scrollTop = el.scrollHeight + scrollClearance(el);
@@ -102,10 +113,23 @@
     }
 
     function afterLayoutScroll() {
-        // Call after renderStep / OTP dock so the newest Q&A stays visible.
+        // Re-run after dock widgets paint (OTP boxes, signature pad, choices).
         requestAnimationFrame(() => scrollDown(true));
-        setTimeout(() => scrollDown(true), 60);
-        setTimeout(() => scrollDown(true), 200);
+        setTimeout(() => scrollDown(true), 50);
+        setTimeout(() => scrollDown(true), 150);
+        setTimeout(() => scrollDown(true), 350);
+        setTimeout(() => scrollDown(true), 600);
+    }
+
+    // When the input dock grows/shrinks (OTP, signature, cards), keep the
+    // latest Q&A scrolled into the visible gap above it.
+    let dockResizeObserver = null;
+    function watchDockResize() {
+        const dockEl = dock();
+        if (!dockEl || typeof ResizeObserver === 'undefined') return;
+        if (dockResizeObserver) dockResizeObserver.disconnect();
+        dockResizeObserver = new ResizeObserver(() => scrollDown(true));
+        dockResizeObserver.observe(dockEl);
     }
 
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -257,7 +281,7 @@
     function renderStep(step) {
         state.step = step;
         dockError('');
-        if (!step) { clearDock(); return; }
+        if (!step) { clearDock(); afterLayoutScroll(); return; }
         const input = step.input || { type: 'text' };
         switch (input.type) {
             case 'text':
@@ -291,6 +315,7 @@
             default:
                 renderTextInput({ type: 'text', placeholder: input.placeholder });
         }
+        afterLayoutScroll();
     }
 
     function renderTextInput(input) {
@@ -957,6 +982,7 @@
         await playMessages(data.messages || []);
         setProgress(data.progress);
         renderStep(data.step);
+        afterLayoutScroll();
     }
 
     async function pauseApplication() {
@@ -971,6 +997,7 @@
             $('resume-now').addEventListener('click', async () => {
                 await resumeApplication(state.resumeCode, state.email || '');
             });
+            afterLayoutScroll();
         }
     }
 
@@ -978,6 +1005,8 @@
         $('welcome-screen').hidden = true;
         $('chat-screen').hidden = false;
         showHeaderTools();
+        watchDockResize();
+        afterLayoutScroll();
     }
 
     // ---- boot -------------------------------------------------------------
