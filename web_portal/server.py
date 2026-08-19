@@ -7461,18 +7461,22 @@ def send_admin_customer_outreach(
     subject: Optional[str] = None,
     custom_message: Optional[str] = None,
     actor: str = 'customer_relations',
-    login_url: str = '/billing.html',
 ) -> Dict[str, Any]:
     """Send a customer-relations email/WhatsApp using the stored customer record.
 
     Recipients are resolved only from ``CUSTOMERS`` (email/phone on file).
     Client-supplied destinations are ignored so outreach cannot be redirected
-    to an arbitrary address. Uses ``CustomerCommunicationAgent`` and the
+    to an arbitrary address. The portal CTA link is resolved server-side from
+    ``BASE_URL`` so callers cannot point the official "Open your PHINS portal"
+    button at an off-site host. Uses ``CustomerCommunicationAgent`` and the
     platform notification service.
     """
     customer_id = str(customer_id or '').strip()
     if not customer_id:
         return {'success': False, 'error': 'customer_id is required'}
+
+    portal_base = (os.environ.get('BASE_URL') or 'https://phins-portal-production.up.railway.app').strip().rstrip('/')
+    login_url = f"{portal_base}/billing.html" if portal_base else '/billing.html'
 
     customer = CUSTOMERS.get(customer_id)
     if not customer:
@@ -51211,7 +51215,6 @@ For claims or questions, please contact:
                 subject=data.get('subject'),
                 custom_message=data.get('message') or data.get('custom_message'),
                 actor=(session or {}).get('username', 'customer_relations'),
-                login_url=str(data.get('login_url') or '/billing.html'),
             )
             status_code = 200 if report.get('success') else (
                 404 if report.get('error') == 'Customer not found' else 400

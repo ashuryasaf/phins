@@ -811,6 +811,9 @@ class CustomerCommunicationAgent:
     @staticmethod
     def _safe_url(value: str) -> str:
         url = str(value or "/billing.html").strip() or "/billing.html"
+        # Reject protocol-relative URLs ("//host") which resolve off-site.
+        if url.startswith("//"):
+            return "/billing.html"
         if url.startswith(("https://", "http://", "/")):
             return CustomerCommunicationAgent._clip(url, 240)
         return "/billing.html"
