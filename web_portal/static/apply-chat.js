@@ -79,45 +79,119 @@
     }
 
     function scrollClearance(el) {
-        // Match the ~10vh bottom padding on .chat-scroll so programmatic
-        // scrolls leave the latest Q&A readable above the input dock.
-        return Math.round((el.clientHeight || window.innerHeight || 800) * 0.10) + 480;
+        // >10% of page length (matches .chat-scroll::after spacer at 15vh).
+        return Math.round((window.innerHeight || el.clientHeight || 800) * 0.15);
     }
 
-    function scrollDown(forceInstant) {
+    function lastChatContent(el) {
+        const nodes = el.querySelectorAll('.msg-row, .chat-card');
+        return nodes.length ? nodes[nodes.length - 1] : null;
+    }
+
+    // Stick-to-bottom through the whole chat (including after OTP → signature).
+    // Programmatic scrolls keep the flag true; only intentional user scroll-up
+    // pauses auto-follow until they return near the bottom.
+    let stickToBottom = true;
+    let scrollProgrammatic = false;
+    let layoutScrollTimers = [];
+
+    function nearBottom(el) {
+        const clearance = scrollClearance(el);
+        return (el.scrollHeight - el.scrollTop - el.clientHeight) <= clearance + 24;
+    }
+
+    function scrollDown(force) {
         const el = chatScroll();
         if (!el) return;
-        // Programmatic scrolls must not fight CSS scroll-behavior:smooth —
-        // after OTP / Q&A the dock height changes and smooth mid-scrolls leave
-        // the latest bubble hidden behind the input dock.
+        if (force) stickToBottom = true;
+        if (!stickToBottom) return;
+        // Keep the latest Q&A visible above the dock: scroll the last content
+        // into view (scroll-margin-bottom: 15vh preserves the gap), then pin to
+        // the true bottom so the permanent spacer stays in place.
         const prev = el.style.scrollBehavior;
         el.style.scrollBehavior = 'auto';
+        scrollProgrammatic = true;
         const run = () => {
-            const pad = scrollClearance(el);
-            const last = el.lastElementChild;
+            const last = lastChatContent(el);
             if (last && typeof last.scrollIntoView === 'function') {
                 try {
                     last.scrollIntoView({ behavior: 'auto', block: 'end', inline: 'nearest' });
-                } catch (e) {
-                    el.scrollTop = el.scrollHeight + pad;
-                }
-            } else {
-                el.scrollTop = el.scrollHeight + pad;
+                } catch (e) { /* fall through to scrollTop */ }
             }
-            // Second pass after dock/layout settles (OTP boxes, signature pad).
+            el.scrollTop = el.scrollHeight + scrollClearance(el);
             requestAnimationFrame(() => {
                 el.scrollTop = el.scrollHeight + scrollClearance(el);
                 el.style.scrollBehavior = prev || '';
+                // Allow the browser to settle before re-enabling user-scroll detection.
+                setTimeout(() => { scrollProgrammatic = false; }, 80);
             });
         };
         requestAnimationFrame(run);
     }
 
-    function afterLayoutScroll() {
-        // Call after renderStep / OTP dock so the newest Q&A stays visible.
-        requestAnimationFrame(() => scrollDown(true));
-        setTimeout(() => scrollDown(true), 60);
-        setTimeout(() => scrollDown(true), 200);
+    function afterLayoutScroll(opts) {
+        // Re-run after dock widgets paint and after multi-bubble OTP follow-ups
+        // (typing delays can stretch past 1s).
+        const force = !(opts && opts.soft);
+        layoutScrollTimers.forEach((id) => clearTimeout(id));
+        layoutScrollTimers = [];
+        const delays = [0, 50, 150, 350, 600, 1000, 1600, 2400];
+        requestAnimationFrame(() => scrollDown(force));
+        delays.slice(1).forEach((ms) => {
+            layoutScrollTimers.push(setTimeout(() => scrollDown(force), ms));
+        });
+    }
+
+    function focusWithoutScroll(el) {
+        if (!el) return;
+        try {
+            el.focus({ preventScroll: true });
+        } catch (e) {
+            el.focus();
+        }
+        // Focusing dock controls can still nudge layout; re-pin the transcript.
+        afterLayoutScroll({ soft: true });
+    }
+
+    // When the input dock grows/shrinks (OTP, signature, cards), keep the
+    // latest Q&A scrolled into the visible gap above it. Also observe the
+    // transcript itself so post-OTP cards/messages keep following to the end.
+    let dockResizeObserver = null;
+    let chatMutationObserver = null;
+    function watchChatScrollFollow() {
+        const el = chatScroll();
+        const dockEl = dock();
+        if (!el) return;
+
+        if (!el.dataset.scrollFollowBound) {
+            el.dataset.scrollFollowBound = '1';
+            el.addEventListener('scroll', () => {
+                if (scrollProgrammatic) return;
+                stickToBottom = nearBottom(el);
+            }, { passive: true });
+        }
+
+        if (typeof ResizeObserver !== 'undefined') {
+            if (dockResizeObserver) dockResizeObserver.disconnect();
+            dockResizeObserver = new ResizeObserver(() => {
+                if (stickToBottom) scrollDown(false);
+            });
+            if (dockEl) dockResizeObserver.observe(dockEl);
+            dockResizeObserver.observe(el);
+        }
+
+        if (typeof MutationObserver !== 'undefined') {
+            if (chatMutationObserver) chatMutationObserver.disconnect();
+            chatMutationObserver = new MutationObserver(() => {
+                if (stickToBottom) scrollDown(false);
+            });
+            chatMutationObserver.observe(el, { childList: true, subtree: true });
+        }
+    }
+
+    function watchDockResize() {
+        // Back-compat alias used by switchToChat — wires full follow behavior.
+        watchChatScrollFollow();
     }
 
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -141,7 +215,7 @@
             row.innerHTML = `<div class="msg-bubble">${html}</div>`;
         }
         chatScroll().appendChild(row);
-        scrollDown();
+        scrollDown(true);
         return row;
     }
 
@@ -151,7 +225,7 @@
         row.innerHTML = '<div class="msg-avatar"><img src="/phins-logo.svg" alt=""></div>' +
             '<div class="msg-bubble typing"><i></i><i></i><i></i></div>';
         chatScroll().appendChild(row);
-        scrollDown();
+        scrollDown(true);
         return row;
     }
 
@@ -160,7 +234,7 @@
         card.className = 'chat-card';
         card.innerHTML = html;
         chatScroll().appendChild(card);
-        scrollDown();
+        scrollDown(true);
         return card;
     }
 
@@ -269,7 +343,7 @@
     function renderStep(step) {
         state.step = step;
         dockError('');
-        if (!step) { clearDock(); return; }
+        if (!step) { clearDock(); afterLayoutScroll(); return; }
         const input = step.input || { type: 'text' };
         switch (input.type) {
             case 'text':
@@ -303,6 +377,7 @@
             default:
                 renderTextInput({ type: 'text', placeholder: input.placeholder });
         }
+        afterLayoutScroll();
     }
 
     function renderTextInput(input) {
@@ -323,7 +398,7 @@
             ${input.suffix ? `<div class="dock-hint">${escapeHtml(input.suffix)}</div>` : ''}
         `);
         const field = $('dock-field');
-        field.focus();
+        focusWithoutScroll(field);
         const send = () => {
             const value = field.value.trim();
             if (!value) return;
@@ -532,7 +607,7 @@
         });
 
         const field = $('dock-field');
-        field.focus();
+        focusWithoutScroll(field);
         const send = () => {
             const name = field.value.trim();
             const idNumber = ($('dock-id-number').value || '').trim();
@@ -729,11 +804,11 @@
         inputs.forEach((box, i) => {
             box.addEventListener('input', () => {
                 box.value = box.value.replace(/\D/g, '');
-                if (box.value && i < 5) inputs[i + 1].focus();
+                if (box.value && i < 5) focusWithoutScroll(inputs[i + 1]);
                 if (inputs.every((b) => b.value)) verifyOtp(inputs.map((b) => b.value).join(''));
             });
             box.addEventListener('keydown', (e) => {
-                if (e.key === 'Backspace' && !box.value && i > 0) inputs[i - 1].focus();
+                if (e.key === 'Backspace' && !box.value && i > 0) focusWithoutScroll(inputs[i - 1]);
             });
             box.addEventListener('paste', (e) => {
                 const text = (e.clipboardData.getData('text') || '').replace(/\D/g, '').slice(0, 6);
@@ -744,7 +819,7 @@
                 }
             });
         });
-        if (inputs.length) inputs[0].focus();
+        if (inputs.length) focusWithoutScroll(inputs[0]);
         const submitBtn = $('otp-submit');
         if (submitBtn) submitBtn.addEventListener('click', () =>
             verifyOtp(inputs.map((b) => b.value).join('')));
@@ -755,6 +830,7 @@
     async function verifyOtp(code) {
         if (!code || code.length !== 6) { dockError('Please enter all 6 digits.'); return; }
         dockError('');
+        stickToBottom = true;
         addBubble('user', escapeHtml('\u2022'.repeat(6)));
         const { status, data } = await api('POST', `/${state.appId}/otp/verify`, {
             verification_id: state.otp && state.otp.verification_id,
@@ -774,12 +850,15 @@
         // conversation only after the fresh OTP passes - replay it so the chat
         // is restored. Skip it on the same-tab continue path where the live
         // conversation is already rendered, to avoid duplicating history.
+        stickToBottom = true;
         if (state.otpRestoreTranscript && data.transcript && data.transcript.length) {
             await playMessages(data.transcript, { instant: true });
         }
         state.otpRestoreTranscript = false;
         await playMessages(data.messages);
         renderStep(data.step);
+        // Keep following through the rest of the application after OTP.
+        stickToBottom = true;
         afterLayoutScroll();
     }
 
@@ -788,6 +867,7 @@
     async function submitAnswer(value, displayText) {
         if (state.busy) return;
         state.busy = true;
+        stickToBottom = true;
         clearDock();
         addBubble('user', richText(displayText !== undefined ? displayText : String(value)));
         try {
@@ -799,6 +879,7 @@
             }
             if (data.otp_required) {
                 await requestOtp();
+                stickToBottom = true;
                 afterLayoutScroll();
             } else if (data.ready_to_finalize) {
                 await finalize();
@@ -824,12 +905,14 @@
 
     async function finalize() {
         const t = addTyping();
+        stickToBottom = true;
         const { status, data } = await api('POST', `/${state.appId}/finalize`, { resume_code: state.resumeCode });
         t.remove();
         if (status !== 201) {
             addBubble('bot', richText(data.error || 'Submission failed - let me try that again in a moment.'));
             dockHtml('<div class="dock-row" style="justify-content:center;"><button class="chip chip-go" id="retry-finalize">Retry submission</button></div>');
             $('retry-finalize').addEventListener('click', finalize);
+            afterLayoutScroll();
             return;
         }
         state.submitted = true;
@@ -862,6 +945,8 @@
         `);
         clearDock();
         $('pause-btn').hidden = true;
+        stickToBottom = true;
+        afterLayoutScroll();
         startUwDecisionWatch();
     }
 
@@ -885,7 +970,9 @@
                 for (const msg of msgs) {
                     if (msg.seq <= uwLastSeq) continue;
                     uwLastSeq = Math.max(uwLastSeq, msg.seq);
+                    stickToBottom = true;
                     await playMessages([msg]);
+                    afterLayoutScroll();
                 }
                 if (data.uw_decision && data.uw_decision.decision) {
                     // Decision delivered — keep watching briefly then stop.
@@ -953,8 +1040,12 @@
             // on screen (fresh-page resume). The same-tab continue path still
             // shows the live conversation, so replaying would duplicate it.
             state.otpRestoreTranscript = chatScroll().childElementCount === 0;
-            addBubble('bot', richText(
-                `Welcome back! Since your session is verified, I sent a fresh security code to **${data.masked_email || 'your email'}** - enter it and we'll continue.`));
+            // Masked emails contain literal '*' (e.g. as***@domain) — do not wrap
+            // them in **markdown** or richText will close bold early and leave stray '*'.
+            addBubble('bot',
+                richText('Welcome back! Since your session is verified, I sent a fresh security code to ')
+                + `<strong>${escapeHtml(data.masked_email || 'your email')}</strong>`
+                + richText(" — enter it and we'll continue."));
             state.otp = { verification_id: (data.otp || {}).verification_id };
             if ((data.otp || {}).demo_otp_code) {
                 addBubble('bot',
@@ -969,6 +1060,7 @@
         await playMessages(data.messages || []);
         setProgress(data.progress);
         renderStep(data.step);
+        afterLayoutScroll();
     }
 
     async function pauseApplication() {
@@ -983,6 +1075,7 @@
             $('resume-now').addEventListener('click', async () => {
                 await resumeApplication(state.resumeCode, state.email || '');
             });
+            afterLayoutScroll();
         }
     }
 
@@ -990,6 +1083,8 @@
         $('welcome-screen').hidden = true;
         $('chat-screen').hidden = false;
         showHeaderTools();
+        watchDockResize();
+        afterLayoutScroll();
     }
 
     // ---- boot -------------------------------------------------------------
