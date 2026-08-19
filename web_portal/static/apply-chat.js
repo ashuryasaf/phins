@@ -79,11 +79,8 @@
     }
 
     function scrollClearance(el) {
-        // ≥10% of the chat pane (matches .chat-scroll::after spacer).
-        return Math.max(
-            Math.round((el.clientHeight || window.innerHeight || 800) * 0.12),
-            Math.round((window.innerHeight || 800) * 0.12)
-        );
+        // >10% of page length (matches .chat-scroll::after spacer at 15vh).
+        return Math.round((window.innerHeight || el.clientHeight || 800) * 0.15);
     }
 
     function scrollDown(forceInstant) {
