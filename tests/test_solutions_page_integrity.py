@@ -47,14 +47,28 @@ def test_solutions_page_uses_title_case_where_necessary():
 
 def test_every_public_segment_opens_an_enlarged_theater_preview():
     html = _html()
+    preview = (
+        Path(__file__).resolve().parents[1]
+        / "web_portal"
+        / "static"
+        / "previews"
+        / "capability.html"
+    ).read_text(encoding="utf-8")
     assert 'id="sol-theater"' in html
     assert 'role="dialog"' in html
     assert 'aria-modal="true"' in html
     assert "WALKTHROUGH_MS = 11000" in html
-    assert "SCENE_MS = 2750" in html
+    assert "PREVIEW_FRAME = '/previews/capability.html'" in html
     assert "Watch 11s Preview" in html
     assert "PHINS · Visual Walkthrough" in html
-    assert "class=\"redact\"" in html or "class='redact'" in html or 'span class="redact"' in html
+    assert "sol-live-frame" in html
+    assert 'id="stage-underwriting"' in preview
+    assert 'id="uw-reject"' in preview
+    assert 'id="stage-claims"' in preview
+    assert "Submit Claim" in preview
+    assert 'id="act-scroll"' in preview
+    assert "Investments Terminal" in preview
+    assert "PHINS · INVESTMENTS" in preview
 
     expected_previews = {
         "underwriting",
@@ -72,7 +86,7 @@ def test_every_public_segment_opens_an_enlarged_theater_preview():
     found = set(re.findall(r'data-preview="([a-z_]+)"', html))
     assert expected_previews == found
     for key in expected_previews:
-        assert key + ":" in html  # scene catalog entry
+        assert key + ":" in html  # preview catalog entry
 
 
 def test_inquiry_form_contract_matches_server_allow_lists():
@@ -94,6 +108,14 @@ def test_inquiry_form_contract_matches_server_allow_lists():
 
 def test_preview_copy_does_not_expose_implementation_secrets():
     html = _html()
+    preview = (
+        Path(__file__).resolve().parents[1]
+        / "web_portal"
+        / "static"
+        / "previews"
+        / "capability.html"
+    ).read_text(encoding="utf-8")
+    blob = html + "\n" + preview
     forbidden = [
         "#keeping secrets hidden#",
         "DATABASE_URL",
@@ -109,9 +131,12 @@ def test_preview_copy_does_not_expose_implementation_secrets():
         "prompt template",
         "llm_providers",
     ]
-    lowered = html.lower()
+    lowered = blob.lower()
     for token in forbidden:
         assert token.lower() not in lowered, token
     # Outline-only framing is preserved; no “secret” badge is added.
     assert "outlines, not implementations" in html
     assert "under NDA" in html
+    assert "SHA-256" not in preview
+    assert "pricing kernel" not in preview.lower()
+    assert "john.doe" not in preview.lower()
