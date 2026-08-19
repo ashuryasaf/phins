@@ -311,7 +311,8 @@ body.chat-apply-page {
 .chat-scroll {
     flex: 1;
     overflow-y: auto;
-    padding: 26px 4px 18px;
+    /* Extra 10vh bottom clearance so the latest Q&A stays readable above the dock */
+    padding: 26px 4px calc(18px + 10vh);
     display: flex;
     flex-direction: column;
     gap: 14px;
