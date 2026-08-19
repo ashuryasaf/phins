@@ -263,7 +263,8 @@
       color: #fff; margin-bottom: 10px;
     }
     .sol-card p { color: var(--ink-dim); font-size: 0.9rem; line-height: 1.65; }
-    .sol-card .card-tag {
+    .sol-card .card-tag,
+    .aud-card .card-tag {
       display: inline-block;
       margin-top: 16px;
       font-family: 'Space Grotesk', sans-serif;
@@ -358,6 +359,373 @@
     .card-grid > *:nth-child(6n + 4) { --tile-accent: #6fe0b8; }
     .card-grid > *:nth-child(6n + 5) { --tile-accent: #ffbe76; }
     .card-grid > *:nth-child(6n + 6) { --tile-accent: #e3bf6f; }
+
+    .sol-card .sol-preview-cue,
+    .crown-card .sol-preview-cue,
+    .aud-card .sol-preview-cue {
+      display: inline-flex; align-items: center; gap: 8px;
+      margin-top: 16px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.68rem; font-weight: 600;
+      letter-spacing: 0.16em; text-transform: uppercase;
+      color: var(--ds-accent-strong);
+    }
+    .sol-preview-cue .play-dot {
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      border: 1px solid rgba(227, 191, 111, 0.7);
+      display: inline-flex; align-items: center; justify-content: center;
+      background: rgba(227, 191, 111, 0.12);
+    }
+    .sol-preview-cue .play-dot::after {
+      content: '';
+      width: 0; height: 0;
+      border-left: 6px solid var(--ds-accent-strong);
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent;
+      margin-left: 2px;
+    }
+    .sol-detail-source { display: none; }
+    .crown-card, .aud-card { cursor: pointer; }
+    .crown-card:focus-visible, .aud-card:focus-visible, .sol-card:focus-visible {
+      outline: 2px solid var(--ds-accent);
+      outline-offset: 3px;
+    }
+
+    /* ===== Enlarged solution theater ===== */
+    .sol-theater {
+      position: fixed; inset: 0;
+      z-index: 2400;
+      display: none;
+      align-items: center; justify-content: center;
+      padding: 28px 20px;
+    }
+    .sol-theater.open { display: flex; }
+    .sol-theater-scrim {
+      position: absolute; inset: 0;
+      background: rgba(3, 8, 20, 0.78);
+      backdrop-filter: blur(16px) saturate(140%);
+      -webkit-backdrop-filter: blur(16px) saturate(140%);
+    }
+    .sol-theater-window {
+      position: relative;
+      width: min(1180px, 96vw);
+      max-height: calc(100vh - 40px);
+      overflow: hidden;
+      display: flex; flex-direction: column;
+      background:
+        radial-gradient(120% 90% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 55%),
+        radial-gradient(80% 70% at 0% 100%, rgba(227, 191, 111, 0.08), transparent 50%),
+        #071226;
+      border: 1px solid rgba(227, 191, 111, 0.38);
+      border-radius: 22px;
+      box-shadow:
+        0 0 0 1px rgba(247, 226, 160, 0.12),
+        0 40px 90px rgba(0, 0, 0, 0.55),
+        0 0 80px rgba(21, 68, 155, 0.22);
+    }
+    .sol-theater-head {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 16px;
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .sol-theater-kicker {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.66rem; font-weight: 600;
+      letter-spacing: 0.34em; text-transform: uppercase;
+      color: var(--ds-accent);
+      margin-bottom: 6px;
+    }
+    .sol-theater-head h2 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(1.2rem, 2.4vw, 1.7rem);
+      font-weight: 600; color: #fff;
+    }
+    .sol-theater-tag {
+      display: inline-block;
+      margin-top: 10px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.64rem; font-weight: 600;
+      letter-spacing: 0.16em; text-transform: uppercase;
+      color: var(--ds-accent-strong);
+      border: 1px solid rgba(227, 191, 111, 0.45);
+      border-radius: 999px;
+      padding: 4px 12px;
+    }
+    .sol-theater-close {
+      width: 40px; height: 40px; flex: none;
+      border-radius: 50%;
+      border: 1px solid var(--line);
+      background: rgba(127, 178, 255, 0.06);
+      color: var(--ink);
+      font-size: 1.2rem; line-height: 1;
+      cursor: pointer;
+    }
+    .sol-theater-close:hover {
+      border-color: var(--ds-accent);
+      color: var(--ds-accent-strong);
+    }
+    .sol-theater-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.8fr);
+      min-height: 0;
+      flex: 1;
+    }
+    .sol-player {
+      display: flex; flex-direction: column;
+      padding: 18px 18px 16px 20px;
+      min-width: 0;
+    }
+    .sol-player-chrome {
+      display: flex; align-items: center; justify-content: space-between;
+      background: #0a1630;
+      border: 1px solid var(--line);
+      border-bottom: none;
+      border-radius: 14px 14px 0 0;
+      padding: 9px 14px;
+    }
+    .sol-player-dots { display: flex; gap: 6px; }
+    .sol-player-dots span {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: rgba(234, 241, 255, 0.22);
+    }
+    .sol-player-dots span:first-child { background: #ff6b6b; }
+    .sol-player-dots span:nth-child(2) { background: #e3bf6f; }
+    .sol-player-dots span:nth-child(3) { background: #6fe0b8; }
+    .sol-player-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.7rem; letter-spacing: 0.16em; text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+    .sol-player-dur {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.7rem; letter-spacing: 0.08em;
+      color: var(--ds-accent);
+    }
+    .sol-stage {
+      position: relative;
+      aspect-ratio: 16 / 9;
+      background:
+        radial-gradient(80% 70% at 80% 0%, rgba(21, 68, 155, 0.35), transparent 60%),
+        #06101f;
+      border: 1px solid var(--line);
+      overflow: hidden;
+    }
+    .sol-live-frame {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      border: 0;
+      background: #0b1224;
+    }
+    .sol-stage::after {
+      content: '';
+      position: absolute; inset: 0;
+      pointer-events: none;
+      box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.35);
+    }
+    .dash {
+      position: absolute; inset: 0;
+      display: grid;
+      grid-template-columns: 64px 1fr;
+      opacity: 0;
+      transform: translateY(10px) scale(0.985);
+      transition: opacity 0.45s ease, transform 0.45s ease;
+      pointer-events: none;
+    }
+    .dash.active {
+      opacity: 1;
+      transform: none;
+    }
+    .dash-rail {
+      border-right: 1px solid var(--line);
+      display: flex; flex-direction: column; align-items: center;
+      gap: 14px; padding: 16px 0;
+      background: rgba(8, 18, 40, 0.9);
+    }
+    .dash-rail i {
+      width: 10px; height: 10px;
+      border-radius: 2px;
+      background: rgba(127, 178, 255, 0.28);
+      transform: rotate(45deg);
+    }
+    .dash-rail i.on { background: var(--ds-accent); box-shadow: 0 0 10px var(--ds-accent); }
+    .dash-main { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+    .dash-caption {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.72rem; font-weight: 600;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--ds-accent-strong);
+    }
+    .dash-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .kpi {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: rgba(127, 178, 255, 0.05);
+    }
+    .kpi label {
+      display: block;
+      font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--ink-faint); margin-bottom: 6px;
+    }
+    .kpi .redact {
+      display: block;
+      height: 16px; width: 62%;
+      border-radius: 4px;
+      background: linear-gradient(90deg, rgba(234,241,255,0.18), rgba(234,241,255,0.05));
+      filter: blur(5px);
+    }
+    .dash-visual {
+      flex: 1;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(6, 13, 31, 0.55);
+      position: relative; overflow: hidden;
+      min-height: 140px;
+    }
+    .bars { display: flex; align-items: flex-end; gap: 8px; height: 100%; padding: 16px 18px 14px; }
+    .bars b {
+      flex: 1;
+      background: linear-gradient(180deg, var(--tile-accent, #7fb2ff), rgba(127,178,255,0.15));
+      border-radius: 5px 5px 0 0;
+      transform-origin: bottom;
+      animation: bar-rise 1.1s ease both;
+      opacity: 0.85;
+    }
+    @keyframes bar-rise { from { transform: scaleY(0.15); } to { transform: scaleY(1); } }
+    .pipeline {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 100%; padding: 22px 20px; gap: 8px;
+    }
+    .pipeline .step {
+      flex: 1; text-align: center;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px 8px;
+      color: var(--ink-faint);
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase;
+    }
+    .pipeline .step.lit {
+      border-color: var(--ds-accent);
+      color: var(--ds-accent-strong);
+      box-shadow: 0 0 18px rgba(227, 191, 111, 0.18);
+    }
+    .rings {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .rings span {
+      position: absolute;
+      border: 1px solid rgba(127, 178, 255, 0.28);
+      border-radius: 50%;
+      animation: ring-pulse 2.4s ease-in-out infinite;
+    }
+    .rings span:nth-child(1) { width: 70px; height: 70px; }
+    .rings span:nth-child(2) { width: 120px; height: 120px; animation-delay: 0.2s; }
+    .rings span:nth-child(3) { width: 170px; height: 170px; animation-delay: 0.4s; border-color: rgba(227,191,111,0.45); }
+    @keyframes ring-pulse { 50% { transform: scale(1.06); opacity: 0.7; } }
+    .curve {
+      width: 100%; height: 100%;
+      stroke: #e3bf6f; fill: none; stroke-width: 2.4;
+      stroke-dasharray: 420; stroke-dashoffset: 420;
+      animation: draw-curve 1.4s ease forwards;
+    }
+    @keyframes draw-curve { to { stroke-dashoffset: 0; } }
+    .nodes {
+      height: 100%;
+      display: flex; align-items: center; justify-content: space-around;
+      padding: 0 20px;
+    }
+    .nodes .node {
+      width: 72px; height: 72px;
+      border-radius: 50%;
+      border: 1px solid rgba(227, 191, 111, 0.5);
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--ds-accent-strong);
+      background: rgba(227, 191, 111, 0.08);
+    }
+    .desks, .portal-cards {
+      display: grid; grid-template-columns: repeat(2, 1fr);
+      gap: 10px; height: 100%; padding: 14px;
+    }
+    .desks article, .portal-cards article {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      background: rgba(127, 178, 255, 0.05);
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--ink-dim);
+    }
+    .sol-player-bar {
+      display: flex; align-items: center; gap: 12px;
+      background: #0a1630;
+      border: 1px solid var(--line);
+      border-top: none;
+      border-radius: 0 0 14px 14px;
+      padding: 10px 14px;
+    }
+    .sol-play {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      border: 1px solid rgba(227, 191, 111, 0.55);
+      background: rgba(227, 191, 111, 0.12);
+      color: var(--ds-accent-strong);
+      cursor: pointer;
+      font-size: 0.7rem;
+    }
+    .sol-progress {
+      flex: 1; height: 4px;
+      background: rgba(127, 178, 255, 0.14);
+      border-radius: 999px; overflow: hidden;
+    }
+    .sol-progress > i {
+      display: block; height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--ds-accent-strong), var(--ds-accent));
+    }
+    .sol-time {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.7rem; letter-spacing: 0.06em;
+      color: var(--ink-faint); min-width: 72px; text-align: right;
+    }
+    .sol-theater-aside {
+      border-left: 1px solid var(--line);
+      padding: 20px 22px 22px;
+      overflow: auto;
+      display: flex; flex-direction: column;
+    }
+    .sol-theater-aside h3 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.68rem; font-weight: 600;
+      letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--ds-accent);
+      margin-bottom: 12px;
+    }
+    .sol-theater-aside ul { list-style: none; margin-bottom: 22px; }
+    .sol-theater-aside li {
+      position: relative;
+      padding: 8px 0 8px 18px;
+      color: var(--ink-dim);
+      font-size: 0.86rem; line-height: 1.55;
+      border-bottom: 1px solid rgba(127, 178, 255, 0.08);
+    }
+    .sol-theater-aside li::before {
+      content: '';
+      position: absolute; left: 0; top: 14px;
+      width: 6px; height: 6px; transform: rotate(45deg);
+      background: var(--ds-accent);
+    }
+    .sol-theater-aside .btn-gold { justify-content: center; width: 100%; border: none; }
+    .sol-theater-aside .aside-note {
+      margin-top: 14px;
+      color: var(--ink-faint);
+      font-size: 0.78rem; line-height: 1.55;
+    }
+    body.theater-open { overflow: hidden; }
 
     /* ===== Crown section ===== */
     .crown-section {
@@ -628,13 +996,17 @@
 
     @media (prefers-reduced-motion: reduce) {
       html { scroll-behavior: auto; }
-      .backdrop::after, .hero-logo, .rise { animation: none; }
+      .backdrop::after, .hero-logo, .rise, .bars b, .rings span, .curve { animation: none; }
       .rise { opacity: 1; transform: none; }
       .reveal { opacity: 1; transform: none; transition: none; }
+      .dash { transition: none; }
     }
     @media screen and (max-width: 900px) {
       .contact-panel { grid-template-columns: 1fr; }
       .top-nav a.nav-item { display: none; }
+      .sol-theater-body { grid-template-columns: 1fr; }
+      .sol-theater-aside { border-left: none; border-top: 1px solid var(--line); }
+      .sol-theater-window { max-height: calc(100vh - 20px); overflow: auto; }
     }
     @media screen and (max-width: 600px) {
       .header-inner { padding: 12px 18px; }
@@ -643,6 +1015,8 @@
       .hero { padding: 140px 0 70px; }
       .form-grid { grid-template-columns: 1fr; }
       .invite-band { padding: 32px 24px; }
+      .dash-kpis { grid-template-columns: 1fr 1fr; }
+      .sol-theater { padding: 10px; }
     }
   </style>
 </head>
@@ -670,11 +1044,11 @@
     <!-- ===== Hero ===== -->
     <section class="hero wrap">
       <div class="hero-logo rise"><img src="/phins-logo.svg" alt="PHINS emblem"></div>
-      <h1 class="rise d1">The AI-native platform where insurance is underwritten, assessed, billed, invested and settled — end to end.</h1>
+      <h1 class="rise d1">The AI-Native Platform Where Insurance Is Underwritten, Assessed, Billed, Invested and Settled — End to End.</h1>
       <p class="lede rise d2">
-        PHINS unifies underwriting, assessments, billing, claims and actuarial
-        investment operations on one intelligent platform — built for
-        individuals, enterprises and the partners who serve them.
+        PHINS unifies Underwriting, Assessments, Billing, Claims and Actuarial
+        Investment operations on one intelligent platform — built for
+        Individuals, Enterprises and the partners who serve them.
       </p>
       <div class="hero-divider rise d3"></div>
       <div class="hero-actions rise d4">
@@ -695,15 +1069,15 @@
       <div class="wrap">
         <div class="reveal">
           <div class="kicker">Solutions</div>
-          <h2 class="section-title">One platform. Every stage of the policy lifecycle.</h2>
+          <h2 class="section-title">One Platform. Every Stage of the Policy Lifecycle.</h2>
           <p class="section-sub">
             Each pillar below is a live, working surface of the PHINS platform.
             We publish the outline — the depth is demonstrated in person.
           </p>
         </div>
         <div class="card-grid">
-          <div class="sol-card reveal" data-interest="underwriting" role="button" tabindex="0" aria-expanded="false">
-            <span class="sol-caret" aria-hidden="true">▾</span>
+          <div class="sol-card reveal" data-preview="underwriting" data-interest="underwriting" role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▸</span>
             <div class="glyph" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l7 4v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-4z"/><path d="M9 12l2 2 4-4"/></svg>
             </div>
@@ -715,19 +1089,19 @@
               of every approval.
             </p>
             <span class="card-tag">Individuals &amp; Enterprises</span>
-            <div class="sol-detail">
-              <div class="sol-detail-title">Inside the solution</div>
+            <div class="sol-preview-cue"><span class="play-dot" aria-hidden="true"></span>Watch 11s Preview</div>
+            <div class="sol-detail-source">
+              <div class="sol-detail-title">Inside the Solution</div>
               <ul>
                 <li>Guided digital application intake feeding a live underwriting pipeline</li>
                 <li>AI-assisted risk evaluation aware of demographics and policy terms</li>
                 <li>An underwriter decision workbench — approval authority stays human</li>
                 <li>Premium pricing connected to actuarial parameters at the point of decision</li>
               </ul>
-              <a href="#contact" class="sol-walkthrough" data-walkthrough="underwriting">Request a walkthrough →</a>
             </div>
           </div>
-          <div class="sol-card reveal" data-interest="assessments" role="button" tabindex="0" aria-expanded="false">
-            <span class="sol-caret" aria-hidden="true">▾</span>
+          <div class="sol-card reveal" data-preview="assessments" data-interest="assessments" role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▸</span>
             <div class="glyph" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
             </div>
@@ -738,18 +1112,18 @@
               feed underwriting, servicing and portfolio decisions.
             </p>
             <span class="card-tag">Decision Intelligence</span>
-            <div class="sol-detail">
-              <div class="sol-detail-title">Inside the solution</div>
+            <div class="sol-preview-cue"><span class="play-dot" aria-hidden="true"></span>Watch 11s Preview</div>
+            <div class="sol-detail-source">
+              <div class="sol-detail-title">Inside the Solution</div>
               <ul>
                 <li>360° customer view assembled from imported facts and documents</li>
                 <li>Risk-level classification feeding underwriting and servicing decisions</li>
                 <li>Assessment records that keep every decision loop auditable</li>
               </ul>
-              <a href="#contact" class="sol-walkthrough" data-walkthrough="assessments">Request a walkthrough →</a>
             </div>
           </div>
-          <div class="sol-card reveal" data-interest="billing" role="button" tabindex="0" aria-expanded="false">
-            <span class="sol-caret" aria-hidden="true">▾</span>
+          <div class="sol-card reveal" data-preview="billing" data-interest="billing" role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▸</span>
             <div class="glyph" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>
             </div>
@@ -760,18 +1134,18 @@
               every charge reconciles, every time.
             </p>
             <span class="card-tag">Automated Operations</span>
-            <div class="sol-detail">
-              <div class="sol-detail-title">Inside the solution</div>
+            <div class="sol-preview-cue"><span class="play-dot" aria-hidden="true"></span>Watch 11s Preview</div>
+            <div class="sol-detail-source">
+              <div class="sol-detail-title">Inside the Solution</div>
               <ul>
                 <li>Premium billing engine aligned with the accounting ledger</li>
                 <li>Flexible payment methods with monthly auto-pay scheduling</li>
                 <li>Reconciliation designed so every charge stays traceable</li>
               </ul>
-              <a href="#contact" class="sol-walkthrough" data-walkthrough="billing">Request a walkthrough →</a>
             </div>
           </div>
-          <div class="sol-card reveal" data-interest="claims" role="button" tabindex="0" aria-expanded="false">
-            <span class="sol-caret" aria-hidden="true">▾</span>
+          <div class="sol-card reveal" data-preview="claims" data-interest="claims" role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▸</span>
             <div class="glyph" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6z"/><path d="M14 3v6h6"/><path d="M9 14l2 2 4-4"/></svg>
             </div>
@@ -782,18 +1156,18 @@
               dashboards — built for speed without sacrificing control.
             </p>
             <span class="card-tag">Straight-Through Processing</span>
-            <div class="sol-detail">
-              <div class="sol-detail-title">Inside the solution</div>
+            <div class="sol-preview-cue"><span class="play-dot" aria-hidden="true"></span>Watch 11s Preview</div>
+            <div class="sol-detail-source">
+              <div class="sol-detail-title">Inside the Solution</div>
               <ul>
                 <li>Structured claims intake with integrated document handling</li>
                 <li>Adjuster dashboards for review and adjudication</li>
                 <li>Settlement approval flow with clear separation of duties</li>
               </ul>
-              <a href="#contact" class="sol-walkthrough" data-walkthrough="claims">Request a walkthrough →</a>
             </div>
           </div>
-          <div class="sol-card reveal" data-interest="actuarial_investments" role="button" tabindex="0" aria-expanded="false">
-            <span class="sol-caret" aria-hidden="true">▾</span>
+          <div class="sol-card reveal" data-preview="actuarial_investments" data-interest="actuarial_investments" role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▸</span>
             <div class="glyph" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg>
             </div>
@@ -804,18 +1178,18 @@
               the pricing of risk to the performance of capital.
             </p>
             <span class="card-tag">Capital Intelligence</span>
-            <div class="sol-detail">
-              <div class="sol-detail-title">Inside the solution</div>
+            <div class="sol-preview-cue"><span class="play-dot" aria-hidden="true"></span>Watch 11s Preview</div>
+            <div class="sol-detail-source">
+              <div class="sol-detail-title">Inside the Solution</div>
               <ul>
                 <li>Actuarial tables, reserve forecasting and portfolio simulations</li>
                 <li>Pricing parameters managed as first-class platform data</li>
                 <li>Savings and investment allocation connected to coverage</li>
               </ul>
-              <a href="#contact" class="sol-walkthrough" data-walkthrough="actuarial_investments">Request a walkthrough →</a>
             </div>
           </div>
-          <div class="sol-card reveal" data-interest="platform" role="button" tabindex="0" aria-expanded="false">
-            <span class="sol-caret" aria-hidden="true">▾</span>
+          <div class="sol-card reveal" data-preview="platform" data-interest="platform" role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▸</span>
             <div class="glyph" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
             </div>
@@ -826,14 +1200,14 @@
               to be examined.
             </p>
             <span class="card-tag">Integrity by Design</span>
-            <div class="sol-detail">
-              <div class="sol-detail-title">Inside the solution</div>
+            <div class="sol-preview-cue"><span class="play-dot" aria-hidden="true"></span>Watch 11s Preview</div>
+            <div class="sol-detail-source">
+              <div class="sol-detail-title">Inside the Solution</div>
               <ul>
                 <li>Role-scoped access across every operations desk</li>
                 <li>Layered network and request defenses</li>
                 <li>Tamper-evident event trails built for examination</li>
               </ul>
-              <a href="#contact" class="sol-walkthrough" data-walkthrough="platform">Request a walkthrough →</a>
             </div>
           </div>
         </div>
@@ -845,14 +1219,14 @@
       <div class="wrap">
         <div class="reveal">
           <div class="kicker">The Jeweled Crown</div>
-          <h2 class="section-title">Where PHINS goes beyond the market.</h2>
+          <h2 class="section-title">Where PHINS Goes Beyond the Market.</h2>
           <p class="section-sub">
             Three capabilities crown the platform. We describe them in outline
             only — the working depth is reserved for qualified conversations.
           </p>
         </div>
         <div class="crown-grid">
-          <div class="crown-card reveal">
+          <div class="crown-card reveal" data-preview="smart_contracts" data-interest="smart_contracts" role="button" tabindex="0" aria-haspopup="dialog">
             <div class="crown-mark">Crown Capability</div>
             <h3>Smart Contracts Development</h3>
             <p>
@@ -860,8 +1234,16 @@
               to insurance and marketplace flows — signatures, settlements and
               entitlements recorded on tamper-evident rails.
             </p>
+            <div class="sol-preview-cue"><span class="play-dot" aria-hidden="true"></span>Watch 11s Preview</div>
+            <div class="sol-detail-source">
+              <ul>
+                <li>Ledger-anchored agreements for insurance and marketplace flows</li>
+                <li>Verifiable signatures and settlement events on tamper-evident rails</li>
+                <li>Entitlements recorded as first-class platform outcomes</li>
+              </ul>
+            </div>
           </div>
-          <div class="crown-card reveal">
+          <div class="crown-card reveal" data-preview="mga_solutions" data-interest="mga_solutions" role="button" tabindex="0" aria-haspopup="dialog">
             <div class="crown-mark">Crown Capability</div>
             <h3>MGA Solutions</h3>
             <p>
@@ -869,8 +1251,16 @@
               partners: distribution, underwriting authority, supplier and agent
               ecosystems — orchestrated from a single platform.
             </p>
+            <div class="sol-preview-cue"><span class="play-dot" aria-hidden="true"></span>Watch 11s Preview</div>
+            <div class="sol-detail-source">
+              <ul>
+                <li>Distribution and program operations in one working layer</li>
+                <li>Underwriting authority coordinated with partner ecosystems</li>
+                <li>Supplier and agent networks orchestrated from a single platform</li>
+              </ul>
+            </div>
           </div>
-          <div class="crown-card reveal">
+          <div class="crown-card reveal" data-preview="actuarial_force" data-interest="actuarial_investments" role="button" tabindex="0" aria-haspopup="dialog">
             <div class="crown-mark">Crown Capability</div>
             <h3>Actuarial Force</h3>
             <p>
@@ -878,15 +1268,15 @@
               and portfolio simulations are first-class platform citizens — not
               spreadsheets at the edge of the business.
             </p>
+            <div class="sol-preview-cue"><span class="play-dot" aria-hidden="true"></span>Watch 11s Preview</div>
+            <div class="sol-detail-source">
+              <ul>
+                <li>Pricing, reserve forecasts and simulations as platform citizens</li>
+                <li>Capital views connected to coverage and portfolio performance</li>
+                <li>Working depth reserved for qualified conversations</li>
+              </ul>
+            </div>
           </div>
-        </div>
-        <div class="crown-note reveal">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-          <span>
-            This page intentionally shares outlines, not implementations. Deeper
-            technical and commercial materials are made available to qualified
-            investors and partners under NDA.
-          </span>
         </div>
       </div>
     </section>
@@ -896,28 +1286,32 @@
       <div class="wrap">
         <div class="reveal">
           <div class="kicker">Who It Serves</div>
-          <h2 class="section-title">Built for individuals. Engineered for enterprises.</h2>
+          <h2 class="section-title">Built for Individuals. Engineered for Enterprises.</h2>
         </div>
         <div class="audience-grid">
-          <div class="aud-card reveal">
+          <div class="aud-card reveal" data-preview="individuals" data-interest="underwriting" role="button" tabindex="0" aria-haspopup="dialog">
             <h3>For Individuals</h3>
             <div class="aud-sub">A personal insurance experience that respects your time and your data.</div>
+            <span class="card-tag">Individuals</span>
             <ul>
               <li>A self-service client portal for policies, claims and documents</li>
               <li>Transparent billing with flexible payment and auto-pay options</li>
               <li>Savings and investment allocation connected to your coverage</li>
               <li>AI-assisted guidance across application and servicing journeys</li>
             </ul>
+            <div class="sol-preview-cue"><span class="play-dot" aria-hidden="true"></span>Watch 11s Preview</div>
           </div>
-          <div class="aud-card reveal">
+          <div class="aud-card reveal" data-preview="enterprises" data-interest="mga_solutions" role="button" tabindex="0" aria-haspopup="dialog">
             <h3>For Enterprises &amp; Partners</h3>
             <div class="aud-sub">Operate insurance programs, not just policies.</div>
+            <span class="card-tag">Enterprises &amp; Partners</span>
             <ul>
               <li>Role-based operations desks: underwriting, claims, billing, actuary, accounting</li>
               <li>MGA and program-partner tooling with supplier and agent ecosystems</li>
               <li>BI analytics and portfolio views for management and oversight</li>
               <li>Audit-ready event trails and security controls across every workflow</li>
             </ul>
+            <div class="sol-preview-cue"><span class="play-dot" aria-hidden="true"></span>Watch 11s Preview</div>
           </div>
         </div>
       </div>
@@ -928,7 +1322,7 @@
       <div class="wrap">
         <div class="invite-band reveal">
           <div>
-            <h3>An open invitation — with the edge kept sharp.</h3>
+            <h3>An Open Invitation — With the Edge Kept Sharp.</h3>
             <p>
               Viewers, investors and business collaborators are welcome to see
               the platform in motion. We demonstrate live, we answer directly,
@@ -946,7 +1340,7 @@
       <div class="wrap">
         <div class="reveal">
           <div class="kicker">Business Relations</div>
-          <h2 class="section-title">Start the conversation.</h2>
+          <h2 class="section-title">Start the Conversation.</h2>
           <p class="section-sub">
             Tell us who you are and what you want to see. Your inquiry goes
             straight to the PHINS business relations desk — nothing more is
@@ -955,7 +1349,7 @@
         </div>
         <div class="contact-panel">
           <div class="contact-side reveal">
-            <h3>What happens next</h3>
+            <h3>What Happens Next</h3>
             <ul class="contact-points">
               <li>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
@@ -1038,6 +1432,45 @@
     </section>
   </main>
 
+  <!-- Enlarged solution theater -->
+  <div id="sol-theater" class="sol-theater" hidden role="dialog" aria-modal="true" aria-labelledby="theater-title">
+    <div class="sol-theater-scrim" data-theater-close="1"></div>
+    <div class="sol-theater-window">
+      <div class="sol-theater-head">
+        <div>
+          <div class="sol-theater-kicker">Solution Preview</div>
+          <h2 id="theater-title">Solution</h2>
+          <span class="sol-theater-tag" id="theater-tag"></span>
+        </div>
+        <button type="button" class="sol-theater-close" id="theater-close" aria-label="Close preview">&times;</button>
+      </div>
+      <div class="sol-theater-body">
+        <div class="sol-player">
+          <div class="sol-player-chrome">
+            <div class="sol-player-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+            <div class="sol-player-title">PHINS · Visual Walkthrough</div>
+            <div class="sol-player-dur">0:11</div>
+          </div>
+          <div class="sol-stage" id="theater-stage" aria-live="polite"></div>
+          <div class="sol-player-bar">
+            <button type="button" class="sol-play" id="theater-replay" aria-label="Replay preview">▶</button>
+            <div class="sol-progress" aria-hidden="true"><i id="theater-progress"></i></div>
+            <div class="sol-time" id="theater-time">0:00 / 0:11</div>
+          </div>
+        </div>
+        <aside class="sol-theater-aside">
+          <h3>Inside the Solution</h3>
+          <ul id="theater-outline"></ul>
+          <button type="button" class="btn-gold" id="theater-cta">Request a Live Walkthrough</button>
+          <p class="aside-note">
+            This preview is a visual outline of the working surface.
+            A live demonstration is reserved for qualified conversations.
+          </p>
+        </aside>
+      </div>
+    </div>
+  </div>
+
   <!-- Footer -->
   <footer class="landing-footer">
     <div class="footer-inner">
@@ -1070,38 +1503,147 @@
       els.forEach(function (el) { io.observe(el); });
     })();
 
-    // ===== Expandable solution tabs =====
-    (function initSolutionTabs() {
-      var cards = document.querySelectorAll('.sol-card[data-interest]');
-      function setOpen(card, open) {
-        card.classList.toggle('open', open);
-        card.setAttribute('aria-expanded', String(open));
+    // ===== Enlarged solution theater (11-second visual walkthroughs) =====
+    var WALKTHROUGH_MS = 11000;
+    var PREVIEW_FRAME = '/previews/capability.html';
+    var PREVIEW_SCENES = {
+      underwriting: 1,
+      assessments: 1,
+      billing: 1,
+      claims: 1,
+      actuarial_investments: 1,
+      platform: 1,
+      smart_contracts: 1,
+      mga_solutions: 1,
+      actuarial_force: 1,
+      individuals: 1,
+      enterprises: 1
+    };
+
+    (function initSolutionTheater() {
+      var theater = document.getElementById('sol-theater');
+      var stage = document.getElementById('theater-stage');
+      var titleEl = document.getElementById('theater-title');
+      var tagEl = document.getElementById('theater-tag');
+      var outlineEl = document.getElementById('theater-outline');
+      var progressEl = document.getElementById('theater-progress');
+      var timeEl = document.getElementById('theater-time');
+      var closeBtn = document.getElementById('theater-close');
+      var replayBtn = document.getElementById('theater-replay');
+      var ctaBtn = document.getElementById('theater-cta');
+      var triggers = document.querySelectorAll('[data-preview]');
+      var timer = null;
+      var startedAt = 0;
+      var activeCard = null;
+      var activeInterest = '';
+
+      function formatClock(ms) {
+        var sec = Math.min(11, Math.max(0, Math.floor(ms / 1000)));
+        return '0:' + (sec < 10 ? '0' : '') + sec;
       }
-      cards.forEach(function (card) {
-        card.addEventListener('click', function (e) {
-          if (e.target.closest('.sol-walkthrough')) return; // link handles itself
-          var isOpen = card.classList.contains('open');
-          cards.forEach(function (c) { setOpen(c, false); }); // accordion
-          setOpen(card, !isOpen);
+
+      function stopPlayback() {
+        if (timer) { window.clearInterval(timer); timer = null; }
+      }
+
+      function mountPreview(previewId) {
+        stage.innerHTML = '';
+        var frame = document.createElement('iframe');
+        frame.className = 'sol-live-frame';
+        frame.title = 'PHINS capability preview';
+        frame.setAttribute('aria-label', 'Live desk preview');
+        frame.src = PREVIEW_FRAME + '?scene=' + encodeURIComponent(previewId) + '&t=' + Date.now();
+        stage.appendChild(frame);
+      }
+
+      function playPreview(reload) {
+        stopPlayback();
+        var frame = stage.querySelector('iframe.sol-live-frame');
+        if (reload && frame) {
+          var url = new URL(frame.src, window.location.origin);
+          url.searchParams.set('t', String(Date.now()));
+          frame.src = url.toString();
+        }
+        startedAt = Date.now();
+        progressEl.style.width = '0%';
+        timeEl.textContent = '0:00 / 0:11';
+        timer = window.setInterval(function () {
+          var elapsed = Date.now() - startedAt;
+          var pct = Math.min(100, (elapsed / WALKTHROUGH_MS) * 100);
+          progressEl.style.width = pct + '%';
+          timeEl.textContent = formatClock(elapsed) + ' / 0:11';
+          if (elapsed >= WALKTHROUGH_MS) {
+            stopPlayback();
+            progressEl.style.width = '100%';
+            timeEl.textContent = '0:11 / 0:11';
+          }
+        }, 80);
+      }
+
+      function closeTheater() {
+        stopPlayback();
+        theater.classList.remove('open');
+        theater.hidden = true;
+        document.body.classList.remove('theater-open');
+        triggers.forEach(function (card) {
+          card.setAttribute('aria-expanded', 'false');
         });
+        if (activeCard) activeCard.focus();
+        activeCard = null;
+      }
+
+      function openTheater(card) {
+        var previewId = card.getAttribute('data-preview');
+        if (!PREVIEW_SCENES[previewId]) return;
+        activeCard = card;
+        activeInterest = card.getAttribute('data-interest') || '';
+        var heading = card.querySelector('h3');
+        var tag = card.querySelector('.card-tag, .crown-mark, .aud-sub');
+        var sourceList = card.querySelector('.sol-detail-source ul') || card.querySelector('ul');
+        titleEl.textContent = heading ? heading.textContent.trim() : 'Solution Preview';
+        tagEl.textContent = tag ? tag.textContent.trim() : 'Preview';
+        outlineEl.innerHTML = '';
+        if (sourceList) {
+          Array.prototype.forEach.call(sourceList.querySelectorAll('li'), function (item) {
+            var li = document.createElement('li');
+            li.textContent = item.textContent.trim();
+            outlineEl.appendChild(li);
+          });
+        }
+        mountPreview(previewId);
+        theater.hidden = false;
+        theater.classList.add('open');
+        document.body.classList.add('theater-open');
+        card.setAttribute('aria-expanded', 'true');
+        closeBtn.focus();
+        playPreview();
+      }
+
+      triggers.forEach(function (card) {
+        card.addEventListener('click', function () { openTheater(card); });
         card.addEventListener('keydown', function (e) {
-          if (e.target.closest('.sol-walkthrough')) return; // link handles itself
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            card.click();
+            openTheater(card);
           }
         });
       });
-    })();
 
-    // "Request a walkthrough" links preselect the demo tab + interest area.
-    document.querySelectorAll('[data-walkthrough]').forEach(function (link) {
-      link.addEventListener('click', function () {
+      closeBtn.addEventListener('click', closeTheater);
+      theater.querySelector('[data-theater-close]').addEventListener('click', closeTheater);
+      replayBtn.addEventListener('click', function () { playPreview(true); });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && theater.classList.contains('open')) closeTheater();
+      });
+      ctaBtn.addEventListener('click', function () {
         setInquiryType('demo');
         var interestSelect = document.getElementById('inq-interest');
-        if (interestSelect) interestSelect.value = link.getAttribute('data-walkthrough');
+        if (interestSelect && activeInterest) interestSelect.value = activeInterest;
+        closeTheater();
+        var contact = document.getElementById('contact');
+        if (contact) contact.scrollIntoView({ behavior: 'smooth' });
       });
-    });
+    })();
 
     // ===== Inquiry type toggle =====
     var inquiryType = 'contact';
