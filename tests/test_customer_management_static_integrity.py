@@ -59,6 +59,14 @@ def test_customer_management_preserves_data_binding_ids():
         "validation-modal",
         "modal-title",
         "validation-results",
+        "contact-modal",
+        "contact-modal-title",
+        "contact-template",
+        "contact-channel-pills",
+        "contact-subject",
+        "contact-message",
+        "contact-send-btn",
+        "contact-result",
     ):
         assert f'id="{element_id}"' in html, f"missing #{element_id}"
 
@@ -69,6 +77,10 @@ def test_customer_management_preserves_pipeline_and_repair_apis():
     assert "/api/admin/customers" in html
     assert "/api/admin/validate-customer/" in html
     assert "/api/admin/billing-pending/repair" in html
+    assert "/api/admin/customers/" in html
+    assert "/contact" in html
+    assert "openContactModal" in html
+    assert "sendCustomerContact" in html
     # Token keys used by the rest of the admin/customer portal
     assert "localStorage.getItem('phins_token')" in html
     assert "sessionStorage.getItem('authToken')" in html

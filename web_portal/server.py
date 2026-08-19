@@ -7453,6 +7453,99 @@ def repair_billing_pending_pipeline(
     return repair_report
 
 
+def send_admin_customer_outreach(
+    customer_id: str,
+    *,
+    template: str = 'message',
+    channels: str = 'both',
+    subject: Optional[str] = None,
+    custom_message: Optional[str] = None,
+    actor: str = 'customer_relations',
+    login_url: str = '/billing.html',
+) -> Dict[str, Any]:
+    """Send a customer-relations email/WhatsApp using the stored customer record.
+
+    Recipients are resolved only from ``CUSTOMERS`` (email/phone on file).
+    Client-supplied destinations are ignored so outreach cannot be redirected
+    to an arbitrary address. Uses ``CustomerCommunicationAgent`` and the
+    platform notification service.
+    """
+    customer_id = str(customer_id or '').strip()
+    if not customer_id:
+        return {'success': False, 'error': 'customer_id is required'}
+
+    customer = CUSTOMERS.get(customer_id)
+    if not customer:
+        return {'success': False, 'error': 'Customer not found'}
+
+    if is_suspended_account(customer_id):
+        return {'success': False, 'error': 'Cannot contact a suspended test account'}
+
+    email = str(customer.get('email') or '').strip()
+    phone = str(customer.get('phone') or customer.get('mobile') or customer.get('whatsapp') or '').strip()
+    name = str(customer.get('name') or customer.get('full_name') or 'PHINS Customer').strip()
+
+    policies = [p for p in POLICIES.values() if p.get('customer_id') == customer_id]
+    bills = [b for b in BILLING.values() if b.get('customer_id') == customer_id]
+    accounts = []
+    wallet = HEALTH_WALLETS.get(customer_id) or {}
+    if wallet:
+        accounts.append({'name': 'health_wallet', 'balance': wallet.get('balance', 0)})
+
+    offers: List[Dict[str, Any]] = []
+    try:
+        with STATE_LOCK:
+            for offer in SUPPLIER_OFFERS.values():
+                if offer.get('active', True):
+                    offers.append(offer)
+                    if len(offers) >= 8:
+                        break
+    except Exception:
+        offers = []
+
+    try:
+        from services.notification_service import (
+            create_notification_service,
+            should_use_mock_notifications,
+        )
+        from services.customer_communication_agent import get_customer_communication_agent
+
+        notification_service = create_notification_service(
+            use_mock=should_use_mock_notifications()
+        )
+        agent = get_customer_communication_agent(notification_service=notification_service)
+        result = agent.send_customer_outreach(
+            customer_id=customer_id,
+            customer_name=name,
+            email=email or None,
+            phone=phone or None,
+            template=template,
+            channels=channels,
+            subject=subject,
+            custom_message=custom_message,
+            policies=policies,
+            bills=bills,
+            offers=offers,
+            accounts=accounts,
+            login_url=login_url,
+            actor=actor,
+        )
+    except Exception as exc:
+        return {
+            'success': False,
+            'error': f'Outreach failed: {exc}',
+            'customer_id': customer_id,
+        }
+
+    result.setdefault('customer_id', customer_id)
+    result['customer_name'] = name
+    result['contact_available'] = {
+        'email': bool(email),
+        'whatsapp': bool(phone),
+    }
+    return result
+
+
 def bootstrap_job_runtime() -> None:
     """Load persisted runtime state for scheduled command execution."""
     print("📂 Loading persisted ledger data for scheduled job...")
@@ -51084,6 +51177,47 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({
                     'error': f'Billing-pending repair failed: {e}'
                 }).encode('utf-8'))
+            return
+
+        # Admin: Customer-relations outreach (email / WhatsApp)
+        # Recipients come from the stored customer record only.
+        if path.startswith('/api/admin/customers/') and path.endswith('/contact'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'accountant', 'underwriter']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Unauthorized. Admin, accountant, or underwriter access required.'
+                }).encode('utf-8'))
+                return
+            parts = [p for p in path.split('/') if p]
+            # api / admin / customers / {id} / contact
+            if len(parts) != 5 or parts[3] in ('upload', 'contact'):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                return
+            target_customer_id = parts[3]
+            try:
+                data = json.loads(body) if body else {}
+            except Exception:
+                data = {}
+            if not isinstance(data, dict):
+                data = {}
+            report = send_admin_customer_outreach(
+                target_customer_id,
+                template=str(data.get('template') or 'message'),
+                channels=str(data.get('channels') or 'both'),
+                subject=data.get('subject'),
+                custom_message=data.get('message') or data.get('custom_message'),
+                actor=(session or {}).get('username', 'customer_relations'),
+                login_url=str(data.get('login_url') or '/billing.html'),
+            )
+            status_code = 200 if report.get('success') else (
+                404 if report.get('error') == 'Customer not found' else 400
+            )
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(report, default=str).encode('utf-8'))
             return
 
         # ========== CUSTOMER BILLING PROJECTIONS API (POST) ==========

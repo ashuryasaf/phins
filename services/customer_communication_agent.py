@@ -11,9 +11,11 @@ High-level customer communication agent focused on:
 
 from __future__ import annotations
 
+import html
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from services.notification_service import (
     NotificationChannel,
@@ -416,6 +418,402 @@ class CustomerCommunicationAgent:
             "email": email_result.to_dict(),
             "whatsapp": whatsapp_result_dict,
         }
+
+    # ------------------------------------------------------------------
+    # Customer-relations outreach (email / WhatsApp)
+    # ------------------------------------------------------------------
+
+    OUTREACH_TEMPLATES = ("message", "offer", "bill", "reminder", "welcome")
+    OUTREACH_CHANNELS = ("email", "whatsapp", "both")
+    _MAX_SUBJECT = 140
+    _MAX_MESSAGE = 4000
+
+    def send_customer_outreach(
+        self,
+        *,
+        customer_id: str,
+        customer_name: str,
+        email: Optional[str] = None,
+        phone: Optional[str] = None,
+        template: str = "message",
+        channels: str = "both",
+        subject: Optional[str] = None,
+        custom_message: Optional[str] = None,
+        policies: Optional[List[Dict[str, Any]]] = None,
+        bills: Optional[List[Dict[str, Any]]] = None,
+        offers: Optional[List[Dict[str, Any]]] = None,
+        accounts: Optional[List[Dict[str, Any]]] = None,
+        login_url: str = "/billing.html",
+        actor: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Send a customer-relations message via email and/or WhatsApp.
+
+        Recipients must be supplied by the caller from the stored customer
+        record. Client-supplied destination addresses are never accepted
+        here — the API layer is responsible for resolving email/phone from
+        ``CUSTOMERS`` so outreach cannot be redirected off-record.
+        """
+        template_key = str(template or "message").strip().lower()
+        if template_key not in self.OUTREACH_TEMPLATES:
+            return {
+                "success": False,
+                "error": f"Invalid template. Allowed: {', '.join(self.OUTREACH_TEMPLATES)}",
+                "code": "INVALID_TEMPLATE",
+            }
+
+        channel_key = str(channels or "both").strip().lower()
+        if channel_key not in self.OUTREACH_CHANNELS:
+            return {
+                "success": False,
+                "error": f"Invalid channels. Allowed: {', '.join(self.OUTREACH_CHANNELS)}",
+                "code": "INVALID_CHANNELS",
+            }
+
+        email_addr = self._normalize_email(email)
+        phone_addr = self._normalize_phone(phone)
+        send_email = channel_key in ("email", "both")
+        send_whatsapp = channel_key in ("whatsapp", "both")
+
+        if send_email and not email_addr:
+            return {
+                "success": False,
+                "error": "Customer has no email on file for email outreach",
+                "code": "EMAIL_REQUIRED",
+            }
+        if send_whatsapp and not phone_addr:
+            return {
+                "success": False,
+                "error": "Customer has no phone on file for WhatsApp outreach",
+                "code": "PHONE_REQUIRED",
+            }
+        if not send_email and not send_whatsapp:
+            return {
+                "success": False,
+                "error": "Select at least one channel",
+                "code": "CHANNEL_REQUIRED",
+            }
+
+        report = self.build_diversified_executive_report(
+            customer_id=customer_id,
+            policies=policies,
+            bills=bills,
+            accounts=accounts,
+        )
+        offer_summaries = self._summarize_offers(offers or [])
+        payload = self._build_outreach_copy(
+            template=template_key,
+            customer_name=customer_name,
+            report=report,
+            offers=offer_summaries,
+            custom_subject=subject,
+            custom_message=custom_message,
+            login_url=login_url,
+        )
+
+        metadata: Dict[str, Any] = {
+            "agent": "customer_communication_agent",
+            "purpose": "customer_relations_outreach",
+            "template": template_key,
+            "actor": actor or "customer_relations",
+            "executive_report": report.to_dict(),
+            "offers_count": len(offer_summaries),
+        }
+
+        email_result_dict: Optional[Dict[str, Any]] = None
+        whatsapp_result_dict: Optional[Dict[str, Any]] = None
+
+        if send_email:
+            email_request = NotificationRequest(
+                channel=NotificationChannel.EMAIL,
+                recipient=email_addr,
+                subject=payload["subject"],
+                content=payload["text"],
+                html_content=payload["html"],
+                priority=NotificationPriority.HIGH if template_key in ("bill", "reminder") else NotificationPriority.NORMAL,
+                customer_id=customer_id,
+                metadata=metadata.copy(),
+            )
+            email_result_dict = self._notification_service.send(email_request).to_dict()
+
+        if send_whatsapp:
+            whatsapp_request = NotificationRequest(
+                channel=NotificationChannel.WHATSAPP,
+                recipient=phone_addr,
+                content=payload["whatsapp"],
+                priority=NotificationPriority.HIGH if template_key in ("bill", "reminder") else NotificationPriority.NORMAL,
+                customer_id=customer_id,
+                metadata=metadata.copy(),
+            )
+            whatsapp_result_dict = self._notification_service.send(whatsapp_request).to_dict()
+
+        email_ok = email_result_dict is None or bool(email_result_dict.get("success"))
+        whatsapp_ok = whatsapp_result_dict is None or bool(whatsapp_result_dict.get("success"))
+        success = bool(email_ok and whatsapp_ok)
+
+        return {
+            "success": success,
+            "customer_id": customer_id,
+            "template": template_key,
+            "channels": channel_key,
+            "subject": payload["subject"],
+            "recipients": {
+                "email": self._mask_email(email_addr) if send_email else None,
+                "whatsapp": self._mask_phone(phone_addr) if send_whatsapp else None,
+            },
+            "email": email_result_dict,
+            "whatsapp": whatsapp_result_dict,
+            "report": {
+                "outstanding_bills": report.outstanding_bills,
+                "outstanding_amount": report.outstanding_amount,
+                "active_policies": report.active_policies,
+                "total_policies": report.total_policies,
+            },
+            "offers_included": len(offer_summaries),
+        }
+
+    def _build_outreach_copy(
+        self,
+        *,
+        template: str,
+        customer_name: str,
+        report: ExecutiveReport,
+        offers: Sequence[Dict[str, Any]],
+        custom_subject: Optional[str],
+        custom_message: Optional[str],
+        login_url: str,
+    ) -> Dict[str, str]:
+        name = self._clip(str(customer_name or "PHINS Customer").strip() or "PHINS Customer", 80)
+        note = self._clip(str(custom_message or "").strip(), self._MAX_MESSAGE)
+        safe_login = self._safe_url(login_url)
+
+        default_subjects = {
+            "message": f"A message from PHINS, {name}",
+            "offer": f"New PHINS offers for you, {name}",
+            "bill": f"Your PHINS bill is ready — ${report.outstanding_amount:,.2f} outstanding",
+            "reminder": f"Reminder: {report.outstanding_bills} PHINS bill(s) need attention",
+            "welcome": f"Welcome to PHINS | Executive Portfolio Brief",
+        }
+        subject = self._clip(str(custom_subject or "").strip() or default_subjects[template], self._MAX_SUBJECT)
+
+        offer_lines = [
+            f"- {item['name']}" + (f" (${item['price']:,.2f})" if item.get("price") is not None else "")
+            for item in offers[:6]
+        ]
+        if not offer_lines:
+            offer_lines = ["- New coverage and marketplace options are available in your portal"]
+
+        if template == "offer":
+            intro = (
+                f"Hi {name}, we have new offers matched to your PHINS relationship."
+            )
+            body_lines = [
+                intro,
+                "",
+                "Current offers:",
+                *offer_lines,
+                "",
+                f"Active policies: {report.active_policies}/{report.total_policies}.",
+            ]
+        elif template == "bill":
+            intro = (
+                f"Hi {name}, your latest PHINS billing summary is ready."
+            )
+            body_lines = [
+                intro,
+                "",
+                f"Outstanding bills: {report.outstanding_bills} (${report.outstanding_amount:,.2f}).",
+                f"Overdue bills: {report.overdue_bills}.",
+                "",
+                f"Review and pay securely: {safe_login}",
+            ]
+        elif template == "reminder":
+            intro = (
+                f"Hi {name}, this is a friendly reminder from PHINS customer relations."
+            )
+            body_lines = [
+                intro,
+                "",
+                f"{report.outstanding_bills} bill(s) remain outstanding totaling ${report.outstanding_amount:,.2f}.",
+                "Keeping coverage active is easiest when premiums stay current.",
+                "",
+                f"Pay now: {safe_login}",
+            ]
+        elif template == "welcome":
+            intro = f"Welcome to PHINS, {name}."
+            body_lines = [
+                intro,
+                "",
+                f"Policies: {report.active_policies}/{report.total_policies} active",
+                f"Coverage: ${report.total_coverage:,.2f}",
+                f"Outstanding billing: ${report.outstanding_amount:,.2f}",
+                "",
+                f"Open your dashboard: {safe_login}",
+            ]
+        else:
+            intro = f"Hi {name}, a note from PHINS customer relations."
+            body_lines = [
+                intro,
+                "",
+                f"Your relationship snapshot: {report.active_policies} active polic"
+                f"{'y' if report.active_policies == 1 else 'ies'}, "
+                f"${report.outstanding_amount:,.2f} outstanding.",
+            ]
+
+        if note:
+            body_lines.extend(["", "Personal note:", note])
+        body_lines.extend(["", "Thank you for choosing PHINS."])
+        text_body = "\n".join(body_lines)
+
+        whatsapp_body = (
+            f"PHINS: {subject}. {intro} "
+            f"Outstanding ${report.outstanding_amount:,.2f} across {report.outstanding_bills} bill(s)."
+        )
+        if template == "offer" and offers:
+            first = offers[0]
+            price_bit = f" (${first['price']:,.2f})" if first.get("price") is not None else ""
+            whatsapp_body += f" Featured offer: {first['name']}{price_bit}."
+        if note:
+            whatsapp_body += f" Note: {self._clip(note, 280)}"
+        whatsapp_body += f" {safe_login}"
+
+        html_body = self._render_outreach_html(
+            customer_name=name,
+            subject=subject,
+            intro=intro,
+            text_body=text_body,
+            login_url=safe_login,
+            template=template,
+        )
+        return {
+            "subject": subject,
+            "text": text_body,
+            "html": html_body,
+            "whatsapp": self._clip(whatsapp_body, 1000),
+        }
+
+    def _render_outreach_html(
+        self,
+        *,
+        customer_name: str,
+        subject: str,
+        intro: str,
+        text_body: str,
+        login_url: str,
+        template: str,
+    ) -> str:
+        safe_name = html.escape(customer_name)
+        safe_subject = html.escape(subject)
+        safe_intro = html.escape(intro)
+        safe_url = html.escape(login_url, quote=True)
+        paragraphs = "".join(
+            f"<p style=\"margin:0 0 10px 0;line-height:1.55;\">{html.escape(line)}</p>"
+            if line else "<p style=\"margin:0 0 10px 0;\">&nbsp;</p>"
+            for line in text_body.split("\n")
+        )
+        badge = {
+            "offer": "NEW OFFER",
+            "bill": "BILLING",
+            "reminder": "REMINDER",
+            "welcome": "WELCOME",
+            "message": "CUSTOMER RELATIONS",
+        }.get(template, "CUSTOMER RELATIONS")
+        return f"""
+<html>
+<body style="margin:0;background:#f5f9fc;font-family:Inter,Arial,sans-serif;color:#12203f;">
+  <div style="max-width:680px;margin:24px auto;background:#ffffff;border:1px solid #d7e0ec;border-radius:14px;overflow:hidden;">
+    <div style="padding:22px 26px;background:linear-gradient(135deg,#060d1f 0%,#0e2f63 48%,#123f82 100%);color:#eaf1ff;">
+      <div style="font-size:11px;letter-spacing:0.16em;color:#e3bf6f;">{html.escape(badge)}</div>
+      <h1 style="margin:8px 0 0 0;font-size:22px;">{safe_subject}</h1>
+      <p style="margin:8px 0 0 0;opacity:0.9;">{safe_intro}</p>
+    </div>
+    <div style="padding:22px 26px;">
+      {paragraphs}
+      <p style="margin-top:18px;"><a href="{safe_url}" style="color:#0e2f63;font-weight:600;">Open your PHINS portal</a></p>
+    </div>
+    <div style="padding:12px 26px;background:#060d1f;color:#9fb6dd;font-size:12px;">
+      PHINS | Customer Relations for {safe_name}
+    </div>
+  </div>
+</body>
+</html>
+""".strip()
+
+    @staticmethod
+    def _summarize_offers(offers: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        summarized: List[Dict[str, Any]] = []
+        for offer in offers:
+            if not isinstance(offer, dict):
+                continue
+            if offer.get("active") is False:
+                continue
+            name = str(offer.get("name") or offer.get("title") or offer.get("id") or "").strip()
+            if not name:
+                continue
+            price_raw = offer.get("price", offer.get("amount", offer.get("monthly_premium")))
+            try:
+                price = float(price_raw) if price_raw is not None and str(price_raw) != "" else None
+            except (TypeError, ValueError):
+                price = None
+            summarized.append({
+                "name": CustomerCommunicationAgent._clip(name, 80),
+                "price": price,
+                "category": str(offer.get("category") or offer.get("type") or "").strip() or None,
+            })
+            if len(summarized) >= 8:
+                break
+        return summarized
+
+    @staticmethod
+    def _normalize_email(value: Optional[str]) -> Optional[str]:
+        email = str(value or "").strip().lower()
+        if not email or "@" not in email or " " in email:
+            return None
+        local, _, domain = email.partition("@")
+        if not local or "." not in domain:
+            return None
+        return email
+
+    @staticmethod
+    def _normalize_phone(value: Optional[str]) -> Optional[str]:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        digits = re.sub(r"[^\d+]", "", raw)
+        just_digits = re.sub(r"\D", "", digits)
+        if len(just_digits) < 8:
+            return None
+        return digits
+
+    @staticmethod
+    def _mask_email(email: Optional[str]) -> Optional[str]:
+        if not email or "@" not in email:
+            return email
+        local, _, domain = email.partition("@")
+        visible = local[:1] if local else "*"
+        return f"{visible}***@{domain}"
+
+    @staticmethod
+    def _mask_phone(phone: Optional[str]) -> Optional[str]:
+        if not phone:
+            return phone
+        digits = re.sub(r"\D", "", phone)
+        if len(digits) < 4:
+            return "***"
+        return f"***{digits[-4:]}"
+
+    @staticmethod
+    def _clip(value: str, limit: int) -> str:
+        text = str(value or "")
+        if len(text) <= limit:
+            return text
+        return text[: max(0, limit - 1)].rstrip() + "…"
+
+    @staticmethod
+    def _safe_url(value: str) -> str:
+        url = str(value or "/billing.html").strip() or "/billing.html"
+        if url.startswith(("https://", "http://", "/")):
+            return CustomerCommunicationAgent._clip(url, 240)
+        return "/billing.html"
 
 
 def get_customer_communication_agent(notification_service=None) -> CustomerCommunicationAgent:
