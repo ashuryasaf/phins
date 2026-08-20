@@ -221,26 +221,26 @@
       border: 1px solid var(--phins-line);
       border-radius: 14px; padding: 12px 14px; margin-bottom: 10px;
     }
-    .fn-bar { border: 1px solid var(--phins-line); border-radius: 12px; margin-bottom: 7px; background: rgba(7,15,34,.88); overflow: hidden; border-left: 5px solid #4fd8ff; }
+    .fn-bar { border: 1px solid var(--phins-line); border-radius: 12px; margin-bottom: 6px; background: rgba(7,15,34,.88); overflow: hidden; border-left: 5px solid #4fd8ff; }
     .fn-bar.docs { border-left-color: #4fd8ff; }
     .fn-bar.assess { border-left-color: #6fe0b8; }
     .fn-bar.risk { border-left-color: #ff9e8a; }
     .fn-bar.report { border-left-color: #c4a0ff; }
     .fn-bar-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; }
     .fn-bar-title { font-family: 'Space Grotesk', sans-serif; font-size: 13px; }
-    .fn-bar-body { display: none; padding: 0 12px 10px; color: var(--phins-dim); font-size: 12px; }
+    .fn-bar-body { display: none; padding: 0 12px 8px; color: var(--phins-dim); font-size: 11px; }
     .fn-bar.open .fn-bar-body { display: block; }
     .bar { height: 8px; background: rgba(127,178,255,.12); border-radius: 999px; overflow: hidden; margin-top: 8px; }
     .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #4fd8ff, #e3bf6f); transition: width 1s ease; }
 
-    .flow { display: flex; align-items: flex-start; justify-content: space-between; position: relative; margin: 6px 0 12px; }
-    .flow::before { content: ''; position: absolute; top: 16px; left: 8%; right: 8%; height: 2px; background: rgba(127,178,255,.16); }
+    .flow { display: flex; align-items: flex-start; justify-content: space-between; position: relative; margin: 4px 0 10px; }
+    .flow::before { content: ''; position: absolute; top: 13px; left: 8%; right: 8%; height: 2px; background: rgba(127,178,255,.16); }
     .pstage { flex: 1; text-align: center; position: relative; z-index: 1; }
     .pstage i {
       display: flex; align-items: center; justify-content: center;
-      width: 32px; height: 32px; margin: 0 auto 6px; border-radius: 50%;
+      width: 26px; height: 26px; margin: 0 auto 4px; border-radius: 50%;
       background: rgba(7,15,34,.95); border: 1px solid var(--phins-line);
-      font-style: normal; font-size: 11px; font-family: 'Space Grotesk', sans-serif;
+      font-style: normal; font-size: 10px; font-family: 'Space Grotesk', sans-serif;
     }
     .pstage.on i { background: linear-gradient(135deg, #f7e2a0, #e3bf6f); color: #071022; border-color: transparent; }
     .pstage b { display: block; font-size: 12px; }
@@ -743,6 +743,9 @@
         ['bar-report', 'chip-report', 'fill-report', 'Issued', '90%', 'Reports issued · one record']
       ].forEach(function (row, idx) {
         later(2200 + idx * 1800, function () {
+          document.querySelectorAll('#stage-assessments .fn-bar').forEach(function (bar) {
+            bar.classList.remove('open');
+          });
           document.getElementById(row[0]).classList.add('open');
           document.getElementById(row[1]).textContent = row[3];
           document.getElementById(row[1]).className = 'badge risk-low';
