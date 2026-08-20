@@ -69,6 +69,13 @@ def test_every_public_segment_opens_an_enlarged_theater_preview():
     assert 'id="act-scroll"' in preview
     assert "Investments Terminal" in preview
     assert "PHINS · INVESTMENTS" in preview
+    assert "PHINS TERMINAL" in preview
+    assert "Customer Management" in preview
+    assert "Unified Workbench" in preview
+    assert "Validate Pipeline" in preview
+    assert 'src="/phins-logo.svg"' in preview
+    assert 'class="sol-player-logo"' in html
+    assert 'class="sol-theater-wordmark"' in html
 
     expected_previews = {
         "underwriting",
