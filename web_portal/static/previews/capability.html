@@ -94,7 +94,8 @@
       height: 100%; padding: 12px 14px 44px; overflow: hidden; position: relative;
     }
     .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
-    .kpis-5 { grid-template-columns: repeat(5, 1fr); }
+    .kpis-5 { display: none; }
+    .cm-split { display: grid; grid-template-columns: 1fr 1.15fr; gap: 8px; min-height: 0; }
     .kpi {
       background: radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%), rgba(7, 15, 34, 0.92);
       border: 1px solid var(--phins-line);
@@ -521,37 +522,37 @@
 
   <section class="stage" id="stage-customers">
     <div class="workbench">
-      <div class="card" style="padding-bottom:10px">
-        <div class="desk-name" style="margin-bottom:8px">Customer Management</div>
-        <div class="flow" id="cm-pipe">
-          <div class="pstage" data-step="0"><i>1</i><b>2</b><small>Application</small></div>
-          <div class="pstage on" data-step="1"><i>2</i><b>4</b><small>Underwriting</small></div>
-          <div class="pstage" data-step="2"><i>3</i><b>1</b><small>Approved</small></div>
-          <div class="pstage" data-step="3"><i>4</i><b>7</b><small>Active Policy</small></div>
-          <div class="pstage" data-step="4"><i>5</i><b>2</b><small>Billing</small></div>
+      <div class="cm-split">
+        <div class="card" style="padding-bottom:10px;margin-bottom:0">
+          <div class="desk-name" style="margin-bottom:8px">Customer Management</div>
+          <div class="flow" id="cm-pipe">
+            <div class="pstage" data-step="0"><i>1</i><b>2</b><small>Application</small></div>
+            <div class="pstage on" data-step="1"><i>2</i><b>4</b><small>Underwriting</small></div>
+            <div class="pstage" data-step="2"><i>3</i><b>1</b><small>Approved</small></div>
+            <div class="pstage" data-step="3"><i>4</i><b>7</b><small>Active Policy</small></div>
+            <div class="pstage" data-step="4"><i>5</i><b>2</b><small>Billing</small></div>
+          </div>
+          <div class="kpis" style="margin-bottom:0">
+            <div class="kpi"><b>12</b><span>Customers</span></div>
+            <div class="kpi"><b>7</b><span>Policies</span></div>
+            <div class="kpi"><b>2</b><span>Billing</span></div>
+            <div class="kpi"><b>9</b><span>Wallets</span></div>
+          </div>
         </div>
-      </div>
-      <div class="kpis kpis-5">
-        <div class="kpi"><b>12</b><span>Customers</span></div>
-        <div class="kpi"><b>4</b><span>Applications</span></div>
-        <div class="kpi"><b>7</b><span>Active Policies</span></div>
-        <div class="kpi"><b>2</b><span>Billing Pending</span></div>
-        <div class="kpi"><b>9</b><span>Health Wallets</span></div>
-      </div>
-      <div class="toolbar">
-        <input value="" placeholder="Search by ID or initials" readonly>
-        <button class="btn btn-ghost">Refresh</button>
-        <button class="btn btn-gold" id="cm-validate">Validate Pipeline</button>
-      </div>
-      <div class="card">
-        <table class="cm-table">
-          <thead><tr><th>ID</th><th>Name</th><th>Stage</th><th>Policies</th><th>Wallet</th></tr></thead>
-          <tbody>
-            <tr id="cm-r1"><td>CUST-••104</td><td>R. P.</td><td>Underwriting</td><td>—</td><td>Open</td></tr>
-            <tr id="cm-r2"><td>CUST-••218</td><td>A. M.</td><td>Active</td><td>1</td><td>Linked</td></tr>
-            <tr id="cm-r3"><td>CUST-••331</td><td>J. K.</td><td>Billing</td><td>1</td><td>Open</td></tr>
-          </tbody>
-        </table>
+        <div class="card" style="margin-bottom:0">
+          <div class="toolbar">
+            <input value="" placeholder="Search by ID or initials" readonly>
+            <button class="btn btn-gold" id="cm-validate">Validate Pipeline</button>
+          </div>
+          <table class="cm-table">
+            <thead><tr><th>ID</th><th>Name</th><th>Stage</th><th>Policies</th><th>Wallet</th></tr></thead>
+            <tbody>
+              <tr id="cm-r1"><td>CUST-••104</td><td>R. P.</td><td>Underwriting</td><td>—</td><td>Open</td></tr>
+              <tr id="cm-r2"><td>CUST-••218</td><td>A. M.</td><td>Active</td><td>1</td><td>Linked</td></tr>
+              <tr id="cm-r3"><td>CUST-••331</td><td>J. K.</td><td>Billing</td><td>1</td><td>Open</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       <div class="toast" id="cm-toast">Pipeline validated. Stages aligned.</div>
       <div class="caption" data-caption>Customer Management · application through billing</div>
