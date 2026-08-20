@@ -22,6 +22,9 @@ def test_assessments_nav_assets_exist():
     assert "no 135deg stripe bleed" in css
     assert "background: var(--phins-gold) !important;" in css
     assert "#mobile-nav .assessments-nav-toggle" in css
+    # Drawer lives inside a backdrop-filter header; bottom:auto keeps
+    # the ☰ open state from collapsing to a 0-height strip.
+    assert "bottom: auto !important;" in css
 
 
 def test_admin_and_customer_mount_assessments_chooser():

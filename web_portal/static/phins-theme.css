@@ -88,7 +88,15 @@
     padding: 10px 12px 28px !important;
     gap: 6px !important;
     top: 60px !important;
+    /* Header chrome uses backdrop-filter, which makes the header the
+       containing block for position:fixed descendants. Pinning bottom:0
+       then computes height as (header − 60px) ≈ 0, so the ☰ toggle adds
+       .open but the drawer is invisible. Size from content + a viewport
+       cap instead. */
+    bottom: auto !important;
+    height: auto !important;
     max-height: calc(100vh - 60px) !important;
+    max-height: calc(100dvh - 60px) !important;
     overflow-y: auto !important;
     overscroll-behavior: contain;
   }
