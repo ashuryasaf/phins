@@ -9,28 +9,74 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
   <style>
     :root {
-      --navy:#1a1f36; --navy-2:#2d3561; --ink:#1b2437; --muted:#6b7280;
-      --line:#e5e7eb; --bg:#f4f6fb; --gold:#e3bf6f; --blue:#1976d2;
-      --green:#059669; --red:#dc2626; --warn:#d97706;
+      --phins-navy: #060d1f;
+      --phins-ink: #eaf1ff;
+      --phins-gold: #e3bf6f;
+      --phins-gold-strong: #f7e2a0;
+      --phins-line: rgba(127, 178, 255, 0.16);
+      --phins-dim: rgba(234, 241, 255, 0.62);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; overflow: hidden; }
     body {
       font-family: Inter, system-ui, sans-serif;
-      background: #0b1224;
-      color: var(--ink);
+      background: var(--phins-navy);
+      color: var(--phins-ink);
+      -webkit-font-smoothing: antialiased;
     }
-    .hdr {
+    .backdrop {
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background:
+        radial-gradient(900px 420px at 88% -12%, rgba(21, 68, 155, 0.5), transparent 62%),
+        radial-gradient(640px 360px at 6% 110%, rgba(11, 92, 130, 0.32), transparent 60%),
+        var(--phins-navy);
+    }
+    .backdrop::before {
+      content: '';
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(127, 178, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(127, 178, 255, 0.05) 1px, transparent 1px);
+      background-size: 56px 56px;
+      mask-image: radial-gradient(900px 520px at 50% 0%, rgba(0,0,0,0.8), transparent 78%);
+    }
+    .phins-header {
+      position: relative; z-index: 2;
       height: 52px;
       display: flex; align-items: center; justify-content: space-between;
-      padding: 0 16px;
-      background: linear-gradient(135deg, #1a1f36 0%, #2d3561 50%, #1a1f36 100%);
-      color: #fff;
+      padding: 0 14px;
+      background:
+        radial-gradient(700px 180px at 85% -60%, rgba(21, 68, 155, 0.5), transparent 70%),
+        rgba(6, 13, 31, 0.96);
+      border-bottom: 1px solid var(--phins-line);
     }
-    .brand { display: flex; align-items: center; gap: 10px; font-family: 'Space Grotesk', sans-serif; font-weight: 700; letter-spacing: .12em; }
-    .brand img { width: 28px; height: 28px; }
-    .desk-name { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--gold); }
-    .stage { display: none; height: calc(100% - 52px); }
+    .phins-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .phins-logo img { width: 28px; height: 28px; filter: drop-shadow(0 4px 14px rgba(79, 216, 255, 0.3)); }
+    .phins-logo-text {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 600; letter-spacing: 0.28em;
+      background: linear-gradient(180deg, #fff 0%, #b7d3ff 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .surface-nav { display: flex; gap: 4px; flex-wrap: nowrap; overflow: hidden; }
+    .surface-nav span {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase;
+      color: rgba(234,241,255,0.62);
+      padding: 5px 8px; border-radius: 999px; white-space: nowrap;
+    }
+    .surface-nav span.on {
+      background: linear-gradient(135deg, #f7e2a0, #e3bf6f);
+      color: #071022; font-weight: 600;
+    }
+    .desk-name {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 11px; font-weight: 600;
+      letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--phins-gold);
+    }
+    .stage { display: none; height: calc(100% - 52px); position: relative; z-index: 1; }
     body[data-scene="underwriting"] #stage-underwriting,
     body[data-scene="assessments"] #stage-assessments,
     body[data-scene="billing"] #stage-billing,
@@ -41,115 +87,203 @@
     body[data-scene="smart_contracts"] #stage-contracts,
     body[data-scene="mga_solutions"] #stage-mga,
     body[data-scene="individuals"] #stage-client,
-    body[data-scene="enterprises"] #stage-mga,
+    body[data-scene="enterprises"] #stage-customers,
     body[data-scene="invest"] #stage-invest { display: block; }
 
-    .workbench { height: 100%; background: var(--bg); padding: 14px 16px; overflow: hidden; position: relative; }
-    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
-    .kpi { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
-    .kpi b { display: block; font-size: 20px; font-family: 'Space Grotesk', sans-serif; }
-    .kpi span { font-size: 11px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+    .workbench {
+      height: 100%; padding: 12px 14px 44px; overflow: hidden; position: relative;
+    }
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+    .kpis-5 { grid-template-columns: repeat(5, 1fr); }
+    .kpi {
+      background: radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%), rgba(7, 15, 34, 0.92);
+      border: 1px solid var(--phins-line);
+      border-radius: 12px; padding: 8px 10px;
+    }
+    .kpi b { display: block; font-size: 17px; font-family: 'Space Grotesk', sans-serif; }
+    .kpi span { font-size: 9px; color: var(--phins-dim); letter-spacing: .1em; text-transform: uppercase; }
     .card {
-      background: #fff; border: 1px solid var(--line); border-radius: 12px;
-      padding: 14px; margin-bottom: 10px; box-shadow: 0 6px 18px rgba(15,23,42,.05);
-      transition: transform .35s ease, box-shadow .35s ease, opacity .4s ease;
+      background: rgba(7, 15, 34, 0.88);
+      border: 1px solid var(--phins-line);
+      border-radius: 14px; padding: 12px; margin-bottom: 8px;
+      transition: box-shadow .35s ease, opacity .4s ease, border-color .35s ease;
     }
-    .card.pulse { box-shadow: 0 0 0 2px #fecaca, 0 10px 24px rgba(220,38,38,.12); }
+    .card.pulse { border-color: rgba(227, 191, 111, 0.7); box-shadow: 0 0 0 1px rgba(227,191,111,.25), 0 12px 28px rgba(2,8,23,.4); }
     .row { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
-    .meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; background: #f8fafc; border-radius: 8px; padding: 10px; margin: 10px 0; font-size: 13px; }
-    .meta small { color: var(--muted); display: block; }
-    .badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .08em; padding: 3px 8px; border-radius: 999px; }
-    .risk-high { background: #fee2e2; color: #991b1b; }
-    .risk-med { background: #fef3c7; color: #92400e; }
-    .risk-low { background: #d1fae5; color: #065f46; }
+    .meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; background: rgba(127,178,255,.05); border-radius: 8px; padding: 8px; margin: 8px 0; font-size: 12px; }
+    .meta small { color: var(--phins-dim); display: block; letter-spacing: .06em; text-transform: uppercase; font-size: 10px; }
+    .badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .1em; padding: 3px 8px; border-radius: 999px; }
+    .risk-high { background: rgba(220,38,38,.18); color: #fecaca; }
+    .risk-med { background: rgba(227,191,111,.16); color: var(--phins-gold-strong); }
+    .risk-low { background: rgba(111,224,184,.16); color: #9befd4; }
     .btns { display: flex; gap: 8px; flex-wrap: wrap; }
-    .btn { border: 0; border-radius: 8px; padding: 7px 12px; font-weight: 600; font-size: 13px; cursor: default; color: #fff; }
-    .btn-ok { background: #059669; }
-    .btn-no { background: #dc2626; }
-    .btn-ref { background: #2563eb; }
-    .btn-ghost { background: #6b7280; }
-    .btn.aim { transform: scale(1.06); box-shadow: 0 0 0 3px rgba(220,38,38,.25); }
+    .btn { border: 0; border-radius: 999px; padding: 7px 13px; font-weight: 600; font-size: 12px; cursor: default; font-family: 'Space Grotesk', sans-serif; letter-spacing: .04em; }
+    .btn-ok { background: #059669; color: #fff; }
+    .btn-no { background: #dc2626; color: #fff; }
+    .btn-ref { background: #2563eb; color: #fff; }
+    .btn-gold { background: linear-gradient(135deg, #f7e2a0, #e3bf6f); color: #071022; }
+    .btn-ghost { background: transparent; color: var(--phins-gold); border: 1px solid rgba(227,191,111,.55); }
+    .btn.aim { transform: scale(1.05); box-shadow: 0 0 0 3px rgba(227,191,111,.28); }
 
-    .modal {
-      position: absolute; inset: 0;
-      background: rgba(15,23,42,.45);
-      display: none; align-items: center; justify-content: center;
-      padding: 20px;
-    }
+    .modal { position: absolute; inset: 0; background: rgba(3,8,20,.62); display: none; align-items: center; justify-content: center; padding: 20px; z-index: 4; }
     .modal.show { display: flex; }
-    .sheet { width: min(520px, 94%); background: #fff; border-radius: 14px; padding: 18px 20px; }
+    .sheet {
+      width: min(520px, 94%);
+      background: rgba(7,15,34,.97);
+      border: 1px solid rgba(227,191,111,.4);
+      border-radius: 16px; padding: 18px 20px;
+    }
     .sheet h3 { font-family: 'Space Grotesk', sans-serif; margin-bottom: 8px; }
-    .field { margin: 10px 0; }
-    .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .08em; }
+    .field { margin: 8px 0; }
+    .field label { display: block; font-size: 11px; color: var(--phins-dim); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .1em; }
     .field select, .field textarea, .field input {
-      width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; font: inherit;
+      width: 100%; border: 1px solid var(--phins-line); border-radius: 8px; padding: 8px 10px;
+      font: inherit; background: rgba(6,13,31,.7); color: var(--phins-ink);
     }
     .toast {
-      position: absolute; right: 16px; bottom: 16px;
-      background: #111827; color: #fff; padding: 10px 14px; border-radius: 10px;
-      opacity: 0; transform: translateY(8px); transition: .3s ease;
+      position: absolute; right: 16px; bottom: 48px;
+      background: #071022; color: var(--phins-gold-strong);
+      border: 1px solid rgba(227,191,111,.45);
+      padding: 10px 14px; border-radius: 10px;
+      opacity: 0; transform: translateY(8px); transition: .3s ease; z-index: 5;
     }
     .toast.show { opacity: 1; transform: none; }
+    .caption {
+      position: absolute; left: 14px; right: 14px; bottom: 8px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+      color: var(--phins-gold-strong);
+      background: rgba(6,13,31,0.86);
+      border: 1px solid rgba(227,191,111,0.32);
+      border-radius: 999px;
+      padding: 6px 12px; text-align: center; z-index: 6;
+    }
 
-    .act { display: grid; grid-template-columns: 168px 1fr; height: 100%; }
-    .act-nav { background: #111827; color: #cbd5e1; padding: 12px 10px; font-size: 12px; }
-    .act-nav .sec { color: var(--gold); letter-spacing: .14em; text-transform: uppercase; margin: 10px 6px 6px; font-size: 10px; }
-    .act-nav a { display: block; padding: 7px 8px; border-radius: 6px; color: inherit; text-decoration: none; }
-    .act-nav a.on { background: #1d4ed8; color: #fff; }
-    .act-scroll { overflow: auto; background: #0f172a; color: #e5e7eb; padding: 16px 18px; scroll-behavior: auto; }
-    .act-scroll h2 { font-family: 'Space Grotesk', sans-serif; margin: 6px 0 12px; }
+    .act { display: grid; grid-template-columns: 156px 1fr; height: 100%; }
+    .act-nav { background: rgba(7,15,34,.96); border-right: 1px solid var(--phins-line); color: var(--phins-dim); padding: 12px 10px; font-size: 12px; }
+    .act-nav .sec { color: var(--phins-gold); letter-spacing: .16em; text-transform: uppercase; margin: 10px 6px 6px; font-size: 10px; }
+    .act-nav a { display: block; padding: 7px 8px; border-radius: 8px; color: inherit; text-decoration: none; }
+    .act-nav a.on { background: linear-gradient(135deg, #f7e2a0, #e3bf6f); color: #071022; font-weight: 600; }
+    .act-scroll { overflow: auto; padding: 14px 16px 48px; }
+    .act-scroll h2 { font-family: 'Space Grotesk', sans-serif; margin: 6px 0 10px; font-size: 20px; }
     .act-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
-    .act-kpi { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 10px; }
-    .act-kpi b { font-size: 18px; display: block; }
-    .act-kpi span { font-size: 11px; color: #94a3b8; }
-    .tbar { display: flex; gap: 8px; overflow: hidden; padding-bottom: 8px; }
-    .tcard { min-width: 150px; background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 10px; }
-    .tcard em { display: block; font-style: normal; color: var(--gold); font-size: 12px; margin-bottom: 6px; }
-    .spark { height: 46px; width: 100%; }
+    .tbar { display: flex; gap: 8px; overflow: hidden; }
+    .tcard { min-width: 148px; background: rgba(7,15,34,.9); border: 1px solid var(--phins-line); border-radius: 10px; padding: 10px; }
+    .tcard em { display: block; font-style: normal; color: var(--phins-gold); font-size: 12px; margin-bottom: 6px; }
     .lifecycle { display: flex; gap: 6px; margin: 8px 0 14px; }
-    .lifecycle i { flex: 1; text-align: center; font-style: normal; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; border: 1px solid #334155; border-radius: 8px; padding: 8px 4px; color: #94a3b8; }
-    .lifecycle i.on { border-color: var(--gold); color: var(--gold); background: rgba(227,191,111,.08); }
+    .lifecycle i { flex: 1; text-align: center; font-style: normal; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; border: 1px solid var(--phins-line); border-radius: 8px; padding: 8px 4px; color: var(--phins-dim); }
+    .lifecycle i.on { border-color: var(--phins-gold); color: var(--phins-gold-strong); background: rgba(227,191,111,.08); }
 
-    .term { height: 100%; background: #0a0e17; color: #e5e7eb; font-family: 'IBM Plex Mono', monospace; display: flex; flex-direction: column; }
-    .term-top { height: 36px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; background: #000; border-bottom: 1px solid #1f2937; font-size: 12px; }
-    .gold { color: #fbbf24; }
-    .up { color: #10b981; } .down { color: #ef4444; }
-    .ticker { height: 28px; overflow: hidden; background: #000; border-bottom: 1px solid #1a1a2e; }
-    .ticker b { display: inline-block; padding: 6px 18px; font-weight: 600; animation: tick 18s linear infinite; white-space: nowrap; }
+    .term { height: 100%; background: #070d18; color: var(--phins-ink); font-family: 'IBM Plex Mono', monospace; display: flex; flex-direction: column; }
+    .term-top { height: 40px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid var(--phins-line); }
+    .term-brand { display: flex; align-items: center; gap: 8px; font-family: 'Space Grotesk', sans-serif; letter-spacing: .16em; color: var(--phins-gold); font-size: 12px; }
+    .term-brand img { width: 22px; height: 22px; }
+    .gold { color: var(--phins-gold); }
+    .up { color: #6fe0b8; } .down { color: #ff9e8a; }
+    .ticker { height: 26px; overflow: hidden; border-bottom: 1px solid var(--phins-line); }
+    .ticker b { display: inline-block; padding: 5px 18px; font-weight: 600; animation: tick 18s linear infinite; white-space: nowrap; font-size: 11px; }
     @keyframes tick { from { transform: translateX(20%); } to { transform: translateX(-40%); } }
-    .term-grid { flex: 1; display: grid; grid-template-columns: 180px 1fr 200px; min-height: 0; }
-    .pane { border-right: 1px solid #1f2937; padding: 10px; overflow: hidden; }
-    .pane h4 { color: #fbbf24; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; margin-bottom: 8px; }
-    .pos { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #1f2937; font-size: 12px; }
+    .term-grid { flex: 1; display: grid; grid-template-columns: 168px 1fr 188px; min-height: 0; }
+    .pane { border-right: 1px solid var(--phins-line); padding: 8px 10px; overflow: hidden; }
+    .pane h4 { color: var(--phins-gold); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; margin-bottom: 8px; font-family: 'Space Grotesk', sans-serif; }
+    .pos { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(127,178,255,.1); font-size: 11px; }
     canvas { width: 100%; height: 100%; display: block; }
+    .chart-wrap { position: relative; padding: 0; }
+    .tfs { position: absolute; top: 8px; left: 8px; display: flex; gap: 4px; z-index: 2; }
+    .tfs i { font-style: normal; font-size: 10px; letter-spacing: .08em; padding: 3px 7px; border: 1px solid var(--phins-line); border-radius: 4px; color: var(--phins-dim); background: rgba(6,13,31,.75); }
+    .tfs i.on { background: var(--phins-gold); color: #071022; border-color: var(--phins-gold); }
+    .term-bottom { height: 78px; border-top: 1px solid var(--phins-line); padding: 6px 10px; }
+    .tabs { display: flex; gap: 12px; margin-bottom: 6px; }
+    .tabs span { font-family: 'Space Grotesk', sans-serif; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--phins-dim); }
+    .tabs span.on { color: var(--phins-gold); border-bottom: 2px solid var(--phins-gold); padding-bottom: 2px; }
 
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .claim-pipe { display: flex; gap: 6px; margin-bottom: 12px; }
-    .claim-pipe span { flex: 1; text-align: center; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; background: #e5e7eb; border-radius: 8px; padding: 8px; }
-    .claim-pipe span.on { background: #dbeafe; color: #1d4ed8; font-weight: 700; }
+    .claim-pipe, .pipe { display: flex; gap: 6px; margin-bottom: 10px; }
+    .claim-pipe span, .pipe span {
+      flex: 1; text-align: center; font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+      background: rgba(127,178,255,.08); border: 1px solid var(--phins-line); border-radius: 8px; padding: 7px 4px;
+      font-family: 'Space Grotesk', sans-serif;
+    }
+    .claim-pipe span.on, .pipe span.on { border-color: var(--phins-gold); color: var(--phins-gold-strong); background: rgba(227,191,111,.1); }
 
-    .desk-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-    .desk-tile { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-height: 88px; }
-    .desk-tile h4 { font-family: 'Space Grotesk', sans-serif; margin-bottom: 6px; }
-    .desk-tile p { color: var(--muted); font-size: 13px; }
+    .desk-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .desk-tile { background: rgba(7,15,34,.88); border: 1px solid var(--phins-line); border-radius: 12px; padding: 12px; min-height: 72px; transition: border-color .3s, box-shadow .3s; }
+    .desk-tile.on { border-color: var(--phins-gold); box-shadow: 0 0 0 1px rgba(227,191,111,.2); }
+    .desk-tile h4 { font-family: 'Space Grotesk', sans-serif; margin-bottom: 4px; font-size: 13px; }
+    .desk-tile p { color: var(--phins-dim); font-size: 11px; }
 
-    .ring-wrap { display: flex; gap: 16px; align-items: center; }
-    .ring { width: 120px; height: 120px; border-radius: 50%; border: 10px solid #e5e7eb; border-top-color: #2563eb; border-right-color: #e3bf6f; animation: spin 4s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    .master {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      background:
+        radial-gradient(700px 180px at 85% -40%, rgba(21, 68, 155, 0.55), transparent 70%),
+        rgba(6, 13, 31, 0.96);
+      border: 1px solid var(--phins-line);
+      border-radius: 14px; padding: 12px 14px; margin-bottom: 10px;
+    }
+    .fn-bar { border: 1px solid var(--phins-line); border-radius: 12px; margin-bottom: 7px; background: rgba(7,15,34,.88); overflow: hidden; border-left: 5px solid #4fd8ff; }
+    .fn-bar.docs { border-left-color: #4fd8ff; }
+    .fn-bar.assess { border-left-color: #6fe0b8; }
+    .fn-bar.risk { border-left-color: #ff9e8a; }
+    .fn-bar.report { border-left-color: #c4a0ff; }
+    .fn-bar-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; }
+    .fn-bar-title { font-family: 'Space Grotesk', sans-serif; font-size: 13px; }
+    .fn-bar-body { display: none; padding: 0 12px 10px; color: var(--phins-dim); font-size: 12px; }
+    .fn-bar.open .fn-bar-body { display: block; }
+    .bar { height: 8px; background: rgba(127,178,255,.12); border-radius: 999px; overflow: hidden; margin-top: 8px; }
+    .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #4fd8ff, #e3bf6f); transition: width 1s ease; }
+
+    .flow { display: flex; align-items: flex-start; justify-content: space-between; position: relative; margin: 6px 0 12px; }
+    .flow::before { content: ''; position: absolute; top: 16px; left: 8%; right: 8%; height: 2px; background: rgba(127,178,255,.16); }
+    .pstage { flex: 1; text-align: center; position: relative; z-index: 1; }
+    .pstage i {
+      display: flex; align-items: center; justify-content: center;
+      width: 32px; height: 32px; margin: 0 auto 6px; border-radius: 50%;
+      background: rgba(7,15,34,.95); border: 1px solid var(--phins-line);
+      font-style: normal; font-size: 11px; font-family: 'Space Grotesk', sans-serif;
+    }
+    .pstage.on i { background: linear-gradient(135deg, #f7e2a0, #e3bf6f); color: #071022; border-color: transparent; }
+    .pstage b { display: block; font-size: 12px; }
+    .pstage small { color: var(--phins-dim); letter-spacing: .08em; text-transform: uppercase; font-size: 9px; }
+
+    .toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
+    .toolbar input {
+      flex: 1; border: 1px solid var(--phins-line); border-radius: 8px;
+      background: rgba(6,13,31,.7); color: var(--phins-ink); padding: 8px 10px; font: inherit;
+    }
+    .cm-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .cm-table th { text-align: left; color: var(--phins-gold); font-family: 'Space Grotesk', sans-serif; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; padding: 7px 6px; border-bottom: 1px solid var(--phins-line); }
+    .cm-table td { padding: 7px 6px; border-bottom: 1px solid rgba(127,178,255,.08); }
+    .cm-table tr.on td { background: rgba(227,191,111,.08); }
 
     .rail { display: flex; gap: 8px; }
-    .rail .step { flex: 1; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 8px; text-align: center; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
-    .rail .step.on { border-color: var(--gold); color: #92400e; background: #fffbeb; }
+    .rail .step { flex: 1; background: rgba(7,15,34,.88); border: 1px solid var(--phins-line); border-radius: 10px; padding: 12px 8px; text-align: center; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; font-family: 'Space Grotesk', sans-serif; }
+    .rail .step.on { border-color: var(--phins-gold); color: var(--phins-gold-strong); }
 
-    .gone { opacity: .35; filter: grayscale(.4); }
-    @media (prefers-reduced-motion: reduce) {
-      .ticker b, .ring { animation: none; }
+    .gone { opacity: .38; filter: grayscale(.35); }
+    @media (prefers-reduced-motion: reduce) { .ticker b { animation: none; } }
+    @media (max-width: 720px) {
+      .surface-nav, .kpis-5 { display: none; }
+      .kpis { grid-template-columns: repeat(2, 1fr); }
+      .term-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
-  <header class="hdr">
-    <div class="brand"><img src="/phins-logo.svg" alt="">PHINS</div>
+  <div class="backdrop" aria-hidden="true"></div>
+  <header class="phins-header">
+    <a class="phins-logo" href="/solutions.html" tabindex="-1">
+      <img src="/phins-logo.svg" alt="PHINS emblem">
+      <span class="phins-logo-text">PHINS</span>
+    </a>
+    <nav class="surface-nav" id="surface-nav" aria-hidden="true">
+      <span data-nav="underwriting">Underwriting</span>
+      <span data-nav="assessments">Workbench</span>
+      <span data-nav="billing">Billing</span>
+      <span data-nav="claims">Claims</span>
+      <span data-nav="actuarial">Actuary</span>
+      <span data-nav="invest">Terminal</span>
+      <span data-nav="customers">Customers</span>
+    </nav>
     <div class="desk-name" id="desk-name">Capability Preview</div>
   </header>
 
@@ -163,10 +297,7 @@
       </div>
       <div class="card" id="uw-high">
         <div class="row">
-          <div>
-            <strong>APP-••4821</strong>
-            <div style="margin-top:4px">Applicant R. P. · Life Protection</div>
-          </div>
+          <div><strong>APP-••4821</strong><div style="margin-top:4px;color:var(--phins-dim)">Applicant R. P. · Life Protection</div></div>
           <span class="badge risk-high">HIGH ATTENTION</span>
         </div>
         <div class="meta">
@@ -184,35 +315,21 @@
       </div>
       <div class="card">
         <div class="row">
-          <div>
-            <strong>APP-••1904</strong>
-            <div style="margin-top:4px">Applicant A. M. · Disability</div>
-          </div>
+          <div><strong>APP-••1904</strong><div style="margin-top:4px;color:var(--phins-dim)">Applicant A. M. · Disability</div></div>
           <span class="badge risk-med">IN REVIEW</span>
-        </div>
-        <div class="meta">
-          <div><small>Product</small><strong>Disability</strong></div>
-          <div><small>Requested Cover</small><strong>In band</strong></div>
-          <div><small>Submitted</small><strong>Yesterday</strong></div>
-          <div><small>Exam</small><strong>Not required</strong></div>
         </div>
       </div>
       <div class="modal" id="uw-modal">
         <div class="sheet">
           <h3>Assess Application</h3>
-          <p style="color:#6b7280;font-size:14px;margin-bottom:8px">APP-••4821 · authority stays with the underwriter</p>
-          <div class="field">
-            <label>Decision</label>
-            <select id="uw-decision"><option>Approve</option><option selected>Reject</option><option>Refer</option></select>
-          </div>
-          <div class="field">
-            <label>Notes</label>
-            <textarea id="uw-notes" rows="3"></textarea>
-          </div>
+          <p style="color:var(--phins-dim);font-size:13px;margin-bottom:8px">APP-••4821 · authority stays with the underwriter</p>
+          <div class="field"><label>Decision</label><select id="uw-decision"><option>Approve</option><option selected>Reject</option><option>Refer</option></select></div>
+          <div class="field"><label>Notes</label><textarea id="uw-notes" rows="3"></textarea></div>
           <div class="btns"><button class="btn btn-no" id="uw-submit">Submit Decision</button><button class="btn btn-ghost">Cancel</button></div>
         </div>
       </div>
       <div class="toast" id="uw-toast">Application declined. Queue updated.</div>
+      <div class="caption" data-caption>Underwriting desk · human authority on every decision</div>
     </div>
   </section>
 
@@ -224,17 +341,17 @@
       <div class="card">
         <h3 style="font-family:'Space Grotesk',sans-serif;margin-bottom:10px">New Claim</h3>
         <div class="form-grid">
-          <div class="field"><label>Policy</label><input id="cl-pol" value="" placeholder="POL-••••"></div>
-          <div class="field"><label>Event Date</label><input id="cl-date" value=""></div>
-          <div class="field" style="grid-column:1/-1"><label>Description</label><input id="cl-desc" value=""></div>
+          <div class="field"><label>Policy</label><input id="cl-pol" placeholder="POL-••••"></div>
+          <div class="field"><label>Event Date</label><input id="cl-date"></div>
+          <div class="field" style="grid-column:1/-1"><label>Description</label><input id="cl-desc"></div>
         </div>
-        <div class="btns" style="margin-top:8px"><button class="btn btn-ref" id="cl-submit">Submit Claim</button></div>
+        <div class="btns" style="margin-top:8px"><button class="btn btn-gold" id="cl-submit">Submit Claim</button></div>
       </div>
       <div class="card" id="cl-row" style="opacity:.35">
         <div class="row"><strong>CLM-••19</strong><span class="badge risk-med">INTAKE</span></div>
-        <div style="color:#6b7280;margin-top:6px;font-size:13px">Waiting for structured file…</div>
       </div>
       <div class="toast" id="cl-toast">Claim accepted into intake.</div>
+      <div class="caption" data-caption>Claims desk · intake, document, review, settle</div>
     </div>
   </section>
 
@@ -248,6 +365,7 @@
         <a href="#sm" data-nav="sm">Simulation</a>
         <div class="sec">Capital</div>
         <a href="#pt" data-nav="pt">Portfolio</a>
+        <a href="#tm" data-nav="tm">Terminal</a>
       </nav>
       <div class="act-scroll" id="act-scroll">
         <div class="lifecycle">
@@ -260,10 +378,10 @@
         <section id="ov">
           <h2>Actuarial Overview</h2>
           <div class="act-grid">
-            <div class="act-kpi"><b>Live</b><span>Table Set</span></div>
-            <div class="act-kpi"><b>Banded</b><span>Decline Gate</span></div>
-            <div class="act-kpi"><b>Loaded</b><span>Expense View</span></div>
-            <div class="act-kpi"><b>Governed</b><span>Margin View</span></div>
+            <div class="kpi"><b>Live</b><span>Table Set</span></div>
+            <div class="kpi"><b>Banded</b><span>Decline Gate</span></div>
+            <div class="kpi"><b>Loaded</b><span>Expense View</span></div>
+            <div class="kpi"><b>Governed</b><span>Margin View</span></div>
           </div>
         </section>
         <section id="tb">
@@ -277,23 +395,22 @@
         </section>
         <section id="fc">
           <h2>Reserve Forecast</h2>
-          <div class="tcard" style="min-width:auto">
-            Path view only — working depth stays in the live desk.
-            <svg class="spark" viewBox="0 0 280 46" preserveAspectRatio="none"><path d="M2 38 C 40 36, 70 22, 110 26 S 180 8, 278 12" fill="none" stroke="#e3bf6f" stroke-width="2"/></svg>
+          <div class="tcard" style="min-width:auto">Path view only — working depth stays in the live desk.
+            <svg viewBox="0 0 280 46" preserveAspectRatio="none" style="width:100%;height:46px"><path d="M2 38 C 40 36, 70 22, 110 26 S 180 8, 278 12" fill="none" stroke="#e3bf6f" stroke-width="2"/></svg>
           </div>
         </section>
         <section id="sm" style="margin-top:16px">
           <h2>Portfolio Simulation</h2>
           <div class="act-grid">
-            <div class="act-kpi"><b>Run</b><span>Scenario Pack</span></div>
-            <div class="act-kpi"><b>Compare</b><span>Paths</span></div>
-            <div class="act-kpi"><b>Hold</b><span>Assumptions</span></div>
-            <div class="act-kpi"><b>Apply</b><span>On Approval</span></div>
+            <div class="kpi"><b>Run</b><span>Scenario Pack</span></div>
+            <div class="kpi"><b>Compare</b><span>Paths</span></div>
+            <div class="kpi"><b>Hold</b><span>Assumptions</span></div>
+            <div class="kpi"><b>Apply</b><span>On Approval</span></div>
           </div>
         </section>
         <section id="pt" style="margin-top:16px;padding-bottom:40px">
           <h2>Capital Connection</h2>
-          <div class="tcard" style="min-width:auto">Coverage, reserves and allocation sit on one lifecycle — not a spreadsheet at the edge.</div>
+          <div class="tcard" style="min-width:auto">Coverage, reserves and allocation sit on one lifecycle — then the Investments Terminal.</div>
         </section>
       </div>
     </div>
@@ -301,19 +418,19 @@
 
   <section class="stage" id="stage-assessments">
     <div class="workbench">
-      <div class="ring-wrap">
-        <div class="ring"></div>
+      <div class="master">
         <div>
-          <h3 style="font-family:'Space Grotesk',sans-serif;margin-bottom:8px">360° Customer View</h3>
-          <p style="color:#6b7280;margin-bottom:10px">Facts and documents assemble into a reviewable record.</p>
-          <div class="desk-grid">
-            <div class="desk-tile" id="as1"><h4>Imported Facts</h4><p>Structured fields only</p></div>
-            <div class="desk-tile" id="as2"><h4>Documents</h4><p>Indexed, not rewritten</p></div>
-            <div class="desk-tile" id="as3"><h4>Risk Class</h4><p>Feeds the next desk</p></div>
-            <div class="desk-tile" id="as4"><h4>Audit Record</h4><p>Every loop stays visible</p></div>
-          </div>
+          <div class="desk-name" style="margin-bottom:4px">Unified Workbench</div>
+          <strong>Target &amp; queue</strong>
+          <div style="color:var(--phins-dim);font-size:12px;margin-top:4px">Customer 360 · documents · risk · report</div>
         </div>
+        <button class="btn btn-gold" id="uwb-run">Run Unified Analysis</button>
       </div>
+      <div class="fn-bar docs" id="bar-docs"><div class="fn-bar-head"><div class="fn-bar-title">Documents</div><span class="badge risk-med" id="chip-docs">—</span></div><div class="fn-bar-body">Indexed files, bytes unchanged<div class="bar"><i id="fill-docs"></i></div></div></div>
+      <div class="fn-bar assess" id="bar-assess"><div class="fn-bar-head"><div class="fn-bar-title">Assessment Center</div><span class="badge risk-med" id="chip-assess">—</span></div><div class="fn-bar-body">360° view from imported facts<div class="bar"><i id="fill-assess"></i></div></div></div>
+      <div class="fn-bar risk" id="bar-risk"><div class="fn-bar-head"><div class="fn-bar-title">Risk</div><span class="badge risk-med" id="chip-risk">—</span></div><div class="fn-bar-body">Class ready for the next desk<div class="bar"><i id="fill-risk"></i></div></div></div>
+      <div class="fn-bar report" id="bar-report"><div class="fn-bar-head"><div class="fn-bar-title">Reports</div><span class="badge risk-med" id="chip-report">—</span></div><div class="fn-bar-body">One pass, one record<div class="bar"><i id="fill-report"></i></div></div></div>
+      <div class="caption" data-caption>Unified Workbench · one session, four surfaces</div>
     </div>
   </section>
 
@@ -333,24 +450,23 @@
           <div><small>Schedule</small><strong>Monthly</strong></div>
           <div><small>Reconcile</small><strong>Pending post</strong></div>
         </div>
-        <div class="btns"><button class="btn btn-ok" id="bill-pay">Collect Premium</button></div>
+        <div class="btns"><button class="btn btn-gold" id="bill-pay">Collect Premium</button></div>
       </div>
       <div class="toast" id="bill-toast">Premium collected. Ledger posted.</div>
+      <div class="caption" data-caption>Billing desk · collect, post, reconcile</div>
     </div>
   </section>
 
   <section class="stage" id="stage-platform">
     <div class="workbench">
       <div class="desk-grid">
-        <div class="desk-tile"><h4>Underwriter</h4><p>Scoped to applications</p></div>
-        <div class="desk-tile"><h4>Adjuster</h4><p>Scoped to claims</p></div>
-        <div class="desk-tile"><h4>Billing</h4><p>Scoped to collections</p></div>
-        <div class="desk-tile"><h4>Actuary</h4><p>Scoped to tables</p></div>
+        <div class="desk-tile" id="pl1"><h4>Underwriter</h4><p>Scoped to applications</p></div>
+        <div class="desk-tile" id="pl2"><h4>Adjuster</h4><p>Scoped to claims</p></div>
+        <div class="desk-tile" id="pl3"><h4>Billing</h4><p>Scoped to collections</p></div>
+        <div class="desk-tile" id="pl4"><h4>Actuary</h4><p>Scoped to tables</p></div>
       </div>
-      <div class="card" style="margin-top:12px">
-        <strong>Event Trail</strong>
-        <div id="trail" style="margin-top:8px;font-size:13px;color:#4b5563;line-height:1.8"></div>
-      </div>
+      <div class="card" style="margin-top:10px"><strong>Event Trail</strong><div id="trail" style="margin-top:8px;font-size:13px;color:var(--phins-dim);line-height:1.8"></div></div>
+      <div class="caption" data-caption>Trust desk · role scope and a trail you can examine</div>
     </div>
   </section>
 
@@ -364,19 +480,24 @@
       </div>
       <div class="card" style="margin-top:14px">
         <h3 style="font-family:'Space Grotesk',sans-serif;margin-bottom:8px">Programmable Agreement</h3>
-        <p style="color:#6b7280">Signatures, settlement and entitlement on a visible rail. Working depth stays in a live conversation.</p>
+        <p style="color:var(--phins-dim)">Signatures, settlement and entitlement on a visible rail.</p>
       </div>
+      <div class="caption" data-caption>Agreement rail · draft, sign, anchor, execute</div>
     </div>
   </section>
 
   <section class="stage" id="stage-mga">
     <div class="workbench">
-      <div class="desk-grid">
-        <div class="desk-tile"><h4>Insurer Desk</h4><p>Program authority</p></div>
-        <div class="desk-tile"><h4>Distribution</h4><p>Channel to bind</p></div>
-        <div class="desk-tile"><h4>Suppliers</h4><p>Offers and orders</p></div>
-        <div class="desk-tile"><h4>Agents</h4><p>Affiliation and books</p></div>
+      <div class="pipe" id="mga-pipe">
+        <span class="on">Program</span><span>Distribute</span><span>Bind</span><span>Settle</span>
       </div>
+      <div class="desk-grid">
+        <div class="desk-tile" id="m1"><h4>Insurer Desk</h4><p>Program authority</p></div>
+        <div class="desk-tile" id="m2"><h4>Distribution</h4><p>Channel to bind</p></div>
+        <div class="desk-tile" id="m3"><h4>Suppliers</h4><p>Offers and orders</p></div>
+        <div class="desk-tile" id="m4"><h4>Agents</h4><p>Affiliation and books</p></div>
+      </div>
+      <div class="caption" data-caption>MGA layer · program, distribute, bind, settle</div>
     </div>
   </section>
 
@@ -389,20 +510,64 @@
         <div class="kpi"><b>Linked</b><span>Savings</span></div>
       </div>
       <div class="desk-grid">
-        <div class="desk-tile"><h4>My Cover</h4><p>Policy summary</p></div>
-        <div class="desk-tile"><h4>My Claims</h4><p>Status you can see</p></div>
-        <div class="desk-tile"><h4>Billing</h4><p>Pay or auto-pay</p></div>
-        <div class="desk-tile"><h4>Documents</h4><p>Your file, your copy</p></div>
+        <div class="desk-tile" id="c1"><h4>My Cover</h4><p>POL-••77 · Life Protection</p></div>
+        <div class="desk-tile" id="c2"><h4>My Claims</h4><p>CLM-••19 · Intake</p></div>
+        <div class="desk-tile" id="c3"><h4>Billing</h4><p>Auto-pay enrolled</p></div>
+        <div class="desk-tile" id="c4"><h4>Documents</h4><p>Your file, your copy</p></div>
       </div>
+      <div class="caption" data-caption>Client portal · cover, claims, billing, documents</div>
+    </div>
+  </section>
+
+  <section class="stage" id="stage-customers">
+    <div class="workbench">
+      <div class="card" style="padding-bottom:10px">
+        <div class="desk-name" style="margin-bottom:8px">Customer Management</div>
+        <div class="flow" id="cm-pipe">
+          <div class="pstage" data-step="0"><i>1</i><b>2</b><small>Application</small></div>
+          <div class="pstage on" data-step="1"><i>2</i><b>4</b><small>Underwriting</small></div>
+          <div class="pstage" data-step="2"><i>3</i><b>1</b><small>Approved</small></div>
+          <div class="pstage" data-step="3"><i>4</i><b>7</b><small>Active Policy</small></div>
+          <div class="pstage" data-step="4"><i>5</i><b>2</b><small>Billing</small></div>
+        </div>
+      </div>
+      <div class="kpis kpis-5">
+        <div class="kpi"><b>12</b><span>Customers</span></div>
+        <div class="kpi"><b>4</b><span>Applications</span></div>
+        <div class="kpi"><b>7</b><span>Active Policies</span></div>
+        <div class="kpi"><b>2</b><span>Billing Pending</span></div>
+        <div class="kpi"><b>9</b><span>Health Wallets</span></div>
+      </div>
+      <div class="toolbar">
+        <input value="" placeholder="Search by ID or initials" readonly>
+        <button class="btn btn-ghost">Refresh</button>
+        <button class="btn btn-gold" id="cm-validate">Validate Pipeline</button>
+      </div>
+      <div class="card">
+        <table class="cm-table">
+          <thead><tr><th>ID</th><th>Name</th><th>Stage</th><th>Policies</th><th>Wallet</th></tr></thead>
+          <tbody>
+            <tr id="cm-r1"><td>CUST-••104</td><td>R. P.</td><td>Underwriting</td><td>—</td><td>Open</td></tr>
+            <tr id="cm-r2"><td>CUST-••218</td><td>A. M.</td><td>Active</td><td>1</td><td>Linked</td></tr>
+            <tr id="cm-r3"><td>CUST-••331</td><td>J. K.</td><td>Billing</td><td>1</td><td>Open</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="toast" id="cm-toast">Pipeline validated. Stages aligned.</div>
+      <div class="caption" data-caption>Customer Management · application through billing</div>
     </div>
   </section>
 
   <section class="stage" id="stage-invest">
     <div class="term">
-      <div class="term-top"><span class="gold">PHINS · INVESTMENTS</span><span><i class="up">●</i> Market open</span></div>
+      <div class="term-top">
+        <div class="term-brand"><img src="/phins-logo.svg" alt="">PHINS TERMINAL · INVESTMENTS</div>
+        <span><span class="up">●</span> Market open · Preview Only</span>
+      </div>
       <div class="ticker"><b>
         <span class="up">SPY +0.4</span> <span class="down">QQQ −0.2</span> <span class="up">IWM +0.1</span>
         <span class="gold">ALLOCATION VIEW</span> <span class="up">BND +0.0</span> <span class="up">GLD +0.3</span>
+        <span class="gold">PHINS · INVESTMENTS</span>
       </b></div>
       <div class="term-grid">
         <div class="pane">
@@ -410,15 +575,24 @@
           <div class="pos"><span class="gold">SPY</span><span class="up">+0.4</span></div>
           <div class="pos"><span class="gold">QQQ</span><span class="down">−0.2</span></div>
           <div class="pos"><span class="gold">BND</span><span>0.0</span></div>
+          <div class="pos"><span class="gold">GLD</span><span class="up">+0.3</span></div>
         </div>
-        <div class="pane" style="padding:0"><canvas id="term-chart"></canvas></div>
+        <div class="pane chart-wrap">
+          <div class="tfs"><i class="on">1D</i><i>1W</i><i>1M</i></div>
+          <canvas id="term-chart"></canvas>
+        </div>
         <div class="pane">
           <h4>Ticket</h4>
           <div class="pos"><span>Symbol</span><span class="gold">SPY</span></div>
           <div class="pos"><span>Side</span><span>Buy</span></div>
           <div class="pos"><span>Qty</span><span>—</span></div>
-          <div class="btn btn-ok" style="width:100%;margin-top:10px;text-align:center">Preview Only</div>
+          <div class="btn btn-gold" style="width:100%;margin-top:10px;text-align:center">Preview Only</div>
         </div>
+      </div>
+      <div class="term-bottom">
+        <div class="tabs"><span class="on">Blotter</span><span>Allocation</span><span>Scanner</span></div>
+        <div class="pos"><span class="gold">SPY</span><span>Buy · Preview</span></div>
+        <div class="pos"><span class="gold">BND</span><span>Hold · Preview</span></div>
       </div>
     </div>
   </section>
@@ -428,7 +602,7 @@
     var scene = params.get('scene') || 'underwriting';
     var ALLOWED = {
       underwriting: 'Underwriting Desk',
-      assessments: 'Assessment Center',
+      assessments: 'Unified Workbench',
       billing: 'Billing Desk',
       claims: 'Claims Desk',
       actuarial_investments: 'Actuarial Lifecycle',
@@ -437,16 +611,54 @@
       smart_contracts: 'Agreement Rail',
       mga_solutions: 'MGA Operations',
       individuals: 'Client Portal',
-      enterprises: 'Enterprise Desks'
+      enterprises: 'Customer Management'
     };
-    if (scene === 'actuarial_investments' || scene === 'actuarial_force') {
-      /* Investments terminal is the second half of the capital story. */
-    }
+    var NAV = {
+      underwriting: 'underwriting',
+      assessments: 'assessments',
+      billing: 'billing',
+      claims: 'claims',
+      actuarial_investments: 'actuarial',
+      actuarial_force: 'actuarial',
+      platform: 'underwriting',
+      smart_contracts: 'underwriting',
+      mga_solutions: 'customers',
+      individuals: 'customers',
+      enterprises: 'customers',
+      invest: 'invest'
+    };
     if (!ALLOWED[scene]) scene = 'underwriting';
     document.body.setAttribute('data-scene', scene);
     document.getElementById('desk-name').textContent = ALLOWED[scene];
-
+    function markNav(key) {
+      document.querySelectorAll('#surface-nav span').forEach(function (el) {
+        el.classList.toggle('on', el.getAttribute('data-nav') === key);
+      });
+    }
+    markNav(NAV[scene] || 'underwriting');
     function later(ms, fn) { return window.setTimeout(fn, ms); }
+    function say(text) {
+      var sceneId = document.body.getAttribute('data-scene');
+      var map = {
+        underwriting: 'stage-underwriting',
+        assessments: 'stage-assessments',
+        billing: 'stage-billing',
+        claims: 'stage-claims',
+        actuarial_investments: 'stage-actuarial',
+        actuarial_force: 'stage-actuarial',
+        platform: 'stage-platform',
+        smart_contracts: 'stage-contracts',
+        mga_solutions: 'stage-mga',
+        individuals: 'stage-client',
+        enterprises: 'stage-customers',
+        invest: 'stage-invest'
+      };
+      var host = document.getElementById(map[sceneId] || 'stage-underwriting');
+      if (host) {
+        var cap = host.querySelector('[data-caption]');
+        if (cap) cap.textContent = text;
+      }
+    }
     function typeInto(el, text, step) {
       el.value = '';
       var i = 0;
@@ -457,26 +669,34 @@
     }
 
     function tourUnderwriting() {
-      later(2200, function () { document.getElementById('uw-reject').classList.add('aim'); document.getElementById('uw-high').classList.add('pulse'); });
-      later(4000, function () { document.getElementById('uw-modal').classList.add('show'); });
+      say('Underwriting desk · queue opens on high attention');
+      later(2200, function () {
+        document.getElementById('uw-reject').classList.add('aim');
+        document.getElementById('uw-high').classList.add('pulse');
+        say('Reject stays a human control — not an automated close');
+      });
+      later(4000, function () { document.getElementById('uw-modal').classList.add('show'); say('Decision sheet · notes stay with the file'); });
       later(5200, function () { typeInto(document.getElementById('uw-notes'), 'Request sits outside the published appetite. Decline and notify.'); });
       later(8800, function () {
         document.getElementById('uw-modal').classList.remove('show');
         document.getElementById('uw-high').classList.add('gone');
         document.getElementById('uw-toast').classList.add('show');
+        say('Application declined. Queue updated.');
       });
     }
 
     function tourClaims() {
+      say('Claims desk · type a policy, then submit');
       later(1200, function () { typeInto(document.getElementById('cl-pol'), 'POL-••77', 70); });
       later(2800, function () { typeInto(document.getElementById('cl-date'), '18 Aug 2026', 70); });
       later(4300, function () { typeInto(document.getElementById('cl-desc'), 'Assistance event — intake only', 40); });
-      later(7200, function () { document.getElementById('cl-submit').classList.add('aim'); });
+      later(7200, function () { document.getElementById('cl-submit').classList.add('aim'); say('Submit Claim · intake becomes the working record'); });
       later(8400, function () {
         document.getElementById('cp1').classList.remove('on');
         document.getElementById('cp2').classList.add('on');
         document.getElementById('cl-row').style.opacity = '1';
         document.getElementById('cl-toast').classList.add('show');
+        say('Claim accepted · document stage lights');
       });
     }
 
@@ -484,90 +704,148 @@
       var scroller = document.getElementById('act-scroll');
       var navs = document.querySelectorAll('.act-nav a');
       var life = document.querySelectorAll('.lifecycle i');
-      var marks = [
-        { y: 0, id: 'ov', t: 0 },
-        { y: 140, id: 'tb', t: 1600 },
-        { y: 280, id: 'fc', t: 3000 },
-        { y: 430, id: 'sm', t: 4400 },
-        { y: 580, id: 'pt', t: 5600 }
-      ];
-      marks.forEach(function (m) {
+      [
+        { y: 0, id: 'ov', t: 0, cap: 'Actuarial lifecycle · overview' },
+        { y: 140, id: 'tb', t: 1600, cap: 'Published tables · life and disability' },
+        { y: 280, id: 'fc', t: 3000, cap: 'Reserve forecast · path view only' },
+        { y: 430, id: 'sm', t: 4400, cap: 'Portfolio simulation · compare paths' },
+        { y: 580, id: 'pt', t: 5600, cap: 'Capital connection · then the terminal' }
+      ].forEach(function (m) {
         later(m.t, function () {
           scroller.scrollTo({ top: m.y, behavior: 'smooth' });
           navs.forEach(function (a) { a.classList.toggle('on', a.getAttribute('data-nav') === m.id); });
           life.forEach(function (i) { i.classList.toggle('on', i.getAttribute('data-life') === m.id); });
+          say(m.cap);
         });
       });
       if (cutToTerminal) later(7000, tourInvestments);
     }
 
     function tourBilling() {
-      later(3500, function () { document.getElementById('bill-pay').classList.add('aim'); });
+      say('Billing desk · due premium on the ledger');
+      later(3500, function () { document.getElementById('bill-pay').classList.add('aim'); say('Collect Premium · auto-pay or one-shot'); });
       later(6500, function () {
         document.getElementById('bill-row').querySelector('.badge').textContent = 'POSTED';
         document.getElementById('bill-row').querySelector('.badge').className = 'badge risk-low';
         document.getElementById('bill-toast').classList.add('show');
+        say('Premium collected. Ledger posted.');
       });
     }
 
     function tourAssessments() {
-      ['as1','as2','as3','as4'].forEach(function (id, idx) {
-        later(1400 * (idx + 1), function () {
-          document.getElementById(id).style.boxShadow = '0 0 0 2px #93c5fd';
+      say('Unified Workbench · one click drives every bar');
+      later(1200, function () { document.getElementById('uwb-run').classList.add('aim'); });
+      [
+        ['bar-docs', 'chip-docs', 'fill-docs', 'Queued', '72%', 'Documents indexed'],
+        ['bar-assess', 'chip-assess', 'fill-assess', '360 Ready', '80%', 'Assessment Center · 360 view'],
+        ['bar-risk', 'chip-risk', 'fill-risk', 'Classed', '64%', 'Risk class ready for the next desk'],
+        ['bar-report', 'chip-report', 'fill-report', 'Issued', '90%', 'Reports issued · one record']
+      ].forEach(function (row, idx) {
+        later(2200 + idx * 1800, function () {
+          document.getElementById(row[0]).classList.add('open');
+          document.getElementById(row[1]).textContent = row[3];
+          document.getElementById(row[1]).className = 'badge risk-low';
+          document.getElementById(row[2]).style.width = row[4];
+          say(row[5]);
         });
       });
     }
 
     function tourPlatform() {
-      var lines = [
+      ['pl1','pl2','pl3','pl4'].forEach(function (id, idx) {
+        later(900 * (idx + 1), function () { document.getElementById(id).classList.add('on'); });
+      });
+      [
         '08:14  Session scoped · underwriter',
         '08:15  Application reviewed · APP-••4821',
         '08:16  Decision recorded · human authority',
         '08:17  Trail sealed · ready to examine'
-      ];
-      var box = document.getElementById('trail');
-      lines.forEach(function (line, idx) {
+      ].forEach(function (line, idx) {
         later(1800 * (idx + 1), function () {
-          box.innerHTML += line + '<br>';
+          document.getElementById('trail').innerHTML += line + '<br>';
+          say('Event trail · ' + line.split('  ')[1]);
         });
       });
     }
 
     function tourContracts() {
       var steps = document.querySelectorAll('#c-rail .step');
+      var labels = ['Draft the agreement', 'Collect signatures', 'Anchor the settlement', 'Execute entitlement'];
       steps.forEach(function (step, idx) {
         later(2200 * idx, function () {
           steps.forEach(function (s) { s.classList.remove('on'); });
           step.classList.add('on');
+          say(labels[idx]);
         });
+      });
+    }
+
+    function tourMga() {
+      var pipe = document.querySelectorAll('#mga-pipe span');
+      var labels = ['Program authority on the insurer desk', 'Distribution opens the channel', 'Suppliers offer and order', 'Agents affiliate and keep books'];
+      ['m1','m2','m3','m4'].forEach(function (id, idx) {
+        later(1800 * idx, function () {
+          document.getElementById(id).classList.add('on');
+          pipe.forEach(function (s) { s.classList.remove('on'); });
+          if (pipe[idx]) pipe[idx].classList.add('on');
+          say(labels[idx]);
+        });
+      });
+    }
+
+    function tourClient() {
+      var labels = ['My Cover · the live policy', 'My Claims · intake you can see', 'Billing · auto-pay enrolled', 'Documents · your file, your copy'];
+      ['c1','c2','c3','c4'].forEach(function (id, idx) {
+        later(1800 * (idx + 1), function () {
+          document.getElementById(id).classList.add('on');
+          say(labels[idx]);
+        });
+      });
+    }
+
+    function tourCustomers() {
+      var stages = document.querySelectorAll('#cm-pipe .pstage');
+      var rows = ['cm-r1', 'cm-r2', 'cm-r3'];
+      var map = [1, 3, 4];
+      var labels = [
+        'Customer Management · underwriting queue',
+        'Active policy · wallet linked',
+        'Billing pending · ready to validate'
+      ];
+      rows.forEach(function (id, idx) {
+        later(1800 * (idx + 1), function () {
+          rows.forEach(function (rid) { document.getElementById(rid).classList.remove('on'); });
+          document.getElementById(id).classList.add('on');
+          stages.forEach(function (s) { s.classList.toggle('on', Number(s.getAttribute('data-step')) === map[idx]); });
+          say(labels[idx]);
+        });
+      });
+      later(8200, function () {
+        document.getElementById('cm-validate').classList.add('aim');
+        document.getElementById('cm-toast').classList.add('show');
+        say('Pipeline validated. Stages aligned.');
       });
     }
 
     function tourInvestments() {
       document.body.setAttribute('data-scene', 'invest');
       document.getElementById('desk-name').textContent = 'Investments Terminal';
+      markNav('invest');
       document.getElementById('stage-invest').style.display = 'block';
       document.getElementById('stage-actuarial').style.display = 'none';
       var canvas = document.getElementById('term-chart');
       if (!canvas) return;
       var ctx = canvas.getContext('2d');
-      function fit() {
-        canvas.width = canvas.parentElement.clientWidth;
-        canvas.height = canvas.parentElement.clientHeight;
-      }
-      fit();
-      var pts = [];
-      var x = 0, y = canvas.height * 0.6;
+      canvas.width = canvas.parentElement.clientWidth;
+      canvas.height = canvas.parentElement.clientHeight;
+      var pts = [], x = 0, y = canvas.height * 0.6;
       function draw() {
-        ctx.fillStyle = '#0a0e17';
+        ctx.fillStyle = '#070d18';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.strokeStyle = '#fbbf24';
+        ctx.strokeStyle = '#e3bf6f';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        pts.forEach(function (p, i) {
-          if (i === 0) ctx.moveTo(p[0], p[1]);
-          else ctx.lineTo(p[0], p[1]);
-        });
+        pts.forEach(function (p, i) { if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]); });
         ctx.stroke();
       }
       var iv = window.setInterval(function () {
@@ -575,7 +853,7 @@
         y += (Math.random() - 0.48) * 10;
         y = Math.max(20, Math.min(canvas.height - 20, y));
         pts.push([x, y]);
-        if (x > canvas.width) { window.clearInterval(iv); }
+        if (x > canvas.width) window.clearInterval(iv);
         draw();
       }, 80);
     }
@@ -589,9 +867,9 @@
       assessments: tourAssessments,
       platform: tourPlatform,
       smart_contracts: tourContracts,
-      mga_solutions: function () {},
-      individuals: function () {},
-      enterprises: function () {}
+      mga_solutions: tourMga,
+      individuals: tourClient,
+      enterprises: tourCustomers
     };
     (start[scene] || tourUnderwriting)();
   </script>
