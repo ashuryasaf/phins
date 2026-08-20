@@ -128,11 +128,29 @@ def _flag(name: str, environ: Optional[Mapping[str, str]] = None) -> bool:
 
 
 def is_production(environ: Optional[Mapping[str, str]] = None) -> bool:
-    """Production detection, reusing the shared secrets policy when available."""
+    """Production detection, reusing the shared secrets policy when available.
+
+    Railway PR-preview environments clone production variables but are served
+    on public ``phins-pr-*`` hosts. The secrets policy deliberately reports
+    them as non-production so preview startup is not aborted; that relaxation
+    must NOT extend to confidential-document access, or ``/internal/`` and
+    ``/legal/`` would be served anonymously on a public preview URL. So gate
+    previews as production here: they fail closed unless a token/unlock is
+    supplied.
+    """
     env = _env(environ)
     try:
-        from security.secrets_policy import _is_production
+        from security.secrets_policy import (
+            _is_production,
+            _is_railway_preview_environment,
+        )
 
+        if _is_railway_preview_environment(
+            str(env.get("RAILWAY_ENVIRONMENT", "")).strip().lower()
+        ) or _is_railway_preview_environment(
+            str(env.get("RAILWAY_ENVIRONMENT_NAME", "")).strip().lower()
+        ):
+            return True
         return bool(_is_production(dict(env)))
     except Exception:
         if str(env.get("PHINS_TEST_MODE", "")).strip().lower() in _TRUTHY:
