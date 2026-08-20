@@ -4,7 +4,9 @@ Tests for the agent/broker ecosystem ("AgentOS").
 Covers:
   * service logic: admin-locked commission, single-active-affiliation integrity,
     idempotent ledger-backed accrual, income summary, PII-minimized outline
+  * agent↔customer referral/commission consistency audit + conservative repair
   * HTTP API: agent + admin role scope, invitation lifecycle, recompute
+  * registration with an approved AGI- code creating a locked affiliation
   * DB repositories: durable schema round-trips
 """
 
@@ -150,8 +152,65 @@ def test_income_summary_and_pii_minimized_outline():
     row = outline["items"][0]
     assert row["customer_id"] == "CUST-5"
     assert row["accrued_commission"] == 200.0
+    assert row["expected_commission"] == 200.0
+    assert row["commission_consistent"] is True
+    assert row["referral_consistent"] is False  # customer record has no referring_agent_id yet
     # PII must NOT leak into the agent-facing outline
     assert "dob" not in row and "address" not in row and "email" not in row
+
+
+def test_connection_integrity_and_referral_repair():
+    agent = svc.create_agent("agent", default_rate=0.1, created_by="admin")
+    _, inv = svc.create_invitation(agent["id"], "customer", proposed_rate=0.1)
+    svc.approve_invitation(inv["code"], 0.10, "admin")
+    svc.redeem_invitation(inv["code"], "customer", "CUST-INT")
+    customers = {"CUST-INT": {"id": "CUST-INT", "name": "Ira"}}
+    policies = {"POL-INT": {"id": "POL-INT", "customer_id": "CUST-INT",
+                            "annual_premium": 1000, "status": "active"}}
+    svc.recompute_commissions(policies)
+
+    audit = svc.connection_integrity(customers, policies)
+    assert audit["ledger_intact"] is True
+    assert any(i["code"] == "missing_referring_agent" for i in audit["issues"])
+    conn = next(c for c in audit["connections"] if c["customer_id"] == "CUST-INT")
+    assert conn["expected_commission"] == 100.0
+    assert conn["accrued_commission"] == 100.0
+    assert conn["commission_consistent"] is True
+    assert conn["referral_consistent"] is False
+
+    repaired = svc.repair_referring_links(customers)
+    assert repaired["repaired"] == 1
+    assert customers["CUST-INT"]["referring_agent_id"] == agent["id"]
+    audit2 = svc.connection_integrity(customers, policies)
+    assert audit2["ok"] is True
+    assert audit2["issue_counts"]["error"] == 0
+
+    customers["CUST-INT"]["referring_agent_id"] = "AGT-OTHER"
+    skipped = svc.repair_referring_links(customers)
+    assert skipped["repaired"] == 0 and skipped["skipped"] == 1
+    assert customers["CUST-INT"]["referring_agent_id"] == "AGT-OTHER"
+    audit3 = svc.connection_integrity(customers, policies)
+    assert any(i["code"] == "referring_agent_mismatch" for i in audit3["issues"])
+
+
+def test_default_rate_change_does_not_move_locked_affiliation():
+    agent = svc.create_agent("agent", default_rate=0.10, created_by="admin")
+    _, inv = svc.create_invitation(agent["id"], "customer", proposed_rate=0.10)
+    svc.approve_invitation(inv["code"], 0.10, "admin")
+    svc.redeem_invitation(inv["code"], "customer", "CUST-LOCK")
+    svc.update_agent(agent["id"], default_rate=0.25)
+    customers = {"CUST-LOCK": {"id": "CUST-LOCK", "name": "Locked",
+                               "referring_agent_id": agent["id"]}}
+    policies = {"POL-LOCK": {"id": "POL-LOCK", "customer_id": "CUST-LOCK",
+                             "annual_premium": 1000, "status": "active"}}
+    svc.recompute_commissions(policies)
+    outline = svc.network_customers(agent["id"], customers, policies)
+    row = outline["items"][0]
+    assert row["commission_rate"] == 0.10
+    assert row["expected_commission"] == 100.0
+    assert row["accrued_commission"] == 100.0
+    assert row["commission_consistent"] is True
+    assert row["referral_consistent"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -289,6 +348,70 @@ def test_http_admin_community_endpoints():
     # an agent cannot reach the admin community endpoints
     _, st = _get("/api/admin/agents/overview", token=agent_token)
     assert st == 403
+
+
+def test_http_admin_integrity_and_repair():
+    admin_token, _ = _login("admin", "admin123")
+    agent_token, _ = _login("agent", "agent123")
+
+    body, _ = _post("/api/agent/invitations",
+                    {"invitee_type": "customer", "proposed_rate": 0.2}, token=agent_token)
+    code = body["invitation"]["code"]
+    _post("/api/admin/agent-invitations/approve",
+          {"code": code, "commission_rate": 0.1}, token=admin_token)
+    portal.CUSTOMERS["CUST-INT-1"] = {"id": "CUST-INT-1", "name": "Integrity Customer"}
+    portal.POLICIES["POL-INT-1"] = {
+        "id": "POL-INT-1", "customer_id": "CUST-INT-1",
+        "annual_premium": 1000, "status": "active",
+    }
+    body, status = _post("/api/admin/agent-invitations/redeem",
+                         {"code": code, "principal_type": "customer",
+                          "principal_id": "CUST-INT-1"}, token=admin_token)
+    assert status == 200, body
+    assert portal.CUSTOMERS["CUST-INT-1"].get("referring_agent_id")
+
+    audit, status = _get("/api/admin/agents/integrity", token=admin_token)
+    assert status == 200 and audit["ledger_intact"] is True
+    assert audit["ok"] is True
+    conn = next(c for c in audit["connections"] if c["customer_id"] == "CUST-INT-1")
+    assert conn["referral_consistent"] is True
+    assert conn["commission_consistent"] is True
+    assert conn["expected_commission"] == 100.0
+    assert conn["locked_rate"] == 0.1
+
+    # missing FK is restored without touching a conflicting one
+    portal.CUSTOMERS["CUST-INT-1"].pop("referring_agent_id", None)
+    repaired, status = _post("/api/admin/agents/repair-referrals", {}, token=admin_token)
+    assert status == 200 and repaired["repaired"] >= 1
+    assert portal.CUSTOMERS["CUST-INT-1"].get("referring_agent_id")
+
+    _, st = _get("/api/admin/agents/integrity", token=agent_token)
+    assert st == 403
+
+
+def test_register_with_agent_invitation_creates_affiliation():
+    agent = svc.create_agent("agent", default_rate=0.1, created_by="admin")
+    _, inv = svc.create_invitation(agent["id"], "customer", proposed_rate=0.1)
+    svc.approve_invitation(inv["code"], 0.12, "admin")
+
+    valid, status = _get(f"/api/invitations/validate?code={inv['code']}")
+    assert status == 200 and valid.get("valid") is True
+    assert valid.get("type") == "agent"
+    assert valid.get("referrer_id") == agent["id"]
+
+    body, status = _post("/api/register", {
+        "name": "Agent Referred",
+        "email": "agentref-integrity@example.com",
+        "password": "secure123456",
+        "invitation_code": inv["code"],
+    })
+    assert status == 201, body
+    cid = body["customer_id"]
+    assert portal.CUSTOMERS[cid]["referring_agent_id"] == agent["id"]
+    aff = svc.get_active_affiliation("customer", cid)
+    assert aff is not None
+    assert aff["agent_id"] == agent["id"]
+    assert aff["commission_rate"] == 0.12
 
 
 # ---------------------------------------------------------------------------

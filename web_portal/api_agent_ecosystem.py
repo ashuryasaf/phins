@@ -23,9 +23,11 @@ Admin (role=admin) — Agents Management:
   GET  /api/admin/agents
   GET  /api/admin/agent-invitations
   GET  /api/admin/agents/commissions
+  GET  /api/admin/agents/integrity
   POST /api/admin/agents
   POST /api/admin/agents/update
   POST /api/admin/agents/recompute-commissions
+  POST /api/admin/agents/repair-referrals
   POST /api/admin/agent-invitations/approve
   POST /api/admin/agent-invitations/reject
   POST /api/admin/agent-invitations/redeem
@@ -140,6 +142,13 @@ def handle_get(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             agent_id = _first(qs, "agent_id")
             return 200, {"items": svc.get_ledger(agent_id=agent_id),
                          "ledger_intact": svc.verify_ledger_integrity()}
+        if path == "/api/admin/agents/integrity":
+            svc.recompute_commissions(data_sources.get("policies", {}))
+            return 200, svc.connection_integrity(
+                customers=data_sources.get("customers", {}),
+                policies=data_sources.get("policies", {}),
+                suppliers=data_sources.get("suppliers", {}),
+            )
         return 404, {"error": "Unknown admin agent endpoint"}
 
     return 404, {"error": "Unknown endpoint"}
@@ -202,6 +211,23 @@ def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
         if path == "/api/admin/agents/recompute-commissions":
             created = svc.recompute_commissions(data_sources.get("policies", {}))
             return 200, {"created": created, "ledger_intact": svc.verify_ledger_integrity()}
+
+        if path == "/api/admin/agents/repair-referrals":
+            result = svc.repair_referring_links(
+                customers=data_sources.get("customers", {}),
+                suppliers=data_sources.get("suppliers", {}),
+            )
+            audit = svc.connection_integrity(
+                customers=data_sources.get("customers", {}),
+                policies=data_sources.get("policies", {}),
+                suppliers=data_sources.get("suppliers", {}),
+            )
+            result["integrity"] = {
+                "ok": audit.get("ok"),
+                "ledger_intact": audit.get("ledger_intact"),
+                "issue_counts": audit.get("issue_counts"),
+            }
+            return 200, result
 
         if path == "/api/admin/agent-invitations/approve":
             code = body.get("code")

@@ -3,110 +3,640 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#060d1f">
   <title>PHINS Admin — Agent Community</title>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <link rel="stylesheet" href="/styles.css">
   <style>
-    :root{--blue-dark:#0d47a1;--blue-mid:#1565c0;--violet:#6a1b9a;--green:#15803d;--bg:#eef3fb;--card:#fff;--border:#dbe4f0;--text:#1a202c;--sub:#4a5568;--soft:#64748b;--shadow:0 10px 26px rgba(15,23,42,.08)}
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Inter,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
-    header{background:linear-gradient(135deg,#3d1e6d,#5a2ca0 50%,#7c3aed);color:#fff;padding:14px 26px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
-    header .brand{font-weight:900;letter-spacing:.05em;font-size:18pt}
-    header .tag{font-size:8pt;opacity:.85;text-transform:uppercase;letter-spacing:.1em}
-    .wrap{max-width:1200px;margin:0 auto;padding:24px 18px 60px}
-    .btn{font-family:inherit;font-size:8.6pt;font-weight:700;cursor:pointer;border:1px solid var(--border);background:#fff;color:var(--text);border-radius:9px;padding:7px 12px;transition:.15s}
-    .btn:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
-    .btn.primary{background:var(--violet);color:#fff;border-color:var(--violet)}
-    .btn.alt{background:var(--blue-mid);color:#fff;border-color:var(--blue-mid)}
-    .btn.green{background:var(--green);color:#fff;border-color:var(--green)}
-    .btn.sm{font-size:8pt;padding:5px 9px}
-    input,select{font-family:inherit;font-size:9pt;padding:8px 10px;border:1px solid var(--border);border-radius:9px;width:100%;background:#fff}
-    label{font-size:7.6pt;font-weight:700;color:var(--blue-dark);display:block;margin:0 0 3px}
-    .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;box-shadow:var(--shadow);margin-bottom:18px}
-    h2{font-size:13.5pt;margin:6px 0 12px}
-    table{width:100%;border-collapse:collapse;font-size:8.8pt;border:1px solid var(--border);border-radius:8px;overflow:hidden}
-    th{background:var(--blue-dark);color:#fff;text-align:left;padding:7px 8px}
-    td{padding:6px 8px;border-top:1px solid var(--border);vertical-align:middle}
-    tr:nth-child(even) td{background:#f8fafc}
-    .pill{display:inline-block;font-size:7.4pt;font-weight:800;text-transform:uppercase;border-radius:999px;padding:2px 8px}
-    .pill.pending{background:#fff7e0;color:#8a6d00}.pill.approved{background:#dcfce7;color:#15803d}
-    .pill.sent{background:#e3f2fd;color:#0d47a1}.pill.accepted{background:#f3e8ff;color:#6a1b9a}.pill.rejected{background:#fde8e8;color:#c62828}.pill.active{background:#dcfce7;color:#15803d}.pill.suspended{background:#fde8e8;color:#c62828}
-    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
-    .muted{color:var(--soft);font-size:8.4pt}
-    .note{background:#f3fbf6;border:1px solid #bfe6cf;border-left:4px solid var(--green);border-radius:10px;padding:11px 14px;font-size:8.6pt;color:#1e4634}
-    .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
-    .kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px 14px;box-shadow:var(--shadow)}
-    .kpi .v{font-size:17pt;font-weight:900;color:var(--blue-dark);line-height:1}
-    .kpi .l{font-size:7.8pt;color:var(--soft);margin-top:6px;text-transform:uppercase;letter-spacing:.04em}
-    .badge{display:inline-block;font-size:8pt;font-weight:800;border-radius:999px;padding:3px 11px}
-    .badge.ok{background:#dcfce7;color:#15803d}.badge.bad{background:#fde8e8;color:#c62828}
-    .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0f274d;color:#fff;padding:10px 16px;border-radius:10px;font-size:9pt;opacity:0;transition:.25s;z-index:9}
-    .toast.show{opacity:1}
-    #login{max-width:360px;margin:60px auto}.hidden{display:none}
-    .rate-in{width:64px;display:inline-block}
-    code.h{font-size:7.4pt;color:var(--soft)}
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+    :root {
+      --phins-navy: #060d1f;
+      --phins-ink: #eaf1ff;
+      --phins-gold: #e3bf6f;
+      --phins-gold-strong: #f7e2a0;
+      --phins-line: rgba(127, 178, 255, 0.16);
+      --heading-navy: #0e2f63;
+      --border-soft: #d7e0ec;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(180deg, #f5f9fc 0%, #e3f2fd 100%);
+      min-height: 100vh;
+      margin: 0;
+      color: #2d3748;
+    }
+
+    .phins-header {
+      background: linear-gradient(135deg, #1a1f36 0%, #2d3561 50%, #1a1f36 100%);
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      padding: 0;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    .phins-header-inner {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 0.75rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .phins-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+    }
+    .phins-logo-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .phins-logo-text {
+      font-size: 1.75rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 50%, #43e97b 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .phins-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .phins-nav a {
+      padding: 0.5rem 1rem;
+      color: rgba(255,255,255,0.8);
+      text-decoration: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+    .phins-nav a:hover {
+      background: rgba(255,255,255,0.1);
+      color: white;
+    }
+    .phins-nav a.active {
+      background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%);
+      color: white;
+    }
+    .phins-nav .btn-logout {
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .mobile-menu-btn {
+      display: none;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: white;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 1.5rem;
+      cursor: pointer;
+      z-index: 1001;
+    }
+    @media screen and (max-width: 1024px) {
+      .mobile-menu-btn { display: block; }
+      .phins-nav {
+        display: none;
+        position: fixed;
+        top: 60px;
+        left: 0;
+        right: 0;
+        background: linear-gradient(135deg, #1a1f36 0%, #2d3561 100%);
+        flex-direction: column;
+        padding: 16px;
+        gap: 8px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        z-index: 999;
+        max-height: calc(100vh - 60px);
+        overflow-y: auto;
+      }
+      .phins-nav.open { display: flex !important; }
+      .phins-nav a, .phins-nav .btn-logout {
+        width: 100%;
+        text-align: center;
+        padding: 14px 16px;
+        font-size: 1.1rem;
+        border-radius: 8px;
+        background: rgba(255,255,255,0.05);
+      }
+    }
+    @media screen and (max-width: 768px) {
+      .phins-header-inner { padding: 0.5rem 1rem; }
+      .phins-logo-icon { width: 36px; height: 36px; }
+      .phins-logo-text { font-size: 1.3rem; }
+    }
+    @media screen and (max-width: 480px) {
+      .phins-logo-text { display: none; }
+    }
+
+    .page-brand-banner {
+      position: relative;
+      overflow: hidden;
+      border-radius: 14px;
+      padding: 18px 22px 20px;
+      margin-bottom: 20px;
+      color: var(--phins-ink);
+      background:
+        radial-gradient(620px 220px at 88% -40%, rgba(21, 68, 155, 0.55), transparent 70%),
+        radial-gradient(420px 180px at 8% 120%, rgba(79, 216, 255, 0.18), transparent 65%),
+        linear-gradient(135deg, #060d1f 0%, #0e2f63 48%, #123f82 78%, #0a1f4a 100%);
+      box-shadow: 0 10px 26px rgba(2, 8, 23, 0.28);
+    }
+    .page-brand-banner::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 4px;
+      background: linear-gradient(90deg, #b8893b, #f7e2a0, #e3bf6f, #4fd8ff);
+    }
+    .page-brand-banner .brand-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .page-brand-banner .brand-emblem { width: 46px; height: 46px; filter: drop-shadow(0 0 10px rgba(79, 216, 255, 0.35)); }
+    .page-brand-banner .brand-wordmark {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      background: linear-gradient(180deg, #ffffff 10%, #f7e2a0 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .page-brand-banner .brand-divider { width: 1px; height: 38px; background: rgba(127, 178, 255, 0.28); }
+    .page-brand-banner .brand-title {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-size: 1.12rem;
+      font-weight: 600;
+      color: var(--phins-ink);
+      letter-spacing: 0.02em;
+      margin: 0;
+    }
+    .page-brand-banner .brand-tagline {
+      font-size: 0.74rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #9fb6dd;
+      margin-top: 2px;
+    }
+    .page-brand-banner .header-badge {
+      background: rgba(79, 216, 255, 0.14);
+      color: #7fe3ff;
+      border: 1px solid rgba(79, 216, 255, 0.35);
+      border-radius: 999px;
+      padding: 3px 12px;
+      font-size: 0.74rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      margin-left: auto;
+      white-space: nowrap;
+    }
+    .page-brand-banner .header-badge.warn {
+      background: rgba(255, 190, 118, 0.16);
+      color: #ffbe76;
+      border-color: rgba(255, 190, 118, 0.4);
+    }
+    .page-brand-banner .header-badge.bad {
+      background: rgba(255, 158, 138, 0.16);
+      color: #ff9e8a;
+      border-color: rgba(255, 158, 138, 0.4);
+    }
+
+    .wrap { max-width: 1400px; margin: 0 auto; padding: 20px 20px 60px; }
+    .page-intro { color: #4a5a78; margin: 0 0 20px 0; font-size: 0.92rem; }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .stat-card {
+      position: relative;
+      overflow: hidden;
+      background:
+        radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%),
+        rgba(7, 15, 34, 0.96);
+      border: 1px solid var(--phins-line);
+      color: var(--phins-ink);
+      padding: 12px 14px 11px;
+      border-radius: 12px;
+      box-shadow: 0 4px 18px rgba(2, 8, 23, 0.28);
+      --tile-accent: #7fb2ff;
+    }
+    .stat-card::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--tile-accent) 0%, transparent 88%);
+    }
+    :where(.stats-grid .stat-card:nth-child(10n + 2)) { --tile-accent: #64b5ff; }
+    :where(.stats-grid .stat-card:nth-child(10n + 3)) { --tile-accent: #9d8cff; }
+    :where(.stats-grid .stat-card:nth-child(10n + 4)) { --tile-accent: #c58cf2; }
+    :where(.stats-grid .stat-card:nth-child(10n + 5)) { --tile-accent: #f18fc1; }
+    :where(.stats-grid .stat-card:nth-child(10n + 6)) { --tile-accent: #ffbe76; }
+    :where(.stats-grid .stat-card:nth-child(10n + 7)) { --tile-accent: #e3bf6f; }
+    :where(.stats-grid .stat-card:nth-child(10n + 8)) { --tile-accent: #b9d977; }
+    :where(.stats-grid .stat-card:nth-child(10n + 9)) { --tile-accent: #6fe0b8; }
+    :where(.stats-grid .stat-card:nth-child(10n + 10)) { --tile-accent: #4fd8ff; }
+    .stat-card.success { --tile-accent: #6fe0b8; }
+    .stat-card.warning { --tile-accent: #ffbe76; }
+    .stat-card.danger { --tile-accent: #ff9e8a; }
+    .stat-value {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-size: 1.42rem;
+      font-weight: 600;
+      line-height: 1.15;
+      color: #ffffff;
+      margin-bottom: 3px;
+    }
+    .stat-label {
+      font-size: 0.64rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: rgba(234, 241, 255, 0.6);
+    }
+
+    .card {
+      background: #ffffff;
+      border: 1px solid rgba(18, 32, 63, 0.06);
+      border-radius: 12px;
+      padding: 16px 20px 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 10px rgba(2, 8, 23, 0.05);
+    }
+    .card-title {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-weight: 600;
+      font-size: 1.05rem;
+      color: #12203f;
+      margin: 0 0 12px 0;
+      padding-left: 12px;
+      border-left: 3px solid var(--phins-gold);
+    }
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .card-head .card-title { margin-bottom: 0; }
+
+    table.data {
+      width: 100%;
+      border-collapse: collapse;
+      background: #ffffff;
+      border: 1px solid rgba(18, 32, 63, 0.06);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    table.data th {
+      background: linear-gradient(180deg, #f2f7ff 0%, #e8f0fc 100%);
+      color: var(--heading-navy);
+      padding: 10px 12px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border-bottom: 2px solid rgba(201, 160, 78, 0.55);
+    }
+    table.data td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #edf2f9;
+      font-size: 0.86rem;
+      vertical-align: middle;
+    }
+    table.data tr:hover td { background: #f5f9fc; }
+    .table-wrap { overflow-x: auto; }
+
+    .btn {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--border-soft);
+      background: #fff;
+      color: #12203f;
+      border-radius: 8px;
+      padding: 8px 14px;
+      transition: all 0.2s;
+    }
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(2, 8, 23, 0.12); }
+    .btn.primary {
+      background: linear-gradient(135deg, #0e2f63 0%, #123f82 100%);
+      color: #fff;
+      border-color: transparent;
+    }
+    .btn.gold {
+      background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%);
+      color: #071022;
+      border-color: transparent;
+    }
+    .btn.green {
+      background: linear-gradient(135deg, #2f855a 0%, #38a169 100%);
+      color: #fff;
+      border-color: transparent;
+    }
+    .btn.alt {
+      background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%);
+      color: #fff;
+      border-color: transparent;
+    }
+    .btn.sm { font-size: 0.76rem; padding: 5px 9px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+    .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    input, select {
+      font-family: inherit;
+      font-size: 0.9rem;
+      padding: 9px 11px;
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      width: 100%;
+      background: #fff;
+    }
+    input:focus, select:focus {
+      border-color: var(--phins-gold);
+      box-shadow: 0 0 0 3px rgba(227, 191, 111, 0.18);
+      outline: none;
+    }
+    label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #4a5a78;
+      display: block;
+      margin: 0 0 4px;
+    }
+    .rate-in { width: 72px; display: inline-block; }
+
+    .pill {
+      display: inline-block;
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-radius: 999px;
+      padding: 3px 9px;
+    }
+    .pill.pending { background: #fff3cd; color: #856404; }
+    .pill.approved, .pill.active, .pill.ok { background: #d4edda; color: #155724; }
+    .pill.sent { background: #cce5ff; color: #004085; }
+    .pill.accepted { background: #e8f0fc; color: #0e2f63; }
+    .pill.rejected, .pill.suspended, .pill.bad { background: #f8d7da; color: #721c24; }
+    .pill.warn { background: #fff3cd; color: #856404; }
+
+    .muted { color: #64748b; font-size: 0.82rem; }
+    .note {
+      background: #f5f9fc;
+      border: 1px solid var(--border-soft);
+      border-left: 4px solid var(--phins-gold);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 0.86rem;
+      color: #3d4f6f;
+      margin-bottom: 18px;
+    }
+    .badge {
+      display: inline-block;
+      font-size: 0.76rem;
+      font-weight: 700;
+      border-radius: 999px;
+      padding: 3px 11px;
+    }
+    .badge.ok { background: #d4edda; color: #155724; }
+    .badge.bad { background: #f8d7da; color: #721c24; }
+    .badge.warn { background: #fff3cd; color: #856404; }
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #071022;
+      color: #eaf1ff;
+      padding: 10px 16px;
+      border-radius: 10px;
+      border: 1px solid var(--phins-line);
+      font-size: 0.86rem;
+      opacity: 0;
+      transition: .25s;
+      z-index: 20;
+    }
+    .toast.show { opacity: 1; }
+    #login { max-width: 400px; margin: 48px auto; }
+    .hidden { display: none; }
+    code.h { font-size: 0.72rem; color: #64748b; }
+    .who { color: rgba(234, 241, 255, 0.7); font-size: 0.82rem; margin-right: 6px; }
+
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(6, 13, 31, 0.62);
+      backdrop-filter: blur(3px);
+      z-index: 1100;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal.active { display: flex; }
+    .modal-card {
+      background: #fff;
+      border-radius: 14px;
+      border-top: 4px solid var(--phins-gold);
+      padding: 24px;
+      max-width: 460px;
+      width: 92%;
+      box-shadow: 0 16px 48px rgba(2, 8, 23, 0.45);
+    }
+    .modal-card h3 {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      color: var(--heading-navy);
+      margin: 0 0 12px;
+    }
+
+    @media screen and (max-width: 768px) {
+      .wrap { padding: 12px; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .page-brand-banner .brand-divider { display: none; }
+      .page-brand-banner .header-badge { margin-left: 0; }
+    }
   </style>
+  <link rel="stylesheet" href="/phins-theme.css">
 </head>
 <body>
-  <header>
-    <div><div class="brand">PHINS · Admin</div><div class="tag">Agent Community · AgentOS</div></div>
-    <div class="row"><span class="muted" id="who" style="color:#fff;opacity:.9"></span><a class="btn" href="/admin.html">← Back to admin</a><a class="btn" href="/unified-workbench.html">⚡ Workbench</a><button class="btn" id="logout">Log out</button></div>
+  <header class="phins-header">
+    <div class="phins-header-inner">
+      <a href="/admin.html" class="phins-logo">
+        <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
+        <span class="phins-logo-text">PHINS</span>
+      </a>
+      <button class="mobile-menu-btn" type="button" onclick="document.getElementById('mobile-nav').classList.toggle('open')">☰</button>
+      <nav class="phins-nav" id="mobile-nav">
+        <a href="/admin.html">Admin</a>
+        <a href="/admin-agents.html" class="active">Agents</a>
+        <a href="/customer-management.html">Customers</a>
+        <a href="/unified-workbench.html">Workbench</a>
+        <span class="who" id="who"></span>
+        <button class="btn-logout" type="button" id="logout">Logout</button>
+      </nav>
+    </div>
   </header>
 
   <div class="wrap">
     <div id="login" class="card">
-      <h2>Admin sign in</h2>
+      <div class="page-brand-banner" style="margin-bottom:18px">
+        <div class="brand-row">
+          <img src="/phins-logo.svg" alt="PHINS emblem" class="brand-emblem">
+          <span class="brand-wordmark">PHINS</span>
+          <div class="brand-divider"></div>
+          <div>
+            <h1 class="brand-title">Admin sign in</h1>
+            <div class="brand-tagline">Agent community · AgentOS</div>
+          </div>
+        </div>
+      </div>
       <p class="muted" style="margin-bottom:12px">Demo: <code>admin</code> / <code>admin123</code></p>
-      <div style="margin-bottom:10px"><label>Username</label><input id="lg-user" value="admin"></div>
-      <div style="margin-bottom:10px"><label>Password</label><input id="lg-pass" type="password"></div>
-      <div id="cap-wrap" style="margin-bottom:14px;display:none"><label id="cap-q">Verification</label><input id="cap-a" placeholder="Your answer" autocomplete="off"></div>
+      <div style="margin-bottom:10px"><label for="lg-user">Username</label><input id="lg-user" value="admin" autocomplete="username"></div>
+      <div style="margin-bottom:10px"><label for="lg-pass">Password</label><input id="lg-pass" type="password" autocomplete="current-password"></div>
+      <div id="cap-wrap" style="margin-bottom:14px;display:none"><label id="cap-q" for="cap-a">Verification</label><input id="cap-a" placeholder="Your answer" autocomplete="off"></div>
       <button class="btn primary" id="lg-go" style="width:100%">Sign in</button>
       <p class="muted" id="lg-err" style="color:#c62828;margin-top:10px"></p>
     </div>
 
     <div id="app" class="hidden">
-      <div class="note">Agent community control center: every action and dataset from the agent ecosystem in one place — community KPIs, agent roster &amp; default rates, invitation approvals (lock the commission rate <strong>in advance</strong>), affiliations, per-agent networks, commission accruals, and the append-only <strong>hash-chained ledger</strong> with a live integrity check.</div>
+      <div class="page-brand-banner">
+        <div class="brand-row">
+          <img src="/phins-logo.svg" alt="PHINS emblem" class="brand-emblem">
+          <span class="brand-wordmark">PHINS</span>
+          <div class="brand-divider"></div>
+          <div>
+            <h1 class="brand-title">Agent Community</h1>
+            <div class="brand-tagline">Affiliations · locked commission · hash-chained ledger</div>
+          </div>
+          <span class="header-badge" id="integrity-banner">CHECKING LEDGER</span>
+        </div>
+      </div>
+      <p class="page-intro">
+        Every customer affiliation uses the <strong>admin-locked invitation rate</strong>, not the agent default.
+        Accrued commission must equal premium basis × locked rate, and <code>referring_agent_id</code> must match the active affiliation.
+      </p>
 
-      <!-- Community KPIs -->
-      <div class="kpis" id="kpis"></div>
-      <div style="margin:-8px 0 16px"><span class="muted">Commission ledger integrity:</span> <span id="integrity" class="badge ok">checking…</span></div>
+      <div class="stats-grid" id="kpis"></div>
 
-      <!-- Create agent -->
       <div class="card">
-        <h2>Create agent</h2>
+        <div class="card-head">
+          <h2 class="card-title">Affiliation integrity</h2>
+          <div class="row-actions">
+            <button class="btn alt sm" id="recompute">Recompute commissions</button>
+            <button class="btn gold sm" id="repair-refs">Repair missing referrals</button>
+          </div>
+        </div>
+        <p class="muted" style="margin-bottom:10px">
+          Ledger: <span id="integrity" class="badge ok">checking…</span>
+          <span id="integrity-summary" class="muted"></span>
+        </p>
+        <div class="table-wrap">
+          <table class="data" id="issues-table">
+            <thead><tr><th>Severity</th><th>Code</th><th>Agent</th><th>Customer</th><th>Detail</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">Create agent</h2>
         <div class="row">
-          <div style="flex:1;min-width:140px"><label>Username (existing login)</label><input id="ca-user" placeholder="agent"></div>
-          <div style="flex:1;min-width:140px"><label>Display name</label><input id="ca-name" placeholder="Jane Broker"></div>
-          <div style="flex:1;min-width:160px"><label>Email</label><input id="ca-email" placeholder="jane@example.com"></div>
-          <div style="min-width:120px"><label>Default rate (%)</label><input id="ca-rate" type="number" min="0" max="100" step="0.5" value="10"></div>
+          <div style="flex:1;min-width:140px"><label for="ca-user">Username (existing login)</label><input id="ca-user" placeholder="agent"></div>
+          <div style="flex:1;min-width:140px"><label for="ca-name">Display name</label><input id="ca-name" placeholder="Jane Broker"></div>
+          <div style="flex:1;min-width:160px"><label for="ca-email">Email</label><input id="ca-email" placeholder="jane@example.com"></div>
+          <div style="min-width:120px"><label for="ca-rate">Default rate (%)</label><input id="ca-rate" type="number" min="0" max="100" step="0.5" value="10"></div>
           <button class="btn primary" id="ca-go">Create</button>
         </div>
+        <p class="muted" style="margin-top:8px">Default rate is a proposal default only. Paid commission always uses the rate locked on the invitation / affiliation.</p>
       </div>
 
-      <!-- Invitation approvals -->
       <div class="card">
-        <div class="row" style="justify-content:space-between">
-          <h2 style="margin:0">Invitation approvals</h2>
-          <button class="btn alt sm" id="recompute">↻ Recompute commissions</button>
+        <h2 class="card-title">Invitation approvals</h2>
+        <div class="table-wrap" style="margin-top:4px">
+          <table class="data" id="inv-table">
+            <thead><tr><th>Code</th><th>Agent</th><th>Type</th><th>Proposed</th><th>Locked rate</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody></tbody>
+          </table>
         </div>
-        <div style="overflow-x:auto;margin-top:10px"><table id="inv-table"><thead><tr><th>Code</th><th>Agent</th><th>Type</th><th>Proposed</th><th>Locked rate</th><th>Status</th><th>Action</th></tr></thead><tbody></tbody></table></div>
       </div>
 
-      <!-- Agents roster -->
       <div class="card">
-        <h2>Agents</h2>
-        <div style="overflow-x:auto"><table id="agents-table"><thead><tr><th>ID</th><th>Name</th><th>User</th><th>Default rate</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+        <h2 class="card-title">Agents</h2>
+        <div class="table-wrap">
+          <table class="data" id="agents-table">
+            <thead><tr><th>ID</th><th>Name</th><th>User</th><th>Default rate</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
 
-      <!-- Per-agent network drill -->
-      <div class="card hidden" id="net-card">
-        <div class="row" style="justify-content:space-between"><h2 style="margin:0" id="net-title">Agent network</h2><button class="btn sm" id="net-close">Close</button></div>
-        <div style="overflow-x:auto;margin-top:10px"><table id="net-table"><thead><tr><th>Customer</th><th>Status</th><th>Policies</th><th>Premium basis</th><th>Rate</th><th>Accrued</th></tr></thead><tbody></tbody></table></div>
-        <p class="muted" style="margin-top:8px">Outline only — affiliated customers' PII/medical data is never exposed.</p>
-      </div>
-
-      <!-- Commission ledger (hash-chained audit) -->
       <div class="card">
-        <h2>Commission ledger <span class="muted">(append-only, hash-chained)</span></h2>
-        <div style="overflow-x:auto"><table id="ledger-table"><thead><tr><th>#</th><th>Event</th><th>Agent</th><th>Amount</th><th>Entry hash</th></tr></thead><tbody></tbody></table></div>
+        <div class="card-head">
+          <h2 class="card-title" id="net-title">Agent ↔ customer connections</h2>
+          <button class="btn sm hidden" id="net-close">Show all</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data" id="net-table">
+            <thead>
+              <tr>
+                <th>Agent</th><th>Customer</th><th>Status</th><th>Policies</th>
+                <th>Premium basis</th><th>Locked rate</th><th>Expected</th><th>Accrued</th>
+                <th>Referral</th><th>Commission</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="muted" style="margin-top:8px">Outline only — affiliated customers' PII/medical data is never exposed. Expected = premium basis × locked affiliation rate.</p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">Commission ledger <span class="muted">(append-only, hash-chained)</span></h2>
+        <div class="table-wrap">
+          <table class="data" id="ledger-table">
+            <thead><tr><th>#</th><th>Event</th><th>Agent</th><th>Amount</th><th>Entry hash</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="redeem-modal">
+    <div class="modal-card">
+      <h3>Affiliate principal</h3>
+      <p class="muted" id="redeem-meta" style="margin-bottom:12px">Enter the customer or supplier ID to lock this invitation’s rate onto.</p>
+      <div style="margin-bottom:12px"><label for="redeem-id">Principal ID</label><input id="redeem-id" placeholder="CUST-123"></div>
+      <div class="row-actions" style="justify-content:flex-end">
+        <button class="btn sm" id="redeem-cancel">Cancel</button>
+        <button class="btn gold sm" id="redeem-go">Create affiliation</button>
       </div>
     </div>
   </div>
@@ -116,13 +646,17 @@
   (function(){
     const $=s=>document.querySelector(s);
     let TOKEN = localStorage.getItem('phins_token')||'';
+    let REDEEM = {code:'', type:''};
+    let ALL_CONNECTIONS = [];
     function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
     function fmt(n){return '$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:2});}
     function pct(r){return Math.round((r||0)*100)+'%';}
+    function escHtml(value){return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
     async function api(path,opts={}){opts.headers=Object.assign({'Content-Type':'application/json'},opts.headers||{});if(TOKEN)opts.headers['Authorization']='Bearer '+TOKEN;const r=await fetch(path,opts);let b={};try{b=await r.json();}catch(e){}return {status:r.status,body:b};}
     function showApp(on){$('#login').classList.toggle('hidden',on);$('#app').classList.toggle('hidden',!on);if(!on)loadCaptcha();}
+    function pillFor(status){const s=String(status||'').replace('pending_approval','pending');return `<span class="pill ${escHtml(s)}">${escHtml(String(status||'').replace(/_/g,' '))}</span>`;}
+    function yesNo(ok){return `<span class="pill ${ok?'ok':'bad'}">${ok?'aligned':'break'}</span>`;}
 
-    // ---- CAPTCHA (production login requires a verified challenge token) ----
     let CAP={id:null};
     async function loadCaptcha(){
       CAP={id:null}; const a=$('#cap-a'); if(a) a.value='';
@@ -153,21 +687,82 @@
       const t=await api('/api/admin/agents');
       if(t.status!==200){showApp(false);return;}
       showApp(true); $('#who').textContent='admin';
-      loadOverview();loadInvitations();loadAgents();loadCommissions();loadLedger();
+      loadOverview();loadInvitations();loadAgents();loadIntegrity();loadLedger();
     }
 
     async function loadOverview(){
       const {body:o}=await api('/api/admin/agents/overview');
       const cards=[
-        ['Agents', o.agents_total||0],['Active agents', o.agents_active||0],
-        ['Affiliated customers', o.affiliated_customers||0],['Affiliated suppliers', o.affiliated_suppliers||0],
-        ['Pending approvals', o.invitations_pending_approval||0],['Active invitations', o.invitations_active||0],
-        ['Lifetime commission', fmt(o.commission_lifetime_total)],['Accrued', fmt(o.commission_accrued_total)],
-        ['Paid out', fmt(o.commission_paid_total)],['Ledger entries', o.ledger_entries||0],
+        ['Agents', o.agents_total||0],
+        ['Active agents', o.agents_active||0],
+        ['Affiliated customers', o.affiliated_customers||0],
+        ['Affiliated suppliers', o.affiliated_suppliers||0],
+        ['Pending approvals', o.invitations_pending_approval||0],
+        ['Active invitations', o.invitations_active||0],
+        ['Lifetime commission', fmt(o.commission_lifetime_total)],
+        ['Accrued', fmt(o.commission_accrued_total)],
+        ['Paid out', fmt(o.commission_paid_total)],
+        ['Ledger entries', o.ledger_entries||0],
       ];
-      $('#kpis').innerHTML=cards.map(([l,v])=>`<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
-      const b=$('#integrity'); const ok=o.ledger_intact!==false;
-      b.textContent= ok?'✓ intact':'✗ TAMPERED'; b.className='badge '+(ok?'ok':'bad');
+      $('#kpis').innerHTML=cards.map(([l,v])=>`<div class="stat-card"><div class="stat-value">${escHtml(v)}</div><div class="stat-label">${escHtml(l)}</div></div>`).join('');
+    }
+
+    function renderConnections(rows, title){
+      ALL_CONNECTIONS = rows || [];
+      $('#net-title').textContent = title || 'Agent ↔ customer connections';
+      const body = ALL_CONNECTIONS.map(r=>{
+        return `<tr>
+          <td><code>${escHtml(r.agent_id)}</code></td>
+          <td>${escHtml(r.customer_name)} <code class="h">${escHtml(r.customer_id)}</code></td>
+          <td>${pillFor(r.status)}</td>
+          <td>${escHtml(r.policy_count)}</td>
+          <td>${fmt(r.premium_basis)}</td>
+          <td>${pct(r.locked_rate != null ? r.locked_rate : r.commission_rate)}</td>
+          <td>${fmt(r.expected_commission)}</td>
+          <td>${fmt(r.accrued_commission)}</td>
+          <td>${yesNo(r.referral_consistent)}</td>
+          <td>${yesNo(r.commission_consistent)}</td>
+        </tr>`;
+      }).join('');
+      $('#net-table tbody').innerHTML = body || '<tr><td colspan="10" class="muted">No affiliated customers.</td></tr>';
+    }
+
+    async function loadIntegrity(){
+      const {status,body}=await api('/api/admin/agents/integrity');
+      if(status!==200){return;}
+      const ok=body.ok!==false && body.ledger_intact!==false;
+      const counts=body.issue_counts||{};
+      const banner=$('#integrity-banner');
+      const badge=$('#integrity');
+      if(!body.ledger_intact){
+        banner.textContent='LEDGER TAMPERED'; banner.className='header-badge bad';
+        badge.textContent='✗ TAMPERED'; badge.className='badge bad';
+      } else if((counts.error||0)>0){
+        banner.textContent='CONNECTION BREAKS'; banner.className='header-badge bad';
+        badge.textContent='✓ ledger intact'; badge.className='badge ok';
+      } else if((counts.warning||0)>0){
+        banner.textContent='REVIEW WARNINGS'; banner.className='header-badge warn';
+        badge.textContent='✓ ledger intact'; badge.className='badge ok';
+      } else {
+        banner.textContent='LEDGER INTACT'; banner.className='header-badge';
+        badge.textContent='✓ intact'; badge.className='badge ok';
+      }
+      $('#integrity-summary').textContent =
+        ` · ${(counts.error||0)} errors · ${(counts.warning||0)} warnings · ${(body.checked&&body.checked.connections)||0} connections`;
+      const issues=body.issues||[];
+      $('#issues-table tbody').innerHTML = issues.length
+        ? issues.map(i=>`<tr>
+            <td><span class="pill ${i.severity==='error'?'bad':'warn'}">${escHtml(i.severity)}</span></td>
+            <td><code>${escHtml(i.code)}</code></td>
+            <td>${escHtml(i.agent_id||'—')}</td>
+            <td>${escHtml(i.principal_id||i.customer_id||'—')}</td>
+            <td>${escHtml(i.message)}</td>
+          </tr>`).join('')
+        : '<tr><td colspan="5" class="muted">No affiliation or commission breaks. Agent ↔ customer links match locked rates.</td></tr>';
+      if(!$('#net-close').classList.contains('hidden')){
+        return;
+      }
+      renderConnections(body.connections||[]);
     }
 
     async function loadInvitations(){
@@ -176,64 +771,85 @@
         const locked=i.commission_rate==null?'—':pct(i.commission_rate);
         let action='';
         if(i.status==='pending_approval'){
-          action=`<input class="rate-in" id="rt-${i.code}" type="number" min="0" max="100" step="0.5" value="${Math.round((i.proposed_rate||0)*100)}"> `+
-            `<button class="btn green sm" data-approve="${i.code}">Approve</button> <button class="btn sm" data-reject="${i.code}">Reject</button>`;
+          action=`<input class="rate-in" id="rt-${escHtml(i.code)}" type="number" min="0" max="100" step="0.5" value="${Math.round((i.proposed_rate||0)*100)}"> `+
+            `<button class="btn green sm" data-approve="${escHtml(i.code)}">Approve</button> <button class="btn sm" data-reject="${escHtml(i.code)}">Reject</button>`;
         } else if(i.status==='approved'||i.status==='sent'){
-          action=`<button class="btn alt sm" data-redeem="${i.code}" data-type="${i.invitee_type}">Redeem…</button>`;
+          action=`<button class="btn alt sm" data-redeem="${escHtml(i.code)}" data-type="${escHtml(i.invitee_type)}">Redeem…</button>`;
         }
-        return `<tr><td><code>${i.code}</code></td><td>${i.agent_id}</td><td>${i.invitee_type}</td>`+
+        return `<tr><td><code>${escHtml(i.code)}</code></td><td>${escHtml(i.agent_id)}</td><td>${escHtml(i.invitee_type)}</td>`+
           `<td>${pct(i.proposed_rate)}</td><td>${locked}</td>`+
-          `<td><span class="pill ${i.status.replace('pending_approval','pending')}">${i.status.replace(/_/g,' ')}</span></td><td>${action}</td></tr>`;
+          `<td>${pillFor(i.status)}</td><td>${action}</td></tr>`;
       }).join('');
       $('#inv-table tbody').innerHTML=rows||'<tr><td colspan="7" class="muted">No invitations.</td></tr>';
     }
 
     async function loadAgents(){
       const {body}=await api('/api/admin/agents');
-      const rows=(body.items||[]).map(a=>`<tr><td><code>${a.id}</code></td><td>${a.display_name||''}</td><td>${a.user_username}</td>`+
-        `<td><input class="rate-in" id="ar-${a.id}" type="number" min="0" max="100" step="0.5" value="${Math.round((a.default_commission_rate||0)*100)}"> `+
-        `<button class="btn sm" data-rate="${a.id}">Save</button></td>`+
-        `<td><span class="pill ${a.status}">${a.status}</span></td>`+
-        `<td><button class="btn sm" data-toggle="${a.id}" data-status="${a.status}">${a.status==='active'?'Suspend':'Activate'}</button> `+
-        `<button class="btn alt sm" data-network="${a.id}" data-name="${(a.display_name||a.user_username)}">Network</button> `+
-        `<button class="btn sm" data-resetpw="${a.id}" data-user="${a.user_username}">Reset PW</button></td></tr>`).join('');
+      const rows=(body.items||[]).map(a=>`<tr><td><code>${escHtml(a.id)}</code></td><td>${escHtml(a.display_name||'')}</td><td>${escHtml(a.user_username)}</td>`+
+        `<td><input class="rate-in" id="ar-${escHtml(a.id)}" type="number" min="0" max="100" step="0.5" value="${Math.round((a.default_commission_rate||0)*100)}"> `+
+        `<button class="btn sm" data-rate="${escHtml(a.id)}">Save</button></td>`+
+        `<td>${pillFor(a.status)}</td>`+
+        `<td class="row-actions"><button class="btn sm" data-toggle="${escHtml(a.id)}" data-status="${escHtml(a.status)}">${a.status==='active'?'Suspend':'Activate'}</button> `+
+        `<button class="btn alt sm" data-network="${escHtml(a.id)}" data-name="${escHtml(a.display_name||a.user_username)}">Network</button> `+
+        `<button class="btn sm" data-resetpw="${escHtml(a.id)}" data-user="${escHtml(a.user_username)}">Reset PW</button></td></tr>`).join('');
       $('#agents-table tbody').innerHTML=rows||'<tr><td colspan="6" class="muted">No agents yet.</td></tr>';
-    }
-
-    async function loadCommissions(){
-      const {body}=await api('/api/admin/agents/commissions');
-      window.__comms=(body.items||[]);
     }
 
     async function loadLedger(){
       const {body}=await api('/api/admin/agents/ledger');
-      const rows=(body.items||[]).slice().reverse().map(e=>`<tr><td>${e.sequence_no}</td><td>${(e.event_type||'').replace(/^agent\./,'')}</td>`+
-        `<td>${e.agent_id}</td><td>${fmt(e.amount)}</td><td><code class="h">${(e.entry_hash||'').slice(0,16)}…</code></td></tr>`).join('');
+      const rows=(body.items||[]).slice().reverse().map(e=>`<tr><td>${escHtml(e.sequence_no)}</td><td>${escHtml((e.event_type||'').replace(/^agent\./,''))}</td>`+
+        `<td>${escHtml(e.agent_id)}</td><td>${fmt(e.amount)}</td><td><code class="h">${escHtml((e.entry_hash||'').slice(0,16))}…</code></td></tr>`).join('');
       $('#ledger-table tbody').innerHTML=rows||'<tr><td colspan="5" class="muted">No ledger entries.</td></tr>';
     }
 
     async function showNetwork(agentId,name){
       const {body}=await api('/api/admin/agents/network?agent_id='+encodeURIComponent(agentId));
-      $('#net-title').textContent='Network — '+name;
-      const rows=(body.items||[]).map(r=>`<tr><td>${r.name}</td><td>${r.status}</td><td>${r.policy_count}</td>`+
-        `<td>${fmt(r.premium_basis)}</td><td>${pct(r.commission_rate)}</td><td>${fmt(r.accrued_commission)}</td></tr>`).join('');
-      $('#net-table tbody').innerHTML=rows||'<tr><td colspan="6" class="muted">No affiliated customers.</td></tr>';
-      $('#net-card').classList.remove('hidden');
-      $('#net-card').scrollIntoView({behavior:'smooth',block:'nearest'});
+      const rows=(body.items||[]).map(r=>({
+        agent_id: agentId,
+        customer_id: r.customer_id,
+        customer_name: r.name,
+        status: r.status,
+        policy_count: r.policy_count,
+        premium_basis: r.premium_basis,
+        locked_rate: r.commission_rate,
+        expected_commission: r.expected_commission,
+        accrued_commission: r.accrued_commission,
+        referral_consistent: r.referral_consistent,
+        commission_consistent: r.commission_consistent,
+      }));
+      renderConnections(rows, 'Network — '+name);
+      $('#net-close').classList.remove('hidden');
+      $('#net-title').scrollIntoView({behavior:'smooth',block:'nearest'});
+    }
+
+    function closeRedeem(){$('#redeem-modal').classList.remove('active');REDEEM={code:'',type:''};$('#redeem-id').value='';}
+    async function confirmRedeem(){
+      const pid=$('#redeem-id').value.trim();
+      if(!pid||!REDEEM.code){toast('Principal ID required');return;}
+      const {status,body}=await api('/api/admin/agent-invitations/redeem',{method:'POST',body:JSON.stringify({code:REDEEM.code,principal_type:REDEEM.type,principal_id:pid})});
+      toast(status===200?'Affiliation created':((body&&body.error)||'Failed'));
+      closeRedeem();
+      loadInvitations();loadOverview();loadIntegrity();
     }
 
     document.addEventListener('click', async (e)=>{
       const t=e.target;
-      if(t.dataset.approve){const c=t.dataset.approve;const rate=parseFloat($('#rt-'+c).value)||0;const {status,body}=await api('/api/admin/agent-invitations/approve',{method:'POST',body:JSON.stringify({code:c,commission_rate:rate})});toast(status===200?'Approved — rate locked':(body.error||'Failed'));loadInvitations();loadOverview();}
+      if(t.dataset.approve){const c=t.dataset.approve;const rate=parseFloat($('#rt-'+c).value)||0;const {status,body}=await api('/api/admin/agent-invitations/approve',{method:'POST',body:JSON.stringify({code:c,commission_rate:rate})});toast(status===200?'Approved — rate locked':((body&&body.error)||'Failed'));loadInvitations();loadOverview();loadIntegrity();}
       else if(t.dataset.reject){const {status}=await api('/api/admin/agent-invitations/reject',{method:'POST',body:JSON.stringify({code:t.dataset.reject,reason:'admin'})});toast(status===200?'Rejected':'Failed');loadInvitations();loadOverview();}
-      else if(t.dataset.redeem){const pid=prompt(`Enter ${t.dataset.type} ID to affiliate (e.g. CUST-123):`);if(!pid)return;const {status,body}=await api('/api/admin/agent-invitations/redeem',{method:'POST',body:JSON.stringify({code:t.dataset.redeem,principal_type:t.dataset.type,principal_id:pid})});toast(status===200?'Affiliation created':(body.error||'Failed'));loadInvitations();loadOverview();}
+      else if(t.dataset.redeem){
+        REDEEM={code:t.dataset.redeem,type:t.dataset.type};
+        $('#redeem-meta').textContent='Lock this invitation onto a '+t.dataset.type+' ID. The admin-approved rate becomes the affiliation snapshot.';
+        $('#redeem-id').placeholder=t.dataset.type==='supplier'?'SUP-123':'CUST-123';
+        $('#redeem-modal').classList.add('active');
+        $('#redeem-id').focus();
+      }
       else if(t.dataset.toggle){const next=t.dataset.status==='active'?'suspended':'active';const {status}=await api('/api/admin/agents/update',{method:'POST',body:JSON.stringify({agent_id:t.dataset.toggle,status:next})});toast(status===200?'Updated':'Failed');loadAgents();loadOverview();}
-      else if(t.dataset.rate){const id=t.dataset.rate;const rate=parseFloat($('#ar-'+id).value)||0;const {status}=await api('/api/admin/agents/update',{method:'POST',body:JSON.stringify({agent_id:id,default_rate:rate})});toast(status===200?'Default rate updated':'Failed');}
+      else if(t.dataset.rate){const id=t.dataset.rate;const rate=parseFloat($('#ar-'+id).value)||0;const {status}=await api('/api/admin/agents/update',{method:'POST',body:JSON.stringify({agent_id:id,default_rate:rate})});toast(status===200?'Default rate updated — existing affiliations stay locked':'Failed');}
       else if(t.dataset.network){showNetwork(t.dataset.network,t.dataset.name||t.dataset.network);}
       else if(t.dataset.resetpw){
         const who=t.dataset.user||t.dataset.resetpw;
         const np=prompt('Reset password for "'+who+'".\nLeave blank to auto-generate a secure password:','');
-        if(np===null) return; // cancelled
+        if(np===null) return;
         const payload={agent_id:t.dataset.resetpw};
         if(np) payload.new_password=np;
         const {status,body}=await api('/api/admin/agents/reset-password',{method:'POST',body:JSON.stringify(payload)});
@@ -244,18 +860,31 @@
       }
     });
 
-    $('#net-close').addEventListener('click',()=>$('#net-card').classList.add('hidden'));
+    $('#net-close').addEventListener('click',()=>{
+      $('#net-close').classList.add('hidden');
+      loadIntegrity();
+    });
     $('#ca-go').addEventListener('click', async ()=>{
       const payload={username:$('#ca-user').value,display_name:$('#ca-name').value,email:$('#ca-email').value,default_rate:parseFloat($('#ca-rate').value)||0};
       if(!payload.username){toast('username required');return;}
       const {status,body}=await api('/api/admin/agents',{method:'POST',body:JSON.stringify(payload)});
-      toast(status===201?'Agent created':(body.error||'Failed'));if(status===201){loadAgents();loadOverview();}
+      toast(status===201?'Agent created':((body&&body.error)||'Failed'));if(status===201){loadAgents();loadOverview();}
     });
     $('#recompute').addEventListener('click', async ()=>{
       const {status,body}=await api('/api/admin/agents/recompute-commissions',{method:'POST',body:'{}'});
       toast(status===200?`Accrued ${body.created} new · ledger ${body.ledger_intact?'intact':'BROKEN'}`:'Failed');
-      loadOverview();loadCommissions();loadLedger();
+      loadOverview();loadIntegrity();loadLedger();
     });
+    $('#repair-refs').addEventListener('click', async ()=>{
+      const {status,body}=await api('/api/admin/agents/repair-referrals',{method:'POST',body:'{}'});
+      if(status!==200){toast((body&&body.error)||'Repair failed');return;}
+      toast(`Repaired ${body.repaired} referral link${body.repaired===1?'':'s'} · ${body.skipped} conflict${body.skipped===1?'':'s'} left unchanged`);
+      loadIntegrity();loadOverview();
+    });
+    $('#redeem-cancel').addEventListener('click', closeRedeem);
+    $('#redeem-go').addEventListener('click', confirmRedeem);
+    $('#redeem-id').addEventListener('keydown', e=>{if(e.key==='Enter')confirmRedeem();});
+    $('#redeem-modal').addEventListener('click', e=>{if(e.target.id==='redeem-modal')closeRedeem();});
     $('#lg-go').addEventListener('click', login);
     $('#lg-pass').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
     document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target&&e.target.id==='cap-a')login();});
