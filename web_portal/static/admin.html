@@ -54,12 +54,15 @@
     }
     .phins-logo-text {
       font-size: 1.5rem;
-      font-weight: 700;
-      background: linear-gradient(135deg, #fff 0%, #e3f2fd 100%);
+      font-weight: 600;
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      background: linear-gradient(180deg, #ffffff 0%, #b7d3ff 100%);
+      background-size: 100% 100%;
+      background-repeat: no-repeat;
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
-      letter-spacing: 0.02em;
+      letter-spacing: 0.22em;
     }
     .phins-utility {
       display: flex;
@@ -93,10 +96,10 @@
       border-color: rgba(255,255,255,0.2);
     }
     .phins-nav a.active {
-      background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
-      color: white;
+      background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+      color: #071022;
       border-color: transparent;
-      box-shadow: 0 4px 12px rgba(66, 165, 245, 0.3);
+      box-shadow: 0 4px 12px rgba(227, 191, 111, 0.35);
     }
     .phins-utility .btn-logout {
       background: linear-gradient(135deg, #ef5350 0%, #e53935 100%);
@@ -164,15 +167,20 @@
         top: 60px;
         left: 0;
         right: 0;
-        background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%);
+        background:
+          radial-gradient(720px 220px at 88% -36%, rgba(21, 68, 155, 0.48), transparent 70%),
+          #060d1f;
         flex-direction: column;
-        padding: 16px;
-        gap: 8px;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        padding: 10px 12px 28px;
+        gap: 6px;
+        box-shadow: 0 18px 40px rgba(2, 8, 23, 0.55);
         z-index: 999;
-        max-height: calc(100vh - 60px);
+        bottom: 0;
+        max-height: none;
         overflow-y: auto;
+        overscroll-behavior: contain;
         justify-content: flex-start;
+        border-top: 1px solid rgba(127, 178, 255, 0.16);
       }
       .phins-nav.open { display: flex !important; }
       .phins-nav a { 
@@ -180,14 +188,37 @@
         text-align: center; 
         padding: 14px 16px; 
         font-size: 1.05rem;
-        border-radius: 8px;
-        background: rgba(255,255,255,0.05);
+        border-radius: 12px;
+        background: rgba(16, 31, 63, 0.96);
+        border: 1px solid rgba(127, 178, 255, 0.16);
+        color: #eaf1ff;
+        font-weight: 600;
+        letter-spacing: 0.04em;
       }
-      .phins-nav a:hover, .phins-nav a.active {
-        background: rgba(255,255,255,0.2);
+      .phins-nav a:hover {
+        background: rgba(127, 178, 255, 0.16);
+        color: #ffffff;
+      }
+      .phins-nav a.active {
+        background: #e3bf6f;
+        color: #071022;
+        border-color: rgba(247, 226, 160, 0.7);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.35),
+          0 6px 18px rgba(227, 191, 111, 0.32);
       }
       .phins-utility .btn-logout { margin-left: 4px; }
       .language-selector { display: none; }
+      .phins-logo-text {
+        display: inline-block;
+        letter-spacing: 0.14em;
+        background: none;
+        -webkit-background-clip: border-box;
+        background-clip: border-box;
+        -webkit-text-fill-color: #eaf1ff;
+        color: #eaf1ff;
+        text-shadow: 0 0 18px rgba(127, 178, 255, 0.28);
+      }
     }
     @media screen and (max-width: 768px) {
       .phins-header-inner { padding: 0.5rem 1rem; }
@@ -202,7 +233,17 @@
     }
     @media screen and (max-width: 480px) {
       .dashboard-stats { grid-template-columns: 1fr !important; }
-      .phins-logo-text { display: none; }
+      .phins-logo-text {
+        display: inline-block;
+        font-size: 1.05rem;
+        letter-spacing: 0.14em;
+        background: none;
+        -webkit-background-clip: border-box;
+        background-clip: border-box;
+        -webkit-text-fill-color: #eaf1ff;
+        color: #eaf1ff;
+        text-shadow: 0 0 18px rgba(127, 178, 255, 0.28);
+      }
     }
     
     /* Soft gradient backgrounds */
@@ -459,7 +500,12 @@
       border-color: rgba(244,67,54,0.5);
     }
     @media (max-width: 768px) {
-      #admin-ai-assistant-panel { padding: 16px; }
+      #admin-ai-assistant-panel {
+        padding: 16px;
+        background:
+          radial-gradient(120% 80% at 90% -10%, rgba(21, 68, 155, 0.35), transparent 60%),
+          #091126;
+      }
       .admin-ai-action-btn { width: 100%; justify-content: center; display: inline-flex; }
       .admin-ai-quick-btn { padding: 6px 10px; font-size: 0.74rem; }
     }

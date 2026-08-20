@@ -16,6 +16,12 @@ def test_assessments_nav_assets_exist():
     css = (STATIC / "phins-theme.css").read_text(encoding="utf-8")
     assert ".assessments-nav" in css
     assert "phins-gold" in css
+    # Mobile drawer uses opaque navy tiles + a vertical gold wash so the
+    # old 135deg blue hatch does not stripe through the stacked chips.
+    assert "#mobile-nav.phins-nav" in css
+    assert "no 135deg stripe bleed" in css
+    assert "background: var(--phins-gold) !important;" in css
+    assert "#mobile-nav .assessments-nav-toggle" in css
 
 
 def test_admin_and_customer_mount_assessments_chooser():

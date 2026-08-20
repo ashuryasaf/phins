@@ -281,3 +281,30 @@ def test_admin_overview_unified_phins_gradient_and_clean_labels():
     assert nav
     emoji_re = re.compile(r"[\U0001F000-\U0001FAFF\u2600-\u27BF]")
     assert not emoji_re.search(nav.group(1))
+
+
+def test_admin_mobile_nav_uses_navy_glass_not_blue_stripe_gradient():
+    content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
+
+    # The old 135deg #0d47a1→#1565c0 drawer painted diagonal "strips///"
+    # through the semi-transparent mobile chips. The open menu must use
+    # the unified deep-navy glass instead.
+    mobile_nav = re.search(
+        r"@media screen and \(max-width: 1024px\)\s*\{(.*?)@media screen and \(max-width: 768px\)",
+        content,
+        flags=re.S,
+    )
+    assert mobile_nav, "expected admin mobile nav breakpoint"
+    block = mobile_nav.group(1)
+    assert "linear-gradient(135deg, #0d47a1 0%, #1565c0 100%)" not in block
+    assert "#060d1f" in block
+    assert "rgba(16, 31, 63, 0.96)" in block
+    assert "background: #e3bf6f;" in block
+    assert "bottom: 0;" in block
+    assert "overflow-y: auto;" in block
+    assert "linear-gradient(180deg, #ffffff 0%, #b7d3ff 100%)" in content
+    assert ".phins-logo-text { display: none; }" not in content
+    # Mobile wordmark drops clipped-gradient dither ("///" hatch) for ice ink.
+    assert "-webkit-text-fill-color: #eaf1ff;" in content
+    assert "#admin-ai-assistant-panel" in content
+    assert "#091126" in content
