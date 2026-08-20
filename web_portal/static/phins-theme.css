@@ -87,6 +87,11 @@
     box-shadow: 0 18px 40px rgba(2, 8, 23, 0.55) !important;
     padding: 10px 12px 28px !important;
     gap: 6px !important;
+    top: 60px !important;
+    bottom: 0 !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
   }
 
   #mobile-nav.phins-nav a,
