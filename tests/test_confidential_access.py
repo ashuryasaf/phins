@@ -114,6 +114,23 @@ def test_non_production_without_token_stays_open_for_local_dev():
     assert decision.reason == "non_production_default"
 
 
+def test_railway_pr_preview_without_token_fails_closed():
+    """Public PR-preview hosts must not serve confidential docs anonymously,
+    even though they inherit PHINS_ENVIRONMENT=production and the secrets
+    policy treats them as non-production for startup purposes."""
+    for railway_env in ("pr-539", "phins-pr-539"):
+        decision = ca.evaluate_access(
+            "/internal/phins-investor-business-plan.html",
+            environ={
+                "PHINS_ENVIRONMENT": "production",
+                "RAILWAY_ENVIRONMENT": railway_env,
+            },
+        )
+        assert decision.allowed is False
+        assert decision.reason == "not_configured_production"
+        assert decision.status == 503
+
+
 def test_missing_token_is_denied_when_a_token_is_configured():
     decision = ca.evaluate_access(
         "/internal/phins-investor-business-plan.html",

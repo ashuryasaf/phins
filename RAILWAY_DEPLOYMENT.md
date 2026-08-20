@@ -175,6 +175,12 @@ railway logs
 - Missing `requirements.txt` → Already included ✅
 - Wrong Python version → Railway auto-detects ✅
 - Port issues → Server auto-detects PORT env var ✅
+- PR-preview healthcheck timeout (~60–90s) → Postgres `connect_timeout` is
+  5s so an unreachable cloned `DATABASE_URL` fails fast instead of hanging
+  past `/api/health`. Railway environment names like `phins-pr-539` are
+  treated as non-production even when they inherit `PHINS_ENVIRONMENT=production`.
+  Confirm the preview has its own Postgres (or accept in-memory fallback)
+  and that `phins-portal` is not installing `ffmpeg` (`INSTALL_FFMPEG` unset).
 
 ### "502 Bad Gateway"
 

@@ -1448,7 +1448,10 @@ if USE_DATABASE:
         
         for attempt in range(max_retries):
             try:
-                if check_database_connection():
+                # Import-time probe must not stack the helper's inner reconnect
+                # on top of this loop — that doubles hang time when DATABASE_URL
+                # points at an unreachable Railway preview host.
+                if check_database_connection(retry_on_failure=False):
                     database_enabled = True
                     print("✓ Database connection verified")
                     
