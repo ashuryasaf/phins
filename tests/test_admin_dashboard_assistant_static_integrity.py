@@ -300,7 +300,10 @@ def test_admin_mobile_nav_uses_navy_glass_not_blue_stripe_gradient():
     assert "#060d1f" in block
     assert "rgba(16, 31, 63, 0.96)" in block
     assert "background: #e3bf6f;" in block
-    assert "bottom: 0;" in block
+    # bottom:0 + top:60px against the backdrop-filter header collapses
+    # the open drawer to ~0px. The hamburger must size from content.
+    assert "bottom: auto;" in block
+    assert "bottom: 0;" not in block
     assert "overflow-y: auto;" in block
     assert "linear-gradient(180deg, #ffffff 0%, #b7d3ff 100%)" in content
     assert ".phins-logo-text { display: none; }" not in content
