@@ -116,7 +116,24 @@ def _gen_id(prefix: str) -> str:
 
 
 def _gen_code() -> str:
-    return f"AGI-{secrets.token_urlsafe(9)}"
+    # Public registration validates codes after .upper(); keep new codes
+    # in that form so AGI- tokens survive the shared invitation surface.
+    raw = secrets.token_urlsafe(9).upper().replace("-", "")
+    return f"AGI-{raw[:12]}"
+
+
+def _find_invitation(code: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Look up an invitation by code, case-insensitively."""
+    if not code:
+        return None
+    inv = INVITATIONS.get(code)
+    if inv:
+        return inv
+    needle = str(code).upper()
+    for stored, rec in INVITATIONS.items():
+        if str(stored).upper() == needle:
+            return rec
+    return None
 
 
 def _canonical(payload: Dict[str, Any]) -> str:
@@ -590,7 +607,7 @@ def list_invitations(agent_id: Optional[str] = None,
 def approve_invitation(code: str, commission_rate: Any, admin: str) -> Tuple[bool, Any]:
     with _LOCK:
         _hydrate_from_db(force=True)
-        inv = INVITATIONS.get(code)
+        inv = _find_invitation(code)
         if not inv:
             return False, "Invitation not found"
         if inv["status"] != "pending_approval":
@@ -608,7 +625,7 @@ def approve_invitation(code: str, commission_rate: Any, admin: str) -> Tuple[boo
 def reject_invitation(code: str, admin: str, reason: str = "") -> Tuple[bool, Any]:
     with _LOCK:
         _hydrate_from_db(force=True)
-        inv = INVITATIONS.get(code)
+        inv = _find_invitation(code)
         if not inv:
             return False, "Invitation not found"
         if inv["status"] != "pending_approval":
@@ -626,7 +643,7 @@ def validate_invitation(code: str) -> Dict[str, Any]:
     """Public validation used by registration flows."""
     with _LOCK:
         _hydrate_from_db()
-        inv = INVITATIONS.get(code)
+        inv = _find_invitation(code)
         if not inv:
             return {"valid": False, "error": "Invalid invitation code"}
         if inv["status"] not in ("approved", "sent"):
@@ -650,7 +667,7 @@ def redeem_invitation(code: str, principal_type: str, principal_id: str) -> Tupl
     """
     with _LOCK:
         _hydrate_from_db(force=True)
-        inv = INVITATIONS.get(code)
+        inv = _find_invitation(code)
         if not inv:
             return False, "Invalid invitation code"
         if inv["status"] not in ("approved", "sent"):
@@ -701,7 +718,7 @@ def redeem_invitation(code: str, principal_type: str, principal_id: str) -> Tupl
 
 def mark_invitation_sent(code: str) -> None:
     with _LOCK:
-        inv = INVITATIONS.get(code)
+        inv = _find_invitation(code)
         if inv and inv["status"] == "approved":
             inv["status"] = "sent"
             _persist("invitation", inv)
@@ -959,6 +976,9 @@ def network_customers(agent_id: str, customers: Dict[str, Any],
             premium_basis = round(sum(float(p.get("annual_premium") or p.get("premium") or 0) for p in cust_policies), 2)
             accrued = round(sum(c["amount"] for c in COMMISSIONS.values()
                                 if c["affiliation_id"] == aff["id"]), 2)
+            rate = float(aff.get("commission_rate") or 0.0)
+            expected = round(premium_basis * rate, 2)
+            referring = cust.get("referring_agent_id")
             rows.append({
                 "customer_id": cid,
                 "name": cust.get("name") or cust.get("first_name") or "Affiliated customer",
@@ -966,7 +986,11 @@ def network_customers(agent_id: str, customers: Dict[str, Any],
                 "policy_count": len(cust_policies),
                 "premium_basis": premium_basis,
                 "commission_rate": aff["commission_rate"],
+                "expected_commission": expected,
                 "accrued_commission": accrued,
+                "commission_consistent": _money_eq(expected, accrued),
+                "referring_agent_id": referring,
+                "referral_consistent": referring == aff["agent_id"],
                 "affiliation_id": aff["id"],
             })
         rows.sort(key=lambda r: r["accrued_commission"], reverse=True)
@@ -1027,3 +1051,274 @@ def get_ledger(agent_id: Optional[str] = None, limit: int = 200) -> List[Dict[st
         if agent_id:
             items = [e for e in items if e["agent_id"] == agent_id]
         return list(items[-limit:])
+
+
+def _money_eq(left: Any, right: Any, tolerance: float = 0.015) -> bool:
+    """Compare currency amounts with a 1.5-cent tolerance."""
+    try:
+        return abs(float(left or 0.0) - float(right or 0.0)) < tolerance
+    except (TypeError, ValueError):
+        return False
+
+
+def _rate_eq(left: Any, right: Any) -> bool:
+    """Compare locked commission rates at the same precision as ``normalize_rate``."""
+    try:
+        return round(float(left or 0.0), 6) == round(float(right or 0.0), 6)
+    except (TypeError, ValueError):
+        return False
+
+
+def _principal_record(customers: Optional[Dict[str, Any]],
+                      suppliers: Optional[Dict[str, Any]],
+                      principal_type: str, principal_id: str) -> Dict[str, Any]:
+    if principal_type == "customer":
+        return ((customers or {}).get(principal_id) or {})
+    if principal_type == "supplier":
+        return ((suppliers or {}).get(principal_id) or {})
+    return {}
+
+
+def connection_integrity(customers: Optional[Dict[str, Any]] = None,
+                         policies: Optional[Dict[str, Any]] = None,
+                         suppliers: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Audit agent↔principal affiliation, referral FK, and commission consistency.
+
+    Read-only. Flags (never silently repairs) any break in the locked-rate
+    chain: one active affiliation per principal, ``referring_agent_id`` matching
+    that affiliation, invitation rate snapshot matching the affiliation, and
+    accrued commission matching ``premium_basis × locked_rate``.
+    """
+    with _LOCK:
+        _hydrate_from_db()
+        issues: List[Dict[str, Any]] = []
+        connections: List[Dict[str, Any]] = []
+        customers = customers or {}
+        policies = policies or {}
+        suppliers = suppliers or {}
+
+        def _issue(severity: str, code: str, message: str, **extra: Any) -> None:
+            row = {"severity": severity, "code": code, "message": message}
+            row.update(extra)
+            issues.append(row)
+
+        # 1) At most one active affiliation per principal.
+        active_keys: Dict[Tuple[str, str], List[str]] = {}
+        for aff in AFFILIATIONS.values():
+            if aff.get("status") != "active":
+                continue
+            key = (aff.get("principal_type"), aff.get("principal_id"))
+            active_keys.setdefault(key, []).append(aff.get("id"))
+        for (ptype, pid), ids in active_keys.items():
+            if len(ids) > 1:
+                _issue("error", "duplicate_active_affiliation",
+                       "Principal has more than one active affiliation",
+                       principal_type=ptype, principal_id=pid, affiliation_ids=ids)
+
+        # 2) Per-affiliation locked-rate + referral + commission checks.
+        for aff in AFFILIATIONS.values():
+            ptype = aff.get("principal_type")
+            pid = aff.get("principal_id")
+            rec = _principal_record(customers, suppliers, ptype, pid)
+            referring = rec.get("referring_agent_id")
+            rate = float(aff.get("commission_rate") or 0.0)
+            inv = _find_invitation(aff.get("source_invitation_code") or "")
+            invitation_rate = inv.get("commission_rate") if inv else None
+            rate_locked_ok = True
+            if inv is not None and invitation_rate is not None:
+                rate_locked_ok = _rate_eq(rate, invitation_rate)
+                if not rate_locked_ok:
+                    _issue("error", "rate_lock_drift",
+                           "Affiliation rate does not match the invitation locked rate",
+                           affiliation_id=aff.get("id"), agent_id=aff.get("agent_id"),
+                           principal_type=ptype, principal_id=pid,
+                           affiliation_rate=rate, invitation_rate=invitation_rate,
+                           invitation_code=aff.get("source_invitation_code"))
+
+            if aff.get("agent_id") not in AGENTS:
+                _issue("error", "unknown_agent",
+                       "Affiliation points at an unknown agent",
+                       affiliation_id=aff.get("id"), agent_id=aff.get("agent_id"),
+                       principal_type=ptype, principal_id=pid)
+
+            if ptype in ("customer", "supplier"):
+                if not rec:
+                    _issue("warning", "missing_principal_record",
+                           "Affiliated principal is not in the live register",
+                           affiliation_id=aff.get("id"), agent_id=aff.get("agent_id"),
+                           principal_type=ptype, principal_id=pid)
+                elif referring != aff.get("agent_id"):
+                    if not referring:
+                        _issue("error", "missing_referring_agent",
+                               "Active affiliation has no referring_agent_id on the principal",
+                               affiliation_id=aff.get("id"), agent_id=aff.get("agent_id"),
+                               principal_type=ptype, principal_id=pid)
+                    else:
+                        _issue("error", "referring_agent_mismatch",
+                               "Principal referring_agent_id does not match the active affiliation",
+                               affiliation_id=aff.get("id"), agent_id=aff.get("agent_id"),
+                               referring_agent_id=referring,
+                               principal_type=ptype, principal_id=pid)
+
+            aff_comms = [c for c in COMMISSIONS.values() if c.get("affiliation_id") == aff.get("id")]
+            for comm in aff_comms:
+                if comm.get("agent_id") != aff.get("agent_id"):
+                    _issue("error", "commission_agent_mismatch",
+                           "Commission agent_id does not match the affiliation",
+                           affiliation_id=aff.get("id"), commission_id=comm.get("id"),
+                           agent_id=aff.get("agent_id"), commission_agent_id=comm.get("agent_id"))
+                if not _rate_eq(comm.get("rate"), rate):
+                    _issue("error", "commission_rate_drift",
+                           "Commission rate does not match the locked affiliation rate",
+                           affiliation_id=aff.get("id"), commission_id=comm.get("id"),
+                           agent_id=aff.get("agent_id"),
+                           affiliation_rate=rate, commission_rate=comm.get("rate"))
+
+            premium_basis = 0.0
+            policy_count = 0
+            if ptype == "customer":
+                cust_policies = [p for p in policies.values()
+                                 if p.get("customer_id") == pid and _policy_drives_commission(p)]
+                policy_count = len(cust_policies)
+                premium_basis = round(sum(
+                    float(p.get("annual_premium") or p.get("premium") or 0)
+                    for p in cust_policies), 2)
+            accrued = round(sum(float(c.get("amount") or 0) for c in aff_comms), 2)
+            expected = round(premium_basis * rate, 2) if (aff.get("commission_basis") or "premium") == "premium" else accrued
+            commission_ok = _money_eq(expected, accrued)
+            if aff.get("status") == "active" and ptype == "customer" and not commission_ok:
+                agent = AGENTS.get(aff.get("agent_id") or "")
+                if accrued > expected + 0.015:
+                    _issue("error", "commission_overage",
+                           "Accrued commission exceeds premium_basis × locked rate",
+                           affiliation_id=aff.get("id"), agent_id=aff.get("agent_id"),
+                           principal_id=pid, expected=expected, accrued=accrued)
+                elif agent and agent.get("status") == "suspended":
+                    _issue("warning", "suspended_agent_shortfall",
+                           "Suspended agent has not accrued the full expected commission",
+                           affiliation_id=aff.get("id"), agent_id=aff.get("agent_id"),
+                           principal_id=pid, expected=expected, accrued=accrued)
+                else:
+                    _issue("warning", "commission_shortfall",
+                           "Accrued commission is below premium_basis × locked rate",
+                           affiliation_id=aff.get("id"), agent_id=aff.get("agent_id"),
+                           principal_id=pid, expected=expected, accrued=accrued)
+
+            if ptype == "customer":
+                connections.append({
+                    "affiliation_id": aff.get("id"),
+                    "agent_id": aff.get("agent_id"),
+                    "customer_id": pid,
+                    "customer_name": rec.get("name") or rec.get("first_name") or "Affiliated customer",
+                    "status": aff.get("status"),
+                    "invitation_code": aff.get("source_invitation_code"),
+                    "locked_rate": rate,
+                    "invitation_rate": invitation_rate,
+                    "rate_locked_consistent": rate_locked_ok,
+                    "policy_count": policy_count,
+                    "premium_basis": premium_basis,
+                    "expected_commission": expected,
+                    "accrued_commission": accrued,
+                    "commission_consistent": commission_ok,
+                    "referring_agent_id": referring,
+                    "referral_consistent": referring == aff.get("agent_id"),
+                })
+
+        # 3) Orphan referring_agent_id (principal claims an agent with no affiliation).
+        for cid, rec in customers.items():
+            if not isinstance(rec, dict):
+                continue
+            referring = rec.get("referring_agent_id")
+            if not referring:
+                continue
+            key = ("customer", cid)
+            aid = _ACTIVE_AFFIL.get(key)
+            aff = AFFILIATIONS.get(aid) if aid else None
+            if not aff:
+                _issue("error", "orphan_referring_agent",
+                       "Customer referring_agent_id has no matching active affiliation",
+                       principal_type="customer", principal_id=cid,
+                       referring_agent_id=referring)
+        for sid, rec in suppliers.items():
+            if not isinstance(rec, dict):
+                continue
+            referring = rec.get("referring_agent_id")
+            if not referring:
+                continue
+            key = ("supplier", sid)
+            aid = _ACTIVE_AFFIL.get(key)
+            aff = AFFILIATIONS.get(aid) if aid else None
+            if not aff:
+                _issue("error", "orphan_referring_agent",
+                       "Supplier referring_agent_id has no matching active affiliation",
+                       principal_type="supplier", principal_id=sid,
+                       referring_agent_id=referring)
+
+        errors = len([i for i in issues if i["severity"] == "error"])
+        warnings = len([i for i in issues if i["severity"] == "warning"])
+        connections.sort(key=lambda r: (r.get("agent_id") or "", r.get("customer_id") or ""))
+        return {
+            "ok": errors == 0 and verify_ledger_integrity(),
+            "ledger_intact": verify_ledger_integrity(),
+            "checked": {
+                "affiliations": len(AFFILIATIONS),
+                "customers": len(customers),
+                "suppliers": len(suppliers),
+                "commissions": len(COMMISSIONS),
+                "connections": len(connections),
+            },
+            "issue_counts": {"error": errors, "warning": warnings, "total": len(issues)},
+            "issues": issues,
+            "connections": connections,
+            "currency": "USD",
+        }
+
+
+def repair_referring_links(customers: Optional[Dict[str, Any]] = None,
+                           suppliers: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Fill missing ``referring_agent_id`` from active affiliations.
+
+    Conservative: never overwrites a conflicting FK (those stay as integrity
+    errors for an operator to resolve). Mutates the in-memory principal
+    records in place and mirrors to durable tables when DB mode is on.
+    """
+    with _LOCK:
+        _hydrate_from_db(force=True)
+        repaired: List[Dict[str, Any]] = []
+        skipped: List[Dict[str, Any]] = []
+        customers = customers or {}
+        suppliers = suppliers or {}
+
+        for aff in AFFILIATIONS.values():
+            if aff.get("status") != "active":
+                continue
+            ptype = aff.get("principal_type")
+            pid = aff.get("principal_id")
+            agent_id = aff.get("agent_id")
+            rec = _principal_record(customers, suppliers, ptype, pid)
+            if not rec or not agent_id:
+                continue
+            current = rec.get("referring_agent_id")
+            if current == agent_id:
+                continue
+            if current:
+                skipped.append({
+                    "principal_type": ptype, "principal_id": pid,
+                    "affiliation_id": aff.get("id"),
+                    "agent_id": agent_id, "referring_agent_id": current,
+                    "reason": "conflicting referring_agent_id left unchanged",
+                })
+                continue
+            rec["referring_agent_id"] = agent_id
+            persist_referring_agent(ptype, pid, agent_id)
+            repaired.append({
+                "principal_type": ptype, "principal_id": pid,
+                "affiliation_id": aff.get("id"), "agent_id": agent_id,
+            })
+
+        return {
+            "repaired": len(repaired),
+            "skipped": len(skipped),
+            "items": repaired,
+            "conflicts": skipped,
+        }
