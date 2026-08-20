@@ -36,6 +36,15 @@ from services.document_processing_service import (
 BASE_URL = os.environ.get("TEST_BASE_URL", "http://localhost:8000")
 
 
+def test_ffmpeg_argv_whitelists_file_and_crypto_only():
+    argv = DocumentProcessingService._ffmpeg_argv("-i", "src.mp4", "dst.mp3")
+    assert argv[0] == "ffmpeg"
+    assert "-protocol_whitelist" in argv
+    assert argv[argv.index("-protocol_whitelist") + 1] == "file,crypto"
+    assert "-nostdin" in argv
+    assert "-hide_banner" in argv
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _admin_session():

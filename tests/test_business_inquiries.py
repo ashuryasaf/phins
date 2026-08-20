@@ -619,3 +619,66 @@ def test_db_mode_persist_failure_rejects_public_submission(monkeypatch):
     assert status == 503
     assert "error" in body
     assert len(portal.BUSINESS_INQUIRIES) == before
+
+
+def test_business_inquiry_notify_limiter_caps_ip_and_mailbox(monkeypatch):
+    monkeypatch.setenv("PHINS_BUSINESS_INQUIRY_NOTIFY_MAX_PER_IP", "1")
+    monkeypatch.setenv("PHINS_BUSINESS_INQUIRY_NOTIFY_MAX_PER_MAILBOX", "1")
+    monkeypatch.setenv("PHINS_BUSINESS_INQUIRY_NOTIFY_WINDOW_SECONDS", "600")
+    portal.reset_business_inquiry_notify_hits()
+    assert portal.business_inquiry_notify_allowed("ip", "203.0.113.9") is True
+    assert portal.business_inquiry_notify_allowed("ip", "203.0.113.9") is False
+    assert portal.business_inquiry_notify_allowed("mailbox", "once@example.com") is True
+    assert portal.business_inquiry_notify_allowed("mailbox", "once@example.com") is False
+    assert portal.business_inquiry_notify_allowed("mailbox", "other@example.com") is True
+
+
+def test_inquiry_notify_skips_mail_when_source_ip_limited(monkeypatch):
+    captured = []
+
+    class _FakeResult:
+        success = True
+        error_message = None
+
+    class _FakeNotificationService:
+        def send(self, request):
+            captured.append(request)
+            return _FakeResult()
+
+    monkeypatch.setenv("PHINS_BUSINESS_INQUIRY_NOTIFY_MAX_PER_IP", "1")
+    monkeypatch.setenv("PHINS_BUSINESS_INQUIRY_NOTIFY_MAX_PER_MAILBOX", "200")
+    portal.reset_business_inquiry_notify_hits()
+    monkeypatch.setattr(
+        portal,
+        "_resolve_business_inquiry_notify_emails",
+        lambda: ["ops@phins.ai"],
+    )
+    monkeypatch.setattr(
+        "services.notification_service.get_notification_service",
+        lambda: _FakeNotificationService(),
+    )
+
+    record = {
+        "id": "BRI-209901-RATELIM1",
+        "inquiry_type": "contact",
+        "name": "Rate Limit",
+        "email": "rate.limit@example.com",
+        "organization": "Org",
+        "audience": "other",
+        "interest": "platform",
+        "message": "hello",
+        "status": "new",
+        "created_at": "2099-01-01T00:00:00",
+        "_source_ip": "198.51.100.20",
+    }
+    first = portal._notify_business_inquiry_received(dict(record))
+    assert first.get("skipped") is None
+    assert first.get("sender_confirmation", {}).get("sent") is True
+    first_count = len(captured)
+    assert first_count >= 1
+
+    second = portal._notify_business_inquiry_received(
+        dict(record, id="BRI-209901-RATELIM2")
+    )
+    assert second.get("skipped") == "source_rate_limited"
+    assert len(captured) == first_count

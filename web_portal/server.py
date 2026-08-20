@@ -7453,6 +7453,22 @@ def repair_billing_pending_pipeline(
     return repair_report
 
 
+def public_portal_base_url() -> str:
+    """Public origin for customer-facing email and invitation links.
+
+    Prefers ``BASE_URL``, then ``WEBHOOK_BASE_URL``. In test mode, falls back
+    to ``TEST_BASE_URL``. Returns empty when unset so callers can emit a
+    relative path instead of a hardcoded production host.
+    """
+    for key in ('BASE_URL', 'WEBHOOK_BASE_URL'):
+        value = str(os.environ.get(key) or '').strip().rstrip('/')
+        if value:
+            return value
+    if str(os.environ.get('PHINS_TEST_MODE', '')).strip().lower() in ('1', 'true', 'yes', 'y'):
+        return str(os.environ.get('TEST_BASE_URL') or '').strip().rstrip('/')
+    return ''
+
+
 def send_admin_customer_outreach(
     customer_id: str,
     *,
@@ -7475,7 +7491,7 @@ def send_admin_customer_outreach(
     if not customer_id:
         return {'success': False, 'error': 'customer_id is required'}
 
-    portal_base = (os.environ.get('BASE_URL') or 'https://phins-portal-production.up.railway.app').strip().rstrip('/')
+    portal_base = public_portal_base_url()
     login_url = f"{portal_base}/billing.html" if portal_base else '/billing.html'
 
     customer = CUSTOMERS.get(customer_id)
@@ -8442,6 +8458,54 @@ BUSINESS_INQUIRY_INTERESTS = (
 )
 BUSINESS_INQUIRY_STATUSES = ('new', 'contacted', 'qualified', 'closed')
 
+# Sliding-window caps for inquiry notify mail (admin alerts + sender confirm).
+# Public intake is otherwise only covered by the global request limiter.
+BUSINESS_INQUIRY_NOTIFY_HITS: Dict[str, List[float]] = {}
+
+
+def reset_business_inquiry_notify_hits() -> None:
+    """Clear inquiry-notify rate-limit buckets (tests)."""
+    BUSINESS_INQUIRY_NOTIFY_HITS.clear()
+
+
+def _business_inquiry_notify_limits() -> Tuple[int, int, float]:
+    test_mode = str(os.environ.get('PHINS_TEST_MODE', '')).strip().lower() in (
+        '1', 'true', 'yes', 'y',
+    )
+
+    def _int(name: str, default: int) -> int:
+        raw = os.environ.get(name)
+        if raw is None or str(raw).strip() == '':
+            return default
+        try:
+            return max(1, int(raw))
+        except (TypeError, ValueError):
+            return default
+
+    max_ip = _int('PHINS_BUSINESS_INQUIRY_NOTIFY_MAX_PER_IP', 200 if test_mode else 5)
+    max_mailbox = _int('PHINS_BUSINESS_INQUIRY_NOTIFY_MAX_PER_MAILBOX', 200 if test_mode else 3)
+    window = float(_int('PHINS_BUSINESS_INQUIRY_NOTIFY_WINDOW_SECONDS', 600))
+    return max_ip, max_mailbox, window
+
+
+def business_inquiry_notify_allowed(kind: str, key: str) -> bool:
+    """Sliding-window allow for inquiry notify emails. Increments on allow."""
+    ident = str(key or '').strip().lower()
+    if not ident:
+        return False
+    max_ip, max_mailbox, window = _business_inquiry_notify_limits()
+    limit = max_ip if kind == 'ip' else max_mailbox
+    now = time.time()
+    bucket_key = f'{kind}:{ident}'
+    with STATE_LOCK:
+        hits = [ts for ts in BUSINESS_INQUIRY_NOTIFY_HITS.get(bucket_key, []) if now - ts < window]
+        if len(hits) >= limit:
+            BUSINESS_INQUIRY_NOTIFY_HITS[bucket_key] = hits
+            return False
+        hits.append(now)
+        BUSINESS_INQUIRY_NOTIFY_HITS[bucket_key] = hits
+        return True
+
 
 def generate_business_inquiry_id() -> str:
     """Generate a unique business-relations inquiry ID (BRI prefix)."""
@@ -8806,13 +8870,12 @@ def _notify_business_inquiry_sender_confirmation(
         result['error'] = error
         if ok:
             print(
-                f"[BUSINESS-RELATIONS] Sender confirmation sent for "
-                f"{record.get('id')} to {recipient}"
+                f"[BUSINESS-RELATIONS] Sender confirmation sent for {record.get('id')}"
             )
         else:
             print(
                 f"[BUSINESS-RELATIONS] Sender confirmation failed for "
-                f"{record.get('id')} to {recipient}: {error}"
+                f"{record.get('id')}: {error}"
             )
     except Exception as exc:
         result['error'] = str(exc)
@@ -8838,10 +8901,28 @@ def _notify_business_inquiry_received(record: Dict[str, Any]) -> Dict[str, Any]:
 
         notification_service = get_notification_service()
 
-        # 1) Welcome + confirmation to the visitor (always attempt when email valid).
-        result['sender_confirmation'] = _notify_business_inquiry_sender_confirmation(
-            record, notification_service=notification_service
-        )
+        source_ip = str(record.get('_source_ip') or '').strip()
+        if source_ip and not business_inquiry_notify_allowed('ip', source_ip):
+            print(
+                f"[BUSINESS-RELATIONS] Inquiry notify skipped for {record.get('id')} "
+                f"(source rate-limited)"
+            )
+            result['skipped'] = 'source_rate_limited'
+            return result
+
+        sender_email = sanitize_input(str(record.get('email') or ''), 254).lower()
+        if sender_email and not business_inquiry_notify_allowed('mailbox', sender_email):
+            result['sender_confirmation'] = {
+                'attempted': False,
+                'recipient': None,
+                'sent': False,
+                'error': 'mailbox_rate_limited',
+            }
+        else:
+            # 1) Welcome + confirmation to the visitor (when email valid).
+            result['sender_confirmation'] = _notify_business_inquiry_sender_confirmation(
+                record, notification_service=notification_service
+            )
 
         # 2) Admin alert with full inquiry details.
         recipients = _resolve_business_inquiry_notify_emails()
@@ -8862,9 +8943,11 @@ def _notify_business_inquiry_received(record: Dict[str, Any]) -> Dict[str, Any]:
             'inquiry_type': record.get('inquiry_type'),
             'audience': record.get('audience'),
             'interest': record.get('interest'),
-            'visitor_email': record.get('email'),
         }
         for recipient in recipients:
+            if not business_inquiry_notify_allowed('mailbox', recipient):
+                result['failed'].append({'error': 'mailbox_rate_limited'})
+                continue
             ok, error = _send_business_inquiry_email(
                 recipient=recipient,
                 subject=subject,
@@ -8876,17 +8959,17 @@ def _notify_business_inquiry_received(record: Dict[str, Any]) -> Dict[str, Any]:
             if ok:
                 result['sent'].append(recipient)
             else:
-                result['failed'].append({'recipient': recipient, 'error': error})
+                result['failed'].append({'error': error})
 
         if result['sent']:
             print(
                 f"[BUSINESS-RELATIONS] Admin alert sent for {record.get('id')} "
-                f"to {', '.join(result['sent'])}"
+                f"({len(result['sent'])} recipient(s))"
             )
         if result['failed']:
             print(
-                f"[BUSINESS-RELATIONS] Admin alert partial/failed for {record.get('id')}: "
-                f"{result['failed']}"
+                f"[BUSINESS-RELATIONS] Admin alert partial/failed for {record.get('id')} "
+                f"({len(result['failed'])} failure(s))"
             )
     except Exception as exc:
         print(f"[BUSINESS-RELATIONS] Inquiry notification error: {exc}")
@@ -31032,6 +31115,7 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
                 notify_record = dict(record)
+                notify_record['_source_ip'] = client_ip
 
             # Admin alert + sender welcome/confirmation after durable write
             # (best-effort; never block the 200).
@@ -33308,9 +33392,11 @@ For claims or questions, please contact:
                 # Also save to persistent file for Railway deployment persistence
                 save_invitation_codes_to_file()
                 
-                # Generate registration link
-                base_url = os.environ.get('BASE_URL', 'https://phins-portal-production.up.railway.app')
-                registration_link = f"{base_url}/register.html?code={code}"
+                # Generate registration link from configured public origin
+                origin = public_portal_base_url()
+                registration_link = (
+                    f"{origin}/register.html?code={code}" if origin else f"/register.html?code={code}"
+                )
                 
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({

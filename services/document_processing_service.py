@@ -1668,6 +1668,16 @@ class DocumentProcessingService:
     def _ffmpeg_available() -> bool:
         return shutil.which('ffmpeg') is not None
 
+    # Refuse concat/http/file-inclusion protocols on untrusted uploads.
+    _FFMPEG_SAFE_PREFIX = (
+        '-hide_banner', '-nostdin', '-y',
+        '-protocol_whitelist', 'file,crypto',
+    )
+
+    @classmethod
+    def _ffmpeg_argv(cls, *args: str) -> List[str]:
+        return ['ffmpeg', *cls._FFMPEG_SAFE_PREFIX, *args]
+
     def _ffmpeg_extract_audio(self, raw: bytes) -> Optional[bytes]:
         """Extract the audio track as MP3 via ffmpeg; None when unavailable."""
         if not raw or len(raw) > self._VIDEO_MAX_BYTES or not self._ffmpeg_available():
@@ -1680,8 +1690,9 @@ class DocumentProcessingService:
                 src = f.name
             dst = src + '.mp3'
             result = subprocess.run(
-                ['ffmpeg', '-y', '-i', src, '-vn', '-acodec', 'libmp3lame',
-                 '-b:a', '64k', dst],
+                self._ffmpeg_argv(
+                    '-i', src, '-vn', '-acodec', 'libmp3lame', '-b:a', '64k', dst,
+                ),
                 capture_output=True, timeout=300,
             )
             if result.returncode != 0 or not os.path.exists(dst):
@@ -1712,10 +1723,12 @@ class DocumentProcessingService:
                 src = f.name
             frames_dir = tempfile.mkdtemp(prefix='phins_frames_')
             result = subprocess.run(
-                ['ffmpeg', '-y', '-i', src, '-vf',
-                 f"select='eq(pict_type\\,I)',scale=1280:-1",
-                 '-vsync', 'vfr', '-frames:v', str(self._VIDEO_KEYFRAME_COUNT),
-                 os.path.join(frames_dir, 'frame_%03d.png')],
+                self._ffmpeg_argv(
+                    '-i', src, '-vf',
+                    f"select='eq(pict_type\\,I)',scale=1280:-1",
+                    '-vsync', 'vfr', '-frames:v', str(self._VIDEO_KEYFRAME_COUNT),
+                    os.path.join(frames_dir, 'frame_%03d.png'),
+                ),
                 capture_output=True, timeout=300,
             )
             if result.returncode != 0:

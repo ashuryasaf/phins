@@ -14,7 +14,12 @@ from __future__ import annotations
 import pytest
 
 from services.assessment_center_service import AssessmentCenterService
-from services.assessment_ai_service import AssessmentAIService
+from services.assessment_ai_service import (
+    AssessmentAIService,
+    assessment_ai_redact_enabled,
+    redact_evidence_for_model,
+    redact_risk_for_model,
+)
 
 
 @pytest.fixture
@@ -109,3 +114,38 @@ class TestAdjustableReportingFilters:
             "CUST-1", "describe_data", options={"filters": {"provider": "כלל"}}
         )
         assert filtered["description"]["fact_count"] >= 1
+
+
+class TestAssessmentAiRedaction:
+    def test_redact_evidence_drops_label_and_document_name(self):
+        redacted = redact_evidence_for_model([
+            {
+                "label": "national_id",
+                "document_name": "passport-dana.pdf",
+                "source": "upload",
+                "value": "123456782",
+                "document_id": "DOC-1",
+            }
+        ])
+        assert redacted == [{"value": "123456782", "document_id": "DOC-1"}]
+
+    def test_redact_risk_keeps_only_safe_keys(self):
+        redacted = redact_risk_for_model({
+            "level": "high",
+            "score": 0.81,
+            "summary": "Dana has diabetes per passport-dana.pdf",
+            "notes": "reviewer: call the customer",
+        })
+        assert redacted == {"level": "high", "score": 0.81}
+
+    def test_redact_defaults_on_in_production(self, monkeypatch):
+        monkeypatch.delenv("PHINS_ASSESSMENT_AI_REDACT", raising=False)
+        monkeypatch.setenv("PHINS_ENVIRONMENT", "production")
+        assert assessment_ai_redact_enabled() is True
+        monkeypatch.setenv("PHINS_ENVIRONMENT", "development")
+        assert assessment_ai_redact_enabled() is False
+        monkeypatch.setenv("PHINS_ASSESSMENT_AI_REDACT", "0")
+        monkeypatch.setenv("PHINS_ENVIRONMENT", "production")
+        assert assessment_ai_redact_enabled() is False
+        monkeypatch.setenv("PHINS_ASSESSMENT_AI_REDACT", "1")
+        assert assessment_ai_redact_enabled() is True

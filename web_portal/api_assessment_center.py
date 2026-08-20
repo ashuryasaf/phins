@@ -92,13 +92,14 @@ def _security_scan_upload(
 ) -> Optional[str]:
     """Scan an upload payload; return a threat summary when it must be blocked.
 
-    Returns ``None`` when the payload is safe (or when the scanner is
-    unavailable, preserving the platform's graceful-degradation convention).
+    Returns ``None`` when the payload is safe. Scanner import or runtime
+    failures fail closed so a broken scanner cannot silently accept malware.
     """
     try:
         from security.file_scanner import scan_base64_payload
     except ImportError:
-        return None
+        logger.warning("Assessment upload scan unavailable; rejecting upload")
+        return "security_scanner_unavailable"
     try:
         verdict = scan_base64_payload(
             file_data_b64,
@@ -107,9 +108,9 @@ def _security_scan_upload(
             # Effectively defer size policy to DocumentProcessingService.
             max_size=1024 * 1024 * 1024,
         )
-    except Exception as exc:  # pragma: no cover - scanner must never 500 uploads
-        logger.warning("Assessment upload scan errored (allowing): %s", exc)
-        return None
+    except Exception as exc:  # pragma: no cover - scanner errors must not 500
+        logger.warning("Assessment upload scan errored (rejecting): %s", exc)
+        return "security_scan_failed"
     blocking = [
         t for t in verdict.threats
         if t.startswith(_BLOCKING_THREAT_PREFIXES)

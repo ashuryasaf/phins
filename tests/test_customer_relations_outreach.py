@@ -177,6 +177,23 @@ def test_helper_unknown_customer():
     assert report["error"] == "Customer not found"
 
 
+def test_public_portal_base_url_never_hardcodes_railway(monkeypatch):
+    import web_portal.server as portal
+
+    monkeypatch.delenv("BASE_URL", raising=False)
+    monkeypatch.delenv("WEBHOOK_BASE_URL", raising=False)
+    origin = portal.public_portal_base_url()
+    assert "railway.app" not in origin
+    test_base = str(os.environ.get("TEST_BASE_URL") or "").rstrip("/")
+    assert origin in ("", test_base)
+    login_url = f"{origin}/billing.html" if origin else "/billing.html"
+    assert "railway.app" not in login_url
+    assert login_url in (f"{test_base}/billing.html", "/billing.html")
+
+    monkeypatch.setenv("BASE_URL", "https://portal.example.test/")
+    assert portal.public_portal_base_url() == "https://portal.example.test"
+
+
 def _http(method, url, data=None, token=None):
     headers = {"Content-Type": "application/json"}
     if token:

@@ -362,6 +362,48 @@ class TestAssessmentUploadScan:
         assert resp.status_code == 400
         assert "dangerous_extension" in resp.json()["details"]
 
+    def test_scanner_import_error_rejects_upload(self, monkeypatch):
+        import builtins
+        import web_portal.api_assessment_center as ac
+
+        real_import = builtins.__import__
+
+        def _blocked(name, *args, **kwargs):
+            if name == "security.file_scanner":
+                raise ImportError("scanner missing")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", _blocked)
+        assert ac._security_scan_upload(
+            _b64("hello"), "intake.txt", "text/plain", "127.0.0.1"
+        ) == "security_scanner_unavailable"
+
+    def test_scanner_exception_rejects_upload(self, monkeypatch):
+        import web_portal.api_assessment_center as ac
+
+        def _boom(*_a, **_k):
+            raise RuntimeError("scanner crashed")
+
+        monkeypatch.setattr("security.file_scanner.scan_base64_payload", _boom)
+        assert ac._security_scan_upload(
+            _b64("hello"), "intake.txt", "text/plain", "127.0.0.1"
+        ) == "security_scan_failed"
+
+        headers = _admin_headers()
+        monkeypatch.setattr(ac, "_security_scan_upload", lambda *a, **k: "security_scan_failed")
+        resp = requests.post(
+            f"{BASE_URL}/api/assessment-center/upload",
+            json={
+                "file_name": "intake.txt",
+                "file_data_b64": _b64("hello"),
+                "mime_type": "text/plain",
+                "customer_id": "CUST-SCAN-EXC",
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "File rejected by security scan"
+
     def test_clean_upload_still_works(self):
         headers = _admin_headers()
         resp = requests.post(

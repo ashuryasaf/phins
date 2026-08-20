@@ -101,6 +101,9 @@ class OpenAICompatibleTranscriptionProvider(AudioTranscriptionProvider):
         if language_hint:
             data["language"] = language_hint
 
+        from security.network import assert_safe_provider_url
+
+        assert_safe_provider_url(self.endpoint)
         start = time.time()
         response = requests.post(
             self.endpoint,
@@ -176,6 +179,12 @@ def get_transcription_provider() -> AudioTranscriptionProvider:
         endpoint = os.environ.get("PHINS_TRANSCRIPTION_ENDPOINT", "").strip()
         api_key = os.environ.get("PHINS_TRANSCRIPTION_API_KEY", "").strip()
         if endpoint and api_key:
+            try:
+                from security.network import assert_safe_provider_url
+                assert_safe_provider_url(endpoint)
+            except ValueError as exc:
+                logger.warning("Transcription endpoint rejected: %s", exc)
+                return DisabledTranscriptionProvider()
             return OpenAICompatibleTranscriptionProvider(
                 endpoint=endpoint,
                 api_key=api_key,

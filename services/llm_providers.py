@@ -195,7 +195,9 @@ class OpenAICompatibleProvider(LLMProvider):
 
     def _chat(self, messages: List[Dict[str, str]], model: str) -> str:
         import requests
+        from security.network import assert_safe_provider_url
 
+        assert_safe_provider_url(self.endpoint)
         start = time.time()
         response = requests.post(
             self.endpoint,
@@ -330,6 +332,12 @@ def get_llm_provider() -> LLMProvider:
     endpoint = os.environ.get("PHINS_ASSESSMENT_AI_ENDPOINT", "").strip()
     api_key = os.environ.get("PHINS_ASSESSMENT_AI_API_KEY", "").strip()
     if not endpoint or not api_key:
+        return DisabledLLMProvider()
+    try:
+        from security.network import assert_safe_provider_url
+        assert_safe_provider_url(endpoint)
+    except ValueError as exc:
+        logger.warning("Assessment LLM endpoint rejected: %s", exc)
         return DisabledLLMProvider()
     return OpenAICompatibleProvider(
         endpoint=endpoint,

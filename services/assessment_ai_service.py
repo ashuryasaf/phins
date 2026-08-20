@@ -24,8 +24,9 @@ Hard data-integrity guarantees:
   in every environment (including tests and air-gapped deployments).
 * **Audited.** Every invocation emits a structured audit record (prompt hash,
   mode, model, evidence document SHA-256s) so the reasoning step is traceable.
-* **Egress-aware.** When the live path is used, values can be redacted before
-  they ever leave the platform (``PHINS_ASSESSMENT_AI_REDACT``).
+* **Egress-aware.** Live-LLM payloads redact document names and fact labels
+  unless an operator explicitly disables ``PHINS_ASSESSMENT_AI_REDACT``.
+  Production defaults the flag on.
 
 Configuration (all optional; absence => deterministic offline mode):
 
@@ -33,7 +34,8 @@ Configuration (all optional; absence => deterministic offline mode):
 * ``PHINS_ASSESSMENT_AI_ENDPOINT``  - OpenAI-compatible chat completions URL.
 * ``PHINS_ASSESSMENT_AI_API_KEY``   - bearer key for that endpoint.
 * ``PHINS_ASSESSMENT_AI_MODEL``     - model id (default: ``hermes-4``).
-* ``PHINS_ASSESSMENT_AI_REDACT``    - "1"/"true" to redact fact values on egress.
+* ``PHINS_ASSESSMENT_AI_REDACT``    - "1"/"true" to redact labels and document
+  names on egress. Defaults on when ``PHINS_ENVIRONMENT=production``.
 * ``PHINS_ASSESSMENT_AI_TIMEOUT``   - request timeout seconds (default 20).
 """
 
@@ -55,6 +57,47 @@ _MAX_ADVISORY_CONFIDENCE = 0.4
 
 def _truthy(value: Optional[str]) -> bool:
     return str(value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _falsy(value: Optional[str]) -> bool:
+    return str(value or "").strip().lower() in ("0", "false", "no", "off")
+
+
+_REDACT_EVIDENCE_KEYS = frozenset({"label", "document_name", "source"})
+_RISK_SAFE_KEYS = frozenset({
+    "level", "score", "band", "category", "rating", "tier",
+})
+
+
+def assessment_ai_redact_enabled() -> bool:
+    """True when live-LLM egress should drop labels and document names.
+
+    Explicit ``PHINS_ASSESSMENT_AI_REDACT`` wins. Unset defaults to on in
+    production so a forgotten flag cannot leak customer filenames off-box.
+    """
+    raw = os.environ.get("PHINS_ASSESSMENT_AI_REDACT")
+    if raw is None or str(raw).strip() == "":
+        return str(os.environ.get("PHINS_ENVIRONMENT") or "").strip().lower() == "production"
+    if _falsy(raw):
+        return False
+    return _truthy(raw)
+
+
+def redact_evidence_for_model(evidence: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Drop fact labels and document names from an evidence trail."""
+    redacted: List[Dict[str, Any]] = []
+    for item in evidence or []:
+        if not isinstance(item, dict):
+            continue
+        redacted.append({k: v for k, v in item.items() if k not in _REDACT_EVIDENCE_KEYS})
+    return redacted
+
+
+def redact_risk_for_model(risk: Any) -> Dict[str, Any]:
+    """Keep numeric/category risk fields; drop free-text that may hold PII."""
+    if not isinstance(risk, dict):
+        return {}
+    return {k: v for k, v in risk.items() if k in _RISK_SAFE_KEYS}
 
 
 class AssessmentAIService:
@@ -189,13 +232,20 @@ class AssessmentAIService:
             customer_id=customer_id, prompt_version=template.prompt_id)
         if self.is_llm_enabled():
             try:
-                user_payload = json.dumps({
-                    "customer_id": customer_id,
+                evidence_for_model = evidence
+                risk_for_model = analysis_payload.get("risk")
+                egress: Dict[str, Any] = {
                     "analysis_type": analysis_payload.get("analysis_type"),
-                    "risk": analysis_payload.get("risk"),
-                    "evidence": evidence,
+                    "risk": risk_for_model,
+                    "evidence": evidence_for_model,
                     "known_contradictions": contradictions,
-                }, ensure_ascii=False, default=str)
+                }
+                if assessment_ai_redact_enabled():
+                    egress["evidence"] = redact_evidence_for_model(evidence)
+                    egress["risk"] = redact_risk_for_model(risk_for_model)
+                else:
+                    egress["customer_id"] = customer_id
+                user_payload = json.dumps(egress, ensure_ascii=False, default=str)
                 result = provider.structured_completion(
                     template.system_prompt,
                     user_payload,
@@ -510,19 +560,17 @@ class AssessmentAIService:
         from prompts import get_prompt
         from services.llm_providers import get_llm_provider
 
-        redact = _truthy(os.environ.get("PHINS_ASSESSMENT_AI_REDACT"))
         evidence_for_model = evidence
-        if redact:
-            evidence_for_model = [
-                {k: v for k, v in item.items() if k not in ("label",)}
-                for item in evidence
-            ]
+        risk_for_model = analysis_payload.get("risk")
+        if assessment_ai_redact_enabled():
+            evidence_for_model = redact_evidence_for_model(evidence)
+            risk_for_model = redact_risk_for_model(risk_for_model)
 
         template = get_prompt("narrative")
         user_payload = {
             "analysis_type": analysis_payload.get("analysis_type"),
             "evidence": evidence_for_model,
-            "risk": analysis_payload.get("risk"),
+            "risk": risk_for_model,
         }
         provider = get_llm_provider()
         provider.usage_hook = self._usage_hook(
