@@ -708,6 +708,14 @@
     <script>
         const token = localStorage.getItem('phins_token') || sessionStorage.getItem('authToken');
         let allCustomers = [];
+        function escHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
 
         async function loadStats() {
             try {
@@ -784,22 +792,23 @@
                 const stageBadge = getStageBadge(customer.pipeline_stage);
                 const needsRepair = customer.pipeline_stage === 'billing_pending'
                     || (customer.outstanding_bills && customer.outstanding_bills > 0);
+                const safeId = escHtml(customer.id);
                 const repairBtn = needsRepair
-                    ? `<button class="btn btn-sm btn-warning" onclick="repairCustomerBilling('${customer.id}')" title="Activate auto-pay and settle outstanding bills">🔧 Settle &amp; Auto-Pay</button>`
+                    ? `<button class="btn btn-sm btn-warning" data-customer-id="${safeId}" onclick="repairCustomerBilling(this.dataset.customerId)" title="Activate auto-pay and settle outstanding bills">🔧 Settle &amp; Auto-Pay</button>`
                     : '';
-                const contactBtn = `<button class="btn btn-sm btn-contact" onclick="openContactModal('${customer.id}')" title="Email or WhatsApp this customer">✉ Contact</button>`;
+                const contactBtn = `<button class="btn btn-sm btn-contact" data-customer-id="${safeId}" onclick="openContactModal(this.dataset.customerId)" title="Email or WhatsApp this customer">✉ Contact</button>`;
                 return `
                     <tr>
-                        <td><code>${customer.id}</code></td>
-                        <td><strong>${customer.name}</strong></td>
-                        <td>${customer.email}</td>
+                        <td><code>${safeId}</code></td>
+                        <td><strong>${escHtml(customer.name)}</strong></td>
+                        <td>${escHtml(customer.email)}</td>
                         <td>${stageBadge}</td>
                         <td>${customer.active_policies}/${customer.policies_count}</td>
-                        <td>$${customer.total_premium_due.toFixed(2)}</td>
-                        <td>$${customer.wallet_balance.toFixed(2)}</td>
+                        <td>$${Number(customer.total_premium_due || 0).toFixed(2)}</td>
+                        <td>$${Number(customer.wallet_balance || 0).toFixed(2)}</td>
                         <td>
                             <div class="row-actions">
-                                <button class="btn btn-sm btn-primary" onclick="validateCustomer('${customer.id}')">🔍 Validate</button>
+                                <button class="btn btn-sm btn-primary" data-customer-id="${safeId}" onclick="validateCustomer(this.dataset.customerId)">🔍 Validate</button>
                                 ${contactBtn}
                                 ${repairBtn}
                             </div>
@@ -832,7 +841,7 @@
                 'billing_pending': '<span class="badge badge-billing">💰 Billing Pending</span>',
                 'fully_active': '<span class="badge badge-active">✨ Fully Active</span>'
             };
-            return badges[stage] || `<span class="badge">${stage}</span>`;
+            return badges[stage] || `<span class="badge">${escHtml(stage)}</span>`;
         }
 
         async function validateCustomer(customerId) {
@@ -852,13 +861,13 @@
                 
                 if (data.errors.length > 0) {
                     html += `<div style="margin-bottom: 15px;"><strong>Errors:</strong><ul style="color: #dc3545;">`;
-                    data.errors.forEach(err => html += `<li>${err}</li>`);
+                    data.errors.forEach(err => html += `<li>${escHtml(err)}</li>`);
                     html += `</ul></div>`;
                 }
                 
                 if (data.warnings.length > 0) {
                     html += `<div style="margin-bottom: 15px;"><strong>Warnings:</strong><ul style="color: #856404;">`;
-                    data.warnings.forEach(warn => html += `<li>${warn}</li>`);
+                    data.warnings.forEach(warn => html += `<li>${escHtml(warn)}</li>`);
                     html += `</ul></div>`;
                 }
                 
@@ -870,8 +879,8 @@
                         <div class="check-item">
                             <div class="check-icon ${iconClass}">${icon}</div>
                             <div>
-                                <strong>${check.check}</strong>
-                                <div style="color: #666; font-size: 0.9rem;">${check.details || ''}</div>
+                                <strong>${escHtml(check.check)}</strong>
+                                <div style="color: #666; font-size: 0.9rem;">${escHtml(check.details || '')}</div>
                             </div>
                         </div>
                     `;
@@ -917,7 +926,7 @@
                     <div class="check-item">
                         <div class="check-icon ${r.valid ? 'pass' : 'fail'}">${r.valid ? '✓' : '✗'}</div>
                         <div>
-                            <strong>${r.name}</strong> <code>(${r.id})</code>
+                            <strong>${escHtml(r.name)}</strong> <code>(${escHtml(r.id)})</code>
                             <div style="color: #666; font-size: 0.9rem;">
                                 ${r.errors > 0 ? `❌ ${r.errors} errors ` : ''}
                                 ${r.warnings > 0 ? `⚠️ ${r.warnings} warnings` : ''}
@@ -967,7 +976,7 @@
 
             let html = `
                 <div style="padding: 15px; border-radius: 8px; margin-bottom: 20px; ${summaryBg}">
-                    <strong>${report.message || 'Repair complete'}</strong>
+                    <strong>${escHtml(report.message || 'Repair complete')}</strong>
                     <div style="margin-top: 8px; font-size: 0.95rem;">
                         Targeted: <strong>${report.targeted}</strong> ·
                         Bills settled: <strong>${report.bills_settled}</strong>
@@ -995,7 +1004,7 @@
                 html += `<div style="margin-bottom: 15px;"><strong>Issues encountered:</strong><ul style="color: #dc3545;">`;
                 report.errors.slice(0, 10).forEach(err => {
                     const cid = err.customer_id ? ` [${err.customer_id}]` : '';
-                    html += `<li>${err.error}${cid}</li>`;
+                    html += `<li>${escHtml(err.error)}${escHtml(cid)}</li>`;
                 });
                 html += `</ul></div>`;
             }
@@ -1013,7 +1022,7 @@
                         <div class="check-item">
                             <div class="check-icon ${passClass}">${icon}</div>
                             <div>
-                                <strong>${rec.name}</strong> <code>(${rec.customer_id})</code>
+                                <strong>${escHtml(rec.name)}</strong> <code>(${escHtml(rec.customer_id)})</code>
                                 <div style="color: #666; font-size: 0.9rem;">
                                     Stage: ${rec.stage_transition || (after.pipeline_stage || '—')} ·
                                     Bills: ${before.outstanding_bills || 0} → ${after.outstanding_bills || 0}
@@ -1021,7 +1030,7 @@
                                     Auto-pay policies: ${before.autopay_active_policies || 0} → ${after.autopay_active_policies || 0}
                                     ${rec.autopay_run ? ` · Charged: ${rec.autopay_run.processed} ($${(rec.autopay_run.total_amount || 0).toFixed(2)})` : ''}
                                 </div>
-                                ${(rec.errors || []).length ? `<div style="color: #dc3545; font-size: 0.85rem;">${rec.errors.join('; ')}</div>` : ''}
+                                ${(rec.errors || []).length ? `<div style="color: #dc3545; font-size: 0.85rem;">${escHtml(rec.errors.join('; '))}</div>` : ''}
                             </div>
                         </div>
                     `;
@@ -1148,24 +1157,26 @@
                 });
                 const data = await response.json().catch(() => ({}));
                 if (!response.ok || !data.success) {
-                    resultBox.innerHTML = `<div style="padding:12px;border-radius:8px;background:#f8d7da;color:#721c24;"><strong>${data.error || 'Contact failed'}</strong></div>`;
+                    resultBox.innerHTML = `<div style="padding:12px;border-radius:8px;background:#f8d7da;color:#721c24;"><strong>${escHtml(data.error || 'Contact failed')}</strong></div>`;
                     btn.disabled = false;
                     return;
                 }
                 const emailStatus = data.email ? (data.email.success ? 'Email delivered' : `Email failed: ${data.email.error_message || data.email.error_code}`) : 'Email skipped';
                 const waStatus = data.whatsapp ? (data.whatsapp.success ? 'WhatsApp delivered' : `WhatsApp failed: ${data.whatsapp.error_message || data.whatsapp.error_code}`) : 'WhatsApp skipped';
+                const recipientEmail = data.recipients && data.recipients.email ? data.recipients.email : '—';
+                const recipientWa = data.recipients && data.recipients.whatsapp ? data.recipients.whatsapp : '—';
                 resultBox.innerHTML = `
                     <div style="padding:12px;border-radius:8px;background:#d4edda;color:#155724;">
-                        <strong>Sent via ${data.channels}</strong>
+                        <strong>Sent via ${escHtml(data.channels)}</strong>
                         <div style="margin-top:6px;font-size:0.9rem;">
-                            ${emailStatus} · ${waStatus}<br>
-                            Recipients: ${data.recipients && data.recipients.email ? data.recipients.email : '—'}
-                            / ${data.recipients && data.recipients.whatsapp ? data.recipients.whatsapp : '—'}
+                            ${escHtml(emailStatus)} · ${escHtml(waStatus)}<br>
+                            Recipients: ${escHtml(recipientEmail)}
+                            / ${escHtml(recipientWa)}
                         </div>
                     </div>
                 `;
             } catch (err) {
-                resultBox.innerHTML = `<div style="padding:12px;border-radius:8px;background:#f8d7da;color:#721c24;"><strong>Contact failed: ${err.message}</strong></div>`;
+                resultBox.innerHTML = `<div style="padding:12px;border-radius:8px;background:#f8d7da;color:#721c24;"><strong>Contact failed: ${escHtml(err.message)}</strong></div>`;
             }
             btn.disabled = false;
         }

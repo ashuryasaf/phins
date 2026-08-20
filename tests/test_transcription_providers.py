@@ -75,6 +75,14 @@ def test_disabled_by_default(monkeypatch):
         provider.transcribe(b"audio")
 
 
+def test_factory_rejects_metadata_endpoint(monkeypatch):
+    monkeypatch.setenv("PHINS_TRANSCRIPTION_PROVIDER", "openai_compatible")
+    monkeypatch.setenv("PHINS_TRANSCRIPTION_ENDPOINT", "http://169.254.169.254/latest")
+    monkeypatch.setenv("PHINS_TRANSCRIPTION_API_KEY", "k")
+    provider = get_transcription_provider()
+    assert isinstance(provider, DisabledTranscriptionProvider)
+
+
 def test_openai_compatible_transcription(monkeypatch):
     _enable_provider(monkeypatch)
     provider = get_transcription_provider()

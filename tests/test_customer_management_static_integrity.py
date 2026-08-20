@@ -119,3 +119,18 @@ def test_customer_management_preserves_pipeline_stage_badges():
         "fully_active",
     ):
         assert f"'{stage}'" in html, f"missing stage badge {stage}"
+
+
+def test_customer_management_escapes_customer_fields():
+    html = _html()
+    assert "function escHtml" in html
+    assert "<strong>${customer.name}</strong>" not in html
+    assert "<td>${customer.email}</td>" not in html
+    assert "<code>${customer.id}</code>" not in html
+    assert "onclick=\"validateCustomer('${customer.id}')\"" not in html
+    assert "onclick=\"openContactModal('${customer.id}')\"" not in html
+    assert "onclick=\"repairCustomerBilling('${customer.id}')\"" not in html
+    assert "data-customer-id=" in html
+    assert "this.dataset.customerId" in html
+    assert "${escHtml(customer.name)}" in html
+    assert "${escHtml(customer.email)}" in html

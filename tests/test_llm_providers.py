@@ -106,6 +106,15 @@ def test_factory_openai_compatible_when_configured(monkeypatch):
     assert provider.escalation_model == "strong-model"
 
 
+def test_factory_rejects_metadata_and_remote_http_endpoints(monkeypatch):
+    monkeypatch.setenv("PHINS_ASSESSMENT_AI_ENABLED", "1")
+    monkeypatch.setenv("PHINS_ASSESSMENT_AI_API_KEY", "test-key")
+    monkeypatch.setenv("PHINS_ASSESSMENT_AI_ENDPOINT", "http://169.254.169.254/latest/meta-data/")
+    assert isinstance(get_llm_provider(), DisabledLLMProvider)
+    monkeypatch.setenv("PHINS_ASSESSMENT_AI_ENDPOINT", "http://evil.example/v1/chat")
+    assert isinstance(get_llm_provider(), DisabledLLMProvider)
+
+
 # ── Fake HTTP endpoint ────────────────────────────────────────────────────────
 
 class _FakeResponse:
