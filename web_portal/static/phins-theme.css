@@ -85,6 +85,8 @@
       #060d1f !important;
     border-top: 1px solid var(--phins-line) !important;
     box-shadow: 0 18px 40px rgba(2, 8, 23, 0.55) !important;
+    padding: 10px 12px 28px !important;
+    gap: 6px !important;
   }
 
   #mobile-nav.phins-nav a,
@@ -110,13 +112,13 @@
 
   #mobile-nav.phins-nav a.active,
   .phins-nav#mobile-nav a.active {
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, transparent 40%),
-      linear-gradient(180deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%) !important;
+    background: var(--phins-gold) !important;
     color: #071022 !important;
     -webkit-text-fill-color: #071022 !important;
-    border-color: rgba(227, 191, 111, 0.55) !important;
-    box-shadow: 0 6px 18px rgba(227, 191, 111, 0.32) !important;
+    border-color: rgba(247, 226, 160, 0.7) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      0 6px 18px rgba(227, 191, 111, 0.32) !important;
     font-family: 'Space Grotesk', 'Inter', sans-serif !important;
   }
 
@@ -140,9 +142,7 @@
   }
   #mobile-nav .assessments-nav-toggle.active,
   #mobile-nav .assessments-nav.open .assessments-nav-toggle {
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, transparent 40%),
-      linear-gradient(180deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%) !important;
+    background: var(--phins-gold) !important;
     color: #071022 !important;
   }
   #mobile-nav .assessments-nav-menu {

@@ -20,7 +20,7 @@ def test_assessments_nav_assets_exist():
     # old 135deg blue hatch does not stripe through the stacked chips.
     assert "#mobile-nav.phins-nav" in css
     assert "no 135deg stripe bleed" in css
-    assert "linear-gradient(180deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%)" in css
+    assert "background: var(--phins-gold) !important;" in css
     assert "#mobile-nav .assessments-nav-toggle" in css
 
 
