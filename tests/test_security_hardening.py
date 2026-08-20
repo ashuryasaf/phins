@@ -335,6 +335,51 @@ def test_secrets_policy_treats_railway_preview_env_as_non_production():
     assert any("SESSION_SECRET_KEY" in w for w in report.warnings)
 
 
+@pytest.mark.parametrize(
+    "name,expected",
+    (
+        ("pr-539", True),
+        ("phins-pr-539", True),
+        ("phins-pr-529-5eb7", True),
+        ("production", False),
+        ("staging", False),
+        ("phins-production", False),
+        ("", False),
+    ),
+)
+def test_is_railway_preview_environment_name_shapes(name, expected):
+    from security.secrets_policy import _is_railway_preview_environment
+
+    assert _is_railway_preview_environment(name) is expected
+
+
+@pytest.mark.parametrize(
+    "railway_env",
+    ("pr-539", "phins-pr-539", "phins-pr-529-5eb7"),
+)
+def test_secrets_policy_treats_service_prefixed_railway_preview_as_non_production(
+    railway_env,
+):
+    """Railway names PR environments ``phins-pr-539``, not only ``pr-539``.
+
+    Those environments inherit ``PHINS_ENVIRONMENT=production`` from the
+    parent service. The preview name must win so fail-closed secret policy
+    and PHINS_REQUIRE_DATABASE do not abort a PR deploy.
+    """
+    from security.secrets_policy import audit_environment_secrets, _is_production
+
+    environ = {
+        "RAILWAY_ENVIRONMENT": railway_env,
+        "PHINS_ENVIRONMENT": "production",
+        "SESSION_SECRET_KEY": "",
+        "ALLOW_LEGACY_DEMO_PASSWORDS": "true",
+    }
+    assert _is_production(environ) is False
+    report = audit_environment_secrets(environ)
+    assert report.production_mode is False
+    assert report.ok
+
+
 def test_secrets_policy_downgrades_forbidden_default_in_test_mode():
     """A forbidden-default value is an error in prod but only a warning in
     test/dev so the test runner still starts. Both conditions must appear

@@ -33,6 +33,13 @@ class DatabaseConfig:
     MAX_OVERFLOW = 10
     POOL_TIMEOUT = 30
     POOL_RECYCLE = 3600  # 1 hour
+    # TCP connect timeout for PostgreSQL. Without this, an unreachable
+    # Railway.internal host (typical on a freshly cloned PR environment
+    # whose Postgres is not ready, or whose DATABASE_URL still points at
+    # another environment) hangs until the kernel SYN retry budget —
+    # well past Railway's healthcheckTimeout — and the deploy is marked
+    # failed before the HTTP server ever binds.
+    CONNECT_TIMEOUT = 5
     
     # Query settings
     # WARNING: ECHO_SQL logs all SQL queries including sensitive data like passwords
@@ -106,6 +113,7 @@ class DatabaseConfig:
                 'max_overflow': cls.MAX_OVERFLOW,
                 'pool_timeout': cls.POOL_TIMEOUT,
                 'pool_recycle': cls.POOL_RECYCLE,
+                'connect_args': {'connect_timeout': cls.CONNECT_TIMEOUT},
             })
         else:
             # SQLite-specific options

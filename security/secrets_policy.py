@@ -55,9 +55,40 @@ class SecretReport:
         return not self.errors
 
 
+def _is_railway_preview_environment(name: str) -> bool:
+    """Return True for Railway PR-preview environment names.
+
+    Railway names these ``pr-539`` or ``<service>-pr-539`` (for example
+    ``phins-pr-539``). A startswith(``pr-``) check misses the service-prefixed
+    form, and PR environments inherit ``PHINS_ENVIRONMENT=production`` from
+    the parent service, so they must be recognized before that inherited
+    label is trusted.
+    """
+    token = (name or "").strip().lower()
+    if not token:
+        return False
+    if token.startswith("pr-"):
+        return True
+    parts = token.split("-")
+    for index, part in enumerate(parts[:-1]):
+        nxt = parts[index + 1]
+        if part == "pr" and nxt[:1].isdigit():
+            return True
+    return False
+
+
 def _is_production(environ: Optional[dict] = None) -> bool:
     env = environ if environ is not None else os.environ
     if str(env.get("PHINS_TEST_MODE", "")).lower() in ("1", "true", "yes", "y"):
+        return False
+    # Railway PR environments clone production variables. The environment
+    # *name* is the source of truth — treat previews as non-production even
+    # when they inherited PHINS_ENVIRONMENT=production.
+    railway_env = str(env.get("RAILWAY_ENVIRONMENT", "")).strip().lower()
+    railway_env_name = str(env.get("RAILWAY_ENVIRONMENT_NAME", "")).strip().lower()
+    if _is_railway_preview_environment(railway_env) or _is_railway_preview_environment(
+        railway_env_name
+    ):
         return False
     production_labels = {"production", "prod", "live"}
     non_production_labels = {"development", "dev", "staging", "stage", "test", "testing"}
@@ -68,10 +99,9 @@ def _is_production(environ: Optional[dict] = None) -> bool:
         return True
     if env_label in non_production_labels:
         return False
-    railway_env = str(env.get("RAILWAY_ENVIRONMENT", "")).strip().lower()
     if railway_env in production_labels:
         return True
-    if railway_env in non_production_labels or railway_env.startswith("pr-"):
+    if railway_env in non_production_labels:
         return False
     # Render sets a platform flag; if no explicit environment hint is present,
     # keep the previous secure default and treat it as production.
