@@ -31115,7 +31115,22 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
                 notify_record = dict(record)
-                notify_record['_source_ip'] = client_ip
+                # Resolve the real visitor IP for the notify limiter. Behind an
+                # edge proxy self.client_address is a shared private/loopback
+                # hop, so a burst from any visitor would otherwise exhaust the
+                # per-source bucket for everyone; trust the address the edge
+                # appended to X-Forwarded-For (same resolution as chat intake).
+                try:
+                    from web_portal.api_chat_application import _effective_client_ip
+                except ImportError:  # pragma: no cover - flat layout fallback
+                    try:
+                        from api_chat_application import _effective_client_ip  # type: ignore
+                    except ImportError:
+                        _effective_client_ip = None
+                notify_record['_source_ip'] = (
+                    _effective_client_ip(client_ip, self)
+                    if _effective_client_ip else client_ip
+                )
 
             # Admin alert + sender welcome/confirmation after durable write
             # (best-effort; never block the 200).

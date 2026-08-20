@@ -35,7 +35,8 @@ Configuration (all optional; absence => deterministic offline mode):
 * ``PHINS_ASSESSMENT_AI_API_KEY``   - bearer key for that endpoint.
 * ``PHINS_ASSESSMENT_AI_MODEL``     - model id (default: ``hermes-4``).
 * ``PHINS_ASSESSMENT_AI_REDACT``    - "1"/"true" to redact labels and document
-  names on egress. Defaults on when ``PHINS_ENVIRONMENT=production``.
+  names on egress. Defaults on in production (``PHINS_ENVIRONMENT`` /
+  ``PHINS_ENV`` / ``ENVIRONMENT`` set to production/prod/live).
 * ``PHINS_ASSESSMENT_AI_TIMEOUT``   - request timeout seconds (default 20).
 """
 
@@ -69,6 +70,24 @@ _RISK_SAFE_KEYS = frozenset({
 })
 
 
+_PRODUCTION_ENV_VARS = ("PHINS_ENVIRONMENT", "PHINS_ENV", "ENVIRONMENT", "ENV")
+_PRODUCTION_ENV_LABELS = frozenset({"production", "prod", "live"})
+
+
+def _is_production_environment() -> bool:
+    """True when any recognised deployment env var marks a production stage.
+
+    Deploy manifests and templates in this repo set the stage under several
+    names (``PHINS_ENVIRONMENT``, ``PHINS_ENV``, ``ENVIRONMENT``). Keying the
+    fail-closed redaction default off a single name would silently leave it off
+    for a template-following production deploy, so check all of them.
+    """
+    for var in _PRODUCTION_ENV_VARS:
+        if str(os.environ.get(var) or "").strip().lower() in _PRODUCTION_ENV_LABELS:
+            return True
+    return False
+
+
 def assessment_ai_redact_enabled() -> bool:
     """True when live-LLM egress should drop labels and document names.
 
@@ -77,7 +96,7 @@ def assessment_ai_redact_enabled() -> bool:
     """
     raw = os.environ.get("PHINS_ASSESSMENT_AI_REDACT")
     if raw is None or str(raw).strip() == "":
-        return str(os.environ.get("PHINS_ENVIRONMENT") or "").strip().lower() == "production"
+        return _is_production_environment()
     if _falsy(raw):
         return False
     return _truthy(raw)
@@ -98,6 +117,17 @@ def redact_risk_for_model(risk: Any) -> Dict[str, Any]:
     if not isinstance(risk, dict):
         return {}
     return {k: v for k, v in risk.items() if k in _RISK_SAFE_KEYS}
+
+
+def redact_contradictions_for_model(contradictions: List[str]) -> List[str]:
+    """Strip fact labels, values and document ids from conflict summaries.
+
+    ``_contradiction_summaries`` formats each conflict as ``field: value (docs:
+    ...)`` — all customer PII. On egress only the fact that N conflicts exist is
+    preserved (so the model can still flag them for review) while the specifics
+    stay on-box, matching the evidence/risk redaction guarantee.
+    """
+    return [f"contradiction_{i + 1}" for i in range(len(contradictions or []))]
 
 
 class AssessmentAIService:
@@ -243,6 +273,8 @@ class AssessmentAIService:
                 if assessment_ai_redact_enabled():
                     egress["evidence"] = redact_evidence_for_model(evidence)
                     egress["risk"] = redact_risk_for_model(risk_for_model)
+                    egress["known_contradictions"] = redact_contradictions_for_model(
+                        contradictions)
                 else:
                     egress["customer_id"] = customer_id
                 user_payload = json.dumps(egress, ensure_ascii=False, default=str)
