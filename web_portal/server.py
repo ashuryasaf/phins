@@ -16054,7 +16054,8 @@ For claims or questions, please contact:
         if path == '/api/invitations' or path.startswith('/api/invitations/'):
             # Validate endpoint is public (for registration form)
             if path == '/api/invitations/validate':
-                code = qs.get('code', [''])[0].strip().upper()
+                code_raw = qs.get('code', [''])[0].strip()
+                code = code_raw.upper()
                 if not code:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'valid': False, 'error': 'No code provided'}).encode('utf-8'))
@@ -16074,14 +16075,14 @@ For claims or questions, please contact:
                 if not invitation:
                     try:
                         from services import agent_ecosystem_service as _aes
-                        agent_check = _aes.validate_invitation(code)
+                        agent_check = _aes.validate_invitation(code_raw)
                     except Exception:
                         agent_check = {}
                     if agent_check.get('valid'):
                         self._set_json_headers(200)
                         self.wfile.write(json.dumps({
                             'valid': True,
-                            'code': code,
+                            'code': code_raw,
                             'type': 'agent',
                             'referrer_id': agent_check.get('agent_id'),
                             'invitee_type': agent_check.get('invitee_type'),
@@ -34931,7 +34932,8 @@ For claims or questions, please contact:
                 phone = sanitize_input(data.get('phone', ''), 20)
                 dob = data.get('dob', '')
                 password = data.get('password', '')
-                invitation_code = data.get('invitation_code', '').strip().upper()
+                invitation_code_raw = data.get('invitation_code', '').strip()
+                invitation_code = invitation_code_raw.upper()
 
                 # ========== STANDARD VALIDATION ==========
                 if not name or not email or not password:
@@ -34997,7 +34999,7 @@ For claims or questions, please contact:
                     if not invitation:
                         try:
                             from services import agent_ecosystem_service as _aes
-                            agent_check = _aes.validate_invitation(invitation_code)
+                            agent_check = _aes.validate_invitation(invitation_code_raw)
                         except Exception:
                             agent_check = {}
                         if (agent_check.get('valid')
@@ -35115,7 +35117,7 @@ For claims or questions, please contact:
                     if invitation_type == 'agent':
                         from services import agent_ecosystem_service as _aes
                         ok_aff, aff_or_err = _aes.redeem_invitation(
-                            invitation_code, 'customer', customer_id)
+                            invitation_code_raw, 'customer', customer_id)
                         if not ok_aff:
                             CUSTOMERS.pop(customer_id, None)
                             REGISTERED_CUSTOMERS.pop(customer_id, None)
