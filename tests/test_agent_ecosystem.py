@@ -394,8 +394,8 @@ def test_register_with_agent_invitation_creates_affiliation():
     _, inv = svc.create_invitation(agent["id"], "customer", proposed_rate=0.1)
     svc.approve_invitation(inv["code"], 0.12, "admin")
 
-    valid, status = _get(f"/api/invitations/validate?code={inv['code']}")
-    assert status == 200 and valid.get("valid") is True
+    valid, status = _get(f"/api/invitations/validate?code={inv['code'].upper()}")
+    assert status == 200 and valid.get("valid") is True, valid
     assert valid.get("type") == "agent"
     assert valid.get("referrer_id") == agent["id"]
 

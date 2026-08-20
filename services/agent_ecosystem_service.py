@@ -116,7 +116,24 @@ def _gen_id(prefix: str) -> str:
 
 
 def _gen_code() -> str:
-    return f"AGI-{secrets.token_urlsafe(9)}"
+    # Public registration validates codes after .upper(); keep new codes
+    # in that form so AGI- tokens survive the shared invitation surface.
+    raw = secrets.token_urlsafe(9).upper().replace("-", "")
+    return f"AGI-{raw[:12]}"
+
+
+def _find_invitation(code: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Look up an invitation by code, case-insensitively."""
+    if not code:
+        return None
+    inv = INVITATIONS.get(code)
+    if inv:
+        return inv
+    needle = str(code).upper()
+    for stored, rec in INVITATIONS.items():
+        if str(stored).upper() == needle:
+            return rec
+    return None
 
 
 def _canonical(payload: Dict[str, Any]) -> str:
@@ -590,7 +607,7 @@ def list_invitations(agent_id: Optional[str] = None,
 def approve_invitation(code: str, commission_rate: Any, admin: str) -> Tuple[bool, Any]:
     with _LOCK:
         _hydrate_from_db(force=True)
-        inv = INVITATIONS.get(code)
+        inv = _find_invitation(code)
         if not inv:
             return False, "Invitation not found"
         if inv["status"] != "pending_approval":
@@ -608,7 +625,7 @@ def approve_invitation(code: str, commission_rate: Any, admin: str) -> Tuple[boo
 def reject_invitation(code: str, admin: str, reason: str = "") -> Tuple[bool, Any]:
     with _LOCK:
         _hydrate_from_db(force=True)
-        inv = INVITATIONS.get(code)
+        inv = _find_invitation(code)
         if not inv:
             return False, "Invitation not found"
         if inv["status"] != "pending_approval":
@@ -626,7 +643,7 @@ def validate_invitation(code: str) -> Dict[str, Any]:
     """Public validation used by registration flows."""
     with _LOCK:
         _hydrate_from_db()
-        inv = INVITATIONS.get(code)
+        inv = _find_invitation(code)
         if not inv:
             return {"valid": False, "error": "Invalid invitation code"}
         if inv["status"] not in ("approved", "sent"):
@@ -650,7 +667,7 @@ def redeem_invitation(code: str, principal_type: str, principal_id: str) -> Tupl
     """
     with _LOCK:
         _hydrate_from_db(force=True)
-        inv = INVITATIONS.get(code)
+        inv = _find_invitation(code)
         if not inv:
             return False, "Invalid invitation code"
         if inv["status"] not in ("approved", "sent"):
@@ -701,7 +718,7 @@ def redeem_invitation(code: str, principal_type: str, principal_id: str) -> Tupl
 
 def mark_invitation_sent(code: str) -> None:
     with _LOCK:
-        inv = INVITATIONS.get(code)
+        inv = _find_invitation(code)
         if inv and inv["status"] == "approved":
             inv["status"] = "sent"
             _persist("invitation", inv)
@@ -1105,7 +1122,7 @@ def connection_integrity(customers: Optional[Dict[str, Any]] = None,
             rec = _principal_record(customers, suppliers, ptype, pid)
             referring = rec.get("referring_agent_id")
             rate = float(aff.get("commission_rate") or 0.0)
-            inv = INVITATIONS.get(aff.get("source_invitation_code") or "")
+            inv = _find_invitation(aff.get("source_invitation_code") or "")
             invitation_rate = inv.get("commission_rate") if inv else None
             rate_locked_ok = True
             if inv is not None and invitation_rate is not None:
