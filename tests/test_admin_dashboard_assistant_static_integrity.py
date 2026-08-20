@@ -302,3 +302,7 @@ def test_admin_mobile_nav_uses_navy_glass_not_blue_stripe_gradient():
     assert "linear-gradient(180deg, #f7e2a0 0%, #e3bf6f 100%)" in block
     assert "linear-gradient(180deg, #ffffff 0%, #b7d3ff 100%)" in content
     assert ".phins-logo-text { display: none; }" not in content
+    # Mobile wordmark drops clipped-gradient dither ("///" hatch) for ice ink.
+    assert "-webkit-text-fill-color: #eaf1ff;" in content
+    assert "#admin-ai-assistant-panel" in content
+    assert "#091126" in content

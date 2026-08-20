@@ -154,12 +154,18 @@
     left: auto;
   }
 
+  /* Clipped gradient fills dither as diagonal "///" hatch on small
+     mobile glyphs. Use the brand ice ink as a solid fill instead. */
   .phins-logo-text,
   .admin-header .logo-text {
     display: inline-block !important;
     letter-spacing: 0.14em !important;
-    background-size: 100% 100% !important;
-    background-repeat: no-repeat !important;
+    background: none !important;
+    -webkit-background-clip: border-box !important;
+    background-clip: border-box !important;
+    -webkit-text-fill-color: var(--phins-ink) !important;
+    color: var(--phins-ink) !important;
+    text-shadow: 0 0 18px rgba(127, 178, 255, 0.28);
   }
 
   .mobile-menu-btn {

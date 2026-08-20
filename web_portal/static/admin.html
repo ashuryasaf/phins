@@ -207,6 +207,16 @@
       }
       .phins-utility .btn-logout { margin-left: 4px; }
       .language-selector { display: none; }
+      .phins-logo-text {
+        display: inline-block;
+        letter-spacing: 0.14em;
+        background: none;
+        -webkit-background-clip: border-box;
+        background-clip: border-box;
+        -webkit-text-fill-color: #eaf1ff;
+        color: #eaf1ff;
+        text-shadow: 0 0 18px rgba(127, 178, 255, 0.28);
+      }
     }
     @media screen and (max-width: 768px) {
       .phins-header-inner { padding: 0.5rem 1rem; }
@@ -225,6 +235,12 @@
         display: inline-block;
         font-size: 1.05rem;
         letter-spacing: 0.14em;
+        background: none;
+        -webkit-background-clip: border-box;
+        background-clip: border-box;
+        -webkit-text-fill-color: #eaf1ff;
+        color: #eaf1ff;
+        text-shadow: 0 0 18px rgba(127, 178, 255, 0.28);
       }
     }
     
@@ -482,7 +498,12 @@
       border-color: rgba(244,67,54,0.5);
     }
     @media (max-width: 768px) {
-      #admin-ai-assistant-panel { padding: 16px; }
+      #admin-ai-assistant-panel {
+        padding: 16px;
+        background:
+          radial-gradient(120% 80% at 90% -10%, rgba(21, 68, 155, 0.35), transparent 60%),
+          #091126;
+      }
       .admin-ai-action-btn { width: 100%; justify-content: center; display: inline-flex; }
       .admin-ai-quick-btn { padding: 6px 10px; font-size: 0.74rem; }
     }
