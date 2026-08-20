@@ -88,8 +88,7 @@
     padding: 10px 12px 28px !important;
     gap: 6px !important;
     top: 60px !important;
-    bottom: 0 !important;
-    max-height: none !important;
+    max-height: calc(100vh - 60px) !important;
     overflow-y: auto !important;
     overscroll-behavior: contain;
   }
