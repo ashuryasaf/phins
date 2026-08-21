@@ -163,9 +163,8 @@ class OTPVerification:
     is_new_device: bool = False
     is_new_location: bool = False
     risk_score: float = 0.0
-    # Delivery channel for the OTP. 'email' (default), 'sms', or 'both'.
-    # When 'sms' or 'both' is requested, the phone field carries the
-    # destination number in E.164 format.
+    # Delivery channel for the OTP. 'email' (default), 'sms', 'whatsapp',
+    # or 'both' (email+SMS). Phone-backed channels require ``phone``.
     delivery_channel: str = 'email'
     phone: Optional[str] = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -671,8 +670,9 @@ class OTPSecurityService:
         """Create OTP verification request.
 
         ``delivery_channel`` selects how the code will reach the user
-        (``'email'``, ``'sms'``, or ``'both'``). When SMS delivery is
-        requested, ``phone`` must be a non-empty E.164-style number.
+        (``'email'``, ``'sms'``, ``'whatsapp'``, or ``'both'``). When a
+        phone-backed channel is requested, ``phone`` must be a non-empty
+        E.164-style number.
         """
         # Check rate limits
         if ip_address and not self._check_rate_limit(ip_address, "otp_request"):
@@ -683,15 +683,16 @@ class OTPSecurityService:
             )
 
         normalized_channel = (delivery_channel or 'email').strip().lower()
-        if normalized_channel not in ('email', 'sms', 'both'):
+        if normalized_channel not in ('email', 'sms', 'whatsapp', 'both'):
             normalized_channel = 'email'
 
         normalized_phone = (phone or '').strip() or None
-        if normalized_channel in ('sms', 'both') and not normalized_phone:
+        if normalized_channel in ('sms', 'whatsapp', 'both') and not normalized_phone:
+            label = 'WhatsApp' if normalized_channel == 'whatsapp' else 'SMS'
             return SecurityResult(
                 success=False,
                 error_code="MISSING_PHONE",
-                message="A phone number is required for SMS verification."
+                message=f"A phone number is required for {label} verification."
             )
         
         # Check if device is trusted
@@ -963,6 +964,7 @@ class OTPSecurityService:
                 "user_id": verification.user_id,
                 "user_type": verification.user_type,
                 "purpose": verification.purpose.value,
+                "delivery_channel": verification.delivery_channel,
                 "device_trusted": device_id is not None,
                 "device_id": device_id
             }
@@ -974,7 +976,8 @@ class OTPSecurityService:
         expected_email: Optional[str] = None,
         expected_purpose: Optional[OTPPurpose] = None,
         ip_address: Optional[str] = None,
-        expected_user_type: Optional[str] = None
+        expected_user_type: Optional[str] = None,
+        expected_phone: Optional[str] = None,
     ) -> SecurityResult:
         """
         Mark a verified OTP as consumed for one-time backend operations.
@@ -1009,6 +1012,16 @@ class OTPSecurityService:
                     error_code="EMAIL_MISMATCH",
                     message="Verified email does not match registration email"
                 )
+
+            if expected_phone:
+                stored_digits = re.sub(r'\D', '', verification.phone or '')
+                expected_digits = re.sub(r'\D', '', expected_phone or '')
+                if not stored_digits or stored_digits != expected_digits:
+                    return SecurityResult(
+                        success=False,
+                        error_code="PHONE_MISMATCH",
+                        message="Verified phone does not match the session phone"
+                    )
 
             if expected_user_type and verification.user_type != expected_user_type:
                 return SecurityResult(

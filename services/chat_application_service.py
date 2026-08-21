@@ -180,6 +180,21 @@ def _mask_email(email: str) -> str:
         return "***"
 
 
+def _mask_phone(phone: Optional[str]) -> str:
+    if not phone:
+        return "***"
+    digits = re.sub(r"\D", "", phone)
+    if len(digits) <= 4:
+        return "***"
+    plus = "+" if str(phone).strip().startswith("+") else ""
+    return f"{plus}{digits[:2]}{'*' * (len(digits) - 4)}{digits[-2:]}"
+
+
+def _identity_verified(session: Dict[str, Any]) -> bool:
+    """True once the applicant proved control of email and/or WhatsApp."""
+    return bool(session.get("email_verified") or session.get("phone_verified"))
+
+
 def parse_conditions_text(text: str) -> List[Dict[str, Any]]:
     """Broker-bot heuristic: map a free-text conditions list to scoring inputs."""
     conditions: List[Dict[str, Any]] = []
@@ -768,7 +783,7 @@ class ChatPolicyApplicationService:
         answered = session["answers"]
         for step in self._steps_for(session):
             if step["id"] not in answered:
-                if step["id"] not in _PRE_OTP_STEPS and not session["email_verified"]:
+                if step["id"] not in _PRE_OTP_STEPS and not _identity_verified(session):
                     return None  # OTP gate blocks progress
                 return step
         return None
@@ -948,7 +963,10 @@ class ChatPolicyApplicationService:
                 "language": lang,
                 "contact": {"name": None, "email": None, "phone": None},
                 "email_verified": False,
+                "phone_verified": False,
+                "verified_via": None,
                 "otp": {},
+                "otp_channel": None,
                 "answers": {},
                 "media": [],
                 "transcript": [],
@@ -1035,7 +1053,7 @@ class ChatPolicyApplicationService:
                 return {"ok": False, "status_code": 403, "error": "OTP_REQUIRED",
                         "message": "Please verify the fresh security code first."}
             if session["status"] == "paused":
-                if session["email_verified"]:
+                if _identity_verified(session):
                     # A verified, paused session must go back through the
                     # resume + fresh-OTP gate; it must never silently unlock
                     # by writing an answer.
@@ -1045,9 +1063,9 @@ class ChatPolicyApplicationService:
 
             step = self._next_step(session)
             if step is None:
-                if not session["email_verified"]:
+                if not _identity_verified(session):
                     return {"ok": False, "status_code": 403, "error": "OTP_REQUIRED",
-                            "message": "Please verify your email with the code I sent before we continue."}
+                            "message": "Please verify your identity with the code I sent before we continue."}
                 return {"ok": False, "status_code": 409,
                         "error": "All questions are answered - you can finalize now.",
                         "ready_to_finalize": True}
@@ -1093,20 +1111,27 @@ class ChatPolicyApplicationService:
             response: Dict[str, Any] = {"ok": True}
             next_step = self._next_step(session)
 
-            if next_step is None and not session["email_verified"] and \
+            if next_step is None and not _identity_verified(session) and \
                     step["id"] == _OTP_GATE_AFTER:
                 events.append(self._journey_add(session, "contact_captured"))
+                masked_email = _mask_email(session["contact"]["email"])
+                masked_phone = _mask_phone(session["contact"].get("phone"))
                 otp_msg = self._transcript_add(
                     session, "bot",
                     _i18n_msg(
                         session, "otp_challenge",
-                        f"Perfect. To protect your data I've sent a 6-digit verification code to "
-                        f"{_mask_email(session['contact']['email'])}. Type it here when it arrives.",
-                        masked_email=_mask_email(session["contact"]["email"]),
+                        "Perfect. To protect your data I'll send a 6-digit verification "
+                        f"code to {masked_email} or WhatsApp {masked_phone}. "
+                        "Choose Email or WhatsApp below, then type the code when it arrives.",
+                        masked_email=masked_email,
+                        masked_phone=masked_phone,
                     ),
                     kind="otp_challenge")
                 bot_msgs.append(otp_msg)
                 response["otp_required"] = True
+                response["otp_channels"] = ["email", "whatsapp"]
+                response["masked_email"] = masked_email
+                response["masked_phone"] = masked_phone
             elif next_step is None:
                 done_msg = self._transcript_add(
                     session, "bot",
@@ -1568,7 +1593,8 @@ class ChatPolicyApplicationService:
     # OTP integration hooks (state only - delivery lives in the API layer)
     # ------------------------------------------------------------------
 
-    def note_otp_requested(self, application_id: str, verification_id: str) -> Dict[str, Any]:
+    def note_otp_requested(self, application_id: str, verification_id: str,
+                           channel: str = "email") -> Dict[str, Any]:
         with self._lock:
             session = self._get(application_id)
             if not session:
@@ -1576,15 +1602,39 @@ class ChatPolicyApplicationService:
             if not session["contact"].get("email"):
                 return {"ok": False, "status_code": 409,
                         "error": "I need your email before I can send a verification code."}
+            normalized = (channel or "email").strip().lower()
+            if normalized not in ("email", "whatsapp"):
+                normalized = "email"
+            if normalized == "whatsapp" and not session["contact"].get("phone"):
+                return {"ok": False, "status_code": 409,
+                        "error": "I need your phone before I can send a WhatsApp code."}
+            session["otp_channel"] = normalized
             session["otp"] = {"verification_id": verification_id,
+                              "channel": normalized,
                               "requested_at": _utc_now_iso()}
             return {"ok": True, "email": session["contact"]["email"],
-                    "phone": session["contact"].get("phone")}
+                    "phone": session["contact"].get("phone"),
+                    "channel": normalized}
 
     def contact_email(self, application_id: str) -> Optional[str]:
         with self._lock:
             session = self._get(application_id)
             return session["contact"].get("email") if session else None
+
+    def contact_phone(self, application_id: str) -> Optional[str]:
+        with self._lock:
+            session = self._get(application_id)
+            if not session:
+                return None
+            return session["contact"].get("phone")
+
+    def otp_channel(self, application_id: str) -> Optional[str]:
+        with self._lock:
+            session = self._get(application_id)
+            if not session:
+                return None
+            pending = (session.get("otp") or {}).get("channel")
+            return pending or session.get("otp_channel")
 
     def pending_verification_id(self, application_id: str) -> Optional[str]:
         with self._lock:
@@ -1592,6 +1642,10 @@ class ChatPolicyApplicationService:
             return (session or {}).get("otp", {}).get("verification_id")
 
     def mark_email_verified(self, application_id: str) -> Dict[str, Any]:
+        return self.mark_identity_verified(application_id, channel="email")
+
+    def mark_identity_verified(self, application_id: str,
+                               channel: str = "email") -> Dict[str, Any]:
         with self._lock:
             session = self._get(application_id)
             if not session:
@@ -1601,7 +1655,17 @@ class ChatPolicyApplicationService:
             # welcome-back messages, so a secure (OTP-gated) resume can restore
             # the full history only after identity is re-proven.
             prior_transcript = list(session["transcript"]) if was_reverify else None
-            session["email_verified"] = True
+            normalized = (channel or "email").strip().lower()
+            if normalized not in ("email", "whatsapp"):
+                normalized = "email"
+            session["verified_via"] = normalized
+            if normalized == "whatsapp":
+                session["phone_verified"] = True
+                # WhatsApp proves phone control, not mailbox control.
+                session["email_verified"] = False
+            else:
+                session["email_verified"] = True
+            session["_reverify_snapshot"] = None
             session["otp"] = {}
             events: List[Dict[str, Any]] = []
             bot_msgs: List[Dict[str, Any]] = []
@@ -1623,8 +1687,14 @@ class ChatPolicyApplicationService:
                                                      kind="question",
                                                      meta={"step": step_pub["id"]}))
             events.extend(self._ledger_for_message(session, m) for m in bot_msgs)
-            result = {"ok": True, "messages": bot_msgs, "step": step_pub,
-                      "progress": self._progress(session), "ledger_events": events}
+            result = {
+                "ok": True, "messages": bot_msgs, "step": step_pub,
+                "progress": self._progress(session), "ledger_events": events,
+                "verified_via": session["verified_via"],
+                "email_verified": bool(session["email_verified"]),
+                "phone_verified": bool(session.get("phone_verified")),
+                "identity_verified": _identity_verified(session),
+            }
             if prior_transcript is not None:
                 result["transcript"] = prior_transcript
             return result
@@ -1643,9 +1713,9 @@ class ChatPolicyApplicationService:
             if session["status"] == "submitted":
                 return {"ok": False, "status_code": 409,
                         "error": "This application was already submitted."}
-            if not session["email_verified"]:
+            if not _identity_verified(session):
                 return {"ok": False, "status_code": 403,
-                        "error": "Please verify your email before uploading attachments."}
+                        "error": "Please verify your identity before uploading attachments."}
             kind = str(kind or "").strip().lower()
             if kind not in ALLOWED_MEDIA_KINDS:
                 return {"ok": False, "status_code": 400,
@@ -1841,15 +1911,25 @@ class ChatPolicyApplicationService:
                         "ledger_events": []}
 
             events: List[Dict[str, Any]] = []
-            if session["email_verified"]:
+            if _identity_verified(session):
                 # Re-challenge: a resume code alone must never unlock a
                 # verified session full of PII.
+                session["_reverify_snapshot"] = {
+                    "email_verified": bool(session.get("email_verified")),
+                    "phone_verified": bool(session.get("phone_verified")),
+                    "verified_via": session.get("verified_via"),
+                }
                 session["status"] = "pending_reverify"
                 session["email_verified"] = False
+                session["phone_verified"] = False
+                last_channel = session.get("otp_channel") or session.get("verified_via") or "email"
                 return {"ok": True, "application_id": session["id"],
                         "status": "pending_reverify", "otp_required": True,
                         "email": session["contact"]["email"],
                         "masked_email": _mask_email(session["contact"]["email"]),
+                        "masked_phone": _mask_phone(session["contact"].get("phone")),
+                        "otp_channel": last_channel,
+                        "otp_channels": ["email", "whatsapp"],
                         "ledger_events": events}
 
             session["status"] = "in_progress"
@@ -1897,10 +1977,15 @@ class ChatPolicyApplicationService:
                 "created_at": session["created_at"],
                 "updated_at": session["updated_at"],
                 "email_verified": session["email_verified"],
+                "phone_verified": bool(session.get("phone_verified")),
+                "identity_verified": _identity_verified(session),
+                "verified_via": session.get("verified_via"),
+                "otp_channel": session.get("otp_channel"),
                 "contact": {"name": session["contact"].get("name"),
                             "email": _mask_email(session["contact"].get("email") or "")
                             if session["contact"].get("email") else None,
-                            "phone": session["contact"].get("phone")},
+                            "phone": _mask_phone(session["contact"].get("phone"))
+                            if session["contact"].get("phone") else None},
                 "transcript": session["transcript"],
                 "step": self._step_public(session, step),
                 "progress": self._progress(session),
@@ -2096,9 +2181,9 @@ class ChatPolicyApplicationService:
                 # policy (the lock is released during the loopback request).
                 return {"ok": False, "status_code": 409,
                         "error": "This application is already being submitted."}
-            if not session["email_verified"]:
+            if not _identity_verified(session):
                 return {"ok": False, "status_code": 403,
-                        "error": "Please verify your email before submitting."}
+                        "error": "Please verify your identity before submitting."}
             missing = [s["id"] for s in self._steps_for(session)
                        if s["id"] not in session["answers"]]
             if missing:
@@ -2131,19 +2216,25 @@ class ChatPolicyApplicationService:
         """Roll back a resume re-challenge whose OTP could not be delivered.
 
         ``resume_session`` flips a verified session to ``pending_reverify``
-        with ``email_verified = False`` before the code is sent. If delivery
-        fails we must restore the previous state: leaving ``email_verified``
-        False would let the *next* resume attempt skip the OTP re-challenge
+        with identity flags cleared before the code is sent. If delivery
+        fails we must restore the previous state: leaving identity unverified
+        would let the *next* resume attempt skip the OTP re-challenge
         entirely (it would take the unverified branch), and leaving the
         status ``pending_reverify`` would brick the session. Restoring
-        ``paused`` + verified keeps the re-challenge guarantee intact for
-        the next resume.
+        ``paused`` + the prior verified flags keeps the re-challenge
+        guarantee intact for the next resume.
         """
         with self._lock:
             session = self._get(application_id)
             if session and session["status"] == "pending_reverify":
+                snapshot = session.get("_reverify_snapshot") or {}
                 session["status"] = "paused"
-                session["email_verified"] = True
+                session["email_verified"] = bool(snapshot.get("email_verified", True))
+                session["phone_verified"] = bool(snapshot.get("phone_verified", False))
+                session["verified_via"] = snapshot.get("verified_via") or (
+                    "whatsapp" if session["phone_verified"] else "email"
+                )
+                session["_reverify_snapshot"] = None
                 session["otp"] = {}
 
     def clear_finalizing(self, application_id: str) -> None:
@@ -2390,6 +2481,9 @@ class ChatPolicyApplicationService:
                 "resume_code": session.get("resume_code"),
                 "status": session.get("status"),
                 "email_verified": bool(session.get("email_verified")),
+                "phone_verified": bool(session.get("phone_verified")),
+                "identity_verified": _identity_verified(session),
+                "verified_via": session.get("verified_via"),
                 "contact": contact,
                 "answers": answers,
                 "assessment": assessment,
@@ -2471,6 +2565,9 @@ class ChatPolicyApplicationService:
                 "created_at": s["created_at"],
                 "updated_at": s["updated_at"],
                 "email_verified": s["email_verified"],
+                "phone_verified": bool(s.get("phone_verified")),
+                "identity_verified": _identity_verified(s),
+                "verified_via": s.get("verified_via"),
                 "progress": self._progress(s),
                 "invited_by": s.get("invited_by"),
                 "quote_monthly": quote.get("monthly"),

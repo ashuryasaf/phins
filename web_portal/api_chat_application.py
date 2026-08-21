@@ -389,7 +389,13 @@ def _ensure_senior_uw_queue(application_id: str) -> Optional[Dict[str, Any]]:
         "media": snap.get("media") or [],
         "email_verified": bool(snap.get("email_verified")),
         "contact_priority": "high",
-        "identity_verified": bool(snap.get("email_verified")),
+        "identity_verified": bool(
+            snap.get("identity_verified")
+            or snap.get("email_verified")
+            or snap.get("phone_verified")
+        ),
+        "phone_verified": bool(snap.get("phone_verified")),
+        "verified_via": snap.get("verified_via"),
         "signature_name": answers.get("signature_name"),
         "signature_at": answers.get("signature_at"),
         "prior_disclosure": answers.get("prior_disclosure"),
@@ -533,20 +539,32 @@ _OTP_UNAVAILABLE_MESSAGE = (
 )
 
 
-def _otp_delivery_ready() -> Tuple[bool, str]:
-    """Pre-flight: can this deployment actually deliver an OTP email?
+_CHAT_OTP_CHANNELS = ("email", "whatsapp")
 
-    Production refuses demo-code exposure (correctly), so when no email
-    provider is configured (``active provider == 'noop'``) every OTP request
-    is doomed. Detecting that before minting a verification keeps the OTP
-    service's per-IP counters and the session state clean.
+
+def _otp_delivery_ready(channel: str = "email") -> Tuple[bool, str]:
+    """Pre-flight: can this deployment actually deliver an OTP?
+
+    Production refuses demo-code exposure (correctly), so when the chosen
+    channel has no provider every OTP request is doomed. Detecting that
+    before minting a verification keeps the OTP service's per-IP counters
+    and the session state clean.
     """
     try:
-        from web_portal.api_extensions import _demo_otp_exposure_allowed
+        from web_portal.api_extensions import (
+            _demo_otp_exposure_allowed,
+            _whatsapp_provider_configured,
+        )
     except ImportError:  # pragma: no cover
-        from api_extensions import _demo_otp_exposure_allowed  # type: ignore
+        from api_extensions import (  # type: ignore
+            _demo_otp_exposure_allowed,
+            _whatsapp_provider_configured,
+        )
     if _demo_otp_exposure_allowed():
         return True, "demo_exposure"
+    if (channel or "email").strip().lower() == "whatsapp":
+        ready, provider = _whatsapp_provider_configured()
+        return ready, provider
     try:
         from services.notification_service import get_active_email_provider_type
         provider = get_active_email_provider_type()
@@ -558,36 +576,78 @@ def _otp_delivery_ready() -> Tuple[bool, str]:
     return True, provider
 
 
+def _resolve_chat_otp_channel(application_id: str, body: Optional[Dict[str, Any]]) -> Tuple[Optional[str], Optional[str]]:
+    """Pick a session-bound channel. Caller-supplied values are an allowlist only."""
+    svc = _service()
+    requested = str((body or {}).get("delivery_channel") or "").strip().lower()
+    if requested and requested not in _CHAT_OTP_CHANNELS:
+        return None, "UNSUPPORTED_CHANNEL"
+    channel = requested or svc.otp_channel(application_id) or "email"
+    if channel not in _CHAT_OTP_CHANNELS:
+        return None, "UNSUPPORTED_CHANNEL"
+    return channel, None
+
+
 def _handle_otp_request(application_id: str, client_ip: str,
-                        user_agent: str) -> Tuple[int, Dict[str, Any]]:
+                        user_agent: str,
+                        body: Optional[Dict[str, Any]] = None) -> Tuple[int, Dict[str, Any]]:
     svc = _service()
     email = svc.contact_email(application_id)
     if not email:
         return 409, {"error": "I need your email before I can send a verification code."}
 
-    ready, provider = _otp_delivery_ready()
+    channel, channel_error = _resolve_chat_otp_channel(application_id, body)
+    if channel_error:
+        return 400, {
+            "error": "Choose Email or WhatsApp for your verification code.",
+            "error_code": channel_error,
+            "otp_channels": list(_CHAT_OTP_CHANNELS),
+        }
+
+    # Destination is always the session contact. A caller-supplied phone
+    # is ignored so an attacker cannot redirect the code.
+    phone = svc.contact_phone(application_id) if channel == "whatsapp" else None
+    if channel == "whatsapp" and not phone:
+        return 409, {
+            "error": "I need your phone before I can send a WhatsApp verification code.",
+            "error_code": "MISSING_PHONE",
+        }
+
+    ready, provider = _otp_delivery_ready(channel)
     if not ready:
-        logger.error(
-            "Chat application OTP blocked: no email provider configured "
-            "(active provider '%s'). Set EMAIL_PROVIDER plus its credentials "
-            "(e.g. INFOBIP_API_KEY+INFOBIP_BASE_URL, SENDGRID_API_KEY, "
-            "MAILGUN_API_KEY, RESEND_API_KEY, or SMTP_HOST + SMTP_USERNAME + "
-            "SMTP_PASSWORD). Disable PHINS_TEST_MODE / "
-            "PHINS_USE_MOCK_NOTIFICATIONS in production.", provider)
+        if channel == "whatsapp":
+            logger.error(
+                "Chat application WhatsApp OTP blocked: provider '%s' is not "
+                "configured. Set TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN + "
+                "TWILIO_WHATSAPP_NUMBER, or META_WHATSAPP_TOKEN + "
+                "META_WHATSAPP_PHONE_ID.", provider)
+        else:
+            logger.error(
+                "Chat application OTP blocked: no email provider configured "
+                "(active provider '%s'). Set EMAIL_PROVIDER plus its credentials "
+                "(e.g. INFOBIP_API_KEY+INFOBIP_BASE_URL, SENDGRID_API_KEY, "
+                "MAILGUN_API_KEY, RESEND_API_KEY, or SMTP_HOST + SMTP_USERNAME + "
+                "SMTP_PASSWORD). Disable PHINS_TEST_MODE / "
+                "PHINS_USE_MOCK_NOTIFICATIONS in production.", provider)
         return 503, {"error": _OTP_UNAVAILABLE_MESSAGE,
                      "error_code": "OTP_DELIVERY_UNAVAILABLE",
                      "retryable": True}
 
     from services.otp_security_service import OTPPurpose, get_otp_security_service
+    purpose = (
+        OTPPurpose.PHONE_VERIFICATION if channel == "whatsapp"
+        else OTPPurpose.EMAIL_VERIFICATION
+    )
     otp_service = get_otp_security_service()
     result = otp_service.create_otp_verification(
         user_type="applicant",
         user_id=application_id,
         email=email,
-        purpose=OTPPurpose.EMAIL_VERIFICATION,
+        purpose=purpose,
         ip_address=client_ip,
         user_agent=user_agent,
-        delivery_channel="email",
+        delivery_channel=channel,
+        phone=phone,
     )
     if not result.success:
         return 429 if result.error_code == "RATE_LIMITED" else 400, {
@@ -598,7 +658,9 @@ def _handle_otp_request(application_id: str, client_ip: str,
     data = result.data or {}
     otp_code = data.get("otp_code")
     verification_id = data.get("verification_id")
-    svc.note_otp_requested(application_id, verification_id)
+    noted = svc.note_otp_requested(application_id, verification_id, channel=channel)
+    if not noted.get("ok"):
+        return noted.get("status_code", 409), {"error": noted.get("error")}
 
     try:
         from web_portal.api_extensions import (
@@ -612,21 +674,26 @@ def _handle_otp_request(application_id: str, client_ip: str,
         )
 
     delivered, delivery_error = _send_otp_via_channel(
-        "email", otp_code, int(data.get("expires_in_seconds") or 300),
-        "email_verification", email=email, ip_address=client_ip,
+        channel, otp_code, int(data.get("expires_in_seconds") or 300),
+        purpose.value, email=email, phone=phone, ip_address=client_ip,
     )
 
     response: Dict[str, Any] = {
         "success": True,
         "verification_id": verification_id,
+        "delivery_channel": channel,
         "masked_email": data.get("masked_email"),
         "expires_in_seconds": data.get("expires_in_seconds"),
         "notification_sent": bool(delivered),
+        "otp_channels": list(_CHAT_OTP_CHANNELS),
     }
+    if data.get("masked_phone"):
+        response["masked_phone"] = data.get("masked_phone")
     if _demo_otp_exposure_allowed():
         response["demo_otp_code"] = otp_code
     elif not delivered:
-        logger.error("Chat application OTP delivery failed: %s", delivery_error)
+        logger.error("Chat application OTP delivery failed (%s): %s",
+                     channel, delivery_error)
         return 503, {"error": _OTP_UNAVAILABLE_MESSAGE,
                      "error_code": "OTP_DELIVERY_FAILED",
                      "retryable": True}
@@ -637,7 +704,9 @@ def _handle_otp_request(application_id: str, client_ip: str,
         "customer_id": email,
         "actor": "applicant",
         "payload": {"application_id": application_id,
+                    "delivery_channel": channel,
                     "masked_email": data.get("masked_email"),
+                    "masked_phone": data.get("masked_phone"),
                     "delivered": bool(delivered)},
     }])
     return 200, response
@@ -660,18 +729,25 @@ def _handle_otp_verify(application_id: str, body: Dict[str, Any],
         return status, {"error": result.message or "Verification failed",
                         "error_code": result.error_code}
 
+    channel = str((result.data or {}).get("delivery_channel")
+                  or svc.otp_channel(application_id) or "email").strip().lower()
+    purpose = (
+        OTPPurpose.PHONE_VERIFICATION if channel == "whatsapp"
+        else OTPPurpose.EMAIL_VERIFICATION
+    )
     consume = otp_service.consume_verification(
         verification_id,
         expected_email=svc.contact_email(application_id),
-        expected_purpose=OTPPurpose.EMAIL_VERIFICATION,
+        expected_purpose=purpose,
         ip_address=client_ip,
         expected_user_type="applicant",
+        expected_phone=svc.contact_phone(application_id) if channel == "whatsapp" else None,
     )
     if not consume.success:
         return 400, {"error": consume.message or "Verification could not be consumed",
                      "error_code": consume.error_code}
 
-    outcome = svc.mark_email_verified(application_id)
+    outcome = svc.mark_identity_verified(application_id, channel=channel)
     if not outcome.get("ok"):
         return outcome.get("status_code", 400), {"error": outcome.get("error")}
     _pop_and_write_events(outcome)
@@ -894,8 +970,15 @@ def dispatch_get(path: str, session: Optional[Dict[str, Any]],
         snapshot = _service().funnel_snapshot()
         # Ops visibility: the OTP gate is the funnel's hardest dependency, so
         # surface whether this deployment can actually deliver codes.
-        ready, provider = _otp_delivery_ready()
-        snapshot["otp_delivery"] = {"ready": ready, "email_provider": provider}
+        email_ready, email_provider = _otp_delivery_ready("email")
+        wa_ready, wa_provider = _otp_delivery_ready("whatsapp")
+        snapshot["otp_delivery"] = {
+            "ready": email_ready or wa_ready,
+            "email_provider": email_provider,
+            "whatsapp_ready": wa_ready,
+            "whatsapp_provider": wa_provider,
+            "channels": ["email", "whatsapp"],
+        }
         return 200, snapshot
 
     match = _ID_RE.match(path)
@@ -998,7 +1081,7 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]],
         return status_code, result
 
     if tail == "/otp/request":
-        return _handle_otp_request(application_id, client_ip, user_agent)
+        return _handle_otp_request(application_id, client_ip, user_agent, body)
 
     if tail == "/otp/verify":
         return _handle_otp_verify(application_id, body, client_ip)

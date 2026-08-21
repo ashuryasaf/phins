@@ -18,7 +18,8 @@
         resumeCode: null,
         email: null,
         step: null,          // current step descriptor from the API
-        otp: null,           // {verification_id}
+        otp: null,           // {verification_id, channel, maskedEmail, maskedPhone}
+        otpChannel: null,    // 'email' | 'whatsapp'
         otpRestoreTranscript: false, // replay transcript after OTP only on a fresh-page resume
         busy: false,
         mediaCount: 0,
@@ -774,20 +775,71 @@
 
     // ---- OTP ------------------------------------------------------------
 
-    async function requestOtp() {
-        const { status, data } = await api('POST', `/${state.appId}/otp/request`, { resume_code: state.resumeCode });
+    function otpDestinationLabel(data) {
+        const channel = (data && data.delivery_channel) || state.otpChannel || 'email';
+        if (channel === 'whatsapp') {
+            return `WhatsApp ${data && data.masked_phone ? data.masked_phone : ''}`;
+        }
+        return data && data.masked_email ? data.masked_email : 'your email';
+    }
+
+    function rememberOtp(data, channel) {
+        const resolved = (data && data.delivery_channel) || channel || 'email';
+        state.otpChannel = resolved;
+        state.otp = {
+            verification_id: data && data.verification_id,
+            channel: resolved,
+            maskedEmail: data && data.masked_email,
+            maskedPhone: data && data.masked_phone,
+        };
+    }
+
+    async function requestOtp(channel) {
+        const delivery = channel || state.otpChannel || 'email';
+        const { status, data } = await api('POST', `/${state.appId}/otp/request`, {
+            resume_code: state.resumeCode,
+            delivery_channel: delivery,
+        });
         if (status !== 200) {
             addBubble('bot', richText(data.error || 'I could not send the code - give it a moment and try again.'));
+            if ((data.error_code || '') === 'UNSUPPORTED_CHANNEL') {
+                renderOtpChannelDock(data);
+                return;
+            }
             renderOtpDock(true);
             return;
         }
-        state.otp = { verification_id: data.verification_id };
+        rememberOtp(data, delivery);
+        addBubble('bot',
+            richText('I sent a 6-digit verification code to ')
+            + `<strong>${escapeHtml(otpDestinationLabel(data))}</strong>`
+            + richText('. Type it here when it arrives.'));
         if (data.demo_otp_code) {
             addBubble('bot',
                 `<strong>Demo environment:</strong> your verification code is <code>${escapeHtml(data.demo_otp_code)}</code>.`,
                 'resume-note');
         }
         renderOtpDock();
+    }
+
+    function renderOtpChannelDock(meta) {
+        const maskedEmail = (meta && meta.masked_email) || (state.otp && state.otp.maskedEmail) || '';
+        const maskedPhone = (meta && meta.masked_phone) || (state.otp && state.otp.maskedPhone) || '';
+        dockHtml(`
+            <div class="dock-label" style="text-align:center;">Send the verification code via</div>
+            <div class="chips-wrap otp-channel-wrap">
+                <button class="chip otp-channel-chip" data-channel="email" type="button">
+                    Email${maskedEmail ? ` · ${escapeHtml(maskedEmail)}` : ''}
+                </button>
+                <button class="chip otp-channel-chip otp-channel-whatsapp" data-channel="whatsapp" type="button">
+                    WhatsApp${maskedPhone ? ` · ${escapeHtml(maskedPhone)}` : ''}
+                </button>
+            </div>
+        `);
+        dock().querySelectorAll('[data-channel]').forEach((chip) => {
+            chip.addEventListener('click', () => requestOtp(chip.dataset.channel));
+        });
+        afterLayoutScroll();
     }
 
     function renderOtpDock(retryOnly) {
@@ -798,6 +850,7 @@
             <div class="otp-actions">
                 ${retryOnly ? '' : '<button class="chip chip-go" id="otp-submit">Verify</button>'}
                 <button class="link-btn" id="otp-resend" style="margin:0;">${retryOnly ? 'Send code again' : 'Resend code'}</button>
+                <button class="link-btn" id="otp-switch-channel" style="margin:0;">Use a different channel</button>
             </div>
         `);
         const inputs = Array.from(dock().querySelectorAll('.otp-box'));
@@ -823,7 +876,9 @@
         const submitBtn = $('otp-submit');
         if (submitBtn) submitBtn.addEventListener('click', () =>
             verifyOtp(inputs.map((b) => b.value).join('')));
-        $('otp-resend').addEventListener('click', requestOtp);
+        $('otp-resend').addEventListener('click', () => requestOtp(state.otpChannel));
+        const switchBtn = $('otp-switch-channel');
+        if (switchBtn) switchBtn.addEventListener('click', () => renderOtpChannelDock());
         afterLayoutScroll();
     }
 
@@ -878,7 +933,7 @@
                 addBubble('bot', richText(data.error || 'Something went wrong - try again.'));
             }
             if (data.otp_required) {
-                await requestOtp();
+                renderOtpChannelDock(data);
                 stickToBottom = true;
                 afterLayoutScroll();
             } else if (data.ready_to_finalize) {
@@ -1040,16 +1095,26 @@
             // on screen (fresh-page resume). The same-tab continue path still
             // shows the live conversation, so replaying would duplicate it.
             state.otpRestoreTranscript = chatScroll().childElementCount === 0;
-            // Masked emails contain literal '*' (e.g. as***@domain) — do not wrap
-            // them in **markdown** or richText will close bold early and leave stray '*'.
+            // Masked destinations contain literal '*' — do not wrap them in
+            // **markdown** or richText will close bold early and leave stray '*'.
+            const otpPayload = data.otp || {};
+            rememberOtp({
+                verification_id: otpPayload.verification_id,
+                delivery_channel: otpPayload.delivery_channel || data.otp_channel,
+                masked_email: otpPayload.masked_email || data.masked_email,
+                masked_phone: otpPayload.masked_phone || data.masked_phone,
+            }, data.otp_channel || 'email');
             addBubble('bot',
                 richText('Welcome back! Since your session is verified, I sent a fresh security code to ')
-                + `<strong>${escapeHtml(data.masked_email || 'your email')}</strong>`
+                + `<strong>${escapeHtml(otpDestinationLabel({
+                    delivery_channel: otpPayload.delivery_channel || data.otp_channel,
+                    masked_email: otpPayload.masked_email || data.masked_email,
+                    masked_phone: otpPayload.masked_phone || data.masked_phone,
+                }))}</strong>`
                 + richText(" — enter it and we'll continue."));
-            state.otp = { verification_id: (data.otp || {}).verification_id };
-            if ((data.otp || {}).demo_otp_code) {
+            if (otpPayload.demo_otp_code) {
                 addBubble('bot',
-                    `<strong>Demo environment:</strong> your verification code is <code>${escapeHtml(data.otp.demo_otp_code)}</code>.`,
+                    `<strong>Demo environment:</strong> your verification code is <code>${escapeHtml(otpPayload.demo_otp_code)}</code>.`,
                     'resume-note');
             }
             renderOtpDock();

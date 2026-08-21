@@ -616,6 +616,99 @@ def _send_otp_sms(
         return False, str(exc)
 
 
+def _normalize_otp_phone(phone: Optional[str]) -> Optional[str]:
+    """Strip formatting while preserving an explicit leading plus."""
+    raw = str(phone or "").strip()
+    if not raw:
+        return None
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) < 7:
+        return None
+    return f"+{digits}"
+
+
+def _whatsapp_provider_configured() -> Tuple[bool, str]:
+    """Return whether a real WhatsApp sender is configured (fail closed)."""
+    try:
+        from services.secure_notification_pipeline import SecureNotificationConfig
+    except Exception:
+        return False, "unavailable"
+    provider = (SecureNotificationConfig.WHATSAPP_PROVIDER or "twilio").strip().lower()
+    if provider == "meta":
+        ready = bool(
+            SecureNotificationConfig.META_WHATSAPP_TOKEN
+            and SecureNotificationConfig.META_WHATSAPP_PHONE_ID
+        )
+        return ready, "meta"
+    ready = bool(
+        SecureNotificationConfig.TWILIO_ACCOUNT_SID
+        and SecureNotificationConfig.TWILIO_AUTH_TOKEN
+        and SecureNotificationConfig.TWILIO_WHATSAPP_NUMBER
+    )
+    return ready, "twilio"
+
+
+def _send_otp_whatsapp(
+    phone: str,
+    otp_code: str,
+    expiry_seconds: int,
+    purpose: str,
+    ip_address: Optional[str] = None,
+) -> Tuple[bool, Optional[str]]:
+    """Send OTP via the configured WhatsApp provider.
+
+    Fail closed in production when credentials are missing. The pipeline's
+    Twilio/Meta helpers silently mock in that case, which would mark an OTP
+    as delivered without ever leaving the server.
+    """
+    try:
+        from services.notification_service import should_use_mock_notifications
+        from services.secure_notification_pipeline import (
+            MetaWhatsAppProvider,
+            MockWhatsAppProvider,
+            SecureNotificationConfig,
+            TwilioWhatsAppProvider,
+        )
+    except Exception as exc:
+        return False, f"WhatsApp service unavailable: {exc}"
+
+    destination = _normalize_otp_phone(phone)
+    if not destination:
+        return False, "A valid phone number is required for WhatsApp OTP delivery."
+
+    expiry_minutes = max(1, int(expiry_seconds // 60))
+    wa_body = (
+        f"Your PHINS verification code is {otp_code}. "
+        f"It expires in {expiry_minutes} minute(s). Never share this code."
+    )
+
+    if should_use_mock_notifications():
+        provider = MockWhatsAppProvider()
+    elif (SecureNotificationConfig.WHATSAPP_PROVIDER or "twilio").strip().lower() == "meta":
+        if not (
+            SecureNotificationConfig.META_WHATSAPP_TOKEN
+            and SecureNotificationConfig.META_WHATSAPP_PHONE_ID
+        ):
+            return False, "WhatsApp provider is not configured."
+        provider = MetaWhatsAppProvider()
+    else:
+        if not (
+            SecureNotificationConfig.TWILIO_ACCOUNT_SID
+            and SecureNotificationConfig.TWILIO_AUTH_TOKEN
+            and SecureNotificationConfig.TWILIO_WHATSAPP_NUMBER
+        ):
+            return False, "WhatsApp provider is not configured."
+        provider = TwilioWhatsAppProvider()
+
+    try:
+        success, _message_id, error = provider.send(to=destination, message=wa_body)
+        if bool(success):
+            return True, None
+        return False, error or "Unknown WhatsApp send failure"
+    except Exception as exc:
+        return False, str(exc)
+
+
 def _send_otp_via_channel(
     delivery_channel: str,
     otp_code: str,
@@ -625,18 +718,19 @@ def _send_otp_via_channel(
     phone: Optional[str] = None,
     ip_address: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
-    """Dispatch OTP delivery to email, SMS, or both based on channel.
+    """Dispatch OTP delivery to email, SMS, WhatsApp, or both (email+SMS).
 
     For ``'both'`` we treat the request as successful if at least one
     channel delivers, while still surfacing the failed channel's error
-    so operators can fix it.
+    so operators can fix it. WhatsApp is a first-class channel of its
+    own — it is not folded into ``'both'``.
     """
     channel = (delivery_channel or 'email').strip().lower()
-    if channel not in ('email', 'sms', 'both'):
+    if channel not in ('email', 'sms', 'whatsapp', 'both'):
         channel = 'email'
 
-    email_ok = sms_ok = False
-    email_error = sms_error = None
+    email_ok = sms_ok = whatsapp_ok = False
+    email_error = sms_error = whatsapp_error = None
 
     if channel in ('email', 'both'):
         if not email:
@@ -661,6 +755,19 @@ def _send_otp_via_channel(
                 purpose=purpose,
                 ip_address=ip_address,
             )
+
+    if channel == 'whatsapp':
+        if not phone:
+            whatsapp_error = "A phone number is required for WhatsApp OTP delivery."
+        else:
+            whatsapp_ok, whatsapp_error = _send_otp_whatsapp(
+                phone=phone,
+                otp_code=otp_code,
+                expiry_seconds=expiry_seconds,
+                purpose=purpose,
+                ip_address=ip_address,
+            )
+        return whatsapp_ok, whatsapp_error
 
     if channel == 'email':
         return email_ok, email_error
@@ -746,7 +853,7 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
     email = body_data.get('email')
     phone = (body_data.get('phone') or '').strip() or None
     delivery_channel = (body_data.get('delivery_channel') or 'email').strip().lower()
-    if delivery_channel not in ('email', 'sms', 'both'):
+    if delivery_channel not in ('email', 'sms', 'whatsapp', 'both'):
         delivery_channel = 'email'
     purpose = body_data.get('purpose', 'login')
     user_type = body_data.get('user_type', 'customer')
@@ -774,10 +881,13 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
     # downstream step that trusts the verification. SMS-bound codes must go
     # through a flow that targets the account's registered phone (for example
     # /api/request-password-reset), so restrict this endpoint to email.
-    if delivery_channel in ('sms', 'both'):
+    if delivery_channel in ('sms', 'whatsapp', 'both'):
         return 400, {
             "success": False,
-            "error": "SMS verification is not available on this endpoint; codes are delivered via email.",
+            "error": (
+                "Phone-channel verification is not available on this endpoint; "
+                "codes are delivered via email."
+            ),
             "error_code": "UNSUPPORTED_CHANNEL",
         }
 
