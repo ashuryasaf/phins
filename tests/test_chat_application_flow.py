@@ -672,6 +672,101 @@ def test_uw_decision_auto_answer_and_notification():
     assert any(m.get("kind") == "uw_decision" for m in rejected.get("messages") or [])
 
 
+def test_chat_whatsapp_otp_uses_session_phone_not_request_body():
+    """WhatsApp OTP must land on the captured session phone, never a body phone."""
+    from unittest.mock import patch
+
+    app_id, resume_code = _start_with_contact(
+        "chat.wa.bound@example.com", phone="+1-555-0166"
+    )
+
+    captured = {}
+
+    def _fake_send(delivery_channel, otp_code, expiry_seconds, purpose,
+                   email=None, phone=None, ip_address=None):
+        captured.update({
+            "delivery_channel": delivery_channel,
+            "phone": phone,
+            "email": email,
+            "purpose": purpose,
+            "otp_code": otp_code,
+        })
+        return True, None
+
+    with patch("web_portal.api_extensions._send_otp_via_channel", _fake_send):
+        status, otp = _post(f"/api/chat-application/{app_id}/otp/request", {
+            "resume_code": resume_code,
+            "delivery_channel": "whatsapp",
+            "phone": "+19998887777",
+        })
+    assert status == 200, otp
+    assert otp["delivery_channel"] == "whatsapp"
+    assert otp.get("notification_sent") is True
+    assert "phone" not in otp
+    assert otp.get("masked_phone")
+    assert "7777" not in str(otp.get("masked_phone"))
+    assert captured["delivery_channel"] == "whatsapp"
+    assert captured["phone"] == "+1-555-0166"
+    assert captured["phone"] != "+19998887777"
+    assert captured["email"] == "chat.wa.bound@example.com"
+
+    status, verified = _post(f"/api/chat-application/{app_id}/otp/verify", {
+        "verification_id": otp["verification_id"],
+        "otp_code": otp["demo_otp_code"],
+        "resume_code": resume_code,
+    })
+    assert status == 200, verified
+    assert verified["step"]["id"] == "dob"
+    assert verified.get("verified_via") == "whatsapp"
+    assert verified.get("phone_verified") is True
+    assert verified.get("email_verified") is False
+    assert verified.get("identity_verified") is True
+
+
+def test_chat_whatsapp_otp_refuses_unknown_channel_and_keeps_email_default():
+    app_id, resume_code = _start_with_contact("chat.wa.default@example.com")
+
+    status, bad = _post(f"/api/chat-application/{app_id}/otp/request", {
+        "resume_code": resume_code,
+        "delivery_channel": "carrier-pigeon",
+    })
+    assert status == 400, bad
+    assert bad.get("error_code") == "UNSUPPORTED_CHANNEL"
+
+    status, otp = _post(f"/api/chat-application/{app_id}/otp/request",
+                        {"resume_code": resume_code})
+    assert status == 200, otp
+    assert otp.get("delivery_channel") in (None, "email")
+    assert otp.get("masked_email")
+    status, verified = _post(f"/api/chat-application/{app_id}/otp/verify", {
+        "verification_id": otp["verification_id"],
+        "otp_code": otp["demo_otp_code"],
+        "resume_code": resume_code,
+    })
+    assert status == 200, verified
+    assert verified.get("verified_via") == "email"
+    assert verified.get("email_verified") is True
+    assert verified.get("identity_verified") is True
+
+
+def test_chat_phone_step_offers_whatsapp_and_email_channels():
+    app_id, resume_code = _start_with_contact("chat.wa.offer@example.com")
+    # Re-read the last message turn via a no-op get: the phone answer already
+    # returned otp_required. Start a fresh contact capture and inspect the
+    # message payload from _start_with_contact's last reply by repeating it.
+    status, body = _post("/api/chat-application/start", {})
+    assert status == 201, body
+    app_id = body["application_id"]
+    resume_code = body["resume_code"]
+    _answer(app_id, "Noa Barak", resume_code=resume_code)
+    _answer(app_id, "chat.wa.offer2@example.com", resume_code=resume_code)
+    reply = _answer(app_id, "+1-555-0144", resume_code=resume_code)
+    assert reply.get("otp_required") is True
+    assert reply.get("otp_channels") == ["email", "whatsapp"]
+    assert reply.get("masked_email")
+    assert reply.get("masked_phone")
+
+
 if __name__ == "__main__":
     import sys
     sys.exit(pytest.main([__file__, "-v"]))

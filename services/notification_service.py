@@ -3306,6 +3306,9 @@ If you did not request this code, please ignore this email.
             'otp_sms': {
                 'body': 'Your PHINS code is {{ code }}. Expires in {{ expiry_minutes }} min. Never share this code.'
             },
+            'otp_whatsapp': {
+                'body': 'Your PHINS verification code is {{ code }}. It expires in {{ expiry_minutes }} min. Never share this code.'
+            },
             'password_reset': {
                 'subject': 'PHINS Password Reset Request',
                 'body': '''Hello {{ name }},

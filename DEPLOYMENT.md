@@ -416,6 +416,11 @@ For production deployments:
 9. Never commit backups: `backups/` is gitignored and
    `scripts/backup_platform.sh` refuses to write into a tracked path. A snapshot
    can contain a full database dump (see `BACKUP.md`)
+10. Chat apply (`/apply-chat.html`) can send OTP via Email or WhatsApp. WhatsApp
+    uses the applicant's session phone only (never a caller-supplied number).
+    Configure `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` + `TWILIO_WHATSAPP_NUMBER`,
+    or `META_WHATSAPP_TOKEN` + `META_WHATSAPP_PHONE_ID` (and `WHATSAPP_PROVIDER=meta`).
+    Production fails closed if those credentials are missing — it will not mock-send.
 
 ## Cost Estimates
 
