@@ -1564,9 +1564,11 @@
             const companyName = supplier.company_name || supplierId;
             return `${companyName}: ${info.awaiting_customer_approval_orders || 0} awaiting customer`;
           });
-        document.getElementById('approval-queue-summary').textContent = approvalSummary.length
-          ? approvalSummary.join(' | ')
-          : 'All listed suppliers are payout-ready.';
+        if (entries.length) {
+          document.getElementById('approval-queue-summary').textContent = approvalSummary.length
+            ? approvalSummary.join(' | ')
+            : 'All listed suppliers are payout-ready.';
+        }
         
         if (entries.length) {
           tbody.innerHTML = entries.map(([supplierId, info]) => {
