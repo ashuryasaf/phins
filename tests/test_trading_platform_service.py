@@ -134,6 +134,219 @@ def test_record_trade_to_ledger_stores_realized_gain_metadata(monkeypatch):
     assert captured["metadata"]["realized_gain"] == 200
 
 
+def test_record_trade_to_ledger_skips_when_no_fill_price(monkeypatch):
+    """Verify that trades with null filled_avg_price and no broker fill
+    are silently skipped rather than recorded with amount=0."""
+    service = TradingPlatformService()
+    service._connected = True
+
+    captured = {}
+    fake_portal = types.ModuleType("web_portal.server")
+    fake_portal.TRANSACTION_LEDGER = {}
+
+    def fake_record_transaction(**kwargs):
+        captured.update(kwargs)
+        return kwargs
+
+    fake_portal.record_transaction = fake_record_transaction
+    monkeypatch.setitem(sys.modules, "web_portal.server", fake_portal)
+    monkeypatch.setattr(web_portal, "server", fake_portal, raising=False)
+
+    monkeypatch.setattr(service, "_poll_fill_price", lambda order_id: None)
+
+    service._record_trade_to_ledger(
+        {
+            "order_id": "ord-pending",
+            "symbol": "AAPL",
+            "side": "buy",
+            "qty": "10",
+            "filled_avg_price": None,
+            "type": "market",
+            "status": "accepted",
+            "broker": "alpaca",
+        },
+    )
+
+    assert captured == {}, "No transaction should be recorded when fill price is unavailable"
+
+
+def test_record_trade_to_ledger_polls_for_fill_price(monkeypatch):
+    """Verify that when filled_avg_price is null, the method polls the
+    broker and records the correct amount once the fill price arrives."""
+    service = TradingPlatformService()
+    service._connected = True
+
+    captured = {}
+    fake_portal = types.ModuleType("web_portal.server")
+    fake_portal.TRANSACTION_LEDGER = {}
+
+    def fake_record_transaction(**kwargs):
+        captured.update(kwargs)
+        return kwargs
+
+    fake_portal.record_transaction = fake_record_transaction
+    monkeypatch.setitem(sys.modules, "web_portal.server", fake_portal)
+    monkeypatch.setattr(web_portal, "server", fake_portal, raising=False)
+
+    monkeypatch.setattr(service, "_poll_fill_price", lambda order_id: "200")
+
+    service._record_trade_to_ledger(
+        {
+            "order_id": "ord-pending",
+            "symbol": "AAPL",
+            "side": "buy",
+            "qty": "10",
+            "filled_avg_price": None,
+            "type": "market",
+            "status": "accepted",
+            "broker": "alpaca",
+        },
+    )
+
+    assert captured["amount"] == 2000
+    assert captured["metadata"]["price"] == "200"
+
+
+def test_record_trade_sell_no_fill_price_skips_negative_gain(monkeypatch):
+    """The original bug: selling with null fill price produced
+    realized_gain = -cost_basis. Verify this no longer happens."""
+    service = TradingPlatformService()
+    service._connected = True
+
+    captured = {}
+    fake_portal = types.ModuleType("web_portal.server")
+    fake_portal.TRANSACTION_LEDGER = {}
+
+    def fake_record_transaction(**kwargs):
+        captured.update(kwargs)
+        return kwargs
+
+    fake_portal.record_transaction = fake_record_transaction
+    monkeypatch.setitem(sys.modules, "web_portal.server", fake_portal)
+    monkeypatch.setattr(web_portal, "server", fake_portal, raising=False)
+
+    monkeypatch.setattr(service, "_poll_fill_price", lambda order_id: None)
+
+    service._record_trade_to_ledger(
+        {
+            "order_id": "ord-sell",
+            "symbol": "AAPL",
+            "side": "sell",
+            "qty": "10",
+            "filled_avg_price": None,
+            "type": "market",
+            "status": "accepted",
+            "broker": "alpaca",
+        },
+        position_snapshot={
+            "symbol": "AAPL",
+            "qty": 10,
+            "avg_entry_price": 180,
+            "cost_basis": 1800,
+        },
+    )
+
+    assert captured == {}, "Sell with no fill price must not produce a negative realized_gain entry"
+
+
+def test_record_trade_sell_polls_and_records_correct_gain(monkeypatch):
+    """Sell order with null initial fill price should poll and record
+    the correct realized_gain once the fill price is available."""
+    service = TradingPlatformService()
+    service._connected = True
+
+    captured = {}
+    fake_portal = types.ModuleType("web_portal.server")
+    fake_portal.TRANSACTION_LEDGER = {}
+
+    def fake_record_transaction(**kwargs):
+        captured.update(kwargs)
+        return kwargs
+
+    fake_portal.record_transaction = fake_record_transaction
+    monkeypatch.setitem(sys.modules, "web_portal.server", fake_portal)
+    monkeypatch.setattr(web_portal, "server", fake_portal, raising=False)
+
+    monkeypatch.setattr(service, "_poll_fill_price", lambda order_id: "200")
+
+    service._record_trade_to_ledger(
+        {
+            "order_id": "ord-sell",
+            "symbol": "AAPL",
+            "side": "sell",
+            "qty": "10",
+            "filled_avg_price": None,
+            "type": "market",
+            "status": "accepted",
+            "broker": "alpaca",
+        },
+        position_snapshot={
+            "symbol": "AAPL",
+            "qty": 10,
+            "avg_entry_price": 180,
+            "cost_basis": 1800,
+        },
+    )
+
+    assert captured["amount"] == 2000
+    assert captured["metadata"]["realized_gain"] == 200
+    assert captured["metadata"]["estimated_cost_basis"] == 1800
+
+
+def test_poll_fill_price_returns_price_on_fill(monkeypatch):
+    """_poll_fill_price returns the filled price when the order fills."""
+    service = TradingPlatformService()
+    service._connected = True
+    service._FILL_POLL_INTERVAL = 0.01
+    service._FILL_POLL_MAX_WAIT = 0.1
+
+    call_count = {"n": 0}
+
+    def fake_trade_request(method, path, body=None):
+        call_count["n"] += 1
+        if call_count["n"] < 3:
+            return {"id": "ord-1", "status": "accepted", "filled_avg_price": None}
+        return {"id": "ord-1", "status": "filled", "filled_avg_price": "150.50"}
+
+    monkeypatch.setattr(service, "_trade_request", fake_trade_request)
+
+    result = service._poll_fill_price("ord-1")
+    assert result == "150.50"
+    assert call_count["n"] >= 3
+
+
+def test_poll_fill_price_returns_none_on_cancel(monkeypatch):
+    """_poll_fill_price returns None when the order is canceled."""
+    service = TradingPlatformService()
+    service._connected = True
+    service._FILL_POLL_INTERVAL = 0.01
+    service._FILL_POLL_MAX_WAIT = 0.1
+
+    def fake_trade_request(method, path, body=None):
+        return {"id": "ord-1", "status": "canceled", "filled_avg_price": None}
+
+    monkeypatch.setattr(service, "_trade_request", fake_trade_request)
+
+    result = service._poll_fill_price("ord-1")
+    assert result is None
+
+
+def test_poll_fill_price_returns_none_on_timeout(monkeypatch):
+    """_poll_fill_price returns None when the order never fills."""
+    service = TradingPlatformService()
+    service._connected = True
+    service._FILL_POLL_INTERVAL = 0.01
+    service._FILL_POLL_MAX_WAIT = 0.05
+
+    def fake_trade_request(method, path, body=None):
+        return {"id": "ord-1", "status": "accepted", "filled_avg_price": None}
+
+    monkeypatch.setattr(service, "_trade_request", fake_trade_request)
+
+    result = service._poll_fill_price("ord-1")
+    assert result is None
+
+
 def test_get_pretax_balance_sheet_uses_realized_gain_metadata(monkeypatch):
     service = TradingPlatformService()
 
