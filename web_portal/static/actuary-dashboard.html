@@ -1481,7 +1481,8 @@
           <h2>🔒 Access Denied</h2>
           <p>This dashboard is restricted to Admin and Actuary roles only.</p>
           <p>Please contact your administrator for access.</p>
-          <button class="btn btn-primary" onclick="window.location.href='/admin.html'">Go to Admin Portal</button>
+          <button class="btn btn-primary" onclick="goToMyDashboard()">Go to My Dashboard</button>
+          <button class="btn btn-outline" onclick="logout()" style="margin-left:10px;">Logout</button>
         </div>
         
         <!-- Overview Section -->
@@ -3755,7 +3756,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     
     async function checkAuth() {
       if (!token) {
-        window.location.href = '/admin.html';
+        // Redirect to login page if no token - not admin page
+        window.location.href = '/login.html';
         return;
       }
       
@@ -3808,13 +3810,33 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         
       } catch (err) {
         console.error('Auth error:', err);
-        window.location.href = '/admin.html';
+        // Redirect to login page on auth error - not admin page
+        window.location.href = '/login.html';
       }
     }
     
     function logout() {
       localStorage.removeItem('phins_token');
-      window.location.href = '/admin.html';
+      localStorage.removeItem('session');
+      sessionStorage.clear();
+      window.location.href = '/login.html';
+    }
+    
+    // Redirect user to appropriate dashboard based on their role
+    function goToMyDashboard() {
+      const role = currentUser?.role?.toLowerCase() || '';
+      const dashboardMap = {
+        'admin': '/admin.html',
+        'actuary': '/actuary-dashboard.html',
+        'underwriter': '/underwriter-dashboard.html',
+        'claims': '/claims-adjuster-dashboard.html',
+        'claims_adjuster': '/claims-adjuster-dashboard.html',
+        'accountant': '/accountant-dashboard.html',
+        'supplier': '/supplier-dashboard.html',
+        'media': '/admin-media.html',
+        'customer': '/client-portal.html'
+      };
+      window.location.href = dashboardMap[role] || '/dashboard.html';
     }
     
     function showSection(sectionId) {
