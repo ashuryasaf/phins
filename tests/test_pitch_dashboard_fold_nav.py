@@ -23,6 +23,7 @@ SECTION_IDS = [
     "regulatory-preruling-avi-ovadia",
     "fintl-vc-meetings-aug",
     "grove-vc-meeting-19aug",
+    "aspire-invest-meeting-sep2026",
     "exec-summary-section",
     "scenario-assessment-section",
     "il-meeting-diary",
@@ -63,6 +64,7 @@ def test_pitch_fold_script_registers_sections():
         "investor-documents-section",
         "fintl-vc-meetings-aug",
         "grove-vc-meeting-19aug",
+        "aspire-invest-meeting-sep2026",
         "scenario-assessment-section",
     ):
         assert f'"{section_id}"' in html
