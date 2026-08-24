@@ -6,11 +6,13 @@ The pack is pinned to the IL pitch dashboard:
   Chief Distribution & Chief Investments
 - bilingual (EN + HE) business plan, 1-hour outline, and mutual NDA
 - 3-year scale identity targeting up to 250,000 issued policies
+- reset actuarial specimen (age 42 · F ILS 1,000,000 · ILS 4,518)
+- PHINS MGA 25% separated from insurance 75%; turnover option after year 3
 - technology layer separated from the first unified insurance product
 - no fundraising ask and no bidding price
 
 These tests read the shipped static assets (no server required) and assert:
-- the pitch dashboard carries the meeting section, nav, and diary seed,
+- the pitch dashboard carries the meeting section, nav, charts, and diary seed,
 - downloadable EN/HE PDFs are linked and registered in the generator,
 - the scale-scenario arithmetic identity is internally consistent,
 - reserved fundraising / bid language is absent from this pack.
@@ -29,18 +31,29 @@ DOCS = STATIC / "investor-docs"
 
 STEMS = [
     ("aspire-invest-meeting-sep2026-brief", False,
-     "September 2026", "Aspire-Invest", "60"),
+     "September 2026", "Aspire-Invest", "4,518"),
     ("aspire-invest-meeting-sep2026-brief-he", True,
-     "ספטמבר 2026", "אספייר-אינבסט", "60"),
+     "ספטמבר 2026", "אספייר-אינבסט", "4,518"),
     ("aspire-invest-business-plan-sep2026", False,
-     "250,000", "Unified Insurance Contract", "3,600"),
+     "250,000", "Unified Insurance Contract", "4,518"),
     ("aspire-invest-business-plan-sep2026-he", True,
-     "250,000", "חוזה הביטוח המאוחד", "3,600"),
+     "250,000", "חוזה הביטוח המאוחד", "4,518"),
     ("aspire-invest-nda-sep2026", False,
      "Aspire-Invest", "Mutual", "Confidential"),
     ("aspire-invest-nda-sep2026-he", True,
      "אספייר-אינבסט", "הדדי", "סודי"),
 ]
+
+# Reset actuarial identity (must hold).
+NEW_ISSUES = (25_000, 75_000, 150_000)
+RISK_PREMIUM = 4_518
+SCALE_EOY = [24_000, 94_080, 230_554]
+SCALE_AVG = [12_000, 59_040, 162_317]
+SCALE_GWP = [54_216_000, 266_742_720, 733_348_206]
+SCALE_PHINS = [13_554_000, 66_685_680, 183_337_052]
+SCALE_INS = [40_662_000, 200_057_040, 550_011_154]
+RETIRED_SCALE_GWP = ("43,200,000", "212,544,000", "584,341,200")
+RETIRED_SCALE_REV = ("10,800,000", "53,136,000", "146,085,300")
 
 
 def _read(p: Path) -> str:
@@ -76,6 +89,7 @@ def test_pitch_dashboard_aspire_invest_section():
     assert "Hanna Hollander" in pd
     assert 'id="aspire-60min-timeline"' in pd
     assert 'id="aspire-scale-identity"' in pd
+    assert 'id="aspire-charts-panel"' in pd
     assert 'id="aspire-two-layers"' in pd
     assert 'id="aspire-why-room"' in pd
 
@@ -103,11 +117,31 @@ def test_aspire_scale_identity_numbers():
         "250,000", "25,000", "75,000", "150,000",
         "24,000", "94,080", "230,554",
         "12,000", "59,040", "162,317",
-        "43,200,000", "212,544,000", "584,341,200",
-        "10,800,000", "53,136,000", "146,085,300",
-        "3,600", "25%",
+        "54,216,000", "266,742,720", "733,348,206",
+        "13,554,000", "66,685,680", "183,337,052",
+        "40,662,000", "200,057,040", "550,011,154",
+        "4,518", "25%", "75%",
     ):
         assert needle in section, f"missing scale-identity figure: {needle}"
+    # Retired ILS 3,600 scale GWP / blended-only take must not remain as
+    # this pack's money identity. ₪3,600 may still appear as the
+    # conservative-book contrast.
+    for retired in RETIRED_SCALE_GWP + RETIRED_SCALE_REV:
+        assert retired not in section, f"retired scale figure still in Aspire section: {retired}"
+
+
+def test_aspire_charts_separate_phins_and_insurance_take():
+    section = _aspire_section(_read(STATIC / "pitch-dashboard.html"))
+    assert 'id="aspire-charts-panel"' in section
+    assert "PHINS MGA" in section
+    assert "Insurance take" in section or "insurance take" in section
+    assert "turnover option" in section.lower()
+    assert "aspire-phins" in section
+    assert "aspire-ins" in section
+    assert "aspire-ins-turnover" in section
+    assert "Savings flow" in section
+    assert "1,000,000" in section
+    assert "average age 42" in section.lower() or "age 42" in section
 
 
 def test_aspire_pack_has_no_fundraise_or_bid():
@@ -141,11 +175,12 @@ def test_dashboard_offers_bilingual_aspire_pdfs():
 
 def test_diary_seeds_aspire_invest_meeting():
     pd = _read(STATIC / "pitch-dashboard.html")
-    assert "phins.il.meeting.diary.v5" in pd
+    assert "phins.il.meeting.diary.v6" in pd
     assert "Aspire-Invest — Chief Distribution" in pd
     assert "2026-09" in pd
     assert "250,000 issued" in pd
     assert "aspire-invest-business-plan-sep2026.pdf" in pd
+    assert "4,518" in pd
 
 
 # ---------------------------------------------------------------------------
@@ -186,44 +221,66 @@ def test_aspire_markdown_carries_the_pack(stem, rtl, needle_a, needle_b, needle_
 
 
 def test_business_plan_scale_identity_reconciles():
-    """Every derived line in the EN business plan matches the stated identity."""
+    """Every derived line in the EN / HE business plan matches the stated identity."""
     md = _read(DOCS / "aspire-invest-business-plan-sep2026.md")
     he = _read(DOCS / "aspire-invest-business-plan-sep2026-he.md")
 
-    new_issues = (25_000, 75_000, 150_000)
-    assert sum(new_issues) == 250_000
+    assert sum(NEW_ISSUES) == 250_000
 
     eoy = 0
     derived_eoy = []
     derived_avg = []
     derived_gwp = []
-    derived_rev = []
-    for new in new_issues:
+    derived_phins = []
+    derived_ins = []
+    for new in NEW_ISSUES:
         persist = round(eoy * 0.92)
         new_if = round(new * 0.96)
         opening = eoy
         eoy = persist + new_if
         avg = (opening + eoy) / 2
-        gwp = avg * 3600
-        rev = gwp * 0.25
+        gwp = avg * RISK_PREMIUM
+        phins = round(gwp * 0.25)
+        ins = gwp - phins
         derived_eoy.append(eoy)
         derived_avg.append(avg)
         derived_gwp.append(int(gwp) if gwp == int(gwp) else gwp)
-        derived_rev.append(int(rev) if rev == int(rev) else rev)
+        derived_phins.append(int(phins) if phins == int(phins) else phins)
+        derived_ins.append(int(ins) if ins == int(ins) else ins)
 
-    assert derived_eoy == [24_000, 94_080, 230_554]
-    assert derived_avg == [12_000, 59_040, 162_317]
-    assert derived_gwp == [43_200_000, 212_544_000, 584_341_200]
-    assert derived_rev == [10_800_000, 53_136_000, 146_085_300]
+    assert derived_eoy == SCALE_EOY
+    assert derived_avg == SCALE_AVG
+    assert derived_gwp == SCALE_GWP
+    assert derived_phins == SCALE_PHINS
+    assert derived_ins == SCALE_INS
+    for gwp, phins, ins in zip(derived_gwp, derived_phins, derived_ins):
+        assert phins + ins == gwp
 
     for doc in (md, he):
         for n in (
             "250,000", "24,000", "94,080", "230,554",
             "12,000", "59,040", "162,317",
-            "43,200,000", "212,544,000", "584,341,200",
-            "10,800,000", "53,136,000", "146,085,300",
+            "54,216,000", "266,742,720", "733,348,206",
+            "13,554,000", "66,685,680", "183,337,052",
+            "40,662,000", "200,057,040", "550,011,154",
+            "4,518",
         ):
             assert n in doc, f"scale identity missing {n}"
+        assert "turnover" in doc.lower() or "מחזור" in doc
+        for retired in RETIRED_SCALE_GWP + RETIRED_SCALE_REV:
+            assert retired not in doc, f"retired scale figure still in plan: {retired}"
+
+
+def test_business_plan_separates_takes_and_savings():
+    md = _read(DOCS / "aspire-invest-business-plan-sep2026.md")
+    assert "PHINS MGA" in md
+    assert "Insurance take" in md
+    assert "300%" in md
+    assert "one-third" in md or "1/3" in md
+    assert "Israel pilot" in md or "Israel-pilot" in md
+    assert "f(42)" in md
+    assert "1.255" in md
+    assert "376.50" in md
 
 
 @pytest.mark.parametrize("stem,rtl,needle_a,needle_b,needle_c", STEMS)

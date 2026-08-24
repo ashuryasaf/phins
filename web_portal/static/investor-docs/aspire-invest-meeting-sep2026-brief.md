@@ -35,8 +35,10 @@ the **PHINS Unified Insurance Contract**: pure-risk life with a lifelong
 3+ ADL disability mechanism, priced on a deterministic actuarial
 simulator and filed tables. Israel first; OECD adapters on the same
 codebase. Today's conversation is readiness, markets, and a scale
-identity of **up to 250,000 issued policies by end-2029**. Valuation and
-any ask stay off the table.
+identity of **up to 250,000 issued policies by end-2029** on the
+**Israel-pilot** reset specimen (age 42 · ILS 4,518), with **PHINS MGA
+25%** separated from the **75% insurance take** and a **turnover option**
+after year 3. Valuation and any ask stay off the table.
 
 ## Why this room
 
@@ -62,7 +64,7 @@ security.
 | 12–24 | Technology | **Layer A** | Production OS; integrity contract; automation vs human touch (underwriting ~92%, billing ~96%, claims ~88%); actuarial simulator and tables; agent ecosystem; what "system ready" means and does not mean. |
 | 24–36 | First insurance product | **Layer B** | Unified contract (Draft 3.1): 3+ ADL, 1:4 below 65 / 1:1 from 65 on reduced life sum; pure risk; fronting / MGA posture; **not** a savings product; **not** kupat-holim LTC. |
 | 36–46 | Markets, regulation, milestones | Both | Israel first; OECD next; Authority path and appointed-actuary workstream; operating milestones through 2029 — no use-of-funds slide. |
-| 46–55 | Scale identity + discussion | Both | Walk the §5 identity: 25k / 100k / **250k issued**; ILS 3,600 · 25% take · 8% lapse; contrast with the conservative 28k book; distribution and investments questions from the two chiefs. |
+| 46–55 | Scale identity + discussion | Both | Walk the §5 identity: 25k / 100k / **250k issued**; **ILS 4,518** (age 42 · F ILS 1,000,000 / disability ILS 250,000); **PHINS MGA 25% / insurance 75%**; savings 300% on 1/3; **turnover option** after year 3; contrast the conservative 28k / ILS 3,600 book; questions from both chiefs. |
 | 55–60 | Close | — | Decision outputs; follow-up date; log the diary. Hard stop at 60:00. |
 
 **Run-of-show rules:** one speaker per segment; questions parked unless
@@ -86,7 +88,7 @@ judgment, governance, and licensed advice.
 ## Pre-meeting preparation
 
 - **Mutual NDA** signed or ready — `/investor-docs/aspire-invest-nda-sep2026.pdf` (EN) and `-he.pdf` (HE). Offer the signable workspace `/legal/nda.html` if they prefer a live signature.
-- **Business plan (5–7 pages)** — `/investor-docs/aspire-invest-business-plan-sep2026.pdf` (EN) and `-he.pdf` (HE). Send 48 hours ahead if NDA is in place.
+- **Business plan (7–8 pages, charts + two-take + turnover)** — `/investor-docs/aspire-invest-business-plan-sep2026.pdf` (EN) and `-he.pdf` (HE). Send 48 hours ahead if NDA is in place.
 - **This outline** — `/investor-docs/aspire-invest-meeting-sep2026-brief.pdf` (EN / HE).
 - **Regulatory memorandum** — offer HE first; EN for the international desk.
 - **Scenario Lab** pre-loaded on a tablet; **do not** pre-load the deal / valuation configurator.
@@ -125,8 +127,12 @@ Those remain reserved for a later, separately scoped conversation.
 ---
 
 **Data integrity notice:** this outline is an operational admin
-preparation tool. The 250,000 issued-policy target and the ILS 3,600 /
-25% / 8% identity are the scale-scenario planning assumptions in the
-companion business plan — not commitments or guidance. This document
-contains no fundraising ask and no bidding price. Agendas and decision
-outputs do not write to the platform ledger.
+preparation tool. The 250,000 issued-policy target and the reset
+identity (ILS 4,518 · age 42 · max issue 65 · life ILS 1,000,000 /
+disability ILS 250,000 · PHINS MGA 25% / insurance 75% · savings 300%
+on one-third · 8% lapse · Israel pilot · turnover option after year 3)
+are the scale-scenario planning assumptions in the companion business
+plan — not commitments or guidance. They do not overwrite the
+conservative IL book (ILS 3,600 mix). This document contains no
+fundraising ask and no bidding price. Agendas and decision outputs do
+not write to the platform ledger.

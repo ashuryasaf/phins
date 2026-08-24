@@ -86,11 +86,13 @@ Israel, would be filed separately through a licensed body).
 | Window | Age 3, lifelong while premiums are paid (does not expire at 65) |
 | Below 65 | Life = face F; disability D = F ÷ 4 (ratio 1:4) |
 | From 65 | Life = F ÷ 4; disability D = life (ratio 1:1 on the reduced sum) |
-| Example | Face ILS 500,000 → below 65: ILS 500,000 / ILS 125,000; from 65: ILS 125,000 / ILS 125,000 |
+| Planning specimen (this pack) | Face ILS 1,000,000 → below 65: life ILS 1,000,000 / disability ILS 250,000; from 65: life ILS 250,000 / disability ILS 250,000 |
 | After disability claim below 65 | Policy continues; life becomes 0.75 × F; disability layer ends |
 | Issue caps (below 65) | Life ILS 1,000,000; disability ILS 250,000 |
-| Premium | Age-adjustable risk premium, re-priced each anniversary; separate premium per risk |
-| Savings / cash value | None. Pure risk. |
+| Issue ages | 3–65 (max issue age 65); both layers continue past 65 while premiums are paid |
+| Average attained age (pilot book) | 42 — premiums re-price each anniversary on the published age curve f(x) |
+| Premium | Age-adjustable risk premium; separate identified premium per risk (life / disability) |
+| First-product filing | Pure risk. A licensed savings add-on is modelled on **one-third** of the Israel pilot book (see §5) and is a **separate filing**. |
 
 **Licensing:** PHINS Technologies Ltd. is not a licensed insurer. Risk is
 intended to sit with a licensed Israeli insurer (fronting) and/or approved
@@ -117,10 +119,12 @@ Middle East narratives. Each new market is a **regulatory adapter**, not a
 rewrite and not a silent passport from the Israeli file. The 250,000
 issued-policy target below is **Israel-issued stock first**.
 
-**Adjacent Aspire-Invest surfaces (not in the 250,000 count):** agent
-house / pension agency distribution; later pairing of a licensed savings
-add-on or carrier investment account; exchange-member / IB horizon. Named
-as optionality, not as a 2026–2029 commitment.
+**Israel pilot book.** The 250,000 issued-policy target and every shekel
+in §5 are an **Israel-only pilot**. Years 1–3 PHINS is the digital MGA
+on a designated Israeli insurer's paper. After year 3 a **turnover
+option** lets a PHINS-group local insurer take the insurance share
+(subject to licensing and capital). OECD adapters stay sequential, not
+inside this count.
 
 | Regulatory issue | PHINS posture |
 |---|---|
@@ -140,28 +144,76 @@ as optionality, not as a 2026–2029 commitment.
 | EoY 2027 / 28 / 29 | Automation held under live volume; OECD adapter on the same core | Scale-scenario issued stock **25,000 / 100,000 / 250,000** |
 
 The conservative IL book elsewhere on the dashboard (EoY active 4,000 /
-12,000 / 28,000) remains the **tested base case**. Section 5 is the
-**illustrative scale ceiling** — same unit economics, larger issued stock.
+12,000 / 28,000 · ILS 3,600 mix) remains the **tested small-book base
+case**. Section 5 is the **Israel-pilot scale ceiling** on the **reset
+actuarial specimen** (age 42 · face ILS 1,000,000). Do not mix the two
+premiums.
 
 ---
 
-## 5. Three-year scale scenario — up to 250,000 issued policies
+## 5. Israel-pilot scale scenario — 250,000 issued · reset actuarial specimen
 
-Forward-looking planning identity, not guidance. PHINS is a **digital MGA
-/ platform earning a take rate on premium**; claims reserves are **not**
-PHINS revenue.
+Forward-looking planning identity for the **Israeli market as pilot**,
+not guidance. Years 1–3 PHINS is a **digital MGA**; the **insurance
+take** sits with the fronting Israeli insurer. Claims reserves are
+**never** PHINS MGA revenue. After year 3 a **turnover option** can move
+the insurance take into a PHINS-group local insurer.
+
+### 5.1 Reset actuarial specimen (filed tables · age curve f(x))
+
+| Parameter | Value | Source |
+|---|---|---|
+| Average life cover | ILS 1,000,000 | Plan-level issue cap; Draft 3.1 |
+| Disability cover | ILS 250,000 | Face ÷ 4 (ratio 1:4) below 65 |
+| Max issue age | 65 | Filed entry ages 3–65 |
+| Average attained age | 42 | Pilot-book planning average |
+| Age factor f(42) | 1.00 + (42 − 25) × 0.015 = **1.255** | risk_reference_v1 / filing table |
+| Life premium / month | (1,000,000 / 1,000) × 0.25 × 1.255 = **ILS 313.75** | Filing formula |
+| Disability premium / month | (250,000 / 1,000) × 0.25 × 1.255 = **ILS 62.75** | Filing formula |
+| Combined risk premium | **ILS 376.50 / month · ILS 4,518 / year** | 313.75 + 62.75; × 12 |
+| Premiums re-price | Each policy anniversary on published f(x) | Draft 3.1 consumer disclosure |
+
+Reference check vs the filed ILS 500,000 specimen (150 × f(x) / month):
+this pack uses **twice the face**, so 300 × f(42) = 300 × 1.255 =
+**376.50 / month**. Life : disability premium = 5 : 1 (five-sixths /
+one-sixth of risk GWP).
+
+### 5.2 Savings add-on — 300% on one-third of the portfolio
+
+The first-product filing remains **pure risk**. For this Israel-pilot
+scale identity only:
+
+- **One-third** of in-force elects a licensed savings add-on (separate
+  filing through a duly licensed body — not in the Section 40 risk file).
+- Savings contribution on those policies = **300% of that policy's risk
+  premium** = 3 × 4,518 = **ILS 13,554 / year**.
+- Identity: (1/3) × 300% = **100%**. Portfolio savings flow equals risk
+  GWP exactly. Blended customer outlay = **ILS 9,036 / year**
+  (4,518 + 4,518).
+
+Savings is **not** insurance GWP and is **not** split 25/75. It is a
+deposit / investment flow shown beside the risk book so Aspire-Invest's
+investments bench can see the adjacent surface.
+
+### 5.3 Stated volume and take assumptions
 
 | Assumption | Value |
 |---|---|
-| Average annual premium | ILS 3,600 (ILS 300 / month) — same tested IL assumption |
-| PHINS take rate on GWP | 25% — blended MGA + platform take; **not a bid** |
+| Market | Israel pilot only |
+| Years 1–3 role | Digital MGA on designated Israeli insurer paper |
+| After year 3 | Turnover option — PHINS-group local insurer may take the insurance share |
+| PHINS MGA / platform take | **25% of risk GWP** — not a bid |
+| Insurance take (carrier) | **75% of risk GWP** — claims, reserves, reinsurance, carrier expense / profit sit here |
 | Annual lapse | 8% on opening in-force; 4% (half-year) on new issues |
 | Sales start | 1 January 2027 |
-| New issues | 25,000 / 75,000 / 150,000 |
+| New issues | 25,000 / 75,000 / 150,000 (max issue age 65) |
 | EoY in-force | `round(prior × 0.92) + round(new × 0.96)` |
 | Average in-force | `(opening + closing) / 2` (Year 1 opening = 0) |
-| GWP | average in-force × ILS 3,600 |
-| PHINS net revenue | 25% × GWP |
+| Risk GWP | average in-force × ILS 4,518 |
+| PHINS take | 25% × risk GWP (nearest shekel; insurance take = GWP − PHINS take) |
+| Savings flow | = risk GWP (from the 1/3 × 300% identity) |
+
+### 5.4 Issued stock, in-force, risk GWP, and the two takes
 
 | Line | 2027 | 2028 | 2029 |
 |---|---:|---:|---:|
@@ -172,32 +224,77 @@ PHINS revenue.
 | New in-force `round(new × 0.96)` | 24,000 | 72,000 | 144,000 |
 | EoY in-force | 24,000 | 94,080 | 230,554 |
 | Average in-force | 12,000 | 59,040 | 162,317 |
-| GWP (ILS) | 43,200,000 | 212,544,000 | 584,341,200 |
-| PHINS net revenue 25% (ILS) | 10,800,000 | 53,136,000 | 146,085,300 |
+| Risk GWP (ILS) | 54,216,000 | 266,742,720 | 733,348,206 |
+| of which life 5/6 | 45,180,000 | 222,285,600 | 611,123,505 |
+| of which disability 1/6 | 9,036,000 | 44,457,120 | 122,224,701 |
+| **PHINS MGA take 25%** | **13,554,000** | **66,685,680** | **183,337,052** |
+| **Insurance take 75%** | **40,662,000** | **200,057,040** | **550,011,154** |
+| Savings flow (1/3 × 300%) | 54,216,000 | 266,742,720 | 733,348,206 |
 
 **Arithmetic (must hold):** 25,000 + 75,000 + 150,000 = **250,000**.
-24,000 × 0.92 = 22,080; + 72,000 = **94,080**. 94,080 × 0.92 = 86,553.6
-→ **86,554**; + 144,000 = **230,554**. Average 2029: (94,080 + 230,554)
-/ 2 = **162,317**. 12,000 × 3,600 = **43,200,000**; 59,040 × 3,600 =
-**212,544,000**; 162,317 × 3,600 = **584,341,200**. Each GWP × 0.25 =
-**10,800,000 / 53,136,000 / 146,085,300**.
+In-force identity unchanged: 24,000 / 94,080 / 230,554. 12,000 × 4,518
+= **54,216,000**; 59,040 × 4,518 = **266,742,720**; 162,317 × 4,518 =
+**733,348,206**. Each PHINS take + insurance take = that year's risk
+GWP (2029: 183,337,052 + 550,011,154 = 733,348,206). Life + disability
+= risk GWP. Savings flow = risk GWP.
 
-EoY in-force (230,554) is below issued stock (250,000) because lapse
-removes prior-year policies. **The target for the room is issued stock
-of up to 250,000 by end-2029.**
+The **75% insurance take is not PHINS profit**. It is the premium the
+risk carrier retains to pay claims and hold reserves. The **25% PHINS
+take is not a bid**.
 
-The simulator prices the unified contract off the filed tables. ILS 3,600
-is the **portfolio planning average** (mix of ages, faces, and the 1:4 /
-1:1 hinge), not a single-age quote. Appraisal-simulation versions on the
-dashboard may be used in a follow-up; they are **not** a price for PHINS
-equity and are **not** shown in this meeting.
+### 5.5 Charts (same identity, drawn)
 
-| | Conservative IL book | This scale scenario |
+Risk GWP bars (2029 = full width). Each bar is 25% gold (PHINS MGA) /
+75% navy (insurance take):
+
+| Year | Risk GWP | Bar (relative to 2029) |
+|---|---:|---|
+| 2027 | 54,216,000 | ##........ (7%) |
+| 2028 | 266,742,720 | #########....... (36%) |
+| 2029 | 733,348,206 | ################ (100%) |
+
+Issued vs EoY in-force (2029 issued = full width):
+
+| Year | Issued EoY | In-force EoY |
+|---|---:|---:|
+| 2027 | 25,000 | 24,000 |
+| 2028 | 100,000 | 94,080 |
+| 2029 | 250,000 | 230,554 |
+
+Take split every year (constant shares):
+
+| Share | Who (years 1–3 MGA) | Who (turnover option from 2030) |
+|---|---|---|
+| 25% PHINS take | PHINS MGA / platform | PHINS MGA / platform (unchanged) |
+| 75% insurance take | Designated Israeli fronting insurer | **PHINS-group local insurer** (option) |
+
+Live colour charts sit on the pitch dashboard Aspire-Invest section.
+
+### 5.6 After year 3 — local-insurer turnover option (Israel)
+
+This is an **option**, not a commitment and not a priced security.
+
+| | Stay MGA (default path) | Turnover to local insurer (option) |
+|---|---|---|
+| Who holds insurance risk | Designated Israeli fronting insurer | PHINS-group licensed Israeli insurer |
+| PHINS 25% | Platform / MGA take — same | Platform / MGA take — same |
+| 75% insurance take | Stays with the fronting carrier | **Turns over** to the PHINS-group insurer |
+| Claims / reserves | Carrier's balance sheet | PHINS insurer's balance sheet (solvency capital required) |
+| 2029 insurance take that would turn over | ILS 550,011,154 (gross premium retained — **not** profit) | Same gross figure; net result after claims / reinsurance / expenses is a later actuarial workstream |
+| Savings add-on | Still a separate licensed vehicle | Still a separate licensed vehicle |
+
+The option is Israel-pilot specific: a working MGA book is the evidence
+an Authority path would want before a local-insurer application. Capital,
+solvency, and reinsurance for that application are **not** tabled in
+this meeting.
+
+| | Conservative IL book (dashboard) | This Israel-pilot scale scenario |
 |---|---:|---:|
 | EoY in-force proxy | 4,000 / 12,000 / 28,000 | 24,000 / 94,080 / 230,554 |
 | Average in-force | 2,000 / 8,000 / 20,000 | 12,000 / 59,040 / 162,317 |
 | Issued EoY Year 3 | not the headline | **250,000** |
-| Unit economics | ILS 3,600 · 25% · 1 Jan 2027 | **identical** |
+| Specimen | Mixed-book ILS 3,600 | **Age 42 · F ILS 1,000,000 · ILS 4,518** |
+| Take presentation | Blended 25% only | **25% PHINS MGA + 75% insurance**, plus turnover option |
 
 ---
 
@@ -229,11 +326,16 @@ summary; Scenario Lab; this pack's outline and NDA.
 ---
 
 **Data integrity notice:** All figures in §5 are forward-looking planning
-assumptions in ILS, derived from the stated identity (ILS 3,600 average
-premium, 25% take rate, 8% annual lapse with mid-year convention on new
-issues, sales from 1 January 2027, new issues 25,000 / 75,000 / 150,000).
-They are not commitments, guidance, or a priced security. They do not
-overwrite the conservative IL book on the pitch dashboard. This document
-contains no fundraising ask and no bidding price. PHINS is modelled as a
-digital MGA / platform; claims reserves are not PHINS revenue. This pack
-does not write to the platform ledger.
+assumptions in ILS for an **Israel pilot**. They derive from the reset
+actuarial specimen (life ILS 1,000,000 / disability ILS 250,000 / average
+age 42 / f(42) = 1.255 / risk premium ILS 4,518), 25% PHINS MGA take and
+75% insurance take (2029 insurance take rounded so both takes sum to risk
+GWP), 8% annual lapse with mid-year convention on new issues, sales from
+1 January 2027, new issues 25,000 / 75,000 / 150,000, and a savings
+add-on of 300% of risk premium on one-third of in-force (savings flow =
+risk GWP). They are not commitments, guidance, or a priced security. They
+do not overwrite the conservative IL book (ILS 3,600 mix) on the pitch
+dashboard. This document contains no fundraising ask and no bidding
+price. Years 1–3 PHINS is modelled as a digital MGA; claims reserves are
+not PHINS MGA revenue. The local-insurer turnover is an option, not a
+commitment. This pack does not write to the platform ledger.
