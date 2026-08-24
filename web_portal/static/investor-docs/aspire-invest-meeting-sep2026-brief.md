@@ -67,6 +67,15 @@ security.
 | 46–55 | Scale identity + discussion | Both | Walk the §5 identity: 25k / 100k / **250k issued**; **ILS 4,518** (age 42 · F ILS 1,000,000 / disability ILS 250,000); **PHINS MGA 25% / insurance 75%**; savings 300% on 1/3; **turnover option** after year 3; contrast the conservative 28k / ILS 3,600 book; questions from both chiefs. |
 | 55–60 | Close | — | Decision outputs; follow-up date; log the diary. Hard stop at 60:00. |
 
+**Israel-pilot scale identity (must be said aloud):** average age 42,
+max issue 65, life ILS 1,000,000 / disability ILS 250,000 → risk
+premium **ILS 4,518** / year. Years 1–3 PHINS is the digital MGA at
+**25%**; the designated Israeli carrier holds **75%**. Savings add-on
+is 300% of risk on one-third of the book (flow = risk GWP, not split
+25/75). After year 3 a **turnover option** can move the 75% into a
+PHINS-group local insurer. Conservative IL book (ILS 3,600) is not
+overwritten.
+
 **Run-of-show rules:** one speaker per segment; questions parked unless
 blocking; live Scenario Lab only if asked (do not open the valuation
 configurator); printed or tablet copies of the EN / HE business plan,
