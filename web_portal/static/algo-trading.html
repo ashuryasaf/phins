@@ -842,6 +842,8 @@
                 <a href="/savings-portfolio.html">Investments</a>
                 <a href="/algo-trading.html" class="active">Algo Trading</a>
                 <a href="/trading-terminal.html">Terminal</a>
+                <a href="/dashboard.html#health-wallet">Wallet</a>
+                <a href="/dashboard.html#claims">Claims</a>
                 <a href="/login.html" class="btn-logout">Logout</a>
             </nav>
         </div>
@@ -860,7 +862,7 @@
                 <div class="brand-divider"></div>
                 <div>
                     <h1 class="brand-title">Algorithmic Trading System</h1>
-                    <div class="brand-tagline">Automated strategies · live signals · risk management</div>
+                    <div class="brand-tagline">Actuarial premium · savings pipeline · live signals</div>
                 </div>
                 <span class="header-badge">LIVE MARKET</span>
             </div>
@@ -1029,12 +1031,33 @@
         </div>
 
         <!-- AI Savings Pipeline Visualization -->
-        <div class="section" style="margin-bottom: 1.5rem; background: radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%), var(--bg-card); border: 1px solid var(--phins-line);">
+        <div class="section" id="unifiedPipelineSection" style="margin-bottom: 1.5rem; background: radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%), var(--bg-card); border: 1px solid var(--phins-line);">
             <div class="section-header">
-                <h2 class="section-title">AI Savings Pipeline</h2>
-                <div style="display: flex; gap: 0.5rem;">
+                <h2 class="section-title">Actuarial Premium &amp; Savings Pipeline</h2>
+                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                    <span id="actuarialSourceBadge" style="background: rgba(227, 191, 111, 0.16); color: var(--phins-gold-strong); padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.72rem; letter-spacing: 0.06em;">PHINS_ACTUARIAL_TABLES_V1</span>
                     <span id="pipelineHealth" style="background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem;">● Excellent</span>
                     <button class="btn btn-outline btn-small" onclick="loadPipelineData()">⟳</button>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; margin-bottom: 1rem;">
+                <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
+                    <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Monthly Premium</div>
+                    <div id="actuarialPremium" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">$0.00</div>
+                </div>
+                <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
+                    <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Risk Coverage</div>
+                    <div id="actuarialRiskPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">50%</div>
+                    <div id="actuarialRiskAmt" style="font-size: 0.75rem; color: var(--text-secondary);">$0.00</div>
+                </div>
+                <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
+                    <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Savings Portion</div>
+                    <div id="actuarialSavingsPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">50%</div>
+                    <div id="actuarialSavingsAmt" style="font-size: 0.75rem; color: var(--text-secondary);">$0.00</div>
+                </div>
+                <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
+                    <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Policies / Age</div>
+                    <div id="actuarialPolicyMeta" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.05rem; font-weight: 600;">0 · —</div>
                 </div>
             </div>
             
@@ -2967,6 +2990,38 @@
         
         // ========== SAVINGS PIPELINE FUNCTIONS ==========
         
+        function setPipelineText(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value;
+        }
+
+        function applyActuarialFromUnified(unified) {
+            const dist = (unified && unified.monthly_distribution) || {};
+            const alloc = dist.allocation_pct || {};
+            const actuarial = dist.actuarial_data || {};
+            const savingsPct = Number(alloc.savings_pct != null ? alloc.savings_pct : 50);
+            const riskPct = Number(alloc.risk_pct != null ? alloc.risk_pct : 50);
+            const premium = Number(dist.total_premium || 0);
+            const riskAmt = Number(dist.risk_coverage != null ? dist.risk_coverage : premium * riskPct / 100);
+            const savingsAmt = Number(
+                dist.savings_amount != null ? dist.savings_amount : (dist.to_savings != null ? dist.to_savings : premium * savingsPct / 100)
+            );
+            const source = actuarial.data_source || actuarial.table_source || 'PHINS_ACTUARIAL_TABLES_V1';
+            const age = dist.customer_age != null ? dist.customer_age : actuarial.age;
+            const policies = dist.policy_count != null ? dist.policy_count : '';
+            setPipelineText('actuarialSourceBadge', source);
+            setPipelineText('actuarialPremium', `$${premium.toLocaleString('en-US', {minimumFractionDigits: 2})}`);
+            setPipelineText('actuarialRiskPct', `${riskPct.toFixed(0)}%`);
+            setPipelineText('actuarialRiskAmt', `$${riskAmt.toLocaleString('en-US', {minimumFractionDigits: 0})}`);
+            setPipelineText('actuarialSavingsPct', `${savingsPct.toFixed(0)}%`);
+            setPipelineText('actuarialSavingsAmt', `$${savingsAmt.toLocaleString('en-US', {minimumFractionDigits: 0})}`);
+            const meta = [];
+            if (age !== undefined && age !== null && age !== '') meta.push(`Age ${age}`);
+            if (policies !== '') meta.push(`${policies} ${Number(policies) === 1 ? 'policy' : 'policies'}`);
+            if (actuarial.adl_level) meta.push(`ADL ${actuarial.adl_level}`);
+            setPipelineText('actuarialPolicyMeta', meta.length ? meta.join(' · ') : 'Live from /api/investment/unified');
+        }
+
         async function loadPipelineData() {
             try {
                 // Load pipeline analytics
@@ -2975,17 +3030,17 @@
                 
                 // Update pipeline visualization
                 if (analytics.balances) {
-                    document.getElementById('pipelineCashBalance').textContent = `$${(analytics.balances.cash_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-                    document.getElementById('pipelineWalletBal').textContent = `$${(analytics.balances.wallet_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`;
-                    document.getElementById('pipelineInvestBal').textContent = `$${(analytics.balances.investment_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`;
-                    document.getElementById('pipelineAlgoBal').textContent = `$${(analytics.balances.algo_trading_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`;
+                    setPipelineText('pipelineCashBalance', `$${(analytics.balances.cash_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`);
+                    setPipelineText('pipelineWalletBal', `$${(analytics.balances.wallet_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`);
+                    setPipelineText('pipelineInvestBal', `$${(analytics.balances.investment_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`);
+                    setPipelineText('pipelineAlgoBal', `$${(analytics.balances.algo_trading_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`);
                 }
                 
                 // Update allocation percentages
                 if (analytics.allocation) {
-                    document.getElementById('pipelineWalletPct').textContent = `${(analytics.allocation.wallet || 15).toFixed(0)}%`;
-                    document.getElementById('pipelineInvestPct').textContent = `${(analytics.allocation.investment || 60).toFixed(0)}%`;
-                    document.getElementById('pipelineAlgoPct').textContent = `${(analytics.allocation.algo_trading || 25).toFixed(0)}%`;
+                    setPipelineText('pipelineWalletPct', `${(analytics.allocation.wallet || 15).toFixed(0)}%`);
+                    setPipelineText('pipelineInvestPct', `${(analytics.allocation.investment || 60).toFixed(0)}%`);
+                    setPipelineText('pipelineAlgoPct', `${(analytics.allocation.algo_trading || 25).toFixed(0)}%`);
                 }
                 
                 // Update health indicator
@@ -2999,27 +3054,47 @@
                         'critical': { bg: 'rgba(239, 68, 68, 0.2)', text: '#f87171' }
                     };
                     const color = colors[health.status] || colors.good;
-                    healthEl.style.background = color.bg;
-                    healthEl.style.color = color.text;
-                    healthEl.textContent = `● ${health.status.charAt(0).toUpperCase() + health.status.slice(1)} (${health.score}/100)`;
+                    if (healthEl) {
+                        healthEl.style.background = color.bg;
+                        healthEl.style.color = color.text;
+                        healthEl.textContent = `● ${health.status.charAt(0).toUpperCase() + health.status.slice(1)} (${health.score}/100)`;
+                    }
                 }
-                
+            } catch (e) {
+                console.error('Failed to load pipeline analytics:', e);
+            }
+
+            try {
+                const unifiedRes = await authFetch(`/api/investment/unified?customer_id=${customerId}`);
+                const unified = await unifiedRes.json();
+                applyActuarialFromUnified(unified);
+            } catch (e) {
+                console.error('Failed to load actuarial / unified investment data:', e);
+            }
+
+            try {
                 // Load AI recommendation
                 const recRes = await authFetch(`/api/pipeline/ai-recommendation?customer_id=${customerId}`);
                 const recommendation = await recRes.json();
                 
                 if (recommendation.recommendations && recommendation.recommendations.length > 0) {
                     const topRec = recommendation.recommendations[0];
-                    document.getElementById('aiRecommendationText').textContent = topRec.message;
+                    setPipelineText('aiRecommendationText', topRec.message);
                 } else {
                     const sentiment = recommendation.market_conditions?.sentiment_label || 'Neutral';
-                    const roi = recommendation.performance?.roi_pct || 0;
-                    document.getElementById('aiRecommendationText').textContent = 
-                        `Market sentiment: ${sentiment}. Your portfolio ROI: ${roi.toFixed(1)}%. Allocation is optimized for your ${recommendation.risk_level || 'moderate'} risk profile.`;
+                    const roi = recommendation.performance?.roi || recommendation.performance?.roi_pct || 0;
+                    setPipelineText(
+                        'aiRecommendationText',
+                        `Market sentiment: ${sentiment}. Your portfolio ROI: ${Number(roi).toFixed(1)}%. Allocation is optimized for your ${recommendation.risk_level || 'moderate'} risk profile.`
+                    );
+                }
+                const badge = document.getElementById('aiConfBadge');
+                if (badge && recommendation.ai_confidence) {
+                    badge.textContent = `${(recommendation.ai_confidence * 100).toFixed(0)}%`;
                 }
             } catch (e) {
                 console.error('Failed to load pipeline data:', e);
-                document.getElementById('aiRecommendationText').textContent = 'Pipeline data loading... Connect your savings to get AI recommendations.';
+                setPipelineText('aiRecommendationText', 'Pipeline data loading... Connect your savings to get AI recommendations.');
             }
         }
         

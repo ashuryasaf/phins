@@ -3,24 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#060d1f">
     <title>Savings & Investment Portfolio | PHINS</title>
+    <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+    <link rel="apple-touch-icon" href="/phins-logo.svg">
     <style>
         :root {
-            --primary: #1565c0;
-            --primary-dark: #0d47a1;
-            --secondary: #42a5f5;
-            --accent: #64b5f6;
+            --phins-navy: #060d1f;
+            --phins-ink: #eaf1ff;
+            --phins-gold: #e3bf6f;
+            --phins-gold-strong: #f7e2a0;
+            --phins-line: rgba(127, 178, 255, 0.16);
+            --primary: #e3bf6f;
+            --primary-dark: #b8893b;
+            --secondary: #4fd8ff;
+            --accent: #7fb2ff;
             --danger: #ef5350;
             --success: #4caf50;
-            --bg-dark: #0d1b3e;
-            --bg-card: #1a237e;
-            --bg-hover: #283593;
-            --text-primary: #f5f9fc;
-            --text-secondary: #90caf9;
-            --border: #3949ab;
-            --gradient-primary: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
-            --gradient-success: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);
-            --gradient-crypto: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+            --bg-dark: #060d1f;
+            --bg-card: rgba(7, 15, 34, 0.96);
+            --bg-hover: rgba(16, 31, 63, 0.96);
+            --text-primary: #eaf1ff;
+            --text-secondary: rgba(234, 241, 255, 0.62);
+            --border: rgba(127, 178, 255, 0.16);
+            --gradient-primary: linear-gradient(135deg, #060d1f 0%, #0e2f63 100%);
+            --gradient-success: linear-gradient(135deg, #0e2f63 0%, #1565c0 100%);
+            --gradient-crypto: linear-gradient(135deg, #b8893b 0%, #e3bf6f 100%);
         }
         
         * {
@@ -31,21 +39,27 @@
         
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg-dark);
-            color: var(--text-primary);
+            background:
+                radial-gradient(1000px 600px at 80% -10%, rgba(21, 68, 155, 0.45), transparent 60%),
+                radial-gradient(800px 520px at 8% 110%, rgba(11, 92, 130, 0.32), transparent 60%),
+                var(--phins-navy);
+            color: var(--phins-ink);
             min-height: 100vh;
             line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
         }
         
-        /* PHINS Unified Header - Elegant Gradient Blue */
+        /* PHINS Unified Header */
         .phins-header {
-            background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
-            border-bottom: 1px solid rgba(255,255,255,0.15);
+            background:
+                radial-gradient(700px 180px at 85% -60%, rgba(21, 68, 155, 0.5), transparent 70%),
+                rgba(6, 13, 31, 0.96);
+            border-bottom: 1px solid var(--phins-line);
             padding: 0;
             position: sticky;
             top: 0;
             z-index: 1000;
-            box-shadow: 0 4px 24px rgba(13, 71, 161, 0.3);
+            box-shadow: 0 8px 30px rgba(2, 8, 23, 0.35);
         }
         .phins-header-inner {
             max-width: 1600px;
@@ -64,19 +78,17 @@
         .phins-logo-icon {
             width: 44px;
             height: 44px;
-            background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
             border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.5rem;
-            box-shadow: 0 4px 15px rgba(66, 165, 245, 0.4);
-            border: 1px solid rgba(255,255,255,0.2);
         }
         .phins-logo-text {
-            font-size: 1.75rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, #fff 0%, #e3f2fd 100%);
+            font-family: 'Space Grotesk', 'Inter', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+            letter-spacing: 0.22em;
+            background: linear-gradient(180deg, #ffffff 0%, #b7d3ff 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
@@ -100,9 +112,83 @@
             color: white;
         }
         .phins-nav a.active {
-            background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
+            background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%);
+            color: #071022;
+            font-weight: 600;
+        }
+        .phins-nav .btn-logout {
+            border: 1px solid rgba(227, 191, 111, 0.65);
+            color: var(--phins-gold);
+            border-radius: 999px;
+        }
+        .mobile-menu-btn {
+            display: none;
+            background: rgba(127, 178, 255, 0.12);
+            border: 1px solid var(--phins-line);
             color: white;
-            box-shadow: 0 4px 12px rgba(66, 165, 245, 0.3);
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+        .page-brand-banner {
+            position: relative;
+            overflow: hidden;
+            border-radius: 14px;
+            padding: 18px 22px 20px;
+            margin-bottom: 20px;
+            color: var(--phins-ink);
+            background:
+                radial-gradient(620px 220px at 88% -40%, rgba(21, 68, 155, 0.55), transparent 70%),
+                radial-gradient(420px 180px at 8% 120%, rgba(79, 216, 255, 0.18), transparent 65%),
+                linear-gradient(135deg, #060d1f 0%, #0e2f63 48%, #123f82 78%, #0a1f4a 100%);
+            box-shadow: 0 10px 26px rgba(2, 8, 23, 0.28);
+        }
+        .page-brand-banner::after {
+            content: '';
+            position: absolute;
+            left: 0; right: 0; bottom: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #b8893b, #f7e2a0, #e3bf6f, #4fd8ff);
+        }
+        .page-brand-banner .brand-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+        .page-brand-banner .brand-emblem { width: 46px; height: 46px; filter: drop-shadow(0 0 10px rgba(79, 216, 255, 0.35)); }
+        .page-brand-banner .brand-wordmark {
+            font-family: 'Space Grotesk', 'Inter', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: 0.16em;
+            background: linear-gradient(180deg, #ffffff 10%, #f7e2a0 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .page-brand-banner .brand-divider { width: 1px; height: 38px; background: rgba(127, 178, 255, 0.28); }
+        .page-brand-banner .brand-title {
+            font-family: 'Space Grotesk', 'Inter', sans-serif;
+            font-size: 1.12rem;
+            font-weight: 600;
+            color: var(--phins-ink);
+            margin: 0;
+        }
+        .page-brand-banner .brand-tagline {
+            font-size: 0.74rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #9fb6dd;
+            margin-top: 2px;
+        }
+        .page-brand-banner .header-badge {
+            background: rgba(79, 216, 255, 0.14);
+            color: #7fe3ff;
+            border: 1px solid rgba(79, 216, 255, 0.35);
+            border-radius: 999px;
+            padding: 3px 12px;
+            font-size: 0.74rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            margin-left: auto;
+            white-space: nowrap;
         }
         
         /* Main Content */
@@ -121,26 +207,45 @@
         }
         
         .summary-card {
-            background: var(--bg-card);
-            border-radius: 16px;
+            position: relative;
+            overflow: hidden;
+            background:
+                radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%),
+                var(--bg-card);
+            border-radius: 12px;
             padding: 1.5rem;
             border: 1px solid var(--border);
+            color: var(--phins-ink);
             transition: transform 0.2s, box-shadow 0.2s;
+            --tile-accent: #7fb2ff;
+        }
+        .summary-card::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--tile-accent) 0%, transparent 88%);
         }
         
         .summary-card:hover {
             transform: translateY(-4px);
-            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 12px 40px rgba(2, 8, 23, 0.42);
         }
         
         .summary-card.highlight {
-            background: var(--gradient-primary);
-            border: none;
+            background:
+                radial-gradient(130% 110% at 100% 0%, rgba(227, 191, 111, 0.22), transparent 62%),
+                var(--bg-card);
+            border: 1px solid rgba(227, 191, 111, 0.35);
+            --tile-accent: #e3bf6f;
         }
         
         .summary-card.success {
-            background: var(--gradient-success);
-            border: none;
+            background:
+                radial-gradient(130% 110% at 100% 0%, rgba(16, 185, 129, 0.22), transparent 62%),
+                var(--bg-card);
+            border: 1px solid rgba(16, 185, 129, 0.28);
+            --tile-accent: #6fe0b8;
         }
         
         .card-label {
@@ -158,6 +263,7 @@
         }
         
         .card-value {
+            font-family: 'Space Grotesk', 'Inter', sans-serif;
             font-size: 2rem;
             font-weight: 700;
             margin-bottom: 0.25rem;
@@ -208,11 +314,13 @@
         }
         
         .section-title {
+            font-family: 'Space Grotesk', 'Inter', sans-serif;
             font-size: 1.25rem;
             font-weight: 600;
             display: flex;
             align-items: center;
             gap: 0.5rem;
+            color: var(--phins-ink);
         }
         
         /* Asset Allocation Chart */
@@ -739,7 +847,10 @@
         
         /* Monthly Due Card */
         .monthly-due-card {
-            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            background:
+                radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%),
+                var(--bg-card);
+            border: 1px solid var(--phins-line);
             border-radius: 12px;
             padding: 1.5rem;
             text-align: center;
@@ -757,10 +868,31 @@
         }
         
         /* Responsive */
-        @media (max-width: 768px) {
-            .header {
-                padding: 1rem;
+        @media (max-width: 1024px) {
+            .mobile-menu-btn { display: block; }
+            .phins-nav {
+                display: none;
+                position: fixed;
+                top: 60px;
+                left: 0;
+                right: 0;
+                background:
+                    radial-gradient(720px 220px at 88% -36%, rgba(21, 68, 155, 0.48), transparent 70%),
+                    #060d1f;
+                flex-direction: column;
+                padding: 10px 12px 28px;
+                gap: 6px;
+                z-index: 999;
+                max-height: calc(100vh - 60px);
+                overflow-y: auto;
             }
+            .phins-nav.open { display: flex !important; }
+            .phins-nav a { width: 100%; text-align: center; padding: 14px 16px; }
+        }
+        @media (max-width: 768px) {
+            .phins-header-inner { padding: 0.5rem 1rem; }
+            .page-brand-banner .brand-divider { display: none; }
+            .page-brand-banner .header-badge { margin-left: 0; }
             
             .main-content {
                 padding: 1rem;
@@ -852,52 +984,165 @@
                 <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
                 <span class="phins-logo-text">PHINS</span>
             </a>
-            <nav class="phins-nav">
+            <button class="mobile-menu-btn" type="button" onclick="toggleMobileMenu()" aria-label="Open menu">☰</button>
+            <nav class="phins-nav" id="mobile-nav">
                 <a href="/dashboard.html">Dashboard</a>
-                <a href="/savings-portfolio.html" class="active">📈 Investments</a>
-                <a href="/algo-trading.html">🤖 Algo Trading</a>
-                <a href="/trading-terminal.html" id="terminalNavBtn">🖥️ Terminal</a>
-                <a href="/dashboard.html#health-wallet">🏥 Wallet</a>
+                <a href="/savings-portfolio.html" class="active">Investments</a>
+                <a href="/algo-trading.html">Algo Trading</a>
+                <a href="/trading-terminal.html" id="terminalNavBtn">Terminal</a>
+                <a href="/dashboard.html#health-wallet">Wallet</a>
                 <a href="/dashboard.html#claims">Claims</a>
                 <a href="/login.html" class="btn-logout" style="padding: 0.5rem 1rem;">Logout</a>
             </nav>
         </div>
     </header>
+    <script>
+        function toggleMobileMenu() {
+            document.getElementById('mobile-nav').classList.toggle('open');
+        }
+    </script>
 
     <main class="main-content">
+        <div class="page-brand-banner">
+            <div class="brand-row">
+                <img src="/phins-logo.svg" alt="PHINS emblem" class="brand-emblem">
+                <span class="brand-wordmark">PHINS</span>
+                <div class="brand-divider"></div>
+                <div>
+                    <h1 class="brand-title">Savings &amp; Investment Portfolio</h1>
+                    <div class="brand-tagline">Actuarial premium · savings pipeline · live markets</div>
+                </div>
+                <span class="header-badge">LIVE BOOK</span>
+            </div>
+        </div>
         <!-- Market Ticker -->
         <div class="market-ticker" id="marketTicker">
             <!-- Populated by JS -->
         </div>
 
+        <!-- Unified actuarial premium + savings pipeline (same contract as algo-trading) -->
+        <div class="section" id="unifiedPipelineSection" style="margin-bottom: 1.5rem; background: radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%), var(--bg-card); border: 1px solid var(--phins-line);">
+            <div class="section-header">
+                <h2 class="section-title">Actuarial Premium &amp; Savings Pipeline</h2>
+                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                    <span id="actuarialSourceBadge" style="background: rgba(227, 191, 111, 0.16); color: var(--phins-gold-strong); padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.72rem; letter-spacing: 0.06em;">PHINS_ACTUARIAL_TABLES_V1</span>
+                    <span id="pipelineHealth" style="background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem;">● Excellent</span>
+                    <button class="btn btn-outline btn-small" onclick="loadPipelineData()">⟳</button>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; margin-bottom: 1rem;">
+                <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
+                    <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Monthly Premium</div>
+                    <div id="actuarialPremium" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">$0.00</div>
+                </div>
+                <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
+                    <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Risk Coverage</div>
+                    <div id="actuarialRiskPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">50%</div>
+                    <div id="actuarialRiskAmt" style="font-size: 0.75rem; color: var(--text-secondary);">$0.00</div>
+                </div>
+                <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
+                    <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Savings Portion</div>
+                    <div id="actuarialSavingsPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">50%</div>
+                    <div id="actuarialSavingsAmt" style="font-size: 0.75rem; color: var(--text-secondary);">$0.00</div>
+                </div>
+                <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
+                    <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Policies / Age</div>
+                    <div id="actuarialPolicyMeta" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.05rem; font-weight: 600;">0 · —</div>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 1.5rem; background: rgba(0,0,0,0.2); border-radius: 12px; margin-bottom: 1rem; overflow-x: auto;">
+                <div style="text-align: center; min-width: 100px;">
+                    <div style="width: 60px; height: 60px; background: linear-gradient(135deg, #0e2f63 0%, #1565c0 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 0.5rem; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;">PREM</div>
+                    <div style="font-weight: 600; font-size: 0.85rem;">Premium</div>
+                    <div style="color: var(--text-secondary); font-size: 0.75rem;">Savings Portion</div>
+                </div>
+                <div style="flex: 0 0 40px; text-align: center;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </div>
+                <div style="text-align: center; min-width: 100px;">
+                    <div style="width: 60px; height: 60px; background: linear-gradient(135deg, #b8893b 0%, #e3bf6f 100%); color: #071022; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 0.5rem; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;">CASH</div>
+                    <div style="font-weight: 600; font-size: 0.85rem;">Cash Balance</div>
+                    <div style="color: var(--success); font-size: 0.75rem;" id="pipelineCashBalance">$0.00</div>
+                </div>
+                <div style="flex: 0 0 60px; text-align: center;">
+                    <div style="background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%); color: #071022; padding: 0.25rem 0.5rem; border-radius: 8px; font-size: 0.7rem; margin-bottom: 0.25rem;">AI</div>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--secondary)" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 0.5rem; min-width: 280px;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem; background: rgba(16, 185, 129, 0.1); padding: 0.5rem 0.75rem; border-radius: 8px;">
+                        <span style="font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; color: #6fe0b8;">HW</span>
+                        <div style="flex: 1;">
+                            <div style="font-size: 0.8rem; font-weight: 500;">Health Wallet</div>
+                            <div style="font-size: 0.7rem; color: var(--text-secondary);">Emergency Fund</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineWalletPct">15%</div>
+                            <div style="font-size: 0.7rem; color: var(--success);" id="pipelineWalletBal">$0</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.75rem; background: rgba(59, 130, 246, 0.1); padding: 0.5rem 0.75rem; border-radius: 8px;">
+                        <span style="font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; color: #7fb2ff;">INV</span>
+                        <div style="flex: 1;">
+                            <div style="font-size: 0.8rem; font-weight: 500;">Investments</div>
+                            <div style="font-size: 0.7rem; color: var(--text-secondary);">Index • Bonds • Crypto</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineInvestPct">60%</div>
+                            <div style="font-size: 0.7rem; color: var(--info);" id="pipelineInvestBal">$0</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.75rem; background: rgba(227, 191, 111, 0.1); padding: 0.5rem 0.75rem; border-radius: 8px;">
+                        <span style="font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; color: #e3bf6f;">ALGO</span>
+                        <div style="flex: 1;">
+                            <div style="font-size: 0.8rem; font-weight: 500;">Algo Trading</div>
+                            <div style="font-size: 0.7rem; color: var(--text-secondary);">Automated Strategies</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineAlgoPct">25%</div>
+                            <div style="font-size: 0.7rem; color: var(--secondary);" id="pipelineAlgoBal">$0</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="aiRecommendation" style="background: rgba(227, 191, 111, 0.08); border: 1px solid rgba(227, 191, 111, 0.28); border-radius: 10px; padding: 1rem;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <span style="font-weight: 600;">AI Recommendation</span>
+                    <span id="aiConfBadge" style="background: rgba(227, 191, 111, 0.22); padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.7rem; margin-left: auto;">Live AI</span>
+                </div>
+                <p id="aiRecommendationText" style="color: var(--text-secondary); font-size: 0.85rem; margin: 0;">
+                    Analyzing your portfolio... Loading AI recommendations.
+                </p>
+            </div>
+        </div>
+
         <!-- Portfolio Summary Cards -->
         <div class="portfolio-summary">
             <div class="summary-card highlight">
-                <div class="card-label">&#128176; Total Portfolio Value</div>
+                <div class="card-label">Total Portfolio Value</div>
                 <div class="card-value" id="totalValue">$0.00</div>
                 <div class="card-change positive" id="totalChange">
                     <span>&#9650;</span> +0.00% all time
                 </div>
             </div>
             <div class="summary-card">
-                <div class="card-label">💊 Health Wallet</div>
+                <div class="card-label">Health Wallet</div>
                 <div class="card-value" id="cashBalance">$0.00</div>
                 <div class="card-change" id="cashLabel">Spendable balance</div>
             </div>
             <div class="summary-card success">
-                <div class="card-label">📊 Invested Assets</div>
+                <div class="card-label">Invested Assets</div>
                 <div class="card-value" id="investedValue">$0.00</div>
                 <div class="card-change" id="unrealizedGain">$0.00 unrealized</div>
             </div>
-            <div class="summary-card" style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); border: none;">
-                <div class="card-label" style="color: rgba(255,255,255,0.9);">💵 Investment Cash</div>
-                <div class="card-value" id="investmentCashBalance" style="color: white;">$0.00</div>
-                <div class="card-change" id="investmentCashLabel" style="color: rgba(255,255,255,0.8);">
+            <div class="summary-card success">
+                <div class="card-label">Investment Cash</div>
+                <div class="card-value" id="investmentCashBalance">$0.00</div>
+                <div class="card-change" id="investmentCashLabel">
                     Available for trading
                 </div>
             </div>
             <div class="summary-card" style="position: relative;">
-                <div class="card-label">&#128197; Monthly Savings</div>
+                <div class="card-label">Monthly Savings</div>
                 <div class="card-value" id="monthlyContribution">$0.00</div>
                 <div class="card-change" id="monthlyBreakdown" style="font-size: 0.7rem; line-height: 1.4;">
                     From active policies
@@ -908,27 +1153,27 @@
                     <div id="distributionDetails" style="font-size: 0.75rem;"></div>
                 </div>
             </div>
-            <div class="summary-card" style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); border: none;">
-                <div class="card-label" style="color: rgba(255,255,255,0.9);">🤖 Algo Trading Portfolio</div>
-                <div class="card-value" id="algoPortfolioValue" style="color: white;">$0.00</div>
-                <div class="card-change" id="algoPnl" style="color: rgba(255,255,255,0.8);">
-                    <span>📊</span> Real-time P&L tracking
+            <div class="summary-card highlight">
+                <div class="card-label">Algo Trading Portfolio</div>
+                <div class="card-value" id="algoPortfolioValue">$0.00</div>
+                <div class="card-change" id="algoPnl">
+                    Real-time P&L tracking
                 </div>
-                <button onclick="window.location.href='/algo-trading.html'" style="margin-top: 8px; padding: 6px 12px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; color: white; cursor: pointer; font-size: 0.8rem;">View Algo Dashboard →</button>
+                <button onclick="window.location.href='/algo-trading.html'" style="margin-top: 8px; padding: 6px 12px; background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%); border: none; border-radius: 6px; color: #071022; cursor: pointer; font-size: 0.8rem; font-weight: 600;">View Algo Dashboard →</button>
             </div>
-            <div class="summary-card" style="background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%); border: 1px solid #d4af37;">
-                <div class="card-label" style="color: #d4af37;">🖥️ Trading Terminal</div>
-                <div class="card-value" style="color: white; font-size: 1.1rem; padding: 6px 0;">Live markets, orders &amp; AutoPilot</div>
-                <button id="openTerminalBtn" onclick="window.location.href='/trading-terminal.html'" style="margin-top: 8px; padding: 8px 16px; background: #d4af37; border: none; border-radius: 6px; color: #0f172a; cursor: pointer; font-size: 0.85rem; font-weight: 700;">Terminal →</button>
+            <div class="summary-card">
+                <div class="card-label">Trading Terminal</div>
+                <div class="card-value" style="font-size: 1.1rem; padding: 6px 0;">Live markets, orders &amp; AutoPilot</div>
+                <button id="openTerminalBtn" onclick="window.location.href='/trading-terminal.html'" style="margin-top: 8px; padding: 8px 16px; background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%); border: none; border-radius: 6px; color: #071022; cursor: pointer; font-size: 0.85rem; font-weight: 700;">Terminal →</button>
             </div>
         </div>
         
         <!-- Data Integrity Control Panel -->
-        <div id="integrityPanel" style="background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border: 1px solid #475569; border-radius: 12px; padding: 16px; margin-bottom: 24px;">
+        <div id="integrityPanel" style="background: radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%), var(--bg-card); border: 1px solid var(--phins-line); border-radius: 12px; padding: 16px; margin-bottom: 24px;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
                 <div style="flex: 1; min-width: 300px;">
                     <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
-                        <span style="font-size: 1.5rem;" id="integrityIcon">🔒</span>
+                        <span style="font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; color: var(--phins-gold);" id="integrityIcon">OK</span>
                         <div>
                             <div style="font-weight: 600; color: white;">Data Integrity Status</div>
                             <div style="font-size: 0.85rem; color: #94a3b8;" id="integrityStatus">Checking...</div>
@@ -942,37 +1187,37 @@
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center;">
                     <button onclick="validatePortfolioIntegrity()" style="padding: 10px 16px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); border: none; border-radius: 8px; color: white; cursor: pointer; font-weight: 600; font-size: 0.85rem; display: flex; align-items: center; gap: 6px;">
-                        <span>🔍</span> Verify
+                        Verify
                     </button>
                     <button onclick="showResetModal()" style="padding: 10px 16px; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); border: none; border-radius: 8px; color: white; cursor: pointer; font-weight: 600; font-size: 0.85rem; display: flex; align-items: center; gap: 6px;">
-                        <span>🔄</span> Reset All Tabs
+                        Reset All Tabs
                     </button>
                 </div>
             </div>
             <!-- Integrity Issues (hidden by default) -->
             <div id="integrityIssues" style="display: none; margin-top: 12px; padding: 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px;">
-                <div style="font-weight: 600; color: #f87171; margin-bottom: 8px;">⚠️ Issues Detected</div>
+                <div style="font-weight: 600; color: #f87171; margin-bottom: 8px;">Issues Detected</div>
                 <ul id="integrityIssuesList" style="margin: 0; padding-left: 20px; color: #fca5a5; font-size: 0.85rem;"></ul>
             </div>
         </div>
         
         <!-- Reset Confirmation Modal -->
         <div id="resetModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 1001; align-items: center; justify-content: center;">
-            <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #475569; border-radius: 16px; padding: 2rem; max-width: 500px; width: 90%;">
+            <div style="background: radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%), var(--bg-card); border: 1px solid var(--phins-line); border-radius: 16px; padding: 2rem; max-width: 500px; width: 90%;">
                 <div style="text-align: center; margin-bottom: 1.5rem;">
-                    <span style="font-size: 3rem;">⚠️</span>
+                    
                     <h2 style="color: white; margin: 1rem 0 0.5rem;">Reset All Display Tabs?</h2>
                     <p style="color: #94a3b8; font-size: 0.9rem;">This will reset all portfolio balances to zero. This action is recorded on the blockchain ledger with a unique audit token.</p>
                 </div>
                 
                 <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 1.5rem;">
-                    <div style="font-weight: 600; color: #60a5fa; margin-bottom: 8px;">📋 Tabs to be Reset:</div>
+                    <div style="font-weight: 600; color: #60a5fa; margin-bottom: 8px;">Tabs to be Reset:</div>
                     <ul style="margin: 0; padding-left: 20px; color: #94a3b8; font-size: 0.85rem;">
-                        <li>💰 Total Portfolio Value</li>
-                        <li>💊 Health Wallet</li>
-                        <li>📊 Invested Assets (Index, Bonds, Crypto)</li>
-                        <li>💵 Investment Cash</li>
-                        <li>🤖 Algo Trading Portfolio</li>
+                        <li>Total Portfolio Value</li>
+                        <li>Health Wallet</li>
+                        <li>Invested Assets (Index, Bonds, Crypto)</li>
+                        <li>Investment Cash</li>
+                        <li>Algo Trading Portfolio</li>
                     </ul>
                 </div>
                 
@@ -985,7 +1230,7 @@
                 
                 <div style="display: flex; gap: 1rem;">
                     <button onclick="executePortfolioReset()" style="flex: 1; padding: 12px 20px; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); border: none; border-radius: 8px; color: white; cursor: pointer; font-weight: 600; font-size: 0.95rem;">
-                        🔄 Confirm Reset
+                        Confirm Reset
                     </button>
                     <button onclick="hideResetModal()" style="padding: 12px 20px; background: #475569; border: none; border-radius: 8px; color: white; cursor: pointer; font-weight: 600; font-size: 0.95rem;">
                         Cancel
@@ -995,20 +1240,20 @@
         </div>
         
         <!-- Quick Action: Transfer to Algo Trading -->
-        <div style="background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 12px; padding: 16px; margin-bottom: 24px;">
+        <div style="background: rgba(227, 191, 111, 0.08); border: 1px solid rgba(227, 191, 111, 0.28); border-radius: 12px; padding: 16px; margin-bottom: 24px;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
                 <div style="flex: 1; min-width: 200px;">
-                    <div style="font-weight: 600; color: #8b5cf6; margin-bottom: 4px;">🚀 Fund Algo Trading from Investment Cash</div>
+                    <div style="font-weight: 600; color: var(--phins-gold); margin-bottom: 4px;">Fund Algo Trading from Investment Cash</div>
                     <p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0;">
                         Transfer funds to algo trading for automated strategies, real-time P&L tracking, and margin calculation.
                     </p>
                     <div id="transferAvailableInfo" style="margin-top: 8px; font-size: 0.8rem; color: #10b981;">
-                        💵 Available: <span id="transferAvailableAmount">$0.00</span>
+                        Available: <span id="transferAvailableAmount">$0.00</span>
                     </div>
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center;">
                     <input type="number" id="algoTransferAmount" placeholder="Amount ($)" min="10" style="padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text-primary); width: 140px;" oninput="validateTransferAmount()">
-                    <button id="algoTransferBtn" onclick="transferToAlgoTrading()" style="padding: 10px 20px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); border: none; border-radius: 8px; color: white; cursor: pointer; font-weight: 600; opacity: 0.5;" disabled>
+                    <button id="algoTransferBtn" onclick="transferToAlgoTrading()" style="padding: 10px 20px; background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%); color: #071022; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; opacity: 0.5;" disabled>
                         Transfer →
                     </button>
                 </div>
@@ -1018,7 +1263,7 @@
         <!-- Quick Trading Actions -->
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 24px;">
             <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 16px;">
-                <div style="font-weight: 600; color: #10b981; margin-bottom: 8px;">⚡ Quick Invest</div>
+                <div style="font-weight: 600; color: #10b981; margin-bottom: 8px;">Quick Invest</div>
                 <div style="display: flex; gap: 8px;">
                     <select id="quickInvestAsset" style="flex: 1; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text-primary);">
                         <option value="SPY">SPY (S&P 500)</option>
@@ -1038,7 +1283,7 @@
             </div>
             
             <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 12px; padding: 16px;">
-                <div style="font-weight: 600; color: #ef4444; margin-bottom: 8px;">📈 P&L Summary</div>
+                <div style="font-weight: 600; color: #ef4444; margin-bottom: 8px;">P&L Summary</div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.85rem;">
                     <div>
                         <div style="color: var(--text-secondary);">Total Invested</div>
@@ -1065,7 +1310,7 @@
                 <!-- Asset Allocation -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">&#128202; Asset Allocation</h2>
+                        <h2 class="section-title">Asset Allocation</h2>
                         <button class="btn btn-outline btn-small" onclick="showRebalanceModal()">Rebalance</button>
                     </div>
                     <div class="allocation-chart">
@@ -1084,7 +1329,7 @@
                 <!-- Portfolio Holdings -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">&#128188; Portfolio Holdings</h2>
+                        <h2 class="section-title">Portfolio Holdings</h2>
                         <button class="btn btn-primary btn-small" onclick="showInvestModal()">+ Buy Asset</button>
                     </div>
                     <table class="assets-table">
@@ -1108,7 +1353,7 @@
                 <!-- Savings Projections -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">&#128302; 25-Year Projection (Monte Carlo)</h2>
+                        <h2 class="section-title">25-Year Projection (Monte Carlo)</h2>
                         <select class="form-select" style="width: auto;" id="projectionYears" onchange="updateProjections()">
                             <option value="5">5 Years</option>
                             <option value="10">10 Years</option>
@@ -1141,7 +1386,7 @@
                 <!-- Lump Sum Target -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">&#127919; Retirement Target</h2>
+                        <h2 class="section-title">Retirement Target</h2>
                     </div>
                     <div class="lump-sum-display">
                         <svg class="progress-ring" viewBox="0 0 160 160">
@@ -1167,7 +1412,7 @@
                 <!-- Risk Profile -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">&#9878;&#65039; Risk Profile</h2>
+                        <h2 class="section-title">Risk Profile</h2>
                     </div>
                     <div class="risk-control">
                         <div class="risk-labels">
@@ -1184,7 +1429,7 @@
                 <!-- AI Recommendations -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">&#129302; AI Recommendations</h2>
+                        <h2 class="section-title">AI Recommendations</h2>
                     </div>
                     <div id="recommendationsList">
                         <!-- Populated by JS -->
@@ -1194,7 +1439,7 @@
                 <!-- Quick Invest -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">&#9889; Quick Invest</h2>
+                        <h2 class="section-title">Quick Invest</h2>
                     </div>
                     <div class="invest-form">
                         <div class="form-group">
@@ -1224,14 +1469,14 @@
                             <label class="form-label">Amount ($)</label>
                             <input type="number" class="form-input" id="quickInvestAmount" placeholder="Enter amount" min="10">
                         </div>
-                        <button class="btn btn-success" onclick="quickInvest()">&#128176; Invest Now</button>
+                        <button class="btn btn-success" onclick="quickInvest()">Invest Now</button>
                     </div>
                 </div>
 
                 <!-- Recent Transactions -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">&#128203; Recent Activity</h2>
+                        <h2 class="section-title">Recent Activity</h2>
                     </div>
                     <div class="transaction-list" id="transactionList">
                         <!-- Populated by JS -->
@@ -1247,7 +1492,7 @@
     <!-- Invest Modal -->
     <div id="investModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
         <div style="background: var(--bg-card); border-radius: 16px; padding: 2rem; max-width: 500px; width: 90%;">
-            <h2 style="margin-bottom: 1.5rem;">&#128176; Buy Asset</h2>
+            <h2 style="margin-bottom: 1.5rem;">Buy Asset</h2>
             <div class="invest-form">
                 <div class="form-group">
                     <label class="form-label">Select Asset</label>
@@ -1333,7 +1578,8 @@
             await Promise.all([
                 loadMarketData(),
                 loadPortfolioData(),
-                loadRecommendations()
+                loadRecommendations(),
+                loadPipelineData()
             ]);
             
             // Update projections
@@ -1490,6 +1736,103 @@
             }
         }
         
+        function setPipelineText(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value;
+        }
+
+        function applyActuarialFromUnified(unified) {
+            const dist = (unified && unified.monthly_distribution) || {};
+            const alloc = dist.allocation_pct || {};
+            const actuarial = dist.actuarial_data || {};
+            const savingsPct = Number(alloc.savings_pct != null ? alloc.savings_pct : 50);
+            const riskPct = Number(alloc.risk_pct != null ? alloc.risk_pct : 50);
+            const premium = Number(dist.total_premium || 0);
+            const riskAmt = Number(dist.risk_coverage != null ? dist.risk_coverage : premium * riskPct / 100);
+            const savingsAmt = Number(
+                dist.savings_amount != null ? dist.savings_amount : (dist.to_savings != null ? dist.to_savings : premium * savingsPct / 100)
+            );
+            const source = actuarial.data_source || actuarial.table_source || 'PHINS_ACTUARIAL_TABLES_V1';
+            const age = dist.customer_age != null ? dist.customer_age : actuarial.age;
+            const policies = dist.policy_count != null ? dist.policy_count : '';
+            setPipelineText('actuarialSourceBadge', source);
+            setPipelineText('actuarialPremium', `$${premium.toLocaleString('en-US', {minimumFractionDigits: 2})}`);
+            setPipelineText('actuarialRiskPct', `${riskPct.toFixed(0)}%`);
+            setPipelineText('actuarialRiskAmt', `$${riskAmt.toLocaleString('en-US', {minimumFractionDigits: 0})}`);
+            setPipelineText('actuarialSavingsPct', `${savingsPct.toFixed(0)}%`);
+            setPipelineText('actuarialSavingsAmt', `$${savingsAmt.toLocaleString('en-US', {minimumFractionDigits: 0})}`);
+            const meta = [];
+            if (age !== undefined && age !== null && age !== '') meta.push(`Age ${age}`);
+            if (policies !== '') meta.push(`${policies} ${Number(policies) === 1 ? 'policy' : 'policies'}`);
+            if (actuarial.adl_level) meta.push(`ADL ${actuarial.adl_level}`);
+            setPipelineText('actuarialPolicyMeta', meta.length ? meta.join(' · ') : 'Live from /api/investment/unified');
+        }
+
+        async function loadPipelineData() {
+            try {
+                const analyticsRes = await authFetch(`/api/pipeline/analytics?customer_id=${customerId}`);
+                const analytics = await analyticsRes.json();
+                if (analytics.balances) {
+                    setPipelineText('pipelineCashBalance', `$${(analytics.balances.cash_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`);
+                    setPipelineText('pipelineWalletBal', `$${(analytics.balances.wallet_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`);
+                    setPipelineText('pipelineInvestBal', `$${(analytics.balances.investment_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`);
+                    setPipelineText('pipelineAlgoBal', `$${(analytics.balances.algo_trading_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`);
+                }
+                if (analytics.allocation) {
+                    setPipelineText('pipelineWalletPct', `${(analytics.allocation.wallet || 15).toFixed(0)}%`);
+                    setPipelineText('pipelineInvestPct', `${(analytics.allocation.investment || 60).toFixed(0)}%`);
+                    setPipelineText('pipelineAlgoPct', `${(analytics.allocation.algo_trading || 25).toFixed(0)}%`);
+                }
+                if (analytics.pipeline_health) {
+                    const healthEl = document.getElementById('pipelineHealth');
+                    const health = analytics.pipeline_health;
+                    const colors = {
+                        'excellent': { bg: 'rgba(16, 185, 129, 0.2)', text: '#34d399' },
+                        'good': { bg: 'rgba(59, 130, 246, 0.2)', text: '#60a5fa' },
+                        'needs_attention': { bg: 'rgba(245, 158, 11, 0.2)', text: '#fbbf24' },
+                        'critical': { bg: 'rgba(239, 68, 68, 0.2)', text: '#f87171' }
+                    };
+                    const color = colors[health.status] || colors.good;
+                    if (healthEl) {
+                        healthEl.style.background = color.bg;
+                        healthEl.style.color = color.text;
+                        healthEl.textContent = `${health.status.charAt(0).toUpperCase() + health.status.slice(1)} (${health.score}/100)`;
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load pipeline analytics:', error);
+            }
+
+            try {
+                const unifiedRes = await authFetch(`/api/investment/unified?customer_id=${customerId}`);
+                const unified = await unifiedRes.json();
+                applyActuarialFromUnified(unified);
+            } catch (error) {
+                console.error('Failed to load actuarial / unified investment data:', error);
+            }
+
+            try {
+                const recRes = await authFetch(`/api/pipeline/ai-recommendation?customer_id=${customerId}`);
+                const rec = await recRes.json();
+                if (rec.recommendations && rec.recommendations.length > 0) {
+                    setPipelineText('aiRecommendationText', rec.recommendations[0].message);
+                } else {
+                    const sentiment = rec.market_conditions?.sentiment_label || 'Neutral';
+                    const roi = rec.performance?.roi || rec.performance?.roi_pct || 0;
+                    setPipelineText(
+                        'aiRecommendationText',
+                        `Market sentiment: ${sentiment}. Your portfolio ROI: ${Number(roi).toFixed(1)}%. Allocation is optimized for your ${rec.risk_level || 'moderate'} risk profile.`
+                    );
+                }
+                const badge = document.getElementById('aiConfBadge');
+                if (badge && rec.ai_confidence) {
+                    badge.textContent = `${(rec.ai_confidence * 100).toFixed(0)}%`;
+                }
+            } catch (error) {
+                console.error('Failed to load AI recommendation:', error);
+            }
+        }
+
         async function investInAsset(symbol, amount) {
             try {
                 await authFetch('/api/savings/invest', {
@@ -1591,7 +1934,7 @@
                 const breakdownEl = document.getElementById('monthlyBreakdown');
                 const alloc = dist.allocation_pct || {};
                 breakdownEl.innerHTML = `
-                    <span style="color: var(--success);">💰 ${alloc.savings_pct || 50}% of $${(dist.total_premium || 0).toLocaleString()}</span>
+                    <span style="color: var(--success);">${alloc.savings_pct || 50}% of $${(dist.total_premium || 0).toLocaleString()}</span>
                 `;
                 
                 // Populate distribution tooltip
@@ -1608,18 +1951,19 @@
                     </div>
                     <div style="margin-bottom: 6px;"><strong>Savings Distribution (${alloc.savings_pct || 50}%):</strong></div>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
-                        <span>🏥 Health Wallet (${alloc.wallet_pct || 30}%):</span>
+                        <span>Health Wallet (${alloc.wallet_pct || 30}%):</span>
                         <span style="color: #10b981;">${formatCurrency(dist.to_wallet || 0)}</span>
                     </div>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
-                        <span>📈 Investment (${alloc.investment_pct || 65}%):</span>
+                        <span>Investment (${alloc.investment_pct || 65}%):</span>
                         <span style="color: #3b82f6;">${formatCurrency(dist.to_investment || 0)}</span>
                     </div>
                     <div style="display: flex; justify-content: space-between;">
-                        <span>🤖 Algo Trading (${alloc.algo_pct || 5}%):</span>
-                        <span style="color: #8b5cf6;">${formatCurrency(dist.to_algo || 0)}</span>
+                        <span>Algo Trading (${alloc.algo_pct || 5}%):</span>
+                        <span style="color: #e3bf6f;">${formatCurrency(dist.to_algo || 0)}</span>
                     </div>
                 `;
+                applyActuarialFromUnified(unified);
             }
             
             // P&L from unified data or portfolio
@@ -1641,7 +1985,7 @@
                         cashLabel.innerHTML = '✓ Verified & Synced';
                         cashLabel.style.color = '#4caf50';
                     } else {
-                        cashLabel.innerHTML = '⚠️ Integrity Issue';
+                        cashLabel.innerHTML = 'Integrity Issue';
                         cashLabel.style.color = '#ff9800';
                         console.warn('Integrity issues:', integrityIssues);
                     }
@@ -1706,19 +2050,19 @@
                 equity: '#1565c0',       // Index Funds - Blue
                 fixed_income: '#2e7d32', // Bonds - Green
                 crypto: '#f59e0b',       // Crypto - Amber
-                commodity: '#8b5cf6',
+                commodity: '#7fb2ff',
                 currency: '#ec4899',
                 alternative: '#06b6d4'
             };
             
             // Friendly labels for display
             const labels = {
-                equity: '📈 Index Funds',
-                fixed_income: '🏦 Bonds',
-                crypto: '₿ Crypto',
-                commodity: '🥇 Commodity',
-                currency: '💱 Currency',
-                alternative: '🔄 Alternative'
+                equity: 'Index Funds',
+                fixed_income: 'Bonds',
+                crypto: 'Crypto',
+                commodity: 'Commodity',
+                currency: 'Currency',
+                alternative: 'Alternative'
             };
             
             // Generate legend
@@ -1939,7 +2283,7 @@
             const yScale = chartHeight / maxValue;
             
             // Clear canvas
-            ctx.fillStyle = '#1e293b';
+            ctx.fillStyle = '#071022';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
             // Draw grid lines
@@ -2187,10 +2531,10 @@
             
             // Icon mapping for different toast types
             const icons = {
-                'success': '&#10003;',
-                'error': '&#10007;',
-                'info': 'ℹ️',
-                'warning': '⚠️'
+                'success': 'OK',
+                'error': 'ERR',
+                'info': 'INFO',
+                'warning': 'WARN'
             };
             const icon = icons[type] || icons['info'];
             
@@ -2376,10 +2720,10 @@
                 
                 const pnlEl = document.getElementById('algoPnl');
                 if (totalPnl !== 0 || totalValue > 0) {
-                    pnlEl.innerHTML = `<span>${totalPnl >= 0 ? '📈' : '📉'}</span> ${totalPnl >= 0 ? '+' : ''}${formatCurrency(totalPnl)} P&L`;
+                    pnlEl.innerHTML = `${totalPnl >= 0 ? '+' : ''}${formatCurrency(totalPnl)} P&L`;
                     pnlEl.style.color = totalPnl >= 0 ? '#4caf50' : '#ef5350';
                 } else {
-                    pnlEl.innerHTML = '<span>📊</span> Real-time P&L tracking';
+                    pnlEl.innerHTML = 'Real-time P&L tracking';
                     pnlEl.style.color = 'rgba(255,255,255,0.8)';
                 }
             } catch (e) {
@@ -2624,7 +2968,7 @@
                         const pnl = tabs.algo_trading.breakdown.total_pnl || 0;
                         const pnlEl = document.getElementById('algoPnl');
                         if (pnl !== 0) {
-                            pnlEl.innerHTML = `<span>${pnl >= 0 ? '📈' : '📉'}</span> ${pnl >= 0 ? '+' : ''}${formatCurrency(pnl)} P&L`;
+                            pnlEl.innerHTML = `${pnl >= 0 ? '+' : ''}${formatCurrency(pnl)} P&L`;
                             pnlEl.style.color = pnl >= 0 ? '#4caf50' : '#ef5350';
                         }
                     }
@@ -2653,7 +2997,7 @@
             
             if (!data) {
                 statusEl.textContent = 'Service unavailable';
-                iconEl.textContent = '❓';
+                iconEl.textContent = 'N/A';
                 return;
             }
             
@@ -2662,17 +3006,17 @@
             scoreEl.textContent = score;
             
             if (data.integrity_valid) {
-                iconEl.textContent = '✅';
+                iconEl.textContent = 'OK';
                 statusEl.textContent = 'All data verified and secure';
                 statusEl.style.color = '#4ade80';
                 scoreEl.style.color = '#4ade80';
             } else if (score >= 70) {
-                iconEl.textContent = '⚠️';
+                iconEl.textContent = 'WARN';
                 statusEl.textContent = 'Minor issues detected';
                 statusEl.style.color = '#fbbf24';
                 scoreEl.style.color = '#fbbf24';
             } else {
-                iconEl.textContent = '❌';
+                iconEl.textContent = 'FAIL';
                 statusEl.textContent = 'Integrity issues - reset recommended';
                 statusEl.style.color = '#f87171';
                 scoreEl.style.color = '#f87171';
