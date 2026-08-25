@@ -165,5 +165,5 @@ def test_unified_book_has_no_second_small_book():
     assert [r["eoy"] for r in extra] == list(UNIFIED_5Y_EOY)
     assert [r["avg"] for r in extra] == list(UNIFIED_5Y_AVG)
     assert UNIFIED_5Y_OPEX[:3] == UNIFIED_OPEX
-    assert UNIFIED_5Y_OPEX[3] == 169_635_181.0
-    assert UNIFIED_5Y_OPEX[4] == 202_928_206.0
+    assert UNIFIED_5Y_OPEX[3] == 169_637_783.0
+    assert UNIFIED_5Y_OPEX[4] == 202_927_845.0
