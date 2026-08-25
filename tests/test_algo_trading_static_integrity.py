@@ -231,6 +231,8 @@ def test_algo_trading_preserves_pipeline_allocation_defaults():
     assert 'id="actuarialSavingsPct"' in html and ">50%</div>" in html
     assert "(analytics.allocation.wallet || 15)" in html
     assert "alloc.savings_pct != null ? alloc.savings_pct : 50" in html
+    assert "if (!unified || unified.error || (!unified.monthly_distribution && !unified.customer_id))" in html
+    assert "if (unifiedRes.ok)" in html
     assert "localStorage.getItem('phins_token')" in html
     assert "sessionStorage.getItem('phins_token')" in html
     assert "botMaxPosition\" value=\"1000\"" in html or 'id="botMaxPosition" value="1000"' in html

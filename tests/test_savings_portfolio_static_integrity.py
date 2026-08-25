@@ -181,6 +181,8 @@ def test_savings_portfolio_preserves_pipeline_and_allocation_defaults():
     assert "alloc.wallet_pct || 30" in html
     assert "alloc.investment_pct || 65" in html
     assert "alloc.algo_pct || 5" in html
+    assert "if (!unified || unified.error || (!unified.monthly_distribution && !unified.customer_id))" in html
+    assert "if (unifiedRes.ok)" in html
     assert "localStorage.getItem('phins_token')" in html
     assert "sessionStorage.getItem('phins_token')" in html
     assert 'value="SPY"' in html

@@ -1742,7 +1742,10 @@
         }
 
         function applyActuarialFromUnified(unified) {
-            const dist = (unified && unified.monthly_distribution) || {};
+            if (!unified || unified.error || (!unified.monthly_distribution && !unified.customer_id)) {
+                return;
+            }
+            const dist = unified.monthly_distribution || {};
             const alloc = dist.allocation_pct || {};
             const actuarial = dist.actuarial_data || {};
             const savingsPct = Number(alloc.savings_pct != null ? alloc.savings_pct : 50);
@@ -1805,8 +1808,10 @@
 
             try {
                 const unifiedRes = await authFetch(`/api/investment/unified?customer_id=${customerId}`);
-                const unified = await unifiedRes.json();
-                applyActuarialFromUnified(unified);
+                if (unifiedRes.ok) {
+                    const unified = await unifiedRes.json();
+                    applyActuarialFromUnified(unified);
+                }
             } catch (error) {
                 console.error('Failed to load actuarial / unified investment data:', error);
             }
