@@ -24,7 +24,9 @@ class MarketDataService:
 
     Provider order:
     1) Optional enterprise Bloomberg/Reuters adapters (via env URLs)
-    2) Reliable public fallbacks:
+    2) Securities: Alpaca (ALPACA_API_KEY/ALPACA_SECRET_KEY) → Alpha Vantage
+       (ALPHA_VANTAGE_API_KEY) → Stooq (keyless)
+    3) Reliable public fallbacks:
        - Crypto: CoinGecko
        - Stocks/Bonds/Indexes/ETFs: Stooq
        - FX rates: Frankfurter (ECB-backed)
@@ -248,11 +250,15 @@ class MarketDataService:
         quotes.update(self._fetch_public_crypto_quotes(crypto_symbols))
         quotes.update(self._fetch_public_fx_quotes(fx_symbols))
 
-        # Try Alpha Vantage first for equities, then fall back to Stooq
-        av_quotes = self._fetch_alpha_vantage_quotes(security_symbols)
+        # Securities provider order: Alpaca (broker data API, no daily quota)
+        # → Alpha Vantage (when configured) → Stooq (keyless public fallback).
+        alpaca_quotes = self._fetch_alpaca_quotes(security_symbols)
+        quotes.update(alpaca_quotes)
+        remaining_securities = [s for s in security_symbols if s not in alpaca_quotes]
+        av_quotes = self._fetch_alpha_vantage_quotes(remaining_securities)
         quotes.update(av_quotes)
         av_fetched = set(av_quotes.keys())
-        stooq_remaining = [s for s in security_symbols if s not in av_fetched]
+        stooq_remaining = [s for s in remaining_securities if s not in av_fetched]
         if stooq_remaining:
             quotes.update(self._fetch_public_stooq_quotes(stooq_remaining))
 
@@ -387,7 +393,61 @@ class MarketDataService:
         return []
 
     # ---------------------------------------------------------------------
-    # Alpha Vantage provider (preferred for equities when available)
+    # Alpaca provider (primary for securities when broker keys are set)
+    # ---------------------------------------------------------------------
+    def _fetch_alpaca_quotes(self, symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Fetch security quotes from Alpaca daily bars (IEX feed).
+
+        Tried before Alpha Vantage because the Alpaca data API carries no
+        meaningful daily quota. Index symbols (``^...``) are skipped — Alpaca
+        serves stocks/ETFs only, so those fall through to Stooq.
+        """
+        tradable = [s for s in symbols if not s.startswith("^")]
+        if not tradable:
+            return {}
+        try:
+            from services.trading_platform_service import get_trading_platform
+            tp = get_trading_platform()
+        except Exception:
+            return {}
+        if not getattr(tp, "is_connected", False):
+            return {}
+
+        quotes: Dict[str, Dict[str, Any]] = {}
+        for symbol in tradable:
+            try:
+                bars = tp.get_bars(symbol, "1Day", 2)
+            except Exception:
+                continue
+            if not bars:
+                continue
+            last = bars[-1]
+            close = self._safe_float(last.get("close"))
+            if close is None or close <= 0:
+                continue
+            prev_close = (
+                self._safe_float(bars[-2].get("close")) if len(bars) >= 2 else None
+            )
+            change_pct = None
+            if prev_close is not None and prev_close > 0:
+                change_pct = ((close - prev_close) / prev_close) * 100.0
+            quotes[symbol] = {
+                "symbol": symbol,
+                "asset_class": self._classify_symbol(symbol),
+                "price": close,
+                "open": self._safe_float(last.get("open")),
+                "high": self._safe_float(last.get("high")),
+                "low": self._safe_float(last.get("low")),
+                "volume": self._safe_float(last.get("volume")),
+                "change_pct": change_pct,
+                "source": "alpaca",
+                "date": str(last.get("date") or "")[:10] or None,
+                "as_of": self._now_iso(),
+            }
+        return quotes
+
+    # ---------------------------------------------------------------------
+    # Alpha Vantage provider (used for equities Alpaca could not serve)
     # ---------------------------------------------------------------------
     def _fetch_alpha_vantage_quotes(self, symbols: List[str]) -> Dict[str, Dict[str, Any]]:
         """Fetch equity quotes from Alpha Vantage as primary source."""

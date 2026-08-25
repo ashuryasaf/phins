@@ -107,6 +107,101 @@ def test_bloomberg_provider_adapter_parses_enterprise_payload(monkeypatch):
     assert data["quotes"]["SPY"]["source"] == "bloomberg"
 
 
+class StubTradingPlatform:
+    def __init__(self, bars_by_symbol=None, connected=True):
+        self._bars = bars_by_symbol or {}
+        self.is_connected = connected
+        self.requested_symbols = []
+
+    def get_bars(self, symbol, timeframe="1Day", limit=100):
+        self.requested_symbols.append(symbol)
+        return self._bars.get(symbol, [])
+
+
+def test_alpaca_preferred_for_securities(monkeypatch):
+    service = MarketDataService(cache_ttl_seconds=0)
+    platform = StubTradingPlatform(
+        bars_by_symbol={
+            "SPY": [
+                {"date": "2026-08-24T04:00:00Z", "open": 495.0, "high": 499.0,
+                 "low": 494.0, "close": 498.0, "volume": 1000000},
+                {"date": "2026-08-25T04:00:00Z", "open": 499.0, "high": 503.0,
+                 "low": 498.5, "close": 501.0, "volume": 1100000},
+            ]
+        }
+    )
+    monkeypatch.setattr(
+        "services.trading_platform_service.get_trading_platform", lambda: platform
+    )
+
+    def no_network(url, params=None, timeout=None, headers=None):
+        raise AssertionError(f"Unexpected network call to {url}")
+
+    monkeypatch.setattr("services.market_data_service.requests.get", no_network)
+
+    data = service.get_multi_asset_quotes(["SPY"])
+
+    quote = data["quotes"]["SPY"]
+    assert quote["source"] == "alpaca"
+    assert quote["price"] == 501.0
+    assert quote["date"] == "2026-08-25"
+    assert quote["change_pct"] == pytest.approx((501.0 - 498.0) / 498.0 * 100.0)
+    assert data["prices"]["SPY"] == 501.0
+    assert platform.requested_symbols == ["SPY"]
+
+
+def test_alpaca_disconnected_falls_back_to_public_sources(monkeypatch):
+    service = MarketDataService(cache_ttl_seconds=0)
+    platform = StubTradingPlatform(connected=False)
+    monkeypatch.setattr(
+        "services.trading_platform_service.get_trading_platform", lambda: platform
+    )
+
+    def fake_get(url, params=None, timeout=None, headers=None):
+        if "stooq.com" in url:
+            return StubResponse(
+                text_payload=(
+                    "Symbol,Date,Time,Open,High,Low,Close,Volume\n"
+                    "SPY.US,2026-02-24,20:00:00,498.00,502.00,497.50,500.00,1200000\n"
+                )
+            )
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr("services.market_data_service.requests.get", fake_get)
+
+    data = service.get_multi_asset_quotes(["SPY"])
+
+    assert platform.requested_symbols == []
+    assert data["quotes"]["SPY"]["source"] == "stooq"
+    assert data["prices"]["SPY"] == 500.0
+
+
+def test_alpaca_skips_index_symbols(monkeypatch):
+    service = MarketDataService(cache_ttl_seconds=0)
+    platform = StubTradingPlatform(connected=True)
+    monkeypatch.setattr(
+        "services.trading_platform_service.get_trading_platform", lambda: platform
+    )
+
+    def fake_get(url, params=None, timeout=None, headers=None):
+        if "stooq.com" in url:
+            return StubResponse(
+                text_payload=(
+                    "Symbol,Date,Time,Open,High,Low,Close,Volume\n"
+                    "^SPX,2026-02-24,20:00:00,4980.00,5020.00,4975.00,5000.00,0\n"
+                )
+            )
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr("services.market_data_service.requests.get", fake_get)
+
+    data = service.get_multi_asset_quotes(["^SPX"])
+
+    # Alpaca serves stocks/ETFs only; indexes go straight to Stooq.
+    assert platform.requested_symbols == []
+    assert data["quotes"]["^SPX"]["source"] == "stooq"
+
+
 def test_crypto_compatibility_response_shape(monkeypatch):
     service = MarketDataService(cache_ttl_seconds=0)
 
