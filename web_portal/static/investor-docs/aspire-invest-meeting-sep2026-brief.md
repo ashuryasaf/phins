@@ -64,7 +64,7 @@ security.
 | 12–24 | Technology | **Layer A** | Production OS; integrity contract; automation vs human touch (underwriting ~92%, billing ~96%, claims ~88%); actuarial simulator and tables; agent ecosystem; what "system ready" means and does not mean. |
 | 24–36 | First insurance product | **Layer B** | Unified contract (Draft 3.1): 3+ ADL, 1:4 below 65 / 1:1 from 65 on reduced life sum; pure risk; fronting / MGA posture; **not** a savings product; **not** kupat-holim LTC. |
 | 36–46 | Markets, regulation, milestones | Both | Israel first; OECD next; Authority path and appointed-actuary workstream; operating milestones through 2029 — no use-of-funds slide. |
-| 46–55 | Scale identity + discussion | Both | Walk the §5 identity: 25k / 100k / **250k issued**; **ILS 4,518** (age 42 · F ILS 1,000,000 / disability ILS 250,000 · tables 0.25 / 0.20); **PHINS MGA 25% / insurance 75%**; savings configurator (default 30% × 300%); **turnover option** after year 3; contrast the conservative 28k / ILS 3,600 book; questions from both chiefs. |
+| 46–55 | Scale identity + discussion | Both | Walk the §5 identity: 25k / 100k / **250k issued**; **ILS 4,518** (age 42 · F ILS 1,000,000 / disability ILS 250,000 · tables 0.25 / 0.20); **PHINS MGA 25% / insurance 75%**; savings configurator (default 30% × 300%); **turnover option** after year 3; this is the unified IL book; questions from both chiefs. |
 | 55–60 | Close | — | Decision outputs; follow-up date; log the diary. Hard stop at 60:00. |
 
 **Israel-pilot scale identity (must be said aloud):** average age 42,
@@ -74,8 +74,7 @@ premium **ILS 4,518** / year. Years 1–3 PHINS is the digital MGA at
 defaults to 300% of risk on 30% of the book (flow = 90% of risk GWP,
 not split 25/75); the live configurator can switch 10% / 20% / 30%.
 After year 3 a **turnover option** can move the 75% into a
-PHINS-group local insurer. Conservative IL book (ILS 3,600) is not
-overwritten.
+PHINS-group local insurer. This is the single unified Israel book.
 
 **Run-of-show rules:** one speaker per segment; questions parked unless
 blocking; live Scenario Lab only if asked (do not open the valuation
@@ -142,8 +141,7 @@ identity (ILS 4,518 · age 42 · max issue 65 · life ILS 1,000,000 /
 disability ILS 250,000 · published tables 0.25 / 0.20 · PHINS MGA 25% /
 insurance 75% · savings 30% × 300% · 8% lapse · Israel pilot ·
 turnover option after year 3)
-are the scale-scenario planning assumptions in the companion business
-plan — not commitments or guidance. They do not overwrite the
-conservative IL book (ILS 3,600 mix). This document contains no
+are the unified Israel-book planning assumptions in the companion
+business plan — not commitments or guidance. This document contains no
 fundraising ask and no bidding price. Agendas and decision outputs do
 not write to the platform ledger.

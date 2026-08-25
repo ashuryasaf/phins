@@ -2471,9 +2471,9 @@
             <div class="control-group">
               <label for="inv-mult-metric" style="font-size:7.5pt;font-weight:700;color:var(--blue-dark);">Metric (2029)</label>
               <select id="inv-mult-metric" style="border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;width:100%;">
-                <option value="net_revenue">PHINS net revenue (₪18.0M)</option>
-                <option value="ebitda">EBITDA (₪3.6M)</option>
-                <option value="gwp">Gross written premium (₪72.0M)</option>
+                <option value="net_revenue">PHINS net revenue (₪183.3M)</option>
+                <option value="ebitda">EBITDA (₪66.5M)</option>
+                <option value="gwp">Gross written premium (₪733.3M)</option>
               </select>
             </div>
             <div class="control-group">
@@ -2562,10 +2562,10 @@
                 <tr style="background:#e8f5e9;"><td style="padding:5px 8px;font-weight:700;">Sales start date</td><td style="padding:5px 8px;text-align:right;">1 Jan 2027</td></tr>
                 <tr><td style="padding:5px 8px;">Build phase</td><td style="padding:5px 8px;text-align:right;">~12 months (to 31 Dec 2026)</td></tr>
                 <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Reporting currency</td><td style="padding:5px 8px;text-align:right;" id="inv-assum-currency">₪ (ILS) · live FX</td></tr>
-                <tr><td style="padding:5px 8px;">Average annual premium</td><td style="padding:5px 8px;text-align:right;"><span class="inv-money" data-ils="3600"></span> (<span class="inv-money" data-ils="300"></span> / mo)</td></tr>
-                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">PHINS take rate on GWP (MGA + platform)</td><td style="padding:5px 8px;text-align:right;">25%</td></tr>
-                <tr><td style="padding:5px 8px;">Active policies — EoY 2027 / 28 / 29</td><td style="padding:5px 8px;text-align:right;">4,000 / 12,000 / 28,000</td></tr>
-                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Avg in-force during year</td><td style="padding:5px 8px;text-align:right;">2,000 / 8,000 / 20,000</td></tr>
+                <tr><td style="padding:5px 8px;">Average annual premium (published tables)</td><td style="padding:5px 8px;text-align:right;"><span class="inv-money" data-ils="4518"></span> (<span class="inv-money" data-ils="376.5"></span> / mo)</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">PHINS take rate on risk GWP (MGA + platform)</td><td style="padding:5px 8px;text-align:right;">25% · insurance take 75%</td></tr>
+                <tr><td style="padding:5px 8px;">Active policies — EoY 2027 / 28 / 29</td><td style="padding:5px 8px;text-align:right;">24,000 / 94,080 / 230,554</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Avg in-force during year</td><td style="padding:5px 8px;text-align:right;">12,000 / 59,040 / 162,317</td></tr>
                 <tr><td style="padding:5px 8px;">Blended CAC (incl. advertising)</td><td style="padding:5px 8px;text-align:right;">≈ <span class="inv-money" data-ils="650"></span> / policy</td></tr>
                 <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Annual policy churn</td><td style="padding:5px 8px;text-align:right;">8%</td></tr>
                 <tr><td style="padding:5px 8px;">Seed / build round (the ask)</td><td style="padding:5px 8px;text-align:right;font-weight:700;" id="inv-assum-round">—</td></tr>
@@ -2574,8 +2574,8 @@
             </table>
           </div>
           <p style="font-size:7.8pt;color:var(--text-soft);margin-top:10px;">
-            Conservative by design: PHINS is modelled as a digital MGA / platform earning a blended take rate on premium, so
-            underwriting reserves and claims sit with the risk carrier / reinsurer and are not booked as PHINS revenue.
+            One Israel book: table-driven ILS 4,518 risk premium, persistency in-force, PHINS 25% / insurance 75%.
+            Underwriting reserves and claims sit with the risk carrier and are not booked as PHINS revenue.
           </p>
         </div>
       </div>
@@ -2674,7 +2674,7 @@
           </div>
           <div class="exec-milestone-item">
             <div class="emi-dot planned"></div>
-            <div class="emi-text"><strong>Gate 7 · Q4 2027 — Scale-up</strong> — 4,000 active policies; Series A readiness; second-market preparation.</div>
+            <div class="emi-text"><strong>Gate 7 · Q4 2027 — Scale-up</strong> — 24,000 EoY in-force; Series A readiness; second-market preparation.</div>
           </div>
         </div>
       </div>
@@ -2695,17 +2695,19 @@
                 </tr>
               </thead>
               <tbody>
-                <tr><td style="padding:5px 8px;">Active policies (EoY)</td><td style="padding:5px 8px;text-align:right;">4,000</td><td style="padding:5px 8px;text-align:right;">12,000</td><td style="padding:5px 8px;text-align:right;">28,000</td></tr>
-                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Avg in-force during year</td><td style="padding:5px 8px;text-align:right;">2,000</td><td style="padding:5px 8px;text-align:right;">8,000</td><td style="padding:5px 8px;text-align:right;">20,000</td></tr>
-                <tr><td style="padding:5px 8px;">Gross written premium (earned)</td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="7200000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="28800000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="72000000"></td></tr>
-                <tr style="background:#eef9f0;"><td style="padding:5px 8px;font-weight:700;">PHINS net revenue (25%)</td><td style="padding:5px 8px;text-align:right;font-weight:700;" class="inv-money" data-ils="1800000"></td><td style="padding:5px 8px;text-align:right;font-weight:700;" class="inv-money" data-ils="7200000"></td><td style="padding:5px 8px;text-align:right;font-weight:700;" class="inv-money" data-ils="18000000"></td></tr>
-                <tr><td style="padding:5px 8px;">Operating cost (team, infra, marketing, G&amp;A)</td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="-5400000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="-9000000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="-14400000"></td></tr>
-                <tr style="background:#f8fafc;"><td style="padding:5px 8px;font-weight:700;">EBITDA</td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--red-1);" class="inv-money" data-ils="-3600000"></td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--red-1);" class="inv-money" data-ils="-1800000"></td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--green-1);" class="inv-money" data-ils="3600000"></td></tr>
-                <tr><td style="padding:5px 8px;">EBITDA margin</td><td style="padding:5px 8px;text-align:right;">−200%</td><td style="padding:5px 8px;text-align:right;">−25%</td><td style="padding:5px 8px;text-align:right;">+20%</td></tr>
+                <tr><td style="padding:5px 8px;">Active policies (EoY)</td><td style="padding:5px 8px;text-align:right;">24,000</td><td style="padding:5px 8px;text-align:right;">94,080</td><td style="padding:5px 8px;text-align:right;">230,554</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Avg in-force during year</td><td style="padding:5px 8px;text-align:right;">12,000</td><td style="padding:5px 8px;text-align:right;">59,040</td><td style="padding:5px 8px;text-align:right;">162,317</td></tr>
+                <tr><td style="padding:5px 8px;">Risk GWP (earned)</td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="54216000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="266742720"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="733348206"></td></tr>
+                <tr style="background:#eef9f0;"><td style="padding:5px 8px;font-weight:700;">PHINS net revenue (25%)</td><td style="padding:5px 8px;text-align:right;font-weight:700;" class="inv-money" data-ils="13554000"></td><td style="padding:5px 8px;text-align:right;font-weight:700;" class="inv-money" data-ils="66685680"></td><td style="padding:5px 8px;text-align:right;font-weight:700;" class="inv-money" data-ils="183337052"></td></tr>
+                <tr><td style="padding:5px 8px;">Insurance take (75%)</td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="40662000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="200057040"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="550011154"></td></tr>
+                <tr style="background:#f0fdf4;"><td style="padding:5px 8px;">Savings flow (30% × 300%)</td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="48794400"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="240068448"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="660013385"></td></tr>
+                <tr><td style="padding:5px 8px;">Operating cost (team, infra, marketing, G&amp;A)</td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="-32400000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="-66420000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="-116868240"></td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:5px 8px;font-weight:700;">EBITDA</td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--red-1);" class="inv-money" data-ils="-18846000"></td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--green-1);" class="inv-money" data-ils="265680"></td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--green-1);" class="inv-money" data-ils="66468812"></td></tr>
+                <tr><td style="padding:5px 8px;">EBITDA margin</td><td style="padding:5px 8px;text-align:right;">−139%</td><td style="padding:5px 8px;text-align:right;">+0.4%</td><td style="padding:5px 8px;text-align:right;">+36%</td></tr>
               </tbody>
             </table>
             <p style="font-size:7.8pt;color:var(--text-soft);margin-top:8px;">
-              Cumulative capital to EBITDA-positive ≈ <strong id="inv-cum-total"></strong> (<span class="inv-money inv-scale" data-ils="6000000"></span> build + <span class="inv-money" data-ils="3600000"></span> 2027 burn + <span class="inv-money" data-ils="1800000"></span> 2028 burn). Plan: <span class="inv-money inv-scale" data-ils="6000000"></span> seed now, Series A in 2027 to fund scale-up.
+              Cumulative capital to EBITDA-positive ≈ <strong id="inv-cum-total"></strong> (<span class="inv-money inv-scale" data-ils="6000000"></span> build + <span class="inv-money" data-ils="18846000"></span> 2027 burn; 2028 is already EBITDA-positive). Plan: <span class="inv-money inv-scale" data-ils="6000000"></span> seed now, Series A in 2027 to fund scale-up.
             </p>
           </div>
           <div>
@@ -2713,36 +2715,36 @@
             <div class="exec-bar-group">
               <div class="exec-bar-item">
                 <span class="ebi-label">2027</span>
-                <div class="ebi-track"><div class="ebi-fill ai" style="width:10%;"></div></div>
-                <span class="ebi-val inv-moneyM" data-ils="1800000"></span>
+                <div class="ebi-track"><div class="ebi-fill ai" style="width:7.4%;"></div></div>
+                <span class="ebi-val inv-moneyM" data-ils="13554000"></span>
               </div>
               <div class="exec-bar-item">
                 <span class="ebi-label">2028</span>
-                <div class="ebi-track"><div class="ebi-fill data" style="width:40%;"></div></div>
-                <span class="ebi-val inv-moneyM" data-ils="7200000"></span>
+                <div class="ebi-track"><div class="ebi-fill data" style="width:36.4%;"></div></div>
+                <span class="ebi-val inv-moneyM" data-ils="66685680"></span>
               </div>
               <div class="exec-bar-item">
                 <span class="ebi-label">2029</span>
                 <div class="ebi-track"><div class="ebi-fill cloud" style="width:100%;"></div></div>
-                <span class="ebi-val inv-moneyM" data-ils="18000000"></span>
+                <span class="ebi-val inv-moneyM" data-ils="183337052"></span>
               </div>
             </div>
             <div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--blue-dark);margin:14px 0 8px;">Gross written premium (<span class="inv-cur-sym">₪</span>M)</div>
             <div class="exec-bar-group">
               <div class="exec-bar-item">
                 <span class="ebi-label">2027</span>
-                <div class="ebi-track"><div class="ebi-fill block" style="width:10%;"></div></div>
-                <span class="ebi-val inv-moneyM" data-ils="7200000"></span>
+                <div class="ebi-track"><div class="ebi-fill block" style="width:7.4%;"></div></div>
+                <span class="ebi-val inv-moneyM" data-ils="54216000"></span>
               </div>
               <div class="exec-bar-item">
                 <span class="ebi-label">2028</span>
-                <div class="ebi-track"><div class="ebi-fill block" style="width:40%;"></div></div>
-                <span class="ebi-val inv-moneyM" data-ils="28800000"></span>
+                <div class="ebi-track"><div class="ebi-fill block" style="width:36.4%;"></div></div>
+                <span class="ebi-val inv-moneyM" data-ils="266742720"></span>
               </div>
               <div class="exec-bar-item">
                 <span class="ebi-label">2029</span>
                 <div class="ebi-track"><div class="ebi-fill block" style="width:100%;"></div></div>
-                <span class="ebi-val inv-moneyM" data-ils="72000000"></span>
+                <span class="ebi-val inv-moneyM" data-ils="733348206"></span>
               </div>
             </div>
           </div>
@@ -2916,7 +2918,7 @@
       </div>
 
       <div class="exec-integrity-note">
-        <strong>Data integrity notice:</strong> All financials in this section are forward-looking planning assumptions in ₪ (ILS), the canonical base; $ / € equivalents convert at a live exchange rate (<span id="inv-integrity-fx">live FX — loading…</span>) and every display currency derives from a single USD snapshot so the numbers stay consistent. They are not commitments or guidance. The build budget reconciles exactly to the ₪6.0M round; the income model derives every line from the tested-assumptions table (₪3,600 average premium, 25% take rate, stated in-force counts); and all deal structures price or convert on a single ₪24M pre-money / ₪30M post-money basis so stakes remain comparable. PHINS is modelled as a digital MGA / platform earning a take rate on premium, so claims reserves are not booked as PHINS revenue. The meeting diary is an operational admin tool stored locally in the browser and does not write to the platform ledger. Meeting summary notes are a staff-gated admin record stored server-side (JSON store, not the ledger) so they can be referred to later for BI, regulatory-requirement adjustments, and AI-affiliated use — AI/BI layers may read notes but never post.
+        <strong>Data integrity notice:</strong> All financials in this section are forward-looking planning assumptions in ₪ (ILS), the canonical base; $ / € equivalents convert at a live exchange rate (<span id="inv-integrity-fx">live FX — loading…</span>) and every display currency derives from a single USD snapshot so the numbers stay consistent. They are not commitments or guidance. The build budget reconciles exactly to the ₪6.0M round; the income model derives every line from the unified Israel book (ILS 4,518 table-driven premium, persistency in-force 24,000 / 94,080 / 230,554, 25% PHINS take); and all deal structures price or convert on a single ₪24M pre-money / ₪30M post-money basis so stakes remain comparable. PHINS is modelled as a digital MGA / platform earning a take rate on premium, so claims reserves are not booked as PHINS revenue. The meeting diary is an operational admin tool stored locally in the browser and does not write to the platform ledger. Meeting summary notes are a staff-gated admin record stored server-side (JSON store, not the ledger) so they can be referred to later for BI, regulatory-requirement adjustments, and AI-affiliated use — AI/BI layers may read notes but never post.
       </div>
     </section>
 
@@ -2936,7 +2938,7 @@
           <strong>CEO of a major insurance company (agents orientation)</strong> — building and distributing through a
           <strong>joint company or MGA</strong>. Each track carries its elevator pitch, executive pitch, and a full
           business plan on <strong>adjustable assumptions</strong> with pinned <strong>actuarial simulation versions</strong>,
-          all reconciling to the same canonical IL model (₪3,600 average premium · 25% take rate · sales from 1 Jan 2027).
+          all reconciling to the same unified IL model (ILS 4,518 table-driven premium · 25% PHINS take · sales from 1 Jan 2027).
         </p>
         <div class="exec-dl-row">
           <a href="/internal/phins-ai-tech-partner-business-plan.html" target="_blank" rel="noopener" class="exec-dl-btn">📘 Full Business Plan — Meeting A (Tech Partner)</a>
@@ -3060,7 +3062,7 @@
       </div>
 
       <div class="exec-integrity-note">
-        <strong>Data integrity notice:</strong> Both meeting packs derive every figure from the same canonical IL model used across this dashboard (₪3,600 average premium, 25% take rate, average in-force 2,000 / 8,000 / 20,000, sales from 1 Jan 2027), so the tech-partner economics (Meeting A) and the agent-force economics (Meeting B) always reconcile with the investor section above — the agent plan is derived <em>from</em> the policy ramp, never the other way around. All amounts are forward-looking planning assumptions in ₪ (ILS), the canonical base; $ / € equivalents convert at a live exchange rate (<span id="pm-integrity-fx">live FX — loading…</span>) from a single USD snapshot. Valuations may be hand-set or derived from the deterministic actuarial appraisal simulation (seed 20260713; reproducible bit-for-bit with a verifiable content hash). License, royalty, and commission terms are illustrative deal parameters, adjustable per meeting, and never overwrite the canonical base. These packs are stored locally in this browser and do not write to the platform ledger.
+        <strong>Data integrity notice:</strong> Both meeting packs derive every figure from the same unified IL model used across this dashboard (ILS 4,518 table-driven premium, 25% PHINS take, average in-force 12,000 / 59,040 / 162,317, sales from 1 Jan 2027), so the tech-partner economics (Meeting A) and the agent-force economics (Meeting B) always reconcile with the investor section above — the agent plan is derived <em>from</em> the policy ramp, never the other way around. All amounts are forward-looking planning assumptions in ₪ (ILS), the canonical base; $ / € equivalents convert at a live exchange rate (<span id="pm-integrity-fx">live FX — loading…</span>) from a single USD snapshot. Valuations may be hand-set or derived from the deterministic actuarial appraisal simulation (seed 20260713; reproducible bit-for-bit with a verifiable content hash). License, royalty, and commission terms are illustrative deal parameters, adjustable per meeting, and never overwrite the canonical base. These packs are stored locally in this browser and do not write to the platform ledger.
       </div>
     </section>
 
@@ -3502,7 +3504,7 @@
                 <tr style="background:#ffffff;">
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">16–19</td>
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">Actuary</td>
-                  <td style="padding:5px 8px;border-top:1px solid var(--border);">Canonical IL model (₪3,600 premium · 25% take); valuation simulation on this dashboard.</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">Unified IL model (ILS 4,518 premium · 25% PHINS take); valuation simulation on this dashboard.</td>
                 </tr>
                 <tr style="background:#f0fdf4;">
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">19–20</td>
@@ -3523,7 +3525,7 @@
       </div>
 
       <div class="exec-integrity-note">
-        <strong>Data integrity notice:</strong> These Fintl VC packs are operational admin tools pinned to the IL pitch dashboard. Financials referenced (₪6.0M seed · ₪24M pre · ₪30M post · ₪3,600 average premium · 25% take rate) are the canonical planning assumptions used across this dashboard — not commitments or guidance. Agendas and decision outputs are internal planning aids and do not write to the platform ledger.
+        <strong>Data integrity notice:</strong> These Fintl VC packs are operational admin tools pinned to the IL pitch dashboard. Financials referenced (₪6.0M seed · ₪24M pre · ₪30M post · ILS 4,518 table-driven premium · 25% PHINS take) are the unified planning assumptions used across this dashboard — not commitments or guidance. Agendas and decision outputs are internal planning aids and do not write to the platform ledger.
       </div>
     </section>
 
@@ -3860,7 +3862,7 @@
                 <tr style="background:#f0fdf4;">
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">46–55</td>
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">Scale identity + discussion</td>
-                  <td style="padding:5px 8px;border-top:1px solid var(--border);">25k / 100k / <strong>250k issued</strong>; ILS 4,518 · PHINS MGA 25% / insurance 75% · savings configurator (default 30% × 300%) · turnover option after year 3; contrast the conservative 28k / ILS 3,600 book; questions from both chiefs.</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">25k / 100k / <strong>250k issued</strong>; ILS 4,518 · PHINS MGA 25% / insurance 75% · savings configurator (default 30% × 300%) · turnover option after year 3; this is the unified IL book; questions from both chiefs.</td>
                 </tr>
                 <tr style="background:#ecfdf5;">
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">55–60</td>
@@ -3876,7 +3878,7 @@
         <div class="exec-chart-panel" id="aspire-scale-identity" style="border:2px solid #15803d;background:linear-gradient(180deg,#f0fdf4 0%,#ffffff 55%);">
           <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#15803d;margin-bottom:6px;">📐 Scale identity · 250,000 issued · Israel pilot · reset actuarial</div>
           <h3 style="margin:0 0 6px 0;">Three-year projection — sales from 1 January 2027</h3>
-          <p class="ecp-sub" style="margin-top:0;" id="aspire-scale-lead">Israel-pilot scale ceiling. Live tables: life <strong>0.25</strong> / disability <strong>0.20</strong> per ILS 1,000 / month (disability table is switched — not the life rate). Default specimen: average age 42, issue 3–65, life ILS 1,000,000 / disability ILS 250,000 → <strong>ILS 4,518</strong> / year. Years 1–3 PHINS is the digital MGA (25% of risk GWP). The licensed carrier holds the 75% insurance take. Savings add-on is configurable (10% / 20% / 30% of the book × 300%). Conservative IL book (₪3,600 · 4k / 12k / 28k) is a <em>different</em> book — do not overwrite it.</p>
+          <p class="ecp-sub" style="margin-top:0;" id="aspire-scale-lead">Unified Israel book. Live tables: life <strong>0.25</strong> / disability <strong>0.20</strong> per ILS 1,000 / month (disability table is switched — not the life rate). Default specimen: average age 42, issue 3–65, life ILS 1,000,000 / disability ILS 250,000 → <strong>ILS 4,518</strong> / year. Years 1–3 PHINS is the digital MGA (25% of risk GWP). The licensed carrier holds the 75% insurance take. Savings add-on is configurable (10% / 20% / 30% of the book × 300%). Same identity as the investor income model and valuation-sim — there is no second book.</p>
           <div style="overflow-x:auto;margin-top:10px;">
             <table style="width:100%;min-width:520px;font-size:8.2pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
               <thead>
@@ -3939,7 +3941,7 @@
               </tbody>
             </table>
           </div>
-          <p style="font-size:7.6pt;color:var(--text-soft);margin-top:8px;" id="aspire-identity-check">Identity check: 25,000+75,000+150,000 = 250,000 issued. 94,080×0.92 → 86,554; +144,000 = 230,554 EoY IF. (94,080+230,554)/2 = 162,317. 12,000 × 4,518 = 54,216,000. 162,317 × 4,518 = 733,348,206. PHINS 25% + insurance 75% = risk GWP (2029: 183,337,052 + 550,011,154). Savings = 30% × 300% = 90% of risk GWP (not split 25/75). Conservative IL book (EoY 4,000 / 12,000 / 28,000 · ₪3,600) is the tested small-book base case — do not mix the two books.</p>
+          <p style="font-size:7.6pt;color:var(--text-soft);margin-top:8px;" id="aspire-identity-check">Identity check: 25,000+75,000+150,000 = 250,000 issued. 94,080×0.92 → 86,554; +144,000 = 230,554 EoY IF. (94,080+230,554)/2 = 162,317. 12,000 × 4,518 = 54,216,000. 162,317 × 4,518 = 733,348,206. PHINS 25% + insurance 75% = risk GWP (2029: 183,337,052 + 550,011,154). Savings = 30% × 300% = 90% of risk GWP (not split 25/75). This is the single unified Israel book — same identity as the investor income model and valuation-sim.</p>
         </div>
 
         <div class="exec-chart-panel" id="aspire-scope-panel" style="border:2px solid #0f766e;background:linear-gradient(180deg,#f0fdfa 0%,#ffffff 55%);">
@@ -4189,7 +4191,7 @@
       </div>
 
       <div class="exec-integrity-note">
-        <strong>Data integrity notice:</strong> This Aspire-Invest pack is an operational admin tool pinned to the IL pitch dashboard. The 250,000 issued-policy target and the income lines (risk GWP ILS 54,216,000 / 266,742,720 / 733,348,206; PHINS MGA 25% ILS 13,554,000 / 66,685,680 / 183,337,052; insurance 75% ILS 40,662,000 / 200,057,040 / 550,011,154) are derived from a single stated identity — reset actuarial specimen average age 42 / issue ages 3–65 / life ILS 1,000,000 / disability ILS 250,000 / f(42)=1.255 / published tables life 0.25 and disability 0.20 per ILS 1,000 / month / risk premium ILS 4,518, 25% PHINS MGA take and 75% insurance take, 8% annual lapse with mid-year convention on new issues, sales from 1 January 2027, new issues 25,000 / 75,000 / 150,000, EoY in-force = round(prior × 0.92) + round(new × 0.96), and a savings add-on of 300% of risk premium on 30% of in-force (savings flow = 90% of risk GWP, not split 25/75). The live configurator re-prices when tables, age, cover, or the 10%/20%/30% savings election change. Years 1–3 PHINS is modelled as a digital MGA on designated Israeli paper; after year 3 a turnover option can move the 75% insurance take into a PHINS-group local insurer. They are forward-looking planning assumptions, not commitments or guidance, and they do not overwrite the conservative IL book (EoY 4,000 / 12,000 / 28,000 · ₪3,600) used elsewhere on this dashboard. This section contains no fundraising ask and no bidding price. Agendas and decision outputs do not write to the platform ledger.
+        <strong>Data integrity notice:</strong> This Aspire-Invest pack is an operational admin tool pinned to the IL pitch dashboard. The 250,000 issued-policy target and the income lines (risk GWP ILS 54,216,000 / 266,742,720 / 733,348,206; PHINS MGA 25% ILS 13,554,000 / 66,685,680 / 183,337,052; insurance 75% ILS 40,662,000 / 200,057,040 / 550,011,154) are derived from a single stated identity — reset actuarial specimen average age 42 / issue ages 3–65 / life ILS 1,000,000 / disability ILS 250,000 / f(42)=1.255 / published tables life 0.25 and disability 0.20 per ILS 1,000 / month / risk premium ILS 4,518, 25% PHINS MGA take and 75% insurance take, 8% annual lapse with mid-year convention on new issues, sales from 1 January 2027, new issues 25,000 / 75,000 / 150,000, EoY in-force = round(prior × 0.92) + round(new × 0.96), and a savings add-on of 300% of risk premium on 30% of in-force (savings flow = 90% of risk GWP, not split 25/75). The live configurator re-prices when tables, age, cover, or the 10%/20%/30% savings election change. Years 1–3 PHINS is modelled as a digital MGA on designated Israeli paper; after year 3 a turnover option can move the 75% insurance take into a PHINS-group local insurer. They are forward-looking planning assumptions, not commitments or guidance. This is the single unified Israel book used across this dashboard (investor income model, partner packs, valuation-sim). This section contains no fundraising ask and no bidding price. Agendas and decision outputs do not write to the platform ledger.
       </div>
     </section>
 
@@ -9003,16 +9005,16 @@
 
       // Shared with the linked full business plans so in-room deal terms reconcile
       // across artifacts (same pattern as the investor configurator / plan).
-      var AITECH_STORE_ID = "phins.partner.aitech.cfg.v1";   // /internal/phins-ai-tech-partner-business-plan.html
-      var INSURER_STORE_ID = "phins.partner.insurer.cfg.v1"; // /internal/phins-insurer-mga-business-plan.html
+      var AITECH_STORE_ID = "phins.partner.aitech.cfg.v2";   // /internal/phins-ai-tech-partner-business-plan.html
+      var INSURER_STORE_ID = "phins.partner.insurer.cfg.v2"; // /internal/phins-insurer-mga-business-plan.html
       // Dashboard field -> canonical plan field (Track A = AI-tech, Track B = insurer/MGA).
       var A_MAP = { aInvest: "invest", aPre: "preMoney", aMarkets: "markets", aLicense: "license", aRoyalty: "royaltyPct", aScale: "scalePct", aSimVersion: "simVersion", aSimProvenance: "simProvenance", aPremium: "premium" };
       var B_MAP = { bStructure: "structure", bProd: "prod", bComm: "commPct", bJvShare: "jvSharePct", bPre: "jvPre", bSimVersion: "simVersion", bSimProvenance: "simProvenance", bPremium: "premium", bTakePct: "takePct", bChurnPct: "churnPct" };
       // Canonical IL base — must mirror the investor section + /api/investor/valuation-sim scope.
       var BASE = {
-        eoyPolicies: [4000, 12000, 28000],   // EoY 2027/28/29 (avg in force 2,000/8,000/20,000)
-        premium: 3600,                        // average annual premium (₪)
-        takeRate: 0.25,                       // blended take on GWP
+        eoyPolicies: [24000, 94080, 230554], // unified persistency EoY (avg 12,000/59,040/162,317)
+        premium: 4518,                        // table-driven annual risk premium (₪)
+        takeRate: 0.25,                       // PHINS take on risk GWP
         churn: 0.08                           // annual policy churn
       };
       // Pinned simulation-version parameter sets (deterministic; seed = meeting date).
@@ -9218,7 +9220,7 @@
       };
       // 2029 base metrics (ILS) used by the income-multiple basis — these are the
       // exact figures shown in the income table, so the valuation reconciles.
-      var METRIC_2029 = { net_revenue: 18000000, ebitda: 3600000, gwp: 72000000 };
+      var METRIC_2029 = { net_revenue: 183337052, ebitda: 66468812, gwp: 733348206 };
       try {
         var saved = JSON.parse(localStorage.getItem(CFG_STORE_ID) || "null");
         if (saved && typeof saved === "object") Object.assign(cfg, saved);
@@ -9411,7 +9413,7 @@
         if ($("inv-assum-round")) $("inv-assum-round").textContent = fmtMoney(cfg.round);
         if ($("inv-assum-pre")) $("inv-assum-pre").textContent = fmtMoney(cfg.preMoney);
         if ($("inv-build-total")) $("inv-build-total").textContent = fmtShort(cfg.round);
-        if ($("inv-cum-total")) $("inv-cum-total").textContent = fmtShort(cfg.round + 5400000);
+        if ($("inv-cum-total")) $("inv-cum-total").textContent = fmtShort(cfg.round + 18846000);
 
         // deal header + table + callouts
         if ($("inv-deal-h-round")) $("inv-deal-h-round").textContent = fmtMoney(cfg.round);
@@ -9988,7 +9990,7 @@
           ". " + ils(y[2029].avg_in_force) + " × " + ils2(q.annual_premium) + " = " + ils(y[2029].risk_gwp) +
           ". PHINS 25% + insurance 75% = risk GWP (2029: " + ils(y[2029].phins_take) + " + " + ils(y[2029].insurance_take) +
           "). Savings = " + electPct + "% × " + addonPct + "% = " + multPct +
-          "% of risk GWP (not split 25/75). Conservative IL book (EoY 4,000 / 12,000 / 28,000 · ₪3,600) is the tested small-book base case — do not mix the two books.");
+          "% of risk GWP (not split 25/75). This is the unified Israel book used on the investor income model and valuation-sim.");
         setText("aspire-cfg-note",
           "Live identity from " + (pack._source || "local closed form") +
           ". Disability uses the configured table (default 0.20 / 1,000), not the life table (0.25). Change rates when the filed table moves; 25/75 takes and charts follow.");

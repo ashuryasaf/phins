@@ -81,8 +81,8 @@ def test_pitch_dashboard_partner_meetings_adjustable_assumptions():
         assert f'id="{iid}"' in pd, f"missing Meeting B input {iid}"
     # persisted locally so admins can adjust without redeploying;
     # shared with the linked full plans via the two plan-aligned keys
-    assert "phins.partner.aitech.cfg.v1" in pd
-    assert "phins.partner.insurer.cfg.v1" in pd
+    assert "phins.partner.aitech.cfg.v2" in pd
+    assert "phins.partner.insurer.cfg.v2" in pd
 
 
 def test_pitch_dashboard_partner_meetings_simulation_versions():
@@ -101,7 +101,7 @@ def test_pitch_dashboard_partner_meetings_data_integrity():
     # integrity notice reconciles both packs to the canonical IL model
     assert 'id="pm-integrity-fx"' in pd
     # canonical anchors restated in the section
-    assert "₪3,600 average premium" in pd
+    assert "ILS 4,518 table-driven premium" in pd or "4,518" in pd
     # the agent plan derives FROM the policy ramp (single source of truth)
     assert "never the other way around" in pd
 
@@ -141,7 +141,7 @@ def test_business_plan_exists_and_is_wellformed(fname):
     # founder identity consistent with the investor business plan
     assert "Asaf Ashury, Adv. &amp; Insurance Broker" in bp
     # canonical financial model restated (locked base)
-    assert "₪3,600" in bp and "25%" in bp
+    assert "₪4,518" in bp and "25%" in bp
     assert "1 Jan" in bp or "1 January 2027" in bp
     # adjustable assumptions persisted locally
     assert "Adjustable" in bp
@@ -203,7 +203,7 @@ def test_business_plan_a_tech_partner_specifics():
     for iid in ("in-invest", "in-pre", "in-markets", "in-license",
                 "in-royalty", "in-scale", "in-premium", "in-take"):
         assert f'id="{iid}"' in bp, f"missing input {iid}"
-    assert "phins.partner.aitech.cfg.v1" in bp
+    assert "phins.partner.aitech.cfg.v2" in bp
     # integrity contract headline (AI recommends; ledger decides)
     assert "AI recommends" in bp
 
@@ -221,9 +221,9 @@ def test_business_plan_b_insurer_mga_specifics():
     for iid in ("in-structure", "in-prod", "in-comm", "in-jvshare",
                 "in-premium", "in-take", "in-churn", "in-jvpre"):
         assert f'id="{iid}"' in bp, f"missing input {iid}"
-    assert "phins.partner.insurer.cfg.v1" in bp
+    assert "phins.partner.insurer.cfg.v2" in bp
     # the agent plan derives FROM the canonical policy ramp
     assert "derived" in bp.lower() and "policy ramp" in bp.lower()
-    # canonical EoY policy counts restated
-    for count in ("4,000", "12,000", "28,000"):
-        assert count in bp, f"missing canonical policy count {count}"
+    # unified EoY policy counts restated
+    for count in ("24,000", "94,080", "230,554"):
+        assert count in bp, f"missing unified policy count {count}"

@@ -4,10 +4,19 @@ from pathlib import Path
 
 from services.aspire_scale_identity import (
     DEFAULTS,
+    UNIFIED_5Y_AVG,
+    UNIFIED_5Y_EOY,
+    UNIFIED_5Y_OPEX,
+    UNIFIED_ANNUAL_PREMIUM,
+    UNIFIED_AVG_IN_FORCE,
+    UNIFIED_EOY_IN_FORCE,
+    UNIFIED_OPEX,
     compute_aspire_identity,
+    extend_in_force_path,
     parse_identity_query,
     published_table_rates,
     quote_risk_premium,
+    unified_phins_ebitda,
 )
 from services.pricing_kernel import risk_reference_v1_factor
 
@@ -141,3 +150,20 @@ def test_api_dispatch_default_and_savings_presets():
     )
     assert status == 400
     assert "error" in bad
+
+
+def test_unified_book_has_no_second_small_book():
+    assert UNIFIED_ANNUAL_PREMIUM == 4518.0
+    assert UNIFIED_EOY_IN_FORCE == (24_000, 94_080, 230_554)
+    assert UNIFIED_AVG_IN_FORCE == (12_000, 59_040, 162_317)
+    assert UNIFIED_OPEX == (32_400_000.0, 66_420_000.0, 116_868_240.0)
+    ebitda = unified_phins_ebitda()
+    assert ebitda[0] == 13_554_000 - 32_400_000
+    assert ebitda[1] == 66_685_680 - 66_420_000
+    assert ebitda[2] == 183_337_052 - 116_868_240
+    extra = extend_in_force_path(2, 150_000)
+    assert [r["eoy"] for r in extra] == list(UNIFIED_5Y_EOY)
+    assert [r["avg"] for r in extra] == list(UNIFIED_5Y_AVG)
+    assert UNIFIED_5Y_OPEX[:3] == UNIFIED_OPEX
+    assert UNIFIED_5Y_OPEX[3] == 169_635_181.0
+    assert UNIFIED_5Y_OPEX[4] == 202_928_206.0

@@ -125,11 +125,19 @@ def test_aspire_scale_identity_numbers():
         "aspire-configurator", "0.20",
     ):
         assert needle in section, f"missing scale-identity figure: {needle}"
-    # Retired ILS 3,600 scale GWP / blended-only take must not remain as
-    # this pack's money identity. ₪3,600 may still appear as the
-    # conservative-book contrast.
+    # Retired ILS 3,600 / small-book contrast is gone — one unified book.
     for retired in RETIRED_SCALE_GWP + RETIRED_SCALE_REV:
         assert retired not in section, f"retired scale figure still in Aspire section: {retired}"
+    for forbidden in (
+        "do not mix the two books",
+        "do not overwrite",
+        "Conservative IL book",
+        "conservative IL book",
+        "₪3,600",
+        "ILS 3,600",
+        "4,000 / 12,000 / 28,000",
+    ):
+        assert forbidden not in section, f"two-book language still in Aspire section: {forbidden}"
 
 
 def test_aspire_charts_separate_phins_and_insurance_take():
@@ -273,6 +281,16 @@ def test_business_plan_scale_identity_reconciles():
         assert "turnover" in doc.lower() or "מחזור" in doc
         for retired in RETIRED_SCALE_GWP + RETIRED_SCALE_REV:
             assert retired not in doc, f"retired scale figure still in plan: {retired}"
+        for forbidden in (
+            "do not overwrite",
+            "do not mix",
+            "Conservative IL book",
+            "conservative IL book",
+            "ספר ישראל השמרני",
+            "ILS 3,600",
+            "4,000 / 12,000 / 28,000",
+        ):
+            assert forbidden not in doc, f"two-book language still in plan: {forbidden}"
 
 
 def test_business_plan_separates_takes_and_savings():

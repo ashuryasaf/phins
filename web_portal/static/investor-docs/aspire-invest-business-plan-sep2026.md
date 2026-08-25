@@ -143,11 +143,10 @@ inside this count.
 | H1 2027 | Issuance-quality agent + billing stack | First licensed issuance (1 Jan 2027 clock) |
 | EoY 2027 / 28 / 29 | Automation held under live volume; OECD adapter on the same core | Scale-scenario issued stock **25,000 / 100,000 / 250,000** |
 
-The conservative IL book elsewhere on the dashboard (EoY active 4,000 /
-12,000 / 28,000 · ILS 3,600 mix) remains the **tested small-book base
-case**. Section 5 is the **Israel-pilot scale ceiling** on the **reset
-actuarial specimen** (age 42 · face ILS 1,000,000). Do not mix the two
-premiums.
+Section 5 is the **single unified Israel book** — the same table-driven
+premium, persistency path, and 25% / 75% take split used on the pitch
+dashboard investor income model, partner packs, and valuation-sim. There
+is no second conservative book.
 
 ---
 
@@ -295,14 +294,6 @@ an Authority path would want before a local-insurer application. Capital,
 solvency, and reinsurance for that application are **not** tabled in
 this meeting.
 
-| | Conservative IL book (dashboard) | This Israel-pilot scale scenario |
-|---|---:|---:|
-| EoY in-force proxy | 4,000 / 12,000 / 28,000 | 24,000 / 94,080 / 230,554 |
-| Average in-force | 2,000 / 8,000 / 20,000 | 12,000 / 59,040 / 162,317 |
-| Issued EoY Year 3 | not the headline | **250,000** |
-| Specimen | Mixed-book ILS 3,600 | **Age 42 · F ILS 1,000,000 · ILS 4,518** |
-| Take presentation | Blended 25% only | **25% PHINS MGA + 75% insurance**, plus turnover option |
-
 ---
 
 ## 6. Why Aspire-Invest — and what this meeting is for
@@ -341,9 +332,9 @@ GWP), 8% annual lapse with mid-year convention on new issues, sales from
 1 January 2027, new issues 25,000 / 75,000 / 150,000, published tables
 life 0.25 / disability 0.20 per ILS 1,000 / month, and a savings add-on
 of 300% of risk premium on 30% of in-force (savings flow = 90% of risk
-GWP). They are not commitments, guidance, or a priced security. They
-do not overwrite the conservative IL book (ILS 3,600 mix) on the pitch
-dashboard. This document contains no fundraising ask and no bidding
-price. Years 1–3 PHINS is modelled as a digital MGA; claims reserves are
-not PHINS MGA revenue. The local-insurer turnover is an option, not a
-commitment. This pack does not write to the platform ledger.
+GWP). They are not commitments, guidance, or a priced security. This
+is the single unified Israel book used across the pitch dashboard. This
+document contains no fundraising ask and no bidding price. Years 1–3
+PHINS is modelled as a digital MGA; claims reserves are not PHINS MGA
+revenue. The local-insurer turnover is an option, not a commitment.
+This pack does not write to the platform ledger.

@@ -32,6 +32,32 @@ PRIOR_PERSIST = 0.92
 NEW_PERSIST = 0.96
 PHINS_TAKE = 0.25
 
+# Unified Israel book — one volume path, one table-driven premium.
+# The retired ₪3,600 / 4k / 12k / 28k mix is not a second model.
+UNIFIED_EOY_IN_FORCE: Tuple[int, int, int] = (24_000, 94_080, 230_554)
+UNIFIED_AVG_IN_FORCE: Tuple[int, int, int] = (12_000, 59_040, 162_317)
+UNIFIED_ANNUAL_PREMIUM = 4_518.0
+UNIFIED_MONTHLY_PREMIUM = 376.50
+# Same opex *intensity* as the retired small book (cost / average in-force).
+_RETIRED_SMALL_AVG = (2_000, 8_000, 20_000)
+_RETIRED_SMALL_OPEX = (5_400_000.0, 9_000_000.0, 14_400_000.0)
+UNIFIED_OPEX: Tuple[float, float, float] = (
+    float(round(_RETIRED_SMALL_OPEX[0] * UNIFIED_AVG_IN_FORCE[0] / _RETIRED_SMALL_AVG[0])),
+    float(round(_RETIRED_SMALL_OPEX[1] * UNIFIED_AVG_IN_FORCE[1] / _RETIRED_SMALL_AVG[1])),
+    float(round(_RETIRED_SMALL_OPEX[2] * UNIFIED_AVG_IN_FORCE[2] / _RETIRED_SMALL_AVG[2])),
+)
+
+# Years 4–5 continue the same persistency identity (150,000 new issues / year).
+# Opex keeps the retired 5-year intensity (cost / average in-force).
+UNIFIED_5Y_EOY: Tuple[int, int, int, int, int] = (24_000, 94_080, 230_554, 356_110, 471_621)
+UNIFIED_5Y_AVG: Tuple[int, int, int, int, int] = (12_000, 59_040, 162_317, 293_332, 413_866)
+_RETIRED_5Y_AVG = (2_000, 8_000, 20_000, 41_500, 77_500)
+_RETIRED_5Y_OPEX = (5_400_000.0, 9_000_000.0, 14_400_000.0, 24_000_000.0, 38_000_000.0)
+UNIFIED_5Y_OPEX: Tuple[float, float, float, float, float] = tuple(
+    float(round(_RETIRED_5Y_OPEX[i] * UNIFIED_5Y_AVG[i] / _RETIRED_5Y_AVG[i]))
+    for i in range(5)
+)
+
 DEFAULTS: Dict[str, float] = {
     "avg_age": 42,
     "min_age": 3,
@@ -126,6 +152,37 @@ def _in_force_path(new_issues: Tuple[int, int, int] = NEW_ISSUES) -> List[Dict[s
             "avg": avg,
         })
     return rows
+
+
+def extend_in_force_path(
+    extra_years: int = 2,
+    new_per_year: int = 150_000,
+) -> List[Dict[str, int]]:
+    """Years 1–3 plus further years on the same persistency identity."""
+    rows = _in_force_path()
+    eoy = rows[-1]["eoy"]
+    extra: List[Dict[str, int]] = []
+    for _ in range(int(extra_years)):
+        opening = eoy
+        persist = round(eoy * PRIOR_PERSIST)
+        new_if = round(int(new_per_year) * NEW_PERSIST)
+        eoy = persist + new_if
+        extra.append({
+            "new_issues": int(new_per_year),
+            "opening": int(opening),
+            "eoy": int(eoy),
+            "avg": int(round((opening + eoy) / 2.0)),
+        })
+    return rows + extra
+
+
+def unified_phins_ebitda() -> List[int]:
+    """PHINS take minus intensity-scaled opex for years 1–3."""
+    pack = compute_aspire_identity()
+    return [
+        int(y["phins_take"]) - int(UNIFIED_OPEX[i])
+        for i, y in enumerate(pack["years"])
+    ]
 
 
 def _shekel(value: float) -> int:
