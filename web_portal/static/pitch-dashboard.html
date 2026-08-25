@@ -9272,7 +9272,7 @@
         return fullName();
       }
       function fxLabel() {
-        if (cfg.fxSource === "alpha_vantage") return "LIVE";
+        if (cfg.fxSource === "alpha_vantage" || cfg.fxSource === "frankfurter_ecb" || cfg.fxSource === "mixed_live") return "LIVE";
         if (cfg.fxSource === "partial") return "PARTIAL (live + fallback)";
         if (cfg.fxSource === "manual") return "MANUAL OVERRIDE";
         if (cfg.fxSource === "loading") return "loading…";
@@ -9454,7 +9454,7 @@
 
       // ---- FX fetch ----
       function applyFxBadge() {
-        var live = cfg.fxSource === "alpha_vantage";
+        var live = cfg.fxSource === "alpha_vantage" || cfg.fxSource === "frankfurter_ecb" || cfg.fxSource === "mixed_live";
         var partial = cfg.fxSource === "partial";
         var label = fxLabel();
         if (elFxBadge) {
