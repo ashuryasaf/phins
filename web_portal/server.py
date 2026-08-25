@@ -8102,9 +8102,10 @@ def get_investor_fx_rates(force_refresh=False):
 # Makes the pitch-dashboard pre-money valuation OPTIONALLY derivable from an
 # actuarial-style appraisal simulation instead of a hand-entered number, while
 # keeping data integrity flawless:
-#   * scope = the SAME Israel income model shown in the investor section
-#     (in-force counts, ₪3,600 average premium, 25% take rate, opex path), so
-#     the valuation always reconciles with the figures on the page,
+#   * scope = the SAME unified Israel income model shown in the investor
+#     section (table-driven ILS 4,518 premium, persistency in-force, 25%
+#     PHINS take, intensity-scaled opex), so the valuation always
+#     reconciles with the figures on the page,
 #   * methodology mirrors the platform's actuarial valuation engine
 #     (services/actuarial_valuation.py): present value of projected profits plus
 #     a terminal exit value, less a prudence/risk margin,
@@ -8115,13 +8116,20 @@ def get_investor_fx_rates(force_refresh=False):
 # The platform's broader actuarial engine values the full in-force book
 # separately (admin/actuary only); this endpoint is the seed-stage, IL-scoped
 # appraisal used for the funding round.
+from services.aspire_scale_identity import (
+    PHINS_TAKE as _UNIFIED_PHINS_TAKE,
+    UNIFIED_ANNUAL_PREMIUM as _UNIFIED_PREMIUM,
+    UNIFIED_AVG_IN_FORCE as _UNIFIED_AVG_IF,
+    UNIFIED_OPEX as _UNIFIED_OPEX,
+)
+
 _INV_VAL_BASE = {
     'currency': 'ILS',
     'years': [2027, 2028, 2029],
-    'in_force': [2000.0, 8000.0, 20000.0],   # avg policies in force during year
-    'premium': 3600.0,                        # average annual premium (₪)
-    'take_rate': 0.25,                        # PHINS blended take rate on GWP
-    'opex': [5400000.0, 9000000.0, 14400000.0],
+    'in_force': [float(x) for x in _UNIFIED_AVG_IF],
+    'premium': float(_UNIFIED_PREMIUM),
+    'take_rate': float(_UNIFIED_PHINS_TAKE),
+    'opex': [float(x) for x in _UNIFIED_OPEX],
 }
 
 

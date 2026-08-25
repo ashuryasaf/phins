@@ -49,8 +49,11 @@ def test_valuation_sim_central_reconciles_to_income_model():
         "wacc": 0.35, "exit_multiple": 4.0, "exit_metric": "net_revenue", "prudence": 0.15,
     })
     assert out["central"] == round(expected)
-    # Sanity band consistent with the ₪24M manual default.
-    assert 18_000_000 <= out["central"] <= 28_000_000
+    # Appraisal follows the unified ILS 4,518 / persistency book. The ₪24M
+    # figure remains the manual fundraising ask, not this appraisal.
+    assert out["central"] > 100_000_000
+    assert b["premium"] == 4518.0
+    assert b["in_force"] == [12000.0, 59040.0, 162317.0]
 
 
 def test_valuation_sim_http_endpoint():

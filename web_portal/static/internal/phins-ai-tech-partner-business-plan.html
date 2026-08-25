@@ -145,7 +145,7 @@ strong { color: var(--navy); }
     <div class="kpi"><div class="v">64+</div><div class="l">Deployed platform modules</div></div>
     <div class="kpi"><div class="v" id="k-round">₪6.0M</div><div class="l">Seed / build round</div></div>
     <div class="kpi"><div class="v" id="k-pre">₪24.0M</div><div class="l">Pre-money (adjustable)</div></div>
-    <div class="kpi"><div class="v" id="k-gwp29">₪72.0M</div><div class="l">2029 GWP (IL model)</div></div>
+    <div class="kpi"><div class="v" id="k-gwp29">₪733.3M</div><div class="l">2029 GWP (IL model)</div></div>
     <div class="kpi"><div class="v" id="k-techrev">—</div><div class="l">Partner-market tech revenue / yr</div></div>
   </div>
 </div>
@@ -153,7 +153,7 @@ strong { color: var(--navy); }
 <div class="cover">
   <strong>Meeting:</strong> 13 July 2026, 11:00 · Chairman, AI technology development public company (name to be confirmed under NDA)<br>
   <strong>Objective:</strong> strategic investment in PHINS and/or a technology co-development &amp; market-opening partnership<br>
-  <strong>Prepared by:</strong> PHINS founding team · <strong>Basis:</strong> canonical IL business-plan assumptions (₪3,600 average premium · 25% take rate · sales from 1 Jan 2027)<br>
+  <strong>Prepared by:</strong> PHINS founding team · <strong>Basis:</strong> unified IL business-plan assumptions (₪4,518 table-driven premium · 25% take rate · sales from 1 Jan 2027)<br>
   <strong>Valuation basis:</strong> adjustable — manual, or derived from the deterministic actuarial appraisal simulation (versions A·P25 / A·P50 / A·P75 below)
 </div>
 
@@ -260,13 +260,13 @@ strong { color: var(--navy); }
 <table>
   <thead><tr><th>Driver</th><th class="num">2027</th><th class="num">2028</th><th class="num">2029</th></tr></thead>
   <tbody>
-    <tr><td>Average policies in force</td><td class="num">2,000</td><td class="num">8,000</td><td class="num">20,000</td></tr>
-    <tr><td>Active policies (end of year)</td><td class="num">4,000</td><td class="num">12,000</td><td class="num">28,000</td></tr>
-    <tr><td>Average annual premium</td><td class="num" colspan="3">₪3,600 (₪300 / month) · adjustable in §7</td></tr>
-    <tr><td>Gross written premium (GWP)</td><td class="num m-gwp" data-y="0">₪7.2M</td><td class="num m-gwp" data-y="1">₪28.8M</td><td class="num m-gwp" data-y="2">₪72.0M</td></tr>
-    <tr><td>PHINS net revenue (25% take)</td><td class="num m-nrev" data-y="0">₪1.8M</td><td class="num m-nrev" data-y="1">₪7.2M</td><td class="num m-nrev" data-y="2">₪18.0M</td></tr>
-    <tr><td>Operating expenses</td><td class="num m-opex" data-y="0">₪5.4M</td><td class="num m-opex" data-y="1">₪9.0M</td><td class="num m-opex" data-y="2">₪14.4M</td></tr>
-    <tr><td><strong>EBITDA</strong></td><td class="num m-ebitda" data-y="0">−₪3.6M</td><td class="num m-ebitda" data-y="1">−₪1.8M</td><td class="num m-ebitda" data-y="2">₪3.6M</td></tr>
+    <tr><td>Average policies in force</td><td class="num">12,000</td><td class="num">59,040</td><td class="num">162,317</td></tr>
+    <tr><td>Active policies (end of year)</td><td class="num">24,000</td><td class="num">94,080</td><td class="num">230,554</td></tr>
+    <tr><td>Average annual premium</td><td class="num" colspan="3">₪4,518 (₪376.50 / month) · adjustable in §7</td></tr>
+    <tr><td>Gross written premium (GWP)</td><td class="num m-gwp" data-y="0">₪54.2M</td><td class="num m-gwp" data-y="1">₪266.7M</td><td class="num m-gwp" data-y="2">₪733.3M</td></tr>
+    <tr><td>PHINS net revenue (25% take)</td><td class="num m-nrev" data-y="0">₪13.6M</td><td class="num m-nrev" data-y="1">₪66.7M</td><td class="num m-nrev" data-y="2">₪183.3M</td></tr>
+    <tr><td>Operating expenses</td><td class="num m-opex" data-y="0">₪32.4M</td><td class="num m-opex" data-y="1">₪66.4M</td><td class="num m-opex" data-y="2">₪116.9M</td></tr>
+    <tr><td><strong>EBITDA</strong></td><td class="num m-ebitda" data-y="0">−₪18.8M</td><td class="num m-ebitda" data-y="1">₪0.3M</td><td class="num m-ebitda" data-y="2">₪66.5M</td></tr>
   </tbody>
 </table>
 <p class="fine">Annual policy churn 8% · blended CAC ≈ ₪650 per policy · seed / build round ₪6.0M · base pre-money ₪24.0M (₪30.0M post). The actuarial appraisal simulation in §8 is scoped to exactly this model.</p>
@@ -283,7 +283,7 @@ strong { color: var(--navy); }
   <div class="cg"><label for="in-license">Platform license / market / yr (₪)</label><input id="in-license" type="number" min="0" step="100000" value="1500000"></div>
   <div class="cg"><label for="in-royalty">Royalty on partner-market GWP (%)</label><input id="in-royalty" type="number" min="0" max="20" step="0.5" value="3"></div>
   <div class="cg"><label for="in-scale">Partner-market scale vs IL 2029 GWP (%)</label><input id="in-scale" type="number" min="0" max="300" step="5" value="60"></div>
-  <div class="cg"><label for="in-premium">Average annual premium (₪)</label><input id="in-premium" type="number" min="0" step="100" value="3600"></div>
+  <div class="cg"><label for="in-premium">Average annual premium (₪)</label><input id="in-premium" type="number" min="0" step="100" value="4518"></div>
   <div class="cg"><label for="in-take">PHINS take rate on GWP (%)</label><input id="in-take" type="number" min="0" max="60" step="0.5" value="25"></div>
 </div>
 <table>
@@ -335,7 +335,7 @@ strong { color: var(--navy); }
   <li><strong>Gate 2 · Q4 2026</strong> — IL launch feature set complete; Appointed-Actuary pricing &amp; reserve sign-off; first co-developed model in the decision-audit layer.</li>
   <li><strong>Gate 3 · 1 Jan 2027</strong> — IL sales start on the canonical model (§6).</li>
   <li><strong>Gate 4 · 2028</strong> — wave-1 partner markets live on licensed platform; license + royalty revenue begins.</li>
-  <li><strong>Gate 5 · 2029</strong> — IL model at ₪72.0M GWP run-rate; wave-2 market decisions with proven per-market economics.</li>
+  <li><strong>Gate 5 · 2029</strong> — IL model at ₪733.3M GWP run-rate; wave-2 market decisions with proven per-market economics.</li>
 </ul>
 
 <h2><span class="secno">11.</span> Risks &amp; mitigations</h2>
@@ -362,7 +362,7 @@ strong { color: var(--navy); }
   in ₪ (ILS), the canonical base; $ / € equivalents convert at a live exchange rate from <code>/api/fx/rates</code>
   (source is labelled; a static fallback is used only when the live feed is unavailable) and every display currency
   derives from a single USD snapshot so the numbers stay consistent. They are not commitments or guidance. The
-  canonical Israel model (₪3,600 average premium, 25% take rate, stated in-force counts) is the single base for the
+  unified Israel model (₪4,518 table-driven premium, 25% take rate, stated in-force counts) is the single base for the
   §6 table, the §7 derived deal figures, and the §8 actuarial appraisal simulation — which is deterministic for its
   seed and returns a verifiable content hash. Partner-market license and royalty figures are illustrative deal
   parameters, adjustable in the room, and never overwrite the canonical base. PHINS is modelled as a digital MGA /
@@ -372,13 +372,13 @@ strong { color: var(--navy); }
 <script>
 (function () {
   "use strict";
-  var CFG_STORE_ID = "phins.partner.aitech.cfg.v1";
+  var CFG_STORE_ID = "phins.partner.aitech.cfg.v2";
   var SYM = { ILS: "₪", USD: "$", EUR: "€" };
   // Canonical IL base (must mirror the pitch dashboard / valuation-sim scope)
   var BASE = {
     years: [2027, 2028, 2029],
-    inForce: [2000, 8000, 20000],
-    opex: [5400000, 9000000, 14400000],
+    inForce: [12000, 59040, 162317],
+    opex: [32400000, 66420000, 116868240],
     round: 6000000,
     preMoney: 24000000
   };
@@ -387,7 +387,7 @@ strong { color: var(--navy); }
     usdIls: null, usdEur: null, fxSource: "loading",
     invest: 6000000, preMoney: 24000000,
     markets: 2, license: 1500000, royaltyPct: 3, scalePct: 60,
-    premium: 3600, takePct: 25,
+    premium: 4518, takePct: 25,
     simVersion: null, simProvenance: null
   };
   try {

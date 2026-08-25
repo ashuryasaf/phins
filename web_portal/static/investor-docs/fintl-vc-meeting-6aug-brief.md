@@ -37,7 +37,7 @@ next diligence.
 | 02–07 | Technology (depth) | Integrity contract (AI recommends, ledger decides); modules already in production; multi-market adapter layer; what is built vs. what the round funds. |
 | 07–11 | Regulation | Authority pathway and digital MGA / platform posture; status of the Israel regulatory application memorandum; sequencing vs. partner / investor signings. |
 | 11–16 | Funding | Seed ask: **ILS 6.0M** at **ILS 24M pre / ILS 30M post**; use of funds and milestone gates from the business plan; deal structures already on the platform (NDA, term sheet). |
-| 16–19 | Actuary | Canonical IL model (ILS 3,600 average premium · 25% take rate · sales from 1 Jan 2027); actuarial appraisal / simulation versions on the pitch dashboard; how valuation reconciles to the plan. |
+| 16–19 | Actuary | Unified IL model (ILS 4,518 table-driven premium · 25% take rate · sales from 1 Jan 2027); actuarial appraisal / simulation versions on the pitch dashboard; how valuation reconciles to the plan. |
 | 19–20 | Wrap-up & next steps | Agree diligence list, materials to send, and follow-up date. Log outcome in the Meeting Diary. |
 
 **Run-of-show rules:** hard timeboxes, one speaker per segment, materials
@@ -77,7 +77,7 @@ segment — the timeline never slips for it.
 
 **Data integrity notice:** this brief is an operational admin preparation
 tool. Financials referenced here are forward-looking planning assumptions
-from the canonical IL model (ILS 3,600 average premium, 25% take rate, stated
+from the unified IL model (ILS 4,518 table-driven premium, 25% take rate, stated
 in-force counts) and the ILS 24M pre / ILS 30M post seed basis used across the
 pitch dashboard — not commitments or guidance. The agenda, prep list, and
 decision outputs are internal planning aids and this document does not write

@@ -145,7 +145,7 @@ strong { color: var(--navy); }
   <div class="kpis">
     <div class="kpi"><div class="v" id="k-agents27">—</div><div class="l">Agents required · 2027</div></div>
     <div class="kpi"><div class="v" id="k-agents29">—</div><div class="l">Agents required · 2029</div></div>
-    <div class="kpi"><div class="v" id="k-gwp29">₪72.0M</div><div class="l">2029 GWP (IL model)</div></div>
+    <div class="kpi"><div class="v" id="k-gwp29">₪733.3M</div><div class="l">2029 GWP (IL model)</div></div>
     <div class="kpi"><div class="v" id="k-margin29">—</div><div class="l">2029 structure margin</div></div>
     <div class="kpi"><div class="v" id="k-phins29">—</div><div class="l">2029 PHINS share</div></div>
   </div>
@@ -154,7 +154,7 @@ strong { color: var(--navy); }
 <div class="cover">
   <strong>Meeting:</strong> 13 July 2026, 14:15 · CEO, major insurance company — agents orientation (name to be confirmed under NDA)<br>
   <strong>Objective:</strong> agree the build-and-distribute structure — joint company (NewCo) or MGA on the insurer's paper — and the agent-force distribution plan<br>
-  <strong>Prepared by:</strong> PHINS founding team · <strong>Basis:</strong> canonical IL business-plan assumptions (₪3,600 average premium · 25% take rate · sales from 1 Jan 2027)<br>
+  <strong>Prepared by:</strong> PHINS founding team · <strong>Basis:</strong> unified IL business-plan assumptions (₪4,518 table-driven premium · 25% take rate · sales from 1 Jan 2027)<br>
   <strong>Valuation basis (for JV pricing):</strong> adjustable — manual, or derived from the deterministic actuarial appraisal simulation (versions B·P25 / B·P50 / B·P75 below)
 </div>
 
@@ -256,11 +256,11 @@ strong { color: var(--navy); }
 <table>
   <thead><tr><th>Driver</th><th class="num">2027</th><th class="num">2028</th><th class="num">2029</th></tr></thead>
   <tbody>
-    <tr><td>Active policies (end of year)</td><td class="num">4,000</td><td class="num">12,000</td><td class="num">28,000</td></tr>
-    <tr><td>Average policies in force</td><td class="num">2,000</td><td class="num">8,000</td><td class="num">20,000</td></tr>
-    <tr><td>Average annual premium</td><td class="num" colspan="3">₪3,600 (₪300 / month) · adjustable in §7</td></tr>
-    <tr><td>Gross written premium (GWP)</td><td class="num m-gwp" data-y="0">₪7.2M</td><td class="num m-gwp" data-y="1">₪28.8M</td><td class="num m-gwp" data-y="2">₪72.0M</td></tr>
-    <tr><td>Distribution take (25% of GWP)</td><td class="num m-take" data-y="0">₪1.8M</td><td class="num m-take" data-y="1">₪7.2M</td><td class="num m-take" data-y="2">₪18.0M</td></tr>
+    <tr><td>Active policies (end of year)</td><td class="num">24,000</td><td class="num">94,080</td><td class="num">230,554</td></tr>
+    <tr><td>Average policies in force</td><td class="num">12,000</td><td class="num">59,040</td><td class="num">162,317</td></tr>
+    <tr><td>Average annual premium</td><td class="num" colspan="3">₪4,518 (₪376.50 / month) · adjustable in §7</td></tr>
+    <tr><td>Gross written premium (GWP)</td><td class="num m-gwp" data-y="0">₪54.2M</td><td class="num m-gwp" data-y="1">₪266.7M</td><td class="num m-gwp" data-y="2">₪733.3M</td></tr>
+    <tr><td>Distribution take (25% of GWP)</td><td class="num m-take" data-y="0">₪13.6M</td><td class="num m-take" data-y="1">₪66.7M</td><td class="num m-take" data-y="2">₪183.3M</td></tr>
   </tbody>
 </table>
 <p class="fine">Annual policy churn 8% · blended CAC ≈ ₪650 per policy · claims reserves sit with the risk carrier and are never booked as PHINS / NewCo revenue. The actuarial appraisal simulation in §8 is scoped to exactly this model.</p>
@@ -281,7 +281,7 @@ strong { color: var(--navy); }
   <div class="cg"><label for="in-prod">Policies / agent / month</label><input id="in-prod" type="number" min="0.25" max="30" step="0.25" value="2"></div>
   <div class="cg"><label for="in-comm">Agent commission (% of GWP)</label><input id="in-comm" type="number" min="0" max="25" step="0.5" value="10"></div>
   <div class="cg"><label for="in-jvshare">PHINS share of NewCo (%)</label><input id="in-jvshare" type="number" min="0" max="100" step="1" value="50"></div>
-  <div class="cg"><label for="in-premium">Average annual premium (₪)</label><input id="in-premium" type="number" min="0" step="100" value="3600"></div>
+  <div class="cg"><label for="in-premium">Average annual premium (₪)</label><input id="in-premium" type="number" min="0" step="100" value="4518"></div>
   <div class="cg"><label for="in-take">Distribution take on GWP (%)</label><input id="in-take" type="number" min="0" max="60" step="0.5" value="25"></div>
   <div class="cg"><label for="in-churn">Annual policy churn (%)</label><input id="in-churn" type="number" min="0" max="40" step="0.5" value="8"></div>
   <div class="cg"><label for="in-jvpre">NewCo pre-money for JV pricing (₪) <span id="pre-basis" style="font-weight:600;color:#5a6b86;"></span></label><input id="in-jvpre" type="number" min="0" step="1000000" value="24000000"></div>
@@ -333,7 +333,7 @@ strong { color: var(--navy); }
   <li><strong>Gate 2 · Q4 2026</strong> — agent portal live for the insurer's field force; pricing &amp; reserve sign-off; pilot agent cohort onboarded.</li>
   <li><strong>Gate 3 · 1 Jan 2027</strong> — sales start on the canonical model (§6) through the agent force.</li>
   <li><strong>Gate 4 · 2028</strong> — agent force scaled per §7; commission economics verified against the ledger; NewCo conversion decision (if hybrid).</li>
-  <li><strong>Gate 5 · 2029</strong> — ₪72.0M GWP run-rate; second product line / channel decision.</li>
+  <li><strong>Gate 5 · 2029</strong> — ₪733.3M GWP run-rate; second product line / channel decision.</li>
 </ul>
 
 <h2><span class="secno">10.</span> Team &amp; governance</h2>
@@ -367,7 +367,7 @@ strong { color: var(--navy); }
   in ₪ (ILS), the canonical base; $ / € equivalents convert at a live exchange rate from <code>/api/fx/rates</code>
   (source is labelled; a static fallback is used only when the live feed is unavailable) and every display currency
   derives from a single USD snapshot so the numbers stay consistent. They are not commitments or guidance. The
-  canonical Israel model (₪3,600 average premium, 25% take rate, stated in-force counts) is the single base for the
+  unified Israel model (₪4,518 table-driven premium, 25% take rate, stated in-force counts) is the single base for the
   §6 table, the §7 derived agent-force plan, and the §8 actuarial appraisal simulation — which is deterministic for
   its seed and returns a verifiable content hash. The agent plan is derived from the policy ramp (never the other
   way around), so adjusting productivity or commission terms cannot corrupt the underlying model. Claims reserves
@@ -377,19 +377,19 @@ strong { color: var(--navy); }
 <script>
 (function () {
   "use strict";
-  var CFG_STORE_ID = "phins.partner.insurer.cfg.v1";
+  var CFG_STORE_ID = "phins.partner.insurer.cfg.v2";
   var SYM = { ILS: "₪", USD: "$", EUR: "€" };
   // Canonical IL base (must mirror the pitch dashboard / valuation-sim scope)
   var BASE = {
     years: [2027, 2028, 2029],
-    eoyPolicies: [4000, 12000, 28000]
+    eoyPolicies: [24000, 94080, 230554]
   };
   var cfg = {
     currency: "ILS",
     usdIls: null, usdEur: null, fxSource: "loading",
     structure: "jv",
     prod: 2, commPct: 10, jvSharePct: 50,
-    premium: 3600, takePct: 25, churnPct: 8,
+    premium: 4518, takePct: 25, churnPct: 8,
     jvPre: 24000000,
     simVersion: null, simProvenance: null
   };

@@ -3233,6 +3233,22 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     Dispatch GET requests to appropriate handlers.
     Returns (status_code, response_dict) or None if path not handled.
     """
+    # Aspire-Invest Israel-pilot identity (planning calculator — no PII).
+    if path == '/api/pitch/aspire-identity':
+        try:
+            from services.aspire_scale_identity import (
+                compute_aspire_identity, parse_identity_query,
+            )
+            kwargs = parse_identity_query(query_params or {})
+            payload = compute_aspire_identity(**kwargs)
+            if payload.get('error'):
+                return 400, {'error': payload['error']}
+            return 200, payload
+        except (TypeError, ValueError) as exc:
+            return 400, {'error': str(exc)}
+        except Exception as exc:
+            return 500, {'error': str(exc)}
+
     # Foundation invitations validation (public)
     # Support both query param (?code=XXX) and path param (/validate/XXX) formats
     # NOTE: /api/invitations/validate is handled in server.py for regular invitation codes

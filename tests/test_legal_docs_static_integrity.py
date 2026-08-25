@@ -255,7 +255,7 @@ def test_investor_business_plan_meeting_adjustments():
     assert 'id="bp-chart-burn"' in bp
     # 5-year (2027-2031) gantt + forecast charts/tables
     assert 'id="bp-chart-gantt"' in bp and "5-year" in bp
-    assert "2031" in bp and "100,000" in bp and "55,000" in bp
+    assert "2031" in bp and "471,621" in bp and "356,110" in bp
     assert 'id="bp-chart-policies"' in bp and 'id="bp-chart-pnl"' in bp
     # premiums / claims / reinsurance forecast on the portfolio-simulation basis
     assert 'id="bp-carrier-table"' in bp and 'id="bp-chart-carrier"' in bp
@@ -300,11 +300,11 @@ def test_investor_business_plan_hebrew_locale_for_ils():
     ]
     for he in he_section_titles:
         assert he in bp, f"missing Hebrew title: {he}"
-    # data-integrity notice is fully translated and preserves the ₪3,600 /
+    # data-integrity notice is fully translated and preserves the ₪4,518 /
     # 25% take-rate anchor values so numeric integrity is flawless across
     # both locales
     assert "הצהרת שלמות נתונים" in bp
-    assert "₪3,600" in bp and "25%" in bp
+    assert "₪4,518" in bp and "25%" in bp
 
 
 def test_il_pitch_links_data_room():

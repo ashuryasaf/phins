@@ -113,6 +113,28 @@ DOCUMENTS = [
      'investor-docs/grove-vc-meeting-19aug-brief.pdf',
      'PHINS — Grove VC Investor Evening Brief (19 August 2026) · '
      'Public Presentation of PHINS hosted by Mr. Lotan Levkovitch'),
+    ('investor-docs/aspire-invest-meeting-sep2026-brief.md',
+     'investor-docs/aspire-invest-meeting-sep2026-brief.pdf',
+     'PHINS — Aspire-Invest Meeting Outline (September 2026) · '
+     'Chief Distribution & Chief Investments · 60 minutes'),
+    ('investor-docs/aspire-invest-meeting-sep2026-brief-he.md',
+     'investor-docs/aspire-invest-meeting-sep2026-brief-he.pdf',
+     'פינס — מתווה פגישה עם אספייר-אינבסט (ספטמבר 2026) · '
+     'ראש החלוקה וראש ההשקעות · 60 דקות'),
+    ('investor-docs/aspire-invest-business-plan-sep2026.md',
+     'investor-docs/aspire-invest-business-plan-sep2026.pdf',
+     'PHINS — Aspire-Invest Business Plan (September 2026) · '
+     'Technology, first product, and 250,000-policy scale identity'),
+    ('investor-docs/aspire-invest-business-plan-sep2026-he.md',
+     'investor-docs/aspire-invest-business-plan-sep2026-he.pdf',
+     'פינס — תוכנית עסקית לאספייר-אינבסט (ספטמבר 2026) · '
+     'טכנולוגיה, מוצר ראשון וזהות סקייל של 250,000 פוליסות'),
+    ('investor-docs/aspire-invest-nda-sep2026.md',
+     'investor-docs/aspire-invest-nda-sep2026.pdf',
+     'PHINS — Mutual Non-Disclosure Agreement (Aspire-Invest · September 2026)'),
+    ('investor-docs/aspire-invest-nda-sep2026-he.md',
+     'investor-docs/aspire-invest-nda-sep2026-he.pdf',
+     'פינס — הסכם סודיות הדדי (אספייר-אינבסט · ספטמבר 2026)'),
 ]
 
 # Sources rendered right-to-left (Hebrew). RTL documents use a Hebrew-capable
@@ -120,6 +142,9 @@ DOCUMENTS = [
 # mirrored table columns so the logical first column sits on the right.
 RTL_DOCUMENTS = {
     'investor-docs/israel-regulatory-application-he.md',
+    'investor-docs/aspire-invest-meeting-sep2026-brief-he.md',
+    'investor-docs/aspire-invest-business-plan-sep2026-he.md',
+    'investor-docs/aspire-invest-nda-sep2026-he.md',
 }
 
 # Candidate Hebrew-capable fonts (first hit wins). DejaVu Sans covers the

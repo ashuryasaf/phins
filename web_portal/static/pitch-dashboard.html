@@ -1889,6 +1889,82 @@
       text-align: right;
     }
 
+    .aspire-chart-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+      margin-top: 12px;
+    }
+
+    .aspire-chart-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      background: #fff;
+    }
+
+    .aspire-chart-card h4 {
+      margin: 0 0 8px 0;
+      font-size: 10pt;
+      font-weight: 800;
+      color: var(--blue-dark);
+    }
+
+    .aspire-legend {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 7.6pt;
+      color: var(--text-sub);
+      margin: 0 0 10px 0;
+    }
+
+    .aspire-swatch {
+      display: inline-block;
+      width: 11px;
+      height: 11px;
+      border-radius: 3px;
+      vertical-align: -1px;
+      margin-right: 4px;
+    }
+
+    .aspire-stack-inner {
+      height: 100%;
+      display: flex;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .aspire-phins {
+      background: linear-gradient(135deg, #f7e2a0 0%, #b8893b 100%);
+    }
+
+    .aspire-ins {
+      background: linear-gradient(135deg, #0b1f3f 0%, #123f82 100%);
+    }
+
+    .aspire-ins-turnover {
+      background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+    }
+
+    .aspire-life {
+      background: linear-gradient(135deg, #1d4ed8 0%, #60a5fa 100%);
+    }
+
+    .aspire-disab {
+      background: linear-gradient(135deg, #6a1b9a 0%, #ab47bc 100%);
+    }
+
+    .aspire-savings {
+      background: linear-gradient(135deg, #15803d 0%, #4ade80 100%);
+    }
+
+    .aspire-elect-btn.on {
+      background: #0b1f3f;
+      color: #fff;
+      border-color: #0b1f3f;
+    }
+
     .exec-donut-wrap {
       display: flex;
       align-items: center;
@@ -1989,6 +2065,7 @@
       <a href="#regulatory-preruling-avi-ovadia" class="pitch-nav-link">Authority Pre-Ruling (TBA)</a>
       <a href="#fintl-vc-meetings-aug" class="pitch-nav-link">Fintl VC 5–6.8</a>
       <a href="#grove-vc-meeting-19aug" class="pitch-nav-link">Grove VC 19.8</a>
+      <a href="#aspire-invest-meeting-sep2026" class="pitch-nav-link">Aspire-Invest Sep 2026</a>
       <a href="#il-meeting-diary" class="pitch-nav-link">Meeting Diary</a>
       <a href="#exec-summary-section" class="pitch-nav-link">Executive Summary</a>
       <a href="#scenario-assessment-section" class="pitch-nav-link">Scenario Lab</a>
@@ -2156,6 +2233,21 @@
             <a href="/PHINS_Business_Plan_Executive.pdf" target="_blank" rel="noopener" class="exec-dl-btn">📄 Open Business Plan</a>
             <a href="/PHINS_Business_Plan_Executive.pdf" target="_blank" rel="noopener" class="exec-dl-btn" download>⬇ PDF</a>
             <a href="/PHINS_Business_Plan_Executive.md" target="_blank" rel="noopener" class="exec-dl-btn">📝 Source</a>
+          </div>
+        </div>
+
+        <div style="background:var(--bg-card);border:2px solid #b8893b;border-radius:14px;padding:18px;box-shadow:var(--shadow);">
+          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#b8893b;margin-bottom:6px;">Aspire-Invest · September 2026 · EN + עברית</div>
+          <h3 style="margin:0 0 8px 0;font-size:13pt;">Aspire-Invest Meeting Pack — Business Plan, NDA, 60-minute Outline</h3>
+          <p style="font-size:9.5pt;color:var(--text-sub);margin:0 0 12px 0;">Capital-markets briefing for Chief Distribution &amp; Chief Investments: technology layer separated from the first unified insurance contract; Israel-pilot actuarial reset (age 42 · F ILS 1M · published tables life 0.25 / disability 0.20 · ILS 4,518); PHINS MGA 25% vs insurance 75%; live savings configurator (default 30% of book at 300% add-on); turnover option after year 3; charts on the 250,000-issued scale identity. No fundraising ask and no bidding price in this pack.</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <a href="#aspire-invest-meeting-sep2026" class="exec-dl-btn" style="background:#0b1f3f;color:#fff;border-color:#0b1f3f;">📌 Open Meeting Section</a>
+            <a href="/investor-docs/aspire-invest-business-plan-sep2026.pdf" target="_blank" rel="noopener" class="exec-dl-btn">📘 Business Plan (EN)</a>
+            <a href="/investor-docs/aspire-invest-business-plan-sep2026-he.pdf" target="_blank" rel="noopener" class="exec-dl-btn">📘 תוכנית עסקית (עברית)</a>
+            <a href="/investor-docs/aspire-invest-meeting-sep2026-brief.pdf" target="_blank" rel="noopener" class="exec-dl-btn">⏱️ 60-min Outline (EN)</a>
+            <a href="/investor-docs/aspire-invest-meeting-sep2026-brief-he.pdf" target="_blank" rel="noopener" class="exec-dl-btn">⏱️ מתווה (עברית)</a>
+            <a href="/investor-docs/aspire-invest-nda-sep2026.pdf" target="_blank" rel="noopener" class="exec-dl-btn">🔒 NDA (EN)</a>
+            <a href="/investor-docs/aspire-invest-nda-sep2026-he.pdf" target="_blank" rel="noopener" class="exec-dl-btn">🔒 הסכם סודיות (עברית)</a>
           </div>
         </div>
 
@@ -2379,9 +2471,9 @@
             <div class="control-group">
               <label for="inv-mult-metric" style="font-size:7.5pt;font-weight:700;color:var(--blue-dark);">Metric (2029)</label>
               <select id="inv-mult-metric" style="border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;width:100%;">
-                <option value="net_revenue">PHINS net revenue (₪18.0M)</option>
-                <option value="ebitda">EBITDA (₪3.6M)</option>
-                <option value="gwp">Gross written premium (₪72.0M)</option>
+                <option value="net_revenue">PHINS net revenue (₪183.3M)</option>
+                <option value="ebitda">EBITDA (₪66.5M)</option>
+                <option value="gwp">Gross written premium (₪733.3M)</option>
               </select>
             </div>
             <div class="control-group">
@@ -2470,10 +2562,10 @@
                 <tr style="background:#e8f5e9;"><td style="padding:5px 8px;font-weight:700;">Sales start date</td><td style="padding:5px 8px;text-align:right;">1 Jan 2027</td></tr>
                 <tr><td style="padding:5px 8px;">Build phase</td><td style="padding:5px 8px;text-align:right;">~12 months (to 31 Dec 2026)</td></tr>
                 <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Reporting currency</td><td style="padding:5px 8px;text-align:right;" id="inv-assum-currency">₪ (ILS) · live FX</td></tr>
-                <tr><td style="padding:5px 8px;">Average annual premium</td><td style="padding:5px 8px;text-align:right;"><span class="inv-money" data-ils="3600"></span> (<span class="inv-money" data-ils="300"></span> / mo)</td></tr>
-                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">PHINS take rate on GWP (MGA + platform)</td><td style="padding:5px 8px;text-align:right;">25%</td></tr>
-                <tr><td style="padding:5px 8px;">Active policies — EoY 2027 / 28 / 29</td><td style="padding:5px 8px;text-align:right;">4,000 / 12,000 / 28,000</td></tr>
-                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Avg in-force during year</td><td style="padding:5px 8px;text-align:right;">2,000 / 8,000 / 20,000</td></tr>
+                <tr><td style="padding:5px 8px;">Average annual premium (published tables)</td><td style="padding:5px 8px;text-align:right;"><span class="inv-money" data-ils="4518"></span> (<span class="inv-money" data-ils="376.5"></span> / mo)</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">PHINS take rate on risk GWP (MGA + platform)</td><td style="padding:5px 8px;text-align:right;">25% · insurance take 75%</td></tr>
+                <tr><td style="padding:5px 8px;">Active policies — EoY 2027 / 28 / 29</td><td style="padding:5px 8px;text-align:right;">24,000 / 94,080 / 230,554</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Avg in-force during year</td><td style="padding:5px 8px;text-align:right;">12,000 / 59,040 / 162,317</td></tr>
                 <tr><td style="padding:5px 8px;">Blended CAC (incl. advertising)</td><td style="padding:5px 8px;text-align:right;">≈ <span class="inv-money" data-ils="650"></span> / policy</td></tr>
                 <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Annual policy churn</td><td style="padding:5px 8px;text-align:right;">8%</td></tr>
                 <tr><td style="padding:5px 8px;">Seed / build round (the ask)</td><td style="padding:5px 8px;text-align:right;font-weight:700;" id="inv-assum-round">—</td></tr>
@@ -2482,8 +2574,8 @@
             </table>
           </div>
           <p style="font-size:7.8pt;color:var(--text-soft);margin-top:10px;">
-            Conservative by design: PHINS is modelled as a digital MGA / platform earning a blended take rate on premium, so
-            underwriting reserves and claims sit with the risk carrier / reinsurer and are not booked as PHINS revenue.
+            One Israel book: table-driven ILS 4,518 risk premium, persistency in-force, PHINS 25% / insurance 75%.
+            Underwriting reserves and claims sit with the risk carrier and are not booked as PHINS revenue.
           </p>
         </div>
       </div>
@@ -2582,7 +2674,7 @@
           </div>
           <div class="exec-milestone-item">
             <div class="emi-dot planned"></div>
-            <div class="emi-text"><strong>Gate 7 · Q4 2027 — Scale-up</strong> — 4,000 active policies; Series A readiness; second-market preparation.</div>
+            <div class="emi-text"><strong>Gate 7 · Q4 2027 — Scale-up</strong> — 24,000 EoY in-force; Series A readiness; second-market preparation.</div>
           </div>
         </div>
       </div>
@@ -2603,17 +2695,19 @@
                 </tr>
               </thead>
               <tbody>
-                <tr><td style="padding:5px 8px;">Active policies (EoY)</td><td style="padding:5px 8px;text-align:right;">4,000</td><td style="padding:5px 8px;text-align:right;">12,000</td><td style="padding:5px 8px;text-align:right;">28,000</td></tr>
-                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Avg in-force during year</td><td style="padding:5px 8px;text-align:right;">2,000</td><td style="padding:5px 8px;text-align:right;">8,000</td><td style="padding:5px 8px;text-align:right;">20,000</td></tr>
-                <tr><td style="padding:5px 8px;">Gross written premium (earned)</td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="7200000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="28800000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="72000000"></td></tr>
-                <tr style="background:#eef9f0;"><td style="padding:5px 8px;font-weight:700;">PHINS net revenue (25%)</td><td style="padding:5px 8px;text-align:right;font-weight:700;" class="inv-money" data-ils="1800000"></td><td style="padding:5px 8px;text-align:right;font-weight:700;" class="inv-money" data-ils="7200000"></td><td style="padding:5px 8px;text-align:right;font-weight:700;" class="inv-money" data-ils="18000000"></td></tr>
-                <tr><td style="padding:5px 8px;">Operating cost (team, infra, marketing, G&amp;A)</td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="-5400000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="-9000000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="-14400000"></td></tr>
-                <tr style="background:#f8fafc;"><td style="padding:5px 8px;font-weight:700;">EBITDA</td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--red-1);" class="inv-money" data-ils="-3600000"></td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--red-1);" class="inv-money" data-ils="-1800000"></td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--green-1);" class="inv-money" data-ils="3600000"></td></tr>
-                <tr><td style="padding:5px 8px;">EBITDA margin</td><td style="padding:5px 8px;text-align:right;">−200%</td><td style="padding:5px 8px;text-align:right;">−25%</td><td style="padding:5px 8px;text-align:right;">+20%</td></tr>
+                <tr><td style="padding:5px 8px;">Active policies (EoY)</td><td style="padding:5px 8px;text-align:right;">24,000</td><td style="padding:5px 8px;text-align:right;">94,080</td><td style="padding:5px 8px;text-align:right;">230,554</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Avg in-force during year</td><td style="padding:5px 8px;text-align:right;">12,000</td><td style="padding:5px 8px;text-align:right;">59,040</td><td style="padding:5px 8px;text-align:right;">162,317</td></tr>
+                <tr><td style="padding:5px 8px;">Risk GWP (earned)</td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="54216000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="266742720"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="733348206"></td></tr>
+                <tr style="background:#eef9f0;"><td style="padding:5px 8px;font-weight:700;">PHINS net revenue (25%)</td><td style="padding:5px 8px;text-align:right;font-weight:700;" class="inv-money" data-ils="13554000"></td><td style="padding:5px 8px;text-align:right;font-weight:700;" class="inv-money" data-ils="66685680"></td><td style="padding:5px 8px;text-align:right;font-weight:700;" class="inv-money" data-ils="183337052"></td></tr>
+                <tr><td style="padding:5px 8px;">Insurance take (75%)</td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="40662000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="200057040"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="550011154"></td></tr>
+                <tr style="background:#f0fdf4;"><td style="padding:5px 8px;">Savings flow (30% × 300%)</td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="48794400"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="240068448"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="660013385"></td></tr>
+                <tr><td style="padding:5px 8px;">Operating cost (team, infra, marketing, G&amp;A)</td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="-32400000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="-66420000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="-116868240"></td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:5px 8px;font-weight:700;">EBITDA</td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--red-1);" class="inv-money" data-ils="-18846000"></td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--green-1);" class="inv-money" data-ils="265680"></td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--green-1);" class="inv-money" data-ils="66468812"></td></tr>
+                <tr><td style="padding:5px 8px;">EBITDA margin</td><td style="padding:5px 8px;text-align:right;">−139%</td><td style="padding:5px 8px;text-align:right;">+0.4%</td><td style="padding:5px 8px;text-align:right;">+36%</td></tr>
               </tbody>
             </table>
             <p style="font-size:7.8pt;color:var(--text-soft);margin-top:8px;">
-              Cumulative capital to EBITDA-positive ≈ <strong id="inv-cum-total"></strong> (<span class="inv-money inv-scale" data-ils="6000000"></span> build + <span class="inv-money" data-ils="3600000"></span> 2027 burn + <span class="inv-money" data-ils="1800000"></span> 2028 burn). Plan: <span class="inv-money inv-scale" data-ils="6000000"></span> seed now, Series A in 2027 to fund scale-up.
+              Cumulative capital to EBITDA-positive ≈ <strong id="inv-cum-total"></strong> (<span class="inv-money inv-scale" data-ils="6000000"></span> build + <span class="inv-money" data-ils="18846000"></span> 2027 burn; 2028 is already EBITDA-positive). Plan: <span class="inv-money inv-scale" data-ils="6000000"></span> seed now, Series A in 2027 to fund scale-up.
             </p>
           </div>
           <div>
@@ -2621,36 +2715,36 @@
             <div class="exec-bar-group">
               <div class="exec-bar-item">
                 <span class="ebi-label">2027</span>
-                <div class="ebi-track"><div class="ebi-fill ai" style="width:10%;"></div></div>
-                <span class="ebi-val inv-moneyM" data-ils="1800000"></span>
+                <div class="ebi-track"><div class="ebi-fill ai" style="width:7.4%;"></div></div>
+                <span class="ebi-val inv-moneyM" data-ils="13554000"></span>
               </div>
               <div class="exec-bar-item">
                 <span class="ebi-label">2028</span>
-                <div class="ebi-track"><div class="ebi-fill data" style="width:40%;"></div></div>
-                <span class="ebi-val inv-moneyM" data-ils="7200000"></span>
+                <div class="ebi-track"><div class="ebi-fill data" style="width:36.4%;"></div></div>
+                <span class="ebi-val inv-moneyM" data-ils="66685680"></span>
               </div>
               <div class="exec-bar-item">
                 <span class="ebi-label">2029</span>
                 <div class="ebi-track"><div class="ebi-fill cloud" style="width:100%;"></div></div>
-                <span class="ebi-val inv-moneyM" data-ils="18000000"></span>
+                <span class="ebi-val inv-moneyM" data-ils="183337052"></span>
               </div>
             </div>
             <div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--blue-dark);margin:14px 0 8px;">Gross written premium (<span class="inv-cur-sym">₪</span>M)</div>
             <div class="exec-bar-group">
               <div class="exec-bar-item">
                 <span class="ebi-label">2027</span>
-                <div class="ebi-track"><div class="ebi-fill block" style="width:10%;"></div></div>
-                <span class="ebi-val inv-moneyM" data-ils="7200000"></span>
+                <div class="ebi-track"><div class="ebi-fill block" style="width:7.4%;"></div></div>
+                <span class="ebi-val inv-moneyM" data-ils="54216000"></span>
               </div>
               <div class="exec-bar-item">
                 <span class="ebi-label">2028</span>
-                <div class="ebi-track"><div class="ebi-fill block" style="width:40%;"></div></div>
-                <span class="ebi-val inv-moneyM" data-ils="28800000"></span>
+                <div class="ebi-track"><div class="ebi-fill block" style="width:36.4%;"></div></div>
+                <span class="ebi-val inv-moneyM" data-ils="266742720"></span>
               </div>
               <div class="exec-bar-item">
                 <span class="ebi-label">2029</span>
                 <div class="ebi-track"><div class="ebi-fill block" style="width:100%;"></div></div>
-                <span class="ebi-val inv-moneyM" data-ils="72000000"></span>
+                <span class="ebi-val inv-moneyM" data-ils="733348206"></span>
               </div>
             </div>
           </div>
@@ -2824,7 +2918,7 @@
       </div>
 
       <div class="exec-integrity-note">
-        <strong>Data integrity notice:</strong> All financials in this section are forward-looking planning assumptions in ₪ (ILS), the canonical base; $ / € equivalents convert at a live exchange rate (<span id="inv-integrity-fx">live FX — loading…</span>) and every display currency derives from a single USD snapshot so the numbers stay consistent. They are not commitments or guidance. The build budget reconciles exactly to the ₪6.0M round; the income model derives every line from the tested-assumptions table (₪3,600 average premium, 25% take rate, stated in-force counts); and all deal structures price or convert on a single ₪24M pre-money / ₪30M post-money basis so stakes remain comparable. PHINS is modelled as a digital MGA / platform earning a take rate on premium, so claims reserves are not booked as PHINS revenue. The meeting diary is an operational admin tool stored locally in the browser and does not write to the platform ledger. Meeting summary notes are a staff-gated admin record stored server-side (JSON store, not the ledger) so they can be referred to later for BI, regulatory-requirement adjustments, and AI-affiliated use — AI/BI layers may read notes but never post.
+        <strong>Data integrity notice:</strong> All financials in this section are forward-looking planning assumptions in ₪ (ILS), the canonical base; $ / € equivalents convert at a live exchange rate (<span id="inv-integrity-fx">live FX — loading…</span>) and every display currency derives from a single USD snapshot so the numbers stay consistent. They are not commitments or guidance. The build budget reconciles exactly to the ₪6.0M round; the income model derives every line from the unified Israel book (ILS 4,518 table-driven premium, persistency in-force 24,000 / 94,080 / 230,554, 25% PHINS take); and all deal structures price or convert on a single ₪24M pre-money / ₪30M post-money basis so stakes remain comparable. PHINS is modelled as a digital MGA / platform earning a take rate on premium, so claims reserves are not booked as PHINS revenue. The meeting diary is an operational admin tool stored locally in the browser and does not write to the platform ledger. Meeting summary notes are a staff-gated admin record stored server-side (JSON store, not the ledger) so they can be referred to later for BI, regulatory-requirement adjustments, and AI-affiliated use — AI/BI layers may read notes but never post.
       </div>
     </section>
 
@@ -2844,7 +2938,7 @@
           <strong>CEO of a major insurance company (agents orientation)</strong> — building and distributing through a
           <strong>joint company or MGA</strong>. Each track carries its elevator pitch, executive pitch, and a full
           business plan on <strong>adjustable assumptions</strong> with pinned <strong>actuarial simulation versions</strong>,
-          all reconciling to the same canonical IL model (₪3,600 average premium · 25% take rate · sales from 1 Jan 2027).
+          all reconciling to the same unified IL model (ILS 4,518 table-driven premium · 25% PHINS take · sales from 1 Jan 2027).
         </p>
         <div class="exec-dl-row">
           <a href="/internal/phins-ai-tech-partner-business-plan.html" target="_blank" rel="noopener" class="exec-dl-btn">📘 Full Business Plan — Meeting A (Tech Partner)</a>
@@ -2968,7 +3062,7 @@
       </div>
 
       <div class="exec-integrity-note">
-        <strong>Data integrity notice:</strong> Both meeting packs derive every figure from the same canonical IL model used across this dashboard (₪3,600 average premium, 25% take rate, average in-force 2,000 / 8,000 / 20,000, sales from 1 Jan 2027), so the tech-partner economics (Meeting A) and the agent-force economics (Meeting B) always reconcile with the investor section above — the agent plan is derived <em>from</em> the policy ramp, never the other way around. All amounts are forward-looking planning assumptions in ₪ (ILS), the canonical base; $ / € equivalents convert at a live exchange rate (<span id="pm-integrity-fx">live FX — loading…</span>) from a single USD snapshot. Valuations may be hand-set or derived from the deterministic actuarial appraisal simulation (seed 20260713; reproducible bit-for-bit with a verifiable content hash). License, royalty, and commission terms are illustrative deal parameters, adjustable per meeting, and never overwrite the canonical base. These packs are stored locally in this browser and do not write to the platform ledger.
+        <strong>Data integrity notice:</strong> Both meeting packs derive every figure from the same unified IL model used across this dashboard (ILS 4,518 table-driven premium, 25% PHINS take, average in-force 12,000 / 59,040 / 162,317, sales from 1 Jan 2027), so the tech-partner economics (Meeting A) and the agent-force economics (Meeting B) always reconcile with the investor section above — the agent plan is derived <em>from</em> the policy ramp, never the other way around. All amounts are forward-looking planning assumptions in ₪ (ILS), the canonical base; $ / € equivalents convert at a live exchange rate (<span id="pm-integrity-fx">live FX — loading…</span>) from a single USD snapshot. Valuations may be hand-set or derived from the deterministic actuarial appraisal simulation (seed 20260713; reproducible bit-for-bit with a verifiable content hash). License, royalty, and commission terms are illustrative deal parameters, adjustable per meeting, and never overwrite the canonical base. These packs are stored locally in this browser and do not write to the platform ledger.
       </div>
     </section>
 
@@ -3410,7 +3504,7 @@
                 <tr style="background:#ffffff;">
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">16–19</td>
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">Actuary</td>
-                  <td style="padding:5px 8px;border-top:1px solid var(--border);">Canonical IL model (₪3,600 premium · 25% take); valuation simulation on this dashboard.</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">Unified IL model (ILS 4,518 premium · 25% PHINS take); valuation simulation on this dashboard.</td>
                 </tr>
                 <tr style="background:#f0fdf4;">
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">19–20</td>
@@ -3431,7 +3525,7 @@
       </div>
 
       <div class="exec-integrity-note">
-        <strong>Data integrity notice:</strong> These Fintl VC packs are operational admin tools pinned to the IL pitch dashboard. Financials referenced (₪6.0M seed · ₪24M pre · ₪30M post · ₪3,600 average premium · 25% take rate) are the canonical planning assumptions used across this dashboard — not commitments or guidance. Agendas and decision outputs are internal planning aids and do not write to the platform ledger.
+        <strong>Data integrity notice:</strong> These Fintl VC packs are operational admin tools pinned to the IL pitch dashboard. Financials referenced (₪6.0M seed · ₪24M pre · ₪30M post · ILS 4,518 table-driven premium · 25% PHINS take) are the unified planning assumptions used across this dashboard — not commitments or guidance. Agendas and decision outputs are internal planning aids and do not write to the platform ledger.
       </div>
     </section>
 
@@ -3625,6 +3719,479 @@
 
       <div class="exec-integrity-note">
         <strong>Data integrity notice:</strong> This Grove VC pack is an operational admin tool pinned to the IL pitch dashboard. The funding figures (₪6.0M seed · ₪24M pre · ₪30M post) are the canonical planning basis used across this dashboard — not commitments or guidance. The global-problem narrative and automation-vs-savings comparison are presentation framing built on the platform's published automation benchmarks and adjustable Scenario Lab assumptions — not actuarial projections. The agenda, prep list, and decision outputs are internal planning aids and this section does not write to the platform ledger.
+      </div>
+    </section>
+
+    <!-- Aspire-Invest — September 2026 (TBA) · Chief Distribution & Chief Investments -->
+    <section id="aspire-invest-meeting-sep2026" style="margin-bottom:28px;">
+      <div class="exec-summary-banner" style="background: linear-gradient(135deg,#060d1f 0%,#0b1f3f 42%,#b8893b 100%); box-shadow: 0 12px 32px rgba(11,31,63,0.28);">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+          <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">🔒 Internal · Confidential</span>
+          <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(247,226,160,0.22);font-size:8.5pt;font-weight:700;">🏛️ Aspire-Invest · Capital markets</span>
+          <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,0.16);font-size:8.5pt;font-weight:700;">EN + עברית</span>
+          <span style="font-size:8.5pt;opacity:0.9;">🗓️ September 2026 · TBA · 60 minutes · hard timebox · no ask · no bid</span>
+        </div>
+        <h2>Aspire-Invest — September 2026 (TBA) · Chief Distribution &amp; Chief Investments</h2>
+        <p class="exec-subtitle">
+          First-class professional pack for <strong>Aspire-Invest</strong>
+          (<a href="https://aspire-invest.com/" target="_blank" rel="noopener" style="color:#fff;text-decoration:underline;">aspire-invest.com</a>) —
+          a rising Israeli capital-markets house (regulation, investments, stock exchange,
+          insurance markets, real estate; founder, partner and CEO <strong>Hanna Hollander</strong>;
+          150 Menachem Begin, Tel Aviv). Addressed to <strong>Chief Distribution</strong> and
+          <strong>Chief Investments</strong>. The briefing <strong>separates the technology
+          from the first insurance product</strong>, walks the unified contract and actuarial
+          simulator / tables, and illustrates a 3-year scale identity of
+          <strong>up to 250,000 issued policies by end-2029</strong>
+          on the <strong>Israel-pilot</strong> reset specimen (average age 42,
+          max issue 65, life ILS 1,000,000 / disability ILS 250,000 →
+          <strong>ILS 4,518</strong> risk premium). Years 1–3 PHINS is the
+          <strong>digital MGA (25% take)</strong>; the licensed carrier holds
+          the <strong>75% insurance take</strong>. After year 3 a
+          <strong>turnover option</strong> can move that 75% into a
+          PHINS-group Israeli insurer. Charts below separate the two takes.
+          <strong>No fundraising ask and no bidding price</strong> — those remain reserved.
+        </p>
+        <div class="exec-dl-row">
+          <a href="/investor-docs/aspire-invest-business-plan-sep2026.pdf" target="_blank" rel="noopener" class="exec-dl-btn">📘 Open Business Plan (EN)</a>
+          <a href="/investor-docs/aspire-invest-business-plan-sep2026.pdf" target="_blank" rel="noopener" class="exec-dl-btn" download>⬇ Business Plan (EN)</a>
+          <a href="/investor-docs/aspire-invest-business-plan-sep2026-he.pdf" target="_blank" rel="noopener" class="exec-dl-btn">📘 פתיחת תוכנית עסקית</a>
+          <a href="/investor-docs/aspire-invest-business-plan-sep2026-he.pdf" target="_blank" rel="noopener" class="exec-dl-btn" download>⬇ תוכנית עסקית</a>
+          <a href="/investor-docs/aspire-invest-meeting-sep2026-brief.pdf" target="_blank" rel="noopener" class="exec-dl-btn">⏱️ Open 60-min Outline (EN)</a>
+          <a href="/investor-docs/aspire-invest-meeting-sep2026-brief.pdf" target="_blank" rel="noopener" class="exec-dl-btn" download>⬇ Outline (EN)</a>
+          <a href="/investor-docs/aspire-invest-meeting-sep2026-brief-he.pdf" target="_blank" rel="noopener" class="exec-dl-btn">⏱️ מתווה 60 דקות</a>
+          <a href="/investor-docs/aspire-invest-meeting-sep2026-brief-he.pdf" target="_blank" rel="noopener" class="exec-dl-btn" download>⬇ מתווה</a>
+          <a href="/investor-docs/aspire-invest-nda-sep2026.pdf" target="_blank" rel="noopener" class="exec-dl-btn">🔒 Open NDA (EN)</a>
+          <a href="/investor-docs/aspire-invest-nda-sep2026.pdf" target="_blank" rel="noopener" class="exec-dl-btn" download>⬇ NDA (EN)</a>
+          <a href="/investor-docs/aspire-invest-nda-sep2026-he.pdf" target="_blank" rel="noopener" class="exec-dl-btn">🔒 הסכם סודיות</a>
+          <a href="/investor-docs/aspire-invest-nda-sep2026-he.pdf" target="_blank" rel="noopener" class="exec-dl-btn" download>⬇ הסכם סודיות</a>
+          <a href="/legal/nda.html" class="exec-dl-btn">✍️ Signable NDA</a>
+          <a href="#il-meeting-diary" class="exec-dl-btn">🗓️ Meeting Diary</a>
+          <span style="font-size:7.8pt;opacity:0.8;">Do not share internal drafts before the meeting · no ask · no bid</span>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;margin-top:18px;">
+
+        <div class="exec-chart-panel" id="aspire-why-room" style="border:2px solid #b8893b;background:linear-gradient(180deg,#fffbeb 0%,#ffffff 55%);">
+          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#b8893b;margin-bottom:6px;">🏛️ Why this room · founder · opportunity</div>
+          <h3 style="margin:0 0 6px 0;">Capital-markets counterparties — not a generic VC intro</h3>
+          <p class="ecp-sub" style="margin-top:0;">Aspire-Invest already combines the two benches this meeting is built for. Public house profile: funds and portfolios, trust / employee options, stock-exchange member, pension insurance agency, agent house, real estate, alternatives, global credit syndication, underwriting / IB.</p>
+          <ul style="font-size:8.4pt;margin:8px 0 0 0;padding-left:16px;line-height:1.6;">
+            <li><strong>Chief Distribution</strong> — pension agency + agent house (employed and independent agents, investment marketers, retirement advisors, household-economics professionals).</li>
+            <li><strong>Chief Investments</strong> — active management, alternatives, real estate, credit syndication, exchange member, IB / underwriting.</li>
+            <li><strong>Founder in the room:</strong> Asaf Ashury, Adv. — insurance broker + lawyer; production platform at www.phins.ai; Draft 3.1 regulatory memorandum already in actuarial form (EN + HE).</li>
+            <li><strong>The global gap:</strong> private long-term cover is retreating; national schemes face demographic strain; households are left without affordable lifelong disability / LTC protection.</li>
+            <li><strong>House leadership context:</strong> Hanna Hollander — founder, partner and CEO; offices at 150 Menachem Begin, Tel Aviv.</li>
+          </ul>
+          <div style="border:1px solid #fde68a;background:#fffbeb;border-radius:10px;padding:10px 12px;margin-top:10px;" id="aspire-elevator">
+            <div style="font-size:7.6pt;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:#92400e;margin-bottom:4px;">⚡ Elevator — 45 seconds</div>
+            <p style="font-size:8.6pt;margin:0;">PHINS is an <strong>AI-operated insurance OS already in production</strong>, on a hash-chained ledger where <strong>AI recommends but never posts</strong>. Separately — and only second — the first product is the <strong>Unified Insurance Contract</strong>: pure-risk life with a lifelong 3+ ADL mechanism, priced on a deterministic actuarial simulator. Israel first; OECD adapters on one codebase. Scale identity: <strong>up to 250,000 issued policies by end-2029</strong>. Valuation and any ask stay off the table.</p>
+          </div>
+        </div>
+
+        <div class="exec-chart-panel" id="aspire-two-layers" style="border:2px solid #1d4ed8;background:linear-gradient(180deg,#eff6ff 0%,#ffffff 55%);">
+          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#1d4ed8;margin-bottom:6px;">🧩 Two layers · do not collapse them</div>
+          <h3 style="margin:0 0 6px 0;">Present technology first · product second</h3>
+          <p class="ecp-sub" style="margin-top:0;">Capital-markets professionals diligence each layer on its own merits. Collapsing them is how insurtechs over-promise.</p>
+          <div style="overflow-x:auto;margin-top:10px;">
+            <table style="width:100%;min-width:460px;font-size:8.2pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
+              <thead>
+                <tr style="background:#0b1f3f;color:#fff;">
+                  <th style="padding:6px 8px;text-align:left;font-weight:700;">Layer</th>
+                  <th style="padding:6px 8px;text-align:left;font-weight:700;">What it is</th>
+                  <th style="padding:6px 8px;text-align:left;font-weight:700;">Readiness</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="background:#ffffff;">
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">A · Technology</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">AI-operated insurance OS: hash-chained ledger, UW / billing / claims automation, agent ecosystem, actuarial simulator &amp; tables, regulatory adapters. One codebase, multi-market.</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);"><strong>In production.</strong> Not a licensed-insurer claim.</td>
+                </tr>
+                <tr style="background:#f8fafc;">
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">B · First product</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">PHINS Unified Insurance Contract (Draft 3.1): pure-risk life + lifelong 3+ ADL disability; below 65 life = face &amp; D = face ÷ 4; from 65 life = face ÷ 4 &amp; D = life. Caps below 65: ₪1,000,000 / ₪250,000.</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);"><strong>Filed in actuarial form.</strong> Issuance waits on a designated Israeli carrier + Authority path.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p style="font-size:8.2pt;margin-top:8px;"><strong>Licensing posture:</strong> PHINS Technologies Ltd. is not a licensed insurer. Risk sits with a licensed Israeli insurer (fronting) and/or approved reinsurance. PHINS is the digital MGA / platform. Savings add-on, if ever offered, is a <em>separate</em> filing — not this product.</p>
+          <p style="font-size:8.2pt;margin-top:6px;"><strong>Automation planning basis</strong> (Scenario Lab, not a quote): underwriting ≈92% · billing ≈96% · claims ≈88% · digital-first agents. AI recommends, the ledger decides, people supervise.</p>
+        </div>
+
+        <div class="exec-chart-panel" id="aspire-60min-timeline" style="border:2px solid #0b1f3f;background:linear-gradient(180deg,#f8fafc 0%,#ffffff 55%);">
+          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0b1f3f;margin-bottom:6px;">⏱️ 60-minute meeting · run of show · hard timebox</div>
+          <h3 style="margin:0 0 6px 0;">Chief Distribution &amp; Chief Investments — September 2026 (TBA)</h3>
+          <p class="ecp-sub" style="margin-top:0;">Objective: a professional read on founder, technology, first product, regulation, markets, and the 250,000-issued scale identity — without opening a priced process.</p>
+          <div style="overflow-x:auto;margin-top:10px;">
+            <table style="width:100%;min-width:420px;font-size:8.2pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
+              <thead>
+                <tr style="background:#0b1f3f;color:#fff;">
+                  <th style="padding:6px 8px;text-align:left;font-weight:700;white-space:nowrap;">Minutes</th>
+                  <th style="padding:6px 8px;text-align:left;font-weight:700;">Segment</th>
+                  <th style="padding:6px 8px;text-align:left;font-weight:700;">Talking points</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="background:#ffffff;">
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">00–05</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">Opening</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">Why Aspire-Invest; 60-minute hard stop; <strong>no ask, no bid today</strong>; NDA status.</td>
+                </tr>
+                <tr style="background:#f8fafc;">
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">05–12</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">Founder &amp; opportunity</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">Asaf Ashury, Adv.; retreating long-term cover; why a capital-markets / distribution house is the right first institutional reader.</td>
+                </tr>
+                <tr style="background:#eff6ff;">
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">12–24</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">Layer A · Technology</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">Production OS; integrity contract; automation vs human touch; actuarial simulator and tables; what “system ready” does and does not mean.</td>
+                </tr>
+                <tr style="background:#fffbeb;">
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">24–36</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">Layer B · First product</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">Unified contract Draft 3.1; 3+ ADL; 1:4 / 1:1 hinge; pure risk; fronting / MGA; not savings; not kupat-holim LTC.</td>
+                </tr>
+                <tr style="background:#ffffff;">
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">36–46</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">Markets · regulation · milestones</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">Israel first; OECD adapters next; Authority path; appointed-actuary workstream; operating milestones — no use-of-funds slide.</td>
+                </tr>
+                <tr style="background:#f0fdf4;">
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">46–55</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">Scale identity + discussion</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">25k / 100k / <strong>250k issued</strong>; ILS 4,518 · PHINS MGA 25% / insurance 75% · savings configurator (default 30% × 300%) · turnover option after year 3; this is the unified IL book; questions from both chiefs.</td>
+                </tr>
+                <tr style="background:#ecfdf5;">
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">55–60</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">Close</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">Decision outputs; follow-up date; log the Meeting Diary. Hard stop at 60:00.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p style="font-size:7.5pt;color:var(--text-soft);margin-top:8px;">Run-of-show rules: one speaker per segment; questions parked unless blocking; Scenario Lab only if asked; do not open the valuation configurator; if asked for a price or a raise, defer — those remain reserved.</p>
+        </div>
+
+        <div class="exec-chart-panel" id="aspire-scale-identity" style="border:2px solid #15803d;background:linear-gradient(180deg,#f0fdf4 0%,#ffffff 55%);">
+          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#15803d;margin-bottom:6px;">📐 Scale identity · 250,000 issued · Israel pilot · reset actuarial</div>
+          <h3 style="margin:0 0 6px 0;">Three-year projection — sales from 1 January 2027</h3>
+          <p class="ecp-sub" style="margin-top:0;" id="aspire-scale-lead">Unified Israel book. Live tables: life <strong>0.25</strong> / disability <strong>0.20</strong> per ILS 1,000 / month (disability table is switched — not the life rate). Default specimen: average age 42, issue 3–65, life ILS 1,000,000 / disability ILS 250,000 → <strong>ILS 4,518</strong> / year. Years 1–3 PHINS is the digital MGA (25% of risk GWP). The licensed carrier holds the 75% insurance take. Savings add-on is configurable (10% / 20% / 30% of the book × 300%). Same identity as the investor income model and valuation-sim — there is no second book.</p>
+          <div style="overflow-x:auto;margin-top:10px;">
+            <table style="width:100%;min-width:520px;font-size:8.2pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
+              <thead>
+                <tr style="background:#15803d;color:#fff;">
+                  <th style="padding:6px 8px;text-align:left;font-weight:700;">Line</th>
+                  <th style="padding:6px 8px;text-align:right;font-weight:700;">2027</th>
+                  <th style="padding:6px 8px;text-align:right;font-weight:700;">2028</th>
+                  <th style="padding:6px 8px;text-align:right;font-weight:700;">2029</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="background:#ffffff;">
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">New issues</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">25,000</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">75,000</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">150,000</td>
+                </tr>
+                <tr style="background:#dcfce7;">
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">Cumulative issued (EoY)</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;font-weight:700;">25,000</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;font-weight:700;">100,000</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;font-weight:700;">250,000</td>
+                </tr>
+                <tr style="background:#ffffff;">
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">EoY in-force <span style="font-weight:400;color:var(--text-soft);">round(prior×0.92)+round(new×0.96)</span></td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">24,000</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">94,080</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">230,554</td>
+                </tr>
+                <tr style="background:#f8fafc;">
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">Average in-force</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">12,000</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">59,040</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">162,317</td>
+                </tr>
+                <tr style="background:#ffffff;">
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);" id="aspire-gwp-label">Risk GWP (ILS) = avg IF × 4,518</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;" id="aspire-gwp-2027">54,216,000</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;" id="aspire-gwp-2028">266,742,720</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;" id="aspire-gwp-2029">733,348,206</td>
+                </tr>
+                <tr style="background:#fffbeb;">
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">PHINS MGA take 25% (ILS)</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;font-weight:700;" id="aspire-phins-2027">13,554,000</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;font-weight:700;" id="aspire-phins-2028">66,685,680</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;font-weight:700;" id="aspire-phins-2029">183,337,052</td>
+                </tr>
+                <tr style="background:#eff6ff;">
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">Insurance take 75% (ILS)</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;font-weight:700;" id="aspire-ins-2027">40,662,000</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;font-weight:700;" id="aspire-ins-2028">200,057,040</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;font-weight:700;" id="aspire-ins-2029">550,011,154</td>
+                </tr>
+                <tr style="background:#f0fdf4;">
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);" id="aspire-sav-label">Savings flow (30% × 300%)</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;" id="aspire-sav-2027">48,794,400</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;" id="aspire-sav-2028">240,068,448</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;" id="aspire-sav-2029">660,013,385</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p style="font-size:7.6pt;color:var(--text-soft);margin-top:8px;" id="aspire-identity-check">Identity check: 25,000+75,000+150,000 = 250,000 issued. 94,080×0.92 → 86,554; +144,000 = 230,554 EoY IF. (94,080+230,554)/2 = 162,317. 12,000 × 4,518 = 54,216,000. 162,317 × 4,518 = 733,348,206. PHINS 25% + insurance 75% = risk GWP (2029: 183,337,052 + 550,011,154). Savings = 30% × 300% = 90% of risk GWP (not split 25/75). This is the single unified Israel book — same identity as the investor income model and valuation-sim.</p>
+        </div>
+
+        <div class="exec-chart-panel" id="aspire-scope-panel" style="border:2px solid #0f766e;background:linear-gradient(180deg,#f0fdfa 0%,#ffffff 55%);">
+          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0f766e;margin-bottom:6px;">🎯 Scope · prep · decision outputs</div>
+          <h3 style="margin:0 0 6px 0;">What we bring · what we will not table · what we leave with</h3>
+
+          <div style="border:1px solid var(--border);background:#f8fafc;border-radius:10px;padding:10px 12px;margin-top:10px;">
+            <div style="font-size:7.6pt;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--blue-dark);margin-bottom:4px;">📦 Pre-meeting prep</div>
+            <ul style="font-size:8.4pt;margin:0;padding-left:16px;line-height:1.55;">
+              <li><strong>Business plan EN + HE</strong> — send 48 hours ahead if NDA is in place.</li>
+              <li><strong>60-minute outline EN + HE</strong> — this run of show.</li>
+              <li><strong>Mutual NDA EN + HE</strong> — or the signable workspace <a href="/legal/nda.html">/legal/nda.html</a>.</li>
+              <li><strong>Regulatory application (HE first)</strong> — offer EN for the international desk.</li>
+              <li>Scenario Lab pre-loaded; <strong>do not</strong> pre-load the valuation configurator.</li>
+              <li>Confirm both chiefs; note if Hanna Hollander sits in; Hebrew default.</li>
+            </ul>
+          </div>
+
+          <div style="border:1px solid #fecaca;background:#fef2f2;border-radius:10px;padding:10px 12px;margin-top:10px;" id="aspire-reserved">
+            <div style="font-size:7.6pt;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:#b91c1c;margin-bottom:4px;">🚫 Reserved — not in this meeting</div>
+            <ul style="font-size:8.4pt;margin:0;padding-left:16px;line-height:1.55;">
+              <li>Fundraising amount, pre-money / post-money, or use of funds.</li>
+              <li>Any bidding price, term sheet, or comparable from other rooms.</li>
+              <li>A live valuation simulation used as a price.</li>
+            </ul>
+          </div>
+
+          <div style="border:1px solid #bbf7d0;background:#f0fdf4;border-radius:10px;padding:10px 12px;margin-top:10px;" id="aspire-outputs">
+            <div style="font-size:7.6pt;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:#15803d;margin-bottom:4px;">✅ Decision outputs — leave with</div>
+            <ul style="font-size:8.4pt;margin:0;padding-left:16px;line-height:1.55;">
+              <li>A professional <strong>read from Chief Distribution</strong> on product fitness for the agency / agent house.</li>
+              <li>A professional <strong>read from Chief Investments</strong> on technology integrity, actuarial identity, and market optionality.</li>
+              <li>A <strong>named next step</strong> and date — logged in the <a href="#il-meeting-diary">Meeting Diary</a>.</li>
+              <li>Diligence questions still open (carrier, actuary, Authority) — without a priced process.</li>
+              <li>NDA status confirmed.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="exec-chart-panel" id="aspire-configurator" style="margin-top:18px;border:2px solid #1d4ed8;background:linear-gradient(180deg,#eff6ff 0%,#ffffff 50%);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#1d4ed8;margin-bottom:6px;">🎛️ Adjustable identity · live tables · savings configurator</div>
+            <h3 style="margin:0 0 4px 0;">Re-price when the disability table moves · choose 10% / 20% / 30% savings election</h3>
+            <p class="ecp-sub" style="margin:0;">Every figure, bar, and integrity line below recomputes from one engine (<code>/api/pitch/aspire-identity</code> + the same closed form in this page). Disability uses the <strong>switched</strong> table rate (default 0.20 / 1,000), not the life rate (0.25). Savings is not GWP and is not split 25/75.</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <span id="aspire-integrity-badge" style="font-size:8pt;font-weight:800;padding:4px 10px;border-radius:999px;background:#dcfce7;color:#15803d;">Identity holds</span>
+            <button type="button" class="exec-dl-btn" id="aspire-sync-tables">↻ Sync published tables</button>
+            <button type="button" class="exec-dl-btn" id="aspire-reset-cfg">Reset defaults</button>
+          </div>
+        </div>
+        <div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;">
+          <div class="control-group">
+            <label for="aspire-avg-age" style="font-size:7.4pt;font-weight:700;color:var(--blue-dark);">Average age</label>
+            <input id="aspire-avg-age" type="number" min="3" max="80" step="1" value="42" style="border-radius:8px;border:1px solid var(--border);padding:7px 9px;font-family:inherit;font-size:8.6pt;width:100%;">
+          </div>
+          <div class="control-group">
+            <label for="aspire-min-age" style="font-size:7.4pt;font-weight:700;color:var(--blue-dark);">Min issue age</label>
+            <input id="aspire-min-age" type="number" min="0" max="64" step="1" value="3" style="border-radius:8px;border:1px solid var(--border);padding:7px 9px;font-family:inherit;font-size:8.6pt;width:100%;">
+          </div>
+          <div class="control-group">
+            <label for="aspire-max-age" style="font-size:7.4pt;font-weight:700;color:var(--blue-dark);">Max issue age</label>
+            <input id="aspire-max-age" type="number" min="18" max="80" step="1" value="65" style="border-radius:8px;border:1px solid var(--border);padding:7px 9px;font-family:inherit;font-size:8.6pt;width:100%;">
+          </div>
+          <div class="control-group">
+            <label for="aspire-face" style="font-size:7.4pt;font-weight:700;color:var(--blue-dark);">Avg life cover (ILS)</label>
+            <input id="aspire-face" type="number" min="50000" step="50000" value="1000000" style="border-radius:8px;border:1px solid var(--border);padding:7px 9px;font-family:inherit;font-size:8.6pt;width:100%;">
+          </div>
+          <div class="control-group">
+            <label for="aspire-life-rate" style="font-size:7.4pt;font-weight:700;color:var(--blue-dark);">Life table / 1,000 / mo</label>
+            <input id="aspire-life-rate" type="number" min="0" step="0.01" value="0.25" style="border-radius:8px;border:1px solid var(--border);padding:7px 9px;font-family:inherit;font-size:8.6pt;width:100%;">
+          </div>
+          <div class="control-group">
+            <label for="aspire-dis-rate" style="font-size:7.4pt;font-weight:700;color:var(--blue-dark);">Disability table / 1,000 / mo</label>
+            <input id="aspire-dis-rate" type="number" min="0" step="0.01" value="0.20" style="border-radius:8px;border:1px solid var(--border);padding:7px 9px;font-family:inherit;font-size:8.6pt;width:100%;">
+          </div>
+          <div class="control-group">
+            <label for="aspire-addon" style="font-size:7.4pt;font-weight:700;color:var(--blue-dark);">Savings add-on (%)</label>
+            <input id="aspire-addon" type="number" min="0" max="600" step="50" value="300" style="border-radius:8px;border:1px solid var(--border);padding:7px 9px;font-family:inherit;font-size:8.6pt;width:100%;">
+          </div>
+        </div>
+        <div style="margin-top:12px;">
+          <div style="font-size:7.4pt;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:var(--blue-dark);margin-bottom:6px;">Share of policies with the savings add-on</div>
+          <div id="aspire-sav-elect" style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="exec-dl-btn aspire-elect-btn" data-elect="0.10">10%</button>
+            <button type="button" class="exec-dl-btn aspire-elect-btn" data-elect="0.20">20%</button>
+            <button type="button" class="exec-dl-btn aspire-elect-btn on" data-elect="0.30" style="background:#0b1f3f;color:#fff;border-color:#0b1f3f;">30%</button>
+          </div>
+        </div>
+        <div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">
+          <div class="stat-box" style="border-radius:12px;padding:10px;"><div class="stat-val" id="aspire-kpi-annual" style="font-size:13pt;">ILS 4,518</div><div class="stat-lbl">Annual risk premium</div></div>
+          <div class="stat-box" style="border-radius:12px;padding:10px;"><div class="stat-val" id="aspire-kpi-split" style="font-size:13pt;">313.75 + 62.75</div><div class="stat-lbl">Life + disability / month</div></div>
+          <div class="stat-box" style="border-radius:12px;padding:10px;"><div class="stat-val" id="aspire-kpi-sav" style="font-size:13pt;">30% × 300%</div><div class="stat-lbl">Savings election · add-on</div></div>
+          <div class="stat-box" style="border-radius:12px;padding:10px;"><div class="stat-val" id="aspire-kpi-blend" style="font-size:13pt;">ILS 8,584</div><div class="stat-lbl">Blended customer outlay</div></div>
+        </div>
+        <p style="font-size:7.4pt;color:var(--text-soft);margin:10px 0 0;" id="aspire-cfg-note">Defaults match published tables v2.0. Change the disability rate when the table is switched; the 25/75 takes and charts follow.</p>
+      </div>
+
+      <div class="exec-chart-panel" id="aspire-charts-panel" style="margin-top:18px;border:2px solid #0b1f3f;background:linear-gradient(180deg,#fffbeb 0%,#ffffff 40%);">
+        <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#b8893b;margin-bottom:6px;">📊 Israel-pilot charts · two takes · turnover option</div>
+        <h3 style="margin:0 0 6px 0;">Same identity as the table — drawn so the two takes stay separate</h3>
+        <p class="ecp-sub" style="margin-top:0;" id="aspire-charts-lead">Gold = PHINS MGA / platform take (25% of risk GWP). Navy = insurance take (75% of risk GWP) held by the designated Israeli carrier in years 1–3. Teal = the same 75% after the year-3 <strong>turnover option</strong> into a PHINS-group local insurer. Savings (green) is election × add-on × risk GWP (default 30% × 300% = 90%) and is <em>not</em> split 25/75.</p>
+
+        <div class="aspire-chart-grid">
+
+          <div class="aspire-chart-card">
+            <h4>1 · Risk GWP — PHINS 25% / insurance 75%</h4>
+            <p class="aspire-legend">
+              <span><span class="aspire-swatch aspire-phins"></span>PHINS MGA 25%</span>
+              <span><span class="aspire-swatch aspire-ins"></span>Insurance 75%</span>
+              <span id="aspire-gwp-rel">Bars relative to 2029 ILS 733,348,206</span>
+            </p>
+            <div class="exec-bar-group">
+              <div class="exec-bar-item" style="grid-template-columns:72px 1fr 118px;">
+                <span class="ebi-label">2027</span>
+                <div class="ebi-track">
+                  <div class="aspire-stack-inner" id="aspire-bar-2027" style="width:7.4%;">
+                    <span class="aspire-phins" style="flex:25;"></span>
+                    <span class="aspire-ins" style="flex:75;"></span>
+                  </div>
+                </div>
+                <span class="ebi-val" id="aspire-bar-val-2027">54.2M · 13.6 / 40.7</span>
+              </div>
+              <div class="exec-bar-item" style="grid-template-columns:72px 1fr 118px;">
+                <span class="ebi-label">2028</span>
+                <div class="ebi-track">
+                  <div class="aspire-stack-inner" id="aspire-bar-2028" style="width:36.4%;">
+                    <span class="aspire-phins" style="flex:25;"></span>
+                    <span class="aspire-ins" style="flex:75;"></span>
+                  </div>
+                </div>
+                <span class="ebi-val" id="aspire-bar-val-2028">266.7M · 66.7 / 200.1</span>
+              </div>
+              <div class="exec-bar-item" style="grid-template-columns:72px 1fr 118px;">
+                <span class="ebi-label">2029</span>
+                <div class="ebi-track">
+                  <div class="aspire-stack-inner" id="aspire-bar-2029" style="width:100%;">
+                    <span class="aspire-phins" style="flex:25;"></span>
+                    <span class="aspire-ins" style="flex:75;"></span>
+                  </div>
+                </div>
+                <span class="ebi-val" id="aspire-bar-val-2029">733.3M · 183.3 / 550.0</span>
+              </div>
+            </div>
+            <p style="font-size:7.4pt;color:var(--text-soft);margin:8px 0 0;" id="aspire-gwp-exact">Exact: 54,216,000 / 266,742,720 / 733,348,206. PHINS 13,554,000 / 66,685,680 / 183,337,052. Insurance 40,662,000 / 200,057,040 / 550,011,154. Insurance take is not PHINS profit.</p>
+          </div>
+
+          <div class="aspire-chart-card">
+            <h4>2 · Issued stock vs EoY in-force</h4>
+            <p class="aspire-legend">
+              <span><span class="aspire-swatch aspire-life"></span>Issued EoY</span>
+              <span><span class="aspire-swatch aspire-disab"></span>In-force EoY</span>
+              <span>Bars relative to 250,000 issued</span>
+            </p>
+            <div class="exec-bar-group">
+              <div class="exec-bar-item" style="grid-template-columns:72px 1fr 100px;">
+                <span class="ebi-label">2027 issued</span>
+                <div class="ebi-track"><div class="ebi-fill" style="width:10%;background:linear-gradient(135deg,#1d4ed8,#60a5fa);"></div></div>
+                <span class="ebi-val">25,000</span>
+              </div>
+              <div class="exec-bar-item" style="grid-template-columns:72px 1fr 100px;">
+                <span class="ebi-label">2027 in-force</span>
+                <div class="ebi-track"><div class="ebi-fill" style="width:9.6%;background:linear-gradient(135deg,#6a1b9a,#ab47bc);"></div></div>
+                <span class="ebi-val">24,000</span>
+              </div>
+              <div class="exec-bar-item" style="grid-template-columns:72px 1fr 100px;">
+                <span class="ebi-label">2028 issued</span>
+                <div class="ebi-track"><div class="ebi-fill" style="width:40%;background:linear-gradient(135deg,#1d4ed8,#60a5fa);"></div></div>
+                <span class="ebi-val">100,000</span>
+              </div>
+              <div class="exec-bar-item" style="grid-template-columns:72px 1fr 100px;">
+                <span class="ebi-label">2028 in-force</span>
+                <div class="ebi-track"><div class="ebi-fill" style="width:37.6%;background:linear-gradient(135deg,#6a1b9a,#ab47bc);"></div></div>
+                <span class="ebi-val">94,080</span>
+              </div>
+              <div class="exec-bar-item" style="grid-template-columns:72px 1fr 100px;">
+                <span class="ebi-label">2029 issued</span>
+                <div class="ebi-track"><div class="ebi-fill" style="width:100%;background:linear-gradient(135deg,#1d4ed8,#60a5fa);"></div></div>
+                <span class="ebi-val">250,000</span>
+              </div>
+              <div class="exec-bar-item" style="grid-template-columns:72px 1fr 100px;">
+                <span class="ebi-label">2029 in-force</span>
+                <div class="ebi-track"><div class="ebi-fill" style="width:92.2%;background:linear-gradient(135deg,#6a1b9a,#ab47bc);"></div></div>
+                <span class="ebi-val">230,554</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="aspire-chart-card">
+            <h4>3 · Constant take split · MGA then turnover option</h4>
+            <p class="aspire-legend">
+              <span><span class="aspire-swatch aspire-phins"></span>PHINS 25% (unchanged)</span>
+              <span><span class="aspire-swatch aspire-ins"></span>Fronting insurer 75% (Y1–3)</span>
+              <span><span class="aspire-swatch aspire-ins-turnover"></span>PHINS-group insurer 75% (option from 2030)</span>
+            </p>
+            <div style="margin-bottom:10px;">
+              <div style="font-size:7.6pt;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#0b1f3f;margin-bottom:4px;">Years 1–3 · digital MGA on designated Israeli paper</div>
+              <div class="ebi-track" style="height:22px;">
+                <div class="aspire-stack-inner" style="width:100%;">
+                  <span class="aspire-phins" style="flex:25;display:flex;align-items:center;justify-content:center;font-size:7.4pt;font-weight:800;color:#0b1f3f;">25%</span>
+                  <span class="aspire-ins" style="flex:75;display:flex;align-items:center;justify-content:center;font-size:7.4pt;font-weight:800;color:#fff;">75% designated Israeli carrier</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:7.6pt;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#0f766e;margin-bottom:4px;">After year 3 · turnover option (not a commitment)</div>
+              <div class="ebi-track" style="height:22px;">
+                <div class="aspire-stack-inner" style="width:100%;">
+                  <span class="aspire-phins" style="flex:25;display:flex;align-items:center;justify-content:center;font-size:7.4pt;font-weight:800;color:#0b1f3f;">25%</span>
+                  <span class="aspire-ins-turnover" style="flex:75;display:flex;align-items:center;justify-content:center;font-size:7.4pt;font-weight:800;color:#fff;">75% PHINS-group local insurer</span>
+                </div>
+              </div>
+            </div>
+            <p style="font-size:7.4pt;color:var(--text-soft);margin:8px 0 0;" id="aspire-turnover-note">2029 insurance take that would turn over: ILS 550,011,154 (gross premium retained — not profit). Capital / solvency for a local-insurer application are not tabled in this meeting.</p>
+          </div>
+
+          <div class="aspire-chart-card">
+            <h4>4 · Risk mix + savings add-on (not GWP)</h4>
+            <p class="aspire-legend">
+              <span><span class="aspire-swatch aspire-life"></span>Life 5/6 of risk GWP</span>
+              <span><span class="aspire-swatch aspire-disab"></span>Disability 1/6</span>
+              <span><span class="aspire-swatch aspire-savings"></span>Savings flow = election × add-on × GWP</span>
+            </p>
+            <div class="exec-bar-group">
+              <div class="exec-bar-item" style="grid-template-columns:88px 1fr 88px;">
+                <span class="ebi-label" id="aspire-life-lbl">Life</span>
+                <div class="ebi-track"><div class="ebi-fill aspire-life" id="aspire-life-bar" style="width:83.3%;"></div></div>
+                <span class="ebi-val" id="aspire-life-pct">83.3%</span>
+              </div>
+              <div class="exec-bar-item" style="grid-template-columns:88px 1fr 88px;">
+                <span class="ebi-label" id="aspire-dis-lbl">Disability</span>
+                <div class="ebi-track"><div class="ebi-fill aspire-disab" id="aspire-dis-bar" style="width:16.7%;"></div></div>
+                <span class="ebi-val" id="aspire-dis-pct">16.7%</span>
+              </div>
+              <div class="exec-bar-item" style="grid-template-columns:88px 1fr 88px;">
+                <span class="ebi-label">Savings flow</span>
+                <div class="ebi-track"><div class="ebi-fill aspire-savings" id="aspire-sav-bar" style="width:90%;"></div></div>
+                <span class="ebi-val" id="aspire-sav-pct">90% GWP</span>
+              </div>
+            </div>
+            <p style="font-size:7.4pt;color:var(--text-soft);margin:8px 0 0;" id="aspire-mix-note">Specimen: f(42)=1.255 · 376.50 / month · ILS 4,518 / year. Life 313.75 (0.25 table) + disability 62.75 (0.20 table). Savings = 300% of risk on 30% of in-force = ILS 13,554 / electing policy. Blended customer outlay ILS 8,584. Separate licensed filing — not Section 40.</p>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="exec-integrity-note">
+        <strong>Data integrity notice:</strong> This Aspire-Invest pack is an operational admin tool pinned to the IL pitch dashboard. The 250,000 issued-policy target and the income lines (risk GWP ILS 54,216,000 / 266,742,720 / 733,348,206; PHINS MGA 25% ILS 13,554,000 / 66,685,680 / 183,337,052; insurance 75% ILS 40,662,000 / 200,057,040 / 550,011,154) are derived from a single stated identity — reset actuarial specimen average age 42 / issue ages 3–65 / life ILS 1,000,000 / disability ILS 250,000 / f(42)=1.255 / published tables life 0.25 and disability 0.20 per ILS 1,000 / month / risk premium ILS 4,518, 25% PHINS MGA take and 75% insurance take, 8% annual lapse with mid-year convention on new issues, sales from 1 January 2027, new issues 25,000 / 75,000 / 150,000, EoY in-force = round(prior × 0.92) + round(new × 0.96), and a savings add-on of 300% of risk premium on 30% of in-force (savings flow = 90% of risk GWP, not split 25/75). The live configurator re-prices when tables, age, cover, or the 10%/20%/30% savings election change. Years 1–3 PHINS is modelled as a digital MGA on designated Israeli paper; after year 3 a turnover option can move the 75% insurance take into a PHINS-group local insurer. They are forward-looking planning assumptions, not commitments or guidance. This is the single unified Israel book used across this dashboard (investor income model, partner packs, valuation-sim). This section contains no fundraising ask and no bidding price. Agendas and decision outputs do not write to the platform ledger.
       </div>
     </section>
 
@@ -7962,8 +8529,8 @@
     (function () {
       var tbody = document.getElementById("diary-tbody");
       if (!tbody) return;
-      // v4: Authority pre-ruling meeting (Mr. Avi Ovadia, date TBA) seeded.
-      var STORAGE_ID = "phins.il.meeting.diary.v4";
+      // v7: Aspire identity uses the switched disability table (0.20) and a 10/20/30 savings configurator.
+      var STORAGE_ID = "phins.il.meeting.diary.v7";
       var statusEl = document.getElementById("diary-status");
       var COLUMNS = ["date", "time", "counterparty", "location", "purpose", "status"];
 
@@ -8025,6 +8592,11 @@
           {
             date: "TBA", time: "TBC · 60 min", counterparty: "Mr. Avi Ovadia — Capital Market, Insurance & Savings Authority",
             location: "TBC", purpose: "Pre-ruling meeting (60 min, hard timebox): PHINS insurance product, functional MGA (underwriting, billing, claims, actuary) as the managerial and operational bridge between a designated Israeli insurance company and an investment company (savings add-on risk — TBA), distribution (direct, collaborations, agents), adjustable actuarial methods, future steps (technology, policy, B2B contracts), and future expansion / insurance-company option. Goal: pre-agree a regulation path approving all PHINS assumptions + open discussion on future products. Pack: Authority Pre-Ruling section + /investor-docs/regulatory-preruling-avi-ovadia-brief.pdf.",
+            status: "To be scheduled"
+          },
+          {
+            date: "2026-09", time: "TBA · 60 min", counterparty: "Aspire-Invest — Chief Distribution & Chief Investments (Hanna Hollander, founder / CEO context)",
+            location: "TBC · 150 Menachem Begin, Tel Aviv", purpose: "September 2026 (TBA) professional briefing: founder, technology vs first unified insurance product, reset actuarial specimen (age 42 · life ILS 1,000,000 / disability ILS 250,000 · published tables 0.25 / 0.20 · ILS 4,518), Israel-pilot MGA 25% vs insurance 75%, savings configurator (default 30% of book at 300% add-on), turnover option after year 3 to a PHINS-group local insurer, scale identity up to 250,000 issued. No fundraising ask and no bidding price. Pack: Aspire-Invest Sep 2026 section + live configurator + charts + /investor-docs/aspire-invest-business-plan-sep2026.pdf (EN/HE) + meeting outline + NDA.",
             status: "To be scheduled"
           }
         ];
@@ -8197,7 +8769,7 @@
           if (typeof window.phinsDiaryRows === "function") {
             rows = window.phinsDiaryRows() || [];
           } else {
-            rows = JSON.parse(localStorage.getItem("phins.il.meeting.diary.v4") || "[]") || [];
+            rows = JSON.parse(localStorage.getItem("phins.il.meeting.diary.v7") || localStorage.getItem("phins.il.meeting.diary.v6") || "[]") || [];
           }
         } catch (e) { rows = []; }
         rows.forEach(function (rec, idx) {
@@ -8433,16 +9005,16 @@
 
       // Shared with the linked full business plans so in-room deal terms reconcile
       // across artifacts (same pattern as the investor configurator / plan).
-      var AITECH_STORE_ID = "phins.partner.aitech.cfg.v1";   // /internal/phins-ai-tech-partner-business-plan.html
-      var INSURER_STORE_ID = "phins.partner.insurer.cfg.v1"; // /internal/phins-insurer-mga-business-plan.html
+      var AITECH_STORE_ID = "phins.partner.aitech.cfg.v2";   // /internal/phins-ai-tech-partner-business-plan.html
+      var INSURER_STORE_ID = "phins.partner.insurer.cfg.v2"; // /internal/phins-insurer-mga-business-plan.html
       // Dashboard field -> canonical plan field (Track A = AI-tech, Track B = insurer/MGA).
       var A_MAP = { aInvest: "invest", aPre: "preMoney", aMarkets: "markets", aLicense: "license", aRoyalty: "royaltyPct", aScale: "scalePct", aSimVersion: "simVersion", aSimProvenance: "simProvenance", aPremium: "premium" };
       var B_MAP = { bStructure: "structure", bProd: "prod", bComm: "commPct", bJvShare: "jvSharePct", bPre: "jvPre", bSimVersion: "simVersion", bSimProvenance: "simProvenance", bPremium: "premium", bTakePct: "takePct", bChurnPct: "churnPct" };
       // Canonical IL base — must mirror the investor section + /api/investor/valuation-sim scope.
       var BASE = {
-        eoyPolicies: [4000, 12000, 28000],   // EoY 2027/28/29 (avg in force 2,000/8,000/20,000)
-        premium: 3600,                        // average annual premium (₪)
-        takeRate: 0.25,                       // blended take on GWP
+        eoyPolicies: [24000, 94080, 230554], // unified persistency EoY (avg 12,000/59,040/162,317)
+        premium: 4518,                        // table-driven annual risk premium (₪)
+        takeRate: 0.25,                       // PHINS take on risk GWP
         churn: 0.08                           // annual policy churn
       };
       // Pinned simulation-version parameter sets (deterministic; seed = meeting date).
@@ -8648,7 +9220,7 @@
       };
       // 2029 base metrics (ILS) used by the income-multiple basis — these are the
       // exact figures shown in the income table, so the valuation reconciles.
-      var METRIC_2029 = { net_revenue: 18000000, ebitda: 3600000, gwp: 72000000 };
+      var METRIC_2029 = { net_revenue: 183337052, ebitda: 66468812, gwp: 733348206 };
       try {
         var saved = JSON.parse(localStorage.getItem(CFG_STORE_ID) || "null");
         if (saved && typeof saved === "object") Object.assign(cfg, saved);
@@ -8841,7 +9413,7 @@
         if ($("inv-assum-round")) $("inv-assum-round").textContent = fmtMoney(cfg.round);
         if ($("inv-assum-pre")) $("inv-assum-pre").textContent = fmtMoney(cfg.preMoney);
         if ($("inv-build-total")) $("inv-build-total").textContent = fmtShort(cfg.round);
-        if ($("inv-cum-total")) $("inv-cum-total").textContent = fmtShort(cfg.round + 5400000);
+        if ($("inv-cum-total")) $("inv-cum-total").textContent = fmtShort(cfg.round + 18846000);
 
         // deal header + table + callouts
         if ($("inv-deal-h-round")) $("inv-deal-h-round").textContent = fmtMoney(cfg.round);
@@ -9141,6 +9713,412 @@
     })();
   </script>
   <script>
+    /* Aspire identity configurator engine — mirrors services/aspire_scale_identity.py */
+    (function () {
+      var panel = document.getElementById("aspire-configurator");
+      if (!panel) return;
+
+      var NEW_ISSUES = [25000, 75000, 150000];
+      var YEARS = [2027, 2028, 2029];
+      var DEFAULTS = {
+        avg_age: 42, min_age: 3, max_age: 65, face: 1000000,
+        disability_share_pre: 0.25,
+        life_rate_per_1000: 0.25,
+        disability_rate_per_1000: 0.20,
+        savings_election: 0.30,
+        savings_addon: 3.00,
+        phins_take: 0.25
+      };
+      var election = DEFAULTS.savings_election;
+
+      function $(id) { return document.getElementById(id); }
+      function num(id, fallback) {
+        var el = $(id);
+        var n = el ? parseFloat(el.value) : NaN;
+        return isFinite(n) ? n : fallback;
+      }
+      function ils(n) {
+        return Math.round(Number(n)).toLocaleString("en-US");
+      }
+      function ils2(n) {
+        return Number(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+      }
+      function bankRoundInt(v) {
+        var n = Number(v);
+        if (!isFinite(n)) return 0;
+        var sign = n < 0 ? -1 : 1;
+        var abs = Math.abs(n);
+        var floor = Math.floor(abs);
+        var frac = abs - floor;
+        var r;
+        if (Math.abs(frac - 0.5) < 1e-9) {
+          r = (floor % 2 === 0) ? floor : floor + 1;
+        } else {
+          r = Math.round(abs);
+        }
+        return sign * r;
+      }
+      function bankRound(v, digits) {
+        var f = Math.pow(10, digits);
+        return bankRoundInt(v * f) / f;
+      }
+      function ageFactor(age) {
+        age = Math.round(age);
+        var youthA = 3, youthF = 0.30, adultA = 25, adultF = 1.00, slope = 0.015, cut = 65;
+        if (age <= adultA) {
+          var span = adultA - youthA;
+          var rise = adultF - youthF;
+          var anchored = Math.max(youthA, age);
+          return bankRound(youthF + (anchored - youthA) * (rise / span), 4);
+        }
+        if (age <= cut) {
+          return bankRound(adultF + (age - adultA) * slope, 4);
+        }
+        var base = ageFactor(cut);
+        var capped = Math.min(age, 80);
+        if (capped <= 75) return bankRound(base + (capped - cut) * 0.05, 4);
+        return bankRound(base + (75 - cut) * 0.05 + (capped - 75) * 0.08, 4);
+      }
+      function benefitSums(face, age, maxAge, dSharePre) {
+        var band = Math.round(maxAge);
+        var ageI = Math.round(age);
+        var lifeShare, dShare;
+        if (ageI >= band) { lifeShare = 0.25; dShare = 1.0; }
+        else { lifeShare = 1.0; dShare = dSharePre; }
+        var lifeSum = face * lifeShare;
+        return { life_sum: lifeSum, disability_sum: lifeSum * dShare, disability_share: dShare };
+      }
+      function inForcePath() {
+        var eoy = 0, rows = [];
+        for (var i = 0; i < NEW_ISSUES.length; i++) {
+          var neu = NEW_ISSUES[i];
+          var opening = eoy;
+          var persist = Math.round(eoy * 0.92);
+          var newIf = Math.round(neu * 0.96);
+          eoy = persist + newIf;
+          rows.push({
+            new_issues: neu,
+            opening: opening,
+            eoy: eoy,
+            avg: Math.round((opening + eoy) / 2)
+          });
+        }
+        return rows;
+      }
+      function computeLocal(inp) {
+        var quoteAge = Math.round(inp.avg_age);
+        var sums = benefitSums(inp.face, quoteAge, inp.max_age, inp.disability_share_pre);
+        var factor = ageFactor(quoteAge);
+        var lifeM = (sums.life_sum / 1000) * inp.life_rate_per_1000 * factor;
+        var disM = sums.disability_share > 0
+          ? (sums.disability_sum / 1000) * inp.disability_rate_per_1000 * factor
+          : 0;
+        var totalM = lifeM + disM;
+        var annual = bankRound(totalM * 12, 2);
+        var lifeAnnual = bankRound(lifeM * 12, 2);
+        var disAnnual = bankRound(disM * 12, 2);
+        var path = inForcePath();
+        var years = [];
+        var phinsTake = inp.phins_take;
+        for (var i = 0; i < YEARS.length; i++) {
+          var gwp = path[i].avg * annual;
+          var gwpIls = bankRoundInt(gwp);
+          var phins = bankRoundInt(gwp * phinsTake);
+          var ins = gwpIls - phins;
+          var lifeGwp = annual ? bankRoundInt(gwp * (lifeAnnual / annual)) : 0;
+          var disGwp = gwpIls - lifeGwp;
+          var sav = bankRoundInt(gwpIls * inp.savings_election * inp.savings_addon);
+          years.push({
+            year: YEARS[i],
+            new_issues: path[i].new_issues,
+            eoy_in_force: path[i].eoy,
+            avg_in_force: path[i].avg,
+            risk_gwp: gwpIls,
+            life_gwp: lifeGwp,
+            disability_gwp: disGwp,
+            phins_take: phins,
+            insurance_take: ins,
+            savings_flow: sav
+          });
+        }
+        var multiple = bankRound(inp.savings_election * inp.savings_addon, 6);
+        var integrity = {
+          issued_sum: NEW_ISSUES[0] + NEW_ISSUES[1] + NEW_ISSUES[2] === 250000,
+          in_force_path: path[0].eoy === 24000 && path[1].eoy === 94080 && path[2].eoy === 230554,
+          takes_sum_to_gwp: years.every(function (y) { return y.phins_take + y.insurance_take === y.risk_gwp; }),
+          life_plus_disability_equals_gwp: years.every(function (y) { return y.life_gwp + y.disability_gwp === y.risk_gwp; }),
+          savings_is_election_times_addon_times_gwp: years.every(function (y) {
+            return y.savings_flow === bankRoundInt(y.risk_gwp * multiple);
+          }),
+          avg_age_within_issue_band: inp.min_age <= inp.avg_age && inp.avg_age <= inp.max_age,
+          disability_table_is_not_life_table: Math.abs(inp.life_rate_per_1000 - inp.disability_rate_per_1000) > 1e-12,
+          savings_not_split_25_75: true
+        };
+        var allHold = true;
+        Object.keys(integrity).forEach(function (k) { if (!integrity[k]) allHold = false; });
+        integrity.all_hold = allHold;
+        return {
+          inputs: inp,
+          quote: {
+            avg_age: quoteAge,
+            age_factor: bankRound(factor, 4),
+            life_monthly: bankRound(lifeM, 2),
+            disability_monthly: bankRound(disM, 2),
+            total_monthly: bankRound(totalM, 2),
+            annual_premium: annual,
+            life_annual: lifeAnnual,
+            disability_annual: disAnnual
+          },
+          years: years,
+          savings: {
+            election: inp.savings_election,
+            addon: inp.savings_addon,
+            portfolio_multiple: multiple,
+            electing_policy_annual: bankRound(annual * inp.savings_addon, 2),
+            blended_customer_outlay: bankRound(annual * (1 + multiple), 2)
+          },
+          data_integrity: integrity
+        };
+      }
+
+      function readInputs() {
+        return {
+          avg_age: num("aspire-avg-age", DEFAULTS.avg_age),
+          min_age: num("aspire-min-age", DEFAULTS.min_age),
+          max_age: num("aspire-max-age", DEFAULTS.max_age),
+          face: num("aspire-face", DEFAULTS.face),
+          disability_share_pre: DEFAULTS.disability_share_pre,
+          life_rate_per_1000: num("aspire-life-rate", DEFAULTS.life_rate_per_1000),
+          disability_rate_per_1000: num("aspire-dis-rate", DEFAULTS.disability_rate_per_1000),
+          savings_election: election,
+          savings_addon: num("aspire-addon", 300) / 100,
+          phins_take: DEFAULTS.phins_take
+        };
+      }
+
+      function fmtM(n) {
+        return (n / 1e6).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "M";
+      }
+
+      function setText(id, text) {
+        var el = $(id);
+        if (el) el.textContent = text;
+      }
+
+      function applyPack(pack) {
+        if (!pack || pack.error) {
+          setBadge(false, pack && pack.error ? String(pack.error) : "Compute failed");
+          return;
+        }
+        var q = pack.quote;
+        var s = pack.savings;
+        var y = {};
+        pack.years.forEach(function (row) { y[row.year] = row; });
+        var electPct = Math.round(s.election * 100);
+        var addonPct = Math.round(s.addon * 100);
+        var multPct = Math.round(s.portfolio_multiple * 1000) / 10;
+
+        setText("aspire-kpi-annual", "ILS " + ils2(q.annual_premium));
+        setText("aspire-kpi-split", Number(q.life_monthly).toFixed(2) + " + " + Number(q.disability_monthly).toFixed(2));
+        setText("aspire-kpi-sav", electPct + "% × " + addonPct + "%");
+        setText("aspire-kpi-blend", "ILS " + ils2(s.blended_customer_outlay));
+        setText("aspire-sav-label", "Savings flow (" + electPct + "% × " + addonPct + "%)");
+        setText("aspire-gwp-label", "Risk GWP (ILS) = avg IF × " + ils2(q.annual_premium));
+
+        [2027, 2028, 2029].forEach(function (yr) {
+          setText("aspire-gwp-" + yr, ils(y[yr].risk_gwp));
+          setText("aspire-phins-" + yr, ils(y[yr].phins_take));
+          setText("aspire-ins-" + yr, ils(y[yr].insurance_take));
+          setText("aspire-sav-" + yr, ils(y[yr].savings_flow));
+        });
+
+        var gwp2029 = y[2029].risk_gwp || 1;
+        [2027, 2028, 2029].forEach(function (yr) {
+          var bar = $("aspire-bar-" + yr);
+          if (bar) {
+            var pct = yr === 2029 ? 100 : Math.max(8, Math.round(100 * y[yr].risk_gwp / gwp2029));
+            bar.style.width = pct + "%";
+            var phinsSpan = bar.querySelector(".aspire-phins");
+            var insSpan = bar.querySelector(".aspire-ins");
+            var take = (pack.inputs && pack.inputs.phins_take) || 0.25;
+            if (phinsSpan) phinsSpan.style.flex = String(Math.round(take * 100));
+            if (insSpan) insSpan.style.flex = String(Math.round((1 - take) * 100));
+          }
+          setText("aspire-bar-val-" + yr,
+            fmtM(y[yr].risk_gwp) + " · " +
+            (y[yr].phins_take / 1e6).toFixed(1) + " / " +
+            (y[yr].insurance_take / 1e6).toFixed(1));
+        });
+        setText("aspire-gwp-rel", "Bars relative to 2029 ILS " + ils(gwp2029));
+        setText("aspire-gwp-exact",
+          "Exact: " + ils(y[2027].risk_gwp) + " / " + ils(y[2028].risk_gwp) + " / " + ils(y[2029].risk_gwp) +
+          ". PHINS " + ils(y[2027].phins_take) + " / " + ils(y[2028].phins_take) + " / " + ils(y[2029].phins_take) +
+          ". Insurance " + ils(y[2027].insurance_take) + " / " + ils(y[2028].insurance_take) + " / " + ils(y[2029].insurance_take) +
+          ". Insurance take is not PHINS profit.");
+        setText("aspire-turnover-note",
+          "2029 insurance take that would turn over: ILS " + ils(y[2029].insurance_take) +
+          " (gross premium retained — not profit). Capital / solvency for a local-insurer application are not tabled in this meeting.");
+
+        var lifeShare = q.annual_premium ? (q.life_annual / q.annual_premium) : 0;
+        var disShare = q.annual_premium ? (q.disability_annual / q.annual_premium) : 0;
+        var lifePct = (lifeShare * 100).toFixed(1);
+        var disPct = (disShare * 100).toFixed(1);
+        var lifeBar = $("aspire-life-bar");
+        var disBar = $("aspire-dis-bar");
+        var savEl = $("aspire-sav-bar");
+        if (lifeBar) lifeBar.style.width = lifePct + "%";
+        if (disBar) disBar.style.width = disPct + "%";
+        if (savEl) savEl.style.width = Math.min(100, multPct) + "%";
+        setText("aspire-life-pct", lifePct + "%");
+        setText("aspire-dis-pct", disPct + "%");
+        setText("aspire-sav-pct", multPct + "% GWP");
+        setText("aspire-charts-lead",
+          "Gold = PHINS MGA / platform take (25% of risk GWP). Navy = insurance take (75% of risk GWP) held by the designated Israeli carrier in years 1–3. Teal = the same 75% after the year-3 turnover option into a PHINS-group local insurer. Savings (green) is election × add-on × risk GWP (current " +
+          electPct + "% × " + addonPct + "% = " + multPct +
+          "%) and is not split 25/75.");
+        setText("aspire-mix-note",
+          "Specimen: f(" + q.avg_age + ")=" + q.age_factor + " · " + Number(q.total_monthly).toFixed(2) +
+          " / month · ILS " + ils2(q.annual_premium) + " / year. Life " + Number(q.life_monthly).toFixed(2) +
+          " (" + pack.inputs.life_rate_per_1000 + " table) + disability " + Number(q.disability_monthly).toFixed(2) +
+          " (" + pack.inputs.disability_rate_per_1000 + " table). Savings = " + addonPct +
+          "% of risk on " + electPct + "% of in-force = ILS " + ils2(s.electing_policy_annual) +
+          " / electing policy. Blended customer outlay ILS " + ils2(s.blended_customer_outlay) +
+          ". Separate licensed filing — not Section 40.");
+        setText("aspire-identity-check",
+          "Identity check: 25,000+75,000+150,000 = 250,000 issued. 94,080×0.92 → 86,554; +144,000 = 230,554 EoY IF. (94,080+230,554)/2 = 162,317. " +
+          ils(y[2027].avg_in_force) + " × " + ils2(q.annual_premium) + " = " + ils(y[2027].risk_gwp) +
+          ". " + ils(y[2029].avg_in_force) + " × " + ils2(q.annual_premium) + " = " + ils(y[2029].risk_gwp) +
+          ". PHINS 25% + insurance 75% = risk GWP (2029: " + ils(y[2029].phins_take) + " + " + ils(y[2029].insurance_take) +
+          "). Savings = " + electPct + "% × " + addonPct + "% = " + multPct +
+          "% of risk GWP (not split 25/75). This is the unified Israel book used on the investor income model and valuation-sim.");
+        setText("aspire-cfg-note",
+          "Live identity from " + (pack._source || "local closed form") +
+          ". Disability uses the configured table (default 0.20 / 1,000), not the life table (0.25). Change rates when the filed table moves; 25/75 takes and charts follow.");
+
+        setBadge(!!(pack.data_integrity && pack.data_integrity.all_hold), pack.data_integrity || {});
+      }
+
+      function setBadge(ok, di) {
+        var el = $("aspire-integrity-badge");
+        if (!el) return;
+        if (ok) {
+          el.textContent = "Identity holds";
+          el.style.background = "#dcfce7";
+          el.style.color = "#15803d";
+          return;
+        }
+        var failed = [];
+        if (di && typeof di === "object") {
+          Object.keys(di).forEach(function (k) {
+            if (k !== "all_hold" && di[k] === false) failed.push(k);
+          });
+        }
+        el.textContent = failed.length ? ("Check: " + failed.join(", ")) : (typeof di === "string" ? di : "Identity broken");
+        el.style.background = "#fef3c7";
+        el.style.color = "#92400e";
+      }
+
+      var fetchTimer = null;
+      function recompute() {
+        var inp = readInputs();
+        var local = computeLocal(inp);
+        local._source = "local closed form";
+        applyPack(local);
+        if (fetchTimer) window.clearTimeout(fetchTimer);
+        fetchTimer = window.setTimeout(function () { fetchRemote(inp); }, 180);
+      }
+
+      function fetchRemote(inp) {
+        var q = new URLSearchParams({
+          avg_age: String(inp.avg_age),
+          min_age: String(inp.min_age),
+          max_age: String(inp.max_age),
+          face: String(inp.face),
+          life_rate_per_1000: String(inp.life_rate_per_1000),
+          disability_rate_per_1000: String(inp.disability_rate_per_1000),
+          savings_election: String(inp.savings_election),
+          savings_addon: String(inp.savings_addon)
+        });
+        fetch("/api/pitch/aspire-identity?" + q.toString(), { credentials: "same-origin" })
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+          .then(function (res) {
+            if (!res.ok || !res.j || res.j.error) return;
+            res.j._source = "/api/pitch/aspire-identity";
+            applyPack(res.j);
+          })
+          .catch(function () { /* keep local closed form */ });
+      }
+
+      function markElect() {
+        panel.querySelectorAll(".aspire-elect-btn").forEach(function (b) {
+          var on = parseFloat(b.getAttribute("data-elect")) === election;
+          b.classList.toggle("on", on);
+          if (on) {
+            b.style.background = "#0b1f3f";
+            b.style.color = "#fff";
+            b.style.borderColor = "#0b1f3f";
+          } else {
+            b.style.background = "";
+            b.style.color = "";
+            b.style.borderColor = "";
+          }
+        });
+      }
+
+      function writeDefaults() {
+        if ($("aspire-avg-age")) $("aspire-avg-age").value = DEFAULTS.avg_age;
+        if ($("aspire-min-age")) $("aspire-min-age").value = DEFAULTS.min_age;
+        if ($("aspire-max-age")) $("aspire-max-age").value = DEFAULTS.max_age;
+        if ($("aspire-face")) $("aspire-face").value = DEFAULTS.face;
+        if ($("aspire-life-rate")) $("aspire-life-rate").value = DEFAULTS.life_rate_per_1000;
+        if ($("aspire-dis-rate")) $("aspire-dis-rate").value = DEFAULTS.disability_rate_per_1000;
+        if ($("aspire-addon")) $("aspire-addon").value = Math.round(DEFAULTS.savings_addon * 100);
+        election = DEFAULTS.savings_election;
+        markElect();
+      }
+
+      panel.querySelectorAll(".aspire-elect-btn").forEach(function (b) {
+        b.addEventListener("click", function () {
+          election = parseFloat(b.getAttribute("data-elect")) || 0.30;
+          markElect();
+          recompute();
+        });
+      });
+      ["aspire-avg-age", "aspire-min-age", "aspire-max-age", "aspire-face", "aspire-life-rate", "aspire-dis-rate", "aspire-addon"]
+        .forEach(function (id) {
+          var el = $(id);
+          if (!el) return;
+          el.addEventListener("input", recompute);
+          el.addEventListener("change", recompute);
+        });
+      var syncBtn = $("aspire-sync-tables");
+      if (syncBtn) {
+        syncBtn.addEventListener("click", function () {
+          fetch("/api/pitch/aspire-identity", { credentials: "same-origin" })
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+              if (j.error || !j.tables) throw new Error(j.error || "no tables");
+              if ($("aspire-life-rate")) $("aspire-life-rate").value = j.tables.life_rate_per_1000;
+              if ($("aspire-dis-rate")) $("aspire-dis-rate").value = j.tables.disability_rate_per_1000;
+              setText("aspire-cfg-note", "Synced published tables " + (j.tables.profile_id || "") + " " + (j.tables.version || "") + " — life " + j.tables.life_rate_per_1000 + " / disability " + j.tables.disability_rate_per_1000 + ".");
+              recompute();
+            })
+            .catch(function () {
+              if ($("aspire-life-rate")) $("aspire-life-rate").value = DEFAULTS.life_rate_per_1000;
+              if ($("aspire-dis-rate")) $("aspire-dis-rate").value = DEFAULTS.disability_rate_per_1000;
+              setText("aspire-cfg-note", "API unavailable — restored published defaults (life 0.25 / disability 0.20).");
+              recompute();
+            });
+        });
+      }
+      var resetBtn = $("aspire-reset-cfg");
+      if (resetBtn) resetBtn.addEventListener("click", function () { writeDefaults(); recompute(); });
+
+      markElect();
+      recompute();
+    })();
+  </script>
+  <script>
     (function () {
       var panel = document.getElementById("confidential-share-admin");
       var form = document.getElementById("confidential-share-form");
@@ -9226,6 +10204,7 @@
         "regulatory-preruling-avi-ovadia",
         "fintl-vc-meetings-aug",
         "grove-vc-meeting-19aug",
+        "aspire-invest-meeting-sep2026",
         "exec-summary-section",
         "scenario-assessment-section"
       ];
@@ -9234,7 +10213,12 @@
         "investor-configurator": "investor-meeting-section",
         "fintl-5aug-panel": "fintl-vc-meetings-aug",
         "fintl-6aug-panel": "fintl-vc-meetings-aug",
-        "grove-presentation-timeline": "grove-vc-meeting-19aug"
+        "grove-presentation-timeline": "grove-vc-meeting-19aug",
+        "aspire-60min-timeline": "aspire-invest-meeting-sep2026",
+        "aspire-scale-identity": "aspire-invest-meeting-sep2026",
+        "aspire-configurator": "aspire-invest-meeting-sep2026",
+        "aspire-charts-panel": "aspire-invest-meeting-sep2026",
+        "aspire-two-layers": "aspire-invest-meeting-sep2026"
       };
       // Documents only — never treat app/dashboard HTML as in-page viewer
       // targets (admin / underwriting / billing were incorrectly iframed under
