@@ -26542,7 +26542,10 @@ For claims or questions, please contact:
                     'to_wallet': distribution['distribution']['health_wallet'],
                     'to_investment': distribution['distribution']['investment'],
                     'to_algo': distribution['distribution']['algo_trading'],
-                    'allocation_pct': distribution['allocation']
+                    'allocation_pct': distribution['allocation'],
+                    'customer_age': distribution.get('customer_age'),
+                    'policy_count': distribution.get('policy_count'),
+                    'actuarial_data': distribution.get('actuarial_data'),
                 }
                 
                 # Total portfolio value
