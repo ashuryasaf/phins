@@ -79,6 +79,14 @@ def test_algo_trading_preserves_data_binding_ids():
         "riskFilter",
         "smartBotTemplates",
         "extendedMarketData",
+        "unifiedPipelineSection",
+        "actuarialSourceBadge",
+        "actuarialPremium",
+        "actuarialRiskPct",
+        "actuarialRiskAmt",
+        "actuarialSavingsPct",
+        "actuarialSavingsAmt",
+        "actuarialPolicyMeta",
         "pipelineHealth",
         "pipelineCashBalance",
         "pipelineWalletPct",
@@ -175,6 +183,7 @@ def test_algo_trading_preserves_live_apis():
         "/api/algo/trade",
         "/api/pipeline/analytics",
         "/api/pipeline/ai-recommendation",
+        "/api/investment/unified",
         "/api/balance/unified",
         "/api/balance/algo-trading",
         "/api/balance/transfer-to-algo",
@@ -218,7 +227,10 @@ def test_algo_trading_preserves_pipeline_allocation_defaults():
     assert 'id="pipelineWalletPct">15%</div>' in html
     assert 'id="pipelineInvestPct">60%</div>' in html
     assert 'id="pipelineAlgoPct">25%</div>' in html
+    assert 'id="actuarialRiskPct"' in html and ">50%</div>" in html
+    assert 'id="actuarialSavingsPct"' in html and ">50%</div>" in html
     assert "(analytics.allocation.wallet || 15)" in html
+    assert "alloc.savings_pct != null ? alloc.savings_pct : 50" in html
     assert "localStorage.getItem('phins_token')" in html
     assert "sessionStorage.getItem('phins_token')" in html
     assert "botMaxPosition\" value=\"1000\"" in html or 'id="botMaxPosition" value="1000"' in html
