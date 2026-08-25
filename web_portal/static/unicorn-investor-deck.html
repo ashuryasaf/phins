@@ -1961,7 +1961,7 @@ derived from the same engine. Cite any market statistic; mark planning estimates
           var usdIls = (d.rates && d.rates.USD && d.rates.USD.ILS) || d.usd_ils;
           if (usdEur) state.fxEur = Number(usdEur);
           if (usdIls) state.fxIls = Number(usdIls);
-          state.fxSource = d.source === "alpha_vantage" ? "live" : (d.source || "fallback");
+          state.fxSource = (d.source === "alpha_vantage" || d.source === "frankfurter_ecb" || d.source === "mixed_live") ? "live" : (d.source || "fallback");
           state.fxAsOf = d.as_of || "";
           applyFxLabels();
           applyFxInputs(); persist(); render();

@@ -1290,7 +1290,7 @@ html[dir="rtl"] .confidential { letter-spacing: 0; }
     document.querySelectorAll(".cur-btn").forEach(function (b) {
       b.classList.toggle("on", b.getAttribute("data-cur") === cfg.currency);
     });
-    var fxState = cfg.fxSource === "alpha_vantage" ? (isHe() ? "חי" : "LIVE")
+    var fxState = (cfg.fxSource === "alpha_vantage" || cfg.fxSource === "frankfurter_ecb" || cfg.fxSource === "mixed_live") ? (isHe() ? "חי" : "LIVE")
                 : cfg.fxSource === "manual" ? (isHe() ? "ידני" : "MANUAL")
                 : (isHe() ? "מילוט" : "FALLBACK");
     $("bp-fx-note").textContent = "1 USD = ₪" + Number(cfg.usdIls).toFixed(4) + " / €" + Number(cfg.usdEur).toFixed(4) +

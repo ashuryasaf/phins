@@ -7999,15 +7999,18 @@ except Exception:
     _market_data = None
 
 # ---------------------------------------------------------------------------
-# Investor FX rates (live via Alpha Vantage forex, cached, fallback-safe)
+# Investor FX rates (live, cached, fallback-safe)
 # ---------------------------------------------------------------------------
 # Powers the investor documents (pitch-dashboard deal/valuation configurator):
 # convert figures between USD ($), ILS (₪) and EUR (€) using a correct, live
-# exchange rate. Data integrity is preserved because every display currency is
-# derived deterministically from a single USD base snapshot (no triangulation
-# drift), and the response is always tagged with its source ("alpha_vantage"
-# vs "fallback"/"partial") and an as_of timestamp so the UI can show whether
-# the rate is live or a labelled default.
+# exchange rate. Provider order: Alpha Vantage forex (when configured) →
+# Frankfurter ECB reference rates (keyless) → labelled static fallback.
+# Alpaca is not used here because its data API has no forex coverage.
+# Data integrity is preserved because every display currency is derived
+# deterministically from a single USD base snapshot (no triangulation drift),
+# and the response is always tagged with its source ("alpha_vantage" /
+# "frankfurter_ecb" / "mixed_live" / "partial" / "fallback") and an as_of
+# timestamp so the UI can show whether the rate is live or a labelled default.
 _FX_LOCK = threading.Lock()
 _FX_CACHE = {'data': None, 'fetched_at': 0.0}
 _FX_TTL_SECONDS = 3600.0  # 1h: forex moves slowly and this protects the free-tier quota
@@ -8016,12 +8019,39 @@ _FX_TTL_SECONDS = 3600.0  # 1h: forex moves slowly and this protects the free-ti
 _FX_FALLBACK = {'USD_ILS': 3.70, 'USD_EUR': 0.92}
 
 
+def _fetch_investor_fx_frankfurter():
+    """Live keyless FX legs from Frankfurter (ECB reference rates).
+
+    Used when Alpha Vantage is not configured or cannot serve a leg, so the
+    investor documents keep showing real exchange rates without any API key.
+    Returns (usd_ils, usd_eur, as_of_date); each leg may be None.
+    """
+    import requests
+    resp = requests.get(
+        'https://api.frankfurter.app/latest',
+        params={'from': 'USD', 'to': 'ILS,EUR'},
+        timeout=8,
+    )
+    resp.raise_for_status()
+    payload = resp.json()
+    rates = payload.get('rates') or {}
+
+    def _leg(code):
+        try:
+            value = float(rates.get(code))
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+
+    return _leg('ILS'), _leg('EUR'), payload.get('date')
+
+
 def get_investor_fx_rates(force_refresh=False):
     """Return USD/ILS/EUR rates for the investor documents.
 
     Always succeeds (never raises) so the investor pages degrade gracefully:
     on any failure it returns the labelled static fallback. Result is cached
-    for _FX_TTL_SECONDS to respect the Alpha Vantage free-tier quota.
+    for _FX_TTL_SECONDS to respect provider quotas.
     """
     now = time.time()
     with _FX_LOCK:
@@ -8031,8 +8061,8 @@ def get_investor_fx_rates(force_refresh=False):
 
     usd_ils = None
     usd_eur = None
-    ils_live = False
-    eur_live = False
+    ils_provider = None
+    eur_provider = None
     as_of = None
     if alpha_vantage_enabled and _av_svc is not None:
         try:
@@ -8041,26 +8071,45 @@ def get_investor_fx_rates(force_refresh=False):
             if r1 and r1.get('exchange_rate'):
                 usd_ils = float(r1['exchange_rate'])
                 as_of = r1.get('last_refreshed') or as_of
-                ils_live = usd_ils > 0
+                ils_provider = 'alpha_vantage' if usd_ils > 0 else None
             if r2 and r2.get('exchange_rate'):
                 usd_eur = float(r2['exchange_rate'])
                 as_of = r2.get('last_refreshed') or as_of
-                eur_live = usd_eur > 0
+                eur_provider = 'alpha_vantage' if usd_eur > 0 else None
         except Exception as e:  # never let a market-data error reach investors
             print(f"[FX] live rate fetch failed: {e}")
+
+    # Keyless live fallback (per-leg): Frankfurter publishes ECB reference
+    # rates, so currencies stay live even with no Alpha Vantage key at all.
+    if (not usd_ils or usd_ils <= 0) or (not usd_eur or usd_eur <= 0):
+        try:
+            f_ils, f_eur, f_date = _fetch_investor_fx_frankfurter()
+            if (not usd_ils or usd_ils <= 0) and f_ils:
+                usd_ils = f_ils
+                ils_provider = 'frankfurter_ecb'
+                as_of = as_of or f_date
+            if (not usd_eur or usd_eur <= 0) and f_eur:
+                usd_eur = f_eur
+                eur_provider = 'frankfurter_ecb'
+                as_of = as_of or f_date
+        except Exception as e:
+            print(f"[FX] frankfurter fallback fetch failed: {e}")
 
     # Fall back per-leg so a single missing leg doesn't void the whole response.
     if not usd_ils or usd_ils <= 0:
         usd_ils = _FX_FALLBACK['USD_ILS']
-        ils_live = False
+        ils_provider = None
     if not usd_eur or usd_eur <= 0:
         usd_eur = _FX_FALLBACK['USD_EUR']
-        eur_live = False
+        eur_provider = None
+
+    ils_live = ils_provider is not None
+    eur_live = eur_provider is not None
 
     # Label the snapshot by how many legs are live, so the UI can show whether
     # the displayed rate is fully live, partially live, or a static default.
     if ils_live and eur_live:
-        source = 'alpha_vantage'
+        source = ils_provider if ils_provider == eur_provider else 'mixed_live'
     elif ils_live or eur_live:
         source = 'partial'
     else:
@@ -8083,12 +8132,17 @@ def get_investor_fx_rates(force_refresh=False):
         'usd_eur': usd_eur,
         'live': {'USD_ILS': ils_live, 'USD_EUR': eur_live},
         'source': source,
-        'provider': 'alpha_vantage' if source in ('alpha_vantage', 'partial') else 'static_fallback',
+        'provider': (ils_provider or eur_provider) if (ils_live or eur_live) else 'static_fallback',
+        'providers': {
+            'USD_ILS': ils_provider or 'static_fallback',
+            'USD_EUR': eur_provider or 'static_fallback',
+        },
         'as_of': as_of or datetime.now(timezone.utc).isoformat(),
         'fetched_at': datetime.now(timezone.utc).isoformat(),
         'symbols': ['USD', 'ILS', 'EUR'],
-        'note': ('Live FX via Alpha Vantage forex; labelled static fallback used when '
-                 'unavailable. Cross-rates derived from USD legs for consistency.'),
+        'note': ('Live FX via Alpha Vantage forex when configured, otherwise Frankfurter '
+                 '(ECB reference rates, keyless); labelled static fallback used when both '
+                 'are unavailable. Cross-rates derived from USD legs for consistency.'),
     }
     with _FX_LOCK:
         _FX_CACHE['data'] = payload
@@ -15404,10 +15458,12 @@ For claims or questions, please contact:
             return
 
         # Investor FX rates (read-only, public): live USD/ILS/EUR via Alpha
-        # Vantage forex with a labelled static fallback. Used by the investor
-        # documents to show correct currency values ($ / ₪ / €). Always 200 so
-        # the investor pages degrade gracefully; the payload self-describes its
-        # source ("alpha_vantage" / "partial" / "fallback").
+        # Vantage forex, then Frankfurter ECB reference rates (keyless), with
+        # a labelled static fallback. Used by the investor documents to show
+        # correct currency values ($ / ₪ / €). Always 200 so the investor
+        # pages degrade gracefully; the payload self-describes its source
+        # ("alpha_vantage" / "frankfurter_ecb" / "mixed_live" / "partial" /
+        # "fallback").
         if path == '/api/fx/rates':
             force = (qs.get('refresh', ['0'])[0] or '').strip().lower() in ('1', 'true', 'yes')
             try:

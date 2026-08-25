@@ -711,7 +711,7 @@
         var ui = (d.rates && d.rates.USD && d.rates.USD.ILS) || d.usd_ils;
         if (ue) state.fxEur = Number(ue);
         if (ui) state.fxIls = Number(ui);
-        state.fxSource = d.source === "alpha_vantage" ? "live" : (d.source || "fallback");
+        state.fxSource = (d.source === "alpha_vantage" || d.source === "frankfurter_ecb" || d.source === "mixed_live") ? "live" : (d.source || "fallback");
         if (badge) badge.textContent = state.fxSource === "live" ? "live ✓" : (state.fxSource + " ⚠");
         var src = document.getElementById("fx-source");
         if (src) src.textContent = d.as_of ? ("as of " + String(d.as_of).slice(0, 10)) : "";
