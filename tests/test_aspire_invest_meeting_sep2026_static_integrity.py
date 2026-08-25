@@ -121,6 +121,8 @@ def test_aspire_scale_identity_numbers():
         "13,554,000", "66,685,680", "183,337,052",
         "40,662,000", "200,057,040", "550,011,154",
         "4,518", "25%", "75%",
+        "48,794,400", "240,068,448", "660,013,385",
+        "aspire-configurator", "0.20",
     ):
         assert needle in section, f"missing scale-identity figure: {needle}"
     # Retired ILS 3,600 scale GWP / blended-only take must not remain as
@@ -175,7 +177,7 @@ def test_dashboard_offers_bilingual_aspire_pdfs():
 
 def test_diary_seeds_aspire_invest_meeting():
     pd = _read(STATIC / "pitch-dashboard.html")
-    assert "phins.il.meeting.diary.v6" in pd
+    assert "phins.il.meeting.diary.v7" in pd
     assert "Aspire-Invest — Chief Distribution" in pd
     assert "2026-09" in pd
     assert "250,000 issued" in pd
@@ -264,6 +266,8 @@ def test_business_plan_scale_identity_reconciles():
             "13,554,000", "66,685,680", "183,337,052",
             "40,662,000", "200,057,040", "550,011,154",
             "4,518",
+            "48,794,400", "240,068,448", "660,013,385",
+            "0.20",
         ):
             assert n in doc, f"scale identity missing {n}"
         assert "turnover" in doc.lower() or "מחזור" in doc
@@ -276,11 +280,18 @@ def test_business_plan_separates_takes_and_savings():
     assert "PHINS MGA" in md
     assert "Insurance take" in md
     assert "300%" in md
-    assert "one-third" in md or "1/3" in md
+    assert "30%" in md
+    assert "0.20" in md
+    assert "48,794,400" in md
+    assert "660,013,385" in md
+    assert "8,584.20" in md
+    assert "/api/pitch/aspire-identity" in md
     assert "Israel pilot" in md or "Israel-pilot" in md
     assert "f(42)" in md
     assert "1.255" in md
     assert "376.50" in md
+    assert "one-third" not in md
+    assert "1/3" not in md
 
 
 @pytest.mark.parametrize("stem,rtl,needle_a,needle_b,needle_c", STEMS)

@@ -92,7 +92,7 @@ Israel, would be filed separately through a licensed body).
 | Issue ages | 3–65 (max issue age 65); both layers continue past 65 while premiums are paid |
 | Average attained age (pilot book) | 42 — premiums re-price each anniversary on the published age curve f(x) |
 | Premium | Age-adjustable risk premium; separate identified premium per risk (life / disability) |
-| First-product filing | Pure risk. A licensed savings add-on is modelled on **one-third** of the Israel pilot book (see §5) and is a **separate filing**. |
+| First-product filing | Pure risk. A licensed savings add-on is modelled on a configurable share of the Israel pilot book (default **30%**; see §5) and is a **separate filing**. |
 
 **Licensing:** PHINS Technologies Ltd. is not a licensed insurer. Risk is
 intended to sit with a licensed Israeli insurer (fronting) and/or approved
@@ -168,8 +168,8 @@ the insurance take into a PHINS-group local insurer.
 | Max issue age | 65 | Filed entry ages 3–65 |
 | Average attained age | 42 | Pilot-book planning average |
 | Age factor f(42) | 1.00 + (42 − 25) × 0.015 = **1.255** | risk_reference_v1 / filing table |
-| Life premium / month | (1,000,000 / 1,000) × 0.25 × 1.255 = **ILS 313.75** | Filing formula |
-| Disability premium / month | (250,000 / 1,000) × 0.25 × 1.255 = **ILS 62.75** | Filing formula |
+| Life premium / month | (1,000,000 / 1,000) × 0.25 × 1.255 = **ILS 313.75** | Published life table |
+| Disability premium / month | (250,000 / 1,000) × 0.20 × 1.255 = **ILS 62.75** | Switched disability table (not the life rate) |
 | Combined risk premium | **ILS 376.50 / month · ILS 4,518 / year** | 313.75 + 62.75; × 12 |
 | Premiums re-price | Each policy anniversary on published f(x) | Draft 3.1 consumer disclosure |
 
@@ -178,22 +178,28 @@ this pack uses **twice the face**, so 300 × f(42) = 300 × 1.255 =
 **376.50 / month**. Life : disability premium = 5 : 1 (five-sixths /
 one-sixth of risk GWP).
 
-### 5.2 Savings add-on — 300% on one-third of the portfolio
+### 5.2 Savings add-on — configurable election (default 30% × 300%)
 
 The first-product filing remains **pure risk**. For this Israel-pilot
-scale identity only:
+scale identity only, a live configurator (pitch dashboard +
+`/api/pitch/aspire-identity`) lets the room choose the share of
+in-force that elects a licensed savings add-on and the add-on rate.
+Presets are **10% / 20% / 30%** of policies at a **300%** average
+add-on. Default for this pack:
 
-- **One-third** of in-force elects a licensed savings add-on (separate
-  filing through a duly licensed body — not in the Section 40 risk file).
+- **30%** of in-force elects a licensed savings add-on (separate filing
+  through a duly licensed body — not in the Section 40 risk file).
 - Savings contribution on those policies = **300% of that policy's risk
   premium** = 3 × 4,518 = **ILS 13,554 / year**.
-- Identity: (1/3) × 300% = **100%**. Portfolio savings flow equals risk
-  GWP exactly. Blended customer outlay = **ILS 9,036 / year**
-  (4,518 + 4,518).
+- Identity: 30% × 300% = **90%**. Portfolio savings flow = 0.90 × risk
+  GWP. Blended customer outlay = **ILS 8,584.20 / year**
+  (4,518 × 1.90).
 
 Savings is **not** insurance GWP and is **not** split 25/75. It is a
 deposit / investment flow shown beside the risk book so Aspire-Invest's
-investments bench can see the adjacent surface.
+investments bench can see the adjacent surface. When the filed
+disability table or the age / cover assumptions move, the configurator
+re-prices risk GWP and both takes from the same closed form.
 
 ### 5.3 Stated volume and take assumptions
 
@@ -211,7 +217,7 @@ investments bench can see the adjacent surface.
 | Average in-force | `(opening + closing) / 2` (Year 1 opening = 0) |
 | Risk GWP | average in-force × ILS 4,518 |
 | PHINS take | 25% × risk GWP (nearest shekel; insurance take = GWP − PHINS take) |
-| Savings flow | = risk GWP (from the 1/3 × 300% identity) |
+| Savings flow | = risk GWP × election × add-on (default 30% × 300% = 90%) |
 
 ### 5.4 Issued stock, in-force, risk GWP, and the two takes
 
@@ -229,14 +235,15 @@ investments bench can see the adjacent surface.
 | of which disability 1/6 | 9,036,000 | 44,457,120 | 122,224,701 |
 | **PHINS MGA take 25%** | **13,554,000** | **66,685,680** | **183,337,052** |
 | **Insurance take 75%** | **40,662,000** | **200,057,040** | **550,011,154** |
-| Savings flow (1/3 × 300%) | 54,216,000 | 266,742,720 | 733,348,206 |
+| Savings flow (30% × 300%) | 48,794,400 | 240,068,448 | 660,013,385 |
 
 **Arithmetic (must hold):** 25,000 + 75,000 + 150,000 = **250,000**.
 In-force identity unchanged: 24,000 / 94,080 / 230,554. 12,000 × 4,518
 = **54,216,000**; 59,040 × 4,518 = **266,742,720**; 162,317 × 4,518 =
 **733,348,206**. Each PHINS take + insurance take = that year's risk
 GWP (2029: 183,337,052 + 550,011,154 = 733,348,206). Life + disability
-= risk GWP. Savings flow = risk GWP.
+= risk GWP. Savings flow = 90% of risk GWP at the default 30% × 300%
+election (2029: 660,013,385).
 
 The **75% insurance take is not PHINS profit**. It is the premium the
 risk carrier retains to pay claims and hold reserves. The **25% PHINS
@@ -331,9 +338,10 @@ actuarial specimen (life ILS 1,000,000 / disability ILS 250,000 / average
 age 42 / f(42) = 1.255 / risk premium ILS 4,518), 25% PHINS MGA take and
 75% insurance take (2029 insurance take rounded so both takes sum to risk
 GWP), 8% annual lapse with mid-year convention on new issues, sales from
-1 January 2027, new issues 25,000 / 75,000 / 150,000, and a savings
-add-on of 300% of risk premium on one-third of in-force (savings flow =
-risk GWP). They are not commitments, guidance, or a priced security. They
+1 January 2027, new issues 25,000 / 75,000 / 150,000, published tables
+life 0.25 / disability 0.20 per ILS 1,000 / month, and a savings add-on
+of 300% of risk premium on 30% of in-force (savings flow = 90% of risk
+GWP). They are not commitments, guidance, or a priced security. They
 do not overwrite the conservative IL book (ILS 3,600 mix) on the pitch
 dashboard. This document contains no fundraising ask and no bidding
 price. Years 1–3 PHINS is modelled as a digital MGA; claims reserves are

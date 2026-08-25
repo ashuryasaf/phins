@@ -139,7 +139,7 @@ def test_diary_seeds_aug_vc_meetings():
     assert "grove-vc-meeting-19aug-brief.pdf" in pd
     # bumped storage key so returning browsers pick up the new seeded rows
     # (v6: Aspire-Invest actuarial reset + two-take / turnover charts)
-    assert "phins.il.meeting.diary.v6" in pd
+    assert "phins.il.meeting.diary.v7" in pd
 
 
 # ---------------------------------------------------------------------------
