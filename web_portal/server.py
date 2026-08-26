@@ -25938,7 +25938,14 @@ For claims or questions, please contact:
                     live_prices = {}
                     integrity = {'warning': 'overview_quote_refresh_failed'}
 
-            overview = algo_trading_service.get_market_overview()
+            if live_prices:
+                overview = algo_trading_service.get_market_overview()
+            else:
+                overview = {
+                    'timestamp': datetime.now().isoformat(),
+                    'assets': [],
+                    'data_source': 'none',
+                }
             if isinstance(overview, dict):
                 overview['assets'] = filter_overview_assets_to_live(
                     overview.get('assets'), live_prices

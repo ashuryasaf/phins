@@ -1725,7 +1725,12 @@ class AlgoTradingService:
         
         # Sort by created_at descending
         signals.sort(key=lambda s: s.created_at, reverse=True)
-        return [asdict(s) for s in signals[:limit]]
+        live_signals = [
+            asdict(signal)
+            for signal in signals
+            if self._symbol_history_is_live(getattr(signal, "symbol", ""))
+        ]
+        return live_signals[:limit]
     
     def get_order_history(self, account_id: str = None, limit: int = 50) -> List[Dict]:
         """Get order history"""
@@ -1799,12 +1804,11 @@ class AlgoTradingService:
         }
 
         for symbol in overview_symbols:
+            if not self._symbol_history_is_live(symbol):
+                continue
             indicators = self.calculate_indicators(symbol)
             if indicators.current_price <= 0:
-                if self.portfolio_service and symbol in getattr(self.portfolio_service, 'MARKET_DATA', {}):
-                    pass
-                else:
-                    continue
+                continue
             signal = self.generate_signal(symbol, TradingStrategy.MOMENTUM)
             name = names.get(symbol, symbol)
             if self.portfolio_service and symbol in getattr(self.portfolio_service, 'MARKET_DATA', {}):
@@ -1822,6 +1826,23 @@ class AlgoTradingService:
             })
 
         return overview
+
+    def _symbol_history_is_live(self, symbol: str, min_live_bars: int = 14) -> bool:
+        """True when enough bars are not portfolio_seed placeholders."""
+        history = self.price_history.get(symbol) or []
+        live_bars = 0
+        for bar in history:
+            if not isinstance(bar, dict):
+                continue
+            if bar.get("source") == "portfolio_seed":
+                continue
+            try:
+                if float(bar.get("price") or 0) <= 0:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            live_bars += 1
+        return live_bars >= min_live_bars
 
     def _has_live_data(self) -> bool:
         """Check if any price history comes from live Alpaca data."""

@@ -46,6 +46,17 @@ def test_funded_pipeline_health_is_not_no_activity():
     assert dest_total > 0
 
 
+def test_market_overview_does_not_emit_seed_signals():
+    from services.algo_trading_service import AlgoTradingService
+    from services.investment_portfolio_service import InvestmentPortfolioService
+
+    algo = AlgoTradingService(InvestmentPortfolioService())
+    algo.signals.clear()
+    overview = algo.get_market_overview()
+    assert overview.get("assets") == []
+    assert algo.get_all_signals() == []
+
+
 def test_live_quote_helpers_drop_seed_cache():
     from web_portal.server import (
         build_live_market_payload,
@@ -133,3 +144,15 @@ def test_http_extended_market_is_not_seed_book():
     if assets.get("BTC") is not None and abs(float(assets["BTC"]) - 43250.00) < 1:
         seed_hits += 1
     assert seed_hits < 2, "advanced_market_data seed book leaked onto /api/algo/market/extended"
+
+
+def test_http_algo_signals_omit_seed_book():
+    body = _http_get("/api/algo/signals?limit=50")
+    assert "signals" in body
+    seed_prices = {405.20, 92.30, 478.50, 72.50, 78.90, 188.50, 193.50}
+    hits = 0
+    for signal in body.get("signals") or []:
+        price = float(signal.get("current_price") or signal.get("price") or 0)
+        if any(abs(price - seed) < 0.001 for seed in seed_prices):
+            hits += 1
+    assert hits < 3, "seed-priced momentum signals leaked onto /api/algo/signals"
