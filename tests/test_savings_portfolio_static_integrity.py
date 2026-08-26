@@ -187,6 +187,12 @@ def test_savings_portfolio_preserves_pipeline_and_allocation_defaults():
     assert "POL-001" not in html
     assert "|| 1000" not in html
     assert "Allocation is optimized for your" not in html
+    assert "function applyPipelineHealth(health)" in html
+    assert "health.status === 'no_activity'" in html
+    assert "Awaiting live data" in html
+    assert "No live AI recommendation yet." in html
+    assert "data.is_live === false" in html
+    assert "Awaiting live quotes" in html
     assert "#0066cc 0deg 216deg" not in html
     assert "sessionStorage.getItem('phins_token')" in html
     assert 'value="SPY"' in html

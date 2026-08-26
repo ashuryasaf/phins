@@ -2249,7 +2249,7 @@
         
         function renderMarketOverview(assets) {
             const grid = document.getElementById('marketGrid');
-            const liveAssets = (assets || []).filter(asset => Number(asset.price) > 0);
+            const liveAssets = (assets || []).filter(asset => Number(asset.price) > 0 && asset.is_live !== false);
             if (liveAssets.length === 0) {
                 grid.innerHTML = '<div class="market-item" style="grid-column:1/-1;text-align:center;color:var(--text-secondary);">No live market quotes</div>';
                 return;
@@ -2286,7 +2286,7 @@
         
         function renderIndicators(data) {
             const grid = document.getElementById('indicatorGrid');
-            if (!data || data.error) {
+            if (!data || data.error || data.is_live === false) {
                 grid.innerHTML = '<div class="indicator-card"><div class="indicator-name">Indicators</div><div class="indicator-value">No live data</div></div>';
                 return;
             }
@@ -2544,7 +2544,7 @@
             try {
                 const response = await fetch(url);
                 const data = await response.json();
-                extendedMarketData = data.assets || [];
+                extendedMarketData = (data.assets || []).filter(asset => Number(asset.price) > 0 && asset.is_live !== false);
                 renderExtendedMarket();
             } catch (e) {
                 console.error('Failed to load extended market data:', e);
@@ -2555,7 +2555,7 @@
             const container = document.getElementById('extendedMarketData');
             
             if (extendedMarketData.length === 0) {
-                container.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: var(--text-secondary);">No market data available</div>`;
+                container.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: var(--text-secondary);">Awaiting live quotes</div>`;
                 return;
             }
             
@@ -2963,6 +2963,27 @@
             if (el) el.textContent = value;
         }
 
+        function applyPipelineHealth(health) {
+            const healthEl = document.getElementById('pipelineHealth');
+            if (!healthEl || !health) return;
+            if (health.status === 'no_activity' || health.score == null) {
+                healthEl.style.background = 'rgba(127, 178, 255, 0.12)';
+                healthEl.style.color = 'var(--text-secondary)';
+                healthEl.textContent = 'Awaiting live data';
+                return;
+            }
+            const colors = {
+                'excellent': { bg: 'rgba(16, 185, 129, 0.2)', text: '#34d399' },
+                'good': { bg: 'rgba(59, 130, 246, 0.2)', text: '#60a5fa' },
+                'needs_attention': { bg: 'rgba(245, 158, 11, 0.2)', text: '#fbbf24' },
+                'critical': { bg: 'rgba(239, 68, 68, 0.2)', text: '#f87171' }
+            };
+            const color = colors[health.status] || colors.good;
+            healthEl.style.background = color.bg;
+            healthEl.style.color = color.text;
+            healthEl.textContent = `${health.status.charAt(0).toUpperCase() + health.status.slice(1)} (${health.score}/100)`;
+        }
+
         function applyActuarialFromUnified(unified) {
             if (!unified || unified.error || (!unified.monthly_distribution && !unified.customer_id)) {
                 return;
@@ -3016,20 +3037,7 @@
                 
                 // Update health indicator
                 if (analytics.pipeline_health) {
-                    const healthEl = document.getElementById('pipelineHealth');
-                    const health = analytics.pipeline_health;
-                    const colors = {
-                        'excellent': { bg: 'rgba(16, 185, 129, 0.2)', text: '#34d399' },
-                        'good': { bg: 'rgba(59, 130, 246, 0.2)', text: '#60a5fa' },
-                        'needs_attention': { bg: 'rgba(245, 158, 11, 0.2)', text: '#fbbf24' },
-                        'critical': { bg: 'rgba(239, 68, 68, 0.2)', text: '#f87171' }
-                    };
-                    const color = colors[health.status] || colors.good;
-                    if (healthEl) {
-                        healthEl.style.background = color.bg;
-                        healthEl.style.color = color.text;
-                        healthEl.textContent = `● ${health.status.charAt(0).toUpperCase() + health.status.slice(1)} (${health.score}/100)`;
-                    }
+                    applyPipelineHealth(analytics.pipeline_health);
                 }
             } catch (e) {
                 console.error('Failed to load pipeline analytics:', e);
@@ -3057,8 +3065,10 @@
                     setPipelineText('aiRecommendationText', 'No live AI recommendation yet.');
                 }
                 const badge = document.getElementById('aiConfBadge');
-                if (badge && recommendation.ai_confidence) {
-                    badge.textContent = `${(recommendation.ai_confidence * 100).toFixed(0)}%`;
+                if (badge) {
+                    badge.textContent = recommendation.ai_confidence
+                        ? `${(recommendation.ai_confidence * 100).toFixed(0)}%`
+                        : 'Awaiting';
                 }
             } catch (e) {
                 console.error('Failed to load pipeline data:', e);

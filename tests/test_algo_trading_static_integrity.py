@@ -236,6 +236,12 @@ def test_algo_trading_preserves_pipeline_allocation_defaults():
     assert "activateDemoData" not in html
     assert "Simulate some trades for demo" not in html
     assert "Allocation is optimized for your" not in html
+    assert "function applyPipelineHealth(health)" in html
+    assert "health.status === 'no_activity'" in html
+    assert "Awaiting live data" in html
+    assert "No live AI recommendation yet." in html
+    assert "data.is_live === false" in html
+    assert "Awaiting live quotes" in html
     assert "localStorage.getItem('phins_token')" in html
     assert "sessionStorage.getItem('phins_token')" in html
     assert "botMaxPosition\" value=\"1000\"" in html or 'id="botMaxPosition" value="1000"' in html
