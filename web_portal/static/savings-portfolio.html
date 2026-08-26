@@ -335,13 +335,7 @@
             height: 200px;
             border-radius: 50%;
             position: relative;
-            background: conic-gradient(
-                #0066cc 0deg 216deg,
-                #10b981 216deg 306deg,
-                #f59e0b 306deg 324deg,
-                #8b5cf6 324deg 342deg,
-                #ec4899 342deg 360deg
-            );
+            background: rgba(127, 178, 255, 0.12);
         }
         
         .pie-center {
@@ -1026,7 +1020,7 @@
                 <h2 class="section-title">Actuarial Premium &amp; Savings Pipeline</h2>
                 <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
                     <span id="actuarialSourceBadge" style="background: rgba(227, 191, 111, 0.16); color: var(--phins-gold-strong); padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.72rem; letter-spacing: 0.06em;">PHINS_ACTUARIAL_TABLES_V1</span>
-                    <span id="pipelineHealth" style="background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem;">● Excellent</span>
+                    <span id="pipelineHealth" style="background: rgba(127, 178, 255, 0.12); color: var(--text-secondary); padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem;">Awaiting live data</span>
                     <button class="btn btn-outline btn-small" onclick="loadPipelineData()">⟳</button>
                 </div>
             </div>
@@ -1110,7 +1104,7 @@
                     <span id="aiConfBadge" style="background: rgba(227, 191, 111, 0.22); padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.7rem; margin-left: auto;">Live AI</span>
                 </div>
                 <p id="aiRecommendationText" style="color: var(--text-secondary); font-size: 0.85rem; margin: 0;">
-                    Analyzing your portfolio... Loading AI recommendations.
+                    Awaiting live pipeline recommendation.
                 </p>
             </div>
         </div>
@@ -1316,7 +1310,7 @@
                     <div class="allocation-chart">
                         <div class="pie-chart" id="allocationPie">
                             <div class="pie-center">
-                                <div style="font-size: 1.5rem; font-weight: 700;" id="allocationTotal">100%</div>
+                                <div style="font-size: 1.5rem; font-weight: 700;" id="allocationTotal">0%</div>
                                 <div style="font-size: 0.75rem; color: var(--text-secondary);">Allocated</div>
                             </div>
                         </div>
@@ -1604,10 +1598,11 @@
             const ticker = document.getElementById('marketTicker');
             const symbols = ['BTC', 'ETH', 'SPY', 'QQQ', 'GLD', '^SPX'];
             
-            ticker.innerHTML = symbols.map(symbol => {
+            const items = symbols.map(symbol => {
                 const data = marketData[symbol] || {};
-                const price = data.price || 0;
-                const change = data.change_24h || 0;
+                const price = Number(data.price);
+                if (!(price > 0)) return '';
+                const change = Number(data.change_24h || 0);
                 const isPositive = change >= 0;
                 
                 return `
@@ -1619,7 +1614,10 @@
                         </span>
                     </div>
                 `;
-            }).join('');
+            }).filter(Boolean);
+            ticker.innerHTML = items.length
+                ? items.join('')
+                : '<div class="ticker-item"><span class="ticker-symbol">Markets</span><span class="ticker-price">Awaiting live quotes</span></div>';
         }
         
         async function loadPortfolioData() {
@@ -1649,33 +1647,18 @@
                 if (data.accounts && data.accounts.length > 0) {
                     accountId = data.accounts[0].account_id;
                 } else {
-                    // Create a new account if none exists
-                    // Use unified data for monthly contribution if available
-                    const monthlyContrib = unifiedData.monthly_contribution || 1000;
-                    
-                    response = await authFetch('/api/savings/create-account', {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            customer_id: customerId,
-                            policy_id: 'POL-001',
-                            monthly_contribution: monthlyContrib,
-                            savings_rate_pct: 30,
-                            risk_profile: 'moderate'
-                        })
-                    });
-                    data = await response.json();
-                    accountId = data.account_id;
-                    
-                    // NOTE: Removed auto-seeding of $25,000 deposit
-                    // Users should make deposits manually via the Deposit button
-                    // This ensures clean account state after reset
-                    console.log('New savings account created:', accountId);
+                    accountId = null;
+                    console.log('No live savings account for customer; skipping mock account creation');
                 }
                 
                 // STEP 3: Load detailed portfolio summary
                 try {
-                    response = await authFetch(`/api/savings/portfolio?account_id=${accountId}`);
-                    portfolioData = await response.json();
+                    if (accountId) {
+                        response = await authFetch(`/api/savings/portfolio?account_id=${accountId}`);
+                        portfolioData = await response.json();
+                    } else {
+                        portfolioData = {};
+                    }
                 } catch (e) {
                     console.warn('Portfolio service unavailable, using unified data only');
                     portfolioData = {};
@@ -1822,12 +1805,7 @@
                 if (rec.recommendations && rec.recommendations.length > 0) {
                     setPipelineText('aiRecommendationText', rec.recommendations[0].message);
                 } else {
-                    const sentiment = rec.market_conditions?.sentiment_label || 'Neutral';
-                    const roi = rec.performance?.roi || rec.performance?.roi_pct || 0;
-                    setPipelineText(
-                        'aiRecommendationText',
-                        `Market sentiment: ${sentiment}. Your portfolio ROI: ${Number(roi).toFixed(1)}%. Allocation is optimized for your ${rec.risk_level || 'moderate'} risk profile.`
-                    );
+                    setPipelineText('aiRecommendationText', 'No live AI recommendation yet.');
                 }
                 const badge = document.getElementById('aiConfBadge');
                 if (badge && rec.ai_confidence) {
@@ -2099,9 +2077,15 @@
             }
             
             legendContainer.innerHTML = legendHTML;
+            const totalEl = document.getElementById('allocationTotal');
             
             if (gradientParts.length > 0) {
                 pieChart.style.background = `conic-gradient(${gradientParts.join(', ')})`;
+                if (totalEl) totalEl.textContent = '100%';
+            } else {
+                pieChart.style.background = 'rgba(127, 178, 255, 0.12)';
+                if (totalEl) totalEl.textContent = '0%';
+                legendContainer.innerHTML = '<p style="color: var(--text-secondary);">No live allocation yet</p>';
             }
         }
         

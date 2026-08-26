@@ -976,7 +976,7 @@
                 <div style="font-size: 0.9rem; font-weight: 600; color: white; margin-bottom: 0.75rem;">Recent Profitable Trades</div>
                 <div id="recentProfitableTrades" style="display: flex; flex-wrap: wrap; gap: 0.5rem; max-height: 80px; overflow-y: auto;">
                     <span style="background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem;">
-                        No trades yet - Click "Activate Auto-Profits" to start!
+                        No live trades yet.
                     </span>
                 </div>
             </div>
@@ -1036,7 +1036,7 @@
                 <h2 class="section-title">Actuarial Premium &amp; Savings Pipeline</h2>
                 <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
                     <span id="actuarialSourceBadge" style="background: rgba(227, 191, 111, 0.16); color: var(--phins-gold-strong); padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.72rem; letter-spacing: 0.06em;">PHINS_ACTUARIAL_TABLES_V1</span>
-                    <span id="pipelineHealth" style="background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem;">● Excellent</span>
+                    <span id="pipelineHealth" style="background: rgba(127, 178, 255, 0.12); color: var(--text-secondary); padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem;">Awaiting live data</span>
                     <button class="btn btn-outline btn-small" onclick="loadPipelineData()">⟳</button>
                 </div>
             </div>
@@ -1137,7 +1137,7 @@
                     <span id="aiConfBadge" style="background: rgba(227, 191, 111, 0.22); padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.7rem; margin-left: auto;">Live AI</span>
                 </div>
                 <p id="aiRecommendationText" style="color: var(--text-secondary); font-size: 0.85rem; margin: 0;">
-                    Analyzing your portfolio... Loading AI recommendations.
+                    Awaiting live pipeline recommendation.
                 </p>
             </div>
         </div>
@@ -2249,19 +2249,24 @@
         
         function renderMarketOverview(assets) {
             const grid = document.getElementById('marketGrid');
+            const liveAssets = (assets || []).filter(asset => Number(asset.price) > 0);
+            if (liveAssets.length === 0) {
+                grid.innerHTML = '<div class="market-item" style="grid-column:1/-1;text-align:center;color:var(--text-secondary);">No live market quotes</div>';
+                return;
+            }
             
-            grid.innerHTML = assets.map(asset => {
-                const isPositive = asset.change_24h >= 0;
-                const signalClass = asset.signal.includes('buy') ? 'success' : asset.signal.includes('sell') ? 'danger' : 'secondary';
+            grid.innerHTML = liveAssets.map(asset => {
+                const isPositive = (asset.change_24h || 0) >= 0;
+                const signal = asset.signal || 'hold';
                 
                 return `
                     <div class="market-item">
                         <div class="market-symbol">${asset.symbol}</div>
                         <div class="market-price">$${formatNumber(asset.price)}</div>
                         <div class="market-change ${isPositive ? 'positive' : 'negative'}">
-                            ${isPositive ? '▲' : '▼'} ${Math.abs(asset.change_24h).toFixed(2)}%
+                            ${isPositive ? '▲' : '▼'} ${Math.abs(asset.change_24h || 0).toFixed(2)}%
                         </div>
-                        <div class="market-signal signal-badge ${asset.signal}">${asset.signal.replace('_', ' ')}</div>
+                        <div class="market-signal signal-badge ${signal}">${String(signal).replace('_', ' ')}</div>
                     </div>
                 `;
             }).join('');
@@ -2281,39 +2286,44 @@
         
         function renderIndicators(data) {
             const grid = document.getElementById('indicatorGrid');
-            
-            const rsiColor = data.rsi_14 < 30 ? 'var(--success)' : data.rsi_14 > 70 ? 'var(--danger)' : 'var(--warning)';
+            if (!data || data.error) {
+                grid.innerHTML = '<div class="indicator-card"><div class="indicator-name">Indicators</div><div class="indicator-value">No live data</div></div>';
+                return;
+            }
+            const hasRsi = data.rsi_14 != null;
+            const rsiColor = !hasRsi ? 'var(--text-secondary)' : data.rsi_14 < 30 ? 'var(--success)' : data.rsi_14 > 70 ? 'var(--danger)' : 'var(--warning)';
+            const fmt = (value, digits) => (value == null || Number.isNaN(Number(value)) ? '—' : Number(value).toFixed(digits));
             
             grid.innerHTML = `
                 <div class="indicator-card">
                     <div class="indicator-name">RSI (14)</div>
-                    <div class="indicator-value" style="color: ${rsiColor}">${data.rsi_14?.toFixed(1) || 50}</div>
+                    <div class="indicator-value" style="color: ${rsiColor}">${fmt(data.rsi_14, 1)}</div>
                     <div class="indicator-bar">
-                        <div class="indicator-fill" style="width: ${data.rsi_14 || 50}%; background: ${rsiColor};"></div>
+                        <div class="indicator-fill" style="width: ${hasRsi ? data.rsi_14 : 0}%; background: ${rsiColor};"></div>
                     </div>
                 </div>
                 <div class="indicator-card">
                     <div class="indicator-name">MACD</div>
                     <div class="indicator-value" style="color: ${data.macd_histogram >= 0 ? 'var(--success)' : 'var(--danger)'}">
-                        ${data.macd_histogram?.toFixed(4) || 0}
+                        ${fmt(data.macd_histogram, 4)}
                     </div>
                 </div>
                 <div class="indicator-card">
                     <div class="indicator-name">SMA 20</div>
-                    <div class="indicator-value">$${data.sma_20?.toFixed(2) || 0}</div>
+                    <div class="indicator-value">$${fmt(data.sma_20, 2)}</div>
                 </div>
                 <div class="indicator-card">
                     <div class="indicator-name">SMA 50</div>
-                    <div class="indicator-value">$${data.sma_50?.toFixed(2) || 0}</div>
+                    <div class="indicator-value">$${fmt(data.sma_50, 2)}</div>
                 </div>
                 <div class="indicator-card">
                     <div class="indicator-name">Volatility</div>
-                    <div class="indicator-value">${((data.volatility || 0) * 100).toFixed(1)}%</div>
+                    <div class="indicator-value">${data.volatility == null ? '—' : (Number(data.volatility) * 100).toFixed(1) + '%'}</div>
                 </div>
                 <div class="indicator-card">
                     <div class="indicator-name">24h Change</div>
                     <div class="indicator-value" style="color: ${data.price_change_24h >= 0 ? 'var(--success)' : 'var(--danger)'}">
-                        ${data.price_change_24h >= 0 ? '+' : ''}${data.price_change_24h?.toFixed(2) || 0}%
+                        ${data.price_change_24h == null ? '—' : ((data.price_change_24h >= 0 ? '+' : '') + Number(data.price_change_24h).toFixed(2) + '%')}
                     </div>
                 </div>
             `;
@@ -2502,19 +2512,7 @@
                 if (data.success) {
                     showToast(`${data.bot?.name || 'Smart Bot'} activated successfully!`, 'success');
                     
-                    // Simulate some trades for demo
-                    if (data.bot?.bot_id) {
-                        await authFetch('/api/algo/bots/simulate', {
-                            method: 'POST',
-                            
-                            body: JSON.stringify({
-                                bot_id: data.bot.bot_id,
-                                days: 30
-                            })
-                        });
-                    }
-                    
-                    // Reload bots and stats
+                    // Reload bots and stats from live APIs only
                     await loadBots();
                     await updateStats();
                 } else {
@@ -2636,31 +2634,6 @@
             showToast(`Selected ${symbol} for trading`, 'info');
         }
         
-        // ========== DEMO DATA ACTIVATION ==========
-        async function activateDemoData() {
-            showToast('Activating demo data...', 'info');
-            
-            try {
-                const response = await authFetch('/api/algo/activate-demo', {
-                    method: 'POST',
-                    
-                    body: JSON.stringify({ customer_id: customerId })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    showToast(`Created ${data.bots_created?.length || 0} demo bots with simulated history!`, 'success');
-                    await loadBots();
-                    await updateStats();
-                } else {
-                    showToast(data.error || 'Failed to activate demo', 'error');
-                }
-            } catch (e) {
-                showToast('Failed to activate demo: ' + e.message, 'error');
-            }
-        }
-        
         // Bot Actions - Enhanced
         function showCreateBotModal() {
             document.getElementById('createBotModal').classList.add('active');
@@ -2737,15 +2710,10 @@
                     // Reset form
                     document.getElementById('botName').value = '';
                     
-                    // Reload bots and signals
+                    // Reload bots and signals from live APIs only
                     await loadBots();
-                    
-                    // If auto-start, also run a profit cycle
                     if (autoStart) {
-                        setTimeout(() => {
-                            runProfitCycle();
-                            showToast('Bot is now trading! First signals generating...', 'info');
-                        }, 1000);
+                        showToast('Bot is live. Signals will appear from market data.', 'info');
                     }
                 } else {
                     showToast(data.error || 'Failed to create bot', 'error');
@@ -3086,12 +3054,7 @@
                     const topRec = recommendation.recommendations[0];
                     setPipelineText('aiRecommendationText', topRec.message);
                 } else {
-                    const sentiment = recommendation.market_conditions?.sentiment_label || 'Neutral';
-                    const roi = recommendation.performance?.roi || recommendation.performance?.roi_pct || 0;
-                    setPipelineText(
-                        'aiRecommendationText',
-                        `Market sentiment: ${sentiment}. Your portfolio ROI: ${Number(roi).toFixed(1)}%. Allocation is optimized for your ${recommendation.risk_level || 'moderate'} risk profile.`
-                    );
+                    setPipelineText('aiRecommendationText', 'No live AI recommendation yet.');
                 }
                 const badge = document.getElementById('aiConfBadge');
                 if (badge && recommendation.ai_confidence) {

@@ -49214,13 +49214,6 @@ For claims or questions, please contact:
                 )
                 bot.risk_level = risk_level
                 
-                # Run initial profit cycles to generate starting profits
-                total_initial_profit = 0
-                for _ in range(3):  # Run 3 initial cycles
-                    result = profit_engine.run_profit_cycle(customer_id, customer_id)
-                    total_initial_profit += result.get('total_profit_this_cycle', 0)
-                
-                # Update investment account with initial profits
                 if customer_id not in INVESTMENT_ACCOUNTS:
                     INVESTMENT_ACCOUNTS[customer_id] = {
                         'customer_id': customer_id,
@@ -49229,15 +49222,11 @@ For claims or questions, please contact:
                         'created_at': datetime.now().isoformat()
                     }
                 
-                INVESTMENT_ACCOUNTS[customer_id]['algo_trading_profits'] = \
-                    INVESTMENT_ACCOUNTS[customer_id].get('algo_trading_profits', 0) + total_initial_profit
-                
-                # Record activation
                 record_transaction(
                     customer_id=customer_id,
                     tx_type='algo_profit_activated',
-                    amount=total_initial_profit,
-                    description=f"Auto-profit trading activated ({risk_level} risk). Initial profit: ${total_initial_profit:.2f}",
+                    amount=0,
+                    description=f"Auto-profit trading activated ({risk_level} risk). Live signals only.",
                     metadata={
                         'bot_id': bot.bot_id,
                         'risk_level': risk_level,
@@ -49246,15 +49235,14 @@ For claims or questions, please contact:
                     }
                 )
                 
-                # Get updated summary
                 summary = profit_engine.get_customer_trading_summary(customer_id)
                 
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
                     'success': True,
-                    'message': f'Auto-profit trading activated! Generated ${total_initial_profit:.2f} initial profit.',
+                    'message': 'Auto-profit trading activated. Waiting for live market signals.',
                     'bot': algo_trading_service.get_bot_performance(bot.bot_id),
-                    'initial_profit': round(total_initial_profit, 2),
+                    'initial_profit': 0,
                     'trading_summary': summary
                 }).encode('utf-8'))
             except Exception as e:
