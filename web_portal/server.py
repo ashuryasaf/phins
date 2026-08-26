@@ -203,7 +203,7 @@ def filter_overview_assets_to_live(assets: Optional[List[Dict[str, Any]]],
     return filtered
 
 
-def price_history_is_live(history: Optional[List[Dict[str, Any]]], min_live_bars: int = 14) -> bool:
+def price_history_is_live(history: Optional[List[Dict[str, Any]]], min_live_bars: int = 15) -> bool:
     """True only when enough bars are not portfolio_seed placeholders."""
     if not history:
         return False
