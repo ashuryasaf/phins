@@ -519,3 +519,10 @@ class TestActuarialDistributionIntegrity:
         assert "'customer_age': distribution.get('customer_age')" in text
         assert "'policy_count': distribution.get('policy_count')" in text
         assert "'actuarial_data': distribution.get('actuarial_data')" in text
+
+    def test_activate_profits_does_not_seed_mock_initial_pnl(self):
+        source = Path(__file__).resolve().parents[1] / "web_portal" / "server.py"
+        text = source.read_text(encoding="utf-8")
+        assert "Run 3 initial cycles" not in text
+        assert "Generated ${total_initial_profit:.2f} initial profit." not in text
+        assert "Waiting for live market signals." in text

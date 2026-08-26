@@ -170,9 +170,7 @@ def test_algo_trading_preserves_live_apis():
         "/api/algo/stats",
         "/api/algo/smart-bots/templates",
         "/api/algo/smart-bots/create",
-        "/api/algo/bots/simulate",
         "/api/algo/market/extended",
-        "/api/algo/activate-demo",
         "/api/algo/bots/create",
         "/api/algo/bots/start",
         "/api/algo/bots/stop",
@@ -233,6 +231,11 @@ def test_algo_trading_preserves_pipeline_allocation_defaults():
     assert "alloc.savings_pct != null ? alloc.savings_pct : 50" in html
     assert "if (!unified || unified.error || (!unified.monthly_distribution && !unified.customer_id))" in html
     assert "if (unifiedRes.ok)" in html
+    assert "/api/algo/bots/simulate" not in html
+    assert "/api/algo/activate-demo" not in html
+    assert "activateDemoData" not in html
+    assert "Simulate some trades for demo" not in html
+    assert "Allocation is optimized for your" not in html
     assert "localStorage.getItem('phins_token')" in html
     assert "sessionStorage.getItem('phins_token')" in html
     assert "botMaxPosition\" value=\"1000\"" in html or 'id="botMaxPosition" value="1000"' in html

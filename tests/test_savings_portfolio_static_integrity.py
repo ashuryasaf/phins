@@ -141,7 +141,6 @@ def test_savings_portfolio_preserves_live_apis():
         "/api/integrity/verified-total",
         "/api/investment/unified",
         "/api/savings/accounts",
-        "/api/savings/create-account",
         "/api/savings/portfolio",
         "/api/pipeline/analytics",
         "/api/pipeline/ai-recommendation",
@@ -184,6 +183,11 @@ def test_savings_portfolio_preserves_pipeline_and_allocation_defaults():
     assert "if (!unified || unified.error || (!unified.monthly_distribution && !unified.customer_id))" in html
     assert "if (unifiedRes.ok)" in html
     assert "localStorage.getItem('phins_token')" in html
+    assert "/api/savings/create-account" not in html
+    assert "POL-001" not in html
+    assert "|| 1000" not in html
+    assert "Allocation is optimized for your" not in html
+    assert "#0066cc 0deg 216deg" not in html
     assert "sessionStorage.getItem('phins_token')" in html
     assert 'value="SPY"' in html
     assert 'value="QQQ"' in html
