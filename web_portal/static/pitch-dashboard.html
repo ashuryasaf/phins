@@ -2520,13 +2520,22 @@
         <div id="investor-deck-config" style="margin-top:16px;border:1px solid #99f6e4;background:linear-gradient(180deg,#f0fdfa 0%,#ffffff 70%);border-radius:12px;padding:14px 16px;">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
             <div>
-              <h3 style="margin:0;">📗 General investment deck <span style="font-size:8pt;font-weight:700;color:#0f766e;background:#ccfbf1;border-radius:20px;padding:2px 9px;vertical-align:middle;">no ask · no deal terms</span></h3>
-              <p class="ecp-sub" style="margin-top:4px;">A counterpart-facing document that keeps the same ₪ book but drops the ask strip, quarterly forecast, and deal structures. Tune presentation here; the deck recomputes from this configurator.</p>
+              <h3 style="margin:0;">📗 Investment document versions <span style="font-size:8pt;font-weight:700;color:#0f766e;background:#ccfbf1;border-radius:20px;padding:2px 9px;vertical-align:middle;">choose which to show</span></h3>
+              <p class="ecp-sub" style="margin-top:4px;">Both documents stay available and share this configurator’s ₪ book. Pick the version to present; the other remains one click away.</p>
             </div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;">
-              <a href="/internal/phins-investment-deck.html" target="_blank" rel="noopener" class="exec-dl-btn" style="background:#0f766e;color:#fff;border-color:#0f766e;">Open general deck</a>
-              <a href="/internal/phins-investor-business-plan.html" target="_blank" rel="noopener" class="exec-dl-btn">Open detailed plan</a>
-            </div>
+            <a id="inv-deck-open-selected" href="/internal/phins-investment-deck.html" target="_blank" rel="noopener" class="exec-dl-btn" style="background:#0f766e;color:#fff;border-color:#0f766e;">Open selected version</a>
+          </div>
+          <div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;" id="inv-deck-version-picker">
+            <button type="button" class="inv-deck-ver-btn" data-deck-doc="detailed" id="inv-deck-ver-detailed" style="text-align:left;border:1px solid var(--border);background:#fff;border-radius:12px;padding:12px 14px;cursor:pointer;font-family:inherit;">
+              <div style="font-size:7.4pt;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#0d47a1;">Previous version</div>
+              <div style="font-size:10pt;font-weight:800;color:var(--blue-dark);margin-top:2px;">Detailed business plan</div>
+              <div style="font-size:8pt;color:var(--text-sub);margin-top:4px;">Ask, pre-money, post-money, stake, quarterly forecast, and deal structures.</div>
+            </button>
+            <button type="button" class="inv-deck-ver-btn" data-deck-doc="general" id="inv-deck-ver-general" style="text-align:left;border:2px solid #0f766e;background:#ecfdf5;border-radius:12px;padding:12px 14px;cursor:pointer;font-family:inherit;">
+              <div style="font-size:7.4pt;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#0f766e;">New version</div>
+              <div style="font-size:10pt;font-weight:800;color:#115e59;margin-top:2px;">General investment deck</div>
+              <div style="font-size:8pt;color:var(--text-sub);margin-top:4px;">Platform objectives, Israel launch, and annual cash flow — no ask strip or deal terms.</div>
+            </button>
           </div>
           <div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
             <div class="control-group">
@@ -9252,7 +9261,8 @@
         multX: 1.3,
         valProvenance: null,         // set when basis is multiple/actuarial
         deckHorizon: 5,              // 3 | 5 — general investment deck forecast
-        deckTableDetail: "summary"   // summary | full — general investment deck tables
+        deckTableDetail: "summary",  // summary | full — general investment deck tables
+        deckDoc: "general"           // general | detailed — which document version to show
       };
       // 2029 base metrics (ILS) used by the income-multiple basis — these are the
       // exact figures shown in the income table, so the valuation reconciles.
@@ -9263,6 +9273,7 @@
       } catch (e) {}
       if (cfg.deckHorizon !== 3 && cfg.deckHorizon !== 5) cfg.deckHorizon = 5;
       if (cfg.deckTableDetail !== "full") cfg.deckTableDetail = "summary";
+      if (cfg.deckDoc !== "detailed") cfg.deckDoc = "general";
 
       // ---- helpers ----
       function num(v, d) { var n = parseFloat(v); return isFinite(n) ? n : (d || 0); }
@@ -9325,7 +9336,8 @@
           elRound = $("inv-round"), elPre = $("inv-premoney"), elPos = $("inv-position"),
           elCoCash = $("inv-cocash"), elFounderEq = $("inv-founder-eq"),
           elValBasis = $("inv-valbasis"), elMultMetric = $("inv-mult-metric"), elMultX = $("inv-mult-x"),
-          elDeckHorizon = $("inv-deck-horizon"), elDeckDetail = $("inv-deck-detail");
+          elDeckHorizon = $("inv-deck-horizon"), elDeckDetail = $("inv-deck-detail"),
+          elDeckOpenSelected = $("inv-deck-open-selected");
 
       function basisLabel() {
         if (cfg.valBasis === "multiple") {
@@ -9349,6 +9361,20 @@
         if (elMultX) elMultX.value = cfg.multX;
         if (elDeckHorizon) elDeckHorizon.value = String(cfg.deckHorizon);
         if (elDeckDetail) elDeckDetail.value = cfg.deckTableDetail;
+        document.querySelectorAll(".inv-deck-ver-btn").forEach(function (b) {
+          var on = b.getAttribute("data-deck-doc") === cfg.deckDoc;
+          b.style.border = on ? "2px solid #0f766e" : "1px solid var(--border)";
+          b.style.background = on ? "#ecfdf5" : "#fff";
+        });
+        if (elDeckOpenSelected) {
+          var general = cfg.deckDoc !== "detailed";
+          elDeckOpenSelected.href = general
+            ? "/internal/phins-investment-deck.html"
+            : "/internal/phins-investor-business-plan.html";
+          elDeckOpenSelected.textContent = general
+            ? "Open selected version — general deck"
+            : "Open selected version — detailed plan";
+        }
         // Pre-money is editable only when basis is manual; otherwise it reflects
         // the derived value (the user can switch to Manual to override — optional).
         elPre.readOnly = (cfg.valBasis !== "manual");
@@ -9564,6 +9590,13 @@
       if (elDeckDetail) elDeckDetail.addEventListener("change", function () {
         cfg.deckTableDetail = elDeckDetail.value === "full" ? "full" : "summary";
         recompute();
+      });
+      document.querySelectorAll(".inv-deck-ver-btn").forEach(function (b) {
+        b.addEventListener("click", function () {
+          cfg.deckDoc = b.getAttribute("data-deck-doc") === "detailed" ? "detailed" : "general";
+          syncInputsFromCfg();
+          recompute();
+        });
       });
 
       var simRunBtn = $("inv-sim-run");

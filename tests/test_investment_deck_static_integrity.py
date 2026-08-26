@@ -41,6 +41,9 @@ def test_general_deck_omits_investment_hero_and_deal_section():
     assert 'id="bp-deal-body"' not in deck
     assert 'id="bp-kpi-ask"' not in deck
     assert 'id="bp-kpi-moic"' not in deck
+    assert 'data-i18n="kpi.ledger"' not in deck
+    assert 'data-i18n="kpi.ledger.v"' not in deck
+    assert ">Hash-chained<" not in deck
 
 
 def test_general_deck_shows_objectives_israel_launch_and_cash_flow():
@@ -99,8 +102,24 @@ def test_pitch_dashboard_wires_general_deck_configurator():
     assert 'id="inv-deck-horizon"' in pd
     assert 'id="inv-deck-detail"' in pd
     meeting = pd.split('id="investor-meeting-section"', 1)[1].split('id="partner-meetings-13jul"', 1)[0]
-    assert "Open General Investment Deck" in meeting or "Open general deck" in meeting
-    assert "no ask · no deal terms" in meeting
+    assert "Open General Investment Deck" in meeting
+    assert "Open Fintech Business Plan" in meeting
+    assert 'id="inv-deck-version-picker"' in meeting
+    assert 'data-deck-doc="general"' in meeting
+    assert 'data-deck-doc="detailed"' in meeting
+    assert "Previous version" in meeting
+    assert "New version" in meeting
     assert "deckHorizon" in pd
     assert "deckTableDetail" in pd
+    assert "deckDoc" in pd
     assert '"investor-deck-config": "investor-meeting-section"' in pd
+
+
+def test_both_investment_document_versions_remain():
+    assert DECK.is_file()
+    bp = STATIC / "internal" / "phins-investor-business-plan.html"
+    assert bp.is_file()
+    previous = _read(bp)
+    assert "The ask (seed / build)" in previous
+    assert "The ask &amp; deal structures" in previous
+    assert "Quarterly forecast" in previous
