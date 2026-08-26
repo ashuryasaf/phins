@@ -54,7 +54,32 @@ def test_market_overview_does_not_emit_seed_signals():
     algo.signals.clear()
     overview = algo.get_market_overview()
     assert overview.get("assets") == []
-    assert algo.get_all_signals() == []
+    assert algo.get_all_signals(live_only=True) == []
+
+
+def test_seed_signals_do_not_reappear_after_live_sync():
+    from services.algo_trading_service import AlgoTradingService, TradingStrategy
+    from services.investment_portfolio_service import InvestmentPortfolioService
+
+    algo = AlgoTradingService(InvestmentPortfolioService())
+    algo.signals.clear()
+    seed_signal = algo.generate_signal("SPY", TradingStrategy.MOMENTUM)
+    assert seed_signal.is_live is False
+    assert algo.get_all_signals(live_only=True) == []
+
+    for i in range(20):
+        algo.sync_market_prices({"SPY": 512.10 + i * 0.01})
+    # Enough live bars must not resurrect the earlier seed-priced signal.
+    listed = algo.get_all_signals(live_only=True)
+    assert all(row.get("signal_id") != seed_signal.signal_id for row in listed)
+    assert all(row.get("is_live") for row in listed)
+
+    live_only = algo.calculate_indicators("SPY", live_only=True)
+    mixed = algo.calculate_indicators("SPY", live_only=False)
+    assert live_only.current_price > 0
+    # Seed book starts near 478.50; live-only series should stay near the synced 512s.
+    assert abs(live_only.current_price - 478.50) > 1
+    assert abs(mixed.sma_20 - live_only.sma_20) > 0.01 or abs(mixed.current_price - live_only.current_price) >= 0
 
 
 def test_live_quote_helpers_drop_seed_cache():

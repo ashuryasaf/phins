@@ -25810,7 +25810,9 @@ For claims or questions, please contact:
             symbol = qs.get('symbol', [''])[0]
             limit = int(qs.get('limit', ['50'])[0])
             
-            signals = algo_trading_service.get_all_signals(symbol if symbol else None, limit)
+            signals = algo_trading_service.get_all_signals(
+                symbol if symbol else None, limit, live_only=True
+            )
             self._set_json_headers()
             self.wfile.write(json.dumps({'signals': signals}).encode('utf-8'))
             return
