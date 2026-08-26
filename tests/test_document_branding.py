@@ -128,6 +128,7 @@ INTERNAL_DOCS = [
     "phins-ai-tech-partner-business-plan.html",
     "phins-insurer-mga-business-plan.html",
     "phins-investor-business-plan.html",
+    "phins-investment-deck.html",
     "exec-actuary-briefing.html",
 ]
 

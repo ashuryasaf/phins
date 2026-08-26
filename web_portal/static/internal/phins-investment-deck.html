@@ -1,0 +1,1066 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="robots" content="noindex,nofollow"/>
+<title data-i18n="page.title">PHINS — Investment Deck (Platform · Israel Launch · Cash Flow)</title>
+<!--
+  This is a counterparty-facing print document.
+  Marker: ui-clarity.js — keep this token in the file so the server-side
+  injector skips the shared assistant widget (no floating admin mic/branding
+  may appear on this page).
+-->
+<style>
+@page {
+  size: A4;
+  margin: 16mm 14mm 18mm 14mm;
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 9pt; color: #888; }
+  @bottom-left { content: "PHINS — Investment Deck — Confidential"; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 9pt; color: #888; }
+}
+:root {
+  --navy: #0b2545; --navy-2: #13315c; --ink: #1a1f2c;
+  --green: #15803d; --green-soft: #f1faf4;
+  --gold: #b98a00; --line: #d4dae6; --soft: #f6f8fc;
+  --accent: #4338ca; --accent-soft: #eef2ff;
+}
+html { font-size: 10.5pt; }
+body {
+  font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: var(--ink);
+  line-height: 1.5;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px;
+  background: #fff;
+}
+h1 { font-size: 22pt; color: var(--navy); margin: 0; }
+h2 { font-size: 14.5pt; color: var(--navy); margin-top: 28px; border-bottom: 2px solid var(--line); padding-bottom: 4px; page-break-after: avoid; }
+h2 .secno { color: var(--gold); margin-right: 6px; }
+h3 { font-size: 12pt; color: var(--navy-2); margin-top: 16px; page-break-after: avoid; }
+p { margin: 8px 0; text-align: justify; }
+ul, ol { margin: 6px 0 10px 22px; padding: 0; }
+li { margin: 4px 0; }
+hr { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
+table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 9.6pt; page-break-inside: avoid; }
+th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+th { background: var(--navy); color: #fff; font-weight: 600; }
+tr:nth-child(even) td { background: var(--soft); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.hi td { background: #eef9f0; font-weight: 700; }
+strong { color: var(--navy); }
+.confidential { text-align: center; font-size: 9pt; color: #8a3324; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+.hero {
+  border-radius: 14px; overflow: hidden; margin: 10px 0 20px 0;
+  background: linear-gradient(135deg, #0b2545 0%, #13315c 48%, #0f766e 100%);
+  color: #fff; padding: 26px 28px; page-break-inside: avoid;
+  box-shadow: 0 14px 36px rgba(11,37,69,0.25);
+}
+.hero h1 { color: #fff; font-size: 23pt; letter-spacing: 0.01em; }
+.hero .tagline { font-size: 11pt; opacity: 0.94; margin: 8px 0 0 0; max-width: 680px; text-align: left; }
+.hero .badges { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.hero .badge { display: inline-block; padding: 3px 11px; border-radius: 999px; background: rgba(255,255,255,0.16); font-size: 8pt; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 10px; margin-top: 18px; }
+.kpi { background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.22); border-radius: 10px; padding: 10px 12px; }
+.kpi .v { font-size: 13pt; font-weight: 800; }
+.kpi .l { font-size: 7.6pt; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+.cover { border: 1px solid var(--line); background: var(--soft); padding: 14px 18px; border-radius: 8px; margin: 14px 0 22px 0; font-size: 10pt; }
+.callout { border-left: 3px solid var(--green); background: var(--green-soft); padding: 8px 14px; margin: 12px 0; border-radius: 0 8px 8px 0; }
+.obj-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+.obj-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: #fff; page-break-inside: avoid; }
+.obj-card .n { font-size: 8pt; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold); margin-bottom: 4px; }
+.obj-card h3 { margin: 0 0 6px 0; font-size: 12pt; }
+.obj-card p { margin: 0; font-size: 9.4pt; text-align: left; color: #334155; }
+.chart-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px 8px 14px; margin: 12px 0; page-break-inside: avoid; background: #fff; }
+.chart-card .ct { font-size: 9pt; font-weight: 800; color: var(--navy-2); margin-bottom: 2px; }
+.chart-card .cs { font-size: 7.8pt; color: #5a6b86; margin-bottom: 6px; }
+.chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.sync-pill { display: inline-block; font-size: 7.6pt; font-weight: 700; color: var(--green); background: #dcfce7; border-radius: 999px; padding: 2px 9px; vertical-align: middle; }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 14px 0; align-items: center; }
+.toolbar a, .toolbar button { font-family: inherit; font-size: 9.5pt; border: 1px solid var(--navy); background: var(--navy); color: #fff; border-radius: 8px; padding: 7px 14px; cursor: pointer; text-decoration: none; }
+.toolbar a.secondary { background: #fff; color: var(--navy); }
+.toolbar .cur-btn { background: #fff; color: var(--navy); padding: 6px 10px; }
+.toolbar .cur-btn.on { background: var(--navy); color: #fff; }
+.toolbar .fxnote { font-size: 7.8pt; color: #5a6b86; }
+svg { display: block; width: 100%; height: auto; }
+.fine { font-size: 8.5pt; color: #5a6b86; }
+.gate { display: grid; grid-template-columns: 92px 1fr; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.gate:last-child { border-bottom: none; }
+.gate .when { font-size: 8pt; font-weight: 800; color: var(--navy-2); }
+.phins-letterhead {
+  display: flex; align-items: center; gap: 12px; position: relative;
+  border-bottom: 2.2px solid #c9a04e; padding-bottom: 10px; margin: 2px 0 14px 0;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.phins-letterhead::after { content: ''; position: absolute; left: 0; right: 0; bottom: -4px; height: 1px; background: #0e2f63; }
+.phins-letterhead img { width: 44px; height: 44px; object-fit: contain; }
+.phins-letterhead .lh-name { font-size: 17pt; font-weight: 900; color: #0e2f63; letter-spacing: 0.05em; line-height: 1.1; }
+.phins-letterhead .lh-tag { font-size: 7.4pt; color: #5b6b82; letter-spacing: 0.08em; text-transform: uppercase; }
+
+html[dir="rtl"] body {
+  font-family: "Segoe UI", "Arial Hebrew", "David", "Frank Ruehl", "Times New Roman", Arial, sans-serif;
+  direction: rtl;
+}
+html[dir="rtl"] p { text-align: justify; }
+html[dir="rtl"] th, html[dir="rtl"] td { text-align: right; }
+html[dir="rtl"] td.num, html[dir="rtl"] th.num { text-align: left; }
+html[dir="rtl"] h2 .secno { margin-right: 0; margin-left: 6px; }
+html[dir="rtl"] ul, html[dir="rtl"] ol { margin: 6px 22px 10px 0; }
+html[dir="rtl"] .hero .tagline, html[dir="rtl"] .obj-card p { text-align: right; }
+html[dir="rtl"] .callout { border-left: none; border-right: 3px solid var(--green); border-radius: 8px 0 0 8px; }
+html[dir="rtl"] svg { direction: ltr; }
+html[dir="rtl"] .confidential { letter-spacing: 0; }
+
+@media (max-width: 700px) {
+  .obj-grid, .chart-grid { grid-template-columns: 1fr; }
+  .gate { grid-template-columns: 1fr; }
+}
+@media print {
+  .toolbar { display: none; }
+  body { padding: 0; }
+  .hero { box-shadow: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .chart-card, table, .callout, .cover, .kpi, .obj-card { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <button type="button" onclick="window.print()" data-i18n="tb.print">🖨️ Print / Save as PDF</button>
+  <a class="secondary" href="/pitch-dashboard.html#investor-meeting-section" data-i18n="tb.back">← Back to Investor Meeting</a>
+  <a class="secondary" href="/internal/phins-investor-business-plan.html" data-i18n="tb.detail">Detailed business plan →</a>
+  <span style="flex:1;"></span>
+  <span style="font-size:7.8pt;color:#5a6b86;" data-i18n="tb.cur">Display currency</span>
+  <button type="button" class="cur-btn" data-cur="ILS">₪ ILS</button>
+  <button type="button" class="cur-btn" data-cur="USD">$ USD</button>
+  <button type="button" class="cur-btn" data-cur="EUR">€ EUR</button>
+  <span class="fxnote" id="deck-fx-note"></span>
+</div>
+<div class="phins-letterhead">
+  <img src="/phins-logo.svg" alt="PHINS emblem">
+  <div>
+    <div class="lh-name">PHINS</div>
+    <div class="lh-tag">Personal Health Insurance &amp; Savings · AI-Operated Insurance Platform</div>
+  </div>
+</div>
+
+<div class="confidential" data-i18n="confidential.banner">Confidential — For the Recipient Only</div>
+
+<div class="hero">
+  <div class="badges">
+    <span class="badge" data-i18n="badge.confidential">🔒 Confidential</span>
+    <span class="badge" data-i18n="badge.kind">Investment deck</span>
+    <span class="badge" id="deck-hero-date">Plan as of —</span>
+    <span class="badge" data-i18n="badge.synced">⚙ Synced to Deal Configurator</span>
+  </div>
+  <h1 data-i18n="hero.h1">PHINS — Investment Deck</h1>
+  <p class="tagline" data-i18n="hero.tagline">
+    A general investment document for the PHINS platform: the operating system for severe-disability
+    and long-term-care insurance, the Israel launch, and the cash-flow path from build to scale.
+    Deal terms live in the configurator and the detailed business plan — this deck stays on objectives and execution.
+  </p>
+  <div class="kpis">
+    <div class="kpi"><div class="v" data-i18n="kpi.launch.v">1 Jan 2027</div><div class="l" data-i18n="kpi.launch">Israel commercial launch</div></div>
+    <div class="kpi"><div class="v">25%</div><div class="l" data-i18n="kpi.take">Digital MGA take rate</div></div>
+    <div class="kpi"><div class="v">24,000</div><div class="l" data-i18n="kpi.y1">Year-1 policies (EoY 2027)</div></div>
+    <div class="kpi"><div class="v">2028</div><div class="l" data-i18n="kpi.ebitda">EBITDA-positive year</div></div>
+    <div class="kpi"><div class="v" data-i18n="kpi.market.v">Israel first</div><div class="l" data-i18n="kpi.market">Then multi-market OS</div></div>
+    <div class="kpi"><div class="v" data-i18n="kpi.ledger.v">Hash-chained</div><div class="l" data-i18n="kpi.ledger">Ledger integrity</div></div>
+  </div>
+</div>
+
+<div class="cover">
+  <strong data-i18n="cover.company.lbl">Company:</strong> <span data-i18n="cover.company.val">PHINS — Personal Health Insurance &amp; Savings (digital-first severity disability &amp; long-term-care platform)</span><br/>
+  <strong data-i18n="cover.stage.lbl">Stage:</strong> <span data-i18n="cover.stage.val">Developed platform, pre-revenue · Israel launch planned for 1 January 2027</span><br/>
+  <strong data-i18n="cover.doc.lbl">Document:</strong> <span data-i18n="cover.doc.val">General investment deck — platform objectives, Israel launch, and cash flow. Ask, valuation, and deal structures are not restated here.</span>
+</div>
+
+<h2><span class="secno">1.</span><span data-i18n="sec.1.title">Platform objectives</span></h2>
+<p data-i18n="sec.1.lead">
+  PHINS is founder-led by <strong>Asaf Ashury, Adv. &amp; Insurance Broker</strong>. The platform is already live at
+  <strong>www.phins.ai</strong>. The investment case is the funded conversion of a built operating system into a
+  regulated Israel launch — and then a repeatable multi-market deployment.
+</p>
+<div class="obj-grid">
+  <div class="obj-card">
+    <div class="n" data-i18n="obj.1.n">Objective 1</div>
+    <h3 data-i18n="obj.1.h">One insurance operating system</h3>
+    <p data-i18n="obj.1.p">Underwrite, adjudicate, bill, reinsure, and prove every figure on a single AI-enhanced platform with an append-only, hash-chained ledger.</p>
+  </div>
+  <div class="obj-card">
+    <div class="n" data-i18n="obj.2.n">Objective 2</div>
+    <h3 data-i18n="obj.2.h">Israel launch, 1 January 2027</h3>
+    <p data-i18n="obj.2.p">Close the build phase (legal terms, platform, QA, regulatory, funding) and begin sales only after the commercial-launch gate.</p>
+  </div>
+  <div class="obj-card">
+    <div class="n" data-i18n="obj.3.n">Objective 3</div>
+    <h3 data-i18n="obj.3.h">Capital-light digital MGA</h3>
+    <p data-i18n="obj.3.p">Earn a blended 25% take on earned premium. Claims and reserves sit with the risk carrier — PHINS books platform economics, not underwriting risk.</p>
+  </div>
+  <div class="obj-card">
+    <div class="n" data-i18n="obj.4.n">Objective 4</div>
+    <h3 data-i18n="obj.4.h">Replicable multi-market path</h3>
+    <p data-i18n="obj.4.p">Develop once; deploy across Israel first, then the USA, Canada, Europe and further regulated markets on the same integrity contract.</p>
+  </div>
+</div>
+
+<h2><span class="secno">2.</span><span data-i18n="sec.2.title">The need</span></h2>
+<ul data-i18n-list="sec.2.bullets">
+  <li>Severe-disability and long-term-care cover is <strong>under-served and hard to buy</strong>: manual underwriting, fragmented data, and slow claims.</li>
+  <li>Ageing populations increase demand faster than incumbents can serve it.</li>
+  <li>Buyers distrust opaque claims; carriers struggle with fraud and severity validation.</li>
+  <li>Israel has high private LTC interest and a home-care orientation, but no clean digital-first severity product.</li>
+</ul>
+
+<h2><span class="secno">3.</span><span data-i18n="sec.3.title">Solution</span></h2>
+<p data-i18n="sec.3.body">
+  PHINS is an <strong>AI-enhanced insurance platform</strong> for severe disability and LTC. It unifies underwriting,
+  claims, billing, reinsurance, care navigation, and analytics — with a transparent ledger so every balance is reproducible.
+</p>
+<ul data-i18n-list="sec.3.bullets">
+  <li><strong>AI underwriting</strong> — risk scoring from structured and unstructured medical data.</li>
+  <li><strong>Claims intelligence</strong> — fraud / severity validation with multi-year look-back.</li>
+  <li><strong>Objective severity trigger</strong> — permanent 3+ ADL standard keeps the promise reinsurable.</li>
+  <li><strong>Data integrity</strong> — append-only, hash-chained ledger; AI / BI may recommend but never post.</li>
+</ul>
+
+<h2><span class="secno">4.</span><span data-i18n="sec.4.title">Israel launch market</span></h2>
+<table>
+  <thead><tr><th data-i18n="tam.h.layer">Layer</th><th data-i18n="tam.h.def">Definition</th><th class="num" data-i18n="tam.h.pool">Annual premium pool</th></tr></thead>
+  <tbody>
+    <tr><td><strong data-i18n="tam.tam.lbl">TAM</strong></td><td data-i18n="tam.tam.def">~4.5M working-age adults × table premium</td><td class="num"><span class="deck-moneyB" data-ils="20331000000">₪20.3B</span></td></tr>
+    <tr><td><strong data-i18n="tam.sam.lbl">SAM</strong></td><td data-i18n="tam.sam.def">~5% open to a digital severity / LTC top-up</td><td class="num"><span class="deck-moneyM" data-ils="1016550000">₪1.02B</span></td></tr>
+    <tr><td><strong data-i18n="tam.som.lbl">SOM (plan)</strong></td><td id="deck-tam-som-def">Active policies at the selected horizon (run-rate GWP)</td><td class="num" id="deck-tam-som">—</td></tr>
+  </tbody>
+</table>
+<p class="fine" data-i18n="sec.4.note">Israel is the first narrative. The same platform is pre-modelled for later regulated markets — one OS, many books.</p>
+
+<h2><span class="secno">5.</span><span data-i18n="sec.5.title">Business model</span></h2>
+<p data-i18n="sec.5.body">
+  Digital MGA / platform: <strong>25% blended take</strong> on earned GWP. Underwriting reserves and claims sit with the
+  carrier / reinsurer and are <em>not</em> PHINS revenue. Additional lines: SaaS platform fees, data services, and a B2B actuarial vertical.
+</p>
+
+<h2><span class="secno">6.</span><span data-i18n="sec.6.title">Launch assumptions</span></h2>
+<table id="deck-assum-table">
+  <tbody>
+    <tr><td data-i18n="assum.start.lbl">Sales start</td><td data-i18n="assum.start.val">1 Jan 2027 (build phase before)</td></tr>
+    <tr><td data-i18n="assum.horizon.lbl">Forecast shown</td><td id="deck-assum-horizon">—</td></tr>
+    <tr><td data-i18n="assum.avg.lbl">Average annual premium</td><td><span class="deck-money" data-ils="4518">₪4,518</span> (<span class="deck-money" data-ils="376.5">₪376.50</span> / mo)</td></tr>
+    <tr><td data-i18n="assum.take.lbl">PHINS take rate on GWP</td><td>25%</td></tr>
+    <tr><td data-i18n="assum.eoy.lbl">Active policies (EoY)</td><td id="deck-assum-eoy">—</td></tr>
+    <tr><td data-i18n="assum.cac.lbl">Blended CAC</td><td>≈ <span class="deck-money" data-ils="650">₪650</span> / policy</td></tr>
+    <tr><td data-i18n="assum.churn.lbl">Annual churn</td><td>8%</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="secno">7.</span><span data-i18n="sec.7.title">Israel launch — build plan &amp; cash flow</span></h2>
+<p class="fine" style="margin-top:-2px;">
+  <span class="sync-pill" data-i18n="uof.sync.pill">adjustable · synced</span>&nbsp;<span data-i18n="uof.sync.note">
+  Build spend scales with the round size set in the
+  <a href="/pitch-dashboard.html#investor-configurator">Investor Meeting configurator</a>.
+  Categories stay grouped for investors; the total still reconciles exactly to the configured round.</span>
+</p>
+<table id="deck-uof-table">
+  <thead><tr><th data-i18n="uof.h.cat">Use of funds</th><th class="num" id="deck-uof-cur-h">₪</th><th class="num" data-i18n="uof.h.share">Share</th></tr></thead>
+  <tbody></tbody>
+</table>
+<div class="chart-grid">
+  <div class="chart-card">
+    <div class="ct" data-i18n="ct.uof">Build-budget allocation</div>
+    <div class="cs" data-i18n="cs.uof">Four investor-level groups. Amounts scale with the configured round.</div>
+    <div id="deck-chart-uof"></div>
+  </div>
+  <div class="chart-card">
+    <div class="ct" data-i18n="ct.burn">Cash flow — build through launch</div>
+    <div class="cs" data-i18n="cs.burn">Monthly net cash (bars) and cash balance (line). Build burn is offset after 1 Jan 2027 by platform cash flow.</div>
+    <div id="deck-chart-burn"></div>
+  </div>
+</div>
+<div class="callout" id="deck-runway-callout">—</div>
+
+<h3 data-i18n="cf.h3">Annual cash flow (Israel)</h3>
+<p class="fine" data-i18n="cf.note">Yearly roll-up of the same monthly model used on the pitch dashboard. No quarterly grid — investors see the launch year and the scale years only.</p>
+<table id="deck-cf-table">
+  <thead><tr>
+    <th data-i18n="cf.h.year">Year</th>
+    <th class="num" data-i18n="cf.h.pol">Policies (EoY)</th>
+    <th class="num" data-i18n="cf.h.rev">PHINS net revenue</th>
+    <th class="num" data-i18n="cf.h.net">Net cash flow</th>
+    <th class="num" data-i18n="cf.h.cash">Cash (EoY)</th>
+  </tr></thead>
+  <tbody></tbody>
+</table>
+
+<h2><span class="secno">8.</span><span data-i18n="sec.8.title">Israel milestone gates</span></h2>
+<div id="deck-gates"></div>
+<div class="chart-card">
+  <div class="ct" id="deck-gantt-title">Execution timeline</div>
+  <div class="cs" data-i18n="cs.gantt">Gates from funding through commercial launch and the selected forecast horizon.</div>
+  <div id="deck-chart-gantt"></div>
+</div>
+
+<h2><span class="secno">9.</span><span data-i18n="sec.9.title">Israel financial trajectory</span></h2>
+<p class="fine" data-i18n="sec.9.note">Summary view for investors. Every cell is the same canonical Israel book (₪4,518 premium · 25% take · stated in-force). Switch “table detail” in the configurator to add GWP and operating cost.</p>
+<table id="deck-pnl-table">
+  <thead></thead>
+  <tbody></tbody>
+</table>
+<div class="chart-card">
+  <div class="ct" data-i18n="ct.pnl">Net revenue and EBITDA</div>
+  <div class="cs" data-i18n="cs.pnl">EBITDA turns positive in 2028 and compounds with operating leverage.</div>
+  <div id="deck-chart-pnl"></div>
+</div>
+<p id="deck-cum-capital">—</p>
+
+<h2><span class="secno">10.</span><span data-i18n="sec.10.title">Team &amp; governance</span></h2>
+<ul data-i18n-list="sec.10.bullets">
+  <li><strong>Founder / CEO</strong> — Asaf Ashury (product, platform, technology).</li>
+  <li><strong>Chief Actuary</strong> — incoming Appointed Actuary path for Israel pricing and reserves.</li>
+  <li><strong>Active operating partner / Chairman</strong> — open seat for an Israeli insurance-industry operator.</li>
+</ul>
+
+<h2><span class="secno">11.</span><span data-i18n="sec.11.title">Risks &amp; mitigations</span></h2>
+<table>
+  <thead><tr><th data-i18n="risk.h.risk">Risk</th><th data-i18n="risk.h.mit">Mitigation</th></tr></thead>
+  <tbody>
+    <tr><td data-i18n="risk.r1">Regulatory timeline (IL licensing)</td><td data-i18n="risk.m1">Gate 4 checkpoint; Appointed Actuary; capital released against gates.</td></tr>
+    <tr><td data-i18n="risk.r2">Distribution / CAC overrun</td><td data-i18n="risk.m2">Gate 6 unit-economics validation before scale-up spend.</td></tr>
+    <tr><td data-i18n="risk.r3">Claims severity / fraud</td><td data-i18n="risk.m3">Objective 3+ ADL trigger; claims-intelligence engine; reinsurance cession.</td></tr>
+    <tr><td data-i18n="risk.r4">Key-person concentration</td><td data-i18n="risk.m4">Vesting, documentation, ledger-based reproducibility of platform state.</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="secno">12.</span><span data-i18n="sec.12.title">Next steps</span></h2>
+<ol data-i18n-list="sec.12.steps">
+  <li>Review this deck and the live platform at www.phins.ai.</li>
+  <li>Walk the Israel launch gates and cash-flow path in the Investor Meeting configurator.</li>
+  <li>Open the detailed business plan only when deal terms and valuation need to be discussed.</li>
+  <li>Mutual NDA and confirmatory diligence: demo, pricing model, ledger review.</li>
+</ol>
+
+<hr/>
+<p class="fine" id="deck-integrity-note" data-i18n="integrity.note">
+  <strong>Data integrity notice.</strong> All figures are forward-looking planning assumptions in ₪ (ILS), the canonical base;
+  $ / € equivalents convert at a live exchange rate (Alpha Vantage forex, with a labelled static fallback used only when live data is unavailable)
+  and every display currency derives from a single USD snapshot so the numbers stay consistent. They are not commitments or guidance.
+  This document reads the same configuration as the Investor Meeting configurator. The build budget reconciles exactly to the
+  configured round. The income and cash-flow model derives every line from the tested-assumptions table
+  (₪4,518 table-driven premium, 25% take rate, stated in-force counts). PHINS is modelled as a digital MGA / platform
+  earning a take rate on premium, so claims reserves are not booked as PHINS revenue. Ask, pre-money, post-money, investor
+  stake, and MOIC are intentionally omitted from this general deck.
+</p>
+
+<script>
+(function () {
+  "use strict";
+
+  var CFG_STORE_ID = "phins.investor.cfg.v1";
+  var SYM = { ILS: "\u20AA", USD: "$", EUR: "\u20AC" };
+  var cfg = {
+    currency: "ILS", round: 6000000, preMoney: 24000000, position: "combined",
+    coCash: 3000000, founderEq: 6, usdIls: 3.70, usdEur: 0.92,
+    fxSource: "fallback", valBasis: "manual", valProvenance: null,
+    deckHorizon: 5, deckTableDetail: "summary"
+  };
+  try {
+    var saved = JSON.parse(localStorage.getItem(CFG_STORE_ID) || "null");
+    if (saved && typeof saved === "object") {
+      ["currency","round","preMoney","position","coCash","founderEq","usdIls","usdEur","fxSource","valBasis","valProvenance","deckHorizon","deckTableDetail"]
+        .forEach(function (k) { if (saved[k] !== undefined && saved[k] !== null) cfg[k] = saved[k]; });
+    }
+  } catch (e) {}
+  if (cfg.deckHorizon !== 3 && cfg.deckHorizon !== 5) cfg.deckHorizon = 5;
+  if (cfg.deckTableDetail !== "full") cfg.deckTableDetail = "summary";
+
+  var I18N_HE = {
+    "page.title": "פיינס — מצגת השקעה (פלטפורמה · השקה בישראל · תזרים)",
+    "tb.print": "🖨️ הדפסה / שמירה כ-PDF",
+    "tb.back": "→ חזרה לפגישת המשקיעים",
+    "tb.detail": "← תוכנית עסקית מפורטת",
+    "tb.cur": "מטבע תצוגה",
+    "confidential.banner": "סודי — לעיני הנמען בלבד",
+    "badge.confidential": "🔒 סודי",
+    "badge.kind": "מצגת השקעה",
+    "badge.synced": "⚙ מסונכרן עם המחולל",
+    "hero.h1": "פיינס — מצגת השקעה",
+    "hero.tagline":
+      "מסמך השקעה כללי לפלטפורמת פיינס: מערכת ההפעלה לביטוח נכות סיעודית ולטיפול ארוך-טווח, ההשקה בישראל ונתיב התזרים מבנייה להרחבה. תנאי העסקה נשארים במחולל ובתוכנית העסקית המפורטת — מצגת זו נשארת ביעדים ובביצוע.",
+    "kpi.launch": "השקה מסחרית בישראל",
+    "kpi.launch.v": "1 בינו׳ 2027",
+    "kpi.take": "שיעור-לקיחה MGA דיגיטלי",
+    "kpi.y1": "פוליסות שנה 1 (סוף 2027)",
+    "kpi.ebitda": "שנת EBITDA חיובי",
+    "kpi.market": "ואז מערכת רב-שווקית",
+    "kpi.market.v": "ישראל תחילה",
+    "kpi.ledger": "שלמות יומן",
+    "kpi.ledger.v": "משורשר-גיבוב",
+    "cover.company.lbl": "החברה:",
+    "cover.company.val": "פיינס — ביטוח בריאות וחיסכון אישי (פלטפורמת נכות סיעודית וטיפול ארוך-טווח בגישה דיגיטלית)",
+    "cover.stage.lbl": "שלב:",
+    "cover.stage.val": "פלטפורמה מפותחת, טרם הכנסות · השקה בישראל מתוכננת ל-1 בינואר 2027",
+    "cover.doc.lbl": "המסמך:",
+    "cover.doc.val": "מצגת השקעה כללית — יעדי פלטפורמה, השקה בישראל ותזרים. הגיוס, השווי ומבני העסקה אינם מפורטים כאן.",
+    "sec.1.title": "יעדי הפלטפורמה",
+    "sec.1.lead":
+      "פיינס מובלת על-ידי מייסדה <strong>עו״ד אסף אשורי, סוכן ביטוח מורשה</strong>. הפלטפורמה כבר פעילה ב-<strong>www.phins.ai</strong>. תיק ההשקעה הוא המרה ממומנת של מערכת הפעלה בנויה להשקה מפוקחת בישראל — ואז לפריסה רב-שווקית חוזרת.",
+    "obj.1.n": "יעד 1", "obj.1.h": "מערכת הפעלה אחת לביטוח",
+    "obj.1.p": "חיתום, בירור תביעות, גבייה, ביטוח-משנה ואימות כל ספרה על פלטפורמה אחת מבוססת בינה מלאכותית, עם יומן בלתי-משתנה משורשר-גיבוב.",
+    "obj.2.n": "יעד 2", "obj.2.h": "השקה בישראל, 1 בינואר 2027",
+    "obj.2.p": "סגירת שלב הבנייה (תנאים משפטיים, פלטפורמה, QA, רגולציה, מימון) ותחילת מכירות רק לאחר שער ההשקה המסחרית.",
+    "obj.3.n": "יעד 3", "obj.3.h": "MGA דיגיטלי קל-הון",
+    "obj.3.p": "הפקת שיעור-לקיחה משוקלל של 25% על פרמיה מורווחת. תביעות ועתודות יושבות אצל חברת הביטוח — פיינס רושמת כלכלת פלטפורמה, לא סיכון חיתום.",
+    "obj.4.n": "יעד 4", "obj.4.h": "נתיב רב-שווקי בר-שכפול",
+    "obj.4.p": "פיתוח פעם אחת; פריסה בישראל תחילה, ואחר כך בארה״ב, קנדה, אירופה ושווקים מפוקחים נוספים על אותו חוזה שלמות.",
+    "sec.2.title": "הצורך",
+    "sec.2.bullets": [
+      "כיסויי נכות סיעודית וטיפול ארוך-טווח הם <strong>תת-מטופלים וקשים לרכישה</strong>: חיתום ידני, נתונים מפוצלים ותביעות איטיות.",
+      "הזדקנות האוכלוסייה מגדילה ביקוש מהר יותר מקצב השירות של החברות הקיימות.",
+      "הציבור אינו סומך על החלטות תביעות אטומות; החברות מתקשות באימות הונאה וחומרה.",
+      "בישראל קיים עניין גבוה ב-LTC פרטי ונטיה לטיפול ביתי, אך אין מוצר נכות חמורה דיגיטלי-תחילה."
+    ],
+    "sec.3.title": "הפתרון",
+    "sec.3.body":
+      "פיינס היא <strong>פלטפורמת ביטוח מבוססת בינה מלאכותית</strong> לנכות חמורה ול-LTC. היא מאחדת חיתום, תביעות, גבייה, ביטוח-משנה, ניווט טיפולי ואנליטיקה — על יומן שקוף כך שכל יתרה ניתנת לשחזור.",
+    "sec.3.bullets": [
+      "<strong>חיתום מבוסס בינה מלאכותית</strong> — דירוג סיכון מנתונים רפואיים מובנים ובלתי מובנים.",
+      "<strong>אינטליגנציית תביעות</strong> — אימות הונאה / חומרה עם הסתכלות אחורה רב-שנתית.",
+      "<strong>סף חומרה אובייקטיבי</strong> — תקן 3+ ADL קבוע משמר התחייבות בת-ביטוח-משנה.",
+      "<strong>שלמות נתונים</strong> — יומן בלתי-משתנה משורשר-גיבוב; AI / BI ממליצים בלבד, אינם רושמים."
+    ],
+    "sec.4.title": "שוק ההשקה בישראל",
+    "tam.h.layer": "שכבה", "tam.h.def": "הגדרה", "tam.h.pool": "מאגר פרמיה שנתי",
+    "tam.tam.lbl": "TAM", "tam.tam.def": "כ-4.5 מ׳ בני-גיל-עבודה × פרמיית הטבלה",
+    "tam.sam.lbl": "SAM", "tam.sam.def": "~5% פתוחים לכיסוי דיגיטלי משלים לנכות חמורה / LTC",
+    "tam.som.lbl": "SOM (תוכנית)",
+    "sec.4.note": "ישראל היא הסיפור הראשון. אותה פלטפורמה ממודלת מראש לשווקים מפוקחים נוספים — מערכת אחת, ספרים רבים.",
+    "sec.5.title": "מודל עסקי",
+    "sec.5.body":
+      "MGA / פלטפורמה דיגיטלית: <strong>שיעור-לקיחה משוקלל 25%</strong> על GWP מורווח. עתודות ותביעות יושבות אצל חברת הביטוח / מבטח-המשנה ואינן הכנסות פיינס. ערוצים נוספים: דמי SaaS, שירותי נתונים, וערוץ B2B לאקטוארים.",
+    "sec.6.title": "הנחות השקה",
+    "assum.start.lbl": "תחילת מכירות", "assum.start.val": "1 בינואר 2027 (שלב בנייה לפניו)",
+    "assum.horizon.lbl": "תחזית מוצגת",
+    "assum.avg.lbl": "פרמיה שנתית ממוצעת",
+    "assum.take.lbl": "שיעור-לקיחה של פיינס על GWP",
+    "assum.eoy.lbl": "פוליסות פעילות (סוף שנה)",
+    "assum.cac.lbl": "CAC משוקלל",
+    "assum.churn.lbl": "נטישה שנתית",
+    "sec.7.title": "השקה בישראל — תוכנית בנייה ותזרים",
+    "uof.sync.pill": "ניתן להתאמה · מסונכרן",
+    "uof.sync.note":
+      "הוצאות הבנייה מתעדכנות עם גודל הסבב ב-<a href=\"/pitch-dashboard.html#investor-configurator\">מחולל פגישת המשקיעים</a>. הקטגוריות מקובצות למשקיעים; הסך מסתנכרן בדיוק עם הסבב המוגדר.",
+    "uof.h.cat": "שימוש בכספים", "uof.h.share": "חלק",
+    "ct.uof": "הקצאת תקציב הבנייה",
+    "cs.uof": "ארבעה מקבצים ברמת משקיע. הסכומים מתעדכנים עם הסבב המוגדר.",
+    "ct.burn": "תזרים — בנייה עד השקה",
+    "cs.burn": "תזרים נטו חודשי (עמודות) ויתרת מזומן (קו). שריפת הבנייה מתקזזת אחרי 1 בינו׳ 2027 בתזרים פלטפורמה.",
+    "cf.h3": "תזרים שנתי (ישראל)",
+    "cf.note": "ריכוז שנתי של אותו מודל חודשי שבלוח המגרש. אין רשת רבעונית — המשקיע רואה את שנת ההשקה ואת שנות ההרחבה בלבד.",
+    "cf.h.year": "שנה", "cf.h.pol": "פוליסות (סוף שנה)", "cf.h.rev": "הכנסות נטו פיינס",
+    "cf.h.net": "תזרים נטו", "cf.h.cash": "מזומן (סוף שנה)",
+    "sec.8.title": "שערי ביצוע בישראל",
+    "cs.gantt": "שערים מסגירת מימון עד ההשקה המסחרית ואופק התחזית שנבחר.",
+    "sec.9.title": "מסלול פיננסי בישראל",
+    "sec.9.note": "תצוגת סיכום למשקיעים. כל תא הוא אותו ספר ישראלי קנוני (פרמיה ₪4,518 · לקיחה 25% · תיק פעיל מוצהר). במחולל אפשר להוסיף GWP ועלות תפעול.",
+    "ct.pnl": "הכנסות נטו ו-EBITDA",
+    "cs.pnl": "ה-EBITDA הופך חיובי ב-2028 וצובר תאוצה הודות למינוף תפעולי.",
+    "sec.10.title": "צוות וממשל תאגידי",
+    "sec.10.bullets": [
+      "<strong>מייסד / מנכ״ל</strong> — אסף אשורי (מוצר, פלטפורמה, טכנולוגיה).",
+      "<strong>אקטואר ראשי</strong> — נתיב אקטואר ממונה לתמחור ועתודות בישראל.",
+      "<strong>שותף תפעולי פעיל / יו״ר</strong> — מושב פתוח למפעיל מהתעשייה הישראלית."
+    ],
+    "sec.11.title": "סיכונים והפחתות",
+    "risk.h.risk": "סיכון", "risk.h.mit": "הפחתה",
+    "risk.r1": "לוח-זמנים רגולטורי (רישוי בישראל)",
+    "risk.m1": "נקודת-ביקורת בשער 4; אקטואר ממונה; הון משוחרר כנגד שערים.",
+    "risk.r2": "חריגה בהפצה / CAC",
+    "risk.m2": "אימות יחידות-כלכלה בשער 6 לפני הוצאת כסף להגדלת היקף.",
+    "risk.r3": "חומרת תביעות / הונאה",
+    "risk.m3": "סף 3+ ADL אובייקטיבי; מנוע אינטליגנציית תביעות; הסבת ביטוח-משנה.",
+    "risk.r4": "ריכוז סביב אנשי-מפתח",
+    "risk.m4": "הבשלה, תיעוד ושחזור מצב פלטפורמה מבוסס יומן.",
+    "sec.12.title": "השלבים הבאים",
+    "sec.12.steps": [
+      "סקירת מצגת זו והפלטפורמה החיה ב-www.phins.ai.",
+      "מעבר על שערי ההשקה בישראל ועל נתיב התזרים במחולל פגישת המשקיעים.",
+      "פתיחת התוכנית העסקית המפורטת רק כאשר נדרש דיון בתנאי עסקה ושווי.",
+      "NDA הדדי ובדיקת נאותות מאשרת: הדגמה, מודל תמחור, סקירת יומן."
+    ],
+    "integrity.note":
+      "<strong>הצהרת שלמות נתונים.</strong> כל הנתונים הם הנחות תכנון צופות-פני-עתיד ב-₪ (שקל), המהווה את הבסיס הקנוני; הערכים ב-$ / € מתקבלים בשער חליפין חי (Alpha Vantage forex, עם ערך-מילוט סטטי מתויג בשימוש רק כאשר נתונים חיים אינם זמינים) וכל מטבע תצוגה נגזר ממצב USD יחיד, כך שהמספרים נשמרים עקביים. אלה אינם התחייבויות או הנחיה. מסמך זה קורא את אותה תצורה כמו מחולל פגישת המשקיעים. תקציב הבנייה מסתנכרן בדיוק עם הסבב המוגדר. מודל ההכנסות והתזרים נגזר מטבלת ההנחות (פרמיה ₪4,518, שיעור-לקיחה 25%, מספרי תיק פעיל מוצהרים). פיינס מודלת כ-MGA / פלטפורמה דיגיטלית המפיקה שיעור-לקיחה על פרמיה, ולכן עתודות תביעות אינן נרשמות כהכנסות פיינס. הגיוס, שווי לפני/אחרי הכסף, אחזקת המשקיע ו-MOIC הושמטו במכוון ממצגת כללית זו."
+  };
+
+  function isHe() { return cfg.currency === "ILS"; }
+  function tr(en, key) {
+    if (isHe() && key && I18N_HE[key] !== undefined) return I18N_HE[key];
+    return en;
+  }
+
+  var ORIG_TEXT = null;
+  var _nodeSeq = 0;
+  function nodeKey(el) {
+    if (!el.__deckKey) { el.__deckKey = "n" + (++_nodeSeq); }
+    return el.__deckKey;
+  }
+  function snapshotOriginals() {
+    if (ORIG_TEXT) return;
+    ORIG_TEXT = {};
+    document.querySelectorAll("[data-i18n]").forEach(function (el) {
+      ORIG_TEXT[el.getAttribute("data-i18n") + "::" + nodeKey(el)] = el.innerHTML;
+    });
+    document.querySelectorAll("[data-i18n-list]").forEach(function (el) {
+      ORIG_TEXT["__list__::" + el.getAttribute("data-i18n-list")] = el.innerHTML;
+    });
+  }
+  function applyStaticI18n() {
+    snapshotOriginals();
+    var he = isHe();
+    document.documentElement.lang = he ? "he" : "en";
+    document.documentElement.dir = he ? "rtl" : "ltr";
+    document.querySelectorAll("[data-i18n]").forEach(function (el) {
+      var key = el.getAttribute("data-i18n");
+      var orig = ORIG_TEXT[key + "::" + nodeKey(el)];
+      if (he && I18N_HE[key] !== undefined) el.innerHTML = I18N_HE[key];
+      else if (orig !== undefined) el.innerHTML = orig;
+    });
+    document.querySelectorAll("[data-i18n-list]").forEach(function (el) {
+      var key = el.getAttribute("data-i18n-list");
+      if (he && Array.isArray(I18N_HE[key])) {
+        el.innerHTML = I18N_HE[key].map(function (s) { return "<li>" + s + "</li>"; }).join("");
+      } else {
+        var orig = ORIG_TEXT["__list__::" + key];
+        if (orig !== undefined) el.innerHTML = orig;
+      }
+    });
+    document.title = he ? I18N_HE["page.title"] : "PHINS — Investment Deck (Platform · Israel Launch · Cash Flow)";
+  }
+
+  var PLAN = {
+    premium: 4518, monthlyPremium: 376.50, takeRate: 0.25,
+    years: [2027, 2028, 2029, 2030, 2031],
+    eoyPolicies: [24000, 94080, 230554, 356110, 471621],
+    avgInForce: [12000, 59040, 162317, 293332, 413866],
+    opex: [32400000, 66420000, 116868240, 169637783, 202927845],
+    launch: new Date(2027, 0, 1)
+  };
+  var LAST_YI = PLAN.years.length - 1;
+  var FINAL_YEAR = PLAN.years[LAST_YI];
+
+  // Investor-level groups of the same ₪6.0M canonical shares used on the
+  // detailed business plan. Contingency absorbs rounding so the table
+  // always reconciles exactly to the configured round.
+  var UOF_GROUPS = [
+    { en: "Technology (platform + cloud / AI)", he: "טכנולוגיה (פלטפורמה + ענן / בינה מלאכותית)", share: 0.403333 },
+    { en: "Regulatory & product (legal + actuarial)", he: "רגולציה ומוצר (משפט + אקטואריה)", share: 0.233334 },
+    { en: "Launch readiness (QA + marketing)", he: "מוכנות להשקה (QA + שיווק)", share: 0.180000 },
+    { en: "Operations (G&A)", he: "תפעול (הנהלה כללית)", share: 0.066667 }
+  ];
+  var UOF_CONTINGENCY = { en: "Contingency", he: "רזרבת בלת״ם" };
+  var UOF_COLORS = ["#1d4ed8", "#0f766e", "#b45309", "#475569", "#94a3b8"];
+
+  function yearCount() { return cfg.deckHorizon === 3 ? 3 : 5; }
+  function shownYears() { return PLAN.years.slice(0, yearCount()); }
+  function lastShownYi() { return yearCount() - 1; }
+
+  function HORIZON() {
+    var s = planStartDate();
+    var endYear = shownYears()[shownYears().length - 1];
+    var m = (endYear - s.getFullYear()) * 12 + (11 - s.getMonth()) + 1;
+    return Math.max(m, 1);
+  }
+
+  function $(id) { return document.getElementById(id); }
+  function num(v, d) { var n = parseFloat(v); return isFinite(n) ? n : (d || 0); }
+  function rateFromILS(cur) {
+    if (cur === "USD") return 1 / cfg.usdIls;
+    if (cur === "EUR") return cfg.usdEur / cfg.usdIls;
+    return 1;
+  }
+  function fmtMoney(ils, cur) {
+    cur = cur || cfg.currency;
+    var v = ils * rateFromILS(cur), neg = v < 0;
+    var s = SYM[cur] + Math.round(Math.abs(v)).toLocaleString("en-US");
+    return neg ? "(" + s + ")" : s;
+  }
+  function fmtShort(ils, cur) {
+    cur = cur || cfg.currency;
+    var v = ils * rateFromILS(cur), neg = v < 0, abs = Math.abs(v), out;
+    if (abs >= 1e9) out = (abs / 1e9).toLocaleString("en-US", { maximumFractionDigits: 2 }) + "B";
+    else if (abs >= 1e6) out = (abs / 1e6).toLocaleString("en-US", { maximumFractionDigits: 1 }) + "M";
+    else if (abs >= 1e3) out = (abs / 1e3).toLocaleString("en-US", { maximumFractionDigits: 0 }) + "K";
+    else out = Math.round(abs).toString();
+    return (neg ? "(" : "") + SYM[cur] + out + (neg ? ")" : "");
+  }
+  function pct(frac, digits) {
+    return (frac * 100).toLocaleString("en-US", { maximumFractionDigits: digits === undefined ? 1 : digits }) + "%";
+  }
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+  function monthLabel(d) {
+    if (isHe()) {
+      var HE_MONTHS = ["ינו׳","פבר׳","מרץ","אפר׳","מאי","יוני","יולי","אוג׳","ספט׳","אוק׳","נוב׳","דצמ׳"];
+      return HE_MONTHS[d.getMonth()] + " " + String(d.getFullYear()).slice(2);
+    }
+    return d.toLocaleString("en-US", { month: "short" }) + " " + String(d.getFullYear()).slice(2);
+  }
+
+  function planStartDate() {
+    var d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d;
+  }
+  function policiesAt(d) {
+    if (d < PLAN.launch) return 0;
+    var y = d.getFullYear(), mi = d.getMonth();
+    var yi = y - 2027;
+    if (yi > LAST_YI) return PLAN.eoyPolicies[LAST_YI];
+    var start = yi <= 0 ? 0 : PLAN.eoyPolicies[yi - 1];
+    var end = PLAN.eoyPolicies[Math.min(yi, LAST_YI)];
+    return start + (end - start) * ((mi + 1) / 12);
+  }
+  function monthlyModel() {
+    var start = planStartDate();
+    var buildMonths = 0, probe = new Date(start);
+    while (probe < PLAN.launch && buildMonths < 60) { buildMonths++; probe.setMonth(probe.getMonth() + 1); }
+    if (buildMonths === 0) buildMonths = 1;
+    var months = [], cash = cfg.round, minCash = cash, minIdx = -1;
+    var horizon = HORIZON();
+    for (var i = 0; i < horizon; i++) {
+      var d = new Date(start.getFullYear(), start.getMonth() + i, 1);
+      var buildSpend = 0, opex = 0, gwp = 0, netRev = 0, pol = 0;
+      if (i < buildMonths) buildSpend = cfg.round / buildMonths;
+      if (d >= PLAN.launch) {
+        var yi = Math.min(Math.max(d.getFullYear() - 2027, 0), LAST_YI);
+        var startPol = policiesAt(new Date(d.getFullYear(), d.getMonth(), 0));
+        pol = policiesAt(d);
+        var avgPol = (startPol + pol) / 2;
+        gwp = avgPol * PLAN.monthlyPremium;
+        netRev = gwp * PLAN.takeRate;
+        opex = PLAN.opex[yi] / 12;
+      }
+      var net = netRev - opex - buildSpend;
+      cash += net;
+      if (cash < minCash) { minCash = cash; minIdx = i; }
+      months.push({ d: d, buildSpend: buildSpend, opex: opex, gwp: gwp, netRev: netRev, net: net, cash: cash, policies: pol });
+    }
+    return { months: months, buildMonths: buildMonths, minCash: minCash, minIdx: minIdx,
+             seriesANeed: Math.max(0, -minCash), start: start };
+  }
+  function annualCash(mm) {
+    var map = {}, list = [];
+    mm.months.forEach(function (m) {
+      var y = m.d.getFullYear();
+      if (!map[y]) {
+        map[y] = { year: y, gwp: 0, netRev: 0, spend: 0, net: 0, cash: 0, pol: 0 };
+        list.push(map[y]);
+      }
+      map[y].gwp += m.gwp;
+      map[y].netRev += m.netRev;
+      map[y].spend += m.opex + m.buildSpend;
+      map[y].net += m.net;
+      map[y].cash = m.cash;
+      map[y].pol = m.policies;
+    });
+    var lastYear = shownYears()[shownYears().length - 1];
+    return list.filter(function (r) { return r.year <= lastYear; });
+  }
+
+  function svgOpen(w, h) { return '<svg viewBox="0 0 ' + w + ' ' + h + '" xmlns="http://www.w3.org/2000/svg" role="img">'; }
+  function txt(x, y, s, size, fill, anchor, weight) {
+    return '<text x="' + x + '" y="' + y + '" font-size="' + (size || 10) + '" fill="' + (fill || "#334155") +
+           '" text-anchor="' + (anchor || "start") + '"' + (weight ? ' font-weight="' + weight + '"' : '') +
+           ' font-family="-apple-system,Segoe UI,Roboto,sans-serif">' + esc(s) + '</text>';
+  }
+
+  function donutChart(items, total) {
+    var W = 560, H = 210, cx = 115, cy = 105, r = 78, ir = 48;
+    var out = svgOpen(W, H);
+    var a0 = -Math.PI / 2;
+    items.forEach(function (it, i) {
+      var frac = total > 0 ? it.value / total : 0;
+      var a1 = a0 + frac * Math.PI * 2;
+      var large = (a1 - a0) > Math.PI ? 1 : 0;
+      var x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
+      var x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+      var xi1 = cx + ir * Math.cos(a1), yi1 = cy + ir * Math.sin(a1);
+      var xi0 = cx + ir * Math.cos(a0), yi0 = cy + ir * Math.sin(a0);
+      out += '<path d="M' + x0 + ' ' + y0 + ' A' + r + ' ' + r + ' 0 ' + large + ' 1 ' + x1 + ' ' + y1 +
+             ' L' + xi1 + ' ' + yi1 + ' A' + ir + ' ' + ir + ' 0 ' + large + ' 0 ' + xi0 + ' ' + yi0 +
+             ' Z" fill="' + UOF_COLORS[i % UOF_COLORS.length] + '" stroke="#fff" stroke-width="1.5"/>';
+      a0 = a1;
+    });
+    out += txt(cx, cy - 4, fmtShort(total), 15, "#0b2545", "middle", 800);
+    out += txt(cx, cy + 14, tr("build budget", "chart.build.budget"), 8.5, "#5a6b86", "middle");
+    var ly = 28;
+    items.forEach(function (it, i) {
+      out += '<rect x="232" y="' + (ly - 9) + '" width="10" height="10" rx="2" fill="' + UOF_COLORS[i % UOF_COLORS.length] + '"/>';
+      out += txt(248, ly, it.name, 8.6, "#334155");
+      out += txt(W - 6, ly, fmtShort(it.value) + " · " + pct(total > 0 ? it.value / total : 0), 8.6, "#0b2545", "end", 700);
+      ly += 32;
+    });
+    return out + "</svg>";
+  }
+
+  function burnChart(mm) {
+    var W = 560, H = 250, padL = 52, padR = 50, padT = 16, padB = 34;
+    var months = mm.months;
+    var maxBar = 0, minBar = 0, maxCash = 0, minCashV = 0;
+    months.forEach(function (m) {
+      maxBar = Math.max(maxBar, m.net); minBar = Math.min(minBar, m.net);
+      maxCash = Math.max(maxCash, m.cash); minCashV = Math.min(minCashV, m.cash);
+    });
+    maxCash = Math.max(maxCash, cfg.round);
+    var barSpan = Math.max(maxBar - minBar, 1), cashSpan = Math.max(maxCash - minCashV, 1);
+    var iw = (W - padL - padR) / months.length;
+    function yBar(v) { return padT + (maxBar - v) / barSpan * (H - padT - padB); }
+    function yCash(v) { return padT + (maxCash - v) / cashSpan * (H - padT - padB); }
+    var out = svgOpen(W, H);
+    out += '<line x1="' + padL + '" y1="' + yBar(0) + '" x2="' + (W - padR) + '" y2="' + yBar(0) + '" stroke="#cbd5e1" stroke-width="1"/>';
+    months.forEach(function (m, i) {
+      var x = padL + i * iw + 1;
+      var h = Math.abs(yBar(m.net) - yBar(0));
+      var y = m.net >= 0 ? yBar(m.net) : yBar(0);
+      var color = m.d < PLAN.launch ? "#b45309" : (m.net >= 0 ? "#15803d" : "#dc2626");
+      out += '<rect x="' + x + '" y="' + y + '" width="' + Math.max(iw - 2, 1.4) + '" height="' + Math.max(h, 0.5) + '" fill="' + color + '" opacity="0.82"/>';
+    });
+    var pts = months.map(function (m, i) {
+      return (padL + i * iw + iw / 2).toFixed(1) + "," + yCash(m.cash).toFixed(1);
+    }).join(" ");
+    out += '<polyline points="' + pts + '" fill="none" stroke="#1d4ed8" stroke-width="2.4"/>';
+    if (mm.minIdx >= 0) {
+      var mx = padL + mm.minIdx * iw + iw / 2, my = yCash(mm.minCash);
+      out += '<circle cx="' + mx + '" cy="' + my + '" r="3.6" fill="#1d4ed8"/>';
+      out += txt(Math.min(mx + 6, W - padR - 4), my - 6, tr("min cash ", "chart.min.cash") + fmtShort(mm.minCash), 8.2, "#1d4ed8", mx > W - 150 ? "end" : "start", 700);
+    }
+    for (var i = 0; i < months.length; i++) {
+      if (months[i].d.getTime() === PLAN.launch.getTime()) {
+        var lx = padL + i * iw;
+        out += '<line x1="' + lx + '" y1="' + padT + '" x2="' + lx + '" y2="' + (H - padB) + '" stroke="#0f766e" stroke-width="1.2" stroke-dasharray="5 3"/>';
+        out += txt(lx + 4, padT + 9, tr("launch 1 Jan 27", "chart.launch.lbl"), 8, "#0f766e", "start", 700);
+        break;
+      }
+    }
+    var lblStep = months.length > 36 ? 12 : 6;
+    months.forEach(function (m, i) {
+      if (i % lblStep === 0) out += txt(padL + i * iw + iw / 2, H - padB + 13, monthLabel(m.d), 7.6, "#64748b", "middle");
+    });
+    out += txt(4, padT + 8, fmtShort(maxBar), 7.6, "#64748b");
+    out += txt(4, yBar(0) + 3, "0", 7.6, "#64748b");
+    out += txt(W - 2, padT + 8, fmtShort(maxCash), 7.6, "#1d4ed8", "end");
+    out += '<rect x="' + padL + '" y="' + (H - 12) + '" width="9" height="9" fill="#b45309"/>' + txt(padL + 13, H - 4, tr("build burn", "leg.build.burn"), 7.8, "#475569");
+    out += '<rect x="' + (padL + 78) + '" y="' + (H - 12) + '" width="9" height="9" fill="#15803d"/>' + txt(padL + 91, H - 4, tr("positive CF", "leg.pos.cf"), 7.8, "#475569");
+    out += '<line x1="' + (padL + 178) + '" y1="' + (H - 7) + '" x2="' + (padL + 200) + '" y2="' + (H - 7) + '" stroke="#1d4ed8" stroke-width="2.4"/>' + txt(padL + 204, H - 4, tr("cash balance", "leg.cash.balance"), 7.8, "#475569");
+    return out + "</svg>";
+  }
+
+  I18N_HE["chart.build.budget"] = "תקציב בנייה";
+  I18N_HE["chart.min.cash"] = "מינ׳ מזומן ";
+  I18N_HE["chart.launch.lbl"] = "השקה 1 בינו׳ 27";
+  I18N_HE["leg.build.burn"] = "שריפת בנייה";
+  I18N_HE["leg.pos.cf"] = "תזרים חיובי";
+  I18N_HE["leg.cash.balance"] = "יתרת מזומן";
+  I18N_HE["ser.phins"] = "הכנסות נטו פיינס";
+  I18N_HE["ser.ebitda"] = "EBITDA";
+  I18N_HE["tbl.total"] = "סה״כ";
+  I18N_HE["pnl.policies"] = "פוליסות פעילות (סוף שנה)";
+  I18N_HE["pnl.gwp"] = "GWP (מורווח)";
+  I18N_HE["pnl.net"] = "הכנסות נטו לפיינס (25%)";
+  I18N_HE["pnl.opex"] = "עלות תפעולית";
+  I18N_HE["pnl.ebitda"] = "EBITDA";
+  I18N_HE["pnl.margin"] = "שיעור EBITDA";
+
+  function ganttChart(mm) {
+    var start = mm.start;
+    var horizon = HORIZON();
+    function mIdx(date) {
+      return (date.getFullYear() - start.getFullYear()) * 12 + (date.getMonth() - start.getMonth());
+    }
+    function clip(v) { return Math.max(0, Math.min(horizon, v)); }
+    var rows = [
+      { n: tr("Funding, team & legal terms", "gantt.r1"), s: new Date(2026, 5, 1), e: new Date(2026, 8, 30), c: "#1d4ed8" },
+      { n: tr("Platform, pricing & QA", "gantt.r2"), s: new Date(2026, 5, 1), e: new Date(2026, 11, 31), c: "#0ea5e9" },
+      { n: tr("Regulatory & distribution", "gantt.r3"), s: new Date(2026, 8, 1), e: new Date(2026, 11, 31), c: "#0f766e" },
+      { n: tr("Commercial launch", "gantt.r4"), s: PLAN.launch, e: PLAN.launch, c: "#15803d", milestone: true },
+      { n: tr("Unit-economics validation", "gantt.r5"), s: new Date(2027, 0, 1), e: new Date(2027, 5, 30), c: "#b45309" },
+      { n: tr("Scale in Israel", "gantt.r6"), s: new Date(2027, 6, 1), e: new Date(shownYears()[shownYears().length - 1], 11, 31), c: "#13315c" }
+    ];
+    var W = 560, rowH = 26, padL = 200, padT = 26, padB = 20;
+    var H = padT + rows.length * rowH + padB;
+    var span = W - padL - 8, mw = span / horizon;
+    var out = svgOpen(W, H);
+    var gLblStep = horizon > 36 ? 12 : 6;
+    for (var i = 0; i <= horizon; i += 6) {
+      var gx = padL + i * mw;
+      out += '<line x1="' + gx + '" y1="' + (padT - 8) + '" x2="' + gx + '" y2="' + (H - padB + 4) + '" stroke="#e2e8f0" stroke-width="1"/>';
+      if (i < horizon && i % gLblStep === 0) {
+        var d = new Date(start.getFullYear(), start.getMonth() + i, 1);
+        out += txt(gx + 2, padT - 12, monthLabel(d), 7.4, "#64748b");
+      }
+    }
+    var li = mIdx(PLAN.launch);
+    if (li >= 0 && li <= horizon) {
+      var lx = padL + li * mw;
+      out += '<line x1="' + lx + '" y1="' + (padT - 8) + '" x2="' + lx + '" y2="' + (H - padB + 4) + '" stroke="#15803d" stroke-width="1.4" stroke-dasharray="5 3"/>';
+    }
+    rows.forEach(function (r, i) {
+      var y = padT + i * rowH;
+      out += txt(2, y + 14, r.n, 8.2, "#334155");
+      var s = clip(mIdx(r.s)), e = clip(mIdx(r.e) + 1);
+      if (e <= s && !r.milestone) return;
+      if (r.milestone) {
+        var mx = padL + clip(mIdx(r.s)) * mw + mw / 2, my = y + 10;
+        out += '<path d="M' + mx + ' ' + (my - 7) + ' L' + (mx + 7) + ' ' + my + ' L' + mx + ' ' + (my + 7) + ' L' + (mx - 7) + ' ' + my + ' Z" fill="' + r.c + '"/>';
+      } else {
+        out += '<rect x="' + (padL + s * mw) + '" y="' + (y + 4) + '" width="' + Math.max((e - s) * mw - 1.5, 2) + '" height="14" rx="4" fill="' + r.c + '" opacity="0.88"/>';
+      }
+    });
+    return out + "</svg>";
+  }
+  I18N_HE["gantt.r1"] = "מימון, צוות ותנאים משפטיים";
+  I18N_HE["gantt.r2"] = "פלטפורמה, תמחור ו-QA";
+  I18N_HE["gantt.r3"] = "רגולציה והפצה";
+  I18N_HE["gantt.r4"] = "השקה מסחרית";
+  I18N_HE["gantt.r5"] = "אימות כלכלת יחידה";
+  I18N_HE["gantt.r6"] = "הרחבה בישראל";
+
+  function groupBarChart(years, series) {
+    var W = 560, H = 220, padL = 56, padR = 10, padT = 14, padB = 40;
+    var all = [];
+    series.forEach(function (s) { all = all.concat(s.values); });
+    var maxV = Math.max.apply(null, all.concat([1]));
+    var minV = Math.min.apply(null, all.concat([0]));
+    var span = Math.max(maxV - minV, 1);
+    function y(v) { return padT + (maxV - v) / span * (H - padT - padB); }
+    var gw = (W - padL - padR) / years.length;
+    var bw = Math.min((gw - 18) / series.length, 40);
+    var out = svgOpen(W, H);
+    [0, 0.5, 1].forEach(function (f) {
+      var v = minV + span * f;
+      out += '<line x1="' + padL + '" y1="' + y(v) + '" x2="' + (W - padR) + '" y2="' + y(v) + '" stroke="#eef2f7"/>';
+      out += txt(padL - 4, y(v) + 3, fmtShort(v), 7.4, "#64748b", "end");
+    });
+    out += '<line x1="' + padL + '" y1="' + y(0) + '" x2="' + (W - padR) + '" y2="' + y(0) + '" stroke="#cbd5e1"/>';
+    years.forEach(function (yr, gi) {
+      var gx = padL + gi * gw + (gw - bw * series.length) / 2;
+      series.forEach(function (s, si) {
+        var v = s.values[gi];
+        var by = v >= 0 ? y(v) : y(0);
+        var bh = Math.abs(y(v) - y(0));
+        out += '<rect x="' + (gx + si * bw + 1) + '" y="' + by + '" width="' + (bw - 2) + '" height="' + Math.max(bh, 0.6) + '" rx="2.5" fill="' + s.color + '" opacity="0.9"/>';
+      });
+      out += txt(padL + gi * gw + gw / 2, H - padB + 14, String(yr), 9, "#0b2545", "middle", 700);
+    });
+    var lx = padL;
+    series.forEach(function (s) {
+      out += '<rect x="' + lx + '" y="' + (H - 13) + '" width="9" height="9" rx="2" fill="' + s.color + '"/>';
+      out += txt(lx + 13, H - 5, s.name, 7.8, "#475569");
+      lx += 13 + s.name.length * 4.6 + 16;
+    });
+    return out + "</svg>";
+  }
+
+  function renderUseOfFunds() {
+    var total = cfg.round;
+    var rows = UOF_GROUPS.map(function (u) {
+      return { name: isHe() ? u.he : u.en, value: Math.round(total * u.share) };
+    });
+    var allocated = rows.reduce(function (a, r) { return a + r.value; }, 0);
+    rows.push({ name: isHe() ? UOF_CONTINGENCY.he : UOF_CONTINGENCY.en, value: Math.max(0, Math.round(total - allocated)) });
+    var tbody = $("deck-uof-table").querySelector("tbody");
+    var html = "";
+    rows.forEach(function (r) {
+      html += "<tr><td>" + esc(r.name) + '</td><td class="num">' + fmtMoney(r.value) +
+              '</td><td class="num">' + pct(total > 0 ? r.value / total : 0) + "</td></tr>";
+    });
+    html += '<tr class="hi"><td>' + tr("Total build budget", "tbl.total") + '</td><td class="num">' + fmtMoney(total) +
+            '</td><td class="num">100%</td></tr>';
+    tbody.innerHTML = html;
+    $("deck-uof-cur-h").textContent = SYM[cfg.currency];
+    $("deck-chart-uof").innerHTML = donutChart(rows, total);
+  }
+
+  function renderAnnualCash(mm) {
+    var rows = annualCash(mm);
+    var html = "";
+    rows.forEach(function (r) {
+      var neg = r.cash < 0;
+      html += "<tr><td>" + r.year + '</td><td class="num">' + Math.round(r.pol).toLocaleString("en-US") +
+        '</td><td class="num">' + fmtMoney(r.netRev) +
+        '</td><td class="num">' + fmtMoney(r.net) +
+        '</td><td class="num"' + (neg ? ' style="color:#b91c1c;font-weight:700;"' : "") + ">" + fmtMoney(r.cash) + "</td></tr>";
+    });
+    $("deck-cf-table").querySelector("tbody").innerHTML = html;
+  }
+
+  function renderPnl() {
+    var years = shownYears();
+    var n = years.length;
+    var thead = "<tr><th>" + tr("Line item", "pnl.h.line") + "</th>" +
+      years.map(function (y) { return '<th class="num">' + y + "</th>"; }).join("") + "</tr>";
+    $("deck-pnl-table").querySelector("thead").innerHTML = thead;
+    I18N_HE["pnl.h.line"] = "סעיף";
+
+    function cells(vals, strong, money) {
+      return vals.map(function (v) {
+        var s = money ? fmtMoney(v) : (typeof v === "number" ? v.toLocaleString("en-US") : v);
+        return '<td class="num">' + (strong ? "<strong>" + s + "</strong>" : s) + "</td>";
+      }).join("");
+    }
+    var rows = [];
+    rows.push("<tr><td>" + tr("Active policies (EoY)", "pnl.policies") + "</td>" +
+      cells(PLAN.eoyPolicies.slice(0, n), false, false) + "</tr>");
+    if (cfg.deckTableDetail === "full") {
+      rows.push("<tr><td>" + tr("GWP (earned)", "pnl.gwp") + "</td>" +
+        cells(PLAN.avgInForce.slice(0, n).map(function (p) { return p * PLAN.premium; }), false, true) + "</tr>");
+    }
+    rows.push('<tr class="hi"><td>' + tr("PHINS net revenue (25%)", "pnl.net") + "</td>" +
+      cells(PLAN.avgInForce.slice(0, n).map(function (p) { return p * PLAN.premium * PLAN.takeRate; }), true, true) + "</tr>");
+    if (cfg.deckTableDetail === "full") {
+      rows.push("<tr><td>" + tr("Operating cost", "pnl.opex") + "</td>" +
+        cells(PLAN.opex.slice(0, n).map(function (v) { return -v; }), false, true) + "</tr>");
+    }
+    var ebitda = PLAN.avgInForce.slice(0, n).map(function (p, i) {
+      return p * PLAN.premium * PLAN.takeRate - PLAN.opex[i];
+    });
+    rows.push('<tr class="hi"><td>' + tr("EBITDA", "pnl.ebitda") + "</td>" +
+      cells(ebitda, true, true) + "</tr>");
+    rows.push("<tr><td>" + tr("EBITDA margin", "pnl.margin") + "</td>" +
+      ebitda.map(function (v, i) {
+        var rev = PLAN.avgInForce[i] * PLAN.premium * PLAN.takeRate;
+        var m = rev ? (v / rev) * 100 : 0;
+        return '<td class="num">' + (m < 0 ? "−" : "+") + Math.abs(m).toFixed(m < 2 && m > -2 ? 1 : 0) + "%</td>";
+      }).join("") + "</tr>");
+    $("deck-pnl-table").querySelector("tbody").innerHTML = rows.join("");
+
+    $("deck-chart-pnl").innerHTML = groupBarChart(years, [
+      { name: tr("PHINS net revenue", "ser.phins"), color: "#1d4ed8",
+        values: PLAN.avgInForce.slice(0, n).map(function (p) { return p * PLAN.premium * PLAN.takeRate; }) },
+      { name: tr("EBITDA", "ser.ebitda"), color: "#15803d",
+        values: ebitda }
+    ]);
+  }
+
+  function renderGates() {
+    var gates = isHe() ? [
+      ["שער 0 · רבעון 3 2026", "סגירת מימון וצוות — אקטואר ראשי ושותף תפעולי."],
+      ["שער 1 · רבעון 3 2026", "תנאים משפטיים: ניסוח פוליסה, IP, מבנה MGA / חברת ביטוח."],
+      ["שער 2 · רבעון 4 2026", "סט השקת הפלטפורמה + אישור תמחור ועתודות."],
+      ["שער 3 · רבעון 4 2026", "QA, ביקורת אבטחה ואימות יומן."],
+      ["שער 4 · רבעון 4 2026", "רישוי רגולטורי והסכמי הפצה."],
+      ["שער 5 · 1 בינואר 2027", "השקה מסחרית — תחילת מכירות."],
+      ["שער 6 · רבעון 2 2027", "1,000 פוליסות ראשונות; אימות כלכלת יחידה."],
+      ["שער 7 · סוף 2027+", "הרחבה בישראל לפי אופק התחזית שנבחר."]
+    ] : [
+      ["Gate 0 · Q3 2026", "Funding and team closed — Chief Actuary and operating partner."],
+      ["Gate 1 · Q3 2026", "Legal terms: policy wording, IP, MGA / carrier structure."],
+      ["Gate 2 · Q4 2026", "Platform launch set + pricing and reserve sign-off."],
+      ["Gate 3 · Q4 2026", "QA, security audit, and ledger validation."],
+      ["Gate 4 · Q4 2026", "Regulatory licensing and distribution agreements."],
+      ["Gate 5 · 1 Jan 2027", "Commercial launch — sales begin."],
+      ["Gate 6 · Q2 2027", "First 1,000 policies; unit economics validated."],
+      ["Gate 7 · EoY 2027+", "Scale in Israel across the selected forecast horizon."]
+    ];
+    $("deck-gates").innerHTML = gates.map(function (g) {
+      return '<div class="gate"><div class="when">' + esc(g[0]) + '</div><div>' + g[1] + "</div></div>";
+    }).join("");
+  }
+
+  function renderAll() {
+    applyStaticI18n();
+    var mm = monthlyModel();
+    var yi = lastShownYi();
+    var somPol = PLAN.eoyPolicies[yi];
+    var somGwp = somPol * PLAN.premium;
+
+    document.querySelectorAll(".cur-btn").forEach(function (b) {
+      b.classList.toggle("on", b.getAttribute("data-cur") === cfg.currency);
+    });
+    var fxState = (cfg.fxSource === "alpha_vantage" || cfg.fxSource === "frankfurter_ecb" || cfg.fxSource === "mixed_live") ? (isHe() ? "חי" : "LIVE")
+                : cfg.fxSource === "manual" ? (isHe() ? "ידני" : "MANUAL")
+                : (isHe() ? "מילוט" : "FALLBACK");
+    $("deck-fx-note").textContent = "1 USD = ₪" + Number(cfg.usdIls).toFixed(4) + " / €" + Number(cfg.usdEur).toFixed(4) +
+      " (" + fxState + ")";
+
+    var today = new Date();
+    if (isHe()) {
+      var HE_MONTHS_FULL = ["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
+      $("deck-hero-date").textContent = "תוכנית נכון ל-" + today.getDate() + " ב" + HE_MONTHS_FULL[today.getMonth()] + " " + today.getFullYear();
+    } else {
+      $("deck-hero-date").textContent = "Plan as of " + today.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+    }
+
+    document.querySelectorAll(".deck-money").forEach(function (n) { n.textContent = fmtMoney(num(n.getAttribute("data-ils"), 0)); });
+    document.querySelectorAll(".deck-moneyM").forEach(function (n) { n.textContent = fmtShort(num(n.getAttribute("data-ils"), 0)); });
+    document.querySelectorAll(".deck-moneyB").forEach(function (n) { n.textContent = fmtShort(num(n.getAttribute("data-ils"), 0)); });
+
+    $("deck-tam-som").textContent = fmtShort(somGwp);
+    $("deck-tam-som-def").textContent = isHe()
+      ? somPol.toLocaleString("en-US") + " פוליסות פעילות בסוף " + shownYears()[yi] + " (GWP שיעור-ריצה)"
+      : somPol.toLocaleString("en-US") + " active policies at EoY " + shownYears()[yi] + " (run-rate GWP)";
+
+    $("deck-assum-horizon").textContent = isHe()
+      ? yearCount() + " שנים (" + shownYears()[0] + "–" + shownYears()[yi] + ")"
+      : yearCount() + "-year (" + shownYears()[0] + "–" + shownYears()[yi] + ")";
+    $("deck-assum-eoy").textContent = PLAN.eoyPolicies.slice(0, nSafe()).map(function (p) {
+      return p.toLocaleString("en-US");
+    }).join(" / ");
+
+    renderUseOfFunds();
+    $("deck-chart-burn").innerHTML = burnChart(mm);
+    var totalCapital = cfg.round + mm.seriesANeed;
+    if (isHe()) {
+      $("deck-runway-callout").innerHTML = "<strong>תזרים ו-runway.</strong> תקציב הבנייה של " + fmtShort(cfg.round) +
+        " נפרס על-פני <strong>" + mm.buildMonths + " חודשי בנייה</strong> עד ההשקה ב-1 בינואר 2027. " +
+        "נקודת מינ׳ מזומן: <strong>" + fmtShort(mm.minCash) + "</strong>" +
+        (mm.seriesANeed > 0
+          ? " — נגשרת בהאצה ב-2027 בגובה כ-<strong>" + fmtShort(mm.seriesANeed) + "</strong>."
+          : " — הסבב המוגדר מממן את התוכנית עד EBITDA חיובי.");
+      $("deck-cum-capital").innerHTML = "סך ההון החיצוני עד EBITDA חיובי ≈ <strong>" + fmtShort(totalCapital) + "</strong>.";
+      $("deck-gantt-title").textContent = "ציר ביצוע — " + monthLabel(mm.start) + " ← " +
+        monthLabel(new Date(mm.start.getFullYear(), mm.start.getMonth() + HORIZON() - 1, 1));
+    } else {
+      $("deck-runway-callout").innerHTML = "<strong>Cash flow &amp; runway.</strong> The " + fmtShort(cfg.round) +
+        " build budget is deployed across <strong>" + mm.buildMonths + " build months</strong> to the 1 Jan 2027 launch. " +
+        "Minimum cash point: <strong>" + fmtShort(mm.minCash) + "</strong>" +
+        (mm.seriesANeed > 0
+          ? " — bridged by 2027 scale-up capital of ≈ <strong>" + fmtShort(mm.seriesANeed) + "</strong>."
+          : " — the configured round funds the plan to EBITDA-positive.");
+      $("deck-cum-capital").innerHTML = "Cumulative external capital to EBITDA-positive ≈ <strong>" + fmtShort(totalCapital) + "</strong>.";
+      $("deck-gantt-title").textContent = "Execution timeline — " + monthLabel(mm.start) + " → " +
+        monthLabel(new Date(mm.start.getFullYear(), mm.start.getMonth() + HORIZON() - 1, 1));
+    }
+
+    renderAnnualCash(mm);
+    renderGates();
+    $("deck-chart-gantt").innerHTML = ganttChart(mm);
+    renderPnl();
+  }
+
+  function nSafe() { return yearCount(); }
+
+  function persistPartial(patch) {
+    try {
+      var saved = JSON.parse(localStorage.getItem(CFG_STORE_ID) || "{}") || {};
+      Object.keys(patch).forEach(function (k) { saved[k] = patch[k]; });
+      localStorage.setItem(CFG_STORE_ID, JSON.stringify(saved));
+    } catch (e) {}
+  }
+  document.querySelectorAll(".cur-btn").forEach(function (b) {
+    b.addEventListener("click", function () {
+      cfg.currency = b.getAttribute("data-cur");
+      persistPartial({ currency: cfg.currency });
+      renderAll();
+    });
+  });
+
+  renderAll();
+
+  fetch("/api/fx/rates").then(function (r) { return r.json(); }).then(function (d) {
+    if (d && d.usd_ils) {
+      cfg.usdIls = num(d.usd_ils, cfg.usdIls);
+      cfg.usdEur = num(d.usd_eur, cfg.usdEur);
+      cfg.fxSource = d.source || cfg.fxSource;
+      renderAll();
+    }
+  }).catch(function () { /* offline: keep configurator/fallback rates */ });
+})();
+</script>
+</body>
+</html>
