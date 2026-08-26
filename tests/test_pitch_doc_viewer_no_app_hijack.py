@@ -85,6 +85,7 @@ def test_investor_documents_still_open_in_viewer():
         ("/investor-docs/israel-pitch-executive-summary.pdf", "view"),
         ("/investor-docs/fintl-vc-meeting-5aug-brief.md", "view"),
         ("/internal/phins-investor-business-plan.html", "view"),
+        ("/internal/phins-investment-deck.html", "view"),
         ("/legal/term-sheet.html", "view"),
         ("/legal/nda.html", "view"),
         ("/unicorn-investor-deck.html", "view"),

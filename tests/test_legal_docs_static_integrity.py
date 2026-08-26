@@ -133,8 +133,9 @@ def test_pitch_dashboard_investor_meeting_section():
     assert "Deal structures &amp; valuation" in pd
     for structure in ("Priced equity", "Investment cap (SAFE)", "Credit line", "CLA", "Active co-founder + investor"):
         assert structure in pd, f"missing deal structure: {structure}"
-    # links to the standalone business plan doc
+    # links to the standalone business plan and the general investment deck
     assert "/internal/phins-investor-business-plan.html" in pd
+    assert "/internal/phins-investment-deck.html" in pd
 
 
 def test_pitch_dashboard_deal_configurator():
@@ -151,6 +152,11 @@ def test_pitch_dashboard_deal_configurator():
     assert "/api/fx/rates" in pd  # live FX source (Alpha Vantage)
     # canonical base + scaling cells so figures reconcile
     assert 'class="inv-money inv-scale"' in pd
+    # general investment-deck presentation controls (horizon + table detail)
+    assert 'id="investor-deck-config"' in pd
+    assert 'id="inv-deck-horizon"' in pd
+    assert 'id="inv-deck-detail"' in pd
+    assert "deckHorizon" in pd and "deckTableDetail" in pd
 
 
 def test_pitch_dashboard_investor_name_adjustable():

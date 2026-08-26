@@ -2152,6 +2152,8 @@
           <h3 style="margin:0 0 8px 0;font-size:13pt;">Unicorn InsurTech Investor Deck <span style="font-size:8pt;font-weight:700;color:#15803d;background:#dcfce7;border-radius:20px;padding:2px 9px;vertical-align:middle;">adjustable · live FX · reconciling</span></h3>
           <p style="font-size:9.5pt;color:var(--text-sub);margin:0 0 12px 0;">The world-class, institutional-grade Series A deck: PHINS positioned as <strong>"AgentOS for Insurance + a Disability/Longevity Protection Marketplace,"</strong> with the disability/LTC MGA as the first use case (the wedge). Series A investment thesis (10 pillars), full deck (Vision → Exit Scenarios), an adjustable investor &amp; scenario configurator (re-tune for any investor or factor), reported InsurTech unicorn comparables, and a reusable PHINS prompt library — every figure reconciles from a single canonical base.</p>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <a href="/internal/phins-investor-business-plan.html" class="exec-dl-btn">📘 Extended Plan (pre-change)</a>
+            <a href="/internal/phins-investment-deck.html" class="exec-dl-btn" style="background:#0f766e;color:#fff;border-color:#0f766e;">📗 Newest Investment Deck</a>
             <a href="/unicorn-investor-deck.html" class="exec-dl-btn" style="background:var(--blue-mid);color:#fff;border-color:var(--blue-mid);">🦄 Open Unicorn Deck</a>
             <a href="/unicorn-executive-summary.html" class="exec-dl-btn" style="background:#0f274d;color:#fff;border-color:#0f274d;">⚡ Executive Summary (2–3 pages)</a>
             <a href="/seed-investor-deck.html" class="exec-dl-btn" style="background:#6a1b9a;color:#fff;border-color:#6a1b9a;">📄 Seed 5-Pager (EN/עברית · PDF)</a>
@@ -2387,7 +2389,8 @@
           (legal terms, platform development, QA, regulatory, and funding).
         </p>
         <div class="exec-dl-row">
-          <a href="/internal/phins-investor-business-plan.html" target="_blank" rel="noopener" class="exec-dl-btn">📘 Open Fintech Business Plan (Angel / Investor)</a>
+          <a href="/internal/phins-investor-business-plan.html" target="_blank" rel="noopener" class="exec-dl-btn">📘 Open Extended Plan (section 10 · ask · deals)</a>
+          <a href="/internal/phins-investment-deck.html" target="_blank" rel="noopener" class="exec-dl-btn" style="background:#0f766e;color:#fff;border-color:#0f766e;">📗 Open Newest Investment Deck</a>
           <a href="/legal/term-sheet.html" class="exec-dl-btn">📝 Term Sheet</a>
           <a href="/legal/cap-table.html" class="exec-dl-btn">📊 Cap Table</a>
           <a href="/legal/founder-agreement.html" class="exec-dl-btn">🤝 Founder Agreement</a>
@@ -2514,6 +2517,47 @@
           <div class="stat-box" style="border-radius:12px;padding:12px 10px;"><div class="stat-val" id="inv-kpi-dilution" style="font-size:14pt;">—</div><div class="stat-lbl">Founder dilution</div></div>
         </div>
         <p style="font-size:7.5pt;color:var(--text-soft);margin-top:8px;" id="inv-cfg-note">Inputs are entered in ₪ (the canonical base); all outputs convert to the selected display currency at the live rate. Settings persist in this browser.</p>
+
+        <div id="investor-deck-config" style="margin-top:16px;border:1px solid #99f6e4;background:linear-gradient(180deg,#f0fdfa 0%,#ffffff 70%);border-radius:12px;padding:14px 16px;">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <div>
+              <h3 style="margin:0;">📗 Investment document versions <span style="font-size:8pt;font-weight:700;color:#0f766e;background:#ccfbf1;border-radius:20px;padding:2px 9px;vertical-align:middle;">extended + newest</span></h3>
+              <p class="ecp-sub" style="margin-top:4px;">Two documents, same ₪ book. <strong>Extended</strong> is the pre-change platform plan (section 10, ask, quarterly, deals). <strong>Newest</strong> is the general deck from the last edit (objectives, Israel launch, cash flow — no hash bar).</p>
+            </div>
+            <a id="inv-deck-open-selected" href="/internal/phins-investor-business-plan.html" target="_blank" rel="noopener" class="exec-dl-btn" style="background:#0f766e;color:#fff;border-color:#0f766e;">Open selected version</a>
+          </div>
+          <div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;" id="inv-deck-version-picker">
+            <button type="button" class="inv-deck-ver-btn" data-deck-doc="detailed" id="inv-deck-ver-detailed" style="text-align:left;border:2px solid #0f766e;background:#ecfdf5;border-radius:12px;padding:12px 14px;cursor:pointer;font-family:inherit;">
+              <div style="font-size:7.4pt;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#0d47a1;">Extended version</div>
+              <div style="font-size:10pt;font-weight:800;color:var(--blue-dark);margin-top:2px;">Platform plan before these changes</div>
+              <div style="font-size:8pt;color:var(--text-sub);margin-top:4px;">Section 10, the ask, pre/post-money, investor stake, quarterly forecast, and deal structures.</div>
+            </button>
+            <button type="button" class="inv-deck-ver-btn" data-deck-doc="general" id="inv-deck-ver-general" style="text-align:left;border:1px solid var(--border);background:#fff;border-radius:12px;padding:12px 14px;cursor:pointer;font-family:inherit;">
+              <div style="font-size:7.4pt;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#0f766e;">Newest version</div>
+              <div style="font-size:10pt;font-weight:800;color:#115e59;margin-top:2px;">General investment deck</div>
+              <div style="font-size:8pt;color:var(--text-sub);margin-top:4px;">Last-edit deck: platform objectives, Israel launch, annual cash flow. No ask strip, quarterly grid, deal section, or hash bar.</div>
+            </button>
+          </div>
+          <div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
+            <div class="control-group">
+              <label for="inv-deck-horizon" style="font-size:7.5pt;font-weight:700;color:#115e59;">Forecast horizon</label>
+              <select id="inv-deck-horizon" style="border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;width:100%;">
+                <option value="3">3-year (2027–2029)</option>
+                <option value="5" selected>5-year (2027–2031)</option>
+              </select>
+            </div>
+            <div class="control-group">
+              <label for="inv-deck-detail" style="font-size:7.5pt;font-weight:700;color:#115e59;">Table detail</label>
+              <select id="inv-deck-detail" style="border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;width:100%;">
+                <option value="summary" selected>Investor summary (policies · net revenue · EBITDA · cash)</option>
+                <option value="full">Full line items (adds GWP + operating cost)</option>
+              </select>
+            </div>
+            <div class="control-group" style="align-self:end;">
+              <div style="font-size:8pt;color:var(--text-sub);line-height:1.45;" id="inv-deck-cfg-note">Cash flow stays annual (no quarterly grid). Ask, pre-money, post-money, stake and MOIC stay off the general deck cover.</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Context + Target profile -->
@@ -9216,7 +9260,10 @@
         valBasis: "manual",          // manual | multiple | actuarial
         multMetric: "net_revenue",
         multX: 1.3,
-        valProvenance: null          // set when basis is multiple/actuarial
+        valProvenance: null,         // set when basis is multiple/actuarial
+        deckHorizon: 5,              // 3 | 5 — general investment deck forecast
+        deckTableDetail: "summary",  // summary | full — general investment deck tables
+        deckDoc: "detailed"          // detailed = extended pre-change plan; general = newest deck
       };
       // 2029 base metrics (ILS) used by the income-multiple basis — these are the
       // exact figures shown in the income table, so the valuation reconciles.
@@ -9225,6 +9272,9 @@
         var saved = JSON.parse(localStorage.getItem(CFG_STORE_ID) || "null");
         if (saved && typeof saved === "object") Object.assign(cfg, saved);
       } catch (e) {}
+      if (cfg.deckHorizon !== 3 && cfg.deckHorizon !== 5) cfg.deckHorizon = 5;
+      if (cfg.deckTableDetail !== "full") cfg.deckTableDetail = "summary";
+      if (cfg.deckDoc !== "general") cfg.deckDoc = "detailed";
 
       // ---- helpers ----
       function num(v, d) { var n = parseFloat(v); return isFinite(n) ? n : (d || 0); }
@@ -9286,7 +9336,9 @@
           elFxSource = $("inv-fx-source"), elFxNote = $("inv-fx-note"),
           elRound = $("inv-round"), elPre = $("inv-premoney"), elPos = $("inv-position"),
           elCoCash = $("inv-cocash"), elFounderEq = $("inv-founder-eq"),
-          elValBasis = $("inv-valbasis"), elMultMetric = $("inv-mult-metric"), elMultX = $("inv-mult-x");
+          elValBasis = $("inv-valbasis"), elMultMetric = $("inv-mult-metric"), elMultX = $("inv-mult-x"),
+          elDeckHorizon = $("inv-deck-horizon"), elDeckDetail = $("inv-deck-detail"),
+          elDeckOpenSelected = $("inv-deck-open-selected");
 
       function basisLabel() {
         if (cfg.valBasis === "multiple") {
@@ -9308,6 +9360,22 @@
         if (elValBasis) elValBasis.value = cfg.valBasis;
         if (elMultMetric) elMultMetric.value = cfg.multMetric;
         if (elMultX) elMultX.value = cfg.multX;
+        if (elDeckHorizon) elDeckHorizon.value = String(cfg.deckHorizon);
+        if (elDeckDetail) elDeckDetail.value = cfg.deckTableDetail;
+        document.querySelectorAll(".inv-deck-ver-btn").forEach(function (b) {
+          var on = b.getAttribute("data-deck-doc") === cfg.deckDoc;
+          b.style.border = on ? "2px solid #0f766e" : "1px solid var(--border)";
+          b.style.background = on ? "#ecfdf5" : "#fff";
+        });
+        if (elDeckOpenSelected) {
+          var general = cfg.deckDoc !== "detailed";
+          elDeckOpenSelected.href = general
+            ? "/internal/phins-investment-deck.html"
+            : "/internal/phins-investor-business-plan.html";
+          elDeckOpenSelected.textContent = general
+            ? "Open selected version — newest deck"
+            : "Open selected version — extended plan";
+        }
         // Pre-money is editable only when basis is manual; otherwise it reflects
         // the derived value (the user can switch to Manual to override — optional).
         elPre.readOnly = (cfg.valBasis !== "manual");
@@ -9516,6 +9584,21 @@
       });
       if (elMultMetric) elMultMetric.addEventListener("change", function () { cfg.multMetric = elMultMetric.value; if (cfg.valBasis === "multiple") applyMultiple(); syncInputsFromCfg(); recompute(); });
       if (elMultX) elMultX.addEventListener("input", function () { cfg.multX = Math.max(0, num(elMultX.value, cfg.multX)); if (cfg.valBasis === "multiple") applyMultiple(); syncInputsFromCfg(); recompute(); });
+      if (elDeckHorizon) elDeckHorizon.addEventListener("change", function () {
+        cfg.deckHorizon = elDeckHorizon.value === "3" ? 3 : 5;
+        recompute();
+      });
+      if (elDeckDetail) elDeckDetail.addEventListener("change", function () {
+        cfg.deckTableDetail = elDeckDetail.value === "full" ? "full" : "summary";
+        recompute();
+      });
+      document.querySelectorAll(".inv-deck-ver-btn").forEach(function (b) {
+        b.addEventListener("click", function () {
+          cfg.deckDoc = b.getAttribute("data-deck-doc") === "detailed" ? "detailed" : "general";
+          syncInputsFromCfg();
+          recompute();
+        });
+      });
 
       var simRunBtn = $("inv-sim-run");
       if (simRunBtn) simRunBtn.addEventListener("click", function () {
@@ -10211,6 +10294,7 @@
       var NESTED_PARENTS = {
         "il-meeting-diary": "investor-meeting-section",
         "investor-configurator": "investor-meeting-section",
+        "investor-deck-config": "investor-meeting-section",
         "fintl-5aug-panel": "fintl-vc-meetings-aug",
         "fintl-6aug-panel": "fintl-vc-meetings-aug",
         "grove-presentation-timeline": "grove-vc-meeting-19aug",
