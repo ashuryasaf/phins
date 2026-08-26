@@ -534,7 +534,7 @@ class AlgoTradingService:
                 bar for bar in history
                 if isinstance(bar, dict) and bar.get("source") != "portfolio_seed"
             ]
-            if len(history) < 14:
+            if len(history) < 15:
                 return TechnicalIndicators(symbol=symbol, timestamp=datetime.now().isoformat())
         prices = [h["price"] for h in history]
         volumes = [h.get("volume", 0) for h in history]
@@ -1842,7 +1842,7 @@ class AlgoTradingService:
 
         return overview
 
-    def _symbol_history_is_live(self, symbol: str, min_live_bars: int = 14) -> bool:
+    def _symbol_history_is_live(self, symbol: str, min_live_bars: int = 15) -> bool:
         """True when enough bars are not portfolio_seed placeholders."""
         history = self.price_history.get(symbol) or []
         live_bars = 0

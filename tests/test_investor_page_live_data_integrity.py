@@ -79,7 +79,7 @@ def test_seed_signals_do_not_reappear_after_live_sync():
     assert live_only.current_price > 0
     # Seed book starts near 478.50; live-only series should stay near the synced 512s.
     assert abs(live_only.current_price - 478.50) > 1
-    assert abs(mixed.sma_20 - live_only.sma_20) > 0.01 or abs(mixed.current_price - live_only.current_price) >= 0
+    assert abs(mixed.sma_20 - live_only.sma_20) > 0.01 or abs(mixed.sma_50 - live_only.sma_50) > 0.01
 
 
 def test_live_quote_helpers_drop_seed_cache():
