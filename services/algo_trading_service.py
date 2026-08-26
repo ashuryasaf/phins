@@ -144,6 +144,7 @@ class TradingSignal:
     indicators: Dict[str, float] = field(default_factory=dict)
     created_at: str = ""
     expires_at: str = ""
+    is_live: bool = False
     
     def __post_init__(self):
         if not self.created_at:
@@ -511,13 +512,14 @@ class AlgoTradingService:
                     "price": price,
                     "volume": volume,
                     "timestamp": now_iso,
+                    "source": "live",
                 }
             )
             updated += 1
 
         return {"updated": updated, "ignored": ignored, "timestamp": now_iso}
     
-    def calculate_indicators(self, symbol: str) -> TechnicalIndicators:
+    def calculate_indicators(self, symbol: str, live_only: bool = False) -> TechnicalIndicators:
         """Calculate technical indicators — uses AI trading engine with real data when available."""
         ai_result = self._try_ai_engine_indicators(symbol)
         if ai_result:
@@ -527,6 +529,13 @@ class AlgoTradingService:
             return TechnicalIndicators(symbol=symbol, timestamp=datetime.now().isoformat())
 
         history = list(self.price_history[symbol])
+        if live_only:
+            history = [
+                bar for bar in history
+                if isinstance(bar, dict) and bar.get("source") != "portfolio_seed"
+            ]
+            if len(history) < 15:
+                return TechnicalIndicators(symbol=symbol, timestamp=datetime.now().isoformat())
         prices = [h["price"] for h in history]
         volumes = [h.get("volume", 0) for h in history]
 
@@ -703,7 +712,11 @@ class AlgoTradingService:
     
     def generate_signal(self, symbol: str, strategy: TradingStrategy) -> TradingSignal:
         """Generate trading signal based on strategy"""
-        indicators = self.calculate_indicators(symbol)
+        used_live_bars = self._symbol_history_is_live(symbol)
+        indicators = self.calculate_indicators(symbol, live_only=used_live_bars)
+        if used_live_bars and indicators.current_price <= 0:
+            used_live_bars = False
+            indicators = self.calculate_indicators(symbol, live_only=False)
         
         signal_type = SignalType.HOLD
         confidence = 0.5
@@ -775,7 +788,8 @@ class AlgoTradingService:
                 "sma_20": indicators.sma_20,
                 "sma_50": indicators.sma_50,
                 "bb_position": (indicators.current_price - indicators.bb_lower) / (indicators.bb_upper - indicators.bb_lower) if indicators.bb_upper != indicators.bb_lower else 0.5
-            }
+            },
+            is_live=bool(used_live_bars and indicators.current_price > 0),
         )
         
         # Store signal
@@ -1714,7 +1728,8 @@ class AlgoTradingService:
             "performance": self.get_bot_performance(bot_id)
         }
     
-    def get_all_signals(self, symbol: str = None, limit: int = 50) -> List[Dict]:
+    def get_all_signals(self, symbol: str = None, limit: int = 50,
+                        live_only: bool = False) -> List[Dict]:
         """Get recent trading signals"""
         if symbol:
             signals = self.signals.get(symbol, [])
@@ -1725,7 +1740,12 @@ class AlgoTradingService:
         
         # Sort by created_at descending
         signals.sort(key=lambda s: s.created_at, reverse=True)
-        return [asdict(s) for s in signals[:limit]]
+        if live_only:
+            signals = [
+                signal for signal in signals
+                if getattr(signal, "is_live", False)
+            ]
+        return [asdict(signal) for signal in signals[:limit]]
     
     def get_order_history(self, account_id: str = None, limit: int = 50) -> List[Dict]:
         """Get order history"""
@@ -1799,12 +1819,11 @@ class AlgoTradingService:
         }
 
         for symbol in overview_symbols:
-            indicators = self.calculate_indicators(symbol)
+            if not self._symbol_history_is_live(symbol):
+                continue
+            indicators = self.calculate_indicators(symbol, live_only=True)
             if indicators.current_price <= 0:
-                if self.portfolio_service and symbol in getattr(self.portfolio_service, 'MARKET_DATA', {}):
-                    pass
-                else:
-                    continue
+                continue
             signal = self.generate_signal(symbol, TradingStrategy.MOMENTUM)
             name = names.get(symbol, symbol)
             if self.portfolio_service and symbol in getattr(self.portfolio_service, 'MARKET_DATA', {}):
@@ -1822,6 +1841,23 @@ class AlgoTradingService:
             })
 
         return overview
+
+    def _symbol_history_is_live(self, symbol: str, min_live_bars: int = 15) -> bool:
+        """True when enough bars are not portfolio_seed placeholders."""
+        history = self.price_history.get(symbol) or []
+        live_bars = 0
+        for bar in history:
+            if not isinstance(bar, dict):
+                continue
+            if bar.get("source") == "portfolio_seed":
+                continue
+            try:
+                if float(bar.get("price") or 0) <= 0:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            live_bars += 1
+        return live_bars >= min_live_bars
 
     def _has_live_data(self) -> bool:
         """Check if any price history comes from live Alpaca data."""

@@ -666,23 +666,46 @@ class SavingsPipelineService:
         
         # Calculate current allocation percentages
         total = account.wallet_balance + account.investment_balance + account.algo_trading_balance
-        if total == 0:
-            total = 1  # Avoid division by zero
-        
-        current_allocation = {
-            'wallet': (account.wallet_balance / total) * 100,
-            'investment': (account.investment_balance / total) * 100,
-            'algo_trading': (account.algo_trading_balance / total) * 100
-        }
-        
-        # Get optimal allocation
+        deposits = account.total_deposits or 0
+        cash = account.cash_balance or 0
         optimal_config = self._get_ai_allocation_config(account.risk_level, AllocationStrategy.AI_OPTIMIZED)
-        
         optimal_allocation = {
             'wallet': optimal_config.wallet_pct,
             'investment': optimal_config.investment_pct,
             'algo_trading': optimal_config.algo_trading_pct
         }
+        if total <= 0 and cash <= 0 and deposits <= 0:
+            return {
+                'customer_id': customer_id,
+                'timestamp': datetime.now().isoformat(),
+                'current_allocation': {'wallet': 0, 'investment': 0, 'algo_trading': 0},
+                'optimal_allocation': optimal_allocation,
+                'deviations': {'wallet': 0, 'investment': 0, 'algo_trading': 0},
+                'recommendations': [],
+                'suggested_actions': [],
+                'market_conditions': {
+                    'sentiment': None,
+                    'sentiment_label': 'Unknown',
+                    'volatility': None,
+                    'volatility_label': 'Unknown',
+                },
+                'performance': {
+                    'total_deposits': 0,
+                    'total_returns': account.total_returns or 0,
+                    'roi': 0,
+                },
+                'risk_level': account.risk_level.value,
+                'ai_confidence': 0,
+                'data_source': 'none',
+            }
+
+        current_allocation = {
+            'wallet': (account.wallet_balance / total) * 100 if total else 0,
+            'investment': (account.investment_balance / total) * 100 if total else 0,
+            'algo_trading': (account.algo_trading_balance / total) * 100 if total else 0
+        }
+        
+        # Optimal allocation already resolved above from AllocationConfig targets.
         
         # Calculate deviations
         deviations = {
@@ -693,6 +716,32 @@ class SavingsPipelineService:
         # Generate recommendations
         recommendations = []
         actions = []
+
+        # No destination balances yet — do not invent $0 transfer advice.
+        if total <= 0:
+            return {
+                'customer_id': customer_id,
+                'timestamp': datetime.now().isoformat(),
+                'current_allocation': current_allocation,
+                'optimal_allocation': optimal_allocation,
+                'deviations': deviations,
+                'recommendations': [],
+                'suggested_actions': [],
+                'market_conditions': {
+                    'sentiment': None,
+                    'sentiment_label': 'Unknown',
+                    'volatility': None,
+                    'volatility_label': 'Unknown',
+                },
+                'performance': {
+                    'total_deposits': deposits,
+                    'total_returns': account.total_returns or 0,
+                    'roi': 0,
+                },
+                'risk_level': account.risk_level.value,
+                'ai_confidence': 0,
+                'data_source': 'pipeline',
+            }
         
         # Check wallet (emergency fund)
         if deviations['wallet'] > 5:
@@ -756,7 +805,8 @@ class SavingsPipelineService:
                 'roi': roi
             },
             'risk_level': account.risk_level.value,
-            'ai_confidence': 0.85  # Simplified confidence score
+            'ai_confidence': 0.85 if recommendations else 0,
+            'data_source': 'pipeline',
         }
     
     def get_pipeline_analytics(self, customer_id: str) -> Dict[str, Any]:
@@ -881,7 +931,15 @@ class SavingsPipelineService:
     def _calculate_pipeline_health(self, account: SavingsPipelineAccount) -> Dict[str, Any]:
         """Calculate pipeline health score and metrics."""
         total = account.wallet_balance + account.investment_balance + account.algo_trading_balance
-        
+        cash = account.cash_balance or 0
+        deposits = account.total_deposits or 0
+        if total <= 0 and cash <= 0 and deposits <= 0:
+            return {
+                'score': 0,
+                'status': 'no_activity',
+                'issues': ['No live pipeline balances']
+            }
+
         health_score = 100
         issues = []
         

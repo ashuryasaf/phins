@@ -3,94 +3,132 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#060d1f">
     <title>Algo Trading | PHINS</title>
+    <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+    <link rel="apple-touch-icon" href="/phins-logo.svg">
     <style>
         :root {
-            --primary: #6366f1;
-            --primary-dark: #4f46e5;
-            --secondary: #8b5cf6;
+            --phins-navy: #060d1f;
+            --phins-ink: #eaf1ff;
+            --phins-gold: #e3bf6f;
+            --phins-gold-strong: #f7e2a0;
+            --phins-line: rgba(127, 178, 255, 0.16);
+            --primary: #e3bf6f;
+            --primary-dark: #b8893b;
+            --secondary: #4fd8ff;
             --success: #10b981;
             --danger: #ef4444;
-            --warning: #f59e0b;
-            --info: #0ea5e9;
-            --bg-dark: #0f172a;
-            --bg-card: #1e293b;
-            --bg-hover: #334155;
-            --text-primary: #f1f5f9;
-            --text-secondary: #94a3b8;
-            --border: #475569;
+            --warning: #e3bf6f;
+            --info: #4fd8ff;
+            --bg-dark: #060d1f;
+            --bg-card: rgba(7, 15, 34, 0.96);
+            --bg-hover: rgba(16, 31, 63, 0.96);
+            --text-primary: #eaf1ff;
+            --text-secondary: rgba(234, 241, 255, 0.62);
+            --border: rgba(127, 178, 255, 0.16);
         }
         
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: var(--bg-dark);
-            color: var(--text-primary);
+            background:
+                radial-gradient(1000px 600px at 80% -10%, rgba(21, 68, 155, 0.45), transparent 60%),
+                radial-gradient(800px 520px at 8% 110%, rgba(11, 92, 130, 0.32), transparent 60%),
+                var(--phins-navy);
+            color: var(--phins-ink);
             min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
         }
         
-        /* Header */
-        .header {
-            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%);
-            padding: 1rem 2rem;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
+        /* PHINS unified header chrome */
+        .phins-header {
+            background:
+                radial-gradient(700px 180px at 85% -60%, rgba(21, 68, 155, 0.5), transparent 70%),
+                rgba(6, 13, 31, 0.96);
+            padding: 0;
+            border-bottom: 1px solid var(--phins-line);
             position: sticky;
             top: 0;
-            z-index: 100;
+            z-index: 1000;
+            box-shadow: 0 8px 30px rgba(2, 8, 23, 0.35);
         }
         
-        .header-inner {
+        .phins-header-inner {
             max-width: 1600px;
             margin: 0 auto;
+            padding: 0.75rem 2rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
         
-        .logo {
+        .phins-logo {
             display: flex;
             align-items: center;
             gap: 0.75rem;
             text-decoration: none;
-            color: white;
+            color: var(--phins-ink);
         }
         
-        .logo-icon {
+        .phins-logo-icon {
             width: 44px;
             height: 44px;
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
             border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.5rem;
         }
         
-        .logo-text {
+        .phins-logo-text {
+            font-family: 'Space Grotesk', 'Inter', sans-serif;
             font-size: 1.5rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, #fff 0%, #c7d2fe 100%);
+            font-weight: 600;
+            letter-spacing: 0.22em;
+            background: linear-gradient(180deg, #ffffff 0%, #b7d3ff 100%);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
         }
         
-        .nav {
+        .phins-nav {
             display: flex;
+            align-items: center;
             gap: 0.5rem;
         }
         
-        .nav a {
+        .phins-nav a {
             padding: 0.5rem 1rem;
-            color: rgba(255,255,255,0.8);
+            color: rgba(234, 241, 255, 0.85);
             text-decoration: none;
             border-radius: 8px;
             font-size: 0.9rem;
+            font-weight: 500;
             transition: all 0.2s;
         }
         
-        .nav a:hover { background: rgba(255,255,255,0.1); color: white; }
-        .nav a.active { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: white; }
+        .phins-nav a:hover { background: rgba(127, 178, 255, 0.14); color: #ffffff; }
+        .phins-nav a.active {
+            background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%);
+            color: #071022;
+            font-weight: 600;
+        }
+        .phins-nav .btn-logout {
+            border: 1px solid rgba(227, 191, 111, 0.65);
+            color: var(--phins-gold);
+            border-radius: 999px;
+        }
+        .mobile-menu-btn {
+            display: none;
+            background: rgba(127, 178, 255, 0.12);
+            border: 1px solid var(--phins-line);
+            color: white;
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
         
         /* Main Content */
         .main {
@@ -99,12 +137,13 @@
             padding: 2rem;
         }
         
-        /* Page Title */
+        /* Page Title + unified brand banner */
         .page-title {
             margin-bottom: 2rem;
         }
         
         .page-title h1 {
+            font-family: 'Space Grotesk', 'Inter', sans-serif;
             font-size: 2rem;
             display: flex;
             align-items: center;
@@ -114,6 +153,67 @@
         
         .page-title p {
             color: var(--text-secondary);
+        }
+
+        .page-brand-banner {
+            position: relative;
+            overflow: hidden;
+            border-radius: 14px;
+            padding: 18px 22px 20px;
+            margin-bottom: 20px;
+            color: var(--phins-ink);
+            background:
+                radial-gradient(620px 220px at 88% -40%, rgba(21, 68, 155, 0.55), transparent 70%),
+                radial-gradient(420px 180px at 8% 120%, rgba(79, 216, 255, 0.18), transparent 65%),
+                linear-gradient(135deg, #060d1f 0%, #0e2f63 48%, #123f82 78%, #0a1f4a 100%);
+            box-shadow: 0 10px 26px rgba(2, 8, 23, 0.28);
+        }
+        .page-brand-banner::after {
+            content: '';
+            position: absolute;
+            left: 0; right: 0; bottom: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #b8893b, #f7e2a0, #e3bf6f, #4fd8ff);
+        }
+        .page-brand-banner .brand-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+        .page-brand-banner .brand-emblem { width: 46px; height: 46px; filter: drop-shadow(0 0 10px rgba(79, 216, 255, 0.35)); }
+        .page-brand-banner .brand-wordmark {
+            font-family: 'Space Grotesk', 'Inter', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: 0.16em;
+            background: linear-gradient(180deg, #ffffff 10%, #f7e2a0 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .page-brand-banner .brand-divider { width: 1px; height: 38px; background: rgba(127, 178, 255, 0.28); }
+        .page-brand-banner .brand-title {
+            font-family: 'Space Grotesk', 'Inter', sans-serif;
+            font-size: 1.12rem;
+            font-weight: 600;
+            color: var(--phins-ink);
+            letter-spacing: 0.02em;
+            margin: 0;
+        }
+        .page-brand-banner .brand-tagline {
+            font-size: 0.74rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #9fb6dd;
+            margin-top: 2px;
+        }
+        .page-brand-banner .header-badge {
+            background: rgba(79, 216, 255, 0.14);
+            color: #7fe3ff;
+            border: 1px solid rgba(79, 216, 255, 0.35);
+            border-radius: 999px;
+            padding: 3px 12px;
+            font-size: 0.74rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            margin-left: auto;
+            white-space: nowrap;
         }
         
         /* Stats Grid */
@@ -125,20 +225,43 @@
         }
         
         .stat-card {
-            background: var(--bg-card);
-            border-radius: 16px;
+            position: relative;
+            overflow: hidden;
+            background:
+                radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%),
+                var(--bg-card);
+            border-radius: 12px;
             padding: 1.5rem;
             border: 1px solid var(--border);
+            color: var(--phins-ink);
+            --tile-accent: #7fb2ff;
         }
+        .stat-card::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--tile-accent) 0%, transparent 88%);
+        }
+        .stats-grid .stat-card:nth-child(5n + 2) { --tile-accent: #9d8cff; }
+        .stats-grid .stat-card:nth-child(5n + 3) { --tile-accent: #e3bf6f; }
+        .stats-grid .stat-card:nth-child(5n + 4) { --tile-accent: #6fe0b8; }
+        .stats-grid .stat-card:nth-child(5n + 5) { --tile-accent: #4fd8ff; }
         
         .stat-card.highlight {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-            border: none;
+            background:
+                radial-gradient(130% 110% at 100% 0%, rgba(227, 191, 111, 0.22), transparent 62%),
+                var(--bg-card);
+            border: 1px solid rgba(227, 191, 111, 0.35);
+            --tile-accent: #e3bf6f;
         }
         
         .stat-card.success {
-            background: linear-gradient(135deg, #059669 0%, #10b981 100%);
-            border: none;
+            background:
+                radial-gradient(130% 110% at 100% 0%, rgba(16, 185, 129, 0.22), transparent 62%),
+                var(--bg-card);
+            border: 1px solid rgba(16, 185, 129, 0.28);
+            --tile-accent: #6fe0b8;
         }
         
         .stat-label {
@@ -147,9 +270,10 @@
             margin-bottom: 0.5rem;
         }
         
-        .highlight .stat-label, .success .stat-label { color: rgba(255,255,255,0.8); }
+        .highlight .stat-label, .success .stat-label { color: rgba(234, 241, 255, 0.7); }
         
         .stat-value {
+            font-family: 'Space Grotesk', 'Inter', sans-serif;
             font-size: 1.75rem;
             font-weight: 700;
         }
@@ -190,11 +314,13 @@
         }
         
         .section-title {
+            font-family: 'Space Grotesk', 'Inter', sans-serif;
             font-size: 1.25rem;
             font-weight: 600;
             display: flex;
             align-items: center;
             gap: 0.5rem;
+            color: var(--phins-ink);
         }
         
         /* Buttons */
@@ -214,9 +340,9 @@
         .btn:hover { transform: translateY(-2px); }
         
         .btn-primary {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-            color: white;
-            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+            background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%);
+            color: #071022;
+            box-shadow: 0 4px 15px rgba(227, 191, 111, 0.35);
         }
         
         .btn-success {
@@ -257,8 +383,8 @@
         }
         
         .bot-card:hover {
-            border-color: var(--primary);
-            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.15);
+            border-color: rgba(227, 191, 111, 0.45);
+            box-shadow: 0 4px 20px rgba(227, 191, 111, 0.15);
         }
         
         .bot-header {
@@ -522,6 +648,10 @@
             align-items: center;
             margin-bottom: 1.5rem;
         }
+        .modal-header h2 {
+            font-family: 'Space Grotesk', 'Inter', sans-serif;
+            color: var(--phins-ink);
+        }
         
         .modal-close {
             background: none;
@@ -578,17 +708,20 @@
         }
         
         .order-side {
-            width: 36px;
-            height: 36px;
+            min-width: 48px;
+            height: 28px;
+            padding: 0 8px;
             border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.2rem;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
         }
         
-        .order-side.buy { background: rgba(16, 185, 129, 0.2); }
-        .order-side.sell { background: rgba(239, 68, 68, 0.2); }
+        .order-side.buy { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+        .order-side.sell { background: rgba(239, 68, 68, 0.2); color: #f87171; }
         
         .order-symbol { font-weight: 600; }
         .order-details { font-size: 0.8rem; color: var(--text-secondary); }
@@ -598,11 +731,38 @@
         .order-pnl.negative { color: var(--danger); }
         
         /* Responsive */
+        @media (max-width: 1024px) {
+            .mobile-menu-btn { display: block; }
+            .phins-nav {
+                display: none;
+                position: fixed;
+                top: 60px;
+                left: 0;
+                right: 0;
+                background:
+                    radial-gradient(720px 220px at 88% -36%, rgba(21, 68, 155, 0.48), transparent 70%),
+                    #060d1f;
+                flex-direction: column;
+                padding: 10px 12px 28px;
+                gap: 6px;
+                z-index: 999;
+                max-height: calc(100vh - 60px);
+                overflow-y: auto;
+            }
+            .phins-nav.open { display: flex !important; }
+            .phins-nav a {
+                width: 100%;
+                text-align: center;
+                padding: 14px 16px;
+            }
+        }
         @media (max-width: 768px) {
-            .header { padding: 1rem; }
+            .phins-header-inner { padding: 0.5rem 1rem; }
+            .phins-logo-text { font-size: 1.2rem; letter-spacing: 0.14em; }
             .main { padding: 1rem; }
             .stats-grid { grid-template-columns: repeat(2, 1fr); }
-            .nav { display: none; }
+            .page-brand-banner .brand-divider { display: none; }
+            .page-brand-banner .header-badge { margin-left: 0; }
         }
         
         /* Real-time Animations */
@@ -667,54 +827,71 @@
     </style>
     <!-- Unified Payment Modal -->
     <script src="/unified-payment.js"></script>
+    <link rel="stylesheet" href="/phins-theme.css">
 </head>
 <body>
-    <header class="header">
-        <div class="header-inner">
-            <a href="/savings-portfolio.html" class="logo">
-                <div class="logo-icon">🤖</div>
-                <span class="logo-text">PHINS Algo Trading</span>
+    <header class="phins-header">
+        <div class="phins-header-inner">
+            <a href="/dashboard.html" class="phins-logo">
+                <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
+                <span class="phins-logo-text">PHINS</span>
             </a>
-            <nav class="nav">
+            <button class="mobile-menu-btn" type="button" onclick="toggleMobileMenu()" aria-label="Open menu">☰</button>
+            <nav class="phins-nav" id="mobile-nav">
                 <a href="/dashboard.html">Dashboard</a>
-                <a href="/savings-portfolio.html">📈 Investments</a>
-                <a href="/algo-trading.html" class="active">🤖 Algo Trading</a>
-                <a href="/trading-terminal.html">🖥️ Terminal</a>
-                <a href="/login.html" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);">Logout</a>
+                <a href="/savings-portfolio.html">Investments</a>
+                <a href="/algo-trading.html" class="active">Algo Trading</a>
+                <a href="/trading-terminal.html">Terminal</a>
+                <a href="/dashboard.html#health-wallet">Wallet</a>
+                <a href="/dashboard.html#claims">Claims</a>
+                <a href="/login.html" class="btn-logout">Logout</a>
             </nav>
         </div>
     </header>
+    <script>
+        function toggleMobileMenu() {
+            document.getElementById('mobile-nav').classList.toggle('open');
+        }
+    </script>
 
     <main class="main">
-        <div class="page-title">
-            <h1>🤖 Algorithmic Trading System</h1>
-            <p>Automated trading strategies with AI-powered signals and risk management</p>
+        <div class="page-brand-banner">
+            <div class="brand-row">
+                <img src="/phins-logo.svg" alt="PHINS emblem" class="brand-emblem">
+                <span class="brand-wordmark">PHINS</span>
+                <div class="brand-divider"></div>
+                <div>
+                    <h1 class="brand-title">Algorithmic Trading System</h1>
+                    <div class="brand-tagline">Actuarial premium · savings pipeline · live signals</div>
+                </div>
+                <span class="header-badge">LIVE MARKET</span>
+            </div>
         </div>
 
         <!-- Performance Stats - Enhanced Dashboard Indicators -->
         <div class="stats-grid">
             <div class="stat-card highlight">
-                <div class="stat-label">💰 Total P&L</div>
+                <div class="stat-label">Total P&L</div>
                 <div class="stat-value" id="totalPnl">$0.00</div>
                 <div class="stat-change positive" id="pnlChange">+0.00% return</div>
             </div>
             <div class="stat-card success">
-                <div class="stat-label">📊 Win Rate</div>
+                <div class="stat-label">Win Rate</div>
                 <div class="stat-value" id="winRate">0%</div>
                 <div class="stat-change" id="winRateChange">0/0 trades</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">📈 Sharpe Ratio</div>
+                <div class="stat-label">Sharpe Ratio</div>
                 <div class="stat-value" id="sharpeRatio">0.00</div>
                 <div class="stat-change">Risk-adjusted return</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">📉 Max Drawdown</div>
+                <div class="stat-label">Max Drawdown</div>
                 <div class="stat-value" id="maxDrawdown">0%</div>
                 <div class="stat-change">Peak to trough</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">🤖 Active Bots</div>
+                <div class="stat-label">Active Bots</div>
                 <div class="stat-value" id="activeBots">0</div>
                 <div class="stat-change" id="botsChange">0 signals today</div>
             </div>
@@ -723,72 +900,72 @@
         <!-- Advanced Metrics Row -->
         <div class="stats-grid" style="margin-top: 1rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
             <div class="stat-card" style="padding: 1rem;">
-                <div class="stat-label" style="font-size: 0.75rem;">📊 Sortino Ratio</div>
+                <div class="stat-label" style="font-size: 0.75rem;">Sortino Ratio</div>
                 <div class="stat-value" id="sortinoRatio" style="font-size: 1.25rem;">0.00</div>
                 <div class="stat-change" style="font-size: 0.7rem;">Downside risk</div>
             </div>
             <div class="stat-card" style="padding: 1rem;">
-                <div class="stat-label" style="font-size: 0.75rem;">⚖️ Calmar Ratio</div>
+                <div class="stat-label" style="font-size: 0.75rem;">Calmar Ratio</div>
                 <div class="stat-value" id="calmarRatio" style="font-size: 1.25rem;">0.00</div>
                 <div class="stat-change" style="font-size: 0.7rem;">Return/Drawdown</div>
             </div>
             <div class="stat-card" style="padding: 1rem;">
-                <div class="stat-label" style="font-size: 0.75rem;">💹 Profit Factor</div>
+                <div class="stat-label" style="font-size: 0.75rem;">Profit Factor</div>
                 <div class="stat-value" id="profitFactor" style="font-size: 1.25rem;">0.00</div>
                 <div class="stat-change" style="font-size: 0.7rem;">Gain/Loss ratio</div>
             </div>
             <div class="stat-card" style="padding: 1rem;">
-                <div class="stat-label" style="font-size: 0.75rem;">📈 Best Trade</div>
+                <div class="stat-label" style="font-size: 0.75rem;">Best Trade</div>
                 <div class="stat-value" id="bestTrade" style="font-size: 1.25rem; color: var(--success);">$0</div>
                 <div class="stat-change" style="font-size: 0.7rem;">Top performer</div>
             </div>
             <div class="stat-card" style="padding: 1rem;">
-                <div class="stat-label" style="font-size: 0.75rem;">📉 Worst Trade</div>
+                <div class="stat-label" style="font-size: 0.75rem;">Worst Trade</div>
                 <div class="stat-value" id="worstTrade" style="font-size: 1.25rem; color: var(--danger);">$0</div>
                 <div class="stat-change" style="font-size: 0.7rem;">Biggest loss</div>
             </div>
             <div class="stat-card" style="padding: 1rem;">
-                <div class="stat-label" style="font-size: 0.75rem;">🔥 Win Streak</div>
+                <div class="stat-label" style="font-size: 0.75rem;">Win Streak</div>
                 <div class="stat-value" id="winStreak" style="font-size: 1.25rem;">0</div>
                 <div class="stat-change" style="font-size: 0.7rem;">Longest streak</div>
             </div>
         </div>
         
         <!-- REAL-TIME PROFIT ENGINE SECTION -->
-        <div class="section" style="margin-top: 1.5rem; background: linear-gradient(135deg, #059669 0%, #10b981 50%, #34d399 100%); border: none; position: relative; overflow: hidden;">
+        <div class="section" style="margin-top: 1.5rem; background: radial-gradient(620px 220px at 88% -40%, rgba(21, 68, 155, 0.45), transparent 70%), linear-gradient(135deg, #060d1f 0%, #0e2f63 55%, #0a1f4a 100%); border: 1px solid var(--phins-line); position: relative; overflow: hidden;">
             <div style="position: absolute; top: -50%; right: -20%; width: 300px; height: 300px; background: rgba(255,255,255,0.1); border-radius: 50%; pointer-events: none;"></div>
             <div style="position: absolute; bottom: -30%; left: -10%; width: 200px; height: 200px; background: rgba(255,255,255,0.05); border-radius: 50%; pointer-events: none;"></div>
             
             <div class="section-header" style="position: relative; z-index: 1;">
-                <h2 class="section-title" style="color: white;">⚡ Auto-Profit Trading Engine</h2>
+                <h2 class="section-title" style="color: white;">Auto-Profit Trading Engine</h2>
                 <div style="display: flex; gap: 0.5rem;">
                     <button class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);" onclick="runProfitCycle()">
-                        🚀 Run Profit Cycle
+                        Run Profit Cycle
                     </button>
-                    <button class="btn" style="background: white; color: #059669; font-weight: 600;" onclick="activateProfitTrading()">
-                        ⚡ Activate Auto-Profits
+                    <button class="btn" style="background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%); color: #071022; font-weight: 600;" onclick="activateProfitTrading()">
+                        Activate Auto-Profits
                     </button>
                 </div>
             </div>
             
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; position: relative; z-index: 1;">
                 <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 1.25rem; backdrop-filter: blur(10px);">
-                    <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8); margin-bottom: 0.5rem;">💰 Today's Profit</div>
+                    <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8); margin-bottom: 0.5rem;">Today's Profit</div>
                     <div style="font-size: 1.75rem; font-weight: 700; color: white;" id="profitToday">$0.00</div>
                     <div style="font-size: 0.75rem; color: rgba(255,255,255,0.7);" id="tradesToday">0 trades executed</div>
                 </div>
                 <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 1.25rem; backdrop-filter: blur(10px);">
-                    <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8); margin-bottom: 0.5rem;">📈 This Week</div>
+                    <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8); margin-bottom: 0.5rem;">This Week</div>
                     <div style="font-size: 1.75rem; font-weight: 700; color: white;" id="profitWeek">$0.00</div>
                     <div style="font-size: 0.75rem; color: rgba(255,255,255,0.7);">7-day performance</div>
                 </div>
                 <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 1.25rem; backdrop-filter: blur(10px);">
-                    <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8); margin-bottom: 0.5rem;">📊 This Month</div>
+                    <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8); margin-bottom: 0.5rem;">This Month</div>
                     <div style="font-size: 1.75rem; font-weight: 700; color: white;" id="profitMonth">$0.00</div>
                     <div style="font-size: 0.75rem; color: rgba(255,255,255,0.7);">30-day performance</div>
                 </div>
                 <div style="background: rgba(255,255,255,0.2); border-radius: 12px; padding: 1.25rem; backdrop-filter: blur(10px); border: 2px solid rgba(255,255,255,0.3);">
-                    <div style="font-size: 0.85rem; color: rgba(255,255,255,0.9); margin-bottom: 0.5rem;">🏆 All-Time Profit</div>
+                    <div style="font-size: 0.85rem; color: rgba(255,255,255,0.9); margin-bottom: 0.5rem;">All-Time Profit</div>
                     <div style="font-size: 2rem; font-weight: 800; color: white;" id="profitAllTime">$0.00</div>
                     <div style="font-size: 0.75rem; color: rgba(255,255,255,0.8);" id="totalWinRate">Win rate: 0%</div>
                 </div>
@@ -796,26 +973,26 @@
             
             <!-- Recent Profitable Trades -->
             <div style="margin-top: 1.25rem; background: rgba(0,0,0,0.2); border-radius: 12px; padding: 1rem; position: relative; z-index: 1;">
-                <div style="font-size: 0.9rem; font-weight: 600; color: white; margin-bottom: 0.75rem;">📋 Recent Profitable Trades</div>
+                <div style="font-size: 0.9rem; font-weight: 600; color: white; margin-bottom: 0.75rem;">Recent Profitable Trades</div>
                 <div id="recentProfitableTrades" style="display: flex; flex-wrap: wrap; gap: 0.5rem; max-height: 80px; overflow-y: auto;">
                     <span style="background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem;">
-                        No trades yet - Click "Activate Auto-Profits" to start!
+                        No live trades yet.
                     </span>
                 </div>
             </div>
         </div>
         
         <!-- Smart Bot Templates Section -->
-        <div class="section" style="margin-top: 1.5rem; background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%); border: 1px solid rgba(99, 102, 241, 0.3);">
+        <div class="section" style="margin-top: 1.5rem; background: radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%), var(--bg-card); border: 1px solid var(--phins-line);">
             <div class="section-header">
-                <h2 class="section-title">🧠 Smart Bot Templates</h2>
+                <h2 class="section-title">Smart Bot Templates</h2>
                 <div style="display: flex; gap: 0.5rem;">
                     <select class="form-select" id="riskFilter" style="width: auto; padding: 0.5rem; font-size: 0.8rem;" onchange="loadSmartBotTemplates()">
                         <option value="">All Risk Levels</option>
-                        <option value="low">🛡️ Low Risk</option>
-                        <option value="medium">⚖️ Medium Risk</option>
-                        <option value="high">🔥 High Risk</option>
-                        <option value="very_high">⚡ Very High Risk</option>
+                        <option value="low">Low Risk</option>
+                        <option value="medium">Medium Risk</option>
+                        <option value="high">High Risk</option>
+                        <option value="very_high">Very High Risk</option>
                     </select>
                     <button class="btn btn-outline btn-small" onclick="loadSmartBotTemplates()">⟳</button>
                 </div>
@@ -823,9 +1000,9 @@
             <div id="smartBotTemplates" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem;">
                 <!-- Populated by JS -->
             </div>
-            <div style="margin-top: 1rem; padding: 1rem; background: rgba(99, 102, 241, 0.1); border-radius: 10px;">
+            <div style="margin-top: 1rem; padding: 1rem; background: rgba(21, 68, 155, 0.28); border-radius: 10px;">
                 <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-                    <span style="font-size: 1.2rem;">💡</span>
+                    
                     <span style="font-weight: 600;">Quick Setup</span>
                 </div>
                 <p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0;">
@@ -838,14 +1015,14 @@
         <!-- Extended Market Data Section -->
         <div class="section" style="margin-top: 1.5rem;">
             <div class="section-header">
-                <h2 class="section-title">🌐 Extended Market Data</h2>
+                <h2 class="section-title">Extended Market Data</h2>
                 <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
                     <button class="btn btn-outline btn-small asset-class-btn active" data-class="" onclick="loadExtendedMarket('')">All</button>
-                    <button class="btn btn-outline btn-small asset-class-btn" data-class="equity" onclick="loadExtendedMarket('equity')">📈 Stocks</button>
-                    <button class="btn btn-outline btn-small asset-class-btn" data-class="crypto" onclick="loadExtendedMarket('crypto')">₿ Crypto</button>
-                    <button class="btn btn-outline btn-small asset-class-btn" data-class="commodity" onclick="loadExtendedMarket('commodity')">🛢️ Commodities</button>
-                    <button class="btn btn-outline btn-small asset-class-btn" data-class="forex" onclick="loadExtendedMarket('forex')">💱 Forex</button>
-                    <button class="btn btn-outline btn-small asset-class-btn" data-class="bond" onclick="loadExtendedMarket('bond')">📜 Bonds</button>
+                    <button class="btn btn-outline btn-small asset-class-btn" data-class="equity" onclick="loadExtendedMarket('equity')">Stocks</button>
+                    <button class="btn btn-outline btn-small asset-class-btn" data-class="crypto" onclick="loadExtendedMarket('crypto')">Crypto</button>
+                    <button class="btn btn-outline btn-small asset-class-btn" data-class="commodity" onclick="loadExtendedMarket('commodity')">Commodities</button>
+                    <button class="btn btn-outline btn-small asset-class-btn" data-class="forex" onclick="loadExtendedMarket('forex')">Forex</button>
+                    <button class="btn btn-outline btn-small asset-class-btn" data-class="bond" onclick="loadExtendedMarket('bond')">Bonds</button>
                 </div>
             </div>
             <div id="extendedMarketData" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; max-height: 350px; overflow-y: auto;">
@@ -854,12 +1031,33 @@
         </div>
 
         <!-- AI Savings Pipeline Visualization -->
-        <div class="section" style="margin-bottom: 1.5rem; background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); border: 1px solid rgba(139, 92, 246, 0.3);">
+        <div class="section" id="unifiedPipelineSection" style="margin-bottom: 1.5rem; background: radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%), var(--bg-card); border: 1px solid var(--phins-line);">
             <div class="section-header">
-                <h2 class="section-title">🔄 AI Savings Pipeline</h2>
-                <div style="display: flex; gap: 0.5rem;">
-                    <span id="pipelineHealth" style="background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem;">● Excellent</span>
+                <h2 class="section-title">Actuarial Premium &amp; Savings Pipeline</h2>
+                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                    <span id="actuarialSourceBadge" style="background: rgba(227, 191, 111, 0.16); color: var(--phins-gold-strong); padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.72rem; letter-spacing: 0.06em;">PHINS_ACTUARIAL_TABLES_V1</span>
+                    <span id="pipelineHealth" style="background: rgba(127, 178, 255, 0.12); color: var(--text-secondary); padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem;">Awaiting live data</span>
                     <button class="btn btn-outline btn-small" onclick="loadPipelineData()">⟳</button>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; margin-bottom: 1rem;">
+                <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
+                    <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Monthly Premium</div>
+                    <div id="actuarialPremium" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">$0.00</div>
+                </div>
+                <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
+                    <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Risk Coverage</div>
+                    <div id="actuarialRiskPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">50%</div>
+                    <div id="actuarialRiskAmt" style="font-size: 0.75rem; color: var(--text-secondary);">$0.00</div>
+                </div>
+                <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
+                    <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Savings Portion</div>
+                    <div id="actuarialSavingsPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">50%</div>
+                    <div id="actuarialSavingsAmt" style="font-size: 0.75rem; color: var(--text-secondary);">$0.00</div>
+                </div>
+                <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
+                    <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Policies / Age</div>
+                    <div id="actuarialPolicyMeta" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.05rem; font-weight: 600;">0 · —</div>
                 </div>
             </div>
             
@@ -867,7 +1065,7 @@
             <div style="display: flex; align-items: center; justify-content: space-between; padding: 1.5rem; background: rgba(0,0,0,0.2); border-radius: 12px; margin-bottom: 1rem; overflow-x: auto;">
                 <!-- Premium Payment -->
                 <div style="text-align: center; min-width: 100px;">
-                    <div style="width: 60px; height: 60px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 0.5rem; font-size: 1.5rem;">💵</div>
+                    <div style="width: 60px; height: 60px; background: linear-gradient(135deg, #0e2f63 0%, #1565c0 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 0.5rem; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;">PREM</div>
                     <div style="font-weight: 600; font-size: 0.85rem;">Premium</div>
                     <div style="color: var(--text-secondary); font-size: 0.75rem;">Savings Portion</div>
                 </div>
@@ -879,14 +1077,14 @@
                 
                 <!-- Cash Balance (Staging) -->
                 <div style="text-align: center; min-width: 100px;">
-                    <div style="width: 60px; height: 60px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 0.5rem; font-size: 1.5rem;">💰</div>
+                    <div style="width: 60px; height: 60px; background: linear-gradient(135deg, #b8893b 0%, #e3bf6f 100%); color: #071022; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 0.5rem; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;">CASH</div>
                     <div style="font-weight: 600; font-size: 0.85rem;">Cash Balance</div>
                     <div style="color: var(--success); font-size: 0.75rem;" id="pipelineCashBalance">$0.00</div>
                 </div>
                 
                 <!-- Arrow with AI -->
                 <div style="flex: 0 0 60px; text-align: center;">
-                    <div style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); padding: 0.25rem 0.5rem; border-radius: 8px; font-size: 0.7rem; margin-bottom: 0.25rem;">🤖 AI</div>
+                    <div style="background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%); color: #071022; padding: 0.25rem 0.5rem; border-radius: 8px; font-size: 0.7rem; margin-bottom: 0.25rem;">AI</div>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--secondary)" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                 </div>
                 
@@ -894,7 +1092,7 @@
                 <div style="display: flex; flex-direction: column; gap: 0.5rem; min-width: 280px;">
                     <!-- Wallet -->
                     <div style="display: flex; align-items: center; gap: 0.75rem; background: rgba(16, 185, 129, 0.1); padding: 0.5rem 0.75rem; border-radius: 8px;">
-                        <span style="font-size: 1.2rem;">🏥</span>
+                        <span class="pipe-mark" style="font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; color: #6fe0b8;">HW</span>
                         <div style="flex: 1;">
                             <div style="font-size: 0.8rem; font-weight: 500;">Health Wallet</div>
                             <div style="font-size: 0.7rem; color: var(--text-secondary);">Emergency Fund</div>
@@ -906,7 +1104,7 @@
                     </div>
                     <!-- Investments -->
                     <div style="display: flex; align-items: center; gap: 0.75rem; background: rgba(59, 130, 246, 0.1); padding: 0.5rem 0.75rem; border-radius: 8px;">
-                        <span style="font-size: 1.2rem;">📈</span>
+                        <span class="pipe-mark" style="font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; color: #7fb2ff;">INV</span>
                         <div style="flex: 1;">
                             <div style="font-size: 0.8rem; font-weight: 500;">Investments</div>
                             <div style="font-size: 0.7rem; color: var(--text-secondary);">Index • Bonds • Crypto</div>
@@ -917,8 +1115,8 @@
                         </div>
                     </div>
                     <!-- Algo Trading -->
-                    <div style="display: flex; align-items: center; gap: 0.75rem; background: rgba(139, 92, 246, 0.1); padding: 0.5rem 0.75rem; border-radius: 8px;">
-                        <span style="font-size: 1.2rem;">🤖</span>
+                    <div style="display: flex; align-items: center; gap: 0.75rem; background: rgba(227, 191, 111, 0.1); padding: 0.5rem 0.75rem; border-radius: 8px;">
+                        <span class="pipe-mark" style="font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; color: #e3bf6f;">ALGO</span>
                         <div style="flex: 1;">
                             <div style="font-size: 0.8rem; font-weight: 500;">Algo Trading</div>
                             <div style="font-size: 0.7rem; color: var(--text-secondary);">Automated Strategies</div>
@@ -932,14 +1130,14 @@
             </div>
             
             <!-- AI Recommendation -->
-            <div id="aiRecommendation" style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 10px; padding: 1rem;">
+            <div id="aiRecommendation" style="background: rgba(227, 191, 111, 0.08); border: 1px solid rgba(227, 191, 111, 0.28); border-radius: 10px; padding: 1rem;">
                 <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-                    <span style="font-size: 1.2rem;">🧠</span>
+                    
                     <span style="font-weight: 600;">AI Recommendation</span>
-                    <span id="aiConfBadge" style="background: rgba(139, 92, 246, 0.3); padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.7rem; margin-left: auto;">Live AI</span>
+                    <span id="aiConfBadge" style="background: rgba(227, 191, 111, 0.22); padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.7rem; margin-left: auto;">Live AI</span>
                 </div>
                 <p id="aiRecommendationText" style="color: var(--text-secondary); font-size: 0.85rem; margin: 0;">
-                    Analyzing your portfolio... Loading AI recommendations.
+                    Awaiting live pipeline recommendation.
                 </p>
             </div>
         </div>
@@ -949,9 +1147,9 @@
                 <!-- Trading Bots -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">🤖 Trading Bots</h2>
+                        <h2 class="section-title">Trading Bots</h2>
                         <button class="btn btn-primary" onclick="showCreateBotModal()">
-                            <span>➕</span> Create Bot
+                            Create Bot
                         </button>
                     </div>
                     <div class="bot-grid" id="botGrid">
@@ -962,7 +1160,7 @@
                 <!-- Active Signals - Enhanced with Real-time Updates -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">📡 Live Trading Signals</h2>
+                        <h2 class="section-title">Live Trading Signals</h2>
                         <div style="display: flex; align-items: center; gap: 0.75rem;">
                             <span id="signalUpdateTime" style="font-size: 0.75rem; color: var(--text-secondary);">Updated just now</span>
                             <div id="signalLiveIndicator" style="display: flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0.5rem; background: rgba(16, 185, 129, 0.15); border-radius: 6px;">
@@ -976,10 +1174,10 @@
                     <!-- Signal Filters -->
                     <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap;">
                         <button class="btn btn-small signal-filter-btn active" data-filter="all" onclick="filterSignals('all')">All Signals</button>
-                        <button class="btn btn-small signal-filter-btn" data-filter="strong_buy" onclick="filterSignals('strong_buy')" style="color: #10b981;">🟢 Strong Buy</button>
-                        <button class="btn btn-small signal-filter-btn" data-filter="buy" onclick="filterSignals('buy')" style="color: #34d399;">📈 Buy</button>
-                        <button class="btn btn-small signal-filter-btn" data-filter="sell" onclick="filterSignals('sell')" style="color: #f87171;">📉 Sell</button>
-                        <button class="btn btn-small signal-filter-btn" data-filter="strong_sell" onclick="filterSignals('strong_sell')" style="color: #ef4444;">🔴 Strong Sell</button>
+                        <button class="btn btn-small signal-filter-btn" data-filter="strong_buy" onclick="filterSignals('strong_buy')" style="color: #10b981;">Strong Buy</button>
+                        <button class="btn btn-small signal-filter-btn" data-filter="buy" onclick="filterSignals('buy')" style="color: #34d399;">Buy</button>
+                        <button class="btn btn-small signal-filter-btn" data-filter="sell" onclick="filterSignals('sell')" style="color: #f87171;">Sell</button>
+                        <button class="btn btn-small signal-filter-btn" data-filter="strong_sell" onclick="filterSignals('strong_sell')" style="color: #ef4444;">Strong Sell</button>
                     </div>
                     
                     <table class="signals-table">
@@ -1025,7 +1223,7 @@
                 <!-- Active Positions with Real-time P&L -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">📊 Active Positions</h2>
+                        <h2 class="section-title">Active Positions</h2>
                         <button class="btn btn-outline btn-small" onclick="loadPositions()">⟳ Refresh P&L</button>
                     </div>
                     <table class="signals-table" id="positionsTable">
@@ -1046,7 +1244,7 @@
                             <tr><td colspan="9" style="text-align: center; color: var(--text-secondary); padding: 2rem;">Loading positions...</td></tr>
                         </tbody>
                     </table>
-                    <div style="margin-top: 1rem; padding: 1rem; background: rgba(99, 102, 241, 0.1); border-radius: 10px;">
+                    <div style="margin-top: 1rem; padding: 1rem; background: rgba(21, 68, 155, 0.28); border-radius: 10px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
                             <div>
                                 <div style="color: var(--text-secondary); font-size: 0.8rem;">Total Unrealized P&L</div>
@@ -1071,7 +1269,7 @@
                 <!-- Order History -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">📜 Recent Orders</h2>
+                        <h2 class="section-title">Recent Orders</h2>
                     </div>
                     <div id="orderHistory">
                         <!-- Populated by JS -->
@@ -1083,7 +1281,7 @@
                 <!-- Market Overview -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">📊 Market Overview</h2>
+                        <h2 class="section-title">Market Overview</h2>
                     </div>
                     <div class="market-grid" id="marketGrid">
                         <!-- Populated by JS -->
@@ -1093,7 +1291,7 @@
                 <!-- Technical Indicators -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">📉 Indicators</h2>
+                        <h2 class="section-title">Indicators</h2>
                         <select class="form-select" style="width: auto;" id="indicatorSymbol" onchange="loadIndicators()">
                             <option value="SPY">SPY</option>
                             <option value="QQQ">QQQ</option>
@@ -1123,52 +1321,52 @@
                 <!-- Quick Trade -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">⚡ Quick Trade</h2>
+                        <h2 class="section-title">Quick Trade</h2>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Asset Class</label>
                         <select class="form-select" id="quickTradeClass" onchange="updateQuickTradeSymbols()" style="margin-bottom: 0.5rem;">
-                            <option value="all">🌐 All Assets</option>
-                            <option value="index">📊 Indices</option>
-                            <option value="equity">📈 Equities</option>
-                            <option value="crypto">₿ Crypto</option>
-                            <option value="commodity">🛢️ Commodities</option>
-                            <option value="forex">💱 Forex</option>
-                            <option value="bond">📜 Bonds</option>
+                            <option value="all">All Assets</option>
+                            <option value="index">Indices</option>
+                            <option value="equity">Equities</option>
+                            <option value="crypto">Crypto</option>
+                            <option value="commodity">Commodities</option>
+                            <option value="forex">Forex</option>
+                            <option value="bond">Bonds</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Symbol</label>
                         <select class="form-select" id="quickTradeSymbol">
-                            <optgroup label="📊 Indices" data-asset-class="index">
+                            <optgroup label="Indices" data-asset-class="index">
                                 <option value="SPY">SPY - S&P 500</option>
                                 <option value="QQQ">QQQ - NASDAQ</option>
                                 <option value="DIA">DIA - Dow Jones</option>
                             </optgroup>
-                            <optgroup label="📈 Equities" data-asset-class="equity">
+                            <optgroup label="Equities" data-asset-class="equity">
                                 <option value="AAPL">AAPL - Apple</option>
                                 <option value="MSFT">MSFT - Microsoft</option>
                                 <option value="NVDA">NVDA - NVIDIA</option>
                                 <option value="GOOGL">GOOGL - Alphabet</option>
                                 <option value="TSLA">TSLA - Tesla</option>
                             </optgroup>
-                            <optgroup label="₿ Crypto" data-asset-class="crypto">
+                            <optgroup label="Crypto" data-asset-class="crypto">
                                 <option value="BTC">BTC - Bitcoin</option>
                                 <option value="ETH">ETH - Ethereum</option>
                                 <option value="SOL">SOL - Solana</option>
                                 <option value="AVAX">AVAX - Avalanche</option>
                             </optgroup>
-                            <optgroup label="🛢️ Commodities" data-asset-class="commodity">
+                            <optgroup label="Commodities" data-asset-class="commodity">
                                 <option value="GLD">GLD - Gold</option>
                                 <option value="SLV">SLV - Silver</option>
                                 <option value="USO">USO - Oil</option>
                             </optgroup>
-                            <optgroup label="💱 Forex" data-asset-class="forex">
+                            <optgroup label="Forex" data-asset-class="forex">
                                 <option value="EURUSD">EUR/USD</option>
                                 <option value="GBPUSD">GBP/USD</option>
                                 <option value="USDJPY">USD/JPY</option>
                             </optgroup>
-                            <optgroup label="📜 Bonds" data-asset-class="bond">
+                            <optgroup label="Bonds" data-asset-class="bond">
                                 <option value="BND">BND - Total Bond</option>
                                 <option value="TLT">TLT - 20+ Yr Treasury</option>
                                 <option value="HYG">HYG - High Yield</option>
@@ -1180,15 +1378,15 @@
                         <input type="number" class="form-input" id="quickTradeAmount" placeholder="100" min="10">
                     </div>
                     <div style="display: flex; gap: 0.5rem;">
-                        <button class="btn btn-success" style="flex: 1;" onclick="quickTrade('buy')">📈 Buy</button>
-                        <button class="btn btn-danger" style="flex: 1;" onclick="quickTrade('sell')">📉 Sell</button>
+                        <button class="btn btn-success" style="flex: 1;" onclick="quickTrade('buy')">Buy</button>
+                        <button class="btn btn-danger" style="flex: 1;" onclick="quickTrade('sell')">Sell</button>
                     </div>
                 </div>
 
                 <!-- Fund Trading Account -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">💰 Fund Account</h2>
+                        <h2 class="section-title">Fund Account</h2>
                     </div>
                     <div style="background: var(--bg-hover); border-radius: 10px; padding: 1rem; margin-bottom: 1rem;">
                         <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
@@ -1205,44 +1403,44 @@
                         </div>
                     </div>
                     <div style="display: flex; gap: 0.5rem;">
-                        <button class="btn btn-success btn-small" style="flex: 1;" onclick="showFundModal('deposit')">➕ Deposit</button>
-                        <button class="btn btn-outline btn-small" style="flex: 1;" onclick="showFundModal('withdraw')">➖ Withdraw</button>
+                        <button class="btn btn-success btn-small" style="flex: 1;" onclick="showFundModal('deposit')">Deposit</button>
+                        <button class="btn btn-outline btn-small" style="flex: 1;" onclick="showFundModal('withdraw')">Withdraw</button>
                     </div>
                 </div>
 
                 <!-- Auto Rebalance -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">⚖️ Auto Rebalance</h2>
+                        <h2 class="section-title">Auto Rebalance</h2>
                     </div>
                     <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1rem;">
                         Automatically rebalance your portfolio to target allocation.
                     </p>
                     <button class="btn btn-primary" style="width: 100%;" onclick="autoRebalance()">
-                        🔄 Rebalance Now
+                        Rebalance Now
                     </button>
                 </div>
                 
                 <!-- Unified Balance -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">📊 Unified Balance</h2>
+                        <h2 class="section-title">Unified Balance</h2>
                     </div>
                     <div id="unifiedBalanceDisplay" style="font-size: 0.85rem;">
                         <div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border);">
-                            <span style="color: var(--text-secondary);">🏥 Health Wallet</span>
+                            <span style="color: var(--text-secondary);">Health Wallet</span>
                             <span id="walletBalanceDisplay">$0.00</span>
                         </div>
                         <div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border);">
-                            <span style="color: var(--text-secondary);">📈 Investments</span>
+                            <span style="color: var(--text-secondary);">Investments</span>
                             <span id="investmentBalanceDisplay">$0.00</span>
                         </div>
                         <div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border);">
-                            <span style="color: var(--text-secondary);">🤖 Algo Trading</span>
+                            <span style="color: var(--text-secondary);">Algo Trading</span>
                             <span id="algoBalanceDisplay">$0.00</span>
                         </div>
                         <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; font-weight: 600;">
-                            <span>💎 Total Assets</span>
+                            <span>Total Assets</span>
                             <span style="color: var(--success);" id="totalAssetsDisplay">$0.00</span>
                         </div>
                     </div>
@@ -1256,16 +1454,16 @@
     <div class="modal" id="createBotModal">
         <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
-                <h2>🤖 Create Trading Bot</h2>
+                <h2>Create Trading Bot</h2>
                 <button class="modal-close" onclick="hideCreateBotModal()">×</button>
             </div>
             
             <!-- Bot Status Preview -->
-            <div id="botPreview" style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; border: 1px solid rgba(99, 102, 241, 0.3);">
+            <div id="botPreview" style="background: radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%), var(--bg-hover); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; border: 1px solid var(--phins-line);">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
                         <div id="botPreviewName" style="font-weight: 600; font-size: 1.1rem;">New Trading Bot</div>
-                        <div id="botPreviewStrategy" style="color: var(--text-secondary); font-size: 0.85rem;">📈 Momentum Strategy</div>
+                        <div id="botPreviewStrategy" style="color: var(--text-secondary); font-size: 0.85rem;">Momentum Strategy</div>
                     </div>
                     <div style="text-align: right;">
                         <div style="color: var(--success); font-weight: 600;">Ready to Deploy</div>
@@ -1282,9 +1480,9 @@
                 <div class="form-group">
                     <label class="form-label">Risk Level</label>
                     <select class="form-select" id="botRiskLevel" onchange="updateBotPreview()">
-                        <option value="conservative">🛡️ Conservative (Low Risk)</option>
-                        <option value="moderate" selected>⚖️ Moderate (Balanced)</option>
-                        <option value="aggressive">🔥 Aggressive (High Risk)</option>
+                        <option value="conservative">Conservative (Low Risk)</option>
+                        <option value="moderate" selected>Moderate (Balanced)</option>
+                        <option value="aggressive">Aggressive (High Risk)</option>
                     </select>
                 </div>
             </div>
@@ -1292,25 +1490,25 @@
             <div class="form-group">
                 <label class="form-label">Strategy</label>
                 <select class="form-select" id="botStrategy" onchange="updateBotPreview()">
-                    <optgroup label="🎯 Classic Strategies">
-                        <option value="momentum">📈 Momentum - Follow price trends</option>
-                        <option value="mean_reversion">🔄 Mean Reversion - Buy dips, sell rallies</option>
-                        <option value="trend_following">📊 Trend Following - Ride long trends</option>
-                        <option value="breakout">🚀 Breakout - Trade key levels</option>
+                    <optgroup label="Classic Strategies">
+                        <option value="momentum">Momentum - Follow price trends</option>
+                        <option value="mean_reversion">Mean Reversion - Buy dips, sell rallies</option>
+                        <option value="trend_following">Trend Following - Ride long trends</option>
+                        <option value="breakout">Breakout - Trade key levels</option>
                     </optgroup>
-                    <optgroup label="📉 Indicator-Based">
-                        <option value="rsi_strategy">📉 RSI Strategy - Overbought/Oversold</option>
-                        <option value="macd_crossover">📈 MACD Crossover - Momentum shifts</option>
+                    <optgroup label="Indicator-Based">
+                        <option value="rsi_strategy">RSI Strategy - Overbought/Oversold</option>
+                        <option value="macd_crossover">MACD Crossover - Momentum shifts</option>
                     </optgroup>
-                    <optgroup label="💰 Passive Strategies">
-                        <option value="dollar_cost_averaging">💰 DCA - Regular investments</option>
-                        <option value="grid_trading">📊 Grid Trading - Range bound</option>
+                    <optgroup label="Passive Strategies">
+                        <option value="dollar_cost_averaging">DCA - Regular investments</option>
+                        <option value="grid_trading">Grid Trading - Range bound</option>
                     </optgroup>
-                    <optgroup label="⚡ Advanced Strategies">
-                        <option value="scalping">⚡ Scalping - Quick profits</option>
-                        <option value="swing_trading">📊 Swing Trading - Multi-day holds</option>
-                        <option value="arbitrage">🔀 Arbitrage - Price differences</option>
-                        <option value="ai_adaptive">🧠 AI Adaptive - ML-powered</option>
+                    <optgroup label="Advanced Strategies">
+                        <option value="scalping">Scalping - Quick profits</option>
+                        <option value="swing_trading">Swing Trading - Multi-day holds</option>
+                        <option value="arbitrage">Arbitrage - Price differences</option>
+                        <option value="ai_adaptive">AI Adaptive - ML-powered</option>
                     </optgroup>
                 </select>
             </div>
@@ -1318,13 +1516,13 @@
             <div class="form-group">
                 <label class="form-label">Trading Symbols <span style="color: var(--text-secondary); font-size: 0.8rem;">(Hold Ctrl/Cmd to select multiple)</span></label>
                 <select class="form-select" id="botSymbols" multiple style="height: 150px;">
-                    <optgroup label="📊 Indices">
+                    <optgroup label="Indices">
                         <option value="SPY" selected>SPY - S&P 500</option>
                         <option value="QQQ">QQQ - NASDAQ 100</option>
                         <option value="DIA">DIA - Dow Jones</option>
                         <option value="IWM">IWM - Russell 2000</option>
                     </optgroup>
-                    <optgroup label="📈 Tech Equities">
+                    <optgroup label="Tech Equities">
                         <option value="AAPL">AAPL - Apple</option>
                         <option value="MSFT">MSFT - Microsoft</option>
                         <option value="NVDA">NVDA - NVIDIA</option>
@@ -1333,7 +1531,7 @@
                         <option value="META">META - Meta</option>
                         <option value="AMZN">AMZN - Amazon</option>
                     </optgroup>
-                    <optgroup label="₿ Crypto">
+                    <optgroup label="Crypto">
                         <option value="BTC" selected>BTC - Bitcoin</option>
                         <option value="ETH">ETH - Ethereum</option>
                         <option value="SOL">SOL - Solana</option>
@@ -1341,18 +1539,18 @@
                         <option value="AVAX">AVAX - Avalanche</option>
                         <option value="ADA">ADA - Cardano</option>
                     </optgroup>
-                    <optgroup label="🛢️ Commodities">
+                    <optgroup label="Commodities">
                         <option value="GLD">GLD - Gold</option>
                         <option value="SLV">SLV - Silver</option>
                         <option value="USO">USO - Oil</option>
                         <option value="UNG">UNG - Natural Gas</option>
                     </optgroup>
-                    <optgroup label="💱 Forex">
+                    <optgroup label="Forex">
                         <option value="EURUSD">EUR/USD</option>
                         <option value="GBPUSD">GBP/USD</option>
                         <option value="USDJPY">USD/JPY</option>
                     </optgroup>
-                    <optgroup label="📜 Bonds">
+                    <optgroup label="Bonds">
                         <option value="BND">BND - Total Bond</option>
                         <option value="TLT">TLT - 20+ Yr Treasury</option>
                         <option value="HYG">HYG - High Yield</option>
@@ -1387,7 +1585,7 @@
             <div style="display: flex; gap: 1rem; margin-top: 1rem;">
                 <button class="btn btn-outline" style="flex: 1;" onclick="hideCreateBotModal()">Cancel</button>
                 <button class="btn btn-primary" style="flex: 2;" onclick="createBot()" id="createBotBtn">
-                    🚀 Launch Trading Bot
+                    Launch Trading Bot
                 </button>
             </div>
         </div>
@@ -1397,14 +1595,14 @@
     <div class="modal" id="fundModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 id="fundModalTitle">💰 Fund Algo Trading</h2>
+                <h2 id="fundModalTitle">Fund Algo Trading</h2>
                 <button class="modal-close" onclick="hideFundModal()">×</button>
             </div>
             <div class="form-group">
                 <label class="form-label" id="fundSourceLabel">Transfer From</label>
                 <select class="form-select" id="fundSource">
-                    <option value="investment_account">📈 Investment Account</option>
-                    <option value="health_wallet">🏥 Health Wallet</option>
+                    <option value="investment_account">Investment Account</option>
+                    <option value="health_wallet">Health Wallet</option>
                 </select>
             </div>
             <div class="form-group">
@@ -1418,7 +1616,7 @@
                 </div>
             </div>
             <button class="btn btn-primary" style="width: 100%;" id="fundActionBtn" onclick="executeFundTransfer()">
-                ➕ Deposit to Algo Trading
+                Deposit to Algo Trading
             </button>
         </div>
     </div>
@@ -1538,7 +1736,7 @@
             setInterval(loadPipelineData, 60000);   // Pipeline every 60 seconds
             setInterval(loadOrders, 30000);         // Orders every 30 seconds
             
-            console.log('✅ Real-time updates initialized');
+            console.log('Real-time updates initialized');
         });
         
         // Real-time price update function
@@ -1594,7 +1792,7 @@
             if (bots.length === 0) {
                 grid.innerHTML = `
                     <div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--text-secondary);">
-                        <div style="font-size: 3rem; margin-bottom: 1rem;">🤖</div>
+                        
                         <p>No trading bots yet. Create your first bot to start automated trading!</p>
                     </div>
                 `;
@@ -1609,7 +1807,7 @@
                             <div class="bot-strategy">${formatStrategy(bot.strategy)}</div>
                         </div>
                         <span class="bot-status ${bot.is_active ? 'running' : 'stopped'}">
-                            ${bot.is_active ? '● Running' : '○ Stopped'}
+                            ${bot.is_active ? 'Running' : 'Stopped'}
                         </span>
                     </div>
                     <div class="bot-stats">
@@ -1633,11 +1831,11 @@
                     </div>
                     <div class="bot-actions">
                         ${bot.is_active 
-                            ? `<button class="btn btn-danger btn-small" onclick="stopBot('${bot.bot_id}')">⏹ Stop</button>`
-                            : `<button class="btn btn-success btn-small" onclick="startBot('${bot.bot_id}')">▶ Start</button>`
+                            ? `<button class="btn btn-danger btn-small" onclick="stopBot('${bot.bot_id}')">Stop</button>`
+                            : `<button class="btn btn-success btn-small" onclick="startBot('${bot.bot_id}')">Start</button>`
                         }
-                        <button class="btn btn-outline btn-small" onclick="runBotCycle('${bot.bot_id}')">🔄 Run Cycle</button>
-                        <button class="btn btn-outline btn-small" onclick="deleteBot('${bot.bot_id}')">🗑</button>
+                        <button class="btn btn-outline btn-small" onclick="runBotCycle('${bot.bot_id}')">Run Cycle</button>
+                        <button class="btn btn-outline btn-small" onclick="deleteBot('${bot.bot_id}')">Delete</button>
                     </div>
                 </div>
             `).join('');
@@ -1645,18 +1843,18 @@
         
         function formatStrategy(strategy) {
             const names = {
-                'momentum': '📈 Momentum',
-                'mean_reversion': '🔄 Mean Reversion',
-                'trend_following': '📊 Trend Following',
-                'rsi_strategy': '📉 RSI Strategy',
-                'macd_crossover': '📈 MACD Crossover',
-                'dollar_cost_averaging': '💰 DCA',
-                'breakout': '🚀 Breakout',
-                'grid_trading': '📊 Grid Trading',
-                'scalping': '⚡ Scalping',
-                'swing_trading': '📊 Swing Trading',
-                'arbitrage': '🔀 Arbitrage',
-                'ai_adaptive': '🧠 AI Adaptive'
+                'momentum': 'Momentum',
+                'mean_reversion': 'Mean Reversion',
+                'trend_following': 'Trend Following',
+                'rsi_strategy': 'RSI Strategy',
+                'macd_crossover': 'MACD Crossover',
+                'dollar_cost_averaging': 'DCA',
+                'breakout': 'Breakout',
+                'grid_trading': 'Grid Trading',
+                'scalping': 'Scalping',
+                'swing_trading': 'Swing Trading',
+                'arbitrage': 'Arbitrage',
+                'ai_adaptive': 'AI Adaptive'
             };
             return names[strategy] || strategy;
         }
@@ -1746,7 +1944,7 @@
                 btn.classList.toggle('active', btn.dataset.filter === filter);
                 if (btn.dataset.filter === filter) {
                     btn.style.background = 'var(--primary)';
-                    btn.style.color = 'white';
+                    btn.style.color = '#071022';
                 } else {
                     btn.style.background = 'transparent';
                     btn.style.color = '';
@@ -1794,7 +1992,6 @@
             table.innerHTML = filteredSignals.slice(0, 15).map(signal => {
                 const confidenceColor = signal.confidence >= 0.8 ? 'var(--success)' : signal.confidence >= 0.6 ? 'var(--warning)' : 'var(--text-secondary)';
                 const isBuy = signal.signal_type.includes('buy');
-                const signalIcon = signal.signal_type === 'strong_buy' ? '🟢' : signal.signal_type === 'buy' ? '📈' : signal.signal_type === 'strong_sell' ? '🔴' : '📉';
                 
                 // Calculate risk/reward ratio
                 const currentPrice = signal.current_price || signal.indicators?.current_price || signal.price_target || 0;
@@ -1813,7 +2010,7 @@
                         </td>
                         <td>
                             <span class="signal-badge ${signal.signal_type}" style="display: inline-flex; align-items: center; gap: 0.25rem;">
-                                ${signalIcon} ${signal.signal_type.replace('_', ' ').toUpperCase()}
+                                ${signal.signal_type.replace('_', ' ').toUpperCase()}
                             </span>
                         </td>
                         <td style="font-size: 0.85rem;">${formatStrategy(signal.strategy)}</td>
@@ -1836,7 +2033,7 @@
                                 <button class="btn ${isBuy ? 'btn-success' : 'btn-danger'} btn-small" 
                                         onclick="executeSignal('${signal.signal_id}', '${signal.symbol}', '${isBuy ? 'buy' : 'sell'}')"
                                         style="font-size: 0.75rem; padding: 0.35rem 0.6rem;">
-                                    ${isBuy ? '📈 Buy' : '📉 Sell'}
+                                    ${isBuy ? 'Buy' : 'Sell'}
                                 </button>
                             </div>
                         </td>
@@ -1871,7 +2068,7 @@
             container.innerHTML = orders.map(order => `
                 <div class="order-item">
                     <div class="order-info">
-                        <div class="order-side ${order.side}">${order.side === 'buy' ? '📈' : '📉'}</div>
+                        <div class="order-side ${order.side}">${order.side === 'buy' ? 'BUY' : 'SELL'}</div>
                         <div>
                             <div class="order-symbol">${order.symbol}</div>
                             <div class="order-details">${order.quantity.toFixed(4)} @ $${order.price.toFixed(2)}</div>
@@ -2052,19 +2249,24 @@
         
         function renderMarketOverview(assets) {
             const grid = document.getElementById('marketGrid');
+            const liveAssets = (assets || []).filter(asset => Number(asset.price) > 0 && asset.is_live !== false);
+            if (liveAssets.length === 0) {
+                grid.innerHTML = '<div class="market-item" style="grid-column:1/-1;text-align:center;color:var(--text-secondary);">No live market quotes</div>';
+                return;
+            }
             
-            grid.innerHTML = assets.map(asset => {
-                const isPositive = asset.change_24h >= 0;
-                const signalClass = asset.signal.includes('buy') ? 'success' : asset.signal.includes('sell') ? 'danger' : 'secondary';
+            grid.innerHTML = liveAssets.map(asset => {
+                const isPositive = (asset.change_24h || 0) >= 0;
+                const signal = asset.signal || 'hold';
                 
                 return `
                     <div class="market-item">
                         <div class="market-symbol">${asset.symbol}</div>
                         <div class="market-price">$${formatNumber(asset.price)}</div>
                         <div class="market-change ${isPositive ? 'positive' : 'negative'}">
-                            ${isPositive ? '▲' : '▼'} ${Math.abs(asset.change_24h).toFixed(2)}%
+                            ${isPositive ? '▲' : '▼'} ${Math.abs(asset.change_24h || 0).toFixed(2)}%
                         </div>
-                        <div class="market-signal signal-badge ${asset.signal}">${asset.signal.replace('_', ' ')}</div>
+                        <div class="market-signal signal-badge ${signal}">${String(signal).replace('_', ' ')}</div>
                     </div>
                 `;
             }).join('');
@@ -2084,39 +2286,44 @@
         
         function renderIndicators(data) {
             const grid = document.getElementById('indicatorGrid');
-            
-            const rsiColor = data.rsi_14 < 30 ? 'var(--success)' : data.rsi_14 > 70 ? 'var(--danger)' : 'var(--warning)';
+            if (!data || data.error || data.is_live === false) {
+                grid.innerHTML = '<div class="indicator-card"><div class="indicator-name">Indicators</div><div class="indicator-value">No live data</div></div>';
+                return;
+            }
+            const hasRsi = data.rsi_14 != null;
+            const rsiColor = !hasRsi ? 'var(--text-secondary)' : data.rsi_14 < 30 ? 'var(--success)' : data.rsi_14 > 70 ? 'var(--danger)' : 'var(--warning)';
+            const fmt = (value, digits) => (value == null || Number.isNaN(Number(value)) ? '—' : Number(value).toFixed(digits));
             
             grid.innerHTML = `
                 <div class="indicator-card">
                     <div class="indicator-name">RSI (14)</div>
-                    <div class="indicator-value" style="color: ${rsiColor}">${data.rsi_14?.toFixed(1) || 50}</div>
+                    <div class="indicator-value" style="color: ${rsiColor}">${fmt(data.rsi_14, 1)}</div>
                     <div class="indicator-bar">
-                        <div class="indicator-fill" style="width: ${data.rsi_14 || 50}%; background: ${rsiColor};"></div>
+                        <div class="indicator-fill" style="width: ${hasRsi ? data.rsi_14 : 0}%; background: ${rsiColor};"></div>
                     </div>
                 </div>
                 <div class="indicator-card">
                     <div class="indicator-name">MACD</div>
                     <div class="indicator-value" style="color: ${data.macd_histogram >= 0 ? 'var(--success)' : 'var(--danger)'}">
-                        ${data.macd_histogram?.toFixed(4) || 0}
+                        ${fmt(data.macd_histogram, 4)}
                     </div>
                 </div>
                 <div class="indicator-card">
                     <div class="indicator-name">SMA 20</div>
-                    <div class="indicator-value">$${data.sma_20?.toFixed(2) || 0}</div>
+                    <div class="indicator-value">$${fmt(data.sma_20, 2)}</div>
                 </div>
                 <div class="indicator-card">
                     <div class="indicator-name">SMA 50</div>
-                    <div class="indicator-value">$${data.sma_50?.toFixed(2) || 0}</div>
+                    <div class="indicator-value">$${fmt(data.sma_50, 2)}</div>
                 </div>
                 <div class="indicator-card">
                     <div class="indicator-name">Volatility</div>
-                    <div class="indicator-value">${((data.volatility || 0) * 100).toFixed(1)}%</div>
+                    <div class="indicator-value">${data.volatility == null ? '—' : (Number(data.volatility) * 100).toFixed(1) + '%'}</div>
                 </div>
                 <div class="indicator-card">
                     <div class="indicator-name">24h Change</div>
                     <div class="indicator-value" style="color: ${data.price_change_24h >= 0 ? 'var(--success)' : 'var(--danger)'}">
-                        ${data.price_change_24h >= 0 ? '+' : ''}${data.price_change_24h?.toFixed(2) || 0}%
+                        ${data.price_change_24h == null ? '—' : ((data.price_change_24h >= 0 ? '+' : '') + Number(data.price_change_24h).toFixed(2) + '%')}
                     </div>
                 </div>
             `;
@@ -2250,10 +2457,10 @@
             }
             
             const riskColors = {
-                'low': { bg: 'rgba(16, 185, 129, 0.15)', border: '#10b981', icon: '🛡️' },
-                'medium': { bg: 'rgba(245, 158, 11, 0.15)', border: '#f59e0b', icon: '⚖️' },
-                'high': { bg: 'rgba(239, 68, 68, 0.15)', border: '#ef4444', icon: '🔥' },
-                'very_high': { bg: 'rgba(168, 85, 247, 0.15)', border: '#a855f7', icon: '⚡' }
+                'low': { bg: 'rgba(16, 185, 129, 0.15)', border: '#10b981', icon: '' },
+                'medium': { bg: 'rgba(245, 158, 11, 0.15)', border: '#f59e0b', icon: '' },
+                'high': { bg: 'rgba(239, 68, 68, 0.15)', border: '#ef4444', icon: '' },
+                'very_high': { bg: 'rgba(168, 85, 247, 0.15)', border: '#a855f7', icon: '' }
             };
             
             container.innerHTML = smartBotTemplates.map(template => {
@@ -2268,7 +2475,7 @@
                                 <div style="font-size: 0.75rem; color: var(--text-secondary);">${template.strategy}</div>
                             </div>
                             <span style="background: ${risk.bg}; border: 1px solid ${risk.border}; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.7rem;">
-                                ${risk.icon} ${template.risk_level.replace('_', ' ')}
+                                ${template.risk_level.replace('_', ' ')}
                             </span>
                         </div>
                         <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.75rem; line-height: 1.4;">
@@ -2281,7 +2488,7 @@
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <span style="font-size: 0.75rem; color: var(--success);">${template.expected_return}</span>
                             <button class="btn btn-primary btn-small" onclick="activateSmartBot('${template.bot_id}')">
-                                🚀 Activate
+                                Activate
                             </button>
                         </div>
                     </div>
@@ -2305,19 +2512,7 @@
                 if (data.success) {
                     showToast(`${data.bot?.name || 'Smart Bot'} activated successfully!`, 'success');
                     
-                    // Simulate some trades for demo
-                    if (data.bot?.bot_id) {
-                        await authFetch('/api/algo/bots/simulate', {
-                            method: 'POST',
-                            
-                            body: JSON.stringify({
-                                bot_id: data.bot.bot_id,
-                                days: 30
-                            })
-                        });
-                    }
-                    
-                    // Reload bots and stats
+                    // Reload bots and stats from live APIs only
                     await loadBots();
                     await updateStats();
                 } else {
@@ -2336,8 +2531,8 @@
             document.querySelectorAll('.asset-class-btn').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.class === assetClass);
                 if (btn.dataset.class === assetClass) {
-                    btn.style.background = 'linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%)';
-                    btn.style.color = 'white';
+                    btn.style.background = 'linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%)';
+                    btn.style.color = '#071022';
                 } else {
                     btn.style.background = 'transparent';
                     btn.style.color = 'var(--text-secondary)';
@@ -2349,7 +2544,7 @@
             try {
                 const response = await fetch(url);
                 const data = await response.json();
-                extendedMarketData = data.assets || [];
+                extendedMarketData = (data.assets || []).filter(asset => Number(asset.price) > 0 && asset.is_live !== false);
                 renderExtendedMarket();
             } catch (e) {
                 console.error('Failed to load extended market data:', e);
@@ -2360,26 +2555,26 @@
             const container = document.getElementById('extendedMarketData');
             
             if (extendedMarketData.length === 0) {
-                container.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: var(--text-secondary);">No market data available</div>`;
+                container.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: var(--text-secondary);">Awaiting live quotes</div>`;
                 return;
             }
             
             const assetIcons = {
-                'equity': '📈', 'crypto': '₿', 'commodity': '🛢️', 
-                'forex': '💱', 'bond': '📜', 'index': '📊', 'etf': '📦'
+                'equity': '', 'crypto': '', 'commodity': '', 
+                'forex': '', 'bond': '', 'index': '', 'etf': ''
             };
             
             container.innerHTML = extendedMarketData.slice(0, 24).map(asset => {
                 const isPositive = asset.change_24h >= 0;
-                const icon = assetIcons[asset.class] || '📊';
+                const icon = assetIcons[asset.class] || '';
                 
                 return `
                     <div style="background: var(--bg-hover); border-radius: 10px; padding: 0.75rem; cursor: pointer; transition: all 0.2s;"
-                         onmouseover="this.style.borderColor='var(--primary)'; this.style.boxShadow='0 4px 15px rgba(99, 102, 241, 0.2)';"
+                         onmouseover="this.style.borderColor='var(--primary)'; this.style.boxShadow='0 4px 15px rgba(227, 191, 111, 0.2)';"
                          onmouseout="this.style.borderColor='transparent'; this.style.boxShadow='none';"
                          onclick="selectAssetForTrade('${asset.symbol}')">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                            <span style="font-weight: 600; font-size: 0.9rem;">${icon} ${asset.symbol}</span>
+                            <span style="font-weight: 600; font-size: 0.9rem;">${asset.symbol}</span>
                             <span style="font-size: 0.65rem; color: var(--text-secondary); background: var(--bg-card); padding: 0.1rem 0.3rem; border-radius: 4px;">${asset.class}</span>
                         </div>
                         <div style="font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem;">
@@ -2439,31 +2634,6 @@
             showToast(`Selected ${symbol} for trading`, 'info');
         }
         
-        // ========== DEMO DATA ACTIVATION ==========
-        async function activateDemoData() {
-            showToast('Activating demo data...', 'info');
-            
-            try {
-                const response = await authFetch('/api/algo/activate-demo', {
-                    method: 'POST',
-                    
-                    body: JSON.stringify({ customer_id: customerId })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    showToast(`Created ${data.bots_created?.length || 0} demo bots with simulated history!`, 'success');
-                    await loadBots();
-                    await updateStats();
-                } else {
-                    showToast(data.error || 'Failed to activate demo', 'error');
-                }
-            } catch (e) {
-                showToast('Failed to activate demo: ' + e.message, 'error');
-            }
-        }
-        
         // Bot Actions - Enhanced
         function showCreateBotModal() {
             document.getElementById('createBotModal').classList.add('active');
@@ -2481,9 +2651,9 @@
             const riskLevel = document.getElementById('botRiskLevel').value;
             
             const riskInfo = {
-                'conservative': { color: '#10b981', signals: '5-8', label: '🛡️ Low Risk' },
-                'moderate': { color: '#f59e0b', signals: '10-15', label: '⚖️ Balanced' },
-                'aggressive': { color: '#ef4444', signals: '20-30', label: '🔥 High Risk' }
+                'conservative': { color: '#10b981', signals: '5-8', label: 'Low Risk' },
+                'moderate': { color: '#f59e0b', signals: '10-15', label: 'Balanced' },
+                'aggressive': { color: '#ef4444', signals: '20-30', label: 'High Risk' }
             };
             
             document.getElementById('botPreviewName').textContent = name;
@@ -2493,7 +2663,7 @@
         async function createBot() {
             const btn = document.getElementById('createBotBtn');
             btn.disabled = true;
-            btn.innerHTML = '⏳ Creating Bot...';
+            btn.innerHTML = 'Creating Bot...';
             
             const name = document.getElementById('botName').value || 'My Trading Bot';
             const strategy = document.getElementById('botStrategy').value;
@@ -2509,7 +2679,7 @@
             if (symbols.length === 0) {
                 showToast('Please select at least one trading symbol', 'error');
                 btn.disabled = false;
-                btn.innerHTML = '🚀 Launch Trading Bot';
+                btn.innerHTML = 'Launch Trading Bot';
                 return;
             }
             
@@ -2534,21 +2704,16 @@
                 const data = await response.json();
                 
                 if (data.success || data.bot_id) {
-                    showToast(`🤖 Bot "${name}" created successfully!`, 'success');
+                    showToast(`Bot "${name}" created successfully!`, 'success');
                     hideCreateBotModal();
                     
                     // Reset form
                     document.getElementById('botName').value = '';
                     
-                    // Reload bots and signals
+                    // Reload bots and signals from live APIs only
                     await loadBots();
-                    
-                    // If auto-start, also run a profit cycle
                     if (autoStart) {
-                        setTimeout(() => {
-                            runProfitCycle();
-                            showToast('Bot is now trading! First signals generating...', 'info');
-                        }, 1000);
+                        showToast('Bot is live. Signals will appear from market data.', 'info');
                     }
                 } else {
                     showToast(data.error || 'Failed to create bot', 'error');
@@ -2558,7 +2723,7 @@
                 showToast('Failed to create bot: ' + e.message, 'error');
             } finally {
                 btn.disabled = false;
-                btn.innerHTML = '🚀 Launch Trading Bot';
+                btn.innerHTML = 'Launch Trading Bot';
             }
         }
         
@@ -2732,7 +2897,7 @@
                 if (data.success) {
                     const order = data.order || {};
                     const price = order.price ? `@ $${order.price.toFixed(2)}` : '';
-                    showToast(`✅ ${side.toUpperCase()} ${symbol} ${price} executed!`, 'success');
+                    showToast(`${side.toUpperCase()} ${symbol} ${price} executed!`, 'success');
                     
                     // Refresh orders and other data
                     await Promise.all([
@@ -2754,7 +2919,7 @@
             const btn = document.querySelector('[onclick="refreshSignals()"]');
             if (btn) {
                 btn.disabled = true;
-                btn.innerHTML = '⏳ Loading...';
+                btn.innerHTML = 'Loading...';
             }
             
             try {
@@ -2763,7 +2928,7 @@
                     loadMarketOverview(),
                     updateStats()
                 ]);
-                showToast('📡 Signals & market data refreshed', 'success');
+                showToast('Signals & market data refreshed', 'success');
             } catch (e) {
                 showToast('Refresh failed', 'error');
             } finally {
@@ -2793,6 +2958,62 @@
         
         // ========== SAVINGS PIPELINE FUNCTIONS ==========
         
+        function setPipelineText(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value;
+        }
+
+        function applyPipelineHealth(health) {
+            const healthEl = document.getElementById('pipelineHealth');
+            if (!healthEl || !health) return;
+            if (health.status === 'no_activity' || health.score == null) {
+                healthEl.style.background = 'rgba(127, 178, 255, 0.12)';
+                healthEl.style.color = 'var(--text-secondary)';
+                healthEl.textContent = 'Awaiting live data';
+                return;
+            }
+            const colors = {
+                'excellent': { bg: 'rgba(16, 185, 129, 0.2)', text: '#34d399' },
+                'good': { bg: 'rgba(59, 130, 246, 0.2)', text: '#60a5fa' },
+                'needs_attention': { bg: 'rgba(245, 158, 11, 0.2)', text: '#fbbf24' },
+                'critical': { bg: 'rgba(239, 68, 68, 0.2)', text: '#f87171' }
+            };
+            const color = colors[health.status] || colors.good;
+            healthEl.style.background = color.bg;
+            healthEl.style.color = color.text;
+            healthEl.textContent = `${health.status.charAt(0).toUpperCase() + health.status.slice(1)} (${health.score}/100)`;
+        }
+
+        function applyActuarialFromUnified(unified) {
+            if (!unified || unified.error || (!unified.monthly_distribution && !unified.customer_id)) {
+                return;
+            }
+            const dist = unified.monthly_distribution || {};
+            const alloc = dist.allocation_pct || {};
+            const actuarial = dist.actuarial_data || {};
+            const savingsPct = Number(alloc.savings_pct != null ? alloc.savings_pct : 50);
+            const riskPct = Number(alloc.risk_pct != null ? alloc.risk_pct : 50);
+            const premium = Number(dist.total_premium || 0);
+            const riskAmt = Number(dist.risk_coverage != null ? dist.risk_coverage : premium * riskPct / 100);
+            const savingsAmt = Number(
+                dist.savings_amount != null ? dist.savings_amount : (dist.to_savings != null ? dist.to_savings : premium * savingsPct / 100)
+            );
+            const source = actuarial.data_source || actuarial.table_source || 'PHINS_ACTUARIAL_TABLES_V1';
+            const age = dist.customer_age != null ? dist.customer_age : actuarial.age;
+            const policies = dist.policy_count != null ? dist.policy_count : '';
+            setPipelineText('actuarialSourceBadge', source);
+            setPipelineText('actuarialPremium', `$${premium.toLocaleString('en-US', {minimumFractionDigits: 2})}`);
+            setPipelineText('actuarialRiskPct', `${riskPct.toFixed(0)}%`);
+            setPipelineText('actuarialRiskAmt', `$${riskAmt.toLocaleString('en-US', {minimumFractionDigits: 0})}`);
+            setPipelineText('actuarialSavingsPct', `${savingsPct.toFixed(0)}%`);
+            setPipelineText('actuarialSavingsAmt', `$${savingsAmt.toLocaleString('en-US', {minimumFractionDigits: 0})}`);
+            const meta = [];
+            if (age !== undefined && age !== null && age !== '') meta.push(`Age ${age}`);
+            if (policies !== '') meta.push(`${policies} ${Number(policies) === 1 ? 'policy' : 'policies'}`);
+            if (actuarial.adl_level) meta.push(`ADL ${actuarial.adl_level}`);
+            setPipelineText('actuarialPolicyMeta', meta.length ? meta.join(' · ') : 'Live from /api/investment/unified');
+        }
+
         async function loadPipelineData() {
             try {
                 // Load pipeline analytics
@@ -2801,51 +3022,57 @@
                 
                 // Update pipeline visualization
                 if (analytics.balances) {
-                    document.getElementById('pipelineCashBalance').textContent = `$${(analytics.balances.cash_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-                    document.getElementById('pipelineWalletBal').textContent = `$${(analytics.balances.wallet_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`;
-                    document.getElementById('pipelineInvestBal').textContent = `$${(analytics.balances.investment_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`;
-                    document.getElementById('pipelineAlgoBal').textContent = `$${(analytics.balances.algo_trading_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`;
+                    setPipelineText('pipelineCashBalance', `$${(analytics.balances.cash_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`);
+                    setPipelineText('pipelineWalletBal', `$${(analytics.balances.wallet_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`);
+                    setPipelineText('pipelineInvestBal', `$${(analytics.balances.investment_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`);
+                    setPipelineText('pipelineAlgoBal', `$${(analytics.balances.algo_trading_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`);
                 }
                 
                 // Update allocation percentages
                 if (analytics.allocation) {
-                    document.getElementById('pipelineWalletPct').textContent = `${(analytics.allocation.wallet || 15).toFixed(0)}%`;
-                    document.getElementById('pipelineInvestPct').textContent = `${(analytics.allocation.investment || 60).toFixed(0)}%`;
-                    document.getElementById('pipelineAlgoPct').textContent = `${(analytics.allocation.algo_trading || 25).toFixed(0)}%`;
+                    setPipelineText('pipelineWalletPct', `${(analytics.allocation.wallet || 15).toFixed(0)}%`);
+                    setPipelineText('pipelineInvestPct', `${(analytics.allocation.investment || 60).toFixed(0)}%`);
+                    setPipelineText('pipelineAlgoPct', `${(analytics.allocation.algo_trading || 25).toFixed(0)}%`);
                 }
                 
                 // Update health indicator
                 if (analytics.pipeline_health) {
-                    const healthEl = document.getElementById('pipelineHealth');
-                    const health = analytics.pipeline_health;
-                    const colors = {
-                        'excellent': { bg: 'rgba(16, 185, 129, 0.2)', text: '#34d399' },
-                        'good': { bg: 'rgba(59, 130, 246, 0.2)', text: '#60a5fa' },
-                        'needs_attention': { bg: 'rgba(245, 158, 11, 0.2)', text: '#fbbf24' },
-                        'critical': { bg: 'rgba(239, 68, 68, 0.2)', text: '#f87171' }
-                    };
-                    const color = colors[health.status] || colors.good;
-                    healthEl.style.background = color.bg;
-                    healthEl.style.color = color.text;
-                    healthEl.textContent = `● ${health.status.charAt(0).toUpperCase() + health.status.slice(1)} (${health.score}/100)`;
+                    applyPipelineHealth(analytics.pipeline_health);
                 }
-                
+            } catch (e) {
+                console.error('Failed to load pipeline analytics:', e);
+            }
+
+            try {
+                const unifiedRes = await authFetch(`/api/investment/unified?customer_id=${customerId}`);
+                if (unifiedRes.ok) {
+                    const unified = await unifiedRes.json();
+                    applyActuarialFromUnified(unified);
+                }
+            } catch (e) {
+                console.error('Failed to load actuarial / unified investment data:', e);
+            }
+
+            try {
                 // Load AI recommendation
                 const recRes = await authFetch(`/api/pipeline/ai-recommendation?customer_id=${customerId}`);
                 const recommendation = await recRes.json();
                 
                 if (recommendation.recommendations && recommendation.recommendations.length > 0) {
                     const topRec = recommendation.recommendations[0];
-                    document.getElementById('aiRecommendationText').textContent = topRec.message;
+                    setPipelineText('aiRecommendationText', topRec.message);
                 } else {
-                    const sentiment = recommendation.market_conditions?.sentiment_label || 'Neutral';
-                    const roi = recommendation.performance?.roi_pct || 0;
-                    document.getElementById('aiRecommendationText').textContent = 
-                        `Market sentiment: ${sentiment}. Your portfolio ROI: ${roi.toFixed(1)}%. Allocation is optimized for your ${recommendation.risk_level || 'moderate'} risk profile.`;
+                    setPipelineText('aiRecommendationText', 'No live AI recommendation yet.');
+                }
+                const badge = document.getElementById('aiConfBadge');
+                if (badge) {
+                    badge.textContent = recommendation.ai_confidence
+                        ? `${(recommendation.ai_confidence * 100).toFixed(0)}%`
+                        : 'Awaiting';
                 }
             } catch (e) {
                 console.error('Failed to load pipeline data:', e);
-                document.getElementById('aiRecommendationText').textContent = 'Pipeline data loading... Connect your savings to get AI recommendations.';
+                setPipelineText('aiRecommendationText', 'Pipeline data loading... Connect your savings to get AI recommendations.');
             }
         }
         
@@ -2902,22 +3129,22 @@
             const actionBtn = document.getElementById('fundActionBtn');
             
             if (mode === 'deposit') {
-                title.textContent = '💰 Deposit to Algo Trading';
+                title.textContent = 'Deposit to Algo Trading';
                 sourceLabel.textContent = 'Transfer From';
                 sourceSelect.innerHTML = `
-                    <option value="investment_account">📈 Investment Account</option>
-                    <option value="health_wallet">🏥 Health Wallet</option>
+                    <option value="investment_account">Investment Account</option>
+                    <option value="health_wallet">Health Wallet</option>
                 `;
-                actionBtn.textContent = '➕ Deposit to Algo Trading';
+                actionBtn.textContent = 'Deposit to Algo Trading';
                 actionBtn.className = 'btn btn-success';
             } else {
-                title.textContent = '💸 Withdraw from Algo Trading';
+                title.textContent = 'Withdraw from Algo Trading';
                 sourceLabel.textContent = 'Transfer To';
                 sourceSelect.innerHTML = `
-                    <option value="investment_account">📈 Investment Account</option>
-                    <option value="health_wallet">🏥 Health Wallet</option>
+                    <option value="investment_account">Investment Account</option>
+                    <option value="health_wallet">Health Wallet</option>
                 `;
-                actionBtn.textContent = '➖ Withdraw from Algo Trading';
+                actionBtn.textContent = 'Withdraw from Algo Trading';
                 actionBtn.className = 'btn btn-primary';
             }
             
@@ -3059,7 +3286,7 @@
                             <span style="background: ${t.is_winner ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}; 
                                          color: white; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem;
                                          display: flex; align-items: center; gap: 0.25rem;">
-                                ${t.is_winner ? '✅' : '❌'} ${t.symbol}
+                                ${t.symbol}
                                 <span style="font-weight: 600; color: ${t.is_winner ? '#34d399' : '#f87171'}">
                                     ${t.realized_pnl >= 0 ? '+' : ''}$${t.realized_pnl.toFixed(2)}
                                 </span>
@@ -3073,7 +3300,7 @@
         }
         
         async function runProfitCycle() {
-            showToast('🚀 Running profit cycle...', 'info');
+            showToast('Running profit cycle...', 'info');
             
             try {
                 const response = await authFetch('/api/algo/run-profit-cycle', {
@@ -3093,7 +3320,7 @@
                     const winners = data.trades_closed.filter(t => t.is_winner).length;
                     
                     showToast(
-                        `💰 Cycle complete! ${trades} trades, ${winners} winners. ` +
+                        `Cycle complete! ${trades} trades, ${winners} winners. ` +
                         `Profit: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`,
                         profit >= 0 ? 'success' : 'warning'
                     );
@@ -3130,7 +3357,7 @@
                 return;
             }
             
-            showToast('⚡ Activating profit trading...', 'info');
+            showToast('Activating profit trading...', 'info');
             
             try {
                 const response = await authFetch('/api/algo/activate-profits', {
@@ -3147,7 +3374,7 @@
                 
                 if (data.success) {
                     showToast(
-                        `🎉 ${data.message}`,
+                        `${data.message}`,
                         'success'
                     );
                     

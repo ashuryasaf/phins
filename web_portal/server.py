@@ -125,6 +125,140 @@ def safe_int(val, default: int = 0) -> int:
         return default
 
 
+# Investor-page quote helpers: never leak seed / cache prices as live data.
+_EXTENDED_LIVE_SYMBOLS = {
+    '': [
+        'SPY', 'QQQ', 'VTI', 'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA',
+        'BTC', 'ETH', 'SOL', 'GLD', 'SLV', 'USO', 'BND', 'TLT', 'LQD',
+        'EURUSD', 'GBPUSD', 'USDJPY',
+    ],
+    'equity': ['SPY', 'QQQ', 'VTI', 'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA'],
+    'crypto': ['BTC', 'ETH', 'SOL'],
+    'commodity': ['GLD', 'SLV', 'USO'],
+    'forex': ['EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF'],
+    'bond': ['BND', 'TLT', 'LQD', 'HYG'],
+    'index': ['SPY', 'QQQ', 'DIA'],
+}
+
+
+def live_quote_aliases(symbol: str) -> set:
+    """Normalize BTC vs BTC/USD so live books can match overview symbols."""
+    raw = str(symbol or '').upper().strip()
+    if not raw:
+        return set()
+    aliases = {raw, raw.replace('/', '')}
+    if '/' in raw:
+        aliases.add(raw.split('/', 1)[0])
+    else:
+        aliases.add(f'{raw}/USD')
+    return aliases
+
+
+def build_live_market_payload(live_quotes: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Build a market_data map from provider quotes only. Empty if none are live."""
+    live_quotes = live_quotes or {}
+    prices = live_quotes.get('prices') or {}
+    quotes = live_quotes.get('quotes') or {}
+    provider = live_quotes.get('provider') or 'live'
+    data: Dict[str, Any] = {}
+    for symbol, raw_price in prices.items():
+        price = safe_float(raw_price)
+        if price <= 0:
+            continue
+        quote = quotes.get(symbol) or {}
+        status = quote.get('status')
+        if status and status not in ('ok', 'stale_last_good'):
+            continue
+        data[str(symbol)] = {
+            'price': price,
+            'name': quote.get('name') or symbol,
+            'class': quote.get('asset_class') or quote.get('class') or '',
+            'change_24h': safe_float(quote.get('change_24h', quote.get('change_pct', 0.0))),
+            'is_live': True,
+            'source': quote.get('source') or provider,
+        }
+    return data
+
+
+def filter_overview_assets_to_live(assets: Optional[List[Dict[str, Any]]],
+                                   live_prices: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Drop overview rows that were not refreshed from a live quote book."""
+    if not live_prices:
+        return []
+    live_keys = set()
+    for symbol in live_prices:
+        if safe_float(live_prices.get(symbol)) <= 0:
+            continue
+        live_keys.update(live_quote_aliases(symbol))
+    if not live_keys:
+        return []
+    filtered = []
+    for asset in assets or []:
+        symbol = str(asset.get('symbol') or '')
+        if not live_quote_aliases(symbol).intersection(live_keys):
+            continue
+        if safe_float(asset.get('price')) <= 0:
+            continue
+        filtered.append(asset)
+    return filtered
+
+
+def price_history_is_live(history: Optional[List[Dict[str, Any]]], min_live_bars: int = 15) -> bool:
+    """True only when enough bars are not portfolio_seed placeholders."""
+    if not history:
+        return False
+    live_bars = 0
+    for bar in history:
+        if not isinstance(bar, dict):
+            continue
+        if bar.get('source') == 'portfolio_seed':
+            continue
+        if safe_float(bar.get('price')) <= 0:
+            continue
+        live_bars += 1
+    return live_bars >= min_live_bars
+
+
+def build_live_extended_market(live_quotes: Optional[Dict[str, Any]],
+                               asset_class: str = '') -> Dict[str, Any]:
+    """Shape /api/algo/market/extended from live quotes only."""
+    payload = build_live_market_payload(live_quotes)
+    assets = []
+    for symbol, row in payload.items():
+        klass = row.get('class') or asset_class or ''
+        if asset_class and klass and klass != asset_class:
+            continue
+        assets.append({
+            'symbol': symbol,
+            'name': row.get('name') or symbol,
+            'class': klass,
+            'price': row.get('price'),
+            'change_24h': row.get('change_24h', 0),
+            'volume': 0,
+            'market_cap': 0,
+            'is_live': True,
+            'provider': row.get('source') or 'live',
+        })
+    gainers = len([a for a in assets if safe_float(a.get('change_24h')) > 0])
+    losers = len([a for a in assets if safe_float(a.get('change_24h')) < 0])
+    avg_change = (
+        sum(safe_float(a.get('change_24h')) for a in assets) / len(assets)
+        if assets else 0
+    )
+    return {
+        'timestamp': datetime.now().isoformat(),
+        'total_assets': len(assets),
+        'assets': assets,
+        'market_summary': {
+            'total_market_cap': 0,
+            'avg_change_24h': avg_change,
+            'gainers': gainers,
+            'losers': losers,
+        },
+        'data_source': 'live' if assets else 'none',
+    }
+
+
 def _coerce_verified_flag(val) -> bool:
     """
     Interpret a stored verification flag as a boolean.
@@ -25552,10 +25686,12 @@ For claims or questions, please contact:
                 '^SPX', '^NDX', '^DJI'
             ]
 
-            quote_provider = 'portfolio_cache'
+            quote_provider = 'none'
             integrity: Dict[str, Any] = {}
+            live_quotes: Dict[str, Any] = {}
 
             # Refresh quotes with strict integrity validation before responding.
+            # Never fall back to the seeded MARKET_DATA cache on these pages.
             if _market_data:
                 try:
                     live_quotes = _market_data.get_multi_asset_quotes(
@@ -25566,21 +25702,22 @@ For claims or questions, please contact:
                         portfolio_service.update_market_prices(live_prices)
                         if algo_trading_enabled and algo_trading_service:
                             algo_trading_service.sync_market_prices(live_prices)
-                    quote_provider = live_quotes.get('provider', quote_provider)
+                    quote_provider = live_quotes.get('provider', quote_provider) if live_prices else 'none'
                     integrity = live_quotes.get('integrity', {})
                 except Exception:
+                    live_quotes = {}
                     integrity = {'warning': 'live_quote_refresh_failed'}
 
+            data = build_live_market_payload(live_quotes)
             if symbol_list:
-                data = portfolio_service.get_market_data(symbol_list)
-            else:
-                data = portfolio_service.get_market_data()
-            
+                wanted = {s.upper() for s in symbol_list}
+                data = {k: v for k, v in data.items() if str(k).upper() in wanted}
+
             result = {
                 'market_data': data,
                 'last_updated': datetime.now().isoformat(),
-                'source': 'phins_investment_service',
-                'quote_provider': quote_provider,
+                'source': 'live' if data else 'none',
+                'quote_provider': quote_provider if data else 'none',
                 'integrity': integrity
             }
             
@@ -25673,7 +25810,9 @@ For claims or questions, please contact:
             symbol = qs.get('symbol', [''])[0]
             limit = int(qs.get('limit', ['50'])[0])
             
-            signals = algo_trading_service.get_all_signals(symbol if symbol else None, limit)
+            signals = algo_trading_service.get_all_signals(
+                symbol if symbol else None, limit, live_only=True
+            )
             self._set_json_headers()
             self.wfile.write(json.dumps({'signals': signals}).encode('utf-8'))
             return
@@ -25752,11 +25891,25 @@ For claims or questions, please contact:
                 return
             
             symbol = qs.get('symbol', ['SPY'])[0]
-            indicators = algo_trading_service.calculate_indicators(symbol)
-            
             from dataclasses import asdict
+            from services.algo_trading_service import TechnicalIndicators
+            history = list(algo_trading_service.price_history.get(symbol) or [])
+            if not price_history_is_live(history):
+                payload = asdict(TechnicalIndicators(
+                    symbol=symbol,
+                    timestamp=datetime.now().isoformat(),
+                ))
+                payload['rsi_14'] = None
+                payload['is_live'] = False
+                self._set_json_headers()
+                self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+                return
+
+            indicators = algo_trading_service.calculate_indicators(symbol)
+            payload = asdict(indicators)
+            payload['is_live'] = True
             self._set_json_headers()
-            self.wfile.write(json.dumps(asdict(indicators)).encode('utf-8'))
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
         
         # Get market overview with signals
@@ -25766,8 +25919,9 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
                 return
 
-            quote_provider = 'internal_cache'
+            quote_provider = 'none'
             integrity: Dict[str, Any] = {}
+            live_prices: Dict[str, Any] = {}
             if _market_data:
                 try:
                     overview_symbols = ['SPY', 'QQQ', 'BTC', 'ETH', 'GLD', 'BND', 'EURUSD', 'USDJPY']
@@ -25780,14 +25934,26 @@ For claims or questions, please contact:
                         if portfolio_enabled:
                             portfolio_service.update_market_prices(live_prices)
                         algo_trading_service.sync_market_prices(live_prices)
-                    quote_provider = live_quotes.get('provider', quote_provider)
+                    quote_provider = live_quotes.get('provider', quote_provider) if live_prices else 'none'
                     integrity = live_quotes.get('integrity', {})
                 except Exception:
+                    live_prices = {}
                     integrity = {'warning': 'overview_quote_refresh_failed'}
 
-            overview = algo_trading_service.get_market_overview()
+            if live_prices:
+                overview = algo_trading_service.get_market_overview()
+            else:
+                overview = {
+                    'timestamp': datetime.now().isoformat(),
+                    'assets': [],
+                    'data_source': 'none',
+                }
             if isinstance(overview, dict):
-                overview['quote_provider'] = quote_provider
+                overview['assets'] = filter_overview_assets_to_live(
+                    overview.get('assets'), live_prices
+                )
+                overview['quote_provider'] = quote_provider if overview['assets'] else 'none'
+                overview['data_source'] = 'live' if overview['assets'] else 'none'
                 if integrity:
                     overview['integrity'] = integrity
             self._set_json_headers()
@@ -25857,10 +26023,22 @@ For claims or questions, please contact:
                 return
             
             asset_class = qs.get('asset_class', [''])[0]
-            market_data = algo_trading_service.get_extended_market_data(
-                asset_class=asset_class if asset_class else None
-            )
-            
+            live_quotes: Dict[str, Any] = {}
+            symbols = _EXTENDED_LIVE_SYMBOLS.get(asset_class, _EXTENDED_LIVE_SYMBOLS[''])
+            if _market_data and symbols:
+                try:
+                    live_quotes = _market_data.get_multi_asset_quotes(
+                        symbols, provider_preference='auto'
+                    )
+                    live_prices = live_quotes.get('prices', {}) or {}
+                    if live_prices:
+                        if portfolio_enabled:
+                            portfolio_service.update_market_prices(live_prices)
+                        if algo_trading_enabled and algo_trading_service:
+                            algo_trading_service.sync_market_prices(live_prices)
+                except Exception:
+                    live_quotes = {}
+            market_data = build_live_extended_market(live_quotes, asset_class)
             self._set_json_headers()
             self.wfile.write(json.dumps(market_data).encode('utf-8'))
             return
@@ -26542,7 +26720,10 @@ For claims or questions, please contact:
                     'to_wallet': distribution['distribution']['health_wallet'],
                     'to_investment': distribution['distribution']['investment'],
                     'to_algo': distribution['distribution']['algo_trading'],
-                    'allocation_pct': distribution['allocation']
+                    'allocation_pct': distribution['allocation'],
+                    'customer_age': distribution.get('customer_age'),
+                    'policy_count': distribution.get('policy_count'),
+                    'actuarial_data': distribution.get('actuarial_data'),
                 }
                 
                 # Total portfolio value
@@ -49211,13 +49392,6 @@ For claims or questions, please contact:
                 )
                 bot.risk_level = risk_level
                 
-                # Run initial profit cycles to generate starting profits
-                total_initial_profit = 0
-                for _ in range(3):  # Run 3 initial cycles
-                    result = profit_engine.run_profit_cycle(customer_id, customer_id)
-                    total_initial_profit += result.get('total_profit_this_cycle', 0)
-                
-                # Update investment account with initial profits
                 if customer_id not in INVESTMENT_ACCOUNTS:
                     INVESTMENT_ACCOUNTS[customer_id] = {
                         'customer_id': customer_id,
@@ -49226,15 +49400,11 @@ For claims or questions, please contact:
                         'created_at': datetime.now().isoformat()
                     }
                 
-                INVESTMENT_ACCOUNTS[customer_id]['algo_trading_profits'] = \
-                    INVESTMENT_ACCOUNTS[customer_id].get('algo_trading_profits', 0) + total_initial_profit
-                
-                # Record activation
                 record_transaction(
                     customer_id=customer_id,
                     tx_type='algo_profit_activated',
-                    amount=total_initial_profit,
-                    description=f"Auto-profit trading activated ({risk_level} risk). Initial profit: ${total_initial_profit:.2f}",
+                    amount=0,
+                    description=f"Auto-profit trading activated ({risk_level} risk). Live signals only.",
                     metadata={
                         'bot_id': bot.bot_id,
                         'risk_level': risk_level,
@@ -49243,15 +49413,14 @@ For claims or questions, please contact:
                     }
                 )
                 
-                # Get updated summary
                 summary = profit_engine.get_customer_trading_summary(customer_id)
                 
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
                     'success': True,
-                    'message': f'Auto-profit trading activated! Generated ${total_initial_profit:.2f} initial profit.',
+                    'message': 'Auto-profit trading activated. Waiting for live market signals.',
                     'bot': algo_trading_service.get_bot_performance(bot.bot_id),
-                    'initial_profit': round(total_initial_profit, 2),
+                    'initial_profit': 0,
                     'trading_summary': summary
                 }).encode('utf-8'))
             except Exception as e:

@@ -17,6 +17,7 @@ import os
 import requests
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -466,3 +467,62 @@ class TestSeedDataIntegrity:
         assert abs(wallet['balance'] - expected_total) < 0.01, \
             f"Wallet balance {wallet['balance']} != expected {expected_total}"
         assert len(wallet['transactions']) == len(paid_claims)
+
+
+class TestActuarialDistributionIntegrity:
+    """Premium cash split stays on customer allocation; actuarial context is additive."""
+
+    def test_monthly_distribution_keeps_allocation_math_and_actuarial_source(self):
+        import web_portal.server as portal
+
+        customer_id = 'CUST-ACTUARIAL-FLOW'
+        portal.CUSTOMERS[customer_id] = {
+            'id': customer_id,
+            'name': 'Actuarial Flow',
+            'age': 45,
+        }
+        portal.POLICIES['POL-ACT-FLOW'] = {
+            'id': 'POL-ACT-FLOW',
+            'customer_id': customer_id,
+            'type': 'life',
+            'coverage_amount': 250000.0,
+            'annual_premium': 12000.0,
+            'monthly_premium': 1000.0,
+            'status': 'active',
+            'risk_score': 'medium',
+        }
+
+        dist = portal.calculate_monthly_distribution(customer_id)
+        assert dist['customer_age'] == 45
+        assert dist['policy_count'] == 1
+        assert dist['total_monthly_premium'] == 1000.0
+        assert dist['actuarial_data']['data_source'] == 'PHINS_ACTUARIAL_TABLES_V1'
+
+        alloc = dist['allocation']
+        assert alloc['savings_pct'] == 50.0
+        assert alloc['risk_pct'] == 50.0
+        assert alloc['wallet_pct'] == 30.0
+        assert alloc['investment_pct'] == 65.0
+        assert alloc['algo_pct'] == 5.0
+
+        cash = dist['distribution']
+        assert abs(cash['risk_coverage'] + cash['total_savings'] - 1000.0) < 0.01
+        assert abs(cash['health_wallet'] + cash['investment'] + cash['algo_trading'] - cash['total_savings']) < 0.01
+        assert abs(cash['total_savings'] - 500.0) < 0.01
+        assert abs(cash['health_wallet'] - 150.0) < 0.01
+        assert abs(cash['investment'] - 325.0) < 0.01
+        assert abs(cash['algo_trading'] - 25.0) < 0.01
+
+    def test_unified_monthly_distribution_forwards_actuarial_fields(self):
+        source = Path(__file__).resolve().parents[1] / "web_portal" / "server.py"
+        text = source.read_text(encoding="utf-8")
+        assert "'customer_age': distribution.get('customer_age')" in text
+        assert "'policy_count': distribution.get('policy_count')" in text
+        assert "'actuarial_data': distribution.get('actuarial_data')" in text
+
+    def test_activate_profits_does_not_seed_mock_initial_pnl(self):
+        source = Path(__file__).resolve().parents[1] / "web_portal" / "server.py"
+        text = source.read_text(encoding="utf-8")
+        assert "Run 3 initial cycles" not in text
+        assert "Generated ${total_initial_profit:.2f} initial profit." not in text
+        assert "Waiting for live market signals." in text
