@@ -102,13 +102,13 @@ def test_pitch_dashboard_wires_general_deck_configurator():
     assert 'id="inv-deck-horizon"' in pd
     assert 'id="inv-deck-detail"' in pd
     meeting = pd.split('id="investor-meeting-section"', 1)[1].split('id="partner-meetings-13jul"', 1)[0]
-    assert "Open General Investment Deck" in meeting
-    assert "Open Fintech Business Plan" in meeting
+    assert "Open Newest Investment Deck" in meeting
+    assert "Open Extended Plan" in meeting
     assert 'id="inv-deck-version-picker"' in meeting
     assert 'data-deck-doc="general"' in meeting
     assert 'data-deck-doc="detailed"' in meeting
-    assert "Previous version" in meeting
-    assert "New version" in meeting
+    assert "Extended version" in meeting
+    assert "Newest version" in meeting
     assert "deckHorizon" in pd
     assert "deckTableDetail" in pd
     assert "deckDoc" in pd
@@ -120,6 +120,13 @@ def test_both_investment_document_versions_remain():
     bp = STATIC / "internal" / "phins-investor-business-plan.html"
     assert bp.is_file()
     previous = _read(bp)
+    newest = _read(DECK)
+    # Extended / older platform plan keeps ask, quarterly, and section 10.
     assert "The ask (seed / build)" in previous
     assert "The ask &amp; deal structures" in previous
     assert "Quarterly forecast" in previous
+    # Newest general deck keeps the last-edit omissions.
+    assert "The ask (seed / build)" not in newest
+    assert "The ask &amp; deal structures" not in newest
+    assert "Quarterly forecast" not in newest
+    assert 'data-i18n="kpi.ledger"' not in newest
