@@ -683,7 +683,7 @@ def test_chat_whatsapp_otp_uses_session_phone_not_request_body():
     captured = {}
 
     def _fake_send(delivery_channel, otp_code, expiry_seconds, purpose,
-                   email=None, phone=None, ip_address=None):
+                   email=None, phone=None, ip_address=None, **_kwargs):
         captured.update({
             "delivery_channel": delivery_channel,
             "phone": phone,
