@@ -1526,6 +1526,28 @@ except ImportError:
         api_chat_app_post = None
         print("Warning: Chat Application API not available.")
 
+# Import API extensions for Didit standalone identity verification
+try:
+    from web_portal.api_didit import (
+        dispatch_get as api_didit_get,
+        dispatch_post as api_didit_post,
+    )
+    didit_api_enabled = True
+    print("✓ Didit identity API loaded")
+except ImportError:
+    try:
+        from api_didit import (
+            dispatch_get as api_didit_get,
+            dispatch_post as api_didit_post,
+        )
+        didit_api_enabled = True
+        print("✓ Didit identity API loaded")
+    except ImportError:
+        didit_api_enabled = False
+        api_didit_get = None
+        api_didit_post = None
+        print("Warning: Didit identity API not available.")
+
 # Database support - ENABLED BY DEFAULT for data persistence
 # Set USE_DATABASE=false to use volatile in-memory storage (not recommended)
 USE_DATABASE = os.environ.get('USE_DATABASE', 'true').lower() not in ('false', '0', 'no')
@@ -15402,6 +15424,17 @@ For claims or questions, please contact:
             except Exception:
                 pass
 
+            didit_health = {'configured': False, 'enabled': False}
+            try:
+                from services.didit_service import get_didit_service
+                _didit = get_didit_service()
+                didit_health = {
+                    'configured': _didit.is_configured(),
+                    'enabled': _didit.is_enabled(),
+                }
+            except Exception:
+                pass
+
             health_status = {
                 'status': 'healthy',
                 'service': 'phins-portal',
@@ -15413,6 +15446,7 @@ For claims or questions, please contact:
                 'customers_available': customers_count,
                 'notifications': notification_health,
                 'document_processing': document_processing,
+                'didit': didit_health,
                 'version': '2.0.0'
             }
             
@@ -15938,6 +15972,23 @@ For claims or questions, please contact:
                     return
             except Exception as e:
                 print(f"Assessment Center error (GET {path}): {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
+
+        # =====================================================================
+        # DIDIT STANDALONE IDENTITY (GET) - configuration / status
+        # =====================================================================
+        if didit_api_enabled and api_didit_get and path.startswith('/api/didit'):
+            try:
+                didit_result = api_didit_get(path, session, qs, client_ip)
+                if didit_result is not None:
+                    status_code, response_data = didit_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+            except Exception as e:
+                print(f"Didit API error (GET {path}): {e}")
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
                 return
@@ -31520,6 +31571,43 @@ For claims or questions, please contact:
                 return
             except Exception as e:
                 print(f"Assessment Center error (POST {path}): {e}")
+                import traceback
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
+
+        # =====================================================================
+        # DIDIT STANDALONE IDENTITY (POST) - server-to-server verification
+        # =====================================================================
+        if didit_api_enabled and api_didit_post and path.startswith('/api/didit'):
+            try:
+                session = self._get_session()
+                if not session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
+                user_agent = self.headers.get('User-Agent', '')
+
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length).decode('utf-8') if length else '{}'
+                try:
+                    body_data = json.loads(body)
+                except json.JSONDecodeError:
+                    body_data = {}
+
+                didit_result = api_didit_post(
+                    path, session, body_data, client_ip, user_agent)
+                if didit_result is not None:
+                    status_code, response_data = didit_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
+                return
+            except Exception as e:
+                print(f"Didit API error (POST {path}): {e}")
                 import traceback
                 traceback.print_exc()
                 self._set_json_headers(500)
