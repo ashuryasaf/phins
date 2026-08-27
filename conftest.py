@@ -196,12 +196,6 @@ def pytest_runtest_setup(item):  # type: ignore[no-redef]
     except Exception:
         pass
 
-    try:
-        from services.didit_service import reset_didit_service
-        reset_didit_service()
-    except Exception:
-        pass
-
     # Reset assessment records so decision-loop snapshots don't bleed between tests.
     try:
         from services.assessment_record_service import reset_assessment_record_service

@@ -247,26 +247,6 @@ variables in Railway (or Render / your hosting platform):
 The trading terminal is accessible at `/trading-terminal.html` and requires the
 Investment AI access key to authenticate API calls.
 
-### Didit standalone identity verification
-
-Server-to-server KYC/KYB/AML/contact checks against
-`https://verification.didit.me/v3`. Staff-only routes live at
-`/api/didit/*` (`web_portal/api_didit.py`, `services/didit_service.py`).
-The hosted Didit session UI is not required for these endpoints.
-
-| Variable | Required | Description |
-|---|---|---|
-| `DIDIT_API_KEY` | Yes, to enable | Application API key (`x-api-key`). From [business.didit.me](https://business.didit.me) → API & Webhooks. Never expose client-side |
-| `DIDIT_ENABLED` | No | Default on when a key is set. Set `false` to disable outbound calls |
-| `DIDIT_BASE_URL` | No | Default `https://verification.didit.me` |
-| `DIDIT_ORG_ID` / `DIDIT_APPLICATION_ID` / `DIDIT_CLIENT_ID` | No | Console identifiers for operator status (`GET /api/didit/status`) |
-| `DIDIT_WORKFLOW_ID` | No | Used later for hosted sessions; unused by standalone checks |
-| `DIDIT_WEBHOOK_SECRET` | No | HMAC secret if you also consume Didit webhooks |
-| `DIDIT_TIMEOUT` / `DIDIT_FILE_TIMEOUT` | No | JSON timeout (default 30s) and multipart timeout (default 60s) |
-
-`GET /api/health` reports `{ "didit": { "configured": bool, "enabled": bool } }`
-and never returns the API key.
-
 ### Confidential document access (investor / corporate documents)
 
 Investor business plans under `/internal/` and corporate instruments under
