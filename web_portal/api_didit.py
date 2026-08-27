@@ -84,7 +84,7 @@ def _scan_file_field(field_name: str, value: Any, client_ip: str) -> Optional[st
         field_name, (f"{field_name}.bin", "application/octet-stream")
     )
     try:
-        filename, raw, content_type = decode_file_input(
+        filename, raw, _content_type = decode_file_input(
             value, field_name, default_name, default_type
         )
     except DiditRequestError as exc:
@@ -94,11 +94,23 @@ def _scan_file_field(field_name: str, value: Any, client_ip: str) -> Optional[st
     except ImportError:
         logger.warning("Didit upload scan unavailable; rejecting %s", field_name)
         return "security_scanner_unavailable"
+    # Only treat the content type as "declared" when the caller actually
+    # supplied one. Bare base64 strings and {filename, data} objects carry no
+    # MIME type, so the field default (e.g. image/jpeg) would otherwise be
+    # compared against a PNG/WebP/PDF magic byte and rejected as a mismatch.
+    declared_type = ""
+    if isinstance(value, dict):
+        declared_type = str(
+            value.get("content_type")
+            or value.get("file_type")
+            or value.get("mime_type")
+            or ""
+        ).strip()
     try:
         verdict = scan_file_bytes(
             raw,
             filename=filename,
-            declared_content_type=content_type or "",
+            declared_content_type=declared_type,
         )
     except Exception as exc:
         logger.warning("Didit upload scan errored (rejecting %s): %s", field_name, exc)

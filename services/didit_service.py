@@ -491,14 +491,7 @@ class DiditService:
         payload = self._common_fields(dict(fields))
         payload.update(fields)
         missing = [
-            key for key in (
-                "issuing_state",
-                "validation_type",
-                "first_name",
-                "last_name",
-                "date_of_birth",
-                "personal_number",
-            )
+            key for key in ("issuing_state", "services")
             if not payload.get(key)
         ]
         if missing:
