@@ -263,9 +263,15 @@ The hosted Didit session UI is not required for these endpoints.
 | `DIDIT_WORKFLOW_ID` | No | Used later for hosted sessions; unused by standalone checks |
 | `DIDIT_WEBHOOK_SECRET` | No | HMAC secret if you also consume Didit webhooks |
 | `DIDIT_TIMEOUT` / `DIDIT_FILE_TIMEOUT` | No | JSON timeout (default 30s) and multipart timeout (default 60s) |
+| `OTP_PROVIDER` | No | `infobip` (default) keeps PHINS-minted login/registration/reset codes delivered by Infobip/SMTP/Twilio. Set `didit` to let Didit mint and check those codes (`DIDIT_API_KEY` required). Welcome, billing, and claims mail stay on `EMAIL_PROVIDER` — do not set `EMAIL_PROVIDER=didit` |
+| `OTP_DIDIT_PHONE_CHANNEL` | No | Didit phone channel when `OTP_PROVIDER=didit` (`sms`, `whatsapp`, `telegram`; default `sms`) |
 
 `GET /api/health` reports `{ "didit": { "configured": bool, "enabled": bool } }`
 and never returns the API key.
+
+Didit email/phone APIs are OTP-only. They cannot send welcome, billing, or
+claims templates. Keep Infobip (or SMTP) configured for those notifications
+even after switching `OTP_PROVIDER=didit`.
 
 ### Confidential document access (investor / corporate documents)
 

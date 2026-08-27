@@ -330,7 +330,9 @@ Environment variables commonly used:
 - **Didit identity:** `DIDIT_ENABLED`, `DIDIT_API_KEY` (`x-api-key` for
   `verification.didit.me/v3`), `DIDIT_BASE_URL`, `DIDIT_ORG_ID`,
   `DIDIT_APPLICATION_ID`, `DIDIT_CLIENT_ID`, `DIDIT_WORKFLOW_ID`,
-  `DIDIT_WEBHOOK_SECRET`, `DIDIT_TIMEOUT`, `DIDIT_FILE_TIMEOUT`
+  `DIDIT_WEBHOOK_SECRET`, `DIDIT_TIMEOUT`, `DIDIT_FILE_TIMEOUT`,
+  `OTP_PROVIDER` (`infobip` default or `didit` for login/registration/reset
+  codes), `OTP_DIDIT_PHONE_CHANNEL`
 
 Operational notes:
 

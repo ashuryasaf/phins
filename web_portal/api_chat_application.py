@@ -560,6 +560,18 @@ def _otp_delivery_ready(channel: str = "email") -> Tuple[bool, str]:
             _demo_otp_exposure_allowed,
             _whatsapp_provider_configured,
         )
+    try:
+        from services.otp_provider import is_didit_otp
+    except Exception:
+        is_didit_otp = None
+    if is_didit_otp and is_didit_otp():
+        try:
+            from services.didit_service import get_didit_service
+            svc = get_didit_service()
+            return bool(svc.is_enabled()), "didit"
+        except Exception as exc:
+            logger.warning("Didit OTP pre-flight failed: %s", exc)
+            return False, "didit"
     if _demo_otp_exposure_allowed():
         return True, "demo_exposure"
     if (channel or "email").strip().lower() == "whatsapp":
@@ -615,7 +627,11 @@ def _handle_otp_request(application_id: str, client_ip: str,
 
     ready, provider = _otp_delivery_ready(channel)
     if not ready:
-        if channel == "whatsapp":
+        if provider == "didit":
+            logger.error(
+                "Chat application OTP blocked: OTP_PROVIDER=didit but "
+                "DIDIT_API_KEY is missing or Didit is disabled.")
+        elif channel == "whatsapp":
             logger.error(
                 "Chat application WhatsApp OTP blocked: provider '%s' is not "
                 "configured. Set TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN + "
@@ -676,6 +692,7 @@ def _handle_otp_request(application_id: str, client_ip: str,
     delivered, delivery_error = _send_otp_via_channel(
         channel, otp_code, int(data.get("expires_in_seconds") or 300),
         purpose.value, email=email, phone=phone, ip_address=client_ip,
+        verification_id=verification_id,
     )
 
     response: Dict[str, Any] = {

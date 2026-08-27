@@ -167,6 +167,10 @@ class OTPVerification:
     # or 'both' (email+SMS). Phone-backed channels require ``phone``.
     delivery_channel: str = 'email'
     phone: Optional[str] = None
+    # Who minted and will check the code: 'infobip' (PHINS-local hash) or
+    # 'didit' (Didit email/phone check). Stamped at send time so verify
+    # matches the provider that actually delivered the code.
+    delivery_provider: str = 'infobip'
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc) + timedelta(minutes=5))
     verified_at: Optional[datetime] = None
@@ -186,6 +190,7 @@ class OTPVerification:
             'risk_score': self.risk_score,
             'delivery_channel': self.delivery_channel,
             'phone': self.phone,
+            'delivery_provider': self.delivery_provider,
             'created_at': self.created_at.isoformat(),
             'expires_at': self.expires_at.isoformat(),
             'verified_at': self.verified_at.isoformat() if self.verified_at else None
@@ -716,6 +721,8 @@ class OTPSecurityService:
         otp_code = generate_otp(OTPSecurityConfig.OTP_LENGTH)
         salt = generate_salt()
         otp_hash = hash_otp(otp_code, salt)
+        from services.otp_provider import resolve_otp_provider
+        delivery_provider = resolve_otp_provider()
         
         verification = OTPVerification(
             verification_id=generate_id("OTP"),
@@ -732,6 +739,7 @@ class OTPSecurityService:
             risk_score=risk_score,
             delivery_channel=normalized_channel,
             phone=normalized_phone,
+            delivery_provider=delivery_provider,
             expires_at=datetime.now(timezone.utc) + timedelta(
                 seconds=OTPSecurityConfig.OTP_EXPIRY_SECONDS
             )
@@ -773,6 +781,7 @@ class OTPSecurityService:
                 "delivery_channel": normalized_channel,
                 "phone": normalized_phone,
                 "masked_phone": _mask_phone(normalized_phone) if normalized_phone else None,
+                "delivery_provider": delivery_provider,
             }
         )
 
@@ -821,8 +830,10 @@ class OTPSecurityService:
 
             otp_code = generate_otp(OTPSecurityConfig.OTP_LENGTH)
             salt = generate_salt()
+            from services.otp_provider import resolve_otp_provider
             verification.otp_salt = salt
             verification.otp_hash = hash_otp(otp_code, salt)
+            verification.delivery_provider = resolve_otp_provider()
             verification.status = VerificationStatus.PENDING
             verification.attempts = 0
             verification.created_at = now
@@ -860,6 +871,7 @@ class OTPSecurityService:
                 "delivery_channel": verification.delivery_channel,
                 "phone": verification.phone,
                 "masked_phone": _mask_phone(verification.phone) if verification.phone else None,
+                "delivery_provider": verification.delivery_provider,
             }
         )
     
@@ -909,26 +921,55 @@ class OTPSecurityService:
                 message="Maximum verification attempts exceeded"
             )
         
-        # Verify code (timing-safe comparison)
-        code_hash = hash_otp(otp_code, verification.otp_salt)
-        if not hmac.compare_digest(code_hash, verification.otp_hash):
-            remaining = verification.max_attempts - verification.attempts
-            self._log_audit(
-                action="otp_failed",
-                user_type=verification.user_type,
-                user_id=verification.user_id,
-                ip_address=ip_address,
-                details={
-                    "verification_id": verification_id,
-                    "attempts_remaining": remaining
-                },
-                success=False
+        # Verify code. Didit-minted codes are checked with Didit; Infobip
+        # (default) keeps the local timing-safe hash comparison.
+        if (verification.delivery_provider or '').strip().lower() == 'didit':
+            from services.otp_provider import verify_didit_otp
+            code_ok, didit_error = verify_didit_otp(
+                delivery_channel=verification.delivery_channel,
+                email=verification.email,
+                phone=verification.phone,
+                code=otp_code,
             )
-            return SecurityResult(
-                success=False,
-                error_code="INVALID_OTP",
-                message=f"Invalid OTP code. {remaining} attempts remaining."
-            )
+            if not code_ok:
+                remaining = verification.max_attempts - verification.attempts
+                self._log_audit(
+                    action="otp_failed",
+                    user_type=verification.user_type,
+                    user_id=verification.user_id,
+                    ip_address=ip_address,
+                    details={
+                        "verification_id": verification_id,
+                        "attempts_remaining": remaining,
+                        "delivery_provider": "didit",
+                    },
+                    success=False
+                )
+                return SecurityResult(
+                    success=False,
+                    error_code="INVALID_OTP",
+                    message=didit_error or f"Invalid OTP code. {remaining} attempts remaining."
+                )
+        else:
+            code_hash = hash_otp(otp_code, verification.otp_salt)
+            if not hmac.compare_digest(code_hash, verification.otp_hash):
+                remaining = verification.max_attempts - verification.attempts
+                self._log_audit(
+                    action="otp_failed",
+                    user_type=verification.user_type,
+                    user_id=verification.user_id,
+                    ip_address=ip_address,
+                    details={
+                        "verification_id": verification_id,
+                        "attempts_remaining": remaining
+                    },
+                    success=False
+                )
+                return SecurityResult(
+                    success=False,
+                    error_code="INVALID_OTP",
+                    message=f"Invalid OTP code. {remaining} attempts remaining."
+                )
         
         # Success
         verification.status = VerificationStatus.VERIFIED

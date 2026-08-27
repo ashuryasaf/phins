@@ -334,6 +334,15 @@ def _demo_otp_exposure_allowed() -> bool:
     is a direct account-takeover path. Test mode stays unconditionally allowed so
     the pytest harness keeps asserting on ``demo_otp_code``.
     """
+    # Didit mints the code itself; PHINS never sees it, so echoing the
+    # unused local placeholder would let a caller "verify" a code Didit
+    # did not send.
+    try:
+        from services.otp_provider import is_didit_otp
+        if is_didit_otp():
+            return False
+    except Exception:
+        pass
     if not EXPOSE_DEMO_OTP:
         return False
     if PHINS_TEST_MODE:
@@ -378,6 +387,12 @@ def _apply_registration_demo_otp_fallback(
     """
     if not otp_code or _demo_otp_exposure_allowed():
         return False
+    try:
+        from services.otp_provider import is_didit_otp
+        if is_didit_otp():
+            return False
+    except Exception:
+        pass
     if not _registration_otp_fallback_eligible(purpose):
         return False
     if not _allow_registration_demo_otp_fallback():
@@ -478,6 +493,8 @@ def _prepare_otp_client_response(
             sanitized['masked_phone'] = safe_data.get('masked_phone')
         if safe_data.get('delivery_channel'):
             sanitized['delivery_channel'] = safe_data.get('delivery_channel')
+        if safe_data.get('delivery_provider'):
+            sanitized['delivery_provider'] = safe_data.get('delivery_provider')
         if safe_data.get('expires_in_seconds') is not None:
             sanitized['expires_in_seconds'] = safe_data.get('expires_in_seconds')
 
@@ -492,14 +509,27 @@ def _send_otp_email(
     otp_code: str,
     expiry_seconds: int,
     purpose: str,
-    ip_address: Optional[str] = None
+    ip_address: Optional[str] = None,
+    verification_id: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
     """
     Send OTP through notification service with provider-level fallback.
 
     This improves delivery reliability when one provider is temporarily down
     or misconfigured while alternatives are available.
+
+    When ``OTP_PROVIDER=didit``, Didit mints and delivers the code. The
+    PHINS-generated ``otp_code`` is unused.
     """
+    from services.otp_provider import is_didit_otp, send_didit_otp
+    if is_didit_otp():
+        return send_didit_otp(
+            delivery_channel='email',
+            email=email,
+            phone=None,
+            vendor_data=verification_id,
+        )
+
     try:
         from services.notification_service import (
             NotificationRequest,
@@ -572,14 +602,26 @@ def _send_otp_sms(
     otp_code: str,
     expiry_seconds: int,
     purpose: str,
-    ip_address: Optional[str] = None
+    ip_address: Optional[str] = None,
+    verification_id: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
     """Send OTP via the configured SMS provider.
 
     Mirrors ``_send_otp_email`` for the SMS channel. The notification
     service already raises clear failures when the SMS provider is not
     configured, so callers can surface a useful error to the user.
+
+    When ``OTP_PROVIDER=didit``, Didit mints and delivers the SMS code.
     """
+    from services.otp_provider import is_didit_otp, send_didit_otp
+    if is_didit_otp():
+        return send_didit_otp(
+            delivery_channel='sms',
+            email=None,
+            phone=phone,
+            vendor_data=verification_id,
+        )
+
     try:
         from services.notification_service import (
             NotificationRequest,
@@ -654,13 +696,25 @@ def _send_otp_whatsapp(
     expiry_seconds: int,
     purpose: str,
     ip_address: Optional[str] = None,
+    verification_id: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
     """Send OTP via the configured WhatsApp provider.
 
     Fail closed in production when credentials are missing. The pipeline's
     Twilio/Meta helpers silently mock in that case, which would mark an OTP
     as delivered without ever leaving the server.
+
+    When ``OTP_PROVIDER=didit``, Didit mints and delivers the WhatsApp code.
     """
+    from services.otp_provider import is_didit_otp, send_didit_otp
+    if is_didit_otp():
+        return send_didit_otp(
+            delivery_channel='whatsapp',
+            email=None,
+            phone=phone,
+            vendor_data=verification_id,
+        )
+
     try:
         from services.notification_service import should_use_mock_notifications
         from services.secure_notification_pipeline import (
@@ -717,6 +771,7 @@ def _send_otp_via_channel(
     email: Optional[str] = None,
     phone: Optional[str] = None,
     ip_address: Optional[str] = None,
+    verification_id: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
     """Dispatch OTP delivery to email, SMS, WhatsApp, or both (email+SMS).
 
@@ -724,10 +779,22 @@ def _send_otp_via_channel(
     channel delivers, while still surfacing the failed channel's error
     so operators can fix it. WhatsApp is a first-class channel of its
     own — it is not folded into ``'both'``.
+
+    When ``OTP_PROVIDER=didit``, Didit mints and delivers the code on
+    the requested channel. Infobip/SMTP/Twilio stay unused for OTP.
     """
     channel = (delivery_channel or 'email').strip().lower()
     if channel not in ('email', 'sms', 'whatsapp', 'both'):
         channel = 'email'
+
+    from services.otp_provider import is_didit_otp, send_didit_otp
+    if is_didit_otp():
+        return send_didit_otp(
+            delivery_channel=channel,
+            email=email,
+            phone=phone,
+            vendor_data=verification_id,
+        )
 
     email_ok = sms_ok = whatsapp_ok = False
     email_error = sms_error = whatsapp_error = None
@@ -929,6 +996,7 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
                 email=email,
                 phone=phone,
                 ip_address=client_ip,
+                verification_id=response_data.get('verification_id') or result.verification_id,
             )
         response_data['notification_sent'] = notification_sent
 
@@ -1016,6 +1084,7 @@ def handle_otp_resend(client_ip: str, body_data: Dict, user_agent: str = "") -> 
                 email=delivery_email,
                 phone=delivery_phone,
                 ip_address=client_ip,
+                verification_id=verification_id,
             )
             response_data['notification_sent'] = sent
             if sent and send_error:
