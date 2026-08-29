@@ -1128,6 +1128,7 @@
                 delivery_channel: otpPayload.delivery_channel || data.otp_channel,
                 masked_email: otpPayload.masked_email || data.masked_email,
                 masked_phone: otpPayload.masked_phone || data.masked_phone,
+                otp_channels: otpPayload.otp_channels || data.otp_channels,
             }, data.otp_channel || 'email');
             addBubble('bot',
                 richText('Welcome back! Since your session is verified, I sent a fresh security code to ')
