@@ -246,10 +246,35 @@
 
                     <!-- Premium Allocation Section -->
                     <div class="form-section" style="margin-top: 24px;">
-                        <h3 class="section-title">Premium Allocation Strategy</h3>
-                        <p class="section-lead">Choose how your premium is distributed between protection and wealth building.</p>
+                        <h3 class="section-title">Savings Add-on</h3>
+                        <p class="section-lead">Priced by the actuarial kernel as a markup on your risk premium. Pure protection is always an option.</p>
 
-                        <!-- Risk/Savings Split -->
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;">
+                            <label class="radio-card selected" id="savings-addon-card-none">
+                                <input type="radio" name="savings-addon" value="none" checked style="display: none;">
+                                <div class="radio-card-value">None</div>
+                                <div class="radio-card-sub">Pure protection</div>
+                            </label>
+                            <label class="radio-card" id="savings-addon-card-light">
+                                <input type="radio" name="savings-addon" value="light" style="display: none;">
+                                <div class="radio-card-value">Light</div>
+                                <div class="radio-card-sub">+25% of risk</div>
+                            </label>
+                            <label class="radio-card" id="savings-addon-card-balanced">
+                                <input type="radio" name="savings-addon" value="balanced" style="display: none;">
+                                <div class="radio-card-value">Balanced</div>
+                                <div class="radio-card-sub">+50% of risk</div>
+                                <div class="radio-card-badge">Popular</div>
+                            </label>
+                            <label class="radio-card" id="savings-addon-card-growth">
+                                <input type="radio" name="savings-addon" value="growth" style="display: none;">
+                                <div class="radio-card-value">Growth</div>
+                                <div class="radio-card-sub">+100% of risk</div>
+                            </label>
+                        </div>
+                        <p id="savings-addon-breakdown" class="premium-quote-meta" style="margin: 0 0 20px;">No savings add-on. Premium is pure protection.</p>
+
+                        <!-- Risk/Savings Split (routes the add-on, does not reprice) -->
                         <div class="apply-panel" style="margin-bottom: 20px;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                                 <div style="display: flex; align-items: center; gap: 8px;">
@@ -317,9 +342,9 @@
                     </div>
 
                     <!-- Savings Distribution Section -->
-                    <div class="form-section" style="margin-top: 24px;">
+                    <div id="savings-distribution-section" class="form-section" style="margin-top: 24px; display: none;">
                         <h3 class="section-title">Savings Distribution</h3>
-                        <p class="section-lead">Customize how your savings are allocated across different investment channels.</p>
+                        <p class="section-lead">Customize how your savings add-on is allocated across investment channels.</p>
 
                         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
                             <!-- Health Wallet -->

@@ -88,6 +88,43 @@ def test_policies_quote_returns_kernel_for_apply_form():
     assert body["annual"] == pytest.approx(kernel["annual"])
 
 
+def test_explicit_zero_savings_rate_stays_pure_risk():
+    kernel = price_application_with_kernel({
+        **CLASSIC_PAYLOAD,
+        "savings_rate": 0,
+        "savings_formula": "risk_premium_markup",
+        "phins_allocation": {"savings_pct": 75},
+    })
+    assert kernel["savings_premium_annual"] == 0
+    assert kernel["product_id"] == "phins_pure_risk_adjustable"
+
+
+def test_balanced_savings_addon_is_half_of_risk_and_matches_create():
+    payload = {
+        **CLASSIC_PAYLOAD,
+        "savings_rate": 0.5,
+        "savings_formula": "risk_premium_markup",
+    }
+    quote_status, quote = _post("/api/policies/quote", payload)
+    assert quote_status == 200
+    assert quote["pricing_source"] == "pricing_kernel"
+    assert quote["product_id"] == "phins_hybrid_savings"
+    assert quote["savings_premium_annual"] == pytest.approx(
+        quote["risk_premium_annual"] * 0.5, rel=1e-3
+    )
+    assert quote["annual"] > quote["risk_premium_annual"]
+    create_status, created = _post("/api/policies/create", {
+        **payload,
+        "customer_name": "Jordan Hale",
+        "customer_email": "apply-kernel-savings@example.com",
+    })
+    assert create_status in (200, 201)
+    policy = created["policy"]
+    assert policy["monthly_premium"] == pytest.approx(quote["monthly"])
+    assert policy["annual_premium"] == pytest.approx(quote["annual"])
+    assert policy.get("product_id") == "phins_hybrid_savings"
+
+
 def test_classic_create_issues_the_quoted_kernel_amount():
     status, created = _post("/api/policies/create", {
         **CLASSIC_PAYLOAD,

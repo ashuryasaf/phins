@@ -271,19 +271,18 @@ def price_application_with_kernel(payload: Dict[str, Any]) -> Optional[Dict[str,
         from services.pricing_kernel import SavingsFormula
 
         store = get_actuarial_store()
-        # Pure-risk default for new applications (savings is an optional add-on).
-        savings_rate = float(
-            payload.get("savings_rate")
-            or (payload.get("phins_allocation") or {}).get("savings_pct")
-            or 0.0
-        )
-        # phins_allocation.savings_pct is often 0-100; normalize when > 1.
+        # Explicit savings_rate (including 0) is the actuarial add-on.
+        # phins_allocation.savings_pct is portfolio routing and must not
+        # be treated as a risk-premium markup.
+        if "savings_rate" in payload:
+            try:
+                savings_rate = float(payload.get("savings_rate") or 0.0)
+            except (TypeError, ValueError):
+                savings_rate = 0.0
+        else:
+            savings_rate = 0.0
         if savings_rate > 1.0:
             savings_rate = savings_rate / 100.0
-        # Application savings allocation is portfolio routing, not risk markup —
-        # price base risk cover at savings_rate=0 unless explicitly requested.
-        if "savings_rate" not in payload:
-            savings_rate = 0.0
         savings_rate = max(0.0, min(2.0, savings_rate))
 
         # Savings add-ons are priced the way the actuary dashboard prices them:

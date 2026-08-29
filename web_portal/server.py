@@ -13442,6 +13442,8 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
                     'ethnicity_used': kernel.get('ethnicity_used'),
                     'risk_premium_annual': kernel.get('risk_premium_annual'),
                     'savings_premium_annual': kernel.get('savings_premium_annual'),
+                    'savings_rate_used': kernel.get('savings_rate_used'),
+                    'savings_formula': kernel.get('savings_formula'),
                     'eligible': kernel.get('eligible'),
                 }
     except Exception as _kern_err:

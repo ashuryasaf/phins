@@ -61,7 +61,8 @@ class TestApplyPageDataIntegrity:
         "protection-monthly", "savings-monthly",
         "wallet-monthly", "investment-monthly", "algo-monthly",
         "monthly-premium", "quarterly-premium", "annual-premium",
-        "premium-quote-meta",
+        "premium-quote-meta", "savings-addon-breakdown",
+        "savings-distribution-section",
         "summary-coverage", "summary-years",
         # step 3 — health
         "conditions-list", "surgery-list", "height", "weight",
@@ -83,7 +84,7 @@ class TestApplyPageDataIntegrity:
     ]
 
     REQUIRED_NAMES = [
-        "coverage-years", "tobacco", "medical-conditions", "surgery",
+        "coverage-years", "savings-addon", "tobacco", "medical-conditions", "surgery",
         "hazardous", "family-history", "billing-frequency", "auto-pay",
     ]
 
@@ -106,6 +107,8 @@ class TestApplyPageDataIntegrity:
         assert "/api/policies/create" in APPLY_JS
         assert "/api/policies/quote" in APPLY_JS
         assert "application_channel: 'classic'" in APPLY_JS
+        assert "savings_rate: currentSavingsRate()" in APPLY_JS
+        assert "savings_formula: 'risk_premium_markup'" in APPLY_JS
 
     def test_scripts_still_wired(self):
         assert 'src="apply.js"' in APPLY_HTML
