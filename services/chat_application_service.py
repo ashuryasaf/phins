@@ -703,6 +703,15 @@ _OTP_GATE_AFTER = "phone"
 _PRE_OTP_STEPS = {"name", "email", "phone"}
 
 
+def _available_otp_channels(phone: Optional[str] = None) -> List[str]:
+    """OTP channels this deployment can deliver (email, and WhatsApp if ready)."""
+    try:
+        from web_portal.api_chat_application import available_otp_channels
+        return list(available_otp_channels(phone))
+    except Exception:
+        return ["email"]
+
+
 class ChatPolicyApplicationService:
     """Stateful chat application store + broker-bot conversation engine."""
 
@@ -1116,20 +1125,28 @@ class ChatPolicyApplicationService:
                 events.append(self._journey_add(session, "contact_captured"))
                 masked_email = _mask_email(session["contact"]["email"])
                 masked_phone = _mask_phone(session["contact"].get("phone"))
-                otp_msg = self._transcript_add(
-                    session, "bot",
-                    _i18n_msg(
+                otp_channels = _available_otp_channels(session["contact"].get("phone"))
+                if "whatsapp" in otp_channels and masked_phone:
+                    otp_copy = _i18n_msg(
                         session, "otp_challenge",
                         "Perfect. To protect your data I'll send a 6-digit verification "
                         f"code to {masked_email} or WhatsApp {masked_phone}. "
                         "Choose Email or WhatsApp below, then type the code when it arrives.",
                         masked_email=masked_email,
                         masked_phone=masked_phone,
-                    ),
-                    kind="otp_challenge")
+                    )
+                else:
+                    otp_copy = _i18n_msg(
+                        session, "otp_challenge_email",
+                        "Perfect. To protect your data I'll send a 6-digit verification "
+                        f"code to {masked_email}. Type it here when it arrives.",
+                        masked_email=masked_email,
+                    )
+                otp_msg = self._transcript_add(
+                    session, "bot", otp_copy, kind="otp_challenge")
                 bot_msgs.append(otp_msg)
                 response["otp_required"] = True
-                response["otp_channels"] = ["email", "whatsapp"]
+                response["otp_channels"] = otp_channels
                 response["masked_email"] = masked_email
                 response["masked_phone"] = masked_phone
             elif next_step is None:
@@ -1929,7 +1946,9 @@ class ChatPolicyApplicationService:
                         "masked_email": _mask_email(session["contact"]["email"]),
                         "masked_phone": _mask_phone(session["contact"].get("phone")),
                         "otp_channel": last_channel,
-                        "otp_channels": ["email", "whatsapp"],
+                        "otp_channels": _available_otp_channels(
+                            session["contact"].get("phone")
+                        ),
                         "ledger_events": events}
 
             session["status"] = "in_progress"

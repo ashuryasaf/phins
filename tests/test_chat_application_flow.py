@@ -767,6 +767,38 @@ def test_chat_phone_step_offers_whatsapp_and_email_channels():
     assert reply.get("masked_phone")
 
 
+def test_chat_hides_whatsapp_when_delivery_is_unavailable(monkeypatch):
+    """Production-like: Infobip email works, WhatsApp is not configured."""
+    import web_portal.api_extensions as api_extensions
+    import web_portal.api_chat_application as chat_api
+
+    monkeypatch.setattr(api_extensions, "_demo_otp_exposure_allowed", lambda: False)
+    monkeypatch.setattr(
+        api_extensions, "_whatsapp_provider_configured", lambda: (False, "twilio")
+    )
+    monkeypatch.setattr(
+        "services.notification_service.get_active_email_provider_type",
+        lambda: "infobip",
+    )
+
+    assert chat_api.available_otp_channels("+15550123456") == ["email"]
+
+    status, body = _post("/api/chat-application/start", {})
+    assert status == 201, body
+    app_id = body["application_id"]
+    resume_code = body["resume_code"]
+    _answer(app_id, "Noa Barak", resume_code=resume_code)
+    _answer(app_id, "chat.wa.hidden@example.com", resume_code=resume_code)
+    reply = _answer(app_id, "+1-555-0144", resume_code=resume_code)
+    assert reply.get("otp_required") is True
+    assert reply.get("otp_channels") == ["email"]
+    bot_text = " ".join(
+        m.get("text") or "" for m in (reply.get("messages") or []) if m.get("role") == "bot"
+    )
+    assert "WhatsApp" not in bot_text
+    assert "email" in bot_text.lower() or "@" in bot_text
+
+
 if __name__ == "__main__":
     import sys
     sys.exit(pytest.main([__file__, "-v"]))

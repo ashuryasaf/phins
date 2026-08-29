@@ -20,6 +20,7 @@
         step: null,          // current step descriptor from the API
         otp: null,           // {verification_id, channel, maskedEmail, maskedPhone}
         otpChannel: null,    // 'email' | 'whatsapp'
+        otpChannels: ['email'], // channels the server can actually deliver
         otpRestoreTranscript: false, // replay transcript after OTP only on a fresh-page resume
         busy: false,
         mediaCount: 0,
@@ -783,7 +784,15 @@
         return data && data.masked_email ? data.masked_email : 'your email';
     }
 
+    function setOtpChannels(data) {
+        const raw = (data && Array.isArray(data.otp_channels)) ? data.otp_channels : state.otpChannels;
+        const next = (raw || []).filter((c) => c === 'email' || c === 'whatsapp');
+        state.otpChannels = next.length ? next : ['email'];
+        return state.otpChannels;
+    }
+
     function rememberOtp(data, channel) {
+        setOtpChannels(data);
         const resolved = (data && data.delivery_channel) || channel || 'email';
         state.otpChannel = resolved;
         state.otp = {
@@ -802,7 +811,8 @@
         });
         if (status !== 200) {
             addBubble('bot', richText(data.error || 'I could not send the code - give it a moment and try again.'));
-            if ((data.error_code || '') === 'UNSUPPORTED_CHANNEL') {
+            setOtpChannels(data);
+            if ((data.error_code || '') === 'UNSUPPORTED_CHANNEL' || (state.otpChannels || []).length > 1) {
                 renderOtpChannelDock(data);
                 return;
             }
@@ -823,18 +833,27 @@
     }
 
     function renderOtpChannelDock(meta) {
+        const channels = setOtpChannels(meta);
         const maskedEmail = (meta && meta.masked_email) || (state.otp && state.otp.maskedEmail) || '';
         const maskedPhone = (meta && meta.masked_phone) || (state.otp && state.otp.maskedPhone) || '';
+        if (channels.length === 1) {
+            requestOtp(channels[0]);
+            return;
+        }
+        const chips = [];
+        if (channels.includes('email')) {
+            chips.push(`<button class="chip otp-channel-chip" data-channel="email" type="button">
+                    Email${maskedEmail ? ` · ${escapeHtml(maskedEmail)}` : ''}
+                </button>`);
+        }
+        if (channels.includes('whatsapp')) {
+            chips.push(`<button class="chip otp-channel-chip otp-channel-whatsapp" data-channel="whatsapp" type="button">
+                    WhatsApp${maskedPhone ? ` · ${escapeHtml(maskedPhone)}` : ''}
+                </button>`);
+        }
         dockHtml(`
             <div class="dock-label" style="text-align:center;">Send the verification code via</div>
-            <div class="chips-wrap otp-channel-wrap">
-                <button class="chip otp-channel-chip" data-channel="email" type="button">
-                    Email${maskedEmail ? ` · ${escapeHtml(maskedEmail)}` : ''}
-                </button>
-                <button class="chip otp-channel-chip otp-channel-whatsapp" data-channel="whatsapp" type="button">
-                    WhatsApp${maskedPhone ? ` · ${escapeHtml(maskedPhone)}` : ''}
-                </button>
-            </div>
+            <div class="chips-wrap otp-channel-wrap">${chips.join('')}</div>
         `);
         dock().querySelectorAll('[data-channel]').forEach((chip) => {
             chip.addEventListener('click', () => requestOtp(chip.dataset.channel));
@@ -850,7 +869,9 @@
             <div class="otp-actions">
                 ${retryOnly ? '' : '<button class="chip chip-go" id="otp-submit">Verify</button>'}
                 <button class="link-btn" id="otp-resend" style="margin:0;">${retryOnly ? 'Send code again' : 'Resend code'}</button>
-                <button class="link-btn" id="otp-switch-channel" style="margin:0;">Use a different channel</button>
+                ${(state.otpChannels || []).length > 1
+                    ? '<button class="link-btn" id="otp-switch-channel" style="margin:0;">Use a different channel</button>'
+                    : ''}
             </div>
         `);
         const inputs = Array.from(dock().querySelectorAll('.otp-box'));
@@ -933,6 +954,7 @@
                 addBubble('bot', richText(data.error || 'Something went wrong - try again.'));
             }
             if (data.otp_required) {
+                setOtpChannels(data);
                 renderOtpChannelDock(data);
                 stickToBottom = true;
                 afterLayoutScroll();
@@ -1049,12 +1071,15 @@
 
     async function startApplication() {
         $('start-btn').disabled = true;
+        const startLabel = $('start-btn').textContent;
+        $('start-btn').textContent = 'Starting…';
         const body = { channel: 'web_chat', language: currentLanguage() };
         const invite = inviteCodeFromUrl();
         if (invite) body.invite_code = invite;
         const { status, data } = await api('POST', '/start', body);
         if (status !== 201) {
             $('start-btn').disabled = false;
+            $('start-btn').textContent = startLabel;
             alert(data.error || 'Could not start the application - please try again.');
             return;
         }
