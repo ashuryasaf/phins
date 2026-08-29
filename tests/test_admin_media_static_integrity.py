@@ -23,7 +23,7 @@ def test_admin_media_preview_subtitle_uses_download_handler():
     content = ADMIN_MEDIA_PATH.read_text(encoding="utf-8")
 
     preview_link_pattern = re.compile(
-        r"downloadLatestSubtitle\('\$\{media\.id\}'\)",
+        r"downloadLatestSubtitle\('\$\{(?:media\.id|safeId)\}'\)",
         flags=re.S,
     )
     assert preview_link_pattern.search(content)
