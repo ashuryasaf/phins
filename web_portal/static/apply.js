@@ -402,6 +402,20 @@ function calculatePremium(coverageAmount) {
     updateAllocationDisplay();
 }
 
+function reviewPremiumDisplay(premiums, billingFrequency) {
+    const monthly = Number(premiums?.monthly) || 0;
+    const quarterly = Number(premiums?.quarterly) || 0;
+    const annual = Number(premiums?.annual) || 0;
+    const freq = String(billingFrequency || 'monthly').toLowerCase();
+    if (freq === 'quarterly') {
+        return { displayAmount: quarterly, periodText: 'per quarter', monthly, quarterly, annual };
+    }
+    if (freq === 'annual') {
+        return { displayAmount: annual, periodText: 'per year', monthly, quarterly, annual };
+    }
+    return { displayAmount: monthly, periodText: 'per month', monthly, quarterly, annual };
+}
+
 function calculateAge(dobString) {
     const dob = new Date(dobString);
     const today = new Date();
@@ -1012,28 +1026,22 @@ function populateReview() {
     `;
     document.getElementById('review-payment').innerHTML = paymentHtml;
     
-    // Update final premium display based on billing frequency
+    // Update final premium display based on billing frequency.
+    // Step 2 already stores discounted quarterly (monthly*3*0.97) and
+    // annual (monthly*12*0.90) amounts — do not apply those discounts again.
     if (formData.premiums) {
-        let displayAmount = formData.premiums.annual;
-        let periodText = 'per year';
-        
-        if (formData.payment?.billingFrequency === 'monthly') {
-            displayAmount = formData.premiums.monthly;
-            periodText = 'per month';
-        } else if (formData.payment?.billingFrequency === 'quarterly') {
-            displayAmount = formData.premiums.quarterly * 0.97; // 3% discount
-            periodText = 'per quarter';
-        } else {
-            displayAmount = formData.premiums.annual * 0.90; // 10% discount
-        }
+        const review = reviewPremiumDisplay(
+            formData.premiums,
+            formData.payment?.billingFrequency
+        );
         
         document.getElementById('final-premium-amount').textContent = 
-            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(displayAmount);
-        document.getElementById('final-period').textContent = periodText;
+            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(review.displayAmount);
+        document.getElementById('final-period').textContent = review.periodText;
         document.getElementById('final-monthly').textContent = 
-            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(formData.premiums.monthly);
+            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(review.monthly);
         document.getElementById('final-quarterly').textContent = 
-            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(formData.premiums.quarterly * 0.97);
+            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(review.quarterly);
         
         // Health wallet summary
         const walletSummary = document.getElementById('health-wallet-summary');
