@@ -108,3 +108,18 @@ class TestApplyPageDataIntegrity:
         assert 'src="apply.js"' in APPLY_HTML
         assert "/unified-payment.js" in APPLY_HTML
         assert "/i18n.js" in APPLY_HTML
+
+    def test_review_does_not_reapply_frequency_discounts(self):
+        """Step 2 stores already-discounted quarterly/annual premiums.
+
+        Live review used to show $352.84 quarterly after step 2 showed
+        $363.75 ($125 * 3 * 0.97) because review multiplied by 0.97 again.
+        """
+        assert "monthlyPremium * 3 * 0.97" in APPLY_JS
+        assert "monthlyPremium * 12 * 0.90" in APPLY_JS
+        assert "function reviewPremiumDisplay(" in APPLY_JS
+        assert "premiums.quarterly * 0.97" not in APPLY_JS
+        assert "premiums.annual * 0.90" not in APPLY_JS
+        monthly = 125.0
+        assert round(monthly * 3 * 0.97, 2) == 363.75
+        assert round(monthly * 12 * 0.90, 2) == 1350.00
