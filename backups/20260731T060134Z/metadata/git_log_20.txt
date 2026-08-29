@@ -1,0 +1,20 @@
+00c2a3b Merge pull request #478 from ashuryasaf/cursor/remove-admin-ai-assistant-title-10f7
+fa83417 Align admin AI mic tests with title removal and voice wiring
+44bc17b Remove PHINS admin AI Assistant title; keep Admin AI Mic
+e409c2b Merge pull request #477 from ashuryasaf/cursor/assessment-unify-clearance-a8d6
+b59fb51 Fix string-stored verification flags coercing to true
+49026dc Merge pull request #476 from ashuryasaf/cursor/system-backup-configuration-c25e
+c132d2d Fix jurisdiction templates to fully substitute regulator names.
+9a27b5d Add regression tests for unified Assessments nav and jurisdiction templates.
+37d5b4b Unify Assessments nav and replace 52 jurisdiction pitch/NDA duplicates.
+ebf86fe Fix P0 runtime bugs and replace underwriting simulation with content analysis.
+6fe3d58 Join Assessment Center risk scoring with real platform data.
+b43810a backup: full platform snapshot 20260730T060243Z
+c85916d Merge pull request #475 from ashuryasaf/cursor/actuary-dashboard-mock-data-8b78
+f6b4fb0 Fix cleanup-demo-data durability and atomicity
+4921a85 Fix sandbox push persistence: report failures and serialize saves under STATE_LOCK
+594817f Hide orphan TESTSIM sandbox accounts from BI in is_suspended_account
+07de1d4 Tests: sandbox cleanup e2e, orphan recovery, demo-text safety, static integrity
+bb2fa37 Actuary dashboard: remove mock display data outside the sandbox
+2319745 Admin: present pipeline test data and disclose sandbox purge
+6b77a2c Harden actuarial sandbox pipeline: durable registry, namespace purge, safer demo matching
