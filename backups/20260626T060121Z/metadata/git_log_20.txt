@@ -1,0 +1,20 @@
+4589924 Merge pull request #412 from ashuryasaf/cursor/secrets-fail-closed-default-58fc
+1f16cb6 fix(security): avoid fail-closed on Railway preview environments
+efe7879 fix(security): auto-provision SESSION_SECRET_KEY when missing (unblocks deploy)
+5be0549 feat(security): fail closed on secret-policy violations in production (D)
+f47bf52 Merge pull request #411 from ashuryasaf/cursor/harness-nft-ledger-isolation-58fc
+2859654 test(security): add nft-ledger to tenant isolation harness
+3b2be4f Merge pull request #410 from ashuryasaf/cursor/role-detection-regression-guard-58fc
+b062d97 test(security): guard against USERS-only role-detection regressions
+12ef3f1 Merge pull request #409 from ashuryasaf/cursor/role-fallback-isolation-sweep-58fc
+545935d fix(security): use session-role fallback across customer-scoped handlers
+cce2961 Merge pull request #408 from ashuryasaf/cursor/test-server-port-release-58fc
+155c79f test: release embedded server sockets to fix port-collision flakiness
+3ba29ab Merge pull request #407 from ashuryasaf/cursor/health-wallet-purchases-read-guard-58fc
+54ed9db fix(security): scope health-wallet purchases (GET) reads to owner
+a15711b Merge pull request #406 from ashuryasaf/cursor/read-isolation-breadth-58fc
+124e854 fix(security): scope /api/service-transactions to owner and iterate ledger values
+e0f9610 fix(security): scope billing/transactions + customer/status reads to owner; broaden harness
+ea5fa1c Merge pull request #405 from ashuryasaf/cursor/savings-account-tenant-write-guard-58fc
+939fcec fix(security): enforce account ownership on savings withdraw/invest/sell
+ef39704 Merge pull request #404 from ashuryasaf/cursor/money-routes-tenant-write-guard-58fc
