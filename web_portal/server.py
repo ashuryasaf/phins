@@ -13454,9 +13454,16 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
                     'gender_used': kernel.get('gender_used'),
                     'ethnicity_used': kernel.get('ethnicity_used'),
                     'risk_premium_annual': kernel.get('risk_premium_annual'),
+                    'mortality_premium_annual': kernel.get('mortality_premium_annual'),
+                    'disability_premium_annual': kernel.get('disability_premium_annual'),
                     'savings_premium_annual': kernel.get('savings_premium_annual'),
                     'savings_rate_used': kernel.get('savings_rate_used'),
                     'savings_formula': kernel.get('savings_formula'),
+                    'adl_level': kernel.get('adl_level'),
+                    'adl_loading': kernel.get('adl_loading'),
+                    'underwriting_loading': kernel.get('underwriting_loading'),
+                    'adl_mortality_multiplier': kernel.get('adl_mortality_multiplier'),
+                    'adl_disability_multiplier': kernel.get('adl_disability_multiplier'),
                     'eligible': kernel.get('eligible'),
                 }
     except Exception as _kern_err:

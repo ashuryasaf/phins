@@ -125,6 +125,44 @@ def test_balanced_savings_addon_is_half_of_risk_and_matches_create():
     assert policy.get("product_id") == "phins_hybrid_savings"
 
 
+def test_quote_uses_adl_one_and_returns_live_store_multipliers():
+    independent = dict(CLASSIC_PAYLOAD, adl_level=1)
+    average = dict(CLASSIC_PAYLOAD, adl_level=5)
+    status_one, quote_one = _post("/api/policies/quote", independent)
+    status_five, quote_five = _post("/api/policies/quote", average)
+    assert status_one == 200 and status_five == 200
+    assert quote_one["pricing_source"] == "pricing_kernel"
+    assert quote_one["adl_level"] == 1
+    assert quote_five["adl_level"] == 5
+    assert quote_one["adl_mortality_multiplier"] > 0
+    assert quote_one["adl_disability_multiplier"] > 0
+    assert quote_one["gender_used"] == "female"
+    assert quote_one["smoking_status_used"] == "nonsmoker"
+    assert quote_one["monthly"] < quote_five["monthly"]
+    billed = calculate_premium(independent)
+    assert billed["adl_level"] == 1
+    assert billed["adl_mortality_multiplier"] == pytest.approx(
+        quote_one["adl_mortality_multiplier"]
+    )
+
+
+def test_live_actuary_store_edits_change_classic_quote():
+    from services.actuarial_service import get_actuarial_store
+
+    store = get_actuarial_store()
+    payload = dict(CLASSIC_PAYLOAD, adl_level=1)
+    before = calculate_premium(payload)
+    original = float(store.config.female_mortality_factor)
+    store.config.female_mortality_factor = original * 1.5
+    try:
+        after = calculate_premium(payload)
+        assert after["pricing_source"] == "pricing_kernel"
+        assert after["monthly"] > before["monthly"]
+        assert after["annual"] > before["annual"]
+    finally:
+        store.config.female_mortality_factor = original
+
+
 def test_classic_create_issues_the_quoted_kernel_amount():
     status, created = _post("/api/policies/create", {
         **CLASSIC_PAYLOAD,

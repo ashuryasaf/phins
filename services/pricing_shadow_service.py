@@ -396,6 +396,9 @@ def price_application_with_kernel(payload: Dict[str, Any]) -> Optional[Dict[str,
             "ethnicity_used": components.ethnicity_used,
             "life_sum_used": components.life_sum_used,
             "disability_sum_used": components.disability_sum_used,
+            "adl_mortality_multiplier": components.adl_mortality_multiplier,
+            "adl_disability_multiplier": components.adl_disability_multiplier,
+            "benefit_pct_used": getattr(components, "benefit_pct_used", None),
             "components": components.as_dict(),
         }
     except Exception as exc:

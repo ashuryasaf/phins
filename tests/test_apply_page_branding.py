@@ -57,6 +57,7 @@ class TestApplyPageDataIntegrity:
         "policy-type", "coverage-slider", "coverage-amount-display",
         "monthly-premium", "quarterly-premium", "annual-premium",
         "premium-quote-meta", "savings-addon-breakdown",
+        "adl-pricing-note", "adl-card-1",
         "apply-disclosure", "apply-disclosure-video", "apply-disclosure-light",
         "apply-disclosure-meta",
         "summary-coverage", "summary-years",
@@ -80,7 +81,7 @@ class TestApplyPageDataIntegrity:
     ]
 
     REQUIRED_NAMES = [
-        "coverage-years", "savings-addon", "tobacco", "medical-conditions", "surgery",
+        "coverage-years", "adl-level", "savings-addon", "tobacco", "medical-conditions", "surgery",
         "hazardous", "family-history", "billing-frequency", "auto-pay",
     ]
 
@@ -104,6 +105,7 @@ class TestApplyPageDataIntegrity:
         assert "/api/policies/quote" in APPLY_JS
         assert "application_channel: 'classic'" in APPLY_JS
         assert "savings_rate: currentSavingsRate()" in APPLY_JS
+        assert "adl_level: currentAdlLevel()" in APPLY_JS
         assert "savings_formula: 'risk_premium_markup'" in APPLY_JS
         assert "function loadApplyDisclosureVideo(" in APPLY_JS
         assert "apply_disclosure_video_url" in APPLY_JS

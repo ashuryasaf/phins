@@ -10,6 +10,7 @@ let phinsAllocation = {
     savingsPct: 0,
     coverageYears: 20,
     coverageAmount: 500000,
+    adlLevel: 1,
     savingsAddon: 'none',
     savingsRate: 0
 };
@@ -92,14 +93,44 @@ function initializePHINSContract() {
         });
     });
     
+    document.querySelectorAll('input[name="adl-level"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            setAdlLevel(this.value);
+        });
+    });
+
     document.querySelectorAll('input[name="savings-addon"]').forEach(radio => {
         radio.addEventListener('change', function() {
             setSavingsAddon(this.value);
         });
     });
 
+    setAdlLevel(currentAdlLevel());
     setSavingsAddon(currentSavingsAddon());
     updateAllocationDisplay();
+}
+
+function currentAdlLevel() {
+    const el = document.querySelector('input[name="adl-level"]:checked');
+    const raw = el ? parseInt(el.value, 10) : phinsAllocation.adlLevel;
+    const adl = Number.isFinite(raw) ? raw : 1;
+    return Math.max(1, Math.min(10, adl));
+}
+
+function setAdlLevel(value) {
+    const adl = Math.max(1, Math.min(10, parseInt(value, 10) || 1));
+    phinsAllocation.adlLevel = adl;
+    document.querySelectorAll('input[name="adl-level"]').forEach(radio => {
+        const card = radio.closest('.radio-card');
+        const selected = parseInt(radio.value, 10) === adl;
+        radio.checked = selected;
+        if (card) {
+            card.classList.toggle('selected', selected);
+            card.style.border = selected ? '2px solid #c9a24b' : '2px solid #dde7f5';
+            card.style.background = selected ? '#fdf8ec' : 'white';
+        }
+    });
+    scheduleKernelQuote();
 }
 
 function currentSavingsAddon() {
@@ -165,13 +196,15 @@ function collectQuotePayload() {
         gender,
         smoking_status: smokingStatus,
         ethnicity: document.getElementById('ethnicity')?.value || '',
+        adl_level: currentAdlLevel(),
         risk_score: riskScore,
         savings_rate: currentSavingsRate(),
         savings_formula: 'risk_premium_markup',
         questionnaire: {
             tobacco,
             smoke: tobacco,
-            gender
+            gender,
+            adl_level: currentAdlLevel()
         }
     };
 }
@@ -217,22 +250,51 @@ function applyKernelQuote(quote) {
         tables_version: quote.tables_version || '',
         config_version: quote.config_version || '',
         risk_premium_annual: Number(quote.risk_premium_annual) || 0,
+        mortality_premium_annual: Number(quote.mortality_premium_annual) || 0,
+        disability_premium_annual: Number(quote.disability_premium_annual) || 0,
         savings_premium_annual: Number(quote.savings_premium_annual) || 0,
-        savings_rate_used: Number(quote.savings_rate_used) || currentSavingsRate()
+        savings_rate_used: Number(quote.savings_rate_used) || currentSavingsRate(),
+        adl_level: Number(quote.adl_level) || currentAdlLevel(),
+        adl_mortality_multiplier: Number(quote.adl_mortality_multiplier) || 0,
+        adl_disability_multiplier: Number(quote.adl_disability_multiplier) || 0,
+        gender_used: quote.gender_used || '',
+        smoking_status_used: quote.smoking_status_used || ''
     };
     renderPremiumTiles(monthlyPremium, quarterlyPremium, annualPremium);
     const metaEl = document.getElementById('premium-quote-meta');
     if (metaEl) {
         if (quote.pricing_source === 'pricing_kernel') {
             const hash = quote.integrity_hash ? String(quote.integrity_hash).slice(0, 12) : '';
+            const riskYr = Number(quote.risk_premium_annual) || 0;
+            const mortYr = Number(quote.mortality_premium_annual) || 0;
+            const disYr = Number(quote.disability_premium_annual) || 0;
             metaEl.textContent = [
                 quote.product_id === 'phins_hybrid_savings' ? 'Hybrid risk + savings add-on' : 'Actuarial pricing kernel',
                 quote.tables_version ? `tables ${quote.tables_version}` : '',
                 quote.config_version ? `config ${quote.config_version}` : '',
+                riskYr ? `risk ${formatCurrency(riskYr)}/yr` : '',
+                mortYr ? `life ${formatCurrency(mortYr)}` : '',
+                disYr ? `disability ${formatCurrency(disYr)}` : '',
                 hash ? `sealed ${hash}` : ''
             ].filter(Boolean).join(' · ');
         } else {
             metaEl.textContent = 'Standard rate card';
+        }
+        const adlNote = document.getElementById('adl-pricing-note');
+        if (adlNote) {
+            const adl = Number(quote.adl_level) || currentAdlLevel();
+            const mortMult = Number(quote.adl_mortality_multiplier);
+            const disMult = Number(quote.adl_disability_multiplier);
+            const sex = quote.gender_used || 'unisex';
+            const smoke = quote.smoking_status_used || 'nonsmoker';
+            adlNote.textContent = [
+                `ADL ${adl}`,
+                Number.isFinite(mortMult) && mortMult > 0 ? `life ×${mortMult}` : '',
+                Number.isFinite(disMult) && disMult > 0 ? `disability ×${disMult}` : '',
+                sex,
+                smoke,
+                'from the live actuarial store'
+            ].filter(Boolean).join(' · ');
         }
     }
     const breakdown = document.getElementById('savings-addon-breakdown');
@@ -908,6 +970,7 @@ function saveStepData(step) {
                 policyType: document.getElementById('policy-type').value || 'phins_unified',
                 coverageAmount: phinsAllocation.coverageAmount,
                 coverageYears: phinsAllocation.coverageYears,
+                adlLevel: currentAdlLevel(),
                 allocation: {
                     protectionPct: phinsAllocation.protectionPct,
                     savingsPct: phinsAllocation.savingsPct,
@@ -1009,6 +1072,10 @@ function populateReview() {
         <div class="review-item">
             <strong>Coverage Period</strong>
             <span>${formData.coverage?.coverageYears || 20} Years</span>
+        </div>
+        <div class="review-item">
+            <strong>Daily function (ADL)</strong>
+            <span>${formData.coverage?.adlLevel || currentAdlLevel()}</span>
         </div>
         <div class="review-item">
             <strong>Savings Add-on</strong>
@@ -1173,6 +1240,7 @@ async function handleSubmit(e) {
             gender: formData.personal.gender || '',
             smoking_status: smokingStatus,
             ethnicity: formData.personal.ethnicity || formData.health.ethnicity || '',
+            adl_level: formData.coverage?.adlLevel || currentAdlLevel(),
             risk_score: calculateRiskScore(),
             medical_exam_required: formData.health.medicalConditions === 'yes' || formData.health.surgery === 'yes',
             questionnaire: {
@@ -1187,7 +1255,8 @@ async function handleSubmit(e) {
                 family_history: (formData.health.familyHistory || []).join(','),
                 medications: formData.health.medications || '',
                 height: formData.health.height || '',
-                weight: formData.health.weight || ''
+                weight: formData.health.weight || '',
+                adl_level: formData.coverage?.adlLevel || currentAdlLevel()
             },
             // PHINS Unified Contract allocation
             phins_allocation: {
