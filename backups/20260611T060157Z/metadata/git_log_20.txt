@@ -1,0 +1,20 @@
+70279cb Merge pull request #370 from ashuryasaf/cursor/business-plan-5yr-forecast-eb9a
+54bebf9 fix(investor): cap forecast horizon at Dec of final plan year
+8b546af feat(investor): extend business plan to a 5-year high-growth forecast default
+4549b21 docs(investor): trim business plan cover, founder paragraph and team section
+2be8970 Merge pull request #368 from ashuryasaf/cursor/investor-business-plan-unicorn-eb9a
+0f60958 Fix build-burn deployment after launch date and co-founder MOIC denominator
+c094c39 feat(investor): rebuild business plan doc with configurator-synced budget, 42-month gantt and CF charts
+40fa088 Merge pull request #367 from ashuryasaf/cursor/fix-ledger-chain-divergence-482b
+4c840df Merge pull request #365 from ashuryasaf/cursor/system-backup-configuration-3bcd
+3e3d137 Fix ledger DB reconcile truncation and forensic-mode warning
+919f061 fix(billing): restore RLock to prevent credit withdrawal deadlock
+538a7d2 docs: document PHINS_LEDGER_DB_AUTOREPAIR and ledger self-healing
+6497964 fix(boot): self-heal recurring ledger chain divergence on Railway
+540650d fix(ledger): add DB chain write-back and accurate repair counting
+71b15e2 Merge pull request #366 from ashuryasaf/cursor/update-agents-md-2c12
+5a6b4c1 docs: refresh AGENTS.md to match current repo state
+12d78c9 chore(backup): add full platform snapshot 20260610T060531Z
+22a7e8e Merge pull request #364 from ashuryasaf/cursor/activate-sms-otp-channel-on-main-276e
+4de7dff fix(security): make password-reset decoy response mirror SMS channel to prevent account enumeration
+d7c8875 fix(security): make password-reset decoy response mirror SMS channel to prevent account enumeration
