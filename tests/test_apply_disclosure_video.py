@@ -77,6 +77,7 @@ def test_admin_can_assign_light_and_control_disclosure_videos():
         portal.MEDIA_ASSETS.pop(live_id, None)
         portal.MEDIA_ASSETS.pop(control_id, None)
         portal.DESIGN_SETTINGS.update(original)
+        portal.save_ledger_data()
         srv.stop()
 
 
