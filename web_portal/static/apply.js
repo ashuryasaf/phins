@@ -6,11 +6,8 @@ let applicationFiles = [];  // Store uploaded files for submission
 
 // PHINS Contract allocation state
 let phinsAllocation = {
-    protectionPct: 25,
-    savingsPct: 75,
-    walletPct: 15,
-    investmentPct: 60,
-    algoPct: 25,
+    protectionPct: 100,
+    savingsPct: 0,
     coverageYears: 20,
     coverageAmount: 500000,
     savingsAddon: 'none',
@@ -22,6 +19,13 @@ const SAVINGS_ADDON_OPTIONS = {
     light: { rate: 0.25, label: 'Light (+25% of risk premium)' },
     balanced: { rate: 0.50, label: 'Balanced (+50% of risk premium)' },
     growth: { rate: 1.00, label: 'Growth (+100% of risk premium)' }
+};
+
+// Same default routing chat uses. Customers no longer pick this on apply.html.
+const DEFAULT_SAVINGS_DISTRIBUTION = {
+    walletPct: 15,
+    investmentPct: 60,
+    algoPct: 25
 };
 
 // Card type patterns for validation (text badges — no emoji icons)
@@ -42,14 +46,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Initialize PHINS Contract UI
 function initializePHINSContract() {
-    // Setup allocation slider
-    const allocationSlider = document.getElementById('allocation-slider');
-    if (allocationSlider) {
-        allocationSlider.addEventListener('input', updateAllocationSplit);
-        updateAllocationSplit();
-    }
-    
-    // Setup coverage years radio buttons
     document.querySelectorAll('input[name="coverage-years"]').forEach(radio => {
         radio.addEventListener('change', function() {
             phinsAllocation.coverageYears = parseInt(this.value);
@@ -66,15 +62,6 @@ function initializePHINSContract() {
         });
     });
     
-    // Setup savings distribution inputs
-    ['wallet', 'investment', 'algo'].forEach(type => {
-        const input = document.getElementById(`${type}-pct`);
-        if (input) {
-            input.addEventListener('change', () => rebalanceAllocations(type));
-            input.addEventListener('input', () => updateAllocationBars());
-        }
-    });
-    
     document.querySelectorAll('input[name="savings-addon"]').forEach(radio => {
         radio.addEventListener('change', function() {
             setSavingsAddon(this.value);
@@ -82,7 +69,6 @@ function initializePHINSContract() {
     });
 
     setSavingsAddon(currentSavingsAddon());
-    // Initial update
     updateAllocationDisplay();
 }
 
@@ -110,118 +96,14 @@ function setSavingsAddon(choice) {
             card.style.background = selected ? '#fdf8ec' : 'white';
         }
     });
-    const dist = document.getElementById('savings-distribution-section');
-    if (dist) {
-        dist.style.display = phinsAllocation.savingsRate > 0 ? 'block' : 'none';
-    }
+    toggleSavingsOnlyBenefits(phinsAllocation.savingsRate > 0);
     scheduleKernelQuote();
 }
 
-// Update protection/savings split
-function updateAllocationSplit() {
-    const slider = document.getElementById('allocation-slider');
-    if (!slider) return;
-    
-    phinsAllocation.protectionPct = parseInt(slider.value);
-    phinsAllocation.savingsPct = 100 - phinsAllocation.protectionPct;
-    
-    // Update display
-    document.getElementById('protection-pct').textContent = phinsAllocation.protectionPct + '%';
-    document.getElementById('savings-pct').textContent = phinsAllocation.savingsPct + '%';
-    
-    // Update gradient background (navy protection / gold savings)
-    slider.style.background = `linear-gradient(to right, #14509e 0%, #14509e ${phinsAllocation.protectionPct}%, #c9a24b ${phinsAllocation.protectionPct}%, #c9a24b 100%)`;
-    
-    updateAllocationDisplay();
-}
-
-// Adjust allocation for a specific category
-function adjustAllocation(type, delta) {
-    const input = document.getElementById(`${type}-pct`);
-    if (!input) return;
-    
-    let newValue = parseInt(input.value) + delta;
-    newValue = Math.max(0, Math.min(100, newValue));
-    input.value = newValue;
-    
-    rebalanceAllocations(type);
-}
-
-// Rebalance allocations to ensure they total 100%
-function rebalanceAllocations(changedType) {
-    const walletInput = document.getElementById('wallet-pct');
-    const investmentInput = document.getElementById('investment-pct');
-    const algoInput = document.getElementById('algo-pct');
-    
-    if (!walletInput || !investmentInput || !algoInput) return;
-    
-    let wallet = parseInt(walletInput.value) || 0;
-    let investment = parseInt(investmentInput.value) || 0;
-    let algo = parseInt(algoInput.value) || 0;
-    
-    const total = wallet + investment + algo;
-    
-    if (total !== 100) {
-        // Adjust the other two proportionally
-        const diff = 100 - total;
-        const others = ['wallet', 'investment', 'algo'].filter(t => t !== changedType);
-        
-        if (total > 100) {
-            // Reduce others proportionally
-            const currentOthersTotal = others.reduce((sum, t) => sum + parseInt(document.getElementById(`${t}-pct`).value), 0);
-            if (currentOthersTotal > 0) {
-                others.forEach(t => {
-                    const input = document.getElementById(`${t}-pct`);
-                    const current = parseInt(input.value);
-                    const reduction = Math.round((current / currentOthersTotal) * Math.abs(diff));
-                    input.value = Math.max(0, current - reduction);
-                });
-            }
-        } else {
-            // Increase others proportionally
-            const currentOthersTotal = others.reduce((sum, t) => sum + parseInt(document.getElementById(`${t}-pct`).value), 0);
-            if (currentOthersTotal > 0) {
-                others.forEach(t => {
-                    const input = document.getElementById(`${t}-pct`);
-                    const current = parseInt(input.value);
-                    const increase = Math.round((current / currentOthersTotal) * diff);
-                    input.value = Math.min(100, current + increase);
-                });
-            } else {
-                // If others are 0, split evenly
-                const each = Math.floor(diff / others.length);
-                others.forEach(t => {
-                    document.getElementById(`${t}-pct`).value = each;
-                });
-            }
-        }
-    }
-    
-    // Update state
-    phinsAllocation.walletPct = parseInt(walletInput.value);
-    phinsAllocation.investmentPct = parseInt(investmentInput.value);
-    phinsAllocation.algoPct = parseInt(algoInput.value);
-    
-    updateAllocationBars();
-    updateAllocationDisplay();
-}
-
-// Update allocation bar visuals
-function updateAllocationBars() {
-    const wallet = parseInt(document.getElementById('wallet-pct')?.value) || 0;
-    const investment = parseInt(document.getElementById('investment-pct')?.value) || 0;
-    const algo = parseInt(document.getElementById('algo-pct')?.value) || 0;
-    
-    document.getElementById('wallet-bar').style.width = wallet + '%';
-    document.getElementById('investment-bar').style.width = investment + '%';
-    document.getElementById('algo-bar').style.width = algo + '%';
-    
-    const total = wallet + investment + algo;
-    const totalEl = document.getElementById('total-allocation');
-    if (totalEl) {
-        totalEl.textContent = total + '%';
-        totalEl.style.color = total === 100 ? '#0d2a5c' : '#c62828';
-    }
+function toggleSavingsOnlyBenefits(show) {
+    document.querySelectorAll('.savings-only-benefit').forEach(el => {
+        el.style.display = show ? '' : 'none';
+    });
 }
 
 let quoteRequestSeq = 0;
@@ -269,43 +151,14 @@ function renderPremiumTiles(monthlyPremium, quarterlyPremium, annualPremium) {
     const riskAnnual = Number(formData.premiums?.risk_premium_annual) || 0;
     const savingsAnnual = Number(formData.premiums?.savings_premium_annual) || 0;
     const componentBase = riskAnnual + savingsAnnual;
-    let protectionMonthly;
-    let savingsMonthly;
     if (componentBase > 0) {
-        protectionMonthly = monthlyPremium * (riskAnnual / componentBase);
-        savingsMonthly = monthlyPremium * (savingsAnnual / componentBase);
         phinsAllocation.protectionPct = Math.round((riskAnnual / componentBase) * 100);
         phinsAllocation.savingsPct = 100 - phinsAllocation.protectionPct;
     } else {
-        protectionMonthly = monthlyPremium;
-        savingsMonthly = 0;
         phinsAllocation.protectionPct = 100;
         phinsAllocation.savingsPct = 0;
     }
-    const protectionPctEl = document.getElementById('protection-pct');
-    const savingsPctEl = document.getElementById('savings-pct');
-    if (protectionPctEl) protectionPctEl.textContent = phinsAllocation.protectionPct + '%';
-    if (savingsPctEl) savingsPctEl.textContent = phinsAllocation.savingsPct + '%';
-    
-    // Update protection/savings monthly amounts
-    const protectionMonthlyEl = document.getElementById('protection-monthly');
-    const savingsMonthlyEl = document.getElementById('savings-monthly');
-    if (protectionMonthlyEl) protectionMonthlyEl.textContent = formatCurrency(protectionMonthly);
-    if (savingsMonthlyEl) savingsMonthlyEl.textContent = formatCurrency(savingsMonthly);
-    
-    // Update savings distribution amounts
-    const walletMonthly = savingsMonthly * (phinsAllocation.walletPct / 100);
-    const investmentMonthly = savingsMonthly * (phinsAllocation.investmentPct / 100);
-    const algoMonthly = savingsMonthly * (phinsAllocation.algoPct / 100);
-    
-    const walletMonthlyEl = document.getElementById('wallet-monthly');
-    const investmentMonthlyEl = document.getElementById('investment-monthly');
-    const algoMonthlyEl = document.getElementById('algo-monthly');
-    
-    if (walletMonthlyEl) walletMonthlyEl.textContent = formatCurrency(walletMonthly);
-    if (investmentMonthlyEl) investmentMonthlyEl.textContent = formatCurrency(investmentMonthly);
-    if (algoMonthlyEl) algoMonthlyEl.textContent = formatCurrency(algoMonthly);
-    
+
     const monthlyEl = document.getElementById('monthly-premium');
     const quarterlyEl = document.getElementById('quarterly-premium');
     const annualEl = document.getElementById('annual-premium');
@@ -313,11 +166,11 @@ function renderPremiumTiles(monthlyPremium, quarterlyPremium, annualPremium) {
     if (quarterlyEl) quarterlyEl.textContent = formatCurrency(quarterlyPremium);
     if (annualEl) annualEl.textContent = formatCurrency(annualPremium);
     
-    // Update summary
     const summaryCoverage = document.getElementById('summary-coverage');
     const summaryYears = document.getElementById('summary-years');
     if (summaryCoverage) summaryCoverage.textContent = formatCurrency(coverage, false);
     if (summaryYears) summaryYears.textContent = phinsAllocation.coverageYears;
+    toggleSavingsOnlyBenefits(currentSavingsRate() > 0);
 }
 
 function applyKernelQuote(quote) {
@@ -363,10 +216,7 @@ function applyKernelQuote(quote) {
             breakdown.textContent = `${option.label}. Protection ${formatCurrency(riskYr)}/year · Add-on ${formatCurrency(saveYr)}/year.`;
         }
     }
-    const dist = document.getElementById('savings-distribution-section');
-    if (dist) {
-        dist.style.display = currentSavingsRate() > 0 ? 'block' : 'none';
-    }
+    toggleSavingsOnlyBenefits(currentSavingsRate() > 0);
 }
 
 async function refreshKernelQuote() {
@@ -957,19 +807,6 @@ function validateStep(step) {
         }
     });
     
-    // Additional validations
-    if (step === 2) {
-        // PHINS unified contract is pre-selected, just verify allocations total 100%
-        const walletPct = parseInt(document.getElementById('wallet-pct')?.value) || 0;
-        const investmentPct = parseInt(document.getElementById('investment-pct')?.value) || 0;
-        const algoPct = parseInt(document.getElementById('algo-pct')?.value) || 0;
-        
-        if (walletPct + investmentPct + algoPct !== 100) {
-            alert('Savings distribution must total 100%. Please adjust your allocation.');
-            isValid = false;
-        }
-    }
-    
     // Step 4: Payment validation
     if (step === 4) {
         // Validate card number with Mastercard 16-digit check
@@ -1046,11 +883,7 @@ function saveStepData(step) {
                     savingsPct: phinsAllocation.savingsPct,
                     savingsAddon: currentSavingsAddon(),
                     savingsRate: currentSavingsRate(),
-                    distribution: {
-                        walletPct: phinsAllocation.walletPct,
-                        investmentPct: phinsAllocation.investmentPct,
-                        algoPct: phinsAllocation.algoPct
-                    }
+                    distribution: DEFAULT_SAVINGS_DISTRIBUTION
                 }
             };
             break;
@@ -1133,7 +966,6 @@ function populateReview() {
     
     // Coverage Details - PHINS Unified Contract
     const alloc = formData.coverage?.allocation || {};
-    const dist = alloc.distribution || {};
     
     const coverageHtml = `
         <div class="review-item">
@@ -1152,14 +984,11 @@ function populateReview() {
             <strong>Savings Add-on</strong>
             <span>${(SAVINGS_ADDON_OPTIONS[alloc.savingsAddon] || SAVINGS_ADDON_OPTIONS.none).label}</span>
         </div>
+        ${Number(formData.premiums?.savings_premium_annual) > 0 ? `
         <div class="review-item">
-            <strong>Protection / Add-on Split</strong>
-            <span>${alloc.protectionPct || 100}% Protection / ${alloc.savingsPct || 0}% Savings</span>
-        </div>
-        <div class="review-item">
-            <strong>Savings Distribution</strong>
-            <span>${dist.walletPct || 15}% Wallet | ${dist.investmentPct || 60}% Investment | ${dist.algoPct || 25}% Algo Trading</span>
-        </div>
+            <strong>Premium mix</strong>
+            <span>Protection ${formatCurrency(formData.premiums.risk_premium_annual)}/year · Add-on ${formatCurrency(formData.premiums.savings_premium_annual)}/year</span>
+        </div>` : ''}
     `;
     document.getElementById('review-coverage').innerHTML = coverageHtml;
     
@@ -1293,7 +1122,6 @@ async function handleSubmit(e) {
     let submissionData;
     try {
         const alloc = formData.coverage?.allocation || {};
-        const dist = alloc.distribution || {};
         
         const tobaccoRaw = formData.health.tobacco || 'no';
         const smokingStatus = tobaccoRaw === 'yes' ? 'smoker'
@@ -1338,9 +1166,9 @@ async function handleSubmit(e) {
                 savings_rate: currentSavingsRate(),
                 savings_addon: currentSavingsAddon(),
                 distribution: {
-                    wallet_pct: dist.walletPct || 15,
-                    investment_pct: dist.investmentPct || 60,
-                    algo_trading_pct: dist.algoPct || 25
+                    wallet_pct: DEFAULT_SAVINGS_DISTRIBUTION.walletPct,
+                    investment_pct: DEFAULT_SAVINGS_DISTRIBUTION.investmentPct,
+                    algo_trading_pct: DEFAULT_SAVINGS_DISTRIBUTION.algoPct
                 }
             },
             // Payment and billing information

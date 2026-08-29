@@ -197,7 +197,7 @@
                     <!-- Coverage Amount Selection -->
                     <div class="form-section">
                         <h3 class="section-title">Coverage Amount</h3>
-                        <p class="section-lead">Select your total coverage amount. This determines your disability protection and investment capacity.</p>
+                        <p class="section-lead">Select your disability coverage amount.</p>
 
                         <div class="coverage-slider-container apply-panel">
                             <input type="range" id="coverage-slider" min="100000" max="5000000" step="50000" value="500000" style="width: 100%; height: 8px; border-radius: 4px; accent-color: #c9a24b;">
@@ -244,10 +244,9 @@
                         </div>
                     </div>
 
-                    <!-- Premium Allocation Section -->
                     <div class="form-section" style="margin-top: 24px;">
                         <h3 class="section-title">Savings Add-on</h3>
-                        <p class="section-lead">Priced by the actuarial kernel as a markup on your risk premium. Pure protection is always an option.</p>
+                        <p class="section-lead">Optional. Priced by the actuarial kernel as a markup on your risk premium.</p>
 
                         <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;">
                             <label class="radio-card selected" id="savings-addon-card-none">
@@ -272,149 +271,7 @@
                                 <div class="radio-card-sub">+100% of risk</div>
                             </label>
                         </div>
-                        <p id="savings-addon-breakdown" class="premium-quote-meta" style="margin: 0 0 20px;">No savings add-on. Premium is pure protection.</p>
-
-                        <!-- Risk/Savings Split (routes the add-on, does not reprice) -->
-                        <div class="apply-panel" style="margin-bottom: 20px;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <span style="font-weight: 600;">Protection</span>
-                                    <span id="protection-pct" class="split-badge split-badge-protection">25%</span>
-                                </div>
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <span id="savings-pct" class="split-badge split-badge-savings">75%</span>
-                                    <span style="font-weight: 600;">Savings &amp; Investment</span>
-                                </div>
-                            </div>
-                            <input type="range" id="allocation-slider" min="10" max="50" value="25" style="width: 100%; height: 10px; border-radius: 5px; background: linear-gradient(to right, #14509e 0%, #14509e 25%, #c9a24b 25%, #c9a24b 100%); accent-color: #0d2a5c;">
-                            <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 0.8rem; color: #5a6b85;">
-                                <span>More Protection</span>
-                                <span>More Savings</span>
-                            </div>
-                        </div>
-
-                        <!-- Allocation Breakdown Cards -->
-                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
-                            <!-- Protection Allocation -->
-                            <div class="alloc-card alloc-card-protection">
-                                <div class="alloc-card-head">
-                                    <div>
-                                        <div class="alloc-card-title">Protection Pool</div>
-                                        <div class="alloc-card-sub">Disability Coverage</div>
-                                    </div>
-                                </div>
-                                <ul>
-                                    <li>Severe disability coverage (ADL-based)</li>
-                                    <li>Monthly benefit payments</li>
-                                    <li>Lump sum option available</li>
-                                    <li>Global coverage, no restrictions</li>
-                                </ul>
-                                <div class="alloc-card-foot">
-                                    <div style="display: flex; justify-content: space-between;">
-                                        <span class="alloc-foot-label">Monthly allocation:</span>
-                                        <span id="protection-monthly" class="alloc-foot-value">$31.25</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Savings Allocation -->
-                            <div class="alloc-card alloc-card-savings">
-                                <div class="alloc-card-head">
-                                    <div>
-                                        <div class="alloc-card-title">Savings &amp; Investment Pool</div>
-                                        <div class="alloc-card-sub">Wealth Building</div>
-                                    </div>
-                                </div>
-                                <ul>
-                                    <li>Health Wallet (medical expenses)</li>
-                                    <li>Investment Portfolio</li>
-                                    <li>AI Algo Trading Bot</li>
-                                    <li>Guaranteed principal protection</li>
-                                </ul>
-                                <div class="alloc-card-foot">
-                                    <div style="display: flex; justify-content: space-between;">
-                                        <span class="alloc-foot-label">Monthly allocation:</span>
-                                        <span id="savings-monthly" class="alloc-foot-value">$93.75</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Savings Distribution Section -->
-                    <div id="savings-distribution-section" class="form-section" style="margin-top: 24px; display: none;">
-                        <h3 class="section-title">Savings Distribution</h3>
-                        <p class="section-lead">Customize how your savings add-on is allocated across investment channels.</p>
-
-                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
-                            <!-- Health Wallet -->
-                            <div class="dist-card dist-card-wallet">
-                                <span class="dist-badge">Recommended</span>
-                                <h4>Health Wallet</h4>
-                                <p>Pay medical expenses instantly</p>
-                                <div class="dist-controls">
-                                    <button type="button" class="dist-step-btn" onclick="adjustAllocation('wallet', -5)">&minus;</button>
-                                    <input type="number" id="wallet-pct" value="15" min="0" max="100" class="dist-pct-input">
-                                    <span style="font-weight: 700;">%</span>
-                                    <button type="button" class="dist-step-btn" onclick="adjustAllocation('wallet', 5)">+</button>
-                                </div>
-                                <div class="dist-foot">
-                                    <span class="dist-foot-label">Monthly: </span>
-                                    <span id="wallet-monthly" class="dist-foot-value">$14.06</span>
-                                </div>
-                            </div>
-
-                            <!-- Investment Portfolio -->
-                            <div class="dist-card dist-card-investment">
-                                <h4>Investment Portfolio</h4>
-                                <p>Index funds, bonds, crypto</p>
-                                <div class="dist-controls">
-                                    <button type="button" class="dist-step-btn" onclick="adjustAllocation('investment', -5)">&minus;</button>
-                                    <input type="number" id="investment-pct" value="60" min="0" max="100" class="dist-pct-input">
-                                    <span style="font-weight: 700;">%</span>
-                                    <button type="button" class="dist-step-btn" onclick="adjustAllocation('investment', 5)">+</button>
-                                </div>
-                                <div class="dist-foot">
-                                    <span class="dist-foot-label">Monthly: </span>
-                                    <span id="investment-monthly" class="dist-foot-value">$56.25</span>
-                                </div>
-                            </div>
-
-                            <!-- Algo Trading Bot -->
-                            <div class="dist-card dist-card-algo">
-                                <span class="dist-badge dist-badge-algo">AI Powered</span>
-                                <h4>Algo Trading Bot</h4>
-                                <p>Your private AI trading bot</p>
-                                <div class="dist-controls">
-                                    <button type="button" class="dist-step-btn" onclick="adjustAllocation('algo', -5)">&minus;</button>
-                                    <input type="number" id="algo-pct" value="25" min="0" max="100" class="dist-pct-input">
-                                    <span style="font-weight: 700;">%</span>
-                                    <button type="button" class="dist-step-btn" onclick="adjustAllocation('algo', 5)">+</button>
-                                </div>
-                                <div class="dist-foot">
-                                    <span class="dist-foot-label">Monthly: </span>
-                                    <span id="algo-monthly" class="dist-foot-value">$23.44</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Allocation Total Bar -->
-                        <div class="apply-panel" style="margin-top: 20px;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                                <span style="font-weight: 600;">Total Savings Allocation:</span>
-                                <span id="total-allocation" style="font-weight: 700; color: #0d2a5c;">100%</span>
-                            </div>
-                            <div style="height: 8px; background: #dde7f5; border-radius: 4px; overflow: hidden; display: flex;">
-                                <div id="wallet-bar" style="width: 15%; background: #58d6de; transition: width 0.3s;"></div>
-                                <div id="investment-bar" style="width: 60%; background: #64b5ff; transition: width 0.3s;"></div>
-                                <div id="algo-bar" style="width: 25%; background: #9d8cff; transition: width 0.3s;"></div>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 0.75rem; color: #5a6b85;">
-                                <span>Health Wallet</span>
-                                <span>Investment</span>
-                                <span>Algo Trading</span>
-                            </div>
-                        </div>
+                        <p id="savings-addon-breakdown" class="premium-quote-meta" style="margin: 0;">No savings add-on. Premium is pure protection.</p>
                     </div>
 
                     <!-- Premium Estimate -->
@@ -445,10 +302,10 @@
                             <h4>What You Get with Your PHINS Contract:</h4>
                             <div class="premium-benefits-grid">
                                 <div class="benefit-item"><span><strong id="summary-coverage">$500,000</strong> disability coverage</span></div>
-                                <div class="benefit-item"><span><strong id="summary-years">20</strong> years of savings growth</span></div>
-                                <div class="benefit-item"><span>Health Wallet for medical expenses</span></div>
-                                <div class="benefit-item"><span>Diversified investment portfolio</span></div>
-                                <div class="benefit-item"><span>Personal AI trading bot</span></div>
+                                <div class="benefit-item"><span><strong id="summary-years">20</strong> years of coverage</span></div>
+                                <div class="benefit-item savings-only-benefit" style="display: none;"><span>Health Wallet for medical expenses</span></div>
+                                <div class="benefit-item savings-only-benefit" style="display: none;"><span>Diversified investment portfolio</span></div>
+                                <div class="benefit-item savings-only-benefit" style="display: none;"><span>Personal AI trading bot</span></div>
                                 <div class="benefit-item"><span>Full NFT ledger documentation</span></div>
                             </div>
                         </div>

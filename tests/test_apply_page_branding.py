@@ -55,14 +55,8 @@ class TestApplyPageDataIntegrity:
         "address", "city", "state", "zip", "occupation",
         # step 2 — coverage/allocation
         "policy-type", "coverage-slider", "coverage-amount-display",
-        "allocation-slider", "protection-pct", "savings-pct",
-        "wallet-pct", "investment-pct", "algo-pct",
-        "wallet-bar", "investment-bar", "algo-bar", "total-allocation",
-        "protection-monthly", "savings-monthly",
-        "wallet-monthly", "investment-monthly", "algo-monthly",
         "monthly-premium", "quarterly-premium", "annual-premium",
         "premium-quote-meta", "savings-addon-breakdown",
-        "savings-distribution-section",
         "summary-coverage", "summary-years",
         # step 3 — health
         "conditions-list", "surgery-list", "height", "weight",
@@ -119,3 +113,16 @@ class TestApplyPageDataIntegrity:
         assert "function applyKernelQuote(" in APPLY_JS
         assert "premiums.quarterly * 0.97" not in APPLY_JS
         assert "premiums.annual * 0.90" not in APPLY_JS
+
+    def test_savings_distribution_removed_from_customer_form(self):
+        assert 'id="savings-distribution-section"' not in APPLY_HTML
+        assert 'id="wallet-pct"' not in APPLY_HTML
+        assert 'id="allocation-slider"' not in APPLY_HTML
+        assert "adjustAllocation(" not in APPLY_JS
+        assert "Savings distribution must total 100%" not in APPLY_JS
+
+    def test_create_stamps_chat_default_savings_routing(self):
+        assert "walletPct: 15" in APPLY_JS
+        assert "investmentPct: 60" in APPLY_JS
+        assert "algoPct: 25" in APPLY_JS
+        assert "DEFAULT_SAVINGS_DISTRIBUTION" in APPLY_JS
