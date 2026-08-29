@@ -61,6 +61,7 @@ class TestApplyPageDataIntegrity:
         "protection-monthly", "savings-monthly",
         "wallet-monthly", "investment-monthly", "algo-monthly",
         "monthly-premium", "quarterly-premium", "annual-premium",
+        "premium-quote-meta",
         "summary-coverage", "summary-years",
         # step 3 — health
         "conditions-list", "surgery-list", "height", "weight",
@@ -103,8 +104,15 @@ class TestApplyPageDataIntegrity:
 
     def test_submission_endpoint_unchanged(self):
         assert "/api/policies/create" in APPLY_JS
+        assert "/api/policies/quote" in APPLY_JS
+        assert "application_channel: 'classic'" in APPLY_JS
 
     def test_scripts_still_wired(self):
         assert 'src="apply.js"' in APPLY_HTML
         assert "/unified-payment.js" in APPLY_HTML
         assert "/i18n.js" in APPLY_HTML
+
+    def test_review_uses_kernel_amounts_without_rediscouning(self):
+        assert "function applyKernelQuote(" in APPLY_JS
+        assert "premiums.quarterly * 0.97" not in APPLY_JS
+        assert "premiums.annual * 0.90" not in APPLY_JS

@@ -27,6 +27,10 @@ POLICY_TYPE_TO_PRODUCT = {
     "phins_unified": "phins_pure_risk_adjustable",
 }
 
+# Classic /apply.html submissions use kernel prices even when the global
+# billing flag is off. Chat keeps today's flag-gated create path.
+CLASSIC_APPLY_CHANNELS = frozenset({"classic", "apply", "web"})
+
 _LOCK = threading.RLock()
 _SNAPSHOTS: List[Dict[str, Any]] = []
 _BY_POLICY: Dict[str, List[str]] = {}
@@ -64,6 +68,19 @@ def _map_tobacco_to_smoking(raw: Any) -> Optional[str]:
     if s in ("no", "never", "nonsmoker", "non-smoker", "n", "false", "0"):
         return "nonsmoker"
     return s or None
+
+
+def _age_from_dob(value: Any) -> Optional[int]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        dob = datetime.fromisoformat(text[:10]).date()
+    except (TypeError, ValueError):
+        return None
+    today = datetime.now(timezone.utc).date()
+    age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    return age if age >= 0 else None
 
 
 def _coalesce_int(*candidates: Any, default: int) -> int:
@@ -107,12 +124,23 @@ def extract_application_pricing_inputs(payload: Dict[str, Any]) -> Dict[str, Any
         or personal.get("ethnicity")
         or questionnaire.get("ethnicity")
     )
-    age = _coalesce_int(
-        payload.get("age"),
-        payload.get("customer_age"),
-        personal.get("age"),
-        default=30,
+    age_present = any(
+        raw is not None and not (isinstance(raw, str) and not str(raw).strip())
+        for raw in (payload.get("age"), payload.get("customer_age"), personal.get("age"))
     )
+    if age_present:
+        age = _coalesce_int(
+            payload.get("age"),
+            payload.get("customer_age"),
+            personal.get("age"),
+            default=30,
+        )
+    else:
+        age = _age_from_dob(
+            payload.get("customer_dob") or payload.get("dob") or personal.get("dob")
+        )
+        if age is None:
+            age = 30
     term = _coalesce_int(
         payload.get("term_years"),
         payload.get("coverage_years"),
@@ -202,6 +230,19 @@ def is_kernel_billing_enabled() -> bool:
     if raw is not None and str(raw).strip() != "":
         return _truthy(raw)
     return False
+
+
+def should_use_kernel_billing(policy_data: Optional[Dict[str, Any]] = None) -> bool:
+    """True when this payload should be billed from the actuarial kernel.
+
+    Global flag still wins. Classic ``apply.html`` sends
+    ``application_channel=classic`` so its quote and create use kernel
+    prices. Chat (``application_channel=chat``) stays on the flag-gated path.
+    """
+    if is_kernel_billing_enabled():
+        return True
+    channel = str((policy_data or {}).get("application_channel") or "").strip().lower()
+    return channel in CLASSIC_APPLY_CHANNELS
 
 
 def price_application_with_kernel(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:

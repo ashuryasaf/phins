@@ -820,6 +820,12 @@ body.apply-page {
 .premium-tile-featured .premium-tile-save {
     color: var(--apply-gold-strong);
 }
+.premium-quote-meta {
+    margin: 14px 0 0;
+    font-size: 0.78rem;
+    color: var(--apply-muted);
+    letter-spacing: 0.01em;
+}
 .premium-tile-flag {
     position: absolute;
     top: -10px;

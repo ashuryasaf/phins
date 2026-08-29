@@ -178,12 +178,46 @@ function updateAllocationBars() {
     }
 }
 
-// Update all allocation displays
-function updateAllocationDisplay() {
+let quoteRequestSeq = 0;
+let quoteRefreshTimer = null;
+
+function collectQuotePayload() {
+    const dob = document.getElementById('dob')?.value || '';
+    const gender = document.getElementById('gender')?.value || '';
+    const tobacco = document.querySelector('input[name="tobacco"]:checked')?.value || 'no';
+    const smokingStatus = tobacco === 'yes' ? 'smoker'
+        : tobacco === 'former' ? 'former'
+        : 'nonsmoker';
+    let riskScore = 'medium';
+    try {
+        if (formData.health) {
+            riskScore = calculateRiskScore();
+        }
+    } catch (err) {
+        riskScore = 'medium';
+    }
+    return {
+        type: 'phins_unified',
+        application_channel: 'classic',
+        coverage_amount: phinsAllocation.coverageAmount,
+        coverage_years: phinsAllocation.coverageYears,
+        term_years: phinsAllocation.coverageYears,
+        age: dob ? calculateAge(dob) : undefined,
+        customer_dob: dob,
+        gender,
+        smoking_status: smokingStatus,
+        ethnicity: document.getElementById('ethnicity')?.value || '',
+        risk_score: riskScore,
+        questionnaire: {
+            tobacco,
+            smoke: tobacco,
+            gender
+        }
+    };
+}
+
+function renderPremiumTiles(monthlyPremium, quarterlyPremium, annualPremium) {
     const coverage = phinsAllocation.coverageAmount;
-    const basePremium = calculateBasePremium(coverage);
-    
-    const monthlyPremium = basePremium;
     const protectionMonthly = monthlyPremium * (phinsAllocation.protectionPct / 100);
     const savingsMonthly = monthlyPremium * (phinsAllocation.savingsPct / 100);
     
@@ -206,26 +240,108 @@ function updateAllocationDisplay() {
     if (investmentMonthlyEl) investmentMonthlyEl.textContent = formatCurrency(investmentMonthly);
     if (algoMonthlyEl) algoMonthlyEl.textContent = formatCurrency(algoMonthly);
     
-    // Update premium displays
-    const quarterlyPremium = monthlyPremium * 3 * 0.97;
-    const annualPremium = monthlyPremium * 12 * 0.90;
-    
-    document.getElementById('monthly-premium').textContent = formatCurrency(monthlyPremium);
-    document.getElementById('quarterly-premium').textContent = formatCurrency(quarterlyPremium);
-    document.getElementById('annual-premium').textContent = formatCurrency(annualPremium);
+    const monthlyEl = document.getElementById('monthly-premium');
+    const quarterlyEl = document.getElementById('quarterly-premium');
+    const annualEl = document.getElementById('annual-premium');
+    if (monthlyEl) monthlyEl.textContent = formatCurrency(monthlyPremium);
+    if (quarterlyEl) quarterlyEl.textContent = formatCurrency(quarterlyPremium);
+    if (annualEl) annualEl.textContent = formatCurrency(annualPremium);
     
     // Update summary
     const summaryCoverage = document.getElementById('summary-coverage');
     const summaryYears = document.getElementById('summary-years');
     if (summaryCoverage) summaryCoverage.textContent = formatCurrency(coverage, false);
     if (summaryYears) summaryYears.textContent = phinsAllocation.coverageYears;
-    
-    // Store premiums
+}
+
+function applyKernelQuote(quote) {
+    const monthlyPremium = Number(quote.monthly) || 0;
+    const quarterlyPremium = Number(quote.quarterly) || 0;
+    const annualPremium = Number(quote.annual) || 0;
     formData.premiums = {
         monthly: monthlyPremium,
         quarterly: quarterlyPremium,
-        annual: annualPremium
+        annual: annualPremium,
+        pricing_source: quote.pricing_source || 'pricing_kernel',
+        integrity_hash: quote.integrity_hash || '',
+        product_id: quote.product_id || '',
+        tables_version: quote.tables_version || '',
+        config_version: quote.config_version || ''
     };
+    renderPremiumTiles(monthlyPremium, quarterlyPremium, annualPremium);
+    const metaEl = document.getElementById('premium-quote-meta');
+    if (metaEl) {
+        if (quote.pricing_source === 'pricing_kernel') {
+            const hash = quote.integrity_hash ? String(quote.integrity_hash).slice(0, 12) : '';
+            metaEl.textContent = [
+                'Actuarial pricing kernel',
+                quote.tables_version ? `tables ${quote.tables_version}` : '',
+                quote.config_version ? `config ${quote.config_version}` : '',
+                hash ? `sealed ${hash}` : ''
+            ].filter(Boolean).join(' · ');
+        } else {
+            metaEl.textContent = 'Standard rate card';
+        }
+    }
+}
+
+async function refreshKernelQuote() {
+    const seq = ++quoteRequestSeq;
+    try {
+        const response = await fetch('/api/policies/quote', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(collectQuotePayload())
+        });
+        const quote = await response.json();
+        if (seq !== quoteRequestSeq) {
+            return;
+        }
+        if (!response.ok || quote.error || !(Number(quote.monthly) > 0)) {
+            applyFlatPlaceholder();
+            return;
+        }
+        applyKernelQuote(quote);
+    } catch (err) {
+        if (seq !== quoteRequestSeq) {
+            return;
+        }
+        console.error('Kernel quote failed, using local estimate:', err);
+        applyFlatPlaceholder();
+    }
+}
+
+function scheduleKernelQuote() {
+    clearTimeout(quoteRefreshTimer);
+    quoteRefreshTimer = setTimeout(refreshKernelQuote, 250);
+}
+
+function applyFlatPlaceholder() {
+    const coverage = phinsAllocation.coverageAmount;
+    const monthlyPremium = calculateBasePremium(coverage);
+    applyKernelQuote({
+        monthly: monthlyPremium,
+        quarterly: monthlyPremium * 3 * 0.97,
+        annual: monthlyPremium * 12,
+        pricing_source: 'flat_formula'
+    });
+}
+
+// Update all allocation displays
+function updateAllocationDisplay() {
+    const coverage = phinsAllocation.coverageAmount;
+    const summaryCoverage = document.getElementById('summary-coverage');
+    const summaryYears = document.getElementById('summary-years');
+    if (summaryCoverage) summaryCoverage.textContent = formatCurrency(coverage, false);
+    if (summaryYears) summaryYears.textContent = phinsAllocation.coverageYears;
+    if (formData.premiums && formData.premiums.monthly) {
+        renderPremiumTiles(
+            formData.premiums.monthly,
+            formData.premiums.quarterly,
+            formData.premiums.annual
+        );
+    }
+    scheduleKernelQuote();
 }
 
 // Calculate base premium based on coverage
@@ -310,7 +426,7 @@ function setupEventListeners() {
         });
     }
     
-    // Real-time validation for Step 1 fields
+            // Real-time validation for Step 1 fields
     const step1Fields = ['first-name', 'last-name', 'email', 'phone', 'dob'];
     step1Fields.forEach(fieldId => {
         const field = document.getElementById(fieldId);
@@ -323,6 +439,15 @@ function setupEventListeners() {
                 this.style.borderColor = '';
             });
         }
+    });
+    ['dob', 'gender'].forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.addEventListener('change', scheduleKernelQuote);
+        }
+    });
+    document.querySelectorAll('input[name="tobacco"]').forEach(radio => {
+        radio.addEventListener('change', scheduleKernelQuote);
     });
     
     // Conditional fields
@@ -583,6 +708,9 @@ function nextStep() {
     }
     
     saveStepData(currentStep);
+    if (currentStep === 1 || currentStep === 3) {
+        refreshKernelQuote();
+    }
     
     if (currentStep < totalSteps) {
         currentStep++;
@@ -1021,10 +1149,11 @@ function populateReview() {
             displayAmount = formData.premiums.monthly;
             periodText = 'per month';
         } else if (formData.payment?.billingFrequency === 'quarterly') {
-            displayAmount = formData.premiums.quarterly * 0.97; // 3% discount
+            displayAmount = formData.premiums.quarterly;
             periodText = 'per quarter';
-        } else {
-            displayAmount = formData.premiums.annual * 0.90; // 10% discount
+        } else if (formData.payment?.billingFrequency === 'annual') {
+            displayAmount = formData.premiums.annual;
+            periodText = 'per year';
         }
         
         document.getElementById('final-premium-amount').textContent = 
@@ -1033,7 +1162,7 @@ function populateReview() {
         document.getElementById('final-monthly').textContent = 
             new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(formData.premiums.monthly);
         document.getElementById('final-quarterly').textContent = 
-            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(formData.premiums.quarterly * 0.97);
+            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(formData.premiums.quarterly);
         
         // Health wallet summary
         const walletSummary = document.getElementById('health-wallet-summary');
@@ -1085,6 +1214,7 @@ async function handleSubmit(e) {
             customer_email: formData.personal.email || '',
             customer_phone: formData.personal.phone || '',
             customer_dob: formData.personal.dob || '',
+            application_channel: 'classic',
             type: 'phins_unified',
             coverage_amount: formData.coverage?.coverageAmount || 500000,
             coverage_years: formData.coverage?.coverageYears || 20,

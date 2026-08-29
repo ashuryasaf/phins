@@ -13406,7 +13406,8 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
 
     Prefer the actuarial pricing kernel (persisted Pricing Parameters +
     application demographics: smoking / sex / ethnicity / age / term) for
-    life / health / phins_unified when kernel billing is enabled.
+    life / health / phins_unified when kernel billing is enabled or the
+    payload is a classic ``apply.html`` submission.
 
     Fail-open fallback (also used under PHINS_TEST_MODE by default):
     - Base rate: $0.25 per $1,000 coverage per month
@@ -13415,12 +13416,12 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
     """
     try:
         from services.pricing_shadow_service import (
-            is_kernel_billing_enabled,
             map_policy_type_to_product,
             price_application_with_kernel,
+            should_use_kernel_billing,
         )
         if (
-            is_kernel_billing_enabled()
+            should_use_kernel_billing(policy_data)
             and map_policy_type_to_product(policy_data.get('type') or '')
         ):
             kernel = price_application_with_kernel(policy_data)
@@ -13439,6 +13440,9 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
                     'smoking_status_used': kernel.get('smoking_status_used'),
                     'gender_used': kernel.get('gender_used'),
                     'ethnicity_used': kernel.get('ethnicity_used'),
+                    'risk_premium_annual': kernel.get('risk_premium_annual'),
+                    'savings_premium_annual': kernel.get('savings_premium_annual'),
+                    'eligible': kernel.get('eligible'),
                 }
     except Exception as _kern_err:
         print(f"Kernel premium fallback to flat: {_kern_err}")
@@ -42322,6 +42326,28 @@ For claims or questions, please contact:
                 status_code, payload = 500, {'error': str(bi_exc)}
             self._set_json_headers(status_code)
             self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
+        # Classic apply.html actuarial quote (same kernel as create when
+        # application_channel is classic). Chat uses /api/chat-application.
+        if path == '/api/policies/quote':
+            try:
+                data = json.loads(body or '{}')
+            except Exception:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            coverage_amount = data.get('coverage_amount', 0)
+            if coverage_amount and not validate_amount(coverage_amount):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid coverage amount'}).encode('utf-8'))
+                return
+            data = dict(data)
+            data['type'] = data.get('type') or 'phins_unified'
+            data['application_channel'] = 'classic'
+            premium_data = calculate_premium(data)
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(premium_data, default=str).encode('utf-8'))
             return
 
         # Create Policy Endpoint

@@ -79,6 +79,26 @@ def test_kernel_billing_default_off(monkeypatch):
     assert is_kernel_billing_enabled() is True
 
 
+def test_classic_apply_channel_uses_kernel_without_global_flag(monkeypatch):
+    from services.pricing_shadow_service import should_use_kernel_billing
+
+    monkeypatch.delenv("PHINS_KERNEL_BILLING_ENABLED", raising=False)
+    assert should_use_kernel_billing({"application_channel": "classic"}) is True
+    assert should_use_kernel_billing({"application_channel": "chat"}) is False
+    assert should_use_kernel_billing({}) is False
+
+
+def test_extract_age_from_customer_dob():
+    from services.pricing_shadow_service import extract_application_pricing_inputs
+
+    inputs = extract_application_pricing_inputs({
+        "type": "phins_unified",
+        "coverage_amount": 500000,
+        "customer_dob": "1990-05-14",
+    })
+    assert inputs["age"] >= 35
+
+
 def test_record_respects_flag_off(monkeypatch):
     monkeypatch.setenv("PHINS_PRICING_SHADOW_ENABLED", "0")
     assert is_shadow_enabled() is False
