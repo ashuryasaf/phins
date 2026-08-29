@@ -449,6 +449,9 @@
             gap: 8px;
             font-size: 1rem;
         }
+        .apply-disclosure-assignments {
+            background: linear-gradient(135deg, #0d2a5c 0%, #14509e 100%);
+        }
         .assignment-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1378,6 +1381,48 @@ Notes:
             </div>
         </section>
 
+        <section class="assignments-section apply-disclosure-assignments">
+            <h2>Apply form disclosure video</h2>
+            <p style="margin: -6px 0 14px; font-size: 0.82rem; color: rgba(255,255,255,0.82);">
+                Customers see the live/light version on Step 2 of <code>/apply.html</code>. Stage a control cut here, then promote it when the conclusive video is ready.
+            </p>
+            <div class="assignment-grid">
+                <div class="assignment-card">
+                    <div class="assignment-label">Live / light (customer)</div>
+                    <select id="assign-apply-disclosure-video" class="assignment-select" onchange="updateAssignment('apply_disclosure_video')">
+                        <option value="">-- Light in-page version --</option>
+                    </select>
+                    <div class="assignment-status" id="status-apply-disclosure-video">
+                        <span>⚪</span> Light version
+                    </div>
+                </div>
+                <div class="assignment-card">
+                    <div class="assignment-label">Control (next version)</div>
+                    <select id="assign-apply-disclosure-control" class="assignment-select" onchange="updateAssignment('apply_disclosure_control')">
+                        <option value="">-- None --</option>
+                    </select>
+                    <div class="assignment-status" id="status-apply-disclosure-control">
+                        <span>⚪</span> Not set
+                    </div>
+                </div>
+                <div class="assignment-card">
+                    <div class="assignment-label">Version label</div>
+                    <select id="apply-disclosure-version-label" class="assignment-select" onchange="updateDisclosureVersionLabel()">
+                        <option value="light">light</option>
+                        <option value="control">control</option>
+                        <option value="final">final</option>
+                    </select>
+                    <div class="assignment-status" id="status-apply-disclosure-version">
+                        <span>✅</span> light
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-primary" onclick="promoteApplyDisclosureControl()">Promote control to live</button>
+                <a href="/apply.html" target="_blank" class="btn btn-secondary">Preview apply form</a>
+            </div>
+        </section>
+
         <!-- Growth Agent Bridge -->
         <section class="growth-bridge-section">
             <div class="growth-bridge-header">
@@ -1765,8 +1810,11 @@ Notes:
             hero_video: '',
             hero_background: '',
             video_poster: '',
-            promo_banner: ''
+            promo_banner: '',
+            apply_disclosure_video: '',
+            apply_disclosure_control: ''
         };
+        let disclosureVersionLabel = 'light';
         let designSettings = {
             primaryColor: '#1565c0',
             accentColor: '#42a5f5',
@@ -1990,6 +2038,11 @@ Notes:
                     assignments.hero_background = settings.hero_background_id || '';
                     assignments.video_poster = settings.video_poster_id || settings.video_poster || '';
                     assignments.promo_banner = settings.promo_banner_id || '';
+                    assignments.apply_disclosure_video = settings.apply_disclosure_video_id || '';
+                    assignments.apply_disclosure_control = settings.apply_disclosure_control_video_id || '';
+                    disclosureVersionLabel = settings.apply_disclosure_version_label || 'light';
+                    const versionSelect = document.getElementById('apply-disclosure-version-label');
+                    if (versionSelect) versionSelect.value = disclosureVersionLabel;
                     updateAssignmentUI();
                 }
             } catch (e) {
@@ -2023,6 +2076,9 @@ Notes:
                         hero_background_id: assignments.hero_background,
                         video_poster_id: assignments.video_poster,
                         promo_banner_id: assignments.promo_banner,
+                        apply_disclosure_video_id: assignments.apply_disclosure_video,
+                        apply_disclosure_control_video_id: assignments.apply_disclosure_control,
+                        apply_disclosure_version_label: disclosureVersionLabel,
                         video_url: getMediaUrl(assignments.hero_video),
                         video_poster: getMediaUrl(assignments.video_poster)
                     })
@@ -2270,6 +2326,9 @@ Notes:
                         hero_background_id: assignments.hero_background,
                         video_poster_id: assignments.video_poster,
                         promo_banner_id: assignments.promo_banner,
+                        apply_disclosure_video_id: assignments.apply_disclosure_video,
+                        apply_disclosure_control_video_id: assignments.apply_disclosure_control,
+                        apply_disclosure_version_label: disclosureVersionLabel,
                         video_url: getMediaUrl(assignments.hero_video),
                         video_poster: getMediaUrl(assignments.video_poster),
                         // Design settings
@@ -2844,10 +2903,12 @@ Notes:
             const bgSelect = document.getElementById('assign-hero-background');
             const posterSelect = document.getElementById('assign-video-poster');
             const bannerSelect = document.getElementById('assign-promo-banner');
+            const disclosureLiveSelect = document.getElementById('assign-apply-disclosure-video');
+            const disclosureControlSelect = document.getElementById('assign-apply-disclosure-control');
             
             const videos = mediaAssets.filter(m => m.type === 'video');
-            videoSelect.innerHTML = '<option value="">-- No Video --</option>' +
-                videos.map(v => `<option value="${escHtml(v.id)}">${escHtml(v.name)}</option>`).join('');
+            const videoOptions = videos.map(v => `<option value="${escHtml(v.id)}">${escHtml(v.name)}</option>`).join('');
+            videoSelect.innerHTML = '<option value="">-- No Video --</option>' + videoOptions;
             
             const images = mediaAssets.filter(m => m.type === 'image');
             bgSelect.innerHTML = '<option value="">-- No Image --</option>' +
@@ -2856,32 +2917,71 @@ Notes:
                 images.map(i => `<option value="${escHtml(i.id)}">${escHtml(i.name)}</option>`).join('');
             bannerSelect.innerHTML = '<option value="">-- No Banner --</option>' +
                 images.map(i => `<option value="${escHtml(i.id)}">${escHtml(i.name)}</option>`).join('');
+            if (disclosureLiveSelect) {
+                disclosureLiveSelect.innerHTML = '<option value="">-- Light in-page version --</option>' + videoOptions;
+            }
+            if (disclosureControlSelect) {
+                disclosureControlSelect.innerHTML = '<option value="">-- None --</option>' + videoOptions;
+            }
             
             videoSelect.value = assignments.hero_video;
             bgSelect.value = assignments.hero_background;
             posterSelect.value = assignments.video_poster;
             bannerSelect.value = assignments.promo_banner;
+            if (disclosureLiveSelect) disclosureLiveSelect.value = assignments.apply_disclosure_video;
+            if (disclosureControlSelect) disclosureControlSelect.value = assignments.apply_disclosure_control;
         }
         
         function updateAssignment(type) {
-            const select = document.getElementById(`assign-${type.replace('_', '-')}`);
+            const select = document.getElementById(`assign-${type.replace(/_/g, '-')}`);
+            if (!select) return;
             assignments[type] = select.value;
             updateAssignmentUI();
         }
+
+        function updateDisclosureVersionLabel() {
+            const select = document.getElementById('apply-disclosure-version-label');
+            disclosureVersionLabel = (select && select.value) || 'light';
+            updateAssignmentUI();
+        }
+
+        function promoteApplyDisclosureControl() {
+            if (!assignments.apply_disclosure_control) {
+                showToast('Assign a control video first', 'error');
+                return;
+            }
+            assignments.apply_disclosure_video = assignments.apply_disclosure_control;
+            disclosureVersionLabel = 'control';
+            const liveSelect = document.getElementById('assign-apply-disclosure-video');
+            const versionSelect = document.getElementById('apply-disclosure-version-label');
+            if (liveSelect) liveSelect.value = assignments.apply_disclosure_video;
+            if (versionSelect) versionSelect.value = 'control';
+            updateAssignmentUI();
+            saveAllAssignments();
+        }
         
         function updateAssignmentUI() {
-            ['hero_video', 'hero_background', 'video_poster', 'promo_banner'].forEach(key => {
-                const statusEl = document.getElementById(`status-${key.replace('_', '-')}`);
+            ['hero_video', 'hero_background', 'video_poster', 'promo_banner', 'apply_disclosure_video', 'apply_disclosure_control'].forEach(key => {
+                const statusEl = document.getElementById(`status-${key.replace(/_/g, '-')}`);
+                if (!statusEl) return;
                 const value = assignments[key];
                 if (value) {
                     const media = mediaAssets.find(m => m.id === value);
                     statusEl.innerHTML = `<span>✅</span> ${media ? media.name : 'Configured'}`;
                     statusEl.className = 'assignment-status active';
+                } else if (key === 'apply_disclosure_video') {
+                    statusEl.innerHTML = '<span>⚪</span> Light in-page version';
+                    statusEl.className = 'assignment-status inactive';
                 } else {
                     statusEl.innerHTML = '<span>⚪</span> Not configured';
                     statusEl.className = 'assignment-status inactive';
                 }
             });
+            const versionStatus = document.getElementById('status-apply-disclosure-version');
+            if (versionStatus) {
+                versionStatus.innerHTML = `<span>✅</span> ${disclosureVersionLabel || 'light'}`;
+                versionStatus.className = 'assignment-status active';
+            }
         }
         
         function getMediaUrl(id) {

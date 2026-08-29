@@ -2096,6 +2096,9 @@ DESIGN_SETTINGS: Dict[str, Any] = {
     'hero_background_id': '',
     'video_poster_id': '',
     'promo_banner_id': '',
+    'apply_disclosure_video_id': '',
+    'apply_disclosure_control_video_id': '',
+    'apply_disclosure_version_label': 'light',
     'updated_at': None,
     'updated_by': None
 }
@@ -2342,6 +2345,16 @@ def get_media_asset_playback_url(asset_id: str) -> str:
     if not asset:
         return ''
     return media_asset_url(asset)
+
+
+def normalize_apply_disclosure_version_label(value: Any, default: str = 'light') -> str:
+    """Keep the apply-form disclosure version label short and display-safe."""
+    label = str(value or '').strip().lower()
+    if not label:
+        return default
+    cleaned = ''.join(ch if (ch.isalnum() or ch in ('-', '_', ' ')) else '' for ch in label)
+    cleaned = ' '.join(cleaned.split())[:32]
+    return cleaned or default
 
 
 def ensure_media_storage_dir() -> None:
@@ -16200,6 +16213,9 @@ For claims or questions, please contact:
                     media = MEDIA_ASSETS[promo_banner_id]
                     promo_banner_url = media.get('url') or media.get('data', '')
 
+                apply_disclosure_video_id = DESIGN_SETTINGS.get('apply_disclosure_video_id', '')
+                apply_disclosure_video_url = get_media_asset_playback_url(apply_disclosure_video_id)
+
                 show_video = DESIGN_SETTINGS.get('show_video', True)
                 public_settings = {
                     'video_url': hero_video_url if show_video else '',
@@ -16213,6 +16229,10 @@ For claims or questions, please contact:
                     'accent_color': DESIGN_SETTINGS.get('accent_color', '#ff6b35'),
                     'hero_background_url': hero_background_url,
                     'promo_banner_url': promo_banner_url,
+                    'apply_disclosure_video_url': apply_disclosure_video_url,
+                    'apply_disclosure_version_label': normalize_apply_disclosure_version_label(
+                        DESIGN_SETTINGS.get('apply_disclosure_version_label', 'light')
+                    ),
                 }
                 self.wfile.write(json.dumps(public_settings).encode('utf-8'))
             return
@@ -31554,7 +31574,10 @@ For claims or questions, please contact:
             try:
                 data = json.loads(body)
 
-                asset_ref_keys = ['hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id']
+                asset_ref_keys = [
+                    'hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id',
+                    'apply_disclosure_video_id', 'apply_disclosure_control_video_id',
+                ]
                 invalid_refs = []
                 for ref_key in asset_ref_keys:
                     if ref_key not in data:
@@ -31572,9 +31595,17 @@ For claims or questions, please contact:
 
                 for key in ['video_url', 'video_poster', 'tagline', 'primary_color', 'accent_color',
                            'show_video', 'show_contact', 'show_quote_form', 'show_products', 'show_underwriting',
-                           'hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id']:
+                           'hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id',
+                           'apply_disclosure_video_id', 'apply_disclosure_control_video_id']:
                     if key in data:
                         DESIGN_SETTINGS[key] = data[key]
+                if 'apply_disclosure_version_label' in data:
+                    DESIGN_SETTINGS['apply_disclosure_version_label'] = (
+                        normalize_apply_disclosure_version_label(
+                            data.get('apply_disclosure_version_label'),
+                            default=str(DESIGN_SETTINGS.get('apply_disclosure_version_label') or 'light'),
+                        )
+                    )
 
                 # Data integrity: when admin assigns a media asset to the
                 # landing page (hero video / video poster) via /admin-media.html
@@ -53568,7 +53599,10 @@ For claims or questions, please contact:
                     for jid in orphaned_job_ids:
                         MEDIA_PROCESSING_JOBS.pop(jid, None)
 
-                    for key in ['hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id']:
+                    for key in [
+                        'hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id',
+                        'apply_disclosure_video_id', 'apply_disclosure_control_video_id',
+                    ]:
                         if DESIGN_SETTINGS.get(key) == asset_id:
                             DESIGN_SETTINGS[key] = ''
                             if key == 'hero_video_id':

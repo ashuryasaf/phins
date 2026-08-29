@@ -42,7 +42,37 @@ document.addEventListener('DOMContentLoaded', () => {
     updateStepDisplay();
     populateExpiryYears();
     initializePHINSContract();
+    loadApplyDisclosureVideo();
 });
+
+function loadApplyDisclosureVideo() {
+    const video = document.getElementById('apply-disclosure-video');
+    const light = document.getElementById('apply-disclosure-light');
+    const meta = document.getElementById('apply-disclosure-meta');
+    if (!video) return;
+    fetch('/api/design/settings')
+        .then(resp => resp.ok ? resp.json() : null)
+        .then(settings => {
+            if (!settings) return;
+            const url = String(settings.apply_disclosure_video_url || '').trim();
+            const label = String(settings.apply_disclosure_version_label || 'light').trim();
+            if (url) {
+                video.addEventListener('error', () => {
+                    video.removeAttribute('src');
+                    video.style.display = 'none';
+                    if (light) light.style.display = '';
+                    if (meta) meta.textContent = 'Light disclosure. Assigned video could not be played.';
+                }, { once: true });
+                video.src = url;
+                video.style.display = 'block';
+                if (light) light.style.display = 'none';
+                if (meta) meta.textContent = `Product disclosure · ${label} version`;
+            } else if (meta) {
+                meta.textContent = 'Light disclosure. A full video can replace this from Admin Media.';
+            }
+        })
+        .catch(() => {});
+}
 
 // Initialize PHINS Contract UI
 function initializePHINSContract() {

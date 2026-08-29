@@ -34,6 +34,10 @@ def test_admin_media_sends_design_settings_on_save():
     content = ADMIN_MEDIA_PATH.read_text(encoding="utf-8")
     assert "hero_background_id:" in content
     assert "promo_banner_id:" in content
+    assert "apply_disclosure_video_id:" in content
+    assert "apply_disclosure_control_video_id:" in content
+    assert "apply_disclosure_version_label:" in content
+    assert "promoteApplyDisclosureControl" in content
     assert "designSettings:" in content
     assert "brandSettings:" in content
 

@@ -57,6 +57,8 @@ class TestApplyPageDataIntegrity:
         "policy-type", "coverage-slider", "coverage-amount-display",
         "monthly-premium", "quarterly-premium", "annual-premium",
         "premium-quote-meta", "savings-addon-breakdown",
+        "apply-disclosure", "apply-disclosure-video", "apply-disclosure-light",
+        "apply-disclosure-meta",
         "summary-coverage", "summary-years",
         # step 3 — health
         "conditions-list", "surgery-list", "height", "weight",
@@ -103,6 +105,8 @@ class TestApplyPageDataIntegrity:
         assert "application_channel: 'classic'" in APPLY_JS
         assert "savings_rate: currentSavingsRate()" in APPLY_JS
         assert "savings_formula: 'risk_premium_markup'" in APPLY_JS
+        assert "function loadApplyDisclosureVideo(" in APPLY_JS
+        assert "apply_disclosure_video_url" in APPLY_JS
 
     def test_scripts_still_wired(self):
         assert 'src="apply.js"' in APPLY_HTML
