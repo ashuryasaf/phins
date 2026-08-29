@@ -1,0 +1,20 @@
+a7a96e4 Merge pull request #435 from ashuryasaf/cursor/fix-firewall-blocking-legit-traffic-64c0
+e380449 Fix firewall blocking legitimate traffic on landing/other pages
+56450a6 Merge pull request #433 from ashuryasaf/cursor/unify-dashboard-theme-9977
+6248a32 Unify brand chrome across admin and customer dashboards via shared theme
+69e8da6 Merge branch 'cursor/add-unicorn-executive-summary-d65c': executive summary + PDF fixes
+5a6597a Fix gradient text invisible in PDF on executive summary hero
+3cf443d Merge pull request #430 from ashuryasaf/cursor/update-agents-md-0668
+422dafe docs: refresh AGENTS.md counts and document agent ecosystem / assessment center modules
+66ffe6e Merge pull request #429 from ashuryasaf/cursor/redesign-landing-page-logo-9977
+654d274 Wait for logo image before printing PDF reports
+9ea659c Extend dark futuristic design to legal pages
+38aa903 Extend futuristic redesign to auth pages; brand and declutter legal pages
+4f3081c Wait for logo image before printing PDF reports
+60605cb Redesign landing page as minimal futuristic login-only experience
+cc44bfa Add PHINS shield-and-fin emblem logo and roll out across portal headers
+5c52b6d Hide floating Admin AI Mic bar from print/PDF output
+e19d890 Merge pull request #423 from ashuryasaf/cursor/add-unicorn-executive-summary-d65c
+9dd4103 Add polished 2-3 page Series A executive summary derived from unicorn deck
+32926b5 Merge pull request #420 from ashuryasaf/cursor/phins-voiceover-assets-d553
+1b85240 Fix copyVo showing success on clipboard failure
