@@ -292,11 +292,20 @@ function scheduleKernelQuote() {
 
 function applyFlatPlaceholder() {
     const coverage = phinsAllocation.coverageAmount;
-    const monthlyPremium = calculateBasePremium(coverage);
+    // Mirror the kernel's savings add-on (risk premium * savings_rate) in the
+    // local estimate so the fallback tile reflects the elected add-on rather
+    // than showing the pure-protection price while create still submits it.
+    const rate = currentSavingsRate();
+    const riskMonthly = calculateBasePremium(coverage);
+    const savingsMonthly = riskMonthly * rate;
+    const monthlyPremium = riskMonthly + savingsMonthly;
     applyKernelQuote({
         monthly: monthlyPremium,
         quarterly: monthlyPremium * 3 * 0.97,
         annual: monthlyPremium * 12,
+        risk_premium_annual: riskMonthly * 12,
+        savings_premium_annual: savingsMonthly * 12,
+        savings_rate_used: rate,
         pricing_source: 'flat_formula'
     });
 }
