@@ -57,7 +57,6 @@ class TestApplyPageDataIntegrity:
         "policy-type", "coverage-slider", "coverage-amount-display",
         "monthly-premium", "quarterly-premium", "annual-premium",
         "premium-quote-meta", "savings-addon-breakdown",
-        "adl-pricing-note", "adl-card-1",
         "apply-disclosure", "apply-disclosure-video", "apply-disclosure-light",
         "apply-disclosure-meta",
         "summary-coverage", "summary-years",
@@ -81,7 +80,7 @@ class TestApplyPageDataIntegrity:
     ]
 
     REQUIRED_NAMES = [
-        "coverage-years", "adl-level", "savings-addon", "tobacco", "medical-conditions", "surgery",
+        "coverage-years", "savings-addon", "tobacco", "medical-conditions", "surgery",
         "hazardous", "family-history", "billing-frequency", "auto-pay",
     ]
 
@@ -105,7 +104,6 @@ class TestApplyPageDataIntegrity:
         assert "/api/policies/quote" in APPLY_JS
         assert "application_channel: 'classic'" in APPLY_JS
         assert "savings_rate: currentSavingsRate()" in APPLY_JS
-        assert "adl_level: currentAdlLevel()" in APPLY_JS
         assert "savings_formula: 'risk_premium_markup'" in APPLY_JS
         assert "function loadApplyDisclosureVideo(" in APPLY_JS
         assert "apply_disclosure_video_url" in APPLY_JS
@@ -119,6 +117,15 @@ class TestApplyPageDataIntegrity:
         assert "function applyKernelQuote(" in APPLY_JS
         assert "premiums.quarterly * 0.97" not in APPLY_JS
         assert "premiums.annual * 0.90" not in APPLY_JS
+
+    def test_adl_is_not_an_application_choice(self):
+        assert 'name="adl-level"' not in APPLY_HTML
+        assert 'id="adl-card-1"' not in APPLY_HTML
+        assert 'id="adl-pricing-note"' not in APPLY_HTML
+        assert "Daily function (ADL)" not in APPLY_HTML
+        assert "function currentAdlLevel(" not in APPLY_JS
+        assert "function setAdlLevel(" not in APPLY_JS
+        assert "adl_level: currentAdlLevel()" not in APPLY_JS
 
     def test_savings_distribution_removed_from_customer_form(self):
         assert 'id="savings-distribution-section"' not in APPLY_HTML

@@ -125,6 +125,19 @@ def test_balanced_savings_addon_is_half_of_risk_and_matches_create():
     assert policy.get("product_id") == "phins_hybrid_savings"
 
 
+def test_classic_quote_without_adl_uses_assessment_default():
+    omitted = dict(CLASSIC_PAYLOAD)
+    omitted.pop("adl_level", None)
+    status, body = _post("/api/policies/quote", omitted)
+    assert status == 200
+    defaulted = calculate_premium(omitted)
+    assessed = calculate_premium(CLASSIC_PAYLOAD)
+    assert body["pricing_source"] == "pricing_kernel"
+    assert defaulted["adl_level"] == 5
+    assert defaulted["monthly"] == pytest.approx(assessed["monthly"])
+    assert body["monthly"] == pytest.approx(assessed["monthly"])
+
+
 def test_quote_uses_adl_one_and_returns_live_store_multipliers():
     independent = dict(CLASSIC_PAYLOAD, adl_level=1)
     average = dict(CLASSIC_PAYLOAD, adl_level=5)
