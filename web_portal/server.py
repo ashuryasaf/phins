@@ -42397,13 +42397,18 @@ For claims or questions, please contact:
 
                 # Billing path is decided server-side by the entry point, not by
                 # a caller-supplied field. /api/policies/create is the classic
-                # apply.html endpoint (chat submissions are minted through the
-                # separate underwriting-approval path), so it always prices from
-                # the actuarial kernel. Forcing the channel here mirrors
-                # /api/policies/quote and prevents a caller from flipping the
-                # kernel/flat pricing decision in should_use_kernel_billing() by
-                # posting 'chat' / 'web' / an unknown application_channel.
-                data['application_channel'] = 'classic'
+                # apply.html endpoint, so classic / web / unknown submissions
+                # always price from the actuarial kernel. Forcing the channel
+                # here mirrors /api/policies/quote and prevents a caller from
+                # flipping the kernel/flat pricing decision in
+                # should_use_kernel_billing() by posting 'web' / an unknown
+                # application_channel. Chat finalize loops back through this same
+                # route (see web_portal/api_chat_application) with
+                # application_channel='chat'; leave that value intact so chat
+                # still defers login provisioning, is stored as chat, and stays
+                # flag-gated in should_use_kernel_billing().
+                if str(data.get('application_channel') or '').strip().lower() != 'chat':
+                    data['application_channel'] = 'classic'
 
                 # Validate and sanitize inputs
                 customer_name = sanitize_input(data.get('customer_name', ''), 100)
