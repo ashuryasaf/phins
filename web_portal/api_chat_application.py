@@ -50,7 +50,7 @@ import urllib.error
 import urllib.request
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("phins.chat_application.api")
 
@@ -542,6 +542,24 @@ _OTP_UNAVAILABLE_MESSAGE = (
 _CHAT_OTP_CHANNELS = ("email", "whatsapp")
 
 
+def available_otp_channels(phone: Optional[str] = None) -> List[str]:
+    """Return OTP channels this deployment can actually deliver.
+
+    WhatsApp is only advertised when a real Twilio/Meta sender is configured.
+    Test mode (demo OTP exposure) keeps both channels so existing tests stay
+    on the dual-channel path.
+    """
+    channels: List[str] = []
+    email_ready, _provider = _otp_delivery_ready("email")
+    if email_ready:
+        channels.append("email")
+    if phone:
+        wa_ready, _wa_provider = _otp_delivery_ready("whatsapp")
+        if wa_ready:
+            channels.append("whatsapp")
+    return channels or ["email"]
+
+
 def _otp_delivery_ready(channel: str = "email") -> Tuple[bool, str]:
     """Pre-flight: can this deployment actually deliver an OTP?
 
@@ -601,7 +619,7 @@ def _handle_otp_request(application_id: str, client_ip: str,
         return 400, {
             "error": "Choose Email or WhatsApp for your verification code.",
             "error_code": channel_error,
-            "otp_channels": list(_CHAT_OTP_CHANNELS),
+            "otp_channels": available_otp_channels(svc.contact_phone(application_id)),
         }
 
     # Destination is always the session contact. A caller-supplied phone
@@ -629,9 +647,12 @@ def _handle_otp_request(application_id: str, client_ip: str,
                 "MAILGUN_API_KEY, RESEND_API_KEY, or SMTP_HOST + SMTP_USERNAME + "
                 "SMTP_PASSWORD). Disable PHINS_TEST_MODE / "
                 "PHINS_USE_MOCK_NOTIFICATIONS in production.", provider)
-        return 503, {"error": _OTP_UNAVAILABLE_MESSAGE,
-                     "error_code": "OTP_DELIVERY_UNAVAILABLE",
-                     "retryable": True}
+        return 503, {
+            "error": _OTP_UNAVAILABLE_MESSAGE,
+            "error_code": "OTP_DELIVERY_UNAVAILABLE",
+            "retryable": True,
+            "otp_channels": available_otp_channels(svc.contact_phone(application_id)),
+        }
 
     from services.otp_security_service import OTPPurpose, get_otp_security_service
     purpose = (
@@ -685,7 +706,7 @@ def _handle_otp_request(application_id: str, client_ip: str,
         "masked_email": data.get("masked_email"),
         "expires_in_seconds": data.get("expires_in_seconds"),
         "notification_sent": bool(delivered),
-        "otp_channels": list(_CHAT_OTP_CHANNELS),
+        "otp_channels": available_otp_channels(svc.contact_phone(application_id)),
     }
     if data.get("masked_phone"):
         response["masked_phone"] = data.get("masked_phone")
