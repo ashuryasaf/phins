@@ -2175,6 +2175,115 @@ def _compute_file_checksum(file_path: str, chunk_size: int = 256 * 1024) -> str:
     return sha.hexdigest()
 
 
+def _stream_request_body_to_path(rfile, content_length: int, dest_path: str, chunk_size: int = 1024 * 1024) -> int:
+    """Write an HTTP body to disk in chunks. Returns bytes written."""
+    written = 0
+    remaining = int(content_length or 0)
+    with open(dest_path, 'wb') as out:
+        while remaining > 0:
+            chunk = rfile.read(min(chunk_size, remaining))
+            if not chunk:
+                break
+            out.write(chunk)
+            written += len(chunk)
+            remaining -= len(chunk)
+    return written
+
+
+def _parse_multipart_headers(headers_blob: bytes) -> Dict[str, str]:
+    field_name = ''
+    filename = ''
+    content_type = ''
+    if b'name="' in headers_blob:
+        n_start = headers_blob.find(b'name="') + 6
+        n_end = headers_blob.find(b'"', n_start)
+        if n_end > n_start:
+            field_name = headers_blob[n_start:n_end].decode('utf-8', errors='ignore').strip()
+    if b'filename="' in headers_blob:
+        fn_start = headers_blob.find(b'filename="') + 10
+        fn_end = headers_blob.find(b'"', fn_start)
+        if fn_end > fn_start:
+            filename = headers_blob[fn_start:fn_end].decode('utf-8', errors='ignore').strip()
+    ct_marker = b'Content-Type:'
+    ct_idx = headers_blob.find(ct_marker)
+    if ct_idx >= 0:
+        ct_line_end = headers_blob.find(b'\r\n', ct_idx)
+        if ct_line_end == -1:
+            ct_line_end = len(headers_blob)
+        content_type = headers_blob[ct_idx + len(ct_marker):ct_line_end].decode('utf-8', errors='ignore').strip()
+    return {'name': field_name, 'filename': filename, 'content_type': content_type}
+
+
+def _copy_file_range(src_path: str, dest_path: str, start: int, end: int, chunk_size: int = 1024 * 1024) -> int:
+    """Copy ``src_path[start:end]`` to ``dest_path``. Returns bytes copied."""
+    remaining = max(0, end - start)
+    copied = 0
+    with open(src_path, 'rb') as src, open(dest_path, 'wb') as dest:
+        src.seek(start)
+        while remaining > 0:
+            chunk = src.read(min(chunk_size, remaining))
+            if not chunk:
+                break
+            dest.write(chunk)
+            copied += len(chunk)
+            remaining -= len(chunk)
+    return copied
+
+
+def _extract_multipart_from_path(body_path: str, boundary: bytes, dest_path: str) -> tuple:
+    """Parse a multipart body already on disk. Never loads the file part into RAM."""
+    import mmap
+
+    separator = b'--' + boundary
+    form_fields: Dict[str, str] = {}
+    file_info: Optional[Dict[str, Any]] = None
+    size = os.path.getsize(body_path)
+    if size <= 0:
+        return None, form_fields
+
+    with open(body_path, 'rb') as src:
+        mm = mmap.mmap(src.fileno(), 0, access=mmap.ACCESS_READ)
+        try:
+            pos = 0
+            while True:
+                idx = mm.find(separator, pos)
+                if idx < 0:
+                    break
+                part_start = idx + len(separator)
+                if part_start + 2 <= size and mm[part_start:part_start + 2] == b'--':
+                    break
+                if part_start + 2 <= size and mm[part_start:part_start + 2] == b'\r\n':
+                    part_start += 2
+                next_idx = mm.find(separator, part_start)
+                if next_idx < 0:
+                    break
+                part_end = next_idx
+                if part_end >= 2 and mm[part_end - 2:part_end] == b'\r\n':
+                    part_end -= 2
+                hdr_end = mm.find(b'\r\n\r\n', part_start, part_end)
+                if hdr_end < 0:
+                    pos = next_idx
+                    continue
+                headers = _parse_multipart_headers(mm[part_start:hdr_end])
+                value_start = hdr_end + 4
+                value_end = part_end
+                if headers.get('filename') and file_info is None:
+                    copied = _copy_file_range(body_path, dest_path, value_start, value_end)
+                    file_info = {
+                        'filename': headers['filename'],
+                        'content_type': headers.get('content_type') or '',
+                        'size': copied,
+                    }
+                elif headers.get('name'):
+                    form_fields[headers['name']] = bytes(mm[value_start:value_end]).decode(
+                        'utf-8', errors='ignore'
+                    )
+                pos = next_idx
+        finally:
+            mm.close()
+    return file_info, form_fields
+
+
 def _stream_multipart_to_disk(
     rfile,
     content_length: int,
@@ -2188,65 +2297,18 @@ def _stream_multipart_to_disk(
     Only the **first** file part is saved; text fields are collected into
     ``form_fields``.
 
-    The body is read in chunks so that arbitrarily large uploads never need
-    to reside entirely in memory.
+    The HTTP body is written to a sidecar file first so a 14-minute video
+    never has to live entirely in process memory.
     """
-    raw = rfile.read(content_length) if content_length else b''
-    separator = b'--' + boundary
-    parts = raw.split(separator)
-
-    form_fields: Dict[str, str] = {}
-    file_info: Optional[Dict[str, Any]] = None
-
-    for part in parts:
-        if b'Content-Disposition: form-data' not in part:
-            continue
-
-        hdr_end = part.find(b'\r\n\r\n')
-        if hdr_end == -1:
-            continue
-        headers_blob = part[:hdr_end]
-        value_start = hdr_end + 4
-        value_end = part.rfind(b'\r\n')
-        if value_end <= value_start:
-            continue
-        raw_value = part[value_start:value_end]
-
-        if b'name="' not in headers_blob:
-            continue
-        n_start = headers_blob.find(b'name="') + 6
-        n_end = headers_blob.find(b'"', n_start)
-        if n_end <= n_start:
-            continue
-        field_name = headers_blob[n_start:n_end].decode('utf-8', errors='ignore').strip()
-
-        if b'filename="' in headers_blob:
-            if file_info is not None:
-                continue
-            fn_start = headers_blob.find(b'filename="') + 10
-            fn_end = headers_blob.find(b'"', fn_start)
-            filename = headers_blob[fn_start:fn_end].decode('utf-8', errors='ignore').strip() if fn_end > fn_start else ''
-            ct = ''
-            ct_marker = b'Content-Type:'
-            ct_idx = headers_blob.find(ct_marker)
-            if ct_idx >= 0:
-                ct_line_end = headers_blob.find(b'\r\n', ct_idx)
-                if ct_line_end == -1:
-                    ct_line_end = len(headers_blob)
-                ct = headers_blob[ct_idx + len(ct_marker):ct_line_end].decode('utf-8', errors='ignore').strip()
-
-            with open(dest_path, 'wb') as dest:
-                dest.write(raw_value)
-
-            file_info = {
-                'filename': filename,
-                'content_type': ct,
-                'size': len(raw_value),
-            }
-        else:
-            form_fields[field_name] = raw_value.decode('utf-8', errors='ignore')
-
-    return file_info, form_fields
+    body_tmp = dest_path + '.multipart'
+    try:
+        _stream_request_body_to_path(rfile, content_length, body_tmp)
+        return _extract_multipart_from_path(body_tmp, boundary, dest_path)
+    finally:
+        try:
+            os.remove(body_tmp)
+        except OSError:
+            pass
 
 
 def serialize_media_subtitle_track(track: Dict[str, Any]) -> Dict[str, Any]:
@@ -8548,6 +8610,12 @@ MAX_MEDIA_UPLOAD_SIZE = safe_int(
     os.environ.get('PHINS_MAX_MEDIA_UPLOAD_SIZE'),
     0,
 )
+# Practical disk cap when HTTP upload size is unlimited (0). A 14-minute
+# apply-disclosure MP4 is typically 80-400MB; 2GB leaves headroom.
+DEFAULT_MEDIA_ASSET_MAX_BYTES = safe_int(
+    os.environ.get('PHINS_DEFAULT_MEDIA_ASSET_MAX_BYTES'),
+    2 * 1024 * 1024 * 1024,
+)
 SESSION_TIMEOUT = 3600  # 1 hour session timeout
 CONNECTION_TIMEOUT = 30  # 30 seconds connection timeout
 MAX_SESSIONS_PER_IP = 10  # Max concurrent sessions per IP
@@ -10343,6 +10411,7 @@ except Exception:
 try:
     from security.file_scanner import (
         scan_file_bytes,
+        scan_file_path,
         scan_base64_payload,
         sanitize_filename as secure_sanitize_filename,
         quarantine_file,
@@ -33333,16 +33402,23 @@ For claims or questions, please contact:
                 # ── File security scan ──
                 if _file_scanner_enabled:
                     try:
-                        with open(temp_path, 'rb') as _scan_fh:
-                            _scan_data = _scan_fh.read()
-                        _scan_verdict = scan_file_bytes(
-                            _scan_data,
+                        media_scan_max = (
+                            MAX_MEDIA_UPLOAD_SIZE
+                            if MAX_MEDIA_UPLOAD_SIZE > 0
+                            else DEFAULT_MEDIA_ASSET_MAX_BYTES
+                        )
+                        _scan_verdict = scan_file_path(
+                            temp_path,
                             filename=file_name,
                             declared_content_type=file_content_type,
+                            max_size=media_scan_max,
                         )
                         if not _scan_verdict.safe:
+                            # Do not load a 14-minute video into RAM just to quarantine.
+                            with open(temp_path, 'rb') as _scan_fh:
+                                _scan_prefix = _scan_fh.read(65536)
                             quarantine_file(
-                                _scan_data, filename=file_name,
+                                _scan_prefix, filename=file_name,
                                 reason=_scan_verdict.threat_summary,
                                 client_ip=client_ip,
                             )

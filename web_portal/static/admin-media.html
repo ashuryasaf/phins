@@ -1101,7 +1101,7 @@
             <div id="file-upload-zone" class="drop-zone" onclick="document.getElementById('file-input').click()">
                 <div class="drop-zone-icon">📁</div>
                 <div class="drop-zone-text">Drag & drop files here or click to browse</div>
-                <div class="drop-zone-hint">No file size limit — heavy video files welcome</div>
+                <div class="drop-zone-hint">Upload the apply disclosure video here (MP4/WebM, up to 2 GB, including 14-minute cuts). Then assign it under Apply form disclosure video below. If the browser fails, use From URL.</div>
                 <div class="drop-zone-formats">
                     Supported: MP4, MOV, AVI, WebM, MKV • JPG, PNG, GIF, WebP • PDF, DOC, DOCX
                 </div>
@@ -1384,7 +1384,7 @@ Notes:
         <section class="assignments-section apply-disclosure-assignments">
             <h2>Apply form disclosure video</h2>
             <p style="margin: -6px 0 14px; font-size: 0.82rem; color: rgba(255,255,255,0.82);">
-                Customers see the live/light version on Step 2 of <code>/apply.html</code>. Stage a control cut here, then promote it when the conclusive video is ready.
+                Upload the cut in the library above first. Customers see the live/light version on Step 2 of <code>/apply.html</code>. Stage a control cut here, then promote it when the conclusive video is ready.
             </p>
             <div class="assignment-grid">
                 <div class="assignment-card">
@@ -2470,6 +2470,12 @@ Notes:
                     try {
                         const errData = await response.json();
                         errorMsg = errData.error || errorMsg;
+                        if (errData.details) {
+                            errorMsg += ': ' + errData.details;
+                        }
+                        if (errData.max_bytes) {
+                            errorMsg += ` (max ${formatFileSize(errData.max_bytes)})`;
+                        }
                     } catch (_) {}
                     throw new Error(errorMsg);
                 }

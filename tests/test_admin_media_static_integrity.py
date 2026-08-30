@@ -38,6 +38,8 @@ def test_admin_media_sends_design_settings_on_save():
     assert "apply_disclosure_control_video_id:" in content
     assert "apply_disclosure_version_label:" in content
     assert "promoteApplyDisclosureControl" in content
+    assert "Upload the apply disclosure video here" in content
+    assert "Upload the cut in the library above first" in content
     assert "designSettings:" in content
     assert "brandSettings:" in content
 
