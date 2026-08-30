@@ -6,13 +6,26 @@ let applicationFiles = [];  // Store uploaded files for submission
 
 // PHINS Contract allocation state
 let phinsAllocation = {
-    protectionPct: 25,
-    savingsPct: 75,
+    protectionPct: 100,
+    savingsPct: 0,
+    coverageYears: 20,
+    coverageAmount: 500000,
+    savingsAddon: 'none',
+    savingsRate: 0
+};
+
+const SAVINGS_ADDON_OPTIONS = {
+    none: { rate: 0, label: 'Pure protection (no savings)' },
+    light: { rate: 0.25, label: 'Light (+25% of risk premium)' },
+    balanced: { rate: 0.50, label: 'Balanced (+50% of risk premium)' },
+    growth: { rate: 1.00, label: 'Growth (+100% of risk premium)' }
+};
+
+// Same default routing chat uses. Customers no longer pick this on apply.html.
+const DEFAULT_SAVINGS_DISTRIBUTION = {
     walletPct: 15,
     investmentPct: 60,
-    algoPct: 25,
-    coverageYears: 20,
-    coverageAmount: 500000
+    algoPct: 25
 };
 
 // Card type patterns for validation (text badges — no emoji icons)
@@ -29,203 +42,289 @@ document.addEventListener('DOMContentLoaded', () => {
     updateStepDisplay();
     populateExpiryYears();
     initializePHINSContract();
+    loadApplyDisclosureVideo();
 });
+
+function loadApplyDisclosureVideo() {
+    const video = document.getElementById('apply-disclosure-video');
+    const light = document.getElementById('apply-disclosure-light');
+    const meta = document.getElementById('apply-disclosure-meta');
+    if (!video) return;
+    fetch('/api/design/settings')
+        .then(resp => resp.ok ? resp.json() : null)
+        .then(settings => {
+            if (!settings) return;
+            const url = String(settings.apply_disclosure_video_url || '').trim();
+            const label = String(settings.apply_disclosure_version_label || 'light').trim();
+            if (url) {
+                video.addEventListener('error', () => {
+                    video.removeAttribute('src');
+                    video.style.display = 'none';
+                    if (light) light.style.display = '';
+                    if (meta) meta.textContent = 'Light disclosure. Assigned video could not be played.';
+                }, { once: true });
+                video.src = url;
+                video.style.display = 'block';
+                if (light) light.style.display = 'none';
+                if (meta) meta.textContent = `Product disclosure · ${label} version`;
+            } else if (meta) {
+                meta.textContent = 'Light disclosure. A full video can replace this from Admin Media.';
+            }
+        })
+        .catch(() => {});
+}
 
 // Initialize PHINS Contract UI
 function initializePHINSContract() {
-    // Setup allocation slider
-    const allocationSlider = document.getElementById('allocation-slider');
-    if (allocationSlider) {
-        allocationSlider.addEventListener('input', updateAllocationSplit);
-        updateAllocationSplit();
-    }
-    
-    // Setup coverage years radio buttons
     document.querySelectorAll('input[name="coverage-years"]').forEach(radio => {
         radio.addEventListener('change', function() {
             phinsAllocation.coverageYears = parseInt(this.value);
             updateAllocationDisplay();
             
-            // Update visual selection (navy/gold theme)
-            document.querySelectorAll('.radio-card').forEach(card => {
-                card.classList.remove('selected');
-                card.style.border = '2px solid #dde7f5';
-                card.style.background = 'white';
+            document.querySelectorAll('input[name="coverage-years"]').forEach(other => {
+                const card = other.closest('.radio-card');
+                if (!card) return;
+                const selected = other === this;
+                card.classList.toggle('selected', selected);
+                card.style.border = selected ? '2px solid #c9a24b' : '2px solid #dde7f5';
+                card.style.background = selected ? '#fdf8ec' : 'white';
             });
-            this.closest('.radio-card').classList.add('selected');
-            this.closest('.radio-card').style.border = '2px solid #c9a24b';
-            this.closest('.radio-card').style.background = '#fdf8ec';
         });
     });
     
-    // Setup savings distribution inputs
-    ['wallet', 'investment', 'algo'].forEach(type => {
-        const input = document.getElementById(`${type}-pct`);
-        if (input) {
-            input.addEventListener('change', () => rebalanceAllocations(type));
-            input.addEventListener('input', () => updateAllocationBars());
+    document.querySelectorAll('input[name="savings-addon"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            setSavingsAddon(this.value);
+        });
+    });
+
+    setSavingsAddon(currentSavingsAddon());
+    updateAllocationDisplay();
+}
+
+function currentSavingsAddon() {
+    const el = document.querySelector('input[name="savings-addon"]:checked');
+    return (el && el.value) || phinsAllocation.savingsAddon || 'none';
+}
+
+function currentSavingsRate() {
+    const key = currentSavingsAddon();
+    return Number((SAVINGS_ADDON_OPTIONS[key] || SAVINGS_ADDON_OPTIONS.none).rate);
+}
+
+function setSavingsAddon(choice) {
+    const key = SAVINGS_ADDON_OPTIONS[choice] ? choice : 'none';
+    phinsAllocation.savingsAddon = key;
+    phinsAllocation.savingsRate = SAVINGS_ADDON_OPTIONS[key].rate;
+    document.querySelectorAll('input[name="savings-addon"]').forEach(radio => {
+        const card = radio.closest('.radio-card');
+        const selected = radio.value === key;
+        radio.checked = selected;
+        if (card) {
+            card.classList.toggle('selected', selected);
+            card.style.border = selected ? '2px solid #c9a24b' : '2px solid #dde7f5';
+            card.style.background = selected ? '#fdf8ec' : 'white';
         }
     });
-    
-    // Initial update
-    updateAllocationDisplay();
+    toggleSavingsOnlyBenefits(phinsAllocation.savingsRate > 0);
+    scheduleKernelQuote();
 }
 
-// Update protection/savings split
-function updateAllocationSplit() {
-    const slider = document.getElementById('allocation-slider');
-    if (!slider) return;
-    
-    phinsAllocation.protectionPct = parseInt(slider.value);
-    phinsAllocation.savingsPct = 100 - phinsAllocation.protectionPct;
-    
-    // Update display
-    document.getElementById('protection-pct').textContent = phinsAllocation.protectionPct + '%';
-    document.getElementById('savings-pct').textContent = phinsAllocation.savingsPct + '%';
-    
-    // Update gradient background (navy protection / gold savings)
-    slider.style.background = `linear-gradient(to right, #14509e 0%, #14509e ${phinsAllocation.protectionPct}%, #c9a24b ${phinsAllocation.protectionPct}%, #c9a24b 100%)`;
-    
-    updateAllocationDisplay();
+function toggleSavingsOnlyBenefits(show) {
+    document.querySelectorAll('.savings-only-benefit').forEach(el => {
+        el.style.display = show ? '' : 'none';
+    });
 }
 
-// Adjust allocation for a specific category
-function adjustAllocation(type, delta) {
-    const input = document.getElementById(`${type}-pct`);
-    if (!input) return;
-    
-    let newValue = parseInt(input.value) + delta;
-    newValue = Math.max(0, Math.min(100, newValue));
-    input.value = newValue;
-    
-    rebalanceAllocations(type);
+let quoteRequestSeq = 0;
+let quoteRefreshTimer = null;
+
+function collectQuotePayload() {
+    const dob = document.getElementById('dob')?.value || '';
+    const gender = document.getElementById('gender')?.value || '';
+    const tobacco = document.querySelector('input[name="tobacco"]:checked')?.value || 'no';
+    const smokingStatus = tobacco === 'yes' ? 'smoker'
+        : tobacco === 'former' ? 'former'
+        : 'nonsmoker';
+    let riskScore = 'medium';
+    try {
+        if (formData.health) {
+            riskScore = calculateRiskScore();
+        }
+    } catch (err) {
+        riskScore = 'medium';
+    }
+    return {
+        type: 'phins_unified',
+        application_channel: 'classic',
+        coverage_amount: phinsAllocation.coverageAmount,
+        coverage_years: phinsAllocation.coverageYears,
+        term_years: phinsAllocation.coverageYears,
+        age: dob ? calculateAge(dob) : undefined,
+        customer_dob: dob,
+        gender,
+        smoking_status: smokingStatus,
+        ethnicity: document.getElementById('ethnicity')?.value || '',
+        risk_score: riskScore,
+        savings_rate: currentSavingsRate(),
+        savings_formula: 'risk_premium_markup',
+        questionnaire: {
+            tobacco,
+            smoke: tobacco,
+            gender
+        }
+    };
 }
 
-// Rebalance allocations to ensure they total 100%
-function rebalanceAllocations(changedType) {
-    const walletInput = document.getElementById('wallet-pct');
-    const investmentInput = document.getElementById('investment-pct');
-    const algoInput = document.getElementById('algo-pct');
+function renderPremiumTiles(monthlyPremium, quarterlyPremium, annualPremium) {
+    const coverage = phinsAllocation.coverageAmount;
+    const riskAnnual = Number(formData.premiums?.risk_premium_annual) || 0;
+    const savingsAnnual = Number(formData.premiums?.savings_premium_annual) || 0;
+    const componentBase = riskAnnual + savingsAnnual;
+    if (componentBase > 0) {
+        phinsAllocation.protectionPct = Math.round((riskAnnual / componentBase) * 100);
+        phinsAllocation.savingsPct = 100 - phinsAllocation.protectionPct;
+    } else {
+        phinsAllocation.protectionPct = 100;
+        phinsAllocation.savingsPct = 0;
+    }
+
+    const monthlyEl = document.getElementById('monthly-premium');
+    const quarterlyEl = document.getElementById('quarterly-premium');
+    const annualEl = document.getElementById('annual-premium');
+    if (monthlyEl) monthlyEl.textContent = formatCurrency(monthlyPremium);
+    if (quarterlyEl) quarterlyEl.textContent = formatCurrency(quarterlyPremium);
+    if (annualEl) annualEl.textContent = formatCurrency(annualPremium);
     
-    if (!walletInput || !investmentInput || !algoInput) return;
-    
-    let wallet = parseInt(walletInput.value) || 0;
-    let investment = parseInt(investmentInput.value) || 0;
-    let algo = parseInt(algoInput.value) || 0;
-    
-    const total = wallet + investment + algo;
-    
-    if (total !== 100) {
-        // Adjust the other two proportionally
-        const diff = 100 - total;
-        const others = ['wallet', 'investment', 'algo'].filter(t => t !== changedType);
-        
-        if (total > 100) {
-            // Reduce others proportionally
-            const currentOthersTotal = others.reduce((sum, t) => sum + parseInt(document.getElementById(`${t}-pct`).value), 0);
-            if (currentOthersTotal > 0) {
-                others.forEach(t => {
-                    const input = document.getElementById(`${t}-pct`);
-                    const current = parseInt(input.value);
-                    const reduction = Math.round((current / currentOthersTotal) * Math.abs(diff));
-                    input.value = Math.max(0, current - reduction);
-                });
-            }
+    const summaryCoverage = document.getElementById('summary-coverage');
+    const summaryYears = document.getElementById('summary-years');
+    if (summaryCoverage) summaryCoverage.textContent = formatCurrency(coverage, false);
+    if (summaryYears) summaryYears.textContent = phinsAllocation.coverageYears;
+    toggleSavingsOnlyBenefits(currentSavingsRate() > 0);
+}
+
+function applyKernelQuote(quote) {
+    const monthlyPremium = Number(quote.monthly) || 0;
+    const quarterlyPremium = Number(quote.quarterly) || 0;
+    const annualPremium = Number(quote.annual) || 0;
+    formData.premiums = {
+        monthly: monthlyPremium,
+        quarterly: quarterlyPremium,
+        annual: annualPremium,
+        pricing_source: quote.pricing_source || 'pricing_kernel',
+        integrity_hash: quote.integrity_hash || '',
+        product_id: quote.product_id || '',
+        tables_version: quote.tables_version || '',
+        config_version: quote.config_version || '',
+        risk_premium_annual: Number(quote.risk_premium_annual) || 0,
+        mortality_premium_annual: Number(quote.mortality_premium_annual) || 0,
+        disability_premium_annual: Number(quote.disability_premium_annual) || 0,
+        savings_premium_annual: Number(quote.savings_premium_annual) || 0,
+        savings_rate_used: Number(quote.savings_rate_used) || currentSavingsRate(),
+        gender_used: quote.gender_used || '',
+        smoking_status_used: quote.smoking_status_used || ''
+    };
+    renderPremiumTiles(monthlyPremium, quarterlyPremium, annualPremium);
+    const metaEl = document.getElementById('premium-quote-meta');
+    if (metaEl) {
+        if (quote.pricing_source === 'pricing_kernel') {
+            const hash = quote.integrity_hash ? String(quote.integrity_hash).slice(0, 12) : '';
+            const riskYr = Number(quote.risk_premium_annual) || 0;
+            const mortYr = Number(quote.mortality_premium_annual) || 0;
+            const disYr = Number(quote.disability_premium_annual) || 0;
+            metaEl.textContent = [
+                quote.product_id === 'phins_hybrid_savings' ? 'Hybrid risk + savings add-on' : 'Actuarial pricing kernel',
+                quote.tables_version ? `tables ${quote.tables_version}` : '',
+                quote.config_version ? `config ${quote.config_version}` : '',
+                riskYr ? `risk ${formatCurrency(riskYr)}/yr` : '',
+                mortYr ? `life ${formatCurrency(mortYr)}` : '',
+                disYr ? `disability ${formatCurrency(disYr)}` : '',
+                hash ? `sealed ${hash}` : ''
+            ].filter(Boolean).join(' · ');
         } else {
-            // Increase others proportionally
-            const currentOthersTotal = others.reduce((sum, t) => sum + parseInt(document.getElementById(`${t}-pct`).value), 0);
-            if (currentOthersTotal > 0) {
-                others.forEach(t => {
-                    const input = document.getElementById(`${t}-pct`);
-                    const current = parseInt(input.value);
-                    const increase = Math.round((current / currentOthersTotal) * diff);
-                    input.value = Math.min(100, current + increase);
-                });
-            } else {
-                // If others are 0, split evenly
-                const each = Math.floor(diff / others.length);
-                others.forEach(t => {
-                    document.getElementById(`${t}-pct`).value = each;
-                });
-            }
+            metaEl.textContent = 'Standard rate card';
         }
     }
-    
-    // Update state
-    phinsAllocation.walletPct = parseInt(walletInput.value);
-    phinsAllocation.investmentPct = parseInt(investmentInput.value);
-    phinsAllocation.algoPct = parseInt(algoInput.value);
-    
-    updateAllocationBars();
-    updateAllocationDisplay();
+    const breakdown = document.getElementById('savings-addon-breakdown');
+    if (breakdown) {
+        const option = SAVINGS_ADDON_OPTIONS[currentSavingsAddon()] || SAVINGS_ADDON_OPTIONS.none;
+        const riskYr = Number(quote.risk_premium_annual) || 0;
+        const saveYr = Number(quote.savings_premium_annual) || 0;
+        if (option.rate <= 0) {
+            breakdown.textContent = 'No savings add-on. Premium is pure protection.';
+        } else {
+            breakdown.textContent = `${option.label}. Protection ${formatCurrency(riskYr)}/year · Add-on ${formatCurrency(saveYr)}/year.`;
+        }
+    }
+    toggleSavingsOnlyBenefits(currentSavingsRate() > 0);
 }
 
-// Update allocation bar visuals
-function updateAllocationBars() {
-    const wallet = parseInt(document.getElementById('wallet-pct')?.value) || 0;
-    const investment = parseInt(document.getElementById('investment-pct')?.value) || 0;
-    const algo = parseInt(document.getElementById('algo-pct')?.value) || 0;
-    
-    document.getElementById('wallet-bar').style.width = wallet + '%';
-    document.getElementById('investment-bar').style.width = investment + '%';
-    document.getElementById('algo-bar').style.width = algo + '%';
-    
-    const total = wallet + investment + algo;
-    const totalEl = document.getElementById('total-allocation');
-    if (totalEl) {
-        totalEl.textContent = total + '%';
-        totalEl.style.color = total === 100 ? '#0d2a5c' : '#c62828';
+async function refreshKernelQuote() {
+    const seq = ++quoteRequestSeq;
+    try {
+        const response = await fetch('/api/policies/quote', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(collectQuotePayload())
+        });
+        const quote = await response.json();
+        if (seq !== quoteRequestSeq) {
+            return;
+        }
+        if (!response.ok || quote.error || !(Number(quote.monthly) > 0)) {
+            applyFlatPlaceholder();
+            return;
+        }
+        applyKernelQuote(quote);
+    } catch (err) {
+        if (seq !== quoteRequestSeq) {
+            return;
+        }
+        console.error('Kernel quote failed, using local estimate:', err);
+        applyFlatPlaceholder();
     }
+}
+
+function scheduleKernelQuote() {
+    clearTimeout(quoteRefreshTimer);
+    quoteRefreshTimer = setTimeout(refreshKernelQuote, 250);
+}
+
+function applyFlatPlaceholder() {
+    const coverage = phinsAllocation.coverageAmount;
+    // Mirror the kernel's savings add-on (risk premium * savings_rate) in the
+    // local estimate so the fallback tile reflects the elected add-on rather
+    // than showing the pure-protection price while create still submits it.
+    const rate = currentSavingsRate();
+    const riskMonthly = calculateBasePremium(coverage);
+    const savingsMonthly = riskMonthly * rate;
+    const monthlyPremium = riskMonthly + savingsMonthly;
+    applyKernelQuote({
+        monthly: monthlyPremium,
+        quarterly: monthlyPremium * 3 * 0.97,
+        annual: monthlyPremium * 12,
+        risk_premium_annual: riskMonthly * 12,
+        savings_premium_annual: savingsMonthly * 12,
+        savings_rate_used: rate,
+        pricing_source: 'flat_formula'
+    });
 }
 
 // Update all allocation displays
 function updateAllocationDisplay() {
     const coverage = phinsAllocation.coverageAmount;
-    const basePremium = calculateBasePremium(coverage);
-    
-    const monthlyPremium = basePremium;
-    const protectionMonthly = monthlyPremium * (phinsAllocation.protectionPct / 100);
-    const savingsMonthly = monthlyPremium * (phinsAllocation.savingsPct / 100);
-    
-    // Update protection/savings monthly amounts
-    const protectionMonthlyEl = document.getElementById('protection-monthly');
-    const savingsMonthlyEl = document.getElementById('savings-monthly');
-    if (protectionMonthlyEl) protectionMonthlyEl.textContent = formatCurrency(protectionMonthly);
-    if (savingsMonthlyEl) savingsMonthlyEl.textContent = formatCurrency(savingsMonthly);
-    
-    // Update savings distribution amounts
-    const walletMonthly = savingsMonthly * (phinsAllocation.walletPct / 100);
-    const investmentMonthly = savingsMonthly * (phinsAllocation.investmentPct / 100);
-    const algoMonthly = savingsMonthly * (phinsAllocation.algoPct / 100);
-    
-    const walletMonthlyEl = document.getElementById('wallet-monthly');
-    const investmentMonthlyEl = document.getElementById('investment-monthly');
-    const algoMonthlyEl = document.getElementById('algo-monthly');
-    
-    if (walletMonthlyEl) walletMonthlyEl.textContent = formatCurrency(walletMonthly);
-    if (investmentMonthlyEl) investmentMonthlyEl.textContent = formatCurrency(investmentMonthly);
-    if (algoMonthlyEl) algoMonthlyEl.textContent = formatCurrency(algoMonthly);
-    
-    // Update premium displays
-    const quarterlyPremium = monthlyPremium * 3 * 0.97;
-    const annualPremium = monthlyPremium * 12 * 0.90;
-    
-    document.getElementById('monthly-premium').textContent = formatCurrency(monthlyPremium);
-    document.getElementById('quarterly-premium').textContent = formatCurrency(quarterlyPremium);
-    document.getElementById('annual-premium').textContent = formatCurrency(annualPremium);
-    
-    // Update summary
     const summaryCoverage = document.getElementById('summary-coverage');
     const summaryYears = document.getElementById('summary-years');
     if (summaryCoverage) summaryCoverage.textContent = formatCurrency(coverage, false);
     if (summaryYears) summaryYears.textContent = phinsAllocation.coverageYears;
-    
-    // Store premiums
-    formData.premiums = {
-        monthly: monthlyPremium,
-        quarterly: quarterlyPremium,
-        annual: annualPremium
-    };
+    if (formData.premiums && formData.premiums.monthly) {
+        renderPremiumTiles(
+            formData.premiums.monthly,
+            formData.premiums.quarterly,
+            formData.premiums.annual
+        );
+    }
+    scheduleKernelQuote();
 }
 
 // Calculate base premium based on coverage
@@ -310,7 +409,7 @@ function setupEventListeners() {
         });
     }
     
-    // Real-time validation for Step 1 fields
+            // Real-time validation for Step 1 fields
     const step1Fields = ['first-name', 'last-name', 'email', 'phone', 'dob'];
     step1Fields.forEach(fieldId => {
         const field = document.getElementById(fieldId);
@@ -323,6 +422,15 @@ function setupEventListeners() {
                 this.style.borderColor = '';
             });
         }
+    });
+    ['dob', 'gender'].forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.addEventListener('change', scheduleKernelQuote);
+        }
+    });
+    document.querySelectorAll('input[name="tobacco"]').forEach(radio => {
+        radio.addEventListener('change', scheduleKernelQuote);
     });
     
     // Conditional fields
@@ -583,6 +691,9 @@ function nextStep() {
     }
     
     saveStepData(currentStep);
+    if (currentStep === 1 || currentStep === 3) {
+        refreshKernelQuote();
+    }
     
     if (currentStep < totalSteps) {
         currentStep++;
@@ -745,19 +856,6 @@ function validateStep(step) {
         }
     });
     
-    // Additional validations
-    if (step === 2) {
-        // PHINS unified contract is pre-selected, just verify allocations total 100%
-        const walletPct = parseInt(document.getElementById('wallet-pct')?.value) || 0;
-        const investmentPct = parseInt(document.getElementById('investment-pct')?.value) || 0;
-        const algoPct = parseInt(document.getElementById('algo-pct')?.value) || 0;
-        
-        if (walletPct + investmentPct + algoPct !== 100) {
-            alert('Savings distribution must total 100%. Please adjust your allocation.');
-            isValid = false;
-        }
-    }
-    
     // Step 4: Payment validation
     if (step === 4) {
         // Validate card number with Mastercard 16-digit check
@@ -832,11 +930,9 @@ function saveStepData(step) {
                 allocation: {
                     protectionPct: phinsAllocation.protectionPct,
                     savingsPct: phinsAllocation.savingsPct,
-                    distribution: {
-                        walletPct: phinsAllocation.walletPct,
-                        investmentPct: phinsAllocation.investmentPct,
-                        algoPct: phinsAllocation.algoPct
-                    }
+                    savingsAddon: currentSavingsAddon(),
+                    savingsRate: currentSavingsRate(),
+                    distribution: DEFAULT_SAVINGS_DISTRIBUTION
                 }
             };
             break;
@@ -919,7 +1015,6 @@ function populateReview() {
     
     // Coverage Details - PHINS Unified Contract
     const alloc = formData.coverage?.allocation || {};
-    const dist = alloc.distribution || {};
     
     const coverageHtml = `
         <div class="review-item">
@@ -935,13 +1030,14 @@ function populateReview() {
             <span>${formData.coverage?.coverageYears || 20} Years</span>
         </div>
         <div class="review-item">
-            <strong>Protection Allocation</strong>
-            <span>${alloc.protectionPct || 25}% Protection / ${alloc.savingsPct || 75}% Savings</span>
+            <strong>Savings Add-on</strong>
+            <span>${(SAVINGS_ADDON_OPTIONS[alloc.savingsAddon] || SAVINGS_ADDON_OPTIONS.none).label}</span>
         </div>
+        ${Number(formData.premiums?.savings_premium_annual) > 0 ? `
         <div class="review-item">
-            <strong>Savings Distribution</strong>
-            <span>${dist.walletPct || 15}% Wallet | ${dist.investmentPct || 60}% Investment | ${dist.algoPct || 25}% Algo Trading</span>
-        </div>
+            <strong>Premium mix</strong>
+            <span>Protection ${formatCurrency(formData.premiums.risk_premium_annual)}/year · Add-on ${formatCurrency(formData.premiums.savings_premium_annual)}/year</span>
+        </div>` : ''}
     `;
     document.getElementById('review-coverage').innerHTML = coverageHtml;
     
@@ -1021,10 +1117,11 @@ function populateReview() {
             displayAmount = formData.premiums.monthly;
             periodText = 'per month';
         } else if (formData.payment?.billingFrequency === 'quarterly') {
-            displayAmount = formData.premiums.quarterly * 0.97; // 3% discount
+            displayAmount = formData.premiums.quarterly;
             periodText = 'per quarter';
-        } else {
-            displayAmount = formData.premiums.annual * 0.90; // 10% discount
+        } else if (formData.payment?.billingFrequency === 'annual') {
+            displayAmount = formData.premiums.annual;
+            periodText = 'per year';
         }
         
         document.getElementById('final-premium-amount').textContent = 
@@ -1033,7 +1130,7 @@ function populateReview() {
         document.getElementById('final-monthly').textContent = 
             new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(formData.premiums.monthly);
         document.getElementById('final-quarterly').textContent = 
-            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(formData.premiums.quarterly * 0.97);
+            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(formData.premiums.quarterly);
         
         // Health wallet summary
         const walletSummary = document.getElementById('health-wallet-summary');
@@ -1074,7 +1171,6 @@ async function handleSubmit(e) {
     let submissionData;
     try {
         const alloc = formData.coverage?.allocation || {};
-        const dist = alloc.distribution || {};
         
         const tobaccoRaw = formData.health.tobacco || 'no';
         const smokingStatus = tobaccoRaw === 'yes' ? 'smoker'
@@ -1085,6 +1181,9 @@ async function handleSubmit(e) {
             customer_email: formData.personal.email || '',
             customer_phone: formData.personal.phone || '',
             customer_dob: formData.personal.dob || '',
+            application_channel: 'classic',
+            savings_rate: currentSavingsRate(),
+            savings_formula: 'risk_premium_markup',
             type: 'phins_unified',
             coverage_amount: formData.coverage?.coverageAmount || 500000,
             coverage_years: formData.coverage?.coverageYears || 20,
@@ -1111,12 +1210,14 @@ async function handleSubmit(e) {
             },
             // PHINS Unified Contract allocation
             phins_allocation: {
-                protection_pct: alloc.protectionPct || 25,
-                savings_pct: alloc.savingsPct || 75,
+                protection_pct: alloc.protectionPct || 100,
+                savings_pct: alloc.savingsPct || 0,
+                savings_rate: currentSavingsRate(),
+                savings_addon: currentSavingsAddon(),
                 distribution: {
-                    wallet_pct: dist.walletPct || 15,
-                    investment_pct: dist.investmentPct || 60,
-                    algo_trading_pct: dist.algoPct || 25
+                    wallet_pct: DEFAULT_SAVINGS_DISTRIBUTION.walletPct,
+                    investment_pct: DEFAULT_SAVINGS_DISTRIBUTION.investmentPct,
+                    algo_trading_pct: DEFAULT_SAVINGS_DISTRIBUTION.algoPct
                 }
             },
             // Payment and billing information
@@ -1136,7 +1237,7 @@ async function handleSubmit(e) {
             },
             // AI/BI Pipeline integration
             pipeline_enabled: true,
-            savings_pipeline_enabled: true
+            savings_pipeline_enabled: currentSavingsRate() > 0
         };
     } catch (dataError) {
         alert('Error preparing application data. Please review your information and try again.');

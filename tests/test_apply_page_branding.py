@@ -55,12 +55,10 @@ class TestApplyPageDataIntegrity:
         "address", "city", "state", "zip", "occupation",
         # step 2 — coverage/allocation
         "policy-type", "coverage-slider", "coverage-amount-display",
-        "allocation-slider", "protection-pct", "savings-pct",
-        "wallet-pct", "investment-pct", "algo-pct",
-        "wallet-bar", "investment-bar", "algo-bar", "total-allocation",
-        "protection-monthly", "savings-monthly",
-        "wallet-monthly", "investment-monthly", "algo-monthly",
         "monthly-premium", "quarterly-premium", "annual-premium",
+        "premium-quote-meta", "savings-addon-breakdown",
+        "apply-disclosure", "apply-disclosure-video", "apply-disclosure-light",
+        "apply-disclosure-meta",
         "summary-coverage", "summary-years",
         # step 3 — health
         "conditions-list", "surgery-list", "height", "weight",
@@ -82,7 +80,7 @@ class TestApplyPageDataIntegrity:
     ]
 
     REQUIRED_NAMES = [
-        "coverage-years", "tobacco", "medical-conditions", "surgery",
+        "coverage-years", "savings-addon", "tobacco", "medical-conditions", "surgery",
         "hazardous", "family-history", "billing-frequency", "auto-pay",
     ]
 
@@ -103,8 +101,41 @@ class TestApplyPageDataIntegrity:
 
     def test_submission_endpoint_unchanged(self):
         assert "/api/policies/create" in APPLY_JS
+        assert "/api/policies/quote" in APPLY_JS
+        assert "application_channel: 'classic'" in APPLY_JS
+        assert "savings_rate: currentSavingsRate()" in APPLY_JS
+        assert "savings_formula: 'risk_premium_markup'" in APPLY_JS
+        assert "function loadApplyDisclosureVideo(" in APPLY_JS
+        assert "apply_disclosure_video_url" in APPLY_JS
 
     def test_scripts_still_wired(self):
         assert 'src="apply.js"' in APPLY_HTML
         assert "/unified-payment.js" in APPLY_HTML
         assert "/i18n.js" in APPLY_HTML
+
+    def test_review_uses_kernel_amounts_without_rediscouning(self):
+        assert "function applyKernelQuote(" in APPLY_JS
+        assert "premiums.quarterly * 0.97" not in APPLY_JS
+        assert "premiums.annual * 0.90" not in APPLY_JS
+
+    def test_adl_is_not_an_application_choice(self):
+        assert 'name="adl-level"' not in APPLY_HTML
+        assert 'id="adl-card-1"' not in APPLY_HTML
+        assert 'id="adl-pricing-note"' not in APPLY_HTML
+        assert "Daily function (ADL)" not in APPLY_HTML
+        assert "function currentAdlLevel(" not in APPLY_JS
+        assert "function setAdlLevel(" not in APPLY_JS
+        assert "adl_level: currentAdlLevel()" not in APPLY_JS
+
+    def test_savings_distribution_removed_from_customer_form(self):
+        assert 'id="savings-distribution-section"' not in APPLY_HTML
+        assert 'id="wallet-pct"' not in APPLY_HTML
+        assert 'id="allocation-slider"' not in APPLY_HTML
+        assert "adjustAllocation(" not in APPLY_JS
+        assert "Savings distribution must total 100%" not in APPLY_JS
+
+    def test_create_stamps_chat_default_savings_routing(self):
+        assert "walletPct: 15" in APPLY_JS
+        assert "investmentPct: 60" in APPLY_JS
+        assert "algoPct: 25" in APPLY_JS
+        assert "DEFAULT_SAVINGS_DISTRIBUTION" in APPLY_JS

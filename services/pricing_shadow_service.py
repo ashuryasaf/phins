@@ -27,6 +27,10 @@ POLICY_TYPE_TO_PRODUCT = {
     "phins_unified": "phins_pure_risk_adjustable",
 }
 
+# Classic /apply.html submissions use kernel prices even when the global
+# billing flag is off. Chat keeps today's flag-gated create path.
+CLASSIC_APPLY_CHANNELS = frozenset({"classic", "apply", "web"})
+
 _LOCK = threading.RLock()
 _SNAPSHOTS: List[Dict[str, Any]] = []
 _BY_POLICY: Dict[str, List[str]] = {}
@@ -64,6 +68,19 @@ def _map_tobacco_to_smoking(raw: Any) -> Optional[str]:
     if s in ("no", "never", "nonsmoker", "non-smoker", "n", "false", "0"):
         return "nonsmoker"
     return s or None
+
+
+def _age_from_dob(value: Any) -> Optional[int]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        dob = datetime.fromisoformat(text[:10]).date()
+    except (TypeError, ValueError):
+        return None
+    today = datetime.now(timezone.utc).date()
+    age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    return age if age >= 0 else None
 
 
 def _coalesce_int(*candidates: Any, default: int) -> int:
@@ -107,12 +124,23 @@ def extract_application_pricing_inputs(payload: Dict[str, Any]) -> Dict[str, Any
         or personal.get("ethnicity")
         or questionnaire.get("ethnicity")
     )
-    age = _coalesce_int(
-        payload.get("age"),
-        payload.get("customer_age"),
-        personal.get("age"),
-        default=30,
+    age_present = any(
+        raw is not None and not (isinstance(raw, str) and not str(raw).strip())
+        for raw in (payload.get("age"), payload.get("customer_age"), personal.get("age"))
     )
+    if age_present:
+        age = _coalesce_int(
+            payload.get("age"),
+            payload.get("customer_age"),
+            personal.get("age"),
+            default=30,
+        )
+    else:
+        age = _age_from_dob(
+            payload.get("customer_dob") or payload.get("dob") or personal.get("dob")
+        )
+        if age is None:
+            age = 30
     term = _coalesce_int(
         payload.get("term_years"),
         payload.get("coverage_years"),
@@ -204,6 +232,19 @@ def is_kernel_billing_enabled() -> bool:
     return False
 
 
+def should_use_kernel_billing(policy_data: Optional[Dict[str, Any]] = None) -> bool:
+    """True when this payload should be billed from the actuarial kernel.
+
+    Global flag still wins. Classic ``apply.html`` sends
+    ``application_channel=classic`` so its quote and create use kernel
+    prices. Chat (``application_channel=chat``) stays on the flag-gated path.
+    """
+    if is_kernel_billing_enabled():
+        return True
+    channel = str((policy_data or {}).get("application_channel") or "").strip().lower()
+    return channel in CLASSIC_APPLY_CHANNELS
+
+
 def price_application_with_kernel(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Price a new application via the actuarial kernel + persisted pricing params.
 
@@ -230,19 +271,18 @@ def price_application_with_kernel(payload: Dict[str, Any]) -> Optional[Dict[str,
         from services.pricing_kernel import SavingsFormula
 
         store = get_actuarial_store()
-        # Pure-risk default for new applications (savings is an optional add-on).
-        savings_rate = float(
-            payload.get("savings_rate")
-            or (payload.get("phins_allocation") or {}).get("savings_pct")
-            or 0.0
-        )
-        # phins_allocation.savings_pct is often 0-100; normalize when > 1.
+        # Explicit savings_rate (including 0) is the actuarial add-on.
+        # phins_allocation.savings_pct is portfolio routing and must not
+        # be treated as a risk-premium markup.
+        if "savings_rate" in payload:
+            try:
+                savings_rate = float(payload.get("savings_rate") or 0.0)
+            except (TypeError, ValueError):
+                savings_rate = 0.0
+        else:
+            savings_rate = 0.0
         if savings_rate > 1.0:
             savings_rate = savings_rate / 100.0
-        # Application savings allocation is portfolio routing, not risk markup —
-        # price base risk cover at savings_rate=0 unless explicitly requested.
-        if "savings_rate" not in payload:
-            savings_rate = 0.0
         savings_rate = max(0.0, min(2.0, savings_rate))
 
         # Savings add-ons are priced the way the actuary dashboard prices them:
@@ -356,6 +396,9 @@ def price_application_with_kernel(payload: Dict[str, Any]) -> Optional[Dict[str,
             "ethnicity_used": components.ethnicity_used,
             "life_sum_used": components.life_sum_used,
             "disability_sum_used": components.disability_sum_used,
+            "adl_mortality_multiplier": components.adl_mortality_multiplier,
+            "adl_disability_multiplier": components.adl_disability_multiplier,
+            "benefit_pct_used": getattr(components, "benefit_pct_used", None),
             "components": components.as_dict(),
         }
     except Exception as exc:

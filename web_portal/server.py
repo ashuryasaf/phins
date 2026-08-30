@@ -2096,6 +2096,9 @@ DESIGN_SETTINGS: Dict[str, Any] = {
     'hero_background_id': '',
     'video_poster_id': '',
     'promo_banner_id': '',
+    'apply_disclosure_video_id': '',
+    'apply_disclosure_control_video_id': '',
+    'apply_disclosure_version_label': 'light',
     'updated_at': None,
     'updated_by': None
 }
@@ -2342,6 +2345,16 @@ def get_media_asset_playback_url(asset_id: str) -> str:
     if not asset:
         return ''
     return media_asset_url(asset)
+
+
+def normalize_apply_disclosure_version_label(value: Any, default: str = 'light') -> str:
+    """Keep the apply-form disclosure version label short and display-safe."""
+    label = str(value or '').strip().lower()
+    if not label:
+        return default
+    cleaned = ''.join(ch if (ch.isalnum() or ch in ('-', '_', ' ')) else '' for ch in label)
+    cleaned = ' '.join(cleaned.split())[:32]
+    return cleaned or default
 
 
 def ensure_media_storage_dir() -> None:
@@ -13406,7 +13419,8 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
 
     Prefer the actuarial pricing kernel (persisted Pricing Parameters +
     application demographics: smoking / sex / ethnicity / age / term) for
-    life / health / phins_unified when kernel billing is enabled.
+    life / health / phins_unified when kernel billing is enabled or the
+    payload is a classic ``apply.html`` submission.
 
     Fail-open fallback (also used under PHINS_TEST_MODE by default):
     - Base rate: $0.25 per $1,000 coverage per month
@@ -13415,12 +13429,12 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
     """
     try:
         from services.pricing_shadow_service import (
-            is_kernel_billing_enabled,
             map_policy_type_to_product,
             price_application_with_kernel,
+            should_use_kernel_billing,
         )
         if (
-            is_kernel_billing_enabled()
+            should_use_kernel_billing(policy_data)
             and map_policy_type_to_product(policy_data.get('type') or '')
         ):
             kernel = price_application_with_kernel(policy_data)
@@ -13439,6 +13453,18 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
                     'smoking_status_used': kernel.get('smoking_status_used'),
                     'gender_used': kernel.get('gender_used'),
                     'ethnicity_used': kernel.get('ethnicity_used'),
+                    'risk_premium_annual': kernel.get('risk_premium_annual'),
+                    'mortality_premium_annual': kernel.get('mortality_premium_annual'),
+                    'disability_premium_annual': kernel.get('disability_premium_annual'),
+                    'savings_premium_annual': kernel.get('savings_premium_annual'),
+                    'savings_rate_used': kernel.get('savings_rate_used'),
+                    'savings_formula': kernel.get('savings_formula'),
+                    'adl_level': kernel.get('adl_level'),
+                    'adl_loading': kernel.get('adl_loading'),
+                    'underwriting_loading': kernel.get('underwriting_loading'),
+                    'adl_mortality_multiplier': kernel.get('adl_mortality_multiplier'),
+                    'adl_disability_multiplier': kernel.get('adl_disability_multiplier'),
+                    'eligible': kernel.get('eligible'),
                 }
     except Exception as _kern_err:
         print(f"Kernel premium fallback to flat: {_kern_err}")
@@ -16194,6 +16220,9 @@ For claims or questions, please contact:
                     media = MEDIA_ASSETS[promo_banner_id]
                     promo_banner_url = media.get('url') or media.get('data', '')
 
+                apply_disclosure_video_id = DESIGN_SETTINGS.get('apply_disclosure_video_id', '')
+                apply_disclosure_video_url = get_media_asset_playback_url(apply_disclosure_video_id)
+
                 show_video = DESIGN_SETTINGS.get('show_video', True)
                 public_settings = {
                     'video_url': hero_video_url if show_video else '',
@@ -16207,6 +16236,10 @@ For claims or questions, please contact:
                     'accent_color': DESIGN_SETTINGS.get('accent_color', '#ff6b35'),
                     'hero_background_url': hero_background_url,
                     'promo_banner_url': promo_banner_url,
+                    'apply_disclosure_video_url': apply_disclosure_video_url,
+                    'apply_disclosure_version_label': normalize_apply_disclosure_version_label(
+                        DESIGN_SETTINGS.get('apply_disclosure_version_label', 'light')
+                    ),
                 }
                 self.wfile.write(json.dumps(public_settings).encode('utf-8'))
             return
@@ -31548,7 +31581,10 @@ For claims or questions, please contact:
             try:
                 data = json.loads(body)
 
-                asset_ref_keys = ['hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id']
+                asset_ref_keys = [
+                    'hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id',
+                    'apply_disclosure_video_id', 'apply_disclosure_control_video_id',
+                ]
                 invalid_refs = []
                 for ref_key in asset_ref_keys:
                     if ref_key not in data:
@@ -31566,9 +31602,17 @@ For claims or questions, please contact:
 
                 for key in ['video_url', 'video_poster', 'tagline', 'primary_color', 'accent_color',
                            'show_video', 'show_contact', 'show_quote_form', 'show_products', 'show_underwriting',
-                           'hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id']:
+                           'hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id',
+                           'apply_disclosure_video_id', 'apply_disclosure_control_video_id']:
                     if key in data:
                         DESIGN_SETTINGS[key] = data[key]
+                if 'apply_disclosure_version_label' in data:
+                    DESIGN_SETTINGS['apply_disclosure_version_label'] = (
+                        normalize_apply_disclosure_version_label(
+                            data.get('apply_disclosure_version_label'),
+                            default=str(DESIGN_SETTINGS.get('apply_disclosure_version_label') or 'light'),
+                        )
+                    )
 
                 # Data integrity: when admin assigns a media asset to the
                 # landing page (hero video / video poster) via /admin-media.html
@@ -42324,11 +42368,66 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
 
+        # Classic apply.html actuarial quote (same kernel as create when
+        # application_channel is classic). Chat uses /api/chat-application.
+        if path == '/api/policies/quote':
+            try:
+                data = json.loads(body or '{}')
+            except Exception:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            coverage_amount = data.get('coverage_amount', 0)
+            if coverage_amount and not validate_amount(coverage_amount):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid coverage amount'}).encode('utf-8'))
+                return
+            data = dict(data)
+            data['type'] = data.get('type') or 'phins_unified'
+            data['application_channel'] = 'classic'
+            premium_data = calculate_premium(data)
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(premium_data, default=str).encode('utf-8'))
+            return
+
         # Create Policy Endpoint
         if path == '/api/policies/create':
             try:
                 data = json.loads(body)
-                
+
+                # Billing path is decided server-side by the entry point, not by
+                # a caller-supplied field. /api/policies/create is the classic
+                # apply.html endpoint, so classic / web / unknown submissions
+                # always price from the actuarial kernel. Forcing the channel
+                # here mirrors /api/policies/quote and prevents a caller from
+                # flipping the kernel/flat pricing decision in
+                # should_use_kernel_billing() by posting 'web' / an unknown
+                # application_channel.
+                #
+                # Chat finalize loops back through this same route (see
+                # web_portal/api_chat_application._loopback_policy_create) with
+                # application_channel='chat'. That is a direct 127.0.0.1 request
+                # with a dedicated User-Agent and no edge forwarding headers, so
+                # only that internal loopback is trusted to keep 'chat' (which
+                # opts out of kernel billing and defers login provisioning).
+                # A caller-supplied 'chat' from the open internet would let
+                # anyone price from the cheaper flat formula and skip portal
+                # account minting, so every public submission is pinned to
+                # 'classic'.
+                _create_client_ip = (self.client_address[0] if self.client_address else '') or ''
+                _create_user_agent = self.headers.get('User-Agent', '') if self.headers else ''
+                _create_has_forward_headers = bool(self.headers and (
+                    self.headers.get('X-Forwarded-For')
+                    or self.headers.get('X-Real-IP')))
+                internal_chat_loopback = (
+                    _create_client_ip in ('127.0.0.1', '::1', '::ffff:127.0.0.1')
+                    and _create_user_agent == 'phins-chat-application/1.0'
+                    and not _create_has_forward_headers
+                )
+                if not internal_chat_loopback or \
+                        str(data.get('application_channel') or '').strip().lower() != 'chat':
+                    data['application_channel'] = 'classic'
+
                 # Validate and sanitize inputs
                 customer_name = sanitize_input(data.get('customer_name', ''), 100)
                 customer_email = sanitize_input(data.get('customer_email', ''), 254)
@@ -53540,7 +53639,10 @@ For claims or questions, please contact:
                     for jid in orphaned_job_ids:
                         MEDIA_PROCESSING_JOBS.pop(jid, None)
 
-                    for key in ['hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id']:
+                    for key in [
+                        'hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id',
+                        'apply_disclosure_video_id', 'apply_disclosure_control_video_id',
+                    ]:
                         if DESIGN_SETTINGS.get(key) == asset_id:
                             DESIGN_SETTINGS[key] = ''
                             if key == 'hero_video_id':
