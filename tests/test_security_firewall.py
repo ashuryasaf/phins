@@ -90,6 +90,20 @@ class TestFileScanner:
         assert v.safe is False
         assert any("file_too_large" in t for t in v.threats)
 
+    def test_scan_file_path_allows_media_over_default_ten_mb(self, tmp_path):
+        from security.file_scanner import MAX_UPLOAD_SIZE, scan_file_path
+        path = tmp_path / "disclosure.mp4"
+        path.write_bytes(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * (MAX_UPLOAD_SIZE + 2048))
+        blocked = scan_file_path(str(path), filename="disclosure.mp4", declared_content_type="video/mp4")
+        assert blocked.safe is False
+        allowed = scan_file_path(
+            str(path),
+            filename="disclosure.mp4",
+            declared_content_type="video/mp4",
+            max_size=2 * 1024 * 1024 * 1024,
+        )
+        assert allowed.safe is True
+
     def test_empty_file_blocked(self):
         from security.file_scanner import scan_file_bytes
         v = scan_file_bytes(b"", filename="empty.txt")

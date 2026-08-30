@@ -1598,6 +1598,61 @@ def test_multipart_media_upload_stores_file_on_disk():
         srv.stop()
 
 
+def test_multipart_media_upload_accepts_video_over_ten_mb():
+    """Apply disclosure cuts are 10+ minutes; the 10MB scanner cap must not reject them."""
+    import os
+    from security.file_scanner import MAX_UPLOAD_SIZE
+
+    port = 8319
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+    token = "phins_test_large_mp4_upload"
+    _inject_session(token, "mp_admin", "admin")
+
+    try:
+        video_bytes = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * (MAX_UPLOAD_SIZE + 4096)
+        body = BytesIO()
+        body.write(b"------TestBoundaryLarge\r\n")
+        body.write(b'Content-Disposition: form-data; name="file"; filename="disclosure-14min.mp4"\r\n')
+        body.write(b"Content-Type: video/mp4\r\n\r\n")
+        body.write(video_bytes)
+        body.write(b"\r\n------TestBoundaryLarge\r\n")
+        body.write(b'Content-Disposition: form-data; name="name"\r\n\r\n')
+        body.write(b"disclosure-14min.mp4")
+        body.write(b"\r\n------TestBoundaryLarge\r\n")
+        body.write(b'Content-Disposition: form-data; name="type"\r\n\r\n')
+        body.write(b"video")
+        body.write(b"\r\n------TestBoundaryLarge--\r\n")
+        body_data = body.getvalue()
+
+        req = Request(
+            base + "/api/media/upload",
+            data=body_data,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "multipart/form-data; boundary=----TestBoundaryLarge",
+            },
+            method="POST",
+        )
+        with urlopen(req, timeout=60) as resp:
+            status = resp.status
+            result = json.loads(resp.read().decode("utf-8"))
+
+        assert status == 201, f"Expected 201, got {status}: {result}"
+        asset = result["asset"]
+        assert asset["name"] == "disclosure-14min.mp4"
+        assert asset["size"] == len(video_bytes)
+        raw = portal.MEDIA_ASSETS[asset["id"]]
+        assert os.path.isfile(raw["file_path"])
+        assert os.path.getsize(raw["file_path"]) == len(video_bytes)
+        _json_request(base + f"/api/media/{asset['id']}", method="DELETE", token=token)
+    finally:
+        srv.stop()
+
+
 def test_media_upload_route_exempt_from_default_request_size_limit():
     """The media upload paths should use MAX_MEDIA_UPLOAD_SIZE when set,
     not the default MAX_REQUEST_SIZE."""

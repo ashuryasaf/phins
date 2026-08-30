@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 __all__ = [
     "ScanVerdict",
     "scan_file_bytes",
+    "scan_file_path",
     "scan_base64_payload",
     "sanitize_filename",
     "is_allowed_extension",
@@ -255,6 +256,60 @@ def scan_file_bytes(
         )
 
     return verdict
+
+
+def scan_file_path(
+    path: str,
+    *,
+    filename: str = "",
+    declared_content_type: str = "",
+    max_size: int = 0,
+) -> ScanVerdict:
+    """Scan a file on disk without loading the whole payload into memory.
+
+    Used for Admin Media video uploads (a 14-minute MP4 is far larger than
+    the 10MB default ``PHINS_MAX_UPLOAD_BYTES`` cap). Size is checked from
+    ``os.path.getsize``; content heuristics run on the first 32KB plus the
+    last 4KB.
+    """
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return ScanVerdict(
+            safe=False,
+            threats=("unreadable_file",),
+            filename_sanitized=sanitize_filename(filename) if filename else "",
+        )
+
+    head_len = min(size, 32768)
+    tail_len = min(4096, max(0, size - head_len))
+    with open(path, "rb") as fh:
+        head = fh.read(head_len)
+        tail = b""
+        if tail_len:
+            fh.seek(-tail_len, os.SEEK_END)
+            tail = fh.read(tail_len)
+
+    window = head + tail
+    verdict = scan_file_bytes(
+        window if window else b"",
+        filename=filename or os.path.basename(path),
+        declared_content_type=declared_content_type,
+        max_size=max(size, 1) if size > 0 else 0,
+    )
+    threats = [t for t in verdict.threats if not t.startswith("file_too_large")]
+    effective_max = max_size if max_size > 0 else MAX_UPLOAD_SIZE
+    if size > effective_max:
+        threats.append(f"file_too_large ({size} > {effective_max})")
+    if size == 0 and "empty_file" not in threats:
+        threats.append("empty_file")
+    return ScanVerdict(
+        safe=len(threats) == 0,
+        threats=tuple(threats),
+        file_hash=verdict.file_hash,
+        detected_type=verdict.detected_type,
+        filename_sanitized=verdict.filename_sanitized,
+    )
 
 
 def scan_base64_payload(
