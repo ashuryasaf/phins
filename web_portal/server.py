@@ -42402,12 +42402,30 @@ For claims or questions, please contact:
                 # here mirrors /api/policies/quote and prevents a caller from
                 # flipping the kernel/flat pricing decision in
                 # should_use_kernel_billing() by posting 'web' / an unknown
-                # application_channel. Chat finalize loops back through this same
-                # route (see web_portal/api_chat_application) with
-                # application_channel='chat'; leave that value intact so chat
-                # still defers login provisioning, is stored as chat, and stays
-                # flag-gated in should_use_kernel_billing().
-                if str(data.get('application_channel') or '').strip().lower() != 'chat':
+                # application_channel.
+                #
+                # Chat finalize loops back through this same route (see
+                # web_portal/api_chat_application._loopback_policy_create) with
+                # application_channel='chat'. That is a direct 127.0.0.1 request
+                # with a dedicated User-Agent and no edge forwarding headers, so
+                # only that internal loopback is trusted to keep 'chat' (which
+                # opts out of kernel billing and defers login provisioning).
+                # A caller-supplied 'chat' from the open internet would let
+                # anyone price from the cheaper flat formula and skip portal
+                # account minting, so every public submission is pinned to
+                # 'classic'.
+                _create_client_ip = (self.client_address[0] if self.client_address else '') or ''
+                _create_user_agent = self.headers.get('User-Agent', '') if self.headers else ''
+                _create_has_forward_headers = bool(self.headers and (
+                    self.headers.get('X-Forwarded-For')
+                    or self.headers.get('X-Real-IP')))
+                internal_chat_loopback = (
+                    _create_client_ip in ('127.0.0.1', '::1', '::ffff:127.0.0.1')
+                    and _create_user_agent == 'phins-chat-application/1.0'
+                    and not _create_has_forward_headers
+                )
+                if not internal_chat_loopback or \
+                        str(data.get('application_channel') or '').strip().lower() != 'chat':
                     data['application_channel'] = 'classic'
 
                 # Validate and sanitize inputs
