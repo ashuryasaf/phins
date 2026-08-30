@@ -42394,7 +42394,17 @@ For claims or questions, please contact:
         if path == '/api/policies/create':
             try:
                 data = json.loads(body)
-                
+
+                # Billing path is decided server-side by the entry point, not by
+                # a caller-supplied field. /api/policies/create is the classic
+                # apply.html endpoint (chat submissions are minted through the
+                # separate underwriting-approval path), so it always prices from
+                # the actuarial kernel. Forcing the channel here mirrors
+                # /api/policies/quote and prevents a caller from flipping the
+                # kernel/flat pricing decision in should_use_kernel_billing() by
+                # posting 'chat' / 'web' / an unknown application_channel.
+                data['application_channel'] = 'classic'
+
                 # Validate and sanitize inputs
                 customer_name = sanitize_input(data.get('customer_name', ''), 100)
                 customer_email = sanitize_input(data.get('customer_email', ''), 254)

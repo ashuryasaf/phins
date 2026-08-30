@@ -159,6 +159,24 @@ def test_quote_uses_adl_one_and_returns_live_store_multipliers():
     )
 
 
+def test_public_create_forces_classic_billing_channel():
+    # A caller cannot post application_channel=chat (or 'web'/unknown) to
+    # /api/policies/create to flip off the kernel path; the endpoint fixes the
+    # billing channel server-side, so the issued premium is the kernel amount.
+    status, created = _post("/api/policies/create", {
+        **CLASSIC_PAYLOAD,
+        "application_channel": "chat",
+        "customer_name": "Jordan Hale",
+        "customer_email": "apply-kernel-channel@example.com",
+    })
+    assert status in (200, 201)
+    policy = created["policy"]
+    assert policy["pricing_source"] == "pricing_kernel"
+    quote_status, quote = _post("/api/policies/quote", CLASSIC_PAYLOAD)
+    assert quote_status == 200
+    assert policy["monthly_premium"] == pytest.approx(quote["monthly"])
+
+
 def test_live_actuary_store_edits_change_classic_quote():
     from services.actuarial_service import get_actuarial_store
 
