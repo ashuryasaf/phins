@@ -8,17 +8,17 @@ override this document.
 
 PHINS is a Python platform built around:
 
-- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~50k lines)
-- optional extension routing in `web_portal/api_extensions.py` (~3450 lines)
+- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~56k lines)
+- optional extension routing in `web_portal/api_extensions.py` (~3650 lines)
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`, `api_agent_ecosystem.py`,
-  `api_assessment_center.py`)
-- service-layer logic in `services/` (97 modules)
+  `api_assessment_center.py`, `api_chat_application.py`)
+- service-layer logic in `services/` (98 modules)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (178 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (192 files) and root-level `test_*.py` (11 files)
 - an async document intelligence pipeline: uploads can enqueue enrichment
  (`PHINS_DOC_ASYNC=true`) into `document_processing_jobs`, drained by
  `services/document_job_worker.py` (retries, dead-letter, idempotency keys);
@@ -50,6 +50,7 @@ Preferred file-by-task:
 | Delivery/bidding API | `web_portal/api_delivery_bidding.py`, `services/delivery_bidding_service.py` |
 | Agent ecosystem API | `web_portal/api_agent_ecosystem.py`, `services/agent_ecosystem_service.py` |
 | Assessment center API | `web_portal/api_assessment_center.py`, `services/assessment_center_service.py` |
+| Chat application ("Phin") API | `web_portal/api_chat_application.py`, `services/chat_application_service.py` |
 | Business rule/workflow | `services/`, then the route or engine that calls it |
 | Database/schema/repository | `database/models.py`, `database/manager.py`, `database/repositories/`, `database/config.py` |
 | Billing/accounting behavior | `billing_engine.py`, `accounting_engine.py`, related tests |
@@ -81,16 +82,19 @@ Preferred file-by-task:
 |  |- api_delivery_bidding.py
 |  |- api_agent_ecosystem.py
 |  |- api_assessment_center.py
+|  |- api_chat_application.py          # chat "Phin" new-policy flow dispatchers
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
 |                                        # (includes `static/locales/he.json` Hebrew i18n)
 |- prompts/                             # versioned LLM prompt templates
 |  `- assessment/                       # narrative/onboarding/service/termination v1
-|- services/                            # 97 service modules
+|- services/                            # 98 service modules
 |  |- document_job_worker.py            # async doc queue worker (retry/DLQ)
 |  |- llm_providers.py                  # vendor-neutral LLM + schema validation
 |  |- transcription_providers.py        # audio speech-to-text abstraction
-|  `- ai_usage_service.py               # AI/parse cost metering
+|  |- ai_usage_service.py               # AI/parse cost metering
+|  |- chat_application_service.py       # conversational apply state machine
+|  `- assessment_record_service.py      # durable score → decision records
 |- database/
 |  |- config.py
 |  |- manager.py
@@ -101,7 +105,7 @@ Preferred file-by-task:
 |  |- seeds.py
 |  |- migrate_data.py
 |  |- migrations/
-|  |- repositories/                     # 18 *_repository.py + base.py
+|  |- repositories/                     # 18 *_repository.py + base.py + __init__.py
 |- security/
 |  |- vault.py
 |  |- auth_tokens.py
@@ -118,7 +122,7 @@ Preferred file-by-task:
 |  `- runner.py
 |- scripts/                             # operational utilities
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/worker/db-init)
-|- tests/                               # 178 test files
+|- tests/                               # 192 test files
 |- docs/
 |  |- platform_data_architecture.md
 |  |- health_marketplace_architecture.md
@@ -186,6 +190,8 @@ Database patterns:
   `remittances`, `payer_receivables`, `idempotency`, `outbox`
 - Agent ecosystem: `agents`, `agent_invitations`, `agent_affiliations`,
   `agent_commissions`
+- Assessment / cost / intake: `assessment_records`, `ai_usage`,
+  `business_inquiries`
 
 Common ID prefixes:
 
@@ -201,6 +207,9 @@ Common ID prefixes:
 - Credit: `CREDIT`
 - Agent: `AGT` (invitation `AGI`, affiliation `AFF`, commission `COMM`,
   agent ledger `AGLEDGER`)
+- Chat application turn: `CHAT` (e.g. `CHAT-<session_id>-<seq>`)
+- Assessment record: `ASMT`
+- AI usage row: `AIUSE`
 
 ## 5) API Task Playbook
 
@@ -210,7 +219,8 @@ When changing or adding an API endpoint:
 2. Check whether the endpoint belongs in `server.py`,
    `web_portal/api_extensions.py`, `web_portal/api_bi_analytics.py`,
    `web_portal/api_delivery_bidding.py`, `web_portal/api_agent_ecosystem.py`,
-   or `web_portal/api_assessment_center.py`.
+   `web_portal/api_assessment_center.py`, or
+   `web_portal/api_chat_application.py`.
 3. Verify the extension is actually wired; `server.py` imports extension
    dispatchers conditionally and can run without them.
 4. Reuse service-layer logic from `services/` instead of embedding new business
@@ -229,6 +239,12 @@ Watch-outs:
 - `api_extensions.py` covers foundations, OTP/CAPTCHA, contribution payments,
   community messaging, wallet, admin foundation routes, backup/persistence,
   invitation handling, and media/video processing jobs and webhooks.
+- `api_chat_application.py` owns `/api/chat-application/*` (the conversational
+  "Phin" new-policy flow). It reuses OTP + demo-exposure helpers from
+  `api_extensions.py` and calls the classic `POST /api/policies/create` via
+  an internal loopback so underwriting, billing, wallet, and pipeline behavior
+  stay identical to the classic apply form. Only that internal loopback may
+  set `application_channel=chat`.
 
 ## 6) Database Task Playbook
 
@@ -249,8 +265,8 @@ When changing persistence or schema behavior:
 Key facts:
 
 - Storage modes include in-memory, SQLite, and PostgreSQL.
-- `DatabaseManager` exposes 37 repository properties (see §4 for the full list).
-- Repository modules (15 `*_repository.py` + `base.py`):
+- `DatabaseManager` exposes 40 repository properties (see §4 for the full list).
+- Repository modules (18 `*_repository.py` + `base.py`):
   `customer_repository.py`, `policy_repository.py`, `claim_repository.py`,
   `underwriting_repository.py`, `billing_repository.py`,
   `user_repository.py`, `session_repository.py`, `audit_repository.py`,
@@ -260,8 +276,10 @@ Key facts:
   ledger repositories), `marketplace_repository.py` (bundles wallet,
   payment-intent, refund, journal, settlement, external-payer,
   marketplace-claim, remittance, receivable, idempotency, and outbox
-  repositories), and `agent_repository.py` (bundles agent, agent-invitation,
-  agent-affiliation, and agent-commission repositories).
+  repositories), `agent_repository.py` (bundles agent, agent-invitation,
+  agent-affiliation, and agent-commission repositories),
+  `assessment_record_repository.py`, `business_inquiry_repository.py`, and
+  `ai_usage_repository.py`.
 - Connection handling includes recovery logic; avoid bypassing existing session
   patterns without a clear reason.
 
@@ -319,7 +337,8 @@ Environment variables commonly used:
  `PHINS_AI_REVIEW_THRESHOLD`
 - **AI cost prices:** `PHINS_AI_PRICE_INPUT_PER_MTOK`,
  `PHINS_AI_PRICE_OUTPUT_PER_MTOK`, `PHINS_AI_PRICE_PARSE_PER_PAGE`,
- `PHINS_AI_PRICE_TRANSCRIPTION_PER_MIN`
+ `PHINS_AI_PRICE_TRANSCRIPTION_PER_MIN`, `PHINS_AI_USAGE_RING_LIMIT`
+ (in-memory usage ring size fallback)
 - **Auto-pay:** `PHINS_DEFAULT_AUTO_PAY_CARD_NUMBER`,
   `MONTHLY_AUTO_PAY_COMMAND_TOKEN`
 - **Security:** `SESSION_SECRET_KEY`, `PHINS_ENCRYPTION_KEY`,
@@ -373,7 +392,7 @@ Important test harness facts:
 - Tests reset in-memory portal state between cases (clears `POLICIES`,
   `CLAIMS`, `CUSTOMERS`, `SESSIONS`, `BILLING`, etc.)
 - Options wheel service and document processing service are also reset per test
-- 178 test files under `tests/`, 11 root-level `test_*.py` files
+- 192 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -447,4 +466,4 @@ If you update this file again:
 
 ---
 
-Last updated: August 18, 2026
+Last updated: August 31, 2026
