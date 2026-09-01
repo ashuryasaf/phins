@@ -167,6 +167,8 @@ class OTPVerification:
     # or 'both' (email+SMS). Phone-backed channels require ``phone``.
     delivery_channel: str = 'email'
     phone: Optional[str] = None
+    # Infobip 2FA PIN id when SMS was sent via POST /2fa/2/pin.
+    external_pin_id: Optional[str] = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc) + timedelta(minutes=5))
     verified_at: Optional[datetime] = None
@@ -776,6 +778,23 @@ class OTPSecurityService:
             }
         )
 
+    def attach_external_pin(self, verification_id: str, pin_id: str) -> bool:
+        """Bind an Infobip 2FA pinId so verify_otp checks Infobip, not the local hash."""
+        pin_id = str(pin_id or "").strip()
+        if not verification_id or not pin_id:
+            return False
+        with self._lock:
+            verification = self._verifications.get(verification_id)
+            if not verification:
+                return False
+            verification.external_pin_id = pin_id
+            return True
+
+    def has_external_pin(self, verification_id: str) -> bool:
+        with self._lock:
+            verification = self._verifications.get(verification_id)
+            return bool(verification and verification.external_pin_id)
+
     def resend_otp(
         self,
         verification_id: str,
@@ -823,6 +842,7 @@ class OTPSecurityService:
             salt = generate_salt()
             verification.otp_salt = salt
             verification.otp_hash = hash_otp(otp_code, salt)
+            verification.external_pin_id = None
             verification.status = VerificationStatus.PENDING
             verification.attempts = 0
             verification.created_at = now
@@ -909,26 +929,59 @@ class OTPSecurityService:
                 message="Maximum verification attempts exceeded"
             )
         
-        # Verify code (timing-safe comparison)
-        code_hash = hash_otp(otp_code, verification.otp_salt)
-        if not hmac.compare_digest(code_hash, verification.otp_hash):
-            remaining = verification.max_attempts - verification.attempts
-            self._log_audit(
-                action="otp_failed",
-                user_type=verification.user_type,
-                user_id=verification.user_id,
-                ip_address=ip_address,
-                details={
-                    "verification_id": verification_id,
-                    "attempts_remaining": remaining
-                },
-                success=False
-            )
-            return SecurityResult(
-                success=False,
-                error_code="INVALID_OTP",
-                message=f"Invalid OTP code. {remaining} attempts remaining."
-            )
+        # Infobip 2FA generates the PIN. When a pinId is attached, Infobip
+        # is the source of truth — the locally hashed code was never sent.
+        if verification.external_pin_id:
+            try:
+                from services.infobip_2fa_service import verify_2fa_pin
+                external_ok, external_error, _details = verify_2fa_pin(
+                    verification.external_pin_id, otp_code
+                )
+            except Exception as exc:  # pragma: no cover - fail closed
+                logger.error("Infobip 2FA verify failed: %s", exc)
+                external_ok, external_error = False, str(exc)
+            if not external_ok:
+                remaining = verification.max_attempts - verification.attempts
+                self._log_audit(
+                    action="otp_failed",
+                    user_type=verification.user_type,
+                    user_id=verification.user_id,
+                    ip_address=ip_address,
+                    details={
+                        "verification_id": verification_id,
+                        "attempts_remaining": remaining,
+                        "external_2fa": True,
+                    },
+                    success=False
+                )
+                return SecurityResult(
+                    success=False,
+                    error_code="INVALID_OTP",
+                    message=external_error or (
+                        f"Invalid OTP code. {remaining} attempts remaining."
+                    )
+                )
+        else:
+            # Verify code (timing-safe comparison)
+            code_hash = hash_otp(otp_code, verification.otp_salt)
+            if not hmac.compare_digest(code_hash, verification.otp_hash):
+                remaining = verification.max_attempts - verification.attempts
+                self._log_audit(
+                    action="otp_failed",
+                    user_type=verification.user_type,
+                    user_id=verification.user_id,
+                    ip_address=ip_address,
+                    details={
+                        "verification_id": verification_id,
+                        "attempts_remaining": remaining
+                    },
+                    success=False
+                )
+                return SecurityResult(
+                    success=False,
+                    error_code="INVALID_OTP",
+                    message=f"Invalid OTP code. {remaining} attempts remaining."
+                )
         
         # Success
         verification.status = VerificationStatus.VERIFIED
