@@ -117,6 +117,8 @@ def test_infobip_sms_send_builds_correct_request(infobip_env):
     def fake_urlopen(req, timeout=30, allowed_schemes=("https",)):
         captured["url"] = req.full_url
         captured["auth"] = req.get_header("Authorization")
+        captured["content_type"] = req.get_header("Content-type")
+        captured["accept"] = req.get_header("Accept")
         captured["payload"] = json.loads(req.data.decode("utf-8"))
         return _FakeResponse(200, {"messages": [{
             "messageId": "ib-sms-1", "status": {"groupName": "PENDING"}}]})
@@ -127,12 +129,61 @@ def test_infobip_sms_send_builds_correct_request(infobip_env):
 
     assert ok is True and error is None
     assert message_id == "ib-sms-1"
-    assert captured["url"] == f"{BASE_URL}/sms/2/text/advanced"
+    assert captured["url"] == f"{BASE_URL}/sms/3/messages"
     assert captured["auth"] == f"App {API_KEY}"
+    assert captured["content_type"] == "application/json"
+    assert captured["accept"] == "application/json"
     msg = captured["payload"]["messages"][0]
-    assert msg["from"] == "PHINS"
+    assert msg["sender"] == "PHINS"
     assert msg["destinations"] == [{"to": "15550100"}]
-    assert msg["text"] == "PHINS code: 123456"
+    assert msg["content"] == {"text": "PHINS code: 123456"}
+    assert "from" not in msg
+    assert "text" not in msg
+
+
+def test_infobip_sms_defaults_to_servicesms_sender(infobip_env):
+    captured = {}
+
+    def fake_urlopen(req, timeout=30, allowed_schemes=("https",)):
+        captured["payload"] = json.loads(req.data.decode("utf-8"))
+        return _FakeResponse(200, {"messages": [{
+            "messageId": "ib-sms-default", "status": {"groupName": "PENDING"}}]})
+
+    with patch.object(ns, "validated_urlopen", side_effect=fake_urlopen):
+        ok, _, error = ns.InfobipSMSProvider().send(
+            to="972500000000", message="first message")
+
+    assert ok is True and error is None
+    msg = captured["payload"]["messages"][0]
+    assert msg["sender"] == "ServiceSMS"
+    assert msg["destinations"] == [{"to": "972500000000"}]
+    assert msg["content"]["text"] == "first message"
+
+
+def test_infobip_sms_legacy_v2_path_keeps_old_payload(infobip_env):
+    infobip_env.setenv("INFOBIP_SMS_SEND_PATH", "/sms/2/text/advanced")
+    infobip_env.setenv("INFOBIP_SMS_SENDER", "InfoSMS")
+    captured = {}
+
+    def fake_urlopen(req, timeout=30, allowed_schemes=("https",)):
+        captured["url"] = req.full_url
+        captured["payload"] = json.loads(req.data.decode("utf-8"))
+        return _FakeResponse(200, {"messages": [{
+            "messageId": "ib-sms-v2", "status": {"groupName": "PENDING"}}]})
+
+    with patch.object(ns, "validated_urlopen", side_effect=fake_urlopen):
+        ok, message_id, error = ns.InfobipSMSProvider().send(
+            to="+15550100", message="legacy path")
+
+    assert ok is True and error is None
+    assert message_id == "ib-sms-v2"
+    assert captured["url"] == f"{BASE_URL}/sms/2/text/advanced"
+    msg = captured["payload"]["messages"][0]
+    assert msg["from"] == "InfoSMS"
+    assert msg["destinations"] == [{"to": "15550100"}]
+    assert msg["text"] == "legacy path"
+    assert "sender" not in msg
+    assert "content" not in msg
 
 
 def test_infobip_sms_strips_plus_and_punctuation(infobip_env):
@@ -198,7 +249,7 @@ def test_diagnostics_include_infobip(infobip_env):
     diagnostics = ns.get_notification_provider_diagnostics()
     assert diagnostics["email"]["providers"]["infobip"]["configured"] is True
     assert diagnostics["sms"]["providers"]["infobip"]["configured"] is True
-    assert diagnostics["sms"]["providers"]["infobip"]["sender"] == "InfoSMS"
+    assert diagnostics["sms"]["providers"]["infobip"]["sender"] == "ServiceSMS"
 
 
 if __name__ == "__main__":

@@ -1121,15 +1121,15 @@ class ChatPolicyApplicationService:
                     _i18n_msg(
                         session, "otp_challenge",
                         "Perfect. To protect your data I'll send a 6-digit verification "
-                        f"code to {masked_email} or WhatsApp {masked_phone}. "
-                        "Choose Email or WhatsApp below, then type the code when it arrives.",
+                        f"code to {masked_email}, SMS {masked_phone}, or WhatsApp {masked_phone}. "
+                        "Choose Email, SMS, or WhatsApp below, then type the code when it arrives.",
                         masked_email=masked_email,
                         masked_phone=masked_phone,
                     ),
                     kind="otp_challenge")
                 bot_msgs.append(otp_msg)
                 response["otp_required"] = True
-                response["otp_channels"] = ["email", "whatsapp"]
+                response["otp_channels"] = ["email", "sms", "whatsapp"]
                 response["masked_email"] = masked_email
                 response["masked_phone"] = masked_phone
             elif next_step is None:
@@ -1603,11 +1603,12 @@ class ChatPolicyApplicationService:
                 return {"ok": False, "status_code": 409,
                         "error": "I need your email before I can send a verification code."}
             normalized = (channel or "email").strip().lower()
-            if normalized not in ("email", "whatsapp"):
+            if normalized not in ("email", "sms", "whatsapp"):
                 normalized = "email"
-            if normalized == "whatsapp" and not session["contact"].get("phone"):
+            if normalized in ("whatsapp", "sms") and not session["contact"].get("phone"):
+                label = "WhatsApp" if normalized == "whatsapp" else "SMS"
                 return {"ok": False, "status_code": 409,
-                        "error": "I need your phone before I can send a WhatsApp code."}
+                        "error": f"I need your phone before I can send a {label} code."}
             session["otp_channel"] = normalized
             session["otp"] = {"verification_id": verification_id,
                               "channel": normalized,
@@ -1656,12 +1657,12 @@ class ChatPolicyApplicationService:
             # the full history only after identity is re-proven.
             prior_transcript = list(session["transcript"]) if was_reverify else None
             normalized = (channel or "email").strip().lower()
-            if normalized not in ("email", "whatsapp"):
+            if normalized not in ("email", "sms", "whatsapp"):
                 normalized = "email"
             session["verified_via"] = normalized
-            if normalized == "whatsapp":
+            if normalized in ("whatsapp", "sms"):
                 session["phone_verified"] = True
-                # WhatsApp proves phone control, not mailbox control.
+                # Phone-channel OTP proves phone control, not mailbox control.
                 session["email_verified"] = False
             else:
                 session["email_verified"] = True
@@ -1929,7 +1930,7 @@ class ChatPolicyApplicationService:
                         "masked_email": _mask_email(session["contact"]["email"]),
                         "masked_phone": _mask_phone(session["contact"].get("phone")),
                         "otp_channel": last_channel,
-                        "otp_channels": ["email", "whatsapp"],
+                        "otp_channels": ["email", "sms", "whatsapp"],
                         "ledger_events": events}
 
             session["status"] = "in_progress"

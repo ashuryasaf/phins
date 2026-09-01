@@ -133,10 +133,10 @@ class NotificationConfig:
     INFOBIP_API_KEY = os.environ.get('INFOBIP_API_KEY', '')
     INFOBIP_BASE_URL = os.environ.get('INFOBIP_BASE_URL', '')
     INFOBIP_EMAIL_SEND_PATH = os.environ.get('INFOBIP_EMAIL_SEND_PATH', '/email/3/send')
-    INFOBIP_SMS_SEND_PATH = os.environ.get('INFOBIP_SMS_SEND_PATH', '/sms/2/text/advanced')
+    INFOBIP_SMS_SEND_PATH = os.environ.get('INFOBIP_SMS_SEND_PATH', '/sms/3/messages')
     # SMS sender: a number or registered alphanumeric sender ID. Infobip trial
-    # accounts can use the shared default sender.
-    INFOBIP_SMS_SENDER = os.environ.get('INFOBIP_SMS_SENDER', 'InfoSMS')
+    # accounts accept the shared senders InfoSMS / ServiceSMS.
+    INFOBIP_SMS_SENDER = os.environ.get('INFOBIP_SMS_SENDER', 'ServiceSMS')
 
     # ========== SMS Configuration ==========
     # Supported providers: twilio, sns, vonage, messagebird, infobip.
@@ -1683,6 +1683,31 @@ def _infobip_credentials() -> Tuple[str, str, Optional[str]]:
     return api_key, base_url, None
 
 
+def _infobip_sms_uses_v3_path(send_path: str) -> bool:
+    """True for Infobip SMS Messages API v3 (``POST /sms/3/messages``)."""
+    normalized = str(send_path or '').strip().lower()
+    return '/sms/3/' in normalized or normalized.rstrip('/').endswith('/messages')
+
+
+def _infobip_sms_payload(sender: str, phone: str, message: str, send_path: str) -> Dict[str, Any]:
+    """Build the Infobip SMS JSON body for v3 (default) or legacy v2."""
+    if _infobip_sms_uses_v3_path(send_path):
+        return {
+            'messages': [{
+                'sender': sender,
+                'destinations': [{'to': phone}],
+                'content': {'text': message},
+            }]
+        }
+    return {
+        'messages': [{
+            'from': sender,
+            'destinations': [{'to': phone}],
+            'text': message,
+        }]
+    }
+
+
 class InfobipEmailProvider(EmailProvider):
     """Infobip Email API provider (``POST {base}/email/3/send``).
 
@@ -2255,13 +2280,14 @@ class MessageBirdSMSProvider(SMSProvider):
 
 
 class InfobipSMSProvider(SMSProvider):
-    """Infobip SMS provider (``POST {base}/sms/2/text/advanced``).
+    """Infobip SMS provider (``POST {base}/sms/3/messages`` by default).
 
     Shares credentials with :class:`InfobipEmailProvider` (``INFOBIP_API_KEY``
-    + account-specific ``INFOBIP_BASE_URL``). The sender defaults to Infobip's
-    shared ``InfoSMS`` id (works on trial accounts); production traffic should
-    register a dedicated number or alphanumeric sender and set
-    ``INFOBIP_SMS_SENDER``.
+    + account-specific ``INFOBIP_BASE_URL``). The default path matches Infobip's
+    current Messages API. Set ``INFOBIP_SMS_SEND_PATH=/sms/2/text/advanced`` to
+    keep the legacy payload. The sender defaults to Infobip's shared
+    ``ServiceSMS`` trial id; production traffic should register a dedicated
+    number or alphanumeric sender and set ``INFOBIP_SMS_SENDER``.
     """
 
     def send(
@@ -2286,26 +2312,24 @@ class InfobipSMSProvider(SMSProvider):
             send_path = (
                 _first_non_empty_env('INFOBIP_SMS_SEND_PATH')
                 or str(NotificationConfig.INFOBIP_SMS_SEND_PATH or '').strip()
-                or '/sms/2/text/advanced'
+                or '/sms/3/messages'
             )
+            if not str(send_path).startswith('/'):
+                send_path = f'/{send_path}'
             sender = (
                 from_number
                 or _first_non_empty_env('INFOBIP_SMS_SENDER')
                 or str(NotificationConfig.INFOBIP_SMS_SENDER or '').strip()
-                or 'InfoSMS'
+                or 'ServiceSMS'
             )
             # Infobip expects international digits without a leading '+'.
             # normalize_phone keeps '+'; strip to digits for the destination.
             phone = re.sub(r'\D', '', normalize_phone(to))
             if not phone:
                 return False, None, "Infobip SMS: invalid phone number"
-            payload = json.dumps({
-                'messages': [{
-                    'from': sender,
-                    'destinations': [{'to': phone}],
-                    'text': message,
-                }]
-            }).encode('utf-8')
+            payload = json.dumps(
+                _infobip_sms_payload(sender, phone, message, send_path)
+            ).encode('utf-8')
             req = urllib.request.Request(
                 f'{base_url}{send_path}', data=payload, method='POST'
             )
@@ -4315,7 +4339,7 @@ def get_notification_provider_diagnostics() -> Dict[str, Any]:
                 'sender': (
                     _first_non_empty_env('INFOBIP_SMS_SENDER')
                     or NotificationConfig.INFOBIP_SMS_SENDER
-                    or 'InfoSMS'
+                    or 'ServiceSMS'
                 ),
             },
         },
