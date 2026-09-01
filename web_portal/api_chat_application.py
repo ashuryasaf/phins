@@ -693,6 +693,7 @@ def _handle_otp_request(application_id: str, client_ip: str,
     delivered, delivery_error = _send_otp_via_channel(
         channel, otp_code, int(data.get("expires_in_seconds") or 300),
         purpose.value, email=email, phone=phone, ip_address=client_ip,
+        verification_id=verification_id,
     )
 
     response: Dict[str, Any] = {
@@ -706,7 +707,7 @@ def _handle_otp_request(application_id: str, client_ip: str,
     }
     if data.get("masked_phone"):
         response["masked_phone"] = data.get("masked_phone")
-    if _demo_otp_exposure_allowed():
+    if _demo_otp_exposure_allowed() and not otp_service.has_external_pin(verification_id):
         response["demo_otp_code"] = otp_code
     elif not delivered:
         logger.error("Chat application OTP delivery failed (%s): %s",

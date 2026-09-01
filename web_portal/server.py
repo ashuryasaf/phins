@@ -35915,6 +35915,7 @@ For claims or questions, please contact:
                                     email=email,
                                     phone=effective_phone or None,
                                     ip_address=client_ip,
+                                    verification_id=verification_id,
                                 )
                                 notification_sent = sent
                                 # ``_send_otp_via_channel`` may return an error

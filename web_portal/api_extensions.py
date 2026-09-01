@@ -17,10 +17,13 @@ Data Persistence:
 """
 
 import json
+import logging
 import os
 import re
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Tuple, List
+
+logger = logging.getLogger("phins.api_extensions")
 
 # Video Agents Service
 try:
@@ -572,9 +575,10 @@ def _send_otp_sms(
     otp_code: str,
     expiry_seconds: int,
     purpose: str,
-    ip_address: Optional[str] = None
+    ip_address: Optional[str] = None,
+    verification_id: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
-    """Send OTP via the configured SMS provider.
+    """Send OTP via Infobip 2FA PIN when configured, else the SMS provider.
 
     Mirrors ``_send_otp_email`` for the SMS channel. The notification
     service already raises clear failures when the SMS provider is not
@@ -590,6 +594,32 @@ def _send_otp_sms(
         )
     except Exception as exc:
         return False, f"Notification service unavailable: {exc}"
+
+    if not should_use_mock_notifications():
+        try:
+            from services.infobip_2fa_service import infobip_2fa_enabled, send_2fa_pin
+            if infobip_2fa_enabled():
+                sent, pin_id, twofa_error = send_2fa_pin(phone)
+                if sent and pin_id:
+                    if verification_id:
+                        try:
+                            from services.otp_security_service import get_otp_security_service
+                            get_otp_security_service().attach_external_pin(
+                                verification_id, pin_id
+                            )
+                        except Exception as attach_exc:
+                            logger.warning(
+                                "Infobip 2FA PIN sent but pinId could not be stored: %s",
+                                attach_exc,
+                            )
+                    return True, None
+                if twofa_error:
+                    logger.warning(
+                        "Infobip 2FA PIN send failed; falling back to SMS API: %s",
+                        twofa_error,
+                    )
+        except Exception as exc:
+            logger.warning("Infobip 2FA unavailable; falling back to SMS API: %s", exc)
 
     expiry_minutes = max(1, int(expiry_seconds // 60))
     sms_body = (
@@ -717,6 +747,7 @@ def _send_otp_via_channel(
     email: Optional[str] = None,
     phone: Optional[str] = None,
     ip_address: Optional[str] = None,
+    verification_id: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
     """Dispatch OTP delivery to email, SMS, WhatsApp, or both (email+SMS).
 
@@ -754,6 +785,7 @@ def _send_otp_via_channel(
                 expiry_seconds=expiry_seconds,
                 purpose=purpose,
                 ip_address=ip_address,
+                verification_id=verification_id,
             )
 
     if channel == 'whatsapp':
@@ -929,6 +961,7 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
                 email=email,
                 phone=phone,
                 ip_address=client_ip,
+                verification_id=result.verification_id,
             )
         response_data['notification_sent'] = notification_sent
 
@@ -1016,6 +1049,7 @@ def handle_otp_resend(client_ip: str, body_data: Dict, user_agent: str = "") -> 
                 email=delivery_email,
                 phone=delivery_phone,
                 ip_address=client_ip,
+                verification_id=verification_id,
             )
             response_data['notification_sent'] = sent
             if sent and send_error:
