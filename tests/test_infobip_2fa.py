@@ -110,7 +110,7 @@ def test_ensure_creates_application_and_message_when_missing(infobip_env):
             assert body["enabled"] is True
             assert body["configuration"]["pinAttempts"] == 10
             assert body["configuration"]["allowMultiplePinVerifications"] is True
-            assert body["configuration"]["pinTimeToLive"] == "15m"
+            assert body["configuration"]["pinTimeToLive"] == "5m"
             return _FakeResponse(200, {"applicationId": "created-app"})
         if path == "/2fa/2/applications/created-app/messages" and req.get_method() == "GET":
             return _FakeResponse(200, [])
@@ -209,6 +209,18 @@ def test_send_otp_sms_uses_2fa_when_live(monkeypatch):
 
     from web_portal import api_extensions
 
+    service = get_otp_security_service()
+    created = service.create_otp_verification(
+        user_type="applicant",
+        user_id="CHAPP-2FA-SEND",
+        email="twofa.send@example.com",
+        purpose=OTPPurpose.PHONE_VERIFICATION,
+        phone="+972500000000",
+        delivery_channel="sms",
+    )
+    assert created.success
+    vid = created.verification_id
+
     with patch.object(ns, "should_use_mock_notifications", return_value=False), \
          patch.object(twofa, "infobip_2fa_enabled", return_value=True), \
          patch.object(twofa, "send_2fa_pin", return_value=(True, "pin-xyz", None)):
@@ -217,9 +229,12 @@ def test_send_otp_sms_uses_2fa_when_live(monkeypatch):
             otp_code="123456",
             expiry_seconds=300,
             purpose="phone_verification",
-            verification_id=None,
+            verification_id=vid,
         )
     assert ok is True and error is None
+    # The Infobip pinId must be bound so verify_otp checks Infobip, not the
+    # local hash of a code that was never sent.
+    assert service.has_external_pin(vid)
 
 
 if __name__ == "__main__":

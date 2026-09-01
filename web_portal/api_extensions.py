@@ -577,12 +577,20 @@ def _send_otp_sms(
     purpose: str,
     ip_address: Optional[str] = None,
     verification_id: Optional[str] = None,
+    allow_external_pin: bool = True,
 ) -> Tuple[bool, Optional[str]]:
     """Send OTP via Infobip 2FA PIN when configured, else the SMS provider.
 
     Mirrors ``_send_otp_email`` for the SMS channel. The notification
     service already raises clear failures when the SMS provider is not
     configured, so callers can surface a useful error to the user.
+
+    Infobip 2FA generates its own PIN, so it can only be used when that
+    ``pinId`` is bound to the verification (``verify_otp`` then checks
+    Infobip instead of the local hash). When binding is impossible — no
+    ``verification_id``, ``attach_external_pin`` fails, or ``allow_external_pin``
+    is False (e.g. the 'both' channel must send the same local code as
+    email) — we fall through to the SMS provider with the local ``otp_code``.
     """
     try:
         from services.notification_service import (
@@ -595,25 +603,38 @@ def _send_otp_sms(
     except Exception as exc:
         return False, f"Notification service unavailable: {exc}"
 
-    if not should_use_mock_notifications():
+    if allow_external_pin and verification_id and not should_use_mock_notifications():
         try:
             from services.infobip_2fa_service import infobip_2fa_enabled, send_2fa_pin
             if infobip_2fa_enabled():
                 sent, pin_id, twofa_error = send_2fa_pin(phone)
                 if sent and pin_id:
-                    if verification_id:
-                        try:
-                            from services.otp_security_service import get_otp_security_service
+                    attached = False
+                    try:
+                        from services.otp_security_service import get_otp_security_service
+                        attached = bool(
                             get_otp_security_service().attach_external_pin(
                                 verification_id, pin_id
                             )
-                        except Exception as attach_exc:
-                            logger.warning(
-                                "Infobip 2FA PIN sent but pinId could not be stored: %s",
-                                attach_exc,
-                            )
-                    return True, None
-                if twofa_error:
+                        )
+                    except Exception as attach_exc:
+                        logger.warning(
+                            "Infobip 2FA PIN sent but pinId could not be stored: %s",
+                            attach_exc,
+                        )
+                    if attached:
+                        return True, None
+                    # The delivered Infobip PIN could not be bound to the
+                    # verification, so verify_otp would check the local hash
+                    # of a code that was never sent. Fall back to the SMS
+                    # provider with the local code so verification can succeed.
+                    logger.warning(
+                        "Infobip 2FA PIN sent but could not be bound to "
+                        "verification %s; falling back to SMS API with the "
+                        "local code",
+                        verification_id,
+                    )
+                elif twofa_error:
                     logger.warning(
                         "Infobip 2FA PIN send failed; falling back to SMS API: %s",
                         twofa_error,
@@ -786,6 +807,10 @@ def _send_otp_via_channel(
                 purpose=purpose,
                 ip_address=ip_address,
                 verification_id=verification_id,
+                # For 'both', email delivers the local code, so SMS must send
+                # the same local code rather than an Infobip PIN that would
+                # make the emailed code unverifiable.
+                allow_external_pin=(channel != 'both'),
             )
 
     if channel == 'whatsapp':

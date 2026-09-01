@@ -27,10 +27,6 @@ logger = logging.getLogger("phins.infobip_2fa")
 
 _DEFAULT_APP_NAME = "PHINS OTP"
 _LEGACY_APP_NAMES = ("2fa test application",)
-_DEFAULT_MESSAGE_TEXT = (
-    "Your PHINS verification code is {{pin}}. "
-    "It expires in 15 minutes. Never share this code."
-)
 
 _lock = threading.Lock()
 _cached_application_id: Optional[str] = None
@@ -62,6 +58,29 @@ def _application_name() -> str:
     return _env("INFOBIP_2FA_APPLICATION_NAME") or _DEFAULT_APP_NAME
 
 
+def _otp_expiry_seconds() -> int:
+    """Local OTP TTL that ``verify_otp`` enforces before calling Infobip."""
+    try:
+        return max(60, int(os.environ.get("OTP_EXPIRY_SECONDS", "300")))
+    except (TypeError, ValueError):
+        return 300
+
+
+def _pin_time_to_live() -> str:
+    """Infobip ``pinTimeToLive`` aligned to the local OTP expiry."""
+    return _env("INFOBIP_2FA_PIN_TTL") or f"{_otp_expiry_seconds() // 60}m"
+
+
+def _default_message_text() -> str:
+    """SMS template whose stated expiry matches the local OTP TTL."""
+    minutes = _otp_expiry_seconds() // 60
+    unit = "minute" if minutes == 1 else "minutes"
+    return (
+        "Your PHINS verification code is {{pin}}. "
+        f"It expires in {minutes} {unit}. Never share this code."
+    )
+
+
 def _application_payload() -> Dict[str, Any]:
     """Body from Infobip's create-application example (PHINS-named)."""
     return {
@@ -70,7 +89,7 @@ def _application_payload() -> Dict[str, Any]:
         "configuration": {
             "pinAttempts": 10,
             "allowMultiplePinVerifications": True,
-            "pinTimeToLive": _env("INFOBIP_2FA_PIN_TTL") or "15m",
+            "pinTimeToLive": _pin_time_to_live(),
             "verifyPinLimit": "1/3s",
             "sendPinPerApplicationLimit": "100/1d",
             "sendPinPerPhoneNumberLimit": "10/1d",
@@ -82,7 +101,7 @@ def _message_payload() -> Dict[str, Any]:
     return {
         "pinType": "NUMERIC",
         "pinLength": int(_env("INFOBIP_2FA_PIN_LENGTH") or "6"),
-        "messageText": _env("INFOBIP_2FA_MESSAGE_TEXT") or _DEFAULT_MESSAGE_TEXT,
+        "messageText": _env("INFOBIP_2FA_MESSAGE_TEXT") or _default_message_text(),
         "senderId": _sender(),
     }
 
@@ -160,10 +179,9 @@ def _match_message(items: List[Dict[str, Any]]) -> Optional[str]:
         item_sender = str(item.get("senderId") or "").strip().lower()
         if message_id and "{{pin}}" in text and (not item_sender or item_sender == sender):
             return message_id
-    for item in items:
-        message_id = str(item.get("messageId") or item.get("id") or "").strip()
-        if message_id:
-            return message_id
+    # A template without ``{{pin}}`` will not inject the PIN, producing an SMS
+    # with no code. Never reuse one — return None so a correct template is
+    # created instead.
     return None
 
 
