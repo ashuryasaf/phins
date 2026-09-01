@@ -758,7 +758,7 @@ def _handle_otp_verify(application_id: str, body: Dict[str, Any],
         expected_purpose=purpose,
         ip_address=client_ip,
         expected_user_type="applicant",
-        expected_phone=svc.contact_phone(application_id) if channel == "whatsapp" else None,
+        expected_phone=svc.contact_phone(application_id) if channel in ("whatsapp", "sms") else None,
     )
     if not consume.success:
         return 400, {"error": consume.message or "Verification could not be consumed",
