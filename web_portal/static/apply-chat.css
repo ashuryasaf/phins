@@ -631,6 +631,11 @@ body.chat-apply-page {
 .otp-box:focus { outline: none; border-color: var(--gold); }
 .otp-actions { display: flex; justify-content: center; gap: 14px; align-items: center; flex-wrap: wrap; }
 .otp-channel-wrap { justify-content: center; }
+.otp-channel-chip.otp-channel-sms:hover,
+.otp-channel-chip.otp-channel-sms.selected {
+    border-color: #5b9dff;
+    color: #9ec5ff;
+}
 .otp-channel-chip.otp-channel-whatsapp:hover,
 .otp-channel-chip.otp-channel-whatsapp.selected {
     border-color: #25d366;

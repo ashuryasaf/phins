@@ -19,7 +19,7 @@
         email: null,
         step: null,          // current step descriptor from the API
         otp: null,           // {verification_id, channel, maskedEmail, maskedPhone}
-        otpChannel: null,    // 'email' | 'whatsapp'
+        otpChannel: null,    // 'email' | 'sms' | 'whatsapp'
         otpRestoreTranscript: false, // replay transcript after OTP only on a fresh-page resume
         busy: false,
         mediaCount: 0,
@@ -780,6 +780,9 @@
         if (channel === 'whatsapp') {
             return `WhatsApp ${data && data.masked_phone ? data.masked_phone : ''}`;
         }
+        if (channel === 'sms') {
+            return `SMS ${data && data.masked_phone ? data.masked_phone : ''}`;
+        }
         return data && data.masked_email ? data.masked_email : 'your email';
     }
 
@@ -830,6 +833,9 @@
             <div class="chips-wrap otp-channel-wrap">
                 <button class="chip otp-channel-chip" data-channel="email" type="button">
                     Email${maskedEmail ? ` · ${escapeHtml(maskedEmail)}` : ''}
+                </button>
+                <button class="chip otp-channel-chip otp-channel-sms" data-channel="sms" type="button">
+                    SMS${maskedPhone ? ` · ${escapeHtml(maskedPhone)}` : ''}
                 </button>
                 <button class="chip otp-channel-chip otp-channel-whatsapp" data-channel="whatsapp" type="button">
                     WhatsApp${maskedPhone ? ` · ${escapeHtml(maskedPhone)}` : ''}

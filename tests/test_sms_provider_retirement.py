@@ -185,7 +185,7 @@ def test_otp_sms_send_goes_through_infobip(_live_delivery_env):
 
     assert ok is True and error is None
     assert message_id == "ib-otp-1"
-    assert captured["url"] == f"{BASE_URL}/sms/2/text/advanced"
+    assert captured["url"] == f"{BASE_URL}/sms/3/messages"
     assert captured["auth"] == f"App {API_KEY}"
 
 

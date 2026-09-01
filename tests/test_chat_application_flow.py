@@ -723,6 +723,57 @@ def test_chat_whatsapp_otp_uses_session_phone_not_request_body():
     assert verified.get("identity_verified") is True
 
 
+def test_chat_sms_otp_uses_session_phone_not_request_body():
+    """SMS OTP must land on the captured session phone, never a body phone."""
+    from unittest.mock import patch
+
+    app_id, resume_code = _start_with_contact(
+        "chat.sms.bound@example.com", phone="+1-555-0166"
+    )
+
+    captured = {}
+
+    def _fake_send(delivery_channel, otp_code, expiry_seconds, purpose,
+                   email=None, phone=None, ip_address=None):
+        captured.update({
+            "delivery_channel": delivery_channel,
+            "phone": phone,
+            "email": email,
+            "purpose": purpose,
+            "otp_code": otp_code,
+        })
+        return True, None
+
+    with patch("web_portal.api_extensions._send_otp_via_channel", _fake_send):
+        status, otp = _post(f"/api/chat-application/{app_id}/otp/request", {
+            "resume_code": resume_code,
+            "delivery_channel": "sms",
+            "phone": "+19998887777",
+        })
+    assert status == 200, otp
+    assert otp["delivery_channel"] == "sms"
+    assert otp.get("notification_sent") is True
+    assert "phone" not in otp
+    assert otp.get("masked_phone")
+    assert "7777" not in str(otp.get("masked_phone"))
+    assert captured["delivery_channel"] == "sms"
+    assert captured["phone"] == "+1-555-0166"
+    assert captured["phone"] != "+19998887777"
+    assert captured["email"] == "chat.sms.bound@example.com"
+
+    status, verified = _post(f"/api/chat-application/{app_id}/otp/verify", {
+        "verification_id": otp["verification_id"],
+        "otp_code": otp["demo_otp_code"],
+        "resume_code": resume_code,
+    })
+    assert status == 200, verified
+    assert verified["step"]["id"] == "dob"
+    assert verified.get("verified_via") == "sms"
+    assert verified.get("phone_verified") is True
+    assert verified.get("email_verified") is False
+    assert verified.get("identity_verified") is True
+
+
 def test_chat_whatsapp_otp_refuses_unknown_channel_and_keeps_email_default():
     app_id, resume_code = _start_with_contact("chat.wa.default@example.com")
 
@@ -749,7 +800,7 @@ def test_chat_whatsapp_otp_refuses_unknown_channel_and_keeps_email_default():
     assert verified.get("identity_verified") is True
 
 
-def test_chat_phone_step_offers_whatsapp_and_email_channels():
+def test_chat_phone_step_offers_email_sms_and_whatsapp_channels():
     app_id, resume_code = _start_with_contact("chat.wa.offer@example.com")
     # Re-read the last message turn via a no-op get: the phone answer already
     # returned otp_required. Start a fresh contact capture and inspect the
@@ -762,7 +813,7 @@ def test_chat_phone_step_offers_whatsapp_and_email_channels():
     _answer(app_id, "chat.wa.offer2@example.com", resume_code=resume_code)
     reply = _answer(app_id, "+1-555-0144", resume_code=resume_code)
     assert reply.get("otp_required") is True
-    assert reply.get("otp_channels") == ["email", "whatsapp"]
+    assert reply.get("otp_channels") == ["email", "sms", "whatsapp"]
     assert reply.get("masked_email")
     assert reply.get("masked_phone")
 
