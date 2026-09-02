@@ -162,8 +162,9 @@
     }
 
     function composePhone(dial, national) {
-        const parsed = parsePhone(String(national || '').trim());
-        if (parsed.dial && parsed.national) {
+        const rawNational = String(national || '').trim();
+        const parsed = parsePhone(rawNational);
+        if (rawNational.startsWith('+') && parsed.dial && parsed.national) {
             return '+' + parsed.dial + parsed.national;
         }
         let code = digitsOnly(dial);
