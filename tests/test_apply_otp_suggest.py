@@ -46,15 +46,19 @@ class TestChatAddressAfterOtp:
         assert ok is True
         assert cleaned == "Israel"
 
-    def test_phone_normalizes_e164(self):
+    def test_phone_keeps_submitted_international_value(self):
         ok, cleaned = _validate_phone("+972 50-123-4567", {})
         assert ok is True
-        assert cleaned == "+972501234567"
+        assert cleaned == "+972 50-123-4567"
+        assert _validate_phone("12", {})[0] is False
 
 
 class TestClassicApplyOtpAndSuggestMarkup:
     def test_otp_panel_is_on_personal_info_step(self):
-        step1 = APPLY_HTML.split('data-step="2"')[0]
+        start = APPLY_HTML.find('<div class="form-step active" data-step="1">')
+        end = APPLY_HTML.find('<div class="form-step" data-step="2">')
+        step1 = APPLY_HTML[start:end]
+        assert start != -1 and end != -1
         assert 'id="apply-otp-panel"' in step1
         assert "Verify your contact details" in step1
         assert 'id="apply-otp-verify"' in step1
@@ -74,7 +78,7 @@ class TestClassicApplyOtpAndSuggestMarkup:
         assert "PhinsApplySuggest" in APPLY_CHAT_JS
 
     def test_shared_catalogs_include_requested_examples(self):
-        assert "+972" in SUGGEST_JS
+        assert "dial: '972'" in SUGGEST_JS
         assert "United Kingdom" in SUGGEST_JS
         assert "dial: '44'" in SUGGEST_JS
         assert "Software Engineer" in SUGGEST_JS

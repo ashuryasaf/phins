@@ -256,9 +256,6 @@ def _validate_phone(value: Any, _s: Dict[str, Any]) -> Tuple[bool, Any]:
     digits = re.sub(r"\D", "", text)
     if not _PHONE_RE.match(text) or len(digits) < 7:
         return False, "That phone number doesn't look right - please include your area code, e.g. +1-555-0123."
-    # Prefer E.164 so country code and national number stay one canonical value.
-    if text.startswith("+"):
-        return True, "+" + digits
     return True, text
 
 
