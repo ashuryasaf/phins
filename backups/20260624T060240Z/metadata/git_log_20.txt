@@ -1,0 +1,20 @@
+8e3a9ce Merge pull request #397 from ashuryasaf/cursor/agentos-login-captcha-community-3ee2
+78c8047 Fix agent ecosystem hydrate cache wipe and unlocked ledger verification
+6ade56d Preserve agent lifecycle ledger events across hydration
+192774f Harden agent-ecosystem persistence: DB source-of-truth, restart + multi-instance durability
+f4939a1 Tests for community overview + admin endpoints; doc follow-up notes
+b89c53a Expand admin agents page into full agent-community dashboard
+41bd9d9 Add admin agent-community read endpoints + overview aggregate
+e20c41c Fix agent portal sign-in CAPTCHA error
+a564bd8 Merge pull request #396 from ashuryasaf/cursor/agent-ecosystem-scoping-3ee2
+176c020 Fix agent commission rate normalization and accrual persistence/ledger bugs
+b9cb9d7 fix(agents): align DB mode with portal and enforce commission idempotency
+44f34fb Fix agent ecosystem premium basis, XSS, and reject lifecycle bugs
+138b0f3 Fix agent ledger mirror and network premium status filter
+65f519b Fix agent ecosystem commission/affiliation guards
+f1892d1 Fix agent ecosystem hydration and commission basis bugs
+bd68cc3 Fix agent ecosystem hydration, redemption, and approval bugs
+d8e65a7 Add agent ecosystem tests and mark design as implemented (v1)
+ce0e05c Add agent portal + admin agents-management UI
+e001b0f Add agent ecosystem service + API and wire into server
+9943125 Add agent ecosystem persistence layer (models, repos, seeds)
