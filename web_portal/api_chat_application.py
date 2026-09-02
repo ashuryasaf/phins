@@ -170,6 +170,8 @@ def _find_or_create_referral_customer(portal, contact: Dict[str, Any],
     dob = str(answers.get("dob") or "").strip() or None
     gender = answers.get("gender")
     occupation = answers.get("occupation")
+    country = answers.get("country")
+    city = answers.get("city")
     if email:
         for cust_id, cust in list(getattr(portal, "CUSTOMERS", {}).items()):
             if str((cust or {}).get("email") or "").strip().lower() == email:
@@ -185,6 +187,10 @@ def _find_or_create_referral_customer(portal, contact: Dict[str, Any],
                     cust["gender"] = gender
                 if occupation and not cust.get("occupation"):
                     cust["occupation"] = occupation
+                if country and not cust.get("country"):
+                    cust["country"] = country
+                if city and not cust.get("city"):
+                    cust["city"] = city
                 cust["updated_date"] = datetime.now(timezone.utc).isoformat()
                 portal.CUSTOMERS[cust_id] = cust
                 return str(cust_id)
@@ -199,6 +205,8 @@ def _find_or_create_referral_customer(portal, contact: Dict[str, Any],
         "date_of_birth": dob,
         "gender": gender,
         "occupation": occupation,
+        "country": country,
+        "city": city,
         "created_date": now,
         "updated_date": now,
         "source": "chat_adl_referral",

@@ -3,6 +3,12 @@ let currentStep = 1;
 const totalSteps = 5;
 let formData = {};
 let applicationFiles = [];  // Store uploaded files for submission
+let applyOtpState = {
+    verificationId: null,
+    verified: false,
+    email: '',
+    phone: ''
+};
 
 // PHINS Contract allocation state
 let phinsAllocation = {
@@ -39,6 +45,7 @@ const CARD_PATTERNS = {
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
+    setupApplyAssist();
     updateStepDisplay();
     populateExpiryYears();
     initializePHINSContract();
@@ -410,7 +417,7 @@ function setupEventListeners() {
     }
     
             // Real-time validation for Step 1 fields
-    const step1Fields = ['first-name', 'last-name', 'email', 'phone', 'dob'];
+    const step1Fields = ['first-name', 'last-name', 'email', 'phone-national', 'dob', 'country', 'city'];
     step1Fields.forEach(fieldId => {
         const field = document.getElementById(fieldId);
         if (field) {
@@ -460,6 +467,218 @@ function setupEventListeners() {
             }
         });
     });
+
+    const otpVerify = document.getElementById('apply-otp-verify');
+    const otpResend = document.getElementById('apply-otp-resend');
+    if (otpVerify) otpVerify.addEventListener('click', verifyApplyOtp);
+    if (otpResend) otpResend.addEventListener('click', () => requestApplyOtp(true));
+    document.querySelectorAll('.apply-otp-box').forEach((box, index, boxes) => {
+        box.addEventListener('input', function () {
+            this.value = this.value.replace(/\D/g, '').slice(0, 1);
+            if (this.value && index < boxes.length - 1) boxes[index + 1].focus();
+            if (getApplyOtpCode().length === 6) verifyApplyOtp();
+        });
+        box.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                verifyApplyOtp();
+                return;
+            }
+            if (event.key === 'Backspace' && !this.value && index > 0) {
+                boxes[index - 1].focus();
+            }
+        });
+        box.addEventListener('paste', function (event) {
+            event.preventDefault();
+            const pasted = (event.clipboardData.getData('text') || '').replace(/\D/g, '').slice(0, 6);
+            pasted.split('').forEach((ch, i) => {
+                if (boxes[i]) boxes[i].value = ch;
+            });
+            if (pasted.length === 6) verifyApplyOtp();
+        });
+    });
+}
+
+function setupApplyAssist() {
+    const suggest = window.PhinsApplySuggest;
+    if (!suggest) return;
+    const dial = document.getElementById('phone-country');
+    const national = document.getElementById('phone-national');
+    const country = document.getElementById('country');
+    const city = document.getElementById('city');
+    const occupation = document.getElementById('occupation');
+    const medications = document.getElementById('medications');
+    if (dial) {
+        const preferred = suggest.defaultDial();
+        const row = suggest.DIAL_CODES.find((item) => item.dial === preferred);
+        if (row && !dial.value) dial.value = suggest.formatDial(row);
+        suggest.attach(dial, { kind: 'dial', onSelect: composeApplyPhone });
+        dial.addEventListener('change', composeApplyPhone);
+        dial.addEventListener('blur', composeApplyPhone);
+    }
+    if (national) {
+        national.addEventListener('input', composeApplyPhone);
+        national.addEventListener('blur', composeApplyPhone);
+    }
+    if (country) {
+        suggest.attach(country, {
+            kind: 'country',
+            onSelect: () => {
+                if (city) city.dispatchEvent(new Event('focus'));
+            }
+        });
+    }
+    if (city) {
+        suggest.attach(city, {
+            kind: 'city',
+            getCountry: () => (document.getElementById('country') || {}).value || ''
+        });
+    }
+    if (occupation) suggest.attach(occupation, { kind: 'occupation' });
+    if (medications) suggest.attach(medications, { kind: 'medication' });
+    composeApplyPhone();
+}
+
+function composeApplyPhone() {
+    const phoneEl = document.getElementById('phone');
+    const dialEl = document.getElementById('phone-country');
+    const nationalEl = document.getElementById('phone-national');
+    if (!phoneEl) return '';
+    const suggest = window.PhinsApplySuggest;
+    let value = '';
+    if (suggest && dialEl && nationalEl) {
+        value = suggest.composePhone(dialEl.value, nationalEl.value);
+    }
+    if (!value && nationalEl && nationalEl.value.trim().indexOf('+') === 0 && suggest) {
+        value = suggest.composePhone('', nationalEl.value);
+    }
+    phoneEl.value = value;
+    if (applyOtpState.verified && (applyOtpState.phone !== value || applyOtpState.email !== (document.getElementById('email') || {}).value)) {
+        applyOtpState.verified = false;
+    }
+    return value;
+}
+
+function getApplyOtpCode() {
+    return Array.from(document.querySelectorAll('.apply-otp-box')).map((box) => box.value).join('');
+}
+
+function setApplyOtpStatus(text, kind) {
+    const el = document.getElementById('apply-otp-status');
+    if (!el) return;
+    el.textContent = text || '';
+    el.style.color = kind === 'error' ? '#c62828' : (kind === 'ok' ? '#2e7d32' : '#8a6d2e');
+}
+
+function showApplyOtpPanel(destination) {
+    const panel = document.getElementById('apply-otp-panel');
+    if (!panel) return;
+    panel.hidden = false;
+    const dest = document.getElementById('apply-otp-destination');
+    if (dest) dest.textContent = destination || '';
+    const first = document.querySelector('.apply-otp-box');
+    if (first) first.focus();
+}
+
+async function requestApplyOtp(isResend) {
+    composeApplyPhone();
+    const email = (document.getElementById('email') || {}).value.trim();
+    const phone = (document.getElementById('phone') || {}).value.trim();
+    if (!email) {
+        setApplyOtpStatus('Email is required before we can send a code.', 'error');
+        return false;
+    }
+    setApplyOtpStatus(isResend ? 'Sending a new code...' : 'Sending your verification code...');
+    try {
+        const response = await fetch('/api/security/otp/request', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: email,
+                phone: phone || undefined,
+                purpose: 'registration',
+                user_type: 'customer',
+                delivery_channel: 'email'
+            })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            setApplyOtpStatus(data.error || data.message || 'Unable to send a verification code right now.', 'error');
+            return false;
+        }
+        applyOtpState.verificationId = data.verification_id;
+        applyOtpState.email = email;
+        applyOtpState.phone = phone;
+        applyOtpState.verified = false;
+        showApplyOtpPanel(email);
+        if (data.demo_otp_code) {
+            setApplyOtpStatus('Demo environment: your verification code is ' + data.demo_otp_code);
+            const digits = String(data.demo_otp_code).replace(/\D/g, '').slice(0, 6).split('');
+            document.querySelectorAll('.apply-otp-box').forEach((box, idx) => {
+                box.value = digits[idx] || '';
+            });
+        } else {
+            setApplyOtpStatus('Enter the 6-digit code we sent to your email.');
+        }
+        return true;
+    } catch (err) {
+        setApplyOtpStatus('Unable to send a verification code right now.', 'error');
+        return false;
+    }
+}
+
+async function verifyApplyOtp() {
+    const code = getApplyOtpCode();
+    if (code.length !== 6) {
+        setApplyOtpStatus('Enter the 6-digit code to continue.', 'error');
+        return false;
+    }
+    if (!applyOtpState.verificationId) {
+        const sent = await requestApplyOtp(false);
+        if (!sent) return false;
+    }
+    setApplyOtpStatus('Checking your code...');
+    try {
+        const response = await fetch('/api/security/otp/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                verification_id: applyOtpState.verificationId,
+                otp_code: code
+            })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            setApplyOtpStatus(data.error || data.message || 'That code did not match. Try again.', 'error');
+            return false;
+        }
+        applyOtpState.verified = true;
+        applyOtpState.email = (document.getElementById('email') || {}).value.trim();
+        applyOtpState.phone = (document.getElementById('phone') || {}).value.trim();
+        setApplyOtpStatus('Verified. Continuing...', 'ok');
+        advanceFromStep1();
+        return true;
+    } catch (err) {
+        setApplyOtpStatus('Unable to verify that code right now.', 'error');
+        return false;
+    }
+}
+
+function applyOtpStillValid() {
+    composeApplyPhone();
+    const email = (document.getElementById('email') || {}).value.trim();
+    const phone = (document.getElementById('phone') || {}).value.trim();
+    return applyOtpState.verified && applyOtpState.email === email && applyOtpState.phone === phone;
+}
+
+function advanceFromStep1() {
+    saveStepData(1);
+    refreshKernelQuote();
+    if (currentStep < totalSteps) {
+        currentStep++;
+        updateStepDisplay();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
 }
 
 function selectPolicy(e) {
@@ -685,13 +904,33 @@ function validateCardNumber() {
     return true;
 }
 
-function nextStep() {
+async function nextStep() {
+    if (currentStep === 1) {
+        composeApplyPhone();
+    }
     if (!validateStep(currentStep)) {
         return;
     }
-    
+    if (currentStep === 1) {
+        if (applyOtpStillValid()) {
+            advanceFromStep1();
+            return;
+        }
+        const panel = document.getElementById('apply-otp-panel');
+        if (panel && !panel.hidden && getApplyOtpCode().length === 6 && applyOtpState.verificationId) {
+            await verifyApplyOtp();
+            return;
+        }
+        const sent = await requestApplyOtp(false);
+        if (sent) {
+            setApplyOtpStatus('Enter the 6-digit code to continue to coverage.');
+            panel && panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        return;
+    }
+
     saveStepData(currentStep);
-    if (currentStep === 1 || currentStep === 3) {
+    if (currentStep === 3) {
         refreshKernelQuote();
     }
     
@@ -779,12 +1018,23 @@ function validateField(field) {
                 break;
                 
             case 'phone':
-                // Phone format validation (7-30 chars, allows international format)
+            case 'phone-national':
+                composeApplyPhone();
+                const composed = (document.getElementById('phone') || {}).value || field.value;
                 const phoneRegex = /^\+?[\d\s\-\(\)\.]{7,30}$/;
-                const digitCount = field.value.replace(/\D/g, '').length;
-                if (!phoneRegex.test(field.value) || digitCount < 7) {
+                const digitCount = String(composed).replace(/\D/g, '').length;
+                if (!phoneRegex.test(composed) || digitCount < 7) {
                     isValid = false;
-                    errorMessage = 'Please enter a valid phone number (e.g., +1-555-0123 or 555-0123)';
+                    errorMessage = 'Please enter a valid phone number with country code (e.g. +972 50-123-4567)';
+                }
+                break;
+            case 'phone-country':
+            case 'country':
+            case 'city':
+            case 'occupation':
+                if (field.value.trim().length < 2) {
+                    isValid = false;
+                    errorMessage = 'Please enter at least 2 characters';
                 }
                 break;
                 
@@ -808,10 +1058,14 @@ function validateField(field) {
                 break;
                 
             case 'zip':
-                // ZIP code validation: 5 digits or 5+4 format
-                if (!/^\d{5}(-\d{4})?$/.test(field.value)) {
+                const countryVal = ((document.getElementById('country') || {}).value || '').toLowerCase();
+                const usLike = !countryVal || /united states|usa|u\.s\.|us\b/.test(countryVal);
+                if (usLike && !/^\d{5}(-\d{4})?$/.test(field.value)) {
                     isValid = false;
                     errorMessage = 'Please enter a valid ZIP code (e.g., 12345 or 12345-6789)';
+                } else if (!usLike && !/^[A-Za-z0-9][A-Za-z0-9\s\-]{1,11}$/.test(field.value.trim())) {
+                    isValid = false;
+                    errorMessage = 'Please enter a valid postal code';
                 }
                 break;
         }
@@ -907,6 +1161,7 @@ function validateStep(step) {
 function saveStepData(step) {
     switch(step) {
         case 1:
+            composeApplyPhone();
             formData.personal = {
                 firstName: document.getElementById('first-name').value,
                 lastName: document.getElementById('last-name').value,
@@ -914,6 +1169,7 @@ function saveStepData(step) {
                 phone: document.getElementById('phone').value,
                 dob: document.getElementById('dob').value,
                 gender: document.getElementById('gender').value,
+                country: document.getElementById('country').value,
                 address: document.getElementById('address').value,
                 city: document.getElementById('city').value,
                 state: document.getElementById('state').value,
@@ -1004,7 +1260,7 @@ function populateReview() {
         </div>
         <div class="review-item">
             <strong>Address</strong>
-            <span>${formData.personal.address}, ${formData.personal.city}, ${formData.personal.state} ${formData.personal.zip}</span>
+            <span>${formData.personal.address}, ${formData.personal.city}, ${formData.personal.state} ${formData.personal.zip}${formData.personal.country ? ', ' + formData.personal.country : ''}</span>
         </div>
         <div class="review-item">
             <strong>Occupation</strong>
@@ -1156,6 +1412,13 @@ async function handleSubmit(e) {
     }
     
     // Validate that all form data is present
+    if (!applyOtpStillValid()) {
+        alert('Please verify the code sent to your email on step 1 before submitting.');
+        goToStep(1);
+        showApplyOtpPanel((document.getElementById('email') || {}).value || '');
+        return;
+    }
+
     if (!formData.personal || !formData.coverage || !formData.health || !formData.payment) {
         alert('Some application data is missing. Please go back and complete all steps.');
         console.error('Missing formData:', { 
@@ -1181,6 +1444,14 @@ async function handleSubmit(e) {
             customer_email: formData.personal.email || '',
             customer_phone: formData.personal.phone || '',
             customer_dob: formData.personal.dob || '',
+            customer_address: formData.personal.address || '',
+            customer_city: formData.personal.city || '',
+            customer_state: formData.personal.state || '',
+            customer_zip: formData.personal.zip || '',
+            customer_country: formData.personal.country || '',
+            customer_occupation: formData.personal.occupation || '',
+            otp_verification_id: applyOtpState.verificationId || '',
+            otp_verified: !!applyOtpState.verified,
             application_channel: 'classic',
             savings_rate: currentSavingsRate(),
             savings_formula: 'risk_premium_markup',
@@ -1206,7 +1477,11 @@ async function handleSubmit(e) {
                 family_history: (formData.health.familyHistory || []).join(','),
                 medications: formData.health.medications || '',
                 height: formData.health.height || '',
-                weight: formData.health.weight || ''
+                weight: formData.health.weight || '',
+                occupation: formData.personal.occupation || '',
+                country: formData.personal.country || '',
+                city: formData.personal.city || '',
+                address: formData.personal.address || ''
             },
             // PHINS Unified Contract allocation
             phins_allocation: {

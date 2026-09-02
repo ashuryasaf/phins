@@ -51,8 +51,10 @@ class TestApplyPageDataIntegrity:
 
     REQUIRED_IDS = [
         # step 1 — personal
-        "first-name", "last-name", "email", "phone", "dob", "gender",
+        "first-name", "last-name", "email", "phone", "phone-country",
+        "phone-national", "dob", "gender", "country",
         "address", "city", "state", "zip", "occupation",
+        "apply-otp-panel", "apply-otp-verify", "apply-otp-resend",
         # step 2 — coverage/allocation
         "policy-type", "coverage-slider", "coverage-amount-display",
         "monthly-premium", "quarterly-premium", "annual-premium",
@@ -103,6 +105,8 @@ class TestApplyPageDataIntegrity:
         assert "/api/policies/create" in APPLY_JS
         assert "/api/policies/quote" in APPLY_JS
         assert "application_channel: 'classic'" in APPLY_JS
+        assert "function requestApplyOtp(" in APPLY_JS
+        assert "function composeApplyPhone(" in APPLY_JS
         assert "savings_rate: currentSavingsRate()" in APPLY_JS
         assert "savings_formula: 'risk_premium_markup'" in APPLY_JS
         assert "function loadApplyDisclosureVideo(" in APPLY_JS
@@ -110,6 +114,7 @@ class TestApplyPageDataIntegrity:
 
     def test_scripts_still_wired(self):
         assert 'src="apply.js"' in APPLY_HTML
+        assert 'src="apply-suggest.js"' in APPLY_HTML
         assert "/unified-payment.js" in APPLY_HTML
         assert "/i18n.js" in APPLY_HTML
 

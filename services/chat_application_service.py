@@ -7,6 +7,7 @@ them through the same underwriting questionnaire the legacy form collected,
 but as a guided conversation with a licensed-broker persona:
 
 - contact capture (name / email / phone) followed by an OTP gate
+- address inquiry (country / city) immediately after OTP
 - adaptive underwriting questions (follow-ups appear based on answers)
 - optional voice notes, video messages, and document uploads
 - a live agentic risk assessment (reuses ``services.underwriting_risk_scoring``)
@@ -255,7 +256,22 @@ def _validate_phone(value: Any, _s: Dict[str, Any]) -> Tuple[bool, Any]:
     digits = re.sub(r"\D", "", text)
     if not _PHONE_RE.match(text) or len(digits) < 7:
         return False, "That phone number doesn't look right - please include your area code, e.g. +1-555-0123."
+    # Prefer E.164 so country code and national number stay one canonical value.
+    if text.startswith("+"):
+        return True, "+" + digits
     return True, text
+
+
+def _validate_place(label: str) -> Callable[[Any, Dict[str, Any]], Tuple[bool, Any]]:
+    def _validate(value: Any, _s: Dict[str, Any]) -> Tuple[bool, Any]:
+        text = str(value or "").strip()
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", text):
+            return False, f"That looks like a date - please enter your {label}."
+        if len(text) < 2 or len(text) > 100:
+            return False, f"Please enter a {label} (2-100 characters)."
+        return True, text
+
+    return _validate
 
 
 def _validate_dob(value: Any, _s: Dict[str, Any]) -> Tuple[bool, Any]:
@@ -489,13 +505,28 @@ STEPS: List[Dict[str, Any]] = [
     {
         "id": "phone",
         "prompt": "And your mobile number? We only use it for important policy notifications.",
-        "input": {"type": "phone", "placeholder": "+1-555-0123"},
+        "input": {"type": "phone", "placeholder": "+972 50-123-4567", "suggest": "phone"},
         "validate": _validate_phone,
     },
     # OTP gate happens here (handled by dedicated endpoints, not a step).
     {
+        "id": "country",
+        "prompt": (
+            "Verified - thank you! Where should we send your policy documents? "
+            "Start typing your country."
+        ),
+        "input": {"type": "text", "placeholder": "e.g. Israel", "suggest": "country"},
+        "validate": _validate_place("country"),
+    },
+    {
+        "id": "city",
+        "prompt": "And which city?",
+        "input": {"type": "text", "placeholder": "e.g. Tel Aviv", "suggest": "city"},
+        "validate": _validate_place("city"),
+    },
+    {
         "id": "dob",
-        "prompt": "Verified - thank you! Now the underwriting part. I'll be your broker through this: honest answers get you the fairest price. First, what's your date of birth?",
+        "prompt": "Now the underwriting part. I'll be your broker through this: honest answers get you the fairest price. First, what's your date of birth?",
         "input": {"type": "date"},
         "validate": _validate_dob,
     },
@@ -508,7 +539,7 @@ STEPS: List[Dict[str, Any]] = [
     {
         "id": "occupation",
         "prompt": "What do you do for a living? Some occupations carry different risk profiles.",
-        "input": {"type": "text", "placeholder": "e.g. Software Engineer"},
+        "input": {"type": "text", "placeholder": "e.g. Software Engineer", "suggest": "occupation"},
         "validate": _validate_free_text,
     },
     {
@@ -572,7 +603,7 @@ STEPS: List[Dict[str, Any]] = [
     {
         "id": "medications",
         "prompt": "Nearly done with health: any medications you take regularly? Type \"none\" if not.",
-        "input": {"type": "text", "placeholder": "e.g. metformin - or \"none\""},
+        "input": {"type": "text", "placeholder": "e.g. metformin - or \"none\"", "suggest": "medication"},
         "validate": _validate_free_text,
     },
     {
@@ -806,6 +837,12 @@ class ChatPolicyApplicationService:
             if he:
                 prompt = he
         public_input = dict(step["input"])
+        if step["id"] == "city":
+            public_input["country"] = (
+                session.get("answers", {}).get("country")
+                or (session.get("contact") or {}).get("country")
+                or ""
+            )
         labels = public_input.get("labels") or {}
         # Ensure choice steps without English labels still get Hebrew labels.
         if step["id"] == "gender" and not labels:
@@ -900,6 +937,10 @@ class ChatPolicyApplicationService:
             contact["email"] = cleaned
         elif step_id == "phone":
             contact["phone"] = cleaned
+        elif step_id == "country":
+            contact["country"] = cleaned
+        elif step_id == "city":
+            contact["city"] = cleaned
         elif step_id == "payment_card":
             # Redact the stored transcript meta; the card details live only in
             # answers (used once at submission, like the classic form).
@@ -961,7 +1002,7 @@ class ChatPolicyApplicationService:
                 "started_by": started_by,
                 "invited_by": invite,
                 "language": lang,
-                "contact": {"name": None, "email": None, "phone": None},
+                "contact": {"name": None, "email": None, "phone": None, "country": None, "city": None},
                 "email_verified": False,
                 "phone_verified": False,
                 "verified_via": None,
@@ -2026,6 +2067,15 @@ class ChatPolicyApplicationService:
             "customer_email": contact.get("email") or "",
             "customer_phone": contact.get("phone") or "",
             "customer_dob": answers.get("dob") or "",
+            "customer_city": answers.get("city") or contact.get("city") or "",
+            "customer_country": answers.get("country") or contact.get("country") or "",
+            "customer_address": ", ".join(
+                part for part in (
+                    answers.get("city") or contact.get("city") or "",
+                    answers.get("country") or contact.get("country") or "",
+                ) if part
+            ),
+            "customer_occupation": answers.get("occupation") or "",
             "type": "phins_unified",
             "coverage_amount": answers.get("coverage_amount") or 500000,
             "coverage_years": int(answers.get("coverage_years") or 20),
@@ -2058,6 +2108,14 @@ class ChatPolicyApplicationService:
                 "height": str(answers.get("height") or ""),
                 "weight": str(answers.get("weight") or ""),
                 "occupation": answers.get("occupation") or "",
+                "country": answers.get("country") or "",
+                "city": answers.get("city") or "",
+                "address": ", ".join(
+                    part for part in (
+                        answers.get("city") or "",
+                        answers.get("country") or "",
+                    ) if part
+                ),
                 "daily_function": answers.get("daily_function") or "full",
                 "adl_level": adl_level,
                 "prior_disclosure": answers.get("prior_disclosure") or "",

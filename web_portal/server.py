@@ -42508,7 +42508,7 @@ For claims or questions, please contact:
                 # Validate and sanitize inputs
                 customer_name = sanitize_input(data.get('customer_name', ''), 100)
                 customer_email = sanitize_input(data.get('customer_email', ''), 254)
-                customer_phone = sanitize_input(data.get('customer_phone', ''), 20)
+                customer_phone = sanitize_input(data.get('customer_phone', ''), 24)
                 
                 if not customer_name:
                     self._set_json_headers(400)
@@ -42571,6 +42571,17 @@ For claims or questions, please contact:
                             'email': customer_email,
                             'phone': customer_phone,
                             'dob': data.get('customer_dob', ''),
+                            'address': sanitize_input(data.get('customer_address', ''), 200),
+                            'city': sanitize_input(data.get('customer_city', ''), 100),
+                            'state': sanitize_input(data.get('customer_state', ''), 100),
+                            'zip': sanitize_input(data.get('customer_zip', ''), 20),
+                            'country': sanitize_input(data.get('customer_country', ''), 100),
+                            'occupation': sanitize_input(
+                                data.get('customer_occupation')
+                                or (data.get('questionnaire') or {}).get('occupation')
+                                or '',
+                                100,
+                            ),
                             'created_date': datetime.now().isoformat()
                         }
                         # Provision portal login for the customer
