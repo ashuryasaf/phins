@@ -1429,3 +1429,79 @@ body.apply-page .footer a:hover {
 .apply-disclosure-light li + li {
     margin-top: 0.55rem;
 }
+
+/* ===== Typeahead + international phone ===== */
+.phins-suggest {
+    position: relative;
+    width: 100%;
+}
+.phins-suggest-list {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 40;
+    margin: 0;
+    padding: 6px 0;
+    list-style: none;
+    max-height: 220px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid var(--apply-border);
+    border-radius: 10px;
+    box-shadow: 0 10px 28px rgba(6, 13, 31, 0.16);
+}
+.phins-suggest-item {
+    padding: 8px 14px;
+    cursor: pointer;
+    color: #1c2b45;
+    font-size: 0.95rem;
+}
+.phins-suggest-item:hover,
+.phins-suggest-item.active {
+    background: #fdf8ec;
+    color: #8a6d2e;
+}
+
+.apply-otp-panel {
+    margin-top: 1.5rem;
+    padding: 1.25rem 1.4rem;
+    border: 1px solid #e3d3a4;
+    border-radius: 14px;
+    background: #fdf8ec;
+}
+.apply-otp-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin: 16px 0 12px;
+    direction: ltr;
+}
+.apply-otp-box {
+    width: 46px;
+    height: 52px;
+    text-align: center;
+    font-size: 1.3rem;
+    font-weight: 700;
+    border: 2px solid var(--apply-border);
+    border-radius: 10px;
+    background: #fff;
+    color: #1c2b45;
+}
+.apply-otp-box:focus {
+    outline: none;
+    border-color: var(--apply-gold);
+    box-shadow: 0 0 0 4px rgba(201, 162, 75, 0.14);
+}
+.apply-otp-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+.apply-otp-status {
+    text-align: center;
+    margin: 12px 0 0;
+    color: var(--apply-gold-ink);
+    min-height: 1.2em;
+}

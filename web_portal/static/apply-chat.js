@@ -384,6 +384,11 @@
     function renderTextInput(input) {
         const typeMap = { text: 'text', email: 'email', phone: 'tel', date: 'date', number: 'number' };
         const htmlType = typeMap[input.type] || 'text';
+        const suggestKind = input.suggest || (input.type === 'phone' ? 'phone' : '');
+        if (suggestKind === 'phone') {
+            renderPhoneInput(input);
+            return;
+        }
         const attrs = [
             `type="${htmlType}"`,
             input.placeholder ? `placeholder="${escapeHtml(input.placeholder)}"` : '',
@@ -400,6 +405,13 @@
         `);
         const field = $('dock-field');
         focusWithoutScroll(field);
+        if (suggestKind && window.PhinsApplySuggest) {
+            window.PhinsApplySuggest.attach(field, {
+                kind: suggestKind,
+                country: input.country || '',
+                getCountry: () => input.country || '',
+            });
+        }
         const send = () => {
             const value = field.value.trim();
             if (!value) return;
@@ -407,6 +419,41 @@
         };
         $('dock-send').addEventListener('click', send);
         field.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+    }
+
+    function renderPhoneInput(input) {
+        const suggest = window.PhinsApplySuggest;
+        const preferred = suggest ? suggest.defaultDial() : '1';
+        const row = suggest && suggest.DIAL_CODES.find((item) => item.dial === preferred);
+        const dialLabel = row && suggest ? suggest.formatDial(row) : '+1 United States';
+        dockHtml(`
+            <div class="dock-row">
+                <div class="dock-phone">
+                    <input class="dock-input dock-phone-dial" id="dock-dial" type="text"
+                           placeholder="+972 Israel" value="${escapeHtml(dialLabel)}" autocomplete="off">
+                    <input class="dock-input" id="dock-field" type="tel"
+                           placeholder="${escapeHtml(input.placeholder || '50-123-4567')}" autocomplete="off">
+                </div>
+                <button class="send-btn" id="dock-send" title="Send">&#10148;</button>
+            </div>
+        `);
+        const dial = $('dock-dial');
+        const field = $('dock-field');
+        if (suggest) {
+            suggest.attach(dial, { kind: 'dial' });
+        }
+        focusWithoutScroll(field);
+        const send = () => {
+            let value = field.value.trim();
+            if (suggest) {
+                value = suggest.composePhone(dial.value, field.value) || value;
+            }
+            if (!value) return;
+            submitAnswer(value, value);
+        };
+        $('dock-send').addEventListener('click', send);
+        field.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+        dial.addEventListener('keydown', (e) => { if (e.key === 'Enter') field.focus(); });
     }
 
     function renderChoices(input) {

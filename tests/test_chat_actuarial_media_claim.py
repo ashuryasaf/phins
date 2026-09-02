@@ -217,6 +217,8 @@ def _run_application(email: str, *, with_media: bool = True):
     )
     assert status == 200, verified
 
+    _answer(app_id, "Israel", resume_code)       # country
+    _answer(app_id, "Tel Aviv", resume_code)     # city
     _answer(app_id, "1988-04-02", resume_code)   # dob
     _answer(app_id, "female", resume_code)       # gender
     _answer(app_id, "Engineer", resume_code)     # occupation
@@ -572,6 +574,7 @@ def test_adl_decline_opens_underwriter_queue_with_contact(isolated_store):
     assert status == 200, verified
 
     for value in (
+        "Israel", "Haifa",
         "1975-01-15", "male", "Teacher", 175, 80, "no", "no", "no", "no",
         ["none"], "none", "none",
     ):

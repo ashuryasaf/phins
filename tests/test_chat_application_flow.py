@@ -104,11 +104,17 @@ def _start_and_verify(email, name="Dana Levi", phone="+1-555-0100", invite_code=
         "resume_code": resume_code,
     })
     assert status == 200, verified
-    assert verified["step"]["id"] == "dob"
+    assert verified["step"]["id"] == "country"
     return app_id, resume_code
 
 
+def _answer_address(app_id, resume_code=None, country="Israel", city="Tel Aviv"):
+    _answer(app_id, country, resume_code=resume_code)
+    _answer(app_id, city, resume_code=resume_code)
+
+
 def _complete_questionnaire(app_id, resume_code, medical=False):
+    _answer_address(app_id, resume_code=resume_code)
     _answer(app_id, "1990-05-14", resume_code=resume_code)   # dob
     _answer(app_id, "female", resume_code=resume_code)       # gender
     _answer(app_id, "Architect", resume_code=resume_code)    # occupation
@@ -202,6 +208,10 @@ def test_full_chat_application_happy_path():
     assert session["answers"].get("signature_image_sha256")
     assert session["answers"].get("signature_data") is None  # redacted after submit
     assert session["answers"].get("prior_disclosure")
+    assert session["answers"].get("country") == "Israel"
+    assert session["answers"].get("city") == "Tel Aviv"
+    assert session["contact"].get("country") == "Israel"
+    assert session["contact"].get("city") == "Tel Aviv"
 
     # state readable with the resume code
     status, state = _get(f"/api/chat-application/{app_id}?resume_code={resume_code}")
@@ -238,6 +248,7 @@ def test_medical_follow_up_and_risk_loading():
 def test_pause_and_resume_with_otp_rechallenge():
     email = "chat.applicant.resume@example.com"
     app_id, resume_code = _start_and_verify(email)
+    _answer_address(app_id, resume_code=resume_code)
     _answer(app_id, "1985-03-02", resume_code=resume_code)   # dob before pausing
 
     status, paused = _post(f"/api/chat-application/{app_id}/pause",
@@ -383,6 +394,7 @@ def test_validation_and_security_failures():
     assert status == 400
 
     # invalid card is rejected with guidance
+    _answer_address(app_id, resume_code=resume_code)
     _answer(app_id, "1992-07-21", resume_code=resume_code)
     _answer(app_id, "other", resume_code=resume_code)
     _answer(app_id, "Pilot", resume_code=resume_code)
@@ -501,7 +513,7 @@ def test_otp_delivery_failure_is_retryable_and_keeps_session_consistent():
         "resume_code": resume_code,
     })
     assert status == 200, verified
-    assert verified["step"]["id"] == "dob"
+    assert verified["step"]["id"] == "country"
 
 
 def test_resume_otp_failure_rolls_back_reverify_state():
@@ -510,6 +522,7 @@ def test_resume_otp_failure_rolls_back_reverify_state():
 
     email = "chat.applicant.rechallenge@example.com"
     app_id, resume_code = _start_and_verify(email)
+    _answer_address(app_id, resume_code=resume_code)
     _answer(app_id, "1988-11-30", resume_code=resume_code)  # dob answered
     status, paused = _post(f"/api/chat-application/{app_id}/pause",
                            {"resume_code": resume_code})
@@ -716,7 +729,7 @@ def test_chat_whatsapp_otp_uses_session_phone_not_request_body():
         "resume_code": resume_code,
     })
     assert status == 200, verified
-    assert verified["step"]["id"] == "dob"
+    assert verified["step"]["id"] == "country"
     assert verified.get("verified_via") == "whatsapp"
     assert verified.get("phone_verified") is True
     assert verified.get("email_verified") is False
@@ -767,7 +780,7 @@ def test_chat_sms_otp_uses_session_phone_not_request_body():
         "resume_code": resume_code,
     })
     assert status == 200, verified
-    assert verified["step"]["id"] == "dob"
+    assert verified["step"]["id"] == "country"
     assert verified.get("verified_via") == "sms"
     assert verified.get("phone_verified") is True
     assert verified.get("email_verified") is False
