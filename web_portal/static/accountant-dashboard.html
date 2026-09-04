@@ -5,10 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
-    <meta name="theme-color" content="#1a1f36">
+    <meta name="theme-color" content="#060d1f">
     <title>Accountant Dashboard - PHINS Financial Reports</title>
+    <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+    <link rel="apple-touch-icon" href="/phins-logo.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/styles.css">
     <style>
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+        h1, h2, h3, .page-title h1 { font-family: 'Space Grotesk', 'Inter', sans-serif; }
         /* PHINS Unified Header */
         .phins-header {
             background: linear-gradient(135deg, #1a1f36 0%, #2d3561 50%, #1a1f36 100%);
@@ -232,11 +239,11 @@
             <button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
             <nav class="phins-nav" id="mobile-nav">
                 <a href="/admin.html">Admin</a>
-                <a href="/underwriter-dashboard.html">🔍 Underwriting</a>
-                <a href="/billing.html">💳 Billing</a>
-                <a href="/accountant-dashboard.html" class="active">💰 Accounting</a>
-                <a href="/documents.html#archive">📁 Documents</a>
-                <a href="/savings-portfolio.html">📈 Investments</a>
+                <a href="/underwriter-dashboard.html">Underwriting</a>
+                <a href="/billing.html">Billing</a>
+                <a href="/accountant-dashboard.html" class="active">Accounting</a>
+                <a href="/documents.html#archive">Documents</a>
+                <a href="/savings-portfolio.html">Investments</a>
                 <a href="/login.html" class="btn-logout">Logout</a>
             </nav>
         </div>
@@ -248,7 +255,7 @@
     </script>
     <div class="dashboard-container">
         <div class="page-title">
-            <h1>💰 Accountant Dashboard - Financial Reports</h1>
+            <h1>Accountant Dashboard — Financial Reports</h1>
             <p>Long-term financial projections, actuarial analysis, and data integrity validation</p>
         </div>
         
@@ -282,24 +289,24 @@
         
         <!-- Main Tabs -->
         <div class="tabs">
-            <button class="tab active" onclick="showTab('projection')">📊 Customer Projection</button>
-            <button class="tab" onclick="showTab('forecast')">📈 25-Year Forecast</button>
-            <button class="tab" onclick="showTab('portfolio')">📋 Portfolio Report</button>
-            <button class="tab" onclick="showTab('balancesheet')">🏦 Balance Sheet</button>
-            <button class="tab" onclick="showTab('integrity')">✅ Data Integrity</button>
-            <button class="tab" onclick="showTab('dashboards')">👁️ Dashboard Views</button>
+            <button class="tab active" onclick="showTab('projection')">Customer Projection</button>
+            <button class="tab" onclick="showTab('forecast')">25-Year Forecast</button>
+            <button class="tab" onclick="showTab('portfolio')">Portfolio Report</button>
+            <button class="tab" onclick="showTab('balancesheet')">Balance Sheet</button>
+            <button class="tab" onclick="showTab('integrity')">Data Integrity</button>
+            <button class="tab" onclick="showTab('dashboards')">Dashboard Views</button>
         </div>
         
         <!-- Customer Projection Tab -->
         <div id="projection-tab" class="tab-content active">
             <div class="section">
-                <h2>📊 Long-Term Customer Projection Calculator</h2>
+                <h2>Long-Term Customer Projection Calculator</h2>
                 <p>Calculate actuarially-sound premiums using real customer data from policies and applications, with AI-powered BI assessments.</p>
                 
                 <!-- Customer/Policy Selection Section -->
                 <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); border-radius: 12px; padding: 20px; margin-bottom: 20px; color: white;">
                     <h3 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 10px;">
-                        🔍 Select Customer & Policy
+                        Select Customer & Policy
                         <span id="customer-data-status" style="font-size: 0.8rem; font-weight: normal; margin-left: auto; padding: 4px 12px; background: rgba(255,255,255,0.2); border-radius: 20px;">Manual Mode</span>
                     </h3>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px;">
@@ -308,7 +315,7 @@
                             <div style="display: flex; gap: 8px;">
                                 <input type="text" id="proj-customer-search" placeholder="e.g., efrat@phins.ai" style="flex: 1; padding: 10px; border-radius: 8px; border: none;">
                                 <button class="btn" onclick="searchCustomerForProjection()" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; white-space: nowrap;">
-                                    🔍 Search
+                                    Search
                                 </button>
                             </div>
                         </div>
@@ -326,10 +333,10 @@
                         </div>
                         <div style="display: flex; align-items: flex-end; gap: 8px;">
                             <button class="btn" onclick="loadAllCustomersForProjection()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; flex: 1;">
-                                📋 Load All Customers
+                                Load All Customers
                             </button>
                             <button class="btn" onclick="clearCustomerSelection()" style="background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); color: white;">
-                                🔄 Clear
+                                Clear
                             </button>
                         </div>
                     </div>
@@ -384,17 +391,17 @@
                 </div>
                 
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <button class="btn btn-primary" onclick="calculateProjection()">📊 Calculate Projection</button>
-                    <button class="btn" onclick="runAIProjectionAssessment()" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;">🤖 AI BI Assessment</button>
-                    <button class="btn btn-secondary" onclick="exportProjection('csv')" title="Export as CSV">📊 Export CSV</button>
-                    <button class="btn btn-secondary" onclick="exportProjection('pdf')" title="Export as PDF">📄 Export PDF</button>
+                    <button class="btn btn-primary" onclick="calculateProjection()">Calculate Projection</button>
+                    <button class="btn" onclick="runAIProjectionAssessment()" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;">AI BI Assessment</button>
+                    <button class="btn btn-secondary" onclick="exportProjection('csv')" title="Export as CSV">Export CSV</button>
+                    <button class="btn btn-secondary" onclick="exportProjection('pdf')" title="Export as PDF">Export PDF</button>
                     <button class="btn btn-secondary" onclick="printReport('projection-results')" title="Print Report">🖨️ Print</button>
                 </div>
                 
                 <!-- AI BI Assessment Section -->
                 <div id="ai-bi-assessment" style="display: none; margin-top: 20px; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 12px; padding: 20px; border: 1px solid #0ea5e9;">
                     <h3 style="margin: 0 0 16px 0; color: #0369a1; display: flex; align-items: center; gap: 10px;">
-                        🤖 AI Business Intelligence Assessment
+                        AI Business Intelligence Assessment
                         <span id="ai-assessment-status" style="font-size: 0.8rem; font-weight: normal; margin-left: auto; padding: 4px 12px; background: #dbeafe; color: #1e40af; border-radius: 20px;">Ready</span>
                     </h3>
                     <div id="ai-assessment-content">
@@ -409,13 +416,13 @@
         <!-- 25-Year Forecast Tab -->
         <div id="forecast-tab" class="tab-content">
             <div class="section">
-                <h2>📈 Long-Term Portfolio Forecast</h2>
+                <h2>Long-Term Portfolio Forecast</h2>
                 <p>Actuarial projections for revenue, claims, and profitability based on PHINS mortality tables and risk models.</p>
                 
                 <!-- Customer Filter for Forecast -->
                 <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 8px; padding: 15px; margin-bottom: 20px; border: 1px solid #0ea5e9;">
                     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                        <strong style="color: #0369a1;">🔍 Filter by Customer (Optional)</strong>
+                        <strong style="color: #0369a1;">Filter by Customer (Optional)</strong>
                         <span id="forecast-customer-status" style="font-size: 0.85rem; color: #666; margin-left: auto;">Portfolio-wide forecast</span>
                     </div>
                     <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
@@ -426,7 +433,7 @@
                             </select>
                         </div>
                         <button class="btn btn-small" onclick="loadCustomersForForecast()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;">
-                            📋 Load Customers
+                            Load Customers
                         </button>
                         <button class="btn btn-small" onclick="useProjectionCustomer()" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;" title="Use customer from Projection tab">
                             ↩️ Use from Projection
@@ -439,9 +446,9 @@
                         <label>Forecast Years</label>
                         <input type="number" id="forecast-years" value="25" min="5" max="50" step="5">
                     </div>
-                    <button class="btn btn-primary" onclick="loadForecast()">📈 Generate Forecast</button>
-                    <button class="btn btn-secondary" onclick="exportForecast('csv')" title="Export as CSV">📊 Export CSV</button>
-                    <button class="btn btn-secondary" onclick="exportForecast('pdf')" title="Export as PDF">📄 Export PDF</button>
+                    <button class="btn btn-primary" onclick="loadForecast()">Generate Forecast</button>
+                    <button class="btn btn-secondary" onclick="exportForecast('csv')" title="Export as CSV">Export CSV</button>
+                    <button class="btn btn-secondary" onclick="exportForecast('pdf')" title="Export as PDF">Export PDF</button>
                     <button class="btn btn-secondary" onclick="printReport('forecast-results')" title="Print Report">🖨️ Print</button>
                 </div>
                 
@@ -457,7 +464,7 @@
                 <!-- Customer Breakdown Toggle -->
                 <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 8px; padding: 15px; margin-bottom: 20px; border: 1px solid #0ea5e9;">
                     <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
-                        <strong style="color: #0369a1;">📊 Report Options</strong>
+                        <strong style="color: #0369a1;">Report Options</strong>
                         <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
                             <input type="checkbox" id="portfolio-show-customers" onchange="loadPortfolioReport()" style="width: 18px; height: 18px;">
                             Show Customer Breakdown
@@ -471,9 +478,9 @@
                 </div>
                 
                 <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
-                    <button class="btn btn-primary" onclick="loadPortfolioReport()">🔄 Refresh Report</button>
-                    <button class="btn btn-secondary" onclick="exportPortfolio('csv')" title="Export as CSV">📊 Export CSV</button>
-                    <button class="btn btn-secondary" onclick="exportPortfolio('pdf')" title="Export as PDF">📄 Export PDF</button>
+                    <button class="btn btn-primary" onclick="loadPortfolioReport()">Refresh Report</button>
+                    <button class="btn btn-secondary" onclick="exportPortfolio('csv')" title="Export as CSV">Export CSV</button>
+                    <button class="btn btn-secondary" onclick="exportPortfolio('pdf')" title="Export as PDF">Export PDF</button>
                     <button class="btn btn-secondary" onclick="printReport('portfolio-results')" title="Print Report">🖨️ Print</button>
                 </div>
                 <div id="portfolio-results"><div class="loading">Loading portfolio report...</div></div>
@@ -486,14 +493,14 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                     <div>
                         <h2 style="margin: 0; display: flex; align-items: center; gap: 10px;">
-                            🏦 PHINS General Reserves (Balance Sheet)
+                            PHINS General Reserves (Balance Sheet)
                         </h2>
                         <p style="color: #666; margin: 5px 0 0 0;">Company reserves, revenue, and expense tracking</p>
                     </div>
                     <div style="display: flex; gap: 10px;">
-                        <button class="btn btn-primary" onclick="loadBalanceSheet()">🔄 Refresh</button>
-                        <button class="btn btn-success" onclick="reconcileBalanceSheet()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">✅ Reconcile</button>
-                        <button class="btn btn-secondary" onclick="exportBalanceSheet('csv')">📊 Export CSV</button>
+                        <button class="btn btn-primary" onclick="loadBalanceSheet()">Refresh</button>
+                        <button class="btn btn-success" onclick="reconcileBalanceSheet()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">Reconcile</button>
+                        <button class="btn btn-secondary" onclick="exportBalanceSheet('csv')">Export CSV</button>
                         <button class="btn btn-secondary" onclick="printReport('balance-sheet-content')">🖨️ Print</button>
                     </div>
                 </div>
@@ -532,7 +539,7 @@
                         <!-- Revenue Breakdown -->
                         <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border-radius: 12px; padding: 20px; border: 1px solid #10b981;">
                             <h3 style="margin: 0 0 16px 0; color: #065f46; display: flex; align-items: center; gap: 8px;">
-                                📈 Revenue Breakdown
+                                Revenue Breakdown
                             </h3>
                             <div id="bs-revenue-list" style="font-size: 14px;">
                                 <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(16, 185, 129, 0.2);">
@@ -565,7 +572,7 @@
                         <!-- Expense Breakdown -->
                         <div style="background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%); border-radius: 12px; padding: 20px; border: 1px solid #ef4444;">
                             <h3 style="margin: 0 0 16px 0; color: #991b1b; display: flex; align-items: center; gap: 8px;">
-                                📉 Expense Breakdown
+                                Expense Breakdown
                             </h3>
                             <div id="bs-expense-list" style="font-size: 14px;">
                                 <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(239, 68, 68, 0.2);">
@@ -595,11 +602,11 @@
                     <!-- Summary Footer -->
                     <div style="margin-top: 20px; padding: 16px; background: #f8fafc; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                         <div style="font-size: 13px; color: #64748b;">
-                            <span>📅 Last Updated: </span>
+                            <span>Last Updated: </span>
                             <strong id="bs-last-updated">Never</strong>
                         </div>
                         <div style="font-size: 13px; color: #64748b;">
-                            <span>📊 Transactions: </span>
+                            <span>Transactions: </span>
                             <strong id="bs-tx-count">0</strong>
                         </div>
                     </div>
@@ -615,7 +622,7 @@
                 
                 <!-- Actuarial Consistency Info -->
                 <div class="actuarial-info" style="background: linear-gradient(135deg, #e8f4fd 0%, #f0f8ff 100%); border-radius: 8px; padding: 15px; margin-bottom: 20px; border-left: 4px solid #0066cc;">
-                    <h4 style="margin: 0 0 10px 0; color: #004085;">📊 Actuarial Consistency Checks</h4>
+                    <h4 style="margin: 0 0 10px 0; color: #004085;">Actuarial Consistency Checks</h4>
                     <ul style="margin: 0; padding-left: 20px; font-size: 0.9rem; color: #333;">
                         <li>All premiums sourced from <strong>PHINS_ACTUARIAL_TABLES_V1</strong></li>
                         <li>Risk cover component uses mortality rates + ADL risk multipliers</li>
@@ -626,9 +633,10 @@
                 </div>
                 
                 <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
-                    <button class="btn btn-primary" onclick="loadIntegrityReport()">✅ Run Validation</button>
-                    <button class="btn btn-secondary" onclick="exportIntegrity('csv')" title="Export as CSV">📊 Export CSV</button>
-                    <button class="btn btn-secondary" onclick="exportIntegrity('pdf')" title="Export as PDF">📄 Export PDF</button>
+                    <button class="btn btn-primary" onclick="loadIntegrityReport()">Run Validation</button>
+                    <button class="btn btn-primary" onclick="loadBooksReconcile()">Reconcile Books</button>
+                    <button class="btn btn-secondary" onclick="exportIntegrity('csv')" title="Export as CSV">Export CSV</button>
+                    <button class="btn btn-secondary" onclick="exportIntegrity('pdf')" title="Export as PDF">Export PDF</button>
                     <button class="btn btn-secondary" onclick="printReport('integrity-results')" title="Print Report">🖨️ Print</button>
                 </div>
                 <div id="integrity-results"><div class="loading">Click "Run Validation" to check data integrity...</div></div>
@@ -638,20 +646,20 @@
         <!-- Dashboard Views Tab -->
         <div id="dashboards-tab" class="tab-content">
             <div class="section">
-                <h2>📊 Cross-Dashboard Data View</h2>
+                <h2>Cross-Dashboard Data View</h2>
                 <p>View and compare data summaries from all dashboards for reconciliation and data integrity validation.</p>
                 
                 <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 15px;">
-                    <button class="tab" onclick="loadDashboardView('accountant')">💰 Accountant</button>
-                    <button class="tab" onclick="loadDashboardView('underwriter')">📋 Underwriter</button>
-                    <button class="tab" onclick="loadDashboardView('claims')">🏥 Claims</button>
-                    <button class="tab" onclick="loadDashboardView('admin')">👑 Admin</button>
+                    <button class="tab" onclick="loadDashboardView('accountant')">Accountant</button>
+                    <button class="tab" onclick="loadDashboardView('underwriter')">Underwriter</button>
+                    <button class="tab" onclick="loadDashboardView('claims')">Claims</button>
+                    <button class="tab" onclick="loadDashboardView('admin')">Admin</button>
                     <button class="tab active" onclick="loadAllDashboards()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-                        🔄 Compare All
+                        Compare All
                     </button>
                     <span style="flex-grow: 1;"></span>
-                    <button class="btn btn-secondary" onclick="exportCrossDashboard('csv')" title="Export as CSV">📊 Export CSV</button>
-                    <button class="btn btn-secondary" onclick="exportCrossDashboard('pdf')" title="Export as PDF">📄 Export PDF</button>
+                    <button class="btn btn-secondary" onclick="exportCrossDashboard('csv')" title="Export as CSV">Export CSV</button>
+                    <button class="btn btn-secondary" onclick="exportCrossDashboard('pdf')" title="Export as PDF">Export PDF</button>
                     <button class="btn btn-secondary" onclick="printReport('dashboard-view-results')" title="Print Report">🖨️ Print</button>
                 </div>
                 
@@ -1033,7 +1041,7 @@
             // Update data source indicator safely
             const indicator = document.getElementById('data-source-indicator');
             if (indicator) {
-                indicator.textContent = '✓ Real Customer Data';
+                indicator.textContent = 'Real Customer Data';
                 indicator.style.background = '#d1fae5';
                 indicator.style.color = '#065f46';
             }
@@ -1168,7 +1176,7 @@
             statusSpan.textContent = 'Analyzing...';
             statusSpan.style.background = '#fef3c7';
             statusSpan.style.color = '#92400e';
-            contentDiv.innerHTML = '<div class="loading">🤖 AI analyzing customer profile and generating BI assessment...</div>';
+            contentDiv.innerHTML = '<div class="loading">AI analyzing customer profile and generating BI assessment...</div>';
             
             // Gather data for assessment
             const coverage = parseFloat(document.getElementById('proj-coverage').value) || 250000;
@@ -1331,7 +1339,7 @@
                     <!-- Insights -->
                     <div style="background: white; padding: 16px; border-radius: 8px;">
                         <h4 style="margin: 0 0 12px 0; color: #0369a1; display: flex; align-items: center; gap: 8px;">
-                            💡 AI Insights
+                            AI Insights
                         </h4>
                         ${assessment.insights.length > 0 ? 
                             assessment.insights.map(i => `
@@ -1346,7 +1354,7 @@
                     <!-- Recommendations -->
                     <div style="background: white; padding: 16px; border-radius: 8px;">
                         <h4 style="margin: 0 0 12px 0; color: #059669; display: flex; align-items: center; gap: 8px;">
-                            ✅ Recommendations
+                            Recommendations
                         </h4>
                         ${assessment.recommendations.length > 0 ? 
                             assessment.recommendations.map(r => `
@@ -1361,7 +1369,7 @@
                     <!-- Risk Factors -->
                     <div style="background: white; padding: 16px; border-radius: 8px;">
                         <h4 style="margin: 0 0 12px 0; color: #dc2626; display: flex; align-items: center; gap: 8px;">
-                            ⚠️ Risk Factors
+                            Risk Factors
                         </h4>
                         ${assessment.risks.length > 0 ? 
                             assessment.risks.map(r => `
@@ -1369,7 +1377,7 @@
                                     ${r}
                                 </div>
                             `).join('') :
-                            '<p style="color: #10b981; font-size: 0.9rem;">✓ No significant risk factors identified.</p>'
+                            '<p style="color: #10b981; font-size: 0.9rem;">No significant risk factors identified.</p>'
                         }
                     </div>
                 </div>
@@ -1552,7 +1560,7 @@
                             <!-- Verified Badge -->
                             <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
                                 <span style="background: rgba(16, 185, 129, 0.3); padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; display: flex; align-items: center; gap: 6px;">
-                                    ✓ Verified Customer Data
+                                    Verified Customer Data
                                 </span>
                             </div>
                         </div>
@@ -1562,7 +1570,7 @@
                 // Render results with actuarial source information
                 let html = customerInfoHtml + `
                     <div style="background: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 20px; border: 1px solid #dee2e6;">
-                        <h4 style="margin: 0 0 10px 0; color: #495057;">📋 Scenario Summary</h4>
+                        <h4 style="margin: 0 0 10px 0; color: #495057;">Scenario Summary</h4>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; font-size: 0.9rem;">
                             <div><strong>Coverage:</strong> ${formatCurrency(data.scenario.coverage)}</div>
                             <div><strong>Savings:</strong> ${data.scenario.savings_allocation}</div>
@@ -1572,7 +1580,7 @@
                         </div>
                     </div>
                     
-                    <h3>Premium Breakdown <span style="font-size: 0.8rem; color: #28a745;">✓ Actuarially Sourced</span></h3>
+                    <h3>Premium Breakdown <span style="font-size: 0.8rem; color: #28a745;">Actuarially Sourced</span></h3>
                     <div class="stats-grid">
                         <div class="stat-card">
                             <div class="stat-value">${formatCurrency(data.premium_breakdown.annual_premium)}</div>
@@ -1591,12 +1599,12 @@
                         </div>
                         <div class="stat-card" style="background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);">
                             <div class="stat-value">${formatCurrency(data.premium_breakdown.savings_component)}</div>
-                            <div class="stat-label">💰 Savings Component</div>
+                            <div class="stat-label">Savings Component</div>
                         </div>
                     </div>
                     
                     <div style="background: #e9ecef; border-radius: 6px; padding: 10px; margin: 15px 0; font-size: 0.85rem;">
-                        <strong>📊 Actuarial Calculation:</strong> 
+                        <strong>Actuarial Calculation:</strong> 
                         Risk = PV(Mortality Rate × ADL Multiplier × Lapse Survival × Coverage) | 
                         Expense Loading = 15% of Risk | 
                         Discount Rate = 3.5%
@@ -1752,7 +1760,7 @@
             const statusSpan = document.getElementById('forecast-customer-status');
             if (select.value) {
                 const selectedOption = select.options[select.selectedIndex];
-                statusSpan.textContent = `📊 Customer: ${selectedOption.dataset.email || selectedOption.text}`;
+                statusSpan.textContent = `Customer: ${selectedOption.dataset.email || selectedOption.text}`;
                 statusSpan.style.color = '#059669';
             } else {
                 statusSpan.textContent = 'Portfolio-wide forecast';
@@ -1801,7 +1809,7 @@
                                     <strong style="font-size: 1.1rem;">Customer-Specific Forecast</strong>
                                     <p style="margin: 5px 0 0 0; opacity: 0.9;">${selectedOption.text}</p>
                                 </div>
-                                <span style="margin-left: auto; background: rgba(16, 185, 129, 0.3); padding: 4px 12px; border-radius: 12px; font-size: 0.85rem;">✓ Filtered View</span>
+                                <span style="margin-left: auto; background: rgba(16, 185, 129, 0.3); padding: 4px 12px; border-radius: 12px; font-size: 0.85rem;">Filtered View</span>
                             </div>
                         </div>
                     `;
@@ -1909,7 +1917,7 @@
                 // Update status
                 if (statusSpan) {
                     if (showCustomers || showApplications) {
-                        statusSpan.textContent = '📊 Detailed View';
+                        statusSpan.textContent = 'Detailed View';
                         statusSpan.style.color = '#059669';
                     } else {
                         statusSpan.textContent = 'Summary View';
@@ -2021,7 +2029,7 @@
                 // Add customer breakdown if enabled
                 if (showCustomers && customerData.length > 0) {
                     html += `
-                        <h3 style="margin-top: 30px;">👥 Customer Breakdown</h3>
+                        <h3 style="margin-top: 30px;">Customer Breakdown</h3>
                         <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 8px; padding: 15px; margin-bottom: 15px;">
                             <strong>Total Customers:</strong> ${customerData.length}
                         </div>
@@ -2070,7 +2078,7 @@
                 // Add application summary if enabled but not showing customers
                 if (showApplications && !showCustomers && applicationData.length > 0) {
                     html += `
-                        <h3 style="margin-top: 30px;">📋 Application Data Summary</h3>
+                        <h3 style="margin-top: 30px;">Application Data Summary</h3>
                         <div class="stats-grid">
                             <div class="stat-card">
                                 <div class="stat-value">${applicationData.length}</div>
@@ -2100,6 +2108,47 @@
             }
         }
         
+        async function loadBooksReconcile() {
+            const resultsDiv = document.getElementById('integrity-results');
+            resultsDiv.innerHTML = '<div class="loading">Reconciling accounting book, customer ledger, claims, and reserves...</div>';
+            try {
+                const response = await fetch('/api/finance/reconcile', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                if (data.error) {
+                    resultsDiv.innerHTML = `<div class="error">${data.error}</div>`;
+                    return;
+                }
+                const rec = data.reconcile || {};
+                const ok = rec.is_consistent;
+                const prem = rec.premiums || {};
+                const clm = rec.claims || {};
+                let html = `
+                    <div class="integrity-status ${ok ? 'integrity-healthy' : 'integrity-issues'}">
+                        <h3 style="margin:0;">Financial books ${ok ? 'in balance' : 'have discrepancies'}</h3>
+                        <p style="margin:5px 0 0 0;">Cash identity is the customer ledger. Premium identity is the actuarial kernel pin.</p>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-card"><div class="stat-value">$${(prem.customer_ledger && prem.customer_ledger.total || 0).toLocaleString()}</div><div class="stat-label">Ledger premiums</div></div>
+                        <div class="stat-card"><div class="stat-value">$${(prem.accounting_book || 0).toLocaleString()}</div><div class="stat-label">Accounting book premiums</div></div>
+                        <div class="stat-card"><div class="stat-value">$${(clm.customer_ledger && clm.customer_ledger.total || 0).toLocaleString()}</div><div class="stat-label">Ledger claims paid</div></div>
+                        <div class="stat-card"><div class="stat-value">$${(clm.accounting_book || 0).toLocaleString()}</div><div class="stat-label">Accounting book claims</div></div>
+                    </div>
+                `;
+                if ((rec.discrepancies || []).length) {
+                    html += '<h3>Discrepancies</h3><ul>';
+                    for (const d of rec.discrepancies) {
+                        html += `<li><strong>${d.check}</strong> — ${d.description || ''} ${d.difference != null ? `(diff ${d.difference})` : ''}</li>`;
+                    }
+                    html += '</ul>';
+                }
+                resultsDiv.innerHTML = html;
+            } catch (err) {
+                resultsDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;
+            }
+        }
+
         // Load data integrity report
         async function loadIntegrityReport() {
             const resultsDiv = document.getElementById('integrity-results');
@@ -2191,7 +2240,7 @@
                     const av = data.actuarial_validation;
                     const avStatusClass = av.status === 'COMPLIANT' ? 'integrity-healthy' : 'integrity-issues';
                     html += `
-                        <h3>📊 Actuarial Consistency Validation</h3>
+                        <h3>Actuarial Consistency Validation</h3>
                         <div class="integrity-status ${avStatusClass}" style="margin-bottom: 15px;">
                             <h4 style="margin: 0;">Status: ${av.status}</h4>
                             <p style="margin: 5px 0 0 0;">Data Source: <strong>${av.source}</strong></p>
@@ -2203,11 +2252,11 @@
                             </div>
                             <div class="stat-card" style="background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);">
                                 <div class="stat-value">${av.passed}</div>
-                                <div class="stat-label">✓ Actuarially Sound</div>
+                                <div class="stat-label">Actuarially Sound</div>
                             </div>
                             <div class="stat-card" style="background: ${av.needs_review > 0 ? 'linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%)' : '#f8f9fa'};">
                                 <div class="stat-value">${av.needs_review}</div>
-                                <div class="stat-label">⚠️ Needs Review</div>
+                                <div class="stat-label">Needs Review</div>
                             </div>
                         </div>
                     `;
@@ -2278,13 +2327,13 @@
                 
                 // Dashboard-specific icons and colors
                 const dashboardConfig = {
-                    accountant: { icon: '💰', color: '#2e7d32', title: 'Accountant Dashboard - Financial Overview' },
+                    accountant: { icon: '', color: '#2e7d32', title: 'Accountant Dashboard - Financial Overview' },
                     underwriter: { icon: '📋', color: '#1565c0', title: 'Underwriter Dashboard - Risk Assessment' },
                     claims: { icon: '🏥', color: '#c62828', title: 'Claims Dashboard - Claims Management' },
                     admin: { icon: '👑', color: '#7b1fa2', title: 'Admin Dashboard - System Overview' }
                 };
                 
-                const config = dashboardConfig[type] || { icon: '📊', color: '#333', title: type };
+                const config = dashboardConfig[type] || { icon: '', color: '#333', title: type };
                 
                 let html = `
                     <div style="background: linear-gradient(135deg, ${config.color}15 0%, ${config.color}05 100%); 
@@ -2331,7 +2380,7 @@
                 html += `
                         </div>
                         <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid ${config.color}20;">
-                            <small style="color: #666;">🕐 Generated: ${new Date(data.generated_at).toLocaleString()}</small>
+                            <small style="color: #666;">Generated: ${new Date(data.generated_at).toLocaleString()}</small>
                         </div>
                     </div>
                 `;
@@ -2341,7 +2390,7 @@
                     const fs = data.financial_summary;
                     html += `
                         <div style="background: #f8f9fa; border-radius: 8px; padding: 15px; margin-top: 15px;">
-                            <h4 style="margin: 0 0 10px 0;">📊 Financial Reconciliation</h4>
+                            <h4 style="margin: 0 0 10px 0;">Financial Reconciliation</h4>
                             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center;">
                                 <div>
                                     <div style="font-size: 0.8rem; color: #666;">Expected Premiums</div>
@@ -2393,16 +2442,16 @@
                 // Store for export
                 lastCrossDashboardData = results;
                 
-                let html = `<h3>📊 Cross-Dashboard Comparison</h3>
+                let html = `<h3>Cross-Dashboard Comparison</h3>
                     <div style="overflow-x: auto;">
                     <table style="width: 100%; min-width: 600px;">
                         <thead>
                             <tr style="background: #f5f5f5;">
                                 <th>Metric</th>
-                                <th style="color: #2e7d32;">💰 Accountant</th>
-                                <th style="color: #1565c0;">📋 Underwriter</th>
-                                <th style="color: #c62828;">🏥 Claims</th>
-                                <th style="color: #7b1fa2;">👑 Admin</th>
+                                <th style="color: #2e7d32;">Accountant</th>
+                                <th style="color: #1565c0;">Underwriter</th>
+                                <th style="color: #c62828;">Claims</th>
+                                <th style="color: #7b1fa2;">Admin</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -2450,7 +2499,7 @@
                     </table>
                     </div>
                     <p style="color: #666; margin-top: 15px; font-size: 0.85rem;">
-                        ✅ Data synchronized across all dashboards. Last update: ${new Date().toLocaleString()}
+                        Data synchronized across all dashboards. Last update: ${new Date().toLocaleString()}
                     </p>
                 `;
                 
@@ -2492,7 +2541,7 @@
                     </style>
                 </head>
                 <body>
-                    <h1>💰 PHINS Financial Report</h1>
+                    <h1>PHINS Financial Report</h1>
                     <p>Generated: ${new Date().toLocaleString()}</p>
                     <hr>
                     ${content.innerHTML}
@@ -2733,7 +2782,7 @@
                     
                     customerHeader = `
                         <div class="summary-box" style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); color: white; margin-bottom: 20px;">
-                            <h3 style="color: white;">👤 Customer Information (Verified Data)</h3>
+                            <h3 style="color: white;">Customer Information (Verified Data)</h3>
                             <p><strong>Customer ID:</strong> ${custInfo.id || 'N/A'} | <strong>Name:</strong> ${custInfo.name || custInfo.email || 'N/A'} | <strong>Email:</strong> ${custInfo.email || 'N/A'}</p>
                             <p><strong>Policy:</strong> ${policyInfo.id || 'N/A'} | <strong>Coverage:</strong> $${Number(coverageVal).toLocaleString()} | <strong>Status:</strong> ${policyInfo.status || 'N/A'} | <strong>Type:</strong> ${policyInfo.type || 'N/A'}</p>
                             <p><strong>Age:</strong> ${ageVal} | <strong>Disability:</strong> ${disabilityPct}% | <strong>BMI:</strong> ${bmiVal !== 'N/A' && bmiVal > 0 ? Number(bmiVal).toFixed(1) : 'N/A'} | <strong>Smoking:</strong> ${smokingVal}</p>
@@ -2747,7 +2796,7 @@
                         <h3>Scenario Parameters</h3>
                         <p><strong>Coverage:</strong> ${formatCurrency(s.coverage)} | <strong>Term:</strong> ${s.term_years} years | <strong>Age:</strong> ${s.customer_age}</p>
                         <p><strong>ADL Level:</strong> ${s.adl_level} (${s.adl_risk}) | <strong>Savings:</strong> ${s.savings_allocation}</p>
-                        <p><strong>Data Source:</strong> ${dataSource === 'real_customer' ? '✓ Real Customer Data' : 'Manual Input'}</p>
+                        <p><strong>Data Source:</strong> ${dataSource === 'real_customer' ? 'Real Customer Data' : 'Manual Input'}</p>
                     </div>
                     <div class="summary-box">
                         <h3>Premium Breakdown</h3>
@@ -2894,10 +2943,10 @@
                         <thead>
                             <tr style="background: #1a1f36; color: white;">
                                 <th>Metric</th>
-                                <th>💰 Accountant</th>
-                                <th>📋 Underwriter</th>
-                                <th>🏥 Claims</th>
-                                <th>👑 Admin</th>
+                                <th>Accountant</th>
+                                <th>Underwriter</th>
+                                <th>Claims</th>
+                                <th>Admin</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -2937,7 +2986,7 @@
                         </tbody>
                     </table>
                     <p style="margin-top: 20px; color: #666;">
-                        ✅ Data synchronized across all dashboards. Generated: ${new Date().toLocaleString()}
+                        Data synchronized across all dashboards. Generated: ${new Date().toLocaleString()}
                     </p>
                 `;
                 exportToPDF('Cross-Dashboard Data Reconciliation Report', content);
@@ -3123,7 +3172,7 @@
                 // Render results with actuarial source information
                 let html = `
                     <div style="background: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 20px; border: 1px solid #dee2e6;">
-                        <h4 style="margin: 0 0 10px 0; color: #495057;">📋 Scenario Summary</h4>
+                        <h4 style="margin: 0 0 10px 0; color: #495057;">Scenario Summary</h4>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; font-size: 0.9rem;">
                             <div><strong>Coverage:</strong> ${formatCurrency(data.scenario.coverage)}</div>
                             <div><strong>Savings:</strong> ${data.scenario.savings_allocation}</div>
@@ -3135,7 +3184,7 @@
                     
                     <div class="lump-sum-grid">
                         <div class="lump-sum-card">
-                            <h4>💰 Annual Premium</h4>
+                            <h4>Annual Premium</h4>
                             <div class="lump-sum-value">${formatCurrency(data.premium_breakdown.annual_premium)}</div>
                             <div style="font-size: 0.85rem; color: #666; margin-top: 5px;">Monthly: ${formatCurrency(data.premium_breakdown.monthly_premium)}</div>
                         </div>
@@ -3145,7 +3194,7 @@
                             <div style="font-size: 0.85rem; color: #666;">Mortality + ADL Risk</div>
                         </div>
                         <div class="lump-sum-card" style="border-color: #007bff;">
-                            <h4>📈 Savings Component</h4>
+                            <h4>Savings Component</h4>
                             <div class="lump-sum-value" style="color: #007bff;">${formatCurrency(data.premium_breakdown.savings_component)}</div>
                             <div style="font-size: 0.85rem; color: #666;">Target: ${formatCurrency(data.premium_breakdown.savings_target)}</div>
                         </div>
@@ -3155,7 +3204,7 @@
                 // Add yearly projections table
                 if (data.yearly_projections && data.yearly_projections.length > 0) {
                     html += `
-                        <h3 style="margin-top: 30px;">📊 Yearly Projections</h3>
+                        <h3 style="margin-top: 30px;">Yearly Projections</h3>
                         <div class="projection-table">
                             <table>
                                 <thead>
@@ -3253,11 +3302,11 @@
                                 </div>
                                 <div class="stat-card" style="background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);">
                                     <div class="stat-value">${av.passed}</div>
-                                    <div class="stat-label">✓ Actuarially Sound</div>
+                                    <div class="stat-label">Actuarially Sound</div>
                                 </div>
                                 <div class="stat-card" style="background: ${av.needs_review > 0 ? 'linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%)' : '#f8f9fa'};">
                                     <div class="stat-value">${av.needs_review}</div>
-                                    <div class="stat-label">⚠️ Needs Review</div>
+                                    <div class="stat-label">Needs Review</div>
                                 </div>
                             </div>
                         </div>
@@ -3367,7 +3416,7 @@
         
         // Reconcile Balance Sheet - Verify and fix data integrity
         async function reconcileBalanceSheet() {
-            const autoCorrect = confirm('🔍 Balance Sheet Reconciliation\n\nThis will verify:\n• Premium Income (from paid bills)\n• Claims Paid (from approved claims)\n• Medical Equipment/Services (from suppliers)\n• Health Wallets & Investments\n\nClick OK to auto-correct any discrepancies found.\nClick Cancel to view discrepancies without making changes.');
+            const autoCorrect = confirm('Balance Sheet Reconciliation\n\nThis will verify:\n• Premium Income (from paid bills)\n• Claims Paid (from approved claims)\n• Medical Equipment/Services (from suppliers)\n• Health Wallets & Investments\n\nClick OK to auto-correct any discrepancies found.\nClick Cancel to view discrepancies without making changes.');
             
             try {
                 const response = await fetch(`/api/admin/balance-sheet/reconcile?auto_correct=${autoCorrect}`, {
@@ -3378,7 +3427,7 @@
                     const data = await response.json();
                     const fmt = (n) => '$' + (Number(n) || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                     
-                    let message = `✅ Balance Sheet Reconciliation Complete\n`;
+                    let message = `Balance Sheet Reconciliation Complete\n`;
                     message += `═══════════════════════════════════\n`;
                     message += `Data Valid: ${data.is_valid ? 'Yes ✓' : 'No ⚠️'}\n\n`;
                     
@@ -3391,19 +3440,19 @@
                     }
                     
                     if (data.corrections_made.length > 0) {
-                        message += `✅ CORRECTIONS APPLIED:\n`;
+                        message += `CORRECTIONS APPLIED:\n`;
                         data.corrections_made.forEach(c => {
                             message += `• ${c}\n`;
                         });
                         message += `\n`;
                     }
                     
-                    message += `💰 PREMIUM INCOME (Total Collected - Cumulative):\n`;
+                    message += `PREMIUM INCOME (Total Collected - Cumulative):\n`;
                     message += `• From Paid Bills: ${fmt(data.summary_totals?.premium_income_breakdown?.from_bills)}\n`;
                     message += `• From Ledger (Unbilled): ${fmt(data.summary_totals?.premium_income_breakdown?.from_ledger)}\n`;
                     message += `• Total Collected (Cumulative): ${fmt(data.summary_totals?.total_premiums_collected)}\n\n`;
                     
-                    message += `📊 SUMMARY TOTALS:\n`;
+                    message += `SUMMARY TOTALS:\n`;
                     message += `• Premiums Collected (Cumulative): ${fmt(data.summary_totals?.total_premiums_collected)}\n`;
                     message += `• Claims Paid: ${fmt(data.summary_totals?.total_claims_paid)}\n`;
                     message += `• Medical Services: ${fmt(data.summary_totals?.total_medical_services)}\n`;
@@ -3411,18 +3460,18 @@
                     message += `• Investments: ${fmt(data.summary_totals?.total_investments)}\n`;
                     message += `• Net Position: ${fmt(data.summary_totals?.net_position)}\n\n`;
                     
-                    message += `🏪 MEDICAL SERVICES:\n`;
+                    message += `MEDICAL SERVICES:\n`;
                     message += `• Total: ${fmt(data.medical_services?.total_amount)} (${data.medical_services?.total_transactions || 0} transactions)\n`;
                     Object.entries(data.medical_services?.by_category || {}).forEach(([cat, info]) => {
                         message += `  - ${cat}: ${fmt(info.total)} (${info.count})\n`;
                     });
                     message += `\n`;
                     
-                    message += `💳 WALLETS & INVESTMENTS:\n`;
+                    message += `WALLETS & INVESTMENTS:\n`;
                     message += `• Health Wallets: ${fmt(data.health_wallets?.total_balance)} (${data.health_wallets?.active_wallets || 0} active)\n`;
                     message += `• Investments: ${fmt(data.investments?.total_balance)} (${data.investments?.active_accounts || 0} accounts)\n\n`;
                     
-                    message += `🏦 BALANCE SHEET:\n`;
+                    message += `BALANCE SHEET:\n`;
                     message += `• Claims Reserve: ${fmt(data.current_balance_sheet?.claims_reserve)}\n`;
                     message += `• Total Revenue: ${fmt(data.current_balance_sheet?.total_revenue)}\n`;
                     message += `• Total Expenses: ${fmt(data.current_balance_sheet?.total_expenses)}\n`;
