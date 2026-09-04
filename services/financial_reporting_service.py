@@ -361,12 +361,8 @@ class FinancialReportingService:
         """
         Calculate actuarially sound premium via the central pricing kernel.
 
-        The kernel (``services.pricing_kernel.price_policy``) is the single
-        source of truth for actuarial pricing across the platform. This
-        method routes the legacy financial-reporting inputs at the kernel
-        with the legacy claim model (``ClaimModel.INDEPENDENT``), lapse
-        adjustment, and minimum-risk floor enabled so output stays
-        bit-for-bit compatible with previous releases.
+        Uses the same ``price_application_with_kernel`` path as issuance so
+        accountant quotes and billed premiums share one identity.
 
         Args:
             coverage: Face value of policy
@@ -394,99 +390,52 @@ class FinancialReportingService:
         underwriting_loading = uw_check.get('loading', 0)
         exclude_disability = uw_check.get('exclude_disability', False)
 
-        # Delegate the pricing math to the central pricing kernel. The legacy
-        # FinancialReportingService used independent mortality/disability PVs
-        # with lapse adjustment and a minimum-risk floor for ADL 8+, so the
-        # kernel is configured to match that behaviour exactly.
-        from services.pricing_kernel import (
-            ClaimModel, PricingConfig, PricingCustomer, SavingsFormula,
-            TableSet, get_age_curve, get_product, price_policy,
-        )
+        # Same kernel + persisted Pricing Parameters as issuance.
+        from services.pricing_shadow_service import price_application_with_kernel
 
-        kernel_tables = TableSet(
-            mortality_rates=[
-                {'age_min': low, 'age_max': high, 'rate_per_1000': rate}
-                for (low, high), rate in MORTALITY_RATES.items()
-            ],
-            disability_incidence_rates=[
-                {'age_min': low, 'age_max': high, 'rate_per_1000': rate}
-                for (low, high), rate in DISABILITY_INCIDENCE_RATES.items()
-            ],
-            adl_mortality_multipliers=[
-                {'adl': adl, 'multiplier': mult}
-                for adl, mult in ADL_MORTALITY_MULTIPLIERS.items()
-            ],
-            adl_disability_multipliers=[
-                {'adl': adl, 'multiplier': mult}
-                for adl, mult in ADL_DISABILITY_INCIDENCE_MULTIPLIERS.items()
-            ],
-            adl_benefit_percentages=[
-                {'adl': adl, 'benefit_pct': pct}
-                for adl, pct in ADL_BENEFIT_PERCENTAGES.items()
-            ],
-            lapse_rates=[
-                ({'year': key, 'rate': rate} if isinstance(key, int)
-                 else {'year_min': key[0], 'year_max': key[1], 'rate': rate})
-                for key, rate in LAPSE_RATES.items()
-            ],
-            age_curve=get_age_curve('identity'),
-            version='financial_reporting_v2',
-        )
-        # FRS expects each ADL bracket to carry its own benefit percentage but
-        # the legacy disability PV applied wider age-bracket fallbacks. Mirror
-        # those overrides on the table so the kernel sees identical inputs.
-        adl_benefit_override = {
-            1: 0.25, 2: 0.25, 3: 0.25, 4: 0.35, 5: 0.35,
-            6: 0.65, 7: 0.65, 8: 0.90, 9: 0.90, 10: 0.90,
-        }
-        kernel_tables.adl_benefit_percentages = [
-            {'adl': adl, 'benefit_pct': pct} for adl, pct in adl_benefit_override.items()
-        ]
+        kernel = price_application_with_kernel({
+            "type": "phins_unified",
+            "coverage_amount": approved_coverage,
+            "age": int(age),
+            "term_years": int(term_years),
+            "coverage_years": int(term_years),
+            "adl_level": int(adl_level),
+            "savings_rate": float(savings_pct or 0.0),
+            "risk_score": "medium",
+        }) or {}
+        if not kernel or float(kernel.get("annual") or 0) <= 0:
+            return {
+                'annual_premium': 0,
+                'monthly_premium': 0,
+                'eligible': False,
+                'decline_reason': 'kernel_unavailable',
+                'adl_level': adl_level,
+                'customer_age': age,
+            }
 
-        kernel_config = PricingConfig(
-            expense_loading_pct=EXPENSE_LOADING_PCT,
-            profit_margin_pct=PROFIT_MARGIN_PCT if include_profit_margin else 0.0,
-            discount_rate=DISCOUNT_RATE,
-            savings_rate=float(savings_pct or 0.0),
-            savings_yield_pct=0.0,
-            savings_formula=SavingsFormula.STRAIGHT_LINE,
-            claim_model=ClaimModel.INDEPENDENT,
-            apply_lapse_adjustment=True,
-            apply_min_risk_floor=True,
-            version='financial_reporting_v2',
-        )
-
-        components = price_policy(
-            PricingCustomer(
-                age=int(age),
-                coverage=float(approved_coverage),
-                term_years=int(term_years),
-                adl_level=int(adl_level),
-            ),
-            get_product('phins_hybrid_savings'),
-            kernel_tables,
-            kernel_config,
-            underwriting_loading=float(underwriting_loading),
-            exclude_disability=bool(exclude_disability),
-        )
-
-        adl_mort_mult = components.adl_mortality_multiplier
-        adl_dis_mult = components.adl_disability_multiplier
-        mortality_cost_pv = components.pv_mortality_claims
-        disability_cost_pv = components.pv_disability_claims
-        total_risk_cost_pv = components.pv_total_risk_claims
-        mortality_premium_annual = components.mortality_premium_annual
-        disability_premium_annual = components.disability_premium_annual
-        risk_premium_annual = components.risk_premium_annual
-        savings_premium_annual = components.savings_premium_annual
-        expense_loading = components.expense_loading_annual
-        profit_margin = components.profit_margin_annual
-        total_annual = components.annual_premium
+        comps = kernel.get("components") or {}
+        adl_mort_mult = float(kernel.get('adl_mortality_multiplier') or 1.0)
+        adl_dis_mult = float(kernel.get('adl_disability_multiplier') or 1.0)
+        mortality_cost_pv = float(comps.get('pv_mortality_claims') or 0)
+        disability_cost_pv = float(comps.get('pv_disability_claims') or 0)
+        total_risk_cost_pv = mortality_cost_pv + disability_cost_pv
+        mortality_premium_annual = float(kernel.get('mortality_premium_annual') or 0)
+        disability_premium_annual = float(kernel.get('disability_premium_annual') or 0)
+        risk_premium_annual = float(kernel.get('risk_premium_annual') or 0)
+        savings_premium_annual = float(kernel.get('savings_premium_annual') or 0)
+        expense_loading = float(comps.get('expense_loading_annual') or 0)
+        profit_margin = float(comps.get('profit_margin_annual') or 0)
+        total_annual = float(kernel.get('annual') or 0)
+        monthly_premium = float(kernel.get('monthly') or 0)
         savings_allocation = approved_coverage * float(savings_pct or 0.0)
+        if not include_profit_margin and total_annual:
+            total_annual = round(total_annual - profit_margin, 2)
+            monthly_premium = round(total_annual / 12.0, 2)
+            profit_margin = 0.0
 
         return {
             'annual_premium': total_annual,
-            'monthly_premium': components.monthly_premium,
+            'monthly_premium': monthly_premium,
             'risk_component': risk_premium_annual,
             'mortality_component': mortality_premium_annual,
             'disability_component': disability_premium_annual,
@@ -509,7 +458,7 @@ class FinancialReportingService:
             'pv_disability_risk': disability_cost_pv,
             'pv_total_risk': total_risk_cost_pv,
             'actuarial_model': 'PHINS_PRICING_KERNEL_V1',
-            'pricing_kernel_integrity_hash': components.integrity_hash,
+            'pricing_kernel_integrity_hash': kernel.get('integrity_hash'),
             'expected_loss_ratio': round(
                 (total_risk_cost_pv / (risk_premium_annual * term_years)) * 100, 1
             ) if risk_premium_annual > 0 else 0

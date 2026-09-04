@@ -49,7 +49,7 @@ Issuance now uses the actuarial kernel on every channel (classic apply, chat, un
 
 ## 4. Still intentionally dual
 
-- `calculate_age_adjusted_premium` still applies a legacy savings override for leftover quote-compat callers. Monthly distribution and `/api/customer/simulate-coverage` no longer use it — they read the kernel pin or call `calculate_premium`.
+- `calculate_age_adjusted_premium` and accountant `FinancialReportingService.calculate_premium` now return the kernel breakdown (no legacy 50% savings override; FRS uses the same `price_application_with_kernel` path as issuance).
 - Unmapped products (auto / property / business) still use the type-rate card because they have no kernel product.
 - Balance-sheet `claims_reserve` is still seed capital minus expenses; it is reported, not auto-rewritten, by reconcile.
 - Set `PHINS_KERNEL_BILLING_ENABLED=0` only for shadow-only experiments that must keep the flat card.

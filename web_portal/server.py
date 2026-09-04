@@ -5852,12 +5852,8 @@ def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: s
     Calculate age-adjusted premium via the central pricing kernel.
 
     This used to be a parallel pricer with its own hardcoded mortality /
-    disability / ADL tables and a hardcoded 50% savings allocation. It is now
-    a thin wrapper that delegates to ``services.pricing_kernel.price_policy``
-    so the platform has a single source of truth for pricing math. The
-    legacy claim model (independent), lapse adjustment, and ADL-8 minimum
-    risk floor are preserved by configuring the kernel accordingly, so
-    existing quote / billing flows keep their previous outputs.
+    disability / ADL tables and a hardcoded 50% savings allocation. It now
+    returns the kernel breakdown unchanged so quote math matches issuance.
     """
     # ----- Age factor lookup (still used by the simple non-actuarial branch) ----
     AGE_FACTORS = {
@@ -5959,36 +5955,6 @@ def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: s
             exclude_disability=exclude_disability,
         )
 
-        # Legacy savings formula: base_premium * 0.5 (independent of coverage
-        # and term). The kernel uses coverage * rate / term which is a different
-        # formula; override savings and recompute the dependent totals so
-        # existing quote / billing flows stay bit-for-bit unchanged.
-        savings_premium = round(base_premium * 0.5, 2)
-        expense_loading = components.expense_loading_annual
-        profit_margin = round(
-            (components.risk_premium_annual + savings_premium + expense_loading) * 0.10, 2
-        )
-        annual_premium = round(
-            components.risk_premium_annual + savings_premium + expense_loading + profit_margin, 2
-        )
-        monthly_premium = round(annual_premium / 12.0, 2)
-
-        # Recompute integrity hash over the actual returned values so
-        # downstream consumers can verify the breakdown they receive.
-        _r6 = lambda v: round(float(v), 6)
-        override_hash_payload = json.dumps({
-            "annual": _r6(annual_premium),
-            "risk": _r6(components.risk_premium_annual),
-            "savings": _r6(savings_premium),
-            "expense": _r6(expense_loading),
-            "profit": _r6(profit_margin),
-            "pv_mortality": _r6(components.pv_mortality_claims),
-            "pv_disability": _r6(components.pv_disability_claims),
-            "product": components.product_id,
-            "source": "inline_quote_legacy_override",
-        }, sort_keys=True, default=str)
-        integrity_hash = hashlib.sha256(override_hash_payload.encode("utf-8")).hexdigest()[:16]
-
         return {
             'base_premium': base_premium,
             'age': age,
@@ -6002,13 +5968,13 @@ def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: s
             'mortality_premium': components.mortality_premium_annual,
             'disability_premium': components.disability_premium_annual,
             'risk_premium': components.risk_premium_annual,
-            'savings_premium': savings_premium,
-            'expense_loading': expense_loading,
-            'profit_margin': profit_margin,
+            'savings_premium': components.savings_premium_annual,
+            'expense_loading': components.expense_loading_annual,
+            'profit_margin': components.profit_margin_annual,
             'underwriting_loading': underwriting_loading,
             'exclude_disability': exclude_disability,
-            'annual_premium': annual_premium,
-            'monthly_premium': monthly_premium,
+            'annual_premium': components.annual_premium,
+            'monthly_premium': components.monthly_premium,
             'coverage_amount': coverage_amount,
             'term_years': term_years,
             'pv_mortality_risk': components.pv_mortality_claims,
@@ -6016,7 +5982,7 @@ def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: s
             'pv_total_risk': components.pv_total_risk_claims,
             'eligible': True,
             'actuarial_source': 'PHINS_PRICING_KERNEL_V1',
-            'pricing_kernel_integrity_hash': integrity_hash,
+            'pricing_kernel_integrity_hash': components.integrity_hash,
         }
     else:
         # Simple calculation for auto/property
