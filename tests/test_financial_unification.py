@@ -9,6 +9,7 @@ from decimal import Decimal
 from accounting_engine import reset_accounting_engine, get_accounting_engine, EntryType
 from services.financial_unification_service import (
     CLAIM_CASH_TYPES,
+    PREMIUM_AUDIT_TYPES,
     PREMIUM_CASH_TYPES,
     accounting_book_totals,
     kernel_components_from_policy,
@@ -233,10 +234,12 @@ def test_ledger_cash_aliases_and_paid_claim_records():
         {"type": "claim_payment_received", "amount": 7, "customer_id": "C1"},
         {"tx_type": "claim_payment", "amount": 3, "customer_id": "C1"},
         {"type": "wallet_deposit", "amount": 99, "customer_id": "C1"},
+        {"type": "bulk_premium_payment", "amount": -20, "customer_id": "C1"},
     ]
     prem = ledger_cash_total(txs, PREMIUM_CASH_TYPES)
     clm = ledger_cash_total(txs, CLAIM_CASH_TYPES)
-    assert prem["total"] == 25.0
+    # auto_pay_execution is an audit twin and must not count as cash.
+    assert prem["total"] == 30.0  # 10 + abs(-20)
     assert clm["total"] == 10.0
     assert sum_paid_claim_records([
         {"status": "paid", "approved_amount": 7},
@@ -348,3 +351,84 @@ def test_kernel_components_read_snapshot_when_policy_scalars_missing(monkeypatch
     assert comps["source"] == "premium_snapshot"
     assert comps["risk_premium_annual"] == 900.0
     assert comps["integrity_hash"] == "snap-hash"
+
+
+def test_auto_pay_execution_is_audit_not_cash():
+    assert "auto_pay_execution" in PREMIUM_AUDIT_TYPES
+    assert "auto_pay_execution" not in PREMIUM_CASH_TYPES
+    assert "bulk_premium_payment" in PREMIUM_CASH_TYPES
+    txs = [
+        {"type": "premium_payment", "amount": 50, "customer_id": "C1"},
+        {"type": "auto_pay_execution", "amount": 50, "customer_id": "C1"},
+    ]
+    assert ledger_cash_total(txs, PREMIUM_CASH_TYPES)["total"] == 50.0
+
+
+def test_accountant_frs_uses_ledger_claim_cash_not_approved_records():
+    from services.financial_reporting_service import FinancialReportingService
+
+    svc = FinancialReportingService(
+        policies={},
+        claims={
+            "CLM-1": {"status": "approved", "approved_amount": 400},
+            "CLM-2": {"status": "paid", "paid_amount": 25},
+        },
+        billing={},
+        customers={},
+        underwriting={},
+        transaction_ledger={
+            "TX-1": {"type": "claim_payment_received", "amount": 25, "customer_id": "C1"},
+        },
+    )
+    summary = svc.get_dashboard_summary("accountant")
+    assert summary["claims_paid"] == 25.0
+
+    empty_ledger_svc = FinancialReportingService(
+        policies={},
+        claims={"CLM-1": {"status": "approved", "approved_amount": 400}},
+        billing={},
+        customers={},
+        underwriting={},
+        transaction_ledger={},
+    )
+    empty_summary = empty_ledger_svc.get_dashboard_summary("accountant")
+    assert empty_summary["claims_paid"] == 0.0
+
+
+def test_billing_service_payment_writes_ledger_and_accounting_book():
+    from services.billing_service import BillingService
+    from web_portal.server import POLICIES, TRANSACTION_LEDGER
+
+    reset_accounting_engine()
+    bills = {}
+    customer_id = "CUST-BILL-SVC"
+    policy_id = "POL-BILL-SVC"
+    POLICIES[policy_id] = {
+        "id": policy_id,
+        "customer_id": customer_id,
+        "annual_premium": 1000.0,
+        "risk_premium_annual": 800.0,
+        "savings_premium_annual": 200.0,
+        "pricing_source": "pricing_kernel",
+        "status": "active",
+    }
+    billing = BillingService(bills=bills, policies=POLICIES)
+    bill = billing.create_bill(policy_id, 100.0, customer_id=customer_id)
+    created_tx_ids = set(TRANSACTION_LEDGER.keys())
+    try:
+        billing.record_payment(bill["bill_id"], 40.0)
+        new_txs = [
+            tx for tx_id, tx in TRANSACTION_LEDGER.items()
+            if tx_id not in created_tx_ids and tx.get("customer_id") == customer_id
+        ]
+        premium_txs = [tx for tx in new_txs if str(tx.get("type") or "").lower() == "premium_payment"]
+        assert premium_txs
+        assert float(premium_txs[0]["amount"]) == 40.0
+        assert accounting_book_totals()["premium_posted"] == 40.0
+        assert bills[bill["bill_id"]]["status"] == "partial"
+    finally:
+        POLICIES.pop(policy_id, None)
+        for tx_id in list(TRANSACTION_LEDGER.keys()):
+            if tx_id not in created_tx_ids:
+                TRANSACTION_LEDGER.pop(tx_id, None)
+        reset_accounting_engine()

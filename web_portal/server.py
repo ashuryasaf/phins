@@ -317,15 +317,19 @@ def coerce_json_container(val, default):
     return default
 
 
-# Premium-related transaction categories used for revenue reconciliation.
-PREMIUM_LEDGER_TX_TYPES = {
-    'premium_payment',
-    'bill_payment',
-    'bill_paid',
-    'premium_received',
-    'auto_pay_execution',
-    'premium_deposit',
-}
+# Premium cash types used for revenue reconciliation. Keep this identical
+# to financial_unification_service.PREMIUM_CASH_TYPES (audit twins excluded).
+try:
+    from services.financial_unification_service import PREMIUM_CASH_TYPES as PREMIUM_LEDGER_TX_TYPES
+except Exception:
+    PREMIUM_LEDGER_TX_TYPES = {
+        'premium_payment',
+        'bill_payment',
+        'bill_paid',
+        'premium_received',
+        'premium_deposit',
+        'bulk_premium_payment',
+    }
 
 
 def get_transaction_type(tx: Dict[str, Any]) -> str:
@@ -370,7 +374,7 @@ def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[
         if exclude_suspended and is_suspended_account(customer_id):
             continue
 
-        amount = safe_float(tx.get('amount', 0))
+        amount = abs(safe_float(tx.get('amount', 0)))
         if amount <= 0:
             continue
 
@@ -645,10 +649,10 @@ def compute_unified_financial_metrics(
     - ``total_coverage_amount``: sum of ``coverage_amount`` on active policies.
     - ``total_aum``: ``total_investment_value`` + unified wallet balance (health
       + investment + algo + pipeline).
-    - ``claims_paid_amount``: sum of approved amounts for claims in ``paid`` or
-      ``approved`` status.
-    - ``claims_disbursed_amount``: sum of approved amounts for claims actually
-      in ``paid`` status.
+    - ``claims_paid_amount``: customer-ledger claim cash when present; otherwise
+      paid/closed claim records only (approved-but-unpaid is not cash).
+    - ``claims_disbursed_amount``: approved amounts for claims actually in
+      ``paid`` status (record fallback when the ledger has no claim cash).
     - ``pending_claims_liability``: sum of ``claimed_amount`` for claims still
       in ``pending`` or ``under_review``.
     """
@@ -684,8 +688,8 @@ def compute_unified_financial_metrics(
     if exclude_suspended:
         claims = [c for c in claims if not is_suspended_account(c.get('customer_id', ''))]
     claims_paid_amount = round(sum(
-        safe_float(c.get('approved_amount', c.get('amount_approved', 0)), 0.0)
-        for c in claims if status_in(c, ['paid', 'approved'])
+        safe_float(c.get('paid_amount', c.get('approved_amount', c.get('amount_approved', 0))), 0.0)
+        for c in claims if status_in(c, ['paid', 'closed'])
     ), 2)
     claims_disbursed_amount = round(sum(
         safe_float(c.get('approved_amount', c.get('amount_approved', 0)), 0.0)
@@ -785,6 +789,8 @@ def compute_unified_financial_metrics(
         )
         ledger_premium_collected = premium_cash['total']
         ledger_claims_paid = claim_cash['total']
+        if ledger_claims_paid > 0:
+            claims_paid_amount = ledger_claims_paid
         book_totals = accounting_book_totals()
         accounting_premium_posted = book_totals['premium_posted']
         accounting_claims_posted = book_totals['claims_posted']
@@ -4668,6 +4674,42 @@ def record_premium_revenue(
         metadata={'policy_id': policy_id}
     )
 
+
+def record_premium_cash_books(
+    customer_id: str,
+    policy_id: Optional[str],
+    amount: float,
+    bills_paid: Optional[List[str]] = None,
+    source_tx_id: Optional[str] = None,
+    unbilled_amount: float = 0.0,
+) -> None:
+    """Post collected premium cash into the shared accounting book.
+
+    Fail-open: never breaks the payment path. Uses the kernel pin on the
+    policy when present so the book split matches actuarial identity.
+    """
+    try:
+        from services.financial_unification_service import post_collected_premiums_to_accounting
+        policy = POLICIES.get(policy_id) if policy_id else None
+        fallback = 100.0
+        try:
+            fallback = float(get_customer_allocation(customer_id).get('risk_pct', 100))
+        except Exception:
+            fallback = 100.0
+        post_collected_premiums_to_accounting(
+            customer_id=customer_id,
+            policy_id=policy_id,
+            policy=policy,
+            amount=amount,
+            bills_paid=list(bills_paid or []),
+            billing=BILLING,
+            source_tx_id=source_tx_id,
+            fallback_risk_pct=fallback,
+            unbilled_amount=unbilled_amount,
+        )
+    except Exception as acct_err:
+        print(f"[ACCOUNTING_BOOK] Premium post skipped: {acct_err}")
+
 def record_fee_revenue(
     fee_type: str,
     amount: float,
@@ -6864,24 +6906,14 @@ def process_customer_premium_payment(
         metadata=ledger_metadata
     )
 
-    # Accounting book must receive the same customer-ledger cash, split by
-    # the actuarial kernel pin when the policy has one.
-    try:
-        from services.financial_unification_service import post_collected_premiums_to_accounting
-        policy_for_split = POLICIES.get(policy_id) if policy_id else None
-        post_collected_premiums_to_accounting(
-            customer_id=customer_id,
-            policy_id=policy_id,
-            policy=policy_for_split,
-            amount=amount,
-            bills_paid=bills_paid,
-            billing=BILLING,
-            source_tx_id=str(tx.get('id') or ''),
-            fallback_risk_pct=allocation_prefs.get('risk_pct', 100),
-            unbilled_amount=unbilled_premium_amount,
-        )
-    except Exception as _acct_err:
-        print(f"[ACCOUNTING_BOOK] Premium post skipped: {_acct_err}")
+    record_premium_cash_books(
+        customer_id=customer_id,
+        policy_id=policy_id,
+        amount=amount,
+        bills_paid=bills_paid,
+        source_tx_id=str(tx.get('id') or ''),
+        unbilled_amount=unbilled_premium_amount,
+    )
 
     generated_documents = []
     document_generation_details = []
@@ -8166,6 +8198,30 @@ def _init_advanced_integrity_service():
         print(f"Warning: Advanced Portfolio Integrity service not available: {e}")
 
 _init_advanced_integrity_service()
+
+def _init_reserves_reporting():
+    try:
+        from services.reserves_reporting_service import init_reserves_reporting_service
+        tracker = None
+        try:
+            from services.premium_allocation_tracker import get_premium_allocation_tracker
+            tracker = get_premium_allocation_tracker()
+        except Exception:
+            tracker = None
+        init_reserves_reporting_service(
+            premium_allocation_tracker=tracker,
+            policies=POLICIES,
+            claims=CLAIMS,
+            bills=BILLING,
+            health_wallets=HEALTH_WALLETS,
+            investment_accounts=INVESTMENT_ACCOUNTS,
+            transaction_ledger=TRANSACTION_LEDGER,
+        )
+        print("✓ Reserves reporting service enabled (customer-ledger paid claims)")
+    except ImportError as e:
+        print(f"Warning: Reserves reporting service not available: {e}")
+
+_init_reserves_reporting()
 
 # Initialize Customer Data Access Service for enforcing data isolation
 customer_access_service = None
@@ -46461,6 +46517,28 @@ For claims or questions, please contact:
                                     )
                                 except Exception as rev_err:
                                     print(f"[REVENUE] Error recording premium: {rev_err}")
+                                try:
+                                    ledger_tx = record_transaction(
+                                        customer_id=customer_id,
+                                        tx_type='premium_payment',
+                                        amount=amount,
+                                        description=f"Premium payment for policy {policy_id} - Bill {bill_id}",
+                                        metadata={
+                                            'bill_id': bill_id,
+                                            'policy_id': policy_id,
+                                            'payment_method': method,
+                                            'gateway_tx': result.transaction_id,
+                                        },
+                                    )
+                                    record_premium_cash_books(
+                                        customer_id=customer_id,
+                                        policy_id=policy_id,
+                                        amount=amount,
+                                        bills_paid=[str(bill_id)],
+                                        source_tx_id=str(ledger_tx.get('id') or ''),
+                                    )
+                                except Exception as led_err:
+                                    print(f"[LEDGER] Gateway premium post skipped: {led_err}")
                                 break
                     
                     self._set_json_headers()
@@ -51422,6 +51500,13 @@ For claims or questions, please contact:
                         'wallet_deduction': wallet_deduction_info
                     }
                 )
+                record_premium_cash_books(
+                    customer_id=customer_id,
+                    policy_id=policy_id,
+                    amount=amount,
+                    bills_paid=[str(bill_id)],
+                    source_tx_id=str(payment_tx.get('id') or ''),
+                )
 
                 doc_bundle = generate_action_accounting_documents(
                     action_type='bill_payment' if payment_method != 'health_wallet' else 'premium_payment',
@@ -51638,16 +51723,25 @@ For claims or questions, please contact:
                 payment_tx = record_transaction(
                     customer_id=customer_id,
                     tx_type='bulk_premium_payment',
-                    amount=-total_paid,
+                    amount=total_paid,
                     description=f"Bulk premium payment of ${total_paid:.2f} for {len(payments_made)} bills from health wallet",
                     metadata={
                         'bills_paid': payments_made,
                         'total_paid': total_paid,
                         'wallet_previous_balance': prev_wallet_balance,
                         'wallet_new_balance': new_wallet_balance,
-                        'remaining_outstanding': total_outstanding - total_paid
+                        'remaining_outstanding': total_outstanding - total_paid,
+                        'wallet_debit': True,
                     }
                 )
+                for paid in payments_made:
+                    record_premium_cash_books(
+                        customer_id=customer_id,
+                        policy_id=paid.get('policy_id'),
+                        amount=paid.get('amount_paid'),
+                        bills_paid=[str(paid.get('bill_id') or '')],
+                        source_tx_id=str(payment_tx.get('id') or ''),
+                    )
                 
                 save_ledger_data()
                 

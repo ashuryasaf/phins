@@ -27,8 +27,14 @@ PREMIUM_CASH_TYPES = frozenset({
     "bill_payment",
     "bill_paid",
     "premium_received",
-    "auto_pay_execution",
     "premium_deposit",
+    "bulk_premium_payment",
+})
+
+# Companion audit rows written *after* process_customer_premium_payment.
+# They must not be summed as cash — the premium_payment already is.
+PREMIUM_AUDIT_TYPES = frozenset({
+    "auto_pay_execution",
 })
 
 CLAIM_CASH_TYPES = frozenset({
@@ -63,7 +69,9 @@ def _tx_type(tx: Dict[str, Any]) -> str:
 
 
 def _tx_amount(tx: Dict[str, Any]) -> Decimal:
-    return money(tx.get("amount", 0))
+    # Wallet-funded premium rows sometimes store a negative (wallet debit).
+    # Cash identity is the magnitude collected or paid.
+    return money(tx.get("amount", 0)).copy_abs()
 
 
 def ledger_cash_total(

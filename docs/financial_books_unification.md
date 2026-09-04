@@ -26,7 +26,7 @@ The 2026-08-06 contract assessment remains correct on issuance: chat/unlabeled c
 ## 2. Canonical rules
 
 1. **Premium identity** — `price_policy` / pinned `risk_premium_annual` + `savings_premium_annual` on the policy (or the latest `PremiumSnapshot`). Bills consume the issued amount; they do not invent a new premium.
-2. **Cash identity** — the customer ledger. Premium cash types: `premium_payment`, `bill_payment`, `bill_paid`, `premium_received`, `auto_pay_execution`, `premium_deposit`. Claim cash types: `claim_payment_received` (canonical), plus legacy `claim_payment` / `claim_paid` / `claims_paid`.
+2. **Cash identity** — the customer ledger. Premium cash types: `premium_payment`, `bill_payment`, `bill_paid`, `premium_received`, `premium_deposit`, `bulk_premium_payment`. `auto_pay_execution` is an audit twin written after the payment and is **not** cash. Claim cash types: `claim_payment_received` (canonical), plus legacy `claim_payment` / `claim_paid` / `claims_paid`.
 3. **Accounting book** — posts the same cash, split by the kernel pin when present, otherwise the customer allocation preference.
 4. **Claims** — every paid claim is assumed to have been (or must be) written to the customer ledger. Reconcile flags paid records with no ledger row; it does not invent payouts.
 5. **No silent rewrite** — reconcile reports discrepancies only. Historical `annual_premium` / `Bill.amount` are never mutated.
@@ -42,6 +42,8 @@ The 2026-08-06 contract assessment remains correct on issuance: chat/unlabeled c
 - `GET /api/finance/reconcile` (admin / accountant / underwriter / actuary).
 - Reserves paid-claims path prefers customer-ledger cash when a ledger is attached.
 - `try_get_statement_from_engine` reads the **shared** accounting engine (it previously constructed an empty one).
+- Gateway `/api/payment/process`, per-bill pay, wallet bulk pay, and `BillingService.record_payment` now write the customer ledger and the accounting book.
+- Accountant FRS `claims_paid` uses ledger cash when a ledger is attached; approved-but-unpaid claims are not cash.
 
 ---
 

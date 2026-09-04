@@ -167,14 +167,17 @@ EXPENSE_LOADING_PCT = 0.15  # 15%
 PROFIT_MARGIN_PCT = 0.10  # 10% target profit margin
 
 
-_PREMIUM_LEDGER_TX_TYPES = {
-    'premium_payment',
-    'bill_payment',
-    'bill_paid',
-    'premium_received',
-    'auto_pay_execution',
-    'premium_deposit',
-}
+try:
+    from services.financial_unification_service import PREMIUM_CASH_TYPES as _PREMIUM_LEDGER_TX_TYPES
+except Exception:
+    _PREMIUM_LEDGER_TX_TYPES = {
+        'premium_payment',
+        'bill_payment',
+        'bill_paid',
+        'premium_received',
+        'premium_deposit',
+        'bulk_premium_payment',
+    }
 
 
 def _get_tx_type(tx: Dict) -> str:
@@ -195,6 +198,7 @@ class FinancialReportingService:
         self._billing = billing
         self._customers = customers
         self._underwriting = underwriting
+        self._ledger_attached = transaction_ledger is not None
         self._transaction_ledger = transaction_ledger if transaction_ledger is not None else {}
         self._health_wallets = health_wallets if health_wallets is not None else {}
 
@@ -236,7 +240,7 @@ class FinancialReportingService:
             if tx_type not in _PREMIUM_LEDGER_TX_TYPES:
                 continue
 
-            amount = _safe(tx.get('amount', 0))
+            amount = abs(_safe(tx.get('amount', 0)))
             if amount <= 0:
                 continue
 
@@ -1095,14 +1099,26 @@ class FinancialReportingService:
                 except (TypeError, ValueError):
                     return default
             
-            # Claims paid includes both 'paid' and 'approved' status (approved = ready to pay)
-            # Check for approved_amount first, then paid_amount, then claimed_amount as fallback
+            # Claims paid cash: customer ledger is authoritative when attached.
+            # Fall back to disbursed claim records (paid/closed only — not approved).
             claims_paid_amt = 0
-            for c in self._claims.values():
-                status = (c.get('status') or '').lower()
-                if status in ['paid', 'approved']:
-                    amt = safe_num(c.get('approved_amount')) or safe_num(c.get('paid_amount')) or safe_num(c.get('claimed_amount', 0))
-                    claims_paid_amt += amt
+            used_ledger_cash = False
+            if self._ledger_attached:
+                try:
+                    from services.financial_unification_service import CLAIM_CASH_TYPES, ledger_cash_total
+                    claims_paid_amt = ledger_cash_total(
+                        self._transaction_ledger.values(), CLAIM_CASH_TYPES
+                    )['total']
+                    used_ledger_cash = True
+                except Exception:
+                    used_ledger_cash = False
+                    claims_paid_amt = 0
+            if not used_ledger_cash:
+                for c in self._claims.values():
+                    status = (c.get('status') or '').lower()
+                    if status in ['paid', 'closed']:
+                        amt = safe_num(c.get('paid_amount')) or safe_num(c.get('approved_amount')) or 0
+                        claims_paid_amt += amt
             
             # Claims pending - sum of claimed amounts for pending/under review claims
             claims_pending_amt = 0

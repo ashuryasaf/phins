@@ -150,20 +150,43 @@ class BillingService:
         if b['amount_paid'] >= b['amount_due']:
             b['status'] = 'paid'
             b['paid_date'] = datetime.now().isoformat()
-            # Update balance sheet in real-time on status transition to paid
-            if not was_already_paid:
-                try:
-                    from server import record_premium_revenue
-                    record_premium_revenue(
-                        customer_id=b.get('customer_id', ''),
-                        policy_id=b.get('policy_id', ''),
-                        amount=float(amount),
-                        description=f"Premium payment for bill {bill_id}"
-                    )
-                except (ImportError, AttributeError, Exception) as e:
-                    logger.warning(f"Could not update balance sheet for bill {bill_id}: {e}")
         elif b['amount_paid'] > 0:
             b['status'] = 'partial'
+
+        # Every new cash slice hits the customer ledger and accounting book.
+        if float(amount) > 0 and not was_already_paid:
+            try:
+                from server import (
+                    record_premium_revenue,
+                    record_premium_cash_books,
+                    record_transaction,
+                )
+                ledger_tx = record_transaction(
+                    customer_id=b.get('customer_id', ''),
+                    tx_type='premium_payment',
+                    amount=float(amount),
+                    description=f"Premium payment for bill {bill_id}",
+                    metadata={
+                        'bill_id': str(bill_id),
+                        'policy_id': b.get('policy_id', ''),
+                        'source': 'billing_service',
+                    },
+                )
+                record_premium_revenue(
+                    customer_id=b.get('customer_id', ''),
+                    policy_id=b.get('policy_id', ''),
+                    amount=float(amount),
+                    description=f"Premium payment for bill {bill_id}"
+                )
+                record_premium_cash_books(
+                    customer_id=b.get('customer_id', ''),
+                    policy_id=b.get('policy_id', ''),
+                    amount=float(amount),
+                    bills_paid=[str(bill_id)],
+                    source_tx_id=str((ledger_tx or {}).get('id') or ''),
+                )
+            except (ImportError, AttributeError, Exception) as e:
+                logger.warning(f"Could not update books for bill {bill_id}: {e}")
         
         b['updated_at'] = datetime.now().isoformat()
         
