@@ -426,7 +426,7 @@
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
           <button class="btn" onclick="runAutoPayAllDryRun()" style="background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 16px; font-size: 0.9rem;">
-            ️ Preview
+             Preview
           </button>
           <button class="btn" id="btn-autopay-all" onclick="runAutoPayAll()" style="background: linear-gradient(135deg, #10b981 0%, #34d399 100%); color: white; padding: 10px 24px; font-size: 1rem; font-weight: 700; border: none; border-radius: 8px; box-shadow: 0 4px 15px rgba(16,185,129,0.4);">Run Auto-Pay Now
           </button>
@@ -447,7 +447,7 @@
     <section class="card">
       <h2>Secure Payment Processing</h2>
       <div style="background: #e7f3ff; border-left: 4px solid #1565c0; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px;">
-        <strong>️ PCI DSS Compliant</strong> - Your card data is encrypted and never stored in plain text.
+        <strong> PCI DSS Compliant</strong> - Your card data is encrypted and never stored in plain text.
       </div>
       
       <form id="payment-form">
@@ -519,7 +519,7 @@
               <button type="button" class="btn" onclick="runBillingAIAssessment()" style="background: linear-gradient(135deg, #6f42c1 0%, #9c27b0 100%); color: white;">AI Billing Assessment
               </button>
               <button type="button" class="btn" onclick="clearBillingCustomerSelection()" style="background: #dc3545; color: white;">
-                ️ Clear Selection
+                 Clear Selection
               </button>
             </div>
           </div>
@@ -777,7 +777,7 @@
       <div id="autopay-status-panel" style="background: white; border-radius: 8px; padding: 12px; margin-bottom: 12px; border: 1px solid #e0e0e0;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <div>
-            <span style="font-size: 1.2rem;" id="autopay-status-icon">⏳</span>
+            <span style="font-size: 1.2rem;" id="autopay-status-icon"></span>
             <span style="font-weight: 600; margin-left: 8px;" id="autopay-status-text">Checking status...</span>
           </div>
           <div id="autopay-next-billing" style="font-size: 0.85rem; color: #666;">
@@ -789,7 +789,7 @@
       <!-- Auto-Pay Configuration Form -->
       <details id="autopay-config-details">
         <summary style="cursor: pointer; padding: 8px 12px; background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; border-radius: 6px; font-weight: 600; font-size: 0.9rem;">
-          ️ Configure Auto-Pay Settings
+           Configure Auto-Pay Settings
         </summary>
         <div style="background: white; padding: 16px; border-radius: 0 0 8px 8px; border: 1px solid #e0e0e0; border-top: none; margin-top: -4px;">
           <form id="autopay-config-form" onsubmit="saveAutoPayConfig(event)">
@@ -877,7 +877,7 @@
               <button type="submit" class="btn" style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; flex: 1;">Save Auto-Pay Configuration
               </button>
               <button type="button" class="btn" onclick="executeAutoPay()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;">
-                ▶️ Execute Now
+                 Execute Now
               </button>
             </div>
           </form>
@@ -894,7 +894,7 @@
         <div style="display: flex; gap: 6px;">
           <button class="btn btn-small" onclick="exportTransactions('csv')"></button>
           <button class="btn btn-small" onclick="exportTransactions('pdf')"></button>
-          <button class="btn btn-small" onclick="printTransactions()">️</button>
+          <button class="btn btn-small" onclick="printTransactions()"></button>
         </div>
       </div>
       <div class="transaction-list" id="transaction-list" style="max-height: 250px;">
@@ -937,7 +937,7 @@
       
       <div class="tabs" style="font-size: 0.85rem;">
         <div class="tab active" onclick="showMarketplaceTab('all')">All</div>
-        <div class="tab" onclick="showMarketplaceTab('pending')">⏳ Pending</div>
+        <div class="tab" onclick="showMarketplaceTab('pending')"> Pending</div>
         <div class="tab" onclick="showMarketplaceTab('services')">Services</div>
       </div>
       
@@ -1012,7 +1012,7 @@
       <form id="credit-lookup-form" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
         <input type="text" id="credit-customer-id" placeholder="Customer ID (e.g., CUST-12345)" style="flex: 1; min-width: 200px; padding: 8px;">
         <button type="submit" class="btn" style="padding: 8px 16px;">Check Credits</button>
-        <button type="button" class="btn" onclick="validateMyBilling()" style="padding: 8px 16px; background: #ff9800; color: white;">️ Validate Billing</button>
+        <button type="button" class="btn" onclick="validateMyBilling()" style="padding: 8px 16px; background: #ff9800; color: white;"> Validate Billing</button>
       </form>
     </section>
     
@@ -1020,10 +1020,10 @@
     <section class="card" style="padding: 16px;" id="refund-section">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
         <div>
-          <h2 style="margin: 0; font-size: 1.1rem;">↩️ Request a Refund</h2>
+          <h2 style="margin: 0; font-size: 1.1rem;"> Request a Refund</h2>
           <p style="color: #666; margin: 4px 0 0 0; font-size: 0.8rem;">Refund paid premiums or savings — deposited directly to your Health Wallet</p>
         </div>
-        <span id="refund-status-badge" style="font-size: 0.75rem; padding: 4px 10px; background: #fff3cd; color: #856404; border-radius: 12px;">↩️ Refund</span>
+        <span id="refund-status-badge" style="font-size: 0.75rem; padding: 4px 10px; background: #fff3cd; color: #856404; border-radius: 12px;"> Refund</span>
       </div>
 
       <!-- Info banner -->

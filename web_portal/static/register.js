@@ -60,7 +60,7 @@ document.addEventListener('DOMContentLoaded', function () {
     setTimeout(() => {
       validateInvitationCode(codeFromUrl.toUpperCase());
     }, 300);
-    msg.innerHTML = '🎟️ Invitation code detected! Please complete your registration.';
+    msg.innerHTML = '️ Invitation code detected! Please complete your registration.';
     msg.style.color = '#28a745';
   }
 
@@ -194,7 +194,7 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   async function validateInvitationCode(code) {
-    codeValidation.textContent = '⏳ Validating code...';
+    codeValidation.textContent = ' Validating code...';
     codeValidation.style.color = '#856404';
     
     try {
@@ -202,16 +202,16 @@ document.addEventListener('DOMContentLoaded', function () {
       const data = await response.json();
       
       if (data.valid) {
-        codeValidation.innerHTML = '✅ Valid invitation code';
+        codeValidation.innerHTML = ' Valid invitation code';
         codeValidation.style.color = '#28a745';
         isCodeValid = true;
       } else {
-        codeValidation.innerHTML = '❌ ' + (data.error || 'Invalid code');
+        codeValidation.innerHTML = ' ' + (data.error || 'Invalid code');
         codeValidation.style.color = '#dc3545';
         isCodeValid = false;
       }
     } catch (e) {
-      codeValidation.innerHTML = '⚠️ Unable to validate code';
+      codeValidation.innerHTML = '️ Unable to validate code';
       codeValidation.style.color = '#856404';
       isCodeValid = false;
     }
@@ -230,16 +230,16 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     document.getElementById('req-length').className = requirements.length ? 'requirement met' : 'requirement';
-    document.getElementById('req-length').textContent = requirements.length ? '✓ At least 8 characters' : '✗ At least 8 characters';
+    document.getElementById('req-length').textContent = requirements.length ? ' At least 8 characters' : ' At least 8 characters';
     
     document.getElementById('req-uppercase').className = requirements.uppercase ? 'requirement met' : 'requirement';
-    document.getElementById('req-uppercase').textContent = requirements.uppercase ? '✓ One uppercase letter' : '✗ One uppercase letter';
+    document.getElementById('req-uppercase').textContent = requirements.uppercase ? ' One uppercase letter' : ' One uppercase letter';
     
     document.getElementById('req-lowercase').className = requirements.lowercase ? 'requirement met' : 'requirement';
-    document.getElementById('req-lowercase').textContent = requirements.lowercase ? '✓ One lowercase letter' : '✗ One lowercase letter';
+    document.getElementById('req-lowercase').textContent = requirements.lowercase ? ' One lowercase letter' : ' One lowercase letter';
     
     document.getElementById('req-number').className = requirements.number ? 'requirement met' : 'requirement';
-    document.getElementById('req-number').textContent = requirements.number ? '✓ One number' : '✗ One number';
+    document.getElementById('req-number').textContent = requirements.number ? ' One number' : ' One number';
 
     const metCount = Object.values(requirements).filter(Boolean).length;
     const strength = (metCount / 4) * 100;
@@ -519,9 +519,9 @@ document.addEventListener('DOMContentLoaded', function () {
         showCompleteStep();
         clearRegistrationState();
         
-        msg.innerHTML = '✅ Account created successfully! Redirecting to login...';
+        msg.innerHTML = ' Account created successfully! Redirecting to login...';
         msg.style.color = '#28a745';
-        codeValidation.innerHTML = '🎉 Welcome to PHINS!';
+        codeValidation.innerHTML = ' Welcome to PHINS!';
         
         setTimeout(() => {
           window.location.href = '/login.html';

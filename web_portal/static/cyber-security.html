@@ -874,10 +874,10 @@ function chipForStatus(status) {
 function findingIcon(text) {
   if (!text) return '';
   if (text.startsWith('CRITICAL')) return '';
-  if (text.startsWith('HIGH') || text.startsWith('ALERT')) return '🟠';
-  if (text.startsWith('WARNING')) return '🟡';
-  if (text.startsWith('MEDIUM')) return '🟡';
-  if (text.startsWith('LOW') || text.startsWith('INFO')) return '🟢';
+  if (text.startsWith('HIGH') || text.startsWith('ALERT')) return '';
+  if (text.startsWith('WARNING')) return '';
+  if (text.startsWith('MEDIUM')) return '';
+  if (text.startsWith('LOW') || text.startsWith('INFO')) return '';
   return '';
 }
 
@@ -1245,7 +1245,7 @@ function renderAlerts(alerts) {
     return `
     <div class="alert-card alert-${sev === 'critical' ? 'critical' : 'warning'}">
       <div class="alert-header">
-        <span class="alert-rule">${sev === 'critical' ? '' : '🟡'} ${rule}</span>
+        <span class="alert-rule">${sev === 'critical' ? '' : ''} ${rule}</span>
         <span class="alert-time">${formatDateTime(al.created_at)}</span>
       </div>
       <div class="alert-message">${safeStr(al.message)}</div>

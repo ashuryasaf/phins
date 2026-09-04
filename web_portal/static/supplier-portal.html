@@ -1079,7 +1079,7 @@
               <div class="category">${esc(offer.category)}</div>
               <div class="price">${formatCurrency(offer.price, offer.currency)}</div>
               <div class="unit">${(offer.unit || 'per_item').replace(/_/g, ' ')}</div>
-              ${(photoCount + videoCount) ? `<div style="font-size:12px;color:#00695c;margin-bottom:6px;"> ${photoCount} photo${photoCount === 1 ? '' : 's'} •  ${videoCount} video${videoCount === 1 ? '' : 's'}</div>` : `<div style="font-size:12px;color:#b71c1c;margin-bottom:6px;">⚠️ Add photos/videos to boost AI search visibility</div>`}
+              ${(photoCount + videoCount) ? `<div style="font-size:12px;color:#00695c;margin-bottom:6px;"> ${photoCount} photo${photoCount === 1 ? '' : 's'} •  ${videoCount} video${videoCount === 1 ? '' : 's'}</div>` : `<div style="font-size:12px;color:#b71c1c;margin-bottom:6px;"> Add photos/videos to boost AI search visibility</div>`}
               ${deliveryMode ? `<div style="font-size:12px;color:#666;margin-bottom:6px;"> ${esc(String(deliveryMode).replace(/_/g, ' '))}${deliveryEta != null ? ` • ${esc(deliveryEta)} day(s)` : ''}${deliveryFee ? ` • ${formatCurrency(deliveryFee, offer.currency || 'USD')} fee` : ''}</div>` : ''}
               ${billingCycle ? `<div style="font-size:12px;color:#666;margin-bottom:8px;"> ${esc(String(billingCycle).replace(/_/g, ' '))}${billingTerms ? ` • ${esc(billingTerms)}` : ''}</div>` : ''}
               ${wallets.length ? `

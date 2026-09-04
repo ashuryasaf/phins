@@ -77,15 +77,15 @@ function displayPaymentMethods(methods) {
   if (!container) return;
   
   const icons = {
-    credit_card: '💳',
-    paypal: '🅿️',
-    apple_pay: '🍎',
-    google_pay: '🔵',
-    bitcoin: '₿',
-    ethereum: '⟠',
-    usdc: '💵',
-    bank_transfer: '🏦',
-    debit_card: '💳'
+    credit_card: 'CARD',
+    paypal: 'PAYPAL',
+    apple_pay: 'APPLE',
+    google_pay: 'GOOGLE',
+    bitcoin: 'BTC',
+    ethereum: 'ETH',
+    usdc: 'USDC',
+    bank_transfer: 'BANK',
+    debit_card: 'DEBIT'
   };
   
   // Compact card design for payment methods
@@ -94,7 +94,7 @@ function displayPaymentMethods(methods) {
          onclick="selectPaymentMethod('${method.id}')" 
          data-method="${method.id}"
          style="padding: 8px; min-height: auto;">
-      <div class="icon" style="font-size: 1.5rem; margin-bottom: 4px;">${icons[method.id] || '💰'}</div>
+      <div class="icon" style="font-size: 1.5rem; margin-bottom: 4px;">${icons[method.id] || ''}</div>
       <div class="name" style="font-size: 0.8rem;">${method.name}</div>
       <div class="badge test" style="font-size: 0.6rem; padding: 1px 4px; margin-top: 2px;">${method.gateway === 'crypto' ? 'CRYPTO' : 'TEST'}</div>
     </div>
@@ -103,7 +103,7 @@ function displayPaymentMethods(methods) {
   // Update connection status
   const statusEl = document.getElementById('payment-methods-status');
   if (statusEl && methods.length > 0) {
-    statusEl.textContent = `✓ ${methods.length} Methods`;
+    statusEl.textContent = ` ${methods.length} Methods`;
     statusEl.style.background = '#d1fae5';
     statusEl.style.color = '#065f46';
   }
@@ -139,18 +139,18 @@ function showTestCredentials(methodId) {
           </tr>
         </thead>
         <tbody>
-          <tr><td style="padding: 0.5rem; font-family: monospace;">4242 4242 4242 4242</td><td>Visa</td><td style="color: green;">✅ Success</td></tr>
-          <tr><td style="padding: 0.5rem; font-family: monospace;">5555 5555 5555 4444</td><td>Mastercard</td><td style="color: green;">✅ Success</td></tr>
-          <tr><td style="padding: 0.5rem; font-family: monospace;">3782 8224 6310 005</td><td>Amex</td><td style="color: green;">✅ Success</td></tr>
-          <tr><td style="padding: 0.5rem; font-family: monospace;">4000 0000 0000 0002</td><td>Visa</td><td style="color: red;">❌ Declined</td></tr>
-          <tr><td style="padding: 0.5rem; font-family: monospace;">4000 0000 0000 9995</td><td>Visa</td><td style="color: red;">❌ Insufficient Funds</td></tr>
+          <tr><td style="padding: 0.5rem; font-family: monospace;">4242 4242 4242 4242</td><td>Visa</td><td style="color: green;"> Success</td></tr>
+          <tr><td style="padding: 0.5rem; font-family: monospace;">5555 5555 5555 4444</td><td>Mastercard</td><td style="color: green;"> Success</td></tr>
+          <tr><td style="padding: 0.5rem; font-family: monospace;">3782 8224 6310 005</td><td>Amex</td><td style="color: green;"> Success</td></tr>
+          <tr><td style="padding: 0.5rem; font-family: monospace;">4000 0000 0000 0002</td><td>Visa</td><td style="color: red;"> Declined</td></tr>
+          <tr><td style="padding: 0.5rem; font-family: monospace;">4000 0000 0000 9995</td><td>Visa</td><td style="color: red;"> Insufficient Funds</td></tr>
         </tbody>
       </table>
       <p style="margin-top: 0.5rem; color: #666;"><strong>Expiry:</strong> Any future date (e.g., 12/34) | <strong>CVC:</strong> Any 3 digits (4 for Amex)</p>
     `,
     paypal: `
       <div style="background: #f5f5f5; padding: 1rem; border-radius: 4px;">
-        <p><strong>🅿️ PayPal Sandbox Mode</strong></p>
+        <p><strong>PayPal Sandbox Mode</strong></p>
         <p>1. Click "Pay with PayPal" button</p>
         <p>2. You'll be redirected to PayPal Sandbox</p>
         <p>3. Create/use a sandbox buyer account at <a href="https://developer.paypal.com/tools/sandbox/" target="_blank">developer.paypal.com</a></p>
@@ -160,7 +160,7 @@ function showTestCredentials(methodId) {
     `,
     apple_pay: `
       <div style="background: #f5f5f5; padding: 1rem; border-radius: 4px;">
-        <p><strong>🍎 Apple Pay Test Mode</strong></p>
+        <p><strong> Apple Pay Test Mode</strong></p>
         <p>Requirements:</p>
         <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
           <li>Safari browser on macOS or iOS</li>
@@ -172,7 +172,7 @@ function showTestCredentials(methodId) {
     `,
     google_pay: `
       <div style="background: #f5f5f5; padding: 1rem; border-radius: 4px;">
-        <p><strong>🔵 Google Pay Test Mode</strong></p>
+        <p><strong> Google Pay Test Mode</strong></p>
         <p>Requirements:</p>
         <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
           <li>Chrome browser</li>
@@ -184,7 +184,7 @@ function showTestCredentials(methodId) {
     `,
     bitcoin: `
       <div style="background: #f5f5f5; padding: 1rem; border-radius: 4px;">
-        <p><strong>₿ Bitcoin Testnet Mode</strong></p>
+        <p><strong>Bitcoin Testnet Mode</strong></p>
         <p>1. Get testnet BTC from a faucet: <a href="https://coinfaucet.eu/en/btc-testnet/" target="_blank">Bitcoin Testnet Faucet</a></p>
         <p>2. Send to the provided testnet address</p>
         <p>3. Wait for confirmation (simulated in ~30 seconds in test mode)</p>
@@ -193,7 +193,7 @@ function showTestCredentials(methodId) {
     `,
     ethereum: `
       <div style="background: #f5f5f5; padding: 1rem; border-radius: 4px;">
-        <p><strong>⟠ Ethereum Testnet Mode</strong></p>
+        <p><strong>Ethereum Testnet Mode</strong></p>
         <p>1. Get testnet ETH from a faucet: <a href="https://goerlifaucet.com/" target="_blank">Goerli Faucet</a></p>
         <p>2. Send to the provided testnet address</p>
         <p>3. Wait for confirmation</p>
@@ -202,7 +202,7 @@ function showTestCredentials(methodId) {
     `,
     usdc: `
       <div style="background: #f5f5f5; padding: 1rem; border-radius: 4px;">
-        <p><strong>💵 USDC Testnet Mode</strong></p>
+        <p><strong> USDC Testnet Mode</strong></p>
         <p>1. Use Goerli testnet USDC</p>
         <p>2. Send to the provided testnet address</p>
         <p>3. 1 USDC = 1 USD (stablecoin)</p>
@@ -230,26 +230,26 @@ function updatePaymentFormForMethod(methodId) {
   const submitBtn = document.getElementById('submit-payment');
   if (submitBtn) {
     const buttonTexts = {
-      credit_card: '🔐 Process Secure Payment',
-      paypal: '🅿️ Pay with PayPal',
-      apple_pay: '🍎 Pay with Apple Pay',
-      google_pay: '🔵 Pay with Google Pay',
-      bitcoin: '₿ Generate Bitcoin Invoice',
-      ethereum: '⟠ Generate Ethereum Invoice',
-      usdc: '💵 Generate USDC Invoice'
+      credit_card: ' Process Secure Payment',
+      paypal: 'Pay with PayPal',
+      apple_pay: ' Pay with Apple Pay',
+      google_pay: ' Pay with Google Pay',
+      bitcoin: 'Generate Bitcoin Invoice',
+      ethereum: 'Generate Ethereum Invoice',
+      usdc: ' Generate USDC Invoice'
     };
-    submitBtn.textContent = buttonTexts[methodId] || '💰 Process Payment';
+    submitBtn.textContent = buttonTexts[methodId] || ' Process Payment';
   }
 }
 
 // Card type patterns for real-time detection
 const CARD_PATTERNS = {
-  visa: { regex: /^4/, icon: '💳', name: 'Visa', lengths: [13, 16, 19], cvv: 3 },
-  mastercard: { regex: /^(5[1-5]|2[2-7])/, icon: '🔵', name: 'Mastercard', lengths: [16], cvv: 3 },
-  amex: { regex: /^3[47]/, icon: '💠', name: 'American Express', lengths: [15], cvv: 4 },
-  discover: { regex: /^(6011|65|644|645|646|647|648|649)/, icon: '🟠', name: 'Discover', lengths: [16, 19], cvv: 3 },
-  diners: { regex: /^3(0[0-5]|6|8)/, icon: '🔷', name: 'Diners Club', lengths: [14, 16], cvv: 3 },
-  jcb: { regex: /^35(2[89]|[3-8])/, icon: '🟣', name: 'JCB', lengths: [16, 19], cvv: 3 }
+  visa: { regex: /^4/, icon: '', name: 'Visa', lengths: [13, 16, 19], cvv: 3 },
+  mastercard: { regex: /^(5[1-5]|2[2-7])/, icon: '', name: 'Mastercard', lengths: [16], cvv: 3 },
+  amex: { regex: /^3[47]/, icon: '', name: 'American Express', lengths: [15], cvv: 4 },
+  discover: { regex: /^(6011|65|644|645|646|647|648|649)/, icon: '', name: 'Discover', lengths: [16, 19], cvv: 3 },
+  diners: { regex: /^3(0[0-5]|6|8)/, icon: '', name: 'Diners Club', lengths: [14, 16], cvv: 3 },
+  jcb: { regex: /^35(2[89]|[3-8])/, icon: '', name: 'JCB', lengths: [16, 19], cvv: 3 }
 };
 
 function populateExpiryYears() {
@@ -360,34 +360,34 @@ function validateCardNumber() {
   
   // Check card type-specific length
   if (!cardType) {
-    validationDiv.innerHTML = '<span style="color: #dc3545;">❌ Unknown card type</span>';
+    validationDiv.innerHTML = '<span style="color: #dc3545;"> Unknown card type</span>';
     input.style.borderColor = '#dc3545';
     return false;
   }
   
   // Mastercard MUST be exactly 16 digits
   if (cardType.type === 'mastercard' && cardNumber.length !== 16) {
-    validationDiv.innerHTML = `<span style="color: #dc3545;">❌ Mastercard must be exactly 16 digits (currently ${cardNumber.length})</span>`;
+    validationDiv.innerHTML = `<span style="color: #dc3545;"> Mastercard must be exactly 16 digits (currently ${cardNumber.length})</span>`;
     input.style.borderColor = '#dc3545';
     return false;
   }
   
   // Other cards - check valid lengths
   if (!cardType.lengths.includes(cardNumber.length)) {
-    validationDiv.innerHTML = `<span style="color: #dc3545;">❌ ${cardType.name} must be ${cardType.lengths.join(' or ')} digits</span>`;
+    validationDiv.innerHTML = `<span style="color: #dc3545;"> ${cardType.name} must be ${cardType.lengths.join(' or ')} digits</span>`;
     input.style.borderColor = '#dc3545';
     return false;
   }
   
   // Luhn algorithm check
   if (!luhnCheck(cardNumber)) {
-    validationDiv.innerHTML = '<span style="color: #dc3545;">❌ Invalid card number (checksum failed)</span>';
+    validationDiv.innerHTML = '<span style="color: #dc3545;"> Invalid card number (checksum failed)</span>';
     input.style.borderColor = '#dc3545';
     return false;
   }
   
   // All validations passed
-  validationDiv.innerHTML = `<span style="color: #28a745;">✅ Valid ${cardType.name} card</span>`;
+  validationDiv.innerHTML = `<span style="color: #28a745;"> Valid ${cardType.name} card</span>`;
   input.style.borderColor = '#28a745';
   return true;
 }
@@ -410,16 +410,16 @@ function validateExpiry() {
   const expMonth = parseInt(month, 10);
   
   if (expYear < currentYear || (expYear === currentYear && expMonth < currentMonth)) {
-    validationDiv.innerHTML = '<span style="color: #dc3545;">❌ Card has expired</span>';
+    validationDiv.innerHTML = '<span style="color: #dc3545;"> Card has expired</span>';
     return false;
   }
   
   // Warning for cards expiring soon
   const monthsUntilExpiry = (expYear - currentYear) * 12 + (expMonth - currentMonth);
   if (monthsUntilExpiry <= 2) {
-    validationDiv.innerHTML = `<span style="color: #ffc107;">⚠️ Card expires in ${monthsUntilExpiry} month(s)</span>`;
+    validationDiv.innerHTML = `<span style="color: #ffc107;">️ Card expires in ${monthsUntilExpiry} month(s)</span>`;
   } else {
-    validationDiv.innerHTML = '<span style="color: #28a745;">✅ Valid expiry date</span>';
+    validationDiv.innerHTML = '<span style="color: #28a745;"> Valid expiry date</span>';
   }
   
   return true;
@@ -503,14 +503,14 @@ function validateAmount() {
   const amount = parseFloat(amountInput.value);
   
   if (isNaN(amount) || amount <= 0) {
-    validationDiv.innerHTML = '<span style="color: #dc3545;">❌ Please enter a valid amount</span>';
+    validationDiv.innerHTML = '<span style="color: #dc3545;"> Please enter a valid amount</span>';
     return false;
   }
   
   if (amount > 100000) {
-    validationDiv.innerHTML = '<span style="color: #ffc107;">⚠️ Large payment - additional verification may be required</span>';
+    validationDiv.innerHTML = '<span style="color: #ffc107;">️ Large payment - additional verification may be required</span>';
   } else {
-    validationDiv.innerHTML = '<span style="color: #28a745;">✅ Amount: $' + amount.toFixed(2) + '</span>';
+    validationDiv.innerHTML = '<span style="color: #28a745;"> Amount: $' + amount.toFixed(2) + '</span>';
   }
   
   return true;
@@ -598,7 +598,7 @@ async function loadStats() {
     console.error('Failed to load stats:', err);
     const grid = document.getElementById('stats-grid');
     if (grid) {
-      grid.innerHTML = `<p class="muted" style="grid-column: 1/-1; text-align: center; color: #dc3545;">⚠️ Failed to load stats from pipeline</p>`;
+      grid.innerHTML = `<p class="muted" style="grid-column: 1/-1; text-align: center; color: #dc3545;">️ Failed to load stats from pipeline</p>`;
     }
   }
 }
@@ -620,13 +620,13 @@ async function loadFraudAlerts() {
     const container = document.getElementById('fraud-alerts-container');
     
     if (alerts.length === 0) {
-      container.innerHTML = '<p class="muted">✅ No active fraud alerts</p>';
+      container.innerHTML = '<p class="muted"> No active fraud alerts</p>';
       return;
     }
     
     container.innerHTML = alerts.map(alert => `
       <div class="fraud-alert-item alert-${alert.severity || 'medium'}">
-        <strong>🚨 ${alert.reason}</strong>
+        <strong> ${alert.reason}</strong>
         <p>Customer: ${alert.customer_id}</p>
         <p>Transaction: ${alert.transaction_id}</p>
         <p>Time: ${new Date(alert.timestamp).toLocaleString()}</p>
@@ -686,13 +686,13 @@ async function loadRecentTransactions() {
       // Auto-pay badge (if applicable)
       const autoPayBadge = txn.auto_pay ? 
         `<span style="display: inline-flex; align-items: center; gap: 4px; background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; margin-left: 6px;">
-          🤖 Auto
+           Auto
         </span>` : '';
       
       // Billing schedule info
       const billingSchedule = txn.billing_schedule ? 
         `<div style="font-size: 0.75rem; color: #8b5cf6; margin-top: 2px;">
-          📅 ${txn.billing_schedule}
+           ${txn.billing_schedule}
         </div>` : '';
       
       // Next billing info (for auto-pay transactions)
@@ -726,7 +726,7 @@ async function loadRecentTransactions() {
             ${(txn.status === 'success' || txn.status === 'paid') && amount > 0 ? 
               `<div style="margin-top: 6px;">
                 <button class="btn-small btn-refund" onclick="refundTransaction('${txn.transaction_id || txn.id}')" title="Process Refund">
-                  ↩️ Refund
+                  ️ Refund
                 </button>
               </div>` : 
               ''}
@@ -770,20 +770,20 @@ function formatPaymentMethodDisplay(txn) {
   
   // Icon mappings
   const icons = {
-    'credit_card': '💳',
-    'debit_card': '💳',
-    'paypal': '🅿️',
-    'apple_pay': '🍎',
-    'google_pay': '📱',
-    'bank_transfer': '🏦',
-    'Bank Transfer': '🏦',
-    'wire': '🏦',
-    'crypto': '₿',
-    'crypto_btc': '₿',
+    'credit_card': '',
+    'debit_card': '',
+    'paypal': 'PAYPAL',
+    'apple_pay': '',
+    'google_pay': '',
+    'bank_transfer': '',
+    'Bank Transfer': '',
+    'wire': '',
+    'crypto': 'BTC',
+    'crypto_btc': 'BTC',
     'crypto_eth': 'Ξ',
-    'health_wallet': '💊',
-    'internal': '🔄',
-    'N/A': '❓'
+    'health_wallet': '',
+    'internal': '',
+    'N/A': ''
   };
   
   // Card type display names
@@ -798,7 +798,7 @@ function formatPaymentMethodDisplay(txn) {
   };
   
   let display = pm || 'N/A';
-  let icon = icons[pm] || '💰';
+  let icon = icons[pm] || '';
   
   // Format credit/debit card with last 4 digits (DEFAULT: 4444)
   if (pm === 'credit_card' || pm === 'debit_card' || cardLast4 || cardType) {
@@ -806,49 +806,49 @@ function formatPaymentMethodDisplay(txn) {
     // Use actual last 4 or default "4444"
     const displayLast4 = cardLast4 || DEFAULT_CARD_LAST4;
     display = `${typeName} •••• ${displayLast4}`;
-    icon = '💳';
+    icon = '';
   }
   // Format PayPal
   else if (pm === 'paypal' || pm.toLowerCase().includes('paypal')) {
     display = 'PayPal';
-    icon = '🅿️';
+    icon = 'PAYPAL';
   }
   // Format Apple Pay
   else if (pm === 'apple_pay') {
     display = 'Apple Pay';
-    icon = '🍎';
+    icon = '';
   }
   // Format Google Pay
   else if (pm === 'google_pay') {
     display = 'Google Pay';
-    icon = '📱';
+    icon = '';
   }
   // Format Bank Transfer
   else if (pm === 'bank_transfer' || pm === 'Bank Transfer' || pm === 'wire') {
     display = 'Bank Transfer';
-    icon = '🏦';
+    icon = '';
   }
   // Format Crypto
   else if (pm.startsWith('crypto') || ['btc', 'eth', 'usdc'].includes(pm.toLowerCase())) {
     const crypto = pm.replace('crypto_', '').toUpperCase() || 'Crypto';
     display = `Crypto (${crypto})`;
-    icon = pm.includes('eth') ? 'Ξ' : '₿';
+    icon = pm.includes('eth') ? 'ETH' : 'BTC';
   }
   // Format Health Wallet
   else if (pm === 'health_wallet') {
     display = 'Health Wallet';
-    icon = '💊';
+    icon = '';
   }
   // Format N/A or empty - default to Card with "4444"
   else if (!pm || pm === 'N/A' || pm === '****-****-****-****') {
     // Default to showing as card with default last 4
     display = `Card •••• ${DEFAULT_CARD_LAST4}`;
-    icon = '💳';
+    icon = '';
   }
   // Format other methods
   else {
     display = pm.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-    icon = icons[pm] || '💰';
+    icon = icons[pm] || '';
   }
   
   return { 
@@ -891,7 +891,7 @@ async function handlePayment(e) {
   const amount = parseFloat(formData.get('amount'));
   
   if (!customerId || !policyId || !amount || amount <= 0) {
-    showResult(resultDiv, 'error', '❌ Please fill in all required fields');
+    showResult(resultDiv, 'error', ' Please fill in all required fields');
     return;
   }
   
@@ -916,7 +916,7 @@ async function handlePayment(e) {
       await handleCryptoPayment(selectedPaymentMethod, formData, resultDiv, submitBtn);
       break;
     default:
-      showResult(resultDiv, 'error', '❌ Please select a payment method');
+      showResult(resultDiv, 'error', ' Please select a payment method');
   }
 }
 
@@ -924,17 +924,17 @@ async function handlePayment(e) {
 async function handleCardPayment(formData, resultDiv, submitBtn) {
   // Validate card fields
   if (!validateCardNumber()) {
-    showResult(resultDiv, 'error', '❌ Please enter a valid card number');
+    showResult(resultDiv, 'error', ' Please enter a valid card number');
     return;
   }
   
   if (!validateExpiry()) {
-    showResult(resultDiv, 'error', '❌ Please enter a valid expiry date');
+    showResult(resultDiv, 'error', ' Please enter a valid expiry date');
     return;
   }
   
   if (!validateCVV()) {
-    showResult(resultDiv, 'error', '❌ Please enter a valid CVV');
+    showResult(resultDiv, 'error', ' Please enter a valid CVV');
     return;
   }
   
@@ -942,14 +942,14 @@ async function handleCardPayment(formData, resultDiv, submitBtn) {
   if (!document.getElementById('confirm_amount').checked ||
       !document.getElementById('confirm_cardholder').checked ||
       !document.getElementById('confirm_terms').checked) {
-    showResult(resultDiv, 'error', '❌ Please confirm all payment acknowledgments');
+    showResult(resultDiv, 'error', ' Please confirm all payment acknowledgments');
     return;
   }
   
   // Disable submit button
   submitBtn.disabled = true;
-  submitBtn.textContent = '⏳ Processing...';
-  showResult(resultDiv, 'info', '🔄 Processing card payment...');
+  submitBtn.textContent = ' Processing...';
+  showResult(resultDiv, 'info', ' Processing card payment...');
   
   try {
     const cardNumber = formData.get('card_number').replace(/\D/g, '');
@@ -980,17 +980,17 @@ async function handleCardPayment(formData, resultDiv, submitBtn) {
     handlePaymentResult(result, resultDiv, submitBtn, 'credit_card');
     
   } catch (err) {
-    showResult(resultDiv, 'error', `❌ Error: ${err.message}`);
+    showResult(resultDiv, 'error', ` Error: ${err.message}`);
     submitBtn.disabled = false;
-    submitBtn.textContent = '🔐 Process Secure Payment';
+    submitBtn.textContent = ' Process Secure Payment';
   }
 }
 
 // Handle PayPal Payment
 async function handlePayPalPayment(formData, resultDiv, submitBtn) {
   submitBtn.disabled = true;
-  submitBtn.textContent = '⏳ Creating PayPal order...';
-  showResult(resultDiv, 'info', '🔄 Redirecting to PayPal...');
+  submitBtn.textContent = ' Creating PayPal order...';
+  showResult(resultDiv, 'info', ' Redirecting to PayPal...');
   
   try {
     const response = await fetch('/api/payment/process', {
@@ -1013,12 +1013,12 @@ async function handlePayPalPayment(formData, resultDiv, submitBtn) {
     
     if (result.success && result.details?.approval_url) {
       showResult(resultDiv, 'success', `
-        <strong>✅ PayPal Order Created!</strong><br><br>
+        <strong> PayPal Order Created!</strong><br><br>
         <p>Order ID: ${result.transaction_id}</p>
         <p>Amount: $${result.amount.toFixed(2)}</p>
         <br>
         <a href="${result.details.approval_url}" target="_blank" class="btn btn-primary" style="display: inline-block; padding: 0.75rem 1.5rem; text-decoration: none;">
-          🅿️ Complete Payment on PayPal
+          Complete Payment on PayPal
         </a>
         <br><br>
         <p style="color: #666; font-size: 0.9rem;">
@@ -1030,20 +1030,20 @@ async function handlePayPalPayment(formData, resultDiv, submitBtn) {
     }
     
     submitBtn.disabled = false;
-    submitBtn.textContent = '🅿️ Pay with PayPal';
+    submitBtn.textContent = 'Pay with PayPal';
     
   } catch (err) {
-    showResult(resultDiv, 'error', `❌ Error: ${err.message}`);
+    showResult(resultDiv, 'error', ` Error: ${err.message}`);
     submitBtn.disabled = false;
-    submitBtn.textContent = '🅿️ Pay with PayPal';
+    submitBtn.textContent = 'Pay with PayPal';
   }
 }
 
 // Handle Apple Pay Payment
 async function handleApplePayPayment(formData, resultDiv, submitBtn) {
   submitBtn.disabled = true;
-  submitBtn.textContent = '⏳ Initializing Apple Pay...';
-  showResult(resultDiv, 'info', '🔄 Setting up Apple Pay session...');
+  submitBtn.textContent = ' Initializing Apple Pay...';
+  showResult(resultDiv, 'info', ' Setting up Apple Pay session...');
   
   try {
     const response = await fetch('/api/payment/process', {
@@ -1064,7 +1064,7 @@ async function handleApplePayPayment(formData, resultDiv, submitBtn) {
     const result = await response.json();
     
     showResult(resultDiv, 'success', `
-      <strong>🍎 Apple Pay Session Ready!</strong><br><br>
+      <strong> Apple Pay Session Ready!</strong><br><br>
       <p>Session ID: ${result.details?.session_id || result.transaction_id}</p>
       <p>Amount: $${result.amount.toFixed(2)}</p>
       <br>
@@ -1074,26 +1074,26 @@ async function handleApplePayPayment(formData, resultDiv, submitBtn) {
         <p>For testing, this simulates a successful Apple Pay transaction.</p>
         <br>
         <button onclick="simulateApplePaySuccess('${result.transaction_id}')" class="btn btn-primary">
-          ✅ Simulate Successful Payment
+           Simulate Successful Payment
         </button>
       </div>
     `);
     
     submitBtn.disabled = false;
-    submitBtn.textContent = '🍎 Pay with Apple Pay';
+    submitBtn.textContent = ' Pay with Apple Pay';
     
   } catch (err) {
-    showResult(resultDiv, 'error', `❌ Error: ${err.message}`);
+    showResult(resultDiv, 'error', ` Error: ${err.message}`);
     submitBtn.disabled = false;
-    submitBtn.textContent = '🍎 Pay with Apple Pay';
+    submitBtn.textContent = ' Pay with Apple Pay';
   }
 }
 
 // Handle Google Pay Payment
 async function handleGooglePayPayment(formData, resultDiv, submitBtn) {
   submitBtn.disabled = true;
-  submitBtn.textContent = '⏳ Initializing Google Pay...';
-  showResult(resultDiv, 'info', '🔄 Setting up Google Pay session...');
+  submitBtn.textContent = ' Initializing Google Pay...';
+  showResult(resultDiv, 'info', ' Setting up Google Pay session...');
   
   try {
     const response = await fetch('/api/payment/process', {
@@ -1114,7 +1114,7 @@ async function handleGooglePayPayment(formData, resultDiv, submitBtn) {
     const result = await response.json();
     
     showResult(resultDiv, 'success', `
-      <strong>🔵 Google Pay Session Ready!</strong><br><br>
+      <strong> Google Pay Session Ready!</strong><br><br>
       <p>Session ID: ${result.details?.session_id || result.transaction_id}</p>
       <p>Amount: $${result.amount.toFixed(2)}</p>
       <br>
@@ -1124,29 +1124,29 @@ async function handleGooglePayPayment(formData, resultDiv, submitBtn) {
         <p>For testing, this simulates a successful Google Pay transaction.</p>
         <br>
         <button onclick="simulateGooglePaySuccess('${result.transaction_id}')" class="btn btn-primary">
-          ✅ Simulate Successful Payment
+           Simulate Successful Payment
         </button>
       </div>
     `);
     
     submitBtn.disabled = false;
-    submitBtn.textContent = '🔵 Pay with Google Pay';
+    submitBtn.textContent = ' Pay with Google Pay';
     
   } catch (err) {
-    showResult(resultDiv, 'error', `❌ Error: ${err.message}`);
+    showResult(resultDiv, 'error', ` Error: ${err.message}`);
     submitBtn.disabled = false;
-    submitBtn.textContent = '🔵 Pay with Google Pay';
+    submitBtn.textContent = ' Pay with Google Pay';
   }
 }
 
 // Handle Cryptocurrency Payment
 async function handleCryptoPayment(crypto, formData, resultDiv, submitBtn) {
   const cryptoNames = { bitcoin: 'Bitcoin', ethereum: 'Ethereum', usdc: 'USDC' };
-  const cryptoIcons = { bitcoin: '₿', ethereum: '⟠', usdc: '💵' };
+  const cryptoIcons = { bitcoin: 'BTC', ethereum: 'ETH', usdc: 'USDC' };
   
   submitBtn.disabled = true;
-  submitBtn.textContent = `⏳ Generating ${cryptoNames[crypto]} invoice...`;
-  showResult(resultDiv, 'info', `🔄 Creating ${cryptoNames[crypto]} payment request...`);
+  submitBtn.textContent = ` Generating ${cryptoNames[crypto]} invoice...`;
+  showResult(resultDiv, 'info', ` Creating ${cryptoNames[crypto]} payment request...`);
   
   try {
     const response = await fetch('/api/payment/process', {
@@ -1176,21 +1176,21 @@ async function handleCryptoPayment(crypto, formData, resultDiv, submitBtn) {
         <br>
         <p><strong>Send to this address:</strong></p>
         <div class="crypto-address">${details.receiving_address || 'Address pending...'}</div>
-        <div class="qr-placeholder">📱 QR Code<br>(Scan to pay)</div>
+        <div class="qr-placeholder"> QR Code<br>(Scan to pay)</div>
         <br>
         <p><strong>Payment ID:</strong> ${result.transaction_id}</p>
         <p><strong>Expires:</strong> ${details.expires_at ? new Date(details.expires_at).toLocaleString() : '30 minutes'}</p>
         <p><strong>Network:</strong> ${details.network || (details.testnet ? 'Testnet' : 'Mainnet')}</p>
         <br>
         <div style="background: #fff3cd; padding: 1rem; border-radius: 8px; margin-top: 1rem;">
-          <p><strong>⚠️ Test Mode:</strong> This is using ${details.testnet ? 'testnet' : 'mainnet'}.</p>
+          <p><strong>️ Test Mode:</strong> This is using ${details.testnet ? 'testnet' : 'mainnet'}.</p>
           <p>Get testnet coins from a faucet to test this payment.</p>
           <br>
           <button onclick="simulateCryptoPayment('${result.transaction_id}')" class="btn btn-primary">
-            ✅ Simulate Payment Received
+             Simulate Payment Received
           </button>
           <button onclick="checkCryptoStatus('${result.transaction_id}')" class="btn" style="margin-left: 0.5rem;">
-            🔄 Check Status
+             Check Status
           </button>
         </div>
       `);
@@ -1202,7 +1202,7 @@ async function handleCryptoPayment(crypto, formData, resultDiv, submitBtn) {
     submitBtn.textContent = `${cryptoIcons[crypto]} Generate ${cryptoNames[crypto]} Invoice`;
     
   } catch (err) {
-    showResult(resultDiv, 'error', `❌ Error: ${err.message}`);
+    showResult(resultDiv, 'error', ` Error: ${err.message}`);
     submitBtn.disabled = false;
     submitBtn.textContent = `${cryptoIcons[crypto]} Generate ${cryptoNames[crypto]} Invoice`;
   }
@@ -1222,7 +1222,7 @@ async function simulateCryptoPayment(paymentId) {
     const result = await response.json();
     
     if (result.success && result.status === 'completed') {
-      alert(`✅ Payment Confirmed!\n\nTransaction ID: ${paymentId}\nTx Hash: ${result.details?.tx_hash || 'N/A'}`);
+      alert(` Payment Confirmed!\n\nTransaction ID: ${paymentId}\nTx Hash: ${result.details?.tx_hash || 'N/A'}`);
       loadRecentTransactions();
       loadStats();
     } else {
@@ -1252,14 +1252,14 @@ async function checkCryptoStatus(paymentId) {
 
 // Simulate Apple Pay success
 function simulateApplePaySuccess(transactionId) {
-  alert(`✅ Apple Pay Payment Simulated!\n\nTransaction ID: ${transactionId}\nStatus: Completed`);
+  alert(` Apple Pay Payment Simulated!\n\nTransaction ID: ${transactionId}\nStatus: Completed`);
   loadRecentTransactions();
   loadStats();
 }
 
 // Simulate Google Pay success
 function simulateGooglePaySuccess(transactionId) {
-  alert(`✅ Google Pay Payment Simulated!\n\nTransaction ID: ${transactionId}\nStatus: Completed`);
+  alert(` Google Pay Payment Simulated!\n\nTransaction ID: ${transactionId}\nStatus: Completed`);
   loadRecentTransactions();
   loadStats();
 }
@@ -1268,7 +1268,7 @@ function simulateGooglePaySuccess(transactionId) {
 function handlePaymentResult(result, resultDiv, submitBtn, method) {
   if (result.success && result.status === 'completed') {
     showResult(resultDiv, 'success', `
-      ✅ <strong>Payment Successful!</strong><br>
+       <strong>Payment Successful!</strong><br>
       Transaction ID: ${result.transaction_id}<br>
       Amount: $${Number(result.amount).toFixed(2)}<br>
       Method: ${method}<br>
@@ -1289,7 +1289,7 @@ function handlePaymentResult(result, resultDiv, submitBtn, method) {
       loadStats();
     }, 1000);
   } else {
-    showResult(resultDiv, 'error', `❌ Payment failed: ${result.error || 'Transaction declined'}`);
+    showResult(resultDiv, 'error', ` Payment failed: ${result.error || 'Transaction declined'}`);
   }
   
   submitBtn.disabled = false;
@@ -1319,9 +1319,9 @@ async function handleLegacyCardPayment(formData, resultDiv, submitBtn) {
     const validateResult = await validateResponse.json();
     
     if (validateResult.valid === false) {
-      showResult(resultDiv, 'error', `❌ Card validation failed: ${validateResult.errors?.join(', ') || 'Invalid card'}`);
+      showResult(resultDiv, 'error', ` Card validation failed: ${validateResult.errors?.join(', ') || 'Invalid card'}`);
       submitBtn.disabled = false;
-      submitBtn.textContent = '🔐 Process Secure Payment';
+      submitBtn.textContent = ' Process Secure Payment';
       return;
     }
     
@@ -1346,9 +1346,9 @@ async function handleLegacyCardPayment(formData, resultDiv, submitBtn) {
     const paymentMethod = await paymentMethodResponse.json();
     
     if (!paymentMethod.success) {
-      showResult(resultDiv, 'error', `❌ Payment method error: ${paymentMethod.error}`);
+      showResult(resultDiv, 'error', ` Payment method error: ${paymentMethod.error}`);
       submitBtn.disabled = false;
-      submitBtn.textContent = '🔐 Process Secure Payment';
+      submitBtn.textContent = ' Process Secure Payment';
       return;
     }
     
@@ -1375,7 +1375,7 @@ async function handleLegacyCardPayment(formData, resultDiv, submitBtn) {
     
     if (chargeResult.success) {
       showResult(resultDiv, 'success', `
-        ✅ <strong>Payment Successful!</strong><br>
+         <strong>Payment Successful!</strong><br>
         Transaction ID: ${chargeResult.transaction_id}<br>
         Amount: $${parseFloat(formData.get('amount')).toFixed(2)}<br>
         Card: ${paymentMethod.masked_card || '****'}
@@ -1393,13 +1393,13 @@ async function handleLegacyCardPayment(formData, resultDiv, submitBtn) {
         loadStats();
       }, 1000);
     } else {
-      showResult(resultDiv, 'error', `❌ Payment failed: ${chargeResult.error || 'Transaction declined'}`);
+      showResult(resultDiv, 'error', ` Payment failed: ${chargeResult.error || 'Transaction declined'}`);
     }
   } catch (err) {
-    showResult(resultDiv, 'error', `❌ Error: ${err.message}`);
+    showResult(resultDiv, 'error', ` Error: ${err.message}`);
   } finally {
     submitBtn.disabled = false;
-    submitBtn.textContent = '🔐 Process Secure Payment';
+    submitBtn.textContent = ' Process Secure Payment';
   }
 }
 
@@ -1500,7 +1500,7 @@ async function refundTransaction(transactionId) {
   // Sanitize and validate the transaction ID before sending
   const sanitizedId = String(transactionId || '').trim().replace(/[^\w\-]/g, '');
   if (!sanitizedId) {
-    alert('❌ Refund failed: Transaction ID is missing or invalid. Please select a valid transaction.');
+    alert(' Refund failed: Transaction ID is missing or invalid. Please select a valid transaction.');
     return;
   }
 
@@ -1537,20 +1537,20 @@ async function refundTransaction(transactionId) {
     const result = await response.json();
 
     if (result.success) {
-      alert(`✅ Refund successful!\n\nRefund ID: ${result.refund_id}`);
+      alert(` Refund successful!\n\nRefund ID: ${result.refund_id}`);
       loadRecentTransactions();
       loadStats();
     } else {
       const errMsg = result.error || 'Unknown error';
       // Provide a user-friendly message when the transaction is not found (possible sync issue)
       if (errMsg.toLowerCase().includes('not found') || errMsg.toLowerCase().includes('sync')) {
-        alert(`❌ Refund failed: ${refundSyncErrorMessage(errMsg)}`);
+        alert(` Refund failed: ${refundSyncErrorMessage(errMsg)}`);
       } else {
-        alert(`❌ Refund failed: ${errMsg}`);
+        alert(` Refund failed: ${errMsg}`);
       }
     }
   } catch (err) {
-    alert(`❌ Error processing refund. Please try again or contact support if the issue persists.\n\nDetails: ${err.message}`);
+    alert(` Error processing refund. Please try again or contact support if the issue persists.\n\nDetails: ${err.message}`);
   }
 }
 
@@ -1655,7 +1655,7 @@ function displayServiceTransactions(transactions) {
   if (!transactions || transactions.length === 0) {
     container.innerHTML = `
       <div style="text-align: center; padding: 40px; color: #666;">
-        <div style="font-size: 3rem; margin-bottom: 12px;">📋</div>
+        <div style="font-size: 3rem; margin-bottom: 12px;"></div>
         <div style="font-size: 1.1rem; font-weight: 600;">No transactions found</div>
         <div style="font-size: 0.9rem; margin-top: 8px;">Service transactions will appear here when created</div>
       </div>
@@ -1664,13 +1664,13 @@ function displayServiceTransactions(transactions) {
   }
   
   const typeIcons = {
-    'service': '🏥',
-    'claim': '📋',
-    'payment': '💳',
-    'ledger': '📒',
-    'medical_purchase': '💊',
-    'insurance_claim': '🛡️',
-    'premium_payment': '💰'
+    'service': '',
+    'claim': '',
+    'payment': '',
+    'ledger': '',
+    'medical_purchase': '',
+    'insurance_claim': '️',
+    'premium_payment': ''
   };
   
   const statusColors = {
@@ -1686,7 +1686,7 @@ function displayServiceTransactions(transactions) {
   };
   
   container.innerHTML = transactions.map(txn => {
-    const icon = typeIcons[txn.category] || typeIcons[txn.type] || '📄';
+    const icon = typeIcons[txn.category] || typeIcons[txn.type] || '';
     const statusColor = statusColors[(txn.status || '').toLowerCase()] || '#6c757d';
     const date = txn.timestamp ? new Date(txn.timestamp).toLocaleDateString() : 'N/A';
     const time = txn.timestamp ? new Date(txn.timestamp).toLocaleTimeString() : '';
@@ -1699,7 +1699,7 @@ function displayServiceTransactions(transactions) {
             <div style="font-weight: 600; color: #333;">${txn.description || txn.category || 'Transaction'}</div>
             <div style="font-size: 0.85rem; color: #666;">
               ${txn.customer_id || 'N/A'} • ${date} ${time}
-              ${txn.nft_token_id ? `<span style="color: #6f42c1; margin-left: 8px;">🔗 ${txn.nft_token_id.substring(0, 12)}...</span>` : ''}
+              ${txn.nft_token_id ? `<span style="color: #6f42c1; margin-left: 8px;"> ${txn.nft_token_id.substring(0, 12)}...</span>` : ''}
             </div>
             ${txn.provider ? `<div style="font-size: 0.8rem; color: #888;">Provider: ${txn.provider}</div>` : ''}
           </div>
@@ -1730,7 +1730,7 @@ function displayMarketplaceTransactions(transactions) {
     const statusClass = txn.status === 'completed' ? 'status-completed' :
                        txn.status === 'approved' ? 'status-success' :
                        txn.status === 'pending' ? 'status-pending' : 'status-failed';
-    const typeIcon = txn.item_type === 'service' ? '🩺' : '📦';
+    const typeIcon = txn.item_type === 'service' ? '' : '';
     
     return `
       <div class="transaction-item">
@@ -1764,7 +1764,7 @@ function displayPendingApprovals(approvals) {
   if (!approvals || approvals.length === 0) {
     container.innerHTML = `
       <div style="text-align: center; padding: 40px; color: #28a745;">
-        <div style="font-size: 3rem; margin-bottom: 12px;">✅</div>
+        <div style="font-size: 3rem; margin-bottom: 12px;"></div>
         <div style="font-size: 1.1rem; font-weight: 600;">No pending approvals</div>
         <div style="font-size: 0.9rem; margin-top: 8px; color: #666;">All items have been processed</div>
       </div>
@@ -1773,17 +1773,17 @@ function displayPendingApprovals(approvals) {
   }
   
   const typeIcons = {
-    'claim': '📋',
-    'service': '🏥',
-    'medical_purchase': '💊',
-    'insurance_claim': '🛡️'
+    'claim': '',
+    'service': '',
+    'medical_purchase': '',
+    'insurance_claim': '️'
   };
   
   container.innerHTML = approvals.map(item => {
     // Handle both old format (item.transaction) and new unified format
     const txn = item.transaction || item;
     const nft = item.nft || {};
-    const typeIcon = typeIcons[txn.category] || typeIcons[txn.type] || '📄';
+    const typeIcon = typeIcons[txn.category] || typeIcons[txn.type] || '';
     const timestamp = txn.timestamp || txn.created_at || txn.filed_date;
     
     return `
@@ -1805,10 +1805,10 @@ function displayPendingApprovals(approvals) {
         </div>
         <div style="text-align: right;">
           <div style="font-size: 1.3rem; font-weight: 700; color: #856404;">$${Number(txn.amount || txn.total_amount || txn.claimed_amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-          <span class="transaction-status status-pending" style="margin: 8px 0; display: inline-block;">⏳ PENDING</span>
+          <span class="transaction-status status-pending" style="margin: 8px 0; display: inline-block;"> PENDING</span>
           <div class="action-buttons" style="margin-top: 8px; display: flex; gap: 8px; justify-content: flex-end;">
-            <button class="btn-small" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color:#fff; padding: 8px 16px; border-radius: 6px;" onclick="approvePendingItem('${txn.id}', '${txn.type || txn.category}')">✅ Approve</button>
-            <button class="btn-small" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color:#fff; padding: 8px 16px; border-radius: 6px;" onclick="rejectPendingItem('${txn.id}', '${txn.type || txn.category}')">❌ Reject</button>
+            <button class="btn-small" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color:#fff; padding: 8px 16px; border-radius: 6px;" onclick="approvePendingItem('${txn.id}', '${txn.type || txn.category}')"> Approve</button>
+            <button class="btn-small" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color:#fff; padding: 8px 16px; border-radius: 6px;" onclick="rejectPendingItem('${txn.id}', '${txn.type || txn.category}')"> Reject</button>
           </div>
         </div>
       </div>
@@ -1839,14 +1839,14 @@ async function approvePendingItem(itemId, itemType) {
     });
     
     if (response.ok) {
-      alert('✅ Item approved successfully!');
+      alert(' Item approved successfully!');
       loadMarketplaceData();
     } else {
       const data = await response.json();
-      alert('❌ Failed to approve: ' + (data.error || 'Unknown error'));
+      alert(' Failed to approve: ' + (data.error || 'Unknown error'));
     }
   } catch (err) {
-    alert('❌ Error: ' + err.message);
+    alert(' Error: ' + err.message);
   }
 }
 
@@ -1878,10 +1878,10 @@ async function rejectPendingItem(itemId, itemType) {
       loadMarketplaceData();
     } else {
       const data = await response.json();
-      alert('❌ Failed to reject: ' + (data.error || 'Unknown error'));
+      alert(' Failed to reject: ' + (data.error || 'Unknown error'));
     }
   } catch (err) {
-    alert('❌ Error: ' + err.message);
+    alert(' Error: ' + err.message);
   }
 }
 
@@ -1905,13 +1905,13 @@ async function approveMarketplaceTransaction(transactionId) {
     const result = await response.json();
     
     if (result.success) {
-      alert(`✅ Transaction approved!\n\nTransaction ID: ${transactionId}`);
+      alert(` Transaction approved!\n\nTransaction ID: ${transactionId}`);
       loadMarketplaceData();
     } else {
-      alert(`❌ Approval failed: ${result.error}`);
+      alert(` Approval failed: ${result.error}`);
     }
   } catch (err) {
-    alert(`❌ Error: ${err.message}`);
+    alert(` Error: ${err.message}`);
   }
 }
 
@@ -1942,10 +1942,10 @@ async function rejectMarketplaceTransaction(transactionId) {
       alert(`Transaction rejected.\n\nTransaction ID: ${transactionId}`);
       loadMarketplaceData();
     } else {
-      alert(`❌ Rejection failed: ${result.error}`);
+      alert(` Rejection failed: ${result.error}`);
     }
   } catch (err) {
-    alert(`❌ Error: ${err.message}`);
+    alert(` Error: ${err.message}`);
   }
 }
 
@@ -2029,7 +2029,7 @@ function exportPDF(title, contentHtml) {
     </head>
     <body>
       <div class="header">
-        <div class="logo">🛡️ PHINS Insurance</div>
+        <div class="logo">️ PHINS Insurance</div>
         <div class="date">${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
       </div>
       <h1>${title}</h1>
@@ -2303,13 +2303,13 @@ async function loadLedger(filter = 'all') {
     if (integrityEl) {
       const coverage = lastLedgerData.length > 0 ? (nftCount / lastLedgerData.length * 100) : 0;
       if (coverage >= 90) {
-        integrityEl.textContent = '✅ HEALTHY';
+        integrityEl.textContent = ' HEALTHY';
         integrityEl.style.color = '#28a745';
       } else if (coverage >= 70) {
-        integrityEl.textContent = '⚠️ WARNING';
+        integrityEl.textContent = '️ WARNING';
         integrityEl.style.color = '#ffc107';
       } else {
-        integrityEl.textContent = '🔍 CHECKING';
+        integrityEl.textContent = ' CHECKING';
         integrityEl.style.color = '#17a2b8';
       }
     }
@@ -2329,7 +2329,7 @@ function displayLedger(entries) {
   if (!entries || entries.length === 0) {
     container.innerHTML = `
       <div style="text-align: center; padding: 40px; color: #666;">
-        <div style="font-size: 3rem; margin-bottom: 12px;">📒</div>
+        <div style="font-size: 3rem; margin-bottom: 12px;"></div>
         <div style="font-size: 1.1rem; font-weight: 600;">No ledger entries found</div>
         <div style="font-size: 0.9rem; margin-top: 8px;">Transaction records will appear here</div>
       </div>
@@ -2338,21 +2338,21 @@ function displayLedger(entries) {
   }
   
   const typeIcons = {
-    'policy_approved': '✅',
-    'billing_created': '💳',
-    'claim_submitted': '📋',
-    'claim_payment': '💰',
-    'claim_payment_received': '💰',
-    'claim_payout': '💸',
-    'health_wallet_activated': '🏥',
-    'wallet_deposit': '💵',
-    'investment_deposit': '📈',
-    'pipeline_initialized': '🔄',
-    'payment_received': '💵',
-    'premium_payment': '💳',
-    'premium_refund': '↩️',
-    'refund_deposit': '↩️',
-    'default': '📒'
+    'policy_approved': '',
+    'billing_created': '',
+    'claim_submitted': '',
+    'claim_payment': '',
+    'claim_payment_received': '',
+    'claim_payout': '',
+    'health_wallet_activated': '',
+    'wallet_deposit': '',
+    'investment_deposit': '',
+    'pipeline_initialized': '',
+    'payment_received': '',
+    'premium_payment': '',
+    'premium_refund': '️',
+    'refund_deposit': '️',
+    'default': ''
   };
   
   const typeColors = {
@@ -2404,7 +2404,7 @@ function displayLedger(entries) {
               <span style="background: ${color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase;">
                 ${(entry.type || 'unknown').replace(/_/g, ' ')}
               </span>
-              ${nftId ? `<span style="background: linear-gradient(135deg, #9c27b0, #673ab7); color: white; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem;">🔗 NFT Verified</span>` : ''}
+              ${nftId ? `<span style="background: linear-gradient(135deg, #9c27b0, #673ab7); color: white; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem;"> NFT Verified</span>` : ''}
             </div>
             <div style="margin-top: 8px; color: #444; font-size: 0.95rem;">${entry.description || 'No description'}</div>
             ${metaDetails.length > 0 ? `<div style="margin-top: 6px; font-size: 0.8rem; color: #666;">${metaDetails.join(' • ')}</div>` : ''}
@@ -2417,9 +2417,9 @@ function displayLedger(entries) {
           </div>
         </div>
         <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #e0e0e0; font-size: 0.8rem; color: #888; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
-          <span>👤 ${entry.customer_id || 'SYSTEM'}</span>
-          <span>🕐 ${new Date(entry.timestamp).toLocaleString()}</span>
-          ${nftId ? `<span style="color: #9c27b0;">🔗 ${nftId.substring(0, 20)}...</span>` : ''}
+          <span> ${entry.customer_id || 'SYSTEM'}</span>
+          <span> ${new Date(entry.timestamp).toLocaleString()}</span>
+          ${nftId ? `<span style="color: #9c27b0;"> ${nftId.substring(0, 20)}...</span>` : ''}
         </div>
       </div>
     `;
@@ -2468,13 +2468,13 @@ async function validateLedger() {
     
     // Show detailed alert
     let message = `Ledger Integrity: ${data.integrity_status}\n\n`;
-    message += `✓ Validated Entries: ${data.validated_entries}\n`;
-    message += `✓ NFT Ledger Count: ${data.nft_ledger_count}\n`;
-    message += `✓ Transaction Ledger: ${data.transaction_ledger_count}\n`;
-    message += `✓ Billing Records: ${data.billing_records_count}\n`;
+    message += ` Validated Entries: ${data.validated_entries}\n`;
+    message += ` NFT Ledger Count: ${data.nft_ledger_count}\n`;
+    message += ` Transaction Ledger: ${data.transaction_ledger_count}\n`;
+    message += ` Billing Records: ${data.billing_records_count}\n`;
     
     if (data.issues_found > 0) {
-      message += `\n⚠️ Issues Found: ${data.issues_found}\n`;
+      message += `\n️ Issues Found: ${data.issues_found}\n`;
       data.issues.slice(0, 5).forEach(issue => {
         message += `  - ${issue.issue}\n`;
       });
@@ -2863,7 +2863,7 @@ function runBillingAIAssessment() {
   
   const assessmentDiv = document.getElementById('billing-ai-assessment');
   assessmentDiv.style.display = 'block';
-  assessmentDiv.innerHTML = '<div style="text-align: center; padding: 2rem;"><div style="font-size: 2rem;">🤖</div><p>Running AI Billing Assessment...</p></div>';
+  assessmentDiv.innerHTML = '<div style="text-align: center; padding: 2rem;"><div style="font-size: 2rem;"></div><p>Running AI Billing Assessment...</p></div>';
   
   // Simulate AI assessment (in production, this would call a backend service)
   setTimeout(() => {
@@ -2990,7 +2990,7 @@ function renderBillingAIAssessment(assessment) {
   assessmentDiv.innerHTML = `
     <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); border-radius: 12px; padding: 20px; color: white; margin-top: 1rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
-        <h3 style="margin: 0; font-size: 1.2rem;">🤖 AI Billing Assessment</h3>
+        <h3 style="margin: 0; font-size: 1.2rem;"> AI Billing Assessment</h3>
         <span style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem;">
           ${new Date().toLocaleString()}
         </span>
@@ -3017,21 +3017,21 @@ function renderBillingAIAssessment(assessment) {
       
       <!-- Customer Summary -->
       <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 12px; margin-bottom: 15px;">
-        <div style="font-weight: 600; margin-bottom: 8px;">📊 Customer Profile</div>
+        <div style="font-weight: 600; margin-bottom: 8px;"> Customer Profile</div>
         <div style="display: flex; flex-wrap: wrap; gap: 15px; font-size: 0.9rem;">
-          <span>👤 ${assessment.customerData.name}</span>
-          <span>🎂 Age: ${assessment.customerData.age}</span>
-          <span>♿ Disability: ${assessment.customerData.disability}%</span>
-          <span>📏 BMI: ${assessment.customerData.bmi}</span>
-          <span>📋 Status: ${assessment.customerData.policyStatus}</span>
-          <span>💰 Coverage: $${assessment.customerData.coverage.toLocaleString()}</span>
+          <span> ${assessment.customerData.name}</span>
+          <span> Age: ${assessment.customerData.age}</span>
+          <span> Disability: ${assessment.customerData.disability}%</span>
+          <span> BMI: ${assessment.customerData.bmi}</span>
+          <span> Status: ${assessment.customerData.policyStatus}</span>
+          <span> Coverage: $${assessment.customerData.coverage.toLocaleString()}</span>
         </div>
       </div>
       
       <!-- Risk Factors -->
       ${assessment.riskFactors.length > 0 ? `
         <div style="margin-bottom: 15px;">
-          <div style="font-weight: 600; margin-bottom: 8px; color: #ff6b6b;">⚠️ Risk Factors</div>
+          <div style="font-weight: 600; margin-bottom: 8px; color: #ff6b6b;">️ Risk Factors</div>
           <div style="background: rgba(220,53,69,0.2); border-radius: 8px; padding: 10px;">
             ${assessment.riskFactors.map(f => `<div style="padding: 4px 0; font-size: 0.9rem;">• ${f}</div>`).join('')}
           </div>
@@ -3041,7 +3041,7 @@ function renderBillingAIAssessment(assessment) {
       <!-- Insights -->
       ${assessment.insights.length > 0 ? `
         <div style="margin-bottom: 15px;">
-          <div style="font-weight: 600; margin-bottom: 8px; color: #4facfe;">💡 Insights</div>
+          <div style="font-weight: 600; margin-bottom: 8px; color: #4facfe;"> Insights</div>
           <div style="background: rgba(79,172,254,0.2); border-radius: 8px; padding: 10px;">
             ${assessment.insights.map(i => `<div style="padding: 4px 0; font-size: 0.9rem;">• ${i}</div>`).join('')}
           </div>
@@ -3050,7 +3050,7 @@ function renderBillingAIAssessment(assessment) {
       
       <!-- Recommendations -->
       <div style="margin-bottom: 10px;">
-        <div style="font-weight: 600; margin-bottom: 8px; color: #28a745;">✅ Recommendations</div>
+        <div style="font-weight: 600; margin-bottom: 8px; color: #28a745;"> Recommendations</div>
         <div style="background: rgba(40,167,69,0.2); border-radius: 8px; padding: 10px;">
           ${assessment.recommendations.map(r => `<div style="padding: 4px 0; font-size: 0.9rem;">• ${r}</div>`).join('')}
         </div>
@@ -3059,10 +3059,10 @@ function renderBillingAIAssessment(assessment) {
       <!-- Action Buttons -->
       <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
         <button type="button" onclick="applyRecommendedPaymentType()" class="btn" style="background: #28a745; color: white;">
-          ✓ Apply Recommendations
+           Apply Recommendations
         </button>
         <button type="button" onclick="downloadBillingAssessment()" class="btn" style="background: rgba(255,255,255,0.2); color: white;">
-          📄 Download Report
+           Download Report
         </button>
       </div>
     </div>
@@ -3078,7 +3078,7 @@ function applyRecommendedPaymentType() {
   document.getElementById('payment_amount').value = (selectedBillingPolicy.monthly_premium || 0).toFixed(2);
   validateAmount();
   
-  alert('✅ Recommendations applied!\n\nPayment type set to Monthly Premium.\nAmount set to $' + (selectedBillingPolicy.monthly_premium || 0).toFixed(2));
+  alert(' Recommendations applied!\n\nPayment type set to Monthly Premium.\nAmount set to $' + (selectedBillingPolicy.monthly_premium || 0).toFixed(2));
 }
 
 // Download billing assessment as PDF
@@ -3104,14 +3104,14 @@ function downloadBillingAssessment() {
     </div>
     
     ${assessment.riskFactors.length > 0 ? `
-      <h4>⚠️ Risk Factors</h4>
+      <h4>️ Risk Factors</h4>
       <ul>${assessment.riskFactors.map(f => `<li>${f}</li>`).join('')}</ul>
     ` : ''}
     
-    <h4>💡 Insights</h4>
+    <h4> Insights</h4>
     <ul>${assessment.insights.map(i => `<li>${i}</li>`).join('')}</ul>
     
-    <h4>✅ Recommendations</h4>
+    <h4> Recommendations</h4>
     <ul>${assessment.recommendations.map(r => `<li>${r}</li>`).join('')}</ul>
   `;
   
@@ -3159,15 +3159,15 @@ async function validatePipelineConnection() {
     const successCount = checks.filter(c => c.status === 'fulfilled' && c.value.ok).length;
     
     if (successCount === 3) {
-      statusText.textContent = '✓ All Systems Connected';
+      statusText.textContent = ' All Systems Connected';
       statusText.style.color = '#28a745';
       statusElement.style.background = '#d4edda';
     } else if (successCount > 0) {
-      statusText.textContent = `⚠️ Partial (${successCount}/3 services)`;
+      statusText.textContent = `️ Partial (${successCount}/3 services)`;
       statusText.style.color = '#856404';
       statusElement.style.background = '#fff3cd';
     } else {
-      statusText.textContent = '❌ Disconnected';
+      statusText.textContent = ' Disconnected';
       statusText.style.color = '#dc3545';
       statusElement.style.background = '#f8d7da';
     }
@@ -3177,7 +3177,7 @@ async function validatePipelineConnection() {
     }
   } catch (err) {
     console.error('Pipeline validation error:', err);
-    statusText.textContent = '❌ Error';
+    statusText.textContent = ' Error';
     statusText.style.color = '#dc3545';
   }
 }
@@ -3186,7 +3186,7 @@ async function validatePipelineConnection() {
 async function refreshBillingStats() {
   const grid = document.getElementById('stats-grid');
   if (grid) {
-    grid.innerHTML = '<p class="muted" style="grid-column: 1/-1; text-align: center;">🔄 Refreshing...</p>';
+    grid.innerHTML = '<p class="muted" style="grid-column: 1/-1; text-align: center;"> Refreshing...</p>';
   }
   
   await loadStats();
@@ -3200,7 +3200,7 @@ async function refreshBillingStats() {
 async function refreshPaymentMethods() {
   const statusEl = document.getElementById('payment-methods-status');
   if (statusEl) {
-    statusEl.textContent = '🔄 Syncing...';
+    statusEl.textContent = ' Syncing...';
     statusEl.style.background = '#fff3cd';
     statusEl.style.color = '#856404';
   }
@@ -3215,18 +3215,18 @@ async function refreshPaymentMethods() {
     
     if (statusEl) {
       if (response.ok) {
-        statusEl.textContent = '✓ Connected';
+        statusEl.textContent = ' Connected';
         statusEl.style.background = '#d1fae5';
         statusEl.style.color = '#065f46';
       } else {
-        statusEl.textContent = '⚠️ Limited';
+        statusEl.textContent = '️ Limited';
         statusEl.style.background = '#fff3cd';
         statusEl.style.color = '#856404';
       }
     }
   } catch (err) {
     if (statusEl) {
-      statusEl.textContent = '❌ Offline';
+      statusEl.textContent = ' Offline';
       statusEl.style.background = '#fee2e2';
       statusEl.style.color = '#991b1b';
     }
@@ -3681,7 +3681,7 @@ async function validateMyBilling() {
     const creditsList = document.getElementById('credits-list');
     if (result.errors?.length > 0 || result.warnings?.length > 0) {
       let detailsHtml = '<div style="margin-top: 16px; padding: 12px; background: #fff3e0; border-radius: 8px;">';
-      detailsHtml += '<h4 style="margin: 0 0 8px 0;">⚠️ Validation Results</h4>';
+      detailsHtml += '<h4 style="margin: 0 0 8px 0;">️ Validation Results</h4>';
       
       if (result.errors?.length > 0) {
         detailsHtml += '<div style="color: #c62828; margin-bottom: 8px;"><strong>Errors:</strong><ul style="margin: 4px 0;">';
@@ -3738,7 +3738,7 @@ async function sendBillingReminder() {
         showNotification(`${result.notifications_sent} notification(s) sent!`, 'success');
         notificationResults.innerHTML = `
           <div style="padding: 12px; background: #d4edda; border-radius: 8px;">
-            <strong>✅ Notifications Sent</strong>
+            <strong> Notifications Sent</strong>
             <p style="margin: 4px 0 0 0;">${result.notifications_sent} notification(s) sent for outstanding bills.</p>
           </div>
         `;
@@ -3787,7 +3787,7 @@ async function sendAllBillingReminders() {
       showNotification(`${result.notifications_sent} notification(s) sent to customers!`, 'success');
       notificationResults.innerHTML = `
         <div style="padding: 12px; background: #d4edda; border-radius: 8px;">
-          <strong>✅ Bulk Notifications Sent</strong>
+          <strong> Bulk Notifications Sent</strong>
           <p style="margin: 4px 0 0 0;">${result.notifications_sent} notification(s) sent to customers with outstanding bills.</p>
         </div>
       `;
@@ -3811,7 +3811,7 @@ async function loadAutoPaySettings() {
   const nextBilling = document.getElementById('autopay-next-billing');
   const policySelect = document.getElementById('autopay-policy-select');
   
-  statusIcon.textContent = '⏳';
+  statusIcon.textContent = '';
   statusText.textContent = 'Loading...';
   
   try {
@@ -3821,7 +3821,7 @@ async function loadAutoPaySettings() {
                        localStorage.getItem('phins_customer_id');
     
     if (!customerId) {
-      statusIcon.textContent = '❓';
+      statusIcon.textContent = '';
       statusText.textContent = 'Select a customer first';
       return;
     }
@@ -3849,16 +3849,16 @@ async function loadAutoPaySettings() {
         policySelect.value = policies[0].id || policies[0].policy_id;
         await loadPolicyAutoPayStatus(policies[0].id || policies[0].policy_id, customerId);
       } else if (policies.length > 0) {
-        statusIcon.textContent = '📋';
+        statusIcon.textContent = '';
         statusText.textContent = `${policies.length} policies found - select one to configure`;
       } else {
-        statusIcon.textContent = '❌';
+        statusIcon.textContent = '';
         statusText.textContent = 'No policies found for this customer';
       }
     }
   } catch (err) {
     console.error('Error loading auto-pay settings:', err);
-    statusIcon.textContent = '❌';
+    statusIcon.textContent = '';
     statusText.textContent = 'Error loading settings';
   }
 }
@@ -3870,7 +3870,7 @@ async function loadPolicyAutoPayStatus(policyId, customerId) {
   const nextBilling = document.getElementById('autopay-next-billing');
   
   if (!policyId) {
-    statusIcon.textContent = '❓';
+    statusIcon.textContent = '';
     statusText.textContent = 'Select a policy';
     return;
   }
@@ -3890,12 +3890,12 @@ async function loadPolicyAutoPayStatus(policyId, customerId) {
       const autoPay = data.auto_pay || {};
       
       if (autoPay.enabled) {
-        statusIcon.textContent = '✅';
+        statusIcon.textContent = '';
         statusText.innerHTML = `<span style="color: #10b981;">Active</span> - ${autoPay.payment_method} (${autoPay.schedule})`;
         
         if (autoPay.next_billing_date) {
           const nextDate = new Date(autoPay.next_billing_date);
-          nextBilling.innerHTML = `📅 Next: <strong>${nextDate.toLocaleDateString()}</strong>`;
+          nextBilling.innerHTML = ` Next: <strong>${nextDate.toLocaleDateString()}</strong>`;
         }
         
         // Pre-fill form with current settings
@@ -3914,7 +3914,7 @@ async function loadPolicyAutoPayStatus(policyId, customerId) {
     }
   } catch (err) {
     console.error('Error loading policy auto-pay status:', err);
-    statusIcon.textContent = '⚠️';
+    statusIcon.textContent = '️';
     statusText.textContent = 'Could not load status';
   }
 }
@@ -3961,7 +3961,7 @@ async function saveAutoPayConfig(event) {
   const resultDiv = document.getElementById('autopay-config-result');
   resultDiv.style.display = 'block';
   resultDiv.style.background = '#f8f9fa';
-  resultDiv.innerHTML = '⏳ Saving configuration...';
+  resultDiv.innerHTML = ' Saving configuration...';
   
   const policyId = document.getElementById('autopay-policy-select').value;
   const customerId = document.getElementById('customer_id')?.value || 
@@ -3970,7 +3970,7 @@ async function saveAutoPayConfig(event) {
   
   if (!policyId || !customerId) {
     resultDiv.style.background = '#f8d7da';
-    resultDiv.innerHTML = '❌ Please select a customer and policy first';
+    resultDiv.innerHTML = ' Please select a customer and policy first';
     return;
   }
   
@@ -4002,14 +4002,14 @@ async function saveAutoPayConfig(event) {
       resultDiv.style.background = '#d4edda';
       resultDiv.innerHTML = `
         <div style="display: flex; align-items: flex-start; gap: 12px;">
-          <span style="font-size: 1.5rem;">✅</span>
+          <span style="font-size: 1.5rem;"></span>
           <div>
             <strong>Auto-Pay Configured Successfully!</strong>
             <div style="margin-top: 8px; font-size: 0.9rem;">
               <div>${result.auto_pay_config.payment_method_icon} ${result.auto_pay_config.payment_method}</div>
-              <div>📅 ${result.auto_pay_config.schedule}</div>
-              <div>📆 Next billing: ${result.auto_pay_config.next_billing_date}</div>
-              ${result.ai_note ? `<div style="color: #8b5cf6; margin-top: 4px;">🤖 ${result.ai_note}</div>` : ''}
+              <div> ${result.auto_pay_config.schedule}</div>
+              <div> Next billing: ${result.auto_pay_config.next_billing_date}</div>
+              ${result.ai_note ? `<div style="color: #8b5cf6; margin-top: 4px;"> ${result.ai_note}</div>` : ''}
               <div style="font-size: 0.8rem; color: #666; margin-top: 4px;">
                 Ledger TX: ${result.ledger_tx_id || 'N/A'} | NFT: ${result.nft_token_id || 'N/A'}
               </div>
@@ -4027,13 +4027,13 @@ async function saveAutoPayConfig(event) {
       showNotification('Auto-pay configured successfully!', 'success');
     } else {
       resultDiv.style.background = '#f8d7da';
-      resultDiv.innerHTML = `❌ Error: ${result.error}`;
+      resultDiv.innerHTML = ` Error: ${result.error}`;
       showNotification(`Failed: ${result.error}`, 'error');
     }
   } catch (err) {
     console.error('Error saving auto-pay config:', err);
     resultDiv.style.background = '#f8d7da';
-    resultDiv.innerHTML = `❌ Error: ${err.message}`;
+    resultDiv.innerHTML = ` Error: ${err.message}`;
     showNotification(`Error: ${err.message}`, 'error');
   }
 }
@@ -4048,7 +4048,7 @@ async function executeAutoPay() {
   const resultDiv = document.getElementById('autopay-config-result');
   resultDiv.style.display = 'block';
   resultDiv.style.background = '#f8f9fa';
-  resultDiv.innerHTML = '⏳ Executing auto-pay...';
+  resultDiv.innerHTML = ' Executing auto-pay...';
   
   // First do a dry run
   if (!confirm('Execute auto-pay now? This will process payment for the selected policy.')) {
@@ -4077,12 +4077,12 @@ async function executeAutoPay() {
         resultDiv.style.background = '#d4edda';
         resultDiv.innerHTML = `
           <div style="display: flex; align-items: flex-start; gap: 12px;">
-            <span style="font-size: 1.5rem;">✅</span>
+            <span style="font-size: 1.5rem;"></span>
             <div>
               <strong>Auto-Pay Executed Successfully!</strong>
               <div style="margin-top: 8px; font-size: 0.9rem;">
-                <div>💰 Total: <strong>$${result.total_amount.toFixed(2)}</strong></div>
-                <div>📝 Payments processed: ${result.processed}</div>
+                <div> Total: <strong>$${result.total_amount.toFixed(2)}</strong></div>
+                <div> Payments processed: ${result.processed}</div>
                 ${result.payments.map(p => `
                   <div style="margin-top: 4px; padding: 6px; background: rgba(0,0,0,0.05); border-radius: 4px;">
                     Policy: ${p.policy_id} | Amount: $${p.amount.toFixed(2)} | ${p.payment_method}
@@ -4120,13 +4120,13 @@ async function executeAutoPay() {
       }
     } else {
       resultDiv.style.background = '#f8d7da';
-      resultDiv.innerHTML = `❌ Error: ${result.error}`;
+      resultDiv.innerHTML = ` Error: ${result.error}`;
       showNotification(`Failed: ${result.error}`, 'error');
     }
   } catch (err) {
     console.error('Error executing auto-pay:', err);
     resultDiv.style.background = '#f8d7da';
-    resultDiv.innerHTML = `❌ Error: ${err.message}`;
+    resultDiv.innerHTML = ` Error: ${err.message}`;
     showNotification(`Error: ${err.message}`, 'error');
   }
 }
@@ -4172,7 +4172,7 @@ async function loadRefundableBills(event) {
   const listEl = document.getElementById('refundable-bills-list');
   const resultEl = document.getElementById('refund-result');
   resultEl.style.display = 'none';
-  listEl.innerHTML = '<p style="color:#666;">⏳ Loading refundable bills...</p>';
+  listEl.innerHTML = '<p style="color:#666;"> Loading refundable bills...</p>';
 
   // Helper: escape text content to prevent XSS in HTML
   function escHtml(str) {
@@ -4188,7 +4188,7 @@ async function loadRefundableBills(event) {
     const data = await response.json();
 
     if (!response.ok) {
-      listEl.innerHTML = `<p style="color:#dc3545;">❌ ${escHtml(data.error || 'Failed to load bills')}</p>`;
+      listEl.innerHTML = `<p style="color:#dc3545;"> ${escHtml(data.error || 'Failed to load bills')}</p>`;
       return;
     }
 
@@ -4196,7 +4196,7 @@ async function loadRefundableBills(event) {
     if (bills.length === 0) {
       listEl.innerHTML = `
         <div style="text-align:center;padding:24px;color:#666;">
-          <div style="font-size:2.5rem;margin-bottom:8px;">✅</div>
+          <div style="font-size:2.5rem;margin-bottom:8px;"></div>
           <div style="font-weight:600;">No refundable bills found</div>
           <div style="font-size:0.85rem;margin-top:4px;">All paid bills have already been refunded or no paid bills exist.</div>
         </div>`;
@@ -4224,13 +4224,13 @@ async function loadRefundableBills(event) {
               ${alreadyRefundedHtml}
             </div>
             <div style="text-align:right;min-width:140px;">
-              <div style="font-size:1.1rem;font-weight:700;color:#28a745;">↩️ $${bill.refundable_amount.toFixed(2)}</div>
+              <div style="font-size:1.1rem;font-weight:700;color:#28a745;">️ $${bill.refundable_amount.toFixed(2)}</div>
               <div style="font-size:0.75rem;color:#666;">refundable</div>
               <div style="margin-top:8px;">
                 <button class="btn refund-bill-btn"
                   data-bill-idx="${idx}"
                   style="background:linear-gradient(135deg,#ffc107 0%,#e0a800 100%);color:#000;font-weight:600;padding:6px 14px;font-size:0.85rem;">
-                  ↩️ Refund to Wallet
+                  ️ Refund to Wallet
                 </button>
               </div>
             </div>
@@ -4247,7 +4247,7 @@ async function loadRefundableBills(event) {
       });
     });
   } catch (err) {
-    listEl.innerHTML = `<p style="color:#dc3545;">❌ Error: ${escHtml(err.message)}</p>`;
+    listEl.innerHTML = `<p style="color:#dc3545;"> Error: ${escHtml(err.message)}</p>`;
   }
 }
 
@@ -4258,7 +4258,7 @@ function confirmCustomerRefund(billId, customerId, amount) {
   // Sanitize user-visible text (confirm() renders plain text, but we guard against non-string values)
   const safeBillId = String(billId).replace(/[^\w\-]/g, '');
   const confirmed = confirm(
-    `↩️ Confirm Refund\n\nBill ID: ${safeBillId}\nRefund Amount: $${Number(amount).toFixed(2)}\nDestination: 💊 Health Wallet\n\nThe refunded amount will be instantly deposited to your Health Wallet and recorded in the ledger.\n\nProceed?`
+    `️ Confirm Refund\n\nBill ID: ${safeBillId}\nRefund Amount: $${Number(amount).toFixed(2)}\nDestination:  Health Wallet\n\nThe refunded amount will be instantly deposited to your Health Wallet and recorded in the ledger.\n\nProceed?`
   );
   if (confirmed) {
     processCustomerRefund(billId, customerId, amount);
@@ -4281,7 +4281,7 @@ async function processCustomerRefund(billId, customerId, amount) {
     resultEl.style.background = '#f8d7da';
     resultEl.style.border = '1px solid #dc3545';
     resultEl.style.borderRadius = '8px';
-    resultEl.innerHTML = '<div style="color:#721c24;font-weight:600;">❌ Refund Failed</div><div style="margin-top:6px;font-size:0.9rem;">Bill ID and Customer ID are required to process a refund.</div>';
+    resultEl.innerHTML = '<div style="color:#721c24;font-weight:600;"> Refund Failed</div><div style="margin-top:6px;font-size:0.9rem;">Bill ID and Customer ID are required to process a refund.</div>';
     resultEl.style.display = 'block';
     return;
   }
@@ -4331,23 +4331,23 @@ async function processCustomerRefund(billId, customerId, amount) {
       resultEl.style.border = '1px solid #43a047';
       resultEl.style.borderRadius = '8px';
       resultEl.innerHTML = `
-        <div style="font-size:1.1rem;font-weight:700;color:#2e7d32;margin-bottom:8px;">✅ Refund Processed!</div>
+        <div style="font-size:1.1rem;font-weight:700;color:#2e7d32;margin-bottom:8px;"> Refund Processed!</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;font-size:0.9rem;">
           <div><strong>Refund ID:</strong><br><span id="_rfid"></span></div>
           <div><strong>Amount Refunded:</strong><br><span style="color:#28a745;font-weight:700;">$${Number(result.refund_amount).toFixed(2)}</span></div>
-          <div><strong>Deposited To:</strong><br>💊 Health Wallet</div>
+          <div><strong>Deposited To:</strong><br> Health Wallet</div>
           <div><strong>New Wallet Balance:</strong><br><span style="color:#1565c0;font-weight:700;">$${Number(result.wallet_balance_after).toFixed(2)}</span></div>
         </div>
         <div style="margin-top:10px;padding:8px;background:#fff;border-radius:6px;font-size:0.8rem;color:#555;">
-          🔗 Ledger TX: <span id="_ltx"></span> &nbsp;|&nbsp;
-          🔐 NFT Token: <span id="_nft"></span>
+           Ledger TX: <span id="_ltx"></span> &nbsp;|&nbsp;
+           NFT Token: <span id="_nft"></span>
         </div>`;
       resultEl.querySelector('#_rfid').appendChild(refundId);
       resultEl.querySelector('#_ltx').appendChild(ledgerTx);
       resultEl.querySelector('#_nft').appendChild(nftToken);
       resultEl.style.display = 'block';
       if (badgeEl) {
-        badgeEl.textContent = '✅ Refunded';
+        badgeEl.textContent = ' Refunded';
         badgeEl.style.background = '#d4edda';
         badgeEl.style.color = '#155724';
       }
@@ -4365,7 +4365,7 @@ async function processCustomerRefund(billId, customerId, amount) {
       resultEl.style.background = '#f8d7da';
       resultEl.style.border = '1px solid #dc3545';
       resultEl.style.borderRadius = '8px';
-      resultEl.innerHTML = '<div style="color:#721c24;font-weight:600;">❌ Refund Failed</div><div style="margin-top:6px;font-size:0.9rem;" id="_rferr"></div>';
+      resultEl.innerHTML = '<div style="color:#721c24;font-weight:600;"> Refund Failed</div><div style="margin-top:6px;font-size:0.9rem;" id="_rferr"></div>';
       resultEl.querySelector('#_rferr').textContent = displayMsg;
       resultEl.style.display = 'block';
     }
@@ -4373,7 +4373,7 @@ async function processCustomerRefund(billId, customerId, amount) {
     resultEl.style.background = '#f8d7da';
     resultEl.style.border = '1px solid #dc3545';
     resultEl.style.borderRadius = '8px';
-    resultEl.innerHTML = '<div style="color:#721c24;font-weight:600;">❌ Error</div><div style="margin-top:6px;font-size:0.9rem;" id="_rferr2"></div>';
+    resultEl.innerHTML = '<div style="color:#721c24;font-weight:600;"> Error</div><div style="margin-top:6px;font-size:0.9rem;" id="_rferr2"></div>';
     resultEl.querySelector('#_rferr2').textContent = `Request failed. Please check your connection and try again. (${err.message})`;
     resultEl.style.display = 'block';
   }
@@ -4393,7 +4393,7 @@ function _getAutoPayAllResult() {
 async function runAutoPayAllDryRun() {
   const resultDiv = _getAutoPayAllResult();
   resultDiv.style.display = 'block';
-  resultDiv.innerHTML = '<span style="color:white;">⏳ Running preview (dry run)...</span>';
+  resultDiv.innerHTML = '<span style="color:white;"> Running preview (dry run)...</span>';
 
   try {
     const response = await fetch('/api/billing/auto-pay/execute', {
@@ -4433,16 +4433,16 @@ async function runAutoPayAllDryRun() {
 }
 
 async function runAutoPayAll() {
-  if (!confirm('⚡ Execute Auto-Pay for ALL clients now?\n\nThis will process premium payments for every active policy with auto-pay enabled. Proceed?')) {
+  if (!confirm(' Execute Auto-Pay for ALL clients now?\n\nThis will process premium payments for every active policy with auto-pay enabled. Proceed?')) {
     return;
   }
 
   const btn = document.getElementById('btn-autopay-all');
   const resultDiv = _getAutoPayAllResult();
   btn.disabled = true;
-  btn.textContent = '⏳ Processing...';
+  btn.textContent = ' Processing...';
   resultDiv.style.display = 'block';
-  resultDiv.innerHTML = '<span style="color:white;">⏳ Processing all client payments...</span>';
+  resultDiv.innerHTML = '<span style="color:white;"> Processing all client payments...</span>';
 
   try {
     const response = await fetch('/api/billing/auto-pay/execute', {
@@ -4464,7 +4464,7 @@ async function runAutoPayAll() {
       const total = result.total_amount || 0;
       const failed = result.failed || 0;
       let html = `<div style="color:white;">
-        <div style="font-size:1.1rem; font-weight:700; margin-bottom:8px;">✅ Auto-Pay Complete</div>
+        <div style="font-size:1.1rem; font-weight:700; margin-bottom:8px;"> Auto-Pay Complete</div>
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(120px,1fr)); gap:8px; margin-bottom:8px;">
           <div style="background:rgba(255,255,255,0.15); padding:8px; border-radius:6px; text-align:center;">
             <div style="font-size:1.3rem; font-weight:700;">$${total.toFixed(2)}</div>
@@ -4483,7 +4483,7 @@ async function runAutoPayAll() {
       if (result.payments && result.payments.length > 0) {
         html += '<div style="max-height:200px; overflow-y:auto;">';
         result.payments.forEach(p => {
-          const status = p.status === 'paid' ? '✅' : '❌';
+          const status = p.status === 'paid' ? '' : '';
           html += `<div style="padding:6px 10px; margin:3px 0; background:rgba(255,255,255,0.08); border-radius:4px; font-size:0.85rem; display:flex; justify-content:space-between; align-items:center;">
             <span>${status} ${p.customer_name || p.customer_id}</span>
             <span style="font-weight:600;">$${(p.amount||0).toFixed(2)}</span>
@@ -4507,15 +4507,15 @@ async function runAutoPayAll() {
       if (typeof loadRecentTransactions === 'function') loadRecentTransactions();
     } else {
       resultDiv.innerHTML = `<div style="color:#fde68a;">
-        <strong>⚠️ ${result.error || 'No payments processed'}</strong>
+        <strong>️ ${result.error || 'No payments processed'}</strong>
         ${result.message ? `<div style="font-size:0.85rem; margin-top:4px;">${result.message}</div>` : ''}
       </div>`;
     }
   } catch (err) {
-    resultDiv.innerHTML = `<span style="color:#fca5a5;">❌ Error: ${err.message}</span>`;
+    resultDiv.innerHTML = `<span style="color:#fca5a5;"> Error: ${err.message}</span>`;
   } finally {
     btn.disabled = false;
-    btn.textContent = '⚡ Run Auto-Pay Now';
+    btn.textContent = ' Run Auto-Pay Now';
   }
 }
 

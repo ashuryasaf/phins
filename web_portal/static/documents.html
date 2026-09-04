@@ -297,8 +297,8 @@
   <div class="tab-bar">
     <button class="tab-btn active" id="tab-upload-btn" onclick="switchTab('upload')">Upload Documents</button>
     <button class="tab-btn" id="tab-docs-btn" onclick="switchTab('docs')">My Uploaded Documents</button>
-    <button class="tab-btn" id="tab-durable-btn" onclick="switchTab('durable')">️ Durable Object</button>
-    <button class="tab-btn" id="tab-archive-btn" onclick="switchTab('archive')" style="display:none;">️ Platform Archive</button>
+    <button class="tab-btn" id="tab-durable-btn" onclick="switchTab('durable')"> Durable Object</button>
+    <button class="tab-btn" id="tab-archive-btn" onclick="switchTab('archive')" style="display:none;"> Platform Archive</button>
   </div>
 
   <!-- ── Tab: Upload ── -->
@@ -427,7 +427,7 @@
   <div class="tab-panel" id="tab-durable">
     <div class="card">
       <div class="card-title">
-        ️ <span id="durable-list-title">Customer Document Vault</span>
+         <span id="durable-list-title">Customer Document Vault</span>
         <span id="durable-count" style="margin-left:auto;font-size:0.8rem;color:#78909c;font-weight:400;"></span>
       </div>
       <div style="color:#546e7a;font-size:0.88rem;margin-bottom:0.85rem;line-height:1.45;">Single durable view of <strong>every</strong> document linked to this customer — uploaded
@@ -503,7 +503,7 @@
 
       <div id="durable-container">
         <div class="empty-state">
-          <div class="empty-state-icon">️</div>
+          <div class="empty-state-icon"></div>
           <div>Loading customer vault…</div>
         </div>
       </div>
@@ -514,7 +514,7 @@
   <div class="tab-panel" id="tab-archive">
     <div class="card">
       <div class="card-title">
-        ️ <span id="archive-list-title">Platform Document Archive</span>
+         <span id="archive-list-title">Platform Document Archive</span>
         <span id="archive-count" style="margin-left:auto;font-size:0.8rem;color:#78909c;font-weight:400;"></span>
       </div>
       <div style="color:#546e7a;font-size:0.88rem;margin-bottom:0.85rem;line-height:1.45;">Every document uploaded since day one — identity, medical, risk assessment, claims,
@@ -544,7 +544,7 @@
       <div id="archive-summary" style="display:none;margin-bottom:1rem;"></div>
       <div id="archive-container">
         <div class="empty-state">
-          <div class="empty-state-icon">️</div>
+          <div class="empty-state-icon"></div>
           <div>Staff archive loads here…</div>
         </div>
       </div>
@@ -619,7 +619,7 @@
   function fileIcon(name) {
     const ext = (name.split('.').pop() || '').toLowerCase();
     const map = { xls:'', xlsx:'', xsd:'', csv:'', pdf:'', doc:'', docx:'',
-                  xml:'️', json:'️', txt:'', png:'️', jpg:'️', jpeg:'️', gif:'️', zip:'️' };
+                  xml:'', json:'', txt:'', png:'', jpg:'', jpeg:'', gif:'', zip:'' };
     return map[ext] || '';
   }
 
@@ -671,7 +671,7 @@
   function riskBadge(a) {
     if (!a) return '';
     const lvl = a.risk_level || '';
-    const labels = { low:'🟢 LOW', medium:'🟡 MEDIUM', high:' HIGH', very_high:' VERY HIGH' };
+    const labels = { low:' LOW', medium:' MEDIUM', high:' HIGH', very_high:' VERY HIGH' };
     const cls    = { low:'badge-risk-low', medium:'badge-risk-medium', high:'badge-risk-high', very_high:'badge-risk-very_high' };
     return `<span class="badge ${cls[lvl] || ''}">${labels[lvl] || lvl}</span>`;
   }
@@ -753,7 +753,7 @@
     if (selectedFiles.length === 0) return;
     const btn = document.getElementById('upload-btn');
     btn.disabled = true;
-    btn.textContent = '⏳ Uploading…';
+    btn.textContent = ' Uploading…';
     showStatus('', '');
 
     try {
@@ -853,7 +853,7 @@
       renderDocs(ALL_DOCS);
     } catch {
       document.getElementById('docs-container').innerHTML =
-        '<div class="empty-state"><div class="empty-state-icon">️</div><div>Could not load documents.</div></div>';
+        '<div class="empty-state"><div class="empty-state-icon"></div><div>Could not load documents.</div></div>';
     }
   }
 
@@ -969,7 +969,7 @@
   /* ── AI Analysis ── */
   async function runAnalysis(docId, btn) {
     btn.disabled = true;
-    btn.textContent = '⏳ Analyzing…';
+    btn.textContent = ' Analyzing…';
     const panelRow = document.getElementById('analysis-row-' + docId);
     const panel    = document.getElementById('analysis-panel-' + docId);
     if (panelRow) panelRow.style.display = '';
@@ -1013,7 +1013,7 @@
                    : a.risk_level === 'medium' ? 'warn' : '';
     const recLabel = {
       approve: ' Approve',
-      approve_conditional: '️ Conditional Approval',
+      approve_conditional: ' Conditional Approval',
       refer_manual_review: ' Refer for Manual Review',
       decline_or_senior_review: ' Decline / Senior Review',
       process_death_claim: ' Process Death Claim',
@@ -1204,7 +1204,7 @@
     DURABLE_CUSTOMER_ID = customerId;
 
     document.getElementById('durable-container').innerHTML =
-      '<div class="empty-state"><div class="empty-state-icon">⏳</div><div>Loading customer vault…</div></div>';
+      '<div class="empty-state"><div class="empty-state-icon"></div><div>Loading customer vault…</div></div>';
 
     try {
       const url = '/api/durable-objects/documents' + (customerId ? '?customer_id=' + encodeURIComponent(customerId) : '');
@@ -1212,7 +1212,7 @@
       const json = await res.json();
       if (!res.ok || !json.success) {
         document.getElementById('durable-container').innerHTML =
-          `<div class="empty-state"><div class="empty-state-icon">️</div><div>${escHtml(json.error || 'Could not load vault')}</div></div>`;
+          `<div class="empty-state"><div class="empty-state-icon"></div><div>${escHtml(json.error || 'Could not load vault')}</div></div>`;
         return;
       }
       DURABLE_VAULT = json;
@@ -1222,7 +1222,7 @@
       renderDurableDocs();
     } catch (e) {
       document.getElementById('durable-container').innerHTML =
-        `<div class="empty-state"><div class="empty-state-icon">️</div><div>Network error: ${escHtml(e.message)}</div></div>`;
+        `<div class="empty-state"><div class="empty-state-icon"></div><div>Network error: ${escHtml(e.message)}</div></div>`;
     }
   }
 
@@ -1241,7 +1241,7 @@
     }
 
     document.getElementById('durable-container').innerHTML =
-      '<div class="empty-state"><div class="empty-state-icon">⏳</div><div>Loading entity documents…</div></div>';
+      '<div class="empty-state"><div class="empty-state-icon"></div><div>Loading entity documents…</div></div>';
 
     try {
       const params = new URLSearchParams({
@@ -1252,7 +1252,7 @@
       const json = await res.json();
       if (!res.ok || !json.success) {
         document.getElementById('durable-container').innerHTML =
-          `<div class="empty-state"><div class="empty-state-icon">️</div><div>${escHtml(json.error || 'Could not load documents')}</div></div>`;
+          `<div class="empty-state"><div class="empty-state-icon"></div><div>${escHtml(json.error || 'Could not load documents')}</div></div>`;
         return;
       }
       DURABLE_VAULT = json;
@@ -1271,7 +1271,7 @@
       renderDurableDocs();
     } catch (e) {
       document.getElementById('durable-container').innerHTML =
-        `<div class="empty-state"><div class="empty-state-icon">️</div><div>Network error: ${escHtml(e.message)}</div></div>`;
+        `<div class="empty-state"><div class="empty-state-icon"></div><div>Network error: ${escHtml(e.message)}</div></div>`;
     }
   }
 
@@ -1309,7 +1309,7 @@
   function renderDurableDocs() {
     const container = document.getElementById('durable-container');
     if (!DURABLE_VAULT) {
-      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">️</div><div>No vault loaded.</div></div>';
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon"></div><div>No vault loaded.</div></div>';
       return;
     }
     let docs = DURABLE_VAULT.documents || [];
@@ -1374,7 +1374,7 @@
     document.getElementById('tab-archive-btn').style.display = '';
     const tag = (document.getElementById('archive-hashtag') || {}).value || '';
     document.getElementById('archive-container').innerHTML =
-      '<div class="empty-state"><div class="empty-state-icon">⏳</div><div>Loading platform archive…</div></div>';
+      '<div class="empty-state"><div class="empty-state-icon"></div><div>Loading platform archive…</div></div>';
     try {
       const params = new URLSearchParams({ limit: '500' });
       if (tag) params.set('process_hashtag', tag);
@@ -1382,7 +1382,7 @@
       const json = await res.json();
       if (!res.ok || !json.success) {
         document.getElementById('archive-container').innerHTML =
-          `<div class="empty-state"><div class="empty-state-icon">️</div><div>${escHtml(json.error || 'Could not load archive')}</div></div>`;
+          `<div class="empty-state"><div class="empty-state-icon"></div><div>${escHtml(json.error || 'Could not load archive')}</div></div>`;
         return;
       }
       DURABLE_VAULT = json;
@@ -1442,7 +1442,7 @@
         </div>`;
     } catch (e) {
       document.getElementById('archive-container').innerHTML =
-        `<div class="empty-state"><div class="empty-state-icon">️</div><div>Network error: ${escHtml(e.message)}</div></div>`;
+        `<div class="empty-state"><div class="empty-state-icon"></div><div>Network error: ${escHtml(e.message)}</div></div>`;
     }
   }
 
@@ -1450,7 +1450,7 @@
     const map = {
       ok:         { bg: '#e8f5e9', fg: '#2e7d32', label: ' OK' },
       mismatch:   { bg: '#ffebee', fg: '#b71c1c', label: ' MISMATCH' },
-      missing:    { bg: '#fff3e0', fg: '#e65100', label: '️ MISSING' },
+      missing:    { bg: '#fff3e0', fg: '#e65100', label: ' MISSING' },
       unverified: { bg: '#eceff1', fg: '#546e7a', label: '— unverified' }
     };
     const cfg = map[status || 'unverified'] || map.unverified;

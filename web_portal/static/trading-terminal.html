@@ -610,7 +610,7 @@ async function loadIntegrity() {
         ]);
         let html = '';
         const statusColor = integrity.status === 'clean' ? 'var(--green)' : 'var(--red)';
-        const statusIcon = integrity.status === 'clean' ? '' : '⚠';
+        const statusIcon = integrity.status === 'clean' ? '' : '';
         html += `<div style="display:flex;gap:16px;margin-bottom:12px;">`;
         html += `<div style="flex:1;text-align:center;padding:12px;background:var(--bg);border-radius:5px;border:1px solid ${statusColor};">
             <div style="font-size:28px;font-weight:700;color:${statusColor};">${statusIcon} ${(integrity.status||'unknown').toUpperCase().replace('_',' ')}</div>
@@ -997,7 +997,7 @@ async function loadActivities() {
 async function loadMarketClock() {
     try {
         const d = await apiFetch('/api/terminal/clock');
-        const dot = d.is_open ? '🟢' : '';
+        const dot = d.is_open ? '' : '';
         $('marketClock').textContent = dot + (d.is_open ? ' OPEN' : ' CLOSED');
     } catch(e) {}
 }
@@ -1051,7 +1051,7 @@ async function loadAccount() {
         html += acctRow('Unrealized P&L', '$' + fmt(d.unrealized_pl), plClass(d.unrealized_pl));
         html += acctRow('P&L %', (d.unrealized_pl_pct ? (d.unrealized_pl_pct*100).toFixed(2)+'%' : '—'), plClass(d.unrealized_pl_pct));
         if (d.day_trade_count > 0) html += acctRow('Day Trades', d.day_trade_count.toString(), d.day_trade_count >= 3 ? 'down' : '');
-        if (d.trading_blocked) html += `<div style="color:var(--red);padding:4px 0;font-weight:700;">⚠ TRADING BLOCKED</div>`;
+        if (d.trading_blocked) html += `<div style="color:var(--red);padding:4px 0;font-weight:700;"> TRADING BLOCKED</div>`;
         $('accountPanel').innerHTML = html;
     } catch(e) {
         $('accountPanel').innerHTML = '<div style="color:var(--red);font-size:18px;">Connection error — click RECONNECT</div>';
@@ -1623,7 +1623,7 @@ async function executeOrder(side) {
         const sl = parseFloat($('orderSL').value);
         confirmMsg += `\nTake Profit: $${tp}\nStop Loss: $${sl}`;
     }
-    if (!brokerAlive) confirmMsg += '\n\n⚠ Broker connection may be down!';
+    if (!brokerAlive) confirmMsg += '\n\n Broker connection may be down!';
 
     if (!confirm(confirmMsg)) return;
     lastOrderNonce = Date.now();

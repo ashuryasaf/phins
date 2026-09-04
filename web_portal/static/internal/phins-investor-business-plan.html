@@ -150,7 +150,7 @@ html[dir="rtl"] .confidential { letter-spacing: 0; }
     <span class="badge" data-i18n="badge.confidential"> Confidential</span>
     <span class="badge" data-i18n="badge.category"> Category-defining insurtech</span>
     <span class="badge" id="bp-hero-date">Plan as of —</span>
-    <span class="badge" id="bp-hero-sync" data-i18n="badge.synced">⚙ Synced to Deal Configurator</span>
+    <span class="badge" id="bp-hero-sync" data-i18n="badge.synced"> Synced to Deal Configurator</span>
   </div>
   <h1 data-i18n="hero.h1">PHINS — Business Plan</h1>
   <p class="tagline" data-i18n="hero.tagline">
@@ -432,7 +432,7 @@ html[dir="rtl"] .confidential { letter-spacing: 0; }
 
     "badge.confidential": " סודי",
     "badge.category": " אינשורטק מגדיר קטגוריה",
-    "badge.synced": "⚙ מסונכרן עם מחולל העסקה",
+    "badge.synced": " מסונכרן עם מחולל העסקה",
 
     "hero.h1": "פיינס — תוכנית עסקית",
     "hero.tagline":
@@ -1209,14 +1209,14 @@ html[dir="rtl"] .confidential { letter-spacing: 0; }
       { name: "תקרת השקעה (SAFE)", cap: fmtMoney(m.R), stake: "≈" + pct(m.eqStake) + " בהמרה", notes: fmtShort(m.P) + " תקרה, 20% הנחה; סגירה מהירה.", hi: false },
       { name: "מסגרת אשראי / חוב מסחרי", cap: fmtMoney(m.R), stake: "≈" + pct(m.warrantStake) + " (כתבי-אופציה)", notes: "ריבית ~10%, משיכות לפי אבני-דרך, חוב בכיר מובטח.", hi: false },
       { name: "הלוואה להמרה (CLA)", cap: fmtMoney(m.R), stake: "≈" + pct(m.claStake) + " בהמרה", notes: fmtShort(m.P) + " תקרה, 7% PIK, פירעון 24 חודשים.", hi: false },
-      { name: "שותף-מייסד פעיל + משקיע ★", cap: fmtMoney(cfg.coCash) + " מזומן", stake: "≈" + pct(m.combinedStake),
+      { name: "שותף-מייסד פעיל + משקיע ", cap: fmtMoney(cfg.coCash) + " מזומן", stake: "≈" + pct(m.combinedStake),
         notes: pct(m.cashStake) + " כנגד מזומן + " + cfg.founderEq + "% הון מייסדים מבושל (4 שנים, צוק שנה); מושב דירקטוריון.", hi: cfg.position !== "investor" }
     ] : [
       { name: "Priced equity (preferred)", cap: fmtMoney(m.R), stake: pct(m.eqStake), notes: "1× non-participating liquidation pref.", hi: cfg.position === "investor" },
       { name: "Investment cap (SAFE)", cap: fmtMoney(m.R), stake: "≈" + pct(m.eqStake) + " on conversion", notes: fmtShort(m.P) + " cap, 20% discount; fast close.", hi: false },
       { name: "Credit line / venture debt", cap: fmtMoney(m.R), stake: "≈" + pct(m.warrantStake) + " (warrants)", notes: "~10% interest, milestone draws, senior secured.", hi: false },
       { name: "CLA (convertible loan)", cap: fmtMoney(m.R), stake: "≈" + pct(m.claStake) + " on conversion", notes: fmtShort(m.P) + " cap, 7% PIK, 24-month maturity.", hi: false },
-      { name: "Active co-founder + investor ★", cap: fmtMoney(cfg.coCash) + " cash", stake: "≈" + pct(m.combinedStake),
+      { name: "Active co-founder + investor ", cap: fmtMoney(cfg.coCash) + " cash", stake: "≈" + pct(m.combinedStake),
         notes: pct(m.cashStake) + " for cash + " + cfg.founderEq + "% vested founders' equity (4-yr vest, 1-yr cliff); board seat.", hi: cfg.position !== "investor" }
     ];
     var selectedTag = isHe() ? " ► נבחר" : " ◄ selected";

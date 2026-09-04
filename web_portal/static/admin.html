@@ -785,7 +785,7 @@
           <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
           <span class="phins-logo-text">PHINS</span>
         </a>
-        <button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
+        <button class="mobile-menu-btn" onclick="toggleMobileMenu()">Menu</button>
         <div class="phins-utility">
           <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)">
             <option value="en">EN</option>
@@ -924,7 +924,7 @@
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
-          <span id="admin-ai-status-chip" class="admin-ai-status-chip">🟡 Ready</span>
+          <span id="admin-ai-status-chip" class="admin-ai-status-chip"> Ready</span>
           <button onclick="toggleAdminAIHelp()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Help">?</button>
           <button id="admin-ai-panel-minimize-btn" onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Expand">+</button>
         </div>
@@ -940,7 +940,7 @@
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Sync policy ledgers"<br>• "Sync claims ledger"<br>• "Probability analysis"</div>
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Business inquiries"<br>• "Show test data"<br>• "Generate all videos"</div>
         </div>
-        <p style="margin:10px 0 0 0;font-size:0.78rem;opacity:0.9;">⚠️ High-impact actions are confirmation-gated for data integrity.</p>
+        <p style="margin:10px 0 0 0;font-size:0.78rem;opacity:0.9;"> High-impact actions are confirmation-gated for data integrity.</p>
       </div>
 
       <div id="admin-ai-query-row" style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
@@ -2813,13 +2813,13 @@
       run_ai_bi_insights: { label: 'Run AI + BI Insights', fn: async () => { await loadPlatformAnalytics(); await loadAIInsights(); }, integrity: 'safe' },
       reconcile_balance_sheet: {
         label: 'Reconcile Balance Sheet',
-        confirm: '⚠️ Reconcile balance sheet now?\n\nThis verifies financial integrity across reserves and ledgers.',
+        confirm: ' Reconcile balance sheet now?\n\nThis verifies financial integrity across reserves and ledgers.',
         fn: async () => { await reconcileBalanceSheet(); },
         integrity: 'guarded'
       },
       cleanup_demo_data: {
         label: 'Clean Demo Data',
-        confirm: '⚠️ Clean demo/test data now?\n\nThis is a high-impact operation. Continue only if intended.',
+        confirm: ' Clean demo/test data now?\n\nThis is a high-impact operation. Continue only if intended.',
         fn: async () => { await cleanupDemoData(); },
         integrity: 'guarded'
       },
@@ -2836,7 +2836,7 @@
       refresh_underwriting: { label: 'Refresh Underwriting', fn: async () => { await loadUnderwritingApplications(); }, integrity: 'safe' },
       approve_all_pending_underwriting: {
         label: 'Approve All Pending',
-        confirm: '⚠️ Approve all pending underwriting applications?\n\nThis changes policy/application states.',
+        confirm: ' Approve all pending underwriting applications?\n\nThis changes policy/application states.',
         fn: async () => { await approveAllPending(); },
         integrity: 'guarded'
       },
@@ -2864,7 +2864,7 @@
       refresh_transactions: { label: 'Refresh Transactions', fn: async () => { await loadTransactions(); }, integrity: 'safe' },
       bill_all_policies: {
         label: 'Bill All Policies',
-        confirm: '⚠️ Execute bill-all for eligible active policies?\n\nThis creates billing records and should be run intentionally.',
+        confirm: ' Execute bill-all for eligible active policies?\n\nThis creates billing records and should be run intentionally.',
         fn: async () => { await executeBillAll(); },
         integrity: 'guarded'
       },
@@ -2881,7 +2881,7 @@
       refresh_video_jobs: { label: 'Refresh Video Jobs', fn: async () => { await loadMarketingVideoJobs({ silent: false }); if (latestMarketingCampaignPayload?.campaign) renderMarketingCampaign(latestMarketingCampaignPayload); }, integrity: 'safe' },
       batch_generate_marketing_videos: {
         label: 'Generate All Blueprint Videos',
-        confirm: '⚠️ Queue AI video generation for every campaign blueprint?\n\nThis submits provider video jobs for the latest campaign.',
+        confirm: ' Queue AI video generation for every campaign blueprint?\n\nThis submits provider video jobs for the latest campaign.',
         fn: async () => { await batchGenerateMarketingVideos(); },
         integrity: 'guarded'
       },
@@ -2956,7 +2956,7 @@
       if (!panel) return;
       adminAssistantSwitchTab('overview');
       initAdminAssistantVoiceRecognition();
-      adminAssistantSetStatus('ready', '🟡 Ready');
+      adminAssistantSetStatus('ready', ' Ready');
     }
 
     function toggleAdminAIHelp() {
@@ -3033,12 +3033,12 @@
     function adminAssistantNavigateToTabSection() {
       const tab = ADMIN_ASSISTANT_TABS[adminAssistantState.activeTab];
       if (!tab || !tab.sectionId) {
-        adminAssistantSetStatus('warning', '⚠️ No direct section for this tab');
+        adminAssistantSetStatus('warning', ' No direct section for this tab');
         return;
       }
       const target = document.getElementById(tab.sectionId);
       if (!target) {
-        adminAssistantSetStatus('warning', '⚠️ Section not found in DOM');
+        adminAssistantSetStatus('warning', ' Section not found in DOM');
         return;
       }
       target.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -3067,11 +3067,11 @@
       }
 
       if (action.confirm && !confirm(action.confirm)) {
-        adminAssistantSetStatus('warning', '⏸️ Action cancelled');
+        adminAssistantSetStatus('warning', ' Action cancelled');
         return;
       }
 
-      const runningStatusText = `⏳ Running: ${action.label}`;
+      const runningStatusText = ` Running: ${action.label}`;
       adminAssistantSetStatus('ready', runningStatusText);
 
       try {
@@ -3197,7 +3197,7 @@
         adminAssistantState.isListening = true;
         const indicator = document.getElementById('admin-ai-voice-recording-indicator');
         if (indicator) indicator.style.display = 'block';
-        adminAssistantSetStatus('ready', '️ Listening...');
+        adminAssistantSetStatus('ready', ' Listening...');
       };
 
       recognition.onresult = (event) => {
@@ -3219,13 +3219,13 @@
         if (indicator) indicator.style.display = 'none';
         adminAssistantState.isListening = false;
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          adminAssistantSetStatus('warning', '⚠️ Microphone blocked — click the padlock/mic icon in the address bar, allow microphone access, then retry');
+          adminAssistantSetStatus('warning', ' Microphone blocked — click the padlock/mic icon in the address bar, allow microphone access, then retry');
         } else if (event.error === 'no-speech') {
-          adminAssistantSetStatus('warning', '⚠️ No speech detected — tap the mic and speak clearly');
+          adminAssistantSetStatus('warning', ' No speech detected — tap the mic and speak clearly');
         } else if (event.error === 'audio-capture') {
-          adminAssistantSetStatus('warning', '⚠️ No microphone found — connect a microphone and retry');
+          adminAssistantSetStatus('warning', ' No microphone found — connect a microphone and retry');
         } else if (event.error !== 'aborted') {
-          adminAssistantSetStatus('warning', `⚠️ Voice error: ${event.error}`);
+          adminAssistantSetStatus('warning', ` Voice error: ${event.error}`);
         }
       };
     }
@@ -3255,12 +3255,12 @@
     async function startAdminAssistantVoiceInput() {
       const voiceBtn = document.getElementById('admin-ai-voice-btn');
       if (voiceBtn && voiceBtn.disabled) {
-        adminAssistantSetStatus('warning', '⚠️ Voice commands are available after login validation completes');
+        adminAssistantSetStatus('warning', ' Voice commands are available after login validation completes');
         return;
       }
       const recognition = adminAssistantState.recognition;
       if (!recognition) {
-        adminAssistantSetStatus('warning', '⚠️ Voice commands are not supported in this browser');
+        adminAssistantSetStatus('warning', ' Voice commands are not supported in this browser');
         return;
       }
       if (adminAssistantState.isListening) {
@@ -3269,13 +3269,13 @@
       }
       const micAllowed = await ensureAdminAssistantMicPermission();
       if (!micAllowed) {
-        adminAssistantSetStatus('warning', '⚠️ Microphone blocked — click the padlock/mic icon in the address bar, allow microphone access, then retry');
+        adminAssistantSetStatus('warning', ' Microphone blocked — click the padlock/mic icon in the address bar, allow microphone access, then retry');
         return;
       }
       try {
         recognition.start();
       } catch (err) {
-        adminAssistantSetStatus('warning', '⚠️ Voice recognition could not start');
+        adminAssistantSetStatus('warning', ' Voice recognition could not start');
       }
     }
 
@@ -3314,7 +3314,7 @@
       if (!input) return;
       const query = (input.value || '').trim().toLowerCase();
       if (!query) {
-        adminAssistantSetStatus('warning', '⚠️ Enter a command');
+        adminAssistantSetStatus('warning', ' Enter a command');
         return;
       }
 
@@ -3347,7 +3347,7 @@
     }
 
     async function adminRunActuarySimulation() {
-      adminAssistantSetStatus('ready', '⏳ Running actuarial portfolio simulation...');
+      adminAssistantSetStatus('ready', ' Running actuarial portfolio simulation...');
       const area = document.getElementById('admin-ai-response-area');
       if (area) area.innerHTML = '<div style="text-align:center;padding:20px;"><div style="font-size:1.5rem;margin-bottom:8px;"></div><div style="font-weight:600;">Running actuarial simulation...</div><div style="color:#546e7a;font-size:0.85rem;margin-top:4px;">Generating 100k customer portfolio with actuarial tables</div></div>';
       try {
@@ -3396,7 +3396,7 @@
     }
 
     async function adminRunSystemHealth() {
-      adminAssistantSetStatus('ready', '⏳ Checking system health...');
+      adminAssistantSetStatus('ready', ' Checking system health...');
       const area = document.getElementById('admin-ai-response-area');
       if (area) area.innerHTML = '<div style="text-align:center;padding:16px;"><div style="font-size:1.3rem;"></div><div style="font-weight:600;">Running health checks...</div></div>';
       const checks = [];
@@ -3418,7 +3418,7 @@
       const allOk = checks.every(c => c.ok);
       if (area) {
         area.innerHTML = `
-          <div style="font-weight:700;font-size:1.02rem;margin-bottom:10px;">${allOk ? '' : '⚠️'} System Health</div>
+          <div style="font-weight:700;font-size:1.02rem;margin-bottom:10px;">${allOk ? '' : ''} System Health</div>
           <div style="display:grid;gap:6px;">
             ${checks.map(c => `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:${c.ok ? '#e8f5e9' : '#fce4ec'};border-radius:8px;font-size:0.88rem;">
               <span style="font-weight:600;">${c.ok ? '' : ''} ${c.name}</span>
@@ -3427,7 +3427,7 @@
           </div>
         `;
       }
-      adminAssistantSetStatus(allOk ? 'success' : 'warning', allOk ? ' All systems healthy' : '⚠️ Some checks failed');
+      adminAssistantSetStatus(allOk ? 'success' : 'warning', allOk ? ' All systems healthy' : ' Some checks failed');
     }
 
     function adminAssistantSetStatus(kind, text) {
@@ -3771,7 +3771,7 @@
             `UW Completed: ${v.underwriting_complete ? '' : ''}\n` +
             `Has Policy: ${v.has_policy ? '' : ''}\n` +
             `Has Bill: ${v.has_bill ? '' : ''}\n\n` +
-            `Overall: ${v.is_valid ? ' VALID' : '⚠️ INCOMPLETE'}`
+            `Overall: ${v.is_valid ? ' VALID' : ' INCOMPLETE'}`
           );
         }
       } catch (err) {
@@ -3804,15 +3804,15 @@
           });
           
           if (checks.filter(c => c.status === 'PENDING').length > 0) {
-            message += `\n⏳ PENDING:\n`;
+            message += `\n PENDING:\n`;
             checks.filter(c => c.status === 'PENDING').forEach(c => {
               message += `  ○ ${c.check}: ${c.details || ''}\n`;
             });
           }
           
           if (warnings.length > 0) {
-            message += `\n⚠️ WARNINGS:\n`;
-            warnings.forEach(w => message += `  ⚠ ${w}\n`);
+            message += `\n WARNINGS:\n`;
+            warnings.forEach(w => message += `   ${w}\n`);
           }
           
           if (errors.length > 0) {
@@ -3826,7 +3826,7 @@
           }
           
           message += `\n═══════════════════════════════════\n`;
-          message += `OVERALL: ${data.valid ? ' VALID' : '⚠️ NEEDS ACTION'}\n`;
+          message += `OVERALL: ${data.valid ? ' VALID' : ' NEEDS ACTION'}\n`;
           message += `Allocation Status: ${data.allocation_status || 'Not configured'}\n`;
           
           alert(message);
@@ -3965,7 +3965,7 @@
     
     // Approve all pending underwriting applications
     async function approveAllPending() {
-      if (!confirm('⚠️ Approve ALL pending applications?\n\nThis will:\n- Approve all pending underwriting applications\n- Activate all associated policies\n- Generate billing for each policy\n- Initialize savings/hedging allocations\n\nContinue?')) return;
+      if (!confirm(' Approve ALL pending applications?\n\nThis will:\n- Approve all pending underwriting applications\n- Activate all associated policies\n- Generate billing for each policy\n- Initialize savings/hedging allocations\n\nContinue?')) return;
       
       try {
         const response = await fetch('/api/underwriting', {
@@ -4129,7 +4129,7 @@
         message += ` Customer Validation:\n`;
         message += `• Total Customers: ${results.total}\n`;
         message += `•  Valid: ${results.valid}\n`;
-        message += `• ⚠ Needs Action: ${results.needsAction}\n\n`;
+        message += `•  Needs Action: ${results.needsAction}\n\n`;
         
         if (results.errors.length > 0) {
           message += `Issues Found:\n`;
@@ -4167,7 +4167,7 @@
       if (show) {
         progressDiv.style.display = 'block';
         progressText.textContent = text;
-        statusSpan.innerHTML = '<span style="color: #f59e0b;">⏳ Processing...</span>';
+        statusSpan.innerHTML = '<span style="color: #f59e0b;"> Processing...</span>';
       } else {
         progressDiv.style.display = 'none';
         progressBar.style.width = '0%';
@@ -4210,7 +4210,7 @@
         document.getElementById('pipeline-status').innerHTML = '<span style="color: #10b981;"> Data refreshed</span>';
       } catch (err) {
         showProgress(false);
-        document.getElementById('pipeline-status').innerHTML = '<span style="color: #dc3545;">⚠ Refresh failed</span>';
+        document.getElementById('pipeline-status').innerHTML = '<span style="color: #dc3545;"> Refresh failed</span>';
       } finally {
         setButtonLoading('btn-refresh-all', false);
       }
@@ -4227,7 +4227,7 @@
     // Falls back to the legacy per-customer loop only if the batch endpoint
     // is unavailable on an older deployment.
     async function processAllPipelines() {
-      if (!confirm('⚡ Process all customer pipelines?\n\nThis will advance each customer through their pipeline stages automatically.\n\nContinue?')) return;
+      if (!confirm(' Process all customer pipelines?\n\nThis will advance each customer through their pipeline stages automatically.\n\nContinue?')) return;
       
       setButtonLoading('btn-process-pipelines', true);
       showProgress(true, 'Processing all customer pipelines...');
@@ -4257,7 +4257,7 @@
             showProgress(false);
             let message = ` Pipeline Processing Complete!\n\n${processed}/${total} customers processed\n${actionsTotal} total actions taken`;
             if (errors.length > 0) {
-              message += `\n\n⚠ ${errors.length} errors occurred`;
+              message += `\n\n ${errors.length} errors occurred`;
             }
             alert(message);
             await refreshAllData();
@@ -4325,7 +4325,7 @@
         
         let message = ` Pipeline Processing Complete!\n\n${processed}/${customers.length} customers processed\n${actionsTotal} total actions taken`;
         if (errors.length > 0) {
-          message += `\n\n⚠ ${errors.length} errors occurred`;
+          message += `\n\n ${errors.length} errors occurred`;
         }
         alert(message);
         
@@ -4505,7 +4505,7 @@
         
         let message = ` Billing Generation Complete!\n\nProcessed ${customersToProcess.length} customers\n${generated} billing records generated/updated`;
         if (errors > 0) {
-          message += `\n⚠ ${errors} errors occurred`;
+          message += `\n ${errors} errors occurred`;
         }
         alert(message);
         
@@ -5351,10 +5351,10 @@
           // Build comprehensive alert message
           let message = ` Balance Sheet Reconciliation Complete\n`;
           message += `═══════════════════════════════════\n`;
-          message += `Data Valid: ${data.is_valid ? 'Yes ' : 'No ⚠️'}\n\n`;
+          message += `Data Valid: ${data.is_valid ? 'Yes ' : 'No '}\n\n`;
           
           if (data.discrepancies.length > 0) {
-            message += `⚠️ DISCREPANCIES FOUND:\n`;
+            message += ` DISCREPANCIES FOUND:\n`;
             data.discrepancies.forEach(d => {
               message += `• ${d.label || d.field}: Expected ${fmt(d.expected)}, Current ${fmt(d.current)} (Diff: ${fmt(d.difference)})\n`;
             });
@@ -5438,7 +5438,7 @@
       processingDiv.id = 'bill-all-processing';
       processingDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: linear-gradient(135deg, #060d1f 0%, #0d1b3e 100%); padding: 30px 40px; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); z-index: 10000; text-align: center; color: white; border: 1px solid rgba(127, 178, 255, 0.16);';
       processingDiv.innerHTML = `
-        <div style="font-size: 48px; margin-bottom: 16px;">⏳</div>
+        <div style="font-size: 48px; margin-bottom: 16px;"></div>
         <div style="font-size: 18px; font-weight: bold; margin-bottom: 8px;">Processing Bulk Billing...</div>
         <div style="font-size: 14px; color: rgba(255,255,255,0.7);">Generating bills, updating ledgers, reconciling data</div>
       `;
@@ -5484,7 +5484,7 @@
           message += `• Premium Collected: $${currentState.premium_income_collected.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
           
           if (data.errors && data.errors.length > 0) {
-            message += `\n\n⚠️ ERRORS (${data.errors.length}):\n`;
+            message += `\n\n ERRORS (${data.errors.length}):\n`;
             data.errors.slice(0, 5).forEach(err => {
               message += `• ${err.policy_id || err.type}: ${err.error}\n`;
             });
@@ -5529,7 +5529,7 @@
           showBillAllSuccessNotification(summary, data.skip_analysis);
           
         } else if (response.status === 403) {
-          alert('⚠️ Access Denied: Admin or Accountant role required for bulk billing');
+          alert(' Access Denied: Admin or Accountant role required for bulk billing');
         } else {
           const errorData = await response.json().catch(() => ({}));
           alert(` Billing Failed: ${errorData.error || response.status}\n\nPlease check the console for details.`);
@@ -5554,7 +5554,7 @@
       const bgColor = hasIssues 
         ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' 
         : 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
-      const icon = hasIssues ? '⚠️' : '';
+      const icon = hasIssues ? '' : '';
       
       let message = '';
       if (summary.bills_created > 0) {
@@ -5657,7 +5657,7 @@
         '   pushed via "Push to Pipeline" — with their policies,\n' +
         '   claims and bills\n' +
         ' Correct balance sheet discrepancies\n\n' +
-        '⚠️ PROTECTED DATA:\n' +
+        ' PROTECTED DATA:\n' +
         '• asaf@assurance.co.il (CUST-ASAF-001)\n' +
         '• efrat@phins.ai (CUST-EFRAT-001)\n' +
         '• Other real customer data\n\n' +
@@ -5719,7 +5719,7 @@
           }
           
         } else if (response.status === 403) {
-          alert('⚠️ Access Denied: Admin role required for demo data cleanup');
+          alert(' Access Denied: Admin role required for demo data cleanup');
         } else {
           const errorData = await response.json().catch(() => ({}));
           alert(` Cleanup Failed: ${errorData.error || response.status}`);
@@ -5832,7 +5832,7 @@
             if (billingValidation.unbilled_customers && billingValidation.unbilled_customers.length > 0) {
               validationHtml += `
                 <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; border-left: 3px solid #ffb74d;">
-                  <div style="font-weight: bold; color: #ffb74d;">⚠️ Unbilled Customers (${billingValidation.unbilled_customers.length})</div>
+                  <div style="font-weight: bold; color: #ffb74d;"> Unbilled Customers (${billingValidation.unbilled_customers.length})</div>
                   <div style="color: rgba(255,255,255,0.9); margin-top: 4px;">
                     Active policies with no billing records:
                     <ul style="margin: 8px 0 0 20px; padding: 0;">
@@ -5908,7 +5908,7 @@
             if (billingValidation.missing_premium_policies && billingValidation.missing_premium_policies.length > 0) {
               validationHtml += `
                 <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; border-left: 3px solid #ce93d8;">
-                  <div style="font-weight: bold; color: #ce93d8;">⚙️ Configuration Issue (${billingValidation.missing_premium_policies.length})</div>
+                  <div style="font-weight: bold; color: #ce93d8;"> Configuration Issue (${billingValidation.missing_premium_policies.length})</div>
                   <div style="color: rgba(255,255,255,0.9); margin-top: 4px;">
                     Active policies with no premium amount set:
                     <ul style="margin: 8px 0 0 20px; padding: 0;">
@@ -5930,7 +5930,7 @@
           
           console.log('AI Insights loaded:', ai);
         } else if (response.status === 403) {
-          alert('⚠️ Access Denied: Admin/Accountant/Actuary role required for AI Insights');
+          alert(' Access Denied: Admin/Accountant/Actuary role required for AI Insights');
         } else {
           alert('Failed to load AI insights: ' + response.status);
         }
@@ -6800,7 +6800,7 @@
         if (result.valid) {
           alert(` NFT Token Verified!\n\nToken ID: ${result.token_id}\nOwner: ${result.owner_id}\nAsset Type: ${result.asset_type}\nCreated: ${new Date(result.created_at).toLocaleString()}\n\nIntegrity:  Valid`);
         } else {
-          alert(`⚠️ NFT Verification Failed\n\n${result.error || 'Token not found'}`);
+          alert(` NFT Verification Failed\n\n${result.error || 'Token not found'}`);
         }
       } catch (err) {
         alert(` Error: ${err.message}`);
@@ -6911,7 +6911,7 @@
             </div>
             <div>
               <div style="font-weight: 600;">Integrity Score</div>
-              <div style="font-size: 0.8rem; opacity: 0.7;">${integrityScore >= 80 ? ' Excellent' : integrityScore >= 50 ? '⚠ Fair' : ' Needs attention'}</div>
+              <div style="font-size: 0.8rem; opacity: 0.7;">${integrityScore >= 80 ? ' Excellent' : integrityScore >= 50 ? ' Fair' : ' Needs attention'}</div>
             </div>
           </div>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.85rem;">
@@ -6984,7 +6984,7 @@
     // Validate all customer pipelines
     async function validateAllCustomerPipelines() {
       const statusEl = document.getElementById('customer-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Validating...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Validating...</span>';
       
       try {
         // Get all customers
@@ -7027,13 +7027,13 @@
           statusEl.innerHTML = `<span style="color: #10b981;"> ${customers.length} customers validated</span>`;
           alert(` Pipeline Validation Complete!\n\n${customers.length} customers validated\nAll ledger entries verified\nNo integrity issues found`);
         } else {
-          statusEl.innerHTML = `<span style="color: #f59e0b;">⚠ ${issues.length} issues found</span>`;
-          alert(`⚠️ Validation Complete with Issues\n\n${validated}/${customers.length} customers valid\n${issues.length} issues found\nLedger: ${ledgerValid ? 'Valid' : 'Issues detected'}`);
+          statusEl.innerHTML = `<span style="color: #f59e0b;"> ${issues.length} issues found</span>`;
+          alert(` Validation Complete with Issues\n\n${validated}/${customers.length} customers valid\n${issues.length} issues found\nLedger: ${ledgerValid ? 'Valid' : 'Issues detected'}`);
         }
         
         await loadCustomerList();
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Validation failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Validation failed</span>';
         alert('Validation failed: ' + err.message);
       }
     }
@@ -7043,7 +7043,7 @@
       if (!confirm(' Activate health wallets for all eligible customers?\n\nThis will create wallet entries for customers with active policies.\n\nContinue?')) return;
       
       const statusEl = document.getElementById('customer-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Activating wallets...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Activating wallets...</span>';
       
       try {
         const response = await fetch('/api/admin/customers', {
@@ -7075,7 +7075,7 @@
         
         await loadCustomerList();
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Activation failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Activation failed</span>';
         alert('Activation failed: ' + err.message);
       }
     }
@@ -7083,7 +7083,7 @@
     // Sync customer ledgers
     async function syncCustomerLedgers() {
       const statusEl = document.getElementById('customer-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Syncing ledgers...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Syncing ledgers...</span>';
       
       try {
         // Get ledger data
@@ -7106,7 +7106,7 @@
         
         await loadCustomerList();
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Sync failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Sync failed</span>';
         alert('Sync failed: ' + err.message);
       }
     }
@@ -7114,7 +7114,7 @@
     // Export customer data
     async function exportCustomerData() {
       const statusEl = document.getElementById('customer-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Exporting...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Exporting...</span>';
       
       try {
         const response = await fetch('/api/admin/customers', {
@@ -7150,7 +7150,7 @@
         
         statusEl.innerHTML = `<span style="color: #10b981;"> ${customers.length} customers exported</span>`;
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Export failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Export failed</span>';
         alert('Export failed: ' + err.message);
       }
     }
@@ -7158,13 +7158,13 @@
     // Refresh customer list (alias)
     async function refreshCustomerList() {
       const statusEl = document.getElementById('customer-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Refreshing...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Refreshing...</span>';
       
       try {
         await loadCustomerList();
         statusEl.innerHTML = '<span style="color: #10b981;"> Refreshed</span>';
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Refresh failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Refresh failed</span>';
       }
     }
     
@@ -7175,7 +7175,7 @@
       if (!confirm(' Activate all policies with approved underwriting?\n\nThis will change status from pending to active for eligible policies.\n\nContinue?')) return;
       
       const statusEl = document.getElementById('sales-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Activating...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Activating...</span>';
       
       try {
         // Use admin/customers to get all policies
@@ -7236,7 +7236,7 @@
         await loadPolicies();
         updatePolicyBadges();
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Activation failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Activation failed</span>';
         alert('Activation failed: ' + err.message);
       }
     }
@@ -7244,7 +7244,7 @@
     // Generate all premiums
     async function generateAllPremiums() {
       const statusEl = document.getElementById('sales-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Calculating...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Calculating...</span>';
       
       try {
         const response = await fetch('/api/admin/customers', {
@@ -7282,7 +7282,7 @@
           `Annual Premium (active): ${formatCurrency(totalAnnualPremium)}`);
         
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Calculation failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Calculation failed</span>';
         alert('Calculation failed: ' + err.message);
       }
     }
@@ -7290,7 +7290,7 @@
     // Sync policy ledgers
     async function syncPolicyLedgers() {
       const statusEl = document.getElementById('sales-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Syncing ledgers...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Syncing ledgers...</span>';
       
       try {
         // Get ledger entries for policy approvals
@@ -7312,7 +7312,7 @@
         
         await loadPolicies();
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Sync failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Sync failed</span>';
         alert('Sync failed: ' + err.message);
       }
     }
@@ -7320,7 +7320,7 @@
     // Generate policy report
     async function generatePolicyReport() {
       const statusEl = document.getElementById('sales-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Generating report...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Generating report...</span>';
       
       try {
         const response = await fetch('/api/admin/customers', {
@@ -7395,7 +7395,7 @@
           `Investment Value: ${formatCurrency(totalInvestment)}`);
         
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Report failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Report failed</span>';
         alert('Report generation failed: ' + err.message);
       }
     }
@@ -7460,7 +7460,7 @@
       if (!confirm(' Process all pending claims?\n\nThis will review and attempt to approve all valid pending claims.\n\nContinue?')) return;
       
       const statusEl = document.getElementById('claims-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Processing...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Processing...</span>';
       
       try {
         const response = await fetch('/api/claims', {
@@ -7496,7 +7496,7 @@
         await loadClaims();
         updateClaimsBadges();
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Processing failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Processing failed</span>';
         alert('Processing failed: ' + err.message);
       }
     }
@@ -7504,7 +7504,7 @@
     // Validate ADL assessments
     async function validateADLAssessments() {
       const statusEl = document.getElementById('claims-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Validating ADLs...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Validating ADLs...</span>';
       
       try {
         const response = await fetch('/api/claims', {
@@ -7535,7 +7535,7 @@
         alert(` ADL Validation Complete!\n\nTotal Claims: ${claims.length}\nValid (2+ ADLs): ${validClaims}\nPartial (1 ADL): ${invalidClaims}\nTotal ADLs Impaired: ${totalADLs}\n\nADL Criteria: 2+ ADLs required for full disability benefits`);
         
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Validation failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Validation failed</span>';
         alert('ADL validation failed: ' + err.message);
       }
     }
@@ -7543,7 +7543,7 @@
     // Sync claims ledger
     async function syncClaimsLedger() {
       const statusEl = document.getElementById('claims-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Syncing ledger...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Syncing ledger...</span>';
       
       try {
         // Get claims ledger entries
@@ -7565,7 +7565,7 @@
         
         await loadClaims();
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Sync failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Sync failed</span>';
         alert('Sync failed: ' + err.message);
       }
     }
@@ -7573,7 +7573,7 @@
     // Generate claims report
     async function generateClaimsReport() {
       const statusEl = document.getElementById('claims-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Generating report...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Generating report...</span>';
       
       try {
         const response = await fetch('/api/claims', {
@@ -7628,7 +7628,7 @@
         alert(` Claims Report Generated!\n\nTotal Claims: ${claims.length}\nPending: ${pending}\nApproved: ${approved}\nDenied: ${denied}\nPaid: ${paid}\n\nTotal Claimed: ${formatCurrency(totalClaimed)}\nTotal Approved: ${formatCurrency(totalApproved)}`);
         
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Report failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Report failed</span>';
         alert('Report generation failed: ' + err.message);
       }
     }
@@ -8146,7 +8146,7 @@
         console.error('Error:', error);
         content.innerHTML = `
           <div style="text-align:center;padding:40px;">
-            <div style="font-size:48px;margin-bottom:16px;">⚠️</div>
+            <div style="font-size:48px;margin-bottom:16px;"></div>
             <p style="color:#dc2626;">Error generating probability report: ${error.message}</p>
             <button class="btn" onclick="closeClaimProbabilityModal()" style="margin-top:16px;background:#6b7280;color:white;">Close</button>
           </div>
@@ -8187,7 +8187,7 @@
           <div style="background:${authBg};color:white;padding:24px;border-radius:12px;text-align:center;">
             <div style="font-size:2.5rem;font-weight:700;">${(authProb * 100).toFixed(1)}%</div>
             <div style="opacity:0.9;margin-top:8px;">Authenticity Probability</div>
-            <div style="font-size:0.85rem;margin-top:8px;">${authProb >= 0.7 ? ' LEGITIMATE' : (authProb >= 0.5 ? '⚠️ UNCERTAIN' : ' SUSPICIOUS')}</div>
+            <div style="font-size:0.85rem;margin-top:8px;">${authProb >= 0.7 ? ' LEGITIMATE' : (authProb >= 0.5 ? ' UNCERTAIN' : ' SUSPICIOUS')}</div>
           </div>
           <div style="background:${fraudProb > 0.5 ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : (fraudProb > 0.3 ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : '#f8f9fa')};color:${fraudProb > 0.3 ? 'white' : '#333'};padding:24px;border-radius:12px;text-align:center;">
             <div style="font-size:2.5rem;font-weight:700;">${(fraudProb * 100).toFixed(1)}%</div>
@@ -8233,7 +8233,7 @@
         ${hidden.detected > 0 ? `
         <!-- Hidden Conditions Alert -->
         <div style="background:#fef2f2;padding:20px;border-radius:12px;border:1px solid #fecaca;margin-bottom:24px;">
-          <h4 style="margin:0 0 12px 0;color:#dc2626;">⚠️ Hidden Conditions Detected (${hidden.detected})</h4>
+          <h4 style="margin:0 0 12px 0;color:#dc2626;"> Hidden Conditions Detected (${hidden.detected})</h4>
           ${(hidden.conditions || []).map(hc => `
             <div style="background:white;padding:12px;border-radius:8px;border-left:4px solid #ef4444;margin:8px 0;">
               <strong>${hc.condition_name}</strong> (ICD: ${hc.icd_code})
@@ -8447,7 +8447,7 @@
           const statusBadge = status === 'active' 
             ? '<span style="background: #28a745; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem;"> Active</span>'
             : status === 'used'
-            ? '<span style="background: #6c757d; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem;">⚫ Used</span>'
+            ? '<span style="background: #6c757d; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem;"> Used</span>'
             : '<span style="background: #dc3545; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem;"> Expired</span>';
           
           const expiresDate = code.expires_at ? new Date(code.expires_at).toLocaleDateString() : 'Never';
@@ -8507,7 +8507,7 @@
           topRefDiv.innerHTML = '<span style="color: #666; font-style: italic;">No referrers yet</span>';
         } else {
           topRefDiv.innerHTML = topReferrers.map((r, i) => {
-            const medal = i === 0 ? '' : i === 1 ? '' : i === 2 ? '' : '⭐';
+            const medal = i === 0 ? '' : i === 1 ? '' : i === 2 ? '' : '';
             return `<span style="background: ${i < 3 ? '#fff3e0' : '#f5f5f5'}; padding: 6px 12px; border-radius: 20px; font-size: 0.9rem;">
               ${medal} ${r.customer_id}: <strong>${r.referrals}</strong> referrals
             </span>`;
@@ -8531,7 +8531,7 @@
       
       try {
         // Show loading state
-        generateBtn.innerHTML = '⏳ Generating...';
+        generateBtn.innerHTML = ' Generating...';
         generateBtn.disabled = true;
         
         const maxUses = document.getElementById('invite-max-uses').value;
@@ -8652,7 +8652,7 @@
     
     // ========== SOCIAL SHARING FUNCTIONS ==========
     function getShareMessage() {
-      return `️ You're Invited to PHINS!
+      return ` You're Invited to PHINS!
 
 Use this invitation code to register:
  ${lastGeneratedCode}
@@ -8660,7 +8660,7 @@ Use this invitation code to register:
 Or click the direct link:
  ${lastInvitationLink}
 
-Welcome to PHINS Portal! ️`;
+Welcome to PHINS Portal! `;
     }
     
     function shareViaWhatsApp() {
@@ -8679,7 +8679,7 @@ Welcome to PHINS Portal! ️`;
         showToast(' Generate a code first');
         return;
       }
-      const subject = '️ PHINS Invitation - Your Registration Code';
+      const subject = ' PHINS Invitation - Your Registration Code';
       const body = getShareMessage();
       const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
       window.location.href = mailtoUrl;
@@ -8716,7 +8716,7 @@ Welcome to PHINS Portal! ️`;
       }
       
       const shareData = {
-        title: '️ PHINS Invitation',
+        title: ' PHINS Invitation',
         text: getShareMessage(),
         url: lastInvitationLink
       };
@@ -8750,7 +8750,7 @@ Welcome to PHINS Portal! ️`;
       
       // For cross-origin images, open in new tab
       window.open(qrImg.src, '_blank');
-      showToast('⬇️ QR Code opened - right-click to save');
+      showToast(' QR Code opened - right-click to save');
     }
     
   </script>

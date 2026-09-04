@@ -222,8 +222,8 @@
       <span style="font-size:8pt;opacity:.8;" data-i18n="lang_label">Language</span>
       <button type="button" class="btn lang-btn on" data-lang="en">EN</button>
       <button type="button" class="btn lang-btn" data-lang="he">עברית</button>
-      <button type="button" class="btn" id="cfg-toggle" data-i18n="tb_adjust">⚙ Adjust</button>
-      <button type="button" class="btn dl" id="dl" data-i18n="dl">⬇ Download PDF</button>
+      <button type="button" class="btn" id="cfg-toggle" data-i18n="tb_adjust"> Adjust</button>
+      <button type="button" class="btn dl" id="dl" data-i18n="dl"> Download PDF</button>
     </div>
   </div>
 
@@ -310,7 +310,7 @@
         </div>
       </div>
       <div class="page-body">
-        <div class="sec"><span class="sec-no">★</span><div><h2 data-i18n="p1_purpose_h">Purpose of this raise</h2><p class="sub" data-i18n="p1_purpose_s">Why we are raising, and what it unlocks.</p></div></div>
+        <div class="sec"><span class="sec-no">00</span><div><h2 data-i18n="p1_purpose_h">Purpose of this raise</h2><p class="sub" data-i18n="p1_purpose_s">Why we are raising, and what it unlocks.</p></div></div>
         <div class="ask-band" data-i18n-html="p1_ask">We are raising a <strong><span data-calc="round">—</span> seed</strong> to launch the MGA, ship AgentOS to agents, and open the protection marketplace — converting a built platform into a category, on a capital-light path to a $1B+ company.</div>
         <p class="mt16" style="font-size:9.5pt;" data-i18n="p1_story_intro">The story, in seven chapters:</p>
         <div class="storymap mt8">
@@ -334,7 +334,7 @@
         <div class="vision-band"><div class="big" data-i18n="p2_v_big">Protection becomes a software product — priced by AI, paid by code, and orchestrated across everyone who delivers care.</div></div>
         <div class="cols-3 mt16">
           <div class="feat v"><span class="ic"></span><h3 data-i18n="p2_v1">A new category</h3><p data-i18n="p2_v1d">AgentOS for Insurance + a protection marketplace — the layer distribution, underwriting, claims &amp; care run on.</p></div>
-          <div class="feat v"><span class="ic">⚡</span><h3 data-i18n="p2_v2">A new standard</h3><p data-i18n="p2_v2d">Quote in seconds, underwrite with auditable AI, settle eligible claims by code.</p></div>
+          <div class="feat v"><span class="ic"></span><h3 data-i18n="p2_v2">A new standard</h3><p data-i18n="p2_v2d">Quote in seconds, underwrite with auditable AI, settle eligible claims by code.</p></div>
           <div class="feat v"><span class="ic"></span><h3 data-i18n="p2_v3">A new outcome</h3><p data-i18n="p2_v3d">A capital-light, multi-market platform with three compounding revenue engines.</p></div>
         </div>
 
@@ -370,7 +370,7 @@
         <div class="sec"><span class="sec-no">03</span><div><h2 data-i18n="p3_h">Technology</h2><p class="sub" data-i18n="p3_s">Three moats on one ledger — distribute, underwrite, pay, orchestrate.</p></div></div>
         <div class="cols-4">
           <div class="feat b"><span class="ic"></span><h3 data-i18n="p3_t1">AI underwriting</h3><p data-i18n="p3_t1d">Severity-tuned pricing, model registry, proprietary data rivals can't see.</p></div>
-          <div class="feat b"><span class="ic">⚙️</span><h3 data-i18n="p3_t2">AI claims</h3><p data-i18n="p3_t2d">Triage, code-based settlement of eligible benefits, home-care-first routing.</p></div>
+          <div class="feat b"><span class="ic"></span><h3 data-i18n="p3_t2">AI claims</h3><p data-i18n="p3_t2d">Triage, code-based settlement of eligible benefits, home-care-first routing.</p></div>
           <div class="feat g"><span class="ic"></span><h3 data-i18n="p3_t3">AgentOS</h3><p data-i18n="p3_t3d">The SaaS cockpit that arms agents and owns the distribution relationship.</p></div>
           <div class="feat v"><span class="ic"></span><h3 data-i18n="p3_t4">Marketplace</h3><p data-i18n="p3_t4d">Five-sided network: clients, agents, doctors, reinsurers &amp; care providers.</p></div>
         </div>
@@ -712,13 +712,13 @@
         if (ue) state.fxEur = Number(ue);
         if (ui) state.fxIls = Number(ui);
         state.fxSource = (d.source === "alpha_vantage" || d.source === "frankfurter_ecb" || d.source === "mixed_live") ? "live" : (d.source || "fallback");
-        if (badge) badge.textContent = state.fxSource === "live" ? "live " : (state.fxSource + " ⚠");
+        if (badge) badge.textContent = state.fxSource === "live" ? "live " : (state.fxSource + " ");
         var src = document.getElementById("fx-source");
         if (src) src.textContent = d.as_of ? ("as of " + String(d.as_of).slice(0, 10)) : "";
         applyFxInputs(); persist(); render();
       }).catch(function () {
         state.fxSource = "fallback";
-        if (badge) badge.textContent = "fallback ⚠";
+        if (badge) badge.textContent = "fallback ";
         applyFxInputs(); render();
       });
     }
@@ -784,7 +784,7 @@
 
     // ── Hebrew dictionary ──
     var HE = {
-      lang_label: "שפה", dl: "⬇ הורדת PDF", tb_adjust: "⚙ התאמה",
+      lang_label: "שפה", dl: " הורדת PDF", tb_adjust: " התאמה",
       foot: "הנחות תכנון מודליות — לא הנחיה. חסוי — אין להפיץ.",
       chap_vision: "חזון", chap_market: "שוק", chap_tech: "טכנולוגיה", chap_team: "צוות",
       chap_traction: "מומנטום", chap_growth: "צמיחה", chap_fin: "פיננסים",

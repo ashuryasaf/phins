@@ -392,7 +392,7 @@
       '<div class="ld-logo-tagline">Personal Health Insurance &amp; Savings</div></div></div>' +
       '<div class="ld-header-links">' +
       '<a class="ld-link" href="/corporate-legal-dashboard.html">← Legal &amp; Funding Center</a>' +
-      '<a class="ld-link" href="/pitch-dashboard.html">📂 Investor Documents</a>' +
+      '<a class="ld-link" href="/pitch-dashboard.html"> Investor Documents</a>' +
       '<a class="ld-link" href="/admin.html">← Admin</a>' +
       '</div>';
     return h;
@@ -401,7 +401,7 @@
   LegalDoc.prototype.buildControls = function () {
     var self = this;
     var c = el('aside', 'ld-controls ld-no-print');
-    c.appendChild(el('h2', null, '⚙️ Adjust this document'));
+    c.appendChild(el('h2', null, '️ Adjust this document'));
     c.appendChild(el('div', 'ld-sub', 'Edit the fields below — the document and signatures update live. Fields lock once the first signature is captured.'));
 
     // context selector
@@ -469,15 +469,15 @@
     // action buttons
     var br = el('div', 'ld-btn-row');
     br.innerHTML =
-      '<button class="ld-btn" id="ld-print">🖨️ Print / Save PDF</button>' +
-      '<button class="ld-btn secondary" id="ld-verify">🔐 Verify integrity</button>' +
+      '<button class="ld-btn" id="ld-print">️ Print / Save PDF</button>' +
+      '<button class="ld-btn secondary" id="ld-verify"> Verify integrity</button>' +
       '<button class="ld-btn ghost" id="ld-newcopy">🆕 New blank copy</button>';
     c.appendChild(br);
-    var lock = el('div', 'ld-locknote', '🔒 This document is locked after signature to preserve integrity. Use “Unlock &amp; void” below to invalidate signatures and edit again.');
+    var lock = el('div', 'ld-locknote', ' This document is locked after signature to preserve integrity. Use “Unlock &amp; void” below to invalidate signatures and edit again.');
     lock.id = 'ld-locknote';
     c.appendChild(lock);
     var vr = el('div', 'ld-btn-row');
-    vr.innerHTML = '<button class="ld-btn danger" id="ld-void" style="display:none;">🗑️ Unlock &amp; void signatures</button>';
+    vr.innerHTML = '<button class="ld-btn danger" id="ld-void" style="display:none;">️ Unlock &amp; void signatures</button>';
     c.appendChild(vr);
     return c;
   };
@@ -768,7 +768,7 @@
     var wrap = $('#ld-sign-wrap');
     if (!wrap) return;
     var sigs = this.activeSignatories();
-    var html = '<h2>✍️ Signatures</h2>' +
+    var html = '<h2>️ Signatures</h2>' +
       '<div class="ld-sign-intro">Each party signs below (draw or type). On signing, the signature, signer, and ' +
       'date/time are locked and the document content hash is anchored to the PHINS tamper-evident ledger.</div>' +
       '<div class="ld-sign-grid">';
@@ -782,7 +782,7 @@
         '<div class="ld-sig-party">' + esc(party) + '</div>' +
         '<div class="ld-sig-editor">' +
           '<div class="ld-sig-mode-row">' +
-            '<button class="ld-btn" data-sigmode="draw" aria-pressed="true">✏️ Draw</button>' +
+            '<button class="ld-btn" data-sigmode="draw" aria-pressed="true">️ Draw</button>' +
             '<button class="ld-btn" data-sigmode="type" aria-pressed="false">⌨️ Type</button>' +
           '</div>' +
           '<div class="ld-sig-pad-box" data-sigdraw>' +
@@ -796,7 +796,7 @@
             '<div class="ld-field"><label>Signer name</label><input data-signame placeholder="Full legal name"></div>' +
             '<div class="ld-field"><label>Title (optional)</label><input data-sigtitle placeholder="Title / capacity"></div>' +
           '</div>' +
-          '<div class="ld-sig-actions"><button class="ld-btn" data-sigcommit>🔏 Sign &amp; lock</button></div>' +
+          '<div class="ld-sig-actions"><button class="ld-btn" data-sigcommit> Sign &amp; lock</button></div>' +
         '</div>' +
         '<div class="ld-sig-result"></div>' +
       '</div>';
@@ -1021,11 +1021,11 @@
     }
     var receipt;
     if (sig.receipt) {
-      receipt = '<div class="ld-sig-receipt"><span class="ok">✔ Anchored to PHINS ledger</span><br>' +
+      receipt = '<div class="ld-sig-receipt"><span class="ok"> Anchored to PHINS ledger</span><br>' +
         'seq #' + esc(sig.receipt.sequence_no) + ' · entry ' + esc((sig.receipt.entry_hash || '').slice(0, 24)) + '…<br>' +
         'content hash ' + esc((sig.documentHash || '').slice(0, 24)) + '…</div>';
     } else {
-      receipt = '<div class="ld-sig-receipt"><span class="pending">⏳ Anchor pending (offline / retry)</span><br>' +
+      receipt = '<div class="ld-sig-receipt"><span class="pending"> Anchor pending (offline / retry)</span><br>' +
         'content hash ' + esc((sig.documentHash || '').slice(0, 24)) + '…' +
         ' <button class="ld-btn ghost ld-no-print" data-sigretry style="font-size:7.5pt;padding:3px 8px;">Retry anchor</button></div>';
     }
@@ -1109,8 +1109,8 @@
       var tamper = self.lockedHash && live !== self.lockedHash;
       var statusHtml = self.lockedHash
         ? (tamper
-            ? '<span class="v-bad">⚠ CONTENT CHANGED since signing — signatures no longer match this content.</span>'
-            : '<span class="v-ok">✔ Content matches the hash signed by all parties.</span>')
+            ? '<span class="v-bad"> CONTENT CHANGED since signing — signatures no longer match this content.</span>'
+            : '<span class="v-ok"> Content matches the hash signed by all parties.</span>')
         : 'Unsigned draft — content hash is provisional and will be frozen at first signature.';
       box.innerHTML =
         '<strong>Data integrity</strong> — Document instance <code>' + esc(self.docInstanceId) + '</code>. ' +
@@ -1137,13 +1137,13 @@
           var d = res.data || {};
           var localMatch = live === self.lockedHash;
           if (d.verified && d.chain_valid && localMatch) {
-            self.flash('✔ Verified: content unchanged, anchored, and ledger chain intact.', 'ok');
+            self.flash(' Verified: content unchanged, anchored, and ledger chain intact.', 'ok');
           } else if (!localMatch) {
-            self.flash('⚠ Local content changed since signing — does not match the signed hash.', 'err');
+            self.flash(' Local content changed since signing — does not match the signed hash.', 'err');
           } else if (!d.verified) {
-            self.flash('⚠ No matching anchor found on the ledger yet (anchor may be pending).', 'err');
+            self.flash(' No matching anchor found on the ledger yet (anchor may be pending).', 'err');
           } else {
-            self.flash('⚠ Ledger chain reported issues — contact an administrator.', 'err');
+            self.flash(' Ledger chain reported issues — contact an administrator.', 'err');
           }
           self.refreshIntegrity();
         }).catch(function () {

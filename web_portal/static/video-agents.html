@@ -353,7 +353,7 @@
 
         <div class="grid-two">
             <section class="panel">
-                <h2>⚙️ Agent Controls</h2>
+                <h2> Agent Controls</h2>
                 <div class="form-grid">
                     <div class="field">
                         <label for="va-campaign-id">Campaign ID</label>
@@ -710,7 +710,7 @@
                     </div>
                     <div class="job-actions">
                         ${job.generated_asset_id ? `<a class="small-btn open" href="/admin-media.html">Open in Media</a>` : ''}
-                        ${status === 'completed' && downloadUrl ? `<a class="small-btn open" href="${escapeHtml(downloadUrl)}" download>⬇ Download Video</a>` : ''}
+                        ${status === 'completed' && downloadUrl ? `<a class="small-btn open" href="${escapeHtml(downloadUrl)}" download> Download Video</a>` : ''}
                         ${status === 'completed' && job.generated_asset_id ? `<button class="small-btn open" onclick="verifyVideoAgentJob('${job.id}')">Verify Integrity</button>` : ''}
                         ${status === 'completed' && job.generated_asset_id && !implementedLive ? `<button class="small-btn open" onclick="publishVideoAgentJob('${job.id}')"> Implement on phins.ai</button>` : ''}
                         ${implementedLive ? `<a class="small-btn open" href="/" target="_blank" rel="noopener">Open Landing Page</a>` : ''}
@@ -863,7 +863,7 @@
             const providers = diag?.providers || {};
             const rows = Object.entries(providers).map(([name, cfg]) => {
                 const enabled = Boolean(cfg?.enabled);
-                const dot = enabled ? '🟢' : '';
+                const dot = enabled ? '' : '';
                 const label = String(cfg?.label || name).trim() || name;
                 const reason = String(cfg?.reason || '').trim();
                 return `<div style="margin-top:6px;"><strong>${dot} ${escapeHtml(label)}</strong><br><span style="opacity:0.85;">${escapeHtml(reason)}</span></div>`;

@@ -236,7 +236,7 @@
                 <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
                 <span class="phins-logo-text">PHINS</span>
             </a>
-            <button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
+            <button class="mobile-menu-btn" onclick="toggleMobileMenu()">Menu</button>
             <nav class="phins-nav" id="mobile-nav">
                 <a href="/admin.html">Admin</a>
                 <a href="/underwriter-dashboard.html">Underwriting</a>
@@ -395,7 +395,7 @@
                     <button class="btn" onclick="runAIProjectionAssessment()" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;">AI BI Assessment</button>
                     <button class="btn btn-secondary" onclick="exportProjection('csv')" title="Export as CSV">Export CSV</button>
                     <button class="btn btn-secondary" onclick="exportProjection('pdf')" title="Export as PDF">Export PDF</button>
-                    <button class="btn btn-secondary" onclick="printReport('projection-results')" title="Print Report">️ Print</button>
+                    <button class="btn btn-secondary" onclick="printReport('projection-results')" title="Print Report"> Print</button>
                 </div>
                 
                 <!-- AI BI Assessment Section -->
@@ -436,7 +436,7 @@
                             Load Customers
                         </button>
                         <button class="btn btn-small" onclick="useProjectionCustomer()" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;" title="Use customer from Projection tab">
-                            ↩️ Use from Projection
+                             Use from Projection
                         </button>
                     </div>
                 </div>
@@ -449,7 +449,7 @@
                     <button class="btn btn-primary" onclick="loadForecast()">Generate Forecast</button>
                     <button class="btn btn-secondary" onclick="exportForecast('csv')" title="Export as CSV">Export CSV</button>
                     <button class="btn btn-secondary" onclick="exportForecast('pdf')" title="Export as PDF">Export PDF</button>
-                    <button class="btn btn-secondary" onclick="printReport('forecast-results')" title="Print Report">️ Print</button>
+                    <button class="btn btn-secondary" onclick="printReport('forecast-results')" title="Print Report"> Print</button>
                 </div>
                 
                 <div id="forecast-results"></div>
@@ -481,7 +481,7 @@
                     <button class="btn btn-primary" onclick="loadPortfolioReport()">Refresh Report</button>
                     <button class="btn btn-secondary" onclick="exportPortfolio('csv')" title="Export as CSV">Export CSV</button>
                     <button class="btn btn-secondary" onclick="exportPortfolio('pdf')" title="Export as PDF">Export PDF</button>
-                    <button class="btn btn-secondary" onclick="printReport('portfolio-results')" title="Print Report">️ Print</button>
+                    <button class="btn btn-secondary" onclick="printReport('portfolio-results')" title="Print Report"> Print</button>
                 </div>
                 <div id="portfolio-results"><div class="loading">Loading portfolio report...</div></div>
             </div>
@@ -501,7 +501,7 @@
                         <button class="btn btn-primary" onclick="loadBalanceSheet()">Refresh</button>
                         <button class="btn btn-success" onclick="reconcileBalanceSheet()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">Reconcile</button>
                         <button class="btn btn-secondary" onclick="exportBalanceSheet('csv')">Export CSV</button>
-                        <button class="btn btn-secondary" onclick="printReport('balance-sheet-content')">️ Print</button>
+                        <button class="btn btn-secondary" onclick="printReport('balance-sheet-content')"> Print</button>
                     </div>
                 </div>
                 
@@ -637,7 +637,7 @@
                     <button class="btn btn-primary" onclick="loadBooksReconcile()">Reconcile Books</button>
                     <button class="btn btn-secondary" onclick="exportIntegrity('csv')" title="Export as CSV">Export CSV</button>
                     <button class="btn btn-secondary" onclick="exportIntegrity('pdf')" title="Export as PDF">Export PDF</button>
-                    <button class="btn btn-secondary" onclick="printReport('integrity-results')" title="Print Report">️ Print</button>
+                    <button class="btn btn-secondary" onclick="printReport('integrity-results')" title="Print Report"> Print</button>
                 </div>
                 <div id="integrity-results"><div class="loading">Click "Run Validation" to check data integrity...</div></div>
             </div>
@@ -660,7 +660,7 @@
                     <span style="flex-grow: 1;"></span>
                     <button class="btn btn-secondary" onclick="exportCrossDashboard('csv')" title="Export as CSV">Export CSV</button>
                     <button class="btn btn-secondary" onclick="exportCrossDashboard('pdf')" title="Export as PDF">Export PDF</button>
-                    <button class="btn btn-secondary" onclick="printReport('dashboard-view-results')" title="Print Report">️ Print</button>
+                    <button class="btn btn-secondary" onclick="printReport('dashboard-view-results')" title="Print Report"> Print</button>
                 </div>
                 
                 <div id="dashboard-view-results" style="margin-top: 20px;">
@@ -1329,7 +1329,7 @@
                     </div>
                     <div style="background: white; padding: 16px; border-radius: 8px; text-align: center;">
                         <div style="font-size: 1rem; font-weight: 600; color: ${assessment.dataQuality.includes('Real') ? '#10b981' : '#f59e0b'};">
-                            ${assessment.dataQuality.includes('Real') ? '' : '⚠'} ${assessment.dataQuality}
+                            ${assessment.dataQuality.includes('Real') ? '' : ''} ${assessment.dataQuality}
                         </div>
                         <div style="font-size: 0.85rem; color: #666; margin-top: 8px;">Data Source</div>
                     </div>
@@ -1480,7 +1480,7 @@
                             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
                                 <div style="display: flex; align-items: center; gap: 12px;">
                                     <div style="width: 50px; height: 50px; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">
-                                        ️
+                                        
                                     </div>
                                     <div>
                                         <h3 style="margin: 0; font-size: 1.3rem;">PHINS Customer Projection</h3>
@@ -1592,7 +1592,7 @@
                         </div>
                         <div class="stat-card" style="background: linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%);">
                             <div class="stat-value">${formatCurrency(data.premium_breakdown.risk_component)}</div>
-                            <div class="stat-label">️ Risk Cover Component</div>
+                            <div class="stat-label"> Risk Cover Component</div>
                             <div style="font-size: 0.7rem; color: #856404; margin-top: 5px;">
                                 Mortality + ADL + Lapse adjusted
                             </div>
@@ -2410,7 +2410,7 @@
                     
                     // Show integrity status
                     const statusColor = data.data_integrity === 'healthy' ? '#2e7d32' : '#c62828';
-                    const statusIcon = data.data_integrity === 'healthy' ? '' : '⚠️';
+                    const statusIcon = data.data_integrity === 'healthy' ? '' : '';
                     html += `
                         <div style="background: ${statusColor}10; border: 1px solid ${statusColor}30; border-radius: 8px; padding: 15px; margin-top: 15px;">
                             <span style="font-size: 1.2rem;">${statusIcon}</span>
@@ -3189,7 +3189,7 @@
                             <div style="font-size: 0.85rem; color: #666; margin-top: 5px;">Monthly: ${formatCurrency(data.premium_breakdown.monthly_premium)}</div>
                         </div>
                         <div class="lump-sum-card" style="border-color: #dc3545;">
-                            <h4>️ Risk Component</h4>
+                            <h4> Risk Component</h4>
                             <div class="lump-sum-value" style="color: #dc3545;">${formatCurrency(data.premium_breakdown.risk_component)}</div>
                             <div style="font-size: 0.85rem; color: #666;">Mortality + ADL Risk</div>
                         </div>
@@ -3258,7 +3258,7 @@
                 // Use original rendering logic from before
                 const statusClass = data.status === 'healthy' ? 'integrity-healthy' : 
                                    data.issues_count > 0 ? 'integrity-issues' : 'integrity-warnings';
-                const statusIcon = data.status === 'healthy' ? '' : data.issues_count > 0 ? '' : '⚠️';
+                const statusIcon = data.status === 'healthy' ? '' : data.issues_count > 0 ? '' : '';
                 
                 let html = `
                     <div class="integrity-status ${statusClass}">
@@ -3403,7 +3403,7 @@
                     console.log('Balance sheet loaded:', bs);
                 } else if (response.status === 403) {
                     document.getElementById('balance-sheet-content').innerHTML = 
-                        '<div class="error" style="padding: 20px; background: #fef2f2; border-radius: 8px; color: #991b1b;">⚠️ Access denied. Accountant or Admin role required.</div>';
+                        '<div class="error" style="padding: 20px; background: #fef2f2; border-radius: 8px; color: #991b1b;"> Access denied. Accountant or Admin role required.</div>';
                 } else {
                     console.error('Failed to load balance sheet:', response.status);
                 }
@@ -3429,10 +3429,10 @@
                     
                     let message = `Balance Sheet Reconciliation Complete\n`;
                     message += `═══════════════════════════════════\n`;
-                    message += `Data Valid: ${data.is_valid ? 'Yes ' : 'No ⚠️'}\n\n`;
+                    message += `Data Valid: ${data.is_valid ? 'Yes ' : 'No '}\n\n`;
                     
                     if (data.discrepancies.length > 0) {
-                        message += `⚠️ DISCREPANCIES FOUND:\n`;
+                        message += ` DISCREPANCIES FOUND:\n`;
                         data.discrepancies.forEach(d => {
                             message += `• ${d.label || d.field}: Expected ${fmt(d.expected)}, Current ${fmt(d.current)} (Diff: ${fmt(d.difference)})\n`;
                         });

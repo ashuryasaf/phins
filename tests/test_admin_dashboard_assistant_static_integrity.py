@@ -168,14 +168,14 @@ def test_admin_ai_assistant_integrity_guards_and_section_ids_present():
     assert "bill_all_policies" in content
     assert "run_actuary_simulation" in content
     assert "approve_all_pending_underwriting" in content
-    assert "confirm: '⚠️ Reconcile balance sheet now?" in content
-    assert "confirm: '⚠️ Clean demo/test data now?" in content
-    assert "confirm: '⚠️ Execute bill-all for eligible active policies?" in content
+    assert "confirm: 'Reconcile balance sheet now?" in content
+    assert "confirm: 'Clean demo/test data now?" in content
+    assert "confirm: 'Execute bill-all for eligible active policies?" in content
     assert "confirm: '📐 Run portfolio actuarial simulation?" in content
-    assert "confirm: '⚠️ Approve all pending underwriting applications?" in content
-    assert "confirm: '⚠️ Queue AI video generation for every campaign blueprint?" in content
+    assert "confirm: 'Approve all pending underwriting applications?" in content
+    assert "confirm: 'Queue AI video generation for every campaign blueprint?" in content
     assert "integrity: 'guarded'" in content
-    assert "⚠️ High-impact actions are confirmation-gated for data integrity." in content
+    assert "High-impact actions are confirmation-gated for data integrity." in content
 
     # Reinsurance and legal sections get explicit ids for assistant navigation coverage.
     # Tolerate additional attributes (e.g. data-collapsible) being added later.

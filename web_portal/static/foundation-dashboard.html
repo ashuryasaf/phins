@@ -2136,7 +2136,7 @@
             </div>
           </div>
           <div style="background: #fff3e0; padding: 10px; border-radius: 8px; margin-top: 12px; font-size: 0.8rem; color: #e65100;">
-            ⏱️ Bank transfers typically take 2-3 business days to process.
+            ️ Bank transfers typically take 2-3 business days to process.
           </div>
         </div>
         
@@ -3346,7 +3346,7 @@
         html += `
           <div style="margin-bottom: 24px;">
             <h4 style="color: #ff9800; margin: 0 0 16px; display: flex; align-items: center; gap: 8px;">
-              ⏳ Pending Approval (${pendingMembers.length})
+               Pending Approval (${pendingMembers.length})
             </h4>
             <div class="members-grid">
               ${pendingMembers.map(m => renderMemberCard(m, isAdmin, true)).join('')}
@@ -3637,7 +3637,7 @@
       
       const statusLabels = {
         'open': ' Open',
-        'pending_approval': '⏳ Pending Approval',
+        'pending_approval': ' Pending Approval',
         'passed': ' Passed',
         'failed': ' Failed',
         'rejected': ' Rejected'
@@ -3676,7 +3676,7 @@
         <div class="vote-card">
           <div class="vote-header">
             <span class="vote-status" style="background: ${statusColors[vote.status] || '#666'}">${statusLabels[vote.status] || vote.status}</span>
-            ${timeRemaining ? `<span class="vote-time">⏱️ ${timeRemaining}</span>` : ''}
+            ${timeRemaining ? `<span class="vote-time">️ ${timeRemaining}</span>` : ''}
           </div>
           <div class="vote-body">
             <h4 class="vote-title">${escapeHtml(vote.title)}</h4>
@@ -4094,7 +4094,7 @@
     
     function getRoleLabel(role) {
       const labels = {
-        founder: '⭐ Founder',
+        founder: ' Founder',
         admin: ' Admin',
         member: 'Member',
         observer: '️ Observer'
@@ -4457,7 +4457,7 @@
       const notes = document.getElementById('contribution-notes').value;
       const submitBtn = document.getElementById('contribution-submit-btn');
       submitBtn.disabled = true;
-      submitBtn.textContent = '⏳ Processing...';
+      submitBtn.textContent = ' Processing...';
       
       try {
         const token = authToken;

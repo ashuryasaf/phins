@@ -626,7 +626,7 @@
                 <div class="stat-label">Total Pending Amount</div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon">⏱️</div>
+                <div class="stat-icon"></div>
                 <div class="stat-value" id="avg-time">-</div>
                 <div class="stat-label">Avg Processing Time</div>
             </div>
@@ -904,7 +904,7 @@
             } catch (error) {
                 console.error('Error loading claims:', error);
                 document.getElementById('claims-list').innerHTML = 
-                    '<div class="empty-state"><div class="empty-state-icon">️</div><p>Error loading claims. Please refresh the page.</p></div>';
+                    '<div class="empty-state"><div class="empty-state-icon"></div><p>Error loading claims. Please refresh the page.</p></div>';
             }
         }
         
@@ -1291,7 +1291,7 @@
                 console.error('Error generating probability report:', error);
                 document.getElementById('probability-content').innerHTML = `
                     <div class="empty-state">
-                        <div class="empty-state-icon">️</div>
+                        <div class="empty-state-icon"></div>
                         <p>Error generating probability report: ${escapeHtml(error?.message || 'Unknown error')}</p>
                         <button class="btn btn-secondary" onclick="closeProbabilityModal()">Close</button>
                     </div>
@@ -1387,7 +1387,7 @@
             if (hidden.detected > 0) {
                 html += `
                     <div class="prob-section" style="background: #fef2f2; border: 1px solid #fecaca;">
-                        <h4 style="color: #dc2626;">️ Hidden Conditions Detected (${hidden.detected})</h4>
+                        <h4 style="color: #dc2626;"> Hidden Conditions Detected (${hidden.detected})</h4>
                         <p style="color: #991b1b; margin-bottom: 16px;">The following conditions were found in the claim but were NOT declared during underwriting:</p>
                         ${(hidden.conditions || []).map(hc => `
                             <div class="prob-indicator red">
@@ -1437,7 +1437,7 @@
                             }
                         </div>
                         <div>
-                            <h5 style="color: #10b981; margin-bottom: 8px;">🟢 Green Flags</h5>
+                            <h5 style="color: #10b981; margin-bottom: 8px;"> Green Flags</h5>
                             ${(ai.green_flags || []).length > 0 ?
                                 (ai.green_flags || []).map(f => `<div class="prob-indicator green" style="padding: 8px;">${escapeHtml(f)}</div>`).join('') :
                                 '<div style="color: #666;">No specific green flags</div>'
@@ -1607,7 +1607,7 @@
             ${hidden.detected > 0 ? `
             <!-- Hidden Conditions -->
             <div class="section" style="background: #fef2f2; border: 1px solid #fecaca;">
-                <h3 style="color: #dc2626;">️ Hidden Conditions Detected (${hidden.detected})</h3>
+                <h3 style="color: #dc2626;"> Hidden Conditions Detected (${hidden.detected})</h3>
                 ${(hidden.conditions || []).map(hc => `
                     <div class="alert red">
                         <strong>${hc.condition_name}</strong> (ICD: ${hc.icd_code})<br>
@@ -1646,7 +1646,7 @@
                         }
                     </div>
                     <div>
-                        <h4 style="color: #10b981; margin-bottom: 8px;">🟢 Green Flags</h4>
+                        <h4 style="color: #10b981; margin-bottom: 8px;"> Green Flags</h4>
                         ${(ai.green_flags || []).length > 0 ?
                             (ai.green_flags || []).map(f => `<div class="alert green" style="padding: 8px;">${f}</div>`).join('') :
                             '<p style="color: #666;">No specific green flags</p>'
@@ -2119,7 +2119,7 @@
                                         </td>
                                         <td style="padding: 12px; text-align: center;">
                                             ${ra.fraudIndicators.length > 0 ? 
-                                                `<span style="background: rgba(255,0,0,0.2); color: #ff6b6b; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">️ ${ra.fraudIndicators.length}</span>` : 
+                                                `<span style="background: rgba(255,0,0,0.2); color: #ff6b6b; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;"> ${ra.fraudIndicators.length}</span>` : 
                                                 '<span style="color: rgba(255,255,255,0.4);">-</span>'}
                                         </td>
                                         <td style="padding: 12px; color: rgba(255,255,255,0.7); font-size: 0.8rem;">
@@ -2159,7 +2159,7 @@
                 console.error('Error generating report:', error);
                 reportContainer.innerHTML = `
                     <div style="background: rgba(220,53,69,0.2); border: 1px solid rgba(220,53,69,0.5); border-radius: 12px; padding: 30px; text-align: center;">
-                        <div style="font-size: 3rem; margin-bottom: 16px;">️</div>
+                        <div style="font-size: 3rem; margin-bottom: 16px;"></div>
                         <h3 style="color: #dc3545; margin: 0 0 8px 0;">Report Generation Error</h3>
                         <p style="color: rgba(255,255,255,0.7); margin: 0 0 16px 0;">${escapeHtml(error.message || 'An unexpected error occurred.')}</p>
                         <button onclick="generateAccumulativeRiskReport()" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Retry</button>
@@ -2257,7 +2257,7 @@
                 </head>
                 <body>
                     <div class="header">
-                        <h1>️ PHINS Accumulative Risk Report</h1>
+                        <h1> PHINS Accumulative Risk Report</h1>
                         <p><strong>Claims Portfolio Risk Analysis</strong></p>
                         <p>Generated: ${new Date().toLocaleString()}</p>
                         <p>Data Source: PHINS Pipeline (Real Data)</p>
@@ -2360,7 +2360,7 @@
 </head>
 <body>
     <div class="report-header">
-        <h1>️ PHINS Accumulative Risk Report</h1>
+        <h1> PHINS Accumulative Risk Report</h1>
         <p><strong>Claims Portfolio Risk Analysis</strong></p>
         <p class="timestamp">Generated: ${new Date().toLocaleString()}</p>
         <p>Data Integrity: Verified | Source: PHINS Pipeline</p>

@@ -1546,7 +1546,7 @@
             <div class="card-title">Quick Actions</div>
             <div style="display:flex;gap:12px;flex-wrap:wrap;">
               <button class="btn btn-primary" onclick="showSection('simulator')">Run Simulation</button>
-              <button class="btn btn-success" onclick="showSection('reinsurance')">️ Structure Hedge</button>
+              <button class="btn btn-success" onclick="showSection('reinsurance')"> Structure Hedge</button>
               <button class="btn btn-success" onclick="showSection('underwriting')">Edit Underwriting</button>
               <button class="btn btn-warning" onclick="exportTables()">Export Tables</button>
               <button class="btn btn-outline" onclick="showSection('audit')">View Audit Log</button>
@@ -1808,7 +1808,7 @@
           <h2 class="section-title">Underwriting Rules</h2>
           
           <div class="alert alert-warning">
-            ⚠️ Changes to underwriting rules affect NEW policies only. Existing policies retain their original terms.
+             Changes to underwriting rules affect NEW policies only. Existing policies retain their original terms.
           </div>
           
           <div class="card">
@@ -2610,7 +2610,7 @@
                 <small style="color:var(--text-light);font-size:0.75rem;">Months of future annuity payments to reserve for (e.g. 60)</small>
               </div>
               <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;">
-                <button class="btn btn-primary" onclick="runAnnuityReserveForecast()">▶ Run forecast</button>
+                <button class="btn btn-primary" onclick="runAnnuityReserveForecast()"> Run forecast</button>
                 <button class="btn btn-outline" onclick="loadAnnuityReserveDefaults()">Reset to defaults</button>
               </div>
             </div>
@@ -3129,9 +3129,9 @@
           <div class="sandbox-action-bar">
             <button class="btn btn-primary" id="sandbox-generate-btn" onclick="generateSandboxFromSimulation()">Generate Sandbox Accounts from Simulation</button>
             <button class="btn btn-outline" onclick="toggleSandboxLifecycle()">
-              <span id="sandbox-lifecycle-toggle-label">▶️ Start Random Lifecycle</span>
+              <span id="sandbox-lifecycle-toggle-label"> Start Random Lifecycle</span>
             </button>
-            <button class="btn btn-warning" onclick="resetSandbox()">♻️ Reset Values</button>
+            <button class="btn btn-warning" onclick="resetSandbox()"> Reset Values</button>
             <button class="btn btn-success" id="sandbox-push-btn" onclick="pushSandboxToPipeline()">Push to Pipeline</button>
             <span id="sandbox-action-msg" class="sandbox-action-msg">Sandbox is empty. Run a simulation, then click "Generate Sandbox Accounts".</span>
           </div>
@@ -3186,7 +3186,7 @@
             <!-- Export bar: the sandbox lives entirely in browser memory, so
                  these downloads are generated client-side (no server call). -->
             <div class="sandbox-export-bar">
-              <span class="sandbox-export-label">⬇️ Download sandbox insight data:</span>
+              <span class="sandbox-export-label"> Download sandbox insight data:</span>
               <button class="btn-small btn-outline" onclick="exportSandboxCSV()">CSV</button>
               <button class="btn-small btn-outline" onclick="exportSandboxExcel()">Excel (.xls)</button>
               <button class="btn-small btn-primary" onclick="exportSandboxAssessmentPDF()">PDF AI Assessment</button>
@@ -3394,7 +3394,7 @@
                     </tr>
                   </thead>
                   <tbody id="sandbox-projection-body">
-                    <tr><td colspan="7" class="muted-text" style="text-align:center;color:var(--text-light);">Generate sandbox accounts to build the 5-year forecast, then ▶️ Start Random Lifecycle to realize it.</td></tr>
+                    <tr><td colspan="7" class="muted-text" style="text-align:center;color:var(--text-light);">Generate sandbox accounts to build the 5-year forecast, then  Start Random Lifecycle to realize it.</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -4548,7 +4548,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     // database snapshot failed → the change may not survive a redeploy).
     function persistNoteFor(result) {
       if (result.persistence_warning) {
-        return (result.persisted ? ' ⚠️ ' : ' (memory only: ') + result.persistence_warning + (result.persisted ? '' : ')');
+        return (result.persisted ? '  ' : ' (memory only: ') + result.persistence_warning + (result.persisted ? '' : ')');
       }
       if (result.persisted) {
         return result.persisted_to_database ? ' (persisted — survives restart & redeploy)' : ' (persisted)';
@@ -4916,7 +4916,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     async function runSimulation() {
       const btn = document.getElementById('run-sim-btn');
       btn.disabled = true;
-      btn.textContent = '⏳ Running Simulation...';
+      btn.textContent = ' Running Simulation...';
       
       const resultsDiv = document.getElementById('sim-results');
       resultsDiv.style.display = 'block';
@@ -5042,7 +5042,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         <div class="results-section">
           <h4>Premium Reconciliation (verifiable arithmetic chain)</h4>
           <div class="alert ${reconAllPass ? 'alert-success' : 'alert-warning'}" style="margin-bottom:10px;">
-            ${reconAllPass ? 'All portfolio-level identities hold to the cent.' : '⚠️ One or more identities did not reconcile — check the deltas below.'}
+            ${reconAllPass ? 'All portfolio-level identities hold to the cent.' : ' One or more identities did not reconcile — check the deltas below.'}
           </div>
           <table class="data-table">
             <thead>
@@ -5109,7 +5109,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         </div>
         
         <div class="results-section">
-          <h4>⚠️ Risk Analysis (Present Value over ${fmtDec(sim.risk_metrics.avg_term_years)} year avg term)</h4>
+          <h4> Risk Analysis (Present Value over ${fmtDec(sim.risk_metrics.avg_term_years)} year avg term)</h4>
           <table class="data-table">
             <tr><td>PV Mortality Claims</td><td><strong>${fmtCurrency(sim.risk_metrics.pv_mortality_claims)}</strong></td><td style="color:var(--text-light);">${fmtPct(sim.risk_metrics.mortality_pct_of_claims)} of claims</td></tr>
             <tr><td>PV Disability Claims</td><td><strong>${fmtCurrency(sim.risk_metrics.pv_disability_claims)}</strong></td><td style="color:var(--text-light);">${fmtPct(sim.risk_metrics.disability_pct_of_claims)} of claims</td></tr>
@@ -5119,7 +5119,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             <tr><td>Reserve Requirement (150%)</td><td><strong>${fmtCurrency(sim.risk_metrics.reserve_requirement)}</strong></td><td style="color:var(--text-light);">Regulatory reserve</td></tr>
           </table>
           <p style="margin-top:12px;font-size:0.85rem;color:var(--text-light);">
-            ℹ️ <strong>Mutual Exclusivity:</strong> Each customer can have EITHER a mortality OR disability claim (not both). 
+             <strong>Mutual Exclusivity:</strong> Each customer can have EITHER a mortality OR disability claim (not both). 
             Once a mortality claim is paid, the policy terminates. This reflects actual insurance claim behavior.
           </p>
         </div>
@@ -5136,7 +5136,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             }</td></tr>
             <tr><td>Expense Loading</td><td>${fmtCurrency(expenseLoading)}</td><td style="color:var(--text-light);">Operating costs</td></tr>
             <tr><td>Profit Margin</td><td>${fmtCurrency(profitMargin)}</td><td style="color:var(--text-light);">Target profit</td></tr>
-            <tr style="border-top:2px solid var(--border);"><td><strong>Total Annual Premium</strong></td><td><strong>${fmtCurrency(grossPremium)}</strong></td><td>${premiumMatch ? 'Verified' : '⚠️ Diff: ' + fmtCurrency(premiumDiff)}</td></tr>
+            <tr style="border-top:2px solid var(--border);"><td><strong>Total Annual Premium</strong></td><td><strong>${fmtCurrency(grossPremium)}</strong></td><td>${premiumMatch ? 'Verified' : ' Diff: ' + fmtCurrency(premiumDiff)}</td></tr>
             
             <tr style="background:var(--bg);"><td colspan="3"><strong>Profit Calculation</strong></td></tr>
             <tr><td>Operating Revenue (Risk + Expense + Profit)</td><td>${fmtCurrency(riskPremium + expenseLoading + profitMargin)}</td><td></td></tr>
@@ -5330,7 +5330,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
               <td>${v.policies_pinned || 0}</td>
               <td><code style="font-size:0.72rem;" title="${v.integrity_hash || ''}">${(v.integrity_hash || '').substring(0, 12)}…</code></td>
               <td>${v.restorable
-                ? `<button class="btn btn-outline" style="padding:4px 10px;font-size:0.8rem;" onclick="restoreVersion('${v.version}')">↩ Restore</button>`
+                ? `<button class="btn btn-outline" style="padding:4px 10px;font-size:0.8rem;" onclick="restoreVersion('${v.version}')"> Restore</button>`
                 : '—'}</td>
             </tr>
           `).join('');
@@ -5345,7 +5345,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
               <td><small>${c.action || ''}</small></td>
               <td>${c.policies_pinned || 0}</td>
               <td>${c.restorable
-                ? `<button class="btn btn-outline" style="padding:4px 10px;font-size:0.8rem;" onclick="restoreConfigVersion('${c.config_version}')">↩ Restore</button>`
+                ? `<button class="btn btn-outline" style="padding:4px 10px;font-size:0.8rem;" onclick="restoreConfigVersion('${c.config_version}')"> Restore</button>`
                 : '—'}</td>
             </tr>
           `).join('') : '<tr><td colspan="6" style="text-align:center;">No saved config revisions yet — save Underwriting Rules or Pricing Parameters to create one.</td></tr>';
@@ -5418,7 +5418,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Failed to load insights');
 
-        const sevIcon = { positive: '', info: 'ℹ️', warning: '⚠️' };
+        const sevIcon = { positive: '', info: '', warning: '' };
         const adoption = data.adoption || {};
         const auto = data.auto_issuance || {};
         const activity = data.version_activity || {};
@@ -5431,7 +5431,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           </div>
           ${(data.insights || []).map(i => `
             <div class="alert ${i.severity === 'warning' ? 'alert-warning' : 'alert-info'}" style="margin-bottom:8px;">
-              ${sevIcon[i.severity] || 'ℹ️'} <strong>${i.title}</strong><br>
+              ${sevIcon[i.severity] || ''} <strong>${i.title}</strong><br>
               <span style="font-size:0.9rem;">${i.detail}</span>
             </div>
           `).join('') || '<p>No insights available.</p>'}
@@ -6193,8 +6193,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           <div class="tb-meta">${escapeHtml(meta)}</div>
           <div class="tb-hash" title="Integrity SHA-256 prefix">#${hash || '—'}</div>
           <div class="tb-actions">
-            <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "csv")'>⬇ CSV</button>
-            <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "json")'>⬇ JSON</button>
+            <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "csv")'> CSV</button>
+            <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "json")'> JSON</button>
             <button class="btn-small btn-warning" onclick="prepareRegistryReplace(${replaceArgs})">↻ Replace</button>
           </div>
         </div>
@@ -6243,8 +6243,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             <td><span class="tb-hash" title="${escapeAttr(entry.integrity_hash || '')}">#${(entry.integrity_hash || '').slice(0, 12) || '—'}</span></td>
             <td>
               ${previewBtn}
-              <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "csv")'>⬇ CSV</button>
-              <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "json")'>⬇ JSON</button>
+              <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "csv")'> CSV</button>
+              <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "json")'> JSON</button>
               <button class="btn-small btn-warning" onclick="prepareRegistryReplace(${replaceArgs})">↻ Replace</button>
             </td>
           </tr>
@@ -6849,8 +6849,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       refreshAnnualReportSources();
       const bands = val.bands || {};
       const order = [
-        ['insurance_portfolio', '️ Insurance Portfolio'],
-        ['risk_portfolio', '⚠️ Risk Portfolio (Liability View)'],
+        ['insurance_portfolio', ' Insurance Portfolio'],
+        ['risk_portfolio', ' Risk Portfolio (Liability View)'],
         ['company_phins_technologies', 'Company (PHINS Technologies)'],
       ];
       // Compute the max value across BE and Conservative bars for scaling.
@@ -7425,7 +7425,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // generated sandbox so it reflects the latest pipeline state.
       refreshAnnualReportSources();
       const msg = document.getElementById('sandbox-action-msg');
-      if (msg) msg.textContent = `Generated ${sandboxFmtCount(materialize)} sandbox accounts from sim ${sim.simulation_id} (contract ${productId}, accepted ages ${acceptedAgeMin}–${acceptedAgeMax}). 5-year forecast ready in the Monthly Projection tab. Click ▶️ Start Random Lifecycle to begin.`;
+      if (msg) msg.textContent = `Generated ${sandboxFmtCount(materialize)} sandbox accounts from sim ${sim.simulation_id} (contract ${productId}, accepted ages ${acceptedAgeMin}–${acceptedAgeMax}). 5-year forecast ready in the Monthly Projection tab. Click  Start Random Lifecycle to begin.`;
     }
 
     function renderSandbox() {
@@ -7857,12 +7857,12 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (action === 'breaking_news') {
         const headlines = [
           `Mortality cluster detected in cohort age ${sandboxRandInt(50, 75)}+ — reserve adequacy under review.`,
-          `️ Catastrophic event projected: ${sandboxRandInt(20, 200)} extra disability claims this quarter.`,
+          ` Catastrophic event projected: ${sandboxRandInt(20, 200)} extra disability claims this quarter.`,
           `Loss ratio drifted to ${sandboxFmtPct((50 + sandboxRandInt(0, 60)) / 100)} — pricing committee notified.`,
-          `⚠️ Spike in ADL 8+ admissions in sandbox cohort — re-running mortality basis.`,
+          ` Spike in ADL 8+ admissions in sandbox cohort — re-running mortality basis.`,
           `New medical guideline expected to lift average claim severity by ${sandboxRandInt(3, 15)}%.`,
           `Reinsurer signalled possible attachment-point change — hedge cost +${sandboxRandInt(5, 20)}%.`,
-          `⛈️ Regional pandemic alert raised — additional testing recommended for new applicants.`,
+          ` Regional pandemic alert raised — additional testing recommended for new applicants.`,
         ];
         sandboxLogEvent('alert', sandboxPick(headlines), 'breaking');
         return;
@@ -8150,7 +8150,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         setText('sandbox-proj-months-elapsed', '0');
         setText('sandbox-proj-end-customers', '0');
         if (body) {
-          body.innerHTML = '<tr><td colspan="7" class="muted-text" style="text-align:center;color:var(--text-light);">Generate sandbox accounts to build the 5-year forecast, then ▶️ Start Random Lifecycle to realize it.</td></tr>';
+          body.innerHTML = '<tr><td colspan="7" class="muted-text" style="text-align:center;color:var(--text-light);">Generate sandbox accounts to build the 5-year forecast, then  Start Random Lifecycle to realize it.</td></tr>';
         }
         return;
       }
@@ -8215,7 +8215,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         }
       }, 2200);
       const lbl = document.getElementById('sandbox-lifecycle-toggle-label');
-      if (lbl) lbl.textContent = '⏸️ Pause Random Lifecycle';
+      if (lbl) lbl.textContent = ' Pause Random Lifecycle';
       sandboxLogEvent('uw', `Random policy lifecycle started — monthly cash-flow projection seeded (${sandboxFmtMoney((sb.projection.baseline || {}).monthlyPremium)}/mo premium baseline).`, 'info');
     }
 
@@ -8230,7 +8230,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
       sb.lifecycleRunning = false;
       const lbl = document.getElementById('sandbox-lifecycle-toggle-label');
-      if (lbl) lbl.textContent = '▶️ Start Random Lifecycle';
+      if (lbl) lbl.textContent = ' Start Random Lifecycle';
     }
 
     function toggleSandboxLifecycle() {
@@ -8244,7 +8244,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     }
 
     function resetSandbox() {
-      if (!confirm('♻️ Reset sandbox values?\n\nThis clears all in-memory test customers, policies, claims, bills and activity events on the actuary dashboard. It does NOT touch the admin pipeline.')) {
+      if (!confirm(' Reset sandbox values?\n\nThis clears all in-memory test customers, policies, claims, bills and activity events on the actuary dashboard. It does NOT touch the admin pipeline.')) {
         return;
       }
       stopSandboxLifecycle();
@@ -8914,7 +8914,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (!confirmed) return;
 
       const btn = document.getElementById('sandbox-push-btn');
-      if (btn) { btn.disabled = true; btn.textContent = '⏳ Pushing…'; }
+      if (btn) { btn.disabled = true; btn.textContent = ' Pushing…'; }
       const msg = document.getElementById('sandbox-action-msg');
       if (msg) msg.textContent = 'Pushing sandbox slice to admin pipeline…';
 
@@ -9150,7 +9150,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           msgEl.textContent = 'Balances to 100%';
           msgEl.style.color = 'var(--success)';
         } else {
-          msgEl.textContent = `⚠️ Off by ${(total - 100).toFixed(2)}% — must equal 100%`;
+          msgEl.textContent = ` Off by ${(total - 100).toFixed(2)}% — must equal 100%`;
           msgEl.style.color = 'var(--danger)';
         }
       }
@@ -10259,7 +10259,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           <tfoot><tr><th colspan="3" style="text-align:right;">Total</th><th class="num">${capTotal.toFixed(2)}%</th><th colspan="2"></th></tr></tfoot>
         </table>
         ${annualChartCanvas('annual-chart-cap', 220)}</div>
-        ${Math.abs(capTotal - 100) > 0.01 ? '<div class="note">⚠️ Cap table does not balance to 100% — regulator filings require an exact 100% total. Adjust the cap-table editor before re-issuing.</div>' : ''}`);
+        ${Math.abs(capTotal - 100) > 0.01 ? '<div class="note"> Cap table does not balance to 100% — regulator filings require an exact 100% total. Adjust the cap-table editor before re-issuing.</div>' : ''}`);
 
       const debtRowsHtml = debtRows.length
         ? debtRows.map((r, ix) => {
