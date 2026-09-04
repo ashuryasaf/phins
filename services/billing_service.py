@@ -156,11 +156,18 @@ class BillingService:
         # Every new cash slice hits the customer ledger and accounting book.
         if float(amount) > 0 and not was_already_paid:
             try:
-                from server import (
-                    record_premium_revenue,
-                    record_premium_cash_books,
-                    record_transaction,
-                )
+                try:
+                    from web_portal.server import (
+                        record_premium_revenue,
+                        record_premium_cash_books,
+                        record_transaction,
+                    )
+                except ImportError:
+                    from server import (
+                        record_premium_revenue,
+                        record_premium_cash_books,
+                        record_transaction,
+                    )
                 ledger_tx = record_transaction(
                     customer_id=b.get('customer_id', ''),
                     tx_type='premium_payment',

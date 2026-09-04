@@ -649,10 +649,10 @@ def compute_unified_financial_metrics(
     - ``total_coverage_amount``: sum of ``coverage_amount`` on active policies.
     - ``total_aum``: ``total_investment_value`` + unified wallet balance (health
       + investment + algo + pipeline).
-    - ``claims_paid_amount``: customer-ledger claim cash when present; otherwise
-      paid/closed claim records only (approved-but-unpaid is not cash).
+    - ``claims_paid_amount``: paid/closed claim records only (approved-but-unpaid
+      is not cash). ``ledger_claims_paid`` is the cash identity when present.
     - ``claims_disbursed_amount``: approved amounts for claims actually in
-      ``paid`` status (record fallback when the ledger has no claim cash).
+      ``paid`` status.
     - ``pending_claims_liability``: sum of ``claimed_amount`` for claims still
       in ``pending`` or ``under_review``.
     """
@@ -789,8 +789,6 @@ def compute_unified_financial_metrics(
         )
         ledger_premium_collected = premium_cash['total']
         ledger_claims_paid = claim_cash['total']
-        if ledger_claims_paid > 0:
-            claims_paid_amount = ledger_claims_paid
         book_totals = accounting_book_totals()
         accounting_premium_posted = book_totals['premium_posted']
         accounting_claims_posted = book_totals['claims_posted']

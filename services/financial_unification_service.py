@@ -298,6 +298,7 @@ def post_collected_premiums_to_accounting(
     """Post each paid bill (and any unbilled remainder) to the accounting book."""
     split = resolve_premium_split(amount, policy, fallback_risk_pct)
     results: List[Dict[str, Any]] = []
+    posted_from_bills = Decimal("0.00")
     for bill_id in bills_paid:
         bill = billing.get(bill_id) or billing.get(str(bill_id)) or {}
         bill_amount = money(bill.get("amount_paid") or bill.get("amount") or 0)
@@ -316,7 +317,11 @@ def post_collected_premiums_to_accounting(
                 engine=engine,
             )
         )
+        posted_from_bills += bill_amount
     leftover = money(unbilled_amount)
+    remaining_cash = money(amount) - posted_from_bills
+    if leftover <= 0 and remaining_cash > 0:
+        leftover = remaining_cash
     if leftover > 0:
         leftover_split = resolve_premium_split(leftover, policy, split["risk_percentage"])
         results.append(
