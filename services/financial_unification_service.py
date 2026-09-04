@@ -216,11 +216,15 @@ def resolve_premium_split(
 
 def _allocation_already_posted(engine: Any, bill_id: str, source_tx_id: Optional[str]) -> bool:
     allocations = getattr(engine, "allocations", {}) or {}
+    wanted_bill = str(bill_id or "")
+    marker = f"ledger_tx={source_tx_id}" if source_tx_id else ""
     for alloc in allocations.values():
-        if str(getattr(alloc, "bill_id", "") or "") == str(bill_id or "") and bill_id:
-            return True
+        alloc_bill = str(getattr(alloc, "bill_id", "") or "")
         notes = str(getattr(alloc, "notes", "") or "")
-        if source_tx_id and source_tx_id in notes:
+        if wanted_bill and alloc_bill == wanted_bill:
+            return True
+        # Same ledger payment + same synthetic bill id (unbilled remainder).
+        if marker and marker in notes and alloc_bill == wanted_bill:
             return True
     return False
 
