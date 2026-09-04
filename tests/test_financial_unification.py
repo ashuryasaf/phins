@@ -1,0 +1,350 @@
+"""Customer-ledger cash is the identity for premiums collected and claims paid.
+
+The actuarial kernel pin (when present) decides the risk/savings split posted
+to the accounting book. Historical billed amounts are never rewritten.
+"""
+
+from decimal import Decimal
+
+from accounting_engine import reset_accounting_engine, get_accounting_engine, EntryType
+from services.financial_unification_service import (
+    CLAIM_CASH_TYPES,
+    PREMIUM_CASH_TYPES,
+    accounting_book_totals,
+    kernel_components_from_policy,
+    ledger_cash_total,
+    pin_kernel_fields_on_policy,
+    post_collected_premiums_to_accounting,
+    post_premium_to_accounting_book,
+    reconcile_financial_books,
+    resolve_premium_split,
+    sum_paid_claim_records,
+)
+
+
+def setup_function():
+    reset_accounting_engine()
+
+
+def test_kernel_split_prefers_policy_pin_over_allocation_prefs():
+    policy = {
+        "id": "POL-K1",
+        "annual_premium": 1000.0,
+        "risk_premium_annual": 800.0,
+        "savings_premium_annual": 200.0,
+        "pricing_source": "pricing_kernel",
+        "integrity_hash": "abc123",
+        "product_id": "phins_pure_risk_adjustable",
+    }
+    split = resolve_premium_split(100.0, policy, fallback_risk_pct=50)
+    assert split["risk_percentage"] == 80.0
+    assert split["savings_percentage"] == 20.0
+    assert split["risk_amount"] == 80.0
+    assert split["savings_amount"] == 20.0
+    assert split["split_source"].startswith("kernel")
+    assert split["integrity_hash"] == "abc123"
+
+
+def test_split_falls_back_to_allocation_when_no_kernel_pin():
+    split = resolve_premium_split(200.0, {"annual_premium": 2400.0}, fallback_risk_pct=75)
+    assert split["risk_percentage"] == 75.0
+    assert split["risk_amount"] == 150.0
+    assert split["savings_amount"] == 50.0
+    assert split["split_source"] == "allocation_prefs"
+
+
+def test_premium_and_claim_cash_post_to_same_accounting_book():
+    engine = get_accounting_engine()
+    posted = post_premium_to_accounting_book(
+        bill_id="BILL-1",
+        policy_id="POL-1",
+        customer_id="CUST-1",
+        amount=120.50,
+        risk_percentage=80,
+        source_tx_id="TX-PREM-1",
+        engine=engine,
+    )
+    assert posted["posted"] is True
+
+    # Idempotent: same bill must not double-post.
+    again = post_premium_to_accounting_book(
+        bill_id="BILL-1",
+        policy_id="POL-1",
+        customer_id="CUST-1",
+        amount=120.50,
+        risk_percentage=80,
+        source_tx_id="TX-PREM-1",
+        engine=engine,
+    )
+    assert again["posted"] is False
+    assert again["reason"] == "already_posted"
+
+    ok, _ = engine.post_claim_payment(
+        claim_id="CLM-1",
+        policy_id="POL-1",
+        customer_id="CUST-1",
+        amount=Decimal("40.00"),
+        paid_by="test",
+    )
+    assert ok is True
+
+    totals = accounting_book_totals(engine)
+    assert totals["premium_posted"] == 120.50
+    assert totals["claims_posted"] == 40.00
+    assert any(e.entry_type == EntryType.CLAIM_PAYMENT for e in engine.ledger_entries)
+
+
+def test_collected_premiums_use_kernel_split_per_bill():
+    engine = get_accounting_engine()
+    policy = {
+        "id": "POL-K2",
+        "annual_premium": 1200.0,
+        "risk_premium_annual": 1200.0,
+        "savings_premium_annual": 0.0,
+        "pricing_source": "pricing_kernel",
+    }
+    billing = {
+        "BILL-A": {
+            "id": "BILL-A",
+            "policy_id": "POL-K2",
+            "amount_paid": 100.0,
+        }
+    }
+    results = post_collected_premiums_to_accounting(
+        customer_id="CUST-2",
+        policy_id="POL-K2",
+        policy=policy,
+        amount=130.0,
+        bills_paid=["BILL-A"],
+        billing=billing,
+        source_tx_id="TX-2",
+        fallback_risk_pct=50,
+        unbilled_amount=30.0,
+        engine=engine,
+    )
+    assert len(results) == 2
+    assert all(r["posted"] for r in results)
+    allocs = list(engine.allocations.values())
+    assert all(float(a.risk_percentage) == 100.0 for a in allocs)
+    assert accounting_book_totals(engine)["premium_posted"] == 130.0
+
+
+def test_reconcile_flags_paid_claim_missing_customer_ledger():
+    claims = {
+        "CLM-X": {
+            "id": "CLM-X",
+            "customer_id": "CUST-X",
+            "status": "paid",
+            "approved_amount": 500.0,
+        }
+    }
+    report = reconcile_financial_books(
+        policies={},
+        claims=claims,
+        billing={},
+        transactions=[],
+        balance_sheet={"revenue_breakdown": {}, "expense_breakdown": {}, "claims_reserve": 0},
+    )
+    assert report["is_consistent"] is False
+    checks = {d["check"] for d in report["discrepancies"]}
+    assert "claims_records_vs_customer_ledger" in checks
+    assert "paid_claims_missing_customer_ledger" in checks
+    assert report["claims"]["missing_ledger_claim_ids"] == ["CLM-X"]
+
+
+def test_reconcile_is_consistent_when_ledger_matches_books():
+    reset_accounting_engine()
+    engine = get_accounting_engine()
+    post_premium_to_accounting_book(
+        bill_id="BILL-OK",
+        policy_id="POL-OK",
+        customer_id="CUST-OK",
+        amount=90.0,
+        risk_percentage=100,
+        source_tx_id="TX-OK",
+        engine=engine,
+    )
+    engine.post_claim_payment(
+        claim_id="CLM-OK",
+        policy_id="POL-OK",
+        customer_id="CUST-OK",
+        amount=Decimal("25.00"),
+    )
+    transactions = [
+        {
+            "id": "TX-OK",
+            "customer_id": "CUST-OK",
+            "type": "premium_payment",
+            "amount": 90.0,
+            "metadata": {"bill_id": "BILL-OK"},
+        },
+        {
+            "id": "TX-CLM",
+            "customer_id": "CUST-OK",
+            "type": "claim_payment_received",
+            "amount": 25.0,
+            "metadata": {"claim_id": "CLM-OK"},
+        },
+    ]
+    report = reconcile_financial_books(
+        policies={
+            "POL-OK": {
+                "id": "POL-OK",
+                "customer_id": "CUST-OK",
+                "annual_premium": 1080.0,
+                "pricing_source": "pricing_kernel",
+                "risk_premium_annual": 1080.0,
+                "savings_premium_annual": 0.0,
+            }
+        },
+        claims={
+            "CLM-OK": {
+                "id": "CLM-OK",
+                "customer_id": "CUST-OK",
+                "status": "paid",
+                "approved_amount": 25.0,
+            }
+        },
+        billing={
+            "BILL-OK": {
+                "id": "BILL-OK",
+                "customer_id": "CUST-OK",
+                "amount_paid": 90.0,
+            }
+        },
+        transactions=transactions,
+        balance_sheet={
+            "revenue_breakdown": {"premium_income": 90.0},
+            "expense_breakdown": {"claims_paid": 25.0},
+            "claims_reserve": 3475.0,
+        },
+        engine=engine,
+    )
+    assert report["is_consistent"] is True, report["discrepancies"]
+    assert report["premiums"]["customer_ledger"]["total"] == 90.0
+    assert report["claims"]["customer_ledger"]["total"] == 25.0
+    assert report["authority"]["cash_identity"] == "customer_ledger"
+
+
+def test_ledger_cash_aliases_and_paid_claim_records():
+    txs = [
+        {"type": "premium_payment", "amount": 10, "customer_id": "C1"},
+        {"type": "auto_pay_execution", "amount": 15, "customer_id": "C1"},
+        {"type": "claim_payment_received", "amount": 7, "customer_id": "C1"},
+        {"tx_type": "claim_payment", "amount": 3, "customer_id": "C1"},
+        {"type": "wallet_deposit", "amount": 99, "customer_id": "C1"},
+    ]
+    prem = ledger_cash_total(txs, PREMIUM_CASH_TYPES)
+    clm = ledger_cash_total(txs, CLAIM_CASH_TYPES)
+    assert prem["total"] == 25.0
+    assert clm["total"] == 10.0
+    assert sum_paid_claim_records([
+        {"status": "paid", "approved_amount": 7},
+        {"status": "approved", "approved_amount": 100},
+        {"status": "closed", "paid_amount": 3},
+    ]) == Decimal("10.00")
+
+
+def test_pin_kernel_fields_is_additive():
+    policy = {"id": "P", "annual_premium": 1}
+    pin_kernel_fields_on_policy(policy, {
+        "pricing_source": "pricing_kernel",
+        "integrity_hash": "h",
+        "risk_premium_annual": 80,
+        "savings_premium_annual": 20,
+    })
+    assert policy["integrity_hash"] == "h"
+    assert policy["risk_premium_annual"] == 80
+    pin_kernel_fields_on_policy(policy, {"integrity_hash": "should-not-overwrite"})
+    assert policy["integrity_hash"] == "h"
+
+
+def test_premium_payment_posts_customer_ledger_and_accounting_book():
+    """Live payment path: one amount on the ledger and the accounting book."""
+    from web_portal.server import (
+        BILLING,
+        CUSTOMERS,
+        POLICIES,
+        TRANSACTION_LEDGER,
+        process_customer_premium_payment,
+    )
+
+    reset_accounting_engine()
+    customer_id = "CUST-UNIFY-LIVE"
+    policy_id = "POL-UNIFY-LIVE"
+    bill_id = "BILL-UNIFY-LIVE"
+    CUSTOMERS[customer_id] = {"id": customer_id, "name": "Unify Live"}
+    POLICIES[policy_id] = {
+        "id": policy_id,
+        "customer_id": customer_id,
+        "annual_premium": 1200.0,
+        "risk_premium_annual": 960.0,
+        "savings_premium_annual": 240.0,
+        "pricing_source": "pricing_kernel",
+        "status": "active",
+    }
+    BILLING[bill_id] = {
+        "id": bill_id,
+        "customer_id": customer_id,
+        "policy_id": policy_id,
+        "amount": 100.0,
+        "amount_due": 100.0,
+        "amount_paid": 0.0,
+        "status": "outstanding",
+    }
+    created_tx_ids = set(TRANSACTION_LEDGER.keys())
+    try:
+        result = process_customer_premium_payment(
+            customer_id=customer_id,
+            amount=100.0,
+            policy_id=policy_id,
+            specific_bill_ids=[bill_id],
+            allocate_to_investments=False,
+            use_pipeline=False,
+            notify_customer=False,
+        )
+        assert result.get("success") is True
+        assert BILLING[bill_id]["status"] == "paid"
+        new_txs = [
+            tx for tx_id, tx in TRANSACTION_LEDGER.items()
+            if tx_id not in created_tx_ids and tx.get("customer_id") == customer_id
+        ]
+        premium_txs = [tx for tx in new_txs if str(tx.get("type") or "").lower() == "premium_payment"]
+        assert premium_txs, "premium payment must land on the customer ledger"
+        assert float(premium_txs[0]["amount"]) == 100.0
+        book = accounting_book_totals()
+        assert book["premium_posted"] == 100.0
+        engine = get_accounting_engine()
+        posted = list(engine.allocations.values())
+        assert posted
+        assert float(posted[0].risk_percentage) == 80.0
+    finally:
+        CUSTOMERS.pop(customer_id, None)
+        POLICIES.pop(policy_id, None)
+        BILLING.pop(bill_id, None)
+        for tx_id in list(TRANSACTION_LEDGER.keys()):
+            if tx_id not in created_tx_ids:
+                TRANSACTION_LEDGER.pop(tx_id, None)
+        reset_accounting_engine()
+
+
+def test_kernel_components_read_snapshot_when_policy_scalars_missing(monkeypatch):
+    from services import pricing_shadow_service as shadow
+
+    monkeypatch.setattr(
+        shadow,
+        "get_snapshots_for_policy",
+        lambda _pid: [{
+            "kernel_annual": 999.0,
+            "integrity_hash": "snap-hash",
+            "product_id": "phins_pure_risk_adjustable",
+            "components": {
+                "risk_premium_annual": 900.0,
+                "savings_premium_annual": 99.0,
+            },
+        }],
+    )
+    comps = kernel_components_from_policy({"id": "POL-SNAP", "annual_premium": 10})
+    assert comps["source"] == "premium_snapshot"
+    assert comps["risk_premium_annual"] == 900.0
+    assert comps["integrity_hash"] == "snap-hash"

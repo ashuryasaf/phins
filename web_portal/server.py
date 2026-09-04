@@ -762,6 +762,43 @@ def compute_unified_financial_metrics(
     # --- Cumulative premium (from billing + ledger, de-duplicated) ---
     cumulative_premium = calculate_cumulative_premium_income(exclude_suspended=exclude_suspended)
 
+    # --- Customer-ledger cash (authoritative for collections and claim payouts) ---
+    books_reconcile = None
+    ledger_premium_collected = 0.0
+    ledger_claims_paid = 0.0
+    accounting_premium_posted = 0.0
+    accounting_claims_posted = 0.0
+    try:
+        from services.financial_unification_service import (
+            CLAIM_CASH_TYPES,
+            PREMIUM_CASH_TYPES,
+            accounting_book_totals,
+            ledger_cash_total,
+            reconcile_financial_books,
+        )
+        exclude_fn = is_suspended_account if exclude_suspended else None
+        premium_cash = ledger_cash_total(
+            TRANSACTION_LEDGER.values(), PREMIUM_CASH_TYPES, exclude_customer=exclude_fn
+        )
+        claim_cash = ledger_cash_total(
+            TRANSACTION_LEDGER.values(), CLAIM_CASH_TYPES, exclude_customer=exclude_fn
+        )
+        ledger_premium_collected = premium_cash['total']
+        ledger_claims_paid = claim_cash['total']
+        book_totals = accounting_book_totals()
+        accounting_premium_posted = book_totals['premium_posted']
+        accounting_claims_posted = book_totals['claims_posted']
+        books_reconcile = reconcile_financial_books(
+            policies=POLICIES,
+            claims=CLAIMS,
+            billing=BILLING,
+            transactions=TRANSACTION_LEDGER.values(),
+            balance_sheet=PHINS_BALANCE_SHEET,
+            exclude_customer=exclude_fn,
+        )
+    except Exception as _unify_err:
+        print(f"[FINANCIAL_UNIFICATION] metrics attach skipped: {_unify_err}")
+
     return {
         # Billing
         'total_billed': total_billed,
@@ -809,6 +846,12 @@ def compute_unified_financial_metrics(
         'total_aum': total_aum,
         # Cumulative premium (for reconciliation)
         'cumulative_premium': cumulative_premium,
+        # Customer ledger is cash identity for premiums collected and claims paid
+        'ledger_premium_collected': ledger_premium_collected,
+        'ledger_claims_paid': ledger_claims_paid,
+        'accounting_premium_posted': accounting_premium_posted,
+        'accounting_claims_posted': accounting_claims_posted,
+        'books_reconcile': books_reconcile,
     }
 
 
@@ -6820,6 +6863,25 @@ def process_customer_premium_payment(
         ),
         metadata=ledger_metadata
     )
+
+    # Accounting book must receive the same customer-ledger cash, split by
+    # the actuarial kernel pin when the policy has one.
+    try:
+        from services.financial_unification_service import post_collected_premiums_to_accounting
+        policy_for_split = POLICIES.get(policy_id) if policy_id else None
+        post_collected_premiums_to_accounting(
+            customer_id=customer_id,
+            policy_id=policy_id,
+            policy=policy_for_split,
+            amount=amount,
+            bills_paid=bills_paid,
+            billing=BILLING,
+            source_tx_id=str(tx.get('id') or ''),
+            fallback_risk_pct=allocation_prefs.get('risk_pct', 100),
+            unbilled_amount=unbilled_premium_amount,
+        )
+    except Exception as _acct_err:
+        print(f"[ACCOUNTING_BOOK] Premium post skipped: {_acct_err}")
 
     generated_documents = []
     document_generation_details = []
@@ -13710,17 +13772,17 @@ def get_bi_data_accounting() -> Dict[str, Any]:
 
 def try_get_statement_from_engine(customer_id: str) -> Any:
     try:
-        import accounting_engine as ae
+        from accounting_engine import get_accounting_engine
+        from datetime import date as _date
 
-        engine = ae.AccountingEngine()
-        # Try to call a best-effort method and coerce result to JSON-serializable
+        engine = get_accounting_engine()
         if hasattr(engine, "get_customer_statement"):
-            stmt = engine.get_customer_statement(customer_id)  # type: ignore
+            stmt = engine.get_customer_statement(customer_id, _date.min, _date.max)
             try:
                 result: Any = json.loads(json.dumps(stmt, default=lambda o: o.__dict__))
                 return result
             except Exception:
-                return stmt  # type: ignore
+                return stmt
     except Exception:
         pass
     return None
@@ -29176,6 +29238,34 @@ For claims or questions, please contact:
         # Company balance sheet for claims reserves, revenue, and expenses
         # Accessible by: admin, accountant, underwriter, claims_adjuster
         
+        if path == '/api/finance/reconcile':
+            if not require_role(session, ['admin', 'accountant', 'underwriter', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin, Accountant, Underwriter, or Actuary access required.'}).encode('utf-8'))
+                return
+            initialize_balance_sheet()
+            try:
+                from services.financial_unification_service import reconcile_financial_books
+                report = reconcile_financial_books(
+                    policies=POLICIES,
+                    claims=CLAIMS,
+                    billing=BILLING,
+                    transactions=TRANSACTION_LEDGER.values(),
+                    balance_sheet=PHINS_BALANCE_SHEET,
+                    exclude_customer=is_suspended_account,
+                )
+            except Exception as rec_err:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(rec_err)}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'reconcile': report,
+                'timestamp': datetime.now().isoformat(),
+            }, default=str).encode('utf-8'))
+            return
+
         if path == '/api/admin/balance-sheet':
             # Check authorization
             if not require_role(session, ['admin', 'accountant', 'underwriter', 'claims']):
@@ -42915,6 +43005,15 @@ For claims or questions, please contact:
                     'product_id': premium_data.get('product_id'),
                     'tables_version': premium_data.get('tables_version'),
                     'config_version': premium_data.get('config_version'),
+                    'risk_premium_annual': premium_data.get('risk_premium_annual'),
+                    'savings_premium_annual': premium_data.get('savings_premium_annual'),
+                    'mortality_premium_annual': premium_data.get('mortality_premium_annual'),
+                    'disability_premium_annual': premium_data.get('disability_premium_annual'),
+                    'savings_rate_used': premium_data.get('savings_rate_used'),
+                    'savings_formula': premium_data.get('savings_formula'),
+                    'underwriting_loading': premium_data.get('underwriting_loading'),
+                    'life_sum_used': premium_data.get('life_sum_used'),
+                    'disability_sum_used': premium_data.get('disability_sum_used'),
                     # Billing configuration (from application Step 4)
                     'billing': {
                         'frequency': billing_frequency,
@@ -43111,6 +43210,11 @@ For claims or questions, please contact:
                     'tables_version': premium_data.get('tables_version'),
                     'config_version': premium_data.get('config_version'),
                 }
+                try:
+                    from services.financial_unification_service import pin_kernel_fields_on_policy
+                    pin_kernel_fields_on_policy(policy, premium_data)
+                except Exception:
+                    pass
                 POLICIES[policy_id] = policy
                 if audit:
                     actor = 'system'
