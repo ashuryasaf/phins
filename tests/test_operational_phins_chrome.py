@@ -69,6 +69,8 @@ AUTH_AND_LANDING = [
     "forgot-password.html",
     "cyber-security.html",
     "nda.html",
+    "phins-risk-1pager-fefferman.html",
+    "phins-risk-1pager-goldsobel.html",
 ]
 
 
