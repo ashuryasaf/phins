@@ -855,6 +855,10 @@ def compute_unified_financial_metrics(
         'ledger_claims_paid': ledger_claims_paid,
         'accounting_premium_posted': accounting_premium_posted,
         'accounting_claims_posted': accounting_claims_posted,
+        'economic_claims_reserve': (
+            (books_reconcile or {}).get('reserves', {}).get('economic_claims_reserve', 0.0)
+        ),
+        'seed_claims_reserve': safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0),
         'books_reconcile': books_reconcile,
     }
 
@@ -5847,13 +5851,13 @@ def update_customer_allocation(customer_id: str, allocations: Dict[str, float]) 
 def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: str = 'life', 
                                     adl_level: int = 5, coverage_amount: float = None,
                                     use_actuarial: bool = True,
-                                    term_years: int = 20) -> Dict[str, float]:
+                                    term_years: int = 20,
+                                    savings_rate: float = 0.0) -> Dict[str, float]:
     """
-    Calculate age-adjusted premium via the central pricing kernel.
+    Calculate age-adjusted premium via the same kernel path as issuance.
 
-    This used to be a parallel pricer with its own hardcoded mortality /
-    disability / ADL tables and a hardcoded 50% savings allocation. It now
-    returns the kernel breakdown unchanged so quote math matches issuance.
+    Uses persisted actuarial tables and Pricing Parameters. Does not override
+    ADL benefit percentages or invent a private PricingConfig.
     """
     # ----- Age factor lookup (still used by the simple non-actuarial branch) ----
     AGE_FACTORS = {
@@ -5894,95 +5898,72 @@ def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: s
         }
 
     if use_actuarial and policy_type in ['life', 'health', 'phins_unified']:
-        # Delegate the entire actuarial pricing to the central kernel. This
-        # uses the central ActuarialTablesStore (same tables surfaced by the
-        # actuary dashboard) and the legacy claim model so existing quote /
-        # billing flows are bit-for-bit unchanged.
         from services.actuarial_service import get_actuarial_store
-        from services.pricing_kernel import (
-            ClaimModel, PricingConfig, PricingCustomer, SavingsFormula,
-            get_product, price_policy, table_set_from_store,
-        )
-
-        store = get_actuarial_store()
-        UW_LOADING = {6: 0.15, 7: 0.30, 8: 0.50}
-        underwriting_loading = float(UW_LOADING.get(adl_level, 0.0))
-        exclude_disability = adl_level == 8
+        from services.pricing_shadow_service import price_application_with_kernel
 
         if coverage_amount is None:
             coverage_amount = base_premium * 100  # legacy estimate
 
-        kernel_tables = table_set_from_store(store, age_curve_id='identity')
-        # The old inline pricer used if-elif ADL ranges for disability benefit
-        # percentages that differ from the central store values. Override the
-        # table so the kernel reproduces the legacy outputs exactly.
-        kernel_tables.adl_benefit_percentages = [
-            {'adl': 1, 'benefit_pct': 0.25},
-            {'adl': 2, 'benefit_pct': 0.25},
-            {'adl': 3, 'benefit_pct': 0.25},
-            {'adl': 4, 'benefit_pct': 0.35},
-            {'adl': 5, 'benefit_pct': 0.35},
-            {'adl': 6, 'benefit_pct': 0.65},
-            {'adl': 7, 'benefit_pct': 0.65},
-            {'adl': 8, 'benefit_pct': 0.90},
-            {'adl': 9, 'benefit_pct': 0.90},
-            {'adl': 10, 'benefit_pct': 0.90},
-        ]
+        try:
+            elected_savings = float(savings_rate or 0.0)
+        except (TypeError, ValueError):
+            elected_savings = 0.0
+        if elected_savings > 1.0:
+            elected_savings = elected_savings / 100.0
 
-        kernel_config = PricingConfig(
-            expense_loading_pct=0.15,
-            profit_margin_pct=0.10,
-            discount_rate=0.035,
-            savings_rate=0.5,
-            savings_yield_pct=0.0,
-            savings_formula=SavingsFormula.STRAIGHT_LINE,
-            claim_model=ClaimModel.INDEPENDENT,
-            apply_lapse_adjustment=False,
-            apply_min_risk_floor=True,
-            version='inline_quote_v2',
-        )
-        components = price_policy(
-            PricingCustomer(
-                age=int(age),
-                coverage=float(coverage_amount),
-                term_years=int(term_years),
-                adl_level=int(adl_level),
-            ),
-            get_product('phins_hybrid_savings'),
-            kernel_tables,
-            kernel_config,
-            underwriting_loading=underwriting_loading,
-            exclude_disability=exclude_disability,
-        )
+        kernel = price_application_with_kernel({
+            "type": "phins_unified",
+            "coverage_amount": float(coverage_amount),
+            "age": int(age),
+            "term_years": int(term_years),
+            "coverage_years": int(term_years),
+            "adl_level": int(adl_level),
+            "savings_rate": elected_savings,
+            "risk_score": "medium",
+        }) or {}
+        if not kernel or float(kernel.get("annual") or 0) <= 0:
+            return {
+                'base_premium': base_premium,
+                'age': age,
+                'policy_type': policy_type,
+                'adl_level': adl_level,
+                'eligible': False,
+                'decline_reason': kernel.get('decline_reason') or 'kernel_unavailable',
+                'annual_premium': 0,
+                'monthly_premium': 0,
+                'actuarial_source': 'PHINS_PRICING_KERNEL_V1',
+            }
 
+        comps = kernel.get("components") or {}
+        store = get_actuarial_store()
         return {
             'base_premium': base_premium,
             'age': age,
             'policy_type': policy_type,
             'age_factor': round(age_factor, 3),
             'adl_level': adl_level,
-            'adl_mortality_multiplier': components.adl_mortality_multiplier,
-            'adl_disability_multiplier': components.adl_disability_multiplier,
+            'adl_mortality_multiplier': kernel.get('adl_mortality_multiplier'),
+            'adl_disability_multiplier': kernel.get('adl_disability_multiplier'),
             'mortality_rate': round(store.get_mortality_rate(age), 6),
             'disability_rate': round(store.get_disability_rate(age), 6),
-            'mortality_premium': components.mortality_premium_annual,
-            'disability_premium': components.disability_premium_annual,
-            'risk_premium': components.risk_premium_annual,
-            'savings_premium': components.savings_premium_annual,
-            'expense_loading': components.expense_loading_annual,
-            'profit_margin': components.profit_margin_annual,
-            'underwriting_loading': underwriting_loading,
-            'exclude_disability': exclude_disability,
-            'annual_premium': components.annual_premium,
-            'monthly_premium': components.monthly_premium,
+            'mortality_premium': kernel.get('mortality_premium_annual'),
+            'disability_premium': kernel.get('disability_premium_annual'),
+            'risk_premium': kernel.get('risk_premium_annual'),
+            'savings_premium': kernel.get('savings_premium_annual'),
+            'expense_loading': comps.get('expense_loading_annual'),
+            'profit_margin': comps.get('profit_margin_annual'),
+            'underwriting_loading': kernel.get('underwriting_loading'),
+            'exclude_disability': bool(kernel.get('disability_excluded')),
+            'annual_premium': kernel.get('annual'),
+            'monthly_premium': kernel.get('monthly'),
             'coverage_amount': coverage_amount,
             'term_years': term_years,
-            'pv_mortality_risk': components.pv_mortality_claims,
-            'pv_disability_risk': components.pv_disability_claims,
-            'pv_total_risk': components.pv_total_risk_claims,
+            'pv_mortality_risk': comps.get('pv_mortality_claims'),
+            'pv_disability_risk': comps.get('pv_disability_claims'),
+            'pv_total_risk': comps.get('pv_total_risk_claims'),
             'eligible': True,
             'actuarial_source': 'PHINS_PRICING_KERNEL_V1',
-            'pricing_kernel_integrity_hash': components.integrity_hash,
+            'pricing_kernel_integrity_hash': kernel.get('integrity_hash'),
         }
     else:
         # Simple calculation for auto/property
@@ -29372,6 +29353,18 @@ For claims or questions, please contact:
             PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = cumulative_premium_data['total']
             PHINS_BALANCE_SHEET['total_revenue'] = round(sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values()), 2)
 
+            seed_claims_reserve = PHINS_BALANCE_SHEET['claims_reserve']
+            economic_reserve = 0.0
+            try:
+                from services.financial_unification_service import economic_claims_reserve
+                economic_reserve = economic_claims_reserve(
+                    transactions=TRANSACTION_LEDGER.values(),
+                    policies=POLICIES,
+                    exclude_customer=is_suspended_account,
+                )['economic_claims_reserve']
+            except Exception as _econ_err:
+                print(f"[FINANCIAL_UNIFICATION] economic reserve attach skipped: {_econ_err}")
+
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'success': True,
@@ -29381,9 +29374,13 @@ For claims or questions, please contact:
                     'created_at': PHINS_BALANCE_SHEET['created_at'],
                     'last_updated': PHINS_BALANCE_SHEET['last_updated'],
                     
-                    # Balances
+                    # Balances. claims_reserve is the displayed identity
+                    # (collected risk cash minus claim cash). Seed capital is
+                    # reported separately and is never silently rewritten.
                     'total_balance': total_balance,
-                    'claims_reserve': PHINS_BALANCE_SHEET['claims_reserve'],
+                    'seed_claims_reserve': seed_claims_reserve,
+                    'economic_claims_reserve': economic_reserve,
+                    'claims_reserve': economic_reserve,
                     'operating_reserve': PHINS_BALANCE_SHEET['operating_reserve'],
                     'supplier_reserve': PHINS_BALANCE_SHEET['supplier_reserve'],
                     'investment_reserve': PHINS_BALANCE_SHEET['investment_reserve'],
@@ -29493,8 +29490,10 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({
                 'success': True,
                 'summary': {
-                    'claims_reserve': PHINS_BALANCE_SHEET['claims_reserve'],
-                    'total_claims_paid': PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid'],
+                    'claims_reserve': m.get('economic_claims_reserve', PHINS_BALANCE_SHEET['claims_reserve']),
+                    'seed_claims_reserve': PHINS_BALANCE_SHEET['claims_reserve'],
+                    'economic_claims_reserve': m.get('economic_claims_reserve', 0.0),
+                    'total_claims_paid': m.get('ledger_claims_paid', PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid']),
                     'total_premium_income': PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'],
                     'net_position': PHINS_BALANCE_SHEET['total_revenue'] - PHINS_BALANCE_SHEET['total_expenses'],
                     'recent_claims_count': len(recent_claims),

@@ -514,7 +514,7 @@
                         </div>
                         <div class="stat-card" style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); color: white;">
                             <div class="stat-value" id="bs-claims-reserve" style="color: white;">$0</div>
-                            <div class="stat-label" style="color: rgba(255,255,255,0.8);">Claims Reserve</div>
+                            <div class="stat-label" style="color: rgba(255,255,255,0.8);">Claims Reserve (risk cash − claims)</div>
                         </div>
                         <div class="stat-card" style="background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%); color: white;">
                             <div class="stat-value" id="bs-operating-reserve" style="color: white;">$0</div>
@@ -3368,7 +3368,9 @@
                     
                     // Main balances
                     document.getElementById('bs-total-balance').textContent = fmt(bs.total_balance);
-                    document.getElementById('bs-claims-reserve').textContent = fmt(bs.claims_reserve);
+                    document.getElementById('bs-claims-reserve').textContent = fmt(
+                        bs.economic_claims_reserve != null ? bs.economic_claims_reserve : bs.claims_reserve
+                    );
                     document.getElementById('bs-operating-reserve').textContent = fmt(bs.operating_reserve);
                     document.getElementById('bs-total-revenue').textContent = fmt(bs.cumulative_premium || bs.total_revenue);
                     document.getElementById('bs-claims-paid').textContent = fmt(bs.expense_breakdown?.claims_paid || 0);

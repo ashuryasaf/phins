@@ -766,17 +766,14 @@ def test_cohort_override_changes_priced_premium_for_matching_customer_only():
 
 
 def test_inline_pricer_delegates_to_kernel():
-    """``calculate_age_adjusted_premium`` returns the kernel breakdown, not a 50% override."""
-    from services.pricing_kernel import (
-        ClaimModel, PricingConfig, PricingCustomer, SavingsFormula,
-        get_product, price_policy, table_set_from_store,
-    )
-    from services.actuarial_service import get_actuarial_store
+    """``calculate_age_adjusted_premium`` uses the same issuance kernel path."""
+    from services.pricing_shadow_service import price_application_with_kernel
     from web_portal.server import calculate_age_adjusted_premium
 
     result = calculate_age_adjusted_premium(
         base_premium=1000, age=40, policy_type='life',
         adl_level=5, coverage_amount=300_000, use_actuarial=True, term_years=20,
+        savings_rate=0.50,
     )
     assert result['eligible']
     assert result['actuarial_source'] == 'PHINS_PRICING_KERNEL_V1'
@@ -785,31 +782,19 @@ def test_inline_pricer_delegates_to_kernel():
     # Legacy override was base_premium * 0.5 == 500. Kernel savings differs.
     assert result['savings_premium'] != 500.0
 
-    store = get_actuarial_store()
-    tables = table_set_from_store(store, age_curve_id='identity')
-    tables.adl_benefit_percentages = [
-        {'adl': n, 'benefit_pct': pct} for n, pct in (
-            (1, 0.25), (2, 0.25), (3, 0.25), (4, 0.35), (5, 0.35),
-            (6, 0.65), (7, 0.65), (8, 0.90), (9, 0.90), (10, 0.90),
-        )
-    ]
-    kernel = price_policy(
-        PricingCustomer(age=40, coverage=300_000, term_years=20, adl_level=5),
-        get_product('phins_hybrid_savings'),
-        tables,
-        PricingConfig(
-            expense_loading_pct=0.15, profit_margin_pct=0.10, discount_rate=0.035,
-            savings_rate=0.5, savings_yield_pct=0.0,
-            savings_formula=SavingsFormula.STRAIGHT_LINE,
-            claim_model=ClaimModel.INDEPENDENT,
-            apply_lapse_adjustment=False, apply_min_risk_floor=True,
-            version='inline_quote_v2',
-        ),
-        underwriting_loading=0.0, exclude_disability=False,
-    )
-    assert result['savings_premium'] == kernel.savings_premium_annual
-    assert result['annual_premium'] == kernel.annual_premium
-    assert result['pricing_kernel_integrity_hash'] == kernel.integrity_hash
+    kernel = price_application_with_kernel({
+        "type": "phins_unified",
+        "coverage_amount": 300_000,
+        "age": 40,
+        "term_years": 20,
+        "coverage_years": 20,
+        "adl_level": 5,
+        "savings_rate": 0.50,
+        "risk_score": "medium",
+    })
+    assert result['savings_premium'] == kernel['savings_premium_annual']
+    assert result['annual_premium'] == kernel['annual']
+    assert result['pricing_kernel_integrity_hash'] == kernel['integrity_hash']
 
 
 def test_financial_reporting_service_delegates_to_kernel():
@@ -838,6 +823,29 @@ def test_financial_reporting_service_delegates_to_kernel():
     assert result['annual_premium'] == kernel['annual']
     assert result['monthly_premium'] == kernel['monthly']
     assert result['savings_component'] == kernel['savings_premium_annual']
+
+
+def test_frs_projection_rates_use_actuarial_store():
+    """Year-by-year FRS projections read the same tables as the kernel."""
+    from services.actuarial_service import get_actuarial_store
+    from services.financial_reporting_service import FinancialReportingService
+
+    store = get_actuarial_store()
+    svc = FinancialReportingService(
+        policies={}, claims={}, billing={}, customers={}, underwriting={},
+    )
+    assert svc.get_mortality_rate(45) == store.get_mortality_rate(45)
+    assert svc.get_disability_incidence_rate(45) == store.get_disability_rate(45)
+    assert svc.get_adl_mortality_multiplier(7) == store.get_adl_mortality_multiplier(7)
+    assert svc.get_adl_disability_incidence_multiplier(7) == store.get_adl_disability_multiplier(7)
+    assert svc.get_adl_benefit_percentage(6) == store.get_adl_benefit_pct(6)
+    assert svc.get_lapse_rate(2) == store.get_lapse_rate(2)
+    projections = svc.project_policy_value(
+        coverage=200_000, age=40, adl_level=5,
+        savings_pct=0.0, term_years=2,
+    )
+    assert projections
+    assert projections[0]["year"] == 1
 
 
 def test_simulator_savings_rate_actually_drives_savings_premium():

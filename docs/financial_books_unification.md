@@ -44,15 +44,20 @@ Issuance now uses the actuarial kernel on every channel (classic apply, chat, un
 - `try_get_statement_from_engine` reads the **shared** accounting engine (it previously constructed an empty one).
 - Gateway `/api/payment/process`, per-bill pay, wallet bulk pay, and `BillingService.record_payment` now write the customer ledger and the accounting book.
 - Accountant FRS `claims_paid` uses ledger cash when a ledger is attached; approved-but-unpaid claims are not cash.
+- FRS projection rates (`get_mortality_rate` and siblings) read the central actuarial store.
+- `calculate_age_adjusted_premium` calls `price_application_with_kernel` — no private ADL table or `inline_quote_v2` config.
+- Displayed claims reserve is `economic_claims_reserve` (risk cash − claim cash). Seed capital stays on the sheet as `seed_claims_reserve`.
+- Reserves reporting without an allocation tracker uses accounting-book risk cash or the kernel pin, not a 75% card.
 
 ---
 
 ## 4. Still intentionally dual
 
-- `calculate_age_adjusted_premium` and accountant `FinancialReportingService.calculate_premium` now return the kernel breakdown (no legacy 50% savings override; FRS uses the same `price_application_with_kernel` path as issuance).
 - Unmapped products (auto / property / business) still use the type-rate card because they have no kernel product.
-- Balance-sheet `claims_reserve` is still seed capital minus expenses; it is reported, not auto-rewritten, by reconcile.
+- Balance-sheet **seed** `claims_reserve` remains founding capital. Reconcile and `/api/admin/balance-sheet` display `economic_claims_reserve` (collected risk cash minus claim cash) as the claims-reserve identity and never rewrite the seed.
 - Set `PHINS_KERNEL_BILLING_ENABLED=0` only for shadow-only experiments that must keep the flat card.
+
+Age-adjusted quotes, FRS premiums, and FRS year-by-year projection rates now read the central actuarial store / `price_application_with_kernel` path. Reserves reporting no longer invents a 75% risk card when the allocation tracker is empty.
 
 ---
 

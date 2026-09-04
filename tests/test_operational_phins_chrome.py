@@ -57,3 +57,33 @@ def test_mobile_menu_buttons_use_menu_label():
         assert 'class="mobile-menu-btn"' in html
         assert ">☰<" not in html
         assert ">Menu</button>" in html
+
+
+AUTH_AND_LANDING = [
+    "login.html",
+    "register.html",
+    "index.html",
+    "apply.html",
+    "apply-chat.html",
+    "agent-portal.html",
+    "forgot-password.html",
+    "cyber-security.html",
+    "nda.html",
+]
+
+
+def test_auth_and_landing_pages_use_phins_logo_and_fonts():
+    for name in AUTH_AND_LANDING:
+        html = _read(name)
+        assert "/phins-logo.svg" in html, name
+        assert "Inter" in html, name
+        assert ("Space Grotesk" in html) or ("Space+Grotesk" in html), name
+
+
+def test_auth_and_landing_pages_have_no_decorative_dingbats():
+    leftovers = []
+    for name in AUTH_AND_LANDING:
+        for line_no, line in enumerate(_read(name).splitlines(), 1):
+            if DINGBAT.search(line):
+                leftovers.append(f"{name}:{line_no}: {line.strip()[:140]}")
+    assert leftovers == [], "decorative symbols remain:\n" + "\n".join(leftovers)

@@ -1199,7 +1199,7 @@
         <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
           <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">Claims Reserve</div>
           <div style="font-size: 28px; font-weight: bold;" id="bs-claims-reserve">$0</div>
-          <div style="font-size: 11px; color: rgba(255,255,255,0.7);">Available for Claims</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.7);" id="bs-claims-reserve-note">Risk cash minus claims</div>
         </div>
         <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
           <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">Operating Reserve</div>
@@ -5288,7 +5288,9 @@
           };
           
           // Update reserve balances
-          document.getElementById('bs-claims-reserve').textContent = fmt(bs.claims_reserve);
+          document.getElementById('bs-claims-reserve').textContent = fmt(
+            bs.economic_claims_reserve != null ? bs.economic_claims_reserve : bs.claims_reserve
+          );
           document.getElementById('bs-operating-reserve').textContent = fmt(bs.operating_reserve);
           document.getElementById('bs-total-revenue').textContent = fmt(bs.cumulative_premium || bs.total_revenue);
           document.getElementById('bs-claims-paid').textContent = fmt(bs.expense_breakdown?.claims_paid || 0);

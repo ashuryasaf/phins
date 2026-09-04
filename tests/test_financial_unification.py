@@ -12,6 +12,7 @@ from services.financial_unification_service import (
     PREMIUM_AUDIT_TYPES,
     PREMIUM_CASH_TYPES,
     accounting_book_totals,
+    economic_claims_reserve,
     kernel_components_from_policy,
     ledger_cash_total,
     pin_kernel_fields_on_policy,
@@ -225,6 +226,66 @@ def test_reconcile_is_consistent_when_ledger_matches_books():
     assert report["premiums"]["customer_ledger"]["total"] == 90.0
     assert report["claims"]["customer_ledger"]["total"] == 25.0
     assert report["authority"]["cash_identity"] == "customer_ledger"
+    assert report["reserves"]["identity"] == "ledger_risk_cash_minus_claim_cash"
+    assert report["reserves"]["economic_claims_reserve"] == 65.0
+    assert report["reserves"]["seed_claims_reserve"] == 3475.0
+
+
+def test_economic_claims_reserve_is_risk_cash_minus_claim_cash():
+    reset_accounting_engine()
+    engine = get_accounting_engine()
+    post_premium_to_accounting_book(
+        bill_id="BILL-ECON",
+        policy_id="POL-ECON",
+        customer_id="CUST-ECON",
+        amount=200.0,
+        risk_percentage=80,
+        source_tx_id="TX-ECON",
+        engine=engine,
+    )
+    txs = [
+        {"type": "premium_payment", "amount": 200.0, "customer_id": "CUST-ECON"},
+        {"type": "claim_payment_received", "amount": 40.0, "customer_id": "CUST-ECON"},
+    ]
+    result = economic_claims_reserve(transactions=txs, engine=engine)
+    assert result["risk_cash_collected"] == 160.0
+    assert result["claim_cash_paid"] == 40.0
+    assert result["economic_claims_reserve"] == 120.0
+    assert result["identity"] == "ledger_risk_cash_minus_claim_cash"
+
+
+def test_reserves_reporting_uses_kernel_pin_not_seventy_five_percent():
+    from services.reserves_reporting_service import ReservesReportingService
+
+    reset_accounting_engine()
+    policies = {
+        "POL-R": {
+            "id": "POL-R",
+            "annual_premium": 1200.0,
+            "risk_premium_annual": 900.0,
+            "savings_premium_annual": 300.0,
+            "pricing_source": "pricing_kernel",
+        }
+    }
+    bills = {
+        "BILL-R": {
+            "id": "BILL-R",
+            "policy_id": "POL-R",
+            "status": "paid",
+            "amount_paid": 100.0,
+        }
+    }
+    svc = ReservesReportingService(
+        premium_allocation_tracker=None,
+        policies=policies,
+        claims={},
+        bills=bills,
+    )
+    summary = svc.calculate_reserve_summary()
+    assert summary.gross_risk_reserve == Decimal("75.00")
+    report = svc.generate_full_report()
+    assert "75%" not in report["risk_reserves"]["source"]
+    assert "kernel" in report["risk_reserves"]["source"]
 
 
 def test_ledger_cash_aliases_and_paid_claim_records():

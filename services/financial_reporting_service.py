@@ -277,15 +277,35 @@ class FinancialReportingService:
     # NOT: Premium = (Mortality × ADL_Multiplier) + Savings + Expenses (OLD/WRONG)
     # ==========================================================================
     
+    def _actuarial_store(self):
+        """Central actuarial tables — same store the kernel and actuary dashboard use."""
+        try:
+            from services.actuarial_service import get_actuarial_store
+            return get_actuarial_store()
+        except Exception:
+            return None
+
     def get_mortality_rate(self, age: int) -> float:
-        """Get base mortality rate per 1000 lives for given age"""
+        """Get base mortality rate for given age from the actuarial store."""
+        store = self._actuarial_store()
+        if store is not None:
+            try:
+                return float(store.get_mortality_rate(age))
+            except Exception:
+                pass
         for (low, high), rate in MORTALITY_RATES.items():
             if low <= age < high:
                 return rate / 1000.0
         return 0.075  # Default for very old ages
     
     def get_disability_incidence_rate(self, age: int) -> float:
-        """Get disability incidence rate per 1000 lives for given age (NEW)"""
+        """Get disability incidence rate for given age from the actuarial store."""
+        store = self._actuarial_store()
+        if store is not None:
+            try:
+                return float(store.get_disability_rate(age))
+            except Exception:
+                pass
         for (low, high), rate in DISABILITY_INCIDENCE_RATES.items():
             if low <= age < high:
                 return rate / 1000.0
@@ -294,22 +314,40 @@ class FinancialReportingService:
     def get_adl_mortality_multiplier(self, adl_level: int) -> float:
         """Get MORTALITY risk multiplier based on ADL level (1-10)"""
         adl_level = max(1, min(10, adl_level))
+        store = self._actuarial_store()
+        if store is not None:
+            try:
+                return float(store.get_adl_mortality_multiplier(adl_level))
+            except Exception:
+                pass
         return ADL_MORTALITY_MULTIPLIERS.get(adl_level, 1.0)
     
     def get_adl_disability_incidence_multiplier(self, adl_level: int) -> float:
-        """Get DISABILITY INCIDENCE multiplier based on ADL level (1-10) (NEW)
+        """Get DISABILITY INCIDENCE multiplier based on ADL level (1-10)
         
         This is the critical factor - higher ADL means MORE likely to claim disability.
         """
         adl_level = max(1, min(10, adl_level))
+        store = self._actuarial_store()
+        if store is not None:
+            try:
+                return float(store.get_adl_disability_multiplier(adl_level))
+            except Exception:
+                pass
         return ADL_DISABILITY_INCIDENCE_MULTIPLIERS.get(adl_level, 1.0)
     
     def get_adl_benefit_percentage(self, adl_level: int) -> float:
-        """Get disability benefit percentage based on ADL level (NEW)
+        """Get disability benefit percentage based on ADL level
         
         Returns the % of coverage paid out for disability claim at this ADL level.
         """
         adl_level = max(1, min(10, adl_level))
+        store = self._actuarial_store()
+        if store is not None:
+            try:
+                return float(store.get_adl_benefit_pct(adl_level))
+            except Exception:
+                pass
         return ADL_BENEFIT_PERCENTAGES.get(adl_level, 0.35)  # Default 35% avg
     
     def get_adl_multiplier(self, adl_level: int) -> float:
@@ -317,7 +355,13 @@ class FinancialReportingService:
         return self.get_adl_mortality_multiplier(adl_level)
     
     def get_lapse_rate(self, policy_year: int) -> float:
-        """Get lapse rate for given policy year"""
+        """Get lapse rate for given policy year from the actuarial store."""
+        store = self._actuarial_store()
+        if store is not None:
+            try:
+                return float(store.get_lapse_rate(policy_year))
+            except Exception:
+                pass
         if policy_year in LAPSE_RATES:
             return LAPSE_RATES[policy_year]
         for key, rate in LAPSE_RATES.items():

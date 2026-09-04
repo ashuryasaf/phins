@@ -362,15 +362,18 @@ def accounting_book_totals(engine: Any = None) -> Dict[str, float]:
         from accounting_engine import AllocationStatus, EntryType
 
         premium_total = Decimal("0.00")
+        risk_total = Decimal("0.00")
         for alloc in (engine.allocations or {}).values():
             if getattr(alloc, "status", None) == AllocationStatus.POSTED:
                 premium_total += money(alloc.total_premium)
+                risk_total += money(getattr(alloc, "risk_premium", 0))
         claims_total = Decimal("0.00")
         for entry in getattr(engine, "ledger_entries", []) or []:
             if getattr(entry, "entry_type", None) == EntryType.CLAIM_PAYMENT:
                 claims_total += money(entry.credit_amount or entry.debit_amount)
         return {
             "premium_posted": float(premium_total),
+            "risk_posted": float(risk_total),
             "claims_posted": float(claims_total),
             "allocation_count": sum(
                 1 for a in (engine.allocations or {}).values()
@@ -382,10 +385,89 @@ def accounting_book_totals(engine: Any = None) -> Dict[str, float]:
         logger.warning("accounting book totals failed: %s", exc)
         return {
             "premium_posted": 0.0,
+            "risk_posted": 0.0,
             "claims_posted": 0.0,
             "allocation_count": 0,
             "entry_count": 0,
         }
+
+
+def accounting_risk_cash(engine: Any = None) -> Decimal:
+    """Posted risk-premium cash on the shared accounting book."""
+    return money(accounting_book_totals(engine).get("risk_posted", 0))
+
+
+def kernel_portfolio_risk_pct(
+    policies: Optional[Dict[str, Any]] = None,
+    *,
+    exclude_customer: Optional[Any] = None,
+) -> Decimal:
+    """Portfolio risk share from pinned kernel components.
+
+    Policies without a pin count as 100% risk so the fallback never invents
+    a 75% card that disagrees with the ledger.
+    """
+    risk = Decimal("0.00")
+    annual = Decimal("0.00")
+    for policy in (policies or {}).values():
+        if not isinstance(policy, dict):
+            continue
+        cid = str(policy.get("customer_id") or "")
+        if exclude_customer and cid and exclude_customer(cid):
+            continue
+        kernel = kernel_components_from_policy(policy)
+        ann = money(kernel.get("annual_premium") or policy.get("annual_premium", 0))
+        if ann <= 0:
+            continue
+        rsk = money(kernel.get("risk_premium_annual"))
+        annual += ann
+        risk += rsk if rsk > 0 else ann
+    if annual <= 0:
+        return Decimal("100")
+    return (risk / annual * Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def economic_claims_reserve(
+    *,
+    transactions: Iterable[Dict[str, Any]],
+    policies: Optional[Dict[str, Any]] = None,
+    engine: Any = None,
+    exclude_customer: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Displayed claims-reserve identity: risk cash collected minus claim cash.
+
+    Prefers accounting-book risk postings (already kernel-split). Falls back
+    to customer-ledger premium cash times the portfolio kernel risk share.
+    Does not mutate seed capital on the balance sheet.
+    """
+    claim_ledger = ledger_cash_total(
+        transactions, CLAIM_CASH_TYPES, exclude_customer=exclude_customer
+    )
+    premium_ledger = ledger_cash_total(
+        transactions, PREMIUM_CASH_TYPES, exclude_customer=exclude_customer
+    )
+    claim_cash = money(claim_ledger["total"])
+    book = accounting_book_totals(engine)
+    risk_from_book = money(book.get("risk_posted", 0))
+    if risk_from_book > 0:
+        risk_cash = risk_from_book
+        risk_source = "accounting_book"
+    else:
+        risk_pct = kernel_portfolio_risk_pct(
+            policies, exclude_customer=exclude_customer
+        )
+        risk_cash = (
+            money(premium_ledger["total"]) * risk_pct / Decimal("100")
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        risk_source = "kernel_split_of_ledger_premium"
+    economic = (risk_cash - claim_cash).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return {
+        "risk_cash_collected": float(risk_cash),
+        "claim_cash_paid": float(claim_cash),
+        "economic_claims_reserve": float(economic),
+        "risk_cash_source": risk_source,
+        "identity": "ledger_risk_cash_minus_claim_cash",
+    }
 
 
 def _diff(left: Decimal, right: Decimal) -> float:
@@ -475,6 +557,12 @@ def reconcile_financial_books(
     bs_premium = money((bs.get("revenue_breakdown") or {}).get("premium_income", 0))
     bs_claims = money((bs.get("expense_breakdown") or {}).get("claims_paid", 0))
     bs_reserve = money(bs.get("claims_reserve", 0))
+    economic = economic_claims_reserve(
+        transactions=ledger_list,
+        policies=policies,
+        engine=engine,
+        exclude_customer=exclude_customer,
+    )
 
     ledger_premium = money(premium_ledger["total"])
     ledger_claims = money(claim_ledger["total"])
@@ -569,8 +657,17 @@ def reconcile_financial_books(
             "missing_ledger_claim_ids": claims_missing_ledger,
         },
         "reserves": {
+            "seed_claims_reserve": float(bs_reserve),
             "balance_sheet_claims_reserve": float(bs_reserve),
-            "note": "Claims reserve is seed capital minus customer-ledger claim cash; risk premiums fund the book, not a silent rewrite of history.",
+            "economic_claims_reserve": economic["economic_claims_reserve"],
+            "risk_cash_collected": economic["risk_cash_collected"],
+            "claim_cash_paid": economic["claim_cash_paid"],
+            "risk_cash_source": economic["risk_cash_source"],
+            "identity": economic["identity"],
+            "note": (
+                "Displayed claims reserve is collected risk cash minus claim cash. "
+                "Seed capital is reported separately and is never rewritten."
+            ),
         },
         "discrepancies": discrepancies,
         "discrepancy_count": len(discrepancies),

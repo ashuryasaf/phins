@@ -5,8 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#0d47a1">
   <title>PHINS - Cyber Security Command Center</title>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <link rel="apple-touch-icon" href="/phins-logo.svg">
   <link rel="stylesheet" href="/styles.css">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root {
@@ -74,6 +76,16 @@
       align-items: center;
       justify-content: center;
       font-size: 18px;
+      overflow: hidden;
+    }
+    .cyber-logo-shield img {
+      width: 78%;
+      height: 78%;
+      object-fit: contain;
+      display: block;
+    }
+    .cyber-logo span {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
     }
 
     .cyber-nav {
@@ -635,7 +647,7 @@
 <header class="cyber-header">
   <div class="cyber-header-left">
     <a href="/cyber-security.html" class="cyber-logo">
-      <div class="cyber-logo-shield"></div>
+      <div class="cyber-logo-shield"><img src="/phins-logo.svg" alt="PHINS emblem"></div>
       <span>PHINS SOC</span>
     </a>
     <nav class="cyber-nav">
