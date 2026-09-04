@@ -19,7 +19,7 @@ PHINS had a declared pricing contract (`services/pricing_kernel.py`) and several
 | Balance sheet | `premium_income` / `claims_paid` / reserves | Separate counters; reserve formula ignored collected risk premium |
 | Reserves reporting | Allocations + claim *records* | Paid claims ignored customer-ledger cash |
 
-The 2026-08-06 contract assessment remains correct on issuance: chat/unlabeled creates stay on the flat formula unless `PHINS_KERNEL_BILLING_ENABLED` is on. This change does **not** silently reprice history. It unifies *cash posting* and *reconciliation* so every collected premium and every paid claim hits the customer ledger and the accounting book with the same number.
+Issuance now uses the actuarial kernel on every channel (classic apply, chat, unlabeled). Chat finalize also binds the issued premium to `quote_provenance` so the amount the applicant accepted cannot drift from a later table edit. Flat formula remains only as a fail-open fallback or when `PHINS_KERNEL_BILLING_ENABLED=0`. Historical billed premiums are never rewritten. Cash posting and reconciliation still require every collected premium and every paid claim to hit the customer ledger and the accounting book with the same number.
 
 ---
 
@@ -49,9 +49,10 @@ The 2026-08-06 contract assessment remains correct on issuance: chat/unlabeled c
 
 ## 4. Still intentionally dual
 
-- Chat / unlabeled `calculate_premium` remains flat unless `PHINS_KERNEL_BILLING_ENABLED=1` (tests and the chat loopback depend on this).
 - `calculate_age_adjusted_premium` still applies a legacy savings override for quote compatibility.
+- Unmapped products (auto / property / business) still use the type-rate card because they have no kernel product.
 - Balance-sheet `claims_reserve` is still seed capital minus expenses; it is reported, not auto-rewritten, by reconcile.
+- Set `PHINS_KERNEL_BILLING_ENABLED=0` only for shadow-only experiments that must keep the flat card.
 
 ---
 

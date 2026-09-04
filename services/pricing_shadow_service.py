@@ -27,10 +27,6 @@ POLICY_TYPE_TO_PRODUCT = {
     "phins_unified": "phins_pure_risk_adjustable",
 }
 
-# Classic /apply.html submissions use kernel prices even when the global
-# billing flag is off. Chat keeps today's flag-gated create path.
-CLASSIC_APPLY_CHANNELS = frozenset({"classic", "apply", "web"})
-
 _LOCK = threading.RLock()
 _SNAPSHOTS: List[Dict[str, Any]] = []
 _BY_POLICY: Dict[str, List[str]] = {}
@@ -220,11 +216,11 @@ def resolve_adl_underwriting(adl_level: int, uw_config: Any) -> Dict[str, Any]:
 
 
 def is_kernel_billing_enabled() -> bool:
-    """Kernel billed premiums are opt-in via ``PHINS_KERNEL_BILLING_ENABLED``.
+    """Explicit ``PHINS_KERNEL_BILLING_ENABLED`` override.
 
-    Default off so production stays on the flat formula (shadow dual-run can
-    still compare kernel quotes without changing issued premiums). Explicit
-    ``1``/``true`` enables kernel billing; test mode also stays off.
+    Unset means "use the default billing decision" (see
+    ``should_use_kernel_billing``). ``1``/``true`` forces kernel billing;
+    ``0``/``false`` forces the legacy flat formula for shadow-only runs.
     """
     raw = os.environ.get("PHINS_KERNEL_BILLING_ENABLED")
     if raw is not None and str(raw).strip() != "":
@@ -235,14 +231,16 @@ def is_kernel_billing_enabled() -> bool:
 def should_use_kernel_billing(policy_data: Optional[Dict[str, Any]] = None) -> bool:
     """True when this payload should be billed from the actuarial kernel.
 
-    Global flag still wins. Classic ``apply.html`` sends
-    ``application_channel=classic`` so its quote and create use kernel
-    prices. Chat (``application_channel=chat``) stays on the flag-gated path.
+    Kernel pricing is the premium identity for every mapped product —
+    classic apply, chat finalize, and unlabeled create. Set
+    ``PHINS_KERNEL_BILLING_ENABLED=0`` to force the legacy flat formula.
+    Flat remains the fail-open fallback inside ``calculate_premium`` when
+    the kernel cannot price (unmapped type or kernel error).
     """
-    if is_kernel_billing_enabled():
-        return True
-    channel = str((policy_data or {}).get("application_channel") or "").strip().lower()
-    return channel in CLASSIC_APPLY_CHANNELS
+    raw = os.environ.get("PHINS_KERNEL_BILLING_ENABLED")
+    if raw is not None and str(raw).strip() != "":
+        return _truthy(raw)
+    return True
 
 
 def price_application_with_kernel(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:

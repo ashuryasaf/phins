@@ -353,6 +353,33 @@ def test_kernel_components_read_snapshot_when_policy_scalars_missing(monkeypatch
     assert comps["integrity_hash"] == "snap-hash"
 
 
+def test_create_binds_accepted_chat_quote_provenance():
+    from web_portal.server import _apply_accepted_quote_provenance
+
+    recalculated = {
+        "annual": 999.0,
+        "monthly": 83.25,
+        "quarterly": 242.22,
+        "pricing_source": "pricing_kernel",
+        "integrity_hash": "new-hash",
+        "risk_premium_annual": 800.0,
+    }
+    bound = _apply_accepted_quote_provenance(recalculated, {
+        "quote_provenance": {
+            "pricing_source": "pricing_kernel",
+            "quoted_annual": 120.0,
+            "quoted_monthly": 10.0,
+            "integrity_hash": "accepted-hash",
+            "tables_version": "T1",
+        }
+    })
+    assert bound["annual"] == 120.0
+    assert bound["monthly"] == 10.0
+    assert bound["integrity_hash"] == "accepted-hash"
+    assert bound["quote_bound"] is True
+    assert bound["tables_version"] == "T1"
+
+
 def test_auto_pay_execution_is_audit_not_cash():
     assert "auto_pay_execution" in PREMIUM_AUDIT_TYPES
     assert "auto_pay_execution" not in PREMIUM_CASH_TYPES

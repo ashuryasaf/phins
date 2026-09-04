@@ -13604,10 +13604,11 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
 
     Prefer the actuarial pricing kernel (persisted Pricing Parameters +
     application demographics: smoking / sex / ethnicity / age / term) for
-    life / health / phins_unified when kernel billing is enabled or the
-    payload is a classic ``apply.html`` submission.
+    life / health / phins_unified on every issuance channel (classic apply,
+    chat, unlabeled). Set ``PHINS_KERNEL_BILLING_ENABLED=0`` to force the
+    legacy flat formula.
 
-    Fail-open fallback (also used under PHINS_TEST_MODE by default):
+    Fail-open fallback when the kernel cannot price:
     - Base rate: $0.25 per $1,000 coverage per month
     - Age factor: 1.0 + (age - 25) * 0.015
     - Risk factor from underwriting assessment
@@ -13701,6 +13702,51 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
     except Exception:
         pass
     return result
+
+
+def _apply_accepted_quote_provenance(
+    premium_data: Dict[str, Any],
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Bind issued premium to the kernel quote the applicant already accepted.
+
+    Chat finalize stamps ``quote_provenance``. Recalculating after table
+    edits must not silently replace that accepted amount.
+    """
+    prov = payload.get("quote_provenance") if isinstance(payload, dict) else None
+    if not isinstance(prov, dict):
+        return premium_data
+    try:
+        quoted_annual = float(prov.get("quoted_annual") or 0)
+        quoted_monthly = float(prov.get("quoted_monthly") or 0)
+    except (TypeError, ValueError):
+        return premium_data
+    if quoted_annual <= 0 or quoted_monthly <= 0:
+        return premium_data
+    if str(prov.get("pricing_source") or "").strip() not in {"pricing_kernel", "flat_fallback"}:
+        return premium_data
+    bound = dict(premium_data)
+    bound["annual"] = round(quoted_annual, 2)
+    bound["monthly"] = round(quoted_monthly, 2)
+    bound["quarterly"] = round(quoted_monthly * 3 * 0.97, 2)
+    bound["pricing_source"] = prov.get("pricing_source") or bound.get("pricing_source")
+    for key in (
+        "integrity_hash",
+        "product_id",
+        "tables_version",
+        "config_version",
+        "savings_formula",
+        "savings_rate_used",
+        "underwriting_loading",
+        "adl_level",
+        "risk_premium_annual",
+        "savings_premium_annual",
+    ):
+        if prov.get(key) not in (None, ""):
+            bound[key] = prov.get(key)
+    bound["quote_bound"] = True
+    return bound
+
 
 def get_bi_data_actuary() -> Dict[str, Any]:
     """Generate actuarial BI data"""
@@ -42630,11 +42676,10 @@ For claims or questions, please contact:
                 # application_channel='chat'. That is a direct 127.0.0.1 request
                 # with a dedicated User-Agent and no edge forwarding headers, so
                 # only that internal loopback is trusted to keep 'chat' (which
-                # opts out of kernel billing and defers login provisioning).
-                # A caller-supplied 'chat' from the open internet would let
-                # anyone price from the cheaper flat formula and skip portal
-                # account minting, so every public submission is pinned to
-                # 'classic'.
+                # defers login provisioning). A caller-supplied 'chat' from the
+                # open internet would skip portal account minting, so every
+                # public submission is pinned to 'classic'. Kernel pricing is
+                # used on both channels.
                 _create_client_ip = (self.client_address[0] if self.client_address else '') or ''
                 _create_user_agent = self.headers.get('User-Agent', '') if self.headers else ''
                 _create_has_forward_headers = bool(self.headers and (
@@ -43029,8 +43074,12 @@ For claims or questions, please contact:
                         'ethnicity': data.get('ethnicity'),
                     }
 
-                # Calculate premium (kernel + pricing params when enabled; else flat)
+                # Calculate premium from the actuarial kernel (fail-open flat).
+                # Chat finalize stamps quote_provenance with the kernel amount
+                # the applicant accepted; that accepted quote is the issued
+                # premium so quote and policy cannot drift.
                 premium_data = calculate_premium(data)
+                premium_data = _apply_accepted_quote_provenance(premium_data, data)
                 
                 # Create policy
                 policy = {

@@ -1,6 +1,7 @@
-"""Classic apply.html quotes and issues from the actuarial kernel.
+"""Classic apply and chat issuance both bill from the actuarial kernel.
 
-Chat submissions (application_channel=chat) keep the flag-gated flat path.
+Flat formula remains only as a fail-open fallback or when
+``PHINS_KERNEL_BILLING_ENABLED=0``.
 """
 
 from __future__ import annotations
@@ -57,21 +58,31 @@ def test_classic_calculate_premium_matches_kernel(monkeypatch):
     assert billed["integrity_hash"] == kernel["integrity_hash"]
 
 
-def test_chat_calculate_premium_stays_flat_without_flag(monkeypatch):
+def test_chat_calculate_premium_uses_kernel(monkeypatch):
     monkeypatch.delenv("PHINS_KERNEL_BILLING_ENABLED", raising=False)
     chat = dict(CLASSIC_PAYLOAD, application_channel="chat")
     billed = calculate_premium(chat)
-    assert billed["pricing_source"] == "flat_formula"
     kernel = price_application_with_kernel(chat)
-    assert kernel
-    assert billed["monthly"] != pytest.approx(kernel["monthly"])
+    assert kernel and kernel["pricing_source"] == "pricing_kernel"
+    assert billed["pricing_source"] == "pricing_kernel"
+    assert billed["monthly"] == pytest.approx(kernel["monthly"])
+    assert billed["annual"] == pytest.approx(kernel["annual"])
+    assert billed["integrity_hash"] == kernel["integrity_hash"]
 
 
-def test_unlabeled_calculate_premium_stays_flat(monkeypatch):
+def test_unlabeled_calculate_premium_uses_kernel(monkeypatch):
     monkeypatch.delenv("PHINS_KERNEL_BILLING_ENABLED", raising=False)
     unlabeled = dict(CLASSIC_PAYLOAD)
     unlabeled.pop("application_channel")
     billed = calculate_premium(unlabeled)
+    kernel = price_application_with_kernel(unlabeled)
+    assert billed["pricing_source"] == "pricing_kernel"
+    assert billed["monthly"] == pytest.approx(kernel["monthly"])
+
+
+def test_explicit_flag_off_forces_flat_formula(monkeypatch):
+    monkeypatch.setenv("PHINS_KERNEL_BILLING_ENABLED", "0")
+    billed = calculate_premium(CLASSIC_PAYLOAD)
     assert billed["pricing_source"] == "flat_formula"
 
 

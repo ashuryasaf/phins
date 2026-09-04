@@ -79,13 +79,16 @@ def test_kernel_billing_default_off(monkeypatch):
     assert is_kernel_billing_enabled() is True
 
 
-def test_classic_apply_channel_uses_kernel_without_global_flag(monkeypatch):
+def test_every_channel_uses_kernel_unless_flag_forces_flat(monkeypatch):
     from services.pricing_shadow_service import should_use_kernel_billing
 
     monkeypatch.delenv("PHINS_KERNEL_BILLING_ENABLED", raising=False)
     assert should_use_kernel_billing({"application_channel": "classic"}) is True
+    assert should_use_kernel_billing({"application_channel": "chat"}) is True
+    assert should_use_kernel_billing({}) is True
+    monkeypatch.setenv("PHINS_KERNEL_BILLING_ENABLED", "0")
+    assert should_use_kernel_billing({"application_channel": "classic"}) is False
     assert should_use_kernel_billing({"application_channel": "chat"}) is False
-    assert should_use_kernel_billing({}) is False
 
 
 def test_extract_age_from_customer_dob():
