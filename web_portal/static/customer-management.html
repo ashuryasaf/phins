@@ -533,7 +533,7 @@
                 <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
                 <span class="phins-logo-text">PHINS</span>
             </a>
-            <button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
+            <button class="mobile-menu-btn" onclick="toggleMobileMenu()">Menu</button>
             <nav class="phins-nav" id="mobile-nav">
                 <a href="/admin.html">Admin</a>
                 <a href="/customer-management.html" class="active">Customer Management</a>
@@ -590,30 +590,30 @@
 
         <!-- Pipeline Visual -->
         <div class="pipeline-visual">
-            <h2 class="card-title">🔄 Pipeline Flow</h2>
+            <h2 class="card-title">Pipeline Flow</h2>
             <div class="pipeline-stages">
                 <div class="pipeline-stage">
-                    <div class="stage-icon" id="stage-application">📝</div>
+                    <div class="stage-icon" id="stage-application"></div>
                     <div class="stage-count" id="count-application">0</div>
                     <div>Application</div>
                 </div>
                 <div class="pipeline-stage">
-                    <div class="stage-icon" id="stage-underwriting">🔍</div>
+                    <div class="stage-icon" id="stage-underwriting"></div>
                     <div class="stage-count" id="count-underwriting">0</div>
                     <div>Underwriting</div>
                 </div>
                 <div class="pipeline-stage">
-                    <div class="stage-icon" id="stage-approved">✅</div>
+                    <div class="stage-icon" id="stage-approved"></div>
                     <div class="stage-count" id="count-approved">0</div>
                     <div>Approved</div>
                 </div>
                 <div class="pipeline-stage">
-                    <div class="stage-icon" id="stage-active">📋</div>
+                    <div class="stage-icon" id="stage-active"></div>
                     <div class="stage-count" id="count-active">0</div>
                     <div>Active Policy</div>
                 </div>
                 <div class="pipeline-stage">
-                    <div class="stage-icon" id="stage-billing">💰</div>
+                    <div class="stage-icon" id="stage-billing"></div>
                     <div class="stage-count" id="count-billing">0</div>
                     <div>Billing</div>
                 </div>
@@ -622,10 +622,10 @@
 
         <!-- Search and Actions -->
         <div class="search-bar">
-            <input type="text" id="search-input" placeholder="🔍 Search customers by name, email, or ID...">
-            <button class="btn btn-primary" onclick="loadCustomers()">🔄 Refresh</button>
-            <button class="btn btn-success" onclick="validateAll()">✅ Validate All</button>
-            <button class="btn btn-warning" id="repair-billing-btn" onclick="repairAllBillingPending()" title="Activate auto-pay and settle outstanding bills for all customers in Billing Pending stage">🔧 Repair Billing Pending</button>
+            <input type="text" id="search-input" placeholder=" Search customers by name, email, or ID...">
+            <button class="btn btn-primary" onclick="loadCustomers()">Refresh</button>
+            <button class="btn btn-success" onclick="validateAll()">Validate All</button>
+            <button class="btn btn-warning" id="repair-billing-btn" onclick="repairAllBillingPending()" title="Activate auto-pay and settle outstanding bills for all customers in Billing Pending stage">Repair Billing Pending</button>
         </div>
 
         <!-- Customer Table -->
@@ -656,8 +656,8 @@
     <div class="validation-modal" id="validation-modal">
         <div class="validation-content">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h2 id="modal-title">🔍 Validation Results</h2>
-                <button onclick="closeModal()" style="background: none; border: none; font-size: 24px; cursor: pointer;">✕</button>
+                <h2 id="modal-title">Validation Results</h2>
+                <button onclick="closeModal()" style="background: none; border: none; font-size: 24px; cursor: pointer;"></button>
             </div>
             <div id="validation-results"></div>
         </div>
@@ -668,7 +668,7 @@
         <div class="validation-content">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                 <h2 id="contact-modal-title">Contact customer</h2>
-                <button onclick="closeContactModal()" style="background: none; border: none; font-size: 24px; cursor: pointer;">✕</button>
+                <button onclick="closeContactModal()" style="background: none; border: none; font-size: 24px; cursor: pointer;"></button>
             </div>
             <p class="contact-meta" id="contact-recipient-meta">Select a customer to send email or WhatsApp.</p>
             <div class="contact-field">
@@ -770,7 +770,7 @@
                 console.error('Failed to load customers:', err);
                 document.getElementById('customer-table-body').innerHTML = `
                     <tr><td colspan="8" style="text-align: center; padding: 40px; color: #dc3545;">
-                        ❌ Failed to load customers. Please try again.
+                         Failed to load customers. Please try again.
                     </td></tr>
                 `;
             }
@@ -782,7 +782,7 @@
             if (customers.length === 0) {
                 tbody.innerHTML = `
                     <tr><td colspan="8" style="text-align: center; padding: 40px; color: #666;">
-                        📭 No customers registered yet. New applications will appear here.
+                         No customers registered yet. New applications will appear here.
                     </td></tr>
                 `;
                 return;
@@ -794,9 +794,9 @@
                     || (customer.outstanding_bills && customer.outstanding_bills > 0);
                 const safeId = escHtml(customer.id);
                 const repairBtn = needsRepair
-                    ? `<button class="btn btn-sm btn-warning" data-customer-id="${safeId}" onclick="repairCustomerBilling(this.dataset.customerId)" title="Activate auto-pay and settle outstanding bills">🔧 Settle &amp; Auto-Pay</button>`
+                    ? `<button class="btn btn-sm btn-warning" data-customer-id="${safeId}" onclick="repairCustomerBilling(this.dataset.customerId)" title="Activate auto-pay and settle outstanding bills">Settle &amp; Auto-Pay</button>`
                     : '';
-                const contactBtn = `<button class="btn btn-sm btn-contact" data-customer-id="${safeId}" onclick="openContactModal(this.dataset.customerId)" title="Email or WhatsApp this customer">✉ Contact</button>`;
+                const contactBtn = `<button class="btn btn-sm btn-contact" data-customer-id="${safeId}" onclick="openContactModal(this.dataset.customerId)" title="Email or WhatsApp this customer">Contact</button>`;
                 return `
                     <tr>
                         <td><code>${safeId}</code></td>
@@ -808,7 +808,7 @@
                         <td>$${Number(customer.wallet_balance || 0).toFixed(2)}</td>
                         <td>
                             <div class="row-actions">
-                                <button class="btn btn-sm btn-primary" data-customer-id="${safeId}" onclick="validateCustomer(this.dataset.customerId)">🔍 Validate</button>
+                                <button class="btn btn-sm btn-primary" data-customer-id="${safeId}" onclick="validateCustomer(this.dataset.customerId)">Validate</button>
                                 ${contactBtn}
                                 ${repairBtn}
                             </div>
@@ -828,18 +828,18 @@
             btn.style.opacity = pendingCount === 0 ? '0.5' : '1';
             btn.style.cursor = pendingCount === 0 ? 'not-allowed' : 'pointer';
             btn.textContent = pendingCount === 0
-                ? '✅ No Billing Pending'
-                : `🔧 Repair Billing Pending (${pendingCount})`;
+                ? ' No Billing Pending'
+                : ` Repair Billing Pending (${pendingCount})`;
         }
 
         function getStageBadge(stage) {
             const badges = {
-                'registered': '<span class="badge badge-pending">📝 Registered</span>',
-                'underwriting': '<span class="badge badge-underwriting">🔍 Underwriting</span>',
-                'approved': '<span class="badge badge-active">✅ Approved</span>',
-                'active_policy': '<span class="badge badge-active">📋 Active Policy</span>',
-                'billing_pending': '<span class="badge badge-billing">💰 Billing Pending</span>',
-                'fully_active': '<span class="badge badge-active">✨ Fully Active</span>'
+                'registered': '<span class="badge badge-pending">Registered</span>',
+                'underwriting': '<span class="badge badge-underwriting">Underwriting</span>',
+                'approved': '<span class="badge badge-active">Approved</span>',
+                'active_policy': '<span class="badge badge-active">Active Policy</span>',
+                'billing_pending': '<span class="badge badge-billing">Billing Pending</span>',
+                'fully_active': '<span class="badge badge-active">Fully Active</span>'
             };
             return badges[stage] || `<span class="badge">${escHtml(stage)}</span>`;
         }
@@ -851,11 +851,11 @@
                 });
                 const data = await response.json();
                 
-                document.getElementById('modal-title').textContent = `🔍 Validation: ${customerId}`;
+                document.getElementById('modal-title').textContent = ` Validation: ${customerId}`;
                 
                 let html = `
                     <div style="padding: 15px; border-radius: 8px; margin-bottom: 20px; ${data.valid ? 'background: #d4edda; color: #155724;' : 'background: #f8d7da; color: #721c24;'}">
-                        <strong>${data.valid ? '✅ All validations passed!' : '❌ Validation issues found'}</strong>
+                        <strong>${data.valid ? ' All validations passed!' : ' Validation issues found'}</strong>
                     </div>
                 `;
                 
@@ -874,7 +874,7 @@
                 html += `<h3>Validation Checks</h3>`;
                 data.checks.forEach(check => {
                     const iconClass = check.status === 'PASS' ? 'pass' : check.status === 'FAIL' ? 'fail' : check.status === 'PENDING' ? 'pending' : 'warn';
-                    const icon = check.status === 'PASS' ? '✓' : check.status === 'FAIL' ? '✗' : check.status === 'PENDING' ? '⏳' : '⚠';
+                    const icon = check.status === 'PASS' ? '' : check.status === 'FAIL' ? '' : check.status === 'PENDING' ? '⏳' : '';
                     html += `
                         <div class="check-item">
                             <div class="check-icon ${iconClass}">${icon}</div>
@@ -908,14 +908,14 @@
                 }
             }
             
-            document.getElementById('modal-title').textContent = '📊 Bulk Validation Results';
+            document.getElementById('modal-title').textContent = ' Bulk Validation Results';
             
             const passed = results.filter(r => r.valid).length;
             const failed = results.filter(r => !r.valid).length;
             
             let html = `
                 <div style="padding: 15px; border-radius: 8px; margin-bottom: 20px; background: linear-gradient(135deg, #0e2f63 0%, #123f82 100%); color: white;">
-                    <strong>✅ ${passed} Passed | ❌ ${failed} Failed | Total: ${results.length}</strong>
+                    <strong> ${passed} Passed |  ${failed} Failed | Total: ${results.length}</strong>
                 </div>
             `;
             
@@ -924,13 +924,13 @@
             } else {
                 html += results.map(r => `
                     <div class="check-item">
-                        <div class="check-icon ${r.valid ? 'pass' : 'fail'}">${r.valid ? '✓' : '✗'}</div>
+                        <div class="check-icon ${r.valid ? 'pass' : 'fail'}">${r.valid ? '' : ''}</div>
                         <div>
                             <strong>${escHtml(r.name)}</strong> <code>(${escHtml(r.id)})</code>
                             <div style="color: #666; font-size: 0.9rem;">
-                                ${r.errors > 0 ? `❌ ${r.errors} errors ` : ''}
-                                ${r.warnings > 0 ? `⚠️ ${r.warnings} warnings` : ''}
-                                ${r.valid ? '✅ All checks passed' : ''}
+                                ${r.errors > 0 ? ` ${r.errors} errors ` : ''}
+                                ${r.warnings > 0 ? `️ ${r.warnings} warnings` : ''}
+                                ${r.valid ? ' All checks passed' : ''}
                             </div>
                         </div>
                     </div>
@@ -963,7 +963,7 @@
 
         function renderRepairResults(report, titleSuffix) {
             document.getElementById('modal-title').textContent =
-                `🔧 Billing Pending Repair${titleSuffix ? ' — ' + titleSuffix : ''}`;
+                ` Billing Pending Repair${titleSuffix ? ' — ' + titleSuffix : ''}`;
 
             const integrity = report.integrity || {};
             const integrityOk = report.data_integrity_ok === true
@@ -977,8 +977,7 @@
             let html = `
                 <div style="padding: 15px; border-radius: 8px; margin-bottom: 20px; ${summaryBg}">
                     <strong>${escHtml(report.message || 'Repair complete')}</strong>
-                    <div style="margin-top: 8px; font-size: 0.95rem;">
-                        Targeted: <strong>${report.targeted}</strong> ·
+                    <div style="margin-top: 8px; font-size: 0.95rem;">Targeted: <strong>${report.targeted}</strong> ·
                         Bills settled: <strong>${report.bills_settled}</strong>
                         ($${(report.amount_settled || 0).toFixed(2)}) ·
                         Bills remaining: <strong>${report.bills_remaining}</strong>
@@ -1017,14 +1016,13 @@
                     const before = rec.before || {};
                     const after = rec.after || {};
                     const passClass = rec.fully_settled ? 'pass' : (rec.errors && rec.errors.length ? 'fail' : 'warn');
-                    const icon = rec.fully_settled ? '✓' : (rec.errors && rec.errors.length ? '✗' : '⚠');
+                    const icon = rec.fully_settled ? '' : (rec.errors && rec.errors.length ? '' : '');
                     return `
                         <div class="check-item">
                             <div class="check-icon ${passClass}">${icon}</div>
                             <div>
                                 <strong>${escHtml(rec.name)}</strong> <code>(${escHtml(rec.customer_id)})</code>
-                                <div style="color: #666; font-size: 0.9rem;">
-                                    Stage: ${rec.stage_transition || (after.pipeline_stage || '—')} ·
+                                <div style="color: #666; font-size: 0.9rem;">Stage: ${rec.stage_transition || (after.pipeline_stage || '—')} ·
                                     Bills: ${before.outstanding_bills || 0} → ${after.outstanding_bills || 0}
                                     (settled $${(rec.amount_settled || 0).toFixed(2)}) ·
                                     Auto-pay policies: ${before.autopay_active_policies || 0} → ${after.autopay_active_policies || 0}

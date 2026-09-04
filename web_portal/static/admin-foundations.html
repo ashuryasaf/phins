@@ -668,48 +668,47 @@
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="sidebar-logo">
-        🛡️ PHINS Admin
+        ️ PHINS Admin
       </div>
       <ul class="sidebar-menu">
-        <li><a href="/admin.html">📊 Dashboard</a></li>
-        <li><a href="/customer-management.html">👥 Customers</a></li>
-        <li><a href="/underwriter-dashboard.html">📋 Underwriting</a></li>
-        <li><a href="/claims-adjuster-dashboard.html">📑 Claims</a></li>
-        <li><a href="/admin-supplier-dashboard.html">🏪 Suppliers</a></li>
-        <li><a href="/admin-foundations.html" class="active">🤝 Foundations</a></li>
-        <li><a href="/billing.html">💳 Billing</a></li>
-        <li><a href="/settings.html">⚙️ Settings</a></li>
+        <li><a href="/admin.html">Dashboard</a></li>
+        <li><a href="/customer-management.html">Customers</a></li>
+        <li><a href="/underwriter-dashboard.html">Underwriting</a></li>
+        <li><a href="/claims-adjuster-dashboard.html">Claims</a></li>
+        <li><a href="/admin-supplier-dashboard.html">Suppliers</a></li>
+        <li><a href="/admin-foundations.html" class="active">Foundations</a></li>
+        <li><a href="/billing.html">Billing</a></li>
+        <li><a href="/settings.html">️ Settings</a></li>
       </ul>
     </aside>
     
     <!-- Main Content -->
     <main class="main-content">
       <div class="page-header">
-        <h1>🤝 Community Foundations</h1>
-        <button class="btn-export" onclick="exportData()">
-          📥 Export Report
+        <h1>Community Foundations</h1>
+        <button class="btn-export" onclick="exportData()">Export Report
         </button>
       </div>
       
       <!-- Stats -->
       <div class="stats-grid">
         <div class="stat-card">
-          <div class="stat-card-icon purple">🏛️</div>
+          <div class="stat-card-icon purple">️</div>
           <div class="stat-card-value" id="total-foundations">0</div>
           <div class="stat-card-label">Total Foundations</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon blue">👥</div>
+          <div class="stat-card-icon blue"></div>
           <div class="stat-card-value" id="total-members">0</div>
           <div class="stat-card-label">Total Members</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon green">💰</div>
+          <div class="stat-card-icon green"></div>
           <div class="stat-card-value" id="total-funds">$0</div>
           <div class="stat-card-label">Total Fund Balance</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon orange">📊</div>
+          <div class="stat-card-icon orange"></div>
           <div class="stat-card-value" id="active-votes">0</div>
           <div class="stat-card-label">Active Votes</div>
         </div>
@@ -807,7 +806,7 @@
   <div class="modal-overlay" id="members-modal">
     <div class="modal" style="max-width: 900px;">
       <div class="modal-header">
-        <h2>👥 <span id="members-modal-title">Foundation Members</span></h2>
+        <h2> <span id="members-modal-title">Foundation Members</span></h2>
         <button class="modal-close" onclick="closeMembersModal()">&times;</button>
       </div>
       <div class="modal-body" id="members-modal-body">
@@ -822,7 +821,7 @@
   <div class="modal-overlay" id="activity-modal">
     <div class="modal" style="max-width: 800px;">
       <div class="modal-header">
-        <h2>📊 <span id="activity-modal-title">Foundation Activity</span></h2>
+        <h2> <span id="activity-modal-title">Foundation Activity</span></h2>
         <button class="modal-close" onclick="closeActivityModal()">&times;</button>
       </div>
       <div class="modal-body" id="activity-modal-body">
@@ -837,7 +836,7 @@
   <div class="modal-overlay" id="photo-modal">
     <div class="modal" style="max-width: 500px;">
       <div class="modal-header">
-        <h2>📷 Update Member Photo</h2>
+        <h2>Update Member Photo</h2>
         <button class="modal-close" onclick="closePhotoModal()">&times;</button>
       </div>
       <div class="modal-body">
@@ -845,11 +844,11 @@
         <input type="hidden" id="photo-foundation-id" />
         
         <div class="photo-preview" id="photo-preview">
-          👤
+          
         </div>
         
         <div class="photo-upload-area" id="photo-upload-area" onclick="document.getElementById('photo-file-input').click()">
-          <p style="margin: 0; color: #666;">📁 Click to select photo or drag & drop</p>
+          <p style="margin: 0; color: #666;"> Click to select photo or drag & drop</p>
           <p style="margin: 8px 0 0; font-size: 0.8rem; color: #999;">Supported: JPG, PNG, GIF (Max 2MB)</p>
         </div>
         <input type="file" id="photo-file-input" accept="image/*" style="display: none;" onchange="handlePhotoSelect(event)" />
@@ -861,7 +860,7 @@
         
         <div style="display: flex; gap: 12px; margin-top: 20px; justify-content: flex-end;">
           <button class="action-btn" style="background: #e0e0e0; color: #333;" onclick="closePhotoModal()">Cancel</button>
-          <button class="action-btn success" onclick="savePhotoUrl()">💾 Save Photo</button>
+          <button class="action-btn success" onclick="savePhotoUrl()">Save Photo</button>
         </div>
       </div>
     </div>
@@ -871,7 +870,7 @@
   <div class="modal-overlay" id="reject-modal">
     <div class="modal" style="max-width: 500px;">
       <div class="modal-header">
-        <h2>❌ Reject Foundation</h2>
+        <h2>Reject Foundation</h2>
         <button class="modal-close" onclick="closeRejectModal()">&times;</button>
       </div>
       <div class="modal-body">
@@ -880,7 +879,7 @@
         <textarea id="reject-reason" class="filter-input" style="width: 100%; height: 100px; resize: vertical;" placeholder="Enter rejection reason..."></textarea>
         <div style="display: flex; gap: 12px; margin-top: 20px; justify-content: flex-end;">
           <button class="action-btn" style="background: #e0e0e0; color: #333;" onclick="closeRejectModal()">Cancel</button>
-          <button class="action-btn danger" onclick="confirmReject()">❌ Reject Foundation</button>
+          <button class="action-btn danger" onclick="confirmReject()">Reject Foundation</button>
         </div>
       </div>
     </div>
@@ -890,7 +889,7 @@
   <div class="modal-overlay" id="pipeline-modal">
     <div class="modal" style="max-width: 700px;">
       <div class="modal-header">
-        <h2>🔄 <span id="pipeline-modal-title">Process Pipeline</span></h2>
+        <h2> <span id="pipeline-modal-title">Process Pipeline</span></h2>
         <button class="modal-close" onclick="closePipelineModal()">&times;</button>
       </div>
       <div class="modal-body" id="pipeline-modal-body">
@@ -905,12 +904,12 @@
         <div class="detail-section">
           <h4>Transition to Stage</h4>
           <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px;">
-            <button class="action-btn info" onclick="transitionPipeline('pending_activation')">📋 Pending Activation</button>
-            <button class="action-btn warning" onclick="transitionPipeline('in_review')">🔍 In Review</button>
-            <button class="action-btn success" onclick="transitionPipeline('approved')">✅ Approved</button>
-            <button class="action-btn success" onclick="transitionPipeline('active')">🚀 Active</button>
+            <button class="action-btn info" onclick="transitionPipeline('pending_activation')">Pending Activation</button>
+            <button class="action-btn warning" onclick="transitionPipeline('in_review')">In Review</button>
+            <button class="action-btn success" onclick="transitionPipeline('approved')">Approved</button>
+            <button class="action-btn success" onclick="transitionPipeline('active')">Active</button>
             <button class="action-btn danger" onclick="transitionPipeline('suspended')">⏸️ Suspended</button>
-            <button class="action-btn danger" onclick="transitionPipeline('rejected')">❌ Rejected</button>
+            <button class="action-btn danger" onclick="transitionPipeline('rejected')">Rejected</button>
           </div>
         </div>
         
@@ -1024,12 +1023,12 @@
           <td>$${formatNumber(f.total_fund_balance || 0)}</td>
           <td>${formatDate(f.created_at)}</td>
           <td style="white-space: nowrap;">
-            <button class="actions-btn" onclick="viewFoundation('${f.id}')" title="View Details">👁️</button>
-            <button class="actions-btn" onclick="viewMembers('${f.id}')" title="View Members">👥</button>
-            <button class="actions-btn" onclick="viewActivity('${f.id}')" title="View Activity">📊</button>
-            <button class="actions-btn" onclick="openPipelineModal('${f.id}')" title="Process Pipeline">🔄</button>
-            ${f.status !== 'active' && f.status !== 'dissolved' ? `<button class="actions-btn" style="color: #4caf50;" onclick="activateFoundation('${f.id}')" title="Activate">✅</button>` : ''}
-            ${f.status === 'draft' || f.status === 'pending_review' ? `<button class="actions-btn" style="color: #f44336;" onclick="openRejectModal('${f.id}')" title="Reject">❌</button>` : ''}
+            <button class="actions-btn" onclick="viewFoundation('${f.id}')" title="View Details">️</button>
+            <button class="actions-btn" onclick="viewMembers('${f.id}')" title="View Members"></button>
+            <button class="actions-btn" onclick="viewActivity('${f.id}')" title="View Activity"></button>
+            <button class="actions-btn" onclick="openPipelineModal('${f.id}')" title="Process Pipeline"></button>
+            ${f.status !== 'active' && f.status !== 'dissolved' ? `<button class="actions-btn" style="color: #4caf50;" onclick="activateFoundation('${f.id}')" title="Activate"></button>` : ''}
+            ${f.status === 'draft' || f.status === 'pending_review' ? `<button class="actions-btn" style="color: #f44336;" onclick="openRejectModal('${f.id}')" title="Reject"></button>` : ''}
             ${f.status === 'active' ? `<button class="actions-btn" style="color: #ff9800;" onclick="suspendFoundation('${f.id}')" title="Suspend">⏸️</button>` : ''}
           </td>
         </tr>
@@ -1038,16 +1037,16 @@
     
     function getPipelineIcon(stage) {
       const icons = {
-        created: '📝',
+        created: '',
         pending_activation: '⏳',
-        in_review: '🔍',
-        approved: '✅',
+        in_review: '',
+        approved: '',
         active: '🟢',
         suspended: '⏸️',
-        rejected: '❌',
-        dissolved: '💀'
+        rejected: '',
+        dissolved: ''
       };
-      return icons[stage] || '📝';
+      return icons[stage] || '';
     }
     
     // Filter foundations
@@ -1196,17 +1195,17 @@
                 <h4>Admin Actions</h4>
                 <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
                   ${data.status !== 'active' && data.status !== 'dissolved' ? 
-                    `<button class="action-btn success" onclick="activateFoundation('${data.id}'); closeDetailModal();">✅ Activate</button>` : ''
+                    `<button class="action-btn success" onclick="activateFoundation('${data.id}'); closeDetailModal();">Activate</button>` : ''
                   }
                   ${data.status === 'active' ? 
                     `<button class="action-btn warning" onclick="suspendFoundation('${data.id}'); closeDetailModal();">⏸️ Suspend</button>` : ''
                   }
                   ${data.status === 'draft' || data.status === 'pending_review' ? 
-                    `<button class="action-btn danger" onclick="openRejectModal('${data.id}'); closeDetailModal();">❌ Reject</button>` : ''
+                    `<button class="action-btn danger" onclick="openRejectModal('${data.id}'); closeDetailModal();">Reject</button>` : ''
                   }
-                  <button class="action-btn info" onclick="viewMembers('${data.id}'); closeDetailModal();">👥 View Members</button>
-                  <button class="action-btn purple" onclick="viewActivity('${data.id}'); closeDetailModal();">📊 View Activity</button>
-                  <button class="action-btn primary" onclick="openPipelineModal('${data.id}'); closeDetailModal();">🔄 Process Pipeline</button>
+                  <button class="action-btn info" onclick="viewMembers('${data.id}'); closeDetailModal();">View Members</button>
+                  <button class="action-btn purple" onclick="viewActivity('${data.id}'); closeDetailModal();">View Activity</button>
+                  <button class="action-btn primary" onclick="openPipelineModal('${data.id}'); closeDetailModal();">Process Pipeline</button>
                 </div>
               </div>
             </div>
@@ -1315,10 +1314,10 @@
           <div class="member-card">
             <div class="member-photo" onclick="openPhotoModal('${id}', '${member.id}', '${escapeHtml(member.photo_url || '')}')">
               ${member.photo_url ? 
-                `<img src="${escapeHtml(member.photo_url)}" alt="${escapeHtml(member.display_name)}" onerror="this.parentElement.innerHTML='👤'"/>` : 
-                '👤'
+                `<img src="${escapeHtml(member.photo_url)}" alt="${escapeHtml(member.display_name)}" onerror="this.parentElement.innerHTML=''"/>` : 
+                ''
               }
-              <div class="member-photo-overlay">📷 Add Photo</div>
+              <div class="member-photo-overlay">Add Photo</div>
             </div>
             <div class="member-info">
               <div class="member-name">${escapeHtml(member.display_name || 'Unknown')}</div>
@@ -1326,8 +1325,8 @@
                 <span class="badge ${member.role === 'founder' ? 'active' : member.role === 'admin' ? 'entrepreneurs' : 'friends'}">${member.role}</span>
                 <span class="badge ${member.status}">${member.status}</span>
               </div>
-              ${member.email ? `<div style="font-size: 0.8rem; color: #666; margin-top: 4px;">📧 ${escapeHtml(member.email)}</div>` : ''}
-              ${member.phone ? `<div style="font-size: 0.8rem; color: #666;">📞 ${escapeHtml(member.phone)}</div>` : ''}
+              ${member.email ? `<div style="font-size: 0.8rem; color: #666; margin-top: 4px;"> ${escapeHtml(member.email)}</div>` : ''}
+              ${member.phone ? `<div style="font-size: 0.8rem; color: #666;"> ${escapeHtml(member.phone)}</div>` : ''}
             </div>
             <div class="member-stats">
               <div class="member-contribution">$${formatNumber(member.total_contributed || 0)}</div>
@@ -1398,24 +1397,24 @@
     
     function getActivityIcon(type) {
       const icons = {
-        foundation_created: '🏛️',
-        foundation_activated: '✅',
-        foundation_rejected: '❌',
-        foundation_dissolved: '⛔',
-        pipeline_processed: '🔄',
-        member_joined: '👤',
-        member_left: '👋',
-        member_approved: '✅',
-        member_photo_updated: '📷',
-        member_details_updated: '✏️',
-        contribution_made: '💰',
-        claim_submitted: '📝',
-        claim_approved: '✅',
-        vote_created: '🗳️',
-        vote_cast: '✔️',
-        invitation_created: '📨'
+        foundation_created: '️',
+        foundation_activated: '',
+        foundation_rejected: '',
+        foundation_dissolved: '',
+        pipeline_processed: '',
+        member_joined: '',
+        member_left: '',
+        member_approved: '',
+        member_photo_updated: '',
+        member_details_updated: '️',
+        contribution_made: '',
+        claim_submitted: '',
+        claim_approved: '',
+        vote_created: '️',
+        vote_cast: '️',
+        invitation_created: ''
       };
-      return icons[type] || '📝';
+      return icons[type] || '';
     }
     
     // ========== Photo Modal ==========
@@ -1425,9 +1424,9 @@
       document.getElementById('photo-url-input').value = currentPhotoUrl || '';
       
       if (currentPhotoUrl) {
-        document.getElementById('photo-preview').innerHTML = `<img src="${escapeHtml(currentPhotoUrl)}" alt="Current Photo" onerror="this.parentElement.innerHTML='👤'"/>`;
+        document.getElementById('photo-preview').innerHTML = `<img src="${escapeHtml(currentPhotoUrl)}" alt="Current Photo" onerror="this.parentElement.innerHTML=''"/>`;
       } else {
-        document.getElementById('photo-preview').innerHTML = '👤';
+        document.getElementById('photo-preview').innerHTML = '';
       }
       
       document.getElementById('photo-modal').classList.add('active');
@@ -1608,7 +1607,7 @@
               
               return `
                 <div class="pipeline-stage-item">
-                  <div class="pipeline-stage-dot ${stateClass}">${index < currentIndex ? '✓' : index + 1}</div>
+                  <div class="pipeline-stage-dot ${stateClass}">${index < currentIndex ? '' : index + 1}</div>
                   <div class="pipeline-stage-label">${stage.replace('_', ' ')}</div>
                 </div>
               `;
@@ -1764,37 +1763,37 @@
     // Helper functions
     function getTypeIcon(type) {
       const icons = {
-        family: '👨‍👩‍👧‍👦',
-        friends: '👥',
-        work: '💼',
-        neighborhood: '🏘️',
-        entrepreneurs: '🚀',
-        business_venture: '🏢',
-        professional: '🎯',
-        customer_club: '🎫',
-        custom: '⚙️'
+        family: '‍‍‍',
+        friends: '',
+        work: '',
+        neighborhood: '️',
+        entrepreneurs: '',
+        business_venture: '',
+        professional: '',
+        customer_club: '',
+        custom: '️'
       };
-      return icons[type] || '👥';
+      return icons[type] || '';
     }
     
     function getActivityLabel(type) {
       const labels = {
-        foundation_created: '🏛️ Foundation Created',
-        foundation_activated: '✅ Foundation Activated',
-        foundation_rejected: '❌ Foundation Rejected',
-        foundation_dissolved: '⛔ Foundation Dissolved',
-        pipeline_processed: '🔄 Pipeline Updated',
-        member_joined: '👤 Member Joined',
-        member_left: '👋 Member Left',
-        member_approved: '✅ Member Approved',
-        member_photo_updated: '📷 Photo Updated',
-        member_details_updated: '✏️ Details Updated',
-        contribution_made: '💰 Contribution Made',
-        claim_submitted: '📝 Claim Submitted',
-        claim_approved: '✅ Claim Approved',
-        vote_created: '🗳️ Vote Created',
-        vote_cast: '✔️ Vote Cast',
-        invitation_created: '📨 Invitation Sent'
+        foundation_created: '️ Foundation Created',
+        foundation_activated: ' Foundation Activated',
+        foundation_rejected: ' Foundation Rejected',
+        foundation_dissolved: ' Foundation Dissolved',
+        pipeline_processed: ' Pipeline Updated',
+        member_joined: ' Member Joined',
+        member_left: ' Member Left',
+        member_approved: ' Member Approved',
+        member_photo_updated: ' Photo Updated',
+        member_details_updated: '️ Details Updated',
+        contribution_made: ' Contribution Made',
+        claim_submitted: ' Claim Submitted',
+        claim_approved: ' Claim Approved',
+        vote_created: '️ Vote Created',
+        vote_cast: '️ Vote Cast',
+        invitation_created: ' Invitation Sent'
       };
       return labels[type] || type;
     }

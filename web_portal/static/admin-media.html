@@ -1049,7 +1049,7 @@
         </div>
         <div class="header-right">
             <a href="/admin.html" class="btn btn-secondary">← Admin</a>
-            <button onclick="saveAllSettings()" class="btn btn-primary">💾 Save All</button>
+            <button onclick="saveAllSettings()" class="btn btn-primary">Save All</button>
         </div>
     </header>
     
@@ -1057,12 +1057,12 @@
     <div class="main-container">
         <!-- Main Navigation Tabs -->
         <div class="main-tabs" role="tablist" aria-label="Media Dashboard Sections">
-            <button class="main-tab active" data-tab="media" onclick="switchMainTab('media')" role="tab">📁 Media</button>
-            <button class="main-tab" data-tab="growth-agent" onclick="switchMainTab('growth-agent')" role="tab">🚀 Growth Agent</button>
-            <button class="main-tab" data-tab="video-agents" onclick="switchMainTab('video-agents')" role="tab">🎬 Video Agents</button>
-            <button class="main-tab" data-tab="design" onclick="switchMainTab('design')" role="tab">🎨 Design</button>
-            <button class="main-tab" data-tab="layout" onclick="switchMainTab('layout')" role="tab">📐 Layout</button>
-            <button class="main-tab" data-tab="branding" onclick="switchMainTab('branding')" role="tab">✨ Branding</button>
+            <button class="main-tab active" data-tab="media" onclick="switchMainTab('media')" role="tab">Media</button>
+            <button class="main-tab" data-tab="growth-agent" onclick="switchMainTab('growth-agent')" role="tab">Growth Agent</button>
+            <button class="main-tab" data-tab="video-agents" onclick="switchMainTab('video-agents')" role="tab">Video Agents</button>
+            <button class="main-tab" data-tab="design" onclick="switchMainTab('design')" role="tab">Design</button>
+            <button class="main-tab" data-tab="layout" onclick="switchMainTab('layout')" role="tab">Layout</button>
+            <button class="main-tab" data-tab="branding" onclick="switchMainTab('branding')" role="tab">Branding</button>
         </div>
         
         <!-- Media Tab Content -->
@@ -1071,39 +1071,38 @@
             <div class="stats-bar">
                 <div class="stat-card videos">
                     <div class="stat-value" id="stat-videos">0</div>
-                    <div class="stat-label">🎬 Videos</div>
+                    <div class="stat-label">Videos</div>
                 </div>
                 <div class="stat-card images">
                     <div class="stat-value" id="stat-images">0</div>
-                    <div class="stat-label">🖼️ Images</div>
+                    <div class="stat-label">️ Images</div>
                 </div>
                 <div class="stat-card documents">
                     <div class="stat-value" id="stat-documents">0</div>
-                    <div class="stat-label">📄 Documents</div>
+                    <div class="stat-label">Documents</div>
                 </div>
                 <div class="stat-card storage">
                     <div class="stat-value" id="stat-storage">0 MB</div>
-                    <div class="stat-label">💾 Storage</div>
+                    <div class="stat-label">Storage</div>
                 </div>
             </div>
         
         <!-- Upload Section -->
         <section class="upload-section">
             <div class="upload-header">
-                <h2>📤 Upload Media</h2>
+                <h2>Upload Media</h2>
                 <div class="upload-tabs">
-                    <button class="upload-tab active" onclick="switchUploadTab('file', event)">📁 Upload File</button>
-                    <button class="upload-tab" onclick="switchUploadTab('url', event)">🔗 From URL</button>
+                    <button class="upload-tab active" onclick="switchUploadTab('file', event)">Upload File</button>
+                    <button class="upload-tab" onclick="switchUploadTab('url', event)">From URL</button>
                 </div>
             </div>
             
             <!-- File Upload -->
             <div id="file-upload-zone" class="drop-zone" onclick="document.getElementById('file-input').click()">
-                <div class="drop-zone-icon">📁</div>
+                <div class="drop-zone-icon"></div>
                 <div class="drop-zone-text">Drag & drop files here or click to browse</div>
                 <div class="drop-zone-hint">Upload the apply disclosure video here (MP4/WebM, up to 2 GB, including 14-minute cuts). Then assign it under Apply form disclosure video below. If the browser fails, use From URL.</div>
-                <div class="drop-zone-formats">
-                    Supported: MP4, MOV, AVI, WebM, MKV • JPG, PNG, GIF, WebP • PDF, DOC, DOCX
+                <div class="drop-zone-formats">Supported: MP4, MOV, AVI, WebM, MKV • JPG, PNG, GIF, WebP • PDF, DOC, DOCX
                 </div>
             </div>
             <input type="file" id="file-input" style="display: none" multiple 
@@ -1114,14 +1113,14 @@
                 <div class="url-input-group">
                     <input type="text" id="url-input" class="url-input" 
                            placeholder="Enter URL (YouTube, Vimeo, direct file link, or image URL)">
-                    <button onclick="addFromUrl()" class="btn btn-primary">➕ Add</button>
+                    <button onclick="addFromUrl()" class="btn btn-primary">Add</button>
                 </div>
             </div>
             
             <!-- Upload Progress -->
             <div id="upload-progress" class="upload-progress">
                 <div class="progress-file">
-                    <div class="progress-file-icon" id="progress-icon">📁</div>
+                    <div class="progress-file-icon" id="progress-icon"></div>
                     <div class="progress-file-info">
                         <div class="progress-file-name" id="progress-filename">filename.mp4</div>
                         <div class="progress-file-size" id="progress-filesize">52 MB</div>
@@ -1137,12 +1136,12 @@
         <!-- Media Library -->
         <section class="library-section">
             <div class="library-header">
-                <h2>📚 Media Library</h2>
+                <h2>Media Library</h2>
                 <div class="library-filters">
                     <button class="filter-btn active" onclick="filterMedia('all', event)">All</button>
-                    <button class="filter-btn" onclick="filterMedia('video', event)">🎬 Videos</button>
-                    <button class="filter-btn" onclick="filterMedia('image', event)">🖼️ Images</button>
-                    <button class="filter-btn" onclick="filterMedia('document', event)">📄 Documents</button>
+                    <button class="filter-btn" onclick="filterMedia('video', event)">Videos</button>
+                    <button class="filter-btn" onclick="filterMedia('image', event)">️ Images</button>
+                    <button class="filter-btn" onclick="filterMedia('document', event)">Documents</button>
                 </div>
             </div>
             
@@ -1151,7 +1150,7 @@
             </div>
             
             <div class="empty-state" id="empty-state" style="display: none;">
-                <div class="empty-state-icon">📭</div>
+                <div class="empty-state-icon"></div>
                 <h3>No media files yet</h3>
                 <p>Upload files or add from URL to get started</p>
             </div>
@@ -1160,9 +1159,9 @@
         <!-- Voice-Over Script Library -->
         <section class="voiceover-section">
             <div class="vo-header">
-                <h2>🎙️ Voice-Over Script Library</h2>
+                <h2>️ Voice-Over Script Library</h2>
                 <div class="vo-actions">
-                    <a class="btn btn-secondary" href="/voiceover/Phins_VoiceOver_Script_EN_HE.pdf" target="_blank" rel="noopener">👁️ Open PDF</a>
+                    <a class="btn btn-secondary" href="/voiceover/Phins_VoiceOver_Script_EN_HE.pdf" target="_blank" rel="noopener">️ Open PDF</a>
                     <a class="btn btn-secondary" href="/voiceover/Phins_VoiceOver_Script_EN_HE.pdf" download>⬇️ PDF</a>
                     <a class="btn btn-primary" href="/voiceover/Phins_VoiceOver_Script_EN_HE.docx" download>⬇️ Word (.docx)</a>
                 </div>
@@ -1172,10 +1171,10 @@
                 <div class="vo-title">"The Woman I'll Become" — Phins bilingual VO (English / עברית)</div>
                 <div class="vo-sub">High-end AI-video voice-over from a 35-year-old woman's perspective on aging and the risk of one day needing total health care — positioning Phins as her health-financial operating system. Tuned for ElevenLabs. Includes a ~1:15 master plus 30-second and 9:16 vertical cutdowns.</div>
                 <div class="vo-chips">
-                    <span class="vo-chip">🎬 9 exact shots</span>
-                    <span class="vo-chip">🗣️ EN + עברית</span>
-                    <span class="vo-chip">⚡ ElevenLabs-ready</span>
-                    <span class="vo-chip">📐 16:9 + 9:16</span>
+                    <span class="vo-chip"> 9 exact shots</span>
+                    <span class="vo-chip">️ EN + עברית</span>
+                    <span class="vo-chip">ElevenLabs-ready</span>
+                    <span class="vo-chip"> 16:9 + 9:16</span>
                     <span class="vo-chip">⏱️ 1:15 / 0:30</span>
                 </div>
 
@@ -1183,7 +1182,7 @@
                     <button class="vo-tab active" type="button" onclick="showVoPanel('en', this)">English script</button>
                     <button class="vo-tab" type="button" onclick="showVoPanel('he', this)">עברית</button>
                     <button class="vo-tab" type="button" onclick="showVoPanel('cut', this)">⏱️ 30-sec cut</button>
-                    <button class="vo-tab" type="button" onclick="showVoPanel('vert', this)">📱 9:16 vertical</button>
+                    <button class="vo-tab" type="button" onclick="showVoPanel('vert', this)"> 9:16 vertical</button>
                     <button class="vo-tab" type="button" onclick="showVoPanel('el', this)">ElevenLabs settings</button>
                 </div>
 
@@ -1205,7 +1204,7 @@ So when the years come — and they will — I won't be afraid of them. I'll be 
 Because the best time to protect the woman I'll become… is the woman I am today.
 
 Phins. Health that grows old with you.</pre>
-                    <button class="vo-copy" type="button" onclick="copyVo('vo-text-en', this)">📋 Copy</button>
+                    <button class="vo-copy" type="button" onclick="copyVo('vo-text-en', this)">Copy</button>
                 </div>
 
                 <div id="vo-panel-he" class="vo-panel" dir="rtl" style="display:none;">
@@ -1226,19 +1225,19 @@ Phins. Health that grows old with you.</pre>
 כי הזמן הטוב ביותר להגן על האישה שאהיה… הוא האישה שאני היום.
 
 Phins. בריאות שמתבגרת יחד איתך.</pre>
-                    <button class="vo-copy" type="button" onclick="copyVo('vo-text-he', this)">📋 העתק</button>
+                    <button class="vo-copy" type="button" onclick="copyVo('vo-text-he', this)"> העתק</button>
                 </div>
 
                 <div id="vo-panel-cut" class="vo-panel" style="display:none;">
                     <div class="vo-label">English — 30-second cut</div>
                     <div class="vo-subblock">
                         <pre id="vo-text-cut-en" class="vo-text">I'm thirty-five. We're all living longer now — and that's the gift. But living longer also raises the odds that one day I'll need full-time care. And the hardest part isn't the illness — it's the cost. That's why I chose Phins: one health wallet, coverage I can see, and money that comes back when it should. So when the years come, I won't fear them. I'll be ready. Phins. Health that grows old with you.</pre>
-                        <button class="vo-copy" type="button" onclick="copyVo('vo-text-cut-en', this)">📋 Copy</button>
+                        <button class="vo-copy" type="button" onclick="copyVo('vo-text-cut-en', this)">Copy</button>
                     </div>
                     <div class="vo-label">עברית — גרסת 30 שניות</div>
                     <div class="vo-subblock" dir="rtl">
                         <pre id="vo-text-cut-he" class="vo-text" dir="rtl">אני בת שלושים וחמש. כולנו חיים יותר שנים — וזו המתנה. אבל אריכות ימים גם מעלה את הסיכוי שיום אחד אצטרך טיפול מלא. והחלק הקשה הוא לא המחלה — זה המחיר. בגלל זה בחרתי ב-Phins: ארנק בריאות אחד, כיסוי שאני רואה, וכסף שחוזר בדיוק כשצריך. אז כשהשנים יגיעו, לא אפחד מהן. אהיה מוכנה. Phins. בריאות שמתבגרת יחד איתך.</pre>
-                        <button class="vo-copy" type="button" onclick="copyVo('vo-text-cut-he', this)">📋 העתק</button>
+                        <button class="vo-copy" type="button" onclick="copyVo('vo-text-cut-he', this)"> העתק</button>
                     </div>
                 </div>
 
@@ -1265,7 +1264,7 @@ SHOT LIST  (VO = the 30-second cut)
     EN: "So when the years come, I won't fear them. I'll be ready."
 6 · 0:30–0:33 · Vertical logo reveal from a single flowing line; tagline beneath.
     EN: "Phins. Health that grows old with you."</pre>
-                        <button class="vo-copy" type="button" onclick="copyVo('vo-text-vert', this)">📋 Copy</button>
+                        <button class="vo-copy" type="button" onclick="copyVo('vo-text-vert', this)">Copy</button>
                     </div>
                 </div>
 
@@ -1289,8 +1288,8 @@ Notes:
                 </div>
 
                 <div class="vo-foot">
-                    <a href="#video-agents" onclick="switchMainTab('video-agents');return false;" class="btn btn-secondary">🎬 Send to Video Agents</a>
-                    <a href="https://elevenlabs.io/app/speech-synthesis" target="_blank" rel="noopener" class="btn btn-secondary">⚡ Open ElevenLabs</a>
+                    <a href="#video-agents" onclick="switchMainTab('video-agents');return false;" class="btn btn-secondary">Send to Video Agents</a>
+                    <a href="https://elevenlabs.io/app/speech-synthesis" target="_blank" rel="noopener" class="btn btn-secondary">Open ElevenLabs</a>
                 </div>
             </div>
         </section>
@@ -1316,8 +1315,8 @@ Notes:
                     btn.textContent = label;
                     setTimeout(function () { btn.textContent = original; }, 1500);
                 };
-                var done = function () { flash('✓ Copied'); };
-                var fail = function () { flash('✗ Copy failed'); };
+                var done = function () { flash(' Copied'); };
+                var fail = function () { flash(' Copy failed'); };
                 if (navigator.clipboard && navigator.clipboard.writeText) {
                     navigator.clipboard.writeText(text).then(done).catch(fail);
                 } else {
@@ -1337,47 +1336,47 @@ Notes:
 
         <!-- Landing Page Assignments - Compact -->
         <section class="assignments-section">
-            <h2>🎯 Media Assignments</h2>
+            <h2>Media Assignments</h2>
             <div class="assignment-grid">
                 <div class="assignment-card">
-                    <div class="assignment-label">🎬 Hero Video</div>
+                    <div class="assignment-label">Hero Video</div>
                     <select id="assign-hero-video" class="assignment-select" onchange="updateAssignment('hero_video')">
                         <option value="">-- No Video --</option>
                     </select>
                     <div class="assignment-status" id="status-hero-video">
-                        <span>⚪</span> Not set
+                        <span></span> Not set
                     </div>
                 </div>
                 <div class="assignment-card">
-                    <div class="assignment-label">🖼️ Background</div>
+                    <div class="assignment-label">️ Background</div>
                     <select id="assign-hero-background" class="assignment-select" onchange="updateAssignment('hero_background')">
                         <option value="">-- None --</option>
                     </select>
                     <div class="assignment-status" id="status-hero-background">
-                        <span>⚪</span> Not set
+                        <span></span> Not set
                     </div>
                 </div>
                 <div class="assignment-card">
-                    <div class="assignment-label">📸 Thumbnail</div>
+                    <div class="assignment-label">Thumbnail</div>
                     <select id="assign-video-poster" class="assignment-select" onchange="updateAssignment('video_poster')">
                         <option value="">-- Auto --</option>
                     </select>
                     <div class="assignment-status" id="status-video-poster">
-                        <span>⚪</span> Not set
+                        <span></span> Not set
                     </div>
                 </div>
                 <div class="assignment-card">
-                    <div class="assignment-label">🏷️ Banner</div>
+                    <div class="assignment-label">️ Banner</div>
                     <select id="assign-promo-banner" class="assignment-select" onchange="updateAssignment('promo_banner')">
                         <option value="">-- None --</option>
                     </select>
                     <div class="assignment-status" id="status-promo-banner">
-                        <span>⚪</span> Not set
+                        <span></span> Not set
                     </div>
                 </div>
             </div>
             <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
-                <a href="/" target="_blank" class="btn btn-secondary">👁️ Preview</a>
+                <a href="/" target="_blank" class="btn btn-secondary">️ Preview</a>
             </div>
         </section>
 
@@ -1393,7 +1392,7 @@ Notes:
                         <option value="">-- Light in-page version --</option>
                     </select>
                     <div class="assignment-status" id="status-apply-disclosure-video">
-                        <span>⚪</span> Light version
+                        <span></span> Light version
                     </div>
                 </div>
                 <div class="assignment-card">
@@ -1402,7 +1401,7 @@ Notes:
                         <option value="">-- None --</option>
                     </select>
                     <div class="assignment-status" id="status-apply-disclosure-control">
-                        <span>⚪</span> Not set
+                        <span></span> Not set
                     </div>
                 </div>
                 <div class="assignment-card">
@@ -1413,7 +1412,7 @@ Notes:
                         <option value="final">final</option>
                     </select>
                     <div class="assignment-status" id="status-apply-disclosure-version">
-                        <span>✅</span> light
+                        <span></span> light
                     </div>
                 </div>
             </div>
@@ -1426,19 +1425,18 @@ Notes:
         <!-- Growth Agent Bridge -->
         <section class="growth-bridge-section">
             <div class="growth-bridge-header">
-                <h2>🚀 Growth Agent Bridge</h2>
+                <h2>Growth Agent Bridge</h2>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                    <button class="btn btn-secondary" onclick="loadGrowthBridgeCampaign()">🔄 Refresh</button>
-                    <a href="#video-agents" onclick="switchMainTab('video-agents');return false;" class="btn btn-secondary">🎬 Video Agents Tab</a>
-                    <a href="#growth-agent" onclick="switchMainTab('growth-agent');return false;" class="btn btn-primary">⚙️ Growth Agent Tab</a>
+                    <button class="btn btn-secondary" onclick="loadGrowthBridgeCampaign()">Refresh</button>
+                    <a href="#video-agents" onclick="switchMainTab('video-agents');return false;" class="btn btn-secondary">Video Agents Tab</a>
+                    <a href="#growth-agent" onclick="switchMainTab('growth-agent');return false;" class="btn btn-primary">️ Growth Agent Tab</a>
                 </div>
             </div>
 
             <div class="growth-bridge-card">
                 <div class="growth-bridge-main">
                     <div class="growth-bridge-title" id="growth-bridge-title">Latest published campaign</div>
-                    <div class="growth-bridge-summary" id="growth-bridge-summary">
-                        Pull the latest published campaign from the admin dashboard to sync a compact summary into media.
+                    <div class="growth-bridge-summary" id="growth-bridge-summary">Pull the latest published campaign from the admin dashboard to sync a compact summary into media.
                     </div>
                     <div class="growth-bridge-kpis">
                         <span class="growth-chip"><strong id="growth-assets-count">0</strong> synced briefs</span>
@@ -1468,9 +1466,9 @@ Notes:
         <div id="tab-growth-agent" class="tab-content embed-tab" style="display: none;">
             <div class="embed-frame-wrap">
                 <div class="embed-frame-bar">
-                    <div class="embed-frame-title">🚀 AI + BI Marketing &amp; Sales Agent</div>
+                    <div class="embed-frame-title">AI + BI Marketing &amp; Sales Agent</div>
                     <div class="embed-frame-actions">
-                        <button class="btn btn-secondary" type="button" onclick="reloadEmbeddedTab('growth-agent')">🔄 Reload</button>
+                        <button class="btn btn-secondary" type="button" onclick="reloadEmbeddedTab('growth-agent')">Reload</button>
                         <a class="btn btn-secondary" href="/admin.html#growth-agent-section" target="_blank" rel="noopener">↗ Open Full Page</a>
                     </div>
                 </div>
@@ -1486,9 +1484,9 @@ Notes:
         <div id="tab-video-agents" class="tab-content embed-tab" style="display: none;">
             <div class="embed-frame-wrap">
                 <div class="embed-frame-bar">
-                    <div class="embed-frame-title">🎬 Video Agents Pipeline</div>
+                    <div class="embed-frame-title">Video Agents Pipeline</div>
                     <div class="embed-frame-actions">
-                        <button class="btn btn-secondary" type="button" onclick="reloadEmbeddedTab('video-agents')">🔄 Reload</button>
+                        <button class="btn btn-secondary" type="button" onclick="reloadEmbeddedTab('video-agents')">Reload</button>
                         <a class="btn btn-secondary" href="/video-agents.html" target="_blank" rel="noopener">↗ Open Full Page</a>
                     </div>
                 </div>
@@ -1503,11 +1501,11 @@ Notes:
         <!-- Design Tab Content -->
         <div id="tab-design" class="tab-content" style="display: none;">
             <section class="design-section">
-                <h2>🎨 Appearance Settings</h2>
+                <h2>Appearance Settings</h2>
                 <div class="design-grid">
                     <!-- Theme Colors -->
                     <div class="design-card">
-                        <h4>🌈 Theme Colors</h4>
+                        <h4>Theme Colors</h4>
                         <div class="design-option">
                             <label>Primary Color</label>
                             <div class="color-swatches">
@@ -1536,7 +1534,7 @@ Notes:
                     
                     <!-- Display Options -->
                     <div class="design-card">
-                        <h4>📺 Display Options</h4>
+                        <h4>Display Options</h4>
                         <div class="toggle-row">
                             <span class="toggle-label">Dark Mode</span>
                             <label class="toggle-switch">
@@ -1569,7 +1567,7 @@ Notes:
                     
                     <!-- Typography -->
                     <div class="design-card">
-                        <h4>🔤 Typography</h4>
+                        <h4>Typography</h4>
                         <div class="design-option">
                             <label>Font Family</label>
                             <select id="opt-font" onchange="updateDesignOption('fontFamily', this.value)">
@@ -1603,11 +1601,11 @@ Notes:
         <!-- Layout Tab Content -->
         <div id="tab-layout" class="tab-content" style="display: none;">
             <section class="design-section">
-                <h2>📐 Layout Settings</h2>
+                <h2>Layout Settings</h2>
                 <div class="design-grid">
                     <!-- Navigation Layout -->
                     <div class="design-card">
-                        <h4>🧭 Navigation</h4>
+                        <h4>Navigation</h4>
                         <div class="design-option">
                             <label>Nav Position</label>
                             <select id="opt-nav-position" onchange="updateLayoutOption('navPosition', this.value)">
@@ -1635,7 +1633,7 @@ Notes:
                     
                     <!-- Tab Display -->
                     <div class="design-card">
-                        <h4>📑 Tab Display</h4>
+                        <h4>Tab Display</h4>
                         <div class="design-option">
                             <label>Tab Style</label>
                             <select id="opt-tab-style" onchange="updateLayoutOption('tabStyle', this.value)">
@@ -1664,7 +1662,7 @@ Notes:
                     
                     <!-- Content Layout -->
                     <div class="design-card">
-                        <h4>📄 Content</h4>
+                        <h4>Content</h4>
                         <div class="design-option">
                             <label>Max Width</label>
                             <select id="opt-content-width" onchange="updateLayoutOption('contentWidth', this.value)">
@@ -1696,11 +1694,11 @@ Notes:
         <!-- Branding Tab Content -->
         <div id="tab-branding" class="tab-content" style="display: none;">
             <section class="design-section">
-                <h2>✨ Brand Settings</h2>
+                <h2>Brand Settings</h2>
                 <div class="design-grid">
                     <!-- Logo Settings -->
                     <div class="design-card">
-                        <h4>🎨 Logo & Identity</h4>
+                        <h4>Logo & Identity</h4>
                         <div class="design-option">
                             <label>Company Name</label>
                             <input type="text" id="opt-company-name" value="PHINS" placeholder="Company Name" onchange="updateBrandOption('companyName', this.value)">
@@ -1712,13 +1710,13 @@ Notes:
                         <div class="design-option">
                             <label>Logo Icon</label>
                             <select id="opt-logo-icon" onchange="updateBrandOption('logoIcon', this.value)">
-                                <option value="🛡️" selected>🛡️ Shield</option>
-                                <option value="🏦">🏦 Bank</option>
-                                <option value="💼">💼 Briefcase</option>
-                                <option value="🌟">🌟 Star</option>
-                                <option value="🔒">🔒 Lock</option>
-                                <option value="❤️">❤️ Heart</option>
-                                <option value="🏥">🏥 Hospital</option>
+                                <option value="️" selected>️ Shield</option>
+                                <option value=""> Bank</option>
+                                <option value=""> Briefcase</option>
+                                <option value=""> Star</option>
+                                <option value=""> Lock</option>
+                                <option value="️">️ Heart</option>
+                                <option value=""> Hospital</option>
                                 <option value="⭐">⭐ Premium</option>
                             </select>
                         </div>
@@ -1726,7 +1724,7 @@ Notes:
                     
                     <!-- Footer Settings -->
                     <div class="design-card">
-                        <h4>📋 Footer Content</h4>
+                        <h4>Footer Content</h4>
                         <div class="design-option">
                             <label>Copyright Text</label>
                             <input type="text" id="opt-copyright" value="© 2026 PHINS Insurance" placeholder="Copyright" onchange="updateBrandOption('copyright', this.value)">
@@ -1749,7 +1747,7 @@ Notes:
                     
                     <!-- Welcome Message -->
                     <div class="design-card">
-                        <h4>👋 Welcome Settings</h4>
+                        <h4>Welcome Settings</h4>
                         <div class="design-option">
                             <label>Dashboard Greeting</label>
                             <select id="opt-greeting" onchange="updateBrandOption('greeting', this.value)">
@@ -1840,7 +1838,7 @@ Notes:
         let brandSettings = {
             companyName: 'PHINS',
             tagline: 'Safe Assurance',
-            logoIcon: '🛡️',
+            logoIcon: '️',
             copyright: '© 2026 PHINS Insurance',
             showSocial: true,
             showContact: true,
@@ -2339,7 +2337,7 @@ Notes:
                 });
                 
                 if (response.ok) {
-                    showToast('✅ All settings saved!', 'success');
+                    showToast(' All settings saved!', 'success');
                     updateAssignmentUI();
                 } else {
                     showToast('Failed to save settings', 'error');
@@ -2803,8 +2801,8 @@ Notes:
                     </div>
                     <div class="media-actions">
                         <button class="media-action-btn use" onclick="useMedia('${safeId}')">Use</button>
-                        <button class="media-action-btn preview" onclick="previewMedia('${safeId}')">👁️</button>
-                        <button class="media-action-btn delete" onclick="deleteMedia('${safeId}')">🗑️</button>
+                        <button class="media-action-btn preview" onclick="previewMedia('${safeId}')">️</button>
+                        <button class="media-action-btn delete" onclick="deleteMedia('${safeId}')">️</button>
                     </div>
                     ${media.type === 'video' ? `
                         <div class="media-actions-secondary">
@@ -2812,8 +2810,7 @@ Notes:
                                 class="media-action-btn subtitle"
                                 onclick="requestSubtitleJob('${safeId}')"
                                 ${media.processing?.subtitle_status === 'queued' ? 'disabled' : ''}
-                            >
-                                💬 SRT
+                            >SRT
                             </button>
                             <button
                                 class="media-action-btn download"
@@ -2837,13 +2834,13 @@ Notes:
                 name: 'Phins Voice-Over Script (EN/HE) — Word',
                 url: '/voiceover/Phins_VoiceOver_Script_EN_HE.docx',
                 size: 42659,
-                icon: '📝'
+                icon: ''
             },
             {
                 name: 'Phins Voice-Over Script (EN/HE) — PDF',
                 url: '/voiceover/Phins_VoiceOver_Script_EN_HE.pdf',
                 size: 65706,
-                icon: '📄'
+                icon: ''
             }
         ];
 
@@ -2856,7 +2853,7 @@ Notes:
                     <div class="media-thumbnail">
                         <div class="media-thumbnail-icon">${doc.icon}</div>
                         <span class="media-type-badge document">document</span>
-                        <span class="media-type-badge pinned">📌 script</span>
+                        <span class="media-type-badge pinned">script</span>
                     </div>
                     <div class="media-info">
                         <div class="media-name" title="${name}">${name}</div>
@@ -2867,7 +2864,7 @@ Notes:
                     </div>
                     <div class="media-actions">
                         <a class="media-action-btn use" href="${url}" download>⬇️ Download</a>
-                        <a class="media-action-btn preview" href="${url}" target="_blank" rel="noopener">👁️</a>
+                        <a class="media-action-btn preview" href="${url}" target="_blank" rel="noopener">️</a>
                     </div>
                 </div>
                 `;
@@ -2885,8 +2882,8 @@ Notes:
             if (media.type === 'image' && media.data) {
                 return `<img src="${escHtml(media.data)}" alt="${alt}" loading="lazy">`;
             }
-            const icons = { video: '🎬', image: '🖼️', document: '📄' };
-            return `<div class="media-thumbnail-icon">${icons[media.type] || '📁'}</div>`;
+            const icons = { video: '', image: '️', document: '' };
+            return `<div class="media-thumbnail-icon">${icons[media.type] || ''}</div>`;
         }
         
         function updateStats() {
@@ -2973,19 +2970,19 @@ Notes:
                 const value = assignments[key];
                 if (value) {
                     const media = mediaAssets.find(m => m.id === value);
-                    statusEl.innerHTML = `<span>✅</span> ${media ? media.name : 'Configured'}`;
+                    statusEl.innerHTML = `<span></span> ${media ? media.name : 'Configured'}`;
                     statusEl.className = 'assignment-status active';
                 } else if (key === 'apply_disclosure_video') {
-                    statusEl.innerHTML = '<span>⚪</span> Light in-page version';
+                    statusEl.innerHTML = '<span></span> Light in-page version';
                     statusEl.className = 'assignment-status inactive';
                 } else {
-                    statusEl.innerHTML = '<span>⚪</span> Not configured';
+                    statusEl.innerHTML = '<span></span> Not configured';
                     statusEl.className = 'assignment-status inactive';
                 }
             });
             const versionStatus = document.getElementById('status-apply-disclosure-version');
             if (versionStatus) {
-                versionStatus.innerHTML = `<span>✅</span> ${disclosureVersionLabel || 'light'}`;
+                versionStatus.innerHTML = `<span></span> ${disclosureVersionLabel || 'light'}`;
                 versionStatus.className = 'assignment-status active';
             }
         }
@@ -3037,7 +3034,7 @@ Notes:
             } else if (media.type === 'image') {
                 container.innerHTML = `<img src="${escHtml(media.url || media.data || '')}" alt="${escHtml(media.name)}">`;
             } else {
-                container.innerHTML = `<div style="text-align:center;padding:40px;"><div style="font-size:4rem;">📄</div><p>${escHtml(media.name)}</p><a href="${escHtml(media.url || media.data || '')}" target="_blank" class="btn btn-primary" style="margin-top:20px;">Open Document</a></div>`;
+                container.innerHTML = `<div style="text-align:center;padding:40px;"><div style="font-size:4rem;"></div><p>${escHtml(media.name)}</p><a href="${escHtml(media.url || media.data || '')}" target="_blank" class="btn btn-primary" style="margin-top:20px;">Open Document</a></div>`;
             }
             
             const safeId = escHtml(media.id);
@@ -3187,9 +3184,9 @@ Notes:
         }
         
         function getFileTypeIcon(mimeType) {
-            if (mimeType.startsWith('video/')) return '🎬';
-            if (mimeType.startsWith('image/')) return '🖼️';
-            return '📄';
+            if (mimeType.startsWith('video/')) return '';
+            if (mimeType.startsWith('image/')) return '️';
+            return '';
         }
         
         function showToast(message, type = 'info') {

@@ -685,8 +685,8 @@
         const procMap = {
           queued: ['⏳ queued', '#f9a825'],
           pending: ['⏳ pending', '#f9a825'],
-          processing: ['⚙️ processing', '#1565c0'],
-          failed: ['⚠ failed', '#c62828'],
+          processing: ['️ processing', '#1565c0'],
+          failed: [' failed', '#c62828'],
         };
         const proc = procMap[(d.processing_status || '').toLowerCase()];
         const procBadge = proc

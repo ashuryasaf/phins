@@ -492,7 +492,7 @@
         <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
         <span class="phins-logo-text">PHINS</span>
       </a>
-      <button class="mobile-menu-btn" type="button" onclick="document.getElementById('mobile-nav').classList.toggle('open')">☰</button>
+      <button class="mobile-menu-btn" type="button" onclick="document.getElementById('mobile-nav').classList.toggle('open')"></button>
       <nav class="phins-nav" id="mobile-nav">
         <a href="/admin.html">Admin</a>
         <a href="/admin-agents.html" class="active">Agents</a>
@@ -736,16 +736,16 @@
       const badge=$('#integrity');
       if(!body.ledger_intact){
         banner.textContent='LEDGER TAMPERED'; banner.className='header-badge bad';
-        badge.textContent='✗ TAMPERED'; badge.className='badge bad';
+        badge.textContent=' TAMPERED'; badge.className='badge bad';
       } else if((counts.error||0)>0){
         banner.textContent='CONNECTION BREAKS'; banner.className='header-badge bad';
-        badge.textContent='✓ ledger intact'; badge.className='badge ok';
+        badge.textContent=' ledger intact'; badge.className='badge ok';
       } else if((counts.warning||0)>0){
         banner.textContent='REVIEW WARNINGS'; banner.className='header-badge warn';
-        badge.textContent='✓ ledger intact'; badge.className='badge ok';
+        badge.textContent=' ledger intact'; badge.className='badge ok';
       } else {
         banner.textContent='LEDGER INTACT'; banner.className='header-badge';
-        badge.textContent='✓ intact'; badge.className='badge ok';
+        badge.textContent=' intact'; badge.className='badge ok';
       }
       $('#integrity-summary').textContent =
         ` · ${(counts.error||0)} errors · ${(counts.warning||0)} warnings · ${(body.checked&&body.checked.connections)||0} connections`;

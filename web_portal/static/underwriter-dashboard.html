@@ -333,15 +333,15 @@
                 <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
                 <span class="phins-logo-text">PHINS</span>
             </a>
-            <button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
+            <button class="mobile-menu-btn" onclick="toggleMobileMenu()">Menu</button>
             <nav class="phins-nav" id="mobile-nav">
                 <a href="/admin.html">Admin</a>
-                <a href="/underwriter-dashboard.html" class="active">🔍 Underwriting</a>
-                <a href="/documents.html#archive">📁 Documents</a>
+                <a href="/underwriter-dashboard.html" class="active">Underwriting</a>
+                <a href="/documents.html#archive">Documents</a>
                 <span data-assessments-nav data-assessments-role="admin"></span>
-                <a href="/claims-adjuster-dashboard.html">📋 Claims</a>
-                <a href="/billing.html">💳 Billing</a>
-                <a href="/savings-portfolio.html">📈 Investments</a>
+                <a href="/claims-adjuster-dashboard.html">Claims</a>
+                <a href="/billing.html">Billing</a>
+                <a href="/savings-portfolio.html">Investments</a>
                 <a href="/login.html" class="btn-logout">Logout</a>
             </nav>
         </div>
@@ -353,7 +353,7 @@
     </script>
     <div class="dashboard-container">
         <div class="page-title">
-            <h1>🔍 Underwriter Dashboard</h1>
+            <h1>Underwriter Dashboard</h1>
             <p>Review and assess insurance applications</p>
         </div>
         
@@ -379,18 +379,15 @@
         <!-- Compact Quick Actions -->
         <div style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); padding: 12px; border-radius: 10px; margin-bottom: 12px; border: 1px solid rgba(21, 101, 192, 0.15);">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-                <span style="font-size: 0.85rem; font-weight: 600; color: #1565c0;">⚡ Quick Actions</span>
+                <span style="font-size: 0.85rem; font-weight: 600; color: #1565c0;">Quick Actions</span>
                 <span id="pipeline-status" style="font-size: 0.75rem; color: #666;"></span>
             </div>
             <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">
-                <button class="btn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 6px 12px; font-size: 0.75rem;" onclick="approveAllPending()">
-                    ✅ Approve All
+                <button class="btn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 6px 12px; font-size: 0.75rem;" onclick="approveAllPending()">Approve All
                 </button>
-                <button class="btn" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; padding: 6px 12px; font-size: 0.75rem;" onclick="validateAllApplications()">
-                    🔍 Validate
+                <button class="btn" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; padding: 6px 12px; font-size: 0.75rem;" onclick="validateAllApplications()">Validate
                 </button>
-                <button class="btn" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 6px 12px; font-size: 0.75rem;" onclick="generateRiskReport()">
-                    📊 Report
+                <button class="btn" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 6px 12px; font-size: 0.75rem;" onclick="generateRiskReport()">Report
                 </button>
             </div>
         </div>
@@ -399,9 +396,9 @@
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
                 <h2 style="margin: 0;">Pending Applications</h2>
                 <div style="display: flex; gap: 8px;">
-                    <button class="btn" style="background: #6b7280; color: white; padding: 8px 16px;" onclick="exportApplications('csv')" title="Export as CSV">📊 Export CSV</button>
-                    <button class="btn" style="background: #6b7280; color: white; padding: 8px 16px;" onclick="exportApplications('pdf')" title="Export as PDF">📄 Export PDF</button>
-                    <button class="btn" style="background: #6b7280; color: white; padding: 8px 16px;" onclick="refreshApplications()" title="Refresh">🔄 Refresh</button>
+                    <button class="btn" style="background: #6b7280; color: white; padding: 8px 16px;" onclick="exportApplications('csv')" title="Export as CSV">Export CSV</button>
+                    <button class="btn" style="background: #6b7280; color: white; padding: 8px 16px;" onclick="exportApplications('pdf')" title="Export as PDF">Export PDF</button>
+                    <button class="btn" style="background: #6b7280; color: white; padding: 8px 16px;" onclick="refreshApplications()" title="Refresh">Refresh</button>
                 </div>
             </div>
             <div id="applications-list">
@@ -528,7 +525,7 @@
             const pending = applications.filter(a => (a.status || '').toLowerCase() === 'pending');
             
             if (pending.length === 0) {
-                container.innerHTML = '<p style="text-align: center; color: #666; padding: 40px;">✅ No pending applications at this time. All applications have been processed.</p>';
+                container.innerHTML = '<p style="text-align: center; color: #666; padding: 40px;"> No pending applications at this time. All applications have been processed.</p>';
                 return;
             }
             
@@ -550,11 +547,11 @@
                 <div class="application-item" style="border-left: 4px solid ${riskScore === 'low' ? '#28a745' : (riskScore === 'high' || riskScore === 'very_high' ? '#dc3545' : '#ffc107')};">
                     <div class="app-header">
                         <div>
-                            <strong style="font-size: 1.1rem;">📋 ${app.id}</strong>
+                            <strong style="font-size: 1.1rem;"> ${app.id}</strong>
                             <div style="margin-top: 4px;">
-                                <span style="color: #333; font-weight: 600;">👤 ${escapeHtml(app.customer_name || app.customer_id || 'Unknown Customer')}</span>
-                                ${app.customer_email ? `<span style="color: #666; margin-left: 10px;">✉️ <a href="mailto:${escapeHtml(app.customer_email)}">${escapeHtml(app.customer_email)}</a></span>` : ''}
-                                ${app.customer_phone ? `<span style="color: #666; margin-left: 10px;">📞 <a href="tel:${escapeHtml(app.customer_phone)}">${escapeHtml(app.customer_phone)}</a></span>` : ''}
+                                <span style="color: #333; font-weight: 600;"> ${escapeHtml(app.customer_name || app.customer_id || 'Unknown Customer')}</span>
+                                ${app.customer_email ? `<span style="color: #666; margin-left: 10px;">️ <a href="mailto:${escapeHtml(app.customer_email)}">${escapeHtml(app.customer_email)}</a></span>` : ''}
+                                ${app.customer_phone ? `<span style="color: #666; margin-left: 10px;"> <a href="tel:${escapeHtml(app.customer_phone)}">${escapeHtml(app.customer_phone)}</a></span>` : ''}
                             </div>
                             ${referralBanner}
                         </div>
@@ -566,7 +563,7 @@
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 15px 0; padding: 12px; background: #f8f9fa; border-radius: 8px;">
                         <div>
                             <span style="color: #666; font-size: 0.85rem;">Policy Type</span><br>
-                            <strong style="color: #333;">🛡️ PHINS ${policyType}</strong>
+                            <strong style="color: #333;">️ PHINS ${policyType}</strong>
                         </div>
                         <div>
                             <span style="color: #666; font-size: 0.85rem;">Coverage Amount</span><br>
@@ -587,9 +584,9 @@
                     </div>
                     
                     <div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 0.9rem; color: #555; margin-bottom: 12px;">
-                        ${app.age ? `<span>📅 Age: ${app.age}</span>` : ''}
-                        <span>📆 Submitted: ${new Date(app.submitted_date || app.created_date).toLocaleDateString()}</span>
-                        ${app.medical_exam_required ? '<span style="color: #dc3545;">⚠️ Medical Exam Required</span>' : '<span style="color: #28a745;">✓ No Medical Exam</span>'}
+                        ${app.age ? `<span>Age: ${app.age}</span>` : ''}
+                        <span>Submitted: ${new Date(app.submitted_date || app.created_date).toLocaleDateString()}</span>
+                        ${app.medical_exam_required ? '<span style="color: #dc3545;">️ Medical Exam Required</span>' : '<span style="color: #28a745;">No Medical Exam</span>'}
                     </div>
                     
                     <div class="action-group" style="margin-top: 15px; display: flex; flex-wrap: wrap; gap: 10px;">
@@ -785,7 +782,7 @@
                 }
             }
             
-            document.getElementById('pipeline-status').innerHTML = `<span style="color: #10b981;">✓ ${approved} approved, ${failed} failed</span>`;
+            document.getElementById('pipeline-status').innerHTML = `<span style="color: #10b981;"> ${approved} approved, ${failed} failed</span>`;
             showToast(`Bulk approval complete: ${approved} approved, ${failed} failed`, approved > 0 ? 'success' : 'error');
             loadApplications();
         }
@@ -819,9 +816,9 @@
                 }
             }
             
-            document.getElementById('pipeline-status').innerHTML = `<span style="color: ${needsReview > 0 ? '#f59e0b' : '#10b981'};">✓ ${valid} valid, ${needsReview} need review</span>`;
+            document.getElementById('pipeline-status').innerHTML = `<span style="color: ${needsReview > 0 ? '#f59e0b' : '#10b981'};"> ${valid} valid, ${needsReview} need review</span>`;
             
-            let message = `Validation Complete\n\n✓ Valid: ${valid}\n⚠ Needs Review: ${needsReview}`;
+            let message = `Validation Complete\n\n Valid: ${valid}\n Needs Review: ${needsReview}`;
             if (issues.length > 0) {
                 message += `\n\nIssues:\n${issues.slice(0, 5).join('\n')}`;
                 if (issues.length > 5) message += `\n... and ${issues.length - 5} more`;
@@ -868,7 +865,7 @@
                 </head>
                 <body>
                     <div class="header">
-                        <h1>🔍 Risk Assessment Report</h1>
+                        <h1>Risk Assessment Report</h1>
                         <div>${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
                     </div>
                     
@@ -893,7 +890,7 @@
                         </div>
                     </div>
                     
-                    <h3>📊 Summary</h3>
+                    <h3>Summary</h3>
                     <table>
                         <tr><th>Metric</th><th>Value</th></tr>
                         <tr><td>Total Pending</td><td>${pending.length}</td></tr>
@@ -902,7 +899,7 @@
                         <tr><td>Medical Exams Required</td><td>${pending.filter(a => a.medical_exam_required).length}</td></tr>
                     </table>
                     
-                    <h3>📋 Applications by Risk Level</h3>
+                    <h3>Applications by Risk Level</h3>
                     <table>
                         <thead>
                             <tr><th>App ID</th><th>Customer</th><th>Type</th><th>Coverage</th><th>Risk</th></tr>
@@ -994,7 +991,7 @@
                             <div class="logo"><img src="/phins-logo.svg" alt="" style="width:26px;height:26px;vertical-align:-6px;margin-right:8px;"> PHINS Insurance</div>
                             <div>${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
                         </div>
-                        <h1>🔍 Underwriting Applications Report</h1>
+                        <h1>Underwriting Applications Report</h1>
                         <div class="summary">
                             <strong>Total Applications:</strong> ${lastApplicationsData.length} | 
                             <strong>Pending:</strong> ${lastApplicationsData.filter(a => a.status === 'pending').length} |

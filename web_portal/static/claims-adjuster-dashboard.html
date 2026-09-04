@@ -586,14 +586,14 @@
                 <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
                 <span class="phins-logo-text">PHINS</span>
             </a>
-            <button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
+            <button class="mobile-menu-btn" onclick="toggleMobileMenu()">Menu</button>
             <nav class="phins-nav" id="mobile-nav">
                 <a href="/admin.html">Admin</a>
-                <a href="/underwriter-dashboard.html">🔍 Underwriting</a>
-                <a href="/claims-adjuster-dashboard.html" class="active">📋 Claims</a>
-                <a href="/documents.html#archive">📁 Documents</a>
-                <a href="/billing.html">💳 Billing</a>
-                <a href="/savings-portfolio.html">📈 Investments</a>
+                <a href="/underwriter-dashboard.html">Underwriting</a>
+                <a href="/claims-adjuster-dashboard.html" class="active">Claims</a>
+                <a href="/documents.html#archive">Documents</a>
+                <a href="/billing.html">Billing</a>
+                <a href="/savings-portfolio.html">Investments</a>
                 <a href="/login.html" class="btn-logout">Logout</a>
             </nav>
         </div>
@@ -605,23 +605,23 @@
     </script>
     <div class="dashboard-container">
         <div class="page-title">
-            <h1>📋 Claims Adjuster Dashboard</h1>
+            <h1>Claims Adjuster Dashboard</h1>
             <p>Process and manage insurance claims</p>
         </div>
         
         <div class="stats-grid">
             <div class="stat-card highlight">
-                <div class="stat-icon">📋</div>
+                <div class="stat-icon"></div>
                 <div class="stat-value" id="pending-claims">0</div>
                 <div class="stat-label">Pending Review</div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon">✅</div>
+                <div class="stat-icon"></div>
                 <div class="stat-value" id="processed-today">0</div>
                 <div class="stat-label">Processed Today</div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon">💰</div>
+                <div class="stat-icon"></div>
                 <div class="stat-value" id="total-amount">$0</div>
                 <div class="stat-label">Total Pending Amount</div>
             </div>
@@ -631,7 +631,7 @@
                 <div class="stat-label">Avg Processing Time</div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon">💵</div>
+                <div class="stat-icon"></div>
                 <div class="stat-value" id="approved-amount">$0</div>
                 <div class="stat-label">Approved This Month</div>
             </div>
@@ -641,8 +641,7 @@
         <div class="section" style="background: linear-gradient(135deg, #1a1f36 0%, #2d3561 100%); border-radius: 16px; padding: 24px; margin-bottom: 24px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <div>
-                    <h2 style="color: white; margin: 0; display: flex; align-items: center; gap: 10px;">
-                        📊 Accumulative Risk Analysis
+                    <h2 style="color: white; margin: 0; display: flex; align-items: center; gap: 10px;">Accumulative Risk Analysis
                         <span style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%); font-size: 0.7rem; padding: 4px 10px; border-radius: 12px;">AI/BI</span>
                     </h2>
                     <p style="color: rgba(255,255,255,0.7); margin: 8px 0 0 0; font-size: 0.9rem;">Real-time fraud detection & portfolio risk assessment</p>
@@ -680,7 +679,7 @@
         </div>
         
         <div class="section">
-            <h2>📋 Claims Queue</h2>
+            <h2>Claims Queue</h2>
             <div class="filter-bar">
                 <select id="status-filter" class="filter-select" onchange="filterClaims()">
                     <option value="all" selected>All Claims</option>
@@ -710,7 +709,7 @@
     <div id="review-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>📋 Review Claim</h2>
+                <h2>Review Claim</h2>
                 <span class="close" onclick="closeModal()">&times;</span>
             </div>
             <div id="claim-details"></div>
@@ -746,8 +745,7 @@
             <div class="prob-header">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
-                        <h2 style="margin: 0; display: flex; align-items: center; gap: 12px;">
-                            🤖 AI Claims Bot - Probability Report
+                        <h2 style="margin: 0; display: flex; align-items: center; gap: 12px;">AI Claims Bot - Probability Report
                         </h2>
                         <p style="margin: 8px 0 0 0; opacity: 0.8;" id="prob-claim-info">Claim Analysis</p>
                     </div>
@@ -906,7 +904,7 @@
             } catch (error) {
                 console.error('Error loading claims:', error);
                 document.getElementById('claims-list').innerHTML = 
-                    '<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>Error loading claims. Please refresh the page.</p></div>';
+                    '<div class="empty-state"><div class="empty-state-icon">️</div><p>Error loading claims. Please refresh the page.</p></div>';
             }
         }
         
@@ -949,7 +947,7 @@
             if (normalizedClaims.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
-                        <div class="empty-state-icon">📋</div>
+                        <div class="empty-state-icon"></div>
                         <p>No claims match the selected filters.</p>
                         <button class="btn btn-secondary" onclick="document.getElementById('status-filter').value='all'; document.getElementById('priority-filter').value='all'; document.getElementById('search-input').value=''; filterClaims();">Clear Filters</button>
                     </div>`;
@@ -997,7 +995,7 @@
                         ` : ''}
                         <button class="btn btn-claimer" ${claimId ? `onclick="openProbabilityReport('${claimIdEscaped}')"` : 'disabled'} title="${claimId ? 'Generate probability report' : 'Claim ID missing'}">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"></path><path d="M12 6v6l4 2"></path></svg>
-                            🤖 Claimer AI
+                             Claimer AI
                         </button>
                         <button class="btn btn-secondary" ${customerId ? `onclick="viewCustomerRiskReport('${customerIdEscaped}')"` : 'disabled'} title="${customerId ? 'Open underwriting risk report' : 'Customer ID missing'}">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
@@ -1253,7 +1251,7 @@
         
         async function openProbabilityReport(claimId) {
             document.getElementById('probability-modal').style.display = 'block';
-            document.getElementById('probability-content').innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div><p style="text-align: center; margin-top: 16px;">🤖 AI Claims Bot analyzing claim...</p>';
+            document.getElementById('probability-content').innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div><p style="text-align: center; margin-top: 16px;"> AI Claims Bot analyzing claim...</p>';
             document.getElementById('download-report-btn').style.display = 'none';
             document.getElementById('download-json-btn').style.display = 'none';
             currentProbabilityReport = null;
@@ -1293,7 +1291,7 @@
                 console.error('Error generating probability report:', error);
                 document.getElementById('probability-content').innerHTML = `
                     <div class="empty-state">
-                        <div class="empty-state-icon">⚠️</div>
+                        <div class="empty-state-icon">️</div>
                         <p>Error generating probability report: ${escapeHtml(error?.message || 'Unknown error')}</p>
                         <button class="btn btn-secondary" onclick="closeProbabilityModal()">Close</button>
                     </div>
@@ -1348,13 +1346,13 @@
                 
                 <!-- AI Summary -->
                 <div class="ai-summary">
-                    <h4>🤖 AI Analysis Summary</h4>
+                    <h4>AI Analysis Summary</h4>
                     <p style="margin: 0;">${escapeHtml(ai.summary || 'Analysis completed.')}</p>
                 </div>
                 
                 <!-- Component Scores -->
                 <div class="prob-section">
-                    <h4>📊 Component Score Breakdown</h4>
+                    <h4>Component Score Breakdown</h4>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px;">
                         ${renderScoreBar('Document Authenticity', scores.document_authenticity)}
                         ${renderScoreBar('Medical Consistency', scores.medical_consistency)}
@@ -1367,7 +1365,7 @@
                 
                 <!-- Timeline Analysis -->
                 <div class="prob-section">
-                    <h4>📅 Policy Timeline Analysis</h4>
+                    <h4>Policy Timeline Analysis</h4>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
                         <div>
                             <strong>Days Since Policy:</strong> ${safeNumber(timeline.days_since_policy, 0)}
@@ -1389,7 +1387,7 @@
             if (hidden.detected > 0) {
                 html += `
                     <div class="prob-section" style="background: #fef2f2; border: 1px solid #fecaca;">
-                        <h4 style="color: #dc2626;">⚠️ Hidden Conditions Detected (${hidden.detected})</h4>
+                        <h4 style="color: #dc2626;">️ Hidden Conditions Detected (${hidden.detected})</h4>
                         <p style="color: #991b1b; margin-bottom: 16px;">The following conditions were found in the claim but were NOT declared during underwriting:</p>
                         ${(hidden.conditions || []).map(hc => `
                             <div class="prob-indicator red">
@@ -1411,7 +1409,7 @@
             if (fraud.count > 0) {
                 html += `
                     <div class="prob-section" style="background: #fffbeb; border: 1px solid #fde68a;">
-                        <h4 style="color: #d97706;">🚨 Fraud Indicators (${fraud.count})</h4>
+                        <h4 style="color: #d97706;">Fraud Indicators (${fraud.count})</h4>
                         ${(fraud.indicators || []).map(fi => `
                             <div class="prob-indicator ${fi.severity > 0.7 ? 'red' : 'yellow'}">
                                 <div style="flex: 1;">
@@ -1429,13 +1427,13 @@
             // Key Findings
             html += `
                 <div class="prob-section">
-                    <h4>📋 Key Findings</h4>
+                    <h4>Key Findings</h4>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                         <div>
-                            <h5 style="color: #dc2626; margin-bottom: 8px;">🔴 Red Flags</h5>
+                            <h5 style="color: #dc2626; margin-bottom: 8px;"> Red Flags</h5>
                             ${(ai.red_flags || []).length > 0 ? 
                                 (ai.red_flags || []).map(f => `<div class="prob-indicator red" style="padding: 8px;">${escapeHtml(f)}</div>`).join('') :
-                                '<div style="color: #10b981;">✅ No red flags detected</div>'
+                                '<div style="color: #10b981;">No red flags detected</div>'
                             }
                         </div>
                         <div>
@@ -1450,7 +1448,7 @@
                 
                 <!-- Explanation -->
                 <div class="prob-section">
-                    <h4>📝 Decision Explanation</h4>
+                    <h4>Decision Explanation</h4>
                     <p style="margin: 0;">${escapeHtml(report.explanation || 'Assessment completed.')}</p>
                 </div>
                 
@@ -1554,7 +1552,7 @@
 <body>
     <div class="report-container">
         <div class="header">
-            <h1>🤖 PHINS AI Claims Bot - Probability Report</h1>
+            <h1>PHINS AI Claims Bot - Probability Report</h1>
             <p>Claim #${report.claim_id} | Generated: ${new Date(report.assessment_date).toLocaleString()}</p>
         </div>
         
@@ -1577,13 +1575,13 @@
             
             <!-- AI Summary -->
             <div class="summary-box">
-                <h3 style="color: #0369a1; margin-bottom: 12px;">🤖 AI Analysis Summary</h3>
+                <h3 style="color: #0369a1; margin-bottom: 12px;">AI Analysis Summary</h3>
                 <p>${ai.summary || 'Analysis completed.'}</p>
             </div>
             
             <!-- Component Scores -->
             <div class="section">
-                <h3>📊 Component Score Breakdown</h3>
+                <h3>Component Score Breakdown</h3>
                 <div class="component-grid">
                     ${Object.entries(scores).map(([key, value]) => `
                         <div class="component">
@@ -1597,7 +1595,7 @@
             
             <!-- Timeline -->
             <div class="section">
-                <h3>📅 Policy Timeline Analysis</h3>
+                <h3>Policy Timeline Analysis</h3>
                 <div class="component-grid">
                     <div class="component"><div class="component-label">Days Since Policy</div><div class="component-value">${timeline.days_since_policy || 0}</div></div>
                     <div class="component"><div class="component-label">Years Since Policy</div><div class="component-value">${(timeline.years_since_policy || 0).toFixed(2)}</div></div>
@@ -1609,7 +1607,7 @@
             ${hidden.detected > 0 ? `
             <!-- Hidden Conditions -->
             <div class="section" style="background: #fef2f2; border: 1px solid #fecaca;">
-                <h3 style="color: #dc2626;">⚠️ Hidden Conditions Detected (${hidden.detected})</h3>
+                <h3 style="color: #dc2626;">️ Hidden Conditions Detected (${hidden.detected})</h3>
                 ${(hidden.conditions || []).map(hc => `
                     <div class="alert red">
                         <strong>${hc.condition_name}</strong> (ICD: ${hc.icd_code})<br>
@@ -1624,7 +1622,7 @@
             ${fraud.count > 0 ? `
             <!-- Fraud Indicators -->
             <div class="section" style="background: #fffbeb; border: 1px solid #fde68a;">
-                <h3 style="color: #d97706;">🚨 Fraud Indicators (${fraud.count})</h3>
+                <h3 style="color: #d97706;">Fraud Indicators (${fraud.count})</h3>
                 ${(fraud.indicators || []).map(fi => `
                     <div class="alert ${fi.severity > 0.7 ? 'red' : 'yellow'}">
                         <strong>${fi.indicator_type.replace(/_/g, ' ').toUpperCase()}</strong>
@@ -1638,13 +1636,13 @@
             
             <!-- Key Findings -->
             <div class="section">
-                <h3>📋 Key Findings</h3>
+                <h3>Key Findings</h3>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                     <div>
-                        <h4 style="color: #dc2626; margin-bottom: 8px;">🔴 Red Flags</h4>
+                        <h4 style="color: #dc2626; margin-bottom: 8px;">Red Flags</h4>
                         ${(ai.red_flags || []).length > 0 ? 
                             (ai.red_flags || []).map(f => `<div class="alert red" style="padding: 8px;">${f}</div>`).join('') :
-                            '<p style="color: #10b981;">✅ No red flags detected</p>'
+                            '<p style="color: #10b981;"> No red flags detected</p>'
                         }
                     </div>
                     <div>
@@ -1659,7 +1657,7 @@
             
             <!-- Decision Explanation -->
             <div class="section">
-                <h3>📝 Decision Explanation</h3>
+                <h3>Decision Explanation</h3>
                 <p>${report.explanation || 'Assessment completed.'}</p>
             </div>
         </div>
@@ -1984,7 +1982,7 @@
             reportContainer.innerHTML = `
                 <div style="text-align: center; padding: 40px;">
                     <div class="spinner" style="border: 4px solid rgba(255,255,255,0.2); border-top: 4px solid #4facfe; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div>
-                    <p style="color: rgba(255,255,255,0.8); margin-top: 16px;">🤖 AI analyzing claims data...</p>
+                    <p style="color: rgba(255,255,255,0.8); margin-top: 16px;"> AI analyzing claims data...</p>
                 </div>
             `;
             
@@ -1998,7 +1996,7 @@
                 if (!allClaims || allClaims.length === 0) {
                     reportContainer.innerHTML = `
                         <div style="background: rgba(255,165,2,0.2); border: 1px solid rgba(255,165,2,0.5); border-radius: 12px; padding: 30px; text-align: center;">
-                            <div style="font-size: 3rem; margin-bottom: 16px;">📋</div>
+                            <div style="font-size: 3rem; margin-bottom: 16px;"></div>
                             <h3 style="color: #ffa502; margin: 0 0 8px 0;">No Claims Available</h3>
                             <p style="color: rgba(255,255,255,0.7); margin: 0;">There are no claims in the system to analyze. Claims will appear here once customers file them.</p>
                         </div>
@@ -2015,7 +2013,7 @@
                     throw new Error('No valid claim records were found for report generation.');
                 }
                 
-                console.log('📊 Report Generation - Data Loaded:', {
+                console.log(' Report Generation - Data Loaded:', {
                     claims: claimsForAnalysis.length,
                     underwriting: Object.keys(underwritingData || {}).length,
                     customers: Object.keys(customersData || {}).length
@@ -2051,10 +2049,9 @@
             // Generate detailed report
             const reportHTML = `
                 <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 20px; margin-top: 20px;">
-                    <h3 style="color: white; margin: 0 0 16px 0; display: flex; align-items: center; gap: 10px;">
-                        📋 Detailed Risk Assessment (${totalClaims} Claims)
-                        <button onclick="downloadAccumulativeReport()" style="margin-left: auto; background: rgba(79,172,254,0.3); border: 1px solid rgba(79,172,254,0.5); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📥 Download PDF</button>
-                        <button onclick="downloadAsHTMLFile()" style="margin-left: 8px; background: rgba(46,213,115,0.3); border: 1px solid rgba(46,213,115,0.5); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📄 Save HTML</button>
+                    <h3 style="color: white; margin: 0 0 16px 0; display: flex; align-items: center; gap: 10px;">Detailed Risk Assessment (${totalClaims} Claims)
+                        <button onclick="downloadAccumulativeReport()" style="margin-left: auto; background: rgba(79,172,254,0.3); border: 1px solid rgba(79,172,254,0.5); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">Download PDF</button>
+                        <button onclick="downloadAsHTMLFile()" style="margin-left: 8px; background: rgba(46,213,115,0.3); border: 1px solid rgba(46,213,115,0.5); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">Save HTML</button>
                     </h3>
                     
                     <!-- Risk Distribution -->
@@ -2079,7 +2076,7 @@
                     
                     <!-- Recommendations -->
                     <div style="background: rgba(102,126,234,0.15); border-left: 4px solid #667eea; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-                        <h4 style="color: #4facfe; margin: 0 0 12px 0;">🎯 AI Recommendations</h4>
+                        <h4 style="color: #4facfe; margin: 0 0 12px 0;">AI Recommendations</h4>
                         <ul style="color: rgba(255,255,255,0.9); margin: 0; padding-left: 20px; line-height: 1.8;">
                             ${highRiskClaims.length > 0 ? `<li><strong>Priority Review:</strong> ${highRiskClaims.length} claims require immediate attention (risk score ≥40)</li>` : ''}
                             ${fraudFlaggedClaims.length > 0 ? `<li><strong>Fraud Investigation:</strong> ${fraudFlaggedClaims.length} claims show potential fraud indicators - recommend SIU review</li>` : ''}
@@ -2122,7 +2119,7 @@
                                         </td>
                                         <td style="padding: 12px; text-align: center;">
                                             ${ra.fraudIndicators.length > 0 ? 
-                                                `<span style="background: rgba(255,0,0,0.2); color: #ff6b6b; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">⚠️ ${ra.fraudIndicators.length}</span>` : 
+                                                `<span style="background: rgba(255,0,0,0.2); color: #ff6b6b; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">️ ${ra.fraudIndicators.length}</span>` : 
                                                 '<span style="color: rgba(255,255,255,0.4);">-</span>'}
                                         </td>
                                         <td style="padding: 12px; color: rgba(255,255,255,0.7); font-size: 0.8rem;">
@@ -2136,11 +2133,10 @@
                     
                     <!-- Footer -->
                     <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
-                        <div style="color: rgba(255,255,255,0.5); font-size: 0.8rem;">
-                            Generated: ${new Date().toLocaleString()} | Data Source: PHINS Pipeline (Real Data)
+                        <div style="color: rgba(255,255,255,0.5); font-size: 0.8rem;">Generated: ${new Date().toLocaleString()} | Data Source: PHINS Pipeline (Real Data)
                         </div>
                         <div style="display: flex; gap: 8px;">
-                            <button onclick="exportRiskReportCSV()" style="background: rgba(255,255,255,0.1); border: none; color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;">📊 Export CSV</button>
+                            <button onclick="exportRiskReportCSV()" style="background: rgba(255,255,255,0.1); border: none; color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;">Export CSV</button>
                         </div>
                     </div>
                 </div>
@@ -2152,7 +2148,7 @@
                 currentRiskReportData = { riskAnalyses, totalClaims, highRiskClaims, fraudFlaggedClaims, sumAtRisk };
                 
                 showToast('Risk analysis report generated successfully', 'success');
-                console.log('✅ Report generated:', { 
+                console.log(' Report generated:', { 
                     claims: totalClaims, 
                     highRisk: highRiskClaims.length,
                     fraudFlags: fraudFlaggedClaims.length,
@@ -2163,10 +2159,10 @@
                 console.error('Error generating report:', error);
                 reportContainer.innerHTML = `
                     <div style="background: rgba(220,53,69,0.2); border: 1px solid rgba(220,53,69,0.5); border-radius: 12px; padding: 30px; text-align: center;">
-                        <div style="font-size: 3rem; margin-bottom: 16px;">⚠️</div>
+                        <div style="font-size: 3rem; margin-bottom: 16px;">️</div>
                         <h3 style="color: #dc3545; margin: 0 0 8px 0;">Report Generation Error</h3>
                         <p style="color: rgba(255,255,255,0.7); margin: 0 0 16px 0;">${escapeHtml(error.message || 'An unexpected error occurred.')}</p>
-                        <button onclick="generateAccumulativeRiskReport()" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer;">🔄 Retry</button>
+                        <button onclick="generateAccumulativeRiskReport()" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Retry</button>
                     </div>
                 `;
                 showToast('Error generating report: ' + error.message, 'error');
@@ -2261,7 +2257,7 @@
                 </head>
                 <body>
                     <div class="header">
-                        <h1>🛡️ PHINS Accumulative Risk Report</h1>
+                        <h1>️ PHINS Accumulative Risk Report</h1>
                         <p><strong>Claims Portfolio Risk Analysis</strong></p>
                         <p>Generated: ${new Date().toLocaleString()}</p>
                         <p>Data Source: PHINS Pipeline (Real Data)</p>
@@ -2364,7 +2360,7 @@
 </head>
 <body>
     <div class="report-header">
-        <h1>🛡️ PHINS Accumulative Risk Report</h1>
+        <h1>️ PHINS Accumulative Risk Report</h1>
         <p><strong>Claims Portfolio Risk Analysis</strong></p>
         <p class="timestamp">Generated: ${new Date().toLocaleString()}</p>
         <p>Data Integrity: Verified | Source: PHINS Pipeline</p>

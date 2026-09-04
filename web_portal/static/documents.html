@@ -256,8 +256,8 @@
     </a>
     <nav class="phins-nav">
       <a href="/dashboard.html">Dashboard</a>
-      <a href="/unified-workbench.html">⚡ Unified Workbench</a>
-      <a href="/documents.html" class="active">📁 Documents</a>
+      <a href="/unified-workbench.html">Unified Workbench</a>
+      <a href="/documents.html" class="active">Documents</a>
       <a href="#" class="btn-logout" onclick="logout()">Logout</a>
     </nav>
   </div>
@@ -268,7 +268,7 @@
   <div class="modal-box">
     <div class="modal-header">
       <span class="modal-title" id="modal-title">Viewing file</span>
-      <button class="modal-close" onclick="closeViewer()">✕</button>
+      <button class="modal-close" onclick="closeViewer()"></button>
     </div>
     <div class="modal-body" id="modal-body"></div>
     <div class="modal-footer">
@@ -279,11 +279,11 @@
 </div>
 
 <div class="page-container">
-  <div class="page-title">📁 Document Center</div>
+  <div class="page-title">Document Center</div>
   <div class="page-subtitle">Upload, view, manage, and AI-analyze insurance documents — ID cards, receipts, medical records, and authority certificates.</div>
 
   <div style="background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); color: white; border-radius: 14px; padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
-    <div style="font-size: 1.6rem;">🧠</div>
+    <div style="font-size: 1.6rem;"></div>
     <div style="flex: 1; min-width: 200px;">
       <div style="font-weight: 700;">One workbench for every analysis</div>
       <div style="font-size: 0.85rem; opacity: 0.9;">Pick documents, run any analysis (Customer 360, Risk, BI, Describe, Cross-doc), download as CSV/XLSX/PDF.</div>
@@ -295,16 +295,16 @@
 
   <!-- Tab bar -->
   <div class="tab-bar">
-    <button class="tab-btn active" id="tab-upload-btn" onclick="switchTab('upload')">📤 Upload Documents</button>
-    <button class="tab-btn" id="tab-docs-btn" onclick="switchTab('docs')">📋 My Uploaded Documents</button>
-    <button class="tab-btn" id="tab-durable-btn" onclick="switchTab('durable')">🗄️ Durable Object</button>
-    <button class="tab-btn" id="tab-archive-btn" onclick="switchTab('archive')" style="display:none;">🗂️ Platform Archive</button>
+    <button class="tab-btn active" id="tab-upload-btn" onclick="switchTab('upload')">Upload Documents</button>
+    <button class="tab-btn" id="tab-docs-btn" onclick="switchTab('docs')">My Uploaded Documents</button>
+    <button class="tab-btn" id="tab-durable-btn" onclick="switchTab('durable')">️ Durable Object</button>
+    <button class="tab-btn" id="tab-archive-btn" onclick="switchTab('archive')" style="display:none;">️ Platform Archive</button>
   </div>
 
   <!-- ── Tab: Upload ── -->
   <div class="tab-panel active" id="tab-upload">
     <div class="card">
-      <div class="card-title">📤 Upload Documents</div>
+      <div class="card-title">Upload Documents</div>
 
       <!-- Drop zone -->
       <div class="drop-zone" id="drop-zone"
@@ -312,10 +312,9 @@
            ondragover="onDragOver(event)"
            ondragleave="onDragLeave(event)"
            ondrop="onDrop(event)">
-        <div class="drop-zone-icon">📂</div>
+        <div class="drop-zone-icon"></div>
         <div class="drop-zone-text">Drop files here or click to browse</div>
-        <div class="drop-zone-hint">
-          Supported: PDF, DOC, DOCX, XLS, XLSX, CSV, PNG, JPG, ZIP, XML, TXT (max 20 files, 25 MB each)
+        <div class="drop-zone-hint">Supported: PDF, DOC, DOCX, XLS, XLSX, CSV, PNG, JPG, ZIP, XML, TXT (max 20 files, 25 MB each)
         </div>
       </div>
       <input type="file" id="file-input" multiple
@@ -331,15 +330,15 @@
           <div class="form-group">
             <label for="document-type">Document Type</label>
             <select id="document-type">
-              <option value="general">📄 General</option>
-              <option value="id">🪪 Identity (#identity)</option>
-              <option value="medical">🏥 Medical (#medical)</option>
-              <option value="risk_assessment">📊 Risk Assessment (#risk_assessment)</option>
+              <option value="general"> General</option>
+              <option value="id"> Identity (#identity)</option>
+              <option value="medical"> Medical (#medical)</option>
+              <option value="risk_assessment"> Risk Assessment (#risk_assessment)</option>
               <option value="claim">🆘 Claim Document (#claim)</option>
-              <option value="billing">💳 Billing / Invoice (#billing)</option>
-              <option value="underwriting">🔍 Underwriting (#underwriting)</option>
-              <option value="receipt">🧾 Receipt (#receipt)</option>
-              <option value="authority">📜 Authority Certificate (#authority)</option>
+              <option value="billing"> Billing / Invoice (#billing)</option>
+              <option value="underwriting"> Underwriting (#underwriting)</option>
+              <option value="receipt"> Receipt (#receipt)</option>
+              <option value="authority"> Authority Certificate (#authority)</option>
             </select>
           </div>
           <div class="form-group">
@@ -363,8 +362,7 @@
         </div>
       </div>
 
-      <button class="btn-upload" id="upload-btn" onclick="uploadFiles()" disabled>
-        📤 Upload Documents
+      <button class="btn-upload" id="upload-btn" onclick="uploadFiles()" disabled>Upload Documents
       </button>
     </div>
   </div>
@@ -373,13 +371,13 @@
   <div class="tab-panel" id="tab-docs">
     <div class="card">
       <div class="card-title">
-        📋 <span id="docs-list-title">My Uploaded Documents</span>
+         <span id="docs-list-title">My Uploaded Documents</span>
         <span id="docs-count" style="margin-left:auto;font-size:0.8rem;color:#78909c;font-weight:400;"></span>
       </div>
 
       <!-- Admin filter panel (hidden for customers) -->
       <div class="admin-panel" id="admin-panel" style="display:none;">
-        <div class="admin-panel-title">🔑 Admin View — Filter Documents</div>
+        <div class="admin-panel-title">Admin View — Filter Documents</div>
         <div class="form-row">
           <div class="form-group">
             <label for="filter-customer">Filter by Customer</label>
@@ -418,7 +416,7 @@
 
       <div id="docs-container">
         <div class="empty-state">
-          <div class="empty-state-icon">📂</div>
+          <div class="empty-state-icon"></div>
           <div>Loading documents…</div>
         </div>
       </div>
@@ -429,11 +427,10 @@
   <div class="tab-panel" id="tab-durable">
     <div class="card">
       <div class="card-title">
-        🗄️ <span id="durable-list-title">Customer Document Vault</span>
+        ️ <span id="durable-list-title">Customer Document Vault</span>
         <span id="durable-count" style="margin-left:auto;font-size:0.8rem;color:#78909c;font-weight:400;"></span>
       </div>
-      <div style="color:#546e7a;font-size:0.88rem;margin-bottom:0.85rem;line-height:1.45;">
-        Single durable view of <strong>every</strong> document linked to this customer — uploaded
+      <div style="color:#546e7a;font-size:0.88rem;margin-bottom:0.85rem;line-height:1.45;">Single durable view of <strong>every</strong> document linked to this customer — uploaded
         anywhere on the platform: registration, policy applications, claims, underwriting, billing,
         assessments, generated PDF reports, and the persistent disk store. Each entry is
         deduplicated by SHA-256 and tagged with its source so BI processes and AI reports stay
@@ -442,7 +439,7 @@
 
       <!-- Admin: select customer -->
       <div class="admin-panel" id="durable-admin-panel" style="display:none;">
-        <div class="admin-panel-title">🔑 Admin / Underwriter / Claims View</div>
+        <div class="admin-panel-title">Admin / Underwriter / Claims View</div>
         <div class="form-row">
           <div class="form-group">
             <label for="durable-customer">Customer</label>
@@ -506,7 +503,7 @@
 
       <div id="durable-container">
         <div class="empty-state">
-          <div class="empty-state-icon">🗄️</div>
+          <div class="empty-state-icon">️</div>
           <div>Loading customer vault…</div>
         </div>
       </div>
@@ -517,11 +514,10 @@
   <div class="tab-panel" id="tab-archive">
     <div class="card">
       <div class="card-title">
-        🗂️ <span id="archive-list-title">Platform Document Archive</span>
+        ️ <span id="archive-list-title">Platform Document Archive</span>
         <span id="archive-count" style="margin-left:auto;font-size:0.8rem;color:#78909c;font-weight:400;"></span>
       </div>
-      <div style="color:#546e7a;font-size:0.88rem;margin-bottom:0.85rem;line-height:1.45;">
-        Every document uploaded since day one — identity, medical, risk assessment, claims,
+      <div style="color:#546e7a;font-size:0.88rem;margin-bottom:0.85rem;line-height:1.45;">Every document uploaded since day one — identity, medical, risk assessment, claims,
         billing, underwriting, and more — tagged with stable process hashtags for integrity-preserving
         BI and underwriting review. File bytes are never rewritten; SHA-256 fingerprints are checked on read.
       </div>
@@ -548,7 +544,7 @@
       <div id="archive-summary" style="display:none;margin-bottom:1rem;"></div>
       <div id="archive-container">
         <div class="empty-state">
-          <div class="empty-state-icon">🗂️</div>
+          <div class="empty-state-icon">️</div>
           <div>Staff archive loads here…</div>
         </div>
       </div>
@@ -622,25 +618,25 @@
 
   function fileIcon(name) {
     const ext = (name.split('.').pop() || '').toLowerCase();
-    const map = { xls:'📊', xlsx:'📊', xsd:'📋', csv:'📄', pdf:'📕', doc:'📝', docx:'📝',
-                  xml:'🗂️', json:'🗂️', txt:'📃', png:'🖼️', jpg:'🖼️', jpeg:'🖼️', gif:'🖼️', zip:'🗜️' };
-    return map[ext] || '📄';
+    const map = { xls:'', xlsx:'', xsd:'', csv:'', pdf:'', doc:'', docx:'',
+                  xml:'️', json:'️', txt:'', png:'️', jpg:'️', jpeg:'️', gif:'️', zip:'️' };
+    return map[ext] || '';
   }
 
   function docTypeLabel(t) {
     const map = {
-      id: '🪪 Identity',
-      identity: '🪪 Identity',
-      receipt: '🧾 Receipt',
-      medical: '🏥 Medical',
-      authority: '📜 Authority',
-      risk_assessment: '📊 Risk Assessment',
+      id: ' Identity',
+      identity: ' Identity',
+      receipt: ' Receipt',
+      medical: ' Medical',
+      authority: ' Authority',
+      risk_assessment: ' Risk Assessment',
       claim: '🆘 Claim',
-      billing: '💳 Billing',
-      underwriting: '🔍 Underwriting',
-      general: '📄 General',
+      billing: ' Billing',
+      underwriting: ' Underwriting',
+      general: ' General',
     };
-    return map[t] || '📄 General';
+    return map[t] || ' General';
   }
   function docTypeBadgeClass(t) {
     const map = {
@@ -667,7 +663,7 @@
               style="text-decoration:none;color:inherit;"
               title="${escHtml('Top types: ' + (types || '—'))}">
               <span class="badge" style="background:#e8f5e9;color:#1b5e20;font-weight:600;">
-                🧠 ${total} fact${total === 1 ? '' : 's'}
+                 ${total} fact${total === 1 ? '' : 's'}
               </span>
             </a>`;
   }
@@ -675,7 +671,7 @@
   function riskBadge(a) {
     if (!a) return '';
     const lvl = a.risk_level || '';
-    const labels = { low:'🟢 LOW', medium:'🟡 MEDIUM', high:'🔴 HIGH', very_high:'⛔ VERY HIGH' };
+    const labels = { low:'🟢 LOW', medium:'🟡 MEDIUM', high:' HIGH', very_high:' VERY HIGH' };
     const cls    = { low:'badge-risk-low', medium:'badge-risk-medium', high:'badge-risk-high', very_high:'badge-risk-very_high' };
     return `<span class="badge ${cls[lvl] || ''}">${labels[lvl] || lvl}</span>`;
   }
@@ -715,7 +711,7 @@
         <span class="file-icon">${fileIcon(f.name)}</span>
         <span class="file-name">${escHtml(f.name)}</span>
         <span class="file-size">${formatSize(f.size)}</span>
-        <button class="file-remove" onclick="removeFile(${i})" title="Remove">✕</button>
+        <button class="file-remove" onclick="removeFile(${i})" title="Remove"></button>
       </div>
     `).join('');
   }
@@ -803,23 +799,23 @@
           .map(([k, v]) => `${k}:${v}`)
           .join(', ');
         const intel = factTotal > 0
-          ? ` 🧠 Extracted ${factTotal} fact${factTotal === 1 ? '' : 's'} → Customer 360 updated${topTypes ? ' (' + topTypes + ')' : ''}.` +
+          ? `  Extracted ${factTotal} fact${factTotal === 1 ? '' : 's'} → Customer 360 updated${topTypes ? ' (' + topTypes + ')' : ''}.` +
             ' <a href="/unified-workbench.html" style="color:#1565c0;font-weight:600;">View Assessment Center →</a>'
           : '';
-        showStatus('success', `✅ ${json.message}` + intel + (errs ? `. Skipped: ${errs}` : ''));
+        showStatus('success', ` ${json.message}` + intel + (errs ? `. Skipped: ${errs}` : ''));
         selectedFiles = [];
         renderFileList();
         document.getElementById('description').value = '';
         // Switch to documents tab and reload
         switchTab('docs');
       } else {
-        showStatus('error', '❌ ' + (json.error || 'Upload failed'));
+        showStatus('error', ' ' + (json.error || 'Upload failed'));
       }
     } catch (e) {
-      showStatus('error', '❌ Network error: ' + e.message);
+      showStatus('error', ' Network error: ' + e.message);
     } finally {
       btn.disabled = selectedFiles.length === 0;
-      btn.textContent = '📤 Upload Documents';
+      btn.textContent = ' Upload Documents';
     }
   }
 
@@ -857,7 +853,7 @@
       renderDocs(ALL_DOCS);
     } catch {
       document.getElementById('docs-container').innerHTML =
-        '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Could not load documents.</div></div>';
+        '<div class="empty-state"><div class="empty-state-icon">️</div><div>Could not load documents.</div></div>';
     }
   }
 
@@ -878,7 +874,7 @@
     document.getElementById('docs-count').textContent = docs.length ? `${docs.length} document(s)` : '';
 
     if (docs.length === 0) {
-      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📂</div><div>No documents found.</div></div>';
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon"></div><div>No documents found.</div></div>';
       return;
     }
 
@@ -922,17 +918,16 @@
               <td id="risk-cell-${escHtml(d.id)}">${riskBadge(d.ai_analysis)}</td>
               <td style="white-space:nowrap;">
                 ${d.has_data
-                  ? `<button class="btn-sm btn-view" data-id="${escHtml(d.id)}" data-name="${escHtml(d.name)}" data-mime="${escHtml(d.type||'')}">👁 View</button>
+                  ? `<button class="btn-sm btn-view" data-id="${escHtml(d.id)}" data-name="${escHtml(d.name)}" data-mime="${escHtml(d.type||'')}">View</button>
                      <button class="btn-sm btn-download" data-id="${escHtml(d.id)}" data-name="${escHtml(d.name)}">⬇</button>
-                     <button class="btn-sm btn-analyze" data-id="${escHtml(d.id)}" id="analyze-btn-${escHtml(d.id)}">🤖 Analyze</button>`
+                     <button class="btn-sm btn-analyze" data-id="${escHtml(d.id)}" id="analyze-btn-${escHtml(d.id)}">Analyze</button>`
                   : '<span style="color:#bbb;font-size:0.78rem;">—</span>'
                 }
               </td>
             </tr>
             <tr id="analysis-row-${escHtml(d.id)}" style="display:none;">
               <td colspan="${IS_ADMIN ? 10 : 9}" style="padding:0 10px 12px;">
-                <div class="analysis-panel open" id="analysis-panel-${escHtml(d.id)}">
-                  Loading AI analysis…
+                <div class="analysis-panel open" id="analysis-panel-${escHtml(d.id)}">Loading AI analysis…
                 </div>
               </td>
             </tr>
@@ -995,16 +990,16 @@
         const idx = ALL_DOCS.findIndex(d => d.id === docId);
         if (idx >= 0) ALL_DOCS[idx].ai_analysis = a;
         renderAnalysisPanel(docId, a, true);
-        btn.textContent = '✅ Analyzed';
+        btn.textContent = ' Analyzed';
       } else {
-        if (panel) panel.innerHTML = `<span style="color:#b71c1c;">❌ ${escHtml(json.error || 'Analysis failed')}</span>`;
+        if (panel) panel.innerHTML = `<span style="color:#b71c1c;"> ${escHtml(json.error || 'Analysis failed')}</span>`;
         btn.disabled = false;
-        btn.textContent = '🤖 Analyze';
+        btn.textContent = ' Analyze';
       }
     } catch (ex) {
-      if (panel) panel.innerHTML = `<span style="color:#b71c1c;">❌ Network error: ${escHtml(ex.message)}</span>`;
+      if (panel) panel.innerHTML = `<span style="color:#b71c1c;">Network error: ${escHtml(ex.message)}</span>`;
       btn.disabled = false;
-      btn.textContent = '🤖 Analyze';
+      btn.textContent = ' Analyze';
     }
   }
 
@@ -1017,20 +1012,20 @@
     const recClass = a.risk_level === 'very_high' || a.risk_level === 'high' ? 'danger'
                    : a.risk_level === 'medium' ? 'warn' : '';
     const recLabel = {
-      approve: '✅ Approve',
-      approve_conditional: '⚠️ Conditional Approval',
-      refer_manual_review: '🔍 Refer for Manual Review',
-      decline_or_senior_review: '⛔ Decline / Senior Review',
-      process_death_claim: '📋 Process Death Claim',
-      process_disability_claim: '📋 Process Disability Claim',
-      hold_pending_verification: '🔒 Hold — Verification Required',
+      approve: ' Approve',
+      approve_conditional: '️ Conditional Approval',
+      refer_manual_review: ' Refer for Manual Review',
+      decline_or_senior_review: ' Decline / Senior Review',
+      process_death_claim: ' Process Death Claim',
+      process_disability_claim: ' Process Disability Claim',
+      hold_pending_verification: ' Hold — Verification Required',
     }[a.recommendation] || a.recommendation;
 
     const bi = a.bi_insights || {};
     let biHtml = '';
     if (bi.actuarial_impact) {
       const ac = bi.actuarial_impact;
-      biHtml += `<div class="bi-section"><div class="bi-title">📊 Actuarial / Underwriting Impact</div>
+      biHtml += `<div class="bi-section"><div class="bi-title">Actuarial / Underwriting Impact</div>
         <div class="bi-row"><span class="bi-key">Premium Loading</span><span class="bi-val">${escHtml(ac.premium_loading)}</span></div>
         <div class="bi-row"><span class="bi-key">Underwriting Action</span><span class="bi-val">${escHtml(ac.underwriting_action)}</span></div>
         <div class="bi-row"><span class="bi-key">Reserve</span><span class="bi-val">${escHtml(ac.reserve_recommendation)}</span></div>
@@ -1038,7 +1033,7 @@
     }
     if (bi.claims_impact) {
       const cl = bi.claims_impact;
-      biHtml += `<div class="bi-section"><div class="bi-title">🏥 Claims Impact</div>
+      biHtml += `<div class="bi-section"><div class="bi-title">Claims Impact</div>
         <div class="bi-row"><span class="bi-key">Claim Type</span><span class="bi-val">${escHtml(cl.claim_type)}</span></div>
         <div class="bi-row"><span class="bi-key">Priority</span><span class="bi-val">${escHtml(cl.priority)}</span></div>
         <div class="bi-row"><span class="bi-key">Action</span><span class="bi-val">${escHtml(cl.action)}</span></div>
@@ -1047,22 +1042,21 @@
     }
     if (bi.billing_impact) {
       const bl = bi.billing_impact;
-      biHtml += `<div class="bi-section"><div class="bi-title">💰 Billing Impact</div>
+      biHtml += `<div class="bi-section"><div class="bi-title">Billing Impact</div>
         <div class="bi-row"><span class="bi-key">Status</span><span class="bi-val">${escHtml(bl.status)}</span></div>
         <div class="bi-row"><span class="bi-key">Action</span><span class="bi-val">${escHtml(bl.action)}</span></div>
       </div>`;
     }
 
     panel.innerHTML = `
-      <div class="analysis-panel-title">🤖 AI Analysis — Risk: ${riskBadge(a)} &nbsp; Score: ${((a.risk_score||0)*100).toFixed(0)}%</div>
+      <div class="analysis-panel-title">AI Analysis — Risk: ${riskBadge(a)} &nbsp; Score: ${((a.risk_score||0)*100).toFixed(0)}%</div>
       ${(a.findings||[]).map(f => `<div class="analysis-finding">${escHtml(f)}</div>`).join('')}
       <div class="analysis-flags">${(a.flags||[]).map(f => `<span class="analysis-flag">${escHtml(f)}</span>`).join('')}</div>
       <div style="margin-top:0.5rem;">
         <span class="analysis-recommendation ${recClass}">${escHtml(recLabel)}</span>
       </div>
       ${biHtml}
-      <div style="margin-top:0.5rem;font-size:0.72rem;color:#90a4ae;">
-        Confidence: ${((a.confidence||0)*100).toFixed(0)}% &nbsp;|&nbsp; Mode: ${escHtml(a.analysis_mode||'')} &nbsp;|&nbsp; ${escHtml(a.analyzed_at||'')}
+      <div style="margin-top:0.5rem;font-size:0.72rem;color:#90a4ae;">Confidence: ${((a.confidence||0)*100).toFixed(0)}% &nbsp;|&nbsp; Mode: ${escHtml(a.analysis_mode||'')} &nbsp;|&nbsp; ${escHtml(a.analyzed_at||'')}
       </div>`;
   }
 
@@ -1113,7 +1107,7 @@
       document.getElementById('modal-download-btn').onclick = () => triggerDownload(dataUrl, name);
       document.getElementById('viewer-modal').classList.add('open');
     } catch (e) {
-      showStatus('error', '❌ Could not load document: ' + e.message);
+      showStatus('error', ' Could not load document: ' + e.message);
     }
   }
 
@@ -1123,7 +1117,7 @@
       const dataUrl = `data:${json.type || 'application/octet-stream'};base64,${json.data}`;
       triggerDownload(dataUrl, name);
     } catch (e) {
-      showStatus('error', '❌ Could not download document: ' + e.message);
+      showStatus('error', ' Could not download document: ' + e.message);
     }
   }
 
@@ -1201,7 +1195,7 @@
       customerId = document.getElementById('durable-customer').value || '';
       if (!customerId) {
         document.getElementById('durable-container').innerHTML =
-          '<div class="empty-state"><div class="empty-state-icon">👥</div><div>Pick a customer to load their durable vault, or enter an application/claim ID above.</div></div>';
+          '<div class="empty-state"><div class="empty-state-icon"></div><div>Pick a customer to load their durable vault, or enter an application/claim ID above.</div></div>';
         document.getElementById('durable-summary').style.display = 'none';
         document.getElementById('durable-count').textContent = '';
         return;
@@ -1218,7 +1212,7 @@
       const json = await res.json();
       if (!res.ok || !json.success) {
         document.getElementById('durable-container').innerHTML =
-          `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>${escHtml(json.error || 'Could not load vault')}</div></div>`;
+          `<div class="empty-state"><div class="empty-state-icon">️</div><div>${escHtml(json.error || 'Could not load vault')}</div></div>`;
         return;
       }
       DURABLE_VAULT = json;
@@ -1228,7 +1222,7 @@
       renderDurableDocs();
     } catch (e) {
       document.getElementById('durable-container').innerHTML =
-        `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Network error: ${escHtml(e.message)}</div></div>`;
+        `<div class="empty-state"><div class="empty-state-icon">️</div><div>Network error: ${escHtml(e.message)}</div></div>`;
     }
   }
 
@@ -1258,7 +1252,7 @@
       const json = await res.json();
       if (!res.ok || !json.success) {
         document.getElementById('durable-container').innerHTML =
-          `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>${escHtml(json.error || 'Could not load documents')}</div></div>`;
+          `<div class="empty-state"><div class="empty-state-icon">️</div><div>${escHtml(json.error || 'Could not load documents')}</div></div>`;
         return;
       }
       DURABLE_VAULT = json;
@@ -1277,7 +1271,7 @@
       renderDurableDocs();
     } catch (e) {
       document.getElementById('durable-container').innerHTML =
-        `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Network error: ${escHtml(e.message)}</div></div>`;
+        `<div class="empty-state"><div class="empty-state-icon">️</div><div>Network error: ${escHtml(e.message)}</div></div>`;
     }
   }
 
@@ -1303,8 +1297,8 @@
           <strong style="color:#1a237e;">${s.document_count} document(s)</strong>
           <span style="color:#78909c;">· ${(s.total_bytes/1024).toFixed(1)} KB</span>
           ${s.last_upload_at ? `<span style="color:#78909c;">· last upload ${escHtml(formatDate(s.last_upload_at))}</span>` : ''}
-          ${s.with_assessment_summary ? `<span class="badge" style="background:#e8f5e9;color:#1b5e20;">🧠 ${s.with_assessment_summary} with 360 facts</span>` : ''}
-          ${s.with_ai_analysis ? `<span class="badge" style="background:#f3e5f5;color:#6a1b9a;">🤖 ${s.with_ai_analysis} AI-analyzed</span>` : ''}
+          ${s.with_assessment_summary ? `<span class="badge" style="background:#e8f5e9;color:#1b5e20;"> ${s.with_assessment_summary} with 360 facts</span>` : ''}
+          ${s.with_ai_analysis ? `<span class="badge" style="background:#f3e5f5;color:#6a1b9a;"> ${s.with_ai_analysis} AI-analyzed</span>` : ''}
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-top:0.5rem;">${entityChips}</div>
         <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-top:0.35rem;">${sourceChips}</div>
@@ -1315,7 +1309,7 @@
   function renderDurableDocs() {
     const container = document.getElementById('durable-container');
     if (!DURABLE_VAULT) {
-      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🗄️</div><div>No vault loaded.</div></div>';
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">️</div><div>No vault loaded.</div></div>';
       return;
     }
     let docs = DURABLE_VAULT.documents || [];
@@ -1325,7 +1319,7 @@
     document.getElementById('durable-count').textContent = docs.length ? `${docs.length} document(s)` : '';
 
     if (docs.length === 0) {
-      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📂</div><div>No documents in this vault yet.</div></div>';
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon"></div><div>No documents in this vault yet.</div></div>';
       return;
     }
 
@@ -1362,7 +1356,7 @@
               <td style="white-space:nowrap;font-size:0.78rem;">${formatDate(d.uploaded_at)}</td>
               <td style="white-space:nowrap;">
                 ${d.has_data
-                  ? `<a class="btn-sm btn-view" href="${escHtml(d.view_url || '#')}" target="_blank" rel="noopener">👁 Open</a>`
+                  ? `<a class="btn-sm btn-view" href="${escHtml(d.view_url || '#')}" target="_blank" rel="noopener">Open</a>`
                   : '<span style="color:#bbb;font-size:0.78rem;">—</span>'}
               </td>
             </tr>`).join('')}
@@ -1374,7 +1368,7 @@
   async function loadPlatformArchive() {
     if (!IS_ADMIN) {
       document.getElementById('archive-container').innerHTML =
-        '<div class="empty-state"><div class="empty-state-icon">🔒</div><div>Staff access required for the platform archive.</div></div>';
+        '<div class="empty-state"><div class="empty-state-icon"></div><div>Staff access required for the platform archive.</div></div>';
       return;
     }
     document.getElementById('tab-archive-btn').style.display = '';
@@ -1388,7 +1382,7 @@
       const json = await res.json();
       if (!res.ok || !json.success) {
         document.getElementById('archive-container').innerHTML =
-          `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>${escHtml(json.error || 'Could not load archive')}</div></div>`;
+          `<div class="empty-state"><div class="empty-state-icon">️</div><div>${escHtml(json.error || 'Could not load archive')}</div></div>`;
         return;
       }
       DURABLE_VAULT = json;
@@ -1413,7 +1407,7 @@
         docs.length ? `${docs.length} shown` : '';
       if (!docs.length) {
         document.getElementById('archive-container').innerHTML =
-          '<div class="empty-state"><div class="empty-state-icon">📂</div><div>No documents in this archive filter.</div></div>';
+          '<div class="empty-state"><div class="empty-state-icon"></div><div>No documents in this archive filter.</div></div>';
         return;
       }
       document.getElementById('archive-container').innerHTML = `
@@ -1440,7 +1434,7 @@
                 <td>${integrityBadge(d.integrity_status)}</td>
                 <td style="white-space:nowrap;font-size:0.78rem;">${formatDate(d.uploaded_at)}</td>
                 <td>${d.has_data
-                  ? `<a class="btn-sm btn-view" href="${escHtml(d.view_url || '#')}" target="_blank" rel="noopener">👁 Open</a>`
+                  ? `<a class="btn-sm btn-view" href="${escHtml(d.view_url || '#')}" target="_blank" rel="noopener">Open</a>`
                   : '—'}</td>
               </tr>`).join('')}
           </tbody>
@@ -1448,15 +1442,15 @@
         </div>`;
     } catch (e) {
       document.getElementById('archive-container').innerHTML =
-        `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Network error: ${escHtml(e.message)}</div></div>`;
+        `<div class="empty-state"><div class="empty-state-icon">️</div><div>Network error: ${escHtml(e.message)}</div></div>`;
     }
   }
 
   function integrityBadge(status) {
     const map = {
-      ok:         { bg: '#e8f5e9', fg: '#2e7d32', label: '✅ OK' },
-      mismatch:   { bg: '#ffebee', fg: '#b71c1c', label: '⛔ MISMATCH' },
-      missing:    { bg: '#fff3e0', fg: '#e65100', label: '⚠️ MISSING' },
+      ok:         { bg: '#e8f5e9', fg: '#2e7d32', label: ' OK' },
+      mismatch:   { bg: '#ffebee', fg: '#b71c1c', label: ' MISMATCH' },
+      missing:    { bg: '#fff3e0', fg: '#e65100', label: '️ MISSING' },
       unverified: { bg: '#eceff1', fg: '#546e7a', label: '— unverified' }
     };
     const cfg = map[status || 'unverified'] || map.unverified;
