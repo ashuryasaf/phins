@@ -976,7 +976,7 @@
       const voiceBtn = document.getElementById(VQA_VOICE_BTN_ID);
       if (voiceBtn) {
         voiceBtn.dataset.listening = "false";
-        voiceBtn.textContent = "🎤";
+        voiceBtn.textContent = "Mic";
       }
       setFloatingStatus(`Voice error: ${event.error}`, "error");
     };
@@ -986,7 +986,7 @@
       const voiceBtn = document.getElementById(VQA_VOICE_BTN_ID);
       if (voiceBtn) {
         voiceBtn.dataset.listening = "false";
-        voiceBtn.textContent = "🎤";
+        voiceBtn.textContent = "Mic";
       }
     };
 
@@ -1059,7 +1059,7 @@
       const toggle = document.getElementById(VQA_TOGGLE_ID);
       if (titleNode) titleNode.textContent = branding.title;
       if (input) input.placeholder = branding.placeholder;
-      if (toggle) toggle.textContent = `🎤 ${branding.toggleLabel}`;
+      if (toggle) toggle.textContent = branding.toggleLabel;
       if (status) {
         status.textContent = detectContext() === "admin"
           ? "Admin AI Mic ready."
@@ -1077,7 +1077,7 @@
     container.id = FLOATING_BAR_ID;
     container.className = "phins-vqa";
     container.innerHTML = `
-      <button type="button" id="${VQA_TOGGLE_ID}" aria-label="Open voice quick actions">🎤 ${branding.toggleLabel}</button>
+      <button type="button" id="${VQA_TOGGLE_ID}" aria-label="Open voice quick actions">${branding.toggleLabel}</button>
       <div id="${VQA_PANEL_ID}">
         <div class="phins-vqa-header">
           <div class="phins-vqa-title">${branding.title}</div>
@@ -1086,7 +1086,7 @@
         <div class="phins-vqa-row">
           <input id="${VQA_INPUT_ID}" type="text" placeholder="${branding.placeholder}" />
           <button type="button" class="phins-vqa-ask" id="phins-vqa-ask-btn">Ask</button>
-          <button type="button" id="${VQA_VOICE_BTN_ID}" data-listening="false">🎤</button>
+          <button type="button" id="${VQA_VOICE_BTN_ID}" data-listening="false">Mic</button>
         </div>
         <div id="${VQA_STATUS_ID}" data-kind="info">${detectContext() === "admin" ? "Admin AI Mic ready." : "Ready for quick actions."}</div>
         <div id="${VQA_ACTIONS_ID}" class="phins-vqa-actions"></div>

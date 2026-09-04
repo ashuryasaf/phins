@@ -645,7 +645,7 @@
             <tbody id="customer-table-body">
                 <tr>
                     <td colspan="8" style="text-align: center; padding: 40px; color: #666;">
-                        <span class="refresh-indicator">⏳</span> Loading customers...
+                        <span class="refresh-indicator"></span> Loading customers...
                     </td>
                 </tr>
             </tbody>
@@ -874,7 +874,7 @@
                 html += `<h3>Validation Checks</h3>`;
                 data.checks.forEach(check => {
                     const iconClass = check.status === 'PASS' ? 'pass' : check.status === 'FAIL' ? 'fail' : check.status === 'PENDING' ? 'pending' : 'warn';
-                    const icon = check.status === 'PASS' ? '' : check.status === 'FAIL' ? '' : check.status === 'PENDING' ? '⏳' : '';
+                    const icon = check.status === 'PASS' ? '' : check.status === 'FAIL' ? '' : check.status === 'PENDING' ? '' : '';
                     html += `
                         <div class="check-item">
                             <div class="check-icon ${iconClass}">${icon}</div>

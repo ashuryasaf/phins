@@ -42,6 +42,15 @@ def test_operational_pages_have_no_decorative_dingbats():
     assert leftovers == [], "decorative symbols remain:\n" + "\n".join(leftovers)
 
 
+def test_shared_payment_and_voice_scripts_have_no_decorative_emoji():
+    leftovers = []
+    for name in ("unified-payment.js", "ui-clarity.js"):
+        for line_no, line in enumerate(_read(name).splitlines(), 1):
+            if DINGBAT.search(line):
+                leftovers.append(f"{name}:{line_no}: {line.strip()[:140]}")
+    assert leftovers == [], "decorative symbols remain:\n" + "\n".join(leftovers)
+
+
 def test_mobile_menu_buttons_use_menu_label():
     for name in ("admin.html", "accountant-dashboard.html"):
         html = _read(name)
