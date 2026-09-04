@@ -532,7 +532,7 @@
     <button type="button" class="download-btn primary" id="btn-download-pdf"
             title="Generate and download a PDF copy of this 1-pager">⬇️ Download PDF</button>
     <button type="button" class="download-btn ghost" id="btn-print-pdf"
-            onclick="window.print()" title="Open the system print dialog (use 'Save as PDF')">🖨️ Print / Save as PDF</button>
+            onclick="window.print()" title="Open the system print dialog (use 'Save as PDF')">️ Print / Save as PDF</button>
   </div>
 
   <!-- ───────── PAGE 1 — EXECUTIVE 1-PAGER ───────── -->
@@ -722,7 +722,7 @@
         </div>
       </div>
 
-      <span class="integrity-stamp" id="integrity-stamp">✓ Data integrity verified · single locked source</span>
+      <span class="integrity-stamp" id="integrity-stamp"> Data integrity verified · single locked source</span>
     </div>
 
     <div class="page-footer">
@@ -820,7 +820,7 @@
         </div>
       </div>
 
-      <span class="integrity-stamp" id="appendix-integrity-stamp">✓ Data integrity verified · single locked source</span>
+      <span class="integrity-stamp" id="appendix-integrity-stamp"> Data integrity verified · single locked source</span>
     </div>
 
     <div class="page-footer">
@@ -1020,7 +1020,7 @@
       document.getElementById('doc-id').textContent = docId;
       document.getElementById('doc-hash').textContent = 'SHA-DJB2:' + intg;
 
-      const stampText = '✓ Data integrity verified · single locked source · ' + docId;
+      const stampText = ' Data integrity verified · single locked source · ' + docId;
       document.getElementById('integrity-stamp').textContent = stampText;
       document.getElementById('appendix-integrity-stamp').textContent = stampText;
     })();

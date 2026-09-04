@@ -635,7 +635,7 @@
 <header class="cyber-header">
   <div class="cyber-header-left">
     <a href="/cyber-security.html" class="cyber-logo">
-      <div class="cyber-logo-shield">🛡</div>
+      <div class="cyber-logo-shield"></div>
       <span>PHINS SOC</span>
     </a>
     <nav class="cyber-nav">
@@ -706,7 +706,7 @@
     <!-- Threat Activity (Chart + Recent) -->
     <div class="panel" id="threats">
       <div class="panel-header">
-        <div class="panel-title">🎯 Threat Activity <span class="panel-badge badge-live">LIVE</span></div>
+        <div class="panel-title"> Threat Activity <span class="panel-badge badge-live">LIVE</span></div>
         <span class="panel-badge badge-count" id="threat-count">0</span>
       </div>
       <div class="panel-body">
@@ -718,7 +718,7 @@
     <!-- Login Activity -->
     <div class="panel" id="logins">
       <div class="panel-header">
-        <div class="panel-title">🔐 Login Activity <span class="panel-badge badge-live">LIVE</span></div>
+        <div class="panel-title"> Login Activity <span class="panel-badge badge-live">LIVE</span></div>
         <span class="panel-badge badge-count" id="login-count">0</span>
       </div>
       <div class="panel-body">
@@ -729,7 +729,7 @@
     <!-- Applications Submitted -->
     <div class="panel" id="applications">
       <div class="panel-header">
-        <div class="panel-title">📋 Recent Applications</div>
+        <div class="panel-title"> Recent Applications</div>
         <span class="panel-badge badge-count" id="app-count">0</span>
       </div>
       <div class="panel-body">
@@ -740,7 +740,7 @@
     <!-- Supplier Registry -->
     <div class="panel" id="suppliers">
       <div class="panel-header">
-        <div class="panel-title">🏪 Supplier Registry</div>
+        <div class="panel-title"> Supplier Registry</div>
         <span class="panel-badge badge-count" id="supplier-count">0</span>
       </div>
       <div class="panel-body">
@@ -751,7 +751,7 @@
     <!-- Firewall Status -->
     <div class="panel" id="firewall">
       <div class="panel-header">
-        <div class="panel-title">🔥 Firewall Status</div>
+        <div class="panel-title"> Firewall Status</div>
         <span class="panel-badge badge-live">ACTIVE</span>
       </div>
       <div class="panel-body">
@@ -762,7 +762,7 @@
     <!-- Blocked IPs -->
     <div class="panel">
       <div class="panel-header">
-        <div class="panel-title">🚫 Blocked IPs</div>
+        <div class="panel-title"> Blocked IPs</div>
         <span class="panel-badge badge-count" id="blocked-count">0</span>
       </div>
       <div class="panel-body">
@@ -773,7 +773,7 @@
     <!-- IDS Alerts -->
     <div class="panel panel-full" id="alerts">
       <div class="panel-header">
-        <div class="panel-title">🚨 Security Alerts <span class="panel-badge badge-live">LIVE</span></div>
+        <div class="panel-title"> Security Alerts <span class="panel-badge badge-live">LIVE</span></div>
         <span class="panel-badge badge-count" id="alerts-count-badge">0</span>
       </div>
       <div class="panel-body" style="max-height:500px;">
@@ -784,7 +784,7 @@
     <!-- Active Sessions -->
     <div class="panel">
       <div class="panel-header">
-        <div class="panel-title">👥 Active Sessions</div>
+        <div class="panel-title"> Active Sessions</div>
         <span class="panel-badge badge-count" id="session-count-badge">0</span>
       </div>
       <div class="panel-body">
@@ -795,7 +795,7 @@
     <!-- Quarantined Files -->
     <div class="panel">
       <div class="panel-header">
-        <div class="panel-title">📦 Quarantined Files</div>
+        <div class="panel-title"> Quarantined Files</div>
         <span class="panel-badge badge-count" id="quarantine-count">0</span>
       </div>
       <div class="panel-body">
@@ -806,7 +806,7 @@
     <!-- Full Event Log -->
     <div class="panel panel-full" id="events">
       <div class="panel-header">
-        <div class="panel-title">📜 Security Event Log <span class="panel-badge badge-live">LIVE</span></div>
+        <div class="panel-title"> Security Event Log <span class="panel-badge badge-live">LIVE</span></div>
         <span class="panel-badge badge-count" id="events-count-badge">0</span>
       </div>
       <div class="panel-body" style="max-height:500px;">
@@ -872,13 +872,13 @@ function chipForStatus(status) {
 }
 
 function findingIcon(text) {
-  if (!text) return '🔵';
-  if (text.startsWith('CRITICAL')) return '🔴';
+  if (!text) return '';
+  if (text.startsWith('CRITICAL')) return '';
   if (text.startsWith('HIGH') || text.startsWith('ALERT')) return '🟠';
   if (text.startsWith('WARNING')) return '🟡';
   if (text.startsWith('MEDIUM')) return '🟡';
   if (text.startsWith('LOW') || text.startsWith('INFO')) return '🟢';
-  return '🔵';
+  return '';
 }
 
 async function loadDashboard() {
@@ -967,7 +967,7 @@ function renderDashboard(data) {
   const protGrid = document.getElementById('protections-grid');
   protGrid.innerHTML = (ai.protections_active || []).map(p => {
     const active = p.includes('ACTIVE');
-    return `<div class="protection-item ${active ? 'protection-active' : 'protection-inactive'}">${active ? '✓' : '✗'} ${p}</div>`;
+    return `<div class="protection-item ${active ? 'protection-active' : 'protection-inactive'}">${active ? '' : ''} ${p}</div>`;
   }).join('');
 
   // KPIs
@@ -1074,7 +1074,7 @@ function renderThreatChart(attempts) {
 
 function renderThreatLog(attempts) {
   const el = document.getElementById('threat-log');
-  if (!attempts || !attempts.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">✓</div>No threats detected</div>'; return; }
+  if (!attempts || !attempts.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon"></div>No threats detected</div>'; return; }
   el.innerHTML = attempts.slice(-15).reverse().map(a => {
     const item = safeObj(a);
     const details = safeObj(item.details);
@@ -1114,7 +1114,7 @@ function renderLoginActivity(login, data) {
 
   document.getElementById('login-count').textContent = entries.length;
 
-  if (!entries.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">🔐</div>No login activity</div>'; return; }
+  if (!entries.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon"></div>No login activity</div>'; return; }
   el.innerHTML = entries.map(e => `
     <div class="log-entry ${e.cls}">
       <div class="log-header">
@@ -1128,7 +1128,7 @@ function renderLoginActivity(login, data) {
 
 function renderApplications(apps) {
   if (!apps.length) {
-    document.getElementById('applications-table').innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div>No recent applications</div>';
+    document.getElementById('applications-table').innerHTML = '<div class="empty-state"><div class="empty-icon"></div>No recent applications</div>';
     return;
   }
   document.getElementById('applications-table').innerHTML = `
@@ -1148,7 +1148,7 @@ function renderApplications(apps) {
 
 function renderSuppliers(suppliers) {
   if (!suppliers.length) {
-    document.getElementById('suppliers-table').innerHTML = '<div class="empty-state"><div class="empty-icon">🏪</div>No supplier registrations</div>';
+    document.getElementById('suppliers-table').innerHTML = '<div class="empty-state"><div class="empty-icon"></div>No supplier registrations</div>';
     return;
   }
   document.getElementById('suppliers-table').innerHTML = `
@@ -1168,7 +1168,7 @@ function renderSuppliers(suppliers) {
 function renderFirewall(fw, system) {
   const el = document.getElementById('firewall-content');
   if (!system.firewall_enabled) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-icon">🔥</div>Firewall module not active</div>';
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon"></div>Firewall module not active</div>';
     return;
   }
 
@@ -1213,7 +1213,7 @@ function renderBlockedIPs(blocked) {
   const el = document.getElementById('blocked-ips-table');
   const entries = Object.entries(safeObj(blocked));
   if (!entries.length) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-icon">✓</div>No blocked IPs</div>';
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon"></div>No blocked IPs</div>';
     return;
   }
   el.innerHTML = `
@@ -1235,7 +1235,7 @@ function renderBlockedIPs(blocked) {
 function renderAlerts(alerts) {
   const el = document.getElementById('alerts-list');
   if (!alerts || !alerts.length) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-icon">🔔</div>No security alerts</div>';
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon"></div>No security alerts</div>';
     return;
   }
   el.innerHTML = alerts.map(a => {
@@ -1245,12 +1245,12 @@ function renderAlerts(alerts) {
     return `
     <div class="alert-card alert-${sev === 'critical' ? 'critical' : 'warning'}">
       <div class="alert-header">
-        <span class="alert-rule">${sev === 'critical' ? '🔴' : '🟡'} ${rule}</span>
+        <span class="alert-rule">${sev === 'critical' ? '' : '🟡'} ${rule}</span>
         <span class="alert-time">${formatDateTime(al.created_at)}</span>
       </div>
       <div class="alert-message">${safeStr(al.message)}</div>
       <div style="margin-top:4px;font-size:0.73rem;color:var(--cyber-muted)">Source: <span class="log-ip">${safeStr(al.source_ip)}</span> | ID: ${safeStr(al.alert_id)}</div>
-      ${!al.acknowledged ? `<button class="alert-ack-btn" onclick="acknowledgeAlert('${safeStr(al.alert_id)}')">Acknowledge</button>` : '<span style="font-size:0.72rem;color:var(--cyber-green);margin-top:6px;display:inline-block">✓ Acknowledged</span>'}
+      ${!al.acknowledged ? `<button class="alert-ack-btn" onclick="acknowledgeAlert('${safeStr(al.alert_id)}')">Acknowledge</button>` : '<span style="font-size:0.72rem;color:var(--cyber-green);margin-top:6px;display:inline-block"> Acknowledged</span>'}
     </div>`;
   }).join('');
 }
@@ -1258,7 +1258,7 @@ function renderAlerts(alerts) {
 function renderSessions(sessions) {
   const el = document.getElementById('sessions-table');
   if (!sessions.length) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-icon">👥</div>No active sessions</div>';
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon"></div>No active sessions</div>';
     return;
   }
   el.innerHTML = `
@@ -1278,7 +1278,7 @@ function renderSessions(sessions) {
 function renderQuarantine(quarantine) {
   const el = document.getElementById('quarantine-log');
   if (!quarantine || !quarantine.length) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div>No quarantined files</div>';
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon"></div>No quarantined files</div>';
     return;
   }
   el.innerHTML = quarantine.slice().reverse().map(q => {
@@ -1302,7 +1302,7 @@ function renderQuarantine(quarantine) {
 function renderEvents(events) {
   const el = document.getElementById('events-log');
   if (!events || !events.length) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📜</div>No security events recorded</div>';
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon"></div>No security events recorded</div>';
     return;
   }
   el.innerHTML = events.slice().reverse().map(e => {

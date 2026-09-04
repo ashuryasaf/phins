@@ -1546,7 +1546,7 @@
             <div class="card-title">Quick Actions</div>
             <div style="display:flex;gap:12px;flex-wrap:wrap;">
               <button class="btn btn-primary" onclick="showSection('simulator')">Run Simulation</button>
-              <button class="btn btn-success" onclick="showSection('reinsurance')">🛡️ Structure Hedge</button>
+              <button class="btn btn-success" onclick="showSection('reinsurance')">️ Structure Hedge</button>
               <button class="btn btn-success" onclick="showSection('underwriting')">Edit Underwriting</button>
               <button class="btn btn-warning" onclick="exportTables()">Export Tables</button>
               <button class="btn btn-outline" onclick="showSection('audit')">View Audit Log</button>
@@ -5055,7 +5055,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
                 <td>${reconNxAvg.n ? fmt(reconNxAvg.n) : '0'} × ${fmtCurrency(reconNxAvg.avg_premium)} = ${fmtCurrency(reconNxAvg.computed)}</td>
                 <td>${fmtCurrency(reconNxAvg.expected)}</td>
                 <td>${fmtCurrency(reconNxAvg.delta)}</td>
-                <td>${reconNxAvg.check ? '✅' : '❌'}</td>
+                <td>${reconNxAvg.check ? '' : ''}</td>
               </tr>
               <tr>
                 <td>Components → total</td>
@@ -5063,7 +5063,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
                 <td>${fmtCurrency(reconSum.risk)} + ${fmtCurrency(reconSum.savings)} + ${fmtCurrency(reconSum.expense)} + ${fmtCurrency(reconSum.profit)} = ${fmtCurrency(reconSum.computed)}</td>
                 <td>${fmtCurrency(reconSum.expected)}</td>
                 <td>${fmtCurrency(reconSum.delta)}</td>
-                <td>${reconSum.check ? '✅' : '❌'}</td>
+                <td>${reconSum.check ? '' : ''}</td>
               </tr>
               <tr>
                 <td>Savings markup</td>
@@ -5071,7 +5071,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
                 <td>${reconMarkup.applies ? `${(reconMarkup.savings_rate * 100).toFixed(2)}% × ${fmtCurrency(reconSum.risk)} = ${fmtCurrency(reconMarkup.computed)}` : '<em>not applicable</em>'}</td>
                 <td>${reconMarkup.applies ? fmtCurrency(reconMarkup.actual) : '—'}</td>
                 <td>${reconMarkup.applies ? fmtCurrency(reconMarkup.delta) : '—'}</td>
-                <td>${reconMarkup.check ? '✅' : '❌'}</td>
+                <td>${reconMarkup.check ? '' : ''}</td>
               </tr>
             </tbody>
           </table>
@@ -5418,7 +5418,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Failed to load insights');
 
-        const sevIcon = { positive: '✅', info: 'ℹ️', warning: '⚠️' };
+        const sevIcon = { positive: '', info: 'ℹ️', warning: '⚠️' };
         const adoption = data.adoption || {};
         const auto = data.auto_issuance || {};
         const activity = data.version_activity || {};
@@ -5600,16 +5600,16 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
                 <td>${(r.coverage_units_share * 100).toFixed(2)}%</td>
                 <td>${fmtCurrency(r.cumulative_release)}</td>
                 <td><strong>${fmtCurrency(r.closing_balance)}</strong></td>
-                <td>${checks.prev_minus_release_equals_balance ? '✅' : '❌'}</td>
-                <td>${checks.opening_minus_cumulative_equals_balance ? '✅' : '❌'}</td>
-                <td>${checks.coverage_units_share_holds ? '✅' : '❌'}</td>
+                <td>${checks.prev_minus_release_equals_balance ? '' : ''}</td>
+                <td>${checks.opening_minus_cumulative_equals_balance ? '' : ''}</td>
+                <td>${checks.coverage_units_share_holds ? '' : ''}</td>
               </tr>
             `;
           }).join('');
           const totals = rec.totals || {};
           const integrity = rec.data_integrity || {};
           const integrityRows = Object.entries(integrity).map(([k, v]) =>
-            `<tr><td>${k}</td><td>${v ? '✅' : '❌'}</td></tr>`).join('');
+            `<tr><td>${k}</td><td>${v ? '' : ''}</td></tr>`).join('');
           const ident = rec.identities || {};
           const sumId = ident.sum_of_releases || {};
           return `
@@ -5627,9 +5627,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
                   <th>Coverage-units share</th>
                   <th>Cumulative Release</th>
                   <th>Closing</th>
-                  <th>balance − Δ ✓</th>
-                  <th>opening − ΣΔ ✓</th>
-                  <th>share ✓</th>
+                  <th>balance − Δ </th>
+                  <th>opening − ΣΔ </th>
+                  <th>share </th>
                 </tr>
               </thead>
               <tbody>${yearlyRows}</tbody>
@@ -5676,7 +5676,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
       const integrity = projection.data_integrity || {};
       const integrityRows = Object.entries(integrity).map(([k, v]) =>
-        `<tr><td>${k}</td><td>${v ? '✅' : '❌'}</td></tr>`).join('');
+        `<tr><td>${k}</td><td>${v ? '' : ''}</td></tr>`).join('');
       integrityEl.innerHTML = `
         <table class="data-table">
           <thead><tr><th>Check</th><th>Result</th></tr></thead>
@@ -5748,7 +5748,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       `).join('');
       const integrityKeys = Object.keys(ref.data_integrity || {}).filter(k => typeof ref.data_integrity[k] === 'boolean');
       const integrityHtml = integrityKeys.map(k =>
-        `<li>${k}: ${ref.data_integrity[k] ? '✅' : '❌'}</li>`).join('');
+        `<li>${k}: ${ref.data_integrity[k] ? '' : ''}</li>`).join('');
       // Optional savings accumulation block for the reference policyholder.
       let savingsHtml = '';
       const accum = ref.savings_accumulation;
@@ -5770,7 +5770,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         const aTot = accum.totals || {};
         const aInt = accum.data_integrity || {};
         const aIntHtml = Object.keys(aInt).map(k =>
-          `<li>${k}: ${aInt[k] ? '✅' : '❌'}</li>`
+          `<li>${k}: ${aInt[k] ? '' : ''}</li>`
         ).join('');
         savingsHtml = `
           <h4 style="margin-top:20px;">Savings Accumulation (managed portfolio)</h4>
@@ -5981,7 +5981,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const checksEl = document.getElementById('annuity-reserve-integrity-checks');
       if (checksEl) {
         checksEl.innerHTML = Object.entries(checks).map(([key, ok]) => {
-          const sym = ok ? '✅' : '❌';
+          const sym = ok ? '' : '';
           const color = ok ? 'var(--success)' : 'var(--danger)';
           return `<li style="color:${color};">${sym} ${escapeHtml(key)}</li>`;
         }).join('');
@@ -6849,7 +6849,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       refreshAnnualReportSources();
       const bands = val.bands || {};
       const order = [
-        ['insurance_portfolio', '🛡️ Insurance Portfolio'],
+        ['insurance_portfolio', '️ Insurance Portfolio'],
         ['risk_portfolio', '⚠️ Risk Portfolio (Liability View)'],
         ['company_phins_technologies', 'Company (PHINS Technologies)'],
       ];
@@ -6914,7 +6914,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       `;
       const integrity = val.data_integrity || {};
       const integrityRows = Object.entries(integrity).map(([k, v]) =>
-        `<tr><td>${k}</td><td>${v ? '✅' : '❌'}</td></tr>`).join('');
+        `<tr><td>${k}</td><td>${v ? '' : ''}</td></tr>`).join('');
       const companyComponents = (bands.company_phins_technologies?.components) || {};
       const compRows = Object.entries(companyComponents).map(([k, v]) =>
         `<tr><td>${k}</td><td style="text-align:right;">${fmtAbs(v)}</td></tr>`).join('');
@@ -7857,7 +7857,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (action === 'breaking_news') {
         const headlines = [
           `Mortality cluster detected in cohort age ${sandboxRandInt(50, 75)}+ — reserve adequacy under review.`,
-          `🌪️ Catastrophic event projected: ${sandboxRandInt(20, 200)} extra disability claims this quarter.`,
+          `️ Catastrophic event projected: ${sandboxRandInt(20, 200)} extra disability claims this quarter.`,
           `Loss ratio drifted to ${sandboxFmtPct((50 + sandboxRandInt(0, 60)) / 100)} — pricing committee notified.`,
           `⚠️ Spike in ADL 8+ admissions in sandbox cohort — re-running mortality basis.`,
           `New medical guideline expected to lift average claim severity by ${sandboxRandInt(3, 15)}%.`,
@@ -8175,7 +8175,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         body.innerHTML = proj.rows.map(r => {
           const elapsed = r.month <= proj.monthsElapsed;
           const rowStyle = elapsed ? ' style="background:var(--bg);"' : '';
-          const marker = elapsed ? ' ✓' : '';
+          const marker = elapsed ? ' ' : '';
           const netClass = r.netCashFlow >= 0 ? 'sandbox-status approved' : 'sandbox-status declined';
           return `
             <tr${rowStyle}>
@@ -10229,7 +10229,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
       const integritySection = (() => {
         const allOk = checks.every(c => c.ok);
-        const rows = checks.map(c => `<tr><td>${annualEsc(c.name)}</td><td>${c.ok ? '✅' : '❌'}</td><td>${annualEsc(c.detail)}</td></tr>`).join('');
+        const rows = checks.map(c => `<tr><td>${annualEsc(c.name)}</td><td>${c.ok ? '' : ''}</td><td>${annualEsc(c.detail)}</td></tr>`).join('');
         return `<div class="integrity ${allOk ? '' : 'bad'}">
           <strong>Pipeline Integrity:</strong> ${allOk ? 'all checks passed' : 'one or more checks need attention'} ·
           report hash <code>${payload.integrity_hash}</code> ·
