@@ -453,9 +453,57 @@ def test_billing_service_payment_writes_ledger_and_accounting_book():
         assert float(premium_txs[0]["amount"]) == 40.0
         assert accounting_book_totals()["premium_posted"] == 40.0
         assert bills[bill["bill_id"]]["status"] == "partial"
+        billing.record_payment(bill["bill_id"], 60.0)
+        assert accounting_book_totals()["premium_posted"] == 100.0
+        assert bills[bill["bill_id"]]["status"] == "paid"
     finally:
         POLICIES.pop(policy_id, None)
         for tx_id in list(TRANSACTION_LEDGER.keys()):
             if tx_id not in created_tx_ids:
                 TRANSACTION_LEDGER.pop(tx_id, None)
         reset_accounting_engine()
+
+
+def test_monthly_distribution_uses_kernel_pin_not_quote_override():
+    """Issued risk/savings come from the policy pin, never a re-price."""
+    import web_portal.server as portal
+
+    customer_id = "CUST-PIN-DIST"
+    policy_id = "POL-PIN-DIST"
+    portal.CUSTOMERS[customer_id] = {"id": customer_id, "name": "Pin Dist", "age": 40}
+    portal.POLICIES[policy_id] = {
+        "id": policy_id,
+        "customer_id": customer_id,
+        "type": "life",
+        "coverage_amount": 250000.0,
+        "annual_premium": 1000.0,
+        "monthly_premium": 83.33,
+        "status": "active",
+        "risk_score": "medium",
+        "risk_premium_annual": 800.0,
+        "savings_premium_annual": 200.0,
+        "pricing_source": "pricing_kernel",
+        "integrity_hash": "pin-hash",
+    }
+    try:
+        dist = portal.calculate_monthly_distribution(customer_id)
+        assert dist["actuarial_data"]["total_risk_premium"] == 800.0
+        assert dist["actuarial_data"]["total_savings_premium"] == 200.0
+        assert dist["actuarial_data"]["data_source"] == "pricing_kernel_pin"
+        assert dist["active_policies"][0]["integrity_hash"] == "pin-hash"
+        # Cash split still follows customer allocation on the issued monthly.
+        assert abs(dist["distribution"]["risk_coverage"] + dist["distribution"]["total_savings"]
+                   - dist["total_monthly_premium"]) < 0.01
+    finally:
+        portal.POLICIES.pop(policy_id, None)
+        portal.CUSTOMERS.pop(customer_id, None)
+
+
+def test_simulate_coverage_quotes_through_calculate_premium():
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parents[1] / "web_portal" / "server.py"
+    text = source.read_text(encoding="utf-8")
+    assert "premium_data = calculate_premium(quote_payload)" in text
+    assert "base_rates = {'life': 0.012" not in text
+    assert "calculate_age_adjusted_premium(base_annual_premium" not in text

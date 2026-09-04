@@ -223,17 +223,25 @@ def resolve_premium_split(
 
 
 def _allocation_already_posted(engine: Any, bill_id: str, source_tx_id: Optional[str]) -> bool:
+    """True when this cash slice is already on the book.
+
+    Key is (bill_id, source_tx_id). The same bill can receive several
+    partial payments — each ledger tx must post. Missing source_tx_id
+    falls back to bill_id only so a retry without a tx id stays idempotent.
+    """
     allocations = getattr(engine, "allocations", {}) or {}
     wanted_bill = str(bill_id or "")
     marker = f"ledger_tx={source_tx_id}" if source_tx_id else ""
     for alloc in allocations.values():
         alloc_bill = str(getattr(alloc, "bill_id", "") or "")
         notes = str(getattr(alloc, "notes", "") or "")
-        if wanted_bill and alloc_bill == wanted_bill:
-            return True
-        # Same ledger payment + same synthetic bill id (unbilled remainder).
-        if marker and marker in notes and alloc_bill == wanted_bill:
-            return True
+        if not wanted_bill or alloc_bill != wanted_bill:
+            continue
+        if source_tx_id:
+            if marker in notes:
+                return True
+            continue
+        return True
     return False
 
 
@@ -299,25 +307,30 @@ def post_collected_premiums_to_accounting(
     split = resolve_premium_split(amount, policy, fallback_risk_pct)
     results: List[Dict[str, Any]] = []
     posted_from_bills = Decimal("0.00")
+    remaining_cash = money(amount)
     for bill_id in bills_paid:
         bill = billing.get(bill_id) or billing.get(str(bill_id)) or {}
         bill_amount = money(bill.get("amount_paid") or bill.get("amount") or 0)
-        if bill_amount <= 0:
+        # Post this payment's slice, not cumulative amount_paid — a later
+        # partial on the same bill must not re-post the earlier cash.
+        slice_amount = bill_amount if bill_amount <= remaining_cash else remaining_cash
+        if slice_amount <= 0:
             continue
-        bill_split = resolve_premium_split(bill_amount, policy, split["risk_percentage"])
+        bill_split = resolve_premium_split(slice_amount, policy, split["risk_percentage"])
         results.append(
             post_premium_to_accounting_book(
                 bill_id=str(bill.get("id") or bill_id),
                 policy_id=str(bill.get("policy_id") or policy_id or ""),
                 customer_id=customer_id,
-                amount=bill_amount,
+                amount=slice_amount,
                 risk_percentage=bill_split["risk_percentage"],
                 source_tx_id=source_tx_id,
                 notes=f"kernel_split={bill_split['split_source']}",
                 engine=engine,
             )
         )
-        posted_from_bills += bill_amount
+        posted_from_bills += slice_amount
+        remaining_cash -= slice_amount
     leftover = money(unbilled_amount)
     remaining_cash = money(amount) - posted_from_bills
     if leftover <= 0 and remaining_cash > 0:

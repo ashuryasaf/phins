@@ -6090,6 +6090,7 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
     total_risk_premium = 0
     total_savings_premium = 0
     active_policies = []
+    from services.financial_unification_service import kernel_components_from_policy
     
     for policy in POLICIES.values():
         if policy.get('customer_id') == customer_id and status_eq(policy, 'active'):
@@ -6100,23 +6101,25 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
             # Get policy's risk score and convert to ADL level
             risk_score = policy.get('risk_score', 'medium')
             adl_level = RISK_TO_ADL_MAP.get(risk_score, 5)
-            
-            # Calculate age-adjusted premium with FULL actuarial basis (age + ADL)
-            age_info = calculate_age_adjusted_premium(
-                annual_premium, 
-                customer_age, 
-                policy_type,
-                adl_level=adl_level,
-                coverage_amount=policy.get('coverage_amount', 0),
-                use_actuarial=True
-            )
+
+            # Issued premium is the identity. Prefer the kernel pin on the
+            # policy (or its snapshot). Never re-price through the quote
+            # wrapper — that path still has a legacy 50% savings override.
+            kernel = kernel_components_from_policy(policy)
+            pinned_risk = float(kernel.get('risk_premium_annual') or 0)
+            pinned_savings = float(kernel.get('savings_premium_annual') or 0)
+            if pinned_risk or pinned_savings:
+                total_risk_premium += pinned_risk
+                total_savings_premium += pinned_savings
+                actuarial_source = kernel.get('pricing_source') or 'pricing_kernel'
+            else:
+                risk_share = allocation.get('risk_pct', 50) / 100.0
+                total_risk_premium += annual_premium * risk_share
+                total_savings_premium += annual_premium * (1.0 - risk_share)
+                actuarial_source = 'issued_premium_allocation'
             
             total_monthly_premium += monthly_premium
             total_annual_premium += annual_premium
-            
-            # Track risk vs savings components for actuarial integrity
-            total_risk_premium += age_info.get('risk_premium', annual_premium * 0.5)
-            total_savings_premium += age_info.get('savings_premium', annual_premium * 0.5)
             
             active_policies.append({
                 'policy_id': policy.get('id'),
@@ -6127,10 +6130,11 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
                 'start_date': policy.get('start_date', ''),
                 'risk_score': risk_score,
                 'adl_level': adl_level,
-                'age_factor': age_info['age_factor'],
-                'adl_multiplier': age_info.get('adl_multiplier', 1.0),
-                'combined_factor': age_info.get('combined_factor', age_info['age_factor']),
-                'actuarial_source': age_info.get('actuarial_source', 'PHINS_ACTUARIAL_TABLES_V1')
+                'age_factor': 1.0,
+                'adl_multiplier': 1.0,
+                'combined_factor': 1.0,
+                'actuarial_source': actuarial_source,
+                'integrity_hash': kernel.get('integrity_hash'),
             })
     
     # Calculate savings portion (cumulative from all policies)
@@ -6173,13 +6177,13 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
                 'crypto': crypto_amount
             }
         },
-        # Actuarial breakdown (consistent with Long-Term Projection Calculator)
+        # Actuarial breakdown from the issued kernel pin (not a re-price)
         'actuarial_data': {
             'total_risk_premium': round(total_risk_premium, 2),
             'total_savings_premium': round(total_savings_premium, 2),
-            'data_source': 'PHINS_ACTUARIAL_TABLES_V1',
-            'calculation_method': 'Mortality + ADL Risk + Lapse Rate',
-            'note': 'Risk premiums adjusted for age and ADL level per actuarial tables'
+            'data_source': 'pricing_kernel_pin',
+            'calculation_method': 'Pinned kernel risk/savings on issued policies',
+            'note': 'Risk/savings come from the policy pin; cash split still follows customer allocation'
         },
         # Annual projections (for financial planning)
         'annual_projection': {
@@ -24802,17 +24806,29 @@ For claims or questions, please contact:
                     except:
                         customer_age = 45
                 
-                # Calculate premium for new coverage based on age
-                # Base rate: ~1.2% of coverage for life, 1.0% for health
-                base_rates = {'life': 0.012, 'health': 0.010, 'auto': 0.024, 'property': 0.008}
-                base_rate = base_rates.get(policy_type, 0.012)
-                
-                # Get age-adjusted premium
-                base_annual_premium = additional_coverage * base_rate
-                age_adjusted = calculate_age_adjusted_premium(base_annual_premium, customer_age, policy_type)
-                
-                new_monthly_premium = age_adjusted['monthly_premium']
-                new_annual_premium = age_adjusted['annual_premium']
+                # What-if quotes use the same kernel path as issuance so the
+                # simulated premium matches what /api/policies/create would bill.
+                quote_payload = {
+                    'type': policy_type,
+                    'coverage_amount': additional_coverage,
+                    'age': customer_age,
+                    'gender': customer.get('gender') or customer.get('sex'),
+                    'smoking_status': customer.get('smoking_status') or customer.get('tobacco'),
+                    'customer_dob': customer.get('dob'),
+                    'ethnicity': customer.get('ethnicity'),
+                    'risk_score': customer.get('risk_score', 'medium'),
+                    'term_years': customer.get('term_years') or 20,
+                    'coverage_years': customer.get('coverage_years') or 20,
+                }
+                premium_data = calculate_premium(quote_payload)
+                new_monthly_premium = float(premium_data.get('monthly') or 0)
+                new_annual_premium = float(premium_data.get('annual') or 0)
+                age_adjusted = {
+                    'age_factor': 1.0,
+                    'annual_premium': new_annual_premium,
+                    'monthly_premium': new_monthly_premium,
+                    'pricing_source': premium_data.get('pricing_source'),
+                }
                 
                 # Calculate new totals
                 new_total_monthly = current_distribution['total_monthly_premium'] + new_monthly_premium
@@ -24871,12 +24887,12 @@ For claims or questions, please contact:
                         'to_algo': algo_increase
                     },
                     'age_premium_progression': {
-                        'note': 'Estimated annual premiums at different ages for this coverage',
-                        'age_45': calculate_age_adjusted_premium(base_annual_premium, 45, policy_type)['annual_premium'],
-                        'age_48': calculate_age_adjusted_premium(base_annual_premium, 48, policy_type)['annual_premium'],
-                        'age_50': calculate_age_adjusted_premium(base_annual_premium, 50, policy_type)['annual_premium'],
-                        'age_55': calculate_age_adjusted_premium(base_annual_premium, 55, policy_type)['annual_premium'],
-                        'age_60': calculate_age_adjusted_premium(base_annual_premium, 60, policy_type)['annual_premium']
+                        'note': 'Estimated annual premiums at different ages for this coverage (kernel)',
+                        'age_45': calculate_premium({**quote_payload, 'age': 45})['annual'],
+                        'age_48': calculate_premium({**quote_payload, 'age': 48})['annual'],
+                        'age_50': calculate_premium({**quote_payload, 'age': 50})['annual'],
+                        'age_55': calculate_premium({**quote_payload, 'age': 55})['annual'],
+                        'age_60': calculate_premium({**quote_payload, 'age': 60})['annual'],
                     }
                 }, default=str).encode('utf-8'))
             except Exception as e:
