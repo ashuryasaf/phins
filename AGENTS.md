@@ -419,8 +419,12 @@ referenced files, commands, paths, and ports still exist.
   non-production aid and is refused in production; route any new OTP surface
   through `_demo_otp_exposure_allowed()`.
 - Never commit backups. `backups/` is gitignored and
-  `scripts/backup_platform.sh` refuses to write into a tracked path; a snapshot
-  can contain a full database dump.
+ `scripts/backup_platform.sh` refuses to write into a tracked path; a snapshot
+ can contain a full database dump. Each successful run writes
+ `restore_record.json` and `backups/RESTORE_INDEX.json`. A metadata-only
+ catalog (git SHA + checksums) may be written to
+ `PHINS_BACKUP_RECORD_CATALOG` (typically `docs/platform_restore_catalog.json`)
+ and listed with `scripts/restore_from_backup.sh --list`.
 - Repairs that rewrite ledger/audit rows must write their forensic before/after
   journal first (fail closed) and verify the result after commit — see
   `PlatformEventLedgerService.persist_chain_to_db`.

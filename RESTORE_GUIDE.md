@@ -93,13 +93,17 @@ If you have uncommitted changes when running the restore script:
 
 ## Available Backups
 
-The repository includes several backups:
+Snapshots are written to the gitignored `backups/` directory and **recorded**
+for restoration (`restore_record.json` + `backups/RESTORE_INDEX.json`).
 
-| Backup Date | Location | Type |
-|------------|----------|------|
-| January 5, 2026 | `backups/20260105T165208Z/` | Full platform snapshot |
-| January 9, 2026 | `backups/20260109_210945/` | Git bundle + config |
-| January 12, 2026 | `backups/20260112_222044/` | Data snapshots |
+```bash
+bash scripts/restore_from_backup.sh --list
+bash scripts/restore_from_backup.sh --verify
+```
+
+Metadata for the latest recorded snapshot is also stored in
+`docs/platform_restore_catalog.json` (checksums and git commit only — never
+the archive or a database dump). Restore steps are in `BACKUP.md`.
 
 ## Finding Other Restore Points
 

@@ -80,16 +80,17 @@ git stash pop
 
 ## Available Backups
 
-If you need to restore database data:
+Platform snapshots are **not** committed. After `scripts/backup_platform.sh` runs,
+each snapshot is recorded for restoration:
 
 ```bash
-ls -lah backups/
+bash scripts/restore_from_backup.sh --list
+bash scripts/restore_from_backup.sh --print-commands
 ```
 
-Shows backups from:
-- `20260105T165208Z/` - January 5, 2026
-- `20260109_210945/` - January 9, 2026  
-- `20260112_222044/` - January 12, 2026
+The commit-safe catalog (git SHA + checksums only) is
+`docs/platform_restore_catalog.json`. The snapshot bytes live under `backups/`
+(gitignored). See `BACKUP.md` for restore commands.
 
 ## Other Restore Options
 
