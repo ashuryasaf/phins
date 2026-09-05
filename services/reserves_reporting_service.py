@@ -171,12 +171,20 @@ class ReservesReportingService:
                 money,
                 resolve_premium_split,
             )
-            book_risk = accounting_risk_cash()
+            try:
+                from web_portal.server import is_suspended_account
+                exclude_fn = is_suspended_account
+            except Exception:
+                exclude_fn = lambda cid: "TESTSIM" in str(cid or "").upper()
+            book_risk = accounting_risk_cash(exclude_customer=exclude_fn)
             if book_risk > 0:
                 summary.gross_risk_reserve = book_risk
                 return
             for bill_id, bill in self.bills.items():
                 if (bill.get('status') or '').lower() != 'paid':
+                    continue
+                cid = str(bill.get('customer_id') or '')
+                if cid and exclude_fn(cid):
                     continue
                 amount = money(bill.get('amount_paid', 0) or bill.get('amount', 0) or 0)
                 if amount <= 0:
@@ -188,6 +196,8 @@ class ReservesReportingService:
                         if str(candidate.get('id') or '') == pid:
                             policy = candidate
                             break
+                if policy and exclude_fn(str(policy.get('customer_id') or '')):
+                    continue
                 split = resolve_premium_split(amount, policy, fallback_risk_pct=100)
                 summary.gross_risk_reserve += money(split['risk_amount'])
         except Exception:

@@ -4684,11 +4684,14 @@ def record_premium_cash_books(
     bills_paid: Optional[List[str]] = None,
     source_tx_id: Optional[str] = None,
     unbilled_amount: float = 0.0,
+    bill_payments: Optional[Dict[str, float]] = None,
 ) -> None:
     """Post collected premium cash into the shared accounting book.
 
     Fail-open: never breaks the payment path. Uses the kernel pin on the
     policy when present so the book split matches actuarial identity.
+    ``bill_payments`` maps each bill to this payment's increment so a later
+    installment does not re-post the cumulative ``amount_paid``.
     """
     try:
         from services.financial_unification_service import post_collected_premiums_to_accounting
@@ -4708,6 +4711,7 @@ def record_premium_cash_books(
             source_tx_id=source_tx_id,
             fallback_risk_pct=fallback,
             unbilled_amount=unbilled_amount,
+            bill_payments=bill_payments,
         )
     except Exception as acct_err:
         print(f"[ACCOUNTING_BOOK] Premium post skipped: {acct_err}")
@@ -6775,6 +6779,7 @@ def process_customer_premium_payment(
             pipeline_config_error = str(config_err)
 
     bills_paid = []
+    bill_payment_increments: Dict[str, float] = {}
     remaining_amount = amount
     specific_bill_lookup = {str(b) for b in (specific_bill_ids or [])}
     for bill_id, bill in list(BILLING.items()):
@@ -6806,7 +6811,9 @@ def process_customer_premium_payment(
         bill['payment_method'] = normalized_payment_method
         BILLING[bill_id] = bill
         remaining_amount = round(remaining_amount - payment_for_bill, 2)
-        bills_paid.append(str(bill.get('id') or bill_id))
+        paid_bill_key = str(bill.get('id') or bill_id)
+        bills_paid.append(paid_bill_key)
+        bill_payment_increments[paid_bill_key] = round(payment_for_bill, 2)
 
     amount_applied_to_bills = round(amount - remaining_amount, 2)
     unbilled_premium_amount = round(max(0.0, remaining_amount), 2)
@@ -6862,6 +6869,7 @@ def process_customer_premium_payment(
         bills_paid=bills_paid,
         source_tx_id=str(tx.get('id') or ''),
         unbilled_amount=unbilled_premium_amount,
+        bill_payments=bill_payment_increments,
     )
 
     generated_documents = []
@@ -46564,6 +46572,7 @@ For claims or questions, please contact:
                                         amount=amount,
                                         bills_paid=[str(bill_id)],
                                         source_tx_id=str(ledger_tx.get('id') or ''),
+                                        bill_payments={str(bill_id): float(amount)},
                                     )
                                 except Exception as led_err:
                                     print(f"[LEDGER] Gateway premium post skipped: {led_err}")
@@ -51534,6 +51543,7 @@ For claims or questions, please contact:
                     amount=amount,
                     bills_paid=[str(bill_id)],
                     source_tx_id=str(payment_tx.get('id') or ''),
+                    bill_payments={str(bill_id): float(amount)},
                 )
 
                 doc_bundle = generate_action_accounting_documents(
@@ -51769,6 +51779,9 @@ For claims or questions, please contact:
                         amount=paid.get('amount_paid'),
                         bills_paid=[str(paid.get('bill_id') or '')],
                         source_tx_id=str(payment_tx.get('id') or ''),
+                        bill_payments={
+                            str(paid.get('bill_id') or ''): float(paid.get('amount_paid') or 0)
+                        },
                     )
                 
                 save_ledger_data()

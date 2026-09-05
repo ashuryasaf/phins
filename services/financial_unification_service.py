@@ -228,13 +228,19 @@ def _allocation_already_posted(engine: Any, bill_id: str, source_tx_id: Optional
     Key is (bill_id, source_tx_id). The same bill can receive several
     partial payments — each ledger tx must post. Missing source_tx_id
     falls back to bill_id only so a retry without a tx id stays idempotent.
+
+    If the same ledger tx was booked as ``UNBILLED-{tx}`` (bills missing at
+    post time), a later real ``bill_id`` for that tx must not post again.
     """
     allocations = getattr(engine, "allocations", {}) or {}
     wanted_bill = str(bill_id or "")
     marker = f"ledger_tx={source_tx_id}" if source_tx_id else ""
+    unbilled_key = f"UNBILLED-{source_tx_id}" if source_tx_id else ""
     for alloc in allocations.values():
         alloc_bill = str(getattr(alloc, "bill_id", "") or "")
         notes = str(getattr(alloc, "notes", "") or "")
+        if unbilled_key and alloc_bill == unbilled_key and marker in notes:
+            return True
         if not wanted_bill or alloc_bill != wanted_bill:
             continue
         if source_tx_id:
@@ -302,35 +308,48 @@ def post_collected_premiums_to_accounting(
     fallback_risk_pct: Any,
     unbilled_amount: Any = 0,
     engine: Any = None,
+    bill_payments: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
-    """Post each paid bill (and any unbilled remainder) to the accounting book."""
+    """Post each paid bill (and any unbilled remainder) to the accounting book.
+
+    ``bill_payments`` optionally maps a bill id to the increment collected in
+    *this* payment. When supplied it is used instead of the bill's cumulative
+    ``amount_paid`` so a later installment posts only its own increment rather
+    than re-posting (and double-counting) the running total.
+    """
     split = resolve_premium_split(amount, policy, fallback_risk_pct)
     results: List[Dict[str, Any]] = []
     posted_from_bills = Decimal("0.00")
     remaining_cash = money(amount)
     for bill_id in bills_paid:
         bill = billing.get(bill_id) or billing.get(str(bill_id)) or {}
-        bill_amount = money(bill.get("amount_paid") or bill.get("amount") or 0)
-        # Post this payment's slice, not cumulative amount_paid — a later
-        # partial on the same bill must not re-post the earlier cash.
-        slice_amount = bill_amount if bill_amount <= remaining_cash else remaining_cash
-        if slice_amount <= 0:
+        if bill_payments is not None:
+            bill_amount = money(
+                bill_payments.get(bill_id, bill_payments.get(str(bill_id), 0))
+            )
+        else:
+            bill_amount = money(bill.get("amount_paid") or bill.get("amount") or 0)
+            # Without an increment map, cap at remaining cash so a later
+            # single-bill installment cannot re-post the cumulative total.
+            if bill_amount > remaining_cash:
+                bill_amount = remaining_cash
+        if bill_amount <= 0:
             continue
-        bill_split = resolve_premium_split(slice_amount, policy, split["risk_percentage"])
+        bill_split = resolve_premium_split(bill_amount, policy, split["risk_percentage"])
         results.append(
             post_premium_to_accounting_book(
                 bill_id=str(bill.get("id") or bill_id),
                 policy_id=str(bill.get("policy_id") or policy_id or ""),
                 customer_id=customer_id,
-                amount=slice_amount,
+                amount=bill_amount,
                 risk_percentage=bill_split["risk_percentage"],
                 source_tx_id=source_tx_id,
                 notes=f"kernel_split={bill_split['split_source']}",
                 engine=engine,
             )
         )
-        posted_from_bills += slice_amount
-        remaining_cash -= slice_amount
+        posted_from_bills += bill_amount
+        remaining_cash -= bill_amount
     leftover = money(unbilled_amount)
     remaining_cash = money(amount) - posted_from_bills
     if leftover <= 0 and remaining_cash > 0:

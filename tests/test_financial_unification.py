@@ -140,6 +140,119 @@ def test_accounting_book_totals_honor_customer_exclusion():
     assert econ["economic_claims_reserve"] == 62.0
 
 
+def test_partial_installments_each_post_their_increment():
+    """A bill paid in two installments must post both increments, not just one."""
+    engine = get_accounting_engine()
+    policy = {
+        "id": "POL-INST",
+        "annual_premium": 1200.0,
+        "risk_premium_annual": 1200.0,
+        "savings_premium_annual": 0.0,
+        "pricing_source": "pricing_kernel",
+    }
+    billing = {"BILL-INST": {"id": "BILL-INST", "policy_id": "POL-INST"}}
+
+    billing["BILL-INST"]["amount_paid"] = 40.0
+    first = post_collected_premiums_to_accounting(
+        customer_id="CUST-INST",
+        policy_id="POL-INST",
+        policy=policy,
+        amount=40.0,
+        bills_paid=["BILL-INST"],
+        billing=billing,
+        source_tx_id="TX-INST-1",
+        fallback_risk_pct=100,
+        engine=engine,
+        bill_payments={"BILL-INST": 40.0},
+    )
+    assert all(r["posted"] for r in first)
+
+    billing["BILL-INST"]["amount_paid"] = 100.0
+    second = post_collected_premiums_to_accounting(
+        customer_id="CUST-INST",
+        policy_id="POL-INST",
+        policy=policy,
+        amount=60.0,
+        bills_paid=["BILL-INST"],
+        billing=billing,
+        source_tx_id="TX-INST-2",
+        fallback_risk_pct=100,
+        engine=engine,
+        bill_payments={"BILL-INST": 60.0},
+    )
+    assert all(r["posted"] for r in second)
+    assert accounting_book_totals(engine)["premium_posted"] == 100.0
+
+
+def test_same_ledger_payment_is_still_idempotent():
+    """Re-posting the same ledger payment for a bill must not double-book."""
+    engine = get_accounting_engine()
+    first = post_premium_to_accounting_book(
+        bill_id="BILL-IDEM",
+        policy_id="POL-IDEM",
+        customer_id="CUST-IDEM",
+        amount=50.0,
+        risk_percentage=100,
+        source_tx_id="TX-IDEM",
+        engine=engine,
+    )
+    assert first["posted"] is True
+    again = post_premium_to_accounting_book(
+        bill_id="BILL-IDEM",
+        policy_id="POL-IDEM",
+        customer_id="CUST-IDEM",
+        amount=50.0,
+        risk_percentage=100,
+        source_tx_id="TX-IDEM",
+        engine=engine,
+    )
+    assert again["posted"] is False
+    assert again["reason"] == "already_posted"
+    assert accounting_book_totals(engine)["premium_posted"] == 50.0
+
+
+def test_unbilled_leftover_does_not_double_count_later_bill():
+    """Cash posted as UNBILLED-{tx} must not post again when the bill appears."""
+    engine = get_accounting_engine()
+    policy = {
+        "id": "POL-UNB",
+        "annual_premium": 1200.0,
+        "risk_premium_annual": 1200.0,
+        "savings_premium_annual": 0.0,
+        "pricing_source": "pricing_kernel",
+    }
+    leftover = post_collected_premiums_to_accounting(
+        customer_id="CUST-UNB",
+        policy_id="POL-UNB",
+        policy=policy,
+        amount=80.0,
+        bills_paid=[],
+        billing={},
+        source_tx_id="TX-UNB",
+        fallback_risk_pct=100,
+        engine=engine,
+        unbilled_amount=80.0,
+    )
+    assert leftover and leftover[0]["posted"] is True
+    assert leftover[0]["bill_id"] == "UNBILLED-TX-UNB"
+
+    later = post_collected_premiums_to_accounting(
+        customer_id="CUST-UNB",
+        policy_id="POL-UNB",
+        policy=policy,
+        amount=80.0,
+        bills_paid=["BILL-UNB"],
+        billing={"BILL-UNB": {"id": "BILL-UNB", "policy_id": "POL-UNB", "amount_paid": 80.0}},
+        source_tx_id="TX-UNB",
+        fallback_risk_pct=100,
+        engine=engine,
+        bill_payments={"BILL-UNB": 80.0},
+    )
+    assert later and later[0]["posted"] is False
+    assert later[0]["reason"] == "already_posted"
+    assert accounting_book_totals(engine)["premium_posted"] == 80.0
+
+
 def test_collected_premiums_use_kernel_split_per_bill():
     engine = get_accounting_engine()
     policy = {
@@ -330,6 +443,39 @@ def test_reserves_reporting_uses_kernel_pin_not_seventy_five_percent():
     report = svc.generate_full_report()
     assert "75%" not in report["risk_reserves"]["source"]
     assert "kernel" in report["risk_reserves"]["source"]
+
+
+def test_reserves_reporting_excludes_sandbox_book_risk():
+    from services.reserves_reporting_service import ReservesReportingService
+
+    reset_accounting_engine()
+    engine = get_accounting_engine()
+    post_premium_to_accounting_book(
+        bill_id="BILL-RES-REAL",
+        policy_id="POL-RES-REAL",
+        customer_id="CUST-RES-REAL",
+        amount=100.0,
+        risk_percentage=100,
+        source_tx_id="TX-RES-REAL",
+        engine=engine,
+    )
+    post_premium_to_accounting_book(
+        bill_id="BILL-RES-SANDBOX",
+        policy_id="POL-RES-SANDBOX",
+        customer_id="TESTSIM-RES",
+        amount=400.0,
+        risk_percentage=100,
+        source_tx_id="TX-RES-SANDBOX",
+        engine=engine,
+    )
+    svc = ReservesReportingService(
+        premium_allocation_tracker=None,
+        policies={},
+        claims={},
+        bills={},
+    )
+    summary = svc.calculate_reserve_summary()
+    assert summary.gross_risk_reserve == Decimal("100.00")
 
 
 def test_ledger_cash_aliases_and_paid_claim_records():
