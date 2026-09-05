@@ -3671,7 +3671,12 @@
         }
         
         // Initial load — control tower uses the same pipelines as the other tabs.
-        loadControlTower();
+        const requestedTab = (location.hash || '').replace(/^#/, '') || 'control';
+        if (requestedTab && requestedTab !== 'control' && document.getElementById(requestedTab + '-tab')) {
+            showTab(requestedTab);
+        } else {
+            loadControlTower();
+        }
         loadPortfolioReport();
 
         // Auto-refresh
