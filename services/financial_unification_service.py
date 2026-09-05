@@ -497,16 +497,34 @@ def economic_claims_reserve(
     claim_cash = money(claim_ledger["total"])
     book = accounting_book_totals(engine, exclude_customer=exclude_customer)
     risk_from_book = money(book.get("risk_posted", 0))
+    book_premium = money(book.get("premium_posted", 0))
+    ledger_premium = money(premium_ledger["total"])
+    risk_pct = kernel_portfolio_risk_pct(
+        policies, exclude_customer=exclude_customer
+    )
+    # Premium posting to the accounting book is a partial migration: historical
+    # collected premiums still live only on the customer ledger and are not
+    # backfilled onto the book. Trust the book's kernel-split risk for the
+    # premium it already carries, and cover any not-yet-booked ledger premium
+    # with the portfolio kernel risk share so the reserve never collapses to
+    # just newly-posted risk minus all claim cash.
+    unbooked_premium = ledger_premium - book_premium
+    if unbooked_premium < 0:
+        unbooked_premium = Decimal("0.00")
+    unbooked_risk = (
+        unbooked_premium * risk_pct / Decimal("100")
+    ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if risk_from_book > 0:
-        risk_cash = risk_from_book
-        risk_source = "accounting_book"
-    else:
-        risk_pct = kernel_portfolio_risk_pct(
-            policies, exclude_customer=exclude_customer
+        risk_cash = (risk_from_book + unbooked_risk).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
         )
-        risk_cash = (
-            money(premium_ledger["total"]) * risk_pct / Decimal("100")
-        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        risk_source = (
+            "accounting_book_plus_ledger_backfill"
+            if unbooked_risk > 0
+            else "accounting_book"
+        )
+    else:
+        risk_cash = unbooked_risk
         risk_source = "kernel_split_of_ledger_premium"
     economic = (risk_cash - claim_cash).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return {

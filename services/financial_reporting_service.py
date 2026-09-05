@@ -429,10 +429,12 @@ class FinancialReportingService:
                 'customer_age': age
             }
         
-        # Use approved coverage (may be reduced for high ADL)
+        # Use approved coverage (may be reduced for high ADL). The kernel below
+        # re-derives the coverage cap, underwriting loading, and disability
+        # exclusion from the live actuarial store, so the reported values are
+        # taken from the kernel result (not this private FRS table) to keep
+        # accountant quotes and issued kernel prices on one identity.
         approved_coverage = uw_check['approved_coverage']
-        underwriting_loading = uw_check.get('loading', 0)
-        exclude_disability = uw_check.get('exclude_disability', False)
 
         # Same kernel + persisted Pricing Parameters as issuance.
         from services.pricing_shadow_service import price_application_with_kernel
@@ -456,6 +458,16 @@ class FinancialReportingService:
                 'adl_level': adl_level,
                 'customer_age': age,
             }
+
+        # Underwriting rules the kernel actually applied (from the live store),
+        # so the quote does not advertise a loading, exclusion, or coverage that
+        # was never used to price the premium.
+        underwriting_loading = float(kernel.get('underwriting_loading') or 0.0)
+        exclude_disability = bool(kernel.get('disability_excluded', False))
+        kernel_coverage_cap = kernel.get('adl_coverage_cap')
+        if kernel_coverage_cap is not None:
+            approved_coverage = min(float(approved_coverage), float(kernel_coverage_cap))
+        coverage_reduced = float(approved_coverage) < float(coverage)
 
         comps = kernel.get("components") or {}
         adl_mort_mult = float(kernel.get('adl_mortality_multiplier') or 1.0)
@@ -488,7 +500,7 @@ class FinancialReportingService:
             'profit_margin': profit_margin,
             'coverage': approved_coverage,
             'original_coverage': coverage,
-            'coverage_reduced': uw_check.get('coverage_reduced', False),
+            'coverage_reduced': coverage_reduced,
             'savings_target': round(savings_allocation, 2),
             'term_years': term_years,
             'adl_level': adl_level,

@@ -29347,14 +29347,6 @@ For claims or questions, please contact:
             # Initialize balance sheet if needed
             initialize_balance_sheet()
             
-            # Calculate totals
-            total_balance = (
-                PHINS_BALANCE_SHEET['claims_reserve'] +
-                PHINS_BALANCE_SHEET['operating_reserve'] +
-                PHINS_BALANCE_SHEET['supplier_reserve'] +
-                PHINS_BALANCE_SHEET['investment_reserve']
-            )
-            
             cumulative_premium_data = calculate_cumulative_premium_income(exclude_suspended=True)
 
             # Inject cumulative premium into balance sheet so revenue_breakdown reflects actuals
@@ -29372,6 +29364,18 @@ For claims or questions, please contact:
                 )['economic_claims_reserve']
             except Exception as _econ_err:
                 print(f"[FINANCIAL_UNIFICATION] economic reserve attach skipped: {_econ_err}")
+
+            # Calculate totals. claims_reserve is displayed as the economic
+            # identity (collected risk cash minus claim cash), so total_balance
+            # must sum that same figure with the other reserve slices — using
+            # the seed here would break the parts-equal-the-whole identity.
+            total_balance = round(
+                economic_reserve +
+                PHINS_BALANCE_SHEET['operating_reserve'] +
+                PHINS_BALANCE_SHEET['supplier_reserve'] +
+                PHINS_BALANCE_SHEET['investment_reserve'],
+                2,
+            )
 
             self._set_json_headers()
             self.wfile.write(json.dumps({
@@ -43066,9 +43070,13 @@ For claims or questions, please contact:
                 # Calculate premium from the actuarial kernel (fail-open flat).
                 # Chat finalize stamps quote_provenance with the kernel amount
                 # the applicant accepted; that accepted quote is the issued
-                # premium so quote and policy cannot drift.
+                # premium so quote and policy cannot drift. Only the trusted
+                # internal chat loopback may bind a caller-supplied quote onto
+                # the policy — a public create could otherwise post a tiny
+                # quoted_annual/quoted_monthly and under-bill the coverage.
                 premium_data = calculate_premium(data)
-                premium_data = _apply_accepted_quote_provenance(premium_data, data)
+                if internal_chat_loopback:
+                    premium_data = _apply_accepted_quote_provenance(premium_data, data)
                 
                 # Create policy
                 policy = {

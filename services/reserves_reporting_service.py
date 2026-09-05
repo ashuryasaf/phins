@@ -177,9 +177,7 @@ class ReservesReportingService:
             except Exception:
                 exclude_fn = lambda cid: "TESTSIM" in str(cid or "").upper()
             book_risk = accounting_risk_cash(exclude_customer=exclude_fn)
-            if book_risk > 0:
-                summary.gross_risk_reserve = book_risk
-                return
+            bill_risk = money(0)
             for bill_id, bill in self.bills.items():
                 if (bill.get('status') or '').lower() != 'paid':
                     continue
@@ -199,7 +197,12 @@ class ReservesReportingService:
                 if policy and exclude_fn(str(policy.get('customer_id') or '')):
                     continue
                 split = resolve_premium_split(amount, policy, fallback_risk_pct=100)
-                summary.gross_risk_reserve += money(split['risk_amount'])
+                bill_risk += money(split['risk_amount'])
+            # Premium posting to the accounting book is a partial migration; the
+            # paid-bill kernel split still covers all historical collected
+            # premiums. Take the larger so a partial book never understates the
+            # risk reserve.
+            summary.gross_risk_reserve = book_risk if book_risk >= bill_risk else bill_risk
         except Exception:
             logger.warning("kernel/ledger risk-reserve fallback failed; leaving reserve at zero")
     
