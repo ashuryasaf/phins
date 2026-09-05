@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#060d1f">
-    <title>Accountant Dashboard - PHINS Financial Reports</title>
+    <title>Accountant Dashboard — PHINS Financial Control</title>
     <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
     <link rel="apple-touch-icon" href="/phins-logo.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,17 +14,41 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/styles.css">
     <style>
-        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
-        h1, h2, h3, .page-title h1 { font-family: 'Space Grotesk', 'Inter', sans-serif; }
-        /* PHINS Unified Header */
+        :root {
+            --acct-navy: #060d1f;
+            --acct-ink: #eaf1ff;
+            --acct-muted: #8aa0c7;
+            --acct-gold: #e3bf6f;
+            --acct-gold-strong: #f7e2a0;
+            --acct-line: rgba(127, 178, 255, 0.16);
+            --acct-card: #ffffff;
+            --acct-paper: #f4f7fb;
+            --acct-text: #12203a;
+            --acct-subtle: #5b6d8a;
+            --acct-ok: #0f766e;
+            --acct-warn: #b45309;
+            --acct-bad: #b42318;
+        }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--acct-text);
+            background:
+                radial-gradient(900px 320px at 92% -8%, rgba(21, 68, 155, 0.18), transparent 60%),
+                radial-gradient(720px 280px at 0% 100%, rgba(227, 191, 111, 0.08), transparent 55%),
+                linear-gradient(180deg, #eef2f8 0%, #e4ebf4 100%);
+        }
+        h1, h2, h3, .page-title h1 { font-family: 'Space Grotesk', Inter, sans-serif; }
         .phins-header {
-            background: linear-gradient(135deg, #1a1f36 0%, #2d3561 50%, #1a1f36 100%);
-            border-bottom: 1px solid rgba(255,255,255,0.1);
+            background:
+                radial-gradient(700px 180px at 85% -60%, rgba(21, 68, 155, 0.5), transparent 70%),
+                rgba(6, 13, 31, 0.96);
+            border-bottom: 1px solid var(--acct-line);
             padding: 0;
             position: sticky;
             top: 0;
             z-index: 1000;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
         }
         .phins-header-inner {
             max-width: 1600px;
@@ -34,200 +58,229 @@
             justify-content: space-between;
             align-items: center;
         }
-        .phins-logo {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            text-decoration: none;
-        }
+        .phins-logo { display: flex; align-items: center; gap: 0.75rem; text-decoration: none; }
         .phins-logo-icon {
-            width: 44px;
-            height: 44px;
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            width: 44px; height: 44px;
+            background: transparent;
             border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.5rem;
-            box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
+            display: flex; align-items: center; justify-content: center;
         }
         .phins-logo-text {
             font-size: 1.75rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 50%, #43e97b 100%);
+            font-weight: 600;
+            letter-spacing: 0.22em;
+            background: linear-gradient(180deg, #ffffff 0%, #b7d3ff 100%);
             -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
             background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
-        .phins-nav {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
+        .phins-nav { display: flex; align-items: center; gap: 0.5rem; }
         .phins-nav a {
             padding: 0.5rem 1rem;
-            color: rgba(255,255,255,0.8);
+            color: rgba(234, 241, 255, 0.85);
             text-decoration: none;
             border-radius: 8px;
             font-size: 0.9rem;
             font-weight: 500;
-            transition: all 0.2s ease;
-        }
-        .phins-nav a:hover {
-            background: rgba(255,255,255,0.1);
-            color: white;
         }
         .phins-nav a.active {
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-            color: white;
-        }
-        .phins-nav .btn-logout {
-            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
-            color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 8px;
+            background: linear-gradient(180deg, var(--acct-gold-strong) 0%, var(--acct-gold) 100%);
+            color: #071022;
             font-weight: 600;
         }
-        
-        /* Mobile Menu Button */
+        .phins-nav .btn-logout {
+            border: 1px solid rgba(227, 191, 111, 0.65);
+            color: var(--acct-gold);
+            border-radius: 999px;
+            font-weight: 600;
+        }
         .mobile-menu-btn {
             display: none;
-            background: rgba(255,255,255,0.15);
-            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(127, 178, 255, 0.12);
+            border: 1px solid var(--acct-line);
             color: white;
             padding: 10px 14px;
-            border-radius: 8px;
-            font-size: 1.5rem;
+            border-radius: 10px;
+            font-size: 1rem;
             cursor: pointer;
-            z-index: 1001;
         }
-        
-        /* Mobile Responsive - Portrait and Landscape */
         @media screen and (max-width: 1024px) {
             .mobile-menu-btn { display: block; }
             .phins-nav {
                 display: none;
                 position: fixed;
-                top: 60px;
-                left: 0;
-                right: 0;
-                background: linear-gradient(135deg, #1a1f36 0%, #2d3561 100%);
+                top: 60px; left: 0; right: 0;
+                background: #060d1f;
                 flex-direction: column;
                 padding: 16px;
                 gap: 8px;
-                box-shadow: 0 8px 32px rgba(0,0,0,0.4);
                 z-index: 999;
                 max-height: calc(100vh - 60px);
                 overflow-y: auto;
             }
             .phins-nav.open { display: flex !important; }
-            .phins-nav a { 
-                width: 100%; 
-                text-align: center; 
-                padding: 14px 16px; 
-                font-size: 1.1rem;
-                border-radius: 8px;
-                background: rgba(255,255,255,0.05);
-            }
-            .phins-nav a:hover, .phins-nav a.active {
-                background: rgba(255,255,255,0.2);
-            }
-            .phins-nav .btn-logout { margin-top: 8px; }
+            .phins-nav a { width: 100%; text-align: center; padding: 14px 16px; }
         }
         @media screen and (max-width: 768px) {
             .phins-header-inner { padding: 0.5rem 1rem; }
-            .phins-logo-icon { width: 36px; height: 36px; font-size: 1.2rem; }
+            .phins-logo-icon { width: 36px; height: 36px; }
             .phins-logo-text { font-size: 1.3rem; }
             .dashboard-container { padding: 12px; }
-            .page-title { padding: 16px; }
-            .page-title h1 { font-size: 1.2rem; }
-            .page-title p { font-size: 0.85rem; }
             .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-            .stat-card { padding: 16px; }
-            .stat-value { font-size: 1.5rem; }
-            .report-section { padding: 16px; }
-            .chart-container { height: 250px; }
+            .stat-value { font-size: 1.35rem; }
         }
         @media screen and (max-width: 480px) {
             .stats-grid { grid-template-columns: 1fr; }
-            .page-title h1 { font-size: 1.1rem; }
             .phins-logo-text { display: none; }
         }
-        
-        body {
-            background: linear-gradient(180deg, #f0f4f8 0%, #e2e8f0 100%);
-            min-height: 100vh;
-            margin: 0;
+
+        .dashboard-container { max-width: 1600px; margin: 0 auto; padding: 22px; }
+        .page-title {
+            background:
+                radial-gradient(640px 180px at 90% -40%, rgba(21, 68, 155, 0.45), transparent 70%),
+                linear-gradient(180deg, #0a1630 0%, #071022 100%);
+            color: var(--acct-ink);
+            padding: 26px 30px;
+            border-radius: 16px;
+            margin-bottom: 22px;
+            border: 1px solid var(--acct-line);
+            box-shadow: 0 10px 28px rgba(6, 13, 31, 0.18);
         }
-        .dashboard-container { max-width: 1600px; margin: 0 auto; padding: 20px; }
-        .page-title { 
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%); 
-            color: white; 
-            padding: 24px 30px; 
-            border-radius: 12px; 
-            margin-bottom: 30px;
-            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+        .page-title h1 { margin: 0; font-size: 1.7rem; letter-spacing: 0.01em; }
+        .page-title p { margin: 8px 0 0; color: var(--acct-muted); }
+        .identity-row {
+            display: flex; flex-wrap: wrap; gap: 8px;
+            margin-top: 16px;
         }
-        .page-title h1 { margin: 0; font-size: 1.75rem; }
-        .page-title p { margin: 8px 0 0 0; opacity: 0.9; }
-        
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
-        .stat-card { background: white; border-radius: 10px; padding: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
-        .stat-value { font-size: 2rem; font-weight: 700; color: #28a745; }
-        .stat-value.negative { color: #dc3545; }
-        .stat-value.warning { color: #ffc107; }
-        .stat-label { color: #666; margin-top: 10px; font-size: 0.9rem; }
-        
-        .section { background: white; border-radius: 10px; padding: 25px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .section h2 { margin-top: 0; color: #333; border-bottom: 2px solid #28a745; padding-bottom: 10px; }
-        
-        .tabs { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
-        .tab { padding: 10px 20px; border: none; background: #e9ecef; border-radius: 5px; cursor: pointer; font-weight: 600; }
-        .tab.active { background: #28a745; color: white; }
-        .tab:hover:not(.active) { background: #dee2e6; }
-        
+        .identity-pill {
+            font-size: 0.78rem;
+            letter-spacing: 0.03em;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid var(--acct-line);
+            background: rgba(127, 178, 255, 0.08);
+            color: var(--acct-ink);
+        }
+        .identity-pill strong { color: var(--acct-gold-strong); font-weight: 600; }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 22px; }
+        .stat-card {
+            background: var(--acct-card);
+            border-radius: 12px;
+            padding: 20px 18px;
+            text-align: left;
+            border: 1px solid rgba(18, 32, 58, 0.08);
+            box-shadow: 0 8px 22px rgba(18, 32, 58, 0.05);
+        }
+        .stat-value {
+            font-family: 'Space Grotesk', Inter, sans-serif;
+            font-size: 1.7rem;
+            font-weight: 700;
+            color: #0a1630;
+        }
+        .stat-value.negative { color: var(--acct-bad); }
+        .stat-value.warning { color: var(--acct-warn); }
+        .stat-label { color: var(--acct-subtle); margin-top: 8px; font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; }
+
+        .section {
+            background: var(--acct-card);
+            border-radius: 14px;
+            padding: 24px;
+            margin-bottom: 18px;
+            border: 1px solid rgba(18, 32, 58, 0.08);
+            box-shadow: 0 8px 22px rgba(18, 32, 58, 0.05);
+        }
+        .section h2 {
+            margin: 0 0 8px;
+            color: #0a1630;
+            border-bottom: 1px solid rgba(18, 32, 58, 0.08);
+            padding-bottom: 12px;
+        }
+        .section > p { color: var(--acct-subtle); }
+
+        .tabs, .acct-tabs {
+            display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap;
+        }
+        .tab {
+            padding: 9px 16px;
+            border: 1px solid rgba(18, 32, 58, 0.12);
+            background: #fff;
+            border-radius: 999px;
+            cursor: pointer;
+            font-weight: 600;
+            color: #12203a;
+            font-family: Inter, sans-serif;
+        }
+        .tab.active {
+            background: linear-gradient(180deg, var(--acct-gold-strong) 0%, var(--acct-gold) 100%);
+            color: #071022;
+            border-color: transparent;
+        }
+        .tab:hover:not(.active) { background: #eef3fb; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
-        
+
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e0e0e0; }
-        th { background: #f8f9fa; font-weight: 600; }
-        tr:hover { background: #f8f9fa; }
-        
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e6ebf2; }
+        th { background: #f6f8fc; font-weight: 600; color: #12203a; }
+        tr:hover { background: #f8fafc; }
+
         .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px; }
         .form-group { display: flex; flex-direction: column; }
-        .form-group label { font-weight: 600; margin-bottom: 5px; color: #333; }
-        .form-group input, .form-group select { padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 1rem; }
-        
-        .btn { padding: 12px 24px; border-radius: 5px; border: none; cursor: pointer; font-weight: 600; transition: all 0.3s; }
-        .btn-primary { background: #28a745; color: white; }
-        .btn-primary:hover { background: #218838; }
-        .btn-secondary { background: #6c757d; color: white; }
-        .btn-secondary:hover { background: #5a6268; }
-        
-        .chart-container { height: 300px; margin: 20px 0; background: #f8f9fa; border-radius: 8px; padding: 20px; }
+        .form-group label { font-weight: 600; margin-bottom: 5px; color: #12203a; }
+        .form-group input, .form-group select {
+            padding: 10px; border: 1px solid #d5deea; border-radius: 8px; font-size: 1rem;
+            background: #fff;
+        }
+
+        .btn {
+            padding: 11px 18px; border-radius: 8px; border: none; cursor: pointer;
+            font-weight: 600; font-family: Inter, sans-serif;
+        }
+        .btn-primary { background: #0a1630; color: #eaf1ff; }
+        .btn-primary:hover { background: #12264a; }
+        .btn-secondary { background: #e8eef6; color: #12203a; }
+        .btn-secondary:hover { background: #dce4f0; }
+        .btn-success { background: #0f766e; color: #fff; }
+
+        .chart-container { height: 300px; margin: 20px 0; background: #f6f8fc; border-radius: 8px; padding: 20px; }
         .bar-chart { display: flex; align-items: flex-end; height: 100%; gap: 10px; }
-        .bar { background: linear-gradient(180deg, #28a745 0%, #20c997 100%); border-radius: 4px 4px 0 0; min-width: 40px; position: relative; }
+        .bar { background: linear-gradient(180deg, #1a3a78 0%, #0a1630 100%); border-radius: 4px 4px 0 0; min-width: 40px; position: relative; }
         .bar-label { position: absolute; bottom: -25px; left: 50%; transform: translateX(-50%); font-size: 0.75rem; white-space: nowrap; }
         .bar-value { position: absolute; top: -25px; left: 50%; transform: translateX(-50%); font-size: 0.8rem; font-weight: 600; }
-        
         .projection-table { max-height: 400px; overflow-y: auto; }
-        .highlight-row { background: #e8f5e9 !important; }
-        
+        .highlight-row { background: #eef4ff !important; }
+
         .integrity-status { padding: 15px; border-radius: 8px; margin-bottom: 20px; }
-        .integrity-healthy { background: #d4edda; color: #155724; }
-        .integrity-issues { background: #f8d7da; color: #721c24; }
-        .integrity-warnings { background: #fff3cd; color: #856404; }
-        
+        .integrity-healthy { background: #ecfdf3; color: #085041; }
+        .integrity-issues { background: #fef3f2; color: #7a271a; }
+        .integrity-warnings { background: #fffaeb; color: #7a2e0e; }
+
         .lump-sum-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; }
-        .lump-sum-card { background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745; }
-        .lump-sum-card h4 { margin: 0 0 10px 0; color: #333; }
-        .lump-sum-value { font-size: 1.5rem; font-weight: 700; color: #28a745; }
-        
-        .loading { text-align: center; padding: 40px; color: #666; }
-        .error { background: #f8d7da; color: #721c24; padding: 15px; border-radius: 8px; margin: 10px 0; }
+        .lump-sum-card { background: #f6f8fc; padding: 20px; border-radius: 8px; border-left: 4px solid var(--acct-gold); }
+        .lump-sum-card h4 { margin: 0 0 10px 0; color: #12203a; }
+        .lump-sum-value { font-size: 1.5rem; font-weight: 700; color: #0a1630; }
+
+        .loading { text-align: center; padding: 40px; color: var(--acct-subtle); }
+        .error { background: #fef3f2; color: #7a271a; padding: 15px; border-radius: 8px; margin: 10px 0; }
+
+        .acct-panel {
+            background: #f6f8fc;
+            border: 1px solid #e1e7f0;
+            border-radius: 12px;
+            padding: 18px;
+            margin-bottom: 18px;
+        }
+        .acct-panel h3 { margin: 0 0 10px; font-size: 1rem; color: #0a1630; }
+        .acct-note { font-size: 0.86rem; color: var(--acct-subtle); line-height: 1.5; }
+        .books-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+        .ifrs-col { background: #f6f8fc; border-radius: 12px; padding: 20px; border: 1px solid #e1e7f0; }
+        .ifrs-col h3 { margin: 0 0 14px; color: #0a1630; }
+        .ifrs-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e6ebf2; font-size: 14px; }
+        .ifrs-row:last-child { border-bottom: none; }
+        .hidden-legacy { display: none !important; }
     </style>
-  <link rel="stylesheet" href="/phins-theme.css">
+    <link rel="stylesheet" href="/phins-theme.css">
 </head>
 <body>
     <header class="phins-header">
@@ -255,95 +308,144 @@
     </script>
     <div class="dashboard-container">
         <div class="page-title">
-            <h1>Accountant Dashboard — Financial Reports</h1>
-            <p>Long-term financial projections, actuarial analysis, and data integrity validation</p>
+            <h1>Financial Control</h1>
+            <p>IFRS 17 measurement, Solvency coverage, and actuarial kernel identity — one cash book, no invented amounts.</p>
+            <div class="identity-row">
+                <span class="identity-pill"><strong>Premium identity</strong> actuarial kernel pin</span>
+                <span class="identity-pill"><strong>Cash identity</strong> customer ledger</span>
+                <span class="identity-pill"><strong>Books</strong> accounting + reserves consume those amounts</span>
+                <span class="identity-pill"><strong>Framework</strong> IFRS 17 / Solvency II principles</span>
+            </div>
         </div>
-        
-        <!-- Quick Stats -->
+
         <div class="stats-grid" id="quick-stats">
             <div class="stat-card">
                 <div class="stat-value" id="total-revenue">$0</div>
-                <div class="stat-label">Total Revenue (Annual)</div>
+                <div class="stat-label">Insurance revenue (annual)</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="total-collected">$0</div>
-                <div class="stat-label">Total Collected (Cumulative)</div>
+                <div class="stat-label">Premium cash collected</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value warning" id="outstanding-ar">$0</div>
-                <div class="stat-label">Outstanding A/R</div>
+                <div class="stat-label">Premiums receivable</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value negative" id="claims-liability">$0</div>
-                <div class="stat-label">Claims Liability</div>
+                <div class="stat-label">Outstanding claims (LIC)</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="loss-ratio">0%</div>
-                <div class="stat-label">Loss Ratio</div>
+                <div class="stat-label">Loss ratio</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="solvency-ratio">0</div>
-                <div class="stat-label">Solvency Ratio</div>
+                <div class="stat-label">Solvency coverage</div>
             </div>
         </div>
-        
-        <!-- Main Tabs -->
-        <div class="tabs">
-            <button class="tab active" onclick="showTab('projection')">Customer Projection</button>
-            <button class="tab" onclick="showTab('forecast')">25-Year Forecast</button>
-            <button class="tab" onclick="showTab('portfolio')">Portfolio Report</button>
-            <button class="tab" onclick="showTab('balancesheet')">Balance Sheet</button>
-            <button class="tab" onclick="showTab('integrity')">Data Integrity</button>
-            <button class="tab" onclick="showTab('dashboards')">Dashboard Views</button>
+
+        <div class="tabs acct-tabs" role="tablist">
+            <button type="button" class="tab active" data-tab="control" onclick="showTab('control', this)">Control</button>
+            <button type="button" class="tab" data-tab="balancesheet" onclick="showTab('balancesheet', this)">IFRS statements</button>
+            <button type="button" class="tab" data-tab="solvency" onclick="showTab('solvency', this)">Solvency</button>
+            <button type="button" class="tab" data-tab="projection" onclick="showTab('projection', this)">Kernel pricing</button>
+            <button type="button" class="tab" data-tab="forecast" onclick="showTab('forecast', this)">Cash-flow forecast</button>
+            <button type="button" class="tab" data-tab="portfolio" onclick="showTab('portfolio', this)">Portfolio</button>
+            <button type="button" class="tab" data-tab="integrity" onclick="showTab('integrity', this)">Integrity</button>
         </div>
-        
-        <!-- Customer Projection Tab -->
-        <div id="projection-tab" class="tab-content active">
+
+        <div id="control-tab" class="tab-content active">
             <div class="section">
-                <h2>Long-Term Customer Projection Calculator</h2>
-                <p>Calculate actuarially-sound premiums using real customer data from policies and applications, with AI-powered BI assessments.</p>
-                
-                <!-- Customer/Policy Selection Section -->
-                <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); border-radius: 12px; padding: 20px; margin-bottom: 20px; color: white;">
-                    <h3 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 10px;">
-                        Select Customer & Policy
-                        <span id="customer-data-status" style="font-size: 0.8rem; font-weight: normal; margin-left: auto; padding: 4px 12px; background: rgba(255,255,255,0.2); border-radius: 20px;">Manual Mode</span>
+                <h2>Engagement control tower</h2>
+                <p>Three-way tie-out used in insurance practice: kernel-priced premium, ledger cash, and the posted accounting book. Discrepancies are reported, never silently rewritten.</p>
+                <div id="ctl-books-status" class="integrity-status integrity-warnings">Books status will load from the reconcile pipeline.</div>
+                <div class="books-grid" style="margin-top:16px;">
+                    <div class="stat-card">
+                        <div class="stat-value" id="ctl-ledger-premium">$0</div>
+                        <div class="stat-label">Ledger premiums</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="ctl-book-premium">$0</div>
+                        <div class="stat-label">Accounting-book premiums</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="ctl-ledger-claims">$0</div>
+                        <div class="stat-label">Ledger claims paid</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="ctl-book-claims">$0</div>
+                        <div class="stat-label">Accounting-book claims</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="ctl-economic-reserve">$0</div>
+                        <div class="stat-label">Economic claims reserve</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="ctl-seed-reserve">$0</div>
+                        <div class="stat-label">Seed capital (not rewritten)</div>
+                    </div>
+                </div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;">
+                    <button class="btn btn-primary" onclick="loadControlTower()">Refresh control</button>
+                    <button class="btn btn-success" onclick="showTab('integrity', document.querySelector('[data-tab=integrity]')); loadBooksReconcile();">Reconcile books</button>
+                    <button class="btn btn-secondary" onclick="showTab('integrity', document.querySelector('[data-tab=integrity]')); loadIntegrityReport();">Run ISA-style tests</button>
+                </div>
+            </div>
+            <div class="section">
+                <h2>Measurement basis</h2>
+                <div class="acct-panel">
+                    <h3>IFRS 17</h3>
+                    <p class="acct-note">Insurance revenue is collected premium cash. Insurance service expense is claim cash. The liability for incurred claims analogue is economic claims reserve (risk cash collected minus claim cash). No contractual service margin is invented when the book is on a premium-allocation / cash identity.</p>
+                </div>
+                <div class="acct-panel">
+                    <h3>Solvency II / Solvency directives</h3>
+                    <p class="acct-note">Coverage is own funds relative to technical provisions on this platform. Seed founding capital is disclosed separately and never used to paper over a cash shortfall. A ratio at or above 1.00 is the going-concern floor used here.</p>
+                </div>
+                <div class="acct-panel">
+                    <h3>Actuarial kernel</h3>
+                    <p class="acct-note">Issued premium is <code>price_policy</code> / the pinned kernel fields on the policy. Forecasts and customer projections read the same store. Historical <code>annual_premium</code> and bill amounts are not mutated.</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="projection-tab" class="tab-content">
+            <div class="section">
+                <h2>Kernel pricing projection</h2>
+                <p>Actuarially priced premium using the issuance kernel. Inputs come from the customer and policy pipeline; the quote is not a private spreadsheet.</p>
+
+                <div class="acct-panel">
+                    <h3 style="display:flex;align-items:center;gap:10px;">
+                        Select customer and policy
+                        <span id="customer-data-status" style="font-size:0.78rem;font-weight:500;margin-left:auto;padding:4px 12px;background:#e8eef6;border-radius:20px;color:#12203a;">Manual mode</span>
                     </h3>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px;">
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="color: rgba(255,255,255,0.9);">Search Customer (Email)</label>
-                            <div style="display: flex; gap: 8px;">
-                                <input type="text" id="proj-customer-search" placeholder="e.g., efrat@phins.ai" style="flex: 1; padding: 10px; border-radius: 8px; border: none;">
-                                <button class="btn" onclick="searchCustomerForProjection()" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; white-space: nowrap;">
-                                    Search
-                                </button>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label>Search customer (email)</label>
+                            <div style="display:flex;gap:8px;">
+                                <input type="text" id="proj-customer-search" placeholder="e.g., efrat@phins.ai" style="flex:1;">
+                                <button class="btn btn-secondary" onclick="searchCustomerForProjection()">Search</button>
                             </div>
                         </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="color: rgba(255,255,255,0.9);">Select Customer</label>
-                            <select id="proj-customer-select" onchange="loadCustomerPolicies()" style="width: 100%; padding: 10px; border-radius: 8px; border: none;">
-                                <option value="">-- Select Customer --</option>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label>Customer</label>
+                            <select id="proj-customer-select" onchange="loadCustomerPolicies()">
+                                <option value="">-- Select customer --</option>
                             </select>
                         </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="color: rgba(255,255,255,0.9);">Select Policy</label>
-                            <select id="proj-policy-select" onchange="loadPolicyDataForProjection()" style="width: 100%; padding: 10px; border-radius: 8px; border: none;">
-                                <option value="">-- Select Policy --</option>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label>Policy</label>
+                            <select id="proj-policy-select" onchange="loadPolicyDataForProjection()">
+                                <option value="">-- Select policy --</option>
                             </select>
                         </div>
-                        <div style="display: flex; align-items: flex-end; gap: 8px;">
-                            <button class="btn" onclick="loadAllCustomersForProjection()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; flex: 1;">
-                                Load All Customers
-                            </button>
-                            <button class="btn" onclick="clearCustomerSelection()" style="background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); color: white;">
-                                Clear
-                            </button>
+                        <div style="display:flex;align-items:flex-end;gap:8px;">
+                            <button class="btn btn-primary" onclick="loadAllCustomersForProjection()" style="flex:1;">Load customers</button>
+                            <button class="btn btn-secondary" onclick="clearCustomerSelection()">Clear</button>
                         </div>
                     </div>
-                    
-                    <!-- Selected Customer Info Card -->
-                    <div id="selected-customer-info" style="display: none; margin-top: 16px; background: rgba(255,255,255,0.1); border-radius: 8px; padding: 16px;">
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; font-size: 0.9rem;">
+                    <div id="selected-customer-info" style="display:none;margin-top:16px;background:#eef3fb;border-radius:8px;padding:16px;">
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;font-size:0.9rem;">
                             <div><strong>Name:</strong> <span id="info-customer-name">-</span></div>
                             <div><strong>Email:</strong> <span id="info-customer-email">-</span></div>
                             <div><strong>Age:</strong> <span id="info-customer-age">-</span></div>
@@ -355,331 +457,281 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Coverage Amount ($)</label>
+                        <label>Coverage amount ($)</label>
                         <input type="number" id="proj-coverage" value="250000" min="10000" step="10000">
                     </div>
                     <div class="form-group">
-                        <label>Savings Allocation (%)</label>
+                        <label>Savings allocation (%)</label>
                         <input type="number" id="proj-savings" value="50" min="0" max="100" step="5">
                     </div>
                     <div class="form-group">
-                        <label>ADL Level (1-10)</label>
+                        <label>ADL level (1-10)</label>
                         <select id="proj-adl">
-                            <option value="1">1 - Fully Independent</option>
-                            <option value="2">2 - Independent w/ Supervision</option>
-                            <option value="3">3 - Minimal Assistance</option>
-                            <option value="4">4 - Moderate Assistance</option>
-                            <option value="5" selected>5 - Significant Assistance (Medium)</option>
-                            <option value="6">6 - Extensive Assistance</option>
-                            <option value="7">7 - Maximum Assistance</option>
-                            <option value="8">8 - Total Dependence (Some)</option>
-                            <option value="9">9 - Total Dependence (Most)</option>
-                            <option value="10">10 - Complete Dependence</option>
+                            <option value="1">1 - Fully independent</option>
+                            <option value="2">2 - Independent with supervision</option>
+                            <option value="3">3 - Minimal assistance</option>
+                            <option value="4">4 - Moderate assistance</option>
+                            <option value="5" selected>5 - Significant assistance</option>
+                            <option value="6">6 - Extensive assistance</option>
+                            <option value="7">7 - Maximum assistance</option>
+                            <option value="8">8 - Total dependence (some)</option>
+                            <option value="9">9 - Total dependence (most)</option>
+                            <option value="10">10 - Complete dependence</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Term (Years)</label>
+                        <label>Term (years)</label>
                         <input type="number" id="proj-term" value="25" min="5" max="40" step="5">
                     </div>
                     <div class="form-group">
-                        <label>Customer Age</label>
+                        <label>Customer age</label>
                         <input type="number" id="proj-age" value="35" min="18" max="75">
                     </div>
                 </div>
-                
-                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <button class="btn btn-primary" onclick="calculateProjection()">Calculate Projection</button>
-                    <button class="btn" onclick="runAIProjectionAssessment()" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;">AI BI Assessment</button>
-                    <button class="btn btn-secondary" onclick="exportProjection('csv')" title="Export as CSV">Export CSV</button>
-                    <button class="btn btn-secondary" onclick="exportProjection('pdf')" title="Export as PDF">Export PDF</button>
-                    <button class="btn btn-secondary" onclick="printReport('projection-results')" title="Print Report"> Print</button>
+
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button class="btn btn-primary" onclick="calculateProjection()">Price with kernel</button>
+                    <button class="btn btn-secondary" onclick="runAIProjectionAssessment()">Advisory note</button>
+                    <button class="btn btn-secondary" onclick="exportProjection('csv')">Export CSV</button>
+                    <button class="btn btn-secondary" onclick="exportProjection('pdf')">Export PDF</button>
+                    <button class="btn btn-secondary" onclick="printReport('projection-results')">Print</button>
                 </div>
-                
-                <!-- AI BI Assessment Section -->
-                <div id="ai-bi-assessment" style="display: none; margin-top: 20px; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 12px; padding: 20px; border: 1px solid #0ea5e9;">
-                    <h3 style="margin: 0 0 16px 0; color: #0369a1; display: flex; align-items: center; gap: 10px;">
-                        AI Business Intelligence Assessment
-                        <span id="ai-assessment-status" style="font-size: 0.8rem; font-weight: normal; margin-left: auto; padding: 4px 12px; background: #dbeafe; color: #1e40af; border-radius: 20px;">Ready</span>
+
+                <div id="ai-bi-assessment" style="display:none;margin-top:20px;" class="acct-panel">
+                    <h3 style="display:flex;align-items:center;gap:10px;">
+                        Advisory assessment
+                        <span id="ai-assessment-status" style="font-size:0.78rem;font-weight:500;margin-left:auto;padding:4px 12px;background:#e8eef6;border-radius:20px;">Ready</span>
                     </h3>
-                    <div id="ai-assessment-content">
-                        <!-- AI assessment will be populated here -->
-                    </div>
+                    <div id="ai-assessment-content"></div>
                 </div>
-                
-                <div id="projection-results" style="margin-top: 30px;"></div>
+                <div id="projection-results" style="margin-top:30px;"></div>
             </div>
         </div>
-        
-        <!-- 25-Year Forecast Tab -->
+
         <div id="forecast-tab" class="tab-content">
             <div class="section">
-                <h2>Long-Term Portfolio Forecast</h2>
-                <p>Actuarial projections for revenue, claims, and profitability based on PHINS mortality tables and risk models.</p>
-                
-                <!-- Customer Filter for Forecast -->
-                <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 8px; padding: 15px; margin-bottom: 20px; border: 1px solid #0ea5e9;">
-                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                        <strong style="color: #0369a1;">Filter by Customer (Optional)</strong>
-                        <span id="forecast-customer-status" style="font-size: 0.85rem; color: #666; margin-left: auto;">Portfolio-wide forecast</span>
+                <h2>Long-term cash-flow forecast</h2>
+                <p>Year-by-year revenue, claims, and surplus using the actuarial store (mortality and risk rates), not a private table.</p>
+                <div class="acct-panel">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                        <strong>Optional customer filter</strong>
+                        <span id="forecast-customer-status" style="font-size:0.85rem;color:#5b6d8a;margin-left:auto;">Portfolio-wide forecast</span>
                     </div>
-                    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
-                        <div class="form-group" style="margin-bottom: 0; min-width: 200px;">
-                            <label style="font-size: 0.85rem;">Select Customer</label>
-                            <select id="forecast-customer-select" onchange="updateForecastCustomerStatus()" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #ddd;">
-                                <option value="">All Customers (Portfolio)</option>
+                    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+                        <div class="form-group" style="margin-bottom:0;min-width:200px;">
+                            <label>Customer</label>
+                            <select id="forecast-customer-select" onchange="updateForecastCustomerStatus()">
+                                <option value="">All customers (portfolio)</option>
                             </select>
                         </div>
-                        <button class="btn btn-small" onclick="loadCustomersForForecast()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;">
-                            Load Customers
-                        </button>
-                        <button class="btn btn-small" onclick="useProjectionCustomer()" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;" title="Use customer from Projection tab">
-                             Use from Projection
-                        </button>
+                        <button class="btn btn-secondary" onclick="loadCustomersForForecast()">Load customers</button>
+                        <button class="btn btn-secondary" onclick="useProjectionCustomer()">Use from kernel tab</button>
                     </div>
                 </div>
-                
-                <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 20px;">
-                    <div class="form-group" style="min-width: 120px;">
-                        <label>Forecast Years</label>
+                <div style="display:flex;gap:15px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;">
+                    <div class="form-group" style="min-width:120px;">
+                        <label>Forecast years</label>
                         <input type="number" id="forecast-years" value="25" min="5" max="50" step="5">
                     </div>
-                    <button class="btn btn-primary" onclick="loadForecast()">Generate Forecast</button>
-                    <button class="btn btn-secondary" onclick="exportForecast('csv')" title="Export as CSV">Export CSV</button>
-                    <button class="btn btn-secondary" onclick="exportForecast('pdf')" title="Export as PDF">Export PDF</button>
-                    <button class="btn btn-secondary" onclick="printReport('forecast-results')" title="Print Report"> Print</button>
+                    <button class="btn btn-primary" onclick="loadForecast()">Generate forecast</button>
+                    <button class="btn btn-secondary" onclick="exportForecast('csv')">Export CSV</button>
+                    <button class="btn btn-secondary" onclick="exportForecast('pdf')">Export PDF</button>
+                    <button class="btn btn-secondary" onclick="printReport('forecast-results')">Print</button>
                 </div>
-                
                 <div id="forecast-results"></div>
             </div>
         </div>
-        
-        <!-- Portfolio Report Tab -->
+
         <div id="portfolio-tab" class="tab-content">
             <div class="section">
-                <h2>Portfolio Summary Report</h2>
-                
-                <!-- Customer Breakdown Toggle -->
-                <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 8px; padding: 15px; margin-bottom: 20px; border: 1px solid #0ea5e9;">
-                    <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
-                        <strong style="color: #0369a1;">Report Options</strong>
-                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                            <input type="checkbox" id="portfolio-show-customers" onchange="loadPortfolioReport()" style="width: 18px; height: 18px;">
-                            Show Customer Breakdown
+                <h2>Portfolio rollforward</h2>
+                <p>Underwriting result, collections, and solvency coverage from the financial reporting pipeline.</p>
+                <div class="acct-panel">
+                    <div style="display:flex;align-items:center;gap:15px;flex-wrap:wrap;">
+                        <strong>Report options</strong>
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                            <input type="checkbox" id="portfolio-show-customers" onchange="loadPortfolioReport()" style="width:18px;height:18px;">
+                            Customer breakdown
                         </label>
-                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                            <input type="checkbox" id="portfolio-show-applications" onchange="loadPortfolioReport()" style="width: 18px; height: 18px;">
-                            Include Application Data
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                            <input type="checkbox" id="portfolio-show-applications" onchange="loadPortfolioReport()" style="width:18px;height:18px;">
+                            Application data
                         </label>
-                        <span id="portfolio-data-status" style="margin-left: auto; font-size: 0.85rem; color: #666;">Summary View</span>
+                        <span id="portfolio-data-status" style="margin-left:auto;font-size:0.85rem;color:#5b6d8a;">Summary view</span>
                     </div>
                 </div>
-                
-                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
-                    <button class="btn btn-primary" onclick="loadPortfolioReport()">Refresh Report</button>
-                    <button class="btn btn-secondary" onclick="exportPortfolio('csv')" title="Export as CSV">Export CSV</button>
-                    <button class="btn btn-secondary" onclick="exportPortfolio('pdf')" title="Export as PDF">Export PDF</button>
-                    <button class="btn btn-secondary" onclick="printReport('portfolio-results')" title="Print Report"> Print</button>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
+                    <button class="btn btn-primary" onclick="loadPortfolioReport()">Refresh report</button>
+                    <button class="btn btn-secondary" onclick="exportPortfolio('csv')">Export CSV</button>
+                    <button class="btn btn-secondary" onclick="exportPortfolio('pdf')">Export PDF</button>
+                    <button class="btn btn-secondary" onclick="printReport('portfolio-results')">Print</button>
                 </div>
                 <div id="portfolio-results"><div class="loading">Loading portfolio report...</div></div>
             </div>
         </div>
-        
-        <!-- PHINS Balance Sheet Tab (General Reserves) -->
+
         <div id="balancesheet-tab" class="tab-content">
             <div class="section">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;gap:12px;flex-wrap:wrap;">
                     <div>
-                        <h2 style="margin: 0; display: flex; align-items: center; gap: 10px;">
-                            PHINS General Reserves (Balance Sheet)
-                        </h2>
-                        <p style="color: #666; margin: 5px 0 0 0;">Company reserves, revenue, and expense tracking</p>
+                        <h2 style="margin:0;">IFRS statements</h2>
+                        <p style="color:#5b6d8a;margin:8px 0 0;">Statement of financial position and profit or loss. Claims reserve on this sheet is the economic (ledger) identity.</p>
                     </div>
-                    <div style="display: flex; gap: 10px;">
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
                         <button class="btn btn-primary" onclick="loadBalanceSheet()">Refresh</button>
-                        <button class="btn btn-success" onclick="reconcileBalanceSheet()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">Reconcile</button>
+                        <button class="btn btn-success" onclick="reconcileBalanceSheet()">Tie-out sheet</button>
                         <button class="btn btn-secondary" onclick="exportBalanceSheet('csv')">Export CSV</button>
-                        <button class="btn btn-secondary" onclick="printReport('balance-sheet-content')"> Print</button>
+                        <button class="btn btn-secondary" onclick="printReport('balance-sheet-content')">Print</button>
                     </div>
                 </div>
-                
+
                 <div id="balance-sheet-content">
-                    <!-- Main Balance Cards -->
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px;">
-                        <div class="stat-card" style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); color: white;">
-                            <div class="stat-value" id="bs-total-balance" style="color: white;">$0</div>
-                            <div class="stat-label" style="color: rgba(255,255,255,0.8);">Total Balance</div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px;">
+                        <div class="stat-card">
+                            <div class="stat-value" id="bs-total-balance">$0</div>
+                            <div class="stat-label">Total own-fund balances</div>
                         </div>
-                        <div class="stat-card" style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); color: white;">
-                            <div class="stat-value" id="bs-claims-reserve" style="color: white;">$0</div>
-                            <div class="stat-label" style="color: rgba(255,255,255,0.8);">Claims Reserve (risk cash − claims)</div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="bs-claims-reserve">$0</div>
+                            <div class="stat-label">LIC analogue (risk cash − claims)</div>
                         </div>
-                        <div class="stat-card" style="background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%); color: white;">
-                            <div class="stat-value" id="bs-operating-reserve" style="color: white;">$0</div>
-                            <div class="stat-label" style="color: rgba(255,255,255,0.8);">Operating Reserve</div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="bs-operating-reserve">$0</div>
+                            <div class="stat-label">Operating reserve</div>
                         </div>
-                        <div class="stat-card" style="background: linear-gradient(135deg, #0891b2 0%, #06b6d4 100%); color: white;">
-                            <div class="stat-value" id="bs-total-revenue" style="color: white;">$0</div>
-                            <div class="stat-label" style="color: rgba(255,255,255,0.8);">Total Collected (Premiums)</div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="bs-total-revenue">$0</div>
+                            <div class="stat-label">Insurance revenue (collected)</div>
                         </div>
-                        <div class="stat-card" style="background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%); color: white;">
-                            <div class="stat-value" id="bs-claims-paid" style="color: white;">$0</div>
-                            <div class="stat-label" style="color: rgba(255,255,255,0.8);">Claims Paid</div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="bs-claims-paid">$0</div>
+                            <div class="stat-label">Insurance service expense</div>
                         </div>
-                        <div class="stat-card" style="background: linear-gradient(135deg, #ca8a04 0%, #eab308 100%); color: white;">
-                            <div class="stat-value" id="bs-net-income" style="color: white;">$0</div>
-                            <div class="stat-label" style="color: rgba(255,255,255,0.8);">Net Income</div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="bs-net-income">$0</div>
+                            <div class="stat-label">Period result</div>
                         </div>
                     </div>
-                    
-                    <!-- Revenue & Expense Breakdown -->
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
-                        <!-- Revenue Breakdown -->
-                        <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border-radius: 12px; padding: 20px; border: 1px solid #10b981;">
-                            <h3 style="margin: 0 0 16px 0; color: #065f46; display: flex; align-items: center; gap: 8px;">
-                                Revenue Breakdown
-                            </h3>
-                            <div id="bs-revenue-list" style="font-size: 14px;">
-                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(16, 185, 129, 0.2);">
-                                    <span>Premium Income</span>
-                                    <strong id="bs-premium-income">$0</strong>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(16, 185, 129, 0.2);">
-                                    <span>Management Fees</span>
-                                    <strong id="bs-management-fees">$0</strong>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(16, 185, 129, 0.2);">
-                                    <span>Underwriting Fees</span>
-                                    <strong id="bs-underwriting-fees">$0</strong>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(16, 185, 129, 0.2);">
-                                    <span>Investment Earnings</span>
-                                    <strong id="bs-investment-earnings">$0</strong>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(16, 185, 129, 0.2);">
-                                    <span>Late Fees</span>
-                                    <strong id="bs-late-fees">$0</strong>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; padding: 8px 0;">
-                                    <span>Other Income</span>
-                                    <strong id="bs-other-income">$0</strong>
-                                </div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;">
+                        <div class="ifrs-col">
+                            <h3>Revenue — IFRS P&amp;L</h3>
+                            <div id="bs-revenue-list">
+                                <div class="ifrs-row"><span>Premium income</span><strong id="bs-premium-income">$0</strong></div>
+                                <div class="ifrs-row"><span>Management fees</span><strong id="bs-management-fees">$0</strong></div>
+                                <div class="ifrs-row"><span>Underwriting fees</span><strong id="bs-underwriting-fees">$0</strong></div>
+                                <div class="ifrs-row"><span>Investment earnings</span><strong id="bs-investment-earnings">$0</strong></div>
+                                <div class="ifrs-row"><span>Late fees</span><strong id="bs-late-fees">$0</strong></div>
+                                <div class="ifrs-row"><span>Other income</span><strong id="bs-other-income">$0</strong></div>
                             </div>
                         </div>
-                        
-                        <!-- Expense Breakdown -->
-                        <div style="background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%); border-radius: 12px; padding: 20px; border: 1px solid #ef4444;">
-                            <h3 style="margin: 0 0 16px 0; color: #991b1b; display: flex; align-items: center; gap: 8px;">
-                                Expense Breakdown
-                            </h3>
-                            <div id="bs-expense-list" style="font-size: 14px;">
-                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(239, 68, 68, 0.2);">
-                                    <span>Claims Paid</span>
-                                    <strong id="bs-exp-claims-paid">$0</strong>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(239, 68, 68, 0.2);">
-                                    <span>Supplier Payments</span>
-                                    <strong id="bs-supplier-payments">$0</strong>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(239, 68, 68, 0.2);">
-                                    <span>Operating Costs</span>
-                                    <strong id="bs-operating-costs">$0</strong>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(239, 68, 68, 0.2);">
-                                    <span>Reinsurance</span>
-                                    <strong id="bs-reinsurance">$0</strong>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; padding: 8px 0;">
-                                    <span>Other Expenses</span>
-                                    <strong id="bs-other-expenses">$0</strong>
-                                </div>
+                        <div class="ifrs-col">
+                            <h3>Expenses — IFRS P&amp;L</h3>
+                            <div id="bs-expense-list">
+                                <div class="ifrs-row"><span>Claims paid</span><strong id="bs-exp-claims-paid">$0</strong></div>
+                                <div class="ifrs-row"><span>Supplier payments</span><strong id="bs-supplier-payments">$0</strong></div>
+                                <div class="ifrs-row"><span>Operating costs</span><strong id="bs-operating-costs">$0</strong></div>
+                                <div class="ifrs-row"><span>Reinsurance</span><strong id="bs-reinsurance">$0</strong></div>
+                                <div class="ifrs-row"><span>Other expenses</span><strong id="bs-other-expenses">$0</strong></div>
                             </div>
                         </div>
                     </div>
-                    
-                    <!-- Summary Footer -->
-                    <div style="margin-top: 20px; padding: 16px; background: #f8fafc; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-                        <div style="font-size: 13px; color: #64748b;">
-                            <span>Last Updated: </span>
-                            <strong id="bs-last-updated">Never</strong>
-                        </div>
-                        <div style="font-size: 13px; color: #64748b;">
-                            <span>Transactions: </span>
-                            <strong id="bs-tx-count">0</strong>
-                        </div>
+                    <div style="margin-top:20px;padding:16px;background:#f6f8fc;border-radius:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+                        <div style="font-size:13px;color:#5b6d8a;">Last updated: <strong id="bs-last-updated">Never</strong></div>
+                        <div style="font-size:13px;color:#5b6d8a;">Transactions: <strong id="bs-tx-count">0</strong></div>
                     </div>
                 </div>
             </div>
         </div>
-        
-        <!-- Data Integrity Tab -->
+
+        <div id="solvency-tab" class="tab-content">
+            <div class="section">
+                <h2>Solvency and technical provisions</h2>
+                <p>Solvency II principle: eligible own funds versus the capital requirement. This surface reports the platform analogue already produced by the portfolio and reserve pipelines — it does not invent an SCR model.</p>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="sv-coverage">0</div>
+                        <div class="stat-label">Coverage ratio (own funds / TP)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="sv-economic-tp">$0</div>
+                        <div class="stat-label">Technical provisions (economic)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="sv-seed-capital">$0</div>
+                        <div class="stat-label">Seed capital (disclosed only)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="sv-loss-ratio">0%</div>
+                        <div class="stat-label">Loss ratio</div>
+                    </div>
+                </div>
+                <div class="acct-panel">
+                    <h3>Directive notes</h3>
+                    <p class="acct-note">A coverage ratio at or above 1.00 is the going-concern floor (Solvency II 100% SCR analogue). Seed founding capital stays on the sheet as <code>seed_claims_reserve</code> and is never used to inflate economic technical provisions. Loss ratio is claim cash over collected premium cash.</p>
+                </div>
+            </div>
+        </div>
+
         <div id="integrity-tab" class="tab-content">
             <div class="section">
-                <h2>Data Integrity Validation</h2>
-                <p>Bottom-up validation of all data across policies, billing, claims, underwriting, and <strong>actuarial consistency</strong>.</p>
-                
-                <!-- Actuarial Consistency Info -->
-                <div class="actuarial-info" style="background: linear-gradient(135deg, #e8f4fd 0%, #f0f8ff 100%); border-radius: 8px; padding: 15px; margin-bottom: 20px; border-left: 4px solid #0066cc;">
-                    <h4 style="margin: 0 0 10px 0; color: #004085;">Actuarial Consistency Checks</h4>
-                    <ul style="margin: 0; padding-left: 20px; font-size: 0.9rem; color: #333;">
-                        <li>All premiums sourced from <strong>PHINS_ACTUARIAL_TABLES_V1</strong></li>
-                        <li>Risk cover component uses mortality rates + ADL risk multipliers</li>
-                        <li>Savings component = Coverage × Savings Allocation % / Term</li>
-                        <li>Expense loading = 15% of risk premium (industry standard)</li>
-                        <li>All policies' risk_score mapped to ADL level (low→3, medium→5, high→7, very_high→9)</li>
+                <h2>Books integrity</h2>
+                <p>Bottom-up validation across policies, billing, claims, underwriting, and actuarial consistency — then the three-way financial books reconcile.</p>
+                <div class="acct-panel">
+                    <h3>Actuarial consistency</h3>
+                    <ul class="acct-note" style="margin:0;padding-left:18px;">
+                        <li>Premiums sourced from the actuarial kernel / store</li>
+                        <li>Risk cover uses mortality rates and ADL risk multipliers</li>
+                        <li>Savings component follows the pinned kernel split</li>
+                        <li>Reconcile reports differences only; historical rows are not rewritten</li>
                     </ul>
                 </div>
-                
-                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
-                    <button class="btn btn-primary" onclick="loadIntegrityReport()">Run Validation</button>
-                    <button class="btn btn-primary" onclick="loadBooksReconcile()">Reconcile Books</button>
-                    <button class="btn btn-secondary" onclick="exportIntegrity('csv')" title="Export as CSV">Export CSV</button>
-                    <button class="btn btn-secondary" onclick="exportIntegrity('pdf')" title="Export as PDF">Export PDF</button>
-                    <button class="btn btn-secondary" onclick="printReport('integrity-results')" title="Print Report"> Print</button>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
+                    <button class="btn btn-primary" onclick="loadIntegrityReport()">Run validation</button>
+                    <button class="btn btn-success" onclick="loadBooksReconcile()">Reconcile books</button>
+                    <button class="btn btn-secondary" onclick="exportIntegrity('csv')">Export CSV</button>
+                    <button class="btn btn-secondary" onclick="exportIntegrity('pdf')">Export PDF</button>
+                    <button class="btn btn-secondary" onclick="printReport('integrity-results')">Print</button>
                 </div>
-                <div id="integrity-results"><div class="loading">Click "Run Validation" to check data integrity...</div></div>
+                <div id="integrity-results"><div class="loading">Run validation or reconcile books to test the cash identity.</div></div>
             </div>
         </div>
-        
-        <!-- Dashboard Views Tab -->
-        <div id="dashboards-tab" class="tab-content">
-            <div class="section">
-                <h2>Cross-Dashboard Data View</h2>
-                <p>View and compare data summaries from all dashboards for reconciliation and data integrity validation.</p>
-                
-                <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 15px;">
-                    <button class="tab" onclick="loadDashboardView('accountant')">Accountant</button>
-                    <button class="tab" onclick="loadDashboardView('underwriter')">Underwriter</button>
-                    <button class="tab" onclick="loadDashboardView('claims')">Claims</button>
-                    <button class="tab" onclick="loadDashboardView('admin')">Admin</button>
-                    <button class="tab active" onclick="loadAllDashboards()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-                        Compare All
-                    </button>
-                    <span style="flex-grow: 1;"></span>
-                    <button class="btn btn-secondary" onclick="exportCrossDashboard('csv')" title="Export as CSV">Export CSV</button>
-                    <button class="btn btn-secondary" onclick="exportCrossDashboard('pdf')" title="Export as PDF">Export PDF</button>
-                    <button class="btn btn-secondary" onclick="printReport('dashboard-view-results')" title="Print Report"> Print</button>
-                </div>
-                
-                <div id="dashboard-view-results" style="margin-top: 20px;">
-                    <div class="loading">Select a dashboard view or click "Compare All" to see cross-dashboard data...</div>
-                </div>
-            </div>
+
+        <div id="dashboards-tab" class="tab-content hidden-legacy">
+            <div id="dashboard-view-results"></div>
         </div>
     </div>
-    
-    <script>
+
+<script>
         const token = localStorage.getItem('phins_token');
         if (!token) window.location.href = '/login.html';
         
         // Tab management
-        function showTab(tabName) {
+        function showTab(tabName, el) {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
-            document.getElementById(tabName + '-tab').classList.add('active');
-            event.target.classList.add('active');
+            document.querySelectorAll('.tabs .tab, .acct-tabs .tab').forEach(t => t.classList.remove('active'));
+            const pane = document.getElementById(tabName + '-tab');
+            if (pane) pane.classList.add('active');
+            const btn = el || document.querySelector('[data-tab="' + tabName + '"]');
+            if (btn) btn.classList.add('active');
+            if (tabName === 'control') loadControlTower();
+            if (tabName === 'balancesheet' || tabName === 'solvency') loadBalanceSheet();
+            if (tabName === 'portfolio') loadPortfolioReport();
+        }
+
+        function setText(id, value) {
+            const node = document.getElementById(id);
+            if (node) node.textContent = value;
+        }
+
+        async function loadControlTower() {
+            await Promise.all([
+                loadQuickStats(),
+                loadBalanceSheet(),
+                loadBooksReconcile({ silent: true }),
+            ]);
         }
         
         // Format currency
@@ -712,12 +764,13 @@
                 const lossRatioEl = document.getElementById('loss-ratio');
                 const lossRatioVal = parseFloat(lossRatio);
                 if (lossRatioVal > 80) {
-                    lossRatioEl.style.color = '#dc3545'; // Red - concerning
+                    lossRatioEl.style.color = '#b42318';
                 } else if (lossRatioVal > 60) {
-                    lossRatioEl.style.color = '#f59e0b'; // Orange - caution
+                    lossRatioEl.style.color = '#b45309';
                 } else {
-                    lossRatioEl.style.color = '#10b981'; // Green - healthy
+                    lossRatioEl.style.color = '#0f766e';
                 }
+                setText('sv-loss-ratio', lossRatio + '%');
                 
                 // Load portfolio for solvency
                 const portfolioResp = await fetch('/api/financial/portfolio-report', {
@@ -730,14 +783,15 @@
                 
                 // Color code solvency ratio (>= 1.0 is healthy)
                 if (solvencyRatio >= 1.5) {
-                    solvencyEl.style.color = '#10b981'; // Green - excellent
+                    solvencyEl.style.color = '#0f766e';
                 } else if (solvencyRatio >= 1.0) {
-                    solvencyEl.style.color = '#059669'; // Dark green - healthy
+                    solvencyEl.style.color = '#0f766e';
                 } else if (solvencyRatio >= 0.7) {
-                    solvencyEl.style.color = '#f59e0b'; // Orange - caution
+                    solvencyEl.style.color = '#b45309';
                 } else {
-                    solvencyEl.style.color = '#dc3545'; // Red - concerning
+                    solvencyEl.style.color = '#b42318';
                 }
+                setText('sv-coverage', solvencyRatio.toFixed(2));
             } catch (err) {
                 console.error('Error loading stats:', err);
             }
@@ -2108,22 +2162,58 @@
             }
         }
         
-        async function loadBooksReconcile() {
+        async function loadBooksReconcile(opts) {
+            const silent = opts && opts.silent;
             const resultsDiv = document.getElementById('integrity-results');
-            resultsDiv.innerHTML = '<div class="loading">Reconciling accounting book, customer ledger, claims, and reserves...</div>';
+            if (!silent && resultsDiv) {
+                resultsDiv.innerHTML = '<div class="loading">Reconciling accounting book, customer ledger, claims, and reserves...</div>';
+            }
             try {
                 const response = await fetch('/api/finance/reconcile', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await response.json();
                 if (data.error) {
-                    resultsDiv.innerHTML = `<div class="error">${data.error}</div>`;
+                    const statusEl = document.getElementById('ctl-books-status');
+                    if (statusEl) {
+                        statusEl.className = 'integrity-status integrity-issues';
+                        statusEl.textContent = data.error;
+                    }
+                    if (resultsDiv && !silent) resultsDiv.innerHTML = `<div class="error">${data.error}</div>`;
                     return;
                 }
                 const rec = data.reconcile || {};
                 const ok = rec.is_consistent;
                 const prem = rec.premiums || {};
                 const clm = rec.claims || {};
+                const reserves = rec.reserves || {};
+                const ledgerPrem = (prem.customer_ledger && prem.customer_ledger.total) || 0;
+                const bookPrem = prem.accounting_book || 0;
+                const ledgerClm = (clm.customer_ledger && clm.customer_ledger.total) || 0;
+                const bookClm = clm.accounting_book || 0;
+                setText('ctl-ledger-premium', formatCurrency(ledgerPrem));
+                setText('ctl-book-premium', formatCurrency(bookPrem));
+                setText('ctl-ledger-claims', formatCurrency(ledgerClm));
+                setText('ctl-book-claims', formatCurrency(bookClm));
+                if (reserves.economic_claims_reserve != null) {
+                    setText('ctl-economic-reserve', formatCurrency(reserves.economic_claims_reserve));
+                    setText('sv-economic-tp', formatCurrency(reserves.economic_claims_reserve));
+                }
+                if (reserves.seed_claims_reserve != null) {
+                    setText('ctl-seed-reserve', formatCurrency(reserves.seed_claims_reserve));
+                    setText('sv-seed-capital', formatCurrency(reserves.seed_claims_reserve));
+                }
+                const statusEl = document.getElementById('ctl-books-status');
+                if (statusEl) {
+                    statusEl.className = 'integrity-status ' + (ok ? 'integrity-healthy' : 'integrity-issues');
+                    statusEl.textContent = ok
+                        ? 'Financial books are in balance. Cash identity is the customer ledger; premium identity is the actuarial kernel pin.'
+                        : 'Financial books have discrepancies. Review the Integrity tab — amounts are not silently rewritten.';
+                }
+                if (silent && resultsDiv && !resultsDiv.dataset.userRan) {
+                    resultsDiv.innerHTML = '<div class="loading">Run validation or reconcile books to see the full working papers.</div>';
+                    return;
+                }
                 let html = `
                     <div class="integrity-status ${ok ? 'integrity-healthy' : 'integrity-issues'}">
                         <h3 style="margin:0;">Financial books ${ok ? 'in balance' : 'have discrepancies'}</h3>
@@ -2143,9 +2233,14 @@
                     }
                     html += '</ul>';
                 }
-                resultsDiv.innerHTML = html;
+                if (resultsDiv) resultsDiv.innerHTML = html;
             } catch (err) {
-                resultsDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;
+                const statusEl = document.getElementById('ctl-books-status');
+                if (statusEl) {
+                    statusEl.className = 'integrity-status integrity-issues';
+                    statusEl.textContent = 'Reconcile pipeline error: ' + err.message;
+                }
+                if (resultsDiv && !silent) resultsDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;
             }
         }
 
@@ -3371,6 +3466,13 @@
                     document.getElementById('bs-claims-reserve').textContent = fmt(
                         bs.economic_claims_reserve != null ? bs.economic_claims_reserve : bs.claims_reserve
                     );
+                    const economic = bs.economic_claims_reserve != null ? bs.economic_claims_reserve : bs.claims_reserve;
+                    setText('ctl-economic-reserve', fmt(economic));
+                    setText('sv-economic-tp', fmt(economic));
+                    if (bs.seed_claims_reserve != null) {
+                        setText('ctl-seed-reserve', fmt(bs.seed_claims_reserve));
+                        setText('sv-seed-capital', fmt(bs.seed_claims_reserve));
+                    }
                     document.getElementById('bs-operating-reserve').textContent = fmt(bs.operating_reserve);
                     document.getElementById('bs-total-revenue').textContent = fmt(bs.cumulative_premium || bs.total_revenue);
                     document.getElementById('bs-claims-paid').textContent = fmt(bs.expense_breakdown?.claims_paid || 0);
@@ -3405,7 +3507,7 @@
                     console.log('Balance sheet loaded:', bs);
                 } else if (response.status === 403) {
                     document.getElementById('balance-sheet-content').innerHTML = 
-                        '<div class="error" style="padding: 20px; background: #fef2f2; border-radius: 8px; color: #991b1b;"> Access denied. Accountant or Admin role required.</div>';
+                        '<div class="error" style="padding: 20px; background: #fef2f2; border-radius: 8px; color: #991b1b;">Access denied. Accountant or Admin role required.</div>';
                 } else {
                     console.error('Failed to load balance sheet:', response.status);
                 }
@@ -3568,14 +3670,13 @@
             printWindow.print();
         }
         
-        // Initial load
-        loadQuickStats();
+        // Initial load — control tower uses the same pipelines as the other tabs.
+        loadControlTower();
         loadPortfolioReport();
-        loadBalanceSheet();  // Load balance sheet on page load
-        
+
         // Auto-refresh
         setInterval(loadQuickStats, 60000);
-        setInterval(loadBalanceSheet, 60000);  // Refresh balance sheet every minute
+        setInterval(loadBalanceSheet, 60000);
     </script>
   <script src="/ui-clarity.js"></script>
 </body>
