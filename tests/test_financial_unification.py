@@ -96,6 +96,50 @@ def test_premium_and_claim_cash_post_to_same_accounting_book():
     assert any(e.entry_type == EntryType.CLAIM_PAYMENT for e in engine.ledger_entries)
 
 
+def test_accounting_book_totals_honor_customer_exclusion():
+    """Book totals exclude sandbox customers the same way the ledger does."""
+    engine = get_accounting_engine()
+    post_premium_to_accounting_book(
+        bill_id="BILL-REAL",
+        policy_id="POL-REAL",
+        customer_id="CUST-REAL",
+        amount=90.0,
+        risk_percentage=80,
+        source_tx_id="TX-REAL",
+        engine=engine,
+    )
+    post_premium_to_accounting_book(
+        bill_id="BILL-SANDBOX",
+        policy_id="POL-SANDBOX",
+        customer_id="TESTSIM-1",
+        amount=500.0,
+        risk_percentage=80,
+        source_tx_id="TX-SANDBOX",
+        engine=engine,
+    )
+    assert accounting_book_totals(engine)["premium_posted"] == 590.0
+    excluded = accounting_book_totals(
+        engine, exclude_customer=lambda cid: str(cid).startswith("TESTSIM")
+    )
+    assert excluded["premium_posted"] == 90.0
+    assert excluded["risk_posted"] == 72.0
+
+    txs = [
+        {"type": "premium_payment", "amount": 90.0, "customer_id": "CUST-REAL"},
+        {"type": "premium_payment", "amount": 500.0, "customer_id": "TESTSIM-1"},
+        {"type": "claim_payment_received", "amount": 10.0, "customer_id": "CUST-REAL"},
+        {"type": "claim_payment_received", "amount": 40.0, "customer_id": "TESTSIM-1"},
+    ]
+    econ = economic_claims_reserve(
+        transactions=txs,
+        engine=engine,
+        exclude_customer=lambda cid: str(cid).startswith("TESTSIM"),
+    )
+    assert econ["risk_cash_collected"] == 72.0
+    assert econ["claim_cash_paid"] == 10.0
+    assert econ["economic_claims_reserve"] == 62.0
+
+
 def test_collected_premiums_use_kernel_split_per_bill():
     engine = get_accounting_engine()
     policy = {

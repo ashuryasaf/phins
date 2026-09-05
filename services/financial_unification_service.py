@@ -352,8 +352,23 @@ def post_collected_premiums_to_accounting(
     return results
 
 
-def accounting_book_totals(engine: Any = None) -> Dict[str, float]:
-    """Sum posted premiums and claim entries on the shared accounting book."""
+def accounting_book_totals(
+    engine: Any = None,
+    *,
+    exclude_customer: Optional[Any] = None,
+) -> Dict[str, float]:
+    """Sum posted premiums and claim entries on the shared accounting book.
+
+    ``exclude_customer`` is an optional callable ``(customer_id) -> bool``.
+    It mirrors the customer-ledger exclusion so reconcile compares like
+    with like (sandbox / suspended accounts filtered on both sides).
+    """
+    def _excluded(obj: Any) -> bool:
+        if not exclude_customer:
+            return False
+        cid = str(getattr(obj, "customer_id", "") or "")
+        return bool(cid and exclude_customer(cid))
+
     try:
         if engine is None:
             from accounting_engine import get_accounting_engine
@@ -363,23 +378,29 @@ def accounting_book_totals(engine: Any = None) -> Dict[str, float]:
 
         premium_total = Decimal("0.00")
         risk_total = Decimal("0.00")
+        posted_allocations = 0
         for alloc in (engine.allocations or {}).values():
-            if getattr(alloc, "status", None) == AllocationStatus.POSTED:
-                premium_total += money(alloc.total_premium)
-                risk_total += money(getattr(alloc, "risk_premium", 0))
+            if getattr(alloc, "status", None) != AllocationStatus.POSTED:
+                continue
+            if _excluded(alloc):
+                continue
+            premium_total += money(alloc.total_premium)
+            risk_total += money(getattr(alloc, "risk_premium", 0))
+            posted_allocations += 1
         claims_total = Decimal("0.00")
+        entry_count = 0
         for entry in getattr(engine, "ledger_entries", []) or []:
+            if _excluded(entry):
+                continue
+            entry_count += 1
             if getattr(entry, "entry_type", None) == EntryType.CLAIM_PAYMENT:
                 claims_total += money(entry.credit_amount or entry.debit_amount)
         return {
             "premium_posted": float(premium_total),
             "risk_posted": float(risk_total),
             "claims_posted": float(claims_total),
-            "allocation_count": sum(
-                1 for a in (engine.allocations or {}).values()
-                if getattr(a, "status", None) == AllocationStatus.POSTED
-            ),
-            "entry_count": len(getattr(engine, "ledger_entries", []) or []),
+            "allocation_count": posted_allocations,
+            "entry_count": entry_count,
         }
     except Exception as exc:
         logger.warning("accounting book totals failed: %s", exc)
@@ -392,9 +413,17 @@ def accounting_book_totals(engine: Any = None) -> Dict[str, float]:
         }
 
 
-def accounting_risk_cash(engine: Any = None) -> Decimal:
+def accounting_risk_cash(
+    engine: Any = None,
+    *,
+    exclude_customer: Optional[Any] = None,
+) -> Decimal:
     """Posted risk-premium cash on the shared accounting book."""
-    return money(accounting_book_totals(engine).get("risk_posted", 0))
+    return money(
+        accounting_book_totals(engine, exclude_customer=exclude_customer).get(
+            "risk_posted", 0
+        )
+    )
 
 
 def kernel_portfolio_risk_pct(
@@ -447,7 +476,7 @@ def economic_claims_reserve(
         transactions, PREMIUM_CASH_TYPES, exclude_customer=exclude_customer
     )
     claim_cash = money(claim_ledger["total"])
-    book = accounting_book_totals(engine)
+    book = accounting_book_totals(engine, exclude_customer=exclude_customer)
     risk_from_book = money(book.get("risk_posted", 0))
     if risk_from_book > 0:
         risk_cash = risk_from_book
@@ -552,7 +581,7 @@ def reconcile_financial_books(
         else:
             kernel_annual += money(policy.get("annual_premium", 0))
 
-    book = accounting_book_totals(engine)
+    book = accounting_book_totals(engine, exclude_customer=exclude_customer)
     bs = balance_sheet or {}
     bs_premium = money((bs.get("revenue_breakdown") or {}).get("premium_income", 0))
     bs_claims = money((bs.get("expense_breakdown") or {}).get("claims_paid", 0))

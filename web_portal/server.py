@@ -789,7 +789,7 @@ def compute_unified_financial_metrics(
         )
         ledger_premium_collected = premium_cash['total']
         ledger_claims_paid = claim_cash['total']
-        book_totals = accounting_book_totals()
+        book_totals = accounting_book_totals(exclude_customer=exclude_fn)
         accounting_premium_posted = book_totals['premium_posted']
         accounting_claims_posted = book_totals['claims_posted']
         books_reconcile = reconcile_financial_books(
