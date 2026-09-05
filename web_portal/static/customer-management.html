@@ -657,7 +657,7 @@
         <div class="validation-content">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h2 id="modal-title">Validation Results</h2>
-                <button onclick="closeModal()" style="background: none; border: none; font-size: 24px; cursor: pointer;"></button>
+                <button type="button" onclick="closeModal()" aria-label="Close validation results" style="background: none; border: none; font-size: 0.95rem; cursor: pointer; font-weight: 600;">Close</button>
             </div>
             <div id="validation-results"></div>
         </div>
@@ -668,7 +668,7 @@
         <div class="validation-content">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                 <h2 id="contact-modal-title">Contact customer</h2>
-                <button onclick="closeContactModal()" style="background: none; border: none; font-size: 24px; cursor: pointer;"></button>
+                <button type="button" onclick="closeContactModal()" aria-label="Close contact dialog" style="background: none; border: none; font-size: 0.95rem; cursor: pointer; font-weight: 600;">Close</button>
             </div>
             <p class="contact-meta" id="contact-recipient-meta">Select a customer to send email or WhatsApp.</p>
             <div class="contact-field">

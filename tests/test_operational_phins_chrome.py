@@ -114,3 +114,8 @@ def test_copilot_chrome_nits_remove_empty_icons_and_variation_selectors():
     assert "const dot =" not in video
     assert "connected" in video
     assert "unavailable" in video
+
+    customers = _read("customer-management.html")
+    assert 'aria-label="Close validation results"' in customers
+    assert 'aria-label="Close contact dialog"' in customers
+    assert ">Close</button>" in customers
