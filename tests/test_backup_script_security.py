@@ -19,6 +19,7 @@ The script is exercised against a throwaway workspace, never the real repo.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -306,3 +307,89 @@ def test_backups_directory_is_gitignored():
         capture_output=True,
     )
     assert check.returncode == 0, "backups/ is not gitignored"
+
+
+# ---------------------------------------------------------------------------
+# Restoration record
+# ---------------------------------------------------------------------------
+
+RESTORE_HELPER = REPO_ROOT / "scripts" / "restore_from_backup.sh"
+
+
+def test_backup_writes_a_restore_record_and_index(workspace: Path, tmp_path: Path):
+    outside = tmp_path / "external-backups"
+    result = _run_backup(workspace, outside)
+    assert result.returncode == 0, result.stderr
+
+    backup = _backup_dirs(outside)[0]
+    record_path = backup / "restore_record.json"
+    assert record_path.is_file()
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert record["backup_id"] == backup.name
+    assert record["git_commit"]
+    assert record["artifacts"]["platform_snapshot"]["sha256"]
+    assert "code_from_git" in record["restore"]
+    assert (backup / "RESTORE.txt").is_file()
+
+    index = json.loads((outside / "RESTORE_INDEX.json").read_text(encoding="utf-8"))
+    assert index["latest"] == backup.name
+    assert index["count"] == 1
+    assert index["backups"][0]["git_commit"] == record["git_commit"]
+
+
+def test_restore_catalog_is_metadata_only(workspace: Path, tmp_path: Path):
+    outside = tmp_path / "external-backups"
+    catalog = tmp_path / "catalog.json"
+    result = _run_backup(
+        workspace, outside, PHINS_BACKUP_RECORD_CATALOG=str(catalog)
+    )
+    assert result.returncode == 0, result.stderr
+    assert catalog.is_file()
+
+    payload = catalog.read_bytes()
+    assert b"SQLite format" not in payload
+    data = json.loads(payload.decode("utf-8"))
+    assert data["latest"]
+    assert data["backups"][0]["git_commit"]
+    assert data["backups"][0]["snapshot_sha256"]
+    # Catalog must not embed archive or dump bytes.
+    assert len(payload) < 64_000
+
+
+def test_restore_from_backup_lists_and_prints_commands(workspace: Path, tmp_path: Path):
+    outside = tmp_path / "external-backups"
+    assert _run_backup(workspace, outside).returncode == 0
+    backup = _backup_dirs(outside)[0]
+    record = json.loads((backup / "restore_record.json").read_text(encoding="utf-8"))
+
+    listed = subprocess.run(
+        ["bash", str(RESTORE_HELPER), "--list"],
+        cwd=workspace,
+        env={**os.environ, "WORKSPACE_DIR": str(workspace), "BACKUP_ROOT": str(outside)},
+        capture_output=True,
+        text=True,
+    )
+    assert listed.returncode == 0, listed.stderr
+    assert backup.name in listed.stdout
+
+    commands = subprocess.run(
+        ["bash", str(RESTORE_HELPER), "--print-commands", backup.name],
+        cwd=workspace,
+        env={**os.environ, "WORKSPACE_DIR": str(workspace), "BACKUP_ROOT": str(outside)},
+        capture_output=True,
+        text=True,
+    )
+    assert commands.returncode == 0, commands.stderr
+    assert record["git_commit"] in commands.stdout
+    assert "Verify:" in commands.stdout
+
+
+def test_failed_secret_scan_is_not_recorded_in_the_index(
+    workspace: Path, tmp_path: Path
+):
+    (workspace / "leak_aws.txt").write_text(FAKE_CREDENTIALS["aws"] + "\n", encoding="utf-8")
+    outside = tmp_path / "external-backups"
+    result = _run_backup(workspace, outside)
+    assert result.returncode != 0
+    assert not (outside / "RESTORE_INDEX.json").exists()
+    assert not _backup_dirs(outside)

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-09-05T09:13:44Z",
+  "latest": "20260905T091343Z",
+  "count": 1,
+  "backups": [
+    {
+      "backup_id": "20260905T091343Z",
+      "created_at": "2026-09-05T09:13:44Z",
+      "git_commit": "25ecaa013ed5c7cb7670618f6f3de63ea4c2e133",
+      "git_status_dirty": true,
+      "has_db_dump": false,
+      "snapshot_sha256": "755c5a723bbc4a28c1b61b41282aa463ed61875767e549e7c8de65e863dfce3b",
+      "snapshot_bytes": 8163623,
+      "backup_dir": "/workspace/backups/20260905T091343Z",
+      "verify_command": "scripts/backup_platform.sh --verify /workspace/backups/20260905T091343Z",
+      "restore_code": "git checkout 25ecaa013ed5c7cb7670618f6f3de63ea4c2e133"
+    }
+  ]
+}

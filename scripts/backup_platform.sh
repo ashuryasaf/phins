@@ -31,11 +31,18 @@ set -euo pipefail
 #   scripts/backup_platform.sh                # create a backup
 #   scripts/backup_platform.sh --verify PATH  # verify an existing backup dir
 #
+# After a successful run the backup directory contains restore_record.json
+# (checksums, git commit, and restore commands). BACKUP_ROOT/RESTORE_INDEX.json
+# lists every remaining snapshot so scripts/restore_from_backup.sh can find it.
+# Set PHINS_BACKUP_RECORD_CATALOG to also write a metadata-only catalog that
+# is safe to commit (no snapshot, no database dump).
+#
 # Environment:
 #   BACKUP_ROOT                   destination root (default: <workspace>/backups)
 #   PHINS_BACKUP_RETENTION        keep the N newest backups (default 7, 0 = keep all)
 #   PHINS_BACKUP_ALLOW_IN_REPO    set to 'true' to bypass the git-tracking guard
 #   PHINS_BACKUP_SKIP_SCAN        set to 'true' to skip the secret scan (NOT advised)
+#   PHINS_BACKUP_RECORD_CATALOG   optional path for a commit-safe restore catalog
 
 WORKSPACE_DIR="${WORKSPACE_DIR:-/workspace}"
 BACKUP_ROOT="${BACKUP_ROOT:-${WORKSPACE_DIR}/backups}"
@@ -198,6 +205,216 @@ scan_for_secrets() {
 }
 
 # ---------------------------------------------------------------------------
+# Restoration record + index
+# ---------------------------------------------------------------------------
+# restore_record.json lives inside the snapshot directory (gitignored with the
+# rest of backups/). RESTORE_INDEX.json is the local lookup table. A separate
+# catalog file is written only when PHINS_BACKUP_RECORD_CATALOG is set; that
+# file holds metadata and checksums, never archive or dump bytes.
+write_restore_record() {
+  local out_dir="$1"
+  command -v python3 >/dev/null 2>&1 || die "python3 is required to write restore_record.json"
+  python3 - "${out_dir}" <<'PY'
+import hashlib
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+out = Path(sys.argv[1]).resolve()
+ts = out.name
+meta = out / "metadata"
+git_commit = ""
+git_status_dirty = False
+if (meta / "git_commit.txt").exists():
+    git_commit = (meta / "git_commit.txt").read_text(encoding="utf-8").strip()
+if (meta / "git_status_porcelain.txt").exists():
+    git_status_dirty = bool((meta / "git_status_porcelain.txt").read_text(encoding="utf-8").strip())
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+artifacts = {}
+archive = out / "platform_snapshot.tar.gz"
+if archive.is_file():
+    artifacts["platform_snapshot"] = {
+        "path": "platform_snapshot.tar.gz",
+        "sha256": sha256(archive),
+        "bytes": archive.stat().st_size,
+    }
+
+db_files = []
+db_dir = out / "db"
+if db_dir.is_dir():
+    for path in sorted(db_dir.iterdir()):
+        if path.name == "backup_notes.txt" or not path.is_file():
+            continue
+        db_files.append({
+            "path": f"db/{path.name}",
+            "sha256": sha256(path),
+            "bytes": path.stat().st_size,
+        })
+artifacts["db_files"] = db_files
+
+notes = []
+notes_file = db_dir / "backup_notes.txt"
+if notes_file.is_file():
+    notes = [line for line in notes_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+record = {
+    "schema_version": 1,
+    "backup_id": ts,
+    "timestamp_utc": ts,
+    "created_at": created_at,
+    "git_commit": git_commit,
+    "git_status_dirty": git_status_dirty,
+    "backup_dir": str(out),
+    "artifacts": artifacts,
+    "has_db_dump": bool(db_files),
+    "db_notes": notes,
+    "verify_command": f"scripts/backup_platform.sh --verify {out}",
+    "restore": {
+        "code_from_git": (
+            f"git checkout {git_commit}"
+            if git_commit
+            else "git checkout <commit from metadata/git_commit.txt>"
+        ),
+        "code_from_snapshot": (
+            f"mkdir -p /tmp/phins-restore-{ts} && "
+            f"tar xzf {out}/platform_snapshot.tar.gz -C /tmp/phins-restore-{ts}"
+        ),
+        "database_postgres": (
+            f'pg_restore --no-owner --no-privileges -d "$DATABASE_URL" {out}/db/postgres.dump'
+        ),
+        "database_sqlite": 'sqlite3 "$SQLITE_PATH" ".restore \'<backup>/db/<name>.db\'"',
+        "verify": f"scripts/backup_platform.sh --verify {out}",
+        "list_recorded": "scripts/restore_from_backup.sh --list",
+    },
+}
+(out / "restore_record.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+
+lines = [
+    f"PHINS platform restore record",
+    f"backup_id={ts}",
+    f"created_at={created_at}",
+    f"git_commit={git_commit or '(unavailable)'}",
+    f"verify=scripts/backup_platform.sh --verify {out}",
+    f"list=scripts/restore_from_backup.sh --list",
+    f"show=scripts/restore_from_backup.sh --show {ts}",
+]
+if git_commit:
+    lines.append(f"code_restore=./restore_platform.sh {git_commit}")
+(out / "RESTORE.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+print(str(out / "restore_record.json"))
+PY
+}
+
+write_restore_index() {
+  local backup_root="$1"
+  local catalog_path="${PHINS_BACKUP_RECORD_CATALOG:-}"
+  command -v python3 >/dev/null 2>&1 || die "python3 is required to write RESTORE_INDEX.json"
+  python3 - "${backup_root}" "${catalog_path}" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+root = Path(sys.argv[1]).resolve()
+catalog_path = sys.argv[2].strip() if len(sys.argv) > 2 else ""
+entries = []
+for child in sorted(root.iterdir(), reverse=True):
+    if not child.is_dir():
+        continue
+    record_path = child / "restore_record.json"
+    if not record_path.is_file():
+        entries.append({
+            "backup_id": child.name,
+            "path": str(child),
+            "has_restore_record": False,
+        })
+        continue
+    try:
+        data = json.loads(record_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        entries.append({
+            "backup_id": child.name,
+            "path": str(child),
+            "has_restore_record": False,
+        })
+        continue
+    snapshot = (data.get("artifacts") or {}).get("platform_snapshot") or {}
+    entries.append({
+        "backup_id": data.get("backup_id") or child.name,
+        "created_at": data.get("created_at"),
+        "git_commit": data.get("git_commit") or "",
+        "git_status_dirty": bool(data.get("git_status_dirty")),
+        "path": str(child),
+        "has_restore_record": True,
+        "has_db_dump": bool(data.get("has_db_dump")),
+        "snapshot_sha256": snapshot.get("sha256") or "",
+        "snapshot_bytes": snapshot.get("bytes"),
+        "verify_command": data.get("verify_command") or f"scripts/backup_platform.sh --verify {child}",
+    })
+
+index = {
+    "schema_version": 1,
+    "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "latest": entries[0]["backup_id"] if entries else None,
+    "count": len(entries),
+    "backups": entries,
+}
+index_path = root / "RESTORE_INDEX.json"
+index_path.write_text(json.dumps(index, indent=2) + "\n", encoding="utf-8")
+try:
+    index_path.chmod(0o600)
+except OSError:
+    pass
+
+if catalog_path:
+    catalog = Path(catalog_path)
+    catalog.parent.mkdir(parents=True, exist_ok=True)
+    # Metadata only: no archive bytes, no dump bytes, no host-only scratch paths
+    # beyond the recorded backup_id. Absolute paths stay so the same machine
+    # can restore; clones still have git_commit + checksums for verification.
+    safe = {
+        "schema_version": 1,
+        "updated_at": index["updated_at"],
+        "latest": index["latest"],
+        "count": index["count"],
+        "backups": [
+            {
+                "backup_id": item.get("backup_id"),
+                "created_at": item.get("created_at"),
+                "git_commit": item.get("git_commit") or "",
+                "git_status_dirty": bool(item.get("git_status_dirty")),
+                "has_db_dump": bool(item.get("has_db_dump")),
+                "snapshot_sha256": item.get("snapshot_sha256") or "",
+                "snapshot_bytes": item.get("snapshot_bytes"),
+                "backup_dir": item.get("path"),
+                "verify_command": item.get("verify_command"),
+                "restore_code": (
+                    f"git checkout {item['git_commit']}"
+                    if item.get("git_commit")
+                    else None
+                ),
+            }
+            for item in entries
+            if item.get("has_restore_record")
+        ],
+    }
+    catalog.write_text(json.dumps(safe, indent=2) + "\n", encoding="utf-8")
+print(str(index_path))
+PY
+}
+
+# ---------------------------------------------------------------------------
 # Verify mode
 # ---------------------------------------------------------------------------
 if [ "${1:-}" = "--verify" ]; then
@@ -351,6 +568,14 @@ tar \
 chmod 600 "${OUT_DIR}/platform_snapshot.tar.gz" 2>/dev/null || true
 
 # -------------------------
+# Restoration record
+# -------------------------
+# Written before SHA256SUMS so the manifest covers the record itself.
+log "Writing restoration record..."
+write_restore_record "${OUT_DIR}"
+chmod 600 "${OUT_DIR}/restore_record.json" "${OUT_DIR}/RESTORE.txt" 2>/dev/null || true
+
+# -------------------------
 # Integrity manifest
 # -------------------------
 # No `|| true`: a manifest that silently failed to generate is worse than none,
@@ -387,8 +612,18 @@ if [ "${RETENTION}" -gt 0 ] 2>/dev/null; then
   fi
 fi
 
+# Index is written after the secret scan and retention so a failed or pruned
+# snapshot is never advertised as restorable.
+write_restore_index "${BACKUP_ROOT}"
+log "Restore index: ${BACKUP_ROOT}/RESTORE_INDEX.json"
+if [ -n "${PHINS_BACKUP_RECORD_CATALOG:-}" ]; then
+  log "Restore catalog: ${PHINS_BACKUP_RECORD_CATALOG}"
+fi
+
 log "Backup complete."
 log "Archive: ${OUT_DIR}/platform_snapshot.tar.gz"
+log "Record : ${OUT_DIR}/restore_record.json"
 log "DB dir : ${OUT_DIR}/db"
 log "Meta   : ${OUT_DIR}/metadata"
 log "Verify : scripts/backup_platform.sh --verify ${OUT_DIR}"
+log "List   : scripts/restore_from_backup.sh --list"

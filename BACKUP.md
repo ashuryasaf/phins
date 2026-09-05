@@ -14,6 +14,27 @@ This repo includes a repeatable backup script that creates a timestamped bundle 
 bash scripts/backup_platform.sh
 ```
 
+Every successful run writes a **restoration record**:
+
+- `backups/<UTC_TIMESTAMP>/restore_record.json` — git commit, artifact checksums, restore commands
+- `backups/<UTC_TIMESTAMP>/RESTORE.txt` — short human-readable pointer
+- `backups/RESTORE_INDEX.json` — local index of remaining snapshots
+
+To also write a metadata-only catalog that is safe to commit (checksums and git SHAs, never the archive or a database dump):
+
+```bash
+PHINS_BACKUP_RECORD_CATALOG=docs/platform_restore_catalog.json bash scripts/backup_platform.sh
+```
+
+List or verify recorded backups without touching the working tree:
+
+```bash
+bash scripts/restore_from_backup.sh --list
+bash scripts/restore_from_backup.sh --latest
+bash scripts/restore_from_backup.sh --verify
+bash scripts/restore_from_backup.sh --print-commands
+```
+
 ## Verify an existing backup
 
 Checks every file against `SHA256SUMS` and re-runs the secret scan:
@@ -77,6 +98,32 @@ directory `0700`.
 A dump contains live customer data. It must never be committed, and the
 git-destination guard above is what enforces that.
 
+## Restore from a recorded backup
+
+1. Identify the snapshot:
+   ```bash
+   bash scripts/restore_from_backup.sh --list
+   ```
+2. Verify checksums and the secret scan:
+   ```bash
+   bash scripts/restore_from_backup.sh --verify <UTC_TIMESTAMP>
+   ```
+3. Restore **code** from git (preferred) using the commit stored in the record:
+   ```bash
+   ./restore_platform.sh "$(jq -r .git_commit backups/<UTC_TIMESTAMP>/restore_record.json)"
+   ```
+   Or extract the snapshot into a staging directory (does not overwrite the repo):
+   ```bash
+   mkdir -p /tmp/phins-restore && tar xzf backups/<UTC_TIMESTAMP>/platform_snapshot.tar.gz -C /tmp/phins-restore
+   ```
+4. Restore **database** only when a dump exists under `backups/<UTC_TIMESTAMP>/db/`:
+   - Postgres: `pg_restore --no-owner --no-privileges -d "$DATABASE_URL" backups/<UTC_TIMESTAMP>/db/postgres.dump`
+   - SQLite: `sqlite3 "$SQLITE_PATH" ".restore 'backups/<UTC_TIMESTAMP>/db/<name>.db'"`
+
+The recorded catalog at `docs/platform_restore_catalog.json` is metadata only.
+Use it to find the git commit and snapshot checksum after the `backups/` volume
+is attached; it is not a substitute for the snapshot itself.
+
 ## Retention
 
 The newest `PHINS_BACKUP_RETENTION` backups are kept (default `7`); older
@@ -90,5 +137,6 @@ timestamped directories are pruned automatically. Set `0` to keep everything.
 | `PHINS_BACKUP_RETENTION` | Keep the N newest backups (default `7`, `0` = keep all) |
 | `PHINS_BACKUP_ALLOW_IN_REPO` | Bypass the git-destination guard (not recommended) |
 | `PHINS_BACKUP_SKIP_SCAN` | Skip the secret scan (not recommended) |
+| `PHINS_BACKUP_RECORD_CATALOG` | Write a commit-safe metadata catalog (no archive/dump bytes) |
 | `DATABASE_URL` | Enables the Postgres dump |
 | `SQLITE_PATH` | Enables the SQLite backup |
