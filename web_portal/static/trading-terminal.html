@@ -610,10 +610,9 @@ async function loadIntegrity() {
         ]);
         let html = '';
         const statusColor = integrity.status === 'clean' ? 'var(--green)' : 'var(--red)';
-        const statusIcon = integrity.status === 'clean' ? '' : '';
         html += `<div style="display:flex;gap:16px;margin-bottom:12px;">`;
         html += `<div style="flex:1;text-align:center;padding:12px;background:var(--bg);border-radius:5px;border:1px solid ${statusColor};">
-            <div style="font-size:28px;font-weight:700;color:${statusColor};">${statusIcon} ${(integrity.status||'unknown').toUpperCase().replace('_',' ')}</div>
+            <div style="font-size:28px;font-weight:700;color:${statusColor};">${(integrity.status||'unknown').toUpperCase().replace('_',' ')}</div>
             <div style="color:var(--muted);font-size:16px;margin-top:4px;">Broker-Ledger Reconciliation</div>
         </div>`;
         html += `<div style="flex:1;text-align:center;padding:12px;background:var(--bg);border-radius:5px;border:1px solid var(--border);">

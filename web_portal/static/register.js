@@ -60,7 +60,7 @@ document.addEventListener('DOMContentLoaded', function () {
     setTimeout(() => {
       validateInvitationCode(codeFromUrl.toUpperCase());
     }, 300);
-    msg.innerHTML = '️ Invitation code detected! Please complete your registration.';
+    msg.innerHTML = 'Invitation code detected! Please complete your registration.';
     msg.style.color = '#28a745';
   }
 
@@ -211,7 +211,7 @@ document.addEventListener('DOMContentLoaded', function () {
         isCodeValid = false;
       }
     } catch (e) {
-      codeValidation.innerHTML = '️ Unable to validate code';
+      codeValidation.innerHTML = 'Unable to validate code';
       codeValidation.style.color = '#856404';
       isCodeValid = false;
     }

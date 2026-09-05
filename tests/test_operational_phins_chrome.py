@@ -89,3 +89,28 @@ def test_auth_and_landing_pages_have_no_decorative_dingbats():
             if DINGBAT.search(line):
                 leftovers.append(f"{name}:{line_no}: {line.strip()[:140]}")
     assert leftovers == [], "decorative symbols remain:\n" + "\n".join(leftovers)
+
+
+def test_copilot_chrome_nits_remove_empty_icons_and_variation_selectors():
+    """Operational leftovers from emoji stripping: no dead icon helpers or VS16."""
+    cyber = _read("cyber-security.html")
+    assert "function findingIcon" not in cyber
+    assert "ai-finding-icon" not in cyber
+
+    register = _read("register.js")
+    assert "Invitation code detected!" in register
+    assert "\ufe0f Invitation code detected" not in register
+    assert "Unable to validate code" in register
+    assert "\ufe0f Unable to validate code" not in register
+
+    trading = _read("trading-terminal.html")
+    assert "statusIcon" not in trading
+
+    unicorn = _read("unicorn-executive-summary.html")
+    assert ">Print / PDF</button>" in unicorn
+    assert "\ufe0f Print / PDF" not in unicorn
+
+    video = _read("video-agents.html")
+    assert "const dot =" not in video
+    assert "connected" in video
+    assert "unavailable" in video

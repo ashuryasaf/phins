@@ -258,13 +258,8 @@
     .ai-finding {
       padding: 6px 0;
       font-size: 0.85rem;
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
       line-height: 1.4;
     }
-
-    .ai-finding-icon { flex-shrink: 0; font-size: 0.9rem; }
 
     .ai-recommendations {
       margin-top: 16px;
@@ -883,16 +878,6 @@ function chipForStatus(status) {
   return `<span class="status-chip chip-info">${str}</span>`;
 }
 
-function findingIcon(text) {
-  if (!text) return '';
-  if (text.startsWith('CRITICAL')) return '';
-  if (text.startsWith('HIGH') || text.startsWith('ALERT')) return '';
-  if (text.startsWith('WARNING')) return '';
-  if (text.startsWith('MEDIUM')) return '';
-  if (text.startsWith('LOW') || text.startsWith('INFO')) return '';
-  return '';
-}
-
 async function loadDashboard() {
   try {
     const controller = new AbortController();
@@ -962,7 +947,7 @@ function renderDashboard(data) {
 
   const findingsEl = document.getElementById('ai-findings');
   findingsEl.innerHTML = (ai.findings || []).map(f =>
-    `<div class="ai-finding"><span class="ai-finding-icon">${findingIcon(f)}</span><span>${f}</span></div>`
+    `<div class="ai-finding">${f}</div>`
   ).join('');
 
   const recs = ai.recommendations || [];
