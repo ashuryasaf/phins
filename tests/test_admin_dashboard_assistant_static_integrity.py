@@ -14,7 +14,7 @@ def test_admin_ai_mic_panel_present_without_branded_assistant_title():
     assert 'id="admin-ai-query-input"' in content
     assert 'id="admin-ai-voice-btn"' in content
     assert 'id="admin-ai-response-area"' in content
-    assert "💬 Commands (voice or text):" in content
+    assert "Commands (voice or text):" in content
     assert "Use voice, text, or buttons to run existing dashboard functions with built-in integrity safeguards." in content
 
 
@@ -168,14 +168,14 @@ def test_admin_ai_assistant_integrity_guards_and_section_ids_present():
     assert "bill_all_policies" in content
     assert "run_actuary_simulation" in content
     assert "approve_all_pending_underwriting" in content
-    assert "confirm: '⚠️ Reconcile balance sheet now?" in content
-    assert "confirm: '⚠️ Clean demo/test data now?" in content
-    assert "confirm: '⚠️ Execute bill-all for eligible active policies?" in content
-    assert "confirm: '📐 Run portfolio actuarial simulation?" in content
-    assert "confirm: '⚠️ Approve all pending underwriting applications?" in content
-    assert "confirm: '⚠️ Queue AI video generation for every campaign blueprint?" in content
+    assert "confirm: ' Reconcile balance sheet now?" in content
+    assert "confirm: ' Clean demo/test data now?" in content
+    assert "confirm: ' Execute bill-all for eligible active policies?" in content
+    assert "confirm: ' Run portfolio actuarial simulation?" in content
+    assert "confirm: ' Approve all pending underwriting applications?" in content
+    assert "confirm: ' Queue AI video generation for every campaign blueprint?" in content
     assert "integrity: 'guarded'" in content
-    assert "⚠️ High-impact actions are confirmation-gated for data integrity." in content
+    assert "High-impact actions are confirmation-gated for data integrity." in content
 
     # Reinsurance and legal sections get explicit ids for assistant navigation coverage.
     # Tolerate additional attributes (e.g. data-collapsible) being added later.
@@ -189,7 +189,7 @@ def test_admin_ai_assistant_voice_and_quick_action_controls_present():
     assert 'id="admin-ai-voice-btn"' in content
     assert 'id="admin-ai-voice-recording-indicator"' in content
     assert 'id="admin-ai-voice-transcript"' in content
-    assert "🎤 Listening... Speak now" in content
+    assert "Listening... Speak now" in content
     assert "Voice input available after login validation" in content
     assert "onclick=\"startAdminAssistantVoiceInput()\"" in content
 

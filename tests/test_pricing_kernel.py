@@ -766,29 +766,86 @@ def test_cohort_override_changes_priced_premium_for_matching_customer_only():
 
 
 def test_inline_pricer_delegates_to_kernel():
-    """``calculate_age_adjusted_premium`` must now report a kernel integrity hash."""
+    """``calculate_age_adjusted_premium`` uses the same issuance kernel path."""
+    from services.pricing_shadow_service import price_application_with_kernel
     from web_portal.server import calculate_age_adjusted_premium
+
     result = calculate_age_adjusted_premium(
         base_premium=1000, age=40, policy_type='life',
         adl_level=5, coverage_amount=300_000, use_actuarial=True, term_years=20,
+        savings_rate=0.50,
     )
     assert result['eligible']
     assert result['actuarial_source'] == 'PHINS_PRICING_KERNEL_V1'
     assert 'pricing_kernel_integrity_hash' in result
     assert len(result['pricing_kernel_integrity_hash']) == 16
+    # Legacy override was base_premium * 0.5 == 500. Kernel savings differs.
+    assert result['savings_premium'] != 500.0
+
+    kernel = price_application_with_kernel({
+        "type": "phins_unified",
+        "coverage_amount": 300_000,
+        "age": 40,
+        "term_years": 20,
+        "coverage_years": 20,
+        "adl_level": 5,
+        "savings_rate": 0.50,
+        "risk_score": "medium",
+    })
+    assert result['savings_premium'] == kernel['savings_premium_annual']
+    assert result['annual_premium'] == kernel['annual']
+    assert result['pricing_kernel_integrity_hash'] == kernel['integrity_hash']
 
 
 def test_financial_reporting_service_delegates_to_kernel():
-    """``FinancialReportingService.calculate_premium`` must use the kernel."""
+    """Accountant quotes use the same kernel path as issuance."""
     from services.financial_reporting_service import FinancialReportingService
+    from services.pricing_shadow_service import price_application_with_kernel
+
     svc = FinancialReportingService(policies={}, claims={}, billing={}, customers={}, underwriting={})
     result = svc.calculate_premium(
         coverage=500_000, age=45, adl_level=5,
         savings_pct=0.50, term_years=15,
     )
+    kernel = price_application_with_kernel({
+        "type": "phins_unified",
+        "coverage_amount": 500_000,
+        "age": 45,
+        "adl_level": 5,
+        "term_years": 15,
+        "coverage_years": 15,
+        "savings_rate": 0.50,
+        "risk_score": "medium",
+    })
     assert result['eligible']
     assert result['actuarial_model'] == 'PHINS_PRICING_KERNEL_V1'
-    assert 'pricing_kernel_integrity_hash' in result
+    assert result['pricing_kernel_integrity_hash'] == kernel['integrity_hash']
+    assert result['annual_premium'] == kernel['annual']
+    assert result['monthly_premium'] == kernel['monthly']
+    assert result['savings_component'] == kernel['savings_premium_annual']
+
+
+def test_frs_projection_rates_use_actuarial_store():
+    """Year-by-year FRS projections read the same tables as the kernel."""
+    from services.actuarial_service import get_actuarial_store
+    from services.financial_reporting_service import FinancialReportingService
+
+    store = get_actuarial_store()
+    svc = FinancialReportingService(
+        policies={}, claims={}, billing={}, customers={}, underwriting={},
+    )
+    assert svc.get_mortality_rate(45) == store.get_mortality_rate(45)
+    assert svc.get_disability_incidence_rate(45) == store.get_disability_rate(45)
+    assert svc.get_adl_mortality_multiplier(7) == store.get_adl_mortality_multiplier(7)
+    assert svc.get_adl_disability_incidence_multiplier(7) == store.get_adl_disability_multiplier(7)
+    assert svc.get_adl_benefit_percentage(6) == store.get_adl_benefit_pct(6)
+    assert svc.get_lapse_rate(2) == store.get_lapse_rate(2)
+    projections = svc.project_policy_value(
+        coverage=200_000, age=40, adl_level=5,
+        savings_pct=0.0, term_years=2,
+    )
+    assert projections
+    assert projections[0]["year"] == 1
 
 
 def test_simulator_savings_rate_actually_drives_savings_premium():

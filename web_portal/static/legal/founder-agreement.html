@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PHINS — Founder Agreement</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/legal/legal-docs.css">
 </head>
 <body>
@@ -58,7 +58,7 @@ PhinsLegalDoc.init({
     var ts = parseFloat(v.totalShares) || 0;
     return {
       totalEquity: { value: total, display: total.toLocaleString(undefined,{maximumFractionDigits:2}) + "%" },
-      equityStatus: { value: total, display: (Math.abs(total - 100) < 0.01 ? "✓ allocations total 100%" : "⚠ allocations total " + total.toFixed(2) + "% (should equal 100%)") },
+      equityStatus: { value: total, display: (Math.abs(total - 100) < 0.01 ? "OK: allocations total 100%" : "Check: allocations total " + total.toFixed(2) + "% (should equal 100%)") },
       founderAShares: { value: Math.round(ts*a/100), display: Math.round(ts*a/100).toLocaleString() },
       founderBShares: { value: Math.round(ts*b/100), display: Math.round(ts*b/100).toLocaleString() },
       founderCShares: { value: Math.round(ts*c/100), display: Math.round(ts*c/100).toLocaleString() }

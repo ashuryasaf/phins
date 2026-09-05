@@ -82,7 +82,8 @@ class ReservesReportingService:
                  bills: Dict = None,
                  health_wallets: Dict = None,
                  investment_accounts: Dict = None,
-                 actuarial_service=None):
+                 actuarial_service=None,
+                 transaction_ledger: Dict = None):
         """
         Initialize reserves reporting service.
         
@@ -103,6 +104,7 @@ class ReservesReportingService:
         self.health_wallets = health_wallets if health_wallets is not None else {}
         self.investment_accounts = investment_accounts if investment_accounts is not None else {}
         self.actuarial_service = actuarial_service
+        self.transaction_ledger = transaction_ledger if transaction_ledger is not None else {}
         
         # Configuration
         self.ibnr_factor = Decimal('0.15')  # 15% of annual premiums as IBNR default
@@ -158,14 +160,51 @@ class ReservesReportingService:
                         summary.risk_reserve_by_period[period_key] += alloc.risk_amount
                     except:
                         pass
-        else:
-            # Estimate from bills if no tracker
+        if summary.gross_risk_reserve > 0:
+            return
+
+        # Prefer accounting-book risk cash (already kernel-split), then
+        # split paid bills by the policy kernel pin. Never invent 75%.
+        try:
+            from services.financial_unification_service import (
+                accounting_risk_cash,
+                money,
+                resolve_premium_split,
+            )
+            try:
+                from web_portal.server import is_suspended_account
+                exclude_fn = is_suspended_account
+            except Exception:
+                exclude_fn = lambda cid: "TESTSIM" in str(cid or "").upper()
+            book_risk = accounting_risk_cash(exclude_customer=exclude_fn)
+            bill_risk = money(0)
             for bill_id, bill in self.bills.items():
-                if (bill.get('status') or '').lower() == 'paid':
-                    amount = Decimal(str(bill.get('amount_paid', 0) or bill.get('amount', 0) or 0))
-                    # Default 75% risk allocation
-                    risk_amount = (amount * Decimal('0.75')).quantize(Decimal('0.01'))
-                    summary.gross_risk_reserve += risk_amount
+                if (bill.get('status') or '').lower() != 'paid':
+                    continue
+                cid = str(bill.get('customer_id') or '')
+                if cid and exclude_fn(cid):
+                    continue
+                amount = money(bill.get('amount_paid', 0) or bill.get('amount', 0) or 0)
+                if amount <= 0:
+                    continue
+                pid = str(bill.get('policy_id') or '')
+                policy = self.policies.get(pid) if pid else None
+                if policy is None and pid:
+                    for candidate in self.policies.values():
+                        if str(candidate.get('id') or '') == pid:
+                            policy = candidate
+                            break
+                if policy and exclude_fn(str(policy.get('customer_id') or '')):
+                    continue
+                split = resolve_premium_split(amount, policy, fallback_risk_pct=100)
+                bill_risk += money(split['risk_amount'])
+            # Premium posting to the accounting book is a partial migration; the
+            # paid-bill kernel split still covers all historical collected
+            # premiums. Take the larger so a partial book never understates the
+            # risk reserve.
+            summary.gross_risk_reserve = book_risk if book_risk >= bill_risk else bill_risk
+        except Exception:
+            logger.warning("kernel/ledger risk-reserve fallback failed; leaving reserve at zero")
     
     def _calculate_claims_reserves(self, summary: ReserveSummary):
         """Calculate claims reserves (pending claims + IBNR)"""
@@ -213,10 +252,43 @@ class ReservesReportingService:
         summary.total_claims_reserve = summary.claims_reserve_pending + summary.claims_reserve_ibnr
     
     def _calculate_paid_claims(self, summary: ReserveSummary):
-        """Calculate paid claims by period"""
+        """Calculate paid claims by period.
+
+        Customer-ledger claim cash is authoritative when a ledger is attached.
+        Claim records are the fallback for older books that never posted cash.
+        """
         
         current_year = datetime.now().year
         current_month = datetime.now().month
+
+        if self.transaction_ledger:
+            try:
+                from services.financial_unification_service import (
+                    CLAIM_CASH_TYPES,
+                    ledger_cash_total,
+                    money,
+                )
+                cash = ledger_cash_total(self.transaction_ledger.values(), CLAIM_CASH_TYPES)
+                summary.claims_paid_total = money(cash['total'])
+                for tx in self.transaction_ledger.values():
+                    kind = str(tx.get('type') or tx.get('tx_type') or '').strip().lower()
+                    if kind not in CLAIM_CASH_TYPES:
+                        continue
+                    paid_date = tx.get('timestamp') or tx.get('created_at')
+                    if not paid_date:
+                        continue
+                    try:
+                        date = datetime.fromisoformat(str(paid_date).replace('Z', '+00:00'))
+                        amount = money(tx.get('amount', 0))
+                        if date.year == current_year:
+                            summary.claims_paid_ytd += amount
+                            if date.month == current_month:
+                                summary.claims_paid_period += amount
+                    except Exception:
+                        pass
+                return
+            except Exception:
+                logger.warning("ledger-backed paid-claims calculation failed; using claim records")
         
         for claim_id, claim in self.claims.items():
             status = (claim.get('status') or '').lower()
@@ -326,7 +398,7 @@ class ReservesReportingService:
             'risk_reserves': {
                 'gross_risk_reserve': float(summary.gross_risk_reserve),
                 'by_period': {k: float(v) for k, v in summary.risk_reserve_by_period.items()},
-                'source': 'Premium risk allocations (default 75% of premium)'
+                'source': 'Premium risk allocations (kernel pin or accounting-book risk cash)'
             },
             
             # Claims Reserves Section
@@ -505,7 +577,8 @@ def init_reserves_reporting_service(premium_allocation_tracker=None,
                                      bills: Dict = None,
                                      health_wallets: Dict = None,
                                      investment_accounts: Dict = None,
-                                     actuarial_service=None) -> ReservesReportingService:
+                                     actuarial_service=None,
+                                     transaction_ledger: Dict = None) -> ReservesReportingService:
     """Initialize reserves reporting service with dependencies"""
     global _reserves_service
     _reserves_service = ReservesReportingService(
@@ -515,7 +588,8 @@ def init_reserves_reporting_service(premium_allocation_tracker=None,
         bills=bills,
         health_wallets=health_wallets,
         investment_accounts=investment_accounts,
-        actuarial_service=actuarial_service
+        actuarial_service=actuarial_service,
+        transaction_ledger=transaction_ledger,
     )
     return _reserves_service
 

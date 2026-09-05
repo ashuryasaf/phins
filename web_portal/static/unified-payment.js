@@ -82,14 +82,14 @@ class UnifiedPaymentModal {
       <div class="upm-overlay" onclick="unifiedPayment.close()"></div>
       <div class="upm-container">
         <div class="upm-header">
-          <h2>💳 Add Funds</h2>
-          <button class="upm-close" onclick="unifiedPayment.close()">✕</button>
+          <h2>Add Funds</h2>
+          <button class="upm-close" onclick="unifiedPayment.close()">Close</button>
         </div>
         
         <div class="upm-content">
           <!-- Step 1: Select Destination -->
           <div class="upm-step" id="upm-step-destination">
-            <h3>📍 Select Destination</h3>
+            <h3>Select Destination</h3>
             <div class="upm-destinations" id="upm-destinations">
               ${this.destinations.map(d => `
                 <div class="upm-dest-card ${d.id === this.defaultDestination ? 'selected' : ''}" data-dest="${d.id}" onclick="unifiedPayment.selectDestination('${d.id}')">
@@ -98,7 +98,7 @@ class UnifiedPaymentModal {
                     <div class="upm-dest-name">${d.name}</div>
                     <div class="upm-dest-balance">Balance: $${(this.balances[d.id]?.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                   </div>
-                  <div class="upm-dest-check">✓</div>
+                  <div class="upm-dest-check"></div>
                 </div>
               `).join('')}
             </div>
@@ -106,7 +106,7 @@ class UnifiedPaymentModal {
           
           <!-- Step 2: Enter Amount -->
           <div class="upm-step">
-            <h3>💵 Enter Amount</h3>
+            <h3>Enter Amount</h3>
             <div class="upm-amount-container">
               <span class="upm-currency">$</span>
               <input type="number" id="upm-amount" class="upm-amount-input" placeholder="0.00" min="1" max="1000000" step="0.01" oninput="unifiedPayment.updateAmount()">
@@ -122,61 +122,61 @@ class UnifiedPaymentModal {
           
           <!-- Step 3: Select Payment Method -->
           <div class="upm-step">
-            <h3>💳 Payment Method</h3>
+            <h3>Payment Method</h3>
             <div class="upm-methods" id="upm-methods">
               <div class="upm-method-group">
-                <div class="upm-method-group-title">💳 Cards & Wallets</div>
+                <div class="upm-method-group-title">Cards & Wallets</div>
                 <div class="upm-method-options">
                   <div class="upm-method selected" data-method="credit_card" onclick="unifiedPayment.selectMethod('credit_card')">
-                    <span class="upm-method-icon">💳</span>
+                    <span class="upm-method-icon">CARD</span>
                     <span class="upm-method-name">Credit Card</span>
                   </div>
                   <div class="upm-method" data-method="debit_card" onclick="unifiedPayment.selectMethod('debit_card')">
-                    <span class="upm-method-icon">💳</span>
+                    <span class="upm-method-icon">DEBIT</span>
                     <span class="upm-method-name">Debit Card</span>
                   </div>
                   <div class="upm-method" data-method="apple_pay" onclick="unifiedPayment.selectMethod('apple_pay')">
-                    <span class="upm-method-icon">🍎</span>
+                    <span class="upm-method-icon">APPLE</span>
                     <span class="upm-method-name">Apple Pay</span>
                   </div>
                   <div class="upm-method" data-method="google_pay" onclick="unifiedPayment.selectMethod('google_pay')">
-                    <span class="upm-method-icon">🔵</span>
+                    <span class="upm-method-icon">GPay</span>
                     <span class="upm-method-name">Google Pay</span>
                   </div>
                   <div class="upm-method" data-method="paypal" onclick="unifiedPayment.selectMethod('paypal')">
-                    <span class="upm-method-icon">🅿️</span>
+                    <span class="upm-method-icon">PAYPAL</span>
                     <span class="upm-method-name">PayPal</span>
                   </div>
                 </div>
               </div>
               
               <div class="upm-method-group">
-                <div class="upm-method-group-title">₿ Cryptocurrency</div>
+                <div class="upm-method-group-title">Cryptocurrency</div>
                 <div class="upm-method-options">
                   <div class="upm-method" data-method="crypto_btc" onclick="unifiedPayment.selectMethod('crypto_btc')">
-                    <span class="upm-method-icon">₿</span>
+                    <span class="upm-method-icon">BTC</span>
                     <span class="upm-method-name">Bitcoin</span>
                   </div>
                   <div class="upm-method" data-method="crypto_eth" onclick="unifiedPayment.selectMethod('crypto_eth')">
-                    <span class="upm-method-icon">Ξ</span>
+                    <span class="upm-method-icon">ETH</span>
                     <span class="upm-method-name">Ethereum</span>
                   </div>
                   <div class="upm-method" data-method="crypto_usdc" onclick="unifiedPayment.selectMethod('crypto_usdc')">
-                    <span class="upm-method-icon">💵</span>
+                    <span class="upm-method-icon">USDC</span>
                     <span class="upm-method-name">USDC</span>
                   </div>
                 </div>
               </div>
               
               <div class="upm-method-group">
-                <div class="upm-method-group-title">🔄 Transfer</div>
+                <div class="upm-method-group-title">Transfer</div>
                 <div class="upm-method-options">
                   <div class="upm-method" data-method="bank_transfer" onclick="unifiedPayment.selectMethod('bank_transfer')">
-                    <span class="upm-method-icon">🏦</span>
+                    <span class="upm-method-icon">BANK</span>
                     <span class="upm-method-name">Bank Transfer</span>
                   </div>
                   <div class="upm-method" data-method="internal_transfer" onclick="unifiedPayment.selectMethod('internal_transfer')">
-                    <span class="upm-method-icon">🔄</span>
+                    <span class="upm-method-icon">INTERNAL</span>
                     <span class="upm-method-name">Internal Transfer</span>
                   </div>
                 </div>
@@ -185,7 +185,7 @@ class UnifiedPaymentModal {
             
             <!-- Internal Transfer Source Selection -->
             <div class="upm-internal-source" id="upm-internal-source" style="display: none;">
-              <h4>📤 Transfer From:</h4>
+              <h4>Transfer From:</h4>
               <div class="upm-source-options" id="upm-source-options"></div>
             </div>
             
@@ -506,13 +506,13 @@ class UnifiedPaymentModal {
       
       if (data.errors && data.errors.length > 0) {
         data.errors.forEach(err => {
-          validationDiv.innerHTML += `<div class="error">❌ ${err}</div>`;
+          validationDiv.innerHTML += `<div class="error">${err}</div>`;
         });
       }
       
       if (data.warnings && data.warnings.length > 0) {
         data.warnings.forEach(warn => {
-          validationDiv.innerHTML += `<div class="warning">⚠️ ${warn}</div>`;
+          validationDiv.innerHTML += `<div class="warning">${warn}</div>`;
         });
       }
       
@@ -578,7 +578,7 @@ class UnifiedPaymentModal {
         if (typeof showNotification === 'function') {
           showNotification(`Successfully added $${amount.toLocaleString(undefined, {minimumFractionDigits: 2})} to ${this.selectedDestination.replace('_', ' ')}`, 'success');
         } else {
-          alert(`✅ Successfully added $${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}!\n\nTransaction ID: ${result.transaction_id}\nNew Balance: $${result.destination_new_balance?.toLocaleString(undefined, {minimumFractionDigits: 2}) || 'N/A'}`);
+          alert(`Successfully added $${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}!\n\nTransaction ID: ${result.transaction_id}\nNew Balance: $${result.destination_new_balance?.toLocaleString(undefined, {minimumFractionDigits: 2}) || 'N/A'}`);
         }
       } else {
         throw new Error(result.error || 'Payment failed');
@@ -589,7 +589,7 @@ class UnifiedPaymentModal {
       this.onError(err);
       
       const validationDiv = document.getElementById('upm-validation');
-      validationDiv.innerHTML = `<div class="error">❌ ${err.message}</div>`;
+      validationDiv.innerHTML = `<div class="error">${err.message}</div>`;
       
     } finally {
       submitBtn.disabled = false;

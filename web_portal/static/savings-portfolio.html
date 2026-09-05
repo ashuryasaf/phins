@@ -978,7 +978,7 @@
                 <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
                 <span class="phins-logo-text">PHINS</span>
             </a>
-            <button class="mobile-menu-btn" type="button" onclick="toggleMobileMenu()" aria-label="Open menu">☰</button>
+            <button class="mobile-menu-btn" type="button" onclick="toggleMobileMenu()" aria-label="Open menu">Menu</button>
             <nav class="phins-nav" id="mobile-nav">
                 <a href="/dashboard.html">Dashboard</a>
                 <a href="/savings-portfolio.html" class="active">Investments</a>
@@ -1975,7 +1975,7 @@
             if (cashLabel) {
                 if (verified.integrity_valid !== undefined) {
                     if (integrityValid) {
-                        cashLabel.innerHTML = '✓ Verified & Synced';
+                        cashLabel.innerHTML = ' Verified & Synced';
                         cashLabel.style.color = '#4caf50';
                     } else {
                         cashLabel.innerHTML = 'Integrity Issue';
@@ -1983,7 +1983,7 @@
                         console.warn('Integrity issues:', integrityIssues);
                     }
                 } else if (unified.synced) {
-                    cashLabel.innerHTML = '✓ Synced with Dashboard';
+                    cashLabel.innerHTML = ' Synced with Dashboard';
                 }
             }
             
@@ -2845,7 +2845,7 @@
                     const isIntegrityValid = Math.abs(actualDelta - expectedDelta) < 0.01;
                     
                     if (isIntegrityValid) {
-                        showToast(`Added ${formatCurrency(amount)} to savings (Verified ✓)`, 'success');
+                        showToast(`Added ${formatCurrency(amount)} to savings (Verified )`, 'success');
                     } else {
                         showToast(`Deposit processed. Delta: ${formatCurrency(actualDelta)} (Expected: ${formatCurrency(expectedDelta)})`, 'warning');
                         console.warn('Integrity check:', { preTotalSavings, postTotalSavings, actualDelta, expectedDelta });
@@ -2882,7 +2882,7 @@
                 console.log('Integrity Report:', report);
                 
                 if (report.is_valid) {
-                    showToast('Savings integrity verified ✓', 'success');
+                    showToast('Savings integrity verified ', 'success');
                 } else {
                     showToast(`Integrity issues found: ${report.issues.join(', ')}`, 'warning');
                 }

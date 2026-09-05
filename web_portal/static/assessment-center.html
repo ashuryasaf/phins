@@ -243,7 +243,7 @@
             <option value="bi_summary">BI summary (AI charts + risk)</option>
             <option value="cross_document">Cross-document review (selected docs)</option>
           </select>
-          <button class="green" onclick="runAnalysis()">▶ Run analysis</button>
+          <button class="green" onclick="runAnalysis()"> Run analysis</button>
           <span style="margin-left: auto; font-size: 0.85rem; color: #546e7a;">Download:</span>
           <button class="ghost" onclick="downloadReport('csv')">⬇ CSV</button>
           <button class="ghost" onclick="downloadReport('xlsx')">⬇ XLSX</button>
@@ -683,10 +683,10 @@
           ? `<span class="doc-facts">${d.facts_extracted} facts</span>`
           : `<span class="doc-facts" style="color:#90a4ae;">no facts</span>`;
         const procMap = {
-          queued: ['⏳ queued', '#f9a825'],
-          pending: ['⏳ pending', '#f9a825'],
-          processing: ['⚙️ processing', '#1565c0'],
-          failed: ['⚠ failed', '#c62828'],
+          queued: [' queued', '#f9a825'],
+          pending: [' pending', '#f9a825'],
+          processing: ['️ processing', '#1565c0'],
+          failed: [' failed', '#c62828'],
         };
         const proc = procMap[(d.processing_status || '').toLowerCase()];
         const procBadge = proc

@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <link rel="apple-touch-icon" href="/phins-logo.svg">
+
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PHINS - Supplier Login</title>
@@ -167,6 +170,7 @@
       color: var(--text-muted);
     }
   </style>
+  <link rel="stylesheet" href="/phins-theme.css">
 </head>
 <body>
   <header class="topbar">
@@ -185,7 +189,7 @@
   <main class="login-container">
     <div class="login-card">
       <div class="login-header">
-        <div class="icon">🏢</div>
+        <div class="icon"></div>
         <h2>Supplier Login</h2>
         <p>Access your supplier dashboard</p>
       </div>
@@ -214,7 +218,7 @@
       <div id="reset-step1" class="reset-form">
         <a class="back-link" onclick="showLoginForm()">&larr; Back to Login</a>
         <div class="login-header">
-          <div class="icon">🔑</div>
+          <div class="icon"></div>
           <h2>Reset Password</h2>
           <p>Enter your supplier account email</p>
         </div>
@@ -236,7 +240,7 @@
       <div id="reset-step2" class="reset-form">
         <a class="back-link" onclick="showResetStep1()">&larr; Back</a>
         <div class="login-header">
-          <div class="icon">📧</div>
+          <div class="icon"></div>
           <h2>Verify Code</h2>
           <p id="otp-message">Enter the code sent to your email</p>
         </div>
@@ -260,7 +264,7 @@
       <!-- Forgot Password: Step 3 - New Password -->
       <div id="reset-step3" class="reset-form">
         <div class="login-header">
-          <div class="icon">🔒</div>
+          <div class="icon"></div>
           <h2>Set New Password</h2>
           <p>Choose a strong password for your supplier account</p>
         </div>
