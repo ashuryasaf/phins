@@ -490,13 +490,18 @@ class TestActuarialDistributionIntegrity:
             'monthly_premium': 1000.0,
             'status': 'active',
             'risk_score': 'medium',
+            'risk_premium_annual': 9000.0,
+            'savings_premium_annual': 3000.0,
+            'pricing_source': 'pricing_kernel',
         }
 
         dist = portal.calculate_monthly_distribution(customer_id)
         assert dist['customer_age'] == 45
         assert dist['policy_count'] == 1
         assert dist['total_monthly_premium'] == 1000.0
-        assert dist['actuarial_data']['data_source'] == 'PHINS_ACTUARIAL_TABLES_V1'
+        assert dist['actuarial_data']['data_source'] == 'pricing_kernel_pin'
+        assert dist['actuarial_data']['total_risk_premium'] == 9000.0
+        assert dist['actuarial_data']['total_savings_premium'] == 3000.0
 
         alloc = dist['allocation']
         assert alloc['savings_pct'] == 50.0

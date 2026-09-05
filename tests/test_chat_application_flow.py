@@ -188,6 +188,9 @@ def test_full_chat_application_happy_path():
     assert result["underwriting"]["id"]
     assert result["payload_checksum"]
     assert result["submission"]["policy_id"] == result["policy"]["id"]
+    # Issued premium is the kernel quote the applicant accepted.
+    assert result["policy"]["annual_premium"] == quote["annual"]
+    assert result["policy"]["monthly_premium"] == quote["monthly"]
 
     # double submission is refused
     status, dup = _post(f"/api/chat-application/{app_id}/finalize",

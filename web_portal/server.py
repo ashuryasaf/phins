@@ -317,15 +317,19 @@ def coerce_json_container(val, default):
     return default
 
 
-# Premium-related transaction categories used for revenue reconciliation.
-PREMIUM_LEDGER_TX_TYPES = {
-    'premium_payment',
-    'bill_payment',
-    'bill_paid',
-    'premium_received',
-    'auto_pay_execution',
-    'premium_deposit',
-}
+# Premium cash types used for revenue reconciliation. Keep this identical
+# to financial_unification_service.PREMIUM_CASH_TYPES (audit twins excluded).
+try:
+    from services.financial_unification_service import PREMIUM_CASH_TYPES as PREMIUM_LEDGER_TX_TYPES
+except Exception:
+    PREMIUM_LEDGER_TX_TYPES = {
+        'premium_payment',
+        'bill_payment',
+        'bill_paid',
+        'premium_received',
+        'premium_deposit',
+        'bulk_premium_payment',
+    }
 
 
 def get_transaction_type(tx: Dict[str, Any]) -> str:
@@ -370,7 +374,7 @@ def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[
         if exclude_suspended and is_suspended_account(customer_id):
             continue
 
-        amount = safe_float(tx.get('amount', 0))
+        amount = abs(safe_float(tx.get('amount', 0)))
         if amount <= 0:
             continue
 
@@ -645,10 +649,10 @@ def compute_unified_financial_metrics(
     - ``total_coverage_amount``: sum of ``coverage_amount`` on active policies.
     - ``total_aum``: ``total_investment_value`` + unified wallet balance (health
       + investment + algo + pipeline).
-    - ``claims_paid_amount``: sum of approved amounts for claims in ``paid`` or
-      ``approved`` status.
-    - ``claims_disbursed_amount``: sum of approved amounts for claims actually
-      in ``paid`` status.
+    - ``claims_paid_amount``: paid/closed claim records only (approved-but-unpaid
+      is not cash). ``ledger_claims_paid`` is the cash identity when present.
+    - ``claims_disbursed_amount``: approved amounts for claims actually in
+      ``paid`` status.
     - ``pending_claims_liability``: sum of ``claimed_amount`` for claims still
       in ``pending`` or ``under_review``.
     """
@@ -684,8 +688,8 @@ def compute_unified_financial_metrics(
     if exclude_suspended:
         claims = [c for c in claims if not is_suspended_account(c.get('customer_id', ''))]
     claims_paid_amount = round(sum(
-        safe_float(c.get('approved_amount', c.get('amount_approved', 0)), 0.0)
-        for c in claims if status_in(c, ['paid', 'approved'])
+        safe_float(c.get('paid_amount', c.get('approved_amount', c.get('amount_approved', 0))), 0.0)
+        for c in claims if status_in(c, ['paid', 'closed'])
     ), 2)
     claims_disbursed_amount = round(sum(
         safe_float(c.get('approved_amount', c.get('amount_approved', 0)), 0.0)
@@ -762,6 +766,43 @@ def compute_unified_financial_metrics(
     # --- Cumulative premium (from billing + ledger, de-duplicated) ---
     cumulative_premium = calculate_cumulative_premium_income(exclude_suspended=exclude_suspended)
 
+    # --- Customer-ledger cash (authoritative for collections and claim payouts) ---
+    books_reconcile = None
+    ledger_premium_collected = 0.0
+    ledger_claims_paid = 0.0
+    accounting_premium_posted = 0.0
+    accounting_claims_posted = 0.0
+    try:
+        from services.financial_unification_service import (
+            CLAIM_CASH_TYPES,
+            PREMIUM_CASH_TYPES,
+            accounting_book_totals,
+            ledger_cash_total,
+            reconcile_financial_books,
+        )
+        exclude_fn = is_suspended_account if exclude_suspended else None
+        premium_cash = ledger_cash_total(
+            TRANSACTION_LEDGER.values(), PREMIUM_CASH_TYPES, exclude_customer=exclude_fn
+        )
+        claim_cash = ledger_cash_total(
+            TRANSACTION_LEDGER.values(), CLAIM_CASH_TYPES, exclude_customer=exclude_fn
+        )
+        ledger_premium_collected = premium_cash['total']
+        ledger_claims_paid = claim_cash['total']
+        book_totals = accounting_book_totals(exclude_customer=exclude_fn)
+        accounting_premium_posted = book_totals['premium_posted']
+        accounting_claims_posted = book_totals['claims_posted']
+        books_reconcile = reconcile_financial_books(
+            policies=POLICIES,
+            claims=CLAIMS,
+            billing=BILLING,
+            transactions=TRANSACTION_LEDGER.values(),
+            balance_sheet=PHINS_BALANCE_SHEET,
+            exclude_customer=exclude_fn,
+        )
+    except Exception as _unify_err:
+        print(f"[FINANCIAL_UNIFICATION] metrics attach skipped: {_unify_err}")
+
     return {
         # Billing
         'total_billed': total_billed,
@@ -809,6 +850,16 @@ def compute_unified_financial_metrics(
         'total_aum': total_aum,
         # Cumulative premium (for reconciliation)
         'cumulative_premium': cumulative_premium,
+        # Customer ledger is cash identity for premiums collected and claims paid
+        'ledger_premium_collected': ledger_premium_collected,
+        'ledger_claims_paid': ledger_claims_paid,
+        'accounting_premium_posted': accounting_premium_posted,
+        'accounting_claims_posted': accounting_claims_posted,
+        'economic_claims_reserve': (
+            (books_reconcile or {}).get('reserves', {}).get('economic_claims_reserve', 0.0)
+        ),
+        'seed_claims_reserve': safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0),
+        'books_reconcile': books_reconcile,
     }
 
 
@@ -4625,6 +4676,46 @@ def record_premium_revenue(
         metadata={'policy_id': policy_id}
     )
 
+
+def record_premium_cash_books(
+    customer_id: str,
+    policy_id: Optional[str],
+    amount: float,
+    bills_paid: Optional[List[str]] = None,
+    source_tx_id: Optional[str] = None,
+    unbilled_amount: float = 0.0,
+    bill_payments: Optional[Dict[str, float]] = None,
+) -> None:
+    """Post collected premium cash into the shared accounting book.
+
+    Fail-open: never breaks the payment path. Uses the kernel pin on the
+    policy when present so the book split matches actuarial identity.
+    ``bill_payments`` maps each bill to this payment's increment so a later
+    installment does not re-post the cumulative ``amount_paid``.
+    """
+    try:
+        from services.financial_unification_service import post_collected_premiums_to_accounting
+        policy = POLICIES.get(policy_id) if policy_id else None
+        fallback = 100.0
+        try:
+            fallback = float(get_customer_allocation(customer_id).get('risk_pct', 100))
+        except Exception:
+            fallback = 100.0
+        post_collected_premiums_to_accounting(
+            customer_id=customer_id,
+            policy_id=policy_id,
+            policy=policy,
+            amount=amount,
+            bills_paid=list(bills_paid or []),
+            billing=BILLING,
+            source_tx_id=source_tx_id,
+            fallback_risk_pct=fallback,
+            unbilled_amount=unbilled_amount,
+            bill_payments=bill_payments,
+        )
+    except Exception as acct_err:
+        print(f"[ACCOUNTING_BOOK] Premium post skipped: {acct_err}")
+
 def record_fee_revenue(
     fee_type: str,
     amount: float,
@@ -5764,17 +5855,13 @@ def update_customer_allocation(customer_id: str, allocations: Dict[str, float]) 
 def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: str = 'life', 
                                     adl_level: int = 5, coverage_amount: float = None,
                                     use_actuarial: bool = True,
-                                    term_years: int = 20) -> Dict[str, float]:
+                                    term_years: int = 20,
+                                    savings_rate: float = 0.0) -> Dict[str, float]:
     """
-    Calculate age-adjusted premium via the central pricing kernel.
+    Calculate age-adjusted premium via the same kernel path as issuance.
 
-    This used to be a parallel pricer with its own hardcoded mortality /
-    disability / ADL tables and a hardcoded 50% savings allocation. It is now
-    a thin wrapper that delegates to ``services.pricing_kernel.price_policy``
-    so the platform has a single source of truth for pricing math. The
-    legacy claim model (independent), lapse adjustment, and ADL-8 minimum
-    risk floor are preserved by configuring the kernel accordingly, so
-    existing quote / billing flows keep their previous outputs.
+    Uses persisted actuarial tables and Pricing Parameters. Does not override
+    ADL benefit percentages or invent a private PricingConfig.
     """
     # ----- Age factor lookup (still used by the simple non-actuarial branch) ----
     AGE_FACTORS = {
@@ -5815,125 +5902,72 @@ def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: s
         }
 
     if use_actuarial and policy_type in ['life', 'health', 'phins_unified']:
-        # Delegate the entire actuarial pricing to the central kernel. This
-        # uses the central ActuarialTablesStore (same tables surfaced by the
-        # actuary dashboard) and the legacy claim model so existing quote /
-        # billing flows are bit-for-bit unchanged.
         from services.actuarial_service import get_actuarial_store
-        from services.pricing_kernel import (
-            ClaimModel, PricingConfig, PricingCustomer, SavingsFormula,
-            get_product, price_policy, table_set_from_store,
-        )
-
-        store = get_actuarial_store()
-        UW_LOADING = {6: 0.15, 7: 0.30, 8: 0.50}
-        underwriting_loading = float(UW_LOADING.get(adl_level, 0.0))
-        exclude_disability = adl_level == 8
+        from services.pricing_shadow_service import price_application_with_kernel
 
         if coverage_amount is None:
             coverage_amount = base_premium * 100  # legacy estimate
 
-        kernel_tables = table_set_from_store(store, age_curve_id='identity')
-        # The old inline pricer used if-elif ADL ranges for disability benefit
-        # percentages that differ from the central store values. Override the
-        # table so the kernel reproduces the legacy outputs exactly.
-        kernel_tables.adl_benefit_percentages = [
-            {'adl': 1, 'benefit_pct': 0.25},
-            {'adl': 2, 'benefit_pct': 0.25},
-            {'adl': 3, 'benefit_pct': 0.25},
-            {'adl': 4, 'benefit_pct': 0.35},
-            {'adl': 5, 'benefit_pct': 0.35},
-            {'adl': 6, 'benefit_pct': 0.65},
-            {'adl': 7, 'benefit_pct': 0.65},
-            {'adl': 8, 'benefit_pct': 0.90},
-            {'adl': 9, 'benefit_pct': 0.90},
-            {'adl': 10, 'benefit_pct': 0.90},
-        ]
+        try:
+            elected_savings = float(savings_rate or 0.0)
+        except (TypeError, ValueError):
+            elected_savings = 0.0
+        if elected_savings > 1.0:
+            elected_savings = elected_savings / 100.0
 
-        kernel_config = PricingConfig(
-            expense_loading_pct=0.15,
-            profit_margin_pct=0.10,
-            discount_rate=0.035,
-            savings_rate=0.5,
-            savings_yield_pct=0.0,
-            savings_formula=SavingsFormula.STRAIGHT_LINE,
-            claim_model=ClaimModel.INDEPENDENT,
-            apply_lapse_adjustment=False,
-            apply_min_risk_floor=True,
-            version='inline_quote_v2',
-        )
-        components = price_policy(
-            PricingCustomer(
-                age=int(age),
-                coverage=float(coverage_amount),
-                term_years=int(term_years),
-                adl_level=int(adl_level),
-            ),
-            get_product('phins_hybrid_savings'),
-            kernel_tables,
-            kernel_config,
-            underwriting_loading=underwriting_loading,
-            exclude_disability=exclude_disability,
-        )
+        kernel = price_application_with_kernel({
+            "type": "phins_unified",
+            "coverage_amount": float(coverage_amount),
+            "age": int(age),
+            "term_years": int(term_years),
+            "coverage_years": int(term_years),
+            "adl_level": int(adl_level),
+            "savings_rate": elected_savings,
+            "risk_score": "medium",
+        }) or {}
+        if not kernel or float(kernel.get("annual") or 0) <= 0:
+            return {
+                'base_premium': base_premium,
+                'age': age,
+                'policy_type': policy_type,
+                'adl_level': adl_level,
+                'eligible': False,
+                'decline_reason': kernel.get('decline_reason') or 'kernel_unavailable',
+                'annual_premium': 0,
+                'monthly_premium': 0,
+                'actuarial_source': 'PHINS_PRICING_KERNEL_V1',
+            }
 
-        # Legacy savings formula: base_premium * 0.5 (independent of coverage
-        # and term). The kernel uses coverage * rate / term which is a different
-        # formula; override savings and recompute the dependent totals so
-        # existing quote / billing flows stay bit-for-bit unchanged.
-        savings_premium = round(base_premium * 0.5, 2)
-        expense_loading = components.expense_loading_annual
-        profit_margin = round(
-            (components.risk_premium_annual + savings_premium + expense_loading) * 0.10, 2
-        )
-        annual_premium = round(
-            components.risk_premium_annual + savings_premium + expense_loading + profit_margin, 2
-        )
-        monthly_premium = round(annual_premium / 12.0, 2)
-
-        # Recompute integrity hash over the actual returned values so
-        # downstream consumers can verify the breakdown they receive.
-        _r6 = lambda v: round(float(v), 6)
-        override_hash_payload = json.dumps({
-            "annual": _r6(annual_premium),
-            "risk": _r6(components.risk_premium_annual),
-            "savings": _r6(savings_premium),
-            "expense": _r6(expense_loading),
-            "profit": _r6(profit_margin),
-            "pv_mortality": _r6(components.pv_mortality_claims),
-            "pv_disability": _r6(components.pv_disability_claims),
-            "product": components.product_id,
-            "source": "inline_quote_legacy_override",
-        }, sort_keys=True, default=str)
-        integrity_hash = hashlib.sha256(override_hash_payload.encode("utf-8")).hexdigest()[:16]
-
+        comps = kernel.get("components") or {}
+        store = get_actuarial_store()
         return {
             'base_premium': base_premium,
             'age': age,
             'policy_type': policy_type,
             'age_factor': round(age_factor, 3),
             'adl_level': adl_level,
-            'adl_mortality_multiplier': components.adl_mortality_multiplier,
-            'adl_disability_multiplier': components.adl_disability_multiplier,
+            'adl_mortality_multiplier': kernel.get('adl_mortality_multiplier'),
+            'adl_disability_multiplier': kernel.get('adl_disability_multiplier'),
             'mortality_rate': round(store.get_mortality_rate(age), 6),
             'disability_rate': round(store.get_disability_rate(age), 6),
-            'mortality_premium': components.mortality_premium_annual,
-            'disability_premium': components.disability_premium_annual,
-            'risk_premium': components.risk_premium_annual,
-            'savings_premium': savings_premium,
-            'expense_loading': expense_loading,
-            'profit_margin': profit_margin,
-            'underwriting_loading': underwriting_loading,
-            'exclude_disability': exclude_disability,
-            'annual_premium': annual_premium,
-            'monthly_premium': monthly_premium,
+            'mortality_premium': kernel.get('mortality_premium_annual'),
+            'disability_premium': kernel.get('disability_premium_annual'),
+            'risk_premium': kernel.get('risk_premium_annual'),
+            'savings_premium': kernel.get('savings_premium_annual'),
+            'expense_loading': comps.get('expense_loading_annual'),
+            'profit_margin': comps.get('profit_margin_annual'),
+            'underwriting_loading': kernel.get('underwriting_loading'),
+            'exclude_disability': bool(kernel.get('disability_excluded')),
+            'annual_premium': kernel.get('annual'),
+            'monthly_premium': kernel.get('monthly'),
             'coverage_amount': coverage_amount,
             'term_years': term_years,
-            'pv_mortality_risk': components.pv_mortality_claims,
-            'pv_disability_risk': components.pv_disability_claims,
-            'pv_total_risk': components.pv_total_risk_claims,
+            'pv_mortality_risk': comps.get('pv_mortality_claims'),
+            'pv_disability_risk': comps.get('pv_disability_claims'),
+            'pv_total_risk': comps.get('pv_total_risk_claims'),
             'eligible': True,
             'actuarial_source': 'PHINS_PRICING_KERNEL_V1',
-            'pricing_kernel_integrity_hash': integrity_hash,
+            'pricing_kernel_integrity_hash': kernel.get('integrity_hash'),
         }
     else:
         # Simple calculation for auto/property
@@ -6007,6 +6041,7 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
     total_risk_premium = 0
     total_savings_premium = 0
     active_policies = []
+    from services.financial_unification_service import kernel_components_from_policy
     
     for policy in POLICIES.values():
         if policy.get('customer_id') == customer_id and status_eq(policy, 'active'):
@@ -6017,23 +6052,25 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
             # Get policy's risk score and convert to ADL level
             risk_score = policy.get('risk_score', 'medium')
             adl_level = RISK_TO_ADL_MAP.get(risk_score, 5)
-            
-            # Calculate age-adjusted premium with FULL actuarial basis (age + ADL)
-            age_info = calculate_age_adjusted_premium(
-                annual_premium, 
-                customer_age, 
-                policy_type,
-                adl_level=adl_level,
-                coverage_amount=policy.get('coverage_amount', 0),
-                use_actuarial=True
-            )
+
+            # Issued premium is the identity. Prefer the kernel pin on the
+            # policy (or its snapshot). Never re-price through the quote
+            # wrapper — that path still has a legacy 50% savings override.
+            kernel = kernel_components_from_policy(policy)
+            pinned_risk = float(kernel.get('risk_premium_annual') or 0)
+            pinned_savings = float(kernel.get('savings_premium_annual') or 0)
+            if pinned_risk or pinned_savings:
+                total_risk_premium += pinned_risk
+                total_savings_premium += pinned_savings
+                actuarial_source = kernel.get('pricing_source') or 'pricing_kernel'
+            else:
+                risk_share = allocation.get('risk_pct', 50) / 100.0
+                total_risk_premium += annual_premium * risk_share
+                total_savings_premium += annual_premium * (1.0 - risk_share)
+                actuarial_source = 'issued_premium_allocation'
             
             total_monthly_premium += monthly_premium
             total_annual_premium += annual_premium
-            
-            # Track risk vs savings components for actuarial integrity
-            total_risk_premium += age_info.get('risk_premium', annual_premium * 0.5)
-            total_savings_premium += age_info.get('savings_premium', annual_premium * 0.5)
             
             active_policies.append({
                 'policy_id': policy.get('id'),
@@ -6044,10 +6081,11 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
                 'start_date': policy.get('start_date', ''),
                 'risk_score': risk_score,
                 'adl_level': adl_level,
-                'age_factor': age_info['age_factor'],
-                'adl_multiplier': age_info.get('adl_multiplier', 1.0),
-                'combined_factor': age_info.get('combined_factor', age_info['age_factor']),
-                'actuarial_source': age_info.get('actuarial_source', 'PHINS_ACTUARIAL_TABLES_V1')
+                'age_factor': 1.0,
+                'adl_multiplier': 1.0,
+                'combined_factor': 1.0,
+                'actuarial_source': actuarial_source,
+                'integrity_hash': kernel.get('integrity_hash'),
             })
     
     # Calculate savings portion (cumulative from all policies)
@@ -6090,13 +6128,13 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
                 'crypto': crypto_amount
             }
         },
-        # Actuarial breakdown (consistent with Long-Term Projection Calculator)
+        # Actuarial breakdown from the issued kernel pin (not a re-price)
         'actuarial_data': {
             'total_risk_premium': round(total_risk_premium, 2),
             'total_savings_premium': round(total_savings_premium, 2),
-            'data_source': 'PHINS_ACTUARIAL_TABLES_V1',
-            'calculation_method': 'Mortality + ADL Risk + Lapse Rate',
-            'note': 'Risk premiums adjusted for age and ADL level per actuarial tables'
+            'data_source': 'pricing_kernel_pin',
+            'calculation_method': 'Pinned kernel risk/savings on issued policies',
+            'note': 'Risk/savings come from the policy pin; cash split still follows customer allocation'
         },
         # Annual projections (for financial planning)
         'annual_projection': {
@@ -6741,6 +6779,7 @@ def process_customer_premium_payment(
             pipeline_config_error = str(config_err)
 
     bills_paid = []
+    bill_payment_increments: Dict[str, float] = {}
     remaining_amount = amount
     specific_bill_lookup = {str(b) for b in (specific_bill_ids or [])}
     for bill_id, bill in list(BILLING.items()):
@@ -6772,7 +6811,9 @@ def process_customer_premium_payment(
         bill['payment_method'] = normalized_payment_method
         BILLING[bill_id] = bill
         remaining_amount = round(remaining_amount - payment_for_bill, 2)
-        bills_paid.append(str(bill.get('id') or bill_id))
+        paid_bill_key = str(bill.get('id') or bill_id)
+        bills_paid.append(paid_bill_key)
+        bill_payment_increments[paid_bill_key] = round(payment_for_bill, 2)
 
     amount_applied_to_bills = round(amount - remaining_amount, 2)
     unbilled_premium_amount = round(max(0.0, remaining_amount), 2)
@@ -6819,6 +6860,16 @@ def process_customer_premium_payment(
             f"Savings: ${savings_amount:.2f} ({allocation_prefs['savings_pct']}%)"
         ),
         metadata=ledger_metadata
+    )
+
+    record_premium_cash_books(
+        customer_id=customer_id,
+        policy_id=policy_id,
+        amount=amount,
+        bills_paid=bills_paid,
+        source_tx_id=str(tx.get('id') or ''),
+        unbilled_amount=unbilled_premium_amount,
+        bill_payments=bill_payment_increments,
     )
 
     generated_documents = []
@@ -8104,6 +8155,30 @@ def _init_advanced_integrity_service():
         print(f"Warning: Advanced Portfolio Integrity service not available: {e}")
 
 _init_advanced_integrity_service()
+
+def _init_reserves_reporting():
+    try:
+        from services.reserves_reporting_service import init_reserves_reporting_service
+        tracker = None
+        try:
+            from services.premium_allocation_tracker import get_premium_allocation_tracker
+            tracker = get_premium_allocation_tracker()
+        except Exception:
+            tracker = None
+        init_reserves_reporting_service(
+            premium_allocation_tracker=tracker,
+            policies=POLICIES,
+            claims=CLAIMS,
+            bills=BILLING,
+            health_wallets=HEALTH_WALLETS,
+            investment_accounts=INVESTMENT_ACCOUNTS,
+            transaction_ledger=TRANSACTION_LEDGER,
+        )
+        print("✓ Reserves reporting service enabled (customer-ledger paid claims)")
+    except ImportError as e:
+        print(f"Warning: Reserves reporting service not available: {e}")
+
+_init_reserves_reporting()
 
 # Initialize Customer Data Access Service for enforcing data isolation
 customer_access_service = None
@@ -13488,10 +13563,11 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
 
     Prefer the actuarial pricing kernel (persisted Pricing Parameters +
     application demographics: smoking / sex / ethnicity / age / term) for
-    life / health / phins_unified when kernel billing is enabled or the
-    payload is a classic ``apply.html`` submission.
+    life / health / phins_unified on every issuance channel (classic apply,
+    chat, unlabeled). Set ``PHINS_KERNEL_BILLING_ENABLED=0`` to force the
+    legacy flat formula.
 
-    Fail-open fallback (also used under PHINS_TEST_MODE by default):
+    Fail-open fallback when the kernel cannot price:
     - Base rate: $0.25 per $1,000 coverage per month
     - Age factor: 1.0 + (age - 25) * 0.015
     - Risk factor from underwriting assessment
@@ -13585,6 +13661,51 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
     except Exception:
         pass
     return result
+
+
+def _apply_accepted_quote_provenance(
+    premium_data: Dict[str, Any],
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Bind issued premium to the kernel quote the applicant already accepted.
+
+    Chat finalize stamps ``quote_provenance``. Recalculating after table
+    edits must not silently replace that accepted amount.
+    """
+    prov = payload.get("quote_provenance") if isinstance(payload, dict) else None
+    if not isinstance(prov, dict):
+        return premium_data
+    try:
+        quoted_annual = float(prov.get("quoted_annual") or 0)
+        quoted_monthly = float(prov.get("quoted_monthly") or 0)
+    except (TypeError, ValueError):
+        return premium_data
+    if quoted_annual <= 0 or quoted_monthly <= 0:
+        return premium_data
+    if str(prov.get("pricing_source") or "").strip() not in {"pricing_kernel", "flat_fallback"}:
+        return premium_data
+    bound = dict(premium_data)
+    bound["annual"] = round(quoted_annual, 2)
+    bound["monthly"] = round(quoted_monthly, 2)
+    bound["quarterly"] = round(quoted_monthly * 3 * 0.97, 2)
+    bound["pricing_source"] = prov.get("pricing_source") or bound.get("pricing_source")
+    for key in (
+        "integrity_hash",
+        "product_id",
+        "tables_version",
+        "config_version",
+        "savings_formula",
+        "savings_rate_used",
+        "underwriting_loading",
+        "adl_level",
+        "risk_premium_annual",
+        "savings_premium_annual",
+    ):
+        if prov.get(key) not in (None, ""):
+            bound[key] = prov.get(key)
+    bound["quote_bound"] = True
+    return bound
+
 
 def get_bi_data_actuary() -> Dict[str, Any]:
     """Generate actuarial BI data"""
@@ -13710,17 +13831,17 @@ def get_bi_data_accounting() -> Dict[str, Any]:
 
 def try_get_statement_from_engine(customer_id: str) -> Any:
     try:
-        import accounting_engine as ae
+        from accounting_engine import get_accounting_engine
+        from datetime import date as _date
 
-        engine = ae.AccountingEngine()
-        # Try to call a best-effort method and coerce result to JSON-serializable
+        engine = get_accounting_engine()
         if hasattr(engine, "get_customer_statement"):
-            stmt = engine.get_customer_statement(customer_id)  # type: ignore
+            stmt = engine.get_customer_statement(customer_id, _date.min, _date.max)
             try:
                 result: Any = json.loads(json.dumps(stmt, default=lambda o: o.__dict__))
                 return result
             except Exception:
-                return stmt  # type: ignore
+                return stmt
     except Exception:
         pass
     return None
@@ -24640,17 +24761,29 @@ For claims or questions, please contact:
                     except:
                         customer_age = 45
                 
-                # Calculate premium for new coverage based on age
-                # Base rate: ~1.2% of coverage for life, 1.0% for health
-                base_rates = {'life': 0.012, 'health': 0.010, 'auto': 0.024, 'property': 0.008}
-                base_rate = base_rates.get(policy_type, 0.012)
-                
-                # Get age-adjusted premium
-                base_annual_premium = additional_coverage * base_rate
-                age_adjusted = calculate_age_adjusted_premium(base_annual_premium, customer_age, policy_type)
-                
-                new_monthly_premium = age_adjusted['monthly_premium']
-                new_annual_premium = age_adjusted['annual_premium']
+                # What-if quotes use the same kernel path as issuance so the
+                # simulated premium matches what /api/policies/create would bill.
+                quote_payload = {
+                    'type': policy_type,
+                    'coverage_amount': additional_coverage,
+                    'age': customer_age,
+                    'gender': customer.get('gender') or customer.get('sex'),
+                    'smoking_status': customer.get('smoking_status') or customer.get('tobacco'),
+                    'customer_dob': customer.get('dob'),
+                    'ethnicity': customer.get('ethnicity'),
+                    'risk_score': customer.get('risk_score', 'medium'),
+                    'term_years': customer.get('term_years') or 20,
+                    'coverage_years': customer.get('coverage_years') or 20,
+                }
+                premium_data = calculate_premium(quote_payload)
+                new_monthly_premium = float(premium_data.get('monthly') or 0)
+                new_annual_premium = float(premium_data.get('annual') or 0)
+                age_adjusted = {
+                    'age_factor': 1.0,
+                    'annual_premium': new_annual_premium,
+                    'monthly_premium': new_monthly_premium,
+                    'pricing_source': premium_data.get('pricing_source'),
+                }
                 
                 # Calculate new totals
                 new_total_monthly = current_distribution['total_monthly_premium'] + new_monthly_premium
@@ -24709,12 +24842,12 @@ For claims or questions, please contact:
                         'to_algo': algo_increase
                     },
                     'age_premium_progression': {
-                        'note': 'Estimated annual premiums at different ages for this coverage',
-                        'age_45': calculate_age_adjusted_premium(base_annual_premium, 45, policy_type)['annual_premium'],
-                        'age_48': calculate_age_adjusted_premium(base_annual_premium, 48, policy_type)['annual_premium'],
-                        'age_50': calculate_age_adjusted_premium(base_annual_premium, 50, policy_type)['annual_premium'],
-                        'age_55': calculate_age_adjusted_premium(base_annual_premium, 55, policy_type)['annual_premium'],
-                        'age_60': calculate_age_adjusted_premium(base_annual_premium, 60, policy_type)['annual_premium']
+                        'note': 'Estimated annual premiums at different ages for this coverage (kernel)',
+                        'age_45': calculate_premium({**quote_payload, 'age': 45})['annual'],
+                        'age_48': calculate_premium({**quote_payload, 'age': 48})['annual'],
+                        'age_50': calculate_premium({**quote_payload, 'age': 50})['annual'],
+                        'age_55': calculate_premium({**quote_payload, 'age': 55})['annual'],
+                        'age_60': calculate_premium({**quote_payload, 'age': 60})['annual'],
                     }
                 }, default=str).encode('utf-8'))
             except Exception as e:
@@ -29176,6 +29309,34 @@ For claims or questions, please contact:
         # Company balance sheet for claims reserves, revenue, and expenses
         # Accessible by: admin, accountant, underwriter, claims_adjuster
         
+        if path == '/api/finance/reconcile':
+            if not require_role(session, ['admin', 'accountant', 'underwriter', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin, Accountant, Underwriter, or Actuary access required.'}).encode('utf-8'))
+                return
+            initialize_balance_sheet()
+            try:
+                from services.financial_unification_service import reconcile_financial_books
+                report = reconcile_financial_books(
+                    policies=POLICIES,
+                    claims=CLAIMS,
+                    billing=BILLING,
+                    transactions=TRANSACTION_LEDGER.values(),
+                    balance_sheet=PHINS_BALANCE_SHEET,
+                    exclude_customer=is_suspended_account,
+                )
+            except Exception as rec_err:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(rec_err)}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'reconcile': report,
+                'timestamp': datetime.now().isoformat(),
+            }, default=str).encode('utf-8'))
+            return
+
         if path == '/api/admin/balance-sheet':
             # Check authorization
             if not require_role(session, ['admin', 'accountant', 'underwriter', 'claims']):
@@ -29186,19 +29347,35 @@ For claims or questions, please contact:
             # Initialize balance sheet if needed
             initialize_balance_sheet()
             
-            # Calculate totals
-            total_balance = (
-                PHINS_BALANCE_SHEET['claims_reserve'] +
-                PHINS_BALANCE_SHEET['operating_reserve'] +
-                PHINS_BALANCE_SHEET['supplier_reserve'] +
-                PHINS_BALANCE_SHEET['investment_reserve']
-            )
-            
             cumulative_premium_data = calculate_cumulative_premium_income(exclude_suspended=True)
 
             # Inject cumulative premium into balance sheet so revenue_breakdown reflects actuals
             PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = cumulative_premium_data['total']
             PHINS_BALANCE_SHEET['total_revenue'] = round(sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values()), 2)
+
+            seed_claims_reserve = PHINS_BALANCE_SHEET['claims_reserve']
+            economic_reserve = 0.0
+            try:
+                from services.financial_unification_service import economic_claims_reserve
+                economic_reserve = economic_claims_reserve(
+                    transactions=TRANSACTION_LEDGER.values(),
+                    policies=POLICIES,
+                    exclude_customer=is_suspended_account,
+                )['economic_claims_reserve']
+            except Exception as _econ_err:
+                print(f"[FINANCIAL_UNIFICATION] economic reserve attach skipped: {_econ_err}")
+
+            # Calculate totals. claims_reserve is displayed as the economic
+            # identity (collected risk cash minus claim cash), so total_balance
+            # must sum that same figure with the other reserve slices — using
+            # the seed here would break the parts-equal-the-whole identity.
+            total_balance = round(
+                economic_reserve +
+                PHINS_BALANCE_SHEET['operating_reserve'] +
+                PHINS_BALANCE_SHEET['supplier_reserve'] +
+                PHINS_BALANCE_SHEET['investment_reserve'],
+                2,
+            )
 
             self._set_json_headers()
             self.wfile.write(json.dumps({
@@ -29209,9 +29386,13 @@ For claims or questions, please contact:
                     'created_at': PHINS_BALANCE_SHEET['created_at'],
                     'last_updated': PHINS_BALANCE_SHEET['last_updated'],
                     
-                    # Balances
+                    # Balances. claims_reserve is the displayed identity
+                    # (collected risk cash minus claim cash). Seed capital is
+                    # reported separately and is never silently rewritten.
                     'total_balance': total_balance,
-                    'claims_reserve': PHINS_BALANCE_SHEET['claims_reserve'],
+                    'seed_claims_reserve': seed_claims_reserve,
+                    'economic_claims_reserve': economic_reserve,
+                    'claims_reserve': economic_reserve,
                     'operating_reserve': PHINS_BALANCE_SHEET['operating_reserve'],
                     'supplier_reserve': PHINS_BALANCE_SHEET['supplier_reserve'],
                     'investment_reserve': PHINS_BALANCE_SHEET['investment_reserve'],
@@ -29321,8 +29502,10 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({
                 'success': True,
                 'summary': {
-                    'claims_reserve': PHINS_BALANCE_SHEET['claims_reserve'],
-                    'total_claims_paid': PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid'],
+                    'claims_reserve': m.get('economic_claims_reserve', PHINS_BALANCE_SHEET['claims_reserve']),
+                    'seed_claims_reserve': PHINS_BALANCE_SHEET['claims_reserve'],
+                    'economic_claims_reserve': m.get('economic_claims_reserve', 0.0),
+                    'total_claims_paid': m.get('ledger_claims_paid', PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid']),
                     'total_premium_income': PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'],
                     'net_position': PHINS_BALANCE_SHEET['total_revenue'] - PHINS_BALANCE_SHEET['total_expenses'],
                     'recent_claims_count': len(recent_claims),
@@ -42486,11 +42669,10 @@ For claims or questions, please contact:
                 # application_channel='chat'. That is a direct 127.0.0.1 request
                 # with a dedicated User-Agent and no edge forwarding headers, so
                 # only that internal loopback is trusted to keep 'chat' (which
-                # opts out of kernel billing and defers login provisioning).
-                # A caller-supplied 'chat' from the open internet would let
-                # anyone price from the cheaper flat formula and skip portal
-                # account minting, so every public submission is pinned to
-                # 'classic'.
+                # defers login provisioning). A caller-supplied 'chat' from the
+                # open internet would skip portal account minting, so every
+                # public submission is pinned to 'classic'. Kernel pricing is
+                # used on both channels.
                 _create_client_ip = (self.client_address[0] if self.client_address else '') or ''
                 _create_user_agent = self.headers.get('User-Agent', '') if self.headers else ''
                 _create_has_forward_headers = bool(self.headers and (
@@ -42885,8 +43067,16 @@ For claims or questions, please contact:
                         'ethnicity': data.get('ethnicity'),
                     }
 
-                # Calculate premium (kernel + pricing params when enabled; else flat)
+                # Calculate premium from the actuarial kernel (fail-open flat).
+                # Chat finalize stamps quote_provenance with the kernel amount
+                # the applicant accepted; that accepted quote is the issued
+                # premium so quote and policy cannot drift. Only the trusted
+                # internal chat loopback may bind a caller-supplied quote onto
+                # the policy — a public create could otherwise post a tiny
+                # quoted_annual/quoted_monthly and under-bill the coverage.
                 premium_data = calculate_premium(data)
+                if internal_chat_loopback:
+                    premium_data = _apply_accepted_quote_provenance(premium_data, data)
                 
                 # Create policy
                 policy = {
@@ -42915,6 +43105,15 @@ For claims or questions, please contact:
                     'product_id': premium_data.get('product_id'),
                     'tables_version': premium_data.get('tables_version'),
                     'config_version': premium_data.get('config_version'),
+                    'risk_premium_annual': premium_data.get('risk_premium_annual'),
+                    'savings_premium_annual': premium_data.get('savings_premium_annual'),
+                    'mortality_premium_annual': premium_data.get('mortality_premium_annual'),
+                    'disability_premium_annual': premium_data.get('disability_premium_annual'),
+                    'savings_rate_used': premium_data.get('savings_rate_used'),
+                    'savings_formula': premium_data.get('savings_formula'),
+                    'underwriting_loading': premium_data.get('underwriting_loading'),
+                    'life_sum_used': premium_data.get('life_sum_used'),
+                    'disability_sum_used': premium_data.get('disability_sum_used'),
                     # Billing configuration (from application Step 4)
                     'billing': {
                         'frequency': billing_frequency,
@@ -43111,6 +43310,11 @@ For claims or questions, please contact:
                     'tables_version': premium_data.get('tables_version'),
                     'config_version': premium_data.get('config_version'),
                 }
+                try:
+                    from services.financial_unification_service import pin_kernel_fields_on_policy
+                    pin_kernel_fields_on_policy(policy, premium_data)
+                except Exception:
+                    pass
                 POLICIES[policy_id] = policy
                 if audit:
                     actor = 'system'
@@ -46357,6 +46561,29 @@ For claims or questions, please contact:
                                     )
                                 except Exception as rev_err:
                                     print(f"[REVENUE] Error recording premium: {rev_err}")
+                                try:
+                                    ledger_tx = record_transaction(
+                                        customer_id=customer_id,
+                                        tx_type='premium_payment',
+                                        amount=amount,
+                                        description=f"Premium payment for policy {policy_id} - Bill {bill_id}",
+                                        metadata={
+                                            'bill_id': bill_id,
+                                            'policy_id': policy_id,
+                                            'payment_method': method,
+                                            'gateway_tx': result.transaction_id,
+                                        },
+                                    )
+                                    record_premium_cash_books(
+                                        customer_id=customer_id,
+                                        policy_id=policy_id,
+                                        amount=amount,
+                                        bills_paid=[str(bill_id)],
+                                        source_tx_id=str(ledger_tx.get('id') or ''),
+                                        bill_payments={str(bill_id): float(amount)},
+                                    )
+                                except Exception as led_err:
+                                    print(f"[LEDGER] Gateway premium post skipped: {led_err}")
                                 break
                     
                     self._set_json_headers()
@@ -51318,6 +51545,14 @@ For claims or questions, please contact:
                         'wallet_deduction': wallet_deduction_info
                     }
                 )
+                record_premium_cash_books(
+                    customer_id=customer_id,
+                    policy_id=policy_id,
+                    amount=amount,
+                    bills_paid=[str(bill_id)],
+                    source_tx_id=str(payment_tx.get('id') or ''),
+                    bill_payments={str(bill_id): float(amount)},
+                )
 
                 doc_bundle = generate_action_accounting_documents(
                     action_type='bill_payment' if payment_method != 'health_wallet' else 'premium_payment',
@@ -51534,16 +51769,28 @@ For claims or questions, please contact:
                 payment_tx = record_transaction(
                     customer_id=customer_id,
                     tx_type='bulk_premium_payment',
-                    amount=-total_paid,
+                    amount=total_paid,
                     description=f"Bulk premium payment of ${total_paid:.2f} for {len(payments_made)} bills from health wallet",
                     metadata={
                         'bills_paid': payments_made,
                         'total_paid': total_paid,
                         'wallet_previous_balance': prev_wallet_balance,
                         'wallet_new_balance': new_wallet_balance,
-                        'remaining_outstanding': total_outstanding - total_paid
+                        'remaining_outstanding': total_outstanding - total_paid,
+                        'wallet_debit': True,
                     }
                 )
+                for paid in payments_made:
+                    record_premium_cash_books(
+                        customer_id=customer_id,
+                        policy_id=paid.get('policy_id'),
+                        amount=paid.get('amount_paid'),
+                        bills_paid=[str(paid.get('bill_id') or '')],
+                        source_tx_id=str(payment_tx.get('id') or ''),
+                        bill_payments={
+                            str(paid.get('bill_id') or ''): float(paid.get('amount_paid') or 0)
+                        },
+                    )
                 
                 save_ledger_data()
                 

@@ -20,7 +20,8 @@
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js" defer></script>
   <title>PHINS Actuarial Dashboard - Central Pricing & Risk Control</title>
-  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <link rel="apple-touch-icon" href="/phins-logo.svg">
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
 
@@ -1350,6 +1351,7 @@
       color: #071022 !important;
     }
   </style>
+  <link rel="stylesheet" href="/phins-theme.css">
 </head>
 <body>
   <div id="app">
@@ -1478,7 +1480,7 @@
       <main class="content">
         <!-- Access Denied (hidden by default) -->
         <div id="access-denied" class="access-denied" style="display:none;">
-          <h2>🔒 Access Denied</h2>
+          <h2>Access Denied</h2>
           <p>This dashboard is restricted to Admin and Actuary roles only.</p>
           <p>Please contact your administrator for access.</p>
           <button class="btn btn-primary" onclick="window.location.href='/admin.html'">Go to Admin Portal</button>
@@ -1523,8 +1525,8 @@
               <div style="color:var(--text-light);">Loading life & disability tables…</div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
-              <button class="btn btn-outline btn-small" onclick="showSection('tables-registry')">📚 Open full registry</button>
-              <button class="btn btn-outline btn-small" onclick="loadTablesRegistry()">🔄 Refresh</button>
+              <button class="btn btn-outline btn-small" onclick="showSection('tables-registry')">Open full registry</button>
+              <button class="btn btn-outline btn-small" onclick="loadTablesRegistry()">Refresh</button>
             </div>
           </div>
 
@@ -1532,22 +1534,22 @@
             <div class="card-title">Central Source of Truth</div>
             <p style="margin-bottom:16px;">This dashboard controls ALL pricing and risk calculations for the PHINS platform. Changes made here affect:</p>
             <ul style="margin-left:20px;line-height:2;">
-              <li>✓ Quote Engine - Premium calculations</li>
-              <li>✓ Underwriting Bot - Approval/decline decisions</li>
-              <li>✓ Claims Reserve - Risk provisions</li>
-              <li>✓ Financial Reports - Projections & analytics</li>
-              <li>✓ Portfolio Simulations - Business planning</li>
+              <li>Quote Engine - Premium calculations</li>
+              <li>Underwriting Bot - Approval/decline decisions</li>
+              <li>Claims Reserve - Risk provisions</li>
+              <li>Financial Reports - Projections & analytics</li>
+              <li>Portfolio Simulations - Business planning</li>
             </ul>
           </div>
           
           <div class="card">
             <div class="card-title">Quick Actions</div>
             <div style="display:flex;gap:12px;flex-wrap:wrap;">
-              <button class="btn btn-primary" onclick="showSection('simulator')">🎲 Run Simulation</button>
-              <button class="btn btn-success" onclick="showSection('reinsurance')">🛡️ Structure Hedge</button>
-              <button class="btn btn-success" onclick="showSection('underwriting')">📋 Edit Underwriting</button>
-              <button class="btn btn-warning" onclick="exportTables()">📥 Export Tables</button>
-              <button class="btn btn-outline" onclick="showSection('audit')">🔍 View Audit Log</button>
+              <button class="btn btn-primary" onclick="showSection('simulator')">Run Simulation</button>
+              <button class="btn btn-success" onclick="showSection('reinsurance')"> Structure Hedge</button>
+              <button class="btn btn-success" onclick="showSection('underwriting')">Edit Underwriting</button>
+              <button class="btn btn-warning" onclick="exportTables()">Export Tables</button>
+              <button class="btn btn-outline" onclick="showSection('audit')">View Audit Log</button>
             </div>
           </div>
 
@@ -1624,7 +1626,7 @@
                 </select>
               </div>
               <div class="form-group" style="display:flex;align-items:flex-end;">
-                <button class="btn btn-outline" onclick="loadTablesRegistry()">🔄 Refresh</button>
+                <button class="btn btn-outline" onclick="loadTablesRegistry()">Refresh</button>
               </div>
             </div>
           </div>
@@ -1682,7 +1684,7 @@
                 <input type="text" id="replace-registry-cohort-value" class="form-input" placeholder="caucasian / female / no">
               </div>
               <div class="form-group" style="display:flex;align-items:flex-end;">
-                <button class="btn btn-success" onclick="replaceRegistryTable()">📤 Upload &amp; promote</button>
+                <button class="btn btn-success" onclick="replaceRegistryTable()">Upload &amp; promote</button>
               </div>
             </div>
             <p id="replace-registry-status" class="research-note" style="margin-top:8px;"></p>
@@ -1711,7 +1713,7 @@
               <tbody></tbody>
             </table>
             <div style="margin-top:16px;">
-              <button class="btn btn-success" onclick="saveMortalityRates()">💾 Save Changes</button>
+              <button class="btn btn-success" onclick="saveMortalityRates()">Save Changes</button>
               <button class="btn btn-outline" onclick="resetMortalityRates()">↻ Reset to Defaults</button>
             </div>
           </div>
@@ -1734,7 +1736,7 @@
               <tbody></tbody>
             </table>
             <div style="margin-top:16px;">
-              <button class="btn btn-success" onclick="saveDisabilityRates()">💾 Save Changes</button>
+              <button class="btn btn-success" onclick="saveDisabilityRates()">Save Changes</button>
               <button class="btn btn-outline" onclick="resetDisabilityRates()">↻ Reset to Defaults</button>
             </div>
           </div>
@@ -1796,7 +1798,7 @@
           </div>
           
           <div style="margin-top:16px;">
-            <button class="btn btn-success" onclick="saveADLTables()">💾 Save All ADL Tables</button>
+            <button class="btn btn-success" onclick="saveADLTables()">Save All ADL Tables</button>
             <button class="btn btn-outline" onclick="resetADLTables()">↻ Reset to Defaults</button>
           </div>
         </section>
@@ -1806,7 +1808,7 @@
           <h2 class="section-title">Underwriting Rules</h2>
           
           <div class="alert alert-warning">
-            ⚠️ Changes to underwriting rules affect NEW policies only. Existing policies retain their original terms.
+             Changes to underwriting rules affect NEW policies only. Existing policies retain their original terms.
           </div>
           
           <div class="card">
@@ -1870,7 +1872,7 @@
           </div>
 
           <div class="card">
-            <div class="card-title">🤖 Automatic Approval — Clean Issuance</div>
+            <div class="card-title">Automatic Approval — Clean Issuance</div>
             <p style="margin-bottom:16px;">
               New applications that pass <strong>every</strong> gate below are approved automatically:
               the policy is issued (activated + first bill generated) and sent to the customer with no
@@ -1918,7 +1920,7 @@
             <small id="auto-approve-status" style="color:var(--text-light);"></small>
           </div>
 
-          <button class="btn btn-success" onclick="saveUnderwritingConfig()">💾 Save Underwriting Rules</button>
+          <button class="btn btn-success" onclick="saveUnderwritingConfig()">Save Underwriting Rules</button>
           <button class="btn btn-outline" onclick="resetUnderwritingConfig()">↻ Reset to Defaults</button>
         </section>
         
@@ -2115,7 +2117,7 @@
             </table>
           </div>
           
-          <button class="btn btn-success" onclick="savePricingParams()">💾 Save Pricing Parameters</button>
+          <button class="btn btn-success" onclick="savePricingParams()">Save Pricing Parameters</button>
           <button class="btn btn-outline" onclick="resetPricingParams()">↻ Reset to Defaults</button>
         </section>
         
@@ -2283,7 +2285,7 @@
           </div>
           
           <button class="btn btn-primary" onclick="runSimulation()" id="run-sim-btn" style="font-size:1.1rem;padding:14px 30px;">
-            🚀 Run Portfolio Simulation
+            Run Portfolio Simulation
           </button>
           
           <div id="sim-results" class="results-panel" style="display:none;"></div>
@@ -2471,7 +2473,7 @@
                 <small style="color:var(--text-light);">Annual fee charged on the growing savings AUM (company's earnings).</small>
               </div>
             </div>
-            <button class="btn btn-primary" onclick="runReserveProjection()">📈 Project Reserves &amp; Liabilities</button>
+            <button class="btn btn-primary" onclick="runReserveProjection()">Project Reserves &amp; Liabilities</button>
             <p id="reserve-status" class="research-note" style="margin-top:12px;">Run a portfolio simulation first, then project the reserve waterfall.</p>
           </div>
 
@@ -2608,8 +2610,8 @@
                 <small style="color:var(--text-light);font-size:0.75rem;">Months of future annuity payments to reserve for (e.g. 60)</small>
               </div>
               <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;">
-                <button class="btn btn-primary" onclick="runAnnuityReserveForecast()">▶ Run forecast</button>
-                <button class="btn btn-outline" onclick="loadAnnuityReserveDefaults()">🔄 Reset to defaults</button>
+                <button class="btn btn-primary" onclick="runAnnuityReserveForecast()"> Run forecast</button>
+                <button class="btn btn-outline" onclick="loadAnnuityReserveDefaults()">Reset to defaults</button>
               </div>
             </div>
             <p id="annuity-reserve-status" class="research-note" style="margin-top:10px;"></p>
@@ -2775,7 +2777,7 @@
                 <input type="date" id="upload-actuary-effective" class="form-input">
               </div>
               <div class="form-group" style="display:flex;align-items:flex-end;">
-                <button class="btn btn-success" onclick="uploadActuaryTable()">📤 Upload</button>
+                <button class="btn btn-success" onclick="uploadActuaryTable()">Upload</button>
               </div>
             </div>
             <p id="upload-actuary-status" class="research-note" style="margin-top:12px;"></p>
@@ -2914,7 +2916,7 @@
                 <input type="number" id="valuation-attribution" class="form-input" value="100" min="0" max="100" step="1">
               </div>
             </div>
-            <button class="btn btn-primary" onclick="runPortfolioValuation()">📐 Run Valuation</button>
+            <button class="btn btn-primary" onclick="runPortfolioValuation()">Run Valuation</button>
             <p id="valuation-status" class="research-note" style="margin-top:12px;">Run a portfolio simulation first, then valuate.</p>
           </div>
 
@@ -2949,8 +2951,8 @@
                 <input type="text" id="report-sim-id" class="form-input" placeholder="Use latest simulation by default">
               </div>
               <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;">
-                <button class="btn btn-success" onclick="downloadActuaryReport('xlsx')">📊 Download Excel</button>
-                <button class="btn btn-primary" onclick="downloadActuaryReport('pdf')">🧾 Download PDF</button>
+                <button class="btn btn-success" onclick="downloadActuaryReport('xlsx')">Download Excel</button>
+                <button class="btn btn-primary" onclick="downloadActuaryReport('pdf')">Download PDF</button>
               </div>
             </div>
             <p id="report-status" class="research-note" style="margin-top:12px;">Reports embed the current reserve projection (using the values currently entered in the Reserves &amp; IFRS 17 form) so every download is reproducible.</p>
@@ -3031,7 +3033,7 @@
           <h2 class="section-title">Actuarial Versions</h2>
 
           <div class="alert alert-warning">
-            🔒 Versions are immutable. Restoring an earlier version clones it forward as a
+            Versions are immutable. Restoring an earlier version clones it forward as a
             <strong>new</strong> version — policies issued under earlier versions keep their original
             conditions and are never overridden. New versions apply to future underwriting, pricing
             and billing across the platform.
@@ -3093,7 +3095,7 @@
           </div>
 
           <div class="card">
-            <div class="card-title">🧠 BI / AI System Insights
+            <div class="card-title">BI / AI System Insights
               <button class="btn btn-outline" style="float:right;" onclick="loadVersionInsights()">↻ Refresh</button>
             </div>
             <div id="version-insights">
@@ -3111,7 +3113,7 @@
           <!-- Breaking news ticker. Random incidents arising from the
                sandbox lifecycle are streamed here. -->
           <div id="sandbox-banner" class="sandbox-banner sandbox-banner-empty">
-            <span class="sandbox-banner-label">📰 Breaking News</span>
+            <span class="sandbox-banner-label">Breaking News</span>
             <div class="sandbox-ticker-track">
               <div id="sandbox-ticker" class="sandbox-ticker-line">
                 Run a portfolio simulation, then "Generate Sandbox Accounts" to begin random policy lifecycles.
@@ -3125,12 +3127,12 @@
 
           <!-- Action bar -->
           <div class="sandbox-action-bar">
-            <button class="btn btn-primary" id="sandbox-generate-btn" onclick="generateSandboxFromSimulation()">🎲 Generate Sandbox Accounts from Simulation</button>
+            <button class="btn btn-primary" id="sandbox-generate-btn" onclick="generateSandboxFromSimulation()">Generate Sandbox Accounts from Simulation</button>
             <button class="btn btn-outline" onclick="toggleSandboxLifecycle()">
-              <span id="sandbox-lifecycle-toggle-label">▶️ Start Random Lifecycle</span>
+              <span id="sandbox-lifecycle-toggle-label"> Start Random Lifecycle</span>
             </button>
-            <button class="btn btn-warning" onclick="resetSandbox()">♻️ Reset Values</button>
-            <button class="btn btn-success" id="sandbox-push-btn" onclick="pushSandboxToPipeline()">🚚 Push to Pipeline</button>
+            <button class="btn btn-warning" onclick="resetSandbox()"> Reset Values</button>
+            <button class="btn btn-success" id="sandbox-push-btn" onclick="pushSandboxToPipeline()">Push to Pipeline</button>
             <span id="sandbox-action-msg" class="sandbox-action-msg">Sandbox is empty. Run a simulation, then click "Generate Sandbox Accounts".</span>
           </div>
 
@@ -3174,20 +3176,20 @@
           <div class="card">
             <div class="card-title">Sandbox Insight Tabs</div>
             <div class="sandbox-tabs">
-              <button class="sandbox-tab active" data-sandbox-tab="underwriting" onclick="showSandboxTab('underwriting')">📋 Underwriting</button>
-              <button class="sandbox-tab" data-sandbox-tab="claims" onclick="showSandboxTab('claims')">💼 Claims</button>
-              <button class="sandbox-tab" data-sandbox-tab="billing" onclick="showSandboxTab('billing')">💰 Billing</button>
-              <button class="sandbox-tab" data-sandbox-tab="projection" onclick="showSandboxTab('projection')">📈 Monthly Projection</button>
-              <button class="sandbox-tab" data-sandbox-tab="activity" onclick="showSandboxTab('activity')">📜 Activity Log</button>
+              <button class="sandbox-tab active" data-sandbox-tab="underwriting" onclick="showSandboxTab('underwriting')">Underwriting</button>
+              <button class="sandbox-tab" data-sandbox-tab="claims" onclick="showSandboxTab('claims')">Claims</button>
+              <button class="sandbox-tab" data-sandbox-tab="billing" onclick="showSandboxTab('billing')">Billing</button>
+              <button class="sandbox-tab" data-sandbox-tab="projection" onclick="showSandboxTab('projection')">Monthly Projection</button>
+              <button class="sandbox-tab" data-sandbox-tab="activity" onclick="showSandboxTab('activity')">Activity Log</button>
             </div>
 
             <!-- Export bar: the sandbox lives entirely in browser memory, so
                  these downloads are generated client-side (no server call). -->
             <div class="sandbox-export-bar">
-              <span class="sandbox-export-label">⬇️ Download sandbox insight data:</span>
-              <button class="btn-small btn-outline" onclick="exportSandboxCSV()">📄 CSV</button>
-              <button class="btn-small btn-outline" onclick="exportSandboxExcel()">📊 Excel (.xls)</button>
-              <button class="btn-small btn-primary" onclick="exportSandboxAssessmentPDF()">🧠 PDF AI Assessment</button>
+              <span class="sandbox-export-label"> Download sandbox insight data:</span>
+              <button class="btn-small btn-outline" onclick="exportSandboxCSV()">CSV</button>
+              <button class="btn-small btn-outline" onclick="exportSandboxExcel()">Excel (.xls)</button>
+              <button class="btn-small btn-primary" onclick="exportSandboxAssessmentPDF()">PDF AI Assessment</button>
               <span id="sandbox-export-msg" class="sandbox-action-msg"></span>
             </div>
 
@@ -3321,7 +3323,7 @@
                   <input type="number" id="sandbox-forecast-horizon" class="form-input" value="60" min="1" max="60" step="1" oninput="recomputeSandboxForecast()">
                 </div>
                 <div class="form-group" style="display:flex;align-items:flex-end;">
-                  <button class="btn btn-outline" onclick="recomputeSandboxForecast()">🔄 Recompute Forecast</button>
+                  <button class="btn btn-outline" onclick="recomputeSandboxForecast()">Recompute Forecast</button>
                 </div>
               </div>
 
@@ -3392,7 +3394,7 @@
                     </tr>
                   </thead>
                   <tbody id="sandbox-projection-body">
-                    <tr><td colspan="7" class="muted-text" style="text-align:center;color:var(--text-light);">Generate sandbox accounts to build the 5-year forecast, then ▶️ Start Random Lifecycle to realize it.</td></tr>
+                    <tr><td colspan="7" class="muted-text" style="text-align:center;color:var(--text-light);">Generate sandbox accounts to build the 5-year forecast, then  Start Random Lifecycle to realize it.</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -3491,7 +3493,7 @@
               </tbody>
             </table>
             <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-              <button class="btn btn-outline" onclick="refreshAnnualReportSources()">🔄 Re-bind Pipeline</button>
+              <button class="btn btn-outline" onclick="refreshAnnualReportSources()">Re-bind Pipeline</button>
               <span id="annual-sources-msg" class="muted-text"></span>
             </div>
           </div>
@@ -3689,10 +3691,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           <div class="card">
             <div class="card-title">Build &amp; Distribute — Annual Report Preview</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
-              <button class="btn btn-primary" onclick="buildAnnualReportPreview()">📄 Build Report Preview</button>
-              <button class="btn btn-success" onclick="downloadAnnualReportPDF()">🧾 Download PDF</button>
-              <button class="btn btn-outline" onclick="downloadAnnualReportHTML()">🌐 Download HTML</button>
-              <button class="btn btn-outline" onclick="downloadAnnualReportCSV()">📄 Download CSV bundle</button>
+              <button class="btn btn-primary" onclick="buildAnnualReportPreview()">Build Report Preview</button>
+              <button class="btn btn-success" onclick="downloadAnnualReportPDF()">Download PDF</button>
+              <button class="btn btn-outline" onclick="downloadAnnualReportHTML()">Download HTML</button>
+              <button class="btn btn-outline" onclick="downloadAnnualReportCSV()">Download CSV bundle</button>
               <span id="annual-build-msg" class="muted-text"></span>
             </div>
             <div id="annual-report-preview" class="annual-report-preview">
@@ -4300,7 +4302,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         await loadReinsuranceContracts();
         await loadReinsuranceOverview();
       } catch (err) {
-        alert(`❌ Error binding reinsurance: ${err.message}`);
+        alert(`Error binding reinsurance: ${err.message}`);
       }
     }
     
@@ -4430,14 +4432,14 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         
         const data = await res.json();
         if (data.success) {
-          alert('✅ Underwriting configuration saved successfully!');
+          alert('Underwriting configuration saved successfully!');
           loadConfig();
           loadVersions();
         } else {
-          alert('❌ Error: ' + (data.error || 'Unknown error'));
+          alert('Error: ' + (data.error || 'Unknown error'));
         }
       } catch (err) {
-        alert('❌ Error saving config: ' + err.message);
+        alert('Error saving config: ' + err.message);
       }
     }
     
@@ -4526,7 +4528,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             markPricingParamsClean();
           }
           const ver = data.config?.config_version || '';
-          alert('✅ Pricing parameters saved' + (ver ? ' [' + ver + ']' : '') + persistNoteFor(data));
+          alert('Pricing parameters saved' + (ver ? ' [' + ver + ']' : '') + persistNoteFor(data));
           // Re-fetch to confirm durability, then push to contract-spec /
           // simulator surfaces that read the central store.
           await loadConfig();
@@ -4534,10 +4536,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             try { await loadContractSpec(); } catch (_) { /* non-fatal */ }
           }
         } else {
-          alert('❌ Error: ' + (data.error || 'Unknown error'));
+          alert('Error: ' + (data.error || 'Unknown error'));
         }
       } catch (err) {
-        alert('❌ Error saving params: ' + err.message);
+        alert('Error saving params: ' + err.message);
       }
     }
 
@@ -4546,7 +4548,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     // database snapshot failed → the change may not survive a redeploy).
     function persistNoteFor(result) {
       if (result.persistence_warning) {
-        return (result.persisted ? ' ⚠️ ' : ' (memory only: ') + result.persistence_warning + (result.persisted ? '' : ')');
+        return (result.persisted ? '  ' : ' (memory only: ') + result.persistence_warning + (result.persisted ? '' : ')');
       }
       if (result.persisted) {
         return result.persisted_to_database ? ' (persisted — survives restart & redeploy)' : ' (persisted)';
@@ -4557,7 +4559,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     // Save mortality rates table
     async function saveMortalityRates() {
       if (!currentTables || !currentTables.mortality_rates) {
-        alert('❌ No mortality rates loaded');
+        alert('No mortality rates loaded');
         return;
       }
       
@@ -4590,20 +4592,20 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         
         const result = await res.json();
         if (result.success) {
-          alert('✅ Mortality rates saved' + (result.version ? ' as ' + result.version : '') + persistNoteFor(result));
+          alert('Mortality rates saved' + (result.version ? ' as ' + result.version : '') + persistNoteFor(result));
           loadTables();
         } else {
-          alert('❌ Error: ' + (result.error || 'Unknown error'));
+          alert('Error: ' + (result.error || 'Unknown error'));
         }
       } catch (err) {
-        alert('❌ Error saving mortality rates: ' + err.message);
+        alert('Error saving mortality rates: ' + err.message);
       }
     }
     
     // Save disability rates table
     async function saveDisabilityRates() {
       if (!currentTables || !currentTables.disability_incidence_rates) {
-        alert('❌ No disability rates loaded');
+        alert('No disability rates loaded');
         return;
       }
       
@@ -4636,20 +4638,20 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         
         const result = await res.json();
         if (result.success) {
-          alert('✅ Disability incidence rates saved' + (result.version ? ' as ' + result.version : '') + persistNoteFor(result));
+          alert('Disability incidence rates saved' + (result.version ? ' as ' + result.version : '') + persistNoteFor(result));
           loadTables();
         } else {
-          alert('❌ Error: ' + (result.error || 'Unknown error'));
+          alert('Error: ' + (result.error || 'Unknown error'));
         }
       } catch (err) {
-        alert('❌ Error saving disability rates: ' + err.message);
+        alert('Error saving disability rates: ' + err.message);
       }
     }
     
     // Save all ADL tables
     async function saveADLTables() {
       if (!currentTables) {
-        alert('❌ No tables loaded');
+        alert('No tables loaded');
         return;
       }
       
@@ -4757,13 +4759,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         if (allSuccess) {
           const note = lastAdlResult ? persistNoteFor(lastAdlResult) : '';
           const ver = lastAdlResult && lastAdlResult.version ? ' as ' + lastAdlResult.version : '';
-          alert('✅ All ADL tables saved' + ver + note);
+          alert('All ADL tables saved' + ver + note);
           loadTables();
         } else {
-          alert('❌ Some errors occurred:\n' + errors.join('\n'));
+          alert('Some errors occurred:\n' + errors.join('\n'));
         }
       } catch (err) {
-        alert('❌ Error saving ADL tables: ' + err.message);
+        alert('Error saving ADL tables: ' + err.message);
       }
     }
     
@@ -4783,13 +4785,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         
         const result = await res.json();
         if (result.success) {
-          alert('✅ Underwriting rules reset to defaults!');
+          alert('Underwriting rules reset to defaults!');
           loadConfig();
         } else {
-          alert('❌ Error: ' + (result.error || 'Unknown error'));
+          alert('Error: ' + (result.error || 'Unknown error'));
         }
       } catch (err) {
-        alert('❌ Error resetting config: ' + err.message);
+        alert('Error resetting config: ' + err.message);
       }
     }
     
@@ -4809,13 +4811,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         
         const result = await res.json();
         if (result.success) {
-          alert('✅ Pricing parameters reset to defaults!');
+          alert('Pricing parameters reset to defaults!');
           loadConfig();
         } else {
-          alert('❌ Error: ' + (result.error || 'Unknown error'));
+          alert('Error: ' + (result.error || 'Unknown error'));
         }
       } catch (err) {
-        alert('❌ Error resetting pricing params: ' + err.message);
+        alert('Error resetting pricing params: ' + err.message);
       }
     }
     
@@ -4835,13 +4837,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         
         const result = await res.json();
         if (result.success) {
-          alert('✅ Mortality rates reset to defaults!');
+          alert('Mortality rates reset to defaults!');
           loadTables();
         } else {
-          alert('❌ Error: ' + (result.error || 'Unknown error'));
+          alert('Error: ' + (result.error || 'Unknown error'));
         }
       } catch (err) {
-        alert('❌ Error resetting mortality rates: ' + err.message);
+        alert('Error resetting mortality rates: ' + err.message);
       }
     }
     
@@ -4861,13 +4863,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         
         const result = await res.json();
         if (result.success) {
-          alert('✅ Disability rates reset to defaults!');
+          alert('Disability rates reset to defaults!');
           loadTables();
         } else {
-          alert('❌ Error: ' + (result.error || 'Unknown error'));
+          alert('Error: ' + (result.error || 'Unknown error'));
         }
       } catch (err) {
-        alert('❌ Error resetting disability rates: ' + err.message);
+        alert('Error resetting disability rates: ' + err.message);
       }
     }
     
@@ -4900,13 +4902,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         }
         
         if (allSuccess) {
-          alert('✅ All ADL tables reset to defaults!');
+          alert('All ADL tables reset to defaults!');
           loadTables();
         } else {
-          alert('❌ Some errors occurred:\n' + errors.join('\n'));
+          alert('Some errors occurred:\n' + errors.join('\n'));
         }
       } catch (err) {
-        alert('❌ Error resetting ADL tables: ' + err.message);
+        alert('Error resetting ADL tables: ' + err.message);
       }
     }
     
@@ -4914,7 +4916,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     async function runSimulation() {
       const btn = document.getElementById('run-sim-btn');
       btn.disabled = true;
-      btn.textContent = '⏳ Running Simulation...';
+      btn.textContent = ' Running Simulation...';
       
       const resultsDiv = document.getElementById('sim-results');
       resultsDiv.style.display = 'block';
@@ -4991,14 +4993,14 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           const reserveSavings = document.getElementById('reserve-savings-alloc');
           if (simSavings && reserveSavings) reserveSavings.value = simSavings.value;
         } else {
-          resultsDiv.innerHTML = `<div class="alert alert-danger">❌ Error: ${data.error}</div>`;
+          resultsDiv.innerHTML = `<div class="alert alert-danger">Error: ${data.error}</div>`;
         }
       } catch (err) {
-        resultsDiv.innerHTML = `<div class="alert alert-danger">❌ Error: ${err.message}</div>`;
+        resultsDiv.innerHTML = `<div class="alert alert-danger">Error: ${err.message}</div>`;
       }
       
       btn.disabled = false;
-      btn.textContent = '🚀 Run Portfolio Simulation';
+      btn.textContent = 'Run Portfolio Simulation';
     }
     
     function renderSimulationResults(sim) {
@@ -5038,9 +5040,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const reconAllPass = !!recon.all_identities_pass;
       const reconHtml = `
         <div class="results-section">
-          <h4>🧮 Premium Reconciliation (verifiable arithmetic chain)</h4>
+          <h4>Premium Reconciliation (verifiable arithmetic chain)</h4>
           <div class="alert ${reconAllPass ? 'alert-success' : 'alert-warning'}" style="margin-bottom:10px;">
-            ${reconAllPass ? '✅ All portfolio-level identities hold to the cent.' : '⚠️ One or more identities did not reconcile — check the deltas below.'}
+            ${reconAllPass ? 'All portfolio-level identities hold to the cent.' : ' One or more identities did not reconcile — check the deltas below.'}
           </div>
           <table class="data-table">
             <thead>
@@ -5053,7 +5055,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
                 <td>${reconNxAvg.n ? fmt(reconNxAvg.n) : '0'} × ${fmtCurrency(reconNxAvg.avg_premium)} = ${fmtCurrency(reconNxAvg.computed)}</td>
                 <td>${fmtCurrency(reconNxAvg.expected)}</td>
                 <td>${fmtCurrency(reconNxAvg.delta)}</td>
-                <td>${reconNxAvg.check ? '✅' : '❌'}</td>
+                <td>${reconNxAvg.check ? '' : ''}</td>
               </tr>
               <tr>
                 <td>Components → total</td>
@@ -5061,7 +5063,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
                 <td>${fmtCurrency(reconSum.risk)} + ${fmtCurrency(reconSum.savings)} + ${fmtCurrency(reconSum.expense)} + ${fmtCurrency(reconSum.profit)} = ${fmtCurrency(reconSum.computed)}</td>
                 <td>${fmtCurrency(reconSum.expected)}</td>
                 <td>${fmtCurrency(reconSum.delta)}</td>
-                <td>${reconSum.check ? '✅' : '❌'}</td>
+                <td>${reconSum.check ? '' : ''}</td>
               </tr>
               <tr>
                 <td>Savings markup</td>
@@ -5069,7 +5071,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
                 <td>${reconMarkup.applies ? `${(reconMarkup.savings_rate * 100).toFixed(2)}% × ${fmtCurrency(reconSum.risk)} = ${fmtCurrency(reconMarkup.computed)}` : '<em>not applicable</em>'}</td>
                 <td>${reconMarkup.applies ? fmtCurrency(reconMarkup.actual) : '—'}</td>
                 <td>${reconMarkup.applies ? fmtCurrency(reconMarkup.delta) : '—'}</td>
-                <td>${reconMarkup.check ? '✅' : '❌'}</td>
+                <td>${reconMarkup.check ? '' : ''}</td>
               </tr>
             </tbody>
           </table>
@@ -5078,14 +5080,14 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       `;
 
       let html = `
-        <h3 style="margin-bottom:20px;">📊 Simulation Results</h3>
+        <h3 style="margin-bottom:20px;">Simulation Results</h3>
         <div class="alert alert-success">
-          ✅ Simulation completed in ${sim.duration_seconds}s | Tables Version: ${sim.tables_version} | ID: ${sim.simulation_id}
+          Simulation completed in ${sim.duration_seconds}s | Tables Version: ${sim.tables_version} | ID: ${sim.simulation_id}
         </div>
         ${reconHtml}
 
         <div class="results-section">
-          <h4>📈 Portfolio Summary</h4>
+          <h4>Portfolio Summary</h4>
           <div class="stats-grid">
             <div class="stat-card">
               <div class="stat-label">Customers Accepted</div>
@@ -5107,7 +5109,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         </div>
         
         <div class="results-section">
-          <h4>⚠️ Risk Analysis (Present Value over ${fmtDec(sim.risk_metrics.avg_term_years)} year avg term)</h4>
+          <h4> Risk Analysis (Present Value over ${fmtDec(sim.risk_metrics.avg_term_years)} year avg term)</h4>
           <table class="data-table">
             <tr><td>PV Mortality Claims</td><td><strong>${fmtCurrency(sim.risk_metrics.pv_mortality_claims)}</strong></td><td style="color:var(--text-light);">${fmtPct(sim.risk_metrics.mortality_pct_of_claims)} of claims</td></tr>
             <tr><td>PV Disability Claims</td><td><strong>${fmtCurrency(sim.risk_metrics.pv_disability_claims)}</strong></td><td style="color:var(--text-light);">${fmtPct(sim.risk_metrics.disability_pct_of_claims)} of claims</td></tr>
@@ -5117,13 +5119,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             <tr><td>Reserve Requirement (150%)</td><td><strong>${fmtCurrency(sim.risk_metrics.reserve_requirement)}</strong></td><td style="color:var(--text-light);">Regulatory reserve</td></tr>
           </table>
           <p style="margin-top:12px;font-size:0.85rem;color:var(--text-light);">
-            ℹ️ <strong>Mutual Exclusivity:</strong> Each customer can have EITHER a mortality OR disability claim (not both). 
+             <strong>Mutual Exclusivity:</strong> Each customer can have EITHER a mortality OR disability claim (not both). 
             Once a mortality claim is paid, the policy terminates. This reflects actual insurance claim behavior.
           </p>
         </div>
         
         <div class="results-section">
-          <h4>💰 Annual Profitability Analysis</h4>
+          <h4>Annual Profitability Analysis</h4>
           <table class="data-table">
             <tr style="background:var(--bg);"><td colspan="3"><strong>Premium Components</strong></td></tr>
             <tr><td>Risk Premium</td><td>${fmtCurrency(riskPremium)}</td><td style="color:var(--text-light);">Covers expected claims</td></tr>
@@ -5134,7 +5136,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             }</td></tr>
             <tr><td>Expense Loading</td><td>${fmtCurrency(expenseLoading)}</td><td style="color:var(--text-light);">Operating costs</td></tr>
             <tr><td>Profit Margin</td><td>${fmtCurrency(profitMargin)}</td><td style="color:var(--text-light);">Target profit</td></tr>
-            <tr style="border-top:2px solid var(--border);"><td><strong>Total Annual Premium</strong></td><td><strong>${fmtCurrency(grossPremium)}</strong></td><td>${premiumMatch ? '✓ Verified' : '⚠️ Diff: ' + fmtCurrency(premiumDiff)}</td></tr>
+            <tr style="border-top:2px solid var(--border);"><td><strong>Total Annual Premium</strong></td><td><strong>${fmtCurrency(grossPremium)}</strong></td><td>${premiumMatch ? 'Verified' : ' Diff: ' + fmtCurrency(premiumDiff)}</td></tr>
             
             <tr style="background:var(--bg);"><td colspan="3"><strong>Profit Calculation</strong></td></tr>
             <tr><td>Operating Revenue (Risk + Expense + Profit)</td><td>${fmtCurrency(riskPremium + expenseLoading + profitMargin)}</td><td></td></tr>
@@ -5145,7 +5147,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         </div>
         
         <div class="results-section">
-          <h4>🤖 Automation Metrics</h4>
+          <h4>Automation Metrics</h4>
           <div class="automation-gauge">
             <div class="gauge-circle" style="background:linear-gradient(135deg,#38a169,#4299e1);">
               ${fmtPct(sim.automation.overall_automation_pct * 100)}
@@ -5164,7 +5166,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         </div>
         
         <div class="results-section">
-          <h4>👥 Demographics</h4>
+          <h4>Demographics</h4>
           <div class="form-row">
             <div>
               <strong>Age Distribution:</strong>
@@ -5185,7 +5187,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         </div>
         
         <div class="results-section">
-          <h4>❌ Declined Applications</h4>
+          <h4>Declined Applications</h4>
           <p>Count: <strong>${fmt(sim.declined.count)}</strong> | Coverage Declined: <strong>${fmtCurrency(sim.declined.coverage_total)}</strong></p>
           <ul>${Object.entries(sim.declined.reasons || {}).map(([k,v]) => `<li>${k}: ${v}</li>`).join('')}</ul>
         </div>
@@ -5328,7 +5330,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
               <td>${v.policies_pinned || 0}</td>
               <td><code style="font-size:0.72rem;" title="${v.integrity_hash || ''}">${(v.integrity_hash || '').substring(0, 12)}…</code></td>
               <td>${v.restorable
-                ? `<button class="btn btn-outline" style="padding:4px 10px;font-size:0.8rem;" onclick="restoreVersion('${v.version}')">↩ Restore</button>`
+                ? `<button class="btn btn-outline" style="padding:4px 10px;font-size:0.8rem;" onclick="restoreVersion('${v.version}')"> Restore</button>`
                 : '—'}</td>
             </tr>
           `).join('');
@@ -5343,7 +5345,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
               <td><small>${c.action || ''}</small></td>
               <td>${c.policies_pinned || 0}</td>
               <td>${c.restorable
-                ? `<button class="btn btn-outline" style="padding:4px 10px;font-size:0.8rem;" onclick="restoreConfigVersion('${c.config_version}')">↩ Restore</button>`
+                ? `<button class="btn btn-outline" style="padding:4px 10px;font-size:0.8rem;" onclick="restoreConfigVersion('${c.config_version}')"> Restore</button>`
                 : '—'}</td>
             </tr>
           `).join('') : '<tr><td colspan="6" style="text-align:center;">No saved config revisions yet — save Underwriting Rules or Pricing Parameters to create one.</td></tr>';
@@ -5367,16 +5369,16 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         });
         const data = await res.json();
         if (data.success) {
-          alert(`✅ ${data.message}`);
+          alert(`${data.message}`);
           loadVersions();
           loadTables();
           loadAuditLog();
           loadVersionInsights();
         } else {
-          alert('❌ Restore failed: ' + (data.error || 'Unknown error'));
+          alert('Restore failed: ' + (data.error || 'Unknown error'));
         }
       } catch (err) {
-        alert('❌ Restore failed: ' + err.message);
+        alert('Restore failed: ' + err.message);
       }
     }
 
@@ -5394,15 +5396,15 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         });
         const data = await res.json();
         if (data.success) {
-          alert(`✅ ${data.message}`);
+          alert(`${data.message}`);
           loadVersions();
           loadConfig();
           loadAuditLog();
         } else {
-          alert('❌ Restore failed: ' + (data.error || 'Unknown error'));
+          alert('Restore failed: ' + (data.error || 'Unknown error'));
         }
       } catch (err) {
-        alert('❌ Restore failed: ' + err.message);
+        alert('Restore failed: ' + err.message);
       }
     }
 
@@ -5416,20 +5418,20 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Failed to load insights');
 
-        const sevIcon = { positive: '✅', info: 'ℹ️', warning: '⚠️' };
+        const sevIcon = { positive: '', info: '', warning: '' };
         const adoption = data.adoption || {};
         const auto = data.auto_issuance || {};
         const activity = data.version_activity || {};
         container.innerHTML = `
           <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:14px;color:var(--text-light);font-size:0.9rem;">
-            <span>📋 Policies: <strong>${adoption.policies_total || 0}</strong> (${adoption.policies_active || 0} active)</span>
-            <span>📌 Pinned to earlier versions: <strong>${adoption.pinned_to_earlier_versions || 0}</strong></span>
-            <span>🤖 Auto-issued: <strong>${auto.auto_issued || 0}</strong> of ${auto.approved_total || 0} approvals (${((auto.auto_issuance_rate || 0) * 100).toFixed(0)}%)</span>
-            <span>🛠 Table changes (30d): <strong>${activity.table_changes_last_30_days || 0}</strong></span>
+            <span>Policies: <strong>${adoption.policies_total || 0}</strong> (${adoption.policies_active || 0} active)</span>
+            <span>Pinned to earlier versions: <strong>${adoption.pinned_to_earlier_versions || 0}</strong></span>
+            <span>Auto-issued: <strong>${auto.auto_issued || 0}</strong> of ${auto.approved_total || 0} approvals (${((auto.auto_issuance_rate || 0) * 100).toFixed(0)}%)</span>
+            <span>Table changes (30d): <strong>${activity.table_changes_last_30_days || 0}</strong></span>
           </div>
           ${(data.insights || []).map(i => `
             <div class="alert ${i.severity === 'warning' ? 'alert-warning' : 'alert-info'}" style="margin-bottom:8px;">
-              ${sevIcon[i.severity] || 'ℹ️'} <strong>${i.title}</strong><br>
+              ${sevIcon[i.severity] || ''} <strong>${i.title}</strong><br>
               <span style="font-size:0.9rem;">${i.detail}</span>
             </div>
           `).join('') || '<p>No insights available.</p>'}
@@ -5598,20 +5600,20 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
                 <td>${(r.coverage_units_share * 100).toFixed(2)}%</td>
                 <td>${fmtCurrency(r.cumulative_release)}</td>
                 <td><strong>${fmtCurrency(r.closing_balance)}</strong></td>
-                <td>${checks.prev_minus_release_equals_balance ? '✅' : '❌'}</td>
-                <td>${checks.opening_minus_cumulative_equals_balance ? '✅' : '❌'}</td>
-                <td>${checks.coverage_units_share_holds ? '✅' : '❌'}</td>
+                <td>${checks.prev_minus_release_equals_balance ? '' : ''}</td>
+                <td>${checks.opening_minus_cumulative_equals_balance ? '' : ''}</td>
+                <td>${checks.coverage_units_share_holds ? '' : ''}</td>
               </tr>
             `;
           }).join('');
           const totals = rec.totals || {};
           const integrity = rec.data_integrity || {};
           const integrityRows = Object.entries(integrity).map(([k, v]) =>
-            `<tr><td>${k}</td><td>${v ? '✅' : '❌'}</td></tr>`).join('');
+            `<tr><td>${k}</td><td>${v ? '' : ''}</td></tr>`).join('');
           const ident = rec.identities || {};
           const sumId = ident.sum_of_releases || {};
           return `
-            <h4 style="margin-top:16px;">🧮 IFRS 17 CSM Reconciliation</h4>
+            <h4 style="margin-top:16px;">IFRS 17 CSM Reconciliation</h4>
             <p style="color:var(--text-light);">
               Release pattern: <strong>${rec.pattern}</strong> · Opening CSM: <strong>${fmtCurrency(rec.opening_csm)}</strong> · Projection: <strong>${rec.projection_years}</strong> yrs.
               Each year the closing balance equals the prior balance minus the year's release, and equivalently the opening minus the cumulative release. The sum of releases plus the closing balance reconciles back to the opening CSM.
@@ -5625,9 +5627,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
                   <th>Coverage-units share</th>
                   <th>Cumulative Release</th>
                   <th>Closing</th>
-                  <th>balance − Δ ✓</th>
-                  <th>opening − ΣΔ ✓</th>
-                  <th>share ✓</th>
+                  <th>balance − Δ </th>
+                  <th>opening − ΣΔ </th>
+                  <th>share </th>
                 </tr>
               </thead>
               <tbody>${yearlyRows}</tbody>
@@ -5674,7 +5676,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
       const integrity = projection.data_integrity || {};
       const integrityRows = Object.entries(integrity).map(([k, v]) =>
-        `<tr><td>${k}</td><td>${v ? '✅' : '❌'}</td></tr>`).join('');
+        `<tr><td>${k}</td><td>${v ? '' : ''}</td></tr>`).join('');
       integrityEl.innerHTML = `
         <table class="data-table">
           <thead><tr><th>Check</th><th>Result</th></tr></thead>
@@ -5746,7 +5748,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       `).join('');
       const integrityKeys = Object.keys(ref.data_integrity || {}).filter(k => typeof ref.data_integrity[k] === 'boolean');
       const integrityHtml = integrityKeys.map(k =>
-        `<li>${k}: ${ref.data_integrity[k] ? '✅' : '❌'}</li>`).join('');
+        `<li>${k}: ${ref.data_integrity[k] ? '' : ''}</li>`).join('');
       // Optional savings accumulation block for the reference policyholder.
       let savingsHtml = '';
       const accum = ref.savings_accumulation;
@@ -5768,10 +5770,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         const aTot = accum.totals || {};
         const aInt = accum.data_integrity || {};
         const aIntHtml = Object.keys(aInt).map(k =>
-          `<li>${k}: ${aInt[k] ? '✅' : '❌'}</li>`
+          `<li>${k}: ${aInt[k] ? '' : ''}</li>`
         ).join('');
         savingsHtml = `
-          <h4 style="margin-top:20px;">📈 Savings Accumulation (managed portfolio)</h4>
+          <h4 style="margin-top:20px;">Savings Accumulation (managed portfolio)</h4>
           <p style="color:var(--text-light);">Markup ${(accum.savings_rate * 100).toFixed(1)}% of risk premium · yield ${(accum.savings_yield_pct * 100).toFixed(2)}% · management fee ${(accum.management_fee_pct_of_aum * 100).toFixed(2)}%/yr.</p>
           <table class="data-table">
             <thead>
@@ -5868,7 +5870,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           if (statusEl) statusEl.textContent = 'Loaded default scenario preview.';
         }
       } catch (err) {
-        if (statusEl) statusEl.textContent = `❌ Failed to load defaults: ${err.message}`;
+        if (statusEl) statusEl.textContent = `Failed to load defaults: ${err.message}`;
       }
     }
 
@@ -5910,9 +5912,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`);
         renderAnnuityReserveForecast(data.forecast);
-        if (statusEl) statusEl.textContent = `✅ Forecast ready (integrity ${String(data.forecast.integrity_hash || '').slice(0, 12)}).`;
+        if (statusEl) statusEl.textContent = `Forecast ready (integrity ${String(data.forecast.integrity_hash || '').slice(0, 12)}).`;
       } catch (err) {
-        if (statusEl) statusEl.textContent = `❌ ${err.message}`;
+        if (statusEl) statusEl.textContent = `${err.message}`;
       }
     }
 
@@ -5979,7 +5981,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const checksEl = document.getElementById('annuity-reserve-integrity-checks');
       if (checksEl) {
         checksEl.innerHTML = Object.entries(checks).map(([key, ok]) => {
-          const sym = ok ? '✅' : '❌';
+          const sym = ok ? '' : '';
           const color = ok ? 'var(--success)' : 'var(--danger)';
           return `<li style="color:${color};">${sym} ${escapeHtml(key)}</li>`;
         }).join('');
@@ -6191,8 +6193,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           <div class="tb-meta">${escapeHtml(meta)}</div>
           <div class="tb-hash" title="Integrity SHA-256 prefix">#${hash || '—'}</div>
           <div class="tb-actions">
-            <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "csv")'>⬇ CSV</button>
-            <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "json")'>⬇ JSON</button>
+            <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "csv")'> CSV</button>
+            <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "json")'> JSON</button>
             <button class="btn-small btn-warning" onclick="prepareRegistryReplace(${replaceArgs})">↻ Replace</button>
           </div>
         </div>
@@ -6241,8 +6243,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             <td><span class="tb-hash" title="${escapeAttr(entry.integrity_hash || '')}">#${(entry.integrity_hash || '').slice(0, 12) || '—'}</span></td>
             <td>
               ${previewBtn}
-              <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "csv")'>⬇ CSV</button>
-              <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "json")'>⬇ JSON</button>
+              <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "csv")'> CSV</button>
+              <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "json")'> JSON</button>
               <button class="btn-small btn-warning" onclick="prepareRegistryReplace(${replaceArgs})">↻ Replace</button>
             </td>
           </tr>
@@ -6290,9 +6292,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           a.click();
           a.remove();
           setTimeout(() => URL.revokeObjectURL(url), 5000);
-        }).catch((err) => alert('❌ Download failed: ' + err.message));
+        }).catch((err) => alert('Download failed: ' + err.message));
       } catch (err) {
-        alert('❌ Download failed: ' + err.message);
+        alert('Download failed: ' + err.message);
       }
     }
 
@@ -6403,8 +6405,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         if (!useRes.ok || useData.error) throw new Error(useData.error || `HTTP ${useRes.status}`);
         if (statusEl) {
           statusEl.textContent = useData.mode === 'cohort_override'
-            ? `✅ Registered cohort override ${useData.cohort_key} for ${useData.target_table_type} (${useData.rows_applied} rows applied, ${useData.rows_skipped} skipped).`
-            : `✅ Replaced GLOBAL ${useData.target_table_type} (${useData.rows_applied} rows applied, ${useData.rows_skipped} skipped).`;
+            ? `Registered cohort override ${useData.cohort_key} for ${useData.target_table_type} (${useData.rows_applied} rows applied, ${useData.rows_skipped} skipped).`
+            : `Replaced GLOBAL ${useData.target_table_type} (${useData.rows_applied} rows applied, ${useData.rows_skipped} skipped).`;
         }
         if (fileInput) fileInput.value = '';
         loadTablesRegistry();
@@ -6412,7 +6414,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         if (typeof loadUploadedTables === 'function') loadUploadedTables();
         if (typeof loadCohortOverrides === 'function') loadCohortOverrides();
       } catch (err) {
-        if (statusEl) statusEl.textContent = `❌ ${err.message}`;
+        if (statusEl) statusEl.textContent = `${err.message}`;
       }
     }
 
@@ -6502,16 +6504,16 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         });
         const data = await res.json();
         if (!res.ok || data.error) {
-          alert(`❌ ${data.error || ('HTTP ' + res.status)}\n${JSON.stringify(data.normalization || {}, null, 2)}`);
+          alert(`${data.error || ('HTTP ' + res.status)}\n${JSON.stringify(data.normalization || {}, null, 2)}`);
           return;
         }
         const mode = data.mode === 'cohort_override' ? `cohort override (${data.cohort_key})` : 'global rate band';
-        alert(`✅ Applied ${data.rows_applied} rows to ${data.target_table_type} as ${mode} (${data.rows_skipped} skipped).`);
+        alert(`Applied ${data.rows_applied} rows to ${data.target_table_type} as ${mode} (${data.rows_skipped} skipped).`);
         loadTables();
         loadCohortOverrides();
         loadTablesRegistry();
       } catch (err) {
-        alert('❌ ' + err.message);
+        alert('' + err.message);
       }
     }
 
@@ -6574,13 +6576,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         });
         const data = await res.json();
         if (!res.ok || data.error) {
-          alert(`❌ ${data.error || ('HTTP ' + res.status)}`);
+          alert(`${data.error || ('HTTP ' + res.status)}`);
           return;
         }
         loadCohortOverrides();
         loadTablesRegistry();
       } catch (err) {
-        alert('❌ ' + err.message);
+        alert('' + err.message);
       }
     }
 
@@ -6609,12 +6611,12 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         });
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`);
-        statusEl.textContent = `✅ Uploaded ${data.id}`;
+        statusEl.textContent = `Uploaded ${data.id}`;
         fileInput.value = '';
         loadUploadedTables();
         loadTablesRegistry();
       } catch (err) {
-        statusEl.textContent = `❌ ${err.message}`;
+        statusEl.textContent = `${err.message}`;
       }
     }
 
@@ -6667,9 +6669,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         a.click();
         a.remove();
         URL.revokeObjectURL(url);
-        statusEl.textContent = `✅ ${format.toUpperCase()} downloaded.`;
+        statusEl.textContent = `${format.toUpperCase()} downloaded.`;
       } catch (err) {
-        statusEl.textContent = `❌ ${err.message}`;
+        statusEl.textContent = `${err.message}`;
       }
     }
 
@@ -6847,9 +6849,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       refreshAnnualReportSources();
       const bands = val.bands || {};
       const order = [
-        ['insurance_portfolio', '🛡️ Insurance Portfolio'],
-        ['risk_portfolio', '⚠️ Risk Portfolio (Liability View)'],
-        ['company_phins_technologies', '🏢 Company (PHINS Technologies)'],
+        ['insurance_portfolio', ' Insurance Portfolio'],
+        ['risk_portfolio', ' Risk Portfolio (Liability View)'],
+        ['company_phins_technologies', 'Company (PHINS Technologies)'],
       ];
       // Compute the max value across BE and Conservative bars for scaling.
       let maxVal = 0;
@@ -6912,7 +6914,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       `;
       const integrity = val.data_integrity || {};
       const integrityRows = Object.entries(integrity).map(([k, v]) =>
-        `<tr><td>${k}</td><td>${v ? '✅' : '❌'}</td></tr>`).join('');
+        `<tr><td>${k}</td><td>${v ? '' : ''}</td></tr>`).join('');
       const companyComponents = (bands.company_phins_technologies?.components) || {};
       const compRows = Object.entries(companyComponents).map(([k, v]) =>
         `<tr><td>${k}</td><td style="text-align:right;">${fmtAbs(v)}</td></tr>`).join('');
@@ -6957,7 +6959,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           <div class="stats-grid">
             <div class="stat-card ${r.reconciled ? 'success' : 'warning'}">
               <div class="stat-label">Reconciliation</div>
-              <div class="stat-value">${r.reconciled ? '✅ PASS' : '❌ DELTA'}</div>
+              <div class="stat-value">${r.reconciled ? 'PASS' : 'DELTA'}</div>
             </div>
             <div class="stat-card"><div class="stat-label">Gross Premium</div><div class="stat-value">${fmtCurrency(portfolio.gross_premium)}</div></div>
             <div class="stat-card"><div class="stat-label">Sum of Components</div><div class="stat-value">${fmtCurrency(portfolio.sum_of_components)}</div></div>
@@ -7138,7 +7140,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         return;
       }
       banner.classList.remove('sandbox-banner-empty');
-      ticker.textContent = news.map(n => '🚨 ' + n).join('   •   ');
+      ticker.textContent = news.map(n => '' + n).join('   •   ');
     }
 
     function showSandboxTab(tabId) {
@@ -7423,7 +7425,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // generated sandbox so it reflects the latest pipeline state.
       refreshAnnualReportSources();
       const msg = document.getElementById('sandbox-action-msg');
-      if (msg) msg.textContent = `Generated ${sandboxFmtCount(materialize)} sandbox accounts from sim ${sim.simulation_id} (contract ${productId}, accepted ages ${acceptedAgeMin}–${acceptedAgeMax}). 5-year forecast ready in the Monthly Projection tab. Click ▶️ Start Random Lifecycle to begin.`;
+      if (msg) msg.textContent = `Generated ${sandboxFmtCount(materialize)} sandbox accounts from sim ${sim.simulation_id} (contract ${productId}, accepted ages ${acceptedAgeMin}–${acceptedAgeMax}). 5-year forecast ready in the Monthly Projection tab. Click  Start Random Lifecycle to begin.`;
     }
 
     function renderSandbox() {
@@ -7854,13 +7856,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
       if (action === 'breaking_news') {
         const headlines = [
-          `🚨 Mortality cluster detected in cohort age ${sandboxRandInt(50, 75)}+ — reserve adequacy under review.`,
-          `🌪️ Catastrophic event projected: ${sandboxRandInt(20, 200)} extra disability claims this quarter.`,
-          `📈 Loss ratio drifted to ${sandboxFmtPct((50 + sandboxRandInt(0, 60)) / 100)} — pricing committee notified.`,
-          `⚠️ Spike in ADL 8+ admissions in sandbox cohort — re-running mortality basis.`,
-          `🏥 New medical guideline expected to lift average claim severity by ${sandboxRandInt(3, 15)}%.`,
-          `💸 Reinsurer signalled possible attachment-point change — hedge cost +${sandboxRandInt(5, 20)}%.`,
-          `⛈️ Regional pandemic alert raised — additional testing recommended for new applicants.`,
+          `Mortality cluster detected in cohort age ${sandboxRandInt(50, 75)}+ — reserve adequacy under review.`,
+          ` Catastrophic event projected: ${sandboxRandInt(20, 200)} extra disability claims this quarter.`,
+          `Loss ratio drifted to ${sandboxFmtPct((50 + sandboxRandInt(0, 60)) / 100)} — pricing committee notified.`,
+          ` Spike in ADL 8+ admissions in sandbox cohort — re-running mortality basis.`,
+          `New medical guideline expected to lift average claim severity by ${sandboxRandInt(3, 15)}%.`,
+          `Reinsurer signalled possible attachment-point change — hedge cost +${sandboxRandInt(5, 20)}%.`,
+          ` Regional pandemic alert raised — additional testing recommended for new applicants.`,
         ];
         sandboxLogEvent('alert', sandboxPick(headlines), 'breaking');
         return;
@@ -8148,7 +8150,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         setText('sandbox-proj-months-elapsed', '0');
         setText('sandbox-proj-end-customers', '0');
         if (body) {
-          body.innerHTML = '<tr><td colspan="7" class="muted-text" style="text-align:center;color:var(--text-light);">Generate sandbox accounts to build the 5-year forecast, then ▶️ Start Random Lifecycle to realize it.</td></tr>';
+          body.innerHTML = '<tr><td colspan="7" class="muted-text" style="text-align:center;color:var(--text-light);">Generate sandbox accounts to build the 5-year forecast, then  Start Random Lifecycle to realize it.</td></tr>';
         }
         return;
       }
@@ -8173,7 +8175,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         body.innerHTML = proj.rows.map(r => {
           const elapsed = r.month <= proj.monthsElapsed;
           const rowStyle = elapsed ? ' style="background:var(--bg);"' : '';
-          const marker = elapsed ? ' ✓' : '';
+          const marker = elapsed ? ' ' : '';
           const netClass = r.netCashFlow >= 0 ? 'sandbox-status approved' : 'sandbox-status declined';
           return `
             <tr${rowStyle}>
@@ -8213,7 +8215,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         }
       }, 2200);
       const lbl = document.getElementById('sandbox-lifecycle-toggle-label');
-      if (lbl) lbl.textContent = '⏸️ Pause Random Lifecycle';
+      if (lbl) lbl.textContent = ' Pause Random Lifecycle';
       sandboxLogEvent('uw', `Random policy lifecycle started — monthly cash-flow projection seeded (${sandboxFmtMoney((sb.projection.baseline || {}).monthlyPremium)}/mo premium baseline).`, 'info');
     }
 
@@ -8228,7 +8230,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
       sb.lifecycleRunning = false;
       const lbl = document.getElementById('sandbox-lifecycle-toggle-label');
-      if (lbl) lbl.textContent = '▶️ Start Random Lifecycle';
+      if (lbl) lbl.textContent = ' Start Random Lifecycle';
     }
 
     function toggleSandboxLifecycle() {
@@ -8242,7 +8244,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     }
 
     function resetSandbox() {
-      if (!confirm('♻️ Reset sandbox values?\n\nThis clears all in-memory test customers, policies, claims, bills and activity events on the actuary dashboard. It does NOT touch the admin pipeline.')) {
+      if (!confirm(' Reset sandbox values?\n\nThis clears all in-memory test customers, policies, claims, bills and activity events on the actuary dashboard. It does NOT touch the admin pipeline.')) {
         return;
       }
       stopSandboxLifecycle();
@@ -8539,9 +8541,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
         const csv = '\uFEFF' + sections.join('\n\n');
         sandboxDownload(`phins_sandbox_insights_${sandboxStamp()}.csv`, 'text/csv;charset=utf-8', csv);
-        sandboxExportMsg('✅ CSV downloaded.');
+        sandboxExportMsg('CSV downloaded.');
       } catch (err) {
-        sandboxExportMsg('❌ CSV export failed: ' + err.message);
+        sandboxExportMsg('CSV export failed: ' + err.message);
       }
     }
 
@@ -8628,9 +8630,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           '<Styles><Style ss:ID="hdr"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1A365D" ss:Pattern="Solid"/></Style></Styles>' +
           sheets.join('') + '</Workbook>';
         sandboxDownload(`phins_sandbox_insights_${sandboxStamp()}.xls`, 'application/vnd.ms-excel', xml);
-        sandboxExportMsg('✅ Excel (.xls) downloaded.');
+        sandboxExportMsg('Excel (.xls) downloaded.');
       } catch (err) {
-        sandboxExportMsg('❌ Excel export failed: ' + err.message);
+        sandboxExportMsg('Excel export failed: ' + err.message);
       }
     }
 
@@ -8842,9 +8844,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         }
 
         doc.save(`phins_sandbox_ai_assessment_${sandboxStamp()}.pdf`);
-        sandboxExportMsg('✅ PDF AI assessment downloaded.');
+        sandboxExportMsg('PDF AI assessment downloaded.');
       } catch (err) {
-        sandboxExportMsg('❌ PDF export failed: ' + err.message);
+        sandboxExportMsg('PDF export failed: ' + err.message);
       }
     }
 
@@ -8897,7 +8899,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const sliceBills = sb.bills.filter(b => policyBackedIds.has(b.customer_id));
 
       const confirmed = confirm(
-        '🚚 PUSH SANDBOX TO PIPELINE\n' +
+        'PUSH SANDBOX TO PIPELINE\n' +
         '═══════════════════════════════════════\n\n' +
         `• Customers: ${sandboxFmtCount(sliceCustomers.length)} (of ${sandboxFmtCount(sb.customers.length)} in sandbox)\n` +
         `• Policies:  ${sandboxFmtCount(slicePolicies.length)}\n` +
@@ -8912,7 +8914,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (!confirmed) return;
 
       const btn = document.getElementById('sandbox-push-btn');
-      if (btn) { btn.disabled = true; btn.textContent = '⏳ Pushing…'; }
+      if (btn) { btn.disabled = true; btn.textContent = ' Pushing…'; }
       const msg = document.getElementById('sandbox-action-msg');
       if (msg) msg.textContent = 'Pushing sandbox slice to admin pipeline…';
 
@@ -8947,7 +8949,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           'breaking'
         );
         if (msg) msg.textContent = `Pushed ${sandboxFmtCount(created.customers || 0)} sandbox customers to the admin pipeline (suspended, purgeable via Clean Demo Data).`;
-        alert(`✅ Sandbox push complete.\n\n` +
+        alert(`Sandbox push complete.\n\n` +
           `Created customers: ${created.customers || 0}\n` +
           `Created policies:  ${created.policies || 0}\n` +
           `Created claims:    ${created.claims || 0}\n` +
@@ -8956,9 +8958,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       } catch (err) {
         sandboxLogEvent('alert', `Push to pipeline failed: ${err.message}`, 'breaking');
         if (msg) msg.textContent = `Push failed: ${err.message}`;
-        alert('❌ Push to pipeline failed: ' + err.message);
+        alert('Push to pipeline failed: ' + err.message);
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = '🚚 Push to Pipeline'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Push to Pipeline'; }
       }
     }
 
@@ -9145,10 +9147,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (totalEl) totalEl.textContent = total.toFixed(2) + '%';
       if (msgEl) {
         if (Math.abs(total - 100) < 0.01) {
-          msgEl.textContent = '✅ Balances to 100%';
+          msgEl.textContent = 'Balances to 100%';
           msgEl.style.color = 'var(--success)';
         } else {
-          msgEl.textContent = `⚠️ Off by ${(total - 100).toFixed(2)}% — must equal 100%`;
+          msgEl.textContent = ` Off by ${(total - 100).toFixed(2)}% — must equal 100%`;
           msgEl.style.color = 'var(--danger)';
         }
       }
@@ -10227,7 +10229,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
       const integritySection = (() => {
         const allOk = checks.every(c => c.ok);
-        const rows = checks.map(c => `<tr><td>${annualEsc(c.name)}</td><td>${c.ok ? '✅' : '❌'}</td><td>${annualEsc(c.detail)}</td></tr>`).join('');
+        const rows = checks.map(c => `<tr><td>${annualEsc(c.name)}</td><td>${c.ok ? '' : ''}</td><td>${annualEsc(c.detail)}</td></tr>`).join('');
         return `<div class="integrity ${allOk ? '' : 'bad'}">
           <strong>Pipeline Integrity:</strong> ${allOk ? 'all checks passed' : 'one or more checks need attention'} ·
           report hash <code>${payload.integrity_hash}</code> ·
@@ -10257,7 +10259,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           <tfoot><tr><th colspan="3" style="text-align:right;">Total</th><th class="num">${capTotal.toFixed(2)}%</th><th colspan="2"></th></tr></tfoot>
         </table>
         ${annualChartCanvas('annual-chart-cap', 220)}</div>
-        ${Math.abs(capTotal - 100) > 0.01 ? '<div class="note">⚠️ Cap table does not balance to 100% — regulator filings require an exact 100% total. Adjust the cap-table editor before re-issuing.</div>' : ''}`);
+        ${Math.abs(capTotal - 100) > 0.01 ? '<div class="note"> Cap table does not balance to 100% — regulator filings require an exact 100% total. Adjust the cap-table editor before re-issuing.</div>' : ''}`);
 
       const debtRowsHtml = debtRows.length
         ? debtRows.map((r, ix) => {

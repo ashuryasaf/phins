@@ -167,14 +167,17 @@ EXPENSE_LOADING_PCT = 0.15  # 15%
 PROFIT_MARGIN_PCT = 0.10  # 10% target profit margin
 
 
-_PREMIUM_LEDGER_TX_TYPES = {
-    'premium_payment',
-    'bill_payment',
-    'bill_paid',
-    'premium_received',
-    'auto_pay_execution',
-    'premium_deposit',
-}
+try:
+    from services.financial_unification_service import PREMIUM_CASH_TYPES as _PREMIUM_LEDGER_TX_TYPES
+except Exception:
+    _PREMIUM_LEDGER_TX_TYPES = {
+        'premium_payment',
+        'bill_payment',
+        'bill_paid',
+        'premium_received',
+        'premium_deposit',
+        'bulk_premium_payment',
+    }
 
 
 def _get_tx_type(tx: Dict) -> str:
@@ -195,6 +198,7 @@ class FinancialReportingService:
         self._billing = billing
         self._customers = customers
         self._underwriting = underwriting
+        self._ledger_attached = transaction_ledger is not None
         self._transaction_ledger = transaction_ledger if transaction_ledger is not None else {}
         self._health_wallets = health_wallets if health_wallets is not None else {}
 
@@ -236,7 +240,7 @@ class FinancialReportingService:
             if tx_type not in _PREMIUM_LEDGER_TX_TYPES:
                 continue
 
-            amount = _safe(tx.get('amount', 0))
+            amount = abs(_safe(tx.get('amount', 0)))
             if amount <= 0:
                 continue
 
@@ -273,15 +277,35 @@ class FinancialReportingService:
     # NOT: Premium = (Mortality × ADL_Multiplier) + Savings + Expenses (OLD/WRONG)
     # ==========================================================================
     
+    def _actuarial_store(self):
+        """Central actuarial tables — same store the kernel and actuary dashboard use."""
+        try:
+            from services.actuarial_service import get_actuarial_store
+            return get_actuarial_store()
+        except Exception:
+            return None
+
     def get_mortality_rate(self, age: int) -> float:
-        """Get base mortality rate per 1000 lives for given age"""
+        """Get base mortality rate for given age from the actuarial store."""
+        store = self._actuarial_store()
+        if store is not None:
+            try:
+                return float(store.get_mortality_rate(age))
+            except Exception:
+                pass
         for (low, high), rate in MORTALITY_RATES.items():
             if low <= age < high:
                 return rate / 1000.0
         return 0.075  # Default for very old ages
     
     def get_disability_incidence_rate(self, age: int) -> float:
-        """Get disability incidence rate per 1000 lives for given age (NEW)"""
+        """Get disability incidence rate for given age from the actuarial store."""
+        store = self._actuarial_store()
+        if store is not None:
+            try:
+                return float(store.get_disability_rate(age))
+            except Exception:
+                pass
         for (low, high), rate in DISABILITY_INCIDENCE_RATES.items():
             if low <= age < high:
                 return rate / 1000.0
@@ -290,22 +314,40 @@ class FinancialReportingService:
     def get_adl_mortality_multiplier(self, adl_level: int) -> float:
         """Get MORTALITY risk multiplier based on ADL level (1-10)"""
         adl_level = max(1, min(10, adl_level))
+        store = self._actuarial_store()
+        if store is not None:
+            try:
+                return float(store.get_adl_mortality_multiplier(adl_level))
+            except Exception:
+                pass
         return ADL_MORTALITY_MULTIPLIERS.get(adl_level, 1.0)
     
     def get_adl_disability_incidence_multiplier(self, adl_level: int) -> float:
-        """Get DISABILITY INCIDENCE multiplier based on ADL level (1-10) (NEW)
+        """Get DISABILITY INCIDENCE multiplier based on ADL level (1-10)
         
         This is the critical factor - higher ADL means MORE likely to claim disability.
         """
         adl_level = max(1, min(10, adl_level))
+        store = self._actuarial_store()
+        if store is not None:
+            try:
+                return float(store.get_adl_disability_multiplier(adl_level))
+            except Exception:
+                pass
         return ADL_DISABILITY_INCIDENCE_MULTIPLIERS.get(adl_level, 1.0)
     
     def get_adl_benefit_percentage(self, adl_level: int) -> float:
-        """Get disability benefit percentage based on ADL level (NEW)
+        """Get disability benefit percentage based on ADL level
         
         Returns the % of coverage paid out for disability claim at this ADL level.
         """
         adl_level = max(1, min(10, adl_level))
+        store = self._actuarial_store()
+        if store is not None:
+            try:
+                return float(store.get_adl_benefit_pct(adl_level))
+            except Exception:
+                pass
         return ADL_BENEFIT_PERCENTAGES.get(adl_level, 0.35)  # Default 35% avg
     
     def get_adl_multiplier(self, adl_level: int) -> float:
@@ -313,7 +355,13 @@ class FinancialReportingService:
         return self.get_adl_mortality_multiplier(adl_level)
     
     def get_lapse_rate(self, policy_year: int) -> float:
-        """Get lapse rate for given policy year"""
+        """Get lapse rate for given policy year from the actuarial store."""
+        store = self._actuarial_store()
+        if store is not None:
+            try:
+                return float(store.get_lapse_rate(policy_year))
+            except Exception:
+                pass
         if policy_year in LAPSE_RATES:
             return LAPSE_RATES[policy_year]
         for key, rate in LAPSE_RATES.items():
@@ -357,12 +405,8 @@ class FinancialReportingService:
         """
         Calculate actuarially sound premium via the central pricing kernel.
 
-        The kernel (``services.pricing_kernel.price_policy``) is the single
-        source of truth for actuarial pricing across the platform. This
-        method routes the legacy financial-reporting inputs at the kernel
-        with the legacy claim model (``ClaimModel.INDEPENDENT``), lapse
-        adjustment, and minimum-risk floor enabled so output stays
-        bit-for-bit compatible with previous releases.
+        Uses the same ``price_application_with_kernel`` path as issuance so
+        accountant quotes and billed premiums share one identity.
 
         Args:
             coverage: Face value of policy
@@ -385,104 +429,69 @@ class FinancialReportingService:
                 'customer_age': age
             }
         
-        # Use approved coverage (may be reduced for high ADL)
+        # Use approved coverage (may be reduced for high ADL). The kernel below
+        # re-derives the coverage cap, underwriting loading, and disability
+        # exclusion from the live actuarial store, so the reported values are
+        # taken from the kernel result (not this private FRS table) to keep
+        # accountant quotes and issued kernel prices on one identity.
         approved_coverage = uw_check['approved_coverage']
-        underwriting_loading = uw_check.get('loading', 0)
-        exclude_disability = uw_check.get('exclude_disability', False)
 
-        # Delegate the pricing math to the central pricing kernel. The legacy
-        # FinancialReportingService used independent mortality/disability PVs
-        # with lapse adjustment and a minimum-risk floor for ADL 8+, so the
-        # kernel is configured to match that behaviour exactly.
-        from services.pricing_kernel import (
-            ClaimModel, PricingConfig, PricingCustomer, SavingsFormula,
-            TableSet, get_age_curve, get_product, price_policy,
-        )
+        # Same kernel + persisted Pricing Parameters as issuance.
+        from services.pricing_shadow_service import price_application_with_kernel
 
-        kernel_tables = TableSet(
-            mortality_rates=[
-                {'age_min': low, 'age_max': high, 'rate_per_1000': rate}
-                for (low, high), rate in MORTALITY_RATES.items()
-            ],
-            disability_incidence_rates=[
-                {'age_min': low, 'age_max': high, 'rate_per_1000': rate}
-                for (low, high), rate in DISABILITY_INCIDENCE_RATES.items()
-            ],
-            adl_mortality_multipliers=[
-                {'adl': adl, 'multiplier': mult}
-                for adl, mult in ADL_MORTALITY_MULTIPLIERS.items()
-            ],
-            adl_disability_multipliers=[
-                {'adl': adl, 'multiplier': mult}
-                for adl, mult in ADL_DISABILITY_INCIDENCE_MULTIPLIERS.items()
-            ],
-            adl_benefit_percentages=[
-                {'adl': adl, 'benefit_pct': pct}
-                for adl, pct in ADL_BENEFIT_PERCENTAGES.items()
-            ],
-            lapse_rates=[
-                ({'year': key, 'rate': rate} if isinstance(key, int)
-                 else {'year_min': key[0], 'year_max': key[1], 'rate': rate})
-                for key, rate in LAPSE_RATES.items()
-            ],
-            age_curve=get_age_curve('identity'),
-            version='financial_reporting_v2',
-        )
-        # FRS expects each ADL bracket to carry its own benefit percentage but
-        # the legacy disability PV applied wider age-bracket fallbacks. Mirror
-        # those overrides on the table so the kernel sees identical inputs.
-        adl_benefit_override = {
-            1: 0.25, 2: 0.25, 3: 0.25, 4: 0.35, 5: 0.35,
-            6: 0.65, 7: 0.65, 8: 0.90, 9: 0.90, 10: 0.90,
-        }
-        kernel_tables.adl_benefit_percentages = [
-            {'adl': adl, 'benefit_pct': pct} for adl, pct in adl_benefit_override.items()
-        ]
+        kernel = price_application_with_kernel({
+            "type": "phins_unified",
+            "coverage_amount": approved_coverage,
+            "age": int(age),
+            "term_years": int(term_years),
+            "coverage_years": int(term_years),
+            "adl_level": int(adl_level),
+            "savings_rate": float(savings_pct or 0.0),
+            "risk_score": "medium",
+        }) or {}
+        if not kernel or float(kernel.get("annual") or 0) <= 0:
+            return {
+                'annual_premium': 0,
+                'monthly_premium': 0,
+                'eligible': False,
+                'decline_reason': 'kernel_unavailable',
+                'adl_level': adl_level,
+                'customer_age': age,
+            }
 
-        kernel_config = PricingConfig(
-            expense_loading_pct=EXPENSE_LOADING_PCT,
-            profit_margin_pct=PROFIT_MARGIN_PCT if include_profit_margin else 0.0,
-            discount_rate=DISCOUNT_RATE,
-            savings_rate=float(savings_pct or 0.0),
-            savings_yield_pct=0.0,
-            savings_formula=SavingsFormula.STRAIGHT_LINE,
-            claim_model=ClaimModel.INDEPENDENT,
-            apply_lapse_adjustment=True,
-            apply_min_risk_floor=True,
-            version='financial_reporting_v2',
-        )
+        # Underwriting rules the kernel actually applied (from the live store),
+        # so the quote does not advertise a loading, exclusion, or coverage that
+        # was never used to price the premium.
+        underwriting_loading = float(kernel.get('underwriting_loading') or 0.0)
+        exclude_disability = bool(kernel.get('disability_excluded', False))
+        kernel_coverage_cap = kernel.get('adl_coverage_cap')
+        if kernel_coverage_cap is not None:
+            approved_coverage = min(float(approved_coverage), float(kernel_coverage_cap))
+        coverage_reduced = float(approved_coverage) < float(coverage)
 
-        components = price_policy(
-            PricingCustomer(
-                age=int(age),
-                coverage=float(approved_coverage),
-                term_years=int(term_years),
-                adl_level=int(adl_level),
-            ),
-            get_product('phins_hybrid_savings'),
-            kernel_tables,
-            kernel_config,
-            underwriting_loading=float(underwriting_loading),
-            exclude_disability=bool(exclude_disability),
-        )
-
-        adl_mort_mult = components.adl_mortality_multiplier
-        adl_dis_mult = components.adl_disability_multiplier
-        mortality_cost_pv = components.pv_mortality_claims
-        disability_cost_pv = components.pv_disability_claims
-        total_risk_cost_pv = components.pv_total_risk_claims
-        mortality_premium_annual = components.mortality_premium_annual
-        disability_premium_annual = components.disability_premium_annual
-        risk_premium_annual = components.risk_premium_annual
-        savings_premium_annual = components.savings_premium_annual
-        expense_loading = components.expense_loading_annual
-        profit_margin = components.profit_margin_annual
-        total_annual = components.annual_premium
+        comps = kernel.get("components") or {}
+        adl_mort_mult = float(kernel.get('adl_mortality_multiplier') or 1.0)
+        adl_dis_mult = float(kernel.get('adl_disability_multiplier') or 1.0)
+        mortality_cost_pv = float(comps.get('pv_mortality_claims') or 0)
+        disability_cost_pv = float(comps.get('pv_disability_claims') or 0)
+        total_risk_cost_pv = mortality_cost_pv + disability_cost_pv
+        mortality_premium_annual = float(kernel.get('mortality_premium_annual') or 0)
+        disability_premium_annual = float(kernel.get('disability_premium_annual') or 0)
+        risk_premium_annual = float(kernel.get('risk_premium_annual') or 0)
+        savings_premium_annual = float(kernel.get('savings_premium_annual') or 0)
+        expense_loading = float(comps.get('expense_loading_annual') or 0)
+        profit_margin = float(comps.get('profit_margin_annual') or 0)
+        total_annual = float(kernel.get('annual') or 0)
+        monthly_premium = float(kernel.get('monthly') or 0)
         savings_allocation = approved_coverage * float(savings_pct or 0.0)
+        if not include_profit_margin and total_annual:
+            total_annual = round(total_annual - profit_margin, 2)
+            monthly_premium = round(total_annual / 12.0, 2)
+            profit_margin = 0.0
 
         return {
             'annual_premium': total_annual,
-            'monthly_premium': components.monthly_premium,
+            'monthly_premium': monthly_premium,
             'risk_component': risk_premium_annual,
             'mortality_component': mortality_premium_annual,
             'disability_component': disability_premium_annual,
@@ -491,7 +500,7 @@ class FinancialReportingService:
             'profit_margin': profit_margin,
             'coverage': approved_coverage,
             'original_coverage': coverage,
-            'coverage_reduced': uw_check.get('coverage_reduced', False),
+            'coverage_reduced': coverage_reduced,
             'savings_target': round(savings_allocation, 2),
             'term_years': term_years,
             'adl_level': adl_level,
@@ -505,7 +514,7 @@ class FinancialReportingService:
             'pv_disability_risk': disability_cost_pv,
             'pv_total_risk': total_risk_cost_pv,
             'actuarial_model': 'PHINS_PRICING_KERNEL_V1',
-            'pricing_kernel_integrity_hash': components.integrity_hash,
+            'pricing_kernel_integrity_hash': kernel.get('integrity_hash'),
             'expected_loss_ratio': round(
                 (total_risk_cost_pv / (risk_premium_annual * term_years)) * 100, 1
             ) if risk_premium_annual > 0 else 0
@@ -1095,14 +1104,26 @@ class FinancialReportingService:
                 except (TypeError, ValueError):
                     return default
             
-            # Claims paid includes both 'paid' and 'approved' status (approved = ready to pay)
-            # Check for approved_amount first, then paid_amount, then claimed_amount as fallback
+            # Claims paid cash: customer ledger is authoritative when attached.
+            # Fall back to disbursed claim records (paid/closed only — not approved).
             claims_paid_amt = 0
-            for c in self._claims.values():
-                status = (c.get('status') or '').lower()
-                if status in ['paid', 'approved']:
-                    amt = safe_num(c.get('approved_amount')) or safe_num(c.get('paid_amount')) or safe_num(c.get('claimed_amount', 0))
-                    claims_paid_amt += amt
+            used_ledger_cash = False
+            if self._ledger_attached:
+                try:
+                    from services.financial_unification_service import CLAIM_CASH_TYPES, ledger_cash_total
+                    claims_paid_amt = ledger_cash_total(
+                        self._transaction_ledger.values(), CLAIM_CASH_TYPES
+                    )['total']
+                    used_ledger_cash = True
+                except Exception:
+                    used_ledger_cash = False
+                    claims_paid_amt = 0
+            if not used_ledger_cash:
+                for c in self._claims.values():
+                    status = (c.get('status') or '').lower()
+                    if status in ['paid', 'closed']:
+                        amt = safe_num(c.get('paid_amount')) or safe_num(c.get('approved_amount')) or 0
+                        claims_paid_amt += amt
             
             # Claims pending - sum of claimed amounts for pending/under review claims
             claims_pending_amt = 0

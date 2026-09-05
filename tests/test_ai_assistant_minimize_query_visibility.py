@@ -17,8 +17,8 @@ def test_customer_assistant_minimize_keeps_query_input_available():
     assert '#ai-assistant-panel[data-minimized="true"] #ai-response-area' in content
     assert '#ai-assistant-panel[data-minimized="true"] #ai-query-row' in content
     assert "function toggleAIPanel()" in content
-    assert "toggleButton.textContent = '🎤➕';" in content
-    assert "toggleButton.textContent = '➖';" in content
+    assert "toggleButton.textContent = '+';" in content
+    assert "toggleButton.textContent = '−';" in content
     assert "stopVoiceInput()" in content
 
 

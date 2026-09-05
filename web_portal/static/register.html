@@ -355,7 +355,7 @@
       color: #fff;
     }
     .step-item.complete .step-number::after {
-      content: '✓';
+      content: '';
     }
     .step-label {
       font-size: 0.8rem;
@@ -409,7 +409,7 @@
           <!-- Invitation Code (Required) -->
           <div class="form-group invite-box">
             <label for="invitation-code">
-              <span style="font-size: 1.3rem;">🎟️</span> Invitation Code *
+              <span style="font-size: 1.3rem;">️</span> Invitation Code *
             </label>
             <input type="text" id="invitation-code" name="invitation_code" required 
                    placeholder="Enter your invitation code (e.g., PHINS-2026-XXXX)"
@@ -446,10 +446,10 @@
               <div class="password-strength-bar" id="strength-bar"></div>
             </div>
             <div class="password-requirements">
-              <div class="requirement" id="req-length">✗ At least 8 characters</div>
-              <div class="requirement" id="req-uppercase">✗ One uppercase letter</div>
-              <div class="requirement" id="req-lowercase">✗ One lowercase letter</div>
-              <div class="requirement" id="req-number">✗ One number</div>
+              <div class="requirement" id="req-length"> At least 8 characters</div>
+              <div class="requirement" id="req-uppercase"> One uppercase letter</div>
+              <div class="requirement" id="req-lowercase"> One lowercase letter</div>
+              <div class="requirement" id="req-number"> One number</div>
             </div>
           </div>
 
@@ -470,7 +470,7 @@
         <!-- Step 2: Email OTP Verification (hidden by default) -->
         <div class="otp-box" id="otp-section">
           <div class="otp-header">
-            <span>📧</span>
+            <span></span>
             <h3>Verify Your Email</h3>
           </div>
           <p class="otp-info">

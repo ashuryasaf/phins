@@ -2186,6 +2186,8 @@ class ChatPolicyApplicationService:
                 "savings_rate_used": quote.get("savings_rate_used"),
                 "underwriting_loading": quote.get("underwriting_loading"),
                 "adl_level": quote.get("adl_level"),
+                "risk_premium_annual": quote.get("risk_premium_annual"),
+                "savings_premium_annual": quote.get("savings_premium_annual"),
                 "quoted_monthly": quote.get("monthly"),
                 "quoted_annual": quote.get("annual"),
                 "quoted_at": quote.get("quoted_at"),

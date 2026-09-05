@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PHINS — Executive 1-Pager · Risk Factors · Alan Fefferman, F.IL.A.A</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <!-- PDF generation libraries (defer-loaded; the print fallback always works even if the CDN is blocked) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
@@ -107,7 +107,7 @@
       font-size: 18px;
       box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
     }
-    .logo-text { font-size: 18pt; font-weight: 900; letter-spacing: .06em; }
+    .logo-text { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 18pt; font-weight: 900; letter-spacing: .06em; }
     .logo-tagline { font-size: 7.2pt; opacity: .82; letter-spacing: .12em; text-transform: uppercase; margin-top: 1px; }
 
     .doc-ref {
@@ -530,9 +530,9 @@
 
   <div class="download-bar" role="toolbar" aria-label="Document actions">
     <button type="button" class="download-btn primary" id="btn-download-pdf"
-            title="Generate and download a PDF copy of this 1-pager">⬇️ Download PDF</button>
+            title="Generate and download a PDF copy of this 1-pager"> Download PDF</button>
     <button type="button" class="download-btn ghost" id="btn-print-pdf"
-            onclick="window.print()" title="Open the system print dialog (use 'Save as PDF')">🖨️ Print / Save as PDF</button>
+            onclick="window.print()" title="Open the system print dialog (use 'Save as PDF')">️ Print / Save as PDF</button>
   </div>
 
   <!-- ───────── PAGE 1 — EXECUTIVE 1-PAGER ───────── -->
@@ -541,7 +541,7 @@
 
     <div class="page-header">
       <div class="logo-row">
-        <div class="logo-icon"><img src="/phins-logo.png" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
+        <div class="logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
         <div>
           <div class="logo-text">PHINS</div>
           <div class="logo-tagline">Personal Health Insurance &amp; Savings</div>
@@ -722,7 +722,7 @@
         </div>
       </div>
 
-      <span class="integrity-stamp" id="integrity-stamp">✓ Data integrity verified · single locked source</span>
+      <span class="integrity-stamp" id="integrity-stamp"> Data integrity verified · single locked source</span>
     </div>
 
     <div class="page-footer">
@@ -737,7 +737,7 @@
 
     <div class="page-header">
       <div class="logo-row">
-        <div class="logo-icon"><img src="/phins-logo.png" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
+        <div class="logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
         <div>
           <div class="logo-text">PHINS</div>
           <div class="logo-tagline">Appendix · Age-Oriented Premiums</div>
@@ -820,7 +820,7 @@
         </div>
       </div>
 
-      <span class="integrity-stamp" id="appendix-integrity-stamp">✓ Data integrity verified · single locked source</span>
+      <span class="integrity-stamp" id="appendix-integrity-stamp"> Data integrity verified · single locked source</span>
     </div>
 
     <div class="page-footer">
@@ -1020,7 +1020,7 @@
       document.getElementById('doc-id').textContent = docId;
       document.getElementById('doc-hash').textContent = 'SHA-DJB2:' + intg;
 
-      const stampText = '✓ Data integrity verified · single locked source · ' + docId;
+      const stampText = ' Data integrity verified · single locked source · ' + docId;
       document.getElementById('integrity-stamp').textContent = stampText;
       document.getElementById('appendix-integrity-stamp').textContent = stampText;
     })();

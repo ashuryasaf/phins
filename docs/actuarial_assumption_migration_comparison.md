@@ -99,7 +99,7 @@ Draft 2.0 at 65 would have been life-only ≈ 200.00 with disability 0 — also 
 |---|---|
 | `PHINS_ACTUARIAL_STATE_PATH` | Local file cache of Pricing Parameters + rate tables (default `data/actuarial_store_state.json`). Saves also write a checksummed snapshot row to the `actuarial_tables` DB table (`table_type='actuarial_store_state'`) when `USE_DATABASE` is on, so central pricing control survives restarts **and redeploys**; the DB snapshot is loaded first on boot. |
 | `PHINS_PRICING_SHADOW_ENABLED` | Dual-run shadow snapshots on create |
-| `PHINS_KERNEL_BILLING_ENABLED` | Bill from kernel (**opt-in**; default off — flat formula remains production billing) |
+| `PHINS_KERNEL_BILLING_ENABLED` | Force kernel (`1`) or legacy flat (`0`). Unset defaults to kernel billing for mapped products. |
 
 ---
 

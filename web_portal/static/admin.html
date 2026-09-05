@@ -785,7 +785,7 @@
           <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
           <span class="phins-logo-text">PHINS</span>
         </a>
-        <button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
+        <button class="mobile-menu-btn" onclick="toggleMobileMenu()">Menu</button>
         <div class="phins-utility">
           <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)">
             <option value="en">EN</option>
@@ -824,7 +824,7 @@
       <span style="color:#4facfe; font-weight:700;">PHINS Admin Console</span>
       <div style="display:flex; gap:8px; align-items:center;">
         <button onclick="clearConsoleOutput()" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:#ccc; padding:2px 8px; border-radius:4px; font-size:11px; cursor:pointer;">Clear</button>
-        <button onclick="toggleAdminConsole()" style="background:rgba(239,83,80,0.2); border:1px solid rgba(239,83,80,0.4); color:#ef5350; padding:2px 8px; border-radius:4px; font-size:11px; cursor:pointer;">✕ Close</button>
+        <button onclick="toggleAdminConsole()" style="background:rgba(239,83,80,0.2); border:1px solid rgba(239,83,80,0.4); color:#ef5350; padding:2px 8px; border-radius:4px; font-size:11px; cursor:pointer;"> Close</button>
       </div>
     </div>
     <div id="admin-console-output" style="height:180px; overflow-y:auto; padding:8px 12px; color:#e0e0e0; white-space:pre-wrap; word-break:break-all;"></div>
@@ -917,21 +917,21 @@
     <div id="admin-ai-assistant-panel" data-minimized="true" aria-label="Admin AI Mic">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
         <div style="display:flex;align-items:center;gap:12px;">
-          <div style="width:46px;height:46px;background:linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.4rem;animation:pulse-ai 2s ease-in-out infinite;" aria-hidden="true">🎤</div>
+          <div style="width:46px;height:46px;background:linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.4rem;animation:pulse-ai 2s ease-in-out infinite;" aria-hidden="true"></div>
           <div>
             <div class="admin-ai-mic-title" style="font-weight:700;font-size:1.02rem;line-height:1.2;">Admin AI Mic</div>
             <div style="font-size:0.78rem;color:#e3bf6f;letter-spacing:0.04em;">Voice and text commands for every admin function</div>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
-          <span id="admin-ai-status-chip" class="admin-ai-status-chip">🟡 Ready</span>
+          <span id="admin-ai-status-chip" class="admin-ai-status-chip"> Ready</span>
           <button onclick="toggleAdminAIHelp()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Help">?</button>
           <button id="admin-ai-panel-minimize-btn" onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Expand">+</button>
         </div>
       </div>
 
       <div id="admin-ai-help-panel" style="display:none;background:rgba(255,255,255,0.12);border-radius:12px;padding:14px;margin-bottom:12px;">
-        <h4 style="margin:0 0 8px 0;">💬 Commands (voice or text):</h4>
+        <h4 style="margin:0 0 8px 0;"> Commands (voice or text):</h4>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;font-size:0.84rem;">
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Run actuary simulation"<br>• "Open console"<br>• "System health check"</div>
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Reconcile balance sheet"<br>• "Run AI BI insights"<br>• "Process all claims"</div>
@@ -940,7 +940,7 @@
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Sync policy ledgers"<br>• "Sync claims ledger"<br>• "Probability analysis"</div>
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Business inquiries"<br>• "Show test data"<br>• "Generate all videos"</div>
         </div>
-        <p style="margin:10px 0 0 0;font-size:0.78rem;opacity:0.9;">⚠️ High-impact actions are confirmation-gated for data integrity.</p>
+        <p style="margin:10px 0 0 0;font-size:0.78rem;opacity:0.9;"> High-impact actions are confirmation-gated for data integrity.</p>
       </div>
 
       <div id="admin-ai-query-row" style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
@@ -958,7 +958,7 @@
             style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:linear-gradient(135deg, #15449b 0%, #4fd8ff 100%);border:none;width:36px;height:36px;border-radius:50%;cursor:not-allowed;display:flex;align-items:center;justify-content:center;font-size:1.1rem;color:white;opacity:0.5;"
             title="Voice input available after login validation"
             disabled
-          >🎤</button>
+          ></button>
         </div>
         <button onclick="adminAssistantProcessQuery()" style="background:linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);border:none;color:#071022;padding:12px 18px;border-radius:12px;cursor:pointer;font-weight:700;">Ask</button>
         <button onclick="adminAssistantRunAction('refresh_active_tab')" style="background:rgba(227,191,111,0.14);border:1px solid rgba(227,191,111,0.55);color:#f7e2a0;padding:12px 16px;border-radius:12px;cursor:pointer;font-weight:700;">Refresh</button>
@@ -967,7 +967,7 @@
       <div id="admin-ai-voice-recording-indicator" style="display:none;background:rgba(244,67,54,0.2);border:2px solid #f44336;border-radius:12px;padding:14px;margin-bottom:12px;text-align:center;color:white;">
         <div style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;">
           <div style="width:14px;height:14px;background:#f44336;border-radius:50%;animation:pulse-recording 1s infinite;"></div>
-          <span style="font-weight:600;">🎤 Listening... Speak now</span>
+          <span style="font-weight:600;"> Listening... Speak now</span>
           <button onclick="stopAdminAssistantVoiceInput()" style="background:#f44336;border:none;color:white;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:0.85rem;">Stop</button>
         </div>
         <p id="admin-ai-voice-transcript" style="margin:8px 0 0 0;font-style:italic;opacity:0.9;"></p>
@@ -1199,7 +1199,7 @@
         <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
           <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">Claims Reserve</div>
           <div style="font-size: 28px; font-weight: bold;" id="bs-claims-reserve">$0</div>
-          <div style="font-size: 11px; color: rgba(255,255,255,0.7);">Available for Claims</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.7);" id="bs-claims-reserve-note">Risk cash minus claims</div>
         </div>
         <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
           <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">Operating Reserve</div>
@@ -1281,7 +1281,7 @@
         <div style="background: linear-gradient(135deg, rgba(13,71,161,0.35) 0%, rgba(66,165,245,0.3) 100%); border-radius: 12px; padding: 20px; border: 1px solid rgba(144,202,249,0.5);">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
             <h4 style="color: white; margin: 0;">AI-Powered Financial Intelligence</h4>
-            <button onclick="document.getElementById('ai-insights-panel').style.display='none'" style="background: none; border: none; color: white; cursor: pointer; font-size: 18px;">✕</button>
+            <button onclick="document.getElementById('ai-insights-panel').style.display='none'" style="background: none; border: none; color: white; cursor: pointer; font-size: 18px;"></button>
           </div>
           
           <!-- Data Integrity Score -->
@@ -1878,7 +1878,7 @@
             </div>
             <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
               <span>Chain Integrity</span>
-              <span style="color: #28a745; font-weight: bold;">✓ Valid</span>
+              <span style="color: #28a745; font-weight: bold;"> Valid</span>
             </div>
             <div style="display: flex; justify-content: space-between; padding: 8px 0;">
               <span>Last Audit</span>
@@ -2813,13 +2813,13 @@
       run_ai_bi_insights: { label: 'Run AI + BI Insights', fn: async () => { await loadPlatformAnalytics(); await loadAIInsights(); }, integrity: 'safe' },
       reconcile_balance_sheet: {
         label: 'Reconcile Balance Sheet',
-        confirm: '⚠️ Reconcile balance sheet now?\n\nThis verifies financial integrity across reserves and ledgers.',
+        confirm: ' Reconcile balance sheet now?\n\nThis verifies financial integrity across reserves and ledgers.',
         fn: async () => { await reconcileBalanceSheet(); },
         integrity: 'guarded'
       },
       cleanup_demo_data: {
         label: 'Clean Demo Data',
-        confirm: '⚠️ Clean demo/test data now?\n\nThis is a high-impact operation. Continue only if intended.',
+        confirm: ' Clean demo/test data now?\n\nThis is a high-impact operation. Continue only if intended.',
         fn: async () => { await cleanupDemoData(); },
         integrity: 'guarded'
       },
@@ -2836,7 +2836,7 @@
       refresh_underwriting: { label: 'Refresh Underwriting', fn: async () => { await loadUnderwritingApplications(); }, integrity: 'safe' },
       approve_all_pending_underwriting: {
         label: 'Approve All Pending',
-        confirm: '⚠️ Approve all pending underwriting applications?\n\nThis changes policy/application states.',
+        confirm: ' Approve all pending underwriting applications?\n\nThis changes policy/application states.',
         fn: async () => { await approveAllPending(); },
         integrity: 'guarded'
       },
@@ -2864,7 +2864,7 @@
       refresh_transactions: { label: 'Refresh Transactions', fn: async () => { await loadTransactions(); }, integrity: 'safe' },
       bill_all_policies: {
         label: 'Bill All Policies',
-        confirm: '⚠️ Execute bill-all for eligible active policies?\n\nThis creates billing records and should be run intentionally.',
+        confirm: ' Execute bill-all for eligible active policies?\n\nThis creates billing records and should be run intentionally.',
         fn: async () => { await executeBillAll(); },
         integrity: 'guarded'
       },
@@ -2881,14 +2881,14 @@
       refresh_video_jobs: { label: 'Refresh Video Jobs', fn: async () => { await loadMarketingVideoJobs({ silent: false }); if (latestMarketingCampaignPayload?.campaign) renderMarketingCampaign(latestMarketingCampaignPayload); }, integrity: 'safe' },
       batch_generate_marketing_videos: {
         label: 'Generate All Blueprint Videos',
-        confirm: '⚠️ Queue AI video generation for every campaign blueprint?\n\nThis submits provider video jobs for the latest campaign.',
+        confirm: ' Queue AI video generation for every campaign blueprint?\n\nThis submits provider video jobs for the latest campaign.',
         fn: async () => { await batchGenerateMarketingVideos(); },
         integrity: 'guarded'
       },
       refresh_active_tab: { label: 'Refresh Active Domain', dynamic: true, integrity: 'safe' },
       run_actuary_simulation: {
         label: 'Run Actuary Simulation',
-        confirm: '📐 Run portfolio actuarial simulation?\n\nThis generates a full portfolio simulation using actuarial tables.\nDefault: 100k customers, age 3-55, standard demographics.',
+        confirm: ' Run portfolio actuarial simulation?\n\nThis generates a full portfolio simulation using actuarial tables.\nDefault: 100k customers, age 3-55, standard demographics.',
         fn: async () => { await adminRunActuarySimulation(); },
         integrity: 'guarded'
       },
@@ -2956,7 +2956,7 @@
       if (!panel) return;
       adminAssistantSwitchTab('overview');
       initAdminAssistantVoiceRecognition();
-      adminAssistantSetStatus('ready', '🟡 Ready');
+      adminAssistantSetStatus('ready', ' Ready');
     }
 
     function toggleAdminAIHelp() {
@@ -3033,16 +3033,16 @@
     function adminAssistantNavigateToTabSection() {
       const tab = ADMIN_ASSISTANT_TABS[adminAssistantState.activeTab];
       if (!tab || !tab.sectionId) {
-        adminAssistantSetStatus('warning', '⚠️ No direct section for this tab');
+        adminAssistantSetStatus('warning', ' No direct section for this tab');
         return;
       }
       const target = document.getElementById(tab.sectionId);
       if (!target) {
-        adminAssistantSetStatus('warning', '⚠️ Section not found in DOM');
+        adminAssistantSetStatus('warning', ' Section not found in DOM');
         return;
       }
       target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      adminAssistantSetStatus('success', `✅ Opened ${tab.title} section`);
+      adminAssistantSetStatus('success', ` Opened ${tab.title} section`);
     }
 
     async function adminAssistantQuickAction(actionId) {
@@ -3062,16 +3062,16 @@
 
       const action = ADMIN_ASSISTANT_ACTIONS[resolvedActionId];
       if (!action) {
-        adminAssistantSetStatus('error', '❌ Action unavailable');
+        adminAssistantSetStatus('error', ' Action unavailable');
         return;
       }
 
       if (action.confirm && !confirm(action.confirm)) {
-        adminAssistantSetStatus('warning', '⏸️ Action cancelled');
+        adminAssistantSetStatus('warning', ' Action cancelled');
         return;
       }
 
-      const runningStatusText = `⏳ Running: ${action.label}`;
+      const runningStatusText = ` Running: ${action.label}`;
       adminAssistantSetStatus('ready', runningStatusText);
 
       try {
@@ -3088,13 +3088,13 @@
         }
         const chip = document.getElementById('admin-ai-status-chip');
         if (!chip || chip.textContent === runningStatusText) {
-          adminAssistantSetStatus('success', `✅ Completed: ${action.label}`);
+          adminAssistantSetStatus('success', ` Completed: ${action.label}`);
         }
       } catch (err) {
         console.error('[Admin AI Assistant] action failed:', resolvedActionId, err);
         const chip = document.getElementById('admin-ai-status-chip');
         if (!chip || chip.textContent === runningStatusText) {
-          adminAssistantSetStatus('error', `❌ Failed: ${action.label}`);
+          adminAssistantSetStatus('error', ` Failed: ${action.label}`);
         }
       }
     }
@@ -3197,7 +3197,7 @@
         adminAssistantState.isListening = true;
         const indicator = document.getElementById('admin-ai-voice-recording-indicator');
         if (indicator) indicator.style.display = 'block';
-        adminAssistantSetStatus('ready', '🎙️ Listening...');
+        adminAssistantSetStatus('ready', ' Listening...');
       };
 
       recognition.onresult = (event) => {
@@ -3219,13 +3219,13 @@
         if (indicator) indicator.style.display = 'none';
         adminAssistantState.isListening = false;
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          adminAssistantSetStatus('warning', '⚠️ Microphone blocked — click the padlock/mic icon in the address bar, allow microphone access, then retry');
+          adminAssistantSetStatus('warning', ' Microphone blocked — click the padlock/mic icon in the address bar, allow microphone access, then retry');
         } else if (event.error === 'no-speech') {
-          adminAssistantSetStatus('warning', '⚠️ No speech detected — tap the mic and speak clearly');
+          adminAssistantSetStatus('warning', ' No speech detected — tap the mic and speak clearly');
         } else if (event.error === 'audio-capture') {
-          adminAssistantSetStatus('warning', '⚠️ No microphone found — connect a microphone and retry');
+          adminAssistantSetStatus('warning', ' No microphone found — connect a microphone and retry');
         } else if (event.error !== 'aborted') {
-          adminAssistantSetStatus('warning', `⚠️ Voice error: ${event.error}`);
+          adminAssistantSetStatus('warning', ` Voice error: ${event.error}`);
         }
       };
     }
@@ -3255,12 +3255,12 @@
     async function startAdminAssistantVoiceInput() {
       const voiceBtn = document.getElementById('admin-ai-voice-btn');
       if (voiceBtn && voiceBtn.disabled) {
-        adminAssistantSetStatus('warning', '⚠️ Voice commands are available after login validation completes');
+        adminAssistantSetStatus('warning', ' Voice commands are available after login validation completes');
         return;
       }
       const recognition = adminAssistantState.recognition;
       if (!recognition) {
-        adminAssistantSetStatus('warning', '⚠️ Voice commands are not supported in this browser');
+        adminAssistantSetStatus('warning', ' Voice commands are not supported in this browser');
         return;
       }
       if (adminAssistantState.isListening) {
@@ -3269,13 +3269,13 @@
       }
       const micAllowed = await ensureAdminAssistantMicPermission();
       if (!micAllowed) {
-        adminAssistantSetStatus('warning', '⚠️ Microphone blocked — click the padlock/mic icon in the address bar, allow microphone access, then retry');
+        adminAssistantSetStatus('warning', ' Microphone blocked — click the padlock/mic icon in the address bar, allow microphone access, then retry');
         return;
       }
       try {
         recognition.start();
       } catch (err) {
-        adminAssistantSetStatus('warning', '⚠️ Voice recognition could not start');
+        adminAssistantSetStatus('warning', ' Voice recognition could not start');
       }
     }
 
@@ -3314,7 +3314,7 @@
       if (!input) return;
       const query = (input.value || '').trim().toLowerCase();
       if (!query) {
-        adminAssistantSetStatus('warning', '⚠️ Enter a command');
+        adminAssistantSetStatus('warning', ' Enter a command');
         return;
       }
 
@@ -3334,7 +3334,7 @@
         return;
       }
 
-      adminAssistantSetStatus('warning', '🤖 Try: "run actuary simulation", "open console", "system health", "refresh customers"');
+      adminAssistantSetStatus('warning', ' Try: "run actuary simulation", "open console", "system health", "refresh customers"');
     }
 
     function adminAssistantEscapeHtml(value) {
@@ -3347,9 +3347,9 @@
     }
 
     async function adminRunActuarySimulation() {
-      adminAssistantSetStatus('ready', '⏳ Running actuarial portfolio simulation...');
+      adminAssistantSetStatus('ready', ' Running actuarial portfolio simulation...');
       const area = document.getElementById('admin-ai-response-area');
-      if (area) area.innerHTML = '<div style="text-align:center;padding:20px;"><div style="font-size:1.5rem;margin-bottom:8px;">📐</div><div style="font-weight:600;">Running actuarial simulation...</div><div style="color:#546e7a;font-size:0.85rem;margin-top:4px;">Generating 100k customer portfolio with actuarial tables</div></div>';
+      if (area) area.innerHTML = '<div style="text-align:center;padding:20px;"><div style="font-size:1.5rem;margin-bottom:8px;"></div><div style="font-weight:600;">Running actuarial simulation...</div><div style="color:#546e7a;font-size:0.85rem;margin-top:4px;">Generating 100k customer portfolio with actuarial tables</div></div>';
       try {
         const response = await fetch('/api/actuarial/simulate', {
           method: 'POST',
@@ -3364,7 +3364,7 @@
         const runBy = adminAssistantEscapeHtml(sim.run_by || 'admin');
         if (area) {
           area.innerHTML = `
-            <div style="font-weight:700;font-size:1.02rem;margin-bottom:10px;">📐 Actuarial Simulation Complete</div>
+            <div style="font-weight:700;font-size:1.02rem;margin-bottom:10px;"> Actuarial Simulation Complete</div>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px;">
               <div style="background:#e3f2fd;padding:10px;border-radius:8px;text-align:center;">
                 <div style="font-size:0.75rem;color:#546e7a;">Simulation ID</div>
@@ -3386,19 +3386,19 @@
             <div style="font-size:0.82rem;color:#546e7a;">Run by: ${runBy} | <a href="/actuary-dashboard.html" target="_blank" style="color:#1565c0;">Open Actuary Dashboard →</a></div>
           `;
         }
-        adminAssistantSetStatus('success', '✅ Actuary simulation complete');
+        adminAssistantSetStatus('success', ' Actuary simulation complete');
       } catch (err) {
         const errorMessage = adminAssistantEscapeHtml(err?.message || 'Simulation failed');
-        if (area) area.innerHTML = `<div style="color:#c62828;font-weight:600;">❌ Simulation Error</div><div style="color:#546e7a;font-size:0.88rem;margin-top:4px;">${errorMessage}</div>`;
-        adminAssistantSetStatus('error', '❌ Simulation failed');
+        if (area) area.innerHTML = `<div style="color:#c62828;font-weight:600;"> Simulation Error</div><div style="color:#546e7a;font-size:0.88rem;margin-top:4px;">${errorMessage}</div>`;
+        adminAssistantSetStatus('error', ' Simulation failed');
         throw err;
       }
     }
 
     async function adminRunSystemHealth() {
-      adminAssistantSetStatus('ready', '⏳ Checking system health...');
+      adminAssistantSetStatus('ready', ' Checking system health...');
       const area = document.getElementById('admin-ai-response-area');
-      if (area) area.innerHTML = '<div style="text-align:center;padding:16px;"><div style="font-size:1.3rem;">🏥</div><div style="font-weight:600;">Running health checks...</div></div>';
+      if (area) area.innerHTML = '<div style="text-align:center;padding:16px;"><div style="font-size:1.3rem;"></div><div style="font-weight:600;">Running health checks...</div></div>';
       const checks = [];
       const endpoints = [
         { name: 'API Health', url: '/api/health' },
@@ -3418,16 +3418,16 @@
       const allOk = checks.every(c => c.ok);
       if (area) {
         area.innerHTML = `
-          <div style="font-weight:700;font-size:1.02rem;margin-bottom:10px;">${allOk ? '✅' : '⚠️'} System Health</div>
+          <div style="font-weight:700;font-size:1.02rem;margin-bottom:10px;">${allOk ? '' : ''} System Health</div>
           <div style="display:grid;gap:6px;">
             ${checks.map(c => `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:${c.ok ? '#e8f5e9' : '#fce4ec'};border-radius:8px;font-size:0.88rem;">
-              <span style="font-weight:600;">${c.ok ? '✅' : '❌'} ${c.name}</span>
+              <span style="font-weight:600;">${c.ok ? '' : ''} ${c.name}</span>
               <span style="color:#546e7a;">${c.status} · ${c.ms}ms</span>
             </div>`).join('')}
           </div>
         `;
       }
-      adminAssistantSetStatus(allOk ? 'success' : 'warning', allOk ? '✅ All systems healthy' : '⚠️ Some checks failed');
+      adminAssistantSetStatus(allOk ? 'success' : 'warning', allOk ? ' All systems healthy' : ' Some checks failed');
     }
 
     function adminAssistantSetStatus(kind, text) {
@@ -3525,7 +3525,7 @@
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 </button>
                 <button class="action-btn" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;" title="Sync to Ledger" onclick="syncCustomerToLedger('${c.id}')">
-                  📒
+                  
                 </button>
               </div>
             </td>
@@ -3621,29 +3621,29 @@
         
         <!-- Wallet Breakdown Section -->
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px; border-radius: 12px; margin-bottom: 24px; color: white;">
-          <h4 style="margin: 0 0 12px 0;">💰 Wallet Breakdown</h4>
+          <h4 style="margin: 0 0 12px 0;"> Wallet Breakdown</h4>
           <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">
             <div style="background:rgba(255,255,255,0.1);padding:10px;border-radius:8px;text-align:center;">
               <div style="font-size:1.2rem;font-weight:700;">$${((customer.wallet_breakdown?.health_wallet || 0)).toLocaleString()}</div>
-              <div style="font-size:0.75rem;opacity:0.9;">💊 Health</div>
+              <div style="font-size:0.75rem;opacity:0.9;"> Health</div>
             </div>
             <div style="background:rgba(255,255,255,0.1);padding:10px;border-radius:8px;text-align:center;">
               <div style="font-size:1.2rem;font-weight:700;">$${((customer.wallet_breakdown?.investment || 0)).toLocaleString()}</div>
-              <div style="font-size:0.75rem;opacity:0.9;">📈 Investment</div>
+              <div style="font-size:0.75rem;opacity:0.9;"> Investment</div>
             </div>
             <div style="background:rgba(255,255,255,0.1);padding:10px;border-radius:8px;text-align:center;">
               <div style="font-size:1.2rem;font-weight:700;">$${((customer.wallet_breakdown?.algo_trading || 0)).toLocaleString()}</div>
-              <div style="font-size:0.75rem;opacity:0.9;">🤖 Algo</div>
+              <div style="font-size:0.75rem;opacity:0.9;"> Algo</div>
             </div>
             <div style="background:rgba(255,255,255,0.1);padding:10px;border-radius:8px;text-align:center;">
               <div style="font-size:1.2rem;font-weight:700;">$${((customer.wallet_breakdown?.pipeline_cash || 0)).toLocaleString()}</div>
-              <div style="font-size:0.75rem;opacity:0.9;">💵 Pipeline</div>
+              <div style="font-size:0.75rem;opacity:0.9;"> Pipeline</div>
             </div>
           </div>
         </div>
         
         <div style="margin-bottom: 20px;">
-          <h4 style="margin: 0 0 12px 0;">📋 Customer Information</h4>
+          <h4 style="margin: 0 0 12px 0;"> Customer Information</h4>
           <table style="width:100%;border-collapse:collapse;">
             <tr><td style="padding:8px 0;color:#666;">Customer ID:</td><td style="padding:8px 0;font-weight:600;">${customer.id}</td></tr>
             <tr><td style="padding:8px 0;color:#666;">Phone:</td><td style="padding:8px 0;">${customer.phone || 'N/A'}</td></tr>
@@ -3655,7 +3655,7 @@
         
         ${policies.length > 0 ? `
         <div style="margin-bottom: 20px;">
-          <h4 style="margin: 0 0 12px 0;">📄 Policies</h4>
+          <h4 style="margin: 0 0 12px 0;"> Policies</h4>
           <div style="max-height:150px;overflow-y:auto;">
             ${policies.slice(0, 5).map(p => `
               <div style="background:#f8f9fa;padding:12px;border-radius:8px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
@@ -3676,7 +3676,7 @@
         
         ${claims.length > 0 ? `
         <div style="margin-bottom: 20px;">
-          <h4 style="margin: 0 0 12px 0;">📝 Recent Claims</h4>
+          <h4 style="margin: 0 0 12px 0;"> Recent Claims</h4>
           <div style="max-height:150px;overflow-y:auto;">
             ${claims.slice(0, 5).map(c => `
               <div style="background:#f8f9fa;padding:12px;border-radius:8px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
@@ -3698,31 +3698,31 @@
         <!-- Pipeline Validation Section -->
         <div style="margin-bottom: 20px; padding: 16px; background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 12px; border: 1px solid rgba(21, 101, 192, 0.2);">
           <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 1.2rem;">🔄</span> Pipeline Status & Actions
+            <span style="font-size: 1.2rem;"></span> Pipeline Status & Actions
           </h4>
           <div id="pipeline-status-${customer.id}" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px;">
             <div style="text-align: center; padding: 8px; background: white; border-radius: 8px; border: 2px solid ${customer.pipeline_stage === 'registered' || customer.pipeline_stage ? '#4caf50' : '#e0e0e0'};">
-              <div style="font-size: 1.2rem;">📝</div>
+              <div style="font-size: 1.2rem;"></div>
               <div style="font-size: 0.7rem; font-weight: 600;">Registered</div>
             </div>
             <div style="text-align: center; padding: 8px; background: white; border-radius: 8px; border: 2px solid ${['applied', 'underwriting', 'approved', 'active_policy', 'billing_pending', 'fully_active'].includes(customer.pipeline_stage) ? '#4caf50' : '#e0e0e0'};">
-              <div style="font-size: 1.2rem;">📋</div>
+              <div style="font-size: 1.2rem;"></div>
               <div style="font-size: 0.7rem; font-weight: 600;">Applied</div>
             </div>
             <div style="text-align: center; padding: 8px; background: white; border-radius: 8px; border: 2px solid ${['underwriting', 'approved', 'active_policy', 'billing_pending', 'fully_active'].includes(customer.pipeline_stage) ? '#ff9800' : '#e0e0e0'};">
-              <div style="font-size: 1.2rem;">🔍</div>
+              <div style="font-size: 1.2rem;"></div>
               <div style="font-size: 0.7rem; font-weight: 600;">Underwriting</div>
             </div>
             <div style="text-align: center; padding: 8px; background: white; border-radius: 8px; border: 2px solid ${['approved', 'active_policy', 'billing_pending', 'fully_active'].includes(customer.pipeline_stage) ? '#4caf50' : '#e0e0e0'};">
-              <div style="font-size: 1.2rem;">✅</div>
+              <div style="font-size: 1.2rem;"></div>
               <div style="font-size: 0.7rem; font-weight: 600;">Approved</div>
             </div>
             <div style="text-align: center; padding: 8px; background: white; border-radius: 8px; border: 2px solid ${['active_policy', 'billing_pending', 'fully_active'].includes(customer.pipeline_stage) ? '#4caf50' : '#e0e0e0'};">
-              <div style="font-size: 1.2rem;">📄</div>
+              <div style="font-size: 1.2rem;"></div>
               <div style="font-size: 0.7rem; font-weight: 600;">Policy Active</div>
             </div>
             <div style="text-align: center; padding: 8px; background: white; border-radius: 8px; border: 2px solid ${['billing_pending', 'fully_active'].includes(customer.pipeline_stage) ? '#4caf50' : '#e0e0e0'};">
-              <div style="font-size: 1.2rem;">💰</div>
+              <div style="font-size: 1.2rem;"></div>
               <div style="font-size: 0.7rem; font-weight: 600;">Billing</div>
             </div>
           </div>
@@ -3765,13 +3765,13 @@
         if (response.ok) {
           const data = await response.json();
           const v = data.validation || {};
-          alert(`✅ Customer Validation: ${customerId}\n\n` +
-            `Has Profile: ${v.has_profile ? '✓' : '✗'}\n` +
-            `Has Application: ${v.has_application ? '✓' : '✗'}\n` +
-            `UW Completed: ${v.underwriting_complete ? '✓' : '✗'}\n` +
-            `Has Policy: ${v.has_policy ? '✓' : '✗'}\n` +
-            `Has Bill: ${v.has_bill ? '✓' : '✗'}\n\n` +
-            `Overall: ${v.is_valid ? '✓ VALID' : '⚠️ INCOMPLETE'}`
+          alert(` Customer Validation: ${customerId}\n\n` +
+            `Has Profile: ${v.has_profile ? '' : ''}\n` +
+            `Has Application: ${v.has_application ? '' : ''}\n` +
+            `UW Completed: ${v.underwriting_complete ? '' : ''}\n` +
+            `Has Policy: ${v.has_policy ? '' : ''}\n` +
+            `Has Bill: ${v.has_bill ? '' : ''}\n\n` +
+            `Overall: ${v.is_valid ? ' VALID' : ' INCOMPLETE'}`
           );
         }
       } catch (err) {
@@ -3793,40 +3793,40 @@
           const warnings = data.warnings || [];
           const nextActions = data.next_actions || [];
           
-          let message = `🔍 Full Pipeline Validation: ${customerId}\n\n`;
+          let message = ` Full Pipeline Validation: ${customerId}\n\n`;
           message += `═══════════════════════════════════\n`;
-          message += `📊 PIPELINE STAGE: ${(data.pipeline_stage || 'unknown').toUpperCase()}\n`;
+          message += ` PIPELINE STAGE: ${(data.pipeline_stage || 'unknown').toUpperCase()}\n`;
           message += `═══════════════════════════════════\n\n`;
           
-          message += `✅ PASSED CHECKS:\n`;
+          message += ` PASSED CHECKS:\n`;
           checks.filter(c => c.status === 'PASS').forEach(c => {
-            message += `  ✓ ${c.check}: ${c.details || ''}\n`;
+            message += `   ${c.check}: ${c.details || ''}\n`;
           });
           
           if (checks.filter(c => c.status === 'PENDING').length > 0) {
-            message += `\n⏳ PENDING:\n`;
+            message += `\n PENDING:\n`;
             checks.filter(c => c.status === 'PENDING').forEach(c => {
               message += `  ○ ${c.check}: ${c.details || ''}\n`;
             });
           }
           
           if (warnings.length > 0) {
-            message += `\n⚠️ WARNINGS:\n`;
-            warnings.forEach(w => message += `  ⚠ ${w}\n`);
+            message += `\n WARNINGS:\n`;
+            warnings.forEach(w => message += `   ${w}\n`);
           }
           
           if (errors.length > 0) {
-            message += `\n❌ ERRORS:\n`;
-            errors.forEach(e => message += `  ✗ ${e}\n`);
+            message += `\n ERRORS:\n`;
+            errors.forEach(e => message += `   ${e}\n`);
           }
           
           if (nextActions.length > 0) {
-            message += `\n🎯 NEXT ACTIONS:\n`;
+            message += `\n NEXT ACTIONS:\n`;
             nextActions.forEach(a => message += `  → ${a}\n`);
           }
           
           message += `\n═══════════════════════════════════\n`;
-          message += `OVERALL: ${data.valid ? '✓ VALID' : '⚠️ NEEDS ACTION'}\n`;
+          message += `OVERALL: ${data.valid ? ' VALID' : ' NEEDS ACTION'}\n`;
           message += `Allocation Status: ${data.allocation_status || 'Not configured'}\n`;
           
           alert(message);
@@ -3861,17 +3861,17 @@
         if (response.ok) {
           const data = await response.json();
           
-          let message = `✅ Pipeline Step Processed!\n\n`;
+          let message = ` Pipeline Step Processed!\n\n`;
           message += `Previous Stage: ${data.previous_stage || 'N/A'}\n`;
           message += `New Stage: ${data.new_stage || 'N/A'}\n\n`;
           
           if (data.actions_taken && data.actions_taken.length > 0) {
             message += `Actions Taken:\n`;
-            data.actions_taken.forEach(a => message += `  ✓ ${a}\n`);
+            data.actions_taken.forEach(a => message += `   ${a}\n`);
           }
           
           if (data.allocation_result) {
-            message += `\n💰 Allocation:\n`;
+            message += `\n Allocation:\n`;
             message += `  Wallet: $${data.allocation_result.wallet || 0}\n`;
             message += `  Investment: $${data.allocation_result.investment || 0}\n`;
             message += `  Algo Trading: $${data.allocation_result.algo_trading || 0}\n`;
@@ -3907,7 +3907,7 @@
         }
         
         const amount = prompt(
-          `💰 Allocate Savings for Customer\n\n` +
+          ` Allocate Savings for Customer\n\n` +
           `Current Cash Balance: $${cashBalance.toFixed(2)}\n\n` +
           `Enter amount to allocate (or leave empty for full balance):`,
           cashBalance > 0 ? cashBalance.toFixed(2) : '100.00'
@@ -3931,17 +3931,17 @@
         if (response.ok) {
           const data = await response.json();
           
-          let message = `✅ Savings Allocated Successfully!\n\n`;
+          let message = ` Savings Allocated Successfully!\n\n`;
           message += `Total Allocated: $${(data.amount_allocated || 0).toFixed(2)}\n\n`;
           message += `Breakdown:\n`;
           
           const allocation = data.allocation || {};
-          message += `  💊 Health Wallet: $${(allocation.wallet || 0).toFixed(2)}\n`;
-          message += `  📈 Investment: $${(allocation.investment || 0).toFixed(2)}\n`;
-          message += `  🤖 Algo Trading: $${(allocation.algo_trading || 0).toFixed(2)}\n`;
+          message += `   Health Wallet: $${(allocation.wallet || 0).toFixed(2)}\n`;
+          message += `   Investment: $${(allocation.investment || 0).toFixed(2)}\n`;
+          message += `   Algo Trading: $${(allocation.algo_trading || 0).toFixed(2)}\n`;
           
           if (allocation.investment_detail) {
-            message += `\n📊 Investment Breakdown:\n`;
+            message += `\n Investment Breakdown:\n`;
             message += `  Index Funds: $${(allocation.investment_detail.index_funds || 0).toFixed(2)}\n`;
             message += `  Bonds: $${(allocation.investment_detail.bonds || 0).toFixed(2)}\n`;
             message += `  Crypto: $${(allocation.investment_detail.crypto || 0).toFixed(2)}\n`;
@@ -3965,7 +3965,7 @@
     
     // Approve all pending underwriting applications
     async function approveAllPending() {
-      if (!confirm('⚠️ Approve ALL pending applications?\n\nThis will:\n- Approve all pending underwriting applications\n- Activate all associated policies\n- Generate billing for each policy\n- Initialize savings/hedging allocations\n\nContinue?')) return;
+      if (!confirm(' Approve ALL pending applications?\n\nThis will:\n- Approve all pending underwriting applications\n- Activate all associated policies\n- Generate billing for each policy\n- Initialize savings/hedging allocations\n\nContinue?')) return;
       
       try {
         const response = await fetch('/api/underwriting', {
@@ -4010,7 +4010,7 @@
           }
         }
         
-        alert(`✅ Bulk Approval Complete!\n\n${approved} applications approved\n${failed} failed\n\nPolicies activated and billing generated.`);
+        alert(` Bulk Approval Complete!\n\n${approved} applications approved\n${failed} failed\n\nPolicies activated and billing generated.`);
         
         // Refresh data
         loadUnderwritingApplications();
@@ -4026,7 +4026,7 @@
       try {
         // Step 1: First link customers with their applications by email
         const linkingDiv = document.createElement('div');
-        linkingDiv.innerHTML = '🔗 Linking customers with applications...';
+        linkingDiv.innerHTML = ' Linking customers with applications...';
         linkingDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); z-index: 10000; text-align: center;';
         document.body.appendChild(linkingDiv);
         
@@ -4044,7 +4044,7 @@
           console.error('Linking error:', linkErr);
         }
         
-        linkingDiv.innerHTML = '🔍 Validating all customers...';
+        linkingDiv.innerHTML = ' Validating all customers...';
         
         // Step 2: Get all customers
         const response = await fetch('/api/admin/customers', {
@@ -4076,7 +4076,7 @@
         // Step 3: Validate each customer
         for (let i = 0; i < customers.length; i++) {
           const customer = customers[i];
-          linkingDiv.innerHTML = `🔍 Validating customer ${i + 1}/${customers.length}...`;
+          linkingDiv.innerHTML = ` Validating customer ${i + 1}/${customers.length}...`;
           
           try {
             const validateResponse = await fetch(`/api/admin/pipeline-validate/${customer.id}`, {
@@ -4100,17 +4100,17 @@
         document.body.removeChild(linkingDiv);
         
         // Build result message
-        let message = `🔍 Validation Complete!\n\n`;
+        let message = ` Validation Complete!\n\n`;
         
         // Show linking results first
         if (linkResults && linkResults.summary) {
-          message += `📊 Data Integrity Check:\n`;
+          message += ` Data Integrity Check:\n`;
           message += `• Emails checked: ${linkResults.summary.emails_checked}\n`;
           message += `• New customers created: ${linkResults.summary.customers_created}\n`;
           message += `• Applications linked: ${linkResults.summary.applications_linked}\n\n`;
           
           if (linkResults.created_customers && linkResults.created_customers.length > 0) {
-            message += `✨ New Customer Accounts Created:\n`;
+            message += ` New Customer Accounts Created:\n`;
             linkResults.created_customers.forEach(c => {
               message += `  • ${c.name} (${c.email}) → ${c.customer_id}\n`;
             });
@@ -4118,7 +4118,7 @@
           }
           
           if (linkResults.linked_applications && linkResults.linked_applications.length > 0) {
-            message += `🔗 Applications Linked:\n`;
+            message += ` Applications Linked:\n`;
             linkResults.linked_applications.forEach(a => {
               message += `  • ${a.application_id} → ${a.customer_id}\n`;
             });
@@ -4126,10 +4126,10 @@
           }
         }
         
-        message += `👥 Customer Validation:\n`;
+        message += ` Customer Validation:\n`;
         message += `• Total Customers: ${results.total}\n`;
-        message += `• ✓ Valid: ${results.valid}\n`;
-        message += `• ⚠ Needs Action: ${results.needsAction}\n\n`;
+        message += `•  Valid: ${results.valid}\n`;
+        message += `•  Needs Action: ${results.needsAction}\n\n`;
         
         if (results.errors.length > 0) {
           message += `Issues Found:\n`;
@@ -4167,11 +4167,11 @@
       if (show) {
         progressDiv.style.display = 'block';
         progressText.textContent = text;
-        statusSpan.innerHTML = '<span style="color: #f59e0b;">⏳ Processing...</span>';
+        statusSpan.innerHTML = '<span style="color: #f59e0b;"> Processing...</span>';
       } else {
         progressDiv.style.display = 'none';
         progressBar.style.width = '0%';
-        statusSpan.innerHTML = '<span style="color: #10b981;">✓ Ready</span>';
+        statusSpan.innerHTML = '<span style="color: #10b981;"> Ready</span>';
       }
     }
     
@@ -4207,10 +4207,10 @@
           loadPipelineStats()
         ]);
         showProgress(false);
-        document.getElementById('pipeline-status').innerHTML = '<span style="color: #10b981;">✓ Data refreshed</span>';
+        document.getElementById('pipeline-status').innerHTML = '<span style="color: #10b981;"> Data refreshed</span>';
       } catch (err) {
         showProgress(false);
-        document.getElementById('pipeline-status').innerHTML = '<span style="color: #dc3545;">⚠ Refresh failed</span>';
+        document.getElementById('pipeline-status').innerHTML = '<span style="color: #dc3545;"> Refresh failed</span>';
       } finally {
         setButtonLoading('btn-refresh-all', false);
       }
@@ -4227,7 +4227,7 @@
     // Falls back to the legacy per-customer loop only if the batch endpoint
     // is unavailable on an older deployment.
     async function processAllPipelines() {
-      if (!confirm('⚡ Process all customer pipelines?\n\nThis will advance each customer through their pipeline stages automatically.\n\nContinue?')) return;
+      if (!confirm(' Process all customer pipelines?\n\nThis will advance each customer through their pipeline stages automatically.\n\nContinue?')) return;
       
       setButtonLoading('btn-process-pipelines', true);
       showProgress(true, 'Processing all customer pipelines...');
@@ -4255,9 +4255,9 @@
             const actionsTotal = Number(result.actions_total || 0);
             const errors = Array.isArray(result.errors) ? result.errors : [];
             showProgress(false);
-            let message = `✅ Pipeline Processing Complete!\n\n${processed}/${total} customers processed\n${actionsTotal} total actions taken`;
+            let message = ` Pipeline Processing Complete!\n\n${processed}/${total} customers processed\n${actionsTotal} total actions taken`;
             if (errors.length > 0) {
-              message += `\n\n⚠ ${errors.length} errors occurred`;
+              message += `\n\n ${errors.length} errors occurred`;
             }
             alert(message);
             await refreshAllData();
@@ -4323,9 +4323,9 @@
         
         showProgress(false);
         
-        let message = `✅ Pipeline Processing Complete!\n\n${processed}/${customers.length} customers processed\n${actionsTotal} total actions taken`;
+        let message = ` Pipeline Processing Complete!\n\n${processed}/${customers.length} customers processed\n${actionsTotal} total actions taken`;
         if (errors.length > 0) {
-          message += `\n\n⚠ ${errors.length} errors occurred`;
+          message += `\n\n ${errors.length} errors occurred`;
         }
         alert(message);
         
@@ -4341,7 +4341,7 @@
     
     // Allocate all customer savings
     async function allocateAllSavings() {
-      if (!confirm('💰 Allocate savings for ALL customers?\n\nThis will use AI to distribute available funds across:\n- Health Wallet\n- Investment Portfolio\n- Algo Trading\n\nContinue?')) return;
+      if (!confirm(' Allocate savings for ALL customers?\n\nThis will use AI to distribute available funds across:\n- Health Wallet\n- Investment Portfolio\n- Algo Trading\n\nContinue?')) return;
       
       setButtonLoading('btn-allocate-savings', true);
       showProgress(true, 'Loading customers...');
@@ -4403,7 +4403,7 @@
         
         showProgress(false);
         
-        let message = `✅ Savings Allocation Complete!\n\n${allocated} customers had funds allocated\nTotal Amount: $${totalAmount.toLocaleString()}`;
+        let message = ` Savings Allocation Complete!\n\n${allocated} customers had funds allocated\nTotal Amount: $${totalAmount.toLocaleString()}`;
         if (skipped > 0) {
           message += `\n${skipped} customers skipped (no funds or error)`;
         }
@@ -4421,7 +4421,7 @@
     
     // Generate missing billing records
     async function generateMissingBilling() {
-      if (!confirm('📄 Generate missing billing records?\n\nThis will create billing records for any active policies that don\'t have one.\n\nContinue?')) return;
+      if (!confirm(' Generate missing billing records?\n\nThis will create billing records for any active policies that don\'t have one.\n\nContinue?')) return;
       
       setButtonLoading('btn-generate-bills', true);
       showProgress(true, 'Loading policies...');
@@ -4461,7 +4461,7 @@
         
         if (needsBilling.length === 0) {
           showProgress(false);
-          alert('✓ All active policies have billing records');
+          alert(' All active policies have billing records');
           return;
         }
         
@@ -4503,9 +4503,9 @@
         
         showProgress(false);
         
-        let message = `✅ Billing Generation Complete!\n\nProcessed ${customersToProcess.length} customers\n${generated} billing records generated/updated`;
+        let message = ` Billing Generation Complete!\n\nProcessed ${customersToProcess.length} customers\n${generated} billing records generated/updated`;
         if (errors > 0) {
-          message += `\n⚠ ${errors} errors occurred`;
+          message += `\n ${errors} errors occurred`;
         }
         alert(message);
         
@@ -5288,7 +5288,9 @@
           };
           
           // Update reserve balances
-          document.getElementById('bs-claims-reserve').textContent = fmt(bs.claims_reserve);
+          document.getElementById('bs-claims-reserve').textContent = fmt(
+            bs.economic_claims_reserve != null ? bs.economic_claims_reserve : bs.claims_reserve
+          );
           document.getElementById('bs-operating-reserve').textContent = fmt(bs.operating_reserve);
           document.getElementById('bs-total-revenue').textContent = fmt(bs.cumulative_premium || bs.total_revenue);
           document.getElementById('bs-claims-paid').textContent = fmt(bs.expense_breakdown?.claims_paid || 0);
@@ -5337,7 +5339,7 @@
     
     // Reconcile Balance Sheet - Verify and fix data integrity
     async function reconcileBalanceSheet() {
-      const autoCorrect = confirm('🔍 Balance Sheet Reconciliation\n\nThis will verify premium income and claims paid against actual transaction data.\n\nClick OK to auto-correct any discrepancies found.\nClick Cancel to view discrepancies without making changes.');
+      const autoCorrect = confirm(' Balance Sheet Reconciliation\n\nThis will verify premium income and claims paid against actual transaction data.\n\nClick OK to auto-correct any discrepancies found.\nClick Cancel to view discrepancies without making changes.');
       
       try {
         const response = await fetch(`/api/admin/balance-sheet/reconcile?auto_correct=${autoCorrect}`, {
@@ -5349,12 +5351,12 @@
           const fmt = (n) => '$' + (Number(n) || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
           
           // Build comprehensive alert message
-          let message = `✅ Balance Sheet Reconciliation Complete\n`;
+          let message = ` Balance Sheet Reconciliation Complete\n`;
           message += `═══════════════════════════════════\n`;
-          message += `Data Valid: ${data.is_valid ? 'Yes ✓' : 'No ⚠️'}\n\n`;
+          message += `Data Valid: ${data.is_valid ? 'Yes ' : 'No '}\n\n`;
           
           if (data.discrepancies.length > 0) {
-            message += `⚠️ DISCREPANCIES FOUND:\n`;
+            message += ` DISCREPANCIES FOUND:\n`;
             data.discrepancies.forEach(d => {
               message += `• ${d.label || d.field}: Expected ${fmt(d.expected)}, Current ${fmt(d.current)} (Diff: ${fmt(d.difference)})\n`;
             });
@@ -5362,19 +5364,19 @@
           }
           
           if (data.corrections_made.length > 0) {
-            message += `✅ CORRECTIONS APPLIED:\n`;
+            message += ` CORRECTIONS APPLIED:\n`;
             data.corrections_made.forEach(c => {
               message += `• ${c}\n`;
             });
             message += `\n`;
           }
           
-          message += `💰 PREMIUM INCOME (Total Collected - Cumulative):\n`;
+          message += ` PREMIUM INCOME (Total Collected - Cumulative):\n`;
           message += `• From Paid Bills: ${fmt(data.summary_totals?.premium_income_breakdown?.from_bills)}\n`;
           message += `• From Ledger (Unbilled): ${fmt(data.summary_totals?.premium_income_breakdown?.from_ledger)}\n`;
           message += `• Total Collected (Cumulative): ${fmt(data.summary_totals?.total_premiums_collected)}\n\n`;
           
-          message += `📊 SUMMARY TOTALS:\n`;
+          message += ` SUMMARY TOTALS:\n`;
           message += `• Premiums Collected (Cumulative): ${fmt(data.summary_totals?.total_premiums_collected)}\n`;
           message += `• Claims Paid: ${fmt(data.summary_totals?.total_claims_paid)}\n`;
           message += `• Medical Services: ${fmt(data.summary_totals?.total_medical_services)}\n`;
@@ -5382,18 +5384,18 @@
           message += `• Investments: ${fmt(data.summary_totals?.total_investments)}\n`;
           message += `• Net Position: ${fmt(data.summary_totals?.net_position)}\n\n`;
           
-          message += `🏪 MEDICAL SERVICES:\n`;
+          message += ` MEDICAL SERVICES:\n`;
           message += `• Total: ${fmt(data.medical_services?.total_amount)} (${data.medical_services?.total_transactions || 0} transactions)\n`;
           Object.entries(data.medical_services?.by_category || {}).forEach(([cat, info]) => {
             message += `  - ${cat}: ${fmt(info.total)} (${info.count})\n`;
           });
           message += `\n`;
           
-          message += `💳 WALLETS & INVESTMENTS:\n`;
+          message += ` WALLETS & INVESTMENTS:\n`;
           message += `• Health Wallets: ${fmt(data.health_wallets?.total_balance)} (${data.health_wallets?.active_wallets || 0} active)\n`;
           message += `• Investments: ${fmt(data.investments?.total_balance)} (${data.investments?.active_accounts || 0} accounts)\n\n`;
           
-          message += `🏦 BALANCE SHEET:\n`;
+          message += ` BALANCE SHEET:\n`;
           message += `• Claims Reserve: ${fmt(data.current_balance_sheet?.claims_reserve)}\n`;
           message += `• Total Revenue: ${fmt(data.current_balance_sheet?.total_revenue)}\n`;
           message += `• Total Expenses: ${fmt(data.current_balance_sheet?.total_expenses)}\n`;
@@ -5420,14 +5422,14 @@
     async function executeBillAll() {
       // Confirmation dialog with details
       const confirmed = confirm(
-        '📄 BILL ALL POLICIES\n' +
+        ' BILL ALL POLICIES\n' +
         '═══════════════════════════════════════\n\n' +
         'This action will:\n\n' +
-        '✓ Generate bills for all active policies without outstanding bills\n' +
-        '✓ Update transaction ledger with billing records\n' +
-        '✓ Update balance sheet audit log\n' +
-        '✓ Maintain data integrity across all systems\n' +
-        '✓ Persist data for reports and reconciliation\n\n' +
+        ' Generate bills for all active policies without outstanding bills\n' +
+        ' Update transaction ledger with billing records\n' +
+        ' Update balance sheet audit log\n' +
+        ' Maintain data integrity across all systems\n' +
+        ' Persist data for reports and reconciliation\n\n' +
         'Continue with systematic billing?'
       );
       
@@ -5438,7 +5440,7 @@
       processingDiv.id = 'bill-all-processing';
       processingDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: linear-gradient(135deg, #060d1f 0%, #0d1b3e 100%); padding: 30px 40px; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); z-index: 10000; text-align: center; color: white; border: 1px solid rgba(127, 178, 255, 0.16);';
       processingDiv.innerHTML = `
-        <div style="font-size: 48px; margin-bottom: 16px;">⏳</div>
+        <div style="font-size: 48px; margin-bottom: 16px;"></div>
         <div style="font-size: 18px; font-weight: bold; margin-bottom: 8px;">Processing Bulk Billing...</div>
         <div style="font-size: 14px; color: rgba(255,255,255,0.7);">Generating bills, updating ledgers, reconciling data</div>
       `;
@@ -5461,30 +5463,30 @@
           const currentState = data.current_state;
           
           // Build comprehensive result message
-          let message = '✅ BULK BILLING COMPLETED\n';
+          let message = ' BULK BILLING COMPLETED\n';
           message += '═══════════════════════════════════════\n\n';
           
-          message += '📊 BILLING SUMMARY:\n';
+          message += ' BILLING SUMMARY:\n';
           message += `• Total Active Policies: ${summary.total_active_policies}\n`;
           message += `• Bills Created: ${summary.bills_created}\n`;
           message += `• Already Billed: ${summary.already_billed}\n`;
           message += `• Skipped: ${summary.skipped}\n`;
           message += `• Total Amount Billed: $${summary.total_amount_billed.toLocaleString('en-US', {minimumFractionDigits: 2})}\n\n`;
           
-          message += '🔒 DATA INTEGRITY:\n';
+          message += ' DATA INTEGRITY:\n';
           message += `• Ledger Entries Created: ${integrity.ledger_entries_created}\n`;
-          message += `• Balance Sheet Updated: ${integrity.balance_sheet_updated ? 'Yes ✓' : 'No'}\n`;
-          message += `• Persistent Storage: ${integrity.persistent_storage_saved ? 'Saved ✓' : 'Pending'}\n`;
-          message += `• Database Synced: ${integrity.database_synced ? 'Yes ✓' : 'N/A'}\n\n`;
+          message += `• Balance Sheet Updated: ${integrity.balance_sheet_updated ? 'Yes ' : 'No'}\n`;
+          message += `• Persistent Storage: ${integrity.persistent_storage_saved ? 'Saved ' : 'Pending'}\n`;
+          message += `• Database Synced: ${integrity.database_synced ? 'Yes ' : 'N/A'}\n\n`;
           
-          message += '📈 CURRENT STATE:\n';
+          message += ' CURRENT STATE:\n';
           message += `• Total Outstanding: $${currentState.total_outstanding_amount.toLocaleString('en-US', {minimumFractionDigits: 2})}\n`;
           message += `• Outstanding Bills: ${currentState.total_outstanding_bills}\n`;
           message += `• Paid Bills: ${currentState.total_paid_bills}\n`;
           message += `• Premium Collected: $${currentState.premium_income_collected.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
           
           if (data.errors && data.errors.length > 0) {
-            message += `\n\n⚠️ ERRORS (${data.errors.length}):\n`;
+            message += `\n\n ERRORS (${data.errors.length}):\n`;
             data.errors.slice(0, 5).forEach(err => {
               message += `• ${err.policy_id || err.type}: ${err.error}\n`;
             });
@@ -5529,10 +5531,10 @@
           showBillAllSuccessNotification(summary, data.skip_analysis);
           
         } else if (response.status === 403) {
-          alert('⚠️ Access Denied: Admin or Accountant role required for bulk billing');
+          alert(' Access Denied: Admin or Accountant role required for bulk billing');
         } else {
           const errorData = await response.json().catch(() => ({}));
-          alert(`❌ Billing Failed: ${errorData.error || response.status}\n\nPlease check the console for details.`);
+          alert(` Billing Failed: ${errorData.error || response.status}\n\nPlease check the console for details.`);
           console.error('Bill All Error:', errorData);
         }
       } catch (err) {
@@ -5540,7 +5542,7 @@
         const procDiv = document.getElementById('bill-all-processing');
         if (procDiv) procDiv.remove();
         
-        alert('❌ Error executing bulk billing: ' + err.message);
+        alert(' Error executing bulk billing: ' + err.message);
         console.error('Bill All Error:', err);
       }
     }
@@ -5554,7 +5556,7 @@
       const bgColor = hasIssues 
         ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' 
         : 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
-      const icon = hasIssues ? '⚠️' : '✅';
+      const icon = hasIssues ? '' : '';
       
       let message = '';
       if (summary.bills_created > 0) {
@@ -5582,7 +5584,7 @@
             </div>
             ${skipAnalysis && skipAnalysis.recommendation ? `
               <div style="font-size: 11px; opacity: 0.8; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.2);">
-                💡 ${skipAnalysis.recommendation}
+                 ${skipAnalysis.recommendation}
               </div>
             ` : ''}
           </div>
@@ -5622,7 +5624,7 @@
         const accounts = data.suspended_accounts || [];
         summary.textContent = `${data.total_suspended || 0} suspended test account(s) · ${data.sandbox_accounts || 0} from the actuarial sandbox`;
         if (!accounts.length) {
-          tbody.innerHTML = '<tr><td colspan="7" style="padding:8px; text-align:center;">✅ No test or sandbox data in the pipeline.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" style="padding:8px; text-align:center;"> No test or sandbox data in the pipeline.</td></tr>';
           return;
         }
         const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -5630,7 +5632,7 @@
           <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
             <td style="padding:6px;"><code>${esc(a.customer_id)}</code></td>
             <td style="padding:6px;">${esc(a.name)}</td>
-            <td style="padding:6px;">${a.sandbox ? '🧪 Sandbox' : 'Test'}</td>
+            <td style="padding:6px;">${a.sandbox ? ' Sandbox' : 'Test'}</td>
             <td style="padding:6px;">${a.policies_count ?? 0}</td>
             <td style="padding:6px;">${a.claims_count ?? 0}</td>
             <td style="padding:6px;">${a.bills_count ?? 0}</td>
@@ -5639,25 +5641,25 @@
         `).join('');
       } catch (err) {
         summary.textContent = '';
-        tbody.innerHTML = `<tr><td colspan="7" style="padding:8px; text-align:center;">❌ ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" style="padding:8px; text-align:center;"> ${err.message}</td></tr>`;
       }
     }
 
     // Clean up demo/test data while preserving real customers
     async function cleanupDemoData() {
       const confirmed = confirm(
-        '🧹 CLEAN UP DEMO DATA\n' +
+        ' CLEAN UP DEMO DATA\n' +
         '═══════════════════════════════════════\n\n' +
         'This action will:\n\n' +
-        '✓ Remove demo deposits from wallets\n' +
-        '✓ Remove demo investment deposits\n' +
-        '✓ Remove test claims/bills\n' +
-        '✓ Suspend test accounts\n' +
-        '✓ FULLY DELETE actuarial sandbox (TESTSIM) customers\n' +
+        ' Remove demo deposits from wallets\n' +
+        ' Remove demo investment deposits\n' +
+        ' Remove test claims/bills\n' +
+        ' Suspend test accounts\n' +
+        ' FULLY DELETE actuarial sandbox (TESTSIM) customers\n' +
         '   pushed via "Push to Pipeline" — with their policies,\n' +
         '   claims and bills\n' +
-        '✓ Correct balance sheet discrepancies\n\n' +
-        '⚠️ PROTECTED DATA:\n' +
+        ' Correct balance sheet discrepancies\n\n' +
+        ' PROTECTED DATA:\n' +
         '• asaf@assurance.co.il (CUST-ASAF-001)\n' +
         '• efrat@phins.ai (CUST-EFRAT-001)\n' +
         '• Other real customer data\n\n' +
@@ -5676,25 +5678,25 @@
           const data = await response.json();
           const results = data.results;
           
-          let message = '✅ DEMO DATA CLEANUP COMPLETE\n';
+          let message = ' DEMO DATA CLEANUP COMPLETE\n';
           message += '═══════════════════════════════════════\n\n';
           
-          message += '📊 CLEANUP SUMMARY:\n';
+          message += ' CLEANUP SUMMARY:\n';
           message += `• Demo transactions removed: ${results.demo_transactions_removed}\n`;
           message += `• Test wallets cleared: ${results.test_wallets_cleared}\n`;
           message += `• Test investments cleared: ${results.test_investments_cleared}\n`;
           message += `• Demo claims removed: ${results.demo_claims_removed}\n`;
           message += `• Demo bills removed: ${results.demo_bills_removed}\n`;
           message += `• Test accounts suspended: ${results.test_accounts_suspended}\n\n`;
-          message += '🧪 ACTUARIAL SANDBOX (TESTSIM) PURGE:\n';
+          message += ' ACTUARIAL SANDBOX (TESTSIM) PURGE:\n';
           message += `• Sandbox customers deleted: ${results.sandbox_customers_deleted ?? 0}\n`;
           message += `• Sandbox policies deleted: ${results.sandbox_policies_deleted ?? 0}\n`;
           message += `• Sandbox claims deleted: ${results.sandbox_claims_deleted ?? 0}\n`;
           message += `• Sandbox bills deleted: ${results.sandbox_bills_deleted ?? 0}\n\n`;
-          message += `• Balance sheet corrected: ${results.balance_sheet_corrected ? 'Yes ✓' : 'No (already correct)'}\n\n`;
+          message += `• Balance sheet corrected: ${results.balance_sheet_corrected ? 'Yes ' : 'No (already correct)'}\n\n`;
           
           if (results.details && results.details.length > 0) {
-            message += '📝 DETAILS:\n';
+            message += ' DETAILS:\n';
             results.details.slice(0, 10).forEach(detail => {
               message += `• ${detail}\n`;
             });
@@ -5703,7 +5705,7 @@
             }
           }
           
-          message += '\n✅ Protected customers preserved.';
+          message += '\n Protected customers preserved.';
           
           alert(message);
           console.log('Demo data cleanup results:', data);
@@ -5719,13 +5721,13 @@
           }
           
         } else if (response.status === 403) {
-          alert('⚠️ Access Denied: Admin role required for demo data cleanup');
+          alert(' Access Denied: Admin role required for demo data cleanup');
         } else {
           const errorData = await response.json().catch(() => ({}));
-          alert(`❌ Cleanup Failed: ${errorData.error || response.status}`);
+          alert(` Cleanup Failed: ${errorData.error || response.status}`);
         }
       } catch (err) {
-        alert('❌ Error during cleanup: ' + err.message);
+        alert(' Error during cleanup: ' + err.message);
         console.error('Cleanup error:', err);
       }
     }
@@ -5776,7 +5778,7 @@
               `;
             }).join('');
           } else {
-            insightsContent.innerHTML = '<div style="color: #81c784;">✅ No issues detected - financial data is healthy</div>';
+            insightsContent.innerHTML = '<div style="color: #81c784;"> No issues detected - financial data is healthy</div>';
           }
           
           // Update recommendations with action buttons
@@ -5788,7 +5790,7 @@
               const actionButton = isPremiumCollection ? `
                 <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">
                   <button onclick="executeBillAll()" class="btn" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; display: inline-flex; align-items: center; gap: 6px;" title="Generate bills for all active policies">
-                    <span style="font-size: 16px;">📄</span> Bill All Policies
+                    <span style="font-size: 16px;"></span> Bill All Policies
                   </button>
                   <span style="font-size: 11px; color: rgba(255,255,255,0.6); margin-left: 8px;">Systematic billing for all active policies</span>
                 </div>
@@ -5804,7 +5806,7 @@
               `;
             }).join('');
           } else {
-            recsContent.innerHTML = '<div style="color: #81c784;">✅ No immediate actions required</div>';
+            recsContent.innerHTML = '<div style="color: #81c784;"> No immediate actions required</div>';
           }
           
           // Update projections
@@ -5832,7 +5834,7 @@
             if (billingValidation.unbilled_customers && billingValidation.unbilled_customers.length > 0) {
               validationHtml += `
                 <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; border-left: 3px solid #ffb74d;">
-                  <div style="font-weight: bold; color: #ffb74d;">⚠️ Unbilled Customers (${billingValidation.unbilled_customers.length})</div>
+                  <div style="font-weight: bold; color: #ffb74d;"> Unbilled Customers (${billingValidation.unbilled_customers.length})</div>
                   <div style="color: rgba(255,255,255,0.9); margin-top: 4px;">
                     Active policies with no billing records:
                     <ul style="margin: 8px 0 0 20px; padding: 0;">
@@ -5850,7 +5852,7 @@
             if (billingValidation.duplicate_bills && billingValidation.duplicate_bills.length > 0) {
               validationHtml += `
                 <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; border-left: 3px solid #ef9a9a;">
-                  <div style="font-weight: bold; color: #ef9a9a;">🔄 Duplicate Billing (${billingValidation.duplicate_bills.length})</div>
+                  <div style="font-weight: bold; color: #ef9a9a;"> Duplicate Billing (${billingValidation.duplicate_bills.length})</div>
                   <div style="color: rgba(255,255,255,0.9); margin-top: 4px;">
                     Customers billed multiple times for same period:
                     <ul style="margin: 8px 0 0 20px; padding: 0;">
@@ -5869,7 +5871,7 @@
               const discrepancy = billingValidation.bills_not_on_balance_sheet[0];
               validationHtml += `
                 <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; border-left: 3px solid #ef9a9a;">
-                  <div style="font-weight: bold; color: #ef9a9a;">📊 Balance Sheet Discrepancy</div>
+                  <div style="font-weight: bold; color: #ef9a9a;"> Balance Sheet Discrepancy</div>
                   <div style="color: rgba(255,255,255,0.9); margin-top: 4px;">
                     Paid bills not fully reflected on balance sheet:
                     <ul style="margin: 8px 0 0 20px; padding: 0;">
@@ -5879,7 +5881,7 @@
                     </ul>
                     <div style="margin-top: 8px;">
                       <button onclick="reconcileBalanceSheet()" class="btn" style="background: rgba(76,175,80,0.5); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
-                        ✅ Reconcile Balance Sheet
+                         Reconcile Balance Sheet
                       </button>
                     </div>
                   </div>
@@ -5891,7 +5893,7 @@
             if (billingValidation.overbilled_customers && billingValidation.overbilled_customers.length > 0) {
               validationHtml += `
                 <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; border-left: 3px solid #ffb74d;">
-                  <div style="font-weight: bold; color: #ffb74d;">💰 Potential Overbilling (${billingValidation.overbilled_customers.length})</div>
+                  <div style="font-weight: bold; color: #ffb74d;"> Potential Overbilling (${billingValidation.overbilled_customers.length})</div>
                   <div style="color: rgba(255,255,255,0.9); margin-top: 4px;">
                     Customers paid significantly more than expected:
                     <ul style="margin: 8px 0 0 20px; padding: 0;">
@@ -5908,7 +5910,7 @@
             if (billingValidation.missing_premium_policies && billingValidation.missing_premium_policies.length > 0) {
               validationHtml += `
                 <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; border-left: 3px solid #ce93d8;">
-                  <div style="font-weight: bold; color: #ce93d8;">⚙️ Configuration Issue (${billingValidation.missing_premium_policies.length})</div>
+                  <div style="font-weight: bold; color: #ce93d8;"> Configuration Issue (${billingValidation.missing_premium_policies.length})</div>
                   <div style="color: rgba(255,255,255,0.9); margin-top: 4px;">
                     Active policies with no premium amount set:
                     <ul style="margin: 8px 0 0 20px; padding: 0;">
@@ -5925,12 +5927,12 @@
             validationContent.innerHTML = validationHtml;
           } else {
             validationPanel.style.display = 'block';
-            validationContent.innerHTML = '<div style="color: #81c784;">✅ No billing validation issues detected. All billing data is consistent.</div>';
+            validationContent.innerHTML = '<div style="color: #81c784;"> No billing validation issues detected. All billing data is consistent.</div>';
           }
           
           console.log('AI Insights loaded:', ai);
         } else if (response.status === 403) {
-          alert('⚠️ Access Denied: Admin/Accountant/Actuary role required for AI Insights');
+          alert(' Access Denied: Admin/Accountant/Actuary role required for AI Insights');
         } else {
           alert('Failed to load AI insights: ' + response.status);
         }
@@ -6036,14 +6038,14 @@
         const data = await response.json();
         
         if (response.ok && data.success) {
-          alert(`✅ Application approved!\\n\\nPolicy Status: ${data.policy_status || 'active'}\\nBilling ID: ${data.bill_id || 'Generated'}`);
+          alert(` Application approved!\\n\\nPolicy Status: ${data.policy_status || 'active'}\\nBilling ID: ${data.bill_id || 'Generated'}`);
           loadUnderwritingApplications();
           loadDashboardStats();
         } else {
-          alert('❌ Failed to approve: ' + (data.error || 'Unknown error'));
+          alert(' Failed to approve: ' + (data.error || 'Unknown error'));
         }
       } catch (err) {
-        alert('❌ Error: ' + err.message);
+        alert(' Error: ' + err.message);
       }
     }
     
@@ -6164,12 +6166,12 @@
                 <button class="action-btn view" title="View Details" onclick="viewPolicyDetails('${policy.id || policy.policy_id}')">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                 </button>
-                <button class="action-btn" style="background: linear-gradient(135deg, #0e2f63 0%, #123f82 100%); color: #f7e2a0;" title="Download sealed PDF (password: card last 4)" onclick="downloadSealedContractAdmin('${policy.id || policy.policy_id}')">📄</button>
+                <button class="action-btn" style="background: linear-gradient(135deg, #0e2f63 0%, #123f82 100%); color: #f7e2a0;" title="Download sealed PDF (password: card last 4)" onclick="downloadSealedContractAdmin('${policy.id || policy.policy_id}')"></button>
                 <button class="action-btn edit" title="Edit" onclick="editPolicy('${policy.id || policy.policy_id}')">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                 </button>
                 <button class="action-btn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);" title="Sync to Ledger" onclick="syncPolicyToLedger('${policy.id || policy.policy_id}')">
-                  📒
+                  
                 </button>
               </div>
             </td>
@@ -6293,11 +6295,11 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                   </button>
                 `}
-                <button class="action-btn" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;" title="🤖 AI Probability Report" onclick="openClaimProbabilityReport('${claim.id || claim.claim_id}')">
-                  🤖
+                <button class="action-btn" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;" title=" AI Probability Report" onclick="openClaimProbabilityReport('${claim.id || claim.claim_id}')">
+                  
                 </button>
                 <button class="action-btn" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;" title="Sync to Ledger" onclick="syncClaimToLedger('${claim.id || claim.claim_id}')">
-                  📒
+                  
                 </button>
               </div>
             </td>
@@ -6519,10 +6521,10 @@
         .then(response => response.json())
         .then(data => {
           if (data.success) {
-            alert(`✅ Claim ${claimId} approved successfully!`);
+            alert(` Claim ${claimId} approved successfully!`);
             loadClaims();
           } else {
-            alert('❌ Failed to approve claim: ' + (data.error || 'Unknown error'));
+            alert(' Failed to approve claim: ' + (data.error || 'Unknown error'));
           }
         })
         .catch(err => alert('Error: ' + err.message));
@@ -6710,7 +6712,7 @@
                            status === 'approved' ? 'badge-success' :
                            (status === 'pending' || status === 'confirmed' || status === 'processing' || status === 'in_transit' || status === 'delivered') ? 'badge-pending' :
                            status === 'refunded' ? 'badge-warning' : 'badge-danger';
-        const typeIcon = (txn.item_type || txn.order_type) === 'service' ? '🩺' : '📦';
+        const typeIcon = (txn.item_type || txn.order_type) === 'service' ? '' : '';
         
         return `
           <tr>
@@ -6771,10 +6773,10 @@
           alert(result.message || 'Marketplace dispute/refund processed.');
           loadMarketplaceData();
         } else {
-          alert(`❌ Failed: ${result.error}`);
+          alert(` Failed: ${result.error}`);
         }
       } catch (err) {
-        alert(`❌ Error: ${err.message}`);
+        alert(` Error: ${err.message}`);
       }
     }
     
@@ -6798,12 +6800,12 @@
         const result = await response.json();
         
         if (result.valid) {
-          alert(`🔗 NFT Token Verified!\n\nToken ID: ${result.token_id}\nOwner: ${result.owner_id}\nAsset Type: ${result.asset_type}\nCreated: ${new Date(result.created_at).toLocaleString()}\n\nIntegrity: ✅ Valid`);
+          alert(` NFT Token Verified!\n\nToken ID: ${result.token_id}\nOwner: ${result.owner_id}\nAsset Type: ${result.asset_type}\nCreated: ${new Date(result.created_at).toLocaleString()}\n\nIntegrity:  Valid`);
         } else {
-          alert(`⚠️ NFT Verification Failed\n\n${result.error || 'Token not found'}`);
+          alert(` NFT Verification Failed\n\n${result.error || 'Token not found'}`);
         }
       } catch (err) {
-        alert(`❌ Error: ${err.message}`);
+        alert(` Error: ${err.message}`);
       }
     }
     
@@ -6911,16 +6913,16 @@
             </div>
             <div>
               <div style="font-weight: 600;">Integrity Score</div>
-              <div style="font-size: 0.8rem; opacity: 0.7;">${integrityScore >= 80 ? '✓ Excellent' : integrityScore >= 50 ? '⚠ Fair' : '✗ Needs attention'}</div>
+              <div style="font-size: 0.8rem; opacity: 0.7;">${integrityScore >= 80 ? ' Excellent' : integrityScore >= 50 ? ' Fair' : ' Needs attention'}</div>
             </div>
           </div>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.85rem;">
-            <div>📝 NFT Tokens: <strong>${ledger.nft_tokens || 0}</strong></div>
-            <div>💳 Transactions: <strong>${ledger.transaction_records || 0}</strong></div>
-            <div>💊 Medical NFTs: <strong>${ledger.medical_nfts || 0}</strong></div>
-            <div>💰 Deposit NFTs: <strong>${ledger.deposit_nfts || 0}</strong></div>
-            <div>📈 Investment NFTs: <strong>${ledger.investment_nfts || 0}</strong></div>
-            <div>🤖 Algo NFTs: <strong>${ledger.algo_nfts || 0}</strong></div>
+            <div> NFT Tokens: <strong>${ledger.nft_tokens || 0}</strong></div>
+            <div> Transactions: <strong>${ledger.transaction_records || 0}</strong></div>
+            <div> Medical NFTs: <strong>${ledger.medical_nfts || 0}</strong></div>
+            <div> Deposit NFTs: <strong>${ledger.deposit_nfts || 0}</strong></div>
+            <div> Investment NFTs: <strong>${ledger.investment_nfts || 0}</strong></div>
+            <div> Algo NFTs: <strong>${ledger.algo_nfts || 0}</strong></div>
           </div>
         `;
         
@@ -6958,15 +6960,15 @@
               <strong>$${Number(predictions.avg_investment_per_customer || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
             </div>
             <div style="display: flex; justify-content: space-between; padding: 10px; background: rgba(76,175,80,0.2); border-radius: 8px;">
-              <span>📈 Projected Monthly Purchases</span>
+              <span> Projected Monthly Purchases</span>
               <strong style="color: #81c784;">$${Number(predictions.projected_monthly_purchases || 0).toLocaleString(undefined, {maximumFractionDigits: 0})}</strong>
             </div>
             <div style="display: flex; justify-content: space-between; padding: 10px; background: rgba(76,175,80,0.2); border-radius: 8px;">
-              <span>📈 Projected Monthly Investments</span>
+              <span> Projected Monthly Investments</span>
               <strong style="color: #81c784;">$${Number(predictions.projected_monthly_investments || 0).toLocaleString(undefined, {maximumFractionDigits: 0})}</strong>
             </div>
             <div style="display: flex; justify-content: space-between; padding: 10px; background: rgba(255,215,0,0.15); border-radius: 8px;">
-              <span>💎 Customer Lifetime Value</span>
+              <span> Customer Lifetime Value</span>
               <strong style="color: #ffd54f;">$${Number(predictions.customer_lifetime_value || 0).toLocaleString(undefined, {maximumFractionDigits: 0})}</strong>
             </div>
           </div>
@@ -6984,7 +6986,7 @@
     // Validate all customer pipelines
     async function validateAllCustomerPipelines() {
       const statusEl = document.getElementById('customer-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Validating...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Validating...</span>';
       
       try {
         // Get all customers
@@ -7024,26 +7026,26 @@
         const ledgerValid = ledgerRes.ok ? (await ledgerRes.json()).integrity_status === 'VALID' : true;
         
         if (issues.length === 0 && ledgerValid) {
-          statusEl.innerHTML = `<span style="color: #10b981;">✓ ${customers.length} customers validated</span>`;
-          alert(`✅ Pipeline Validation Complete!\n\n${customers.length} customers validated\nAll ledger entries verified\nNo integrity issues found`);
+          statusEl.innerHTML = `<span style="color: #10b981;"> ${customers.length} customers validated</span>`;
+          alert(` Pipeline Validation Complete!\n\n${customers.length} customers validated\nAll ledger entries verified\nNo integrity issues found`);
         } else {
-          statusEl.innerHTML = `<span style="color: #f59e0b;">⚠ ${issues.length} issues found</span>`;
-          alert(`⚠️ Validation Complete with Issues\n\n${validated}/${customers.length} customers valid\n${issues.length} issues found\nLedger: ${ledgerValid ? 'Valid' : 'Issues detected'}`);
+          statusEl.innerHTML = `<span style="color: #f59e0b;"> ${issues.length} issues found</span>`;
+          alert(` Validation Complete with Issues\n\n${validated}/${customers.length} customers valid\n${issues.length} issues found\nLedger: ${ledgerValid ? 'Valid' : 'Issues detected'}`);
         }
         
         await loadCustomerList();
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Validation failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Validation failed</span>';
         alert('Validation failed: ' + err.message);
       }
     }
     
     // Activate all health wallets
     async function activateAllWallets() {
-      if (!confirm('💳 Activate health wallets for all eligible customers?\n\nThis will create wallet entries for customers with active policies.\n\nContinue?')) return;
+      if (!confirm(' Activate health wallets for all eligible customers?\n\nThis will create wallet entries for customers with active policies.\n\nContinue?')) return;
       
       const statusEl = document.getElementById('customer-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Activating wallets...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Activating wallets...</span>';
       
       try {
         const response = await fetch('/api/admin/customers', {
@@ -7070,12 +7072,12 @@
           }
         }
         
-        statusEl.innerHTML = `<span style="color: #10b981;">✓ ${activated} wallets active</span>`;
-        alert(`💳 Wallet Activation Complete!\n\n${activated} wallets activated/verified\n${skipped} customers skipped (no eligible policy)`);
+        statusEl.innerHTML = `<span style="color: #10b981;"> ${activated} wallets active</span>`;
+        alert(` Wallet Activation Complete!\n\n${activated} wallets activated/verified\n${skipped} customers skipped (no eligible policy)`);
         
         await loadCustomerList();
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Activation failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Activation failed</span>';
         alert('Activation failed: ' + err.message);
       }
     }
@@ -7083,7 +7085,7 @@
     // Sync customer ledgers
     async function syncCustomerLedgers() {
       const statusEl = document.getElementById('customer-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Syncing ledgers...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Syncing ledgers...</span>';
       
       try {
         // Get ledger data
@@ -7101,12 +7103,12 @@
         });
         const validation = validateRes.ok ? await validateRes.json() : { integrity_status: 'UNKNOWN' };
         
-        statusEl.innerHTML = `<span style="color: #10b981;">✓ ${entries.length} entries synced</span>`;
-        alert(`📒 Ledger Sync Complete!\n\n${entries.length} total entries\nIntegrity: ${validation.integrity_status || 'Verified'}\nNFT Tokens: ${validation.nft_ledger_count || 0}\nIssues Found: ${validation.issues_found || 0}`);
+        statusEl.innerHTML = `<span style="color: #10b981;"> ${entries.length} entries synced</span>`;
+        alert(` Ledger Sync Complete!\n\n${entries.length} total entries\nIntegrity: ${validation.integrity_status || 'Verified'}\nNFT Tokens: ${validation.nft_ledger_count || 0}\nIssues Found: ${validation.issues_found || 0}`);
         
         await loadCustomerList();
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Sync failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Sync failed</span>';
         alert('Sync failed: ' + err.message);
       }
     }
@@ -7114,7 +7116,7 @@
     // Export customer data
     async function exportCustomerData() {
       const statusEl = document.getElementById('customer-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Exporting...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Exporting...</span>';
       
       try {
         const response = await fetch('/api/admin/customers', {
@@ -7148,9 +7150,9 @@
         a.click();
         URL.revokeObjectURL(url);
         
-        statusEl.innerHTML = `<span style="color: #10b981;">✓ ${customers.length} customers exported</span>`;
+        statusEl.innerHTML = `<span style="color: #10b981;"> ${customers.length} customers exported</span>`;
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Export failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Export failed</span>';
         alert('Export failed: ' + err.message);
       }
     }
@@ -7158,13 +7160,13 @@
     // Refresh customer list (alias)
     async function refreshCustomerList() {
       const statusEl = document.getElementById('customer-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Refreshing...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Refreshing...</span>';
       
       try {
         await loadCustomerList();
-        statusEl.innerHTML = '<span style="color: #10b981;">✓ Refreshed</span>';
+        statusEl.innerHTML = '<span style="color: #10b981;"> Refreshed</span>';
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Refresh failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Refresh failed</span>';
       }
     }
     
@@ -7172,10 +7174,10 @@
     
     // Activate all pending policies
     async function activateAllPendingPolicies() {
-      if (!confirm('✅ Activate all policies with approved underwriting?\n\nThis will change status from pending to active for eligible policies.\n\nContinue?')) return;
+      if (!confirm(' Activate all policies with approved underwriting?\n\nThis will change status from pending to active for eligible policies.\n\nContinue?')) return;
       
       const statusEl = document.getElementById('sales-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Activating...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Activating...</span>';
       
       try {
         // Use admin/customers to get all policies
@@ -7230,13 +7232,13 @@
           }
         }
         
-        statusEl.innerHTML = `<span style="color: #10b981;">✓ ${activated} policies activated</span>`;
-        alert(`✅ Activation Complete!\n\n${activated}/${pending.length} policies activated`);
+        statusEl.innerHTML = `<span style="color: #10b981;"> ${activated} policies activated</span>`;
+        alert(` Activation Complete!\n\n${activated}/${pending.length} policies activated`);
         
         await loadPolicies();
         updatePolicyBadges();
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Activation failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Activation failed</span>';
         alert('Activation failed: ' + err.message);
       }
     }
@@ -7244,7 +7246,7 @@
     // Generate all premiums
     async function generateAllPremiums() {
       const statusEl = document.getElementById('sales-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Calculating...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Calculating...</span>';
       
       try {
         const response = await fetch('/api/admin/customers', {
@@ -7273,8 +7275,8 @@
           });
         });
         
-        statusEl.innerHTML = `<span style="color: #10b981;">✓ ${allPolicies} policies calculated</span>`;
-        alert(`💰 Premium Calculation Complete!\n\n` +
+        statusEl.innerHTML = `<span style="color: #10b981;"> ${allPolicies} policies calculated</span>`;
+        alert(` Premium Calculation Complete!\n\n` +
           `Total Policies: ${allPolicies}\n` +
           `Active Policies: ${activePolicies}\n` +
           `Total Coverage: ${formatCurrency(totalCoverage)}\n` +
@@ -7282,7 +7284,7 @@
           `Annual Premium (active): ${formatCurrency(totalAnnualPremium)}`);
         
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Calculation failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Calculation failed</span>';
         alert('Calculation failed: ' + err.message);
       }
     }
@@ -7290,7 +7292,7 @@
     // Sync policy ledgers
     async function syncPolicyLedgers() {
       const statusEl = document.getElementById('sales-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Syncing ledgers...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Syncing ledgers...</span>';
       
       try {
         // Get ledger entries for policy approvals
@@ -7307,12 +7309,12 @@
         });
         const validation = validateRes.ok ? await validateRes.json() : { integrity_status: 'UNKNOWN' };
         
-        statusEl.innerHTML = `<span style="color: #10b981;">✓ ${policyEntries.length} policy entries synced</span>`;
-        alert(`📒 Policy Ledger Sync Complete!\n\n${policyEntries.length} policy ledger entries\nIntegrity: ${validation.integrity_status || 'Verified'}`);
+        statusEl.innerHTML = `<span style="color: #10b981;"> ${policyEntries.length} policy entries synced</span>`;
+        alert(` Policy Ledger Sync Complete!\n\n${policyEntries.length} policy ledger entries\nIntegrity: ${validation.integrity_status || 'Verified'}`);
         
         await loadPolicies();
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Sync failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Sync failed</span>';
         alert('Sync failed: ' + err.message);
       }
     }
@@ -7320,7 +7322,7 @@
     // Generate policy report
     async function generatePolicyReport() {
       const statusEl = document.getElementById('sales-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Generating report...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Generating report...</span>';
       
       try {
         const response = await fetch('/api/admin/customers', {
@@ -7383,8 +7385,8 @@
         a.click();
         URL.revokeObjectURL(url);
         
-        statusEl.innerHTML = `<span style="color: #10b981;">✓ Report generated</span>`;
-        alert(`📊 Policy Report Generated!\n\n` +
+        statusEl.innerHTML = `<span style="color: #10b981;"> Report generated</span>`;
+        alert(` Policy Report Generated!\n\n` +
           `Total Policies: ${policies.length}\n` +
           `Active: ${active}\n` +
           `Pending: ${pending}\n` +
@@ -7395,7 +7397,7 @@
           `Investment Value: ${formatCurrency(totalInvestment)}`);
         
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Report failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Report failed</span>';
         alert('Report generation failed: ' + err.message);
       }
     }
@@ -7457,10 +7459,10 @@
     
     // Process all pending claims
     async function processAllClaims() {
-      if (!confirm('✅ Process all pending claims?\n\nThis will review and attempt to approve all valid pending claims.\n\nContinue?')) return;
+      if (!confirm(' Process all pending claims?\n\nThis will review and attempt to approve all valid pending claims.\n\nContinue?')) return;
       
       const statusEl = document.getElementById('claims-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Processing...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Processing...</span>';
       
       try {
         const response = await fetch('/api/claims', {
@@ -7490,13 +7492,13 @@
           if (processRes.ok) processed++;
         }
         
-        statusEl.innerHTML = `<span style="color: #10b981;">✓ ${processed} claims processed</span>`;
-        alert(`✅ Claims Processing Complete!\n\n${processed}/${pending.length} claims processed`);
+        statusEl.innerHTML = `<span style="color: #10b981;"> ${processed} claims processed</span>`;
+        alert(` Claims Processing Complete!\n\n${processed}/${pending.length} claims processed`);
         
         await loadClaims();
         updateClaimsBadges();
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Processing failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Processing failed</span>';
         alert('Processing failed: ' + err.message);
       }
     }
@@ -7504,7 +7506,7 @@
     // Validate ADL assessments
     async function validateADLAssessments() {
       const statusEl = document.getElementById('claims-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Validating ADLs...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Validating ADLs...</span>';
       
       try {
         const response = await fetch('/api/claims', {
@@ -7531,11 +7533,11 @@
           }
         });
         
-        statusEl.innerHTML = `<span style="color: #10b981;">✓ ${claims.length} ADL assessments validated</span>`;
-        alert(`🔍 ADL Validation Complete!\n\nTotal Claims: ${claims.length}\nValid (2+ ADLs): ${validClaims}\nPartial (1 ADL): ${invalidClaims}\nTotal ADLs Impaired: ${totalADLs}\n\nADL Criteria: 2+ ADLs required for full disability benefits`);
+        statusEl.innerHTML = `<span style="color: #10b981;"> ${claims.length} ADL assessments validated</span>`;
+        alert(` ADL Validation Complete!\n\nTotal Claims: ${claims.length}\nValid (2+ ADLs): ${validClaims}\nPartial (1 ADL): ${invalidClaims}\nTotal ADLs Impaired: ${totalADLs}\n\nADL Criteria: 2+ ADLs required for full disability benefits`);
         
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Validation failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Validation failed</span>';
         alert('ADL validation failed: ' + err.message);
       }
     }
@@ -7543,7 +7545,7 @@
     // Sync claims ledger
     async function syncClaimsLedger() {
       const statusEl = document.getElementById('claims-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Syncing ledger...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Syncing ledger...</span>';
       
       try {
         // Get claims ledger entries
@@ -7560,12 +7562,12 @@
         });
         const validation = validateRes.ok ? await validateRes.json() : { integrity_status: 'UNKNOWN' };
         
-        statusEl.innerHTML = `<span style="color: #10b981;">✓ ${claimEntries.length} claim entries synced</span>`;
-        alert(`📒 Claims Ledger Sync Complete!\n\n${claimEntries.length} claim ledger entries\nIntegrity: ${validation.integrity_status || 'Verified'}`);
+        statusEl.innerHTML = `<span style="color: #10b981;"> ${claimEntries.length} claim entries synced</span>`;
+        alert(` Claims Ledger Sync Complete!\n\n${claimEntries.length} claim ledger entries\nIntegrity: ${validation.integrity_status || 'Verified'}`);
         
         await loadClaims();
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Sync failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Sync failed</span>';
         alert('Sync failed: ' + err.message);
       }
     }
@@ -7573,7 +7575,7 @@
     // Generate claims report
     async function generateClaimsReport() {
       const statusEl = document.getElementById('claims-pipeline-status');
-      statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Generating report...</span>';
+      statusEl.innerHTML = '<span style="color: #3b82f6;"> Generating report...</span>';
       
       try {
         const response = await fetch('/api/claims', {
@@ -7624,11 +7626,11 @@
         a.click();
         URL.revokeObjectURL(url);
         
-        statusEl.innerHTML = `<span style="color: #10b981;">✓ Report generated</span>`;
-        alert(`📊 Claims Report Generated!\n\nTotal Claims: ${claims.length}\nPending: ${pending}\nApproved: ${approved}\nDenied: ${denied}\nPaid: ${paid}\n\nTotal Claimed: ${formatCurrency(totalClaimed)}\nTotal Approved: ${formatCurrency(totalApproved)}`);
+        statusEl.innerHTML = `<span style="color: #10b981;"> Report generated</span>`;
+        alert(` Claims Report Generated!\n\nTotal Claims: ${claims.length}\nPending: ${pending}\nApproved: ${approved}\nDenied: ${denied}\nPaid: ${paid}\n\nTotal Claimed: ${formatCurrency(totalClaimed)}\nTotal Approved: ${formatCurrency(totalApproved)}`);
         
       } catch (err) {
-        statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Report failed</span>';
+        statusEl.innerHTML = '<span style="color: #dc3545;"> Report failed</span>';
         alert('Report generation failed: ' + err.message);
       }
     }
@@ -7699,7 +7701,7 @@
         
         if (response.ok) {
           const result = await response.json();
-          alert(`📒 Customer ${customerId} synced to ledger!\n\n${result.message || 'Ledger entries verified'}`);
+          alert(` Customer ${customerId} synced to ledger!\n\n${result.message || 'Ledger entries verified'}`);
         } else {
           // Fallback: check if customer has ledger entries
           const ledgerRes = await fetch(`/api/ledger?customer_id=${customerId}`, {
@@ -7709,9 +7711,9 @@
           const entries = ledgerData.entries || [];
           
           if (entries.length > 0) {
-            alert(`📒 Customer ${customerId} has ${entries.length} ledger entries!\n\nAll entries verified and up to date.`);
+            alert(` Customer ${customerId} has ${entries.length} ledger entries!\n\nAll entries verified and up to date.`);
           } else {
-            alert(`📒 Customer ${customerId} ledger sync initiated\n\nNote: Ledger entries will be created when policies are active.`);
+            alert(` Customer ${customerId} ledger sync initiated\n\nNote: Ledger entries will be created when policies are active.`);
           }
         }
       } catch (err) {
@@ -7730,7 +7732,7 @@
         
         if (response.ok) {
           const policy = await response.json();
-          alert(`📋 Policy Details: ${policyId}\n\n` +
+          alert(` Policy Details: ${policyId}\n\n` +
             `Customer: ${policy.customer_name || policy.customer_id || 'N/A'}\n` +
             `Type: ${policy.type || 'Standard'}\n` +
             `Coverage: $${Number(policy.coverage_amount || 0).toLocaleString()}\n` +
@@ -7848,7 +7850,7 @@
           return;
         }
 
-        alert(`✅ Policy ${policyId} updated successfully`);
+        alert(` Policy ${policyId} updated successfully`);
         loadPolicies();
         loadDashboardStats();
       } catch (err) {
@@ -7874,7 +7876,7 @@
         
         if (response.ok) {
           const result = await response.json();
-          alert(`📒 Policy ${policyId} synced to ledger!\n\n${result.message || 'Ledger entry created/updated'}`);
+          alert(` Policy ${policyId} synced to ledger!\n\n${result.message || 'Ledger entry created/updated'}`);
         } else {
           // Fallback: verify ledger has entry
           const ledgerRes = await fetch('/api/ledger?type=policy_approval', {
@@ -7884,9 +7886,9 @@
           const entry = (ledgerData.entries || []).find(e => e.policy_id === policyId || e.entity_id === policyId);
           
           if (entry) {
-            alert(`📒 Policy ${policyId} already in ledger!\n\nEntry ID: ${entry.id}\nType: ${entry.type}\nTimestamp: ${entry.timestamp || entry.created_at}`);
+            alert(` Policy ${policyId} already in ledger!\n\nEntry ID: ${entry.id}\nType: ${entry.type}\nTimestamp: ${entry.timestamp || entry.created_at}`);
           } else {
-            alert(`📒 Policy ${policyId} ledger sync initiated\n\nNote: Ledger entry will be created on next billing cycle.`);
+            alert(` Policy ${policyId} ledger sync initiated\n\nNote: Ledger entry will be created on next billing cycle.`);
           }
         }
       } catch (err) {
@@ -7905,7 +7907,7 @@
         
         if (response.ok) {
           const claim = await response.json();
-          alert(`📝 Claim Details: ${claimId}\n\n` +
+          alert(` Claim Details: ${claimId}\n\n` +
             `Policy: ${claim.policy_id || 'N/A'}\n` +
             `Customer: ${claim.customer_name || claim.customer_id || 'N/A'}\n` +
             `ADLs Impaired: ${claim.adl_impairments || claim.adl_count || 'N/A'}\n` +
@@ -7940,7 +7942,7 @@
         
         if (response.ok) {
           const result = await response.json();
-          alert(`📒 Claim ${claimId} synced to ledger!\n\n${result.message || 'Ledger entry created/updated'}`);
+          alert(` Claim ${claimId} synced to ledger!\n\n${result.message || 'Ledger entry created/updated'}`);
         } else {
           // Fallback: verify ledger has entry
           const ledgerRes = await fetch('/api/ledger?type=claim', {
@@ -7950,9 +7952,9 @@
           const entry = (ledgerData.entries || []).find(e => e.claim_id === claimId || e.entity_id === claimId);
           
           if (entry) {
-            alert(`📒 Claim ${claimId} already in ledger!\n\nEntry ID: ${entry.id}\nType: ${entry.type}\nTimestamp: ${entry.timestamp || entry.created_at}`);
+            alert(` Claim ${claimId} already in ledger!\n\nEntry ID: ${entry.id}\nType: ${entry.type}\nTimestamp: ${entry.timestamp || entry.created_at}`);
           } else {
-            alert(`📒 Claim ${claimId} ledger sync initiated\n\nNote: Ledger entry will be created on claim approval.`);
+            alert(` Claim ${claimId} ledger sync initiated\n\nNote: Ledger entry will be created on claim approval.`);
           }
         }
       } catch (err) {
@@ -7962,7 +7964,7 @@
     
     // Approve claim
     async function approveClaim(claimId) {
-      if (!confirm(`✅ Approve claim ${claimId}?`)) return;
+      if (!confirm(` Approve claim ${claimId}?`)) return;
       
       try {
         const response = await fetch(`/api/claim/${claimId}/approve`, {
@@ -7975,7 +7977,7 @@
         });
         
         if (response.ok) {
-          alert(`✅ Claim ${claimId} approved!`);
+          alert(` Claim ${claimId} approved!`);
           await loadClaims();
         } else {
           // Fallback: try generic update
@@ -7989,7 +7991,7 @@
           });
           
           if (updateRes.ok) {
-            alert(`✅ Claim ${claimId} approved!`);
+            alert(` Claim ${claimId} approved!`);
             await loadClaims();
           } else {
             alert(`Claim approval submitted for ${claimId}`);
@@ -8003,7 +8005,7 @@
     
     // Reject claim
     async function rejectClaim(claimId) {
-      if (!confirm(`❌ Reject claim ${claimId}?`)) return;
+      if (!confirm(` Reject claim ${claimId}?`)) return;
       
       try {
         const response = await fetch(`/api/claim/${claimId}/reject`, {
@@ -8016,7 +8018,7 @@
         });
         
         if (response.ok) {
-          alert(`❌ Claim ${claimId} rejected.`);
+          alert(` Claim ${claimId} rejected.`);
           await loadClaims();
         } else {
           alert(`Claim rejection submitted for ${claimId}`);
@@ -8029,7 +8031,7 @@
     
     // Pay claim
     async function payClaim(claimId) {
-      if (!confirm(`💳 Process payment for claim ${claimId}?`)) return;
+      if (!confirm(` Process payment for claim ${claimId}?`)) return;
       
       try {
         const response = await fetch(`/api/claim/${claimId}/pay`, {
@@ -8042,7 +8044,7 @@
         });
         
         if (response.ok) {
-          alert(`💳 Payment processed for claim ${claimId}!`);
+          alert(` Payment processed for claim ${claimId}!`);
           await loadClaims();
         } else {
           alert(`Payment submitted for claim ${claimId}`);
@@ -8084,7 +8086,7 @@
       <div id="claim-probability-content" style="padding:24px;">
         <div style="text-align:center;padding:40px;">
           <div style="width:40px;height:40px;border:3px solid #f3f3f3;border-top:3px solid #3b82f6;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto;"></div>
-          <p style="margin-top:16px;color:#666;">🤖 AI Claims Bot analyzing claim...</p>
+          <p style="margin-top:16px;color:#666;"> AI Claims Bot analyzing claim...</p>
         </div>
       </div>
     </div>
@@ -8100,13 +8102,13 @@
     
     // Run batch probability analysis on all pending claims
     async function runBatchProbabilityAnalysis() {
-      alert('🤖 Batch Probability Analysis\n\nThis feature analyzes all pending claims and generates probability reports for each.\n\nClick OK to view individual claim analysis in the Claims Adjuster Dashboard.');
+      alert(' Batch Probability Analysis\n\nThis feature analyzes all pending claims and generates probability reports for each.\n\nClick OK to view individual claim analysis in the Claims Adjuster Dashboard.');
       window.location.href = '/claims-adjuster-dashboard.html';
     }
     
     // View fraud alerts
     function viewFraudAlerts() {
-      alert('🚨 Fraud Alerts\n\nNo high-risk fraud alerts at this time.\n\nThe AI Claims Bot continuously monitors claims for:\n• Hidden pre-existing conditions\n• Suspicious timing patterns\n• Document tampering\n• Excessive claim frequencies\n\nAlerts will appear here when detected.');
+      alert(' Fraud Alerts\n\nNo high-risk fraud alerts at this time.\n\nThe AI Claims Bot continuously monitors claims for:\n• Hidden pre-existing conditions\n• Suspicious timing patterns\n• Document tampering\n• Excessive claim frequencies\n\nAlerts will appear here when detected.');
     }
     
     // Open probability report for a specific claim
@@ -8119,7 +8121,7 @@
       content.innerHTML = `
         <div style="text-align:center;padding:40px;">
           <div style="width:40px;height:40px;border:3px solid #f3f3f3;border-top:3px solid #3b82f6;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto;"></div>
-          <p style="margin-top:16px;color:#666;">🤖 AI Claims Bot analyzing claim ${claimId}...</p>
+          <p style="margin-top:16px;color:#666;"> AI Claims Bot analyzing claim ${claimId}...</p>
         </div>
       `;
       info.textContent = `Analyzing Claim #${claimId}`;
@@ -8146,7 +8148,7 @@
         console.error('Error:', error);
         content.innerHTML = `
           <div style="text-align:center;padding:40px;">
-            <div style="font-size:48px;margin-bottom:16px;">⚠️</div>
+            <div style="font-size:48px;margin-bottom:16px;"></div>
             <p style="color:#dc2626;">Error generating probability report: ${error.message}</p>
             <button class="btn" onclick="closeClaimProbabilityModal()" style="margin-top:16px;background:#6b7280;color:white;">Close</button>
           </div>
@@ -8187,7 +8189,7 @@
           <div style="background:${authBg};color:white;padding:24px;border-radius:12px;text-align:center;">
             <div style="font-size:2.5rem;font-weight:700;">${(authProb * 100).toFixed(1)}%</div>
             <div style="opacity:0.9;margin-top:8px;">Authenticity Probability</div>
-            <div style="font-size:0.85rem;margin-top:8px;">${authProb >= 0.7 ? '✅ LEGITIMATE' : (authProb >= 0.5 ? '⚠️ UNCERTAIN' : '❌ SUSPICIOUS')}</div>
+            <div style="font-size:0.85rem;margin-top:8px;">${authProb >= 0.7 ? ' LEGITIMATE' : (authProb >= 0.5 ? ' UNCERTAIN' : ' SUSPICIOUS')}</div>
           </div>
           <div style="background:${fraudProb > 0.5 ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : (fraudProb > 0.3 ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : '#f8f9fa')};color:${fraudProb > 0.3 ? 'white' : '#333'};padding:24px;border-radius:12px;text-align:center;">
             <div style="font-size:2.5rem;font-weight:700;">${(fraudProb * 100).toFixed(1)}%</div>
@@ -8203,13 +8205,13 @@
         
         <!-- AI Summary -->
         <div style="background:linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);padding:20px;border-radius:12px;border:1px solid #bae6fd;margin-bottom:24px;">
-          <h4 style="margin:0 0 12px 0;color:#0369a1;display:flex;align-items:center;gap:8px;">🤖 AI Analysis Summary</h4>
+          <h4 style="margin:0 0 12px 0;color:#0369a1;display:flex;align-items:center;gap:8px;"> AI Analysis Summary</h4>
           <p style="margin:0;">${ai.summary || 'Analysis completed.'}</p>
         </div>
         
         <!-- Component Scores -->
         <div style="background:#f8f9fa;padding:20px;border-radius:12px;margin-bottom:24px;">
-          <h4 style="margin:0 0 16px 0;">📊 Component Scores</h4>
+          <h4 style="margin:0 0 16px 0;"> Component Scores</h4>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;">
             ${renderAdminScoreBar('Document Auth.', scores.document_authenticity)}
             ${renderAdminScoreBar('Medical Consistency', scores.medical_consistency)}
@@ -8222,7 +8224,7 @@
         
         <!-- Timeline -->
         <div style="background:#f8f9fa;padding:20px;border-radius:12px;margin-bottom:24px;">
-          <h4 style="margin:0 0 16px 0;">📅 Policy Timeline</h4>
+          <h4 style="margin:0 0 16px 0;"> Policy Timeline</h4>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;">
             <div><strong>Days:</strong> ${timeline.days_since_policy || 0}</div>
             <div><strong>Years:</strong> ${(timeline.years_since_policy || 0).toFixed(2)}</div>
@@ -8233,7 +8235,7 @@
         ${hidden.detected > 0 ? `
         <!-- Hidden Conditions Alert -->
         <div style="background:#fef2f2;padding:20px;border-radius:12px;border:1px solid #fecaca;margin-bottom:24px;">
-          <h4 style="margin:0 0 12px 0;color:#dc2626;">⚠️ Hidden Conditions Detected (${hidden.detected})</h4>
+          <h4 style="margin:0 0 12px 0;color:#dc2626;"> Hidden Conditions Detected (${hidden.detected})</h4>
           ${(hidden.conditions || []).map(hc => `
             <div style="background:white;padding:12px;border-radius:8px;border-left:4px solid #ef4444;margin:8px 0;">
               <strong>${hc.condition_name}</strong> (ICD: ${hc.icd_code})
@@ -8247,7 +8249,7 @@
         ${fraud.count > 0 ? `
         <!-- Fraud Indicators -->
         <div style="background:#fffbeb;padding:20px;border-radius:12px;border:1px solid #fde68a;margin-bottom:24px;">
-          <h4 style="margin:0 0 12px 0;color:#d97706;">🚨 Fraud Indicators (${fraud.count})</h4>
+          <h4 style="margin:0 0 12px 0;color:#d97706;"> Fraud Indicators (${fraud.count})</h4>
           ${(fraud.indicators || []).map(fi => `
             <div style="background:white;padding:12px;border-radius:8px;border-left:4px solid ${fi.severity > 0.7 ? '#ef4444' : '#f59e0b'};margin:8px 0;">
               <strong>${fi.indicator_type.replace(/_/g, ' ').toUpperCase()}</strong>
@@ -8261,8 +8263,8 @@
         <!-- Actions -->
         <div style="display:flex;justify-content:flex-end;gap:12px;margin-top:24px;">
           <button class="btn" onclick="closeClaimProbabilityModal()" style="background:#6b7280;color:white;">Close Report</button>
-          ${authProb >= 0.7 ? `<button class="btn" onclick="closeClaimProbabilityModal();approveClaim('${report.claim_id}')" style="background:#10b981;color:white;">✅ Approve Claim</button>` : ''}
-          ${authProb < 0.5 ? `<button class="btn" onclick="closeClaimProbabilityModal();rejectClaim('${report.claim_id}')" style="background:#ef4444;color:white;">❌ Reject Claim</button>` : ''}
+          ${authProb >= 0.7 ? `<button class="btn" onclick="closeClaimProbabilityModal();approveClaim('${report.claim_id}')" style="background:#10b981;color:white;"> Approve Claim</button>` : ''}
+          ${authProb < 0.5 ? `<button class="btn" onclick="closeClaimProbabilityModal();rejectClaim('${report.claim_id}')" style="background:#ef4444;color:white;"> Reject Claim</button>` : ''}
         </div>
       `;
     }
@@ -8445,10 +8447,10 @@
         tbody.innerHTML = data.codes.map(code => {
           const status = code.status || 'unknown';
           const statusBadge = status === 'active' 
-            ? '<span style="background: #28a745; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem;">✅ Active</span>'
+            ? '<span style="background: #28a745; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem;"> Active</span>'
             : status === 'used'
-            ? '<span style="background: #6c757d; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem;">⚫ Used</span>'
-            : '<span style="background: #dc3545; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem;">❌ Expired</span>';
+            ? '<span style="background: #6c757d; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem;"> Used</span>'
+            : '<span style="background: #dc3545; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem;"> Expired</span>';
           
           const expiresDate = code.expires_at ? new Date(code.expires_at).toLocaleDateString() : 'Never';
           const isExpired = code.expires_at && new Date(code.expires_at) < new Date();
@@ -8456,8 +8458,8 @@
           // Show invitation type (admin or customer referral)
           const inviteType = code.invitation_type || 'admin';
           const typeBadge = inviteType === 'customer'
-            ? '<span style="background: #ff6b35; padding: 4px 8px; border-radius: 12px; font-size: 0.75rem;">👥 Referral</span>'
-            : '<span style="background: #1565c0; padding: 4px 8px; border-radius: 12px; font-size: 0.75rem;">🔑 Admin</span>';
+            ? '<span style="background: #ff6b35; padding: 4px 8px; border-radius: 12px; font-size: 0.75rem;"> Referral</span>'
+            : '<span style="background: #1565c0; padding: 4px 8px; border-radius: 12px; font-size: 0.75rem;"> Admin</span>';
           
           // Show creator info
           const creatorInfo = inviteType === 'customer' 
@@ -8507,7 +8509,7 @@
           topRefDiv.innerHTML = '<span style="color: #666; font-style: italic;">No referrers yet</span>';
         } else {
           topRefDiv.innerHTML = topReferrers.map((r, i) => {
-            const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '⭐';
+            const medal = i === 0 ? '' : i === 1 ? '' : i === 2 ? '' : '';
             return `<span style="background: ${i < 3 ? '#fff3e0' : '#f5f5f5'}; padding: 6px 12px; border-radius: 20px; font-size: 0.9rem;">
               ${medal} ${r.customer_id}: <strong>${r.referrals}</strong> referrals
             </span>`;
@@ -8519,7 +8521,7 @@
         
       } catch (error) {
         console.error('Error loading invitation stats:', error);
-        showToast('❌ Failed to load statistics');
+        showToast(' Failed to load statistics');
       }
     }
     
@@ -8531,7 +8533,7 @@
       
       try {
         // Show loading state
-        generateBtn.innerHTML = '⏳ Generating...';
+        generateBtn.innerHTML = ' Generating...';
         generateBtn.disabled = true;
         
         const maxUses = document.getElementById('invite-max-uses').value;
@@ -8586,7 +8588,7 @@
         loadInvitationCodes();
         
         // Show success toast
-        showToast('✅ Invitation code generated with QR!');
+        showToast(' Invitation code generated with QR!');
         
         // Scroll to result
         resultPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -8597,7 +8599,7 @@
         
       } catch (error) {
         console.error('Error generating code:', error);
-        showToast('❌ ' + (error.message || 'Failed to generate invitation code'));
+        showToast(' ' + (error.message || 'Failed to generate invitation code'));
         
         // Restore button
         generateBtn.innerHTML = originalBtnText;
@@ -8622,10 +8624,10 @@
     function copyGeneratedCode() {
       if (lastGeneratedCode) {
         navigator.clipboard.writeText(lastGeneratedCode).then(() => {
-          showToast('📋 Code copied to clipboard!');
+          showToast(' Code copied to clipboard!');
         }).catch(() => {
           fallbackCopy(lastGeneratedCode);
-          showToast('📋 Code copied to clipboard!');
+          showToast(' Code copied to clipboard!');
         });
       }
     }
@@ -8633,10 +8635,10 @@
     function copyInvitationLink() {
       if (lastInvitationLink) {
         navigator.clipboard.writeText(lastInvitationLink).then(() => {
-          showToast('🔗 Registration link copied!');
+          showToast(' Registration link copied!');
         }).catch(() => {
           fallbackCopy(lastInvitationLink);
-          showToast('🔗 Registration link copied!');
+          showToast(' Registration link copied!');
         });
       }
     }
@@ -8652,71 +8654,71 @@
     
     // ========== SOCIAL SHARING FUNCTIONS ==========
     function getShareMessage() {
-      return `🎟️ You're Invited to PHINS!
+      return ` You're Invited to PHINS!
 
 Use this invitation code to register:
-📝 ${lastGeneratedCode}
+ ${lastGeneratedCode}
 
 Or click the direct link:
-🔗 ${lastInvitationLink}
+ ${lastInvitationLink}
 
-Welcome to PHINS Portal! 🛡️`;
+Welcome to PHINS Portal! `;
     }
     
     function shareViaWhatsApp() {
       if (!lastGeneratedCode) {
-        showToast('❌ Generate a code first');
+        showToast(' Generate a code first');
         return;
       }
       const message = getShareMessage();
       const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
       window.open(whatsappUrl, '_blank');
-      showToast('📱 Opening WhatsApp...');
+      showToast(' Opening WhatsApp...');
     }
     
     function shareViaEmail() {
       if (!lastGeneratedCode) {
-        showToast('❌ Generate a code first');
+        showToast(' Generate a code first');
         return;
       }
-      const subject = '🎟️ PHINS Invitation - Your Registration Code';
+      const subject = ' PHINS Invitation - Your Registration Code';
       const body = getShareMessage();
       const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
       window.location.href = mailtoUrl;
-      showToast('📧 Opening email client...');
+      showToast(' Opening email client...');
     }
     
     function shareViaTelegram() {
       if (!lastGeneratedCode) {
-        showToast('❌ Generate a code first');
+        showToast(' Generate a code first');
         return;
       }
       const message = getShareMessage();
       const telegramUrl = `https://t.me/share/url?url=${encodeURIComponent(lastInvitationLink)}&text=${encodeURIComponent(message)}`;
       window.open(telegramUrl, '_blank');
-      showToast('📱 Opening Telegram...');
+      showToast(' Opening Telegram...');
     }
     
     function shareViaSMS() {
       if (!lastGeneratedCode) {
-        showToast('❌ Generate a code first');
+        showToast(' Generate a code first');
         return;
       }
       const message = `PHINS Invitation! Code: ${lastGeneratedCode} | Register: ${lastInvitationLink}`;
       // SMS link format varies by device
       const smsUrl = `sms:?body=${encodeURIComponent(message)}`;
       window.location.href = smsUrl;
-      showToast('📱 Opening SMS...');
+      showToast(' Opening SMS...');
     }
     
     async function shareNative() {
       if (!lastGeneratedCode) {
-        showToast('❌ Generate a code first');
+        showToast(' Generate a code first');
         return;
       }
       
       const shareData = {
-        title: '🎟️ PHINS Invitation',
+        title: ' PHINS Invitation',
         text: getShareMessage(),
         url: lastInvitationLink
       };
@@ -8724,7 +8726,7 @@ Welcome to PHINS Portal! 🛡️`;
       if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
         try {
           await navigator.share(shareData);
-          showToast('📤 Invitation shared!');
+          showToast(' Invitation shared!');
         } catch (err) {
           if (err.name !== 'AbortError') {
             // User cancelled - that's ok
@@ -8734,7 +8736,7 @@ Welcome to PHINS Portal! 🛡️`;
       } else {
         // Fallback: Copy link and show options
         copyInvitationLink();
-        showToast('🔗 Link copied! Paste it anywhere to share.');
+        showToast(' Link copied! Paste it anywhere to share.');
       }
     }
     
@@ -8750,7 +8752,7 @@ Welcome to PHINS Portal! 🛡️`;
       
       // For cross-origin images, open in new tab
       window.open(qrImg.src, '_blank');
-      showToast('⬇️ QR Code opened - right-click to save');
+      showToast(' QR Code opened - right-click to save');
     }
     
   </script>

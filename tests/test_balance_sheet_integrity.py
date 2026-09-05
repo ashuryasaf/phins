@@ -1084,7 +1084,8 @@ print(json.dumps({{
 
             m = self.compute_unified_financial_metrics(exclude_suspended=False)
 
-            self.assertGreaterEqual(m['claims_paid_amount'], 180.0)
+            # Paid/closed records are cash; approved-but-unpaid is not.
+            self.assertGreaterEqual(m['claims_paid_amount'], 100.0)
             self.assertGreaterEqual(m['claims_disbursed_amount'], 100.0)
             self.assertGreaterEqual(m['pending_claims_liability'], 100.0)
             self.assertEqual(
@@ -1093,7 +1094,7 @@ print(json.dumps({{
                     - (baseline['claims_paid_amount'] - baseline['claims_disbursed_amount']),
                     2,
                 ),
-                80.0,
+                0.0,
             )
         finally:
             for claim_id, old in prev_claims.items():

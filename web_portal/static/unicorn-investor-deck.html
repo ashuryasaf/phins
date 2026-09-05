@@ -148,7 +148,7 @@
 
     ul.tick { list-style: none; margin-top: 10px; }
     ul.tick li { position: relative; padding-left: 24px; margin-bottom: 9px; font-size: 9.8pt; color: var(--text-sub); }
-    ul.tick li::before { content: "✓"; position: absolute; left: 0; top: 0; color: var(--green-1); font-weight: 800; }
+    ul.tick li::before { content: ""; position: absolute; left: 0; top: 0; color: var(--green-1); font-weight: 800; }
     ul.arrow li::before { content: "→"; color: var(--blue-mid); }
     ul.warn li::before { content: "▲"; color: var(--amber-1); font-size: 8pt; top: 2px; }
 
@@ -453,11 +453,11 @@
     </div>
     <div class="header-actions">
       <div class="lang-switch no-print" role="group" aria-label="Language / שפה">
-        <span style="font-size:7.6pt;opacity:0.85;letter-spacing:0.04em;">🌐</span>
+        <span style="font-size:7.6pt;opacity:0.85;letter-spacing:0.04em;"></span>
         <button type="button" class="btn lang-btn on" data-lang="en">English</button>
         <button type="button" class="btn lang-btn" data-lang="he">עברית</button>
       </div>
-      <button type="button" class="btn no-print" id="print-btn" data-i18n="ui_print">🖨️ Print / PDF</button>
+      <button type="button" class="btn no-print" id="print-btn" data-i18n="ui_print">️ Print / PDF</button>
       <a class="back-link" href="/pitch-dashboard.html" data-i18n="ui_back_dash">← Pitch dashboard</a>
       <a class="back-link" href="/pitch-dashboard.html#investor-meeting-section" data-i18n="ui_back_meeting">Investor meeting</a>
     </div>
@@ -505,7 +505,7 @@
 
   <div class="hero" id="top">
     <div class="hero-inner">
-      <span class="hero-eyebrow" data-i18n="hero_eyebrow">🦄 Series A · Institutional Venture · Confidential</span>
+      <span class="hero-eyebrow" data-i18n="hero_eyebrow"> Series A · Institutional Venture · Confidential</span>
       <h1 data-i18n="hero_h1">PHINS is <span class="grad">AgentOS for Insurance + a Disability/Longevity Protection Marketplace</span> — the AI operating system for the global protection economy.</h1>
       <p class="lede" data-i18n="hero_lede">
         The disability &amp; long-term-care MGA is the <strong>first use case — the wedge, not the whole story</strong>. We start where the
@@ -583,9 +583,9 @@
         <div class="hl-box"><div class="hl-v">3</div><div class="hl-l" data-i18n="sum_hl4">Capital-light revenue engines: MGA take · AgentOS SaaS · marketplace take</div></div>
       </div>
       <div class="grid-3" style="margin-top:16px;">
-        <div class="card" data-i18n="sum_c1"><span class="icon-chip">🏗️</span><h3>Already built</h3><p>A deployed, ledger-governed platform spanning policy, underwriting, billing, claims, reinsurance, a health marketplace and a live agent ecosystem (AgentOS v1) across 84 service modules.</p></div>
-        <div class="card" data-i18n="sum_c2"><span class="icon-chip">🧠</span><h3>Two AI moats</h3><p>Auditable AI underwriting and AI claims intelligence — proprietary data competitors cannot see, with reinsurance-ready evidence.</p></div>
-        <div class="card" data-i18n="sum_c3"><span class="icon-chip">🔗</span><h3>Flawless data integrity</h3><p>Append-only, hash-chained state. AI/BI recommend but never post — a trust moat with regulators and reinsurers.</p></div>
+        <div class="card" data-i18n="sum_c1"><h3>Already built</h3><p>A deployed, ledger-governed platform spanning policy, underwriting, billing, claims, reinsurance, a health marketplace and a live agent ecosystem (AgentOS v1) across 100 service modules.</p></div>
+        <div class="card" data-i18n="sum_c2"><h3>Two AI moats</h3><p>Auditable AI underwriting and AI claims intelligence — proprietary data competitors cannot see, with reinsurance-ready evidence.</p></div>
+        <div class="card" data-i18n="sum_c3"><h3>Flawless data integrity</h3><p>Append-only, hash-chained state. AI/BI recommend but never post — a trust moat with regulators and reinsurers.</p></div>
       </div>
       <div class="integrity" style="margin-top:16px;" data-i18n="sum_integrity">
         <strong>The ask.</strong> Raising <strong data-calc="hero_round">—</strong> (Series A) to launch the severity MGA, scale AgentOS from the live v1 to the full agent cockpit, and open the protection marketplace — funding the path to EBITDA-positive (base 2030) and a modeled 2031 implied valuation of <strong data-calc="kpi_val31">—</strong>. Tune every assumption live in the configurator; all figures recompute from one canonical base.
@@ -597,7 +597,7 @@
       <div class="panel cfg">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
           <div>
-            <div class="slide-label" data-i18n="cfg_eyebrow">🎛️ Adjustable engine</div>
+            <div class="slide-label" data-i18n="cfg_eyebrow">️ Adjustable engine</div>
             <h2 class="slide-title" style="margin-bottom:4px;" data-i18n="cfg_title">Investor &amp; Scenario Configurator <span class="tag tag-adj">adjustable · live FX</span></h2>
             <p class="slide-copy" data-i18n="cfg_copy">Tune the deck for <strong>any investor or any factor</strong>. Currency, the round, valuation, global scale, pricing and take rates all flow from a <strong>single canonical USD base</strong>, so every table, chart, KPI and the unicorn path recompute and always reconcile. Settings persist in your browser.</p>
           </div>
@@ -610,7 +610,7 @@
         </div>
 
         <div class="fx-strip">
-          <span style="font-size:8.5pt;font-weight:800;" data-i18n="cfg_fx_title">💱 Live FX</span>
+          <span style="font-size:8.5pt;font-weight:800;" data-i18n="cfg_fx_title"> Live FX</span>
           <span id="fx-badge" style="font-size:8pt;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,0.16);">loading…</span>
           <label style="font-size:8pt;opacity:0.9;"><span data-i18n="cfg_fx_eur">1 USD = €</span>
             <input id="fx-eur" type="number" step="0.0001" min="0.0001">
@@ -673,16 +673,16 @@
       <h2 class="slide-title" data-i18n="th_title">Evaluated as an institutional partner would: ten reasons PHINS is a fundable platform, not a feature.</h2>
       <p class="slide-copy" data-i18n="th_copy">Headline: <strong>AgentOS for Insurance + a Disability/Longevity Protection Marketplace</strong>, with the disability/LTC MGA as the first use case (the wedge). The ten pillars below are the spine of this deck; <span class="tag tag-reported">reported</span> figures are external &amp; cited, <span class="tag tag-modeled">modeled</span> figures derive live from the configurator so they always reconcile.</p>
       <div class="grid-2" style="margin-top:16px;">
-        <div class="card" style="border-left:4px solid var(--blue-dark);" data-i18n="th_p1"><span class="icon-chip">🌍</span><h3>1 · Massive global disability &amp; longevity market</h3><p>Aging + longevity shock widens a <strong>$1.4T+</strong> protection gap <span class="tag tag-reported">reported estimate</span>. <a href="#market">→ Market</a></p></div>
-        <div class="card" style="border-left:4px solid var(--blue-mid);" data-i18n="th_p2"><span class="icon-chip">🧠</span><h3>2 · AI underwriting moat</h3><p>Per-segment severity thresholds, model registry, replayable decisions, proprietary data rivals can't see. <a href="#ai">→ AI</a></p></div>
-        <div class="card" style="border-left:4px solid var(--blue-mid);" data-i18n="th_p3"><span class="icon-chip">⚙️</span><h3>3 · AI claims-intelligence moat</h3><p>Triage, code-based settlement of eligible benefits, home-care-first navigation — better loss economics. <a href="#ai">→ AI</a></p></div>
-        <div class="card" style="border-left:4px solid var(--green-1);" data-i18n="th_p4"><span class="icon-chip">💻</span><h3>4 · AgentOS for agents</h3><p>The SaaS cockpit that arms agents (not disintermediates them) and owns the distribution relationship. <a href="#agentos">→ AgentOS</a></p></div>
-        <div class="card" style="border-left:4px solid var(--violet-1);" data-i18n="th_p5"><span class="icon-chip">🤝</span><h3>5 · Five-sided marketplace</h3><p>Clients · agents · doctors · reinsurers · care providers — one ledger-clean network. <a href="#marketplace">→ Marketplace</a></p></div>
-        <div class="card" style="border-left:4px solid var(--green-1);" data-i18n="th_p6"><span class="icon-chip">🔁</span><h3>6 · SaaS revenue</h3><p>Recurring, high-margin AgentOS seats — modeled 2031 <strong data-calc="eng_saas">—</strong>. <a href="#model">→ Model</a></p></div>
-        <div class="card" style="border-left:4px solid var(--violet-2);" data-i18n="th_p7"><span class="icon-chip">📊</span><h3>7 · Network effects &amp; data flywheel</h3><p>Distribution → data → pricing → trust → distribution; the loop compounds. <a href="#flywheel">→ Flywheel</a></p></div>
-        <div class="card" style="border-left:4px solid var(--blue-light);" data-i18n="th_p8"><span class="icon-chip">🛫</span><h3>8 · International scalability</h3><p>Regulatory adapters &amp; 26 country packs make expansion a configuration, not a rebuild. <a href="#gtm">→ GTM</a></p></div>
-        <div class="card" style="border-left:4px solid var(--green-2);" data-i18n="th_p9"><span class="icon-chip">💸</span><h3>9 · Capital-light MGA model</h3><p>Risk sits with carriers/reinsurers; PHINS earns software + take-rate margins. <a href="#model">→ Model</a></p></div>
-        <div class="card" style="border-left:4px solid var(--violet-1);" data-i18n="th_p10"><span class="icon-chip">🦄</span><h3>10 · Path to $1B+</h3><p>Modeled 2031 implied valuation <strong data-calc="kpi_val31">—</strong> at the selected exit multiple. <a href="#unicorn">→ Unicorn path</a></p></div>
+        <div class="card" style="border-left:4px solid var(--blue-dark);" data-i18n="th_p1"><h3>1 · Massive global disability &amp; longevity market</h3><p>Aging + longevity shock widens a <strong>$1.4T+</strong> protection gap <span class="tag tag-reported">reported estimate</span>. <a href="#market">→ Market</a></p></div>
+        <div class="card" style="border-left:4px solid var(--blue-mid);" data-i18n="th_p2"><h3>2 · AI underwriting moat</h3><p>Per-segment severity thresholds, model registry, replayable decisions, proprietary data rivals can't see. <a href="#ai">→ AI</a></p></div>
+        <div class="card" style="border-left:4px solid var(--blue-mid);" data-i18n="th_p3"><h3>3 · AI claims-intelligence moat</h3><p>Triage, code-based settlement of eligible benefits, home-care-first navigation — better loss economics. <a href="#ai">→ AI</a></p></div>
+        <div class="card" style="border-left:4px solid var(--green-1);" data-i18n="th_p4"><h3>4 · AgentOS for agents</h3><p>The SaaS cockpit that arms agents (not disintermediates them) and owns the distribution relationship. <a href="#agentos">→ AgentOS</a></p></div>
+        <div class="card" style="border-left:4px solid var(--violet-1);" data-i18n="th_p5"><h3>5 · Five-sided marketplace</h3><p>Clients · agents · doctors · reinsurers · care providers — one ledger-clean network. <a href="#marketplace">→ Marketplace</a></p></div>
+        <div class="card" style="border-left:4px solid var(--green-1);" data-i18n="th_p6"><h3>6 · SaaS revenue</h3><p>Recurring, high-margin AgentOS seats — modeled 2031 <strong data-calc="eng_saas">—</strong>. <a href="#model">→ Model</a></p></div>
+        <div class="card" style="border-left:4px solid var(--violet-2);" data-i18n="th_p7"><h3>7 · Network effects &amp; data flywheel</h3><p>Distribution → data → pricing → trust → distribution; the loop compounds. <a href="#flywheel">→ Flywheel</a></p></div>
+        <div class="card" style="border-left:4px solid var(--blue-light);" data-i18n="th_p8"><h3>8 · International scalability</h3><p>Regulatory adapters &amp; 26 country packs make expansion a configuration, not a rebuild. <a href="#gtm">→ GTM</a></p></div>
+        <div class="card" style="border-left:4px solid var(--green-2);" data-i18n="th_p9"><h3>9 · Capital-light MGA model</h3><p>Risk sits with carriers/reinsurers; PHINS earns software + take-rate margins. <a href="#model">→ Model</a></p></div>
+        <div class="card" style="border-left:4px solid var(--violet-1);" data-i18n="th_p10"><h3>10 · Path to $1B+</h3><p>Modeled 2031 implied valuation <strong data-calc="kpi_val31">—</strong> at the selected exit multiple. <a href="#unicorn">→ Unicorn path</a></p></div>
       </div>
       <div class="integrity" style="margin-top:16px;" data-i18n="th_integrity">
         <strong>How a Sequoia / a16z partner should read this:</strong> the MGA proves pricing, generates proprietary data, and funds the build; the <em>investable</em> story is the platform — AgentOS (SaaS multiples) + the marketplace (network effects) on top of two AI moats and a data flywheel. That is what reprices PHINS from a $50–100M insurance outcome toward a unicorn-scale software company.
@@ -695,9 +695,9 @@
       <h2 class="slide-title" data-i18n="vis_title">Protection should be instant, intelligent, and abundant — not a paper promise people fight to collect.</h2>
       <p class="slide-copy" data-i18n="vis_copy">The world is getting older and living longer, but the systems that protect people against severe disability and the cost of long-term care are analog, adversarial, and underfunded. PHINS exists to make protection a software product: priced by AI, paid by code, and orchestrated across everyone who delivers care.</p>
       <div class="grid-3" style="margin-top:16px;">
-        <div class="card" data-i18n="vis_c1"><span class="icon-chip">🌍</span><h3>The category we are creating</h3><p><strong>AgentOS for Insurance + a Protection Marketplace.</strong> Not another point product — the operating layer that distribution, underwriting, claims and care run on.</p></div>
-        <div class="card" data-i18n="vis_c2"><span class="icon-chip">⚡</span><h3>The standard we set</h3><p>Quote in seconds, underwrite with auditable AI, settle eligible claims by code, and route care — all from one hash-chained system of record.</p></div>
-        <div class="card" data-i18n="vis_c3"><span class="icon-chip">🦄</span><h3>The outcome</h3><p>A capital-light, multi-market platform with three compounding revenue engines and a data flywheel — the shape of a $1B+ company.</p></div>
+        <div class="card" data-i18n="vis_c1"><h3>The category we are creating</h3><p><strong>AgentOS for Insurance + a Protection Marketplace.</strong> Not another point product — the operating layer that distribution, underwriting, claims and care run on.</p></div>
+        <div class="card" data-i18n="vis_c2"><h3>The standard we set</h3><p>Quote in seconds, underwrite with auditable AI, settle eligible claims by code, and route care — all from one hash-chained system of record.</p></div>
+        <div class="card" data-i18n="vis_c3"><h3>The outcome</h3><p>A capital-light, multi-market platform with three compounding revenue engines and a data flywheel — the shape of a $1B+ company.</p></div>
       </div>
     </section>
 
@@ -734,10 +734,10 @@
       <h2 class="slide-title" data-i18n="sol_title">One AI-native platform: distribute, underwrite, pay, and orchestrate care — on a single ledger.</h2>
       <p class="slide-copy" data-i18n="sol_copy">PHINS sells a focused, reinsurable product (permanent severe-disability / LTC severity layer) as a capital-light MGA, then compounds the same platform into SaaS and marketplace revenue.</p>
       <div class="grid-4" style="margin-top:16px;">
-        <div class="card" data-i18n="sol_c1"><span class="icon-chip">📝</span><h3>Distribute</h3><p>Digital quote-to-bind for clients and an AgentOS cockpit for agents.</p></div>
-        <div class="card" data-i18n="sol_c2"><span class="icon-chip">🧠</span><h3>Underwrite</h3><p>Auditable AI underwriting with per-segment thresholds and a model registry.</p></div>
-        <div class="card" data-i18n="sol_c3"><span class="icon-chip">⚙️</span><h3>Pay</h3><p>AI claims intelligence; eligible benefits settled by code, anchored to the ledger.</p></div>
-        <div class="card" data-i18n="sol_c4"><span class="icon-chip">🤝</span><h3>Orchestrate</h3><p>Marketplace routing across doctors, care providers, reinsurers and payers.</p></div>
+        <div class="card" data-i18n="sol_c1"><h3>Distribute</h3><p>Digital quote-to-bind for clients and an AgentOS cockpit for agents.</p></div>
+        <div class="card" data-i18n="sol_c2"><h3>Underwrite</h3><p>Auditable AI underwriting with per-segment thresholds and a model registry.</p></div>
+        <div class="card" data-i18n="sol_c3"><h3>Pay</h3><p>AI claims intelligence; eligible benefits settled by code, anchored to the ledger.</p></div>
+        <div class="card" data-i18n="sol_c4"><h3>Orchestrate</h3><p>Marketplace routing across doctors, care providers, reinsurers and payers.</p></div>
       </div>
       <div class="integrity" style="margin-top:16px;" data-i18n="sol_integrity">
         <strong>The wedge → platform thesis.</strong> The MGA product is the beachhead that proves pricing, generates proprietary data, and funds the build. The <em>headline</em> is the platform: AgentOS + Marketplace. That is what turns a $50–100M insurance outcome into a unicorn-scale software narrative.
@@ -788,15 +788,15 @@
       <h2 class="slide-title" data-i18n="prod_title">A platform that is already built — not a slideware promise.</h2>
       <p class="slide-copy" data-i18n="prod_copy">PHINS is a deployed, multi-module platform spanning policy, underwriting, billing, claims, reinsurance, foundations, a health marketplace, a live agent ecosystem, and multi-market regulatory adapters — all on an append-only, hash-chained ledger.</p>
       <div class="grid-3" style="margin-top:16px;">
-        <div class="card" data-i18n="prod_c1"><span class="icon-chip">🔁</span><h3>Full insurance lifecycle</h3><p>Policy → underwriting → billing → claim → reinsurance, each step audit-logged and reproducible.</p></div>
-        <div class="card" data-i18n="prod_c2"><span class="icon-chip">🧩</span><h3>84 deployed service modules</h3><p>Composable services for distribution, risk, finance, care and compliance.</p></div>
-        <div class="card" data-i18n="prod_c3"><span class="icon-chip">🔗</span><h3>Hash-chained ledger</h3><p>Every balance &amp; decision reproducible from append-only state. AI/BI may recommend but never post.</p></div>
-        <div class="card" data-i18n="prod_c4"><span class="icon-chip">🌐</span><h3>Multi-market adapters</h3><p>26 country/regulator pitch packs &amp; localization rails already modeled.</p></div>
-        <div class="card" data-i18n="prod_c5"><span class="icon-chip">🏦</span><h3>Wallets &amp; settlement</h3><p>Marketplace wallets, holds, settlement runs, payer recovery and remittances.</p></div>
-        <div class="card" data-i18n="prod_c6"><span class="icon-chip">🛡️</span><h3>Security by design</h3><p>Vault, auth tokens, firewall, intrusion detection, request sanitization, file scanning.</p></div>
+        <div class="card" data-i18n="prod_c1"><h3>Full insurance lifecycle</h3><p>Policy → underwriting → billing → claim → reinsurance, each step audit-logged and reproducible.</p></div>
+        <div class="card" data-i18n="prod_c2"><h3>100 deployed service modules</h3><p>Composable services for distribution, risk, finance, care and compliance.</p></div>
+        <div class="card" data-i18n="prod_c3"><h3>Hash-chained ledger</h3><p>Every balance &amp; decision reproducible from append-only state. AI/BI may recommend but never post.</p></div>
+        <div class="card" data-i18n="prod_c4"><h3>Multi-market adapters</h3><p>26 country/regulator pitch packs &amp; localization rails already modeled.</p></div>
+        <div class="card" data-i18n="prod_c5"><h3>Wallets &amp; settlement</h3><p>Marketplace wallets, holds, settlement runs, payer recovery and remittances.</p></div>
+        <div class="card" data-i18n="prod_c6"><h3>Security by design</h3><p>Vault, auth tokens, firewall, intrusion detection, request sanitization, file scanning.</p></div>
       </div>
       <div class="panel" style="margin-top:16px;" data-i18n="prod_momentum">
-        <h3 style="font-size:11.5pt;margin-bottom:8px;">🚀 Platform momentum — shipped since this deck was assembled (June–July 2026)</h3>
+        <h3 style="font-size:11.5pt;margin-bottom:8px;"> Platform momentum — shipped since this deck was assembled (June–July 2026)</h3>
         <ul class="tick">
           <li><strong>AgentOS v1 live:</strong> agent portal, admin agent-community dashboard, invitations &amp; affiliations, and ledger-anchored commission statements.</li>
           <li><strong>Deterministic actuarial appraisal simulation:</strong> seeded, bit-reproducible valuation runs with a verifiable content hash, powering investor and partner pricing.</li>
@@ -814,7 +814,7 @@
       <h2 class="slide-title" data-i18n="ai_title">Two AI moats: underwriting intelligence and claims intelligence — both auditable.</h2>
       <div class="grid-2" style="margin-top:16px;">
         <div class="panel" data-i18n="ai_panel1">
-          <h3 style="font-size:12.5pt;">🧠 AI underwriting moat</h3>
+          <h3 style="font-size:12.5pt;"> AI underwriting moat</h3>
           <ul class="tick">
             <li><strong>Per-segment thresholds</strong> tuned to severity (permanent 3+ ADL), not generic morbidity.</li>
             <li><strong>Model registry</strong> versions every model; decisions are explainable and replayable.</li>
@@ -823,7 +823,7 @@
           </ul>
         </div>
         <div class="panel" data-i18n="ai_panel2">
-          <h3 style="font-size:12.5pt;">⚙️ AI claims intelligence moat</h3>
+          <h3 style="font-size:12.5pt;"> AI claims intelligence moat</h3>
           <ul class="tick">
             <li><strong>Triage &amp; routing</strong> shorten non-permanent claim pathways and reduce false positives.</li>
             <li><strong>Code-based settlement</strong> of eligible benefits — fast, consistent, anchored to the ledger.</li>
@@ -841,10 +841,10 @@
       <h2 class="slide-title" data-i18n="aos_title">AgentOS turns every insurance agent into a 10× operator — and into our distribution flywheel.</h2>
       <p class="slide-copy" data-i18n="aos_copy">Instead of fighting agents, we arm them. AgentOS v1 is already live on the platform — agent portal, invitations &amp; affiliations, and ledger-anchored commission statements — and this round scales it into the full SaaS cockpit agents run their whole book on: the reason PHINS scales distribution without a balance sheet.</p>
       <div class="grid-4" style="margin-top:16px;">
-        <div class="card" data-i18n="aos_c1"><span class="icon-chip">⚡</span><h3>Instant quoting</h3><p>AI quote-to-bind across products and carriers from one screen.</p></div>
-        <div class="card" data-i18n="aos_c2"><span class="icon-chip">📋</span><h3>Compliance autopilot</h3><p>Suitability, disclosures and audit trail generated automatically.</p></div>
-        <div class="card" data-i18n="aos_c3"><span class="icon-chip">🤖</span><h3>Agent copilots</h3><p>AI drafting, servicing, renewals and next-best-action on the book.</p></div>
-        <div class="card" data-i18n="aos_c4"><span class="icon-chip">💼</span><h3>Book analytics</h3><p>Retention, cross-sell and commission intelligence in real time.</p></div>
+        <div class="card" data-i18n="aos_c1"><h3>Instant quoting</h3><p>AI quote-to-bind across products and carriers from one screen.</p></div>
+        <div class="card" data-i18n="aos_c2"><h3>Compliance autopilot</h3><p>Suitability, disclosures and audit trail generated automatically.</p></div>
+        <div class="card" data-i18n="aos_c3"><h3>Agent copilots</h3><p>AI drafting, servicing, renewals and next-best-action on the book.</p></div>
+        <div class="card" data-i18n="aos_c4"><h3>Book analytics</h3><p>Retention, cross-sell and commission intelligence in real time.</p></div>
       </div>
       <div class="integrity" style="margin-top:16px;" data-i18n="aos_integrity"><strong>Why this is the unicorn unlock:</strong> AgentOS converts a services business into recurring software revenue (high gross margin, net-revenue retention, and a land-and-expand motion), and each agent brings clients whose data feeds the underwriting and claims moats.</div>
     </section>
@@ -882,9 +882,9 @@
       <h2 class="slide-title" data-i18n="bm_title">Three compounding, capital-light revenue engines.</h2>
       <p class="slide-copy" data-i18n="bm_copy">Every number below recomputes from the configurator. <span class="tag tag-modeled">modeled</span> in the selected currency &amp; scale scenario.</p>
       <div class="grid-3" style="margin-top:16px;">
-        <div class="card" style="border-top:4px solid var(--blue-mid);" data-i18n="bm_c1"><span class="icon-chip">🛡️</span><h3>1. MGA insurance take</h3><div class="kpi" data-calc="eng_ins">—</div><p>2031 net revenue = GWP × take rate. Risk sits with carriers/reinsurers — capital-light.</p></div>
-        <div class="card" style="border-top:4px solid var(--green-1);" data-i18n="bm_c2"><span class="icon-chip">💻</span><h3>2. AgentOS SaaS</h3><div class="kpi" data-calc="eng_saas">—</div><p>2031 recurring = seats × seat price. High-margin, expanding software revenue.</p></div>
-        <div class="card" style="border-top:4px solid var(--violet-1);" data-i18n="bm_c3"><span class="icon-chip">🤝</span><h3>3. Marketplace take</h3><div class="kpi" data-calc="eng_mkt">—</div><p>2031 = GMV × marketplace take. Network-effect revenue with no underwriting risk.</p></div>
+        <div class="card" style="border-top:4px solid var(--blue-mid);" data-i18n="bm_c1"><h3>1. MGA insurance take</h3><div class="kpi" data-calc="eng_ins">—</div><p>2031 net revenue = GWP × take rate. Risk sits with carriers/reinsurers — capital-light.</p></div>
+        <div class="card" style="border-top:4px solid var(--green-1);" data-i18n="bm_c2"><h3>2. AgentOS SaaS</h3><div class="kpi" data-calc="eng_saas">—</div><p>2031 recurring = seats × seat price. High-margin, expanding software revenue.</p></div>
+        <div class="card" style="border-top:4px solid var(--violet-1);" data-i18n="bm_c3"><h3>3. Marketplace take</h3><div class="kpi" data-calc="eng_mkt">—</div><p>2031 = GMV × marketplace take. Network-effect revenue with no underwriting risk.</p></div>
       </div>
       <div class="panel" style="margin-top:16px;">
         <h3 style="font-size:12pt;margin-bottom:8px;" data-i18n="bm_mix_h">Revenue mix to 2031 <span class="tag tag-modeled">modeled</span></h3>
@@ -897,12 +897,12 @@
       <div class="slide-label" data-i18n="adv_label">10 · Competitive Advantages</div>
       <h2 class="slide-title" data-i18n="adv_title">Why PHINS wins — and keeps winning.</h2>
       <div class="grid-3" style="margin-top:16px;">
-        <div class="card" data-i18n="adv_c1"><span class="icon-chip">📊</span><h3>Data flywheel</h3><p>Underwriting + claims + care data compound on one ledger; rivals see only their silo.</p></div>
-        <div class="card" data-i18n="adv_c2"><span class="icon-chip">🔗</span><h3>Integrity moat</h3><p>Hash-chained, reproducible state — a trust advantage with regulators &amp; reinsurers.</p></div>
-        <div class="card" data-i18n="adv_c3"><span class="icon-chip">🤝</span><h3>Agent love, not conflict</h3><p>We empower agents instead of disintermediating them — durable distribution.</p></div>
-        <div class="card" data-i18n="adv_c4"><span class="icon-chip">💸</span><h3>Capital-light economics</h3><p>MGA + SaaS + marketplace margins without carrier balance-sheet drag.</p></div>
-        <div class="card" data-i18n="adv_c5"><span class="icon-chip">🌍</span><h3>Multi-market rails</h3><p>Regulatory adapters &amp; country packs make expansion a configuration, not a rebuild.</p></div>
-        <div class="card" data-i18n="adv_c6"><span class="icon-chip">🧠</span><h3>Severity focus</h3><p>A reinsurable, explainable risk niche others mis-price or avoid.</p></div>
+        <div class="card" data-i18n="adv_c1"><h3>Data flywheel</h3><p>Underwriting + claims + care data compound on one ledger; rivals see only their silo.</p></div>
+        <div class="card" data-i18n="adv_c2"><h3>Integrity moat</h3><p>Hash-chained, reproducible state — a trust advantage with regulators &amp; reinsurers.</p></div>
+        <div class="card" data-i18n="adv_c3"><h3>Agent love, not conflict</h3><p>We empower agents instead of disintermediating them — durable distribution.</p></div>
+        <div class="card" data-i18n="adv_c4"><h3>Capital-light economics</h3><p>MGA + SaaS + marketplace margins without carrier balance-sheet drag.</p></div>
+        <div class="card" data-i18n="adv_c5"><h3>Multi-market rails</h3><p>Regulatory adapters &amp; country packs make expansion a configuration, not a rebuild.</p></div>
+        <div class="card" data-i18n="adv_c6"><h3>Severity focus</h3><p>A reinsurable, explainable risk niche others mis-price or avoid.</p></div>
       </div>
     </section>
 
@@ -1037,9 +1037,9 @@
       <div class="slide-label" data-i18n="team_label">16 · Team</div>
       <h2 class="slide-title" data-i18n="team_title">Operators who have already built the platform — adding insurance &amp; capital firepower.</h2>
       <div class="grid-3" style="margin-top:16px;">
-        <div class="card" data-i18n="team_c1"><span class="icon-chip">👨‍💻</span><h3>Founding / platform</h3><p>Shipped an 84-service-module, ledger-governed insurance platform end-to-end.</p></div>
-        <div class="card" data-i18n="team_c2"><span class="icon-chip">📐</span><h3>Chief Actuary (incoming)</h3><p>IAA-recognised executive actuary validated pricing &amp; agreed to join.</p></div>
-        <div class="card" data-i18n="team_c3"><span class="icon-chip">🤝</span><h3>Insurance operator + capital</h3><p>Senior insurance entrepreneur (CEO/chairman) engaged as investor / active co-founder.</p></div>
+        <div class="card" data-i18n="team_c1"><h3>Founding / platform</h3><p>Shipped a 100-service-module, ledger-governed insurance platform end-to-end.</p></div>
+        <div class="card" data-i18n="team_c2"><h3>Chief Actuary (incoming)</h3><p>IAA-recognised executive actuary validated pricing &amp; agreed to join.</p></div>
+        <div class="card" data-i18n="team_c3"><h3>Insurance operator + capital</h3><p>Senior insurance entrepreneur (CEO/chairman) engaged as investor / active co-founder.</p></div>
       </div>
       <div class="note" style="margin-top:14px;" data-i18n="team_note">This round funds key hires across AI/ML, distribution (AgentOS), marketplace operations, and multi-market compliance. Specific names &amp; bios are provided under NDA.</div>
     </section>
@@ -1075,7 +1075,7 @@
         <div class="note" style="margin-top:12px;" data-calc="unicorn_note">—</div>
       </div>
       <div class="timeline" style="margin-top:20px;">
-        <div class="tl-item done" data-i18n="uni_t1"><h4>Now — Platform built &amp; validated</h4><p>84 service modules live incl. AgentOS v1; actuary validated; IL regulatory application drafted; insurance operator engaged.</p></div>
+        <div class="tl-item done" data-i18n="uni_t1"><h4>Now — Platform built &amp; validated</h4><p>100 service modules live incl. AgentOS v1; actuary validated; IL regulatory application drafted; insurance operator engaged.</p></div>
         <div class="tl-item target" data-i18n="uni_t2"><h4>Series A (this round)</h4><p>Launch MGA, ship AgentOS, open marketplace; prove unit economics.</p></div>
         <div class="tl-item" data-i18n="uni_t3"><h4>2028–2029 — Multi-market &amp; SaaS scale</h4><p>USA/Canada/EU; AgentOS net-revenue retention; marketplace GMV ramps.</p></div>
         <div class="tl-item" data-i18n="uni_t4"><h4>2030 — EBITDA-positive (base)</h4><p>Operating leverage; data flywheel compounds pricing &amp; treaty terms.</p></div>
@@ -1088,9 +1088,9 @@
       <div class="slide-label" data-i18n="exit_label">19 · Exit Scenarios</div>
       <h2 class="slide-title" data-i18n="exit_title">Multiple credible exits — IPO or strategic.</h2>
       <div class="grid-3" style="margin-top:16px;">
-        <div class="card" data-i18n="exit_c1"><span class="icon-chip">📈</span><h3>IPO</h3><p>Follow Lemonade / Hippo / Ethos public paths once net revenue and retention support public-market multiples.</p></div>
-        <div class="card" data-i18n="exit_c2"><span class="icon-chip">🏛️</span><h3>Strategic acquisition</h3><p>Global carriers &amp; reinsurers acquire AI underwriting, claims &amp; AgentOS distribution.</p></div>
-        <div class="card" data-i18n="exit_c3"><span class="icon-chip">🔗</span><h3>Platform consolidation</h3><p>Marketplace + AgentOS make PHINS a natural consolidator/target in InsurTech roll-ups.</p></div>
+        <div class="card" data-i18n="exit_c1"><h3>IPO</h3><p>Follow Lemonade / Hippo / Ethos public paths once net revenue and retention support public-market multiples.</p></div>
+        <div class="card" data-i18n="exit_c2"><h3>Strategic acquisition</h3><p>Global carriers &amp; reinsurers acquire AI underwriting, claims &amp; AgentOS distribution.</p></div>
+        <div class="card" data-i18n="exit_c3"><h3>Platform consolidation</h3><p>Marketplace + AgentOS make PHINS a natural consolidator/target in InsurTech roll-ups.</p></div>
       </div>
       <div class="panel" style="margin-top:16px;">
         <div class="scroll-x">
@@ -1123,16 +1123,16 @@
         <h2 data-i18n="con_close_h">Let's make protection <span class="grad">instant, intelligent &amp; abundant</span>.</h2>
         <p data-i18n="con_close_p">We are raising our Series A to turn a validated, capital-light MGA into the AI operating system for the global protection economy. We would welcome a conversation about how PHINS fits your thesis.</p>
         <div class="contact-row" data-i18n="con_chips">
-          <span class="contact-chip">🌐 phins.ai</span>
-          <span class="contact-chip">📄 Due-diligence library available under NDA</span>
-          <span class="contact-chip">🤝 Series A · Institutional Venture</span>
+          <span class="contact-chip"> phins.ai</span>
+          <span class="contact-chip"> Due-diligence library available under NDA</span>
+          <span class="contact-chip"> Series A · Institutional Venture</span>
         </div>
       </div>
     </section>
 
     <!-- ── APPENDIX · INTERNAL AUTHORING TOOLS (web only, excluded from PDF) ── -->
     <section class="slide no-print" id="remarks">
-      <div class="appendix-flag" data-i18n="apx_flag">🔧 Appendix · Internal authoring tools — web only, excluded from the investor PDF</div>
+      <div class="appendix-flag" data-i18n="apx_flag"> Appendix · Internal authoring tools — web only, excluded from the investor PDF</div>
       <div class="slide-label" data-i18n="apx_label">Appendix · Strategic Remarks &amp; PHINS Prompt Library</div>
       <h2 class="slide-title" data-i18n="apx_title">Internal: how to keep refining this deck — remarks &amp; reusable AI prompts.</h2>
       <div class="note" style="margin-top:12px;" data-i18n="apx_note">This appendix is an internal working aid for the PHINS team. It is hidden when the deck is printed or exported to PDF, so investor-facing materials never include build instructions or prompts.</div>
@@ -1160,7 +1160,7 @@
         <p class="slide-copy" style="margin-bottom:12px;" data-i18n="apx_lib_copy">Drop these into PHINS's AI tooling (or any LLM) to regenerate, localize, or stress-test the deck while preserving data integrity. Each is self-contained.</p>
 
         <p style="font-size:8.6pt;font-weight:800;color:var(--blue-dark);margin:14px 0 6px;" data-i18n="apx_pa">A · Master deck generator</p>
-        <code class="prompt"><button type="button" class="btn copy-btn no-print" data-copy>📋 Copy</button>Act as a partner at Sequoia Capital and Andreessen Horowitz evaluating PHINS for a Series A.
+        <code class="prompt"><button type="button" class="btn copy-btn no-print" data-copy> Copy</button>Act as a partner at Sequoia Capital and Andreessen Horowitz evaluating PHINS for a Series A.
 Transform PHINS from an insurance business into a global AI-powered InsurTech platform.
 Headline the company as "AgentOS for Insurance + a Disability/Longevity Protection Marketplace,"
 with the disability/LTC MGA as the first use case (the wedge), not the whole story.
@@ -1179,7 +1179,7 @@ numbers reconcile; clearly separate REPORTED (cited, external) facts from MODELE
 planning) outputs; never invent sourced statistics.</code>
 
         <p style="font-size:8.6pt;font-weight:800;color:var(--blue-dark);margin:18px 0 6px;" data-i18n="apx_pb">B · Investor-specific re-tune</p>
-        <code class="prompt"><button type="button" class="btn copy-btn no-print" data-copy>📋 Copy</button>Re-tune the PHINS deck for {INVESTOR_NAME}, a {STAGE} fund focused on {THESIS}
+        <code class="prompt"><button type="button" class="btn copy-btn no-print" data-copy> Copy</button>Re-tune the PHINS deck for {INVESTOR_NAME}, a {STAGE} fund focused on {THESIS}
 (e.g. fintech, AI infra, healthcare, embedded insurance) in {GEOGRAPHY}.
 Adjust emphasis, comparables and the ask to that thesis. Set: round = {ROUND},
 pre-money = {PRE_MONEY}, currency = {CCY}, global scale scenario = {SCALE},
@@ -1189,7 +1189,7 @@ funds, the unicorn valuation path and gross MOIC from these inputs. Keep reporte
 modeled separation intact and flag any figure that would not reconcile.</code>
 
         <p style="font-size:8.6pt;font-weight:800;color:var(--blue-dark);margin:18px 0 6px;" data-i18n="apx_pc">C · Data-integrity audit</p>
-        <code class="prompt"><button type="button" class="btn copy-btn no-print" data-copy>📋 Copy</button>Audit this PHINS deck for data integrity. Verify that every modeled figure derives from
+        <code class="prompt"><button type="button" class="btn copy-btn no-print" data-copy> Copy</button>Audit this PHINS deck for data integrity. Verify that every modeled figure derives from
 the single canonical base (premium, take rate, scale, seats, GMV) and reconciles across
 KPIs, the 5-year P&L, revenue mix, use of funds, the unicorn path and exit table. List
 any number that is asserted without a source or cannot be reproduced from the base. Confirm
@@ -1198,7 +1198,7 @@ currency, and that no public statistic is presented as PHINS revenue. Output a p
 checklist plus exact fixes.</code>
 
         <p style="font-size:8.6pt;font-weight:800;color:var(--blue-dark);margin:18px 0 6px;" data-i18n="apx_pd">D · Market localization</p>
-        <code class="prompt"><button type="button" class="btn copy-btn no-print" data-copy>📋 Copy</button>Localize the PHINS deck for {MARKET}. Replace currency, regulator, distribution channels
+        <code class="prompt"><button type="button" class="btn copy-btn no-print" data-copy> Copy</button>Localize the PHINS deck for {MARKET}. Replace currency, regulator, distribution channels
 and the severity/LTC product framing with market-appropriate equivalents. Keep the
 platform headline (AgentOS + Marketplace) and the three revenue engines constant. Provide
 a market-entry model (MGA / carrier partner / embedded), a milestone gate plan, and a SOM
@@ -1274,7 +1274,7 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       // ── document / chrome ──
       doc_title: "PHINS — מצגת משקיעים סדרה A | AgentOS לביטוח + מרקטפלייס להגנת נכות/אריכות ימים",
       ui_tagline: "AI InsurTech · AgentOS · מרקטפלייס הגנה",
-      ui_print: "🖨️ הדפסה / PDF",
+      ui_print: "️ הדפסה / PDF",
       ui_back_dash: "← לוח המצגת",
       ui_back_meeting: "פגישת משקיעים",
 
@@ -1287,7 +1287,7 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       nav_unicorn: "מסלול יוניקורן", nav_exit: "יציאה", nav_contact: "הבקשה ויצירת קשר", nav_remarks: "נספח · כלים",
 
       // ── hero ──
-      hero_eyebrow: "🦄 סדרה A · השקעה מוסדית · חסוי",
+      hero_eyebrow: " סדרה A · השקעה מוסדית · חסוי",
       hero_h1: "PHINS היא <span class=\"grad\">AgentOS לביטוח + מרקטפלייס להגנת נכות/אריכות ימים</span> — מערכת ההפעלה מבוססת ה‑AI לכלכלת ההגנה הגלובלית.",
       hero_lede: "ה‑MGA לביטוח נכות וסיעוד הוא <strong>השימוש הראשון — נקודת הכניסה, לא כל הסיפור</strong>. אנחנו מתחילים היכן שהכאב הגדול ביותר והמתמטיקה הנקייה ביותר — MGA רזה‑הון שמוכר שכבת חומרה לנכות קשה וסיעוד — ומרכיבים אותו לפלטפורמה: <strong>חפיר חיתום מבוסס AI</strong>, <strong>חפיר תביעות מבוסס AI</strong>, <strong>AgentOS</strong> שהופך כל סוכן ביטוח למפעיל פי 10, ו<strong>מרקטפלייס חמש‑צדדי</strong> המחבר לקוחות, סוכנים, רופאים, מבטחי משנה ונותני טיפול. ספר חשבונות אחד. גלגל תנופה אחד של נתונים. מסלול רזה‑הון אל מעבר ל‑1 מיליארד דולר.",
       hero_badges: "<span class=\"hero-badge\">מודל MGA רזה‑הון</span><span class=\"hero-badge\">חיתום + תביעות מבוססי AI</span><span class=\"hero-badge\">AgentOS SaaS</span><span class=\"hero-badge\">מרקטפלייס הגנה</span><span class=\"hero-badge\">שלמות נתונים בשרשרת גיבוב</span><span class=\"hero-badge\">רב‑שוקי מהיסוד</span>",
@@ -1326,17 +1326,17 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       sum_hl2: "שווי משתמע 2031 <span class=\"tag tag-modeled\">מודלי</span>",
       sum_hl3: "סבב סדרה A — הבקשה <span class=\"tag tag-adj\">מתכוונן</span>",
       sum_hl4: "מנועי הכנסה רזי‑הון: עמלת MGA · AgentOS SaaS · עמלת מרקטפלייס",
-      sum_c1: "<span class=\"icon-chip\">🏗️</span><h3>כבר בנויה</h3><p>פלטפורמה פרוסה ומנוהלת בספר חשבונות המשתרעת על פוליסות, חיתום, חיוב, תביעות, ביטוח משנה, מרקטפלייס בריאות ומערך סוכנים חי (AgentOS v1) לאורך 83 מודולי שירות.</p>",
-      sum_c2: "<span class=\"icon-chip\">🧠</span><h3>שני חפירי AI</h3><p>חיתום AI בר‑ביקורת ובינת תביעות AI — נתונים קנייניים שמתחרים לא רואים, עם ראיות מוכנות לביטוח משנה.</p>",
-      sum_c3: "<span class=\"icon-chip\">🔗</span><h3>שלמות נתונים ללא פשרות</h3><p>מצב צובר‑בלבד בשרשרת גיבוב. AI/BI ממליצים אך לעולם לא רושמים — חפיר אמון מול רגולטורים ומבטחי משנה.</p>",
+      sum_c1: "<span class=\"icon-chip\">️</span><h3>כבר בנויה</h3><p>פלטפורמה פרוסה ומנוהלת בספר חשבונות המשתרעת על פוליסות, חיתום, חיוב, תביעות, ביטוח משנה, מרקטפלייס בריאות ומערך סוכנים חי (AgentOS v1) לאורך 100 מודולי שירות.</p>",
+      sum_c2: "<span class=\"icon-chip\"></span><h3>שני חפירי AI</h3><p>חיתום AI בר‑ביקורת ובינת תביעות AI — נתונים קנייניים שמתחרים לא רואים, עם ראיות מוכנות לביטוח משנה.</p>",
+      sum_c3: "<span class=\"icon-chip\"></span><h3>שלמות נתונים ללא פשרות</h3><p>מצב צובר‑בלבד בשרשרת גיבוב. AI/BI ממליצים אך לעולם לא רושמים — חפיר אמון מול רגולטורים ומבטחי משנה.</p>",
       sum_integrity: "<strong>הבקשה.</strong> מגייסים <strong data-calc=\"hero_round\">—</strong> (סדרה A) להשקת ה‑MGA לחומרה, הרחבת AgentOS מגרסה 1 הפעילה לקוקפיט הסוכנים המלא ופתיחת מרקטפלייס ההגנה — מימון המסלול ל‑EBITDA חיובי (בסיס 2030) ושווי משתמע מודלי ל‑2031 של <strong data-calc=\"kpi_val31\">—</strong>. כווננו כל הנחה בזמן אמת במחולל; כל המספרים מחושבים מחדש מבסיס קנוני אחד.",
 
       // ── configurator ──
-      cfg_eyebrow: "🎛️ מנוע מתכוונן",
+      cfg_eyebrow: "️ מנוע מתכוונן",
       cfg_title: "מחולל משקיעים ותרחישים <span class=\"tag tag-adj\">מתכוונן · שער חי</span>",
       cfg_copy: "כווננו את המצגת ל<strong>כל משקיע או כל גורם</strong>. המטבע, הסבב, השווי, קנה המידה הגלובלי, התמחור ושיעורי העמלה — הכול נובע מ<strong>בסיס דולרי קנוני יחיד</strong>, כך שכל טבלה, גרף, KPI ומסלול היוניקורן מחושבים מחדש ותמיד מתואמים. ההגדרות נשמרות בדפדפן שלכם.",
       cfg_cur_label: "מטבע תצוגה",
-      cfg_fx_title: "💱 שער חי",
+      cfg_fx_title: " שער חי",
       cfg_fx_eur: "1 USD = €",
       cfg_fx_ils: "1 USD = ₪",
       cfg_fx_refresh: "↻ רענון",
@@ -1371,25 +1371,25 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       th_label: "00 · תזת ההשקעה לסדרה A",
       th_title: "מנותח כפי שיעריך שותף מוסדי: עשר סיבות לכך ש‑PHINS היא פלטפורמה ברת‑מימון, לא פיצ'ר.",
       th_copy: "כותרת: <strong>AgentOS לביטוח + מרקטפלייס להגנת נכות/אריכות ימים</strong>, כאשר ה‑MGA לנכות/סיעוד הוא השימוש הראשון (נקודת הכניסה). עשרת העמודים שלהלן הם עמוד השדרה של המצגת; מספרים <span class=\"tag tag-reported\">מדווחים</span> חיצוניים ומצוטטים, מספרים <span class=\"tag tag-modeled\">מודליים</span> נגזרים בזמן אמת מהמחולל כך שתמיד מתואמים.",
-      th_p1: "<span class=\"icon-chip\">🌍</span><h3>1 · שוק נכות ואריכות ימים גלובלי עצום</h3><p>הזדקנות + זעזוע אריכות ימים מרחיבים פער הגנה של <strong>1.4 טריליון דולר+</strong> <span class=\"tag tag-reported\">אומדן מדווח</span>. <a href=\"#market\">→ שוק</a></p>",
-      th_p2: "<span class=\"icon-chip\">🧠</span><h3>2 · חפיר חיתום AI</h3><p>ספי חומרה לפי מקטע, מרשם מודלים, החלטות הניתנות לשחזור, נתונים קנייניים שמתחרים לא רואים. <a href=\"#ai\">→ AI</a></p>",
-      th_p3: "<span class=\"icon-chip\">⚙️</span><h3>3 · חפיר בינת תביעות AI</h3><p>מיון, סילוק מבוסס‑קוד של הטבות זכאות, ניווט טיפול‑בית‑קודם — כלכלת הפסד טובה יותר. <a href=\"#ai\">→ AI</a></p>",
-      th_p4: "<span class=\"icon-chip\">💻</span><h3>4 · AgentOS לסוכנים</h3><p>קוקפיט ה‑SaaS שמחזק סוכנים (לא מנטרל אותם) ומחזיק ביחסי ההפצה. <a href=\"#agentos\">→ AgentOS</a></p>",
-      th_p5: "<span class=\"icon-chip\">🤝</span><h3>5 · מרקטפלייס חמש‑צדדי</h3><p>לקוחות · סוכנים · רופאים · מבטחי משנה · נותני טיפול — רשת אחת נקייה בספר. <a href=\"#marketplace\">→ מרקטפלייס</a></p>",
-      th_p6: "<span class=\"icon-chip\">🔁</span><h3>6 · הכנסת SaaS</h3><p>מושבי AgentOS חוזרים ושולי‑רווח גבוהים — מודלי ל‑2031 <strong data-calc=\"eng_saas\">—</strong>. <a href=\"#model\">→ מודל</a></p>",
-      th_p7: "<span class=\"icon-chip\">📊</span><h3>7 · אפקטי רשת וגלגל תנופה של נתונים</h3><p>הפצה → נתונים → תמחור → אמון → הפצה; הלולאה מצטברת. <a href=\"#flywheel\">→ גלגל תנופה</a></p>",
-      th_p8: "<span class=\"icon-chip\">🛫</span><h3>8 · יכולת התרחבות בינלאומית</h3><p>מתאמים רגולטוריים ו‑26 חבילות מדינה הופכים התרחבות לתצורה, לא לבנייה מחדש. <a href=\"#gtm\">→ אסטרטגיית שוק</a></p>",
-      th_p9: "<span class=\"icon-chip\">💸</span><h3>9 · מודל MGA רזה‑הון</h3><p>הסיכון אצל מבטחים/מבטחי משנה; PHINS מרוויחה שולי תוכנה + עמלות. <a href=\"#model\">→ מודל</a></p>",
-      th_p10: "<span class=\"icon-chip\">🦄</span><h3>10 · מסלול אל מעבר ל‑1 מיליארד דולר</h3><p>שווי משתמע מודלי ל‑2031 <strong data-calc=\"kpi_val31\">—</strong> במכפיל היציאה הנבחר. <a href=\"#unicorn\">→ מסלול יוניקורן</a></p>",
+      th_p1: "<span class=\"icon-chip\"></span><h3>1 · שוק נכות ואריכות ימים גלובלי עצום</h3><p>הזדקנות + זעזוע אריכות ימים מרחיבים פער הגנה של <strong>1.4 טריליון דולר+</strong> <span class=\"tag tag-reported\">אומדן מדווח</span>. <a href=\"#market\">→ שוק</a></p>",
+      th_p2: "<span class=\"icon-chip\"></span><h3>2 · חפיר חיתום AI</h3><p>ספי חומרה לפי מקטע, מרשם מודלים, החלטות הניתנות לשחזור, נתונים קנייניים שמתחרים לא רואים. <a href=\"#ai\">→ AI</a></p>",
+      th_p3: "<span class=\"icon-chip\"></span><h3>3 · חפיר בינת תביעות AI</h3><p>מיון, סילוק מבוסס‑קוד של הטבות זכאות, ניווט טיפול‑בית‑קודם — כלכלת הפסד טובה יותר. <a href=\"#ai\">→ AI</a></p>",
+      th_p4: "<span class=\"icon-chip\"></span><h3>4 · AgentOS לסוכנים</h3><p>קוקפיט ה‑SaaS שמחזק סוכנים (לא מנטרל אותם) ומחזיק ביחסי ההפצה. <a href=\"#agentos\">→ AgentOS</a></p>",
+      th_p5: "<span class=\"icon-chip\"></span><h3>5 · מרקטפלייס חמש‑צדדי</h3><p>לקוחות · סוכנים · רופאים · מבטחי משנה · נותני טיפול — רשת אחת נקייה בספר. <a href=\"#marketplace\">→ מרקטפלייס</a></p>",
+      th_p6: "<span class=\"icon-chip\"></span><h3>6 · הכנסת SaaS</h3><p>מושבי AgentOS חוזרים ושולי‑רווח גבוהים — מודלי ל‑2031 <strong data-calc=\"eng_saas\">—</strong>. <a href=\"#model\">→ מודל</a></p>",
+      th_p7: "<span class=\"icon-chip\"></span><h3>7 · אפקטי רשת וגלגל תנופה של נתונים</h3><p>הפצה → נתונים → תמחור → אמון → הפצה; הלולאה מצטברת. <a href=\"#flywheel\">→ גלגל תנופה</a></p>",
+      th_p8: "<span class=\"icon-chip\"></span><h3>8 · יכולת התרחבות בינלאומית</h3><p>מתאמים רגולטוריים ו‑26 חבילות מדינה הופכים התרחבות לתצורה, לא לבנייה מחדש. <a href=\"#gtm\">→ אסטרטגיית שוק</a></p>",
+      th_p9: "<span class=\"icon-chip\"></span><h3>9 · מודל MGA רזה‑הון</h3><p>הסיכון אצל מבטחים/מבטחי משנה; PHINS מרוויחה שולי תוכנה + עמלות. <a href=\"#model\">→ מודל</a></p>",
+      th_p10: "<span class=\"icon-chip\"></span><h3>10 · מסלול אל מעבר ל‑1 מיליארד דולר</h3><p>שווי משתמע מודלי ל‑2031 <strong data-calc=\"kpi_val31\">—</strong> במכפיל היציאה הנבחר. <a href=\"#unicorn\">→ מסלול יוניקורן</a></p>",
       th_integrity: "<strong>כיצד שותף ב‑Sequoia / a16z צריך לקרוא זאת:</strong> ה‑MGA מוכיח תמחור, מייצר נתונים קנייניים ומממן את הבנייה; הסיפור <em>בר‑ההשקעה</em> הוא הפלטפורמה — AgentOS (מכפילי SaaS) + המרקטפלייס (אפקטי רשת) מעל שני חפירי AI וגלגל תנופה של נתונים. זה מה שמתמחר מחדש את PHINS מתוצאת ביטוח של 50–100 מיליון דולר אל חברת תוכנה בקנה מידה יוניקורן.",
 
       // ── vision ──
       vis_label: "01 · חזון",
       vis_title: "הגנה צריכה להיות מיידית, חכמה ושופעת — לא הבטחה על נייר שאנשים נאבקים לגבות.",
       vis_copy: "העולם מזדקן וחי יותר, אך המערכות שמגנות על אנשים מפני נכות קשה ועלות סיעוד הן אנלוגיות, יריבותיות ותת‑ממומנות. PHINS קיימת כדי להפוך הגנה למוצר תוכנה: מתומחר על‑ידי AI, משולם בקוד, ומתואם בין כל מי שמספק טיפול.",
-      vis_c1: "<span class=\"icon-chip\">🌍</span><h3>הקטגוריה שאנו יוצרים</h3><p><strong>AgentOS לביטוח + מרקטפלייס הגנה.</strong> לא עוד מוצר נקודתי — שכבת ההפעלה שעליה רצים הפצה, חיתום, תביעות וטיפול.</p>",
-      vis_c2: "<span class=\"icon-chip\">⚡</span><h3>הסטנדרט שאנו קובעים</h3><p>הצעת מחיר בשניות, חיתום עם AI בר‑ביקורת, סילוק תביעות זכאות בקוד וניתוב טיפול — הכול ממערכת רישום אחת בשרשרת גיבוב.</p>",
-      vis_c3: "<span class=\"icon-chip\">🦄</span><h3>התוצאה</h3><p>פלטפורמה רזת‑הון רב‑שוקית עם שלושה מנועי הכנסה מצטברים וגלגל תנופה של נתונים — צורתה של חברת 1 מיליארד דולר+.</p>",
+      vis_c1: "<span class=\"icon-chip\"></span><h3>הקטגוריה שאנו יוצרים</h3><p><strong>AgentOS לביטוח + מרקטפלייס הגנה.</strong> לא עוד מוצר נקודתי — שכבת ההפעלה שעליה רצים הפצה, חיתום, תביעות וטיפול.</p>",
+      vis_c2: "<span class=\"icon-chip\"></span><h3>הסטנדרט שאנו קובעים</h3><p>הצעת מחיר בשניות, חיתום עם AI בר‑ביקורת, סילוק תביעות זכאות בקוד וניתוב טיפול — הכול ממערכת רישום אחת בשרשרת גיבוב.</p>",
+      vis_c3: "<span class=\"icon-chip\"></span><h3>התוצאה</h3><p>פלטפורמה רזת‑הון רב‑שוקית עם שלושה מנועי הכנסה מצטברים וגלגל תנופה של נתונים — צורתה של חברת 1 מיליארד דולר+.</p>",
 
       // ── problem ──
       prob_label: "02 · בעיה",
@@ -1401,10 +1401,10 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       sol_label: "03 · פתרון",
       sol_title: "פלטפורמת AI אחת: להפיץ, לחתם, לשלם ולתאם טיפול — על ספר חשבונות יחיד.",
       sol_copy: "PHINS מוכרת מוצר ממוקד ובר‑ביטוח‑משנה (שכבת חומרה לנכות קשה קבועה / סיעוד) כ‑MGA רזה‑הון, ואז מרכיבה את אותה פלטפורמה להכנסות SaaS ומרקטפלייס.",
-      sol_c1: "<span class=\"icon-chip\">📝</span><h3>הפצה</h3><p>הצעת מחיר עד הנפקה דיגיטלית ללקוחות וקוקפיט AgentOS לסוכנים.</p>",
-      sol_c2: "<span class=\"icon-chip\">🧠</span><h3>חיתום</h3><p>חיתום AI בר‑ביקורת עם ספים לפי מקטע ומרשם מודלים.</p>",
-      sol_c3: "<span class=\"icon-chip\">⚙️</span><h3>תשלום</h3><p>בינת תביעות AI; הטבות זכאות מסולקות בקוד, מעוגנות לספר.</p>",
-      sol_c4: "<span class=\"icon-chip\">🤝</span><h3>תיאום</h3><p>ניתוב מרקטפלייס בין רופאים, נותני טיפול, מבטחי משנה ומשלמים.</p>",
+      sol_c1: "<span class=\"icon-chip\"></span><h3>הפצה</h3><p>הצעת מחיר עד הנפקה דיגיטלית ללקוחות וקוקפיט AgentOS לסוכנים.</p>",
+      sol_c2: "<span class=\"icon-chip\"></span><h3>חיתום</h3><p>חיתום AI בר‑ביקורת עם ספים לפי מקטע ומרשם מודלים.</p>",
+      sol_c3: "<span class=\"icon-chip\"></span><h3>תשלום</h3><p>בינת תביעות AI; הטבות זכאות מסולקות בקוד, מעוגנות לספר.</p>",
+      sol_c4: "<span class=\"icon-chip\"></span><h3>תיאום</h3><p>ניתוב מרקטפלייס בין רופאים, נותני טיפול, מבטחי משנה ומשלמים.</p>",
       sol_integrity: "<strong>התזה: נקודת כניסה → פלטפורמה.</strong> מוצר ה‑MGA הוא ראש הגשר שמוכיח תמחור, מייצר נתונים קנייניים ומממן את הבנייה. ה<em>כותרת</em> היא הפלטפורמה: AgentOS + מרקטפלייס. זה מה שהופך תוצאת ביטוח של 50–100 מיליון דולר לנרטיב תוכנה בקנה מידה יוניקורן.",
 
       // ── market ──
@@ -1422,29 +1422,29 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       prod_label: "05 · מוצר",
       prod_title: "פלטפורמה שכבר בנויה — לא הבטחת מצגת.",
       prod_copy: "PHINS היא פלטפורמה פרוסה רבת‑מודולים המשתרעת על פוליסות, חיתום, חיוב, תביעות, ביטוח משנה, תשתיות, מרקטפלייס בריאות, מערך סוכנים חי ומתאמים רגולטוריים רב‑שוקיים — הכול על ספר חשבונות צובר‑בלבד בשרשרת גיבוב.",
-      prod_c1: "<span class=\"icon-chip\">🔁</span><h3>מחזור חיי ביטוח מלא</h3><p>פוליסה → חיתום → חיוב → תביעה → ביטוח משנה, כל שלב מתועד לביקורת וניתן לשחזור.</p>",
-      prod_c2: "<span class=\"icon-chip\">🧩</span><h3>83 מודולי שירות פרוסים</h3><p>שירותים מורכבים להפצה, סיכון, פיננסים, טיפול וציות.</p>",
-      prod_momentum: "<h3 style=\"font-size:11.5pt;margin-bottom:8px;\">🚀 תנופת פלטפורמה — מה נשלח מאז הרכבת המצגת (יוני–יולי 2026)</h3><ul class=\"tick\"><li><strong>AgentOS v1 פעיל:</strong> פורטל סוכנים, לוח קהילת סוכנים למנהלים, הזמנות ושיוכים, ודוחות עמלה מעוגני ספר חשבונות.</li><li><strong>סימולציית הערכה אקטוארית דטרמיניסטית:</strong> ריצות שווי משוחזרות ביט‑אחר‑ביט עם גיבוב תוכן בר‑אימות, המזינות תמחור למשקיעים ולשותפים.</li><li><strong>תזכיר בקשה רגולטורית לישראל (אנגלית + עברית)</strong> עם עיצוב המוצר המוגש (טיוטה 3.0 — כיסוי נכות לכל החיים, יחס 1:1 מגיל 65).</li><li><strong>חיזוק ממשל AI:</strong> קטלוג יכולות, תיעוד ביקורת עמיד להחלטות AI בחיתום, תביעות, מסחר וסוכני וידאו.</li><li><strong>גל אבטחה:</strong> אכיפת בידוד דיירים בכל מסלולי הלקוח ומדיניות סודות שנכשלת‑סגור בפרודקשן.</li><li><strong>סט מסמכי משקיעים ברמה ראשונה:</strong> כל דוח, תכנית, NDA ותשקיף להורדה נושאים כעת את נייר המכתבים הממותג עם סמל המגן.</li></ul>",
-      prod_c3: "<span class=\"icon-chip\">🔗</span><h3>ספר חשבונות בשרשרת גיבוב</h3><p>כל יתרה והחלטה ניתנות לשחזור ממצב צובר‑בלבד. AI/BI רשאים להמליץ אך לעולם לא לרשום.</p>",
-      prod_c4: "<span class=\"icon-chip\">🌐</span><h3>מתאמים רב‑שוקיים</h3><p>26 חבילות מצגת למדינה/רגולטור ומסילות לוקליזציה כבר ממודלים.</p>",
-      prod_c5: "<span class=\"icon-chip\">🏦</span><h3>ארנקים וסילוק</h3><p>ארנקי מרקטפלייס, החזקות, מחזורי סילוק, השבת משלמים והעברות.</p>",
-      prod_c6: "<span class=\"icon-chip\">🛡️</span><h3>אבטחה מהיסוד</h3><p>כספת, אסימוני הזדהות, חומת אש, גילוי חדירות, חיטוי בקשות וסריקת קבצים.</p>",
+      prod_c1: "<span class=\"icon-chip\"></span><h3>מחזור חיי ביטוח מלא</h3><p>פוליסה → חיתום → חיוב → תביעה → ביטוח משנה, כל שלב מתועד לביקורת וניתן לשחזור.</p>",
+      prod_c2: "<span class=\"icon-chip\"></span><h3>100 מודולי שירות פרוסים</h3><p>שירותים מורכבים להפצה, סיכון, פיננסים, טיפול וציות.</p>",
+      prod_momentum: "<h3 style=\"font-size:11.5pt;margin-bottom:8px;\"> תנופת פלטפורמה — מה נשלח מאז הרכבת המצגת (יוני–יולי 2026)</h3><ul class=\"tick\"><li><strong>AgentOS v1 פעיל:</strong> פורטל סוכנים, לוח קהילת סוכנים למנהלים, הזמנות ושיוכים, ודוחות עמלה מעוגני ספר חשבונות.</li><li><strong>סימולציית הערכה אקטוארית דטרמיניסטית:</strong> ריצות שווי משוחזרות ביט‑אחר‑ביט עם גיבוב תוכן בר‑אימות, המזינות תמחור למשקיעים ולשותפים.</li><li><strong>תזכיר בקשה רגולטורית לישראל (אנגלית + עברית)</strong> עם עיצוב המוצר המוגש (טיוטה 3.0 — כיסוי נכות לכל החיים, יחס 1:1 מגיל 65).</li><li><strong>חיזוק ממשל AI:</strong> קטלוג יכולות, תיעוד ביקורת עמיד להחלטות AI בחיתום, תביעות, מסחר וסוכני וידאו.</li><li><strong>גל אבטחה:</strong> אכיפת בידוד דיירים בכל מסלולי הלקוח ומדיניות סודות שנכשלת‑סגור בפרודקשן.</li><li><strong>סט מסמכי משקיעים ברמה ראשונה:</strong> כל דוח, תכנית, NDA ותשקיף להורדה נושאים כעת את נייר המכתבים הממותג עם סמל המגן.</li></ul>",
+      prod_c3: "<span class=\"icon-chip\"></span><h3>ספר חשבונות בשרשרת גיבוב</h3><p>כל יתרה והחלטה ניתנות לשחזור ממצב צובר‑בלבד. AI/BI רשאים להמליץ אך לעולם לא לרשום.</p>",
+      prod_c4: "<span class=\"icon-chip\"></span><h3>מתאמים רב‑שוקיים</h3><p>26 חבילות מצגת למדינה/רגולטור ומסילות לוקליזציה כבר ממודלים.</p>",
+      prod_c5: "<span class=\"icon-chip\"></span><h3>ארנקים וסילוק</h3><p>ארנקי מרקטפלייס, החזקות, מחזורי סילוק, השבת משלמים והעברות.</p>",
+      prod_c6: "<span class=\"icon-chip\">️</span><h3>אבטחה מהיסוד</h3><p>כספת, אסימוני הזדהות, חומת אש, גילוי חדירות, חיטוי בקשות וסריקת קבצים.</p>",
 
       // ── AI ──
       ai_label: "06 · ארכיטקטורת AI",
       ai_title: "שני חפירי AI: בינת חיתום ובינת תביעות — שניהם ברי‑ביקורת.",
-      ai_panel1: "<h3 style=\"font-size:12.5pt;\">🧠 חפיר חיתום AI</h3><ul class=\"tick\"><li><strong>ספים לפי מקטע</strong> מכווננים לחומרה (3+ ADL קבועים), לא לתחלואה גנרית.</li><li><strong>מרשם מודלים</strong> מנהל גרסאות לכל מודל; ההחלטות מוסברות וניתנות לשחזור.</li><li><strong>נתונים קנייניים</strong> מכל פוליסה שנכרתה מחדדים תמחור שמתחרים לא רואים.</li><li><strong>תוצרים מוכנים לביטוח משנה</strong> — ראיות בירור אובייקטיביות משפרות תנאי חוזה.</li></ul>",
-      ai_panel2: "<h3 style=\"font-size:12.5pt;\">⚙️ חפיר בינת תביעות AI</h3><ul class=\"tick\"><li><strong>מיון וניתוב</strong> מקצרים מסלולי תביעות לא‑קבועות ומפחיתים התראות שווא.</li><li><strong>סילוק מבוסס‑קוד</strong> של הטבות זכאות — מהיר, עקבי ומעוגן לספר.</li><li><strong>ניווט טיפול</strong> מנתב טיפול‑בית‑קודם, ומשפר כלכלת הפסד ותוצאות.</li><li><strong>הונאה ושלמות</strong> נבדקות מול רשומות עמידות‑זיוף בשרשרת גיבוב.</li></ul>",
+      ai_panel1: "<h3 style=\"font-size:12.5pt;\"> חפיר חיתום AI</h3><ul class=\"tick\"><li><strong>ספים לפי מקטע</strong> מכווננים לחומרה (3+ ADL קבועים), לא לתחלואה גנרית.</li><li><strong>מרשם מודלים</strong> מנהל גרסאות לכל מודל; ההחלטות מוסברות וניתנות לשחזור.</li><li><strong>נתונים קנייניים</strong> מכל פוליסה שנכרתה מחדדים תמחור שמתחרים לא רואים.</li><li><strong>תוצרים מוכנים לביטוח משנה</strong> — ראיות בירור אובייקטיביות משפרות תנאי חוזה.</li></ul>",
+      ai_panel2: "<h3 style=\"font-size:12.5pt;\"> חפיר בינת תביעות AI</h3><ul class=\"tick\"><li><strong>מיון וניתוב</strong> מקצרים מסלולי תביעות לא‑קבועות ומפחיתים התראות שווא.</li><li><strong>סילוק מבוסס‑קוד</strong> של הטבות זכאות — מהיר, עקבי ומעוגן לספר.</li><li><strong>ניווט טיפול</strong> מנתב טיפול‑בית‑קודם, ומשפר כלכלת הפסד ותוצאות.</li><li><strong>הונאה ושלמות</strong> נבדקות מול רשומות עמידות‑זיוף בשרשרת גיבוב.</li></ul>",
       ai_note: "<strong>ממשל:</strong> שכבות ה‑AI וה‑BI הן ייעוציות בחוזה — הן ממליצות, מנקדות ומסבירות, אך רישומים פיננסיים נעשים רק באמצעות עסקאות מנוהלות בספר. זה מה שמאפשר לנו להבטיח <em>שלמות נתונים ללא פשרות</em> לרגולטורים, מבטחי משנה ומשקיעים בו‑זמנית.",
 
       // ── agentos ──
       aos_label: "07 · AgentOS",
       aos_title: "AgentOS הופך כל סוכן ביטוח למפעיל פי 10 — ולגלגל התנופה של ההפצה שלנו.",
       aos_copy: "במקום להילחם בסוכנים, אנחנו מחזקים אותם. AgentOS v1 כבר פעיל בפלטפורמה — פורטל סוכנים, הזמנות ושיוכים, ודוחות עמלה מעוגני ספר חשבונות — והסבב הזה מרחיב אותו לקוקפיט ה‑SaaS המלא שעליו סוכנים מנהלים את כל התיק שלהם: הסיבה ש‑PHINS מרחיבה הפצה ללא מאזן.",
-      aos_c1: "<span class=\"icon-chip\">⚡</span><h3>הצעת מחיר מיידית</h3><p>הצעת מחיר עד הנפקה מבוססת‑AI על פני מוצרים ומבטחים ממסך אחד.</p>",
-      aos_c2: "<span class=\"icon-chip\">📋</span><h3>טייס אוטומטי לציות</h3><p>התאמה, גילויי נאות ושובל ביקורת נוצרים אוטומטית.</p>",
-      aos_c3: "<span class=\"icon-chip\">🤖</span><h3>קו‑פיילוטים לסוכן</h3><p>ניסוח AI, שירות, חידושים והפעולה הבאה הטובה ביותר על התיק.</p>",
-      aos_c4: "<span class=\"icon-chip\">💼</span><h3>אנליטיקת תיק</h3><p>שימור, מכירה‑צולבת ובינת עמלות בזמן אמת.</p>",
+      aos_c1: "<span class=\"icon-chip\"></span><h3>הצעת מחיר מיידית</h3><p>הצעת מחיר עד הנפקה מבוססת‑AI על פני מוצרים ומבטחים ממסך אחד.</p>",
+      aos_c2: "<span class=\"icon-chip\"></span><h3>טייס אוטומטי לציות</h3><p>התאמה, גילויי נאות ושובל ביקורת נוצרים אוטומטית.</p>",
+      aos_c3: "<span class=\"icon-chip\"></span><h3>קו‑פיילוטים לסוכן</h3><p>ניסוח AI, שירות, חידושים והפעולה הבאה הטובה ביותר על התיק.</p>",
+      aos_c4: "<span class=\"icon-chip\"></span><h3>אנליטיקת תיק</h3><p>שימור, מכירה‑צולבת ובינת עמלות בזמן אמת.</p>",
       aos_integrity: "<strong>מדוע זהו שחרור היוניקורן:</strong> AgentOS ממיר עסק שירותים להכנסת תוכנה חוזרת (שוליים גבוהים, שימור הכנסה נטו ותנועת נחת‑והתרחב), וכל סוכן מביא לקוחות שנתוניהם מזינים את חפירי החיתום והתביעות.",
 
       // ── marketplace ──
@@ -1457,20 +1457,20 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       bm_label: "09 · מודל עסקי",
       bm_title: "שלושה מנועי הכנסה רזי‑הון ומצטברים.",
       bm_copy: "כל מספר למטה מחושב מחדש מהמחולל. <span class=\"tag tag-modeled\">מודלי</span> במטבע ובתרחיש קנה המידה הנבחרים.",
-      bm_c1: "<span class=\"icon-chip\">🛡️</span><h3>1. עמלת ביטוח MGA</h3><div class=\"kpi\" data-calc=\"eng_ins\">—</div><p>הכנסה נטו 2031 = GWP × שיעור עמלה. הסיכון אצל מבטחים/מבטחי משנה — רזה‑הון.</p>",
-      bm_c2: "<span class=\"icon-chip\">💻</span><h3>2. AgentOS SaaS</h3><div class=\"kpi\" data-calc=\"eng_saas\">—</div><p>הכנסה חוזרת 2031 = מושבים × מחיר מושב. הכנסת תוכנה צומחת עם שוליים גבוהים.</p>",
-      bm_c3: "<span class=\"icon-chip\">🤝</span><h3>3. עמלת מרקטפלייס</h3><div class=\"kpi\" data-calc=\"eng_mkt\">—</div><p>2031 = GMV × עמלת מרקטפלייס. הכנסת אפקט‑רשת ללא סיכון חיתומי.</p>",
+      bm_c1: "<span class=\"icon-chip\">️</span><h3>1. עמלת ביטוח MGA</h3><div class=\"kpi\" data-calc=\"eng_ins\">—</div><p>הכנסה נטו 2031 = GWP × שיעור עמלה. הסיכון אצל מבטחים/מבטחי משנה — רזה‑הון.</p>",
+      bm_c2: "<span class=\"icon-chip\"></span><h3>2. AgentOS SaaS</h3><div class=\"kpi\" data-calc=\"eng_saas\">—</div><p>הכנסה חוזרת 2031 = מושבים × מחיר מושב. הכנסת תוכנה צומחת עם שוליים גבוהים.</p>",
+      bm_c3: "<span class=\"icon-chip\"></span><h3>3. עמלת מרקטפלייס</h3><div class=\"kpi\" data-calc=\"eng_mkt\">—</div><p>2031 = GMV × עמלת מרקטפלייס. הכנסת אפקט‑רשת ללא סיכון חיתומי.</p>",
       bm_mix_h: "תמהיל הכנסות ל‑2031 <span class=\"tag tag-modeled\">מודלי</span>",
 
       // ── advantages ──
       adv_label: "10 · יתרונות תחרותיים",
       adv_title: "מדוע PHINS מנצחת — וממשיכה לנצח.",
-      adv_c1: "<span class=\"icon-chip\">📊</span><h3>גלגל תנופה של נתונים</h3><p>נתוני חיתום + תביעות + טיפול מצטברים על ספר אחד; היריבים רואים רק את הסילו שלהם.</p>",
-      adv_c2: "<span class=\"icon-chip\">🔗</span><h3>חפיר שלמות</h3><p>מצב בשרשרת גיבוב, ניתן לשחזור — יתרון אמון מול רגולטורים ומבטחי משנה.</p>",
-      adv_c3: "<span class=\"icon-chip\">🤝</span><h3>אהבת סוכנים, לא קונפליקט</h3><p>אנו מחזקים סוכנים במקום לנטרל אותם — הפצה ברת‑קיימא.</p>",
-      adv_c4: "<span class=\"icon-chip\">💸</span><h3>כלכלה רזת‑הון</h3><p>שולי MGA + SaaS + מרקטפלייס ללא נטל מאזן של מבטח.</p>",
-      adv_c5: "<span class=\"icon-chip\">🌍</span><h3>מסילות רב‑שוקיות</h3><p>מתאמים רגולטוריים וחבילות מדינה הופכים התרחבות לתצורה, לא לבנייה מחדש.</p>",
-      adv_c6: "<span class=\"icon-chip\">🧠</span><h3>מיקוד בחומרה</h3><p>נישת סיכון ברת‑ביטוח‑משנה והסברה שאחרים מתמחרים בשגיאה או נמנעים ממנה.</p>",
+      adv_c1: "<span class=\"icon-chip\"></span><h3>גלגל תנופה של נתונים</h3><p>נתוני חיתום + תביעות + טיפול מצטברים על ספר אחד; היריבים רואים רק את הסילו שלהם.</p>",
+      adv_c2: "<span class=\"icon-chip\"></span><h3>חפיר שלמות</h3><p>מצב בשרשרת גיבוב, ניתן לשחזור — יתרון אמון מול רגולטורים ומבטחי משנה.</p>",
+      adv_c3: "<span class=\"icon-chip\"></span><h3>אהבת סוכנים, לא קונפליקט</h3><p>אנו מחזקים סוכנים במקום לנטרל אותם — הפצה ברת‑קיימא.</p>",
+      adv_c4: "<span class=\"icon-chip\"></span><h3>כלכלה רזת‑הון</h3><p>שולי MGA + SaaS + מרקטפלייס ללא נטל מאזן של מבטח.</p>",
+      adv_c5: "<span class=\"icon-chip\"></span><h3>מסילות רב‑שוקיות</h3><p>מתאמים רגולטוריים וחבילות מדינה הופכים התרחבות לתצורה, לא לבנייה מחדש.</p>",
+      adv_c6: "<span class=\"icon-chip\"></span><h3>מיקוד בחומרה</h3><p>נישת סיכון ברת‑ביטוח‑משנה והסברה שאחרים מתמחרים בשגיאה או נמנעים ממנה.</p>",
 
       // ── flywheel ──
       fw_label: "11 · גלגל תנופה לצמיחה",
@@ -1525,9 +1525,9 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       // ── team ──
       team_label: "16 · צוות",
       team_title: "מפעילים שכבר בנו את הפלטפורמה — מוסיפים עוצמת ביטוח והון.",
-      team_c1: "<span class=\"icon-chip\">👨‍💻</span><h3>ייסוד / פלטפורמה</h3><p>הוקמה פלטפורמת ביטוח מנוהלת‑ספר בת 83 מודולי שירות מקצה לקצה.</p>",
-      team_c2: "<span class=\"icon-chip\">📐</span><h3>אקטואר ראשי (נכנס)</h3><p>אקטואר בכיר מוכר‑IAA אימת את התמחור והסכים להצטרף.</p>",
-      team_c3: "<span class=\"icon-chip\">🤝</span><h3>מפעיל ביטוח + הון</h3><p>יזם ביטוח בכיר (מנכ\"ל/יו\"ר) מעורב כמשקיע / שותף מייסד פעיל.</p>",
+      team_c1: "<span class=\"icon-chip\">‍</span><h3>ייסוד / פלטפורמה</h3><p>הוקמה פלטפורמת ביטוח מנוהלת‑ספר בת 100 מודולי שירות מקצה לקצה.</p>",
+      team_c2: "<span class=\"icon-chip\"></span><h3>אקטואר ראשי (נכנס)</h3><p>אקטואר בכיר מוכר‑IAA אימת את התמחור והסכים להצטרף.</p>",
+      team_c3: "<span class=\"icon-chip\"></span><h3>מפעיל ביטוח + הון</h3><p>יזם ביטוח בכיר (מנכ\"ל/יו\"ר) מעורב כמשקיע / שותף מייסד פעיל.</p>",
       team_note: "הסבב הזה מממן גיוסי מפתח ב‑AI/ML, הפצה (AgentOS), תפעול מרקטפלייס וציות רב‑שוקי. שמות וקורות חיים ספציפיים מסופקים תחת NDA.",
 
       // ── risks ──
@@ -1539,7 +1539,7 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       uni_label: "18 · מסלול יוניקורן",
       uni_title: "מ‑MGA חומרה אל פלטפורמת 1 מיליארד דולר+.",
       uni_copy: "מסלול השווי מיישם את מכפיל הכנסת היציאה הנבחר על ההכנסה נטו המודלית של כל שנה. <span class=\"tag tag-modeled\">מודלי</span> — כווננו את המכפיל וקנה המידה במחולל.",
-      uni_t1: "<h4>עכשיו — פלטפורמה בנויה ומאומתת</h4><p>83 מודולי שירות פעילים כולל AgentOS v1; אקטואר אימת; תזכיר רגולטורי לישראל נוסח; מפעיל ביטוח מעורב.</p>",
+      uni_t1: "<h4>עכשיו — פלטפורמה בנויה ומאומתת</h4><p>100 מודולי שירות פעילים כולל AgentOS v1; אקטואר אימת; תזכיר רגולטורי לישראל נוסח; מפעיל ביטוח מעורב.</p>",
       uni_t2: "<h4>סדרה A (הסבב הזה)</h4><p>השקת MGA, הפעלת AgentOS, פתיחת מרקטפלייס; הוכחת כלכלת יחידה.</p>",
       uni_t3: "<h4>2028–2029 — קנה מידה רב‑שוקי ו‑SaaS</h4><p>ארה\"ב/קנדה/אירופה; שימור הכנסה נטו ב‑AgentOS; ה‑GMV של המרקטפלייס מואץ.</p>",
       uni_t4: "<h4>2030 — EBITDA חיובי (בסיס)</h4><p>מנוף תפעולי; גלגל תנופה של נתונים מצביר תמחור ותנאי חוזה.</p>",
@@ -1548,9 +1548,9 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       // ── exit ──
       exit_label: "19 · תרחישי יציאה",
       exit_title: "כמה יציאות אמינות — הנפקה או אסטרטגית.",
-      exit_c1: "<span class=\"icon-chip\">📈</span><h3>הנפקה (IPO)</h3><p>בעקבות מסלולי Lemonade / Hippo / Ethos הציבוריים, ברגע שההכנסה והשימור תומכים במכפילי שוק ציבורי.</p>",
-      exit_c2: "<span class=\"icon-chip\">🏛️</span><h3>רכישה אסטרטגית</h3><p>מבטחים ומבטחי משנה גלובליים רוכשים חיתום AI, תביעות והפצת AgentOS.</p>",
-      exit_c3: "<span class=\"icon-chip\">🔗</span><h3>קונסולידציית פלטפורמה</h3><p>מרקטפלייס + AgentOS הופכים את PHINS למאחד/יעד טבעי במיזוגי InsurTech.</p>",
+      exit_c1: "<span class=\"icon-chip\"></span><h3>הנפקה (IPO)</h3><p>בעקבות מסלולי Lemonade / Hippo / Ethos הציבוריים, ברגע שההכנסה והשימור תומכים במכפילי שוק ציבורי.</p>",
+      exit_c2: "<span class=\"icon-chip\">️</span><h3>רכישה אסטרטגית</h3><p>מבטחים ומבטחי משנה גלובליים רוכשים חיתום AI, תביעות והפצת AgentOS.</p>",
+      exit_c3: "<span class=\"icon-chip\"></span><h3>קונסולידציית פלטפורמה</h3><p>מרקטפלייס + AgentOS הופכים את PHINS למאחד/יעד טבעי במיזוגי InsurTech.</p>",
       exit_thead: "<th>תרחיש</th><th class=\"num\">מכפיל יציאה</th><th class=\"num\">על הכנסת 2031</th><th class=\"num\">EV משתמע</th><th class=\"num\">MOIC ברוטו (הסבב)</th>",
       exit_note: "להמחשה; מיישם מכפילי רגישות קבועים על ההכנסה נטו המודלית של 2031 בקנה המידה הנבחר. אינו תחזית תשואות.",
 
@@ -1564,10 +1564,10 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       con_hl4: "MOIC ברוטו על הסבב",
       con_close_h: "בואו נהפוך הגנה ל<span class=\"grad\">מיידית, חכמה ושופעת</span>.",
       con_close_p: "אנו מגייסים את סבב סדרה A שלנו כדי להפוך MGA מאומת ורזה‑הון למערכת ההפעלה מבוססת ה‑AI לכלכלת ההגנה הגלובלית. נשמח לשיחה על האופן שבו PHINS מתאימה לתזה שלכם.",
-      con_chips: "<span class=\"contact-chip\">🌐 phins.ai</span><span class=\"contact-chip\">📄 ספריית בדיקת נאותות זמינה תחת NDA</span><span class=\"contact-chip\">🤝 סדרה A · השקעה מוסדית</span>",
+      con_chips: "<span class=\"contact-chip\"> phins.ai</span><span class=\"contact-chip\"> ספריית בדיקת נאותות זמינה תחת NDA</span><span class=\"contact-chip\"> סדרה A · השקעה מוסדית</span>",
 
       // ── appendix ──
-      apx_flag: "🔧 נספח · כלי עריכה פנימיים — לאתר בלבד, מוחרגים מ‑PDF המשקיעים",
+      apx_flag: " נספח · כלי עריכה פנימיים — לאתר בלבד, מוחרגים מ‑PDF המשקיעים",
       apx_label: "נספח · הערות אסטרטגיות וספריית הפקודות של PHINS",
       apx_title: "פנימי: כיצד להמשיך לחדד את המצגת — הערות ופקודות AI לשימוש חוזר.",
       apx_note: "נספח זה הוא כלי עבודה פנימי לצוות PHINS. הוא מוסתר בהדפסה או ביצוא ל‑PDF, כך שחומרים מול משקיעים לעולם אינם כוללים הוראות בנייה או פקודות.",
@@ -1941,10 +1941,10 @@ derived from the same engine. Cite any market statistic; mark planning estimates
     // Re-applies the localized FX badge + "as of" line from current state so the
     // labels follow the active language (e.g. after a language switch).
     function applyFxLabels() {
-      if (state.fxSource === "manual") fxBadge(L("manual ✎", "ידני ✎"));
-      else if (state.fxSource === "live") fxBadge(L("live ✓", "חי ✓"));
-      else if (state.fxSource === "fallback") fxBadge(L("fallback ⚠", "גיבוי ⚠"));
-      else fxBadge(state.fxSource + " ⚠");
+      if (state.fxSource === "manual") fxBadge(L("manual ", "ידני "));
+      else if (state.fxSource === "live") fxBadge(L("live ", "חי "));
+      else if (state.fxSource === "fallback") fxBadge(L("fallback ", "גיבוי "));
+      else fxBadge(state.fxSource + " ");
       fxSource(state.fxAsOf ? (L("as of ", "נכון ל‑") + String(state.fxAsOf).slice(0, 10)) : "");
     }
 
@@ -2088,11 +2088,11 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       for (var j = 0; j < copyBtns.length; j++) {
         copyBtns[j].addEventListener("click", function () {
           var code = this.parentNode;
-          var text = code.textContent.replace(/^📋 Copy/, "").trim();
+          var text = code.textContent.replace(/^ Copy/, "").trim();
           var btn = this;
           if (navigator.clipboard) {
             navigator.clipboard.writeText(text).then(function () {
-              var orig = btn.textContent; btn.textContent = "✓ Copied";
+              var orig = btn.textContent; btn.textContent = " Copied";
               setTimeout(function () { btn.textContent = orig; }, 1500);
             });
           }

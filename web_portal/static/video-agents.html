@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <link rel="apple-touch-icon" href="/phins-logo.svg">
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PHINS Video Agents</title>
@@ -312,12 +315,13 @@
             } catch (e) { /* embed mode is best-effort */ }
         })();
     </script>
+  <link rel="stylesheet" href="/phins-theme.css">
 </head>
 <body>
     <div class="page-shell">
         <div class="topbar">
             <a href="/admin.html" class="brand">
-                <div class="brand-icon">🎬</div>
+                <div class="brand-icon"></div>
                 <div>
                     <div class="brand-title">PHINS Video Agents</div>
                     <div class="brand-subtitle">Pipeline-native video generation for intros, regulatory presentations, and insurance process assistance.</div>
@@ -325,8 +329,8 @@
             </a>
             <div class="top-actions">
                 <a href="/admin.html" class="btn btn-secondary">← Admin</a>
-                <a href="/admin-media.html" class="btn btn-secondary">📁 Media Dashboard</a>
-                <button class="btn btn-primary" onclick="refreshVideoAgentsDashboard()">🔄 Refresh</button>
+                <a href="/admin-media.html" class="btn btn-secondary"> Media Dashboard</a>
+                <button class="btn btn-primary" onclick="refreshVideoAgentsDashboard()"> Refresh</button>
             </div>
         </div>
 
@@ -349,7 +353,7 @@
 
         <div class="grid-two">
             <section class="panel">
-                <h2>⚙️ Agent Controls</h2>
+                <h2> Agent Controls</h2>
                 <div class="form-grid">
                     <div class="field">
                         <label for="va-campaign-id">Campaign ID</label>
@@ -413,16 +417,16 @@
                     </label>
                 </div>
                 <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;">
-                    <button id="va-generate-btn" class="btn btn-success" onclick="queueVideoAgentBatch()">🎬 Generate All Pipeline Videos</button>
-                    <button class="btn btn-secondary" onclick="refreshVideoAgentJobs(false)">📡 Refresh Jobs</button>
-                    <button class="btn btn-secondary" onclick="diagnoseVideoProviders(true)">🔌 Diagnose Provider Connection</button>
+                    <button id="va-generate-btn" class="btn btn-success" onclick="queueVideoAgentBatch()"> Generate All Pipeline Videos</button>
+                    <button class="btn btn-secondary" onclick="refreshVideoAgentJobs(false)"> Refresh Jobs</button>
+                    <button class="btn btn-secondary" onclick="diagnoseVideoProviders(true)"> Diagnose Provider Connection</button>
                 </div>
                 <div id="va-status" class="status-box">Load the latest marketing campaign or enter a campaign ID to start.</div>
                 <div id="va-provider-diagnostics" class="status-box" style="display:none;"></div>
             </section>
 
             <section class="panel">
-                <h2>🧠 Pipeline Templates</h2>
+                <h2> Pipeline Templates</h2>
                 <div class="pipeline-grid">
                     <div class="pipeline-card">
                         <h3>Introductions</h3>
@@ -682,7 +686,7 @@
                 : '';
             const implementedLive = Boolean(job.implemented_on_landing_page);
             const heroBadge = implementedLive
-                ? `<div style="margin-top:6px;display:inline-block;background:rgba(76,175,80,0.28);border-radius:999px;padding:3px 9px;font-size:0.72rem;font-weight:700;">🌐 Implemented on phins.ai landing page</div>`
+                ? `<div style="margin-top:6px;display:inline-block;background:rgba(76,175,80,0.28);border-radius:999px;padding:3px 9px;font-size:0.72rem;font-weight:700;"> Implemented on phins.ai landing page</div>`
                 : '';
             return `
                 <div class="job-card">
@@ -706,9 +710,9 @@
                     </div>
                     <div class="job-actions">
                         ${job.generated_asset_id ? `<a class="small-btn open" href="/admin-media.html">Open in Media</a>` : ''}
-                        ${status === 'completed' && downloadUrl ? `<a class="small-btn open" href="${escapeHtml(downloadUrl)}" download>⬇ Download Video</a>` : ''}
+                        ${status === 'completed' && downloadUrl ? `<a class="small-btn open" href="${escapeHtml(downloadUrl)}" download> Download Video</a>` : ''}
                         ${status === 'completed' && job.generated_asset_id ? `<button class="small-btn open" onclick="verifyVideoAgentJob('${job.id}')">Verify Integrity</button>` : ''}
-                        ${status === 'completed' && job.generated_asset_id && !implementedLive ? `<button class="small-btn open" onclick="publishVideoAgentJob('${job.id}')">🌐 Implement on phins.ai</button>` : ''}
+                        ${status === 'completed' && job.generated_asset_id && !implementedLive ? `<button class="small-btn open" onclick="publishVideoAgentJob('${job.id}')"> Implement on phins.ai</button>` : ''}
                         ${implementedLive ? `<a class="small-btn open" href="/" target="_blank" rel="noopener">Open Landing Page</a>` : ''}
                         ${status === 'failed' ? `<button class="small-btn retry" onclick="retryVideoAgentJob('${job.id}')">Retry</button>` : ''}
                         ${['queued', 'processing'].includes(status) ? `<button class="small-btn cancel" onclick="cancelVideoAgentJob('${job.id}')">Cancel</button>` : ''}
@@ -764,7 +768,7 @@
                     const sizeLabel = formatBytes(notification.asset_size || 0);
                     const integrityBits = [sizeLabel, checksum && `SHA-256 ${checksum}`].filter(Boolean).join(' · ');
                     const heroBit = notification.implemented_on_landing_page ? ' · published as landing-page hero' : '';
-                    setStatus(`✅ "${notification.asset_name || 'Generated video'}" is ready. Download or verify it below${integrityBits ? ` (${integrityBits})` : ''}${heroBit}.`, 'success');
+                    setStatus(` "${notification.asset_name || 'Generated video'}" is ready. Download or verify it below${integrityBits ? ` (${integrityBits})` : ''}${heroBit}.`, 'success');
                 } else if (!silent) {
                     const summary = data.summary || {};
                     const parts = [`${videoAgentJobs.length} job(s)`];
@@ -859,10 +863,10 @@
             const providers = diag?.providers || {};
             const rows = Object.entries(providers).map(([name, cfg]) => {
                 const enabled = Boolean(cfg?.enabled);
-                const dot = enabled ? '🟢' : '🔴';
+                const state = enabled ? 'connected' : 'unavailable';
                 const label = String(cfg?.label || name).trim() || name;
                 const reason = String(cfg?.reason || '').trim();
-                return `<div style="margin-top:6px;"><strong>${dot} ${escapeHtml(label)}</strong><br><span style="opacity:0.85;">${escapeHtml(reason)}</span></div>`;
+                return `<div style="margin-top:6px;"><strong>${escapeHtml(label)}</strong> (${state})<br><span style="opacity:0.85;">${escapeHtml(reason)}</span></div>`;
             }).join('');
             const heading = opts.errorPrefix
                 ? `<div style="font-weight:700;margin-bottom:6px;">${escapeHtml(opts.errorPrefix)}</div>`

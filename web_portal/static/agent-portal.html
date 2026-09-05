@@ -4,16 +4,22 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PHINS AgentOS — Agent Portal</title>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <link rel="apple-touch-icon" href="/phins-logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
       --blue-dark:#0d47a1; --blue-mid:#1565c0; --violet:#6a1b9a; --green:#15803d;
       --bg:#eef3fb; --card:#fff; --border:#dbe4f0; --text:#1a202c; --sub:#4a5568; --soft:#64748b;
       --shadow:0 10px 26px rgba(15,23,42,.08);
+      --phins-navy:#060d1f; --phins-gold:#e3bf6f; --phins-ink:#eaf1ff;
     }
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Inter,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
-    header{background:linear-gradient(135deg,#0d47a1,#1565c0 55%,#1976d2);color:#fff;padding:14px 26px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
-    header .brand{font-weight:900;letter-spacing:.05em;font-size:18pt}
+    body{font-family:'Inter',-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
+    header{background:radial-gradient(700px 180px at 85% -60%, rgba(21,68,155,0.5), transparent 70%), rgba(6,13,31,0.96);color:#fff;padding:14px 26px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;border-bottom:1px solid rgba(127,178,255,0.16)}
+    header .brand{font-family:'Space Grotesk','Inter',sans-serif;font-weight:600;letter-spacing:.22em;font-size:16pt;background:linear-gradient(180deg,#fff 0%,#b7d3ff 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
     header .tag{font-size:8pt;opacity:.85;text-transform:uppercase;letter-spacing:.1em}
     .who{font-size:9pt;opacity:.92}
     .wrap{max-width:1100px;margin:0 auto;padding:24px 18px 60px}
@@ -47,9 +53,12 @@
 </head>
 <body>
   <header>
-    <div>
-      <div class="brand">PHINS · AgentOS</div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <img src="/phins-logo.svg" alt="PHINS emblem" width="36" height="36" style="filter:drop-shadow(0 4px 14px rgba(79,216,255,0.3))">
+      <div>
+      <div class="brand">PHINS</div>
       <div class="tag">Agent Portal</div>
+      </div>
     </div>
     <div class="row">
       <span class="who" id="who"></span>
