@@ -163,9 +163,11 @@
     .act { display: grid; grid-template-columns: 156px 1fr; height: 100%; }
     .act-nav { background: rgba(7,15,34,.96); border-right: 1px solid var(--phins-line); color: var(--phins-dim); padding: 12px 10px; font-size: 12px; }
     .act-nav .sec { color: var(--phins-gold); letter-spacing: .16em; text-transform: uppercase; margin: 10px 6px 6px; font-size: 10px; }
-    .act-nav a { display: block; padding: 7px 8px; border-radius: 8px; color: inherit; text-decoration: none; }
+    .act-nav a { display: block; padding: 7px 8px; border-radius: 8px; color: inherit; text-decoration: none; pointer-events: none; }
     .act-nav a.on { background: linear-gradient(135deg, #f7e2a0, #e3bf6f); color: #071022; font-weight: 600; }
-    .act-scroll { overflow: auto; padding: 14px 16px 48px; }
+    .act-scroll { overflow: hidden; padding: 12px 14px 42px; }
+    .act-scroll > section { display: none; }
+    .act-scroll > section.on { display: block; }
     .act-scroll h2 { font-family: 'Space Grotesk', sans-serif; margin: 6px 0 10px; font-size: 20px; }
     .act-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
     .tbar { display: flex; gap: 8px; overflow: hidden; }
@@ -272,10 +274,10 @@
 <body>
   <div class="backdrop" aria-hidden="true"></div>
   <header class="phins-header">
-    <a class="phins-logo" href="/solutions.html" target="_blank" rel="noopener" tabindex="-1">
-      <img src="/phins-logo.svg" alt="PHINS emblem">
+    <div class="phins-logo" aria-hidden="true">
+      <img src="/phins-logo.svg" alt="">
       <span class="phins-logo-text">PHINS</span>
-    </a>
+    </div>
     <nav class="surface-nav" id="surface-nav" aria-hidden="true">
       <span data-nav="underwriting">Underwriting</span>
       <span data-nav="assessments">Workbench</span>
@@ -376,7 +378,7 @@
           <i data-life="sm">Simulate</i>
           <i data-life="pt">Capital</i>
         </div>
-        <section id="ov">
+        <section id="ov" class="on">
           <h2>Actuarial Overview</h2>
           <div class="act-grid">
             <div class="kpi"><b>Live</b><span>Table Set</span></div>
@@ -704,18 +706,18 @@
     }
 
     function tourActuarial(cutToTerminal) {
-      var scroller = document.getElementById('act-scroll');
+      var panes = document.querySelectorAll('.act-scroll > section');
       var navs = document.querySelectorAll('.act-nav a');
       var life = document.querySelectorAll('.lifecycle i');
       [
-        { y: 0, id: 'ov', t: 0, cap: 'Actuarial lifecycle · overview' },
-        { y: 140, id: 'tb', t: 1600, cap: 'Published tables · life and disability' },
-        { y: 280, id: 'fc', t: 3000, cap: 'Reserve forecast · path view only' },
-        { y: 430, id: 'sm', t: 4400, cap: 'Portfolio simulation · compare paths' },
-        { y: 580, id: 'pt', t: 5600, cap: 'Capital connection · then the terminal' }
+        { id: 'ov', t: 0, cap: 'Actuarial lifecycle · overview' },
+        { id: 'tb', t: 1600, cap: 'Published tables · life and disability' },
+        { id: 'fc', t: 3000, cap: 'Reserve forecast · path view only' },
+        { id: 'sm', t: 4400, cap: 'Portfolio simulation · compare paths' },
+        { id: 'pt', t: 5600, cap: 'Capital connection · then the terminal' }
       ].forEach(function (m) {
         later(m.t, function () {
-          scroller.scrollTo({ top: m.y, behavior: 'smooth' });
+          panes.forEach(function (pane) { pane.classList.toggle('on', pane.id === m.id); });
           navs.forEach(function (a) { a.classList.toggle('on', a.getAttribute('data-nav') === m.id); });
           life.forEach(function (i) { i.classList.toggle('on', i.getAttribute('data-life') === m.id); });
           say(m.cap);

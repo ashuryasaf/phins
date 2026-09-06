@@ -74,8 +74,12 @@ def test_every_public_segment_opens_an_enlarged_theater_preview():
     assert "Unified Workbench" in preview
     assert "Validate Pipeline" in preview
     assert 'src="/phins-logo.svg"' in preview
+    assert 'href="/solutions.html"' not in preview
+    assert "act-scroll > section.on" in preview
     assert 'class="sol-player-logo"' in html
     assert 'class="sol-theater-wordmark"' in html
+    assert "sandbox" in html
+    assert "allow-scripts allow-same-origin" in html
 
     expected_previews = {
         "underwriting",
