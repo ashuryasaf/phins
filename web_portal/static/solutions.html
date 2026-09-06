@@ -1575,6 +1575,7 @@
         frame.className = 'sol-live-frame';
         frame.title = 'PHINS capability preview';
         frame.setAttribute('aria-label', 'Live desk preview');
+        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
         frame.src = PREVIEW_FRAME + '?scene=' + encodeURIComponent(previewId) + '&t=' + Date.now();
         stage.appendChild(frame);
       }
