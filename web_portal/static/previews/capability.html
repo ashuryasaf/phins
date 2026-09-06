@@ -641,7 +641,16 @@
       });
     }
     markNav(NAV[scene] || 'underwriting');
-    function later(ms, fn) { return window.setTimeout(fn, ms); }
+    var tourTimers = [];
+    function later(ms, fn) {
+      var id = window.setTimeout(fn, ms);
+      tourTimers.push(id);
+      return id;
+    }
+    function clearTour() {
+      tourTimers.forEach(function (id) { window.clearTimeout(id); });
+      tourTimers = [];
+    }
     function say(text) {
       var sceneId = document.body.getAttribute('data-scene');
       var map = {
@@ -711,10 +720,10 @@
       var life = document.querySelectorAll('.lifecycle i');
       [
         { id: 'ov', t: 0, cap: 'Actuarial lifecycle · overview' },
-        { id: 'tb', t: 1600, cap: 'Published tables · life and disability' },
-        { id: 'fc', t: 3000, cap: 'Reserve forecast · path view only' },
-        { id: 'sm', t: 4400, cap: 'Portfolio simulation · compare paths' },
-        { id: 'pt', t: 5600, cap: 'Capital connection · then the terminal' }
+        { id: 'tb', t: 1800, cap: 'Published tables · life and disability' },
+        { id: 'fc', t: 3600, cap: 'Reserve forecast · path view only' },
+        { id: 'sm', t: 5400, cap: 'Portfolio simulation · compare paths' },
+        { id: 'pt', t: 7200, cap: 'Capital connection · then the terminal' }
       ].forEach(function (m) {
         later(m.t, function () {
           panes.forEach(function (pane) { pane.classList.toggle('on', pane.id === m.id); });
@@ -723,7 +732,7 @@
           say(m.cap);
         });
       });
-      if (cutToTerminal) later(7000, tourInvestments);
+      if (cutToTerminal) later(9000, tourInvestments);
     }
 
     function tourBilling() {
@@ -879,6 +888,7 @@
       individuals: tourClient,
       enterprises: tourCustomers
     };
+    clearTour();
     (start[scene] || tourUnderwriting)();
   </script>
 </body>
