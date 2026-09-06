@@ -167,8 +167,20 @@
     .act-nav a.on { background: linear-gradient(135deg, #f7e2a0, #e3bf6f); color: #071022; font-weight: 600; }
     .act-scroll { overflow: hidden; padding: 12px 14px 42px; }
     .act-scroll > section { display: none; }
-    .act-scroll > section.on { display: block; }
+    .act-scroll > section.on { display: block; animation: paneIn .4s ease; }
     .act-scroll h2 { font-family: 'Space Grotesk', sans-serif; margin: 6px 0 10px; font-size: 20px; }
+    .act-step {
+      display: inline-block;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
+      color: #071022;
+      background: linear-gradient(135deg, #f7e2a0, #e3bf6f);
+      border-radius: 999px; padding: 4px 10px; margin: 0 0 10px;
+    }
+    @keyframes paneIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: none; }
+    }
     .act-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
     .tbar { display: flex; gap: 8px; overflow: hidden; }
     .tcard { min-width: 148px; background: rgba(7,15,34,.9); border: 1px solid var(--phins-line); border-radius: 10px; padding: 10px; }
@@ -378,6 +390,7 @@
           <i data-life="sm">Simulate</i>
           <i data-life="pt">Capital</i>
         </div>
+        <div class="act-step" id="act-step">1 / 5 · Overview</div>
         <section id="ov" class="on">
           <h2>Actuarial Overview</h2>
           <div class="act-grid">
@@ -647,9 +660,15 @@
       tourTimers.push(id);
       return id;
     }
+    function resetStages() {
+      document.querySelectorAll('.stage').forEach(function (el) {
+        el.style.removeProperty('display');
+      });
+    }
     function clearTour() {
       tourTimers.forEach(function (id) { window.clearTimeout(id); });
       tourTimers = [];
+      resetStages();
     }
     function say(text) {
       var sceneId = document.body.getAttribute('data-scene');
@@ -718,6 +737,14 @@
       var panes = document.querySelectorAll('.act-scroll > section');
       var navs = document.querySelectorAll('.act-nav a');
       var life = document.querySelectorAll('.lifecycle i');
+      var step = document.getElementById('act-step');
+      var labels = {
+        ov: '1 / 5 · Overview',
+        tb: '2 / 5 · Tables',
+        fc: '3 / 5 · Forecast',
+        sm: '4 / 5 · Simulation',
+        pt: '5 / 5 · Capital'
+      };
       [
         { id: 'ov', t: 0, cap: 'Actuarial lifecycle · overview' },
         { id: 'tb', t: 1800, cap: 'Published tables · life and disability' },
@@ -729,6 +756,8 @@
           panes.forEach(function (pane) { pane.classList.toggle('on', pane.id === m.id); });
           navs.forEach(function (a) { a.classList.toggle('on', a.getAttribute('data-nav') === m.id); });
           life.forEach(function (i) { i.classList.toggle('on', i.getAttribute('data-life') === m.id); });
+          if (step) step.textContent = labels[m.id] || '';
+          document.body.setAttribute('data-tour-pane', m.id);
           say(m.cap);
         });
       });
@@ -845,11 +874,11 @@
     }
 
     function tourInvestments() {
+      resetStages();
       document.body.setAttribute('data-scene', 'invest');
+      document.body.setAttribute('data-tour-pane', 'tm');
       document.getElementById('desk-name').textContent = 'Investments Terminal';
       markNav('invest');
-      document.getElementById('stage-invest').style.display = 'block';
-      document.getElementById('stage-actuarial').style.display = 'none';
       var canvas = document.getElementById('term-chart');
       if (!canvas) return;
       var ctx = canvas.getContext('2d');
