@@ -1576,12 +1576,21 @@
         var video = document.createElement('video');
         video.className = 'sol-live-frame';
         video.setAttribute('playsinline', '');
+        video.setAttribute('webkit-playsinline', '');
+        video.setAttribute('x5-playsinline', '');
         video.setAttribute('muted', '');
+        video.playsInline = true;
         video.muted = true;
+        video.defaultMuted = true;
         video.autoplay = true;
         video.preload = 'auto';
+        video.controls = false;
+        video.disablePictureInPicture = true;
         video.setAttribute('aria-label', 'Production desk walkthrough');
-        video.src = src + '?t=' + Date.now();
+        var source = document.createElement('source');
+        source.type = 'video/mp4';
+        source.src = src + '?t=' + Date.now();
+        video.appendChild(source);
         stage.appendChild(video);
       }
 
@@ -1589,10 +1598,19 @@
         stopPlayback();
         var video = stage.querySelector('video.sol-live-frame');
         if (video) {
-          if (reload) video.src = video.src.split('?')[0] + '?t=' + Date.now();
-          try { video.currentTime = 0; } catch (err) {}
-          var playPromise = video.play();
-          if (playPromise && playPromise.catch) playPromise.catch(function () {});
+          if (reload) {
+            var source = video.querySelector('source');
+            var raw = ((source && source.src) || video.currentSrc || '').split('?')[0];
+            if (source && raw) source.src = raw + '?t=' + Date.now();
+            video.load();
+          }
+          var startPlayback = function () {
+            try { if (video.readyState >= 1) video.currentTime = 0; } catch (err) {}
+            var playPromise = video.play();
+            if (playPromise && playPromise.catch) playPromise.catch(function () {});
+          };
+          if (video.readyState >= 2) startPlayback();
+          else video.addEventListener('loadeddata', startPlayback, { once: true });
         }
         startedAt = Date.now();
         progressEl.style.width = '0%';

@@ -70,6 +70,10 @@ def test_every_public_segment_opens_an_enlarged_theater_preview():
     assert "WALKTHROUGH_MS = 11000" in html
     assert "PREVIEW_VIDEOS" in html
     assert "createElement('video')" in html
+    assert "webkit-playsinline" in html
+    assert "playsInline = true" in html
+    assert "x5-playsinline" in html
+    assert "source.type = 'video/mp4'" in html
     assert "Watch 11s Preview" in html
     assert "PHINS · Visual Walkthrough" in html
     assert "sol-live-frame" in html
@@ -125,6 +129,75 @@ def test_theater_videos_are_complete_mp4s_near_eleven_seconds():
             assert 10.5 <= duration <= 12.5, (key, duration)
     hashes = {hash((THEATER_DIR / f"{key}.mp4").read_bytes()) for key in EXPECTED_PREVIEWS}
     assert len(hashes) == len(EXPECTED_PREVIEWS)
+
+
+def test_theater_videos_are_ios_android_compatible():
+    """iPhone Safari rejects High-profile 5fps video-only MP4s."""
+    import json
+
+    assert shutil.which("ffprobe")
+    for key in EXPECTED_PREVIEWS:
+        path = THEATER_DIR / f"{key}.mp4"
+        data = path.read_bytes()
+        moov = data.find(b"moov")
+        mdat = data.find(b"mdat")
+        assert moov != -1 and (mdat == -1 or moov < mdat), key
+        info = json.loads(
+            subprocess.check_output(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-print_format",
+                    "json",
+                    "-show_streams",
+                    str(path),
+                ],
+                text=True,
+            )
+        )
+        streams = info.get("streams") or []
+        videos = [s for s in streams if s.get("codec_type") == "video"]
+        audios = [s for s in streams if s.get("codec_type") == "audio"]
+        assert len(videos) == 1, key
+        assert len(audios) == 1, key
+        video = videos[0]
+        audio = audios[0]
+        assert video.get("codec_name") == "h264", key
+        assert (video.get("profile") or "").lower() in {"main", "baseline", "constrained baseline"}, (
+            key,
+            video.get("profile"),
+        )
+        assert video.get("pix_fmt") == "yuv420p", key
+        num, _, den = (video.get("avg_frame_rate") or "0/1").partition("/")
+        fps = float(num) / float(den or 1)
+        assert fps >= 24, (key, fps)
+        assert audio.get("codec_name") == "aac", key
+
+
+def test_theater_mp4s_are_served_as_ranged_video():
+    """iOS Safari needs video/mp4 + byte ranges, not octet-stream/nosniff."""
+    import os
+    from urllib.request import Request, urlopen
+
+    base = (os.environ.get("TEST_BASE_URL") or "").rstrip("/")
+    assert base, "TEST_BASE_URL is required"
+    url = f"{base}/previews/theaters/smart_contracts.mp4"
+    with urlopen(Request(url)) as resp:
+        assert resp.status == 200
+        assert (resp.headers.get("Content-Type") or "").startswith("video/mp4")
+        assert resp.headers.get("Accept-Ranges") == "bytes"
+        assert int(resp.headers.get("Content-Length") or 0) > 25_000
+        assert b"ftyp" in resp.read(32)
+    req = Request(url, headers={"Range": "bytes=0-1023"})
+    with urlopen(req) as resp:
+        assert resp.status == 206
+        assert (resp.headers.get("Content-Type") or "").startswith("video/mp4")
+        assert resp.headers.get("Content-Range", "").startswith("bytes 0-1023/")
+        assert resp.headers.get("Content-Length") == "1024"
+        body = resp.read()
+        assert len(body) == 1024
+        assert b"ftyp" in body[:32]
 
 
 def test_inquiry_form_contract_matches_server_allow_lists():
