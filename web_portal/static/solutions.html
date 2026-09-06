@@ -533,6 +533,7 @@
       width: 100%; height: 100%;
       border: 0;
       background: #0b1224;
+      object-fit: contain;
     }
     .sol-stage::after {
       content: '';
@@ -1528,19 +1529,18 @@
 
     // ===== Enlarged solution theater (11-second visual walkthroughs) =====
     var WALKTHROUGH_MS = 11000;
-    var PREVIEW_FRAME = '/previews/capability.html';
-    var PREVIEW_SCENES = {
-      underwriting: 1,
-      assessments: 1,
-      billing: 1,
-      claims: 1,
-      actuarial_investments: 1,
-      platform: 1,
-      smart_contracts: 1,
-      mga_solutions: 1,
-      actuarial_force: 1,
-      individuals: 1,
-      enterprises: 1
+    var PREVIEW_VIDEOS = {
+      underwriting: '/previews/theaters/underwriting.mp4',
+      assessments: '/previews/theaters/assessments.mp4',
+      billing: '/previews/theaters/billing.mp4',
+      claims: '/previews/theaters/claims.mp4',
+      actuarial_investments: '/previews/theaters/actuarial_investments.mp4',
+      platform: '/previews/theaters/platform.mp4',
+      smart_contracts: '/previews/theaters/smart_contracts.mp4',
+      mga_solutions: '/previews/theaters/mga_solutions.mp4',
+      actuarial_force: '/previews/theaters/actuarial_force.mp4',
+      individuals: '/previews/theaters/individuals.mp4',
+      enterprises: '/previews/theaters/enterprises.mp4'
     };
 
     (function initSolutionTheater() {
@@ -1571,22 +1571,28 @@
 
       function mountPreview(previewId) {
         stage.innerHTML = '';
-        var frame = document.createElement('iframe');
-        frame.className = 'sol-live-frame';
-        frame.title = 'PHINS capability preview';
-        frame.setAttribute('aria-label', 'Live desk preview');
-        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
-        frame.src = PREVIEW_FRAME + '?scene=' + encodeURIComponent(previewId) + '&t=' + Date.now();
-        stage.appendChild(frame);
+        var src = PREVIEW_VIDEOS[previewId];
+        if (!src) return;
+        var video = document.createElement('video');
+        video.className = 'sol-live-frame';
+        video.setAttribute('playsinline', '');
+        video.setAttribute('muted', '');
+        video.muted = true;
+        video.autoplay = true;
+        video.preload = 'auto';
+        video.setAttribute('aria-label', 'Production desk walkthrough');
+        video.src = src + '?t=' + Date.now();
+        stage.appendChild(video);
       }
 
       function playPreview(reload) {
         stopPlayback();
-        var frame = stage.querySelector('iframe.sol-live-frame');
-        if (reload && frame) {
-          var url = new URL(frame.src, window.location.origin);
-          url.searchParams.set('t', String(Date.now()));
-          frame.src = url.toString();
+        var video = stage.querySelector('video.sol-live-frame');
+        if (video) {
+          if (reload) video.src = video.src.split('?')[0] + '?t=' + Date.now();
+          try { video.currentTime = 0; } catch (err) {}
+          var playPromise = video.play();
+          if (playPromise && playPromise.catch) playPromise.catch(function () {});
         }
         startedAt = Date.now();
         progressEl.style.width = '0%';
@@ -1600,12 +1606,15 @@
             stopPlayback();
             progressEl.style.width = '100%';
             timeEl.textContent = '0:11 / 0:11';
+            if (video) video.pause();
           }
         }, 80);
       }
 
       function closeTheater() {
         stopPlayback();
+        var video = stage.querySelector('video.sol-live-frame');
+        if (video) video.pause();
         theater.classList.remove('open');
         theater.hidden = true;
         document.body.classList.remove('theater-open');
@@ -1618,7 +1627,7 @@
 
       function openTheater(card) {
         var previewId = card.getAttribute('data-preview');
-        if (!PREVIEW_SCENES[previewId]) return;
+        if (!PREVIEW_VIDEOS[previewId]) return;
         activeCard = card;
         activeInterest = card.getAttribute('data-interest') || '';
         var heading = card.querySelector('h3');

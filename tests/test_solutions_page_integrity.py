@@ -2,19 +2,36 @@
 
 Guards:
   * title-case presentation of the public outline
-  * enlarged theater + 11-second preview contract for every segment
+  * enlarged theater + 11-second production-desk video for every segment
   * inquiry form field names, option values, and endpoint stay aligned
     with the server allow-lists (data integrity)
-  * preview copy stays an outline — no implementation secrets
+  * preview copy and theater assets stay an outline — no implementation secrets
 """
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import web_portal.server as portal
 
 
 SOLUTIONS_PATH = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "solutions.html"
+THEATER_DIR = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "previews" / "theaters"
+
+EXPECTED_PREVIEWS = (
+    "underwriting",
+    "assessments",
+    "billing",
+    "claims",
+    "actuarial_investments",
+    "platform",
+    "smart_contracts",
+    "mga_solutions",
+    "actuarial_force",
+    "individuals",
+    "enterprises",
+)
 
 
 def _html():
@@ -47,69 +64,67 @@ def test_solutions_page_uses_title_case_where_necessary():
 
 def test_every_public_segment_opens_an_enlarged_theater_preview():
     html = _html()
-    preview = (
-        Path(__file__).resolve().parents[1]
-        / "web_portal"
-        / "static"
-        / "previews"
-        / "capability.html"
-    ).read_text(encoding="utf-8")
     assert 'id="sol-theater"' in html
     assert 'role="dialog"' in html
     assert 'aria-modal="true"' in html
     assert "WALKTHROUGH_MS = 11000" in html
-    assert "PREVIEW_FRAME = '/previews/capability.html'" in html
+    assert "PREVIEW_VIDEOS" in html
+    assert "createElement('video')" in html
     assert "Watch 11s Preview" in html
     assert "PHINS · Visual Walkthrough" in html
     assert "sol-live-frame" in html
-    assert 'id="stage-underwriting"' in preview
-    assert 'id="uw-reject"' in preview
-    assert 'id="stage-claims"' in preview
-    assert "Submit Claim" in preview
-    assert 'id="act-scroll"' in preview
-    assert "Investments Terminal" in preview
-    assert "PHINS · INVESTMENTS" in preview
-    assert "PHINS TERMINAL" in preview
-    assert "Customer Management" in preview
-    assert "Unified Workbench" in preview
-    assert "Validate Pipeline" in preview
-    assert 'src="/phins-logo.svg"' in preview
-    assert 'href="/solutions.html"' not in preview
-    assert "act-scroll > section.on" in preview
-    assert "animation: paneIn" in preview
-    assert 'id="act-step"' in preview
-    assert "data-tour-pane" in preview
-    assert "resetStages" in preview
-    assert "stage-invest').style.display" not in preview
-    assert "stage-actuarial').style.display" not in preview
-    assert "{ id: 'ov', t: 0" in preview
-    assert "{ id: 'tb', t: 1800" in preview
-    assert "{ id: 'fc', t: 3600" in preview
-    assert "{ id: 'sm', t: 5400" in preview
-    assert "{ id: 'pt', t: 7200" in preview
-    assert "later(9000, tourInvestments)" in preview
+    assert "PREVIEW_FRAME" not in html
+    assert "capability.html" not in html
+    assert "sandbox" not in html
     assert 'class="sol-player-logo"' in html
     assert 'class="sol-theater-wordmark"' in html
-    assert "sandbox" in html
-    assert "allow-scripts allow-same-origin" in html
+    # Public theater must play recorded desk videos, never live authenticated desks.
+    for live_desk in (
+        "underwriter-dashboard.html",
+        "unified-workbench.html",
+        "billing.html",
+        "claims-adjuster-dashboard.html",
+        "actuary-dashboard.html",
+        "cyber-security.html",
+        "settlement-approval.html",
+        "admin-supplier-dashboard.html",
+        "dashboard.html",
+        "customer-management.html",
+        "trading-terminal.html",
+    ):
+        assert live_desk not in html
 
-    expected_previews = {
-        "underwriting",
-        "assessments",
-        "billing",
-        "claims",
-        "actuarial_investments",
-        "platform",
-        "smart_contracts",
-        "mga_solutions",
-        "actuarial_force",
-        "individuals",
-        "enterprises",
-    }
     found = set(re.findall(r'data-preview="([a-z_]+)"', html))
-    assert expected_previews == found
-    for key in expected_previews:
-        assert key + ":" in html  # preview catalog entry
+    assert set(EXPECTED_PREVIEWS) == found
+    for key in EXPECTED_PREVIEWS:
+        assert f"/previews/theaters/{key}.mp4" in html
+
+
+def test_theater_videos_are_complete_mp4s_near_eleven_seconds():
+    for key in EXPECTED_PREVIEWS:
+        path = THEATER_DIR / f"{key}.mp4"
+        assert path.is_file(), path
+        data = path.read_bytes()
+        assert len(data) > 25_000, path
+        assert b"ftyp" in data[:32]
+        if shutil.which("ffprobe"):
+            out = subprocess.check_output(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=nw=1:nk=1",
+                    str(path),
+                ],
+                text=True,
+            ).strip()
+            duration = float(out)
+            assert 10.5 <= duration <= 12.5, (key, duration)
+    hashes = {hash((THEATER_DIR / f"{key}.mp4").read_bytes()) for key in EXPECTED_PREVIEWS}
+    assert len(hashes) == len(EXPECTED_PREVIEWS)
 
 
 def test_inquiry_form_contract_matches_server_allow_lists():
@@ -161,3 +176,4 @@ def test_preview_copy_does_not_expose_implementation_secrets():
     assert "SHA-256" not in preview
     assert "pricing kernel" not in preview.lower()
     assert "john.doe" not in preview.lower()
+    assert "john.doe" not in html.lower()
