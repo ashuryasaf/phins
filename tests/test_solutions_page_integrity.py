@@ -60,6 +60,10 @@ def test_solutions_page_uses_title_case_where_necessary():
     assert "Actuarial Force" in html
     assert "For Individuals" in html
     assert "For Enterprises &amp; Partners" in html
+    assert "Request a Demo" in html
+    assert "Reinsurance / Insurance Company" in html
+    assert ">Individual</option>" not in html
+    assert ">Demo Request</" not in html
 
 
 def test_every_public_segment_opens_an_enlarged_theater_preview():
