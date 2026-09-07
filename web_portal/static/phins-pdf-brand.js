@@ -71,61 +71,144 @@
     return logoPromise;
   }
 
-  /**
-   * jsPDF 2.x always runs Unicode bidi in postProcessText. With default flags
-   * it auto-detects Hebrew and reorders glyphs, which paints backwards copy
-   * (סניפ) and flipped Latin (MGA→AGM, TAM→MAT, AI→IA). Passing matching
-   * visual-in / visual-out flags is a no-op, so logical Hebrew and Latin
-   * tokens are painted as authored. Do not set isInputRtl here.
-   */
-  var RTL_TEXT_OPTIONS = {
-    isInputVisual: true,
-    isOutputVisual: true
+  var HE_RE = /[\u0590-\u05FF]/;
+  var MIRROR = {
+    '(': ')', ')': '(', '[': ']', ']': '[', '{': '}', '}': '{',
+    '<': '>', '>': '<', '«': '»', '»': '«'
   };
 
-  function paintOpts(rtl, extra) {
-    extra = extra && typeof extra === 'object' ? extra : {};
-    if (!rtl) return extra;
-    var out = {};
-    var k;
-    for (k in RTL_TEXT_OPTIONS) {
-      if (Object.prototype.hasOwnProperty.call(RTL_TEXT_OPTIONS, k)) out[k] = RTL_TEXT_OPTIONS[k];
-    }
-    for (k in extra) {
-      if (Object.prototype.hasOwnProperty.call(extra, k)) out[k] = extra[k];
-    }
-    return out;
+  function bidiType(ch) {
+    var c = ch.charCodeAt(0);
+    if (c >= 0x0590 && c <= 0x05FF) return 'R';
+    if ((c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A)) return 'L';
+    if (c >= 0x30 && c <= 0x39) return 'EN';
+    if (ch === '+' || ch === '-') return 'ES';
+    if (ch === '%' || ch === '$' || ch === '#' || ch === '₪' || ch === '¢' || ch === '€' || ch === '£') return 'ET';
+    if (ch === ',' || ch === '.' || ch === ':' || ch === '/') return 'CS';
+    if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || c === 0x00A0) return 'WS';
+    return 'ON';
   }
 
-  function hasHebrew(text) {
-    if (Array.isArray(text)) {
-      for (var i = 0; i < text.length; i++) {
-        if (hasHebrew(text[i])) return true;
+  /**
+   * Unicode Bidirectional Algorithm (implicit Hebrew + Latin/numbers).
+   * jsPDF paints glyphs left-to-right, so RTL copy is converted to visual
+   * order after wrapping. Latin tokens (MGA, TAM, AI, PHINS) stay LTR.
+   *
+   * jsPDF 2.x also runs its own bidi in postProcessText. That second pass
+   * is what flipped MGA→AGM / TAM→MAT and spelled the footer backwards.
+   * disableJsPdfAutoBidi() strips that pass so this conversion runs once.
+   */
+  function toVisual(text, rtl) {
+    text = String(text == null ? '' : text);
+    if (!rtl || !HE_RE.test(text)) return text;
+    var chars = Array.from(text);
+    var n = chars.length;
+    var types = chars.map(bidiType);
+    var i;
+    var prevStrong = 'R';
+    for (i = 0; i < n; i++) {
+      if (types[i] === 'ES' || types[i] === 'CS') {
+        var prev = i > 0 ? types[i - 1] : '';
+        var next = i + 1 < n ? types[i + 1] : '';
+        if (prev === 'EN' && next === 'EN') types[i] = 'EN';
       }
-      return false;
     }
-    return /[\u0590-\u05FF]/.test(String(text || ''));
+    for (i = 0; i < n; i++) {
+      if (types[i] === 'ET') {
+        var j = i;
+        while (j > 0 && types[j - 1] === 'ET') j--;
+        var k = i;
+        while (k + 1 < n && types[k + 1] === 'ET') k++;
+        if ((j > 0 && types[j - 1] === 'EN') || (k + 1 < n && types[k + 1] === 'EN')) {
+          for (var t = j; t <= k; t++) types[t] = 'EN';
+        }
+      }
+    }
+    for (i = 0; i < n; i++) {
+      if (types[i] === 'ES' || types[i] === 'ET' || types[i] === 'CS') types[i] = 'ON';
+    }
+    prevStrong = 'R';
+    for (i = 0; i < n; i++) {
+      if (types[i] === 'L' || types[i] === 'R') prevStrong = types[i];
+      else if (types[i] === 'EN' && prevStrong === 'L') types[i] = 'L';
+    }
+    function isNeutral(tp) { return tp === 'WS' || tp === 'ON'; }
+    function isStrong(tp) { return tp === 'L' || tp === 'R' || tp === 'EN'; }
+    i = 0;
+    while (i < n) {
+      if (!isNeutral(types[i])) { i++; continue; }
+      var start = i;
+      while (i < n && isNeutral(types[i])) i++;
+      var lead = 'R';
+      for (var a = start - 1; a >= 0; a--) {
+        if (isStrong(types[a])) { lead = types[a] === 'EN' ? 'L' : types[a]; break; }
+      }
+      var trail = 'R';
+      for (var b = i; b < n; b++) {
+        if (isStrong(types[b])) { trail = types[b] === 'EN' ? 'L' : types[b]; break; }
+      }
+      var resolved = (lead === trail) ? lead : 'R';
+      for (var c = start; c < i; c++) types[c] = resolved;
+    }
+    var levels = types.map(function (tp) {
+      if (tp === 'L' || tp === 'EN') return 2;
+      return 1;
+    });
+    function reverseRange(lo, hi) {
+      while (lo < hi) {
+        var tc = chars[lo];
+        chars[lo] = chars[hi];
+        chars[hi] = tc;
+        var tl = levels[lo];
+        levels[lo] = levels[hi];
+        levels[hi] = tl;
+        lo++;
+        hi--;
+      }
+    }
+    var maxLevel = 2;
+    for (var lvl = maxLevel; lvl >= 1; lvl--) {
+      i = 0;
+      while (i < n) {
+        if (levels[i] < lvl) { i++; continue; }
+        var from = i;
+        while (i < n && levels[i] >= lvl) i++;
+        reverseRange(from, i - 1);
+      }
+    }
+    for (i = 0; i < n; i++) {
+      if (levels[i] % 2 === 1 && MIRROR[chars[i]]) chars[i] = MIRROR[chars[i]];
+    }
+    return chars.join('');
   }
 
-  function installRtlPainter(doc) {
-    if (!doc || typeof doc.text !== 'function' || doc.__phinsRtlPaint) return doc;
-    var orig = doc.text.bind(doc);
-    doc.__phinsRtlPaint = orig;
-    doc.text = function (text, x, y, options, transform, angle) {
-      if (typeof options === 'number' || typeof transform !== 'undefined') {
-        return orig(text, x, y, options, transform, angle);
+  /**
+   * jsPDF 2.x always bidis in the postProcessText plugin. Undo that pass so
+   * our visual-order Hebrew is painted as-is (MGA/TAM stay MGA/TAM).
+   */
+  function disableJsPdfAutoBidi(doc) {
+    var events = doc && doc.internal && doc.internal.events;
+    if (!events || typeof events.publish !== 'function' || events.__phinsBidiOff) {
+      return doc;
+    }
+    events.__phinsBidiOff = true;
+    var origPublish = events.publish.bind(events);
+    events.publish = function (topic, payload) {
+      if (topic === 'postProcessText' && payload && payload.text != null) {
+        var original = payload.text;
+        origPublish(topic, payload);
+        payload.text = original;
+        return;
       }
-      if (!hasHebrew(text)) return orig(text, x, y, options);
-      return orig(text, x, y, paintOpts(true, options));
+      return origPublish(topic, payload);
     };
     return doc;
   }
 
-  /**
-   * Identity. jsPDF owns logical→visual conversion; do not pre-reverse.
-   */
-  function toVisual(text, rtl) {
-    return String(text == null ? '' : text);
+  function installRtlPainter(doc) {
+    if (!doc || typeof doc.text !== 'function') return doc;
+    disableJsPdfAutoBidi(doc);
+    return doc;
   }
 
   function wrapLogical(doc, text, maxWidth) {
@@ -168,18 +251,21 @@
   }
 
   function wrapToVisual(doc, text, maxWidth, rtl) {
-    return wrapLogical(doc, String(text || ''), maxWidth);
+    var logical = wrapLogical(doc, String(text || ''), maxWidth);
+    if (!rtl) return logical;
+    return logical.map(function (line) { return toVisual(line, true); });
   }
 
   function truncateToWidth(doc, text, maxWidth, rtl) {
     text = String(text || '');
-    if (doc.getTextWidth(text) <= maxWidth) return text;
+    var visual = toVisual(text, rtl);
+    if (doc.getTextWidth(visual) <= maxWidth) return visual;
     var ell = '…';
     var logical = text;
-    while (logical && doc.getTextWidth(logical + ell) > maxWidth) {
+    while (logical && doc.getTextWidth(toVisual(logical + ell, rtl)) > maxWidth) {
       logical = logical.slice(0, -1);
     }
-    return logical ? logical + ell : ell;
+    return toVisual(logical ? logical + ell : ell, rtl);
   }
 
   function arrayBufferToBase64(buffer) {
@@ -281,7 +367,7 @@
     useFont(doc, opts, 'normal');
     doc.setFontSize(6.8);
     doc.setTextColor(GREY[0], GREY[1], GREY[2]);
-    doc.text(tagline, textX, y + 22, { align: align });
+    doc.text(toVisual(tagline, rtl), textX, y + 22, { align: align });
     y += 42;
 
     // gold + navy double rule (the first-level document signature)
@@ -414,7 +500,7 @@
     letterhead: letterhead,
     finalize: finalize,
     installRtlPainter: installRtlPainter,
-    RTL_TEXT_OPTIONS: RTL_TEXT_OPTIONS,
+    disableJsPdfAutoBidi: disableJsPdfAutoBidi,
     toVisual: toVisual,
     wrapToVisual: wrapToVisual
   };

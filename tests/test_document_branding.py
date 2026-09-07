@@ -67,20 +67,75 @@ def test_pdf_brand_helper_exists_with_brand_identity():
     assert "/fonts/DejaVuSans.ttf" in js
 
 
-def test_hebrew_pdf_uses_jspdf_bidi_on_logical_copy():
-    """jsPDF already bidis; pre-reversing Hebrew flips MGA/TAM and the footer."""
+def test_hebrew_pdf_converts_rtl_once_and_keeps_latin_acronyms():
+    """Visual Hebrew is ours; jsPDF must not bidi again (that produced AGM/MAT)."""
     js = _read(STATIC / "phins-pdf-brand.js")
     lab = _read(STATIC / "phins-scenario-lab-pdf.js")
-    assert "isInputVisual: true" in js
-    assert "isOutputVisual: true" in js
-    assert "isInputRtl: true" not in js
+    assert "function toVisual" in js
+    assert "function reverseRange" in js
+    assert "disableJsPdfAutoBidi" in js
+    assert "payload.text = original" in js
+    assert "postProcessText" in js
     assert "installRtlPainter" in js
-    assert "do not pre-reverse" in js or "painted as authored" in js
-    assert "reverseRange" not in js
     assert "brand.installRtlPainter(doc)" in lab
+    assert "brand.toVisual(text, true)" in lab
     assert "מודל MGA" in lab
     assert "תמונת TAM" in lab
     assert "מעבדת תרחישים" in lab
+    assert "isInputRtl: true" not in js
+
+
+def test_hebrew_tovisual_keeps_mga_tam_and_mirrors_hebrew_runs():
+    """Load the brand helper and pin mixed-script visual order."""
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is required to execute phins-pdf-brand.js")
+    script = r"""
+const fs = require('fs');
+const vm = require('vm');
+const code = fs.readFileSync(process.env.PHINS_BRAND_JS, 'utf8');
+const ctx = {
+  window: {},
+  fetch: function () { return Promise.resolve({ ok: false }); }
+};
+vm.createContext(ctx);
+vm.runInContext(code, ctx);
+const tv = ctx.window.PhinsPdfBrand.toVisual;
+if (typeof tv !== 'function') throw new Error('toVisual missing');
+const samples = {
+  mga: tv('מודל MGA', true),
+  tam: tv('תמונת TAM', true),
+  mgaHyphen: tv('כ-MGA', true),
+  tamHyphen: tv('ה-TAM', true),
+  ai: tv('מופעלת-AI', true),
+  footer: tv('פינס — מעבדת תרחישים · מסמך משקיעים חסוי', true),
+  tagline: tv('פלטפורמת ביטוח מופעלת-AI · ביטוח בריאות אישי וחיסכון', true)
+};
+console.log(JSON.stringify(samples));
+"""
+    proc = subprocess.run(
+        [node, "-e", script],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PHINS_BRAND_JS": str(STATIC / "phins-pdf-brand.js")},
+    )
+    samples = json.loads(proc.stdout)
+    assert "MGA" in samples["mga"] and "AGM" not in samples["mga"]
+    assert "TAM" in samples["tam"] and "MAT" not in samples["tam"]
+    assert "MGA" in samples["mgaHyphen"] and "AGM" not in samples["mgaHyphen"]
+    assert "TAM" in samples["tamHyphen"] and "MAT" not in samples["tamHyphen"]
+    assert "AI" in samples["ai"] and "IA" not in samples["ai"]
+    # Visual-order paint: Hebrew runs reverse, Latin stays.
+    assert "סניפ" in samples["footer"]
+    assert "פינס" not in samples["footer"]
+    assert "MGA" not in samples["footer"]
+    assert "AI" in samples["tagline"] and "IA" not in samples["tagline"]
+
 
 
 def test_pitch_dashboard_loads_brand_helper():

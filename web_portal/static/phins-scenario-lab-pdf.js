@@ -541,7 +541,8 @@
     }
 
     function vis(text) {
-      return stripMarks(text);
+      text = stripMarks(text);
+      return rtl ? brand.toVisual(text, true) : text;
     }
 
     function linesOf(text, width) {

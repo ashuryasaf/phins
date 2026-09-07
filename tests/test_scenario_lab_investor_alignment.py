@@ -107,6 +107,7 @@ def test_scenario_lab_pdf_is_bilingual_branded_and_emoji_free():
     assert "brand.letterhead" in lab
     assert "wrapToVisual" in lab
     assert "installRtlPainter" in lab
+    assert "disableJsPdfAutoBidi" in brand
     assert "toVisual" in brand
     assert "bidiVisual" not in lab
     assert "Data-integrity contract" in lab
