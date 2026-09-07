@@ -466,7 +466,7 @@
         widths[ci] = (columnStyles[ci] && columnStyles[ci].cellWidth) || (tw / nCols);
       }
       function visCell(text, width) {
-        return linesOf(text, Math.max(36, width - 12)).join('\n');
+        return linesOf(text, Math.max(36, width - 16)).join('\n');
       }
       doc.autoTable({
         startY: y,
@@ -479,7 +479,7 @@
           font: font || undefined,
           fontSize: 8,
           cellPadding: 5,
-          overflow: 'linebreak',
+          overflow: rtl ? 'hidden' : 'linebreak',
           valign: 'top',
           halign: rtl ? 'right' : 'left',
           textColor: SLATE,
