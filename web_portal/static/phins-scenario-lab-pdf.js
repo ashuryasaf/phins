@@ -26,8 +26,6 @@
   var GREY = [91, 107, 130];
   var SLATE = [51, 65, 85];
 
-  var HE_RE = /[\u0590-\u05FF]/;
-
   var COPY = {
     en: {
       title: 'PHINS Scenario Lab — Market Assessment',
@@ -200,7 +198,7 @@
       priority: 'לוח ניקוד עדיפות שוק',
       prioritySub: 'ויזואל מורכב על בסיס בהירות ביקוש, עומק פרמיה והתאמה תפעולית.',
       demandMap: 'ביקוש מול מונטיזציה',
-      demandMapSub: 'בהירות ביקוש (משמאל) מול בהירות מונטיזציה פרטית (מימין).',
+      demandMapSub: 'בהירות ביקוש מול בהירות מונטיזציה פרטית.',
       dual: 'עומק מערכת ציבורית מול נגישות פרמיה פרטית',
       dualSub: 'מדוע שווקים מסוימים הם שכבת השלמה ואחרים הם מונטיזציה ישירה.',
       readiness: 'מוכנות שווקים',
@@ -309,20 +307,12 @@
       .trim();
   }
 
-  function bidiVisual(text) {
-    text = String(text || '');
-    if (!HE_RE.test(text)) return text;
-    var tokens = text.split(/(\s+)/);
-    var out = [];
-    for (var i = tokens.length - 1; i >= 0; i--) {
-      var tok = tokens[i];
-      if (HE_RE.test(tok)) {
-        out.push(tok.split('').reverse().join(''));
-      } else {
-        out.push(tok);
-      }
-    }
-    return out.join('');
+  function formatExportStamp(raw) {
+    var d = raw ? new Date(raw) : new Date();
+    if (isNaN(d.getTime())) d = new Date();
+    function pad(n) { return n < 10 ? '0' + n : String(n); }
+    return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate())
+      + ' ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ' UTC';
   }
 
   function money(value, currency) {
@@ -367,7 +357,7 @@
     var ilBook = opts.ilBook || null;
     var outputs = (payload.outputs) || opts.outputs || {};
     var assumptions = payload.assumptions || {};
-    var printedAt = opts.printedAt || new Date().toISOString();
+    var printedAt = formatExportStamp(opts.printedAt || (payload && payload.exportedAt));
 
     await brand.preload();
     await brand.preloadDocumentFonts();
@@ -375,7 +365,6 @@
     var jsPDF = window.jspdf.jsPDF;
     var doc = new jsPDF({ unit: 'pt', format: 'a4' });
     var font = brand.applyDocumentFont(doc);
-    var brandOpts = { margin: 40, font: font || undefined, rtl: rtl };
     var pw = doc.internal.pageSize.getWidth();
     var ph = doc.internal.pageSize.getHeight();
     var m = 40;
@@ -391,7 +380,11 @@
 
     function vis(text) {
       text = stripMarks(text);
-      return rtl ? bidiVisual(text) : text;
+      return rtl ? brand.toVisual(text, true) : text;
+    }
+
+    function linesOf(text, width) {
+      return brand.wrapToVisual(doc, stripMarks(text), width, rtl);
     }
 
     function ensure(h) {
@@ -408,7 +401,7 @@
       doc.setFontSize(size);
       if (color) doc.setTextColor(color[0], color[1], color[2]);
       else doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
-      var lines = doc.splitTextToSize(vis(text), tw);
+      var lines = linesOf(text, tw);
       var bh = lines.length * gap;
       ensure(bh + 4);
       doc.text(lines, xText, y, { align: align });
@@ -429,14 +422,14 @@
       setFace('bold');
       doc.setFontSize(size);
       doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
-      var lines = doc.splitTextToSize(vis(text), tw - 8);
+      var lines = linesOf(text, tw - 8);
       doc.text(lines, xText, y + 8, { align: align });
       y += lines.length * (size + 4) + 10;
       doc.setTextColor(0, 0, 0);
     }
 
     function band(text) {
-      var lines = doc.splitTextToSize(vis(text), tw - 20);
+      var lines = linesOf(text, tw - 20);
       var h = Math.max(36, lines.length * 11 + 16);
       ensure(h + 8);
       doc.setFillColor(11, 31, 63);
@@ -455,6 +448,8 @@
     function table(head, body, colW) {
       if (typeof doc.autoTable !== 'function') return;
       ensure(48);
+      setFace('normal');
+      doc.setFontSize(8);
       var headRow = rtl ? head.slice().reverse() : head;
       var bodyRows = rtl ? body.map(function (r) { return r.slice().reverse(); }) : body;
       var columnStyles = {};
@@ -465,11 +460,21 @@
           columnStyles[idx] = { cellWidth: colW[k] };
         });
       }
+      var nCols = headRow.length;
+      var widths = [];
+      for (var ci = 0; ci < nCols; ci++) {
+        widths[ci] = (columnStyles[ci] && columnStyles[ci].cellWidth) || (tw / nCols);
+      }
+      function visCell(text, width) {
+        return linesOf(text, Math.max(36, width - 12)).join('\n');
+      }
       doc.autoTable({
         startY: y,
         margin: { left: m, right: m },
-        head: [headRow.map(vis)],
-        body: bodyRows.map(function (row) { return row.map(vis); }),
+        head: [headRow.map(function (cell, idx) { return visCell(cell, widths[idx]); })],
+        body: bodyRows.map(function (row) {
+          return row.map(function (cell, idx) { return visCell(cell, widths[idx]); });
+        }),
         styles: {
           font: font || undefined,
           fontSize: 8,
@@ -516,7 +521,7 @@
         setFace('bold');
         doc.setFontSize(9.5);
         doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
-        var valLines = doc.splitTextToSize(vis(items[i].value), boxW - 16);
+        var valLines = linesOf(items[i].value, boxW - 16);
         doc.text(valLines, rtl ? (bx + boxW - 8) : (bx + 8), y + 30, { align: align });
       }
       y += boxH + 14;
@@ -549,20 +554,20 @@
 
     var currency = (payload.region && payload.region.currency) || region.currency || 'USD';
     var regionLabel = marketName(region, lang) + ' (' + currency + ')';
-    var title = vis(C.title);
-    var subtitle = vis(C.subtitle);
+    var title = stripMarks(C.title);
+    var subtitle = stripMarks(C.subtitle);
 
     y = brand.letterhead(doc, {
       margin: m,
       font: font || undefined,
       rtl: rtl,
-      tagline: rtl ? vis(brand.BRAND_TAGLINE_HE) : brand.BRAND_TAGLINE,
+      tagline: rtl ? brand.BRAND_TAGLINE_HE : brand.BRAND_TAGLINE,
       title: title,
       subtitle: subtitle,
       meta: [
-        vis(C.confidential),
-        vis(C.exported + ': ' + printedAt),
-        vis(C.selectedMarket + ': ' + marketName(region, lang) + ' · ' + currency)
+        stripMarks(C.confidential),
+        stripMarks(C.exported + ': ' + printedAt),
+        stripMarks(C.selectedMarket + ': ' + marketName(region, lang) + ' · ' + currency)
       ]
     });
 
@@ -747,9 +752,9 @@
       font: font || undefined,
       rtl: rtl,
       title: title,
-      note: vis(C.footer + ' · ' + printedAt),
-      pageLabel: vis(C.page),
-      pageOf: vis(C.pageOf)
+      note: stripMarks(C.footer + ' · ' + printedAt),
+      pageLabel: C.page,
+      pageOf: C.pageOf
     });
 
     var slug = String((region.name || 'market')).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'market';

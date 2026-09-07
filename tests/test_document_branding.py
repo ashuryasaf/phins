@@ -59,7 +59,8 @@ def test_pdf_brand_helper_exists_with_brand_identity():
     assert "14, 47, 99" in js
     # public API used by the generators
     for api in ("letterhead", "finalize", "preload", "PhinsPdfBrand",
-                "preloadDocumentFonts", "applyDocumentFont"):
+                "preloadDocumentFonts", "applyDocumentFont",
+                "toVisual", "wrapToVisual"):
         assert api in js, f"helper missing API {api}"
     # chrome-only contract stated in the module
     assert "chrome ONLY" in js

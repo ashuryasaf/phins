@@ -6950,7 +6950,7 @@
           ilBook: IL_PLANNING_BOOK,
           outputs: payload.outputs,
           modeNote: outputs.modeNote ? outputs.modeNote.textContent : "",
-          printedAt: new Date(payload.exportedAt).toLocaleString(language === "he" ? "he-IL" : "en-US", { hour12: false })
+          printedAt: payload.exportedAt || new Date().toISOString()
         });
         setExportStatus(
           language === "he"

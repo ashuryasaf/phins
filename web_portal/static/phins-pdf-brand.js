@@ -71,14 +71,168 @@
     return logoPromise;
   }
 
-  function truncateToWidth(doc, text, maxWidth) {
+  var HE_RE = /[\u0590-\u05FF]/;
+  var MIRROR = {
+    '(': ')', ')': '(', '[': ']', ']': '[', '{': '}', '}': '{',
+    '<': '>', '>': '<', '«': '»', '»': '«'
+  };
+
+  function bidiType(ch) {
+    var c = ch.charCodeAt(0);
+    if (c >= 0x0590 && c <= 0x05FF) return 'R';
+    if ((c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A)) return 'L';
+    if (c >= 0x30 && c <= 0x39) return 'EN';
+    if (ch === '+' || ch === '-') return 'ES';
+    if (ch === '%' || ch === '$' || ch === '#' || ch === '₪' || ch === '¢' || ch === '€' || ch === '£') return 'ET';
+    if (ch === ',' || ch === '.' || ch === ':' || ch === '/') return 'CS';
+    if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || c === 0x00A0) return 'WS';
+    return 'ON';
+  }
+
+  /**
+   * Unicode Bidirectional Algorithm (implicit Hebrew + Latin/numbers).
+   * jsPDF draws left-to-right, so RTL copy must be converted to visual order
+   * *after* wrapping. Numbers, dates, and Latin tokens stay LTR.
+   */
+  function toVisual(text, rtl) {
     text = String(text || '');
-    if (doc.getTextWidth(text) <= maxWidth) return text;
-    var ell = '…';
-    while (text && doc.getTextWidth(text + ell) > maxWidth) {
-      text = text.slice(0, -1);
+    if (!rtl || !HE_RE.test(text)) return text;
+    var chars = Array.from(text);
+    var n = chars.length;
+    var types = chars.map(bidiType);
+    var i;
+    var prevStrong = 'R';
+    for (i = 0; i < n; i++) {
+      if (types[i] === 'ES' || types[i] === 'CS') {
+        var prev = i > 0 ? types[i - 1] : '';
+        var next = i + 1 < n ? types[i + 1] : '';
+        if (prev === 'EN' && next === 'EN') types[i] = 'EN';
+      }
     }
-    return text ? text + ell : ell;
+    for (i = 0; i < n; i++) {
+      if (types[i] === 'ET') {
+        var j = i;
+        while (j > 0 && types[j - 1] === 'ET') j--;
+        var k = i;
+        while (k + 1 < n && types[k + 1] === 'ET') k++;
+        if ((j > 0 && types[j - 1] === 'EN') || (k + 1 < n && types[k + 1] === 'EN')) {
+          for (var t = j; t <= k; t++) types[t] = 'EN';
+        }
+      }
+    }
+    for (i = 0; i < n; i++) {
+      if (types[i] === 'ES' || types[i] === 'ET' || types[i] === 'CS') types[i] = 'ON';
+    }
+    prevStrong = 'R';
+    for (i = 0; i < n; i++) {
+      if (types[i] === 'L' || types[i] === 'R') prevStrong = types[i];
+      else if (types[i] === 'EN' && prevStrong === 'L') types[i] = 'L';
+    }
+    function isNeutral(tp) { return tp === 'WS' || tp === 'ON'; }
+    function isStrong(tp) { return tp === 'L' || tp === 'R' || tp === 'EN'; }
+    i = 0;
+    while (i < n) {
+      if (!isNeutral(types[i])) { i++; continue; }
+      var start = i;
+      while (i < n && isNeutral(types[i])) i++;
+      var lead = 'R';
+      for (var a = start - 1; a >= 0; a--) {
+        if (isStrong(types[a])) { lead = types[a] === 'EN' ? 'L' : types[a]; break; }
+      }
+      var trail = 'R';
+      for (var b = i; b < n; b++) {
+        if (isStrong(types[b])) { trail = types[b] === 'EN' ? 'L' : types[b]; break; }
+      }
+      var resolved = (lead === trail) ? lead : 'R';
+      for (var c = start; c < i; c++) types[c] = resolved;
+    }
+    var levels = types.map(function (tp) {
+      if (tp === 'L' || tp === 'EN') return 2;
+      return 1;
+    });
+    function reverseRange(lo, hi) {
+      while (lo < hi) {
+        var tc = chars[lo];
+        chars[lo] = chars[hi];
+        chars[hi] = tc;
+        var tl = levels[lo];
+        levels[lo] = levels[hi];
+        levels[hi] = tl;
+        lo++;
+        hi--;
+      }
+    }
+    var maxLevel = 2;
+    for (var lvl = maxLevel; lvl >= 1; lvl--) {
+      i = 0;
+      while (i < n) {
+        if (levels[i] < lvl) { i++; continue; }
+        var from = i;
+        while (i < n && levels[i] >= lvl) i++;
+        reverseRange(from, i - 1);
+      }
+    }
+    for (i = 0; i < n; i++) {
+      if (levels[i] % 2 === 1 && MIRROR[chars[i]]) chars[i] = MIRROR[chars[i]];
+    }
+    return chars.join('');
+  }
+
+  function wrapLogical(doc, text, maxWidth) {
+    text = String(text || '');
+    if (!text) return [''];
+    if (doc.getTextWidth(text) <= maxWidth) return [text];
+    var tokens = text.split(/(\s+)/);
+    var lines = [];
+    var current = '';
+    function flush() {
+      if (current) {
+        lines.push(current.replace(/\s+$/g, ''));
+        current = '';
+      }
+    }
+    function pushHard(chunk) {
+      while (chunk && doc.getTextWidth(chunk) > maxWidth) {
+        var cut = chunk.length;
+        while (cut > 1 && doc.getTextWidth(chunk.slice(0, cut)) > maxWidth) cut--;
+        lines.push(chunk.slice(0, cut));
+        chunk = chunk.slice(cut);
+      }
+      current = chunk;
+    }
+    for (var i = 0; i < tokens.length; i++) {
+      var tok = tokens[i];
+      if (!tok) continue;
+      var trial = current + tok;
+      if (current && doc.getTextWidth(trial) > maxWidth) {
+        flush();
+        if (/^\s+$/.test(tok)) continue;
+        if (doc.getTextWidth(tok) > maxWidth) pushHard(tok);
+        else current = tok;
+      } else {
+        current = trial;
+      }
+    }
+    flush();
+    return lines.length ? lines : [''];
+  }
+
+  function wrapToVisual(doc, text, maxWidth, rtl) {
+    var logical = wrapLogical(doc, String(text || ''), maxWidth);
+    if (!rtl) return logical;
+    return logical.map(function (line) { return toVisual(line, true); });
+  }
+
+  function truncateToWidth(doc, text, maxWidth, rtl) {
+    text = String(text || '');
+    var visual = toVisual(text, rtl);
+    if (doc.getTextWidth(visual) <= maxWidth) return visual;
+    var ell = '…';
+    var logical = text;
+    while (logical && doc.getTextWidth(toVisual(logical + ell, rtl)) > maxWidth) {
+      logical = logical.slice(0, -1);
+    }
+    return toVisual(logical ? logical + ell : ell, rtl);
   }
 
   function arrayBufferToBase64(buffer) {
@@ -162,6 +316,7 @@
     var rtl = !!opts.rtl;
     var align = rtl ? 'right' : 'left';
     var tagline = opts.tagline || (rtl ? BRAND_TAGLINE_HE : BRAND_TAGLINE);
+    if (rtl) tagline = toVisual(tagline, true);
 
     // shield emblem + wordmark + tagline
     var textX = rtl ? (pw - m) : m;
@@ -196,7 +351,7 @@
       useFont(doc, opts, 'bold');
       doc.setFontSize(17);
       doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
-      var titleLines = doc.splitTextToSize(String(opts.title), tw);
+      var titleLines = wrapToVisual(doc, opts.title, tw, rtl);
       doc.text(titleLines, rtl ? (pw - m) : m, y, { align: align });
       y += titleLines.length * 19;
     }
@@ -204,7 +359,7 @@
       useFont(doc, opts, 'normal');
       doc.setFontSize(9.5);
       doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
-      var subLines = doc.splitTextToSize(String(opts.subtitle), tw);
+      var subLines = wrapToVisual(doc, opts.subtitle, tw, rtl);
       doc.text(subLines, rtl ? (pw - m) : m, y, { align: align });
       y += subLines.length * 12 + 2;
     }
@@ -212,7 +367,7 @@
       useFont(doc, opts, 'normal');
       doc.setFontSize(7.6);
       doc.setTextColor(GREY[0], GREY[1], GREY[2]);
-      var metaLines = doc.splitTextToSize(String(line), tw);
+      var metaLines = wrapToVisual(doc, line, tw, rtl);
       doc.text(metaLines, rtl ? (pw - m) : m, y, { align: align });
       y += metaLines.length * 10;
     });
@@ -256,7 +411,7 @@
           } catch (e) { titleX = rtl ? (pw - m) : m; }
         }
         doc.text(
-          truncateToWidth(doc, opts.title, pw - m * 2 - 80),
+          truncateToWidth(doc, opts.title, pw - m * 2 - 80, rtl),
           titleX,
           hy,
           rtl ? { align: 'right' } : undefined
@@ -281,9 +436,12 @@
           noteX = rtl ? (pw - m - 15) : (m + 15);
         } catch (e) { noteX = rtl ? (pw - m) : m; }
       }
-      var pageText = pageLabel + ' ' + p + ' ' + pageOf + ' ' + pageCount;
+      var pageLogical = rtl
+        ? (pageLabel + ' ' + p + ' ' + pageOf + ' ' + pageCount)
+        : (pageLabel + ' ' + p + ' ' + pageOf + ' ' + pageCount);
+      var pageText = toVisual(pageLogical, rtl);
       doc.text(
-        truncateToWidth(doc, note, pw - m * 2 - 80),
+        truncateToWidth(doc, note, pw - m * 2 - 80, rtl),
         noteX,
         ph - 18,
         rtl ? { align: 'right' } : undefined
@@ -309,7 +467,9 @@
     preloadDocumentFonts: preloadDocumentFonts,
     applyDocumentFont: applyDocumentFont,
     letterhead: letterhead,
-    finalize: finalize
+    finalize: finalize,
+    toVisual: toVisual,
+    wrapToVisual: wrapToVisual
   };
 
   // Start fetching the logo immediately so it is ready by first download.

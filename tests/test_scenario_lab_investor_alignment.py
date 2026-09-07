@@ -105,6 +105,9 @@ def test_scenario_lab_pdf_is_bilingual_branded_and_emoji_free():
     assert "Canonical Israel book" in lab
     assert "ספר ישראל הקנוני" in lab
     assert "brand.letterhead" in lab
+    assert "wrapToVisual" in lab
+    assert "toVisual" in lab
+    assert "bidiVisual" not in lab
     assert "Data-integrity contract" in lab
     assert "🇮🇱" not in lab
     assert "⚠️" not in lab
