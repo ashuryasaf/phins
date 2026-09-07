@@ -136,7 +136,9 @@ def test_hebrew_scenario_lab_pdf_uses_regulator_register_and_live_formula():
     assert "שכבה ג — תיק ישראל הקבוע" in lab
     assert "מילון מונחים במסמך זה" in lab
     assert "MARKET_COPY_HE" in lab
-    assert "buildFormulaNote" in lab
+    assert "formulaRows" in lab
+    assert "ilIdentity" in lab
+    assert "tamDefaultVal" in lab
     assert "never pastes English" in lab
     # Reject the previous calque register.
     assert "שיעור הצמדה" not in lab

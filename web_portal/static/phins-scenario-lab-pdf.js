@@ -64,8 +64,8 @@
       opex: 'Operating expenses',
       uw: 'Underwriting contribution',
       margin: 'Net margin on retained premium',
-      phinsTake: 'PHINS MGA take (25%)',
-      insuranceTake: 'Insurance take (75%)',
+      phinsTake: 'PHINS MGA take',
+      insuranceTake: 'Insurance take',
       story: 'A visual investor story: where the PHINS thesis is strongest',
       storyLead: 'These visuals do not invent public facts. They translate the evidence layer into an investor ranking of market fit, monetization capacity, and treaty readiness.',
       thesisIsrael: 'Market entry thesis',
@@ -102,13 +102,13 @@
       stageCaution: 'Pricing caution',
       stagePartner: 'Partnership / capital-light',
       ilBook: 'Canonical Israel book — investor meeting planning basis',
-      ilBookLead: 'Pinned identity used across the Investor Meeting section. Distinct from the adjustable TAM snapshot above. Sales from 1 January 2027. Table-driven ILS 4,518 risk premium. PHINS 25% / insurance 75%. Annual churn 8%.',
+      ilBookLead: 'Pinned identity used across the Investor Meeting section. Distinct from the adjustable TAM snapshot above. The table below is the source of record for premium, take rates, in-force, and the 1 January 2027 sales clock.',
       year: 'Year',
       eoy: 'EoY in-force',
       avgIf: 'Avg in-force',
       riskGwp: 'Risk GWP (ILS)',
-      phinsRev: 'PHINS net revenue 25% (ILS)',
-      insRev: 'Insurance take 75% (ILS)',
+      phinsRev: 'PHINS net revenue (ILS)',
+      insRev: 'Insurance take (ILS)',
       seed: 'Seed / build round',
       pre: 'Pre-money valuation',
       post: 'Post-money valuation',
@@ -151,9 +151,19 @@
       layerA: 'Layer A — Locked public evidence',
       layerABody: 'Official quotes, titles and URLs, copied in the source language. Never rewritten by lab sliders or by the Israel book.',
       layerB: 'Layer B — Adjustable TAM snapshot (this lab)',
-      layerBBody: 'Lives mode: addressable lives × attach rate × planning premium. Premium-share mode: reported pool × PHINS target share. Israel default TAM: 5.0 million lives × 2.4% × ILS 4,518. This is a calibration, not the investor-meeting book.',
+      layerBBody: 'Lives mode: addressable lives × attach rate × planning premium. Premium-share mode: reported pool × PHINS target share. Israel TAM default and the live formula are tabulated below. This is a calibration, not the investor-meeting book.',
       layerC: 'Layer C — Pinned Israel book (Investor Meeting)',
-      layerCBody: 'Identity: average in-force × ILS 4,518 = risk GWP. PHINS 25% / insurance 75%. End-of-year in-force 24,000 / 94,080 / 230,554. Sales from 1 January 2027. Does not follow lab sliders.',
+      layerCBody: 'Pinned Investor Meeting identity. Average in-force × table risk premium = risk GWP. Take rates, in-force counts, and the sales clock are tabulated below and do not follow lab sliders.',
+      ilIdentity: 'Israel book identity (Layer C) — values only',
+      ilIdentityPremium: 'Table annual risk premium',
+      ilIdentityTake: 'Premium split (PHINS / licensed carrier)',
+      ilIdentityEoy: 'EoY in-force (2027 / 2028 / 2029)',
+      ilIdentityAvg: 'Average in-force (2027 / 2028 / 2029)',
+      ilIdentitySales: 'Sales start',
+      ilIdentityChurn: 'Annual churn',
+      tamDefault: 'Israel TAM default (Layer B)',
+      tamDefaultVal: '5,000,000 × 2.4% × ILS 4,518',
+      formulaLead: 'The formula applies to Layer B only. Amounts in this table are the live lab calculation. Do not identify them with the Israel book (Layer C).',
       formula: 'Live scenario formula (Layer B)',
       glossary: 'Working glossary',
       glossTerm: 'Term',
@@ -205,8 +215,8 @@
       opex: 'הוצאות תפעול',
       uw: 'תרומת חיתום',
       margin: 'מרווח נטו על פרמיה שנותרה',
-      phinsTake: 'חלק פינס כ-MGA (25%)',
-      insuranceTake: 'חלק המבטח המורשה (75%)',
+      phinsTake: 'חלק פינס כ-MGA',
+      insuranceTake: 'חלק המבטח המורשה',
       story: 'קריאת משקיע: היכן התזה של פינס חזקה ביותר',
       storyLead: 'התרשימים אינם ממציאים עובדות ציבוריות. הם מתרגמים את שכבת הראיות לדירוג פנימי של התאמת שוק, יכולת מימוש פרמיה פרטית, ומוכנות לחוזה ביטוח משנה.',
       thesisIsrael: 'תזת כניסה לשוק',
@@ -243,18 +253,18 @@
       stageCaution: 'זהירות תמחור',
       stagePartner: 'שותפות / דל-הון',
       ilBook: 'תיק ישראל — בסיס התכנון ממפגש המשקיעים',
-      ilBookLead: 'זהות תכנונית קבועה המשמשת בכל מקטע מפגש המשקיעים. נפרדת מתמונת ה-TAM הניתנת לכיול במעבדה (שכבה ב). מכירות מ-1 בינואר 2027. פרמיית סיכון טבלאית 4,518 ש"ח לשנה. פינס 25% / מבטח מורשה 75%. נטישה שנתית 8%. זהות: ממוצע פוליסות בתוקף × 4,518 = פרמיית סיכון ברוטו.',
+      ilBookLead: 'זהות תכנונית קבועה המשמשת בכל מקטע מפגש המשקיעים. נפרדת מתמונת ה-TAM הניתנת לכיול במעבדה (שכבה ב). טבלת תיק ישראל שלהלן היא מקור האמת לפרמיה, לשיעורי החלוקה, לפוליסות בתוקף ולשעון המכירות.',
       year: 'שנה',
       eoy: 'פוליסות בתוקף בסוף שנה',
       avgIf: 'ממוצע פוליסות בתוקף',
       riskGwp: 'פרמיית סיכון ברוטו (ש"ח)',
-      phinsRev: 'הכנסת נטו פינס 25% (ש"ח)',
-      insRev: 'חלק המבטח 75% (ש"ח)',
+      phinsRev: 'הכנסת נטו פינס (ש"ח)',
+      insRev: 'חלק המבטח (ש"ח)',
       seed: 'סבב הקמה (סיד)',
       pre: 'שווי לפני ההשקעה',
       post: 'שווי לאחר ההשקעה',
       specimen: 'דוגמת תמחור (טבלאות מפורסמות)',
-      specimenVal: 'גיל 42 · סכום חיים 1,000,000 ש"ח / נכות קבועה 250,000 ש"ח · תעריף חיים 0.25 / נכות 0.20 לכל 1,000 ש"ח לחודש · 4,518 ש"ח לשנה',
+      specimenVal: 'Age 42 · life ILS 1,000,000 / disability ILS 250,000 · 0.25 / 0.20 per 1,000 / month · ILS 4,518 / year',
       notes: 'הערות הנהלה וממשל תאגידי',
       modeNote: 'נוסחת התרחיש החי',
       reinsNote: 'הערת ביטוח משנה',
@@ -292,9 +302,19 @@
       layerA: 'שכבה א — ראיות ציבוריות נעולות',
       layerABody: 'ציטוטים, כותרות וכתובות רשמיות, בשפת המקור. המעבדה ותיק ישראל אינם משכתבים אותן.',
       layerB: 'שכבה ב — תמונת TAM ניתנת לכיול (מעבדה זו)',
-      layerBBody: 'תרחיש מבוטחים: אוכלוסיית יעד × שיעור החדרה × פרמיה שנתית לתכנון. תרחיש מאגר: מאגר פרמיה מדווח × חלק יעד. ברירת מחדל לישראל: 5.0 מיליון נפשות × 2.4% × 4,518 ש"ח. זה כיול TAM, לא תיק מפגש המשקיעים.',
+      layerBBody: 'תרחיש מבוטחים: אוכלוסיית יעד × שיעור החדרה × פרמיה שנתית לתכנון. תרחיש מאגר: מאגר פרמיה מדווח × חלק יעד. ברירת המחדל לישראל והנוסחה החיה מפורטות בטבלאות הערכים שלהלן. זה כיול TAM, לא תיק מפגש המשקיעים.',
       layerC: 'שכבה ג — תיק ישראל הקבוע (מפגש המשקיעים)',
-      layerCBody: 'זהות: ממוצע פוליסות בתוקף × 4,518 ש"ח = פרמיית סיכון ברוטו. פינס 25% / מבטח 75%. בתוקף סוף שנה 24,000 / 94,080 / 230,554. מכירות מ-1 בינואר 2027. אינה נגררת אחרי מחווני המעבדה.',
+      layerCBody: 'זהות תכנונית קבועה ממפגש המשקיעים. ממוצע פוליסות בתוקף כפול פרמיית הסיכון הטבלאית שווה לפרמיית הסיכון ברוטו. שיעורי החלוקה, ספירת הפוליסות ושעון המכירות מופיעים בטבלת הערכים — לא בפסקת הפרוזה. אינה נגררת אחרי מחווני המעבדה.',
+      ilIdentity: 'זהות תיק ישראל (שכבה ג) — ערכים בלבד',
+      ilIdentityPremium: 'פרמיית סיכון שנתית טבלאית',
+      ilIdentityTake: 'חלוקת פרמיה (פינס / מבטח מורשה)',
+      ilIdentityEoy: 'פוליסות בתוקף סוף שנה (2027 / 2028 / 2029)',
+      ilIdentityAvg: 'ממוצע פוליסות בתוקף (2027 / 2028 / 2029)',
+      ilIdentitySales: 'תחילת מכירות',
+      ilIdentityChurn: 'נטישה שנתית',
+      tamDefault: 'ברירת מחדל TAM לישראל (שכבה ב)',
+      tamDefaultVal: '5,000,000 × 2.4% × ILS 4,518',
+      formulaLead: 'הנוסחה חלה על שכבה ב בלבד. הסכומים בטבלה הם חישוב המעבדה החי. אין לזהותם עם תיק ישראל (שכבה ג).',
       formula: 'נוסחת התרחיש החי (שכבה ב)',
       glossary: 'מילון מונחים במסמך זה',
       glossTerm: 'מונח',
@@ -698,7 +718,7 @@
     var title = stripMarks(C.title);
     var subtitle = stripMarks(C.subtitle);
 
-    function buildFormulaNote() {
+    function formulaRows() {
       var mode = payload.mode;
       var lives = integer(assumptions.addressableLives);
       var attach = pct(assumptions.attachRate);
@@ -710,32 +730,27 @@
       var retainedPct = pct(100 - (Number(assumptions.cessionRate) || 0));
       var ceded = money(outputs.cededPremium, currency);
       var net = money(outputs.netPremium, currency);
-      if (lang === 'he') {
-        if (mode === 'premium') {
-          return 'תרחיש לפי חלק ממאגר פרמיה מדווח (שכבה ב — כיול מעבדה, לא ראיה ציבורית). פרמיית הסיכון ברוטו (GWP) = מאגר פרמיה מדווח × חלק היעד של פינס = '
-            + pool + ' × ' + share + ' = ' + gwp
-            + '. פרמיה שנמסרה לביטוח משנה = GWP × שיעור המסירה (' + cededPct + ') = ' + ceded
-            + '. פרמיה נטו שנותרה = GWP − פרמיה שנמסרה = ' + net + ' (' + retainedPct + ' שימור). '
-            + 'אין לזהות סכומים אלה עם תיק ישראל הקבוע (שכבה ג).';
-        }
-        return 'תרחיש לפי מספר מבוטחים (שכבה ב — כיול מעבדה, לא ראיה ציבורית). פרמיית הסיכון ברוטו (GWP) = אוכלוסיית יעד × שיעור החדרה × פרמיה שנתית לתכנון = '
-          + lives + ' × ' + attach + ' × ' + prem + ' = ' + gwp
-          + '. פרמיה שנמסרה לביטוח משנה = GWP × שיעור המסירה (' + cededPct + ') = ' + ceded
-          + '. פרמיה נטו שנותרה = GWP − פרמיה שנמסרה = ' + net + ' (' + retainedPct + ' שימור). '
-          + 'בישראל ברירת המחדל היא תמונת TAM (5.0 מיליון × 2.4% × 4,518 ש"ח), לא תיק מפגש המשקיעים.';
-      }
+      var rows;
       if (mode === 'premium') {
-        return 'Premium-share mode (Layer B — lab calibration, not public evidence). Risk GWP = reported premium pool × PHINS target share = '
-          + pool + ' × ' + share + ' = ' + gwp
-          + '. Ceded premium = GWP × cession (' + cededPct + ') = ' + ceded
-          + '. Net retained = GWP − ceded = ' + net + ' (' + retainedPct + ' retained). '
-          + 'Do not identify these amounts with the pinned Israel book (Layer C).';
+        rows = [
+          [C.mode, C.premiumMode],
+          [C.pool, pool],
+          [C.share, share],
+          [C.gwp, pool + ' × ' + share + ' = ' + gwp]
+        ];
+      } else {
+        rows = [
+          [C.mode, C.livesMode],
+          [C.addressable, lives],
+          [C.attach, attach],
+          [C.annualPremium, prem],
+          [C.gwp, lives + ' × ' + attach + ' × ' + prem + ' = ' + gwp]
+        ];
       }
-      return 'Lives mode (Layer B — lab calibration, not public evidence). Risk GWP = addressable lives × attach rate × planning premium = '
-        + lives + ' × ' + attach + ' × ' + prem + ' = ' + gwp
-        + '. Ceded premium = GWP × cession (' + cededPct + ') = ' + ceded
-        + '. Net retained = GWP − ceded = ' + net + ' (' + retainedPct + ' retained). '
-        + 'Israel default is a TAM snapshot (5.0 million × 2.4% × ILS 4,518), not the investor-meeting book.';
+      rows.push([C.cession, cededPct]);
+      rows.push([C.ceded, gwp + ' × ' + cededPct + ' = ' + ceded]);
+      rows.push([C.net, gwp + ' − ' + ceded + ' = ' + net + ' (' + retainedPct + ')']);
+      return rows;
     }
 
     y = brand.letterhead(doc, {
@@ -764,6 +779,21 @@
         [C.layerC, C.layerCBody]
       ]
     );
+    if (ilBook) {
+      heading(C.ilIdentity, 11);
+      table(
+        [C.field, C.value],
+        [
+          [C.ilIdentityPremium, money(ilBook.annualPremium, 'ILS')],
+          [C.ilIdentityTake, Math.round((Number(ilBook.phinsTakeRate) || 0) * 100) + '% / ' + Math.round((Number(ilBook.insuranceTakeRate) || 0) * 100) + '%'],
+          [C.ilIdentityEoy, (ilBook.eoyPolicies || []).map(integer).join(' / ')],
+          [C.ilIdentityAvg, (ilBook.avgInForce || []).map(integer).join(' / ')],
+          [C.ilIdentitySales, '2027-01-01'],
+          [C.ilIdentityChurn, pct((Number(ilBook.churn) || 0) * 100)],
+          [C.tamDefault, C.tamDefaultVal]
+        ]
+      );
+    }
 
     heading(C.assumptions, 12);
     table(
@@ -799,8 +829,8 @@
       table(
         [C.metric, C.value],
         [
-          [C.phinsTake, money(gwp * 0.25, 'ILS')],
-          [C.insuranceTake, money(gwp * 0.75, 'ILS')]
+          [C.phinsTake, money(gwp * 0.25, 'ILS') + ' · 25%'],
+          [C.insuranceTake, money(gwp * 0.75, 'ILS') + ' · 75%']
         ]
       );
     }
@@ -904,7 +934,11 @@
 
     heading(C.notes, 12);
     para(C.formula, 9, 12, NAVY, 'bold');
-    para(buildFormulaNote(), 8.5, 12);
+    para(C.formulaLead, 8.5, 12, GREY);
+    table(
+      [C.field, C.value],
+      formulaRows()
+    );
     var selectedCopy = marketCopy(region, lang);
     para(C.reinsNote + ': ' + selectedCopy.reins, 8.5, 12);
     para(C.interp + ': ' + selectedCopy.interp, 8.5, 12);
