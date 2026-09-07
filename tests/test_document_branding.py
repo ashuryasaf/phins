@@ -53,29 +53,37 @@ def test_pdf_brand_helper_exists_with_brand_identity():
     assert "/phins-logo.png" in js
     assert "PHINS" in js
     assert BRAND_TAGLINE in js
+    assert "פלטפורמת ביטוח מופעלת-AI" in js
     # gold / navy brand palette (RGB of #c9a04e and #0e2f63)
     assert "201, 160, 78" in js
     assert "14, 47, 99" in js
     # public API used by the generators
-    for api in ("letterhead", "finalize", "preload", "PhinsPdfBrand"):
+    for api in ("letterhead", "finalize", "preload", "PhinsPdfBrand",
+                "preloadDocumentFonts", "applyDocumentFont"):
         assert api in js, f"helper missing API {api}"
     # chrome-only contract stated in the module
     assert "chrome ONLY" in js
+    assert "/fonts/DejaVuSans.ttf" in js
 
 
 def test_pitch_dashboard_loads_brand_helper():
     pd = _read(STATIC / "pitch-dashboard.html")
     assert '<script src="/phins-pdf-brand.js"></script>' in pd
+    assert '<script src="/phins-scenario-lab-pdf.js"></script>' in pd
 
 
 def test_pitch_dashboard_generators_use_brand_helper():
     pd = _read(STATIC / "pitch-dashboard.html")
-    # all four client-generated PDFs draw the branded letterhead + footer
-    assert pd.count("window.PhinsPdfBrand.letterhead(doc") == 4
-    assert pd.count("window.PhinsPdfBrand.finalize(doc") == 4
+    lab = _read(STATIC / "phins-scenario-lab-pdf.js")
+    # four client-generated PDFs: exec summary, country pitch, tech-investor
+    # plan stay inline; the scenario-lab assessment lives in the shared module
+    assert pd.count("window.PhinsPdfBrand.letterhead(doc") == 3
+    assert pd.count("window.PhinsPdfBrand.finalize(doc") == 3
+    assert "brand.letterhead(doc" in lab
+    assert "brand.finalize(doc" in lab
     # branded titles per generator
     assert '"PHINS Platform — Executive Summary"' in pd
-    assert '"PHI Permanent 3+ ADL Executive Business Assessment"' in pd
+    assert "PHINS Scenario Lab — Market Assessment" in lab
     assert '"PHINS — " + m.d.name + " — Investor Pitch"' in pd
     assert '"PHINS Technologies — Technology Investor Business Plan"' in pd
     # generators fail closed when the helper is unavailable
@@ -85,12 +93,14 @@ def test_pitch_dashboard_generators_use_brand_helper():
 def test_pitch_dashboard_generator_data_unchanged():
     """Branding must not alter the generated document data."""
     pd = _read(STATIC / "pitch-dashboard.html")
+    lab = _read(STATIC / "phins-scenario-lab-pdf.js")
     # canonical data anchors of the four generators are untouched
     assert "phins-executive-summary.pdf" in pd
-    assert "phi-permanent-3-adl-executive-business-assessment-" in pd
+    assert "phins-scenario-lab-" in lab
     assert "phins-investor-pitch-" in pd
     assert "phins-tech-investor-business-plan.pdf" in pd
     assert "Data integrity notice" in pd
+    assert "public evidence stays locked" in lab
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +323,18 @@ def test_logo_assets_served_with_real_image_types():
     with urlopen(Request(base + "/phins-logo.svg")) as resp:
         assert resp.status == 200
         assert (resp.headers.get("Content-Type") or "").startswith("image/svg+xml")
+
+
+@pytest.mark.skipif(not os.environ.get("TEST_BASE_URL"),
+                    reason="embedded server base URL not available")
+def test_document_fonts_served_with_font_ttf():
+    """Hebrew Scenario Lab PDFs fetch /fonts/DejaVuSans.ttf under nosniff."""
+    base = os.environ["TEST_BASE_URL"].rstrip("/")
+    for name in ("DejaVuSans.ttf", "DejaVuSans-Bold.ttf"):
+        with urlopen(Request(base + "/fonts/" + name)) as resp:
+            assert resp.status == 200
+            assert resp.headers.get("Content-Type") == "font/ttf"
+            assert resp.read(4) == b"\x00\x01\x00\x00"
 
 
 def test_actuary_briefing_pdf_regenerated_with_letterhead():

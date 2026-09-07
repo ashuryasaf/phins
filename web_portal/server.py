@@ -15460,6 +15460,10 @@ For claims or questions, please contact:
             # Static JSON assets (e.g. /locales/he.json i18n dictionaries)
             # must carry their real type under nosniff.
             self.send_header('Content-Type', 'application/json; charset=utf-8')
+        elif path.endswith('.ttf'):
+            # Subset document fonts (e.g. /fonts/DejaVuSans.ttf) used by the
+            # branded Scenario Lab PDF generator for Hebrew/Latin letterhead.
+            self.send_header('Content-Type', 'font/ttf')
         elif path.endswith('.mp4'):
             # iOS Safari refuses to decode MP4s served as octet-stream when
             # X-Content-Type-Options: nosniff is set (Solutions theaters).

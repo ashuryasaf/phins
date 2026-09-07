@@ -7,7 +7,7 @@
   <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=Heebo:wght@400;500;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
       --blue-dark: #0b1f3f;
@@ -931,6 +931,22 @@
       transform: translateY(-1px);
       border-color: var(--accent-1);
       box-shadow: 0 8px 18px rgba(13, 71, 161, 0.12);
+    }
+
+    .export-btn.primary {
+      background: var(--gradient-hdr);
+      color: #fff;
+      border-color: transparent;
+    }
+
+    .export-btn.primary:hover {
+      border-color: var(--gold-hi);
+      box-shadow: 0 8px 18px rgba(14, 47, 99, 0.22);
+    }
+
+    [lang="he"],
+    .export-btn[id$="-he"] {
+      font-family: "Heebo", "Inter", sans-serif;
     }
 
     .export-status {
@@ -2160,6 +2176,18 @@
             <a href="/seed-investor-deck.html" class="exec-dl-btn" style="background:#6a1b9a;color:#fff;border-color:#6a1b9a;"> Seed 5-Pager (EN/עברית · PDF)</a>
             <a href="/unicorn-investor-deck.html#configurator" class="exec-dl-btn">️ Configurator</a>
             <a href="/unicorn-investor-deck.html#remarks" class="exec-dl-btn"> Remarks &amp; Prompts</a>
+          </div>
+        </div>
+
+        <div style="background:linear-gradient(180deg,#f8fbff 0%,#fff 70%);border:2px solid var(--blue-mid);border-radius:14px;padding:18px;box-shadow:var(--shadow);grid-column:1/-1;">
+          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--blue-mid);margin-bottom:6px;">Scenario Lab · Market Assessment · EN + עברית</div>
+          <h3 style="margin:0 0 8px 0;font-size:13pt;">PHINS Scenario Lab — Investor / Regulator Assessment</h3>
+          <p style="font-size:9.5pt;color:var(--text-sub);margin:0 0 12px 0;">Live, adjustable market model. Public evidence stays locked. Israel planning figures reconcile to the Investor Meeting book (ILS 4,518 published-tables premium · 25% PHINS / 75% insurance · EoY in-force 24,000 / 94,080 / 230,554). The downloadable pack includes the visual investor story, market-readiness scorecard, and a fully Hebrew edition. No public statistic is rewritten by the export.</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <a href="#scenario-assessment-section" class="exec-dl-btn" style="background:var(--blue-mid);color:#fff;border-color:var(--blue-mid);">Open Scenario Lab</a>
+            <button type="button" class="exec-dl-btn" id="invdocs-download-lab-en">Download PDF (EN)</button>
+            <button type="button" class="exec-dl-btn" id="invdocs-download-lab-he">הורדת PDF (עברית)</button>
+            <a href="#investor-meeting-section" class="exec-dl-btn">Investor Meeting book</a>
           </div>
         </div>
 
@@ -5197,6 +5225,20 @@
             <li><strong>Middle East</strong> is strategically interesting because the capital structure is visible even when morbidity disclosure is thinner.</li>
           </ul>
         </article>
+        <article class="chart-card" style="grid-column:1/-1;">
+          <div class="chart-head">
+            <div>
+              <h3>Market readiness</h3>
+              <p>Launch-readiness from the same scorecard inputs (operating fit, private access, demand). Not a new public statistic.</p>
+            </div>
+            <div class="chart-legend">
+              <span><i class="legend-dot green"></i> Launch / scale</span>
+              <span><i class="legend-dot amber"></i> Top-up / partner</span>
+              <span><i class="legend-dot red"></i> Caution</span>
+            </div>
+          </div>
+          <div id="readiness-bar-chart" class="bar-chart"></div>
+        </article>
       </div>
     </section>
 
@@ -5347,7 +5389,8 @@
             <div class="export-actions">
               <button type="button" class="export-btn" id="download-json">Download JSON</button>
               <button type="button" class="export-btn" id="download-csv">Download CSV</button>
-              <button type="button" class="export-btn" id="download-pdf">Download Full PDF</button>
+              <button type="button" class="export-btn primary" id="download-pdf">Download PDF (EN)</button>
+              <button type="button" class="export-btn primary" id="download-pdf-he">הורדת PDF (עברית)</button>
             </div>
             <div class="export-status" id="export-status" aria-live="polite"></div>
           </div>
@@ -5383,6 +5426,16 @@
               <div class="kpi-value" id="uw-value">-</div>
               <div class="kpi-foot" id="uw-foot">Net premium less claims and expenses</div>
             </div>
+            <div class="kpi-card" id="phins-take-card" hidden>
+              <div class="kpi-label">PHINS MGA take (25%)</div>
+              <div class="kpi-value" id="phins-take-value">-</div>
+              <div class="kpi-foot">Investor-meeting overlay on modeled GWP · Israel book identity</div>
+            </div>
+            <div class="kpi-card" id="insurance-take-card" hidden>
+              <div class="kpi-label">Insurance take (75%)</div>
+              <div class="kpi-value" id="insurance-take-value">-</div>
+              <div class="kpi-foot">Licensed carrier share · not PHINS revenue</div>
+            </div>
           </div>
 
           <div class="scenario-detail">
@@ -5405,12 +5458,32 @@
               </div>
             </div>
           </div>
+          <div class="detail-card" id="il-book-panel" hidden style="margin-top:16px;border:1px solid #c9a04e;background:linear-gradient(180deg,#fffdf6 0%,#ffffff 70%);">
+            <h3>Canonical Israel book — investor meeting planning basis</h3>
+            <p class="section-copy" style="margin:0 0 10px 0;">Pinned identity used in the Investor Meeting section. Distinct from the adjustable TAM snapshot above. Public evidence is not rewritten.</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Year</th>
+                    <th>EoY in-force</th>
+                    <th>Avg in-force</th>
+                    <th>Risk GWP (ILS)</th>
+                    <th>PHINS 25% (ILS)</th>
+                    <th>Insurance 75% (ILS)</th>
+                  </tr>
+                </thead>
+                <tbody id="il-book-body"></tbody>
+              </table>
+            </div>
+            <p class="table-note" id="il-book-note"></p>
+          </div>
           <div class="detail-card" style="margin-top:16px;">
             <h3>Scenario export notes</h3>
             <div class="detail-list">
-              <div><strong>JSON export:</strong> includes the selected market, source references, assumptions, and current modeled outputs.</div>
-              <div><strong>CSV export:</strong> provides a flat investor-ready line item for spreadsheet analysis and diligence workflows.</div>
-              <div><strong>Integrity rule:</strong> exports include a clear split between reported public evidence and PHINS scenario assumptions.</div>
+              <div><strong>JSON / CSV:</strong> selected market, source references, assumptions, modeled outputs, and the Israel book identity when that market is selected.</div>
+              <div><strong>PDF (EN / עברית):</strong> branded letterhead, investor-story charts, market-readiness scorecard, and the Israel book where relevant. Public evidence remains in source language.</div>
+              <div><strong>Integrity rule:</strong> exports split reported public evidence from PHINS scenario assumptions and from the pinned investor-meeting planning basis.</div>
             </div>
           </div>
         </div>
@@ -6024,7 +6097,35 @@
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
   <script src="/phins-pdf-brand.js"></script>
+  <script src="/phins-scenario-lab-pdf.js"></script>
   <script>
+    const IL_PLANNING_BOOK = {
+      source: "investor-meeting-section canonical planning basis",
+      salesStart: "2027-01-01",
+      annualPremium: 4518,
+      monthlyPremium: 376.5,
+      phinsTakeRate: 0.25,
+      insuranceTakeRate: 0.75,
+      churn: 0.08,
+      years: [2027, 2028, 2029],
+      eoyPolicies: [24000, 94080, 230554],
+      avgInForce: [12000, 59040, 162317],
+      newIssues: [25000, 75000, 150000],
+      riskGwp: [54216000, 266742720, 733348206],
+      phinsNetRevenue: [13554000, 66685680, 183337052],
+      insuranceTake: [40662000, 200057040, 550011154],
+      seedRound: 6000000,
+      preMoney: 24000000,
+      postMoney: 30000000,
+      specimen: {
+        age: 42,
+        lifeFace: 1000000,
+        disabilityFace: 250000,
+        lifeRatePer1000: 0.25,
+        disabilityRatePer1000: 0.20
+      }
+    };
+
     const sourceRegistry = {
       oecd_2025: {
         title: "OECD Health at a Glance 2025",
@@ -6236,14 +6337,15 @@
         assumptionDefaults: {
           addressableLives: 5000000,
           attachRate: 2.4,
-          annualPremium: 2400,
+          annualPremium: 4518,
           marketPremiumPool: 300000000,
           targetShare: 10.0,
           cessionRate: 18.0,
           lossRatio: 62.0,
-          expenseRatio: 18.0
+          expenseRatio: 18.0,
+          takeRate: 25.0
         },
-        basisNote: "Default lives basis uses Israel's reported private LTC insured population as a conservative current-market proxy rather than total population.",
+        basisNote: "Default lives basis uses Israel's reported private LTC insured population as a conservative current-market proxy rather than total population. Annual premium defaults to the canonical Israel book specimen ILS 4,518 (published tables) — the same planning basis as the Investor Meeting section. The 2027–2029 persistency book (24,000 / 94,080 / 230,554 EoY) is a separate pinned identity, not this TAM attach-rate snapshot.",
         reinsuranceNote: "Use quoted treaty terms, not market folklore. Public Israeli LTC cession disclosure was not located in the current evidence set.",
         interpretationNote: "The model reflects a severity-layer attachment on top of an already educated LTC market."
       },
@@ -6490,9 +6592,11 @@
     const priorityBarChart = document.getElementById("priority-bar-chart");
     const marketScatter = document.getElementById("market-scatter");
     const dualBarChart = document.getElementById("dual-bar-chart");
+    const readinessBarChart = document.getElementById("readiness-bar-chart");
     const downloadJsonBtn = document.getElementById("download-json");
     const downloadCsvBtn = document.getElementById("download-csv");
     const downloadPdfBtn = document.getElementById("download-pdf");
+    const downloadPdfHeBtn = document.getElementById("download-pdf-he");
     const exportStatusEl = document.getElementById("export-status");
 
     let currentScenarioState = null;
@@ -6521,6 +6625,8 @@
       opexValue: document.getElementById("opex-value"),
       uwValue: document.getElementById("uw-value"),
       uwFoot: document.getElementById("uw-foot"),
+      phinsTakeValue: document.getElementById("phins-take-value"),
+      insuranceTakeValue: document.getElementById("insurance-take-value"),
       formulaBox: document.getElementById("formula-box"),
       modeNote: document.getElementById("mode-note"),
       reinsuranceNote: document.getElementById("reinsurance-note"),
@@ -6660,6 +6766,33 @@
         </div>
       `).join("");
 
+      if (readinessBarChart) {
+        const stageLabel = {
+          israel: "Launch-ready",
+          usa: "Scale with discipline",
+          canada: "Group / affinity",
+          wneurope: "Top-up / orchestration",
+          middleeast: "Partnership / capital-light",
+          japan: "Top-up / orchestration",
+          australia: "Pricing caution",
+          albania: "Partnership / capital-light",
+          portugal: "Top-up / orchestration"
+        };
+        readinessBarChart.innerHTML = marketData.map((row) => {
+          const score = window.PhinsScenarioLabPdf && typeof window.PhinsScenarioLabPdf.readinessOf === "function"
+            ? window.PhinsScenarioLabPdf.readinessOf(row)
+            : Math.round((row.investorScores.fit * 0.4) + (row.investorScores.privateAccess * 0.3) + (row.investorScores.demand * 0.3));
+          return `
+          <div class="bar-row">
+            <div class="bar-label">${escapeHtml(row.name)}<span style="font-size:7.2pt;font-weight:600;color:var(--text-soft);">${escapeHtml(stageLabel[row.id] || "Assess")}</span></div>
+            <div class="bar-track">
+              <div class="bar-fill ${escapeHtml(row.investorScores.color)}" style="width:${score}%;"></div>
+            </div>
+            <div class="bar-value">${score}</div>
+          </div>`;
+        }).join("");
+      }
+
       marketScatter.querySelectorAll(".scatter-point").forEach((button) => {
         button.addEventListener("click", () => {
           marketScatter.querySelectorAll(".scatter-point").forEach((item) => item.classList.remove("active"));
@@ -6699,8 +6832,9 @@
         outputs: currentScenarioState ? currentScenarioState.outputs : null,
         sources: region.sources.map((key) => sourceRegistry[key]).filter(Boolean),
         integrity: {
-          note: "Reported public evidence is separate from PHINS scenario assumptions."
-        }
+          note: "Reported public evidence is separate from PHINS scenario assumptions and from the pinned Israel book planning basis."
+        },
+        israelBook: region.id === "israel" ? IL_PLANNING_BOOK : null
       };
     }
 
@@ -6759,6 +6893,15 @@
         ["operating_expenses", payload.outputs ? payload.outputs.operatingExpenses : ""],
         ["underwriting_contribution", payload.outputs ? payload.outputs.underwritingContribution : ""],
         ["net_margin_pct", payload.outputs ? payload.outputs.netMargin : ""],
+        ["phins_mga_take_25", payload.outputs && payload.region.id === "israel" ? payload.outputs.phinsTake : ""],
+        ["insurance_take_75", payload.outputs && payload.region.id === "israel" ? payload.outputs.insuranceTake : ""],
+        ["il_book_annual_premium", payload.israelBook ? payload.israelBook.annualPremium : ""],
+        ["il_book_eoy_2027", payload.israelBook ? payload.israelBook.eoyPolicies[0] : ""],
+        ["il_book_eoy_2028", payload.israelBook ? payload.israelBook.eoyPolicies[1] : ""],
+        ["il_book_eoy_2029", payload.israelBook ? payload.israelBook.eoyPolicies[2] : ""],
+        ["il_book_gwp_2027", payload.israelBook ? payload.israelBook.riskGwp[0] : ""],
+        ["il_book_gwp_2028", payload.israelBook ? payload.israelBook.riskGwp[1] : ""],
+        ["il_book_gwp_2029", payload.israelBook ? payload.israelBook.riskGwp[2] : ""],
         ["integrity_note", payload.integrity.note]
       ];
 
@@ -6783,182 +6926,42 @@
       return options.startY;
     }
 
-    async function downloadFullAssessmentPdf() {
-      setExportStatus("Preparing full PDF export...");
-      if (!window.jspdf || typeof window.jspdf.jsPDF !== "function" || !window.PhinsPdfBrand) {
+    async function downloadFullAssessmentPdf(lang) {
+      const language = lang === "he" ? "he" : "en";
+      setExportStatus(language === "he" ? "Preparing Hebrew PDF export..." : "Preparing full PDF export...");
+      if (!window.jspdf || typeof window.jspdf.jsPDF !== "function" || !window.PhinsPdfBrand || !window.PhinsScenarioLabPdf) {
         setExportStatus("PDF library unavailable. Please refresh and retry.", true);
         return;
       }
 
+      const buttons = [downloadPdfBtn, downloadPdfHeBtn,
+        document.getElementById("invdocs-download-lab-en"),
+        document.getElementById("invdocs-download-lab-he")].filter(Boolean);
       try {
-        if (downloadPdfBtn) {
-          downloadPdfBtn.disabled = true;
-        }
-
-        await window.PhinsPdfBrand.preload();
-
+        buttons.forEach((btn) => { btn.disabled = true; });
         const payload = buildScenarioState();
         const region = getRegion(regionSelect.value);
-        const scenarioOutputs = payload.outputs || {
-          grossWrittenPremium: 0,
-          cededPremium: 0,
-          netPremium: 0,
-          expectedClaims: 0,
-          operatingExpenses: 0,
-          underwritingContribution: 0,
-          netMargin: 0
-        };
-
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF({ unit: "pt", format: "a4" });
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const pageHeight = doc.internal.pageSize.getHeight();
-        const margin = 40;
-        const maxTextWidth = pageWidth - margin * 2;
-        const printedAt = new Date(payload.exportedAt).toLocaleString("en-US", { hour12: false });
-        let y = margin;
-
-        const addParagraph = (text, fontSize = 10, lineGap = 14) => {
-          doc.setFontSize(fontSize);
-          const lines = doc.splitTextToSize(String(text), maxTextWidth);
-          const blockHeight = lines.length * lineGap;
-          if (y + blockHeight > pageHeight - margin) {
-            doc.addPage();
-            y = window.PhinsPdfBrand.CONTINUATION_TOP;
-          }
-          doc.text(lines, margin, y);
-          y += blockHeight + 4;
-        };
-
-        // Branded letterhead — same first-level identity as the committed
-        // investor PDFs (shield logo, wordmark, tagline, gold/navy rules).
-        y = window.PhinsPdfBrand.letterhead(doc, {
-          margin: margin,
-          title: "PHI Permanent 3+ ADL Executive Business Assessment"
+        const result = await window.PhinsScenarioLabPdf.generate({
+          lang: language,
+          payload: payload,
+          region: region,
+          marketData: marketData,
+          sourceRegistry: sourceRegistry,
+          ilBook: IL_PLANNING_BOOK,
+          outputs: payload.outputs,
+          modeNote: outputs.modeNote ? outputs.modeNote.textContent : "",
+          printedAt: new Date(payload.exportedAt).toLocaleString(language === "he" ? "he-IL" : "en-US", { hour12: false })
         });
-        addParagraph(`Export timestamp: ${printedAt}`, 9, 13);
-        addParagraph(`Selected market snapshot: ${region.name} (${region.currency})`, 9, 13);
-        addParagraph("Data integrity rule: Reported public evidence remains fixed. PHINS assumptions are editable and are shown as a separate scenario layer.", 9, 13);
-
-        doc.setFont(undefined, "bold");
-        addParagraph("Scenario assumptions", 12, 15);
-        doc.setFont(undefined, "normal");
-        y = addPdfTable(doc, {
-          startY: y,
-          margin: { left: margin, right: margin },
-          head: [["Field", "Value"]],
-          body: [
-            ["Scenario mode", pdfModeLabel(payload.mode)],
-            ["Addressable lives", formatInteger(formatScenarioNumber(payload.assumptions.addressableLives))],
-            ["Attach rate", formatPercent(formatScenarioNumber(payload.assumptions.attachRate))],
-            ["Annual premium", formatMoney(formatScenarioNumber(payload.assumptions.annualPremium), payload.region.currency)],
-            ["Reported premium pool", formatMoney(formatScenarioNumber(payload.assumptions.marketPremiumPool), payload.region.currency)],
-            ["Target share", formatPercent(formatScenarioNumber(payload.assumptions.targetShare))],
-            ["Cession rate", formatPercent(formatScenarioNumber(payload.assumptions.cessionRate))],
-            ["Expected loss ratio", formatPercent(formatScenarioNumber(payload.assumptions.lossRatio))],
-            ["Expense ratio", formatPercent(formatScenarioNumber(payload.assumptions.expenseRatio))]
-          ],
-          styles: { fontSize: 9, cellPadding: 5, overflow: "linebreak", valign: "top" },
-          headStyles: { fillColor: [13, 71, 161], textColor: [255, 255, 255], fontStyle: "bold" }
-        }) + 14;
-
-        doc.setFont(undefined, "bold");
-        addParagraph("Current modeled outputs", 12, 15);
-        doc.setFont(undefined, "normal");
-        y = addPdfTable(doc, {
-          startY: y,
-          margin: { left: margin, right: margin },
-          head: [["Metric", "Value"]],
-          body: [
-            ["Gross written premium", formatMoney(formatScenarioNumber(scenarioOutputs.grossWrittenPremium), payload.region.currency)],
-            ["Ceded premium", formatMoney(formatScenarioNumber(scenarioOutputs.cededPremium), payload.region.currency)],
-            ["Net premium retained", formatMoney(formatScenarioNumber(scenarioOutputs.netPremium), payload.region.currency)],
-            ["Expected claims", formatMoney(formatScenarioNumber(scenarioOutputs.expectedClaims), payload.region.currency)],
-            ["Operating expenses", formatMoney(formatScenarioNumber(scenarioOutputs.operatingExpenses), payload.region.currency)],
-            ["Underwriting contribution", formatMoney(formatScenarioNumber(scenarioOutputs.underwritingContribution), payload.region.currency)],
-            ["Net margin", formatPercent(formatScenarioNumber(scenarioOutputs.netMargin))]
-          ],
-          styles: { fontSize: 9, cellPadding: 5, overflow: "linebreak", valign: "top" },
-          headStyles: { fillColor: [21, 101, 192], textColor: [255, 255, 255], fontStyle: "bold" }
-        }) + 14;
-
-        doc.setFont(undefined, "bold");
-        addParagraph("Executive and governance notes", 12, 15);
-        doc.setFont(undefined, "normal");
-        addParagraph(`Mode note: ${outputs.modeNote.textContent}`, 9, 13);
-        addParagraph(`Reinsurance note: ${region.reinsuranceNote}`, 9, 13);
-        addParagraph(`Interpretation: ${region.interpretationNote}`, 9, 13);
-        addParagraph("Assessment scope includes scenario output, evidence matrix, and source register from the live dashboard state at export time.", 9, 13);
-
-        if (y + 80 > pageHeight - margin) {
-          doc.addPage();
-          y = window.PhinsPdfBrand.CONTINUATION_TOP;
-        }
-        doc.setFont(undefined, "bold");
-        addParagraph("Evidence matrix (reported public layer)", 12, 15);
-        doc.setFont(undefined, "normal");
-        y = addPdfTable(doc, {
-          startY: y,
-          margin: { left: margin, right: margin },
-          head: [["Market", "Demand signal", "Premium / benefit anchor", "Reinsurance signal", "PHINS read-through"]],
-          body: marketData.map((row) => ([
-            row.name,
-            row.demand,
-            row.premium,
-            row.reinsurance,
-            row.insight
-          ])),
-          styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak", valign: "top" },
-          headStyles: { fillColor: [25, 118, 210], textColor: [255, 255, 255], fontStyle: "bold" },
-          columnStyles: {
-            0: { cellWidth: 72 },
-            1: { cellWidth: 112 },
-            2: { cellWidth: 112 },
-            3: { cellWidth: 112 },
-            4: { cellWidth: 112 }
-          }
-        }) + 14;
-
-        doc.setFont(undefined, "bold");
-        addParagraph("Source register", 12, 15);
-        doc.setFont(undefined, "normal");
-        addPdfTable(doc, {
-          startY: y,
-          margin: { left: margin, right: margin },
-          head: [["Key", "Source title", "Type", "Evidence strength", "URL"]],
-          body: Object.entries(sourceRegistry).map(([key, source]) => ([
-            key,
-            source.title,
-            source.sourceType || "source",
-            source.evidenceStrength || "reference",
-            source.url
-          ])),
-          styles: { fontSize: 7.5, cellPadding: 4, overflow: "linebreak", valign: "top" },
-          headStyles: { fillColor: [66, 165, 245], textColor: [255, 255, 255], fontStyle: "bold" },
-          columnStyles: {
-            0: { cellWidth: 56 },
-            1: { cellWidth: 132 },
-            2: { cellWidth: 56 },
-            3: { cellWidth: 72 },
-            4: { cellWidth: 174 }
-          }
-        });
-
-        window.PhinsPdfBrand.finalize(doc, {
-          margin: margin,
-          title: "PHI Permanent 3+ ADL Executive Business Assessment",
-          note: "PHINS — Executive Assessment · " + printedAt + " · Confidential investor document"
-        });
-
-        const filename = `phi-permanent-3-adl-executive-business-assessment-${slugify(region.name)}.pdf`;
-        doc.save(filename);
-        setExportStatus("Full PDF downloaded with fixed evidence and current PHINS assumptions.");
+        setExportStatus(
+          language === "he"
+            ? "PDF בעברית הורד עם ראיות נעולות והנחות התרחיש הנוכחיות."
+            : "Full PDF downloaded with fixed evidence, investor-story charts, and current PHINS assumptions."
+        );
+        return result;
       } catch (error) {
         setExportStatus("Failed to generate PDF export. Please retry.", true);
       } finally {
-        if (downloadPdfBtn) {
-          downloadPdfBtn.disabled = false;
-        }
+        buttons.forEach((btn) => { btn.disabled = false; });
       }
     }
 
@@ -7027,6 +7030,9 @@
       const operatingExpenses = netPremium * expenseRatio / 100;
       const underwritingContribution = netPremium - expectedClaims - operatingExpenses;
       const netMargin = netPremium > 0 ? underwritingContribution / netPremium * 100 : 0;
+      const isIsrael = region.id === "israel";
+      const phinsTake = isIsrael ? grossWrittenPremium * IL_PLANNING_BOOK.phinsTakeRate : null;
+      const insuranceTake = isIsrael ? grossWrittenPremium * IL_PLANNING_BOOK.insuranceTakeRate : null;
 
       outputs.title.textContent = `${region.name} — ${mode === "lives" ? "Lives-based" : "Premium-share"} PHINS scenario`;
       outputs.subtitle.textContent = `Currency preserved in ${currency}. Reported market facts remain fixed; only PHINS planning assumptions below affect these outputs.`;
@@ -7044,6 +7050,18 @@
       outputs.opexValue.textContent = formatMoney(operatingExpenses, currency);
       outputs.uwValue.textContent = formatMoney(underwritingContribution, currency);
       outputs.uwFoot.textContent = `${formatPercent(netMargin)} contribution margin on net premium`;
+
+      const phinsTakeCard = document.getElementById("phins-take-card");
+      const insuranceTakeCard = document.getElementById("insurance-take-card");
+      if (phinsTakeCard) phinsTakeCard.hidden = !isIsrael;
+      if (insuranceTakeCard) insuranceTakeCard.hidden = !isIsrael;
+      if (isIsrael && outputs.phinsTakeValue) {
+        outputs.phinsTakeValue.textContent = formatMoney(phinsTake, currency);
+      }
+      if (isIsrael && outputs.insuranceTakeValue) {
+        outputs.insuranceTakeValue.textContent = formatMoney(insuranceTake, currency);
+      }
+      renderIsraelBookPanel(isIsrael);
 
       outputs.formulaBox.textContent = mode === "lives"
         ? `Gross written premium = addressable lives × attach rate × annual premium. Net retained premium = GWP − ceded premium.`
@@ -7063,9 +7081,34 @@
           expectedClaims,
           operatingExpenses,
           underwritingContribution,
-          netMargin
+          netMargin,
+          phinsTake,
+          insuranceTake
         }
       };
+    }
+
+    function renderIsraelBookPanel(show) {
+      const panel = document.getElementById("il-book-panel");
+      const body = document.getElementById("il-book-body");
+      const note = document.getElementById("il-book-note");
+      if (!panel) return;
+      panel.hidden = !show;
+      if (!show || !body) return;
+      const book = IL_PLANNING_BOOK;
+      body.innerHTML = book.years.map((year, i) => `
+        <tr>
+          <td>${year}</td>
+          <td>${formatInteger(book.eoyPolicies[i])}</td>
+          <td>${formatInteger(book.avgInForce[i])}</td>
+          <td>${formatMoney(book.riskGwp[i], "ILS")}</td>
+          <td>${formatMoney(book.phinsNetRevenue[i], "ILS")}</td>
+          <td>${formatMoney(book.insuranceTake[i], "ILS")}</td>
+        </tr>
+      `).join("");
+      if (note) {
+        note.textContent = `Identity: avg in-force × ILS ${formatInteger(book.annualPremium)} = risk GWP; PHINS take ${formatPercent(book.phinsTakeRate * 100)}; seed ILS ${formatInteger(book.seedRound)}; pre-money ILS ${formatInteger(book.preMoney)}; post-money ILS ${formatInteger(book.postMoney)}. Same book as Investor Meeting.`;
+      }
     }
 
     function initializeScenario() {
@@ -7095,8 +7138,16 @@
         downloadCsvBtn.addEventListener("click", downloadScenarioCsv);
       }
       if (downloadPdfBtn) {
-        downloadPdfBtn.addEventListener("click", downloadFullAssessmentPdf);
+        downloadPdfBtn.addEventListener("click", () => downloadFullAssessmentPdf("en"));
       }
+      if (downloadPdfHeBtn) {
+        downloadPdfHeBtn.addEventListener("click", () => downloadFullAssessmentPdf("he"));
+      }
+      const invEn = document.getElementById("invdocs-download-lab-en");
+      const invHe = document.getElementById("invdocs-download-lab-he");
+      if (invEn) invEn.addEventListener("click", () => downloadFullAssessmentPdf("en"));
+      if (invHe) invHe.addEventListener("click", () => downloadFullAssessmentPdf("he"));
+      window.downloadPhinsScenarioLabPdf = downloadFullAssessmentPdf;
     }
 
     async function downloadExecSummaryPdf() {

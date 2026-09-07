@@ -1,0 +1,5 @@
+DejaVu Sans (subset: Latin, Hebrew, and currency signs) is redistributed
+under the DejaVu Fonts license (Bitstream Vera + Arev), which permits
+use, modification, and redistribution. The subset files in this directory
+are used only to render PHINS investor PDF letterheads that contain Hebrew.
+Full sources: https://dejavu-fonts.github.io/
