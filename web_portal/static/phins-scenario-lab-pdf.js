@@ -12,6 +12,8 @@
  *     assumptions, never as reported public statistics.
  *   • This module does not recompute, round, or blend those identities.
  *   • Chrome (logo, gradient bands, gold/navy rules, fonts) is branding only.
+ *   • Hebrew edition uses regulator-grade wording and never pastes English
+ *     lab notes (mode / reinsurance / interpretation / insight) into the PDF.
  * ==========================================================================*/
 (function () {
   'use strict';
@@ -62,8 +64,8 @@
       opex: 'Operating expenses',
       uw: 'Underwriting contribution',
       margin: 'Net margin on retained premium',
-      phinsTake: 'PHINS MGA take (25%)',
-      insuranceTake: 'Insurance take (75%)',
+      phinsTake: 'PHINS MGA take',
+      insuranceTake: 'Insurance take',
       story: 'A visual investor story: where the PHINS thesis is strongest',
       storyLead: 'These visuals do not invent public facts. They translate the evidence layer into an investor ranking of market fit, monetization capacity, and treaty readiness.',
       thesisIsrael: 'Market entry thesis',
@@ -100,13 +102,13 @@
       stageCaution: 'Pricing caution',
       stagePartner: 'Partnership / capital-light',
       ilBook: 'Canonical Israel book — investor meeting planning basis',
-      ilBookLead: 'Pinned identity used across the Investor Meeting section. Distinct from the adjustable TAM snapshot above. Sales from 1 January 2027. Table-driven ILS 4,518 risk premium. PHINS 25% / insurance 75%. Annual churn 8%.',
+      ilBookLead: 'Pinned identity used across the Investor Meeting section. Distinct from the adjustable TAM snapshot above. The table below is the source of record for premium, take rates, in-force, and the 1 January 2027 sales clock.',
       year: 'Year',
       eoy: 'EoY in-force',
       avgIf: 'Avg in-force',
       riskGwp: 'Risk GWP (ILS)',
-      phinsRev: 'PHINS net revenue 25% (ILS)',
-      insRev: 'Insurance take 75% (ILS)',
+      phinsRev: 'PHINS net revenue (ILS)',
+      insRev: 'Insurance take (ILS)',
       seed: 'Seed / build round',
       pre: 'Pre-money valuation',
       post: 'Post-money valuation',
@@ -142,124 +144,192 @@
       vrBody: 'Vocational triage and employer coordination improve loss economics more than they change top-line premium.',
       treaty: 'Reinsurance-ready design',
       treatyBody: 'A strict permanent 3+ ADL trigger, waiting periods, and objective adjudication artifacts create a better treaty handoff than broad occupational disability wording.',
+      dataMap: 'Three data layers — do not mix',
+      dataMapLead: 'Every figure in this document belongs to one layer. Mixing them is how insurtech over-promises.',
+      layer: 'Layer',
+      layerContent: 'What it is',
+      layerA: 'Layer A — Locked public evidence',
+      layerABody: 'Official quotes, titles and URLs, copied in the source language. Never rewritten by lab sliders or by the Israel book.',
+      layerB: 'Layer B — Adjustable TAM snapshot (this lab)',
+      layerBBody: 'Lives mode: addressable lives × attach rate × planning premium. Premium-share mode: reported pool × PHINS target share. Israel TAM default and the live formula are tabulated below. This is a calibration, not the investor-meeting book.',
+      layerC: 'Layer C — Pinned Israel book (Investor Meeting)',
+      layerCBody: 'Pinned Investor Meeting identity. Average in-force × table risk premium = risk GWP. Take rates, in-force counts, and the sales clock are tabulated below and do not follow lab sliders.',
+      ilIdentity: 'Israel book identity (Layer C) — values only',
+      ilIdentityPremium: 'Table annual risk premium',
+      ilIdentityTake: 'Premium split (PHINS / licensed carrier)',
+      ilIdentityEoy: 'EoY in-force',
+      ilIdentityAvg: 'Average in-force',
+      ilIdentitySales: 'Sales start',
+      ilIdentityChurn: 'Annual churn',
+      tamDefault: 'Israel TAM default (Layer B)',
+      tamDefaultVal: '5,000,000 × 2.4% × ILS 4,518',
+      formulaLead: 'The formula applies to Layer B only. Amounts in this table are the live lab calculation. Do not identify them with the Israel book (Layer C).',
+      formula: 'Live scenario formula (Layer B)',
+      glossary: 'Working glossary',
+      glossTerm: 'Term',
+      glossMeaning: 'Meaning in this document',
+      glossGwp: 'GWP / risk GWP',
+      glossGwpBody: 'Gross written premium on the risk cover. In Layer B this is the lab TAM snapshot; in Layer C it is average in-force × ILS 4,518.',
+      glossCeded: 'Ceded premium',
+      glossCededBody: 'Premium passed to reinsurance under the quota-share assumption. A planning input until replaced by a live treaty quote.',
+      glossAttach: 'Attach rate',
+      glossAttachBody: 'Share of the addressable population assumed to take up the product. Planning assumption, not a reported public statistic.',
+      glossMga: 'MGA take',
+      glossMgaBody: 'On the Israel book, PHINS is modelled as a digital MGA / platform: 25% of risk GWP is PHINS net revenue; 75% is the licensed carrier insurance take.',
+      glossIf: 'In-force / average in-force',
+      glossIfBody: 'Policies in force at year-end, and the year average used to compute Layer C GWP. Average in-force × 4,518 = risk GWP.',
       close: 'This document is a working assessment. Figures that are not labeled as reported public evidence are PHINS planning assumptions and are not commitments, quotes, or guidance.'
     },
     he: {
-      title: 'מעבדת התרחישים של פינס — הערכת שוק',
-      subtitle: 'הערכת שכבת חומרה לדירקטוריון · ראיות ציבוריות נעולות · הנחות תכנון ניתנות לכיול',
-      confidential: 'מסמך עבודה חסוי למשקיעים ולרגולטורים',
+      title: 'פינס — תזכיר מעבדת התרחישים למשקיעים ולרגולטור',
+      subtitle: 'כיסוי נכות קבועה ברמה סיעודית · ראיות ציבוריות נעולות בשפת המקור · הנחות תכנון ניתנות לכיול ואינן ראיה',
+      confidential: 'מסמך עבודה חסוי — למשקיעים ולרגולטור. אינו הצעת מחיר, אינו הנחיה ואינו התחייבות.',
       page: 'עמוד',
       pageOf: 'מתוך',
       footer: 'פינס — מעבדת תרחישים · מסמך משקיעים חסוי',
-      integrityBanner: 'שלמות נתונים: ראיות ציבוריות מדווחות נשארות נעולות ומתויגות למקור. הנחות תרחיש של פינס ובסיס התכנון של ספר ישראל הם שכבות נפרדות ואינם נכתבים בחזרה לסטטיסטיקה הציבורית.',
-      selectedMarket: 'שוק נבחר',
+      integrityBanner: 'שלמות נתונים: כל סכום במסמך שייך לשכבה אחת בלבד. ראיה ציבורית מדווחת נשארת נעולה ומתויגת למקור בשפת הפרסום. הנחות המעבדה ותיק ישראל ממפגש המשקיעים הן שכבות תכנון נפרדות, ואינן נכתבות בחזרה לסטטיסטיקה הציבורית.',
+      selectedMarket: 'שוק נבחר במעבדה',
       exported: 'חותמת ייצוא',
-      assumptions: 'הנחות תרחיש (שכבת תכנון של פינס)',
-      outputs: 'תוצרים ממודלים נוכחיים',
-      mgaOverlay: 'שכבת MGA לישראל (שיעורי לקיחה ממפגש המשקיעים)',
-      mgaNote: 'פינס ממודלת כ-MGA דיגיטלי / פלטפורמה בספר ישראל: 25% מפרמיית הסיכון ברוטו היא הכנסת נטו של פינס; 75% הוא חלק הביטוח של המבטח המורשה. שכבה זו אינה מחליפה את מבחן הוויתור / נזק / הוצאות שלמעלה.',
+      assumptions: 'הנחות התרחיש החי — שכבה ב (כיול מעבדה)',
+      outputs: 'תוצאות המודל על הנחות שכבה ב',
+      mgaOverlay: 'חלוקת פרמיה במודל MGA לישראל (שיעורים ממפגש המשקיעים)',
+      mgaNote: 'פינס אינה מבטח מורשה. בתיק ישראל היא ממודלת כסוכן מנהל כללי דיגיטלי (MGA) / פלטפורמה: 25% מפרמיית הסיכון ברוטו היא הכנסת נטו של פינס; 75% הוא חלק הביטוח של המבטח המורשה. חלוקה זו חלה על ה-GWP החי במעבדה בשיעור תואם, אך בקנה מידה של שכבה ב — לא בקנה המידה של תיק ישראל הקבוע. היא אינה מחליפה את מבחן שיעור המסירה / יחס התביעות / יחס ההוצאות שלמעלה.',
       field: 'שדה',
       value: 'ערך',
       metric: 'מדד',
-      mode: 'בסיס תרחיש',
-      livesMode: 'מצב חיים',
-      premiumMode: 'מצב חלק-פרמיה',
-      addressable: 'חיים ברי-הגעה',
-      attach: 'שיעור הצמדה',
-      annualPremium: 'פרמיה שנתית',
+      mode: 'בסיס התרחיש',
+      livesMode: 'תרחיש לפי מספר מבוטחים',
+      premiumMode: 'תרחיש לפי חלק ממאגר פרמיה מדווח',
+      addressable: 'אוכלוסיית יעד',
+      attach: 'שיעור החדרה',
+      annualPremium: 'פרמיה שנתית לתכנון',
       pool: 'מאגר פרמיה מדווח',
       share: 'חלק יעד של פינס',
-      cession: 'ויתור / השתתפות יחסית',
-      loss: 'יחס נזק צפוי',
+      cession: 'שיעור מסירה לביטוח משנה (השתתפות יחסית)',
+      loss: 'יחס תביעות צפוי',
       expense: 'יחס הוצאות תפעול',
-      gwp: 'פרמיה ברוטו שנכתבה',
-      ceded: 'פרמיה מותרת',
+      gwp: 'פרמיית סיכון ברוטו (GWP)',
+      ceded: 'פרמיה שנמסרה לביטוח משנה',
       net: 'פרמיה נטו שנותרה',
       claims: 'תביעות צפויות',
       opex: 'הוצאות תפעול',
       uw: 'תרומת חיתום',
       margin: 'מרווח נטו על פרמיה שנותרה',
-      phinsTake: 'חלק MGA של פינס (25%)',
-      insuranceTake: 'חלק ביטוח (75%)',
-      story: 'סיפור משקיע חזותי: היכן התזה של פינס חזקה ביותר',
-      storyLead: 'הוויזואלים אינם ממציאים עובדות ציבוריות. הם מתרגמים את שכבת הראיות לדירוג משקיעים של התאמת שוק, יכולת מונטיזציה ומוכנות לחוזה ביטוח משנה.',
+      phinsTake: 'חלק פינס כ-MGA',
+      insuranceTake: 'חלק המבטח המורשה',
+      story: 'קריאת משקיע: היכן התזה של פינס חזקה ביותר',
+      storyLead: 'התרשימים אינם ממציאים עובדות ציבוריות. הם מתרגמים את שכבת הראיות לדירוג פנימי של התאמת שוק, יכולת מימוש פרמיה פרטית, ומוכנות לחוזה ביטוח משנה.',
       thesisIsrael: 'תזת כניסה לשוק',
       thesisIsraelKpi: 'ישראל תחילה',
-      thesisIsraelBody: 'סיפור ההשקה הנקי ביותר משלב עוצמת טיפול ביתי, התנהגות LTC מוכרת, ומבנה מוצר שלקוחות ורגולטורים מבינים במהירות.',
+      thesisIsraelBody: 'סיפור ההשקה הנקי ביותר: עוצמת טיפול ביתי, שוק סיעודי שכבר מחונך למוצר, ומבנה כיסוי — נכות קבועה בטריגר 3+ פעולות יומיום — שלקוח ורגולטור מבינים במהירות.',
       thesisUsa: 'הפוטנציאל הגדול ביותר לפרמיה',
-      thesisUsaKpi: 'קנה מידה בארה"ב',
-      thesisUsaBody: 'ארה"ב נותרת השוק הפרטי המשמעותי ביותר כלכלית אם פינס שומרת על טריגר פגיעה חמורה וקפדני ונמנעת מלשון נכות רחבה.',
+      thesisUsaKpi: 'קנה מידה בארצות הברית',
+      thesisUsaBody: 'ארצות הברית נותרת השוק הפרטי המשמעותי ביותר כלכלית אם פינס שומרת על טריגר ליקוי חמור וקפדני, ונמנעת מלשון נכות תעסוקתית רחבה.',
       thesisCa: 'הסמיכות הטובה ביותר להפצה',
       thesisCaKpi: 'קבוצות בקנדה',
-      thesisCaBody: 'ערוצי מעסיקים ואפיניות הופכים את קנדה לאטרקטיבית לשכבות נכות מודרניות, ניווט טיפול וחזרה לתפקוד.',
+      thesisCaBody: 'ערוצי מעסיקים וקבוצות שיוך הופכים את קנדה לאטרקטיבית לשכבת נכות מודרנית, תיאום שירותי טיפול וחזרה לתפקוד — לא למכרז סיעודי קמעונאי בלבד.',
       thesisMe: 'יתד דלת-הון',
       thesisMeKpi: 'המזרח התיכון',
-      thesisMeBody: 'דינמיקת שימור מפורסמת וזרימת פרמיית בריאות נראית הופכות את מקבץ איחוד האמירויות / המפרץ לאטרקטיבי למבני פרונטינג, MGA ושותפות.',
-      priority: 'לוח ניקוד עדיפות שוק',
-      prioritySub: 'ויזואל מורכב על בסיס בהירות ביקוש, עומק פרמיה והתאמה תפעולית.',
-      demandMap: 'ביקוש מול מונטיזציה',
-      demandMapSub: 'בהירות ביקוש מול בהירות מונטיזציה פרטית.',
+      thesisMeBody: 'יחס שימור מפורסם וזרימת פרמיית בריאות גלויה הופכים את מקבץ איחוד האמירויות / המפרץ לאטרקטיבי למבני פרונטינג, MGA ושותפות.',
+      priority: 'לוח עדיפות שווקים',
+      prioritySub: 'ציון מורכב מבהירות ביקוש, עומק פרמיה והתאמה תפעולית. אינו סטטיסטי ציבורי חדש.',
+      demandMap: 'ביקוש מול מימוש פרמיה פרטית',
+      demandMapSub: 'בהירות הביקוש מול בהירות היכולת לגבות פרמיה פרטית.',
       dual: 'עומק מערכת ציבורית מול נגישות פרמיה פרטית',
-      dualSub: 'מדוע שווקים מסוימים הם שכבת השלמה ואחרים הם מונטיזציה ישירה.',
-      readiness: 'מוכנות שווקים',
-      readinessSub: 'מוכנות השקה מתוך נתוני לוח הניקוד הקיימים (התאמה, גישה פרטית, ביקוש). זה אינו סטטיסטי ציבורי חדש.',
+      dualSub: 'מדוע שווקים מסוימים הם שכבת השלמה ואחרים הם מימוש פרמיה ישיר.',
+      readiness: 'מוכנות שוק להשקה',
+      readinessSub: 'ציון מוכנות מתוך לוח הניקוד הקיים (התאמה תפעולית, גישה פרטית, ביקוש). אינו סטטיסטי ציבורי חדש.',
       readinessScore: 'מוכנות',
-      stage: 'שלב',
+      stage: 'שלב כניסה',
       demand: 'ביקוש',
-      monetization: 'מונטיזציה',
+      monetization: 'מימוש פרמיה',
       publicDepth: 'עומק ציבורי',
       privateAccess: 'גישה פרטית',
       fit: 'התאמה תפעולית',
       stageLaunch: 'מוכן להשקה',
-      stageScale: 'התרחבות עם משמעת',
-      stageGroup: 'קבוצה / אפיניות',
-      stageTopup: 'השלמה / תזמור',
+      stageScale: 'הרחבה במשמעת',
+      stageGroup: 'קבוצה / קבוצות שיוך',
+      stageTopup: 'שכבת השלמה / תיאום שירותים',
       stageCaution: 'זהירות תמחור',
       stagePartner: 'שותפות / דל-הון',
-      ilBook: 'ספר ישראל הקנוני — בסיס תכנון ממפגש המשקיעים',
-      ilBookLead: 'זהות נעוצה המשמשת בכל מקטע מפגש המשקיעים. נפרדת מתמונת ה-TAM הניתנת לכיול שלמעלה. מכירות מ-1 בינואר 2027. פרמיית סיכון טבלאית 4,518 ש"ח. פינס 25% / ביטוח 75%. נטישה שנתית 8%.',
+      ilBook: 'תיק ישראל — בסיס התכנון ממפגש המשקיעים',
+      ilBookLead: 'זהות תכנונית קבועה המשמשת בכל מקטע מפגש המשקיעים. נפרדת מתמונת ה-TAM הניתנת לכיול במעבדה (שכבה ב). טבלת תיק ישראל שלהלן היא מקור האמת לפרמיה, לשיעורי החלוקה, לפוליסות בתוקף ולשעון המכירות.',
       year: 'שנה',
-      eoy: 'בתוקף סוף שנה',
-      avgIf: 'ממוצע בתוקף',
+      eoy: 'פוליסות בתוקף בסוף שנה',
+      avgIf: 'ממוצע פוליסות בתוקף',
       riskGwp: 'פרמיית סיכון ברוטו (ש"ח)',
-      phinsRev: 'הכנסת נטו פינס 25% (ש"ח)',
-      insRev: 'חלק ביטוח 75% (ש"ח)',
-      seed: 'סבב סיד / בניה',
-      pre: 'שווי טרום-כסף',
-      post: 'שווי לאחר-כסף',
-      specimen: 'דגימה (טבלאות מפורסמות)',
-      specimenVal: 'גיל 42 · חיים 1,000,000 ש"ח / נכות 250,000 ש"ח · חיים 0.25 / נכות 0.20 לכל 1,000 ש"ח לחודש · 4,518 ש"ח לשנה',
-      notes: 'הערות הנהלה וממשל',
-      modeNote: 'הערת מצב',
+      phinsRev: 'הכנסת נטו פינס (ש"ח)',
+      insRev: 'חלק המבטח (ש"ח)',
+      seed: 'סבב הקמה (סיד)',
+      pre: 'שווי לפני ההשקעה',
+      post: 'שווי לאחר ההשקעה',
+      specimen: 'דוגמת תמחור (טבלאות מפורסמות)',
+      specimenVal: 'Age 42 · life ILS 1,000,000 / disability ILS 250,000 · 0.25 / 0.20 per 1,000 / month · ILS 4,518 / year',
+      notes: 'הערות הנהלה וממשל תאגידי',
+      modeNote: 'נוסחת התרחיש החי',
       reinsNote: 'הערת ביטוח משנה',
-      interp: 'פרשנות',
-      product: 'מסגרת מוצר: הטבת 3+ ADL קבועה עם טריגר קוגניטיבי חמור אופציונלי ושכבת ניווט טיפול.',
-      vr: 'שכבת שיקום תעסוקתי: חזרה לתפקוד ושיקום מקצועי לתובעים בגיל עבודה.',
-      dist: 'הפצה: ישראל תחילה; ארה"ב וקנדה לערוצים פרטיים ומעסיקים; פורטוגל כשער סולבנסי II באיחוד האירופי; שוודיה, אירופה ויפן להשלמה; איחוד האמירויות / המפרץ לשותפויות דלות-הון.',
-      actuarial: 'זהירות אקטוארית: לפני הגשה, יש להחליף יחסי תרחיש בנתוני היארעות, ביטולים, החלמה, בחירה והצעות ביטוח משנה ספציפיים למדינה.',
-      evidence: 'מטריצת ראיות (שכבה ציבורית מדווחת — שפת המקור נשמרת)',
-      evidenceNote: 'ציטוטים ציבוריים נשמרים בשפת המקור כדי לא לפרפראז את נוסח הפרסום הרשמי. קריאת הרוחב של פינס מופיעה בשפת המסמך.',
+      interp: 'משמעות לפינס',
+      product: 'מסגרת המוצר: הטבת נכות קבועה בטריגר 3+ פעולות יומיום (ADL), עם טריגר קוגניטיבי חמור אופציונלי (תשישות נפש) ושכבת תיאום שירותי טיפול. המוצר הוא סיכון טהור: ללא חיסכון, ללא ערך פדיון וללא ערך מסולק.',
+      vr: 'שכבת שיקום תעסוקתי: חזרה לתפקוד ושיקום מקצועי לתובעים בגיל עבודה — ניהול תביעה, לא הגדלת פרמיית השיא.',
+      dist: 'הפצה: ישראל תחילה; ארצות הברית וקנדה לערוצים פרטיים ומעסיקים; פורטוגל כשער סולבנסי II באיחוד האירופי; שוודיה, אירופה הרחבה ויפן כשכבת השלמה; איחוד האמירויות / המפרץ לשותפויות דלות-הון.',
+      actuarial: 'זהירות אקטוארית: לפני הגשה לרשות, יש להחליף את יחסי התרחיש בנתוני היארעות, ביטולים, החלמה, בחירה נגדית והצעות ביטוח משנה ספציפיים למדינה. היחסים במעבדה הם מצייני תכנון.',
+      evidence: 'מטריצת ראיות — שכבה א (שפת המקור נשמרת)',
+      evidenceNote: 'ציטוטי ביקוש, פרמיה וביטוח משנה נשמרים בשפת המקור כדי שלא יפורפרזו נוסחי הפרסום הרשמי. עמודת המשמעות לפינס מנוסחת בעברית. אין בטבלה זו נתוני תיק ישראל הקבוע.',
       market: 'שוק',
-      demandCol: 'אות ביקוש',
-      premiumCol: 'עוגן פרמיה / הטבה',
-      reinsCol: 'אות ביטוח משנה',
-      readCol: 'קריאת רוחב של פינס',
+      demandCol: 'אות ביקוש (שפת מקור)',
+      premiumCol: 'עוגן פרמיה / הטבה (שפת מקור)',
+      reinsCol: 'אות ביטוח משנה (שפת מקור)',
+      readCol: 'משמעות לפינס',
       sources: 'מרשם מקורות',
       sourceKey: 'מפתח',
-      sourceTitle: 'כותרת מקור',
-      sourceType: 'סוג',
-      sourceStrength: 'עוצמת ראיה',
+      sourceTitle: 'כותרת המקור (כפי שפורסמה)',
+      sourceType: 'סוג מקור',
+      sourceStrength: 'עוצמת הראיה',
       sourceUrl: 'כתובת',
       thesis: 'תזת המוצר',
-      severity: 'חומרה על פני תדירות',
-      severityBody: 'לבטח אובדן תפקוד קטסטרופלי ועמיד, לא כל הפסקת הכנסה קצרת-טווח.',
+      severity: 'כיסוי אירוע חמור — לא הפסקה שכיחה',
+      severityBody: 'לבטח אובדן תפקוד קטסטרופלי ועמיד (נכות קבועה ברמה סיעודית), לא כל הפסקת הכנסה קצרת-טווח.',
       home: 'טיפול ביתי תחילה',
-      homeBody: 'ראיות OECD מעדיפות טיפול ביתי. ישראל היא הדוגמה הברורה ביותר.',
+      homeBody: 'ראיות OECD מעדיפות טיפול בבית על פני מוסד. ישראל היא הדוגמה הברורה ביותר במערך זה.',
       vrTitle: 'שיקום תעסוקתי כניהול תביעה',
-      vrBody: 'מיון מקצועי ותיאום מעסיקים משפרים כלכלת נזק יותר מאשר את פרמיית השיא.',
-      treaty: 'עיצוב מוכן לביטוח משנה',
-      treatyBody: 'טריגר 3+ ADL קבוע, תקופות המתנה וראיות הכרעה אובייקטיביות יוצרים מסירה טובה יותר לחוזה מאשר לשון נכות תעסוקתית רחבה.',
-      close: 'מסמך זה הוא הערכת עבודה. נתונים שאינם מסומנים כראיה ציבורית מדווחת הם הנחות תכנון של פינס ואינם התחייבות, הצעת מחיר או הנחיה.'
+      vrBody: 'מיון מקצועי ותיאום מעסיקים משפרים את כלכלת התביעה יותר מאשר את פרמיית השיא.',
+      treaty: 'ניסוח מוכן לחוזה ביטוח משנה',
+      treatyBody: 'טריגר 3+ פעולות יומיום קבוע, תקופות המתנה וראיות הכרעה אובייקטיביות יוצרים מסירה נקיה לחוזה יותר מלשון נכות תעסוקתית רחבה.',
+      dataMap: 'שלוש שכבות נתונים — אין לערבב',
+      dataMapLead: 'ערבוב השכבות הוא הדרך שבה חברות אינשורטק מבטיחות יותר מדי. כל סכום במסמך מזוהה לשכבה.',
+      layer: 'שכבה',
+      layerContent: 'מה נכלל ומה אינו נכלל',
+      layerA: 'שכבה א — ראיות ציבוריות נעולות',
+      layerABody: 'ציטוטים, כותרות וכתובות רשמיות, בשפת המקור. המעבדה ותיק ישראל אינם משכתבים אותן.',
+      layerB: 'שכבה ב — תמונת TAM ניתנת לכיול (מעבדה זו)',
+      layerBBody: 'תרחיש מבוטחים: אוכלוסיית יעד × שיעור החדרה × פרמיה שנתית לתכנון. תרחיש מאגר: מאגר פרמיה מדווח × חלק יעד. ברירת המחדל לישראל והנוסחה החיה מפורטות בטבלאות הערכים שלהלן. זה כיול TAM, לא תיק מפגש המשקיעים.',
+      layerC: 'שכבה ג — תיק ישראל הקבוע (מפגש המשקיעים)',
+      layerCBody: 'זהות תכנונית קבועה ממפגש המשקיעים. ממוצע פוליסות בתוקף כפול פרמיית הסיכון הטבלאית שווה לפרמיית הסיכון ברוטו. שיעורי החלוקה, ספירת הפוליסות ושעון המכירות מופיעים בטבלת הערכים — לא בפסקת הפרוזה. אינה נגררת אחרי מחווני המעבדה.',
+      ilIdentity: 'זהות תיק ישראל (שכבה ג) — ערכים בלבד',
+      ilIdentityPremium: 'פרמיית סיכון שנתית טבלאית',
+      ilIdentityTake: 'חלוקת פרמיה (פינס / מבטח מורשה)',
+      ilIdentityEoy: 'פוליסות בתוקף סוף שנה',
+      ilIdentityAvg: 'ממוצע פוליסות בתוקף',
+      ilIdentitySales: 'תחילת מכירות',
+      ilIdentityChurn: 'נטישה שנתית',
+      tamDefault: 'ברירת מחדל TAM לישראל (שכבה ב)',
+      tamDefaultVal: '5,000,000 × 2.4% × ILS 4,518',
+      formulaLead: 'הנוסחה חלה על שכבה ב בלבד. הסכומים בטבלה הם חישוב המעבדה החי. אין לזהותם עם תיק ישראל (שכבה ג).',
+      formula: 'נוסחת התרחיש החי (שכבה ב)',
+      glossary: 'מילון מונחים במסמך זה',
+      glossTerm: 'מונח',
+      glossMeaning: 'משמעות במסמך זה',
+      glossGwp: 'GWP / פרמיית סיכון ברוטו',
+      glossGwpBody: 'פרמיה ברוטו על כיסוי הסיכון. בשכבה ב זה תמונת TAM במעבדה; בשכבה ג זה ממוצע פוליסות בתוקף × 4,518 ש"ח.',
+      glossCeded: 'פרמיה שנמסרה',
+      glossCededBody: 'פרמיה המועברת לביטוח משנה לפי הנחת השתתפות יחסית. קלט תכנון עד שיוחלף בהצעת חוזה חיה.',
+      glossAttach: 'שיעור החדרה',
+      glossAttachBody: 'חלק מאוכלוסיית היעד שמונח שירכוש את המוצר. הנחת תכנון, לא סטטיסטי ציבורי מדווח.',
+      glossMga: 'חלק MGA',
+      glossMgaBody: 'בתיק ישראל פינס ממודלת כסוכן מנהל כללי דיגיטלי: 25% מפרמיית הסיכון ברוטו היא הכנסת נטו של פינס; 75% הוא חלק המבטח המורשה.',
+      glossIf: 'פוליסות בתוקף / ממוצע בתוקף',
+      glossIfBody: 'מספר פוליסות בסוף שנה, והממוצע השנתי שממנו מחושב GWP בשכבה ג. ממוצע בתוקף × 4,518 = פרמיית סיכון ברוטו.',
+      close: 'תזכיר זה הוא הערכת עבודה. סכומים שאינם מסומנים כראיה ציבורית מדווחת הם הנחות תכנון של פינס. הם אינם התחייבות, אינם הצעת מחיר ואינם הנחיה לרשות או למשקיע.'
     }
   };
 
@@ -273,6 +343,76 @@
     japan: 'יפן',
     australia: 'אוסטרליה',
     portugal: 'פורטוגל'
+  };
+
+  var SOURCE_TYPE_HE = {
+    official: 'רשמי / רשות',
+    analysis: 'ניתוח',
+    industry: 'איגוד ענפי'
+  };
+
+  var EVIDENCE_STRENGTH_HE = {
+    'benchmark': 'אמת מידה',
+    'direct pdf': 'מסמך PDF ישיר',
+    'synthesis': 'סינתזה',
+    'industry analysis': 'ניתוח ענפי',
+    'market survey': 'סקר שוק',
+    'market release': 'פרסום שוק',
+    'official release': 'פרסום רשמי',
+    'news release': 'הודעה לעיתונות',
+    'consumer guide': 'מדריך לצרכן',
+    'official summary': 'תקציר רשמי',
+    'regulatory letter': 'מכתב רגולטורי',
+    'industry release': 'פרסום ענפי',
+    'official report': 'דוח רשמי'
+  };
+
+  var MARKET_COPY_HE = {
+    israel: {
+      insight: 'שוק ההשקה הנקי ביותר לכיסוי נכות קבועה דיגיטלי: הציבור מכיר ביטוח סיעודי, לוגיסטיקת טיפול ביתי היא ליבת הצורך, והטיעון למיון בבינה מלאכותית ולתיאום שירותי טיפול מובן מיד ללקוח ולרגולטור.',
+      reins: 'יש להסתמך על תנאי חוזה ביטוח משנה מצוטטים, לא על סברת שוק. גילוי ציבורי על שיעור מסירה בסיעוד הישראלי לא אותר במערך הראיות הנוכחי.',
+      interp: 'המודל מתאר שכבת כיסוי לנכות קבועה ברמה סיעודית מעל שוק סיעודי שכבר מחונך למוצר. אין לערבב שכבה זו עם תיק ישראל הקבוע ממפגש המשקיעים.'
+    },
+    usa: {
+      insight: 'ההזדמנות המסחרית הפרטית הגדולה ביותר — וגם השוק שבו ניסוח טריגר רופף, בחירה נגדית ומורכבות הגשה עלולים לקרוס את הכלכלה במהירות הגבוהה ביותר.',
+      reins: 'שיעורי המסירה הם מצייני תכנון. יש להחליפם בניסוח מוצר מאושר במדינה ובהצעות חוזה ביטוח משנה חיות לפני כל החלטת חיתום ממשית.',
+      interp: 'זה השוק הטוב ביותר להוכיח שפינס מסוגלת להפוך טריגר 3+ פעולות יומיום קפדני לסיפור פרמיה ולחוזה ביטוח משנה בר-הרחבה.'
+    },
+    canada: {
+      insight: 'קנדה אטרקטיבית להפצה דרך מעסיקים ואגודות. מוצר פינס צריך להיקרא כשכבת נכות מודרנית ותמיכה בטיפול, לא כמכרז סיעודי קטסטרופלי לקמעונאות בלבד.',
+      reins: 'כל הנחת שיעור מסירה היא קלט תכנון של פינס עד שיהיו נתוני בלוק מול OSFI או מול חוזה ספציפי.',
+      interp: 'קנדה תומכת בתזת הפצה קבוצתית יותר מאשר בסיפור סיעודי קמעונאי ישיר.'
+    },
+    wneurope: {
+      insight: 'שווקים אלה מאמתים צורך מבני וביקוש לטיפול ביתי. פינס מתאימה כשכבת השלמה, תיאום שירותים או גילוף — לא כתחליף למערכות סיעוד סטטוטוריות.',
+      reins: 'גילוי אזורי אינו אחיד. כלכלת החוזה חייבת להיות מבוססת הצעת מחיר וספציפית לשוק.',
+      interp: 'אירופה מוכיחה צורך; הכניסה המסחרית תלויה במיקום מוצר צר סביב המערכת הציבורית.'
+    },
+    sweden: {
+      insight: 'שוודיה היא שוק ההשלמה הנורדי הנקי ביותר: עוצמת טיפול ביתי רשמית גבוהה, הוצאת סיעוד עירונית גלויה, ושכבת ביטוח בריאות פרטי מדודה כבר קיימת בערוצי מעסיק וקבוצה. פינס צריכה להצטרף כשכבת נכות קבועה ותיאום טיפול, לא כתחליף למערכת הציבורית.',
+      reins: 'אין במערך הראיות הנוכחי אמת מידה מפורסמת לשיעור מסירה בנכות או בסיעוד שוודי. כלכלת החוזה תישאר מבוססת הצעה.',
+      interp: 'שוודיה מוכיחה ביקוש נורדי לטיפול ביתי ושכבה פרטית מתונה. הכניסה המסחרית היא סיפור השלמה וערוץ קבוצתי, לא החלפת חובה סטטוטורית.'
+    },
+    middleeast: {
+      insight: 'האזור מתאים למודלי MGA, פרונטינג או שותפות: פינס מביאה הכרעה, מיון בבינה מלאכותית ותפעול דיגיטלי לשוק שכבר מבוסס מסירה ומתווכים.',
+      reins: 'בניגוד לשורות אחרות, הנחת המסירה כברירת מחדל קשורה ליחס שימור מפורסם באיחוד האמירויות.',
+      interp: 'זו הזדמנות מבנה הון ושותפות תחילה, ועדיין לא השוק הנקי ביותר לנתוני תחלואה.'
+    },
+    japan: {
+      insight: 'יפן היא הוכחה מצוינת להשלמה, להכוונת טיפול ביתי ולתיאום ליקוי חמור; היתד המסחרי הוא משלים ולא יסודי.',
+      reins: 'הנחות ביטוח משנה יחולו רק על השכבה המשלימה הפרטית, כי תוכנית הסיעוד הציבורית היא פלטפורמת המימון הדומיננטית.',
+      interp: 'יפן מאמתת עוצמת ביקוש ומשמעת תשלום יותר מאשר לכידת פרמיה מסחרית פתוחה.'
+    },
+    australia: {
+      insight: 'אוסטרליה היא שוק אמין רק עם תמחור משמעתי, תקופות המתנה מפורשות ובקרת תביעות חזקה. אין זה מקום לניסוח רופף או לאסטרטגיית צמיחה בכל מחיר.',
+      reins: 'סקירת הקיימות של APRA לביטוח נכות (DII) היא אות האזהרה המרכזי: יש להניח תמחור צפוף יותר ותיאבון חוזה נמוך יותר מאשר נרטיב שוק חפוז.',
+      interp: 'אוסטרליה אטרקטיבית רק לאחר שניסוח המוצר ומנוע התביעות של פינס הוכחו בשוק אחר.'
+    },
+    portugal: {
+      insight: 'פורטוגל היא נקודת כניסה מחייבת תחת סולבנסי II: אוכלוסייה מזדקנת עם פער סיעודי מתרחב, אימוץ ביטוח בריאות פרטי גדל, יישור רגולטורי לגישה לשוק האיחוד, וכוח עבודה צעיר דיגיטלי שיוצר הזדמנות הפצה למוצר דיגיטלי-ראשון.',
+      reins: 'פורטוגל פועלת תחת סולבנסי II. שיעורי המסירה הם הנחות תכנון; יש להחליפם בהגשות מוצר תואמות ASF ובהצעות ביטוח משנה חיות לפני כניסה לשוק.',
+      interp: 'פורטוגל היא שוק שער לאיחוד עם רוח גבית דמוגרפית לסיעוד, בגישה של מוצרים דיגיטליים תואמי סולבנסי II אל הפער בין כיסוי SNS הציבורי לבין עלות טיפול פרטי עולה.'
+    }
   };
 
   var STAGE_BY_ID = {
@@ -339,6 +479,27 @@
   function marketName(row, lang) {
     if (lang === 'he' && MARKET_NAME_HE[row.id]) return MARKET_NAME_HE[row.id];
     return stripMarks(row.name);
+  }
+
+  function marketCopy(row, lang) {
+    if (lang === 'he' && MARKET_COPY_HE[row && row.id]) return MARKET_COPY_HE[row.id];
+    return {
+      insight: stripMarks(row && row.insight),
+      reins: stripMarks(row && row.reinsuranceNote),
+      interp: stripMarks(row && row.interpretationNote)
+    };
+  }
+
+  function sourceTypeLabel(value, lang) {
+    var key = String(value || 'source');
+    if (lang === 'he') return SOURCE_TYPE_HE[key] || key;
+    return key;
+  }
+
+  function evidenceStrengthLabel(value, lang) {
+    var key = String(value || 'reference');
+    if (lang === 'he') return EVIDENCE_STRENGTH_HE[key] || key;
+    return key;
   }
 
   async function generate(opts) {
@@ -557,6 +718,41 @@
     var title = stripMarks(C.title);
     var subtitle = stripMarks(C.subtitle);
 
+    function formulaRows() {
+      var mode = payload.mode;
+      var lives = integer(assumptions.addressableLives);
+      var attach = pct(assumptions.attachRate);
+      var prem = money(assumptions.annualPremium, currency);
+      var pool = money(assumptions.marketPremiumPool, currency);
+      var share = pct(assumptions.targetShare);
+      var gwp = money(outputs.grossWrittenPremium, currency);
+      var cededPct = pct(assumptions.cessionRate);
+      var retainedPct = pct(100 - (Number(assumptions.cessionRate) || 0));
+      var ceded = money(outputs.cededPremium, currency);
+      var net = money(outputs.netPremium, currency);
+      var rows;
+      if (mode === 'premium') {
+        rows = [
+          [C.mode, C.premiumMode],
+          [C.pool, pool],
+          [C.share, share],
+          [C.gwp, pool + ' × ' + share + ' = ' + gwp]
+        ];
+      } else {
+        rows = [
+          [C.mode, C.livesMode],
+          [C.addressable, lives],
+          [C.attach, attach],
+          [C.annualPremium, prem],
+          [C.gwp, lives + ' × ' + attach + ' × ' + prem + ' = ' + gwp]
+        ];
+      }
+      rows.push([C.cession, cededPct]);
+      rows.push([C.ceded, gwp + ' × ' + cededPct + ' = ' + ceded]);
+      rows.push([C.net, gwp + ' − ' + ceded + ' = ' + net + ' (' + retainedPct + ')']);
+      return rows;
+    }
+
     y = brand.letterhead(doc, {
       margin: m,
       font: font || undefined,
@@ -572,6 +768,32 @@
     });
 
     band(C.integrityBanner);
+
+    heading(C.dataMap, 12);
+    para(C.dataMapLead, 8.5, 12, GREY);
+    table(
+      [C.layer, C.layerContent],
+      [
+        [C.layerA, C.layerABody],
+        [C.layerB, C.layerBBody],
+        [C.layerC, C.layerCBody]
+      ]
+    );
+    if (ilBook) {
+      heading(C.ilIdentity, 11);
+      table(
+        [C.field, C.value],
+        [
+          [C.ilIdentityPremium, money(ilBook.annualPremium, 'ILS')],
+          [C.ilIdentityTake, Math.round((Number(ilBook.phinsTakeRate) || 0) * 100) + '% / ' + Math.round((Number(ilBook.insuranceTakeRate) || 0) * 100) + '%'],
+          [C.ilIdentityEoy, '2027: ' + integer(ilBook.eoyPolicies[0]) + ' · 2028: ' + integer(ilBook.eoyPolicies[1]) + ' · 2029: ' + integer(ilBook.eoyPolicies[2])],
+          [C.ilIdentityAvg, '2027: ' + integer(ilBook.avgInForce[0]) + ' · 2028: ' + integer(ilBook.avgInForce[1]) + ' · 2029: ' + integer(ilBook.avgInForce[2])],
+          [C.ilIdentitySales, '2027-01-01'],
+          [C.ilIdentityChurn, pct((Number(ilBook.churn) || 0) * 100)],
+          [C.tamDefault, C.tamDefaultVal]
+        ]
+      );
+    }
 
     heading(C.assumptions, 12);
     table(
@@ -607,8 +829,8 @@
       table(
         [C.metric, C.value],
         [
-          [C.phinsTake, money(gwp * 0.25, 'ILS')],
-          [C.insuranceTake, money(gwp * 0.75, 'ILS')]
+          [C.phinsTake, money(gwp * 0.25, 'ILS') + ' · 25%'],
+          [C.insuranceTake, money(gwp * 0.75, 'ILS') + ' · 75%']
         ]
       );
     }
@@ -711,9 +933,15 @@
     );
 
     heading(C.notes, 12);
-    para(C.modeNote + ': ' + stripMarks((opts.modeNote || '')), 8.5, 12);
-    para(C.reinsNote + ': ' + stripMarks(region.reinsuranceNote || ''), 8.5, 12);
-    para(C.interp + ': ' + stripMarks(region.interpretationNote || ''), 8.5, 12);
+    para(C.formula, 9, 12, NAVY, 'bold');
+    para(C.formulaLead, 8.5, 12, GREY);
+    table(
+      [C.field, C.value],
+      formulaRows()
+    );
+    var selectedCopy = marketCopy(region, lang);
+    para(C.reinsNote + ': ' + selectedCopy.reins, 8.5, 12);
+    para(C.interp + ': ' + selectedCopy.interp, 8.5, 12);
     para(C.product, 8.5, 12);
     para(C.vr, 8.5, 12);
     para(C.dist, 8.5, 12);
@@ -724,12 +952,13 @@
     table(
       [C.market, C.demandCol, C.premiumCol, C.reinsCol, C.readCol],
       marketData.map(function (row) {
+        var copy = marketCopy(row, lang);
         return [
           marketName(row, lang),
           stripMarks(row.demand),
           stripMarks(row.premium),
           stripMarks(row.reinsurance),
-          stripMarks(row.insight)
+          copy.insight
         ];
       }),
       { 0: 62, 1: 112, 2: 112, 3: 112, 4: 112 }
@@ -740,9 +969,27 @@
       [C.sourceKey, C.sourceTitle, C.sourceType, C.sourceStrength, C.sourceUrl],
       Object.keys(sourceRegistry).map(function (key) {
         var src = sourceRegistry[key] || {};
-        return [key, stripMarks(src.title), src.sourceType || 'source', src.evidenceStrength || 'reference', src.url || ''];
+        return [
+          key,
+          stripMarks(src.title),
+          sourceTypeLabel(src.sourceType, lang),
+          evidenceStrengthLabel(src.evidenceStrength, lang),
+          src.url || ''
+        ];
       }),
       { 0: 56, 1: 132, 2: 56, 3: 72, 4: 174 }
+    );
+
+    heading(C.glossary, 12);
+    table(
+      [C.glossTerm, C.glossMeaning],
+      [
+        [C.glossGwp, C.glossGwpBody],
+        [C.glossCeded, C.glossCededBody],
+        [C.glossAttach, C.glossAttachBody],
+        [C.glossMga, C.glossMgaBody],
+        [C.glossIf, C.glossIfBody]
+      ]
     );
 
     para(C.close, 8, 11, GREY);
@@ -766,6 +1013,7 @@
   window.PhinsScenarioLabPdf = {
     generate: generate,
     readinessOf: readinessOf,
-    COPY: COPY
+    COPY: COPY,
+    MARKET_COPY_HE: MARKET_COPY_HE
   };
 })();

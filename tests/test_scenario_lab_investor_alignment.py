@@ -97,13 +97,13 @@ def test_scenario_lab_pdf_is_bilingual_branded_and_emoji_free():
     lab = _lab()
     brand = BRAND.read_text(encoding="utf-8")
     assert "PHINS Scenario Lab — Market Assessment" in lab
-    assert "מעבדת התרחישים של פינס — הערכת שוק" in lab
+    assert "פינס — תזכיר מעבדת התרחישים למשקיעים ולרגולטור" in lab
     assert "A visual investor story: where the PHINS thesis is strongest" in lab
-    assert "סיפור משקיע חזותי: היכן התזה של פינס חזקה ביותר" in lab
+    assert "קריאת משקיע: היכן התזה של פינס חזקה ביותר" in lab
     assert "Market readiness" in lab
-    assert "מוכנות שווקים" in lab
+    assert "מוכנות שוק להשקה" in lab
     assert "Canonical Israel book" in lab
-    assert "ספר ישראל הקנוני" in lab
+    assert "תיק ישראל — בסיס התכנון ממפגש המשקיעים" in lab
     assert "brand.letterhead" in lab
     assert "wrapToVisual" in lab
     assert "toVisual" in lab
@@ -116,6 +116,65 @@ def test_scenario_lab_pdf_is_bilingual_branded_and_emoji_free():
     assert (FONTS / "DejaVuSans.ttf").is_file()
     assert (FONTS / "DejaVuSans-Bold.ttf").is_file()
     assert (FONTS / "NOTICE.txt").is_file()
+
+
+def test_hebrew_scenario_lab_pdf_uses_regulator_register_and_live_formula():
+    lab = _lab()
+    # High-register insurance Hebrew — not calques from the English lab UI.
+    assert "שיעור החדרה" in lab
+    assert "פרמיה שנמסרה לביטוח משנה" in lab
+    assert "אוכלוסיית יעד" in lab
+    assert "תרחיש לפי מספר מבוטחים" in lab
+    assert "שיעור מסירה לביטוח משנה" in lab
+    assert "משמעות לפינס" in lab
+    assert "קבוצות שיוך" in lab
+    assert "תיאום שירותי טיפול" in lab
+    assert "זהות תכנונית קבועה" in lab
+    assert "שלוש שכבות נתונים" in lab
+    assert "שכבה א — ראיות ציבוריות נעולות" in lab
+    assert "שכבה ב — תמונת TAM ניתנת לכיול" in lab
+    assert "שכבה ג — תיק ישראל הקבוע" in lab
+    assert "מילון מונחים במסמך זה" in lab
+    assert "MARKET_COPY_HE" in lab
+    assert "formulaRows" in lab
+    assert "ilIdentity" in lab
+    assert "tamDefaultVal" in lab
+    assert "never pastes English" in lab
+    # Reject the previous calque register.
+    assert "שיעור הצמדה" not in lab
+    assert "פרמיה מותרת" not in lab
+    assert "חיים ברי-הגעה" not in lab
+    assert "מצב חיים" not in lab
+    assert "קריאת רוחב" not in lab
+    assert "אפיניות" not in lab
+    assert "תזמור" not in lab
+    assert "זהות נעוצה" not in lab
+    assert "ספר ישראל הקנוני" not in lab
+    # Hebrew notes are authored per market; English lab strings are not the HE path.
+    assert "opts.modeNote" not in lab
+    assert "region.reinsuranceNote" not in lab
+    # Public evidence columns stay in source language; only PHINS read-through is translated.
+    copy_he = lab.split("he: {", 1)[1].split("MARKET_NAME_HE", 1)[0]
+    assert "346,000 elderly people" not in copy_he
+    assert MARKET_IDS_IN_HEBREW_COPY(lab)
+
+
+def MARKET_IDS_IN_HEBREW_COPY(lab: str) -> bool:
+    block = lab.split("var MARKET_COPY_HE = {", 1)[1].split("};", 1)[0]
+    for market_id in (
+        "israel",
+        "usa",
+        "canada",
+        "wneurope",
+        "sweden",
+        "middleeast",
+        "japan",
+        "australia",
+        "portugal",
+    ):
+        assert f"{market_id}:" in block, market_id
+    assert "albania" not in block
+    return True
 
 
 def test_scenario_lab_ui_exposes_hebrew_and_readiness_surfaces():
