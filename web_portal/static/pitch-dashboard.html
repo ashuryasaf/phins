@@ -2095,7 +2095,7 @@
         <h1>PHI Permanent 3+ ADL Executive Business Assessment</h1>
         <p>
           Board-grade assessment of health, disability, and long-term care opportunity across Israel, the USA,
-          Canada, West and North Europe, Portugal, the Middle East, Japan, Australia, and Albania. The page separates public
+          Canada, West and North Europe, Sweden, Portugal, the Middle East, Japan, and Australia. The page separates public
           evidence from PHINS assumptions so teams can adjust TAM, ceded premium, and margin without corrupting
           the underlying statistics.
         </p>
@@ -5056,7 +5056,7 @@
         <div class="stat-lbl">Priority markets modeled</div>
       </div>
       <div class="stat-box">
-        <div class="stat-val">27</div>
+        <div class="stat-val">29</div>
         <div class="stat-lbl">Source families mapped</div>
       </div>
       <div class="stat-box">
@@ -5115,7 +5115,7 @@
           </div>
           <div class="priority-item">
             <div class="priority-head">
-              <div class="priority-name">4. Germany / Netherlands / Japan</div>
+              <div class="priority-name">4. Germany / Netherlands / Sweden / Japan</div>
               <div class="priority-score">Top-up markets</div>
             </div>
             <div class="priority-body">Public LTC systems validate lasting demand, but the private wedge is likely top-up cover, care management, and digital claim-routing rather than wholesale risk replacement.</div>
@@ -5220,6 +5220,7 @@
             <li><strong>Israel</strong> is the strongest proof market because demand, product familiarity, and operating logic all line up.</li>
             <li><strong>USA</strong> is the largest premium engine, but it carries the highest underwriting-discipline burden.</li>
             <li><strong>Canada</strong> and <strong>Australia</strong> reward disciplined channel strategy more than aggressive retail expansion.</li>
+            <li><strong>Sweden</strong> is the Nordic top-up market: official home-care intensity is high, and a measured private health-insurance overlay already exists through employer and group channels.</li>
             <li><strong>Europe</strong> and <strong>Japan</strong> validate need and payment logic, but mostly as supplemental or orchestration markets.</li>
             <li><strong>Portugal</strong> is a compelling EU Solvency II gateway with one of Europe's fastest-aging populations, a widening public LTC gap, and growing private health insurance adoption.</li>
             <li><strong>Middle East</strong> is strategically interesting because the capital structure is visible even when morbidity disclosure is thinner.</li>
@@ -6274,19 +6275,33 @@
         sourceType: "official",
         evidenceStrength: "direct pdf"
       },
-      afsa_2024: {
-        title: "AFSA Albania — Annual Report on Insurance Market 2024",
-        url: "https://amf.gov.al/publications.asp",
-        note: "Used for Albania insurance market size, penetration, and regulatory framework overview.",
+      socialstyrelsen_elderly_2024: {
+        title: "Socialstyrelsen — Statistics on Care and Services for the Elderly 2024",
+        url: "https://www.socialstyrelsen.se/publikationer/statistics-on-care-and-services-for-the-elderly-2024-2025-4-9537/",
+        note: "Used for Sweden's official 31 October 2024 counts of people aged 65+ with municipal social-service decisions, home care, and special housing.",
         sourceType: "official",
-        evidenceStrength: "official report"
+        evidenceStrength: "official release"
       },
-      boa_2024: {
-        title: "Bank of Albania — Financial Stability Report 2024",
-        url: "https://www.bankofalbania.org/Publications/Periodic/Financial_Stability_Report/",
-        note: "Used for Albanian banking sector structure, financial inclusion metrics, and macroeconomic context for insurance market entry.",
+      socialstyrelsen_elderly_cost: {
+        title: "Socialstyrelsen — Elderly receive care later (lägesrapport press note)",
+        url: "https://www.socialstyrelsen.se/om-socialstyrelsen/pressrum/press/aldre-far-omsorg-allt-senare/",
+        note: "Used for Sweden municipal elderly-care cost (SEK 166 billion in 2024; 2.6% of GDP) as a public-funding pressure marker.",
         sourceType: "official",
-        evidenceStrength: "official report"
+        evidenceStrength: "official release"
+      },
+      svensk_forsakring_2024: {
+        title: "Svensk Försäkring — Premiums, claims, and market shares (2024)",
+        url: "https://www.svenskforsakring.se/om-forsakring/forsakringar-i-sverige/utbetalningar-premier-och-marknadsandelar/",
+        note: "Used for Sweden's 2024 total insurance premiums and the life/pension versus non-life split.",
+        sourceType: "industry",
+        evidenceStrength: "industry release"
+      },
+      svensk_forsakring_vard_2024: {
+        title: "Svensk Försäkring — Private health insurance (vårdförsäkring) 2024",
+        url: "https://www.svenskforsakring.se/om-forsakring/forsakringar-i-sverige/skadeforsakring/allt-fler-har-en-vardforsakring/",
+        note: "Used for year-end 2024 private health-insurance lives and premium volume as a private overlay anchor, not as a PHINS product price.",
+        sourceType: "industry",
+        evidenceStrength: "industry release"
       },
       asf_portugal_2024: {
         title: "ASF Portugal — Insurance and Pension Funds Supervisory Report 2024",
@@ -6524,33 +6539,33 @@
         interpretationNote: "Australia is attractive, but only after the PHINS product language and claims engine are proven elsewhere."
       },
       {
-        id: "albania",
-        name: "Albania",
-        flag: "🇦🇱",
+        id: "sweden",
+        name: "Sweden",
+        flag: "🇸🇪",
         scope: "Country",
-        focus: "Emerging market entry with digital-first insurance platform",
-        currency: "ALL",
-        tags: ["private", "proxy"],
-        demand: "Albania's insurance penetration stands at approximately 1.5% of GDP, among the lowest in Europe. The population of 2.8 million has limited access to private disability and health insurance products, with an estimated 72% health insurance penetration gap.",
-        premium: "The total Albanian insurance market is approximately EUR 300 million annually. Life and health insurance premiums represent a small but growing share, with the non-life segment dominated by motor insurance. Private health and disability coverage remains largely undeveloped.",
-        reinsurance: "Albanian insurers cede a significant portion of premiums to international reinsurers due to limited domestic retention capacity. AFSA does not publish granular cession ratios, so treaty assumptions should remain quote-driven.",
-        insight: "Albania represents an early-mover digital-first opportunity: low insurance penetration, EU accession trajectory, a young and increasingly digital population, and regulatory openness to fintech innovation under AFSA's modernization agenda.",
-        sources: ["afsa_2024", "boa_2024"],
+        focus: "Public home-care system with private health-insurance overlay",
+        currency: "SEK",
+        tags: ["public", "private"],
+        demand: "On 31 October 2024, just over 352,000 people aged 65+ had at least one ongoing municipal social-service decision; 154,000 received home care in ordinary housing and 84,000 lived in special housing for the elderly (säbo).",
+        premium: "Municipal elderly-care costs were SEK 166 billion in 2024 (2.6% of GDP). Svensk Försäkring reports SEK 556 billion of total 2024 insurance premiums, including just over SEK 116 billion non-life and just under SEK 440 billion pensions and life. Private health insurance (vårdförsäkring) covered nearly 808,000 people at year-end 2024, with about SEK 5.1 billion of premiums.",
+        reinsurance: "Public Swedish sources in this set do not disclose a disability or LTC cession ratio. Treaty assumptions stay quote-driven, as with other high-public-LTC systems.",
+        insight: "Sweden is the cleanest Nordic top-up market: official home-care intensity is high, municipal elderly-care spend is visible, and a measured private health-insurance overlay already exists through employer and group channels. PHINS should attach as a severity and care-navigation layer, not as a replacement for the public system.",
+        sources: ["socialstyrelsen_elderly_2024", "socialstyrelsen_elderly_cost", "svensk_forsakring_2024", "svensk_forsakring_vard_2024", "oecd_2025"],
         defaultMode: "lives",
-        investorScores: { priority: 55, demand: 48, monetization: 42, publicDepth: 30, privateAccess: 52, fit: 58, color: "amber" },
+        investorScores: { priority: 74, demand: 88, monetization: 52, publicDepth: 93, privateAccess: 46, fit: 70, color: "amber" },
         assumptionDefaults: {
-          addressableLives: 1200000,
-          attachRate: 1.5,
-          annualPremium: 16800,
-          marketPremiumPool: 300000000,
-          targetShare: 3.0,
-          cessionRate: 30.0,
-          lossRatio: 58.0,
-          expenseRatio: 20.0
+          addressableLives: 352000,
+          attachRate: 4.0,
+          annualPremium: 6312,
+          marketPremiumPool: 5100000000,
+          targetShare: 5.0,
+          cessionRate: 20.0,
+          lossRatio: 57.0,
+          expenseRatio: 15.0
         },
-        basisNote: "Default lives basis uses estimated addressable Albanian individuals without private health/disability insurance as the target pool.",
-        reinsuranceNote: "Albanian market has limited domestic retention capacity. Treaty terms must be negotiated directly with international reinsurers.",
-        interpretationNote: "Albania is an early-stage market with high growth potential, best approached as a digital-first greenfield entry rather than a legacy displacement play."
+        basisNote: "Default lives basis uses Socialstyrelsen's reported 352,000 people aged 65+ with a social-service decision as a conservative need-pool proxy, not the full Swedish population. The SEK 6,312 annual-premium default is the implied 2024 vårdförsäkring average (SEK 5.1 billion / 808,000 lives) and is a planning input, not a PHINS product price.",
+        reinsuranceNote: "No published Swedish disability or LTC cession benchmark is in the current evidence set. Keep treaty economics quote-based.",
+        interpretationNote: "Sweden proves Nordic home-care demand and a modest private overlay. Commercial entry is a top-up and group-channel story, not a statutory replacement."
       },
       {
         id: "portugal",
@@ -6772,10 +6787,10 @@
           usa: "Scale with discipline",
           canada: "Group / affinity",
           wneurope: "Top-up / orchestration",
+          sweden: "Top-up / orchestration",
           middleeast: "Partnership / capital-light",
           japan: "Top-up / orchestration",
           australia: "Pricing caution",
-          albania: "Partnership / capital-light",
           portugal: "Top-up / orchestration"
         };
         readinessBarChart.innerHTML = marketData.map((row) => {
@@ -8147,16 +8162,11 @@
         spain: "wneurope",
         italy: "wneurope",
         netherlands: "wneurope",
-        sweden: "wneurope",
         swisserland: "wneurope",
         irland: "wneurope",
         greece: "wneurope",
         poland: "wneurope",
         syngapore: "japan",
-        south_africa: "albania",
-        brazil: "albania",
-        india: "albania",
-        mexico: "albania",
         emirates: "middleeast",
         dubai: "middleeast"
       };

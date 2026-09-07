@@ -142,3 +142,21 @@ def test_public_evidence_not_rewritten_by_planning_book():
     assert "Reported public evidence" in html
     lab = _lab()
     assert "never written back into public statistics" in lab or "never as reported public" in lab
+
+
+def test_sweden_replaces_albania_on_scenario_lab():
+    html = _html()
+    start = html.index("const marketData = [")
+    end = html.index("    ];", start)
+    block = html[start:end]
+    assert 'id: "sweden"' in block
+    assert 'id: "albania"' not in block
+    assert "352,000 people aged 65+" in block
+    assert "808,000 people" in block
+    assert "SEK 5.1 billion" in block
+    assert "annualPremium: 6312" in block
+    assert round(5_100_000_000 / 808_000) == 6312
+    lab = _lab()
+    assert "sweden: 'שוודיה'" in lab
+    assert "albania" not in lab
+    assert "sweden: 'stageTopup'" in lab

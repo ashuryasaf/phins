@@ -118,7 +118,7 @@
       interp: 'Interpretation',
       product: 'Product frame: Permanent 3+ ADL benefit with optional severe cognitive trigger and care-navigation layer.',
       vr: 'VR layer: return-to-function and vocational rehabilitation for working-age claimants.',
-      dist: 'Distribution: Israel first; USA and Canada for private and employer channels; Portugal as EU Solvency II gateway; Europe and Japan for top-up; UAE/GCC for capital-light partnerships.',
+      dist: 'Distribution: Israel first; USA and Canada for private and employer channels; Portugal as EU Solvency II gateway; Sweden, broader Europe and Japan for top-up; UAE/GCC for capital-light partnerships.',
       actuarial: 'Actuarial caution: before filing, replace scenario ratios with country-specific incidence, lapse, recovery, selection, and reinsurance quote data.',
       evidence: 'Evidence matrix (reported public layer — source language preserved)',
       evidenceNote: 'Public quotes are kept in their source language so official wording is not paraphrased. PHINS read-through remains in the document language.',
@@ -235,7 +235,7 @@
       interp: 'פרשנות',
       product: 'מסגרת מוצר: הטבת 3+ ADL קבועה עם טריגר קוגניטיבי חמור אופציונלי ושכבת ניווט טיפול.',
       vr: 'שכבת שיקום תעסוקתי: חזרה לתפקוד ושיקום מקצועי לתובעים בגיל עבודה.',
-      dist: 'הפצה: ישראל תחילה; ארה"ב וקנדה לערוצים פרטיים ומעסיקים; פורטוגל כשער סולבנסי II באיחוד האירופי; אירופה ויפן להשלמה; איחוד האמירויות / המפרץ לשותפויות דלות-הון.',
+      dist: 'הפצה: ישראל תחילה; ארה"ב וקנדה לערוצים פרטיים ומעסיקים; פורטוגל כשער סולבנסי II באיחוד האירופי; שוודיה, אירופה ויפן להשלמה; איחוד האמירויות / המפרץ לשותפויות דלות-הון.',
       actuarial: 'זהירות אקטוארית: לפני הגשה, יש להחליף יחסי תרחיש בנתוני היארעות, ביטולים, החלמה, בחירה והצעות ביטוח משנה ספציפיים למדינה.',
       evidence: 'מטריצת ראיות (שכבה ציבורית מדווחת — שפת המקור נשמרת)',
       evidenceNote: 'ציטוטים ציבוריים נשמרים בשפת המקור כדי לא לפרפראז את נוסח הפרסום הרשמי. קריאת הרוחב של פינס מופיעה בשפת המסמך.',
@@ -268,10 +268,10 @@
     usa: 'ארצות הברית',
     canada: 'קנדה',
     wneurope: 'מערב וצפון אירופה',
+    sweden: 'שוודיה',
     middleeast: 'המזרח התיכון',
     japan: 'יפן',
     australia: 'אוסטרליה',
-    albania: 'אלבניה',
     portugal: 'פורטוגל'
   };
 
@@ -280,10 +280,10 @@
     usa: 'stageScale',
     canada: 'stageGroup',
     wneurope: 'stageTopup',
+    sweden: 'stageTopup',
     middleeast: 'stagePartner',
     japan: 'stageTopup',
     australia: 'stageCaution',
-    albania: 'stagePartner',
     portugal: 'stageTopup'
   };
 
