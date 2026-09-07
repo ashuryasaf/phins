@@ -26,7 +26,11 @@
   var GREY = [91, 107, 130];    // #5b6b82 letterhead grey
   var BRAND_NAME = 'PHINS';
   var BRAND_TAGLINE = 'Personal Health Insurance & Savings · AI-Operated Insurance Platform';
+  var BRAND_TAGLINE_HE = 'פלטפורמת ביטוח מופעלת-AI · ביטוח בריאות אישי וחיסכון';
   var LOGO_URL = '/phins-logo.png';
+  var FONT_REGULAR_URL = '/fonts/DejaVuSans.ttf';
+  var FONT_BOLD_URL = '/fonts/DejaVuSans-Bold.ttf';
+  var DOCUMENT_FONT = 'PhinsDejaVu';
   // Baseline where continuation-page body content must start so it clears the
   // running header drawn by finalize() (emblem + title at y≈24, gold rule at
   // y≈29). Generators reset `y` to this on addPage() instead of the top margin.
@@ -34,6 +38,8 @@
 
   var logoDataUrl = null;
   var logoPromise = null;
+  var fontCache = {};
+  var fontPromise = null;
 
   function preload() {
     if (logoPromise) return logoPromise;
@@ -65,19 +71,240 @@
     return logoPromise;
   }
 
-  function truncateToWidth(doc, text, maxWidth) {
+  var HE_RE = /[\u0590-\u05FF]/;
+  var MIRROR = {
+    '(': ')', ')': '(', '[': ']', ']': '[', '{': '}', '}': '{',
+    '<': '>', '>': '<', '«': '»', '»': '«'
+  };
+
+  function bidiType(ch) {
+    var c = ch.charCodeAt(0);
+    if (c >= 0x0590 && c <= 0x05FF) return 'R';
+    if ((c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A)) return 'L';
+    if (c >= 0x30 && c <= 0x39) return 'EN';
+    if (ch === '+' || ch === '-') return 'ES';
+    if (ch === '%' || ch === '$' || ch === '#' || ch === '₪' || ch === '¢' || ch === '€' || ch === '£') return 'ET';
+    if (ch === ',' || ch === '.' || ch === ':' || ch === '/') return 'CS';
+    if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || c === 0x00A0) return 'WS';
+    return 'ON';
+  }
+
+  /**
+   * Unicode Bidirectional Algorithm (implicit Hebrew + Latin/numbers).
+   * jsPDF draws left-to-right, so RTL copy must be converted to visual order
+   * *after* wrapping. Numbers, dates, and Latin tokens stay LTR.
+   */
+  function toVisual(text, rtl) {
     text = String(text || '');
-    if (doc.getTextWidth(text) <= maxWidth) return text;
-    var ell = '…';
-    while (text && doc.getTextWidth(text + ell) > maxWidth) {
-      text = text.slice(0, -1);
+    if (!rtl || !HE_RE.test(text)) return text;
+    var chars = Array.from(text);
+    var n = chars.length;
+    var types = chars.map(bidiType);
+    var i;
+    var prevStrong = 'R';
+    for (i = 0; i < n; i++) {
+      if (types[i] === 'ES' || types[i] === 'CS') {
+        var prev = i > 0 ? types[i - 1] : '';
+        var next = i + 1 < n ? types[i + 1] : '';
+        if (prev === 'EN' && next === 'EN') types[i] = 'EN';
+      }
     }
-    return text ? text + ell : ell;
+    for (i = 0; i < n; i++) {
+      if (types[i] === 'ET') {
+        var j = i;
+        while (j > 0 && types[j - 1] === 'ET') j--;
+        var k = i;
+        while (k + 1 < n && types[k + 1] === 'ET') k++;
+        if ((j > 0 && types[j - 1] === 'EN') || (k + 1 < n && types[k + 1] === 'EN')) {
+          for (var t = j; t <= k; t++) types[t] = 'EN';
+        }
+      }
+    }
+    for (i = 0; i < n; i++) {
+      if (types[i] === 'ES' || types[i] === 'ET' || types[i] === 'CS') types[i] = 'ON';
+    }
+    prevStrong = 'R';
+    for (i = 0; i < n; i++) {
+      if (types[i] === 'L' || types[i] === 'R') prevStrong = types[i];
+      else if (types[i] === 'EN' && prevStrong === 'L') types[i] = 'L';
+    }
+    function isNeutral(tp) { return tp === 'WS' || tp === 'ON'; }
+    function isStrong(tp) { return tp === 'L' || tp === 'R' || tp === 'EN'; }
+    i = 0;
+    while (i < n) {
+      if (!isNeutral(types[i])) { i++; continue; }
+      var start = i;
+      while (i < n && isNeutral(types[i])) i++;
+      var lead = 'R';
+      for (var a = start - 1; a >= 0; a--) {
+        if (isStrong(types[a])) { lead = types[a] === 'EN' ? 'L' : types[a]; break; }
+      }
+      var trail = 'R';
+      for (var b = i; b < n; b++) {
+        if (isStrong(types[b])) { trail = types[b] === 'EN' ? 'L' : types[b]; break; }
+      }
+      var resolved = (lead === trail) ? lead : 'R';
+      for (var c = start; c < i; c++) types[c] = resolved;
+    }
+    var levels = types.map(function (tp) {
+      if (tp === 'L' || tp === 'EN') return 2;
+      return 1;
+    });
+    function reverseRange(lo, hi) {
+      while (lo < hi) {
+        var tc = chars[lo];
+        chars[lo] = chars[hi];
+        chars[hi] = tc;
+        var tl = levels[lo];
+        levels[lo] = levels[hi];
+        levels[hi] = tl;
+        lo++;
+        hi--;
+      }
+    }
+    var maxLevel = 2;
+    for (var lvl = maxLevel; lvl >= 1; lvl--) {
+      i = 0;
+      while (i < n) {
+        if (levels[i] < lvl) { i++; continue; }
+        var from = i;
+        while (i < n && levels[i] >= lvl) i++;
+        reverseRange(from, i - 1);
+      }
+    }
+    for (i = 0; i < n; i++) {
+      if (levels[i] % 2 === 1 && MIRROR[chars[i]]) chars[i] = MIRROR[chars[i]];
+    }
+    return chars.join('');
+  }
+
+  function wrapLogical(doc, text, maxWidth) {
+    text = String(text || '');
+    if (!text) return [''];
+    if (doc.getTextWidth(text) <= maxWidth) return [text];
+    var tokens = text.split(/(\s+)/);
+    var lines = [];
+    var current = '';
+    function flush() {
+      if (current) {
+        lines.push(current.replace(/\s+$/g, ''));
+        current = '';
+      }
+    }
+    function pushHard(chunk) {
+      while (chunk && doc.getTextWidth(chunk) > maxWidth) {
+        var cut = chunk.length;
+        while (cut > 1 && doc.getTextWidth(chunk.slice(0, cut)) > maxWidth) cut--;
+        lines.push(chunk.slice(0, cut));
+        chunk = chunk.slice(cut);
+      }
+      current = chunk;
+    }
+    for (var i = 0; i < tokens.length; i++) {
+      var tok = tokens[i];
+      if (!tok) continue;
+      var trial = current + tok;
+      if (current && doc.getTextWidth(trial) > maxWidth) {
+        flush();
+        if (/^\s+$/.test(tok)) continue;
+        if (doc.getTextWidth(tok) > maxWidth) pushHard(tok);
+        else current = tok;
+      } else {
+        current = trial;
+      }
+    }
+    flush();
+    return lines.length ? lines : [''];
+  }
+
+  function wrapToVisual(doc, text, maxWidth, rtl) {
+    var logical = wrapLogical(doc, String(text || ''), maxWidth);
+    if (!rtl) return logical;
+    return logical.map(function (line) { return toVisual(line, true); });
+  }
+
+  function truncateToWidth(doc, text, maxWidth, rtl) {
+    text = String(text || '');
+    var visual = toVisual(text, rtl);
+    if (doc.getTextWidth(visual) <= maxWidth) return visual;
+    var ell = '…';
+    var logical = text;
+    while (logical && doc.getTextWidth(toVisual(logical + ell, rtl)) > maxWidth) {
+      logical = logical.slice(0, -1);
+    }
+    return toVisual(logical ? logical + ell : ell, rtl);
+  }
+
+  function arrayBufferToBase64(buffer) {
+    var bytes = new Uint8Array(buffer);
+    var chunk = 0x8000;
+    var parts = [];
+    for (var i = 0; i < bytes.length; i += chunk) {
+      parts.push(String.fromCharCode.apply(null, bytes.subarray(i, i + chunk)));
+    }
+    return btoa(parts.join(''));
+  }
+
+  function fetchFontBase64(url) {
+    if (fontCache[url]) return Promise.resolve(fontCache[url]);
+    return fetch(url)
+      .then(function (r) { if (!r.ok) throw new Error('font unavailable'); return r.arrayBuffer(); })
+      .then(function (buf) {
+        fontCache[url] = arrayBufferToBase64(buf);
+        return fontCache[url];
+      });
+  }
+
+  function preloadDocumentFonts() {
+    if (fontPromise) return fontPromise;
+    fontPromise = Promise.all([
+      fetchFontBase64(FONT_REGULAR_URL),
+      fetchFontBase64(FONT_BOLD_URL)
+    ]).then(function (pair) {
+      return { regular: pair[0], bold: pair[1] };
+    }).catch(function () {
+      fontPromise = null;
+      return null;
+    });
+    return fontPromise;
+  }
+
+  /**
+   * Register the PHINS document TTF family on a jsPDF instance.
+   * Chrome-only: does not alter generator data. Falls back silently if
+   * the subset fonts are unavailable so English downloads still work.
+   */
+  function applyDocumentFont(doc) {
+    var regular = fontCache[FONT_REGULAR_URL];
+    var bold = fontCache[FONT_BOLD_URL];
+    if (!regular || !bold || !doc || typeof doc.addFileToVFS !== 'function') {
+      return null;
+    }
+    try {
+      doc.addFileToVFS('PhinsDejaVu.ttf', regular);
+      doc.addFileToVFS('PhinsDejaVu-Bold.ttf', bold);
+      doc.addFont('PhinsDejaVu.ttf', DOCUMENT_FONT, 'normal');
+      doc.addFont('PhinsDejaVu-Bold.ttf', DOCUMENT_FONT, 'bold');
+      doc.setFont(DOCUMENT_FONT, 'normal');
+      return DOCUMENT_FONT;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function useFont(doc, opts, weight) {
+    var family = (opts && opts.font) || undefined;
+    var style = weight || 'normal';
+    try {
+      doc.setFont(family, style);
+    } catch (e) {
+      doc.setFont(undefined, style);
+    }
   }
 
   /**
    * Draw the branded letterhead at the top of the current page.
-   * opts: { title, subtitle, meta (array of small lines), margin }
+   * opts: { title, subtitle, meta (array of small lines), margin, rtl, font, tagline }
    * Returns the y coordinate where document content should start.
    */
   function letterhead(doc, opts) {
@@ -86,23 +313,28 @@
     var pw = doc.internal.pageSize.getWidth();
     var tw = pw - m * 2;
     var y = m - 6;
+    var rtl = !!opts.rtl;
+    var align = rtl ? 'right' : 'left';
+    var tagline = opts.tagline || (rtl ? BRAND_TAGLINE_HE : BRAND_TAGLINE);
+    if (rtl) tagline = toVisual(tagline, true);
 
     // shield emblem + wordmark + tagline
-    var textX = m;
+    var textX = rtl ? (pw - m) : m;
     if (logoDataUrl) {
       try {
-        doc.addImage(logoDataUrl, 'PNG', m, y - 8, 42, 42);
-        textX = m + 52;
-      } catch (e) { textX = m; }
+        var logoX = rtl ? (pw - m - 42) : m;
+        doc.addImage(logoDataUrl, 'PNG', logoX, y - 8, 42, 42);
+        textX = rtl ? (pw - m - 52) : (m + 52);
+      } catch (e) { textX = rtl ? (pw - m) : m; }
     }
-    doc.setFont(undefined, 'bold');
+    useFont(doc, opts, 'bold');
     doc.setFontSize(21);
     doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
-    doc.text(BRAND_NAME, textX, y + 12);
-    doc.setFont(undefined, 'normal');
+    doc.text(BRAND_NAME, textX, y + 12, { align: align });
+    useFont(doc, opts, 'normal');
     doc.setFontSize(6.8);
     doc.setTextColor(GREY[0], GREY[1], GREY[2]);
-    doc.text(BRAND_TAGLINE, textX, y + 22);
+    doc.text(tagline, textX, y + 22, { align: align });
     y += 42;
 
     // gold + navy double rule (the first-level document signature)
@@ -116,32 +348,32 @@
 
     // document title / subtitle / meta lines
     if (opts.title) {
-      doc.setFont(undefined, 'bold');
+      useFont(doc, opts, 'bold');
       doc.setFontSize(17);
       doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
-      var titleLines = doc.splitTextToSize(String(opts.title), tw);
-      doc.text(titleLines, m, y);
+      var titleLines = wrapToVisual(doc, opts.title, tw, rtl);
+      doc.text(titleLines, rtl ? (pw - m) : m, y, { align: align });
       y += titleLines.length * 19;
     }
     if (opts.subtitle) {
-      doc.setFont(undefined, 'normal');
+      useFont(doc, opts, 'normal');
       doc.setFontSize(9.5);
       doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
-      var subLines = doc.splitTextToSize(String(opts.subtitle), tw);
-      doc.text(subLines, m, y);
+      var subLines = wrapToVisual(doc, opts.subtitle, tw, rtl);
+      doc.text(subLines, rtl ? (pw - m) : m, y, { align: align });
       y += subLines.length * 12 + 2;
     }
     (opts.meta || []).forEach(function (line) {
-      doc.setFont(undefined, 'normal');
+      useFont(doc, opts, 'normal');
       doc.setFontSize(7.6);
       doc.setTextColor(GREY[0], GREY[1], GREY[2]);
-      var metaLines = doc.splitTextToSize(String(line), tw);
-      doc.text(metaLines, m, y);
+      var metaLines = wrapToVisual(doc, line, tw, rtl);
+      doc.text(metaLines, rtl ? (pw - m) : m, y, { align: align });
       y += metaLines.length * 10;
     });
 
     doc.setTextColor(0, 0, 0);
-    doc.setFont(undefined, 'normal');
+    useFont(doc, opts, 'normal');
     return y + 8;
   }
 
@@ -155,7 +387,10 @@
     var m = opts.margin || 40;
     var pw = doc.internal.pageSize.getWidth();
     var ph = doc.internal.pageSize.getHeight();
+    var rtl = !!opts.rtl;
     var note = opts.note || (BRAND_NAME + ' — Confidential investor document');
+    var pageLabel = opts.pageLabel || 'Page';
+    var pageOf = opts.pageOf || 'of';
     var pageCount = doc.getNumberOfPages();
 
     for (var p = 1; p <= pageCount; p++) {
@@ -164,17 +399,23 @@
       // running header (continuation pages only)
       if (p > 1 && opts.title) {
         var hy = 24;
-        doc.setFont(undefined, 'bold');
+        useFont(doc, opts, 'bold');
         doc.setFontSize(7.5);
         doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
-        var titleX = m;
+        var titleX = rtl ? (pw - m) : m;
         if (logoDataUrl) {
           try {
-            doc.addImage(logoDataUrl, 'PNG', m, hy - 10, 13, 13);
-            titleX = m + 17;
-          } catch (e) { titleX = m; }
+            var hx = rtl ? (pw - m - 13) : m;
+            doc.addImage(logoDataUrl, 'PNG', hx, hy - 10, 13, 13);
+            titleX = rtl ? (pw - m - 17) : (m + 17);
+          } catch (e) { titleX = rtl ? (pw - m) : m; }
         }
-        doc.text(truncateToWidth(doc, opts.title, pw - m - titleX - 60), titleX, hy);
+        doc.text(
+          truncateToWidth(doc, opts.title, pw - m * 2 - 80, rtl),
+          titleX,
+          hy,
+          rtl ? { align: 'right' } : undefined
+        );
         doc.setDrawColor(GOLD[0], GOLD[1], GOLD[2]);
         doc.setLineWidth(0.9);
         doc.line(m, hy + 5, pw - m, hy + 5);
@@ -184,18 +425,28 @@
       doc.setDrawColor(GOLD[0], GOLD[1], GOLD[2]);
       doc.setLineWidth(0.9);
       doc.line(m, ph - 30, pw - m, ph - 30);
-      doc.setFont(undefined, 'normal');
+      useFont(doc, opts, 'normal');
       doc.setFontSize(6.8);
       doc.setTextColor(GREY[0], GREY[1], GREY[2]);
-      var noteX = m;
+      var noteX = rtl ? (pw - m) : m;
       if (logoDataUrl) {
         try {
-          doc.addImage(logoDataUrl, 'PNG', m, ph - 26, 11, 11);
-          noteX = m + 15;
-        } catch (e) { noteX = m; }
+          var fx = rtl ? (pw - m - 11) : m;
+          doc.addImage(logoDataUrl, 'PNG', fx, ph - 26, 11, 11);
+          noteX = rtl ? (pw - m - 15) : (m + 15);
+        } catch (e) { noteX = rtl ? (pw - m) : m; }
       }
-      doc.text(truncateToWidth(doc, note, pw - noteX - m - 66), noteX, ph - 18);
-      doc.text('Page ' + p + ' of ' + pageCount, pw - m, ph - 18, { align: 'right' });
+      var pageLogical = rtl
+        ? (pageLabel + ' ' + p + ' ' + pageOf + ' ' + pageCount)
+        : (pageLabel + ' ' + p + ' ' + pageOf + ' ' + pageCount);
+      var pageText = toVisual(pageLogical, rtl);
+      doc.text(
+        truncateToWidth(doc, note, pw - m * 2 - 80, rtl),
+        noteX,
+        ph - 18,
+        rtl ? { align: 'right' } : undefined
+      );
+      doc.text(pageText, rtl ? m : (pw - m), ph - 18, { align: rtl ? 'left' : 'right' });
     }
 
     doc.setTextColor(0, 0, 0);
@@ -209,10 +460,16 @@
     GREY: GREY,
     BRAND_NAME: BRAND_NAME,
     BRAND_TAGLINE: BRAND_TAGLINE,
+    BRAND_TAGLINE_HE: BRAND_TAGLINE_HE,
+    DOCUMENT_FONT: DOCUMENT_FONT,
     CONTINUATION_TOP: CONTINUATION_TOP,
     preload: preload,
+    preloadDocumentFonts: preloadDocumentFonts,
+    applyDocumentFont: applyDocumentFont,
     letterhead: letterhead,
-    finalize: finalize
+    finalize: finalize,
+    toVisual: toVisual,
+    wrapToVisual: wrapToVisual
   };
 
   // Start fetching the logo immediately so it is ready by first download.
