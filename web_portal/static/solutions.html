@@ -1384,14 +1384,14 @@
             </ul>
             <p>
               Prefer to keep it brief? Choose <strong>Contact</strong>. Want to
-              see the platform working? Choose <strong>Demo</strong> and tell us
+              see the platform working? Choose <strong>Request a Demo</strong> and tell us
               which solution area interests you most.
             </p>
           </div>
           <form class="contact-form reveal" id="inquiry-form" novalidate>
             <div class="type-toggle" role="tablist" aria-label="Inquiry type">
               <button type="button" id="toggle-contact" class="active" aria-selected="true">Contact</button>
-              <button type="button" id="toggle-demo" aria-selected="false">Demo Request</button>
+              <button type="button" id="toggle-demo" aria-selected="false">Request a Demo</button>
             </div>
             <div class="form-grid">
               <div class="form-field">
@@ -1410,7 +1410,7 @@
                 <label for="inq-audience">I am a… <span class="req">*</span></label>
                 <select id="inq-audience" name="audience" required>
                   <option value="" disabled selected>Select…</option>
-                  <option value="individual">Individual</option>
+                  <option value="individual">Reinsurance / Insurance Company</option>
                   <option value="enterprise">Enterprise</option>
                   <option value="investor">Investor</option>
                   <option value="partner">Business Partner</option>
@@ -1707,7 +1707,7 @@
       toggleDemo.classList.toggle('active', isDemo);
       toggleContact.setAttribute('aria-selected', String(!isDemo));
       toggleDemo.setAttribute('aria-selected', String(isDemo));
-      document.getElementById('inq-submit').textContent = isDemo ? 'Request Demo' : 'Send Inquiry';
+      document.getElementById('inq-submit').textContent = isDemo ? 'Request a Demo' : 'Send Inquiry';
     }
     toggleContact.addEventListener('click', function () { setInquiryType('contact'); });
     toggleDemo.addEventListener('click', function () { setInquiryType('demo'); });

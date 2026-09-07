@@ -9041,7 +9041,7 @@ def _format_business_inquiry_admin_email(record: Dict[str, Any]) -> Tuple[str, s
 
 
 _BUSINESS_INQUIRY_AUDIENCE_LABELS = {
-    'individual': 'Individual',
+    'individual': 'Reinsurance / Insurance Company',
     'enterprise': 'Enterprise',
     'investor': 'Investor',
     'partner': 'Partner / MGA',
