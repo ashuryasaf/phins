@@ -526,6 +526,7 @@
     var jsPDF = window.jspdf.jsPDF;
     var doc = new jsPDF({ unit: 'pt', format: 'a4' });
     var font = brand.applyDocumentFont(doc);
+    if (rtl) brand.installRtlPainter(doc);
     var pw = doc.internal.pageSize.getWidth();
     var ph = doc.internal.pageSize.getHeight();
     var m = 40;
@@ -540,8 +541,7 @@
     }
 
     function vis(text) {
-      text = stripMarks(text);
-      return rtl ? brand.toVisual(text, true) : text;
+      return stripMarks(text);
     }
 
     function linesOf(text, width) {
@@ -999,7 +999,7 @@
       font: font || undefined,
       rtl: rtl,
       title: title,
-      note: stripMarks(C.footer + ' · ' + printedAt),
+      note: stripMarks(C.footer),
       pageLabel: C.page,
       pageOf: C.pageOf
     });

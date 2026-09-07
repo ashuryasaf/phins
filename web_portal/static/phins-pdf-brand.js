@@ -71,111 +71,64 @@
     return logoPromise;
   }
 
-  var HE_RE = /[\u0590-\u05FF]/;
-  var MIRROR = {
-    '(': ')', ')': '(', '[': ']', ']': '[', '{': '}', '}': '{',
-    '<': '>', '>': '<', '«': '»', '»': '«'
+  /**
+   * jsPDF 2.x always runs Unicode bidi in postProcessText. Default flags treat
+   * input as *visual*, so pre-reversing Hebrew (and then letting jsPDF bidi it
+   * again) paints reversed letters and flipped Latin (MGA→AGM, TAM→MAT, AI→IA).
+   * Pass logical copy with these flags so jsPDF converts logical RTL → visual
+   * LTR paint once. Latin tokens stay LTR.
+   */
+  var RTL_TEXT_OPTIONS = {
+    isInputVisual: false,
+    isOutputVisual: true,
+    isInputRtl: true,
+    isOutputRtl: false,
+    isSymmetricSwapping: true
   };
 
-  function bidiType(ch) {
-    var c = ch.charCodeAt(0);
-    if (c >= 0x0590 && c <= 0x05FF) return 'R';
-    if ((c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A)) return 'L';
-    if (c >= 0x30 && c <= 0x39) return 'EN';
-    if (ch === '+' || ch === '-') return 'ES';
-    if (ch === '%' || ch === '$' || ch === '#' || ch === '₪' || ch === '¢' || ch === '€' || ch === '£') return 'ET';
-    if (ch === ',' || ch === '.' || ch === ':' || ch === '/') return 'CS';
-    if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || c === 0x00A0) return 'WS';
-    return 'ON';
+  function paintOpts(rtl, extra) {
+    extra = extra && typeof extra === 'object' ? extra : {};
+    if (!rtl) return extra;
+    var out = {};
+    var k;
+    for (k in RTL_TEXT_OPTIONS) {
+      if (Object.prototype.hasOwnProperty.call(RTL_TEXT_OPTIONS, k)) out[k] = RTL_TEXT_OPTIONS[k];
+    }
+    for (k in extra) {
+      if (Object.prototype.hasOwnProperty.call(extra, k)) out[k] = extra[k];
+    }
+    return out;
+  }
+
+  function hasHebrew(text) {
+    if (Array.isArray(text)) {
+      for (var i = 0; i < text.length; i++) {
+        if (hasHebrew(text[i])) return true;
+      }
+      return false;
+    }
+    return /[\u0590-\u05FF]/.test(String(text || ''));
+  }
+
+  function installRtlPainter(doc) {
+    if (!doc || typeof doc.text !== 'function' || doc.__phinsRtlPaint) return doc;
+    var orig = doc.text.bind(doc);
+    doc.__phinsRtlPaint = orig;
+    doc.text = function (text, x, y, options, transform, angle) {
+      if (typeof options === 'number' || typeof transform !== 'undefined') {
+        return orig(text, x, y, options, transform, angle);
+      }
+      if (!hasHebrew(text)) return orig(text, x, y, options);
+      return orig(text, x, y, paintOpts(true, options));
+    };
+    return doc;
   }
 
   /**
-   * Unicode Bidirectional Algorithm (implicit Hebrew + Latin/numbers).
-   * jsPDF draws left-to-right, so RTL copy must be converted to visual order
-   * *after* wrapping. Numbers, dates, and Latin tokens stay LTR.
+   * Identity. jsPDF owns logical→visual conversion; do not pre-reverse.
    */
   function toVisual(text, rtl) {
-    text = String(text || '');
-    if (!rtl || !HE_RE.test(text)) return text;
-    var chars = Array.from(text);
-    var n = chars.length;
-    var types = chars.map(bidiType);
-    var i;
-    var prevStrong = 'R';
-    for (i = 0; i < n; i++) {
-      if (types[i] === 'ES' || types[i] === 'CS') {
-        var prev = i > 0 ? types[i - 1] : '';
-        var next = i + 1 < n ? types[i + 1] : '';
-        if (prev === 'EN' && next === 'EN') types[i] = 'EN';
-      }
-    }
-    for (i = 0; i < n; i++) {
-      if (types[i] === 'ET') {
-        var j = i;
-        while (j > 0 && types[j - 1] === 'ET') j--;
-        var k = i;
-        while (k + 1 < n && types[k + 1] === 'ET') k++;
-        if ((j > 0 && types[j - 1] === 'EN') || (k + 1 < n && types[k + 1] === 'EN')) {
-          for (var t = j; t <= k; t++) types[t] = 'EN';
-        }
-      }
-    }
-    for (i = 0; i < n; i++) {
-      if (types[i] === 'ES' || types[i] === 'ET' || types[i] === 'CS') types[i] = 'ON';
-    }
-    prevStrong = 'R';
-    for (i = 0; i < n; i++) {
-      if (types[i] === 'L' || types[i] === 'R') prevStrong = types[i];
-      else if (types[i] === 'EN' && prevStrong === 'L') types[i] = 'L';
-    }
-    function isNeutral(tp) { return tp === 'WS' || tp === 'ON'; }
-    function isStrong(tp) { return tp === 'L' || tp === 'R' || tp === 'EN'; }
-    i = 0;
-    while (i < n) {
-      if (!isNeutral(types[i])) { i++; continue; }
-      var start = i;
-      while (i < n && isNeutral(types[i])) i++;
-      var lead = 'R';
-      for (var a = start - 1; a >= 0; a--) {
-        if (isStrong(types[a])) { lead = types[a] === 'EN' ? 'L' : types[a]; break; }
-      }
-      var trail = 'R';
-      for (var b = i; b < n; b++) {
-        if (isStrong(types[b])) { trail = types[b] === 'EN' ? 'L' : types[b]; break; }
-      }
-      var resolved = (lead === trail) ? lead : 'R';
-      for (var c = start; c < i; c++) types[c] = resolved;
-    }
-    var levels = types.map(function (tp) {
-      if (tp === 'L' || tp === 'EN') return 2;
-      return 1;
-    });
-    function reverseRange(lo, hi) {
-      while (lo < hi) {
-        var tc = chars[lo];
-        chars[lo] = chars[hi];
-        chars[hi] = tc;
-        var tl = levels[lo];
-        levels[lo] = levels[hi];
-        levels[hi] = tl;
-        lo++;
-        hi--;
-      }
-    }
-    var maxLevel = 2;
-    for (var lvl = maxLevel; lvl >= 1; lvl--) {
-      i = 0;
-      while (i < n) {
-        if (levels[i] < lvl) { i++; continue; }
-        var from = i;
-        while (i < n && levels[i] >= lvl) i++;
-        reverseRange(from, i - 1);
-      }
-    }
-    for (i = 0; i < n; i++) {
-      if (levels[i] % 2 === 1 && MIRROR[chars[i]]) chars[i] = MIRROR[chars[i]];
-    }
-    return chars.join('');
+    return String(text == null ? '' : text);
   }
 
   function wrapLogical(doc, text, maxWidth) {
@@ -218,21 +171,18 @@
   }
 
   function wrapToVisual(doc, text, maxWidth, rtl) {
-    var logical = wrapLogical(doc, String(text || ''), maxWidth);
-    if (!rtl) return logical;
-    return logical.map(function (line) { return toVisual(line, true); });
+    return wrapLogical(doc, String(text || ''), maxWidth);
   }
 
   function truncateToWidth(doc, text, maxWidth, rtl) {
     text = String(text || '');
-    var visual = toVisual(text, rtl);
-    if (doc.getTextWidth(visual) <= maxWidth) return visual;
+    if (doc.getTextWidth(text) <= maxWidth) return text;
     var ell = '…';
     var logical = text;
-    while (logical && doc.getTextWidth(toVisual(logical + ell, rtl)) > maxWidth) {
+    while (logical && doc.getTextWidth(logical + ell) > maxWidth) {
       logical = logical.slice(0, -1);
     }
-    return toVisual(logical ? logical + ell : ell, rtl);
+    return logical ? logical + ell : ell;
   }
 
   function arrayBufferToBase64(buffer) {
@@ -316,7 +266,7 @@
     var rtl = !!opts.rtl;
     var align = rtl ? 'right' : 'left';
     var tagline = opts.tagline || (rtl ? BRAND_TAGLINE_HE : BRAND_TAGLINE);
-    if (rtl) tagline = toVisual(tagline, true);
+    if (rtl) installRtlPainter(doc);
 
     // shield emblem + wordmark + tagline
     var textX = rtl ? (pw - m) : m;
@@ -392,6 +342,7 @@
     var pageLabel = opts.pageLabel || 'Page';
     var pageOf = opts.pageOf || 'of';
     var pageCount = doc.getNumberOfPages();
+    if (rtl) installRtlPainter(doc);
 
     for (var p = 1; p <= pageCount; p++) {
       doc.setPage(p);
@@ -436,10 +387,7 @@
           noteX = rtl ? (pw - m - 15) : (m + 15);
         } catch (e) { noteX = rtl ? (pw - m) : m; }
       }
-      var pageLogical = rtl
-        ? (pageLabel + ' ' + p + ' ' + pageOf + ' ' + pageCount)
-        : (pageLabel + ' ' + p + ' ' + pageOf + ' ' + pageCount);
-      var pageText = toVisual(pageLogical, rtl);
+      var pageText = pageLabel + ' ' + p + ' ' + pageOf + ' ' + pageCount;
       doc.text(
         truncateToWidth(doc, note, pw - m * 2 - 80, rtl),
         noteX,
@@ -468,6 +416,8 @@
     applyDocumentFont: applyDocumentFont,
     letterhead: letterhead,
     finalize: finalize,
+    installRtlPainter: installRtlPainter,
+    RTL_TEXT_OPTIONS: RTL_TEXT_OPTIONS,
     toVisual: toVisual,
     wrapToVisual: wrapToVisual
   };

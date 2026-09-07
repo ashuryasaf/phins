@@ -60,11 +60,27 @@ def test_pdf_brand_helper_exists_with_brand_identity():
     # public API used by the generators
     for api in ("letterhead", "finalize", "preload", "PhinsPdfBrand",
                 "preloadDocumentFonts", "applyDocumentFont",
-                "toVisual", "wrapToVisual"):
+                "toVisual", "wrapToVisual", "installRtlPainter"):
         assert api in js, f"helper missing API {api}"
     # chrome-only contract stated in the module
     assert "chrome ONLY" in js
     assert "/fonts/DejaVuSans.ttf" in js
+
+
+def test_hebrew_pdf_uses_jspdf_bidi_on_logical_copy():
+    """jsPDF already bidis; pre-reversing Hebrew flips MGA/TAM and the footer."""
+    js = _read(STATIC / "phins-pdf-brand.js")
+    lab = _read(STATIC / "phins-scenario-lab-pdf.js")
+    assert "isInputVisual: false" in js
+    assert "isOutputVisual: true" in js
+    assert "isInputRtl: true" in js
+    assert "installRtlPainter" in js
+    assert "do not pre-reverse" in js
+    assert "reverseRange" not in js
+    assert "brand.installRtlPainter(doc)" in lab
+    assert "מודל MGA" in lab
+    assert "תמונת TAM" in lab
+    assert "מעבדת תרחישים" in lab
 
 
 def test_pitch_dashboard_loads_brand_helper():
