@@ -610,6 +610,9 @@ def test_permissions_policy_blocks_sensitive_features():
     # "not-allowed" for every user.
     assert "microphone=(self)" in PERMISSIONS_POLICY
     assert "microphone=()" not in PERMISSIONS_POLICY.replace("microphone=(self)", "")
+    # Same-origin muted Solutions theaters must be allowed to autoplay on iOS.
+    assert "autoplay=(self)" in PERMISSIONS_POLICY
+    assert "autoplay=()" not in PERMISSIONS_POLICY.replace("autoplay=(self)", "")
 
 
 # ---------------------------------------------------------------------------

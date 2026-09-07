@@ -15460,6 +15460,14 @@ For claims or questions, please contact:
             # Static JSON assets (e.g. /locales/he.json i18n dictionaries)
             # must carry their real type under nosniff.
             self.send_header('Content-Type', 'application/json; charset=utf-8')
+        elif path.endswith('.mp4'):
+            # iOS Safari refuses to decode MP4s served as octet-stream when
+            # X-Content-Type-Options: nosniff is set (Solutions theaters).
+            self.send_header('Content-Type', 'video/mp4')
+        elif path.endswith('.webm'):
+            self.send_header('Content-Type', 'video/webm')
+        elif path.endswith('.mov'):
+            self.send_header('Content-Type', 'video/quicktime')
         else:
             self.send_header('Content-Type', 'application/octet-stream')
 
@@ -15480,6 +15488,62 @@ For claims or questions, please contact:
             self.send_header('Pragma', 'no-cache')
             self.send_header('Expires', '0')
         self.end_headers()
+
+    def _serve_media_file(self, file_path: str) -> None:
+        """Serve MP4/WebM with a real media type, Content-Length, and Range.
+
+        iOS Safari (and Android Chrome WebView) will not play theater clips
+        without ``video/mp4`` plus byte-range support. Full-file 200s without
+        ``Accept-Ranges`` show a black or crossed-play frame on iPhone.
+        """
+        from security.headers import static_asset_security_headers
+
+        size = os.path.getsize(file_path)
+        lowered = file_path.lower()
+        if lowered.endswith('.webm'):
+            content_type = 'video/webm'
+        elif lowered.endswith('.mov'):
+            content_type = 'video/quicktime'
+        else:
+            content_type = 'video/mp4'
+
+        start = 0
+        end = size - 1 if size else 0
+        status = 200
+        range_hdr = (self.headers.get('Range') or self.headers.get('range') or '').strip()
+        if range_hdr.startswith('bytes=') and size > 0:
+            spec = range_hdr.split('=', 1)[1].split(',', 1)[0].strip()
+            first, _, last = spec.partition('-')
+            try:
+                if first:
+                    start = max(0, min(size - 1, int(first)))
+                if last:
+                    end = max(start, min(size - 1, int(last)))
+                status = 206
+            except ValueError:
+                start, end, status = 0, size - 1, 200
+
+        length = (end - start + 1) if size else 0
+        self.send_response(status)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Accept-Ranges', 'bytes')
+        self.send_header('Content-Length', str(length))
+        if status == 206:
+            self.send_header('Content-Range', f'bytes {start}-{end}/{size}')
+        for name, value in static_asset_security_headers():
+            self.send_header(name, value)
+        self.end_headers()
+        if length <= 0:
+            return
+        with open(file_path, 'rb') as fh:
+            fh.seek(start)
+            remaining = length
+            while remaining > 0:
+                chunk = fh.read(min(256 * 1024, remaining))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
 
     def do_HEAD(self):
         """Handle HEAD requests.
@@ -31120,6 +31184,9 @@ For claims or questions, please contact:
 
         if os.path.isfile(file_path):
             try:
+                if file_path.lower().endswith(('.mp4', '.webm', '.mov')):
+                    self._serve_media_file(file_path)
+                    return
                 self._set_file_headers(file_path)
                 if file_path.endswith('.html'):
                     with open(file_path, 'r', encoding='utf-8') as fh:

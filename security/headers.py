@@ -53,7 +53,7 @@ HTML_CSP = (
 # getUserMedia call fail with "not-allowed" regardless of user consent.
 PERMISSIONS_POLICY = (
     "accelerometer=(), "
-    "autoplay=(), "
+    "autoplay=(self), "
     "camera=(), "
     "cross-origin-isolated=(), "
     "display-capture=(), "
