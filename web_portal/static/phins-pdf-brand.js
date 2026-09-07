@@ -26,7 +26,7 @@
   var GREY = [91, 107, 130];    // #5b6b82 letterhead grey
   var BRAND_NAME = 'PHINS';
   var BRAND_TAGLINE = 'Personal Health Insurance & Savings · AI-Operated Insurance Platform';
-  var BRAND_TAGLINE_HE = 'פלטפורמת ביטוח מופעלת-AI · ביטוח בריאות אישי וחיסכון';
+  var BRAND_TAGLINE_HE = 'פלטפורמת ביטוח מופעלת־AI · ביטוח בריאות אישי וחיסכון';
   var LOGO_URL = '/phins-logo.png';
   var FONT_REGULAR_URL = '/fonts/DejaVuSans.ttf';
   var FONT_BOLD_URL = '/fonts/DejaVuSans-Bold.ttf';
@@ -82,7 +82,7 @@
     if (c >= 0x0590 && c <= 0x05FF) return 'R';
     if ((c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A)) return 'L';
     if (c >= 0x30 && c <= 0x39) return 'EN';
-    if (ch === '+' || ch === '-') return 'ES';
+    if (ch === '+' || ch === '-' || ch === '\u05BE') return 'ES';
     if (ch === '%' || ch === '$' || ch === '#' || ch === '₪' || ch === '¢' || ch === '€' || ch === '£') return 'ET';
     if (ch === ',' || ch === '.' || ch === ':' || ch === '/') return 'CS';
     if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || c === 0x00A0) return 'WS';
@@ -183,8 +183,10 @@
   }
 
   /**
-   * jsPDF 2.x always bidis in the postProcessText plugin. Undo that pass so
-   * our visual-order Hebrew is painted as-is (MGA/TAM stay MGA/TAM).
+   * jsPDF 2.x always bidis in the postProcessText plugin, *after* Identity-H
+   * hex encoding. Restoring the original Unicode string here would undo the
+   * font encoding and paint blank pages. Force matching visual/RTL flags
+   * instead so the bidi engine is a no-op and our toVisual() glyphs stay put.
    */
   function disableJsPdfAutoBidi(doc) {
     var events = doc && doc.internal && doc.internal.events;
@@ -194,11 +196,12 @@
     events.__phinsBidiOff = true;
     var origPublish = events.publish.bind(events);
     events.publish = function (topic, payload) {
-      if (topic === 'postProcessText' && payload && payload.text != null) {
-        var original = payload.text;
-        origPublish(topic, payload);
-        payload.text = original;
-        return;
+      if (topic === 'postProcessText' && payload) {
+        payload.options = payload.options || {};
+        payload.options.isInputVisual = true;
+        payload.options.isOutputVisual = true;
+        payload.options.isInputRtl = true;
+        payload.options.isOutputRtl = true;
       }
       return origPublish(topic, payload);
     };

@@ -53,7 +53,7 @@ def test_pdf_brand_helper_exists_with_brand_identity():
     assert "/phins-logo.png" in js
     assert "PHINS" in js
     assert BRAND_TAGLINE in js
-    assert "פלטפורמת ביטוח מופעלת-AI" in js
+    assert "פלטפורמת ביטוח מופעלת־AI" in js
     # gold / navy brand palette (RGB of #c9a04e and #0e2f63)
     assert "201, 160, 78" in js
     assert "14, 47, 99" in js
@@ -74,14 +74,18 @@ def test_hebrew_pdf_converts_rtl_once_and_keeps_latin_acronyms():
     assert "function toVisual" in js
     assert "function reverseRange" in js
     assert "disableJsPdfAutoBidi" in js
-    assert "payload.text = original" in js
-    assert "postProcessText" in js
+    assert "isInputVisual = true" in js
+    assert "isOutputVisual = true" in js
+    assert "isInputRtl = true" in js
+    assert "isOutputRtl = true" in js
+    assert "payload.text = original" not in js
     assert "installRtlPainter" in js
     assert "brand.installRtlPainter(doc)" in lab
     assert "brand.toVisual(text, true)" in lab
     assert "מודל MGA" in lab
     assert "תמונת TAM" in lab
-    assert "מעבדת תרחישים" in lab
+    assert "כ־MGA" in lab
+    assert "ה־TAM" in lab
     assert "isInputRtl: true" not in js
 
 
@@ -111,9 +115,12 @@ const samples = {
   tam: tv('תמונת TAM', true),
   mgaHyphen: tv('כ-MGA', true),
   tamHyphen: tv('ה-TAM', true),
+  mgaMaqaf: tv('כ־MGA', true),
+  tamMaqaf: tv('ה־TAM', true),
   ai: tv('מופעלת-AI', true),
+  aiMaqaf: tv('מופעלת־AI', true),
   footer: tv('פינס — מעבדת תרחישים · מסמך משקיעים חסוי', true),
-  tagline: tv('פלטפורמת ביטוח מופעלת-AI · ביטוח בריאות אישי וחיסכון', true)
+  tagline: tv('פלטפורמת ביטוח מופעלת־AI · ביטוח בריאות אישי וחיסכון', true)
 };
 console.log(JSON.stringify(samples));
 """
@@ -129,7 +136,10 @@ console.log(JSON.stringify(samples));
     assert "TAM" in samples["tam"] and "MAT" not in samples["tam"]
     assert "MGA" in samples["mgaHyphen"] and "AGM" not in samples["mgaHyphen"]
     assert "TAM" in samples["tamHyphen"] and "MAT" not in samples["tamHyphen"]
+    assert "MGA" in samples["mgaMaqaf"] and "AGM" not in samples["mgaMaqaf"]
+    assert "TAM" in samples["tamMaqaf"] and "MAT" not in samples["tamMaqaf"]
     assert "AI" in samples["ai"] and "IA" not in samples["ai"]
+    assert "AI" in samples["aiMaqaf"] and "IA" not in samples["aiMaqaf"]
     # Visual-order paint: Hebrew runs reverse, Latin stays.
     assert "סניפ" in samples["footer"]
     assert "פינס" not in samples["footer"]
