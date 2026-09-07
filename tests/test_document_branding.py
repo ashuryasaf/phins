@@ -71,11 +71,11 @@ def test_hebrew_pdf_uses_jspdf_bidi_on_logical_copy():
     """jsPDF already bidis; pre-reversing Hebrew flips MGA/TAM and the footer."""
     js = _read(STATIC / "phins-pdf-brand.js")
     lab = _read(STATIC / "phins-scenario-lab-pdf.js")
-    assert "isInputVisual: false" in js
+    assert "isInputVisual: true" in js
     assert "isOutputVisual: true" in js
-    assert "isInputRtl: true" in js
+    assert "isInputRtl: true" not in js
     assert "installRtlPainter" in js
-    assert "do not pre-reverse" in js
+    assert "do not pre-reverse" in js or "painted as authored" in js
     assert "reverseRange" not in js
     assert "brand.installRtlPainter(doc)" in lab
     assert "מודל MGA" in lab

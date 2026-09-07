@@ -72,18 +72,15 @@
   }
 
   /**
-   * jsPDF 2.x always runs Unicode bidi in postProcessText. Default flags treat
-   * input as *visual*, so pre-reversing Hebrew (and then letting jsPDF bidi it
-   * again) paints reversed letters and flipped Latin (MGA→AGM, TAM→MAT, AI→IA).
-   * Pass logical copy with these flags so jsPDF converts logical RTL → visual
-   * LTR paint once. Latin tokens stay LTR.
+   * jsPDF 2.x always runs Unicode bidi in postProcessText. With default flags
+   * it auto-detects Hebrew and reorders glyphs, which paints backwards copy
+   * (סניפ) and flipped Latin (MGA→AGM, TAM→MAT, AI→IA). Passing matching
+   * visual-in / visual-out flags is a no-op, so logical Hebrew and Latin
+   * tokens are painted as authored. Do not set isInputRtl here.
    */
   var RTL_TEXT_OPTIONS = {
-    isInputVisual: false,
-    isOutputVisual: true,
-    isInputRtl: true,
-    isOutputRtl: false,
-    isSymmetricSwapping: true
+    isInputVisual: true,
+    isOutputVisual: true
   };
 
   function paintOpts(rtl, extra) {
