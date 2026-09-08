@@ -480,7 +480,15 @@
         ph - 18,
         rtl ? { align: 'right' } : undefined
       );
-      doc.text(pageText, rtl ? m : (pw - m), ph - 18, { align: rtl ? 'left' : 'right' });
+      // Page labels mix Hebrew and digits. With jsPDF auto-bidi off, logical
+      // "עמוד 1 מתוך 6" paints LTR and reads as "6 ךותמ 1 דומע". Convert to
+      // visual order once, same as the footer note.
+      doc.text(
+        toVisual(pageText, rtl),
+        rtl ? m : (pw - m),
+        ph - 18,
+        { align: rtl ? 'left' : 'right' }
+      );
     }
 
     doc.setTextColor(0, 0, 0);

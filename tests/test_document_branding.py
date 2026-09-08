@@ -82,6 +82,7 @@ def test_hebrew_pdf_converts_rtl_once_and_keeps_latin_acronyms():
     assert "installRtlPainter" in js
     assert "brand.installRtlPainter(doc)" in lab
     assert "brand.toVisual(text, true)" in lab
+    assert "toVisual(pageText, rtl)" in js
     assert "מודל MGA" in lab
     assert "תמונת TAM" in lab
     assert "כ־MGA" in lab
@@ -120,7 +121,8 @@ const samples = {
   ai: tv('מופעלת-AI', true),
   aiMaqaf: tv('מופעלת־AI', true),
   footer: tv('פינס — מעבדת תרחישים · מסמך משקיעים חסוי', true),
-  tagline: tv('פלטפורמת ביטוח מופעלת־AI · ביטוח בריאות אישי וחיסכון', true)
+  tagline: tv('פלטפורמת ביטוח מופעלת־AI · ביטוח בריאות אישי וחיסכון', true),
+  page: tv('עמוד 1 מתוך 6', true)
 };
 console.log(JSON.stringify(samples));
 """
@@ -145,6 +147,12 @@ console.log(JSON.stringify(samples));
     assert "פינס" not in samples["footer"]
     assert "MGA" not in samples["footer"]
     assert "AI" in samples["tagline"] and "IA" not in samples["tagline"]
+    # Page "עמוד 1 מתוך 6" must paint visual so it does not read as ךותמ / דומע.
+    assert "דומע" in samples["page"]
+    assert "ךותמ" in samples["page"]
+    assert "1" in samples["page"] and "6" in samples["page"]
+    assert "עמוד" not in samples["page"]
+    assert "מתוך" not in samples["page"]
 
 
 
