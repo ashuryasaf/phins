@@ -55,7 +55,7 @@
       addressable: 'Addressable lives',
       attach: 'Attach rate',
       annualPremium: 'Annual premium',
-      pool: 'Reported premium pool',
+      pool: 'Premium pool (lab calibration)',
       share: 'PHINS target share',
       cession: 'Cession / quota share',
       loss: 'Expected loss ratio',
@@ -154,7 +154,7 @@
       layerA: 'Layer A — Locked public evidence',
       layerABody: 'Official quotes, titles and URLs, copied in the source language. Never rewritten by lab sliders or by the Israel book.',
       layerB: 'Layer B — Adjustable TAM snapshot (this lab)',
-      layerBBody: 'Lives mode: addressable lives × attach rate × planning premium. Premium-share mode: reported pool × PHINS target share. Israel TAM default and the live formula are tabulated below. This is a calibration, not the investor-meeting book.',
+      layerBBody: 'Lives mode: addressable lives × attach rate × planning premium. Premium-share mode: lab premium pool × PHINS target share. Israel TAM default and the live formula are tabulated below. This is a calibration, not the investor-meeting book.',
       layerC: 'Layer C — Pinned Israel book (Investor Meeting)',
       layerCBody: 'Pinned Investor Meeting identity. Average in-force × table risk premium = risk GWP. Take rates, in-force counts, and the sales clock are tabulated below and do not follow lab sliders.',
       ilIdentity: 'Israel book identity (Layer C) — values only',
@@ -202,11 +202,11 @@
       metric: 'מדד',
       mode: 'בסיס התרחיש',
       livesMode: 'תרחיש לפי מספר מבוטחים',
-      premiumMode: 'תרחיש לפי חלק ממאגר פרמיה מדווח',
+      premiumMode: 'תרחיש לפי חלק ממאגר פרמיה לתכנון',
       addressable: 'אוכלוסיית יעד',
       attach: 'שיעור החדרה',
       annualPremium: 'פרמיה שנתית לתכנון',
-      pool: 'מאגר פרמיה מדווח',
+      pool: 'מאגר פרמיה לתכנון (מעבדה)',
       share: 'חלק יעד של פינס',
       cession: 'שיעור מסירה לביטוח משנה (השתתפות יחסית)',
       loss: 'יחס תביעות צפוי',
@@ -305,7 +305,7 @@
       layerA: 'שכבה א — ראיות ציבוריות נעולות',
       layerABody: 'ציטוטים, כותרות וכתובות רשמיות, בשפת המקור. המעבדה ותיק ישראל אינם משכתבים אותן.',
       layerB: 'שכבה ב — תמונת TAM ניתנת לכיול (מעבדה זו)',
-      layerBBody: 'תרחיש מבוטחים: אוכלוסיית יעד × שיעור החדרה × פרמיה שנתית לתכנון. תרחיש מאגר: מאגר פרמיה מדווח × חלק יעד. ברירת המחדל לישראל והנוסחה החיה מפורטות בטבלאות הערכים שלהלן. זה כיול TAM, לא תיק מפגש המשקיעים.',
+      layerBBody: 'תרחיש מבוטחים: אוכלוסיית יעד × שיעור החדרה × פרמיה שנתית לתכנון. תרחיש מאגר: מאגר פרמיה לתכנון × חלק יעד. ברירת המחדל לישראל והנוסחה החיה מפורטות בטבלאות הערכים שלהלן. זה כיול TAM, לא תיק מפגש המשקיעים.',
       layerC: 'שכבה ג — תיק ישראל הקבוע (מפגש המשקיעים)',
       layerCBody: 'זהות תכנונית קבועה ממפגש המשקיעים. ממוצע פוליסות בתוקף כפול פרמיית הסיכון הטבלאית שווה לפרמיית הסיכון ברוטו. שיעורי החלוקה, ספירת הפוליסות ושעון המכירות מופיעים בטבלת הערכים — לא בפסקת הפרוזה. אינה נגררת אחרי מחווני המעבדה.',
       ilIdentity: 'זהות תיק ישראל (שכבה ג) — ערכים בלבד',
@@ -958,20 +958,21 @@
     }
 
     heading(C.assumptions, 12);
-    table(
-      [C.field, C.value],
-      [
-        [C.mode, payload.mode === 'premium' ? C.premiumMode : C.livesMode],
-        [C.addressable, integer(assumptions.addressableLives)],
-        [C.attach, pct(assumptions.attachRate)],
-        [C.annualPremium, money(assumptions.annualPremium, currency)],
-        [C.pool, money(assumptions.marketPremiumPool, currency)],
-        [C.share, pct(assumptions.targetShare)],
-        [C.cession, pct(assumptions.cessionRate)],
-        [C.loss, pct(assumptions.lossRatio)],
-        [C.expense, pct(assumptions.expenseRatio)]
-      ]
-    );
+    var assumptionRows = [
+      [C.mode, payload.mode === 'premium' ? C.premiumMode : C.livesMode]
+    ];
+    if (payload.mode === 'premium') {
+      assumptionRows.push([C.pool, money(assumptions.marketPremiumPool, currency)]);
+      assumptionRows.push([C.share, pct(assumptions.targetShare)]);
+    } else {
+      assumptionRows.push([C.addressable, integer(assumptions.addressableLives)]);
+      assumptionRows.push([C.attach, pct(assumptions.attachRate)]);
+      assumptionRows.push([C.annualPremium, money(assumptions.annualPremium, currency)]);
+    }
+    assumptionRows.push([C.cession, pct(assumptions.cessionRate)]);
+    assumptionRows.push([C.loss, pct(assumptions.lossRatio)]);
+    assumptionRows.push([C.expense, pct(assumptions.expenseRatio)]);
+    table([C.field, C.value], assumptionRows);
 
     heading(C.outputs, 12);
     kpiBoxes([
