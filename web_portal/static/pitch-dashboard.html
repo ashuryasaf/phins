@@ -5323,7 +5323,7 @@
                 <input type="radio" name="scenario-mode" value="premium">
                 <div>
                   <strong>Premium-share mode</strong>
-                  <span>Reported premium pool × target share</span>
+                  <span>Lab premium pool × target share</span>
                 </div>
               </label>
             </div>
@@ -5348,8 +5348,9 @@
 
           <div id="premium-controls" hidden>
             <div class="control-group">
-              <label for="market-premium-pool">Reported premium pool</label>
+              <label for="market-premium-pool">Premium pool (lab calibration)</label>
               <input id="market-premium-pool" type="number" min="0" step="1">
+              <div class="helper-note">Scenario input for premium-share mode. Not a locked public statistic unless the market note says otherwise.</div>
             </div>
             <div class="control-group">
               <label for="target-share">PHINS target share (%)</label>
@@ -6353,14 +6354,15 @@
           addressableLives: 5000000,
           attachRate: 2.4,
           annualPremium: 4518,
-          marketPremiumPool: 300000000,
+          // Lab calibration only: 5,000,000 × 2.4% × ₪4,518. Not a reported public pool.
+          marketPremiumPool: 542160000,
           targetShare: 10.0,
           cessionRate: 18.0,
           lossRatio: 62.0,
           expenseRatio: 18.0,
           takeRate: 25.0
         },
-        basisNote: "Default lives basis uses Israel's reported private LTC insured population as a conservative current-market proxy rather than total population. Annual premium defaults to the canonical Israel book specimen ILS 4,518 (published tables) — the same planning basis as the Investor Meeting section. The 2027–2029 persistency book (24,000 / 94,080 / 230,554 EoY) is a separate pinned identity, not this TAM attach-rate snapshot.",
+        basisNote: "Default lives basis uses Israel's reported private LTC insured population as a conservative current-market proxy rather than total population. Annual premium defaults to the canonical Israel book specimen ILS 4,518 (published tables) — the same planning basis as the Investor Meeting section. The 2027–2029 persistency book (24,000 / 94,080 / 230,554 EoY) is a separate pinned identity, not this TAM attach-rate snapshot. Premium-share mode, if selected, uses the current lives TAM (5,000,000 × 2.4% × ₪4,518 = ₪542,160,000) as a lab calibration — not a reported public premium statistic.",
         reinsuranceNote: "Use quoted treaty terms, not market folklore. Public Israeli LTC cession disclosure was not located in the current evidence set.",
         interpretationNote: "The model reflects a severity-layer attachment on top of an already educated LTC market."
       },
@@ -7035,7 +7037,7 @@
         const targetShare = numericValue(controls.targetShare);
 
         grossWrittenPremium = marketPremiumPool * targetShare / 100;
-        basisDescription = `${formatMoney(marketPremiumPool, currency)} reported premium pool × ${formatPercent(targetShare)} PHINS share`;
+        basisDescription = `${formatMoney(marketPremiumPool, currency)} lab premium pool × ${formatPercent(targetShare)} PHINS share`;
         grossFoot = "Premium-share scenario on reported market pool";
       }
 
@@ -7080,7 +7082,7 @@
 
       outputs.formulaBox.textContent = mode === "lives"
         ? `Gross written premium = addressable lives × attach rate × annual premium. Net retained premium = GWP − ceded premium.`
-        : `Gross written premium = reported premium pool × PHINS target share. Net retained premium = GWP − ceded premium.`;
+        : `Gross written premium = lab premium pool × PHINS target share. Net retained premium = GWP − ceded premium.`;
 
       outputs.modeNote.textContent = `${mode === "lives" ? "Lives mode" : "Premium-share mode"} currently uses: ${basisDescription}.`;
       outputs.reinsuranceNote.textContent = region.reinsuranceNote;

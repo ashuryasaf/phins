@@ -88,9 +88,17 @@ def test_israel_scenario_default_premium_is_published_tables():
     assert "annualPremium: 4518" in israel
     assert "annualPremium: 2400" not in israel
     assert "takeRate: 25.0" in israel
+    # Lives TAM = 5,000,000 × 2.4% × ₪4,518. The old ₪300M pool was a stale round of
+    # the previous ₪2,400 premium, not a public statistic.
+    assert "marketPremiumPool: 542160000" in israel
+    assert "marketPremiumPool: 300000000" not in israel
+    assert 5_000_000 * 0.024 * 4518 == 542_160_000
+    assert "lab calibration" in israel
+    assert "not a reported public premium statistic" in israel
     # Public evidence layer is unchanged (Taub / NII / CBS quotes).
     assert "346,000 elderly people" in israel
     assert "more than 5.0 million people held private LTC cover" in israel
+    assert "Public LTC benefit spend exceeds NIS 16 billion annually" in israel
 
 
 def test_scenario_lab_pdf_is_bilingual_branded_and_emoji_free():
@@ -139,6 +147,11 @@ def test_hebrew_scenario_lab_pdf_uses_regulator_register_and_live_formula():
     assert "מילון מונחים במסמך זה" in lab
     assert "MARKET_COPY_HE" in lab
     assert "formulaRows" in lab
+    assert "assumptionRows" in lab
+    assert "payload.mode === 'premium'" in lab
+    assert "מאגר פרמיה לתכנון (מעבדה)" in lab
+    assert "מאגר פרמיה מדווח" not in lab
+    assert "Premium pool (lab calibration)" in lab
     assert "ilIdentity" in lab
     assert "tamDefaultVal" in lab
     assert "never pastes English" in lab
