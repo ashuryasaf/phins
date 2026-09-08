@@ -185,6 +185,10 @@ def test_scenario_lab_ui_exposes_hebrew_and_readiness_surfaces():
     assert "הורדת PDF (עברית)" in html
     assert 'id="invdocs-download-lab-en"' in html
     assert 'id="invdocs-download-lab-he"' in html
+    assert 'id="download-pdf-reg-en"' in html
+    assert 'id="download-pdf-reg-he"' in html
+    assert 'id="invdocs-download-lab-reg-en"' in html
+    assert 'id="invdocs-download-lab-reg-he"' in html
     assert 'id="readiness-bar-chart"' in html
     assert 'id="il-book-panel"' in html
     assert 'id="phins-take-card"' in html
@@ -221,3 +225,47 @@ def test_sweden_replaces_albania_on_scenario_lab():
     assert "sweden: 'שוודיה'" in lab
     assert "albania" not in lab
     assert "sweden: 'stageTopup'" in lab
+
+
+def test_regulator_brief_is_research_only_without_business_plan():
+    lab = _lab()
+    html = _html()
+    assert "opts.variant === 'regulator'" in lab
+    assert "phins-scenario-lab-readiness-" in lab
+    assert "PHINS — Market-readiness brief for the regulator" in lab
+    assert "פינס — תזכיר מוכנות שווקים לרגולטור" in lab
+    assert "no business plan attached" in lab
+    assert "ללא תכנית עסקית" in lab
+    assert "readinessMethod" in lab
+    assert "ilBook = isRegulator ? null" in lab
+    start = lab.index("if (isRegulator) {")
+    end = lab.index("} else {", start)
+    brief = lab[start:end]
+    assert "C.purpose" in brief
+    assert "C.readiness" in brief
+    assert "C.evidence" in brief
+    assert "C.sources" in brief
+    assert "C.thesis" in brief
+    assert "[C.seed," not in brief
+    assert "[C.pre," not in brief
+    assert "[C.post," not in brief
+    assert "ilBook." not in brief
+    assert "formulaRows" not in brief
+    assert "C.assumptions" not in brief
+    assert "C.outputs" not in brief
+    assert "C.mgaOverlay" not in brief
+    assert "C.story" not in brief
+    assert "C.priority" not in brief
+    assert "grossWrittenPremium" not in brief
+    assert "C.glossGwp" not in brief
+    assert "C.glossAdl" in brief
+    assert 'id="download-pdf-reg-en"' in html
+    assert 'id="download-pdf-reg-he"' in html
+    assert 'id="invdocs-download-lab-reg-en"' in html
+    assert 'id="invdocs-download-lab-reg-he"' in html
+    assert 'variant: "regulator"' in html
+    assert "ilBook: isRegulator ? null : IL_PLANNING_BOOK" in html
+    # Public evidence columns stay in source language on the regulator path too.
+    copy_he = lab.split("var REG_COPY = {", 1)[1].split("var MARKET_NAME_HE", 1)[0]
+    assert "346,000 elderly people" not in copy_he
+    assert "אין תכנית עסקית" in copy_he

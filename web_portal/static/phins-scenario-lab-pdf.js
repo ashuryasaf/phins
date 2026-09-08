@@ -1,9 +1,12 @@
 /* ============================================================================
  * PHINS Scenario Lab — branded investor / regulator PDF generator
  * ----------------------------------------------------------------------------
- * Renders the live Scenario Lab snapshot (assumptions + modeled outputs) plus
- * the on-page investor story, market-readiness scores, and — where relevant —
- * the canonical Israel book from the Investor Meeting section.
+ * Full pack (default): live Scenario Lab snapshot, investor story, readiness
+ * scores, and — where passed in — the canonical Israel book.
+ *
+ * Regulator brief (opts.variant === 'regulator'): research only. Product frame,
+ * market-readiness scores, public-evidence matrix, and source register.
+ * Never attaches a business plan, Israel book, seed/valuation, or lab TAM/GWP.
  *
  * Data-integrity contract:
  *   • Public evidence strings are copied verbatim from marketData / sourceRegistry.
@@ -333,6 +336,61 @@
     }
   };
 
+  var REG_COPY = {
+    en: {
+      title: 'PHINS — Market-readiness brief for the regulator',
+      subtitle: 'Public evidence and market-readiness scores · research only · no business plan attached',
+      confidential: 'Research brief for a supervisory authority. Not a filing, not a quote, not a business plan, and not a commitment.',
+      footer: 'PHINS — Market-readiness brief · research only',
+      integrityBanner: 'Data integrity: this brief contains only the locked public-evidence layer and an internal readiness score derived from it. It does not attach a business plan, the Israel book, a fundraising round, a valuation, or the Scenario Lab TAM snapshot.',
+      audience: 'Audience: supervisory / licensing authority — market-readiness research',
+      purpose: 'Purpose of this brief',
+      purposeLead: 'Show the authority the research basis for market readiness — demand signals, premium and benefit anchors, reinsurance signals, and the product frame — without mixing in commercial planning layers.',
+      scopeItem: 'Scope',
+      scopeDetail: 'What this brief is',
+      scopeIn: 'In scope',
+      scopeInBody: 'Product frame (severity trigger, home-care, vocational rehabilitation, treaty wording); internal market-readiness scores; public-evidence matrix in the source language; source register.',
+      scopeOut: 'Out of scope',
+      scopeOutBody: 'No business plan. No Israel planning book. No seed round, no pre/post-money valuation, no Scenario Lab TAM snapshot, no modelled GWP, and no investor ranking charts.',
+      readinessMethod: 'Readiness = 0.4 × operating fit + 0.3 × private access + 0.3 × demand, from the existing scorecard. It is an internal composite, not a reported public statistic and not a supervisory rating.',
+      glossAdl: 'Permanent 3+ ADL',
+      glossAdlBody: 'A benefit paid when the insured is permanently dependent in three or more activities of daily living, with an optional severe cognitive trigger. Pure risk: no savings, no cash value, no surrender value.',
+      glossEvidence: 'Public evidence layer',
+      glossEvidenceBody: 'Official quotes in the source language, with title, source type, evidence strength, and URL. Lab sliders do not rewrite them.',
+      glossReady: 'Market-readiness score',
+      glossReadyBody: 'Internal composite of operating fit, private access, and demand. Not a reported public statistic and not a rating by the authority.',
+      glossSource: 'Source language',
+      glossSourceBody: 'Demand, premium, and reinsurance quotes stay in the official wording. The PHINS read-through column is in the document language.',
+      close: 'This brief is working research for a supervisor. It is not a business plan, not a licensing application, and not a substitute for an actuarial filing or a live reinsurance quote.'
+    },
+    he: {
+      title: 'פינס — תזכיר מוכנות שווקים לרגולטור',
+      subtitle: 'ראיות ציבוריות וציוני מוכנות שוק · מחקר בלבד · ללא תכנית עסקית',
+      confidential: 'תזכיר מחקר לרשות פיקוח. אינו בקשה, אינו הצעת מחיר, אינו תכנית עסקית ואינו התחייבות.',
+      footer: 'פינס — תזכיר מוכנות שווקים · מחקר בלבד',
+      integrityBanner: 'שלמות נתונים: תזכיר זה מכיל רק את שכבת הראיות הציבוריות הנעולות וציון מוכנות פנימי הנגזר ממנה. אין כאן תכנית עסקית, אין תיק ישראל, אין סבב גיוס, אין שווי, ואין תמונת TAM מהמעבדה.',
+      audience: 'קהל: רשות פיקוח / רישוי — מחקר מוכנות שווקים',
+      purpose: 'ייעוד התזכיר',
+      purposeLead: 'להציג לרשות את בסיס המחקר למוכנות שווקים — אותות ביקוש, עוגני פרמיה והטבה, אותות ביטוח משנה, ומסגרת המוצר — בלי לצרף תכנית עסקית ובלי לערבב שכבות תכנון מסחריות.',
+      scopeItem: 'היקף',
+      scopeDetail: 'מה נכלל ומה אינו נכלל',
+      scopeIn: 'נכלל',
+      scopeInBody: 'מסגרת המוצר (טריגר חומרה, טיפול ביתי, שיקום תעסוקתי, ניסוח לחוזה ביטוח משנה); ציון מוכנות שוק פנימי; מטריצת ראיות ציבוריות בשפת המקור; מרשם מקורות.',
+      scopeOut: 'לא נכלל',
+      scopeOutBody: 'אין תכנית עסקית. אין תיק ישראל. אין סבב גיוס, אין שווי לפני או אחרי השקעה, אין תמונת TAM מהמעבדה, אין GWP ממודל, ואין תרשימי דירוג משקיעים.',
+      readinessMethod: 'מוכנות = 0.4 × התאמה תפעולית + 0.3 × גישה פרטית + 0.3 × ביקוש, מלוח הניקוד הקיים. זה ציון פנימי מורכב, לא סטטיסטי ציבורי מדווח ולא דירוג של הרשות.',
+      glossAdl: 'נכות קבועה בטריגר 3+ פעולות יומיום',
+      glossAdlBody: 'הטבה המשולמת כאשר המבוטח תלוי באופן קבוע בשלוש פעולות יומיום או יותר, עם טריגר קוגניטיבי חמור אופציונלי. זה סיכון טהור: ללא חיסכון, ללא ערך פדיון וללא ערך מסולק.',
+      glossEvidence: 'שכבת ראיות ציבוריות',
+      glossEvidenceBody: 'ציטוטים רשמיים בשפת המקור, עם כותרת, סוג מקור, עוצמת ראיה וכתובת. מחווני המעבדה אינם משכתבים אותם.',
+      glossReady: 'ציון מוכנות שוק',
+      glossReadyBody: 'ציון פנימי מורכב מהתאמה תפעולית, גישה פרטית וביקוש. אינו סטטיסטי ציבורי מדווח ואינו דירוג של הרשות.',
+      glossSource: 'שפת מקור',
+      glossSourceBody: 'ציטוטי ביקוש, פרמיה וביטוח משנה נשמרים בניסוח הרשמי. עמודת המשמעות לפינס מנוסחת בשפת המסמך.',
+      close: 'תזכיר זה הוא מחקר עבודה לרשות. הוא אינו תכנית עסקית, אינו בקשת רישוי, ואינו מחליף הגשה אקטוארית או הצעת ביטוח משנה חיה.'
+    }
+  };
+
   var MARKET_NAME_HE = {
     israel: 'ישראל',
     usa: 'ארצות הברית',
@@ -510,12 +568,13 @@
     }
     var lang = opts.lang === 'he' ? 'he' : 'en';
     var rtl = lang === 'he';
-    var C = COPY[lang];
+    var isRegulator = opts.variant === 'regulator';
+    var C = Object.assign({}, COPY[lang], isRegulator ? (REG_COPY[lang] || {}) : {});
     var payload = opts.payload || {};
     var region = opts.region || {};
     var marketData = opts.marketData || [];
     var sourceRegistry = opts.sourceRegistry || {};
-    var ilBook = opts.ilBook || null;
+    var ilBook = isRegulator ? null : (opts.ilBook || null);
     var outputs = (payload.outputs) || opts.outputs || {};
     var assumptions = payload.assumptions || {};
     var printedAt = formatExportStamp(opts.printedAt || (payload && payload.exportedAt));
@@ -761,7 +820,11 @@
       tagline: rtl ? brand.BRAND_TAGLINE_HE : brand.BRAND_TAGLINE,
       title: title,
       subtitle: subtitle,
-      meta: [
+      meta: isRegulator ? [
+        stripMarks(C.confidential),
+        stripMarks(C.exported + ': ' + printedAt),
+        stripMarks(C.audience)
+      ] : [
         stripMarks(C.confidential),
         stripMarks(C.exported + ': ' + printedAt),
         stripMarks(C.selectedMarket + ': ' + marketName(region, lang) + ' · ' + currency)
@@ -769,6 +832,104 @@
     });
 
     band(C.integrityBanner);
+
+    if (isRegulator) {
+      heading(C.purpose, 12);
+      para(C.purposeLead, 8.5, 12, GREY);
+      table(
+        [C.scopeItem, C.scopeDetail],
+        [
+          [C.scopeIn, C.scopeInBody],
+          [C.scopeOut, C.scopeOutBody]
+        ]
+      );
+
+      heading(C.thesis, 12);
+      table(
+        [C.field, C.value],
+        [
+          [C.severity, C.severityBody],
+          [C.home, C.homeBody],
+          [C.vrTitle, C.vrBody],
+          [C.treaty, C.treatyBody]
+        ]
+      );
+      para(C.product, 8.5, 12);
+      para(C.vr, 8.5, 12);
+      para(C.dist, 8.5, 12);
+      para(C.actuarial, 8.5, 12);
+
+      heading(C.readiness, 12);
+      para(C.readinessSub, 8, 11, GREY);
+      para(C.readinessMethod, 8, 11, GREY);
+      marketData.forEach(function (row) {
+        var scores = row.investorScores || {};
+        hbar(marketName(row, lang), readinessOf(row), colorRgb(scores.color));
+      });
+      y += 6;
+      var readyRows = marketData.map(function (row) {
+        var scores = row.investorScores || {};
+        var stageKey = STAGE_BY_ID[row.id] || 'stageTopup';
+        return [
+          marketName(row, lang),
+          String(readinessOf(row)),
+          C[stageKey],
+          String(scores.fit || 0),
+          String(scores.demand || 0),
+          String(scores.privateAccess || 0)
+        ];
+      });
+      table(
+        [C.market, C.readinessScore, C.stage, C.fit, C.demand, C.privateAccess],
+        readyRows
+      );
+
+      heading(C.evidence, 12);
+      para(C.evidenceNote, 8, 11, GREY);
+      table(
+        [C.market, C.demandCol, C.premiumCol, C.reinsCol, C.readCol],
+        marketData.map(function (row) {
+          var copy = marketCopy(row, lang);
+          return [
+            marketName(row, lang),
+            stripMarks(row.demand),
+            stripMarks(row.premium),
+            stripMarks(row.reinsurance),
+            copy.insight
+          ];
+        }),
+        { 0: 62, 1: 112, 2: 112, 3: 112, 4: 112 }
+      );
+
+      heading(C.sources, 12);
+      table(
+        [C.sourceKey, C.sourceTitle, C.sourceType, C.sourceStrength, C.sourceUrl],
+        Object.keys(sourceRegistry).map(function (key) {
+          var src = sourceRegistry[key] || {};
+          return [
+            key,
+            stripMarks(src.title),
+            sourceTypeLabel(src.sourceType, lang),
+            evidenceStrengthLabel(src.evidenceStrength, lang),
+            src.url || ''
+          ];
+        }),
+        { 0: 56, 1: 132, 2: 56, 3: 72, 4: 174 }
+      );
+
+      heading(C.glossary, 12);
+      table(
+        [C.glossTerm, C.glossMeaning],
+        [
+          [C.glossAdl, C.glossAdlBody],
+          [C.glossEvidence, C.glossEvidenceBody],
+          [C.glossReady, C.glossReadyBody],
+          [C.glossSource, C.glossSourceBody]
+        ]
+      );
+
+      para(C.close, 8, 11, GREY);
+    } else {
 
     heading(C.dataMap, 12);
     para(C.dataMapLead, 8.5, 12, GREY);
@@ -994,6 +1155,7 @@
     );
 
     para(C.close, 8, 11, GREY);
+    }
 
     brand.finalize(doc, {
       margin: m,
@@ -1006,15 +1168,18 @@
     });
 
     var slug = String((region.name || 'market')).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'market';
-    var filename = 'phins-scenario-lab-' + slug + '-' + lang + '.pdf';
+    var filename = isRegulator
+      ? ('phins-scenario-lab-readiness-' + lang + '.pdf')
+      : ('phins-scenario-lab-' + slug + '-' + lang + '.pdf');
     doc.save(filename);
-    return { filename: filename, pages: doc.getNumberOfPages(), lang: lang };
+    return { filename: filename, pages: doc.getNumberOfPages(), lang: lang, variant: isRegulator ? 'regulator' : 'full' };
   }
 
   window.PhinsScenarioLabPdf = {
     generate: generate,
     readinessOf: readinessOf,
     COPY: COPY,
+    REG_COPY: REG_COPY,
     MARKET_COPY_HE: MARKET_COPY_HE
   };
 })();

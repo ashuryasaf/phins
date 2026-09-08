@@ -2182,11 +2182,13 @@
         <div style="background:linear-gradient(180deg,#f8fbff 0%,#fff 70%);border:2px solid var(--blue-mid);border-radius:14px;padding:18px;box-shadow:var(--shadow);grid-column:1/-1;">
           <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--blue-mid);margin-bottom:6px;">Scenario Lab · Market Assessment · EN + עברית</div>
           <h3 style="margin:0 0 8px 0;font-size:13pt;">PHINS Scenario Lab — Investor / Regulator Assessment</h3>
-          <p style="font-size:9.5pt;color:var(--text-sub);margin:0 0 12px 0;">Live, adjustable market model. Public evidence stays locked. Israel planning figures reconcile to the Investor Meeting book (ILS 4,518 published-tables premium · 25% PHINS / 75% insurance · EoY in-force 24,000 / 94,080 / 230,554). The downloadable pack includes the visual investor story, market-readiness scorecard, and a fully Hebrew edition. No public statistic is rewritten by the export.</p>
+          <p style="font-size:9.5pt;color:var(--text-sub);margin:0 0 12px 0;">Live, adjustable market model. Public evidence stays locked. Israel planning figures reconcile to the Investor Meeting book (ILS 4,518 published-tables premium · 25% PHINS / 75% insurance · EoY in-force 24,000 / 94,080 / 230,554). The full pack includes the visual investor story, market-readiness scorecard, and a fully Hebrew edition. A shorter regulator brief is research only: public evidence and market-readiness scores, with no business plan attached.</p>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <a href="#scenario-assessment-section" class="exec-dl-btn" style="background:var(--blue-mid);color:#fff;border-color:var(--blue-mid);">Open Scenario Lab</a>
             <button type="button" class="exec-dl-btn" id="invdocs-download-lab-en">Download PDF (EN)</button>
             <button type="button" class="exec-dl-btn" id="invdocs-download-lab-he">הורדת PDF (עברית)</button>
+            <button type="button" class="exec-dl-btn" id="invdocs-download-lab-reg-en">Regulator brief (EN)</button>
+            <button type="button" class="exec-dl-btn" id="invdocs-download-lab-reg-he">תזכיר רגולטור (עברית)</button>
             <a href="#investor-meeting-section" class="exec-dl-btn">Investor Meeting book</a>
           </div>
         </div>
@@ -5392,8 +5394,11 @@
               <button type="button" class="export-btn" id="download-csv">Download CSV</button>
               <button type="button" class="export-btn primary" id="download-pdf">Download PDF (EN)</button>
               <button type="button" class="export-btn primary" id="download-pdf-he">הורדת PDF (עברית)</button>
+              <button type="button" class="export-btn" id="download-pdf-reg-en">Regulator brief (EN)</button>
+              <button type="button" class="export-btn" id="download-pdf-reg-he">תזכיר רגולטור (עברית)</button>
             </div>
             <div class="export-status" id="export-status" aria-live="polite"></div>
+            <p class="helper-note" style="margin:6px 0 0;">The regulator brief is research only: public evidence and market-readiness scores. It does not attach the business plan or the Israel book.</p>
           </div>
 
           <div class="kpi-grid">
@@ -6941,36 +6946,51 @@
       return options.startY;
     }
 
-    async function downloadFullAssessmentPdf(lang) {
+    async function downloadFullAssessmentPdf(lang, options) {
       const language = lang === "he" ? "he" : "en";
-      setExportStatus(language === "he" ? "Preparing Hebrew PDF export..." : "Preparing full PDF export...");
+      const variant = options && options.variant === "regulator" ? "regulator" : "full";
+      const isRegulator = variant === "regulator";
+      setExportStatus(
+        isRegulator
+          ? (language === "he" ? "מכין תזכיר רגולטור בעברית..." : "Preparing regulator research brief...")
+          : (language === "he" ? "Preparing Hebrew PDF export..." : "Preparing full PDF export...")
+      );
       if (!window.jspdf || typeof window.jspdf.jsPDF !== "function" || !window.PhinsPdfBrand || !window.PhinsScenarioLabPdf) {
         setExportStatus("PDF library unavailable. Please refresh and retry.", true);
         return;
       }
 
       const buttons = [downloadPdfBtn, downloadPdfHeBtn,
+        document.getElementById("download-pdf-reg-en"),
+        document.getElementById("download-pdf-reg-he"),
         document.getElementById("invdocs-download-lab-en"),
-        document.getElementById("invdocs-download-lab-he")].filter(Boolean);
+        document.getElementById("invdocs-download-lab-he"),
+        document.getElementById("invdocs-download-lab-reg-en"),
+        document.getElementById("invdocs-download-lab-reg-he")].filter(Boolean);
       try {
         buttons.forEach((btn) => { btn.disabled = true; });
         const payload = buildScenarioState();
         const region = getRegion(regionSelect.value);
         const result = await window.PhinsScenarioLabPdf.generate({
           lang: language,
+          variant: variant,
           payload: payload,
           region: region,
           marketData: marketData,
           sourceRegistry: sourceRegistry,
-          ilBook: IL_PLANNING_BOOK,
+          ilBook: isRegulator ? null : IL_PLANNING_BOOK,
           outputs: payload.outputs,
           modeNote: outputs.modeNote ? outputs.modeNote.textContent : "",
           printedAt: payload.exportedAt || new Date().toISOString()
         });
         setExportStatus(
-          language === "he"
-            ? "PDF בעברית הורד עם ראיות נעולות והנחות התרחיש הנוכחיות."
-            : "Full PDF downloaded with fixed evidence, investor-story charts, and current PHINS assumptions."
+          isRegulator
+            ? (language === "he"
+              ? "תזכיר הרגולטור הורד — מחקר ומוכנות שווקים בלבד, ללא תכנית עסקית."
+              : "Regulator brief downloaded — research and market readiness only; no business plan attached.")
+            : (language === "he"
+              ? "PDF בעברית הורד עם ראיות נעולות והנחות התרחיש הנוכחיות."
+              : "Full PDF downloaded with fixed evidence, investor-story charts, and current PHINS assumptions.")
         );
         return result;
       } catch (error) {
@@ -7158,10 +7178,22 @@
       if (downloadPdfHeBtn) {
         downloadPdfHeBtn.addEventListener("click", () => downloadFullAssessmentPdf("he"));
       }
+      const downloadPdfRegEnBtn = document.getElementById("download-pdf-reg-en");
+      const downloadPdfRegHeBtn = document.getElementById("download-pdf-reg-he");
+      if (downloadPdfRegEnBtn) {
+        downloadPdfRegEnBtn.addEventListener("click", () => downloadFullAssessmentPdf("en", { variant: "regulator" }));
+      }
+      if (downloadPdfRegHeBtn) {
+        downloadPdfRegHeBtn.addEventListener("click", () => downloadFullAssessmentPdf("he", { variant: "regulator" }));
+      }
       const invEn = document.getElementById("invdocs-download-lab-en");
       const invHe = document.getElementById("invdocs-download-lab-he");
       if (invEn) invEn.addEventListener("click", () => downloadFullAssessmentPdf("en"));
       if (invHe) invHe.addEventListener("click", () => downloadFullAssessmentPdf("he"));
+      const invRegEn = document.getElementById("invdocs-download-lab-reg-en");
+      const invRegHe = document.getElementById("invdocs-download-lab-reg-he");
+      if (invRegEn) invRegEn.addEventListener("click", () => downloadFullAssessmentPdf("en", { variant: "regulator" }));
+      if (invRegHe) invRegHe.addEventListener("click", () => downloadFullAssessmentPdf("he", { variant: "regulator" }));
       window.downloadPhinsScenarioLabPdf = downloadFullAssessmentPdf;
     }
 
