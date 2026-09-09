@@ -40,7 +40,10 @@ def _html():
 
 def test_solutions_page_uses_title_case_where_necessary():
     html = _html()
-    assert "The AI-Native Platform Where Insurance Is Underwritten" in html
+    assert "Insurance. End to End." in html
+    assert "One platform for individuals, enterprises and the partners who serve them." in html
+    assert "The AI-Native Platform Where Insurance Is Underwritten" not in html
+    assert "PHINS unifies Underwriting" not in html
     assert "One Platform. Every Stage of the Policy Lifecycle." in html
     assert "Where PHINS Goes Beyond the Market." in html
     assert "Built for Individuals. Engineered for Enterprises." in html
