@@ -1592,11 +1592,16 @@
     }
 
     .pm-onepager {
+      --op: 8pt;
+      --op-title: 12.2pt;
+      --op-lede: 8.2pt;
+      --op-kpi: 10.5pt;
+      --op-gap: 8px;
       margin: 0 0 18px;
-      border-radius: 18px;
+      border-radius: 14px;
       overflow: hidden;
       border: 1px solid rgba(67, 56, 202, 0.28);
-      box-shadow: 0 18px 40px rgba(30, 27, 75, 0.12);
+      box-shadow: 0 14px 32px rgba(30, 27, 75, 0.1);
       background: #fff;
     }
 
@@ -1650,8 +1655,10 @@
     }
 
     .pm-op-sheet {
-      padding: 18px 20px 16px;
+      padding: 12px 16px 10px;
       color: #0f172a;
+      font-size: var(--op);
+      line-height: 1.35;
     }
 
     .pm-op-sheet[hidden] {
@@ -1666,11 +1673,11 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-      border-bottom: 2.2px solid #c9a04e;
-      padding-bottom: 10px;
-      margin-bottom: 12px;
+      gap: 8px;
+      flex-wrap: nowrap;
+      border-bottom: 2px solid #c9a04e;
+      padding-bottom: 6px;
+      margin-bottom: 8px;
       position: relative;
     }
 
@@ -1679,7 +1686,7 @@
       position: absolute;
       left: 0;
       right: 0;
-      bottom: -4px;
+      bottom: -3px;
       height: 1px;
       background: #0e2f63;
     }
@@ -1687,18 +1694,20 @@
     .pm-op-brand {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
+      min-width: 0;
     }
 
     .pm-op-brand img {
-      width: 40px;
-      height: 40px;
+      width: 28px;
+      height: 28px;
       object-fit: contain;
+      flex-shrink: 0;
     }
 
     .pm-op-brand .lh-name {
       font-family: "Space Grotesk", "Heebo", sans-serif;
-      font-size: 16pt;
+      font-size: 12pt;
       font-weight: 800;
       letter-spacing: 0.08em;
       color: #0e2f63;
@@ -1706,17 +1715,18 @@
     }
 
     .pm-op-brand .lh-tag {
-      font-size: 7.2pt;
+      font-size: 6.4pt;
       color: #5b6b82;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
     }
 
     .pm-op-meta {
-      font-size: 7.6pt;
+      font-size: 6.6pt;
       color: #5b6b82;
       text-align: right;
-      line-height: 1.45;
+      line-height: 1.35;
+      flex-shrink: 0;
     }
 
     .pm-op-sheet[dir="rtl"] .pm-op-meta {
@@ -1727,91 +1737,94 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      font-size: 7.4pt;
+      font-size: 6.4pt;
       font-weight: 800;
       letter-spacing: 0.12em;
       text-transform: uppercase;
       color: #4338ca;
       background: #eef2ff;
       border-radius: 999px;
-      padding: 3px 10px;
-      margin-bottom: 8px;
+      padding: 2px 8px;
+      margin: 0 0 5px;
     }
 
     .pm-op-sheet h3.pm-op-title {
       font-family: "Space Grotesk", "Heebo", sans-serif;
-      font-size: 15.5pt;
+      font-size: var(--op-title);
       font-weight: 700;
-      line-height: 1.18;
+      line-height: 1.15;
       color: #0b1f3f;
-      margin: 0 0 8px;
-      letter-spacing: -0.01em;
+      margin: 0 0 5px;
+      letter-spacing: -0.015em;
     }
 
     .pm-op-lede {
-      font-size: 9.6pt;
+      font-size: var(--op-lede);
       color: #334155;
-      line-height: 1.5;
-      margin: 0 0 12px;
+      line-height: 1.32;
+      margin: 0 0 var(--op-gap);
     }
 
     .pm-op-kpis {
       display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 8px;
-      margin: 0 0 14px;
+      gap: 5px;
+      margin: 0 0 var(--op-gap);
     }
 
     .pm-op-kpi {
       border: 1px solid #dbe4f0;
-      border-radius: 12px;
-      padding: 8px 9px 7px;
+      border-radius: 8px;
+      padding: 4px 6px 3px;
       background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+      min-width: 0;
     }
 
     .pm-op-kpi .v {
       font-family: "Space Grotesk", "Heebo", sans-serif;
-      font-size: 12pt;
+      font-size: var(--op-kpi);
       font-weight: 800;
       color: #0d47a1;
       line-height: 1.1;
     }
 
     .pm-op-kpi .l {
-      font-size: 6.8pt;
+      font-size: 5.8pt;
       font-weight: 700;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.04em;
       text-transform: uppercase;
       color: #64748b;
-      margin-top: 3px;
+      margin-top: 1px;
+      line-height: 1.2;
     }
 
     .pm-op-grid {
       display: grid;
-      grid-template-columns: 1.12fr 0.88fr;
-      gap: 14px;
+      grid-template-columns: 1.08fr 0.92fr;
+      gap: 10px;
       align-items: start;
     }
 
     .pm-op-col h4,
     h4.pm-op-book-label {
-      font-size: 8pt;
+      font-size: 6.6pt;
       font-weight: 800;
       letter-spacing: 0.1em;
       text-transform: uppercase;
       color: #4338ca;
-      margin: 0 0 6px;
+      margin: 0 0 3px;
     }
 
     h4.pm-op-book-label {
-      margin-top: 12px;
+      margin-top: 0;
     }
 
     .pm-op-col p,
     .pm-op-col li {
-      font-size: 8.3pt;
-      line-height: 1.5;
+      font-size: var(--op);
+      line-height: 1.32;
       color: #334155;
+      margin: 0;
     }
 
     .pm-op-col ul {
@@ -1831,16 +1844,17 @@
     .pm-op-contract {
       border-left: 3px solid #4338ca;
       background: #eef2ff;
-      border-radius: 0 10px 10px 0;
-      padding: 8px 11px;
-      margin: 8px 0;
-      font-size: 8.3pt;
+      border-radius: 0 8px 10px 0;
+      padding: 5px 8px;
+      margin: 5px 0 0;
+      font-size: var(--op);
+      line-height: 1.32;
     }
 
     .pm-op-sheet[dir="rtl"] .pm-op-contract {
       border-left: none;
       border-right: 3px solid #4338ca;
-      border-radius: 10px 0 10px 0;
+      border-radius: 8px 0 0 8px;
     }
 
     .pm-op-kpis,
@@ -1849,35 +1863,58 @@
     }
 
     .pm-op-table-wrap {
-      margin: 12px 0 8px;
-      overflow-x: auto;
+      margin: 3px 0 4px;
+      overflow: visible;
     }
 
-    .pm-op-table {
+    /* Beat the dashboard `table { min-width: 1080px }` / 14px cell padding so the
+       book table is the same type size as the surrounding one-pager copy. */
+    .pm-onepager table.pm-op-table {
       width: 100%;
-      min-width: 520px;
+      min-width: 0 !important;
+      max-width: 100%;
       table-layout: fixed;
       border-collapse: collapse;
-      font-size: 7.6pt;
+      font-size: var(--op);
+      line-height: 1.25;
       margin: 0;
     }
 
-    .pm-op-table th,
-    .pm-op-table td {
-      border: 1px solid #dbe4f0;
-      padding: 4px 6px;
+    .pm-onepager .pm-op-table th:first-child,
+    .pm-onepager .pm-op-table td:first-child {
+      width: 42%;
     }
 
-    .pm-op-table th {
+    .pm-onepager .pm-op-table th.num,
+    .pm-onepager .pm-op-table td.num {
+      width: 20.66%;
+    }
+
+    .pm-onepager .pm-op-table th,
+    .pm-onepager .pm-op-table td {
+      border: 1px solid #dbe4f0;
+      padding: 3px 6px;
+      font-size: var(--op);
+      font-weight: 600;
+      text-transform: none;
+      letter-spacing: 0;
+      vertical-align: middle;
+      color: #0f172a;
+      background: #fff;
+    }
+
+    .pm-onepager .pm-op-table th {
       background: #0d47a1;
       color: #fff;
       font-weight: 700;
+      border-bottom-color: #0d47a1;
     }
 
-    .pm-op-table td.num,
-    .pm-op-table th.num {
+    .pm-onepager .pm-op-table td.num,
+    .pm-onepager .pm-op-table th.num {
       text-align: right;
       white-space: nowrap;
+      font-variant-numeric: tabular-nums;
     }
 
     .pm-op-sheet[dir="rtl"] .pm-op-table th:first-child,
@@ -1886,23 +1923,31 @@
       text-align: right;
     }
 
-    .pm-op-table tr.hi td {
+    .pm-onepager .pm-op-table tbody tr:nth-child(even) td {
+      background: #fff;
+    }
+
+    .pm-onepager .pm-op-table tr.hi td {
       background: #eef9f0;
       font-weight: 700;
+    }
+
+    .pm-op-book-col .pm-op-gates {
+      margin-top: 6px;
     }
 
     .pm-op-gates {
       display: flex;
       flex-wrap: wrap;
-      gap: 4px;
-      margin-top: 6px;
+      gap: 3px;
+      margin-top: 4px;
     }
 
     .pm-op-gate {
-      font-size: 6.8pt;
+      font-size: 6pt;
       font-weight: 700;
       border-radius: 999px;
-      padding: 3px 8px;
+      padding: 2px 6px;
       background: #f1f5f9;
       color: #334155;
       border: 1px solid #e2e8f0;
@@ -1916,16 +1961,16 @@
 
     .pm-op-ask {
       display: grid;
-      grid-template-columns: 1.2fr 1fr;
-      gap: 10px;
-      margin-top: 12px;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 6px;
+      margin-top: 6px;
     }
 
     .pm-op-ask-box {
-      border-radius: 12px;
-      padding: 10px 12px;
-      font-size: 8.2pt;
-      line-height: 1.5;
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: var(--op);
+      line-height: 1.32;
     }
 
     .pm-op-ask-box.primary {
@@ -1940,17 +1985,17 @@
 
     .pm-op-ask-box strong.label {
       display: block;
-      font-size: 7.4pt;
+      font-size: 6.4pt;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      margin-bottom: 3px;
+      margin-bottom: 2px;
     }
 
     .pm-op-fine {
-      font-size: 7pt;
+      font-size: 6.4pt;
       color: #64748b;
-      margin-top: 10px;
-      line-height: 1.45;
+      margin: 6px 0 0;
+      line-height: 1.35;
     }
 
     .pm-working-pack-label {
@@ -1962,10 +2007,10 @@
       margin: 4px 0 10px;
     }
 
-    @media (max-width: 980px) {
-      .pm-op-kpis,
-      .pm-op-grid,
-      .pm-op-ask {
+    /* Screen-only: Chrome's print viewport is ~A4 (~794px) and would otherwise
+       collapse the one-pager into a tall single column (extra printed pages). */
+    @media screen and (max-width: 980px) {
+      .pm-op-kpis {
         grid-template-columns: 1fr 1fr 1fr;
       }
       .pm-op-grid,
@@ -1974,58 +2019,122 @@
       }
     }
 
-    @media (max-width: 640px) {
+    @media screen and (max-width: 640px) {
       .pm-op-kpis {
         grid-template-columns: 1fr 1fr;
       }
     }
 
     @media print {
+      @page {
+        size: A4 portrait;
+        margin: 9mm 11mm;
+      }
       html.print-pm-onepager {
         background: #fff !important;
       }
+      html.print-pm-onepager,
       html.print-pm-onepager body {
         background: #fff !important;
+        height: auto !important;
+        min-height: 0 !important;
+        overflow: visible !important;
       }
-      html.print-pm-onepager body * {
-        visibility: hidden !important;
+      html.print-pm-onepager header,
+      html.print-pm-onepager .site-header,
+      html.print-pm-onepager .hero,
+      html.print-pm-onepager .pitch-nav,
+      html.print-pm-onepager .pitch-back-fab,
+      html.print-pm-onepager .pitch-tab-back-row,
+      html.print-pm-onepager footer,
+      html.print-pm-onepager #pitch-doc-viewer,
+      html.print-pm-onepager .pm-op-toolbar,
+      html.print-pm-onepager .pm-meet-tabs,
+      html.print-pm-onepager .pm-working-pack-label,
+      html.print-pm-onepager #pm-track-a,
+      html.print-pm-onepager #pm-panel-b,
+      html.print-pm-onepager #partner-meetings-13jul > .exec-summary-banner,
+      html.print-pm-onepager #pm-panel-a > *:not(#meeting-a-onepager),
+      html.print-pm-onepager main.container > section:not(#partner-meetings-13jul) {
+        display: none !important;
       }
-      html.print-pm-onepager #meeting-a-onepager,
-      html.print-pm-onepager #meeting-a-onepager * {
-        visibility: visible !important;
+      html.print-pm-onepager .container {
+        max-width: none !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
       }
-      html.print-pm-onepager .pitch-fold,
-      html.print-pm-onepager .pitch-fold-body,
-      html.print-pm-onepager #pm-panel-a,
-      html.print-pm-onepager #partner-meetings-13jul {
+      html.print-pm-onepager #partner-meetings-13jul,
+      html.print-pm-onepager #pm-panel-a {
         display: block !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+        background: #fff !important;
         overflow: visible !important;
         height: auto !important;
-        box-shadow: none !important;
-        border: none !important;
-        background: #fff !important;
       }
       html.print-pm-onepager #meeting-a-onepager {
-        position: absolute;
-        left: 0;
-        top: 0;
+        position: relative !important;
+        left: auto;
+        top: auto;
         width: 100%;
+        margin: 0 !important;
         box-shadow: none !important;
         border: none !important;
+        border-radius: 0 !important;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
       }
-      html.print-pm-onepager .pm-op-toolbar,
-      html.print-pm-onepager .pitch-tab-back-row,
-      html.print-pm-onepager .site-header,
-      html.print-pm-onepager .pitch-back-fab {
-        display: none !important;
+      html.print-pm-onepager .pm-onepager {
+        --op: 7.4pt;
+        --op-title: 11.2pt;
+        --op-lede: 7.5pt;
+        --op-kpi: 9.4pt;
+        --op-gap: 5px;
+      }
+      html.print-pm-onepager .pm-op-sheet[dir="rtl"] {
+        --op: 7.2pt;
+        --op-title: 10.8pt;
+        --op-lede: 7.3pt;
       }
       html.print-pm-onepager #meeting-a-onepager [hidden],
       html.print-pm-onepager #meeting-a-onepager [hidden] * {
         display: none !important;
         visibility: hidden !important;
+        height: 0 !important;
+        overflow: hidden !important;
       }
       html.print-pm-onepager .pm-op-sheet {
         padding: 0;
+      }
+      html.print-pm-onepager .pm-op-kpis {
+        grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+      }
+      html.print-pm-onepager .pm-op-grid {
+        grid-template-columns: 1.08fr 0.92fr !important;
+        gap: 8px;
+      }
+      html.print-pm-onepager .pm-op-ask {
+        grid-template-columns: 1.15fr 1fr !important;
+      }
+      html.print-pm-onepager .pm-onepager table.pm-op-table {
+        min-width: 0 !important;
+        font-size: var(--op);
+      }
+      html.print-pm-onepager .pm-onepager .pm-op-table th,
+      html.print-pm-onepager .pm-onepager .pm-op-table td {
+        font-size: var(--op);
+        padding: 2px 5px;
+      }
+      html.print-pm-onepager .pm-op-brand img {
+        width: 22px;
+        height: 22px;
+      }
+      html.print-pm-onepager .pm-op-table-wrap {
+        page-break-inside: avoid;
+        break-inside: avoid;
       }
     }
 
@@ -3564,15 +3673,11 @@
               </div>
             </div>
             <span class="pm-op-eyebrow">One-page executive summary · 30,000 feet</span>
-            <h3 class="pm-op-title">A built insurance operating system, sitting on the last large regulated data industry still running a legacy core.</h3>
+            <h3 class="pm-op-title">A built insurance OS — the last large regulated data industry still on a legacy core.</h3>
             <p class="pm-op-lede">
-              Written for a principal who already understands both the capital stack and the technology.
-              PHINS is not a deck looking for a product. It is a <strong>production insurance OS</strong> — <span data-live-modules>100</span> service modules live —
-              originating a lifelong disability / LTC severity layer as a <strong>capital-light digital MGA</strong>.
-              Underwriting risk never sits on the PHINS balance sheet. Israel is the proof market (sales from 1 January 2027).
-              Every further OECD market is a configuration and a filing, not a rebuild.
-              For a public AI-technology company, this is a <strong>regulated deployment surface</strong>:
-              equity at seed terms, and/or co-development with per-market license and GWP royalty.
+              A <strong>production insurance OS</strong> — <span data-live-modules>100</span> service modules live — originating a lifelong disability / LTC severity layer as a <strong>capital-light digital MGA</strong>.
+              Underwriting risk never sits on the PHINS balance sheet. Israel is the proof market (sales from 1 January 2027); every further OECD market is a configuration and a filing, not a rebuild.
+              For a public AI company this is a <strong>regulated deployment surface</strong>: equity at seed terms, and/or co-development with per-market license and GWP royalty.
             </p>
             <div class="pm-op-kpis">
               <div class="pm-op-kpi"><div class="v" data-live-modules>100</div><div class="l">Service modules</div></div>
@@ -3586,25 +3691,41 @@
               <div class="pm-op-col">
                 <h4>The asset</h4>
                 <p>
-                  Policy → underwriting → billing → claims → reinsurance → wallets/settlement → agent ecosystem → BI / actuarial.
-                  An IAA-recognised executive actuary validated the pricing model (26 May 2026) and is joining on the hybrid Chief-Actuary path.
-                  That cleared the first credibility gate and opened this room.
+                  Policy → UW → billing → claims → reinsurance → wallets → agents → BI / actuarial.
+                  An IAA-recognised executive actuary validated the pricing model (26 May 2026) and is joining on the hybrid Chief-Actuary path — the first credibility gate that opened this room.
                 </p>
                 <div class="pm-op-contract">
-                  <strong>Integrity contract (non-negotiable):</strong> AI recommends; an append-only, hash-chained ledger decides and records.
-                  Co-developed models plug into the existing decision-audit layer. This is the architecture regulators are converging on —
-                  and the reason a public AI company can put models inside UW, claims, and actuarial simulation without inheriting an un-auditable black box.
+                  <strong>Integrity contract:</strong> AI recommends; an append-only, hash-chained ledger decides.
+                  Co-developed models plug into the existing decision-audit layer — the architecture regulators are converging on, not an un-auditable black box.
                 </div>
-              </div>
-              <div class="pm-op-col">
-                <h4>What capital actually buys</h4>
+                <h4 style="margin-top:7px;">What capital actually buys</h4>
                 <p>
-                  Not a rewrite. A 12-month gated path to first sale: legal terms, Appointed-Actuary sign-off, security/QA,
-                  Capital Market, Insurance &amp; Savings Authority engagement, and distribution. Technology (platform + cloud/AI) is 40.3% of the ₪6.0M build;
-                  legal/regulatory 14.7%; remainder actuarial, QA, pre-launch marketing, G&amp;A, and ~11.7% contingency.
-                  Sales do not start until Gate 5. Claims reserves are never booked as PHINS revenue.
+                  Not a rewrite. A 12-month gated path to first sale: legal terms, Appointed-Actuary sign-off, security/QA, Authority engagement, and distribution.
+                  Technology is 40.3% of the ₪6.0M build; legal/regulatory 14.7%; ~11.7% contingency. Sales start at Gate 5. Claims reserves are never PHINS revenue.
                 </p>
-                <h4>Gated execution (capital against completion)</h4>
+              </div>
+              <div class="pm-op-col pm-op-book-col">
+                <h4 class="pm-op-book-label">The book — one Israel model</h4>
+                <div class="pm-op-table-wrap">
+                    <table class="pm-op-table">
+                      <thead>
+                        <tr>
+                          <th>Line (₪)</th>
+                          <th class="num">2027</th>
+                          <th class="num">2028</th>
+                          <th class="num">2029</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr><td>Active policies EoY</td><td class="num" data-live="eoy" data-i="0">24,000</td><td class="num" data-live="eoy" data-i="1">94,080</td><td class="num" data-live="eoy" data-i="2">230,554</td></tr>
+                        <tr><td>Avg in-force</td><td class="num" data-live="avg" data-i="0">12,000</td><td class="num" data-live="avg" data-i="1">59,040</td><td class="num" data-live="avg" data-i="2">162,317</td></tr>
+                        <tr><td>Risk GWP</td><td class="num" data-live="gwp_m" data-i="0">54.2M</td><td class="num" data-live="gwp_m" data-i="1">266.7M</td><td class="num" data-live="gwp_m" data-i="2">733.3M</td></tr>
+                        <tr class="hi"><td>PHINS net revenue (<span data-live="take_pct">25%</span>)</td><td class="num" data-live="nr_m" data-i="0">13.6M</td><td class="num" data-live="nr_m" data-i="1">66.7M</td><td class="num" data-live="nr_m" data-i="2">183.3M</td></tr>
+                        <tr><td>EBITDA</td><td class="num" data-live="ebitda_m" data-i="0">(18.8)M</td><td class="num" data-live="ebitda_m" data-i="1">0.3M</td><td class="num" data-live="ebitda_m" data-i="2">66.5M</td></tr>
+                      </tbody>
+                    </table>
+                </div>
+                <h4>Gated execution</h4>
                 <div class="pm-op-gates">
                   <span class="pm-op-gate">G0 Funding &amp; team</span>
                   <span class="pm-op-gate">G1 Legal terms</span>
@@ -3617,50 +3738,22 @@
                 </div>
               </div>
             </div>
-            <h4 class="pm-op-book-label">The book — one Israel model</h4>
-            <div class="pm-op-table-wrap">
-                <table class="pm-op-table">
-                  <thead>
-                    <tr>
-                      <th>Line (₪)</th>
-                      <th class="num">2027</th>
-                      <th class="num">2028</th>
-                      <th class="num">2029</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr><td>Active policies EoY</td><td class="num" data-live="eoy" data-i="0">24,000</td><td class="num" data-live="eoy" data-i="1">94,080</td><td class="num" data-live="eoy" data-i="2">230,554</td></tr>
-                    <tr><td>Avg in-force</td><td class="num" data-live="avg" data-i="0">12,000</td><td class="num" data-live="avg" data-i="1">59,040</td><td class="num" data-live="avg" data-i="2">162,317</td></tr>
-                    <tr><td>Risk GWP</td><td class="num" data-live="gwp_m" data-i="0">54.2M</td><td class="num" data-live="gwp_m" data-i="1">266.7M</td><td class="num" data-live="gwp_m" data-i="2">733.3M</td></tr>
-                    <tr class="hi"><td>PHINS net revenue (<span data-live="take_pct">25%</span>)</td><td class="num" data-live="nr_m" data-i="0">13.6M</td><td class="num" data-live="nr_m" data-i="1">66.7M</td><td class="num" data-live="nr_m" data-i="2">183.3M</td></tr>
-                    <tr><td>EBITDA</td><td class="num" data-live="ebitda_m" data-i="0">(18.8)M</td><td class="num" data-live="ebitda_m" data-i="1">0.3M</td><td class="num" data-live="ebitda_m" data-i="2">66.5M</td></tr>
-                  </tbody>
-                </table>
-            </div>
-            <p style="font-size:8.3pt;color:#334155;margin:6px 0 0;">
-              Locked base: table-driven ₪<span data-live="premium">4,518</span> annual premium · <span data-live="take_pct">25%</span> PHINS / 75% insurance · 8% churn · CAC ≈ ₪650.
-              Seed ₪6.0M on ₪24M pre / ₪30M post. 2028 is already EBITDA-positive; Series A funds scale, not survival.
-            </p>
             <div class="pm-op-ask">
               <div class="pm-op-ask-box primary">
                 <strong class="label" style="color:#15803d;">Why this room · the ask</strong>
-                A public AI-technology company is not being asked to become an insurer. It is being offered dual economics:
-                <strong>ownership of the OS at seed terms</strong> (₪6.0M / ₪24M pre, adjustable or actuarially simulated),
-                and/or a <strong>co-development + per-market license and GWP royalty</strong> as Wave-1 markets open on the shared stack.
-                OECD expansion is configuration, not a second core.
+                Dual economics, not a request to become an insurer:
+                <strong>ownership of the OS at seed terms</strong> (₪6.0M / ₪24M pre, adjustable),
+                and/or <strong>co-development + per-market license and GWP royalty</strong>. OECD expansion is configuration, not a second core.
               </div>
               <div class="pm-op-ask-box fallback">
                 <strong class="label" style="color:#1565c0;">Fallback &amp; next</strong>
                 Priced equity or convertible if a pure-investor role is preferred.
-                Next: mutual NDA, term sheet, confirmatory diligence on the live platform
-                (policy → UW → billing → claim → reinsurance, with audit log).
-                Full working pack and adjustable deal live below this page.
+                Next: NDA, term sheet, live-platform diligence (policy → UW → billing → claim → reinsurance). Working pack below.
               </div>
             </div>
             <p class="pm-op-fine">
-              Forward-looking planning assumptions in ₪ (ILS), canonical base; $ / € at live FX. Not commitments or guidance.
-              Same unified IL book as the Investor Meeting section (ILS 4,518 · 25% take · persistency 24,000 / 94,080 / 230,554).
-              License, royalty and valuation terms are illustrative deal parameters, adjustable in the Meeting A pack.
+              Planning assumptions in ₪, not commitments. Locked base: ₪<span data-live="premium">4,518</span> premium · <span data-live="take_pct">25%</span> take · 8% churn · persistency 24,000 / 94,080 / 230,554.
+              Seed ₪6.0M on ₪24M pre / ₪30M post. 2028 is EBITDA-positive. $ / € at live FX. Deal terms adjustable in the Meeting A pack.
             </p>
           </div>
 
@@ -3680,13 +3773,11 @@
               </div>
             </div>
             <span class="pm-op-eyebrow">תמצית מנהלים בעמוד אחד · מבט מגובה 30,000 רגל</span>
-            <h3 class="pm-op-title">מערכת הפעלה ביטוחית בנויה — הענף המוסדר הגדול האחרון שעדיין רץ על ליבה מיושנת.</h3>
+            <h3 class="pm-op-title">מערכת הפעלה ביטוחית בנויה — הענף המוסדר הגדול האחרון שעדיין על ליבה מיושנת.</h3>
             <p class="pm-op-lede">
-              נכתב עבור משקיע גלובלי בעל עומק פיננסי וטכנולוגי.
-              PHINS איננה מצגת שמחפשת מוצר. זו <strong>מערכת הפעלה ביטוחית בפרודקשן</strong> — <span data-live-modules>100</span> מודולי שירות פרוסים —
-              שמנפיקה שכבת נכות/סיעוד חמורה (הפעלת 3+ ADL) כ-<strong>MGA דיגיטלי קל-הון</strong>.
-              סיכון החיתום אינו יושב במאזן של PHINS. ישראל היא שוק ההוכחה (מכירות מ-1 בינואר 2027).
-              כל שוק OECD נוסף הוא תצורה והגשה רגולטורית — לא בניה מחדש.
+              <strong>מערכת הפעלה ביטוחית בפרודקשן</strong> — <span data-live-modules>100</span> מודולי שירות פרוסים —
+              שמנפיקה שכבת נכות/סיעוד חמורה כ-<strong>MGA דיגיטלי קל-הון</strong>.
+              סיכון החיתום אינו במאזן PHINS. ישראל שוק ההוכחה (מכירות מ-1.1.2027); כל שוק OECD נוסף הוא תצורה והגשה, לא בניה מחדש.
               לחברת AI ציבורית זה <strong>משטח הטמעה מפוקח</strong>: הון בתנאי סיד, ו/או פיתוח משותף עם רישיון לשוק ותמלוג על הפרמיה.
             </p>
             <div class="pm-op-kpis">
@@ -3701,25 +3792,41 @@
               <div class="pm-op-col">
                 <h4>הנכס</h4>
                 <p>
-                  פוליסה → חיתום → חיוב → תביעות → ביטוח משנה → ארנקים/סליקה → מערכת סוכנים → BI / אקטואריה.
-                  אקטואר בכיר המוכר ב-IAA אימת את מודל התמחור (26 במאי 2026) ומצטרף במסלול אקטואר-ראשי היברידי.
-                  זה היה שער האמינות הראשון — והוא שפתח את החדר הזה.
+                  פוליסה → חיתום → חיוב → תביעות → ביטוח משנה → ארנקים → סוכנים → BI / אקטואריה.
+                  אקטואר בכיר המוכר ב-IAA אימת את מודל התמחור (26 במאי 2026) ומצטרף במסלול אקטואר-ראשי היברידי — שער האמינות שפתח את החדר הזה.
                 </p>
                 <div class="pm-op-contract">
-                  <strong>חוזה השלמות (לא ניתן למשא ומתן):</strong> הבינה המלאכותית ממליצה; ספר חשבונות תוספתי, משורשר-גיבוב, מחליט ומתעד.
-                  מודלים בפיתוח משותף מתחברים לשכבת הביקורת הקיימת. זו הארכיטקטורה שאליה הרגולטורים מתכנסים —
-                  והסיבה שחברת AI ציבורית יכולה להכניס מודלים לחיתום, תביעות וסימולציה אקטוארית בלי לרשת קופסה שחורה.
+                  <strong>חוזה השלמות:</strong> הבינה המלאכותית ממליצה; ספר חשבונות תוספתי, משורשר-גיבוב, מחליט.
+                  מודלים בפיתוח משותף מתחברים לשכבת הביקורת — הארכיטקטורה שאליה הרגולטורים מתכנסים, לא קופסה שחורה.
                 </div>
-              </div>
-              <div class="pm-op-col">
-                <h4>מה ההון באמת קונה</h4>
+                <h4 style="margin-top:7px;">מה ההון באמת קונה</h4>
                 <p>
-                  לא כתיבה מחדש. מסלול בן 12 חודשים, בשערים, עד מכירה ראשונה: תנאי פוליסה, חתימת אקטואר ממונה, אבטחה/QA,
-                  מעורבות רשות שוק ההון, ביטוח וחיסכון, והסכמי הפצה. הטכנולוגיה (פלטפורמה + ענן/AI) היא 40.3% מתקציב הבניה של ₪6.0M;
-                  משפט ורגולציה 14.7%; היתר אקטואריה, QA, שיווק טרום-השקה, הנהלה, ועתודה של כ-11.7%.
-                  מכירות לא מתחילות לפני שער 5. עתודות תביעות אינן נרשמות כהכנסה של PHINS.
+                  לא כתיבה מחדש. מסלול בן 12 חודשים, בשערים, עד מכירה ראשונה: תנאים, אקטואר ממונה, QA/אבטחה, רשות שוק ההון והפצה.
+                  טכנולוגיה 40.3% מתקציב ₪6.0M; משפט ורגולציה 14.7%; עתודה ~11.7%. מכירות משער 5. עתודות תביעות אינן הכנסה של PHINS.
                 </p>
-                <h4>שערי ביצוע (הון משוחרר מול השלמה)</h4>
+              </div>
+              <div class="pm-op-col pm-op-book-col">
+                <h4 class="pm-op-book-label">הספר — מודל ישראל אחד</h4>
+                <div class="pm-op-table-wrap">
+                    <table class="pm-op-table">
+                      <thead>
+                        <tr>
+                          <th>סעיף (₪)</th>
+                          <th class="num">2027</th>
+                          <th class="num">2028</th>
+                          <th class="num">2029</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr><td>פוליסות לסוף שנה</td><td class="num" data-live="eoy" data-i="0">24,000</td><td class="num" data-live="eoy" data-i="1">94,080</td><td class="num" data-live="eoy" data-i="2">230,554</td></tr>
+                        <tr><td>ממוצע בתוקף</td><td class="num" data-live="avg" data-i="0">12,000</td><td class="num" data-live="avg" data-i="1">59,040</td><td class="num" data-live="avg" data-i="2">162,317</td></tr>
+                        <tr><td>פרמיה ברוטו</td><td class="num" data-live="gwp_m" data-i="0">54.2M</td><td class="num" data-live="gwp_m" data-i="1">266.7M</td><td class="num" data-live="gwp_m" data-i="2">733.3M</td></tr>
+                        <tr class="hi"><td>הכנסה נטו (<span data-live="take_pct">25%</span>)</td><td class="num" data-live="nr_m" data-i="0">13.6M</td><td class="num" data-live="nr_m" data-i="1">66.7M</td><td class="num" data-live="nr_m" data-i="2">183.3M</td></tr>
+                        <tr><td>EBITDA</td><td class="num" data-live="ebitda_m" data-i="0">(18.8)M</td><td class="num" data-live="ebitda_m" data-i="1">0.3M</td><td class="num" data-live="ebitda_m" data-i="2">66.5M</td></tr>
+                      </tbody>
+                    </table>
+                </div>
+                <h4>שערי ביצוע</h4>
                 <div class="pm-op-gates">
                   <span class="pm-op-gate">ש0 גיוס וצוות</span>
                   <span class="pm-op-gate">ש1 תנאים משפטיים</span>
@@ -3732,50 +3839,22 @@
                 </div>
               </div>
             </div>
-            <h4 class="pm-op-book-label">הספר — מודל ישראל אחד</h4>
-            <div class="pm-op-table-wrap">
-                <table class="pm-op-table">
-                  <thead>
-                    <tr>
-                      <th>סעיף (₪)</th>
-                      <th class="num">2027</th>
-                      <th class="num">2028</th>
-                      <th class="num">2029</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr><td>פוליסות פעילות לסוף שנה</td><td class="num" data-live="eoy" data-i="0">24,000</td><td class="num" data-live="eoy" data-i="1">94,080</td><td class="num" data-live="eoy" data-i="2">230,554</td></tr>
-                    <tr><td>ממוצע בתוקף</td><td class="num" data-live="avg" data-i="0">12,000</td><td class="num" data-live="avg" data-i="1">59,040</td><td class="num" data-live="avg" data-i="2">162,317</td></tr>
-                    <tr><td>פרמיה ברוטו (סיכון)</td><td class="num" data-live="gwp_m" data-i="0">54.2M</td><td class="num" data-live="gwp_m" data-i="1">266.7M</td><td class="num" data-live="gwp_m" data-i="2">733.3M</td></tr>
-                    <tr class="hi"><td>הכנסה נטו PHINS (<span data-live="take_pct">25%</span>)</td><td class="num" data-live="nr_m" data-i="0">13.6M</td><td class="num" data-live="nr_m" data-i="1">66.7M</td><td class="num" data-live="nr_m" data-i="2">183.3M</td></tr>
-                    <tr><td>EBITDA</td><td class="num" data-live="ebitda_m" data-i="0">(18.8)M</td><td class="num" data-live="ebitda_m" data-i="1">0.3M</td><td class="num" data-live="ebitda_m" data-i="2">66.5M</td></tr>
-                  </tbody>
-                </table>
-            </div>
-            <p style="font-size:8.3pt;color:#334155;margin:6px 0 0;">
-              בסיס נעול: פרמיה טבלאית ₪<span data-live="premium">4,518</span> לשנה · <span data-live="take_pct">25%</span> PHINS / 75% ביטוח · נטישה 8% · CAC ≈ ₪650.
-              סיד ₪6.0M על ₪24M טרום-כסף / ₪30M אחרי-כסף. 2028 כבר חיובית ב-EBITDA; סבב A מממן סקייל, לא הישרדות.
-            </p>
             <div class="pm-op-ask">
               <div class="pm-op-ask-box primary">
                 <strong class="label" style="color:#15803d;">למה החדר הזה · הבקשה</strong>
-                חברת AI ציבורית אינה מתבקשת להפוך למבטחת. מוצעת לה כלכלה כפולה:
-                <strong>בעלות על מערכת ההפעלה בתנאי סיד</strong> (₪6.0M / ₪24M טרום-כסף, ניתן לכוונון או לסימולציה אקטוארית),
-                ו/או <strong>פיתוח משותף + רישיון לשוק ותמלוג על פרמיה</strong> ככל שנפתחים שווקי גל 1 על אותה ליבה.
-                הרחבה ל-OECD היא תצורה, לא ליבה שנייה.
+                כלכלה כפולה, לא בקשה להפוך למבטחת:
+                <strong>בעלות על מערכת ההפעלה בתנאי סיד</strong> (₪6.0M / ₪24M טרום-כסף),
+                ו/או <strong>פיתוח משותף + רישיון לשוק ותמלוג על פרמיה</strong>. הרחבה ל-OECD היא תצורה, לא ליבה שנייה.
               </div>
               <div class="pm-op-ask-box fallback">
                 <strong class="label" style="color:#1565c0;">חלופה והמשך</strong>
                 הון מתומחר או המרה אם מועדף תפקיד משקיע בלבד.
-                הבא: הסכם סודיות הדדי, מזכר תנאים, ובדיקת נאותות על הפלטפורמה החיה
-                (פוליסה → חיתום → חיוב → תביעה → ביטוח משנה, עם יומן ביקורת).
-                חבילת העבודה המלאה והעסקה הניתנת לכוונון — מתחת לעמוד זה.
+                הבא: סודיות, מזכר תנאים, בדיקת נאותות על הפלטפורמה החיה. חבילת העבודה — מתחת.
               </div>
             </div>
             <p class="pm-op-fine">
-              הנחות תכנון צופות-פני-עתיד בש״ח, הבסיס הקנוני; $ / € לפי שער חי. אינן התחייבות ואינן הכוונה.
-              אותו ספר ישראל מאוחד כמו בפרק פגישת המשקיע (₪4,518 · נתח 25% · 24,000 / 94,080 / 230,554).
-              רישיון, תמלוג ושווי הם פרמטרי עסקה להמחשה, הניתנים לכוונון בחבילת פגישה א׳.
+              הנחות תכנון בש״ח, לא התחייבות. בסיס נעול: ₪4,518 פרמיה · נתח 25% · נטישה 8% · 24,000 / 94,080 / 230,554.
+              סיד ₪6.0M על ₪24M טרום-כסף / ₪30M אחרי-כסף. 2028 חיובית ב-EBITDA. $ / € לפי שער חי.
             </p>
           </div>
         </article>
@@ -10154,20 +10233,32 @@
           b.addEventListener("click", function () { setOpLang(b.getAttribute("data-op-lang")); });
         });
         var savedLang = "en";
-        try { savedLang = localStorage.getItem("phins.partner.aitech.onepager.lang") || "en"; } catch (e) {}
+        try {
+          var q = new URLSearchParams(location.search);
+          if (q.get("lang") === "he" || q.get("lang") === "en") savedLang = q.get("lang");
+          else savedLang = localStorage.getItem("phins.partner.aitech.onepager.lang") || "en";
+        } catch (e) {}
         setOpLang(savedLang === "he" ? "he" : "en");
       }
       var printBtn = $("pm-op-print");
+      function applyOnepagerPrintClass() {
+        var h = (location.hash || "").replace(/^#/, "");
+        if (h === "meeting-a-onepager" || document.documentElement.classList.contains("print-pm-onepager")) {
+          document.documentElement.classList.add("print-pm-onepager");
+          selectPartnerTab("a");
+        }
+      }
       if (printBtn) {
         printBtn.addEventListener("click", function () {
           document.documentElement.classList.add("print-pm-onepager");
           selectPartnerTab("a");
           window.print();
         });
-        window.addEventListener("afterprint", function () {
-          document.documentElement.classList.remove("print-pm-onepager");
-        });
       }
+      window.addEventListener("beforeprint", applyOnepagerPrintClass);
+      window.addEventListener("afterprint", function () {
+        document.documentElement.classList.remove("print-pm-onepager");
+      });
 
       var bootHash = (location.hash || "").replace(/^#/, "");
       if (TAB_B_IDS[bootHash]) selectPartnerTab("b");

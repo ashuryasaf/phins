@@ -130,7 +130,17 @@ def test_pitch_dashboard_meeting_a_tab_and_onepager():
     assert "Gate 5" in pd or "G5 1 Jan 2027" in pd
     assert "phinsOpenPartnerMeetingTab" in pd
     assert "print-pm-onepager" in pd
+    assert "@page" in pd
+    assert "size: A4 portrait" in pd
+    assert "html.print-pm-onepager .hero" in pd
+    assert "html.print-pm-onepager #pm-track-a" in pd
+    assert "html.print-pm-onepager #pm-panel-a > *:not(#meeting-a-onepager)" in pd
+    assert "@media screen and (max-width: 980px)" in pd
+    assert "beforeprint" in pd
+    assert 'q.get("lang") === "he"' in pd
     onepager = pd.split('id="meeting-a-onepager"', 1)[1].split('id="pm-track-a"', 1)[0]
+    assert "min-width: 520px" not in onepager
+    assert "min-width: 1080px" not in onepager
     # one-pager restates the investor-meeting book, not a second model
     for token in ("₪4,518", "25%", "24,000", "94,080", "230,554", "₪6.0M", "₪24M",
                   "54.2M", "266.7M", "733.3M", "13.6M", "66.7M", "183.3M",
