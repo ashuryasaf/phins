@@ -1031,7 +1031,7 @@
       </div>
       <div class="stat-box">
         <div class="stat-value" id="stat-revenue">$0</div>
-        <div class="stat-label">Total Revenue</div>
+        <div class="stat-label" title="Annual premium run-rate: sum of annual_premium on active, non-suspended policies. Divide by 12 for the monthly figure.">Total Revenue (Annual Run-Rate)</div>
         <div class="stat-change" id="stat-outstanding">Loading...</div>
       </div>
       <div class="stat-box">
@@ -6370,7 +6370,12 @@
           const data = await response.json();
           
           // Update revenue stats with comma formatting
-          document.getElementById('revenue-premium').textContent = '$' + formatNumber(data.total_revenue || data.monthly_premium_income || 0, 0);
+          // Label is "Monthly Premium Income": use the monthly figure, never the
+          // annual total_revenue run-rate (which is 12x larger).
+          const monthlyIncome = (data.monthly_premium_income != null)
+            ? data.monthly_premium_income
+            : (data.total_revenue || 0) / 12;
+          document.getElementById('revenue-premium').textContent = '$' + formatNumber(monthlyIncome || 0, 0);
           document.getElementById('revenue-outstanding').textContent = '$' + formatNumber(data.outstanding_balance || data.outstanding_receivables || 0, 0);
           document.getElementById('revenue-claims').textContent = '$' + formatNumber(data.claims_paid || data.claims_paid_this_month || 0, 0);
           document.getElementById('revenue-investment').textContent = '+$' + formatNumber(data.investment_returns || 0, 0);
@@ -7385,6 +7390,47 @@
         a.click();
         URL.revokeObjectURL(url);
         
+        // Tie the premium totals out to the dashboard "Total Revenue" using the
+        // server-side reconciliation (same policy set, single source of truth).
+        let premiumSummary =
+          `Monthly Premium (all statuses): ${formatCurrency(totalMonthlyPremium)}\n` +
+          `Annual Premium (all statuses): ${formatCurrency(totalAnnualPremium)}\n` +
+          `Reconciliation vs dashboard: unavailable`;
+        try {
+          const reconRes = await fetch('/api/admin/premium-reconciliation', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (reconRes.ok) {
+            const r = await reconRes.json();
+            const sr = r.sales_report || {};
+            const activeSr = sr.active || {};
+            const pipelineSr = sr.pipeline || {};
+            const allSr = sr.all_statuses || {};
+            const dash = r.dashboard || {};
+            const integrity = r.integrity || {};
+            const issues = [];
+            if ((integrity.missing_monthly_premium || []).length) {
+              issues.push(`${integrity.missing_monthly_premium.length} policy(ies) missing monthly_premium (derived from annual/12)`);
+            }
+            if ((integrity.monthly_annual_mismatch || []).length) {
+              issues.push(`${integrity.monthly_annual_mismatch.length} policy(ies) where monthly x 12 != annual`);
+            }
+            if ((integrity.orphaned_policies || []).length) {
+              issues.push(`${integrity.orphaned_policies.length} policy(ies) without a customer record (counted by dashboard, not in this report)`);
+            }
+            premiumSummary =
+              `Monthly Premium - active (ties to dashboard): ${formatCurrency(activeSr.monthly_premium || 0)}\n` +
+              `Monthly Premium - pipeline (pending/other): ${formatCurrency(pipelineSr.monthly_premium || 0)}\n` +
+              `Monthly Premium - all statuses: ${formatCurrency(allSr.monthly_premium || 0)}\n` +
+              `Annual Revenue Run-Rate (active) = Dashboard Total Revenue: ${formatCurrency(dash.total_revenue || 0)}\n` +
+              `Dashboard Monthly Premium Income (annual / 12): ${formatCurrency(dash.monthly_premium_income || 0)}\n\n` +
+              `Reconciliation: ${r.is_consistent ? 'CONSISTENT' : 'DISCREPANCIES FOUND'}` +
+              (issues.length ? `\n- ${issues.join('\n- ')}` : '');
+          }
+        } catch (reconErr) {
+          console.warn('Premium reconciliation unavailable:', reconErr);
+        }
+
         statusEl.innerHTML = `<span style="color: #10b981;"> Report generated</span>`;
         alert(` Policy Report Generated!\n\n` +
           `Total Policies: ${policies.length}\n` +
@@ -7392,8 +7438,7 @@
           `Pending: ${pending}\n` +
           `Cancelled: ${cancelled}\n\n` +
           `Total Coverage: ${formatCurrency(totalCoverage)}\n` +
-          `Monthly Premium: ${formatCurrency(totalMonthlyPremium)}\n` +
-          `Annual Premium: ${formatCurrency(totalAnnualPremium)}\n` +
+          `${premiumSummary}\n` +
           `Investment Value: ${formatCurrency(totalInvestment)}`);
         
       } catch (err) {

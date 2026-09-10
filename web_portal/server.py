@@ -17462,6 +17462,32 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(dashboard_data).encode('utf-8'))
             return
 
+        # Premium run-rate reconciliation: ties dashboard "Total Revenue"
+        # (annual, active) to the Sales Division premium sums (monthly, all
+        # statuses) and reports every reason the two differ.
+        if path == '/api/admin/premium-reconciliation':
+            if not require_role(session, ['admin', 'accountant', 'underwriter']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            try:
+                from services.financial_unification_service import reconcile_premium_run_rate
+                m = compute_unified_financial_metrics(exclude_suspended=True)
+                report = reconcile_premium_run_rate(
+                    POLICIES.values(),
+                    exclude_customer=is_suspended_account,
+                    known_customer_ids=CUSTOMERS.keys(),
+                    expected_total_revenue=m['total_revenue'],
+                )
+                report['success'] = True
+                report['timestamp'] = datetime.now().isoformat()
+                self._set_json_headers()
+                self.wfile.write(json.dumps(report).encode('utf-8'))
+            except Exception as recon_err:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': f'Premium reconciliation failed: {recon_err}'}).encode('utf-8'))
+            return
+
         # ========== AI CAPABILITY DISCOVERY ==========
         # One machine-readable catalog of AI features for both UI discovery and
         # programmatic agents (action-parity foundation). Role-filtered.
@@ -43470,9 +43496,10 @@ For claims or questions, please contact:
                 if 'monthly_premium' in data:
                     new_premium = float(data['monthly_premium'])
                     if new_premium > 0:
+                        new_premium = round(new_premium, 2)
                         changes['monthly_premium'] = {'old': policy.get('monthly_premium'), 'new': new_premium}
                         policy['monthly_premium'] = new_premium
-                        policy['annual_premium'] = new_premium * 12
+                        policy['annual_premium'] = round(new_premium * 12, 2)
                 
                 if 'status' in data:
                     new_status = data['status']
@@ -43578,6 +43605,17 @@ For claims or questions, please contact:
                     'risk_score': data.get('risk_score', 'medium')
                 })
                 
+                # Keep monthly/annual as one identity: a caller-supplied monthly
+                # premium annualizes (same rule as /api/policy/update); otherwise
+                # both come from the actuarial calculation.
+                monthly_premium = safe_float(data.get('monthly_premium'), 0.0)
+                if monthly_premium > 0:
+                    monthly_premium = round(monthly_premium, 2)
+                    annual_premium = round(monthly_premium * 12, 2)
+                else:
+                    monthly_premium = premium_data['monthly']
+                    annual_premium = premium_data['annual']
+
                 # Create policy
                 policy = {
                     'id': policy_id,
@@ -43585,8 +43623,8 @@ For claims or questions, please contact:
                     'type': policy_type,
                     'policy_type': policy_type,
                     'coverage_amount': coverage_amount,
-                    'monthly_premium': data.get('monthly_premium') or premium_data['monthly'],
-                    'annual_premium': premium_data['annual'],
+                    'monthly_premium': monthly_premium,
+                    'annual_premium': annual_premium,
                     'status': data.get('status', 'draft'),
                     'beneficiary': data.get('beneficiary', ''),
                     'beneficiary_name': data.get('beneficiary', ''),
