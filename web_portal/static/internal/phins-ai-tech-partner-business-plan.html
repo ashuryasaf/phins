@@ -142,7 +142,7 @@ strong { color: var(--navy); }
     canonical Israel model used across the IL pitch dashboard.
   </p>
   <div class="kpis">
-    <div class="kpi"><div class="v">64+</div><div class="l">Deployed platform modules</div></div>
+    <div class="kpi"><div class="v" data-live-modules>100</div><div class="l">Deployed platform modules</div></div>
     <div class="kpi"><div class="v" id="k-round">₪6.0M</div><div class="l">Seed / build round</div></div>
     <div class="kpi"><div class="v" id="k-pre">₪24.0M</div><div class="l">Pre-money (adjustable)</div></div>
     <div class="kpi"><div class="v" id="k-gwp29">₪733.3M</div><div class="l">2029 GWP (IL model)</div></div>
@@ -161,7 +161,7 @@ strong { color: var(--navy); }
 <div class="pitchbox" id="elevator-pitch">
   <div class="pb-label"> Elevator pitch — 30 seconds</div>
   <p>
-    PHINS is an <strong>AI-operated insurance operating system</strong>: 64+ deployed modules covering policy,
+    PHINS is an <strong>AI-operated insurance operating system</strong>: <span data-live-modules>100</span> deployed modules covering policy,
     underwriting, billing, claims, reinsurance, payments, and an agent ecosystem — all running on an
     append-only, hash-chained ledger where <strong>AI recommends but never posts</strong>. We are opening the
     disability and long-term-care protection market — Israel first, then OECD markets on the same codebase.
@@ -201,7 +201,7 @@ strong { color: var(--navy); }
   on premium while underwriting risk sits with licensed carriers and reinsurers.
 </p>
 <ul>
-  <li><strong>Built:</strong> 64+ deployed service modules — policy, underwriting, billing, claims, reinsurance, wallet/settlement, agent ecosystem, BI/actuarial.</li>
+  <li><strong>Built:</strong> <span data-live-modules>100</span> deployed service modules — policy, underwriting, billing, claims, reinsurance, wallet/settlement, agent ecosystem, BI/actuarial.</li>
   <li><strong>Validated:</strong> an IAA-recognised executive actuary reviewed the pricing model (26 May 2026) and is joining on the hybrid Chief-Actuary path.</li>
   <li><strong>Governed:</strong> every financial event is anchored to an append-only, hash-chained platform ledger; AI layers recommend but never post.</li>
 </ul>
@@ -554,5 +554,6 @@ strong { color: var(--navy); }
   loadFx();
 })();
 </script>
+<script src="/platform-facts.js"></script>
 </body>
 </html>

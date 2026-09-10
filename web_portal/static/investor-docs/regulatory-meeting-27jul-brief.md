@@ -35,7 +35,7 @@ application memorandum already published on the platform.
 
 | Minutes | Segment | Talking points & source |
 |---|---|---|
-| 00–03 | Opening — PHINS in 90 seconds | AI-operated insurance operating system, 64+ deployed modules on an append-only hash-chained ledger — **AI recommends, the ledger decides**. Disability / LTC severity product; Israel first. |
+| 00–03 | Opening — PHINS in 90 seconds | AI-operated insurance operating system, **100 deployed modules** (live count from the `services/` layer) on an append-only hash-chained ledger — **AI recommends, the ledger decides**. Disability / LTC severity product; Israel first. |
 | 03–09 | Platform & product regulatory | Capital Market, Insurance & Savings Authority pathway; digital MGA / platform posture (claims reserves stay on the carrier); walk the **Israel regulatory application memorandum (Hebrew)** — ask where counsel sees gaps or accelerators. |
 | 09–15 | IP protection | Codebase, AI/actuarial models, integrity-contract architecture, and brand: what to file vs. hold as trade secret; founder / contractor IP assignments; protection strategy ahead of B2B licensing and multi-market rollout. |
 | 15–21 | B2B contracts | Contract stack from the business plan: insurer JV / MGA agreements, technology license + royalty, reinsurance-adjacent terms, supplier and agent agreements, NDAs and term sheets already in use on the platform. |

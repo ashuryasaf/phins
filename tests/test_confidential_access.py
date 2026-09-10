@@ -54,6 +54,7 @@ def test_confidential_paths_are_recognised(path):
         "/dashboard.html",
         "/api/health",
         "/api/fx/rates",
+        "/api/platform/facts",
         # Shared assets under a gated prefix must stay readable, otherwise a 401
         # on the stylesheet breaks an authorised page.
         "/legal/legal-docs.css",
@@ -367,7 +368,7 @@ def test_http_sign_denied_without_token(gate_token):
 
 
 def test_http_public_pages_unaffected_by_the_gate(gate_token):
-    for path in ("/", "/api/health", "/api/fx/rates"):
+    for path in ("/", "/api/health", "/api/fx/rates", "/api/platform/facts"):
         r = requests.get(f"{BASE_URL}{path}", timeout=10)
         assert r.status_code == 200, path
 

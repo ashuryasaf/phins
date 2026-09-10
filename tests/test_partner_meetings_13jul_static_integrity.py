@@ -137,12 +137,19 @@ def test_pitch_dashboard_meeting_a_tab_and_onepager():
                   "40.3%", "14.7%", "11.7%"):
         assert token in onepager
     # module count must match the live service layer (64+ is a stale under-count)
+    # and stay bound so a later services/ change updates the page on the fly
     services = Path(__file__).resolve().parents[1] / "services"
     module_count = len(list(services.glob("*.py")))
     assert "64+" not in onepager
-    assert f">{module_count}</div>" in onepager or f">{module_count} service" in onepager
-    assert f"{module_count} service modules" in onepager
-    assert f"{module_count} מודולי שירות" in onepager
+    assert "64+" not in pd
+    assert "/platform-facts.js" in pd
+    assert "data-live-modules" in onepager
+    assert f">{module_count}<" in onepager
+    assert "service modules" in onepager
+    assert "מודולי שירות" in onepager
+    assert 'data-live="eoy"' in onepager
+    assert 'data-live="gwp_m"' in onepager
+    assert 'data-live="nr_2029"' in onepager
     # persistency × premium identity (avg in-force × ₪4,518)
     avg = (12000, 59040, 162317)
     prem = 4518
