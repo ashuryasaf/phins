@@ -41,7 +41,7 @@ def test_get_platform_facts_matches_il_book_identity():
     assert book["take_rate"] == 0.25
     avg = book["avg_in_force"]
     gwp = [avg[i] * book["premium"] for i in range(3)]
-    nr = [g * book["take_rate"] for i in gwp]
+    nr = [g * book["take_rate"] for g in gwp]
     assert book["gwp"] == gwp
     assert book["net_revenue"] == nr
     ebitda = [nr[i] - book["opex"][i] for i in range(3)]
