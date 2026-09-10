@@ -1793,13 +1793,18 @@
       align-items: start;
     }
 
-    .pm-op-col h4 {
+    .pm-op-col h4,
+    h4.pm-op-book-label {
       font-size: 8pt;
       font-weight: 800;
       letter-spacing: 0.1em;
       text-transform: uppercase;
       color: #4338ca;
       margin: 0 0 6px;
+    }
+
+    h4.pm-op-book-label {
+      margin-top: 12px;
     }
 
     .pm-op-col p,
@@ -1838,11 +1843,23 @@
       border-radius: 10px 0 10px 0;
     }
 
+    .pm-op-kpis,
+    .pm-op-table-wrap {
+      direction: ltr;
+    }
+
+    .pm-op-table-wrap {
+      margin: 12px 0 8px;
+      overflow-x: auto;
+    }
+
     .pm-op-table {
       width: 100%;
+      min-width: 520px;
+      table-layout: fixed;
       border-collapse: collapse;
       font-size: 7.6pt;
-      margin: 4px 0 8px;
+      margin: 0;
     }
 
     .pm-op-table th,
@@ -3577,16 +3594,30 @@
                   Co-developed models plug into the existing decision-audit layer. This is the architecture regulators are converging on —
                   and the reason a public AI company can put models inside UW, claims, and actuarial simulation without inheriting an un-auditable black box.
                 </div>
-                <h4 style="margin-top:10px;">What capital actually buys</h4>
+              </div>
+              <div class="pm-op-col">
+                <h4>What capital actually buys</h4>
                 <p>
                   Not a rewrite. A 12-month gated path to first sale: legal terms, Appointed-Actuary sign-off, security/QA,
                   Capital Market, Insurance &amp; Savings Authority engagement, and distribution. Technology (platform + cloud/AI) is 40.3% of the ₪6.0M build;
                   legal/regulatory 14.7%; remainder actuarial, QA, pre-launch marketing, G&amp;A, and ~11.7% contingency.
                   Sales do not start until Gate 5. Claims reserves are never booked as PHINS revenue.
                 </p>
+                <h4>Gated execution (capital against completion)</h4>
+                <div class="pm-op-gates">
+                  <span class="pm-op-gate">G0 Funding &amp; team</span>
+                  <span class="pm-op-gate">G1 Legal terms</span>
+                  <span class="pm-op-gate">G2 Platform &amp; pricing</span>
+                  <span class="pm-op-gate">G3 QA &amp; security</span>
+                  <span class="pm-op-gate">G4 Regulatory</span>
+                  <span class="pm-op-gate launch">G5 1 Jan 2027 launch</span>
+                  <span class="pm-op-gate">G6 1,000 policies</span>
+                  <span class="pm-op-gate">G7 24k in-force / Series A</span>
+                </div>
               </div>
-              <div class="pm-op-col">
-                <h4>The book — one Israel model</h4>
+            </div>
+            <h4 class="pm-op-book-label">The book — one Israel model</h4>
+            <div class="pm-op-table-wrap">
                 <table class="pm-op-table">
                   <thead>
                     <tr>
@@ -3604,23 +3635,11 @@
                     <tr><td>EBITDA</td><td class="num">(18.8)M</td><td class="num">0.3M</td><td class="num">66.5M</td></tr>
                   </tbody>
                 </table>
-                <p>
-                  Locked base: table-driven ₪4,518 annual premium · 25% PHINS / 75% insurance · 8% churn · CAC ≈ ₪650.
-                  Seed ₪6.0M on ₪24M pre / ₪30M post. 2028 is already EBITDA-positive; Series A funds scale, not survival.
-                </p>
-                <h4>Gated execution (capital against completion)</h4>
-                <div class="pm-op-gates">
-                  <span class="pm-op-gate">G0 Funding &amp; team</span>
-                  <span class="pm-op-gate">G1 Legal terms</span>
-                  <span class="pm-op-gate">G2 Platform &amp; pricing</span>
-                  <span class="pm-op-gate">G3 QA &amp; security</span>
-                  <span class="pm-op-gate">G4 Regulatory</span>
-                  <span class="pm-op-gate launch">G5 1 Jan 2027 launch</span>
-                  <span class="pm-op-gate">G6 1,000 policies</span>
-                  <span class="pm-op-gate">G7 24k in-force / Series A</span>
-                </div>
-              </div>
             </div>
+            <p style="font-size:8.3pt;color:#334155;margin:6px 0 0;">
+              Locked base: table-driven ₪4,518 annual premium · 25% PHINS / 75% insurance · 8% churn · CAC ≈ ₪650.
+              Seed ₪6.0M on ₪24M pre / ₪30M post. 2028 is already EBITDA-positive; Series A funds scale, not survival.
+            </p>
             <div class="pm-op-ask">
               <div class="pm-op-ask-box primary">
                 <strong class="label" style="color:#15803d;">Why this room · the ask</strong>
@@ -3660,11 +3679,11 @@
               </div>
             </div>
             <span class="pm-op-eyebrow">תמצית מנהלים בעמוד אחד · מבט מגובה 30,000 רגל</span>
-            <h3 class="pm-op-title">מערכת הפעלה ביטוחית בנויה, על הענף הרגולטורי-נתוני האחרון שעדיין רץ על ליבה מיושנת.</h3>
+            <h3 class="pm-op-title">מערכת הפעלה ביטוחית בנויה — הענף המוסדר הגדול האחרון שעדיין רץ על ליבה מיושנת.</h3>
             <p class="pm-op-lede">
-              נכתב עבור בעל הון שמבין גם את מבנה ההון וגם את הטכנולוגיה.
+              נכתב עבור משקיע גלובלי בעל עומק פיננסי וטכנולוגי.
               PHINS איננה מצגת שמחפשת מוצר. זו <strong>מערכת הפעלה ביטוחית בפרודקשן</strong> — יותר מ-64 מודולים פרוסים —
-              שמנפיקה שכבת חומרה לנכות/סיעוד לכל החיים כ-<strong>MGA דיגיטלי קל-הון</strong>.
+              שמנפיקה שכבת נכות/סיעוד חמורה (הפעלת 3+ ADL) כ-<strong>MGA דיגיטלי קל-הון</strong>.
               סיכון החיתום אינו יושב במאזן של PHINS. ישראל היא שוק ההוכחה (מכירות מ-1 בינואר 2027).
               כל שוק OECD נוסף הוא תצורה והגשה רגולטורית — לא בניה מחדש.
               לחברת AI ציבורית זה <strong>משטח הטמעה מפוקח</strong>: הון בתנאי סיד, ו/או פיתוח משותף עם רישיון לשוק ותמלוג על הפרמיה.
@@ -3690,16 +3709,30 @@
                   מודלים בפיתוח משותף מתחברים לשכבת הביקורת הקיימת. זו הארכיטקטורה שאליה הרגולטורים מתכנסים —
                   והסיבה שחברת AI ציבורית יכולה להכניס מודלים לחיתום, תביעות וסימולציה אקטוארית בלי לרשת קופסה שחורה.
                 </div>
-                <h4 style="margin-top:10px;">מה ההון באמת קונה</h4>
+              </div>
+              <div class="pm-op-col">
+                <h4>מה ההון באמת קונה</h4>
                 <p>
                   לא כתיבה מחדש. מסלול בן 12 חודשים, בשערים, עד מכירה ראשונה: תנאי פוליסה, חתימת אקטואר ממונה, אבטחה/QA,
                   מעורבות רשות שוק ההון, ביטוח וחיסכון, והסכמי הפצה. הטכנולוגיה (פלטפורמה + ענן/AI) היא 40.3% מתקציב הבניה של ₪6.0M;
                   משפט ורגולציה 14.7%; היתר אקטואריה, QA, שיווק טרום-השקה, הנהלה, ועתודה של כ-11.7%.
                   מכירות לא מתחילות לפני שער 5. עתודות תביעות אינן נרשמות כהכנסה של PHINS.
                 </p>
+                <h4>שערי ביצוע (הון משוחרר מול השלמה)</h4>
+                <div class="pm-op-gates">
+                  <span class="pm-op-gate">ש0 גיוס וצוות</span>
+                  <span class="pm-op-gate">ש1 תנאים משפטיים</span>
+                  <span class="pm-op-gate">ש2 פלטפורמה ותמחור</span>
+                  <span class="pm-op-gate">ש3 QA ואבטחה</span>
+                  <span class="pm-op-gate">ש4 רגולציה</span>
+                  <span class="pm-op-gate launch">ש5 השקה 1.1.2027</span>
+                  <span class="pm-op-gate">ש6 1,000 פוליסות</span>
+                  <span class="pm-op-gate">ש7 24k בתוקף / סבב A</span>
+                </div>
               </div>
-              <div class="pm-op-col">
-                <h4>הספר — מודל ישראל אחד</h4>
+            </div>
+            <h4 class="pm-op-book-label">הספר — מודל ישראל אחד</h4>
+            <div class="pm-op-table-wrap">
                 <table class="pm-op-table">
                   <thead>
                     <tr>
@@ -3717,23 +3750,11 @@
                     <tr><td>EBITDA</td><td class="num">(18.8)M</td><td class="num">0.3M</td><td class="num">66.5M</td></tr>
                   </tbody>
                 </table>
-                <p>
-                  בסיס נעול: פרמיה טבלאית ₪4,518 לשנה · 25% PHINS / 75% ביטוח · נטישה 8% · CAC ≈ ₪650.
-                  סיד ₪6.0M על ₪24M טרום-כסף / ₪30M אחרי-כסף. 2028 כבר חיובית ב-EBITDA; סבב A מממן סקייל, לא הישרדות.
-                </p>
-                <h4>שערי ביצוע (הון משוחרר מול השלמה)</h4>
-                <div class="pm-op-gates">
-                  <span class="pm-op-gate">ש0 גיוס וצוות</span>
-                  <span class="pm-op-gate">ש1 תנאים משפטיים</span>
-                  <span class="pm-op-gate">ש2 פלטפורמה ותמחור</span>
-                  <span class="pm-op-gate">ש3 QA ואבטחה</span>
-                  <span class="pm-op-gate">ש4 רגולציה</span>
-                  <span class="pm-op-gate launch">ש5 השקה 1.1.2027</span>
-                  <span class="pm-op-gate">ש6 1,000 פוליסות</span>
-                  <span class="pm-op-gate">ש7 24k בתוקף / סבב A</span>
-                </div>
-              </div>
             </div>
+            <p style="font-size:8.3pt;color:#334155;margin:6px 0 0;">
+              בסיס נעול: פרמיה טבלאית ₪4,518 לשנה · 25% PHINS / 75% ביטוח · נטישה 8% · CAC ≈ ₪650.
+              סיד ₪6.0M על ₪24M טרום-כסף / ₪30M אחרי-כסף. 2028 כבר חיובית ב-EBITDA; סבב A מממן סקייל, לא הישרדות.
+            </p>
             <div class="pm-op-ask">
               <div class="pm-op-ask-box primary">
                 <strong class="label" style="color:#15803d;">למה החדר הזה · הבקשה</strong>
