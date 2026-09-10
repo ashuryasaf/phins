@@ -10225,6 +10225,8 @@
         if (book.net_revenue && book.net_revenue[2] != null) METRIC_2029.net_revenue = Math.round(book.net_revenue[2]);
         if (book.ebitda && book.ebitda[2] != null) METRIC_2029.ebitda = Math.round(book.ebitda[2]);
         if (book.gwp && book.gwp[2] != null) METRIC_2029.gwp = Math.round(book.gwp[2]);
+        if (cfg.valBasis === "multiple") applyMultiple();
+        syncInputsFromCfg(); recompute();
       });
       try {
         var saved = JSON.parse(localStorage.getItem(CFG_STORE_ID) || "null");
