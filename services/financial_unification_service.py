@@ -740,6 +740,234 @@ def reconcile_financial_books(
     }
 
 
+def _policy_status(policy: Dict[str, Any]) -> str:
+    return str(policy.get("status") or "").strip().lower()
+
+
+def _empty_bucket() -> Dict[str, Any]:
+    return {"count": 0, "monthly_premium": Decimal("0.00"), "annual_premium": Decimal("0.00")}
+
+
+def _add_to_bucket(bucket: Dict[str, Any], monthly: Decimal, annual: Decimal) -> None:
+    bucket["count"] += 1
+    bucket["monthly_premium"] += monthly
+    bucket["annual_premium"] += annual
+
+
+def _finalize_bucket(bucket: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "count": bucket["count"],
+        "monthly_premium": float(bucket["monthly_premium"]),
+        "annual_premium": float(bucket["annual_premium"]),
+    }
+
+
+def reconcile_premium_run_rate(
+    policies: Iterable[Dict[str, Any]],
+    *,
+    exclude_customer: Optional[Any] = None,
+    known_customer_ids: Optional[Iterable[str]] = None,
+    expected_total_revenue: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Tie the dashboard ``total_revenue`` to Sales Division premium sums.
+
+    The admin dashboard "Total Revenue" is the *annual* premium run-rate of
+    ``active`` policies on non-excluded (non-suspended) customers. The Sales
+    Division report sums ``monthly_premium`` over every policy attached to a
+    listed customer, regardless of status. Both are legitimate views of the
+    same book; this function computes both from one pass over the policies
+    and lists every reason they differ so they can be tied out to the cent:
+
+    * period basis (annual vs monthly),
+    * status basis (active vs all statuses / pipeline),
+    * universe (dashboard counts orphaned policies whose customer record is
+      missing; a customer-driven report cannot see them),
+    * data integrity (``monthly_premium`` missing or not equal to
+      ``round(annual_premium / 12, 2)``).
+
+    Nothing is mutated and no discrepancy is silently absorbed: a missing
+    monthly premium is derived from the annual figure *and* reported.
+    """
+    known_ids = set(known_customer_ids) if known_customer_ids is not None else None
+    tolerance = TOLERANCE
+
+    dashboard_active = _empty_bucket()
+    report_active = _empty_bucket()
+    report_pipeline = _empty_bucket()
+    suspended = _empty_bucket()
+    orphaned_active = _empty_bucket()
+    orphaned_other = _empty_bucket()
+    by_status: Dict[str, Dict[str, Any]] = {}
+
+    missing_monthly: List[str] = []
+    mismatches: List[Dict[str, Any]] = []
+    orphaned_ids: List[str] = []
+
+    for policy in policies:
+        if not isinstance(policy, dict):
+            continue
+        policy_id = str(policy.get("id") or policy.get("policy_id") or "")
+        customer_id = str(policy.get("customer_id") or "")
+        status = _policy_status(policy)
+        annual = money(policy.get("annual_premium", 0))
+        raw_monthly = policy.get("monthly_premium")
+        monthly_missing = raw_monthly in (None, "")
+        monthly = money(raw_monthly) if not monthly_missing else money(annual / 12)
+
+        if exclude_customer is not None and customer_id and exclude_customer(customer_id):
+            _add_to_bucket(suspended, monthly, annual)
+            continue
+
+        if monthly_missing and annual != 0:
+            missing_monthly.append(policy_id)
+        elif not monthly_missing and annual != 0:
+            expected_monthly = money(annual / 12)
+            if (monthly - expected_monthly).copy_abs() > tolerance:
+                mismatches.append({
+                    "policy_id": policy_id,
+                    "status": status,
+                    "monthly_premium": float(monthly),
+                    "annual_premium": float(annual),
+                    "expected_monthly": float(expected_monthly),
+                    "difference": float(monthly - expected_monthly),
+                })
+
+        is_active = status == "active"
+        is_orphan = known_ids is not None and customer_id not in known_ids
+
+        if is_active:
+            _add_to_bucket(dashboard_active, monthly, annual)
+
+        if is_orphan:
+            orphaned_ids.append(policy_id)
+            _add_to_bucket(orphaned_active if is_active else orphaned_other, monthly, annual)
+            continue
+
+        bucket = by_status.setdefault(status or "<blank>", _empty_bucket())
+        _add_to_bucket(bucket, monthly, annual)
+        _add_to_bucket(report_active if is_active else report_pipeline, monthly, annual)
+
+    dashboard_total_revenue = dashboard_active["annual_premium"]
+    dashboard_monthly_income = money(dashboard_total_revenue / 12) if dashboard_total_revenue else Decimal("0.00")
+    report_all_monthly = report_active["monthly_premium"] + report_pipeline["monthly_premium"]
+    report_all_annual = report_active["annual_premium"] + report_pipeline["annual_premium"]
+    active_monthly_times_12 = dashboard_active["monthly_premium"] * 12
+    rounding_drift = dashboard_total_revenue - active_monthly_times_12
+    # Each active policy may carry up to half a cent of monthly rounding.
+    rounding_allowance = Decimal("0.005") * 12 * dashboard_active["count"] + tolerance
+
+    checks: List[Dict[str, Any]] = []
+
+    if expected_total_revenue is not None:
+        expected = money(expected_total_revenue)
+        checks.append({
+            "check": "active_annual_premium_equals_dashboard_total_revenue",
+            "ok": (dashboard_total_revenue - expected).copy_abs() <= tolerance,
+            "left": float(dashboard_total_revenue),
+            "right": float(expected),
+            "difference": _diff(dashboard_total_revenue, expected),
+        })
+
+    checks.append({
+        "check": "active_monthly_premium_x12_matches_total_revenue_within_rounding",
+        "ok": rounding_drift.copy_abs() <= rounding_allowance,
+        "left": float(active_monthly_times_12),
+        "right": float(dashboard_total_revenue),
+        "difference": _diff(active_monthly_times_12, dashboard_total_revenue),
+        "allowance": float(rounding_allowance),
+    })
+    checks.append({
+        "check": "monthly_premium_equals_annual_premium_div_12",
+        "ok": not mismatches,
+        "violations": len(mismatches),
+    })
+    checks.append({
+        "check": "monthly_premium_present_on_every_policy",
+        "ok": not missing_monthly,
+        "violations": len(missing_monthly),
+    })
+    checks.append({
+        "check": "no_active_policies_without_customer_record",
+        "ok": orphaned_active["count"] == 0,
+        "violations": orphaned_active["count"],
+    })
+
+    bridge = [
+        {
+            "step": "sales_report_monthly_premium_all_statuses",
+            "amount": float(report_all_monthly),
+            "note": "Sales Division report: monthly_premium summed over every listed policy",
+        },
+        {
+            "step": "less_pipeline_policies_not_active",
+            "amount": float(-report_pipeline["monthly_premium"]),
+            "note": "pending / draft / cancelled / other non-active statuses",
+        },
+        {
+            "step": "plus_active_policies_without_customer_record",
+            "amount": float(orphaned_active["monthly_premium"]),
+            "note": "counted by the dashboard, invisible to a customer-driven report",
+        },
+        {
+            "step": "active_monthly_premium_dashboard_universe",
+            "amount": float(dashboard_active["monthly_premium"]),
+            "note": "subtotal",
+        },
+        {
+            "step": "times_12_annualize",
+            "amount": float(active_monthly_times_12),
+            "note": "dashboard Total Revenue is an annual run-rate",
+        },
+        {
+            "step": "plus_rounding_drift",
+            "amount": float(rounding_drift),
+            "note": "monthly_premium is stored rounded to cents",
+        },
+        {
+            "step": "dashboard_total_revenue",
+            "amount": float(dashboard_total_revenue),
+            "note": "sum of annual_premium on active, non-suspended policies",
+        },
+    ]
+
+    return {
+        "definitions": {
+            "dashboard_total_revenue": "sum(annual_premium) for status=active, non-suspended customers",
+            "dashboard_monthly_premium_income": "dashboard_total_revenue / 12",
+            "sales_report_monthly_premium": "sum(monthly_premium) over all statuses for listed customers",
+        },
+        "tolerance": float(tolerance),
+        "dashboard": {
+            "total_revenue": float(dashboard_total_revenue),
+            "monthly_premium_income": float(dashboard_monthly_income),
+            "active_policies": dashboard_active["count"],
+        },
+        "sales_report": {
+            "all_statuses": {
+                "count": report_active["count"] + report_pipeline["count"],
+                "monthly_premium": float(report_all_monthly),
+                "annual_premium": float(report_all_annual),
+            },
+            "active": _finalize_bucket(report_active),
+            "pipeline": _finalize_bucket(report_pipeline),
+            "by_status": {k: _finalize_bucket(v) for k, v in sorted(by_status.items())},
+        },
+        "excluded_from_sales_report": {
+            "suspended_customers": _finalize_bucket(suspended),
+            "orphaned_active": _finalize_bucket(orphaned_active),
+            "orphaned_other": _finalize_bucket(orphaned_other),
+        },
+        "bridge": bridge,
+        "integrity": {
+            "missing_monthly_premium": missing_monthly,
+            "monthly_annual_mismatch": mismatches,
+            "orphaned_policies": orphaned_ids,
+        },
+        "checks": checks,
+        "is_consistent": all(c["ok"] for c in checks),
+    }
+
+
 def pin_kernel_fields_on_policy(policy: Dict[str, Any], premium_data: Dict[str, Any]) -> Dict[str, Any]:
     """Copy kernel decomposition onto the issued policy (additive, no reprice)."""
     if not isinstance(policy, dict) or not isinstance(premium_data, dict):
