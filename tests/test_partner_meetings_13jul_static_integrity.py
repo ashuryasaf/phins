@@ -135,6 +135,8 @@ def test_pitch_dashboard_meeting_a_tab_and_onepager():
     assert "html.print-pm-onepager .hero" in pd
     assert "html.print-pm-onepager #pm-track-a" in pd
     assert "html.print-pm-onepager #pm-panel-a > *:not(#meeting-a-onepager)" in pd
+    assert "html.print-pm-onepager #partner-meetings-13jul > .pitch-fold-body" in pd
+    assert "html.print-pm-onepager #partner-meetings-13jul .pitch-fold-body > *:not(#pm-panel-a)" in pd
     assert "@media screen and (max-width: 980px)" in pd
     assert "beforeprint" in pd
     assert 'q.get("lang") === "he"' in pd

@@ -1816,7 +1816,7 @@
     }
 
     h4.pm-op-book-label {
-      margin-top: 0;
+      margin-top: 8px;
     }
 
     .pm-op-col p,
@@ -1882,7 +1882,7 @@
 
     .pm-onepager .pm-op-table th:first-child,
     .pm-onepager .pm-op-table td:first-child {
-      width: 42%;
+      width: 34%;
     }
 
     .pm-onepager .pm-op-table th.num,
@@ -2054,6 +2054,8 @@
       html.print-pm-onepager #pm-track-a,
       html.print-pm-onepager #pm-panel-b,
       html.print-pm-onepager #partner-meetings-13jul > .exec-summary-banner,
+      html.print-pm-onepager #partner-meetings-13jul .exec-integrity-note,
+      html.print-pm-onepager #partner-meetings-13jul .pitch-fold-body > *:not(#pm-panel-a),
       html.print-pm-onepager #pm-panel-a > *:not(#meeting-a-onepager),
       html.print-pm-onepager main.container > section:not(#partner-meetings-13jul) {
         display: none !important;
@@ -2063,6 +2065,19 @@
         width: 100% !important;
         margin: 0 !important;
         padding: 0 !important;
+      }
+      html.print-pm-onepager #partner-meetings-13jul.pitch-fold {
+        overflow: visible !important;
+        box-shadow: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+        background: #fff !important;
+      }
+      html.print-pm-onepager #partner-meetings-13jul > .pitch-fold-body {
+        display: block !important;
+        padding: 0 !important;
+        border: none !important;
+        background: #fff !important;
       }
       html.print-pm-onepager #partner-meetings-13jul,
       html.print-pm-onepager #pm-panel-a {
@@ -3698,33 +3713,13 @@
                   <strong>Integrity contract:</strong> AI recommends; an append-only, hash-chained ledger decides.
                   Co-developed models plug into the existing decision-audit layer — the architecture regulators are converging on, not an un-auditable black box.
                 </div>
-                <h4 style="margin-top:7px;">What capital actually buys</h4>
+              </div>
+              <div class="pm-op-col">
+                <h4>What capital actually buys</h4>
                 <p>
                   Not a rewrite. A 12-month gated path to first sale: legal terms, Appointed-Actuary sign-off, security/QA, Authority engagement, and distribution.
                   Technology is 40.3% of the ₪6.0M build; legal/regulatory 14.7%; ~11.7% contingency. Sales start at Gate 5. Claims reserves are never PHINS revenue.
                 </p>
-              </div>
-              <div class="pm-op-col pm-op-book-col">
-                <h4 class="pm-op-book-label">The book — one Israel model</h4>
-                <div class="pm-op-table-wrap">
-                    <table class="pm-op-table">
-                      <thead>
-                        <tr>
-                          <th>Line (₪)</th>
-                          <th class="num">2027</th>
-                          <th class="num">2028</th>
-                          <th class="num">2029</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr><td>Active policies EoY</td><td class="num" data-live="eoy" data-i="0">24,000</td><td class="num" data-live="eoy" data-i="1">94,080</td><td class="num" data-live="eoy" data-i="2">230,554</td></tr>
-                        <tr><td>Avg in-force</td><td class="num" data-live="avg" data-i="0">12,000</td><td class="num" data-live="avg" data-i="1">59,040</td><td class="num" data-live="avg" data-i="2">162,317</td></tr>
-                        <tr><td>Risk GWP</td><td class="num" data-live="gwp_m" data-i="0">54.2M</td><td class="num" data-live="gwp_m" data-i="1">266.7M</td><td class="num" data-live="gwp_m" data-i="2">733.3M</td></tr>
-                        <tr class="hi"><td>PHINS net revenue (<span data-live="take_pct">25%</span>)</td><td class="num" data-live="nr_m" data-i="0">13.6M</td><td class="num" data-live="nr_m" data-i="1">66.7M</td><td class="num" data-live="nr_m" data-i="2">183.3M</td></tr>
-                        <tr><td>EBITDA</td><td class="num" data-live="ebitda_m" data-i="0">(18.8)M</td><td class="num" data-live="ebitda_m" data-i="1">0.3M</td><td class="num" data-live="ebitda_m" data-i="2">66.5M</td></tr>
-                      </tbody>
-                    </table>
-                </div>
                 <h4>Gated execution</h4>
                 <div class="pm-op-gates">
                   <span class="pm-op-gate">G0 Funding &amp; team</span>
@@ -3737,6 +3732,26 @@
                   <span class="pm-op-gate">G7 24k in-force / Series A</span>
                 </div>
               </div>
+            </div>
+            <h4 class="pm-op-book-label">The book — one Israel model</h4>
+            <div class="pm-op-table-wrap">
+                <table class="pm-op-table">
+                  <thead>
+                    <tr>
+                      <th>Line (₪)</th>
+                      <th class="num">2027</th>
+                      <th class="num">2028</th>
+                      <th class="num">2029</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>Active policies EoY</td><td class="num" data-live="eoy" data-i="0">24,000</td><td class="num" data-live="eoy" data-i="1">94,080</td><td class="num" data-live="eoy" data-i="2">230,554</td></tr>
+                    <tr><td>Avg in-force</td><td class="num" data-live="avg" data-i="0">12,000</td><td class="num" data-live="avg" data-i="1">59,040</td><td class="num" data-live="avg" data-i="2">162,317</td></tr>
+                    <tr><td>Risk GWP</td><td class="num" data-live="gwp_m" data-i="0">54.2M</td><td class="num" data-live="gwp_m" data-i="1">266.7M</td><td class="num" data-live="gwp_m" data-i="2">733.3M</td></tr>
+                    <tr class="hi"><td>PHINS net revenue (<span data-live="take_pct">25%</span>)</td><td class="num" data-live="nr_m" data-i="0">13.6M</td><td class="num" data-live="nr_m" data-i="1">66.7M</td><td class="num" data-live="nr_m" data-i="2">183.3M</td></tr>
+                    <tr><td>EBITDA</td><td class="num" data-live="ebitda_m" data-i="0">(18.8)M</td><td class="num" data-live="ebitda_m" data-i="1">0.3M</td><td class="num" data-live="ebitda_m" data-i="2">66.5M</td></tr>
+                  </tbody>
+                </table>
             </div>
             <div class="pm-op-ask">
               <div class="pm-op-ask-box primary">
@@ -3799,33 +3814,13 @@
                   <strong>חוזה השלמות:</strong> הבינה המלאכותית ממליצה; ספר חשבונות תוספתי, משורשר-גיבוב, מחליט.
                   מודלים בפיתוח משותף מתחברים לשכבת הביקורת — הארכיטקטורה שאליה הרגולטורים מתכנסים, לא קופסה שחורה.
                 </div>
-                <h4 style="margin-top:7px;">מה ההון באמת קונה</h4>
+              </div>
+              <div class="pm-op-col">
+                <h4>מה ההון באמת קונה</h4>
                 <p>
                   לא כתיבה מחדש. מסלול בן 12 חודשים, בשערים, עד מכירה ראשונה: תנאים, אקטואר ממונה, QA/אבטחה, רשות שוק ההון והפצה.
                   טכנולוגיה 40.3% מתקציב ₪6.0M; משפט ורגולציה 14.7%; עתודה ~11.7%. מכירות משער 5. עתודות תביעות אינן הכנסה של PHINS.
                 </p>
-              </div>
-              <div class="pm-op-col pm-op-book-col">
-                <h4 class="pm-op-book-label">הספר — מודל ישראל אחד</h4>
-                <div class="pm-op-table-wrap">
-                    <table class="pm-op-table">
-                      <thead>
-                        <tr>
-                          <th>סעיף (₪)</th>
-                          <th class="num">2027</th>
-                          <th class="num">2028</th>
-                          <th class="num">2029</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr><td>פוליסות לסוף שנה</td><td class="num" data-live="eoy" data-i="0">24,000</td><td class="num" data-live="eoy" data-i="1">94,080</td><td class="num" data-live="eoy" data-i="2">230,554</td></tr>
-                        <tr><td>ממוצע בתוקף</td><td class="num" data-live="avg" data-i="0">12,000</td><td class="num" data-live="avg" data-i="1">59,040</td><td class="num" data-live="avg" data-i="2">162,317</td></tr>
-                        <tr><td>פרמיה ברוטו</td><td class="num" data-live="gwp_m" data-i="0">54.2M</td><td class="num" data-live="gwp_m" data-i="1">266.7M</td><td class="num" data-live="gwp_m" data-i="2">733.3M</td></tr>
-                        <tr class="hi"><td>הכנסה נטו (<span data-live="take_pct">25%</span>)</td><td class="num" data-live="nr_m" data-i="0">13.6M</td><td class="num" data-live="nr_m" data-i="1">66.7M</td><td class="num" data-live="nr_m" data-i="2">183.3M</td></tr>
-                        <tr><td>EBITDA</td><td class="num" data-live="ebitda_m" data-i="0">(18.8)M</td><td class="num" data-live="ebitda_m" data-i="1">0.3M</td><td class="num" data-live="ebitda_m" data-i="2">66.5M</td></tr>
-                      </tbody>
-                    </table>
-                </div>
                 <h4>שערי ביצוע</h4>
                 <div class="pm-op-gates">
                   <span class="pm-op-gate">ש0 גיוס וצוות</span>
@@ -3838,6 +3833,26 @@
                   <span class="pm-op-gate">ש7 24k בתוקף / סבב A</span>
                 </div>
               </div>
+            </div>
+            <h4 class="pm-op-book-label">הספר — מודל ישראל אחד</h4>
+            <div class="pm-op-table-wrap">
+                <table class="pm-op-table">
+                  <thead>
+                    <tr>
+                      <th>סעיף (₪)</th>
+                      <th class="num">2027</th>
+                      <th class="num">2028</th>
+                      <th class="num">2029</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>פוליסות לסוף שנה</td><td class="num" data-live="eoy" data-i="0">24,000</td><td class="num" data-live="eoy" data-i="1">94,080</td><td class="num" data-live="eoy" data-i="2">230,554</td></tr>
+                    <tr><td>ממוצע בתוקף</td><td class="num" data-live="avg" data-i="0">12,000</td><td class="num" data-live="avg" data-i="1">59,040</td><td class="num" data-live="avg" data-i="2">162,317</td></tr>
+                    <tr><td>פרמיה ברוטו</td><td class="num" data-live="gwp_m" data-i="0">54.2M</td><td class="num" data-live="gwp_m" data-i="1">266.7M</td><td class="num" data-live="gwp_m" data-i="2">733.3M</td></tr>
+                    <tr class="hi"><td>הכנסה נטו (<span data-live="take_pct">25%</span>)</td><td class="num" data-live="nr_m" data-i="0">13.6M</td><td class="num" data-live="nr_m" data-i="1">66.7M</td><td class="num" data-live="nr_m" data-i="2">183.3M</td></tr>
+                    <tr><td>EBITDA</td><td class="num" data-live="ebitda_m" data-i="0">(18.8)M</td><td class="num" data-live="ebitda_m" data-i="1">0.3M</td><td class="num" data-live="ebitda_m" data-i="2">66.5M</td></tr>
+                  </tbody>
+                </table>
             </div>
             <div class="pm-op-ask">
               <div class="pm-op-ask-box primary">
@@ -10246,12 +10261,16 @@
         if (h === "meeting-a-onepager" || document.documentElement.classList.contains("print-pm-onepager")) {
           document.documentElement.classList.add("print-pm-onepager");
           selectPartnerTab("a");
+          var sec = document.getElementById("partner-meetings-13jul");
+          if (sec) sec.classList.add("is-open");
         }
       }
       if (printBtn) {
         printBtn.addEventListener("click", function () {
           document.documentElement.classList.add("print-pm-onepager");
           selectPartnerTab("a");
+          var sec = document.getElementById("partner-meetings-13jul");
+          if (sec) sec.classList.add("is-open");
           window.print();
         });
       }
