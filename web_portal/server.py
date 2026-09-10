@@ -8456,8 +8456,10 @@ def get_investor_fx_rates(force_refresh=False):
 # appraisal used for the funding round.
 from services.aspire_scale_identity import (
     PHINS_TAKE as _UNIFIED_PHINS_TAKE,
+    PRIOR_PERSIST as _UNIFIED_PRIOR_PERSIST,
     UNIFIED_ANNUAL_PREMIUM as _UNIFIED_PREMIUM,
     UNIFIED_AVG_IN_FORCE as _UNIFIED_AVG_IF,
+    UNIFIED_EOY_IN_FORCE as _UNIFIED_EOY_IF,
     UNIFIED_OPEX as _UNIFIED_OPEX,
 )
 
@@ -8469,6 +8471,69 @@ _INV_VAL_BASE = {
     'take_rate': float(_UNIFIED_PHINS_TAKE),
     'opex': [float(x) for x in _UNIFIED_OPEX],
 }
+
+# Canonical seed-round economics restated on the IL pitch surfaces.
+_INV_ROUND_SEED = 6_000_000.0
+_INV_ROUND_PRE_MONEY = 24_000_000.0
+
+
+def count_service_modules(root=None):
+    """Live count of deployed Python service modules (``services/*.py``)."""
+    services_dir = os.path.join(root or ROOT_DIR, "services")
+    try:
+        names = os.listdir(services_dir)
+    except OSError:
+        return 0
+    return sum(
+        1 for name in names
+        if name.endswith(".py") and not name.startswith(".")
+    )
+
+
+def build_investor_book():
+    """Canonical IL income-model identity used by investor surfaces.
+
+    Every derived line is persistency × table-driven premium × take, minus
+    intensity-scaled opex — the same identity as ``_INV_VAL_BASE`` and the
+    Meeting A one-pager. Surfaces bind to this payload so a change in
+    ``services/aspire_scale_identity.py`` shows up without a copy edit.
+    """
+    avg = [int(x) for x in _UNIFIED_AVG_IF]
+    eoy = [int(x) for x in _UNIFIED_EOY_IF]
+    premium = float(_UNIFIED_PREMIUM)
+    take = float(_UNIFIED_PHINS_TAKE)
+    opex = [float(x) for x in _UNIFIED_OPEX]
+    gwp = [avg[i] * premium for i in range(3)]
+    net_revenue = [gwp[i] * take for i in range(3)]
+    ebitda = [net_revenue[i] - opex[i] for i in range(3)]
+    nr29 = net_revenue[-1]
+    return {
+        "currency": "ILS",
+        "years": [2027, 2028, 2029],
+        "eoy_in_force": eoy,
+        "avg_in_force": avg,
+        "premium": premium,
+        "take_rate": take,
+        "churn": round(1.0 - float(_UNIFIED_PRIOR_PERSIST), 6),
+        "opex": opex,
+        "gwp": gwp,
+        "net_revenue": net_revenue,
+        "ebitda": ebitda,
+        "ebitda_margin_2029": (ebitda[-1] / nr29) if nr29 else 0.0,
+        "seed": _INV_ROUND_SEED,
+        "pre_money": _INV_ROUND_PRE_MONEY,
+        "post_money": _INV_ROUND_SEED + _INV_ROUND_PRE_MONEY,
+    }
+
+
+def get_platform_facts():
+    """Public snapshot of live platform facts for investor / partner pages."""
+    return {
+        "service_modules": count_service_modules(),
+        "source": "services/*.py",
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "investor_book": build_investor_book(),
+    }
 
 
 def _inv_percentile(sorted_vals, p):
@@ -15903,6 +15968,25 @@ For claims or questions, please contact:
                 }
             self._set_json_headers(200)
             self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
+        # Live platform facts (read-only, public): service-module census from
+        # the ``services/`` layer plus the canonical IL investor book. Investor
+        # and partner pages bind to this so module-count and book figures stay
+        # aligned as the underlying data changes. Always 200.
+        if path == '/api/platform/facts':
+            try:
+                facts = get_platform_facts()
+            except Exception as e:
+                facts = {
+                    'service_modules': 100,
+                    'source': 'fallback',
+                    'as_of': datetime.now(timezone.utc).isoformat(),
+                    'investor_book': None,
+                    'error': str(e),
+                }
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(facts, default=str).encode('utf-8'))
             return
 
         # Investor valuation simulation (read-only, public): deterministic

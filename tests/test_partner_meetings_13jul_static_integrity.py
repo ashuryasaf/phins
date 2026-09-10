@@ -104,6 +104,61 @@ def test_pitch_dashboard_partner_meetings_data_integrity():
     assert "ILS 4,518 table-driven premium" in pd or "4,518" in pd
     # the agent plan derives FROM the policy ramp (single source of truth)
     assert "never the other way around" in pd
+    assert "The Meeting A one-pager restates that same book" in pd
+
+
+def test_pitch_dashboard_meeting_a_tab_and_onepager():
+    pd = _read(STATIC / "pitch-dashboard.html")
+    assert 'id="pm-tab-a"' in pd
+    assert 'id="pm-tab-b"' in pd
+    assert 'role="tablist"' in pd
+    assert 'id="pm-panel-a"' in pd
+    assert 'id="pm-panel-b"' in pd
+    assert 'id="meeting-a"' in pd
+    assert 'id="meeting-a-onepager"' in pd
+    assert "#meeting-a-onepager" in pd
+    assert "30,000-foot executive one-pager" in pd or "30,000-ft" in pd
+    assert "30,000 feet" in pd
+    assert 'lang="en"' in pd and 'lang="he"' in pd
+    assert 'dir="rtl"' in pd
+    assert "data-op-lang=\"en\"" in pd
+    assert "data-op-lang=\"he\"" in pd
+    assert "תמצית מנהלים בעמוד אחד" in pd
+    assert "מערכת הפעלה ביטוחית בנויה" in pd
+    assert "AI recommends" in pd
+    assert "הבינה המלאכותית ממליצה" in pd
+    assert "Gate 5" in pd or "G5 1 Jan 2027" in pd
+    assert "phinsOpenPartnerMeetingTab" in pd
+    assert "print-pm-onepager" in pd
+    onepager = pd.split('id="meeting-a-onepager"', 1)[1].split('id="pm-track-a"', 1)[0]
+    # one-pager restates the investor-meeting book, not a second model
+    for token in ("₪4,518", "25%", "24,000", "94,080", "230,554", "₪6.0M", "₪24M",
+                  "54.2M", "266.7M", "733.3M", "13.6M", "66.7M", "183.3M",
+                  "40.3%", "14.7%", "11.7%"):
+        assert token in onepager
+    # module count must match the live service layer (64+ is a stale under-count)
+    # and stay bound so a later services/ change updates the page on the fly
+    services = Path(__file__).resolve().parents[1] / "services"
+    module_count = len(list(services.glob("*.py")))
+    assert "64+" not in onepager
+    assert "64+" not in pd
+    assert "/platform-facts.js" in pd
+    assert "data-live-modules" in onepager
+    assert f">{module_count}<" in onepager
+    assert "service modules" in onepager
+    assert "מודולי שירות" in onepager
+    assert 'data-live="eoy"' in onepager
+    assert 'data-live="gwp_m"' in onepager
+    assert 'data-live="nr_2029"' in onepager
+    # persistency × premium identity (avg in-force × ₪4,518)
+    avg = (12000, 59040, 162317)
+    prem = 4518
+    gwp = [a * prem for a in avg]
+    nr = [g * 0.25 for g in gwp]
+    assert gwp == [54216000, 266742720, 733348206]
+    assert nr == [13554000, 66685680, 183337051.5]
+    ebitda = [nr[0] - 32400000, nr[1] - 66420000, nr[2] - 116868240]
+    assert [round(x) for x in ebitda] == [-18846000, 265680, 66468812]
 
 
 def test_pitch_dashboard_diary_seeds_13jul_meetings():

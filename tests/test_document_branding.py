@@ -343,9 +343,13 @@ def test_deck_module_count_claims_match_service_layer():
                   "seed-investor-deck.html"):
         doc = _read(STATIC / fname)
         assert "64+" not in doc, f"{fname} still carries the stale 64+ module claim"
-        assert f"{count} service module" in doc or f"{count} deployed service" in doc \
-            or f"{count}-service-module" in doc, \
-            f"{fname} module-count claim out of sync with services/ ({count})"
+        assert "data-live-modules" in doc, f"{fname} missing live module-count binding"
+        assert (
+            f">{count}<" in doc
+            or f"{count} service module" in doc
+            or f"{count} deployed service" in doc
+            or f"{count}-service-module" in doc
+        ), f"{fname} module-count claim out of sync with services/ ({count})"
 
 
 @pytest.mark.parametrize("fname", ["unicorn-investor-deck.html",

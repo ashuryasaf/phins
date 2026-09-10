@@ -1532,6 +1532,503 @@
       transform: translateY(-1px);
     }
 
+    /* Partner Meetings 13.7 — Meeting A / Meeting B tabs + bilingual one-pager */
+    .pm-meet-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin: 16px 0 14px;
+      padding: 6px;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #f4f2ff 0%, #eef6f4 100%);
+      border: 1px solid #d9d6f5;
+    }
+
+    .pm-meet-tab {
+      appearance: none;
+      font-family: "Space Grotesk", "Heebo", inherit;
+      font-size: 9pt;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: #312e81;
+      padding: 10px 16px;
+      cursor: pointer;
+      transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+    }
+
+    .pm-meet-tab:hover {
+      background: rgba(255, 255, 255, 0.7);
+      transform: translateY(-1px);
+    }
+
+    .pm-meet-tab[aria-selected="true"][data-track="a"] {
+      background: linear-gradient(135deg, #1e1b4b 0%, #4338ca 100%);
+      color: #fff;
+      box-shadow: 0 8px 18px rgba(67, 56, 202, 0.28);
+    }
+
+    .pm-meet-tab[aria-selected="true"][data-track="b"] {
+      background: linear-gradient(135deg, #115e59 0%, #0f766e 100%);
+      color: #fff;
+      box-shadow: 0 8px 18px rgba(15, 118, 110, 0.28);
+    }
+
+    .pm-meet-tab .pm-tab-time {
+      display: block;
+      font-size: 7.2pt;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      opacity: 0.78;
+      margin-top: 2px;
+    }
+
+    .pm-tab-panel[hidden] {
+      display: none !important;
+    }
+
+    .pm-onepager {
+      margin: 0 0 18px;
+      border-radius: 18px;
+      overflow: hidden;
+      border: 1px solid rgba(67, 56, 202, 0.28);
+      box-shadow: 0 18px 40px rgba(30, 27, 75, 0.12);
+      background: #fff;
+    }
+
+    .pm-op-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 10px 16px;
+      background: linear-gradient(135deg, #0b1228 0%, #1e1b4b 55%, #4338ca 100%);
+      color: #fff;
+    }
+
+    .pm-op-toolbar .pm-op-kicker {
+      font-size: 8pt;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .pm-op-toolbar .pm-op-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .pm-op-lang-btn,
+    .pm-op-print-btn {
+      font-family: inherit;
+      font-size: 8pt;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      border-radius: 999px;
+      padding: 6px 12px;
+      cursor: pointer;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+
+    .pm-op-lang-btn[aria-pressed="true"] {
+      background: linear-gradient(135deg, #f7e2a0, #e3bf6f);
+      color: #071022;
+      border-color: transparent;
+    }
+
+    .pm-op-print-btn {
+      background: rgba(255, 255, 255, 0.16);
+    }
+
+    .pm-op-sheet {
+      padding: 18px 20px 16px;
+      color: #0f172a;
+    }
+
+    .pm-op-sheet[hidden] {
+      display: none !important;
+    }
+
+    .pm-op-sheet[lang="he"] {
+      font-family: "Heebo", "Inter", sans-serif;
+    }
+
+    .pm-op-letterhead {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      border-bottom: 2.2px solid #c9a04e;
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+      position: relative;
+    }
+
+    .pm-op-letterhead::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -4px;
+      height: 1px;
+      background: #0e2f63;
+    }
+
+    .pm-op-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .pm-op-brand img {
+      width: 40px;
+      height: 40px;
+      object-fit: contain;
+    }
+
+    .pm-op-brand .lh-name {
+      font-family: "Space Grotesk", "Heebo", sans-serif;
+      font-size: 16pt;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: #0e2f63;
+      line-height: 1.05;
+    }
+
+    .pm-op-brand .lh-tag {
+      font-size: 7.2pt;
+      color: #5b6b82;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .pm-op-meta {
+      font-size: 7.6pt;
+      color: #5b6b82;
+      text-align: right;
+      line-height: 1.45;
+    }
+
+    .pm-op-sheet[dir="rtl"] .pm-op-meta {
+      text-align: left;
+    }
+
+    .pm-op-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 7.4pt;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #4338ca;
+      background: #eef2ff;
+      border-radius: 999px;
+      padding: 3px 10px;
+      margin-bottom: 8px;
+    }
+
+    .pm-op-sheet h3.pm-op-title {
+      font-family: "Space Grotesk", "Heebo", sans-serif;
+      font-size: 15.5pt;
+      font-weight: 700;
+      line-height: 1.18;
+      color: #0b1f3f;
+      margin: 0 0 8px;
+      letter-spacing: -0.01em;
+    }
+
+    .pm-op-lede {
+      font-size: 9.6pt;
+      color: #334155;
+      line-height: 1.5;
+      margin: 0 0 12px;
+    }
+
+    .pm-op-kpis {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      margin: 0 0 14px;
+    }
+
+    .pm-op-kpi {
+      border: 1px solid #dbe4f0;
+      border-radius: 12px;
+      padding: 8px 9px 7px;
+      background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+    }
+
+    .pm-op-kpi .v {
+      font-family: "Space Grotesk", "Heebo", sans-serif;
+      font-size: 12pt;
+      font-weight: 800;
+      color: #0d47a1;
+      line-height: 1.1;
+    }
+
+    .pm-op-kpi .l {
+      font-size: 6.8pt;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #64748b;
+      margin-top: 3px;
+    }
+
+    .pm-op-grid {
+      display: grid;
+      grid-template-columns: 1.12fr 0.88fr;
+      gap: 14px;
+      align-items: start;
+    }
+
+    .pm-op-col h4,
+    h4.pm-op-book-label {
+      font-size: 8pt;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #4338ca;
+      margin: 0 0 6px;
+    }
+
+    h4.pm-op-book-label {
+      margin-top: 12px;
+    }
+
+    .pm-op-col p,
+    .pm-op-col li {
+      font-size: 8.3pt;
+      line-height: 1.5;
+      color: #334155;
+    }
+
+    .pm-op-col ul {
+      margin: 0;
+      padding-left: 16px;
+    }
+
+    .pm-op-sheet[dir="rtl"] .pm-op-col ul {
+      padding-left: 0;
+      padding-right: 16px;
+    }
+
+    .pm-op-col li {
+      margin: 3px 0;
+    }
+
+    .pm-op-contract {
+      border-left: 3px solid #4338ca;
+      background: #eef2ff;
+      border-radius: 0 10px 10px 0;
+      padding: 8px 11px;
+      margin: 8px 0;
+      font-size: 8.3pt;
+    }
+
+    .pm-op-sheet[dir="rtl"] .pm-op-contract {
+      border-left: none;
+      border-right: 3px solid #4338ca;
+      border-radius: 10px 0 10px 0;
+    }
+
+    .pm-op-kpis,
+    .pm-op-table-wrap {
+      direction: ltr;
+    }
+
+    .pm-op-table-wrap {
+      margin: 12px 0 8px;
+      overflow-x: auto;
+    }
+
+    .pm-op-table {
+      width: 100%;
+      min-width: 520px;
+      table-layout: fixed;
+      border-collapse: collapse;
+      font-size: 7.6pt;
+      margin: 0;
+    }
+
+    .pm-op-table th,
+    .pm-op-table td {
+      border: 1px solid #dbe4f0;
+      padding: 4px 6px;
+    }
+
+    .pm-op-table th {
+      background: #0d47a1;
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .pm-op-table td.num,
+    .pm-op-table th.num {
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .pm-op-sheet[dir="rtl"] .pm-op-table th:first-child,
+    .pm-op-sheet[dir="rtl"] .pm-op-table td:first-child {
+      direction: rtl;
+      text-align: right;
+    }
+
+    .pm-op-table tr.hi td {
+      background: #eef9f0;
+      font-weight: 700;
+    }
+
+    .pm-op-gates {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+    }
+
+    .pm-op-gate {
+      font-size: 6.8pt;
+      font-weight: 700;
+      border-radius: 999px;
+      padding: 3px 8px;
+      background: #f1f5f9;
+      color: #334155;
+      border: 1px solid #e2e8f0;
+    }
+
+    .pm-op-gate.launch {
+      background: #dcfce7;
+      color: #166534;
+      border-color: #bbf7d0;
+    }
+
+    .pm-op-ask {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .pm-op-ask-box {
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 8.2pt;
+      line-height: 1.5;
+    }
+
+    .pm-op-ask-box.primary {
+      background: #eef9f0;
+      border: 1px solid #c8e6c9;
+    }
+
+    .pm-op-ask-box.fallback {
+      background: #f0f7ff;
+      border: 1px solid #bbdefb;
+    }
+
+    .pm-op-ask-box strong.label {
+      display: block;
+      font-size: 7.4pt;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 3px;
+    }
+
+    .pm-op-fine {
+      font-size: 7pt;
+      color: #64748b;
+      margin-top: 10px;
+      line-height: 1.45;
+    }
+
+    .pm-working-pack-label {
+      font-size: 8pt;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #64748b;
+      margin: 4px 0 10px;
+    }
+
+    @media (max-width: 980px) {
+      .pm-op-kpis,
+      .pm-op-grid,
+      .pm-op-ask {
+        grid-template-columns: 1fr 1fr 1fr;
+      }
+      .pm-op-grid,
+      .pm-op-ask {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .pm-op-kpis {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media print {
+      html.print-pm-onepager {
+        background: #fff !important;
+      }
+      html.print-pm-onepager body {
+        background: #fff !important;
+      }
+      html.print-pm-onepager body * {
+        visibility: hidden !important;
+      }
+      html.print-pm-onepager #meeting-a-onepager,
+      html.print-pm-onepager #meeting-a-onepager * {
+        visibility: visible !important;
+      }
+      html.print-pm-onepager .pitch-fold,
+      html.print-pm-onepager .pitch-fold-body,
+      html.print-pm-onepager #pm-panel-a,
+      html.print-pm-onepager #partner-meetings-13jul {
+        display: block !important;
+        overflow: visible !important;
+        height: auto !important;
+        box-shadow: none !important;
+        border: none !important;
+        background: #fff !important;
+      }
+      html.print-pm-onepager #meeting-a-onepager {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        box-shadow: none !important;
+        border: none !important;
+      }
+      html.print-pm-onepager .pm-op-toolbar,
+      html.print-pm-onepager .pitch-tab-back-row,
+      html.print-pm-onepager .site-header,
+      html.print-pm-onepager .pitch-back-fab {
+        display: none !important;
+      }
+      html.print-pm-onepager #meeting-a-onepager [hidden],
+      html.print-pm-onepager #meeting-a-onepager [hidden] * {
+        display: none !important;
+        visibility: hidden !important;
+      }
+      html.print-pm-onepager .pm-op-sheet {
+        padding: 0;
+      }
+    }
+
     .pitch-back-fab {
       position: fixed;
       right: 18px;
@@ -2599,7 +3096,7 @@
             The 26 May 2026 actuary meeting cleared the first credibility gate: an IAA-recognised executive actuary validated
             the pricing model and agreed to join PHINS on the recommended hybrid path. He has now opened the door to
             <strong><span class="inv-investor-name">Mr. Meir Uzan</span></strong> — capital plus deep Israeli insurance-industry operating experience. PHINS sits at the
-            boundary between a built platform (64+ deployed modules) and a funded, regulated go-to-market in Israel. The right
+            boundary between a built platform (<span data-live-modules>100</span> deployed modules) and a funded, regulated go-to-market in Israel. The right
             partner here both <em>funds</em> the build phase and <em>de-risks</em> regulatory and distribution execution.
           </p>
           <h3 style="margin-top:18px;">Target profile &amp; objective</h3>
@@ -3011,11 +3508,14 @@
           <strong>chairman of an AI technology development public company</strong> — investing in or co-developing the
           PHINS technology (markets opening, tech orientation) — and <strong>Meeting B</strong> with the
           <strong>CEO of a major insurance company (agents orientation)</strong> — building and distributing through a
-          <strong>joint company or MGA</strong>. Each track carries its elevator pitch, executive pitch, and a full
+          <strong>joint company or MGA</strong>. Meeting A opens with a bilingual
+          <strong>30,000-foot executive one-pager</strong> drawn from the Investor Meeting book.
+          Each track also carries its elevator pitch, executive pitch, and a full
           business plan on <strong>adjustable assumptions</strong> with pinned <strong>actuarial simulation versions</strong>,
           all reconciling to the same unified IL model (ILS 4,518 table-driven premium · 25% PHINS take · sales from 1 Jan 2027).
         </p>
         <div class="exec-dl-row">
+          <a href="#meeting-a-onepager" class="exec-dl-btn"> Meeting A · One-pager (EN / עברית)</a>
           <a href="/internal/phins-ai-tech-partner-business-plan.html" target="_blank" rel="noopener" class="exec-dl-btn"> Full Business Plan — Meeting A (Tech Partner)</a>
           <a href="/internal/phins-insurer-mga-business-plan.html" target="_blank" rel="noopener" class="exec-dl-btn"> Full Business Plan — Meeting B (JV / MGA)</a>
           <a href="#il-meeting-diary" class="exec-dl-btn">️ Meeting Diary</a>
@@ -3023,7 +3523,264 @@
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;margin-top:18px;">
+      <div class="pm-meet-tabs" role="tablist" aria-label="Partner meetings 13 July 2026">
+        <button type="button" class="pm-meet-tab" role="tab" id="pm-tab-a" data-track="a" aria-controls="pm-panel-a" aria-selected="true">
+          Meeting A
+          <span class="pm-tab-time">11:00 · Tech &amp; markets · one-pager</span>
+        </button>
+        <button type="button" class="pm-meet-tab" role="tab" id="pm-tab-b" data-track="b" aria-controls="pm-panel-b" aria-selected="false">
+          Meeting B
+          <span class="pm-tab-time">14:15 · Agents · JV / MGA</span>
+        </button>
+      </div>
+
+      <div id="pm-panel-a" class="pm-tab-panel" role="tabpanel" aria-labelledby="pm-tab-a">
+        <span id="meeting-a"></span>
+
+        <!-- Meeting A — first-class bilingual executive one-pager -->
+        <article class="pm-onepager" id="meeting-a-onepager" data-lang="en">
+          <div class="pm-op-toolbar">
+            <div class="pm-op-kicker">Meeting A · 30,000-ft executive brief · EN / עברית</div>
+            <div class="pm-op-actions" role="group" aria-label="Language / שפה">
+              <button type="button" class="pm-op-lang-btn" data-op-lang="en" aria-pressed="true">English</button>
+              <button type="button" class="pm-op-lang-btn" data-op-lang="he" aria-pressed="false">עברית</button>
+              <button type="button" class="pm-op-print-btn" id="pm-op-print">Print / PDF</button>
+            </div>
+          </div>
+
+          <div class="pm-op-sheet" lang="en" dir="ltr" data-op-copy="en">
+            <div class="pm-op-letterhead">
+              <div class="pm-op-brand">
+                <img src="/phins-logo.svg" alt="PHINS emblem">
+                <div>
+                  <div class="lh-name">PHINS</div>
+                  <div class="lh-tag">Personal Health Insurance &amp; Savings · AI-operated insurance OS</div>
+                </div>
+              </div>
+              <div class="pm-op-meta">
+                Internal · Confidential<br>
+                13 July 2026 · 11:00 · Meeting A<br>
+                Source: Investor Meeting book · unified IL model
+              </div>
+            </div>
+            <span class="pm-op-eyebrow">One-page executive summary · 30,000 feet</span>
+            <h3 class="pm-op-title">A built insurance operating system, sitting on the last large regulated data industry still running a legacy core.</h3>
+            <p class="pm-op-lede">
+              Written for a principal who already understands both the capital stack and the technology.
+              PHINS is not a deck looking for a product. It is a <strong>production insurance OS</strong> — <span data-live-modules>100</span> service modules live —
+              originating a lifelong disability / LTC severity layer as a <strong>capital-light digital MGA</strong>.
+              Underwriting risk never sits on the PHINS balance sheet. Israel is the proof market (sales from 1 January 2027).
+              Every further OECD market is a configuration and a filing, not a rebuild.
+              For a public AI-technology company, this is a <strong>regulated deployment surface</strong>:
+              equity at seed terms, and/or co-development with per-market license and GWP royalty.
+            </p>
+            <div class="pm-op-kpis">
+              <div class="pm-op-kpi"><div class="v" data-live-modules>100</div><div class="l">Service modules</div></div>
+              <div class="pm-op-kpi"><div class="v" data-live="seed_m">₪6.0M</div><div class="l">Seed / build round</div></div>
+              <div class="pm-op-kpi"><div class="v" data-live="pre_m">₪24M</div><div class="l">Pre-money (base)</div></div>
+              <div class="pm-op-kpi"><div class="v" data-live="take_pct">25%</div><div class="l">PHINS take on GWP</div></div>
+              <div class="pm-op-kpi"><div class="v" data-live="nr_2029">₪183.3M</div><div class="l">2029 net revenue</div></div>
+              <div class="pm-op-kpi"><div class="v" data-live="ebitda_margin_2029">36%</div><div class="l">2029 EBITDA margin</div></div>
+            </div>
+            <div class="pm-op-grid">
+              <div class="pm-op-col">
+                <h4>The asset</h4>
+                <p>
+                  Policy → underwriting → billing → claims → reinsurance → wallets/settlement → agent ecosystem → BI / actuarial.
+                  An IAA-recognised executive actuary validated the pricing model (26 May 2026) and is joining on the hybrid Chief-Actuary path.
+                  That cleared the first credibility gate and opened this room.
+                </p>
+                <div class="pm-op-contract">
+                  <strong>Integrity contract (non-negotiable):</strong> AI recommends; an append-only, hash-chained ledger decides and records.
+                  Co-developed models plug into the existing decision-audit layer. This is the architecture regulators are converging on —
+                  and the reason a public AI company can put models inside UW, claims, and actuarial simulation without inheriting an un-auditable black box.
+                </div>
+              </div>
+              <div class="pm-op-col">
+                <h4>What capital actually buys</h4>
+                <p>
+                  Not a rewrite. A 12-month gated path to first sale: legal terms, Appointed-Actuary sign-off, security/QA,
+                  Capital Market, Insurance &amp; Savings Authority engagement, and distribution. Technology (platform + cloud/AI) is 40.3% of the ₪6.0M build;
+                  legal/regulatory 14.7%; remainder actuarial, QA, pre-launch marketing, G&amp;A, and ~11.7% contingency.
+                  Sales do not start until Gate 5. Claims reserves are never booked as PHINS revenue.
+                </p>
+                <h4>Gated execution (capital against completion)</h4>
+                <div class="pm-op-gates">
+                  <span class="pm-op-gate">G0 Funding &amp; team</span>
+                  <span class="pm-op-gate">G1 Legal terms</span>
+                  <span class="pm-op-gate">G2 Platform &amp; pricing</span>
+                  <span class="pm-op-gate">G3 QA &amp; security</span>
+                  <span class="pm-op-gate">G4 Regulatory</span>
+                  <span class="pm-op-gate launch">G5 1 Jan 2027 launch</span>
+                  <span class="pm-op-gate">G6 1,000 policies</span>
+                  <span class="pm-op-gate">G7 24k in-force / Series A</span>
+                </div>
+              </div>
+            </div>
+            <h4 class="pm-op-book-label">The book — one Israel model</h4>
+            <div class="pm-op-table-wrap">
+                <table class="pm-op-table">
+                  <thead>
+                    <tr>
+                      <th>Line (₪)</th>
+                      <th class="num">2027</th>
+                      <th class="num">2028</th>
+                      <th class="num">2029</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>Active policies EoY</td><td class="num" data-live="eoy" data-i="0">24,000</td><td class="num" data-live="eoy" data-i="1">94,080</td><td class="num" data-live="eoy" data-i="2">230,554</td></tr>
+                    <tr><td>Avg in-force</td><td class="num" data-live="avg" data-i="0">12,000</td><td class="num" data-live="avg" data-i="1">59,040</td><td class="num" data-live="avg" data-i="2">162,317</td></tr>
+                    <tr><td>Risk GWP</td><td class="num" data-live="gwp_m" data-i="0">54.2M</td><td class="num" data-live="gwp_m" data-i="1">266.7M</td><td class="num" data-live="gwp_m" data-i="2">733.3M</td></tr>
+                    <tr class="hi"><td>PHINS net revenue (<span data-live="take_pct">25%</span>)</td><td class="num" data-live="nr_m" data-i="0">13.6M</td><td class="num" data-live="nr_m" data-i="1">66.7M</td><td class="num" data-live="nr_m" data-i="2">183.3M</td></tr>
+                    <tr><td>EBITDA</td><td class="num" data-live="ebitda_m" data-i="0">(18.8)M</td><td class="num" data-live="ebitda_m" data-i="1">0.3M</td><td class="num" data-live="ebitda_m" data-i="2">66.5M</td></tr>
+                  </tbody>
+                </table>
+            </div>
+            <p style="font-size:8.3pt;color:#334155;margin:6px 0 0;">
+              Locked base: table-driven ₪<span data-live="premium">4,518</span> annual premium · <span data-live="take_pct">25%</span> PHINS / 75% insurance · 8% churn · CAC ≈ ₪650.
+              Seed ₪6.0M on ₪24M pre / ₪30M post. 2028 is already EBITDA-positive; Series A funds scale, not survival.
+            </p>
+            <div class="pm-op-ask">
+              <div class="pm-op-ask-box primary">
+                <strong class="label" style="color:#15803d;">Why this room · the ask</strong>
+                A public AI-technology company is not being asked to become an insurer. It is being offered dual economics:
+                <strong>ownership of the OS at seed terms</strong> (₪6.0M / ₪24M pre, adjustable or actuarially simulated),
+                and/or a <strong>co-development + per-market license and GWP royalty</strong> as Wave-1 markets open on the shared stack.
+                OECD expansion is configuration, not a second core.
+              </div>
+              <div class="pm-op-ask-box fallback">
+                <strong class="label" style="color:#1565c0;">Fallback &amp; next</strong>
+                Priced equity or convertible if a pure-investor role is preferred.
+                Next: mutual NDA, term sheet, confirmatory diligence on the live platform
+                (policy → UW → billing → claim → reinsurance, with audit log).
+                Full working pack and adjustable deal live below this page.
+              </div>
+            </div>
+            <p class="pm-op-fine">
+              Forward-looking planning assumptions in ₪ (ILS), canonical base; $ / € at live FX. Not commitments or guidance.
+              Same unified IL book as the Investor Meeting section (ILS 4,518 · 25% take · persistency 24,000 / 94,080 / 230,554).
+              License, royalty and valuation terms are illustrative deal parameters, adjustable in the Meeting A pack.
+            </p>
+          </div>
+
+          <div class="pm-op-sheet" lang="he" dir="rtl" data-op-copy="he" hidden>
+            <div class="pm-op-letterhead">
+              <div class="pm-op-brand">
+                <img src="/phins-logo.svg" alt="סמל PHINS">
+                <div>
+                  <div class="lh-name">PHINS</div>
+                  <div class="lh-tag">ביטוח בריאות אישי וחיסכון · מערכת הפעלה ביטוחית מונעת-AI</div>
+                </div>
+              </div>
+              <div class="pm-op-meta">
+                פנימי · סודי<br>
+                13 ביולי 2026 · 11:00 · פגישה א׳<br>
+                מקור: ספר פגישת המשקיע · מודל ישראל המאוחד
+              </div>
+            </div>
+            <span class="pm-op-eyebrow">תמצית מנהלים בעמוד אחד · מבט מגובה 30,000 רגל</span>
+            <h3 class="pm-op-title">מערכת הפעלה ביטוחית בנויה — הענף המוסדר הגדול האחרון שעדיין רץ על ליבה מיושנת.</h3>
+            <p class="pm-op-lede">
+              נכתב עבור משקיע גלובלי בעל עומק פיננסי וטכנולוגי.
+              PHINS איננה מצגת שמחפשת מוצר. זו <strong>מערכת הפעלה ביטוחית בפרודקשן</strong> — <span data-live-modules>100</span> מודולי שירות פרוסים —
+              שמנפיקה שכבת נכות/סיעוד חמורה (הפעלת 3+ ADL) כ-<strong>MGA דיגיטלי קל-הון</strong>.
+              סיכון החיתום אינו יושב במאזן של PHINS. ישראל היא שוק ההוכחה (מכירות מ-1 בינואר 2027).
+              כל שוק OECD נוסף הוא תצורה והגשה רגולטורית — לא בניה מחדש.
+              לחברת AI ציבורית זה <strong>משטח הטמעה מפוקח</strong>: הון בתנאי סיד, ו/או פיתוח משותף עם רישיון לשוק ותמלוג על הפרמיה.
+            </p>
+            <div class="pm-op-kpis">
+              <div class="pm-op-kpi"><div class="v" data-live-modules>100</div><div class="l">מודולי שירות</div></div>
+              <div class="pm-op-kpi"><div class="v" data-live="seed_m">₪6.0M</div><div class="l">סבב סיד / בניה</div></div>
+              <div class="pm-op-kpi"><div class="v" data-live="pre_m">₪24M</div><div class="l">שווי טרום-כסף</div></div>
+              <div class="pm-op-kpi"><div class="v" data-live="take_pct">25%</div><div class="l">נתח PHINS מהפרמיה</div></div>
+              <div class="pm-op-kpi"><div class="v" data-live="nr_2029">₪183.3M</div><div class="l">הכנסה נטו 2029</div></div>
+              <div class="pm-op-kpi"><div class="v" data-live="ebitda_margin_2029">36%</div><div class="l">מרווח EBITDA 2029</div></div>
+            </div>
+            <div class="pm-op-grid">
+              <div class="pm-op-col">
+                <h4>הנכס</h4>
+                <p>
+                  פוליסה → חיתום → חיוב → תביעות → ביטוח משנה → ארנקים/סליקה → מערכת סוכנים → BI / אקטואריה.
+                  אקטואר בכיר המוכר ב-IAA אימת את מודל התמחור (26 במאי 2026) ומצטרף במסלול אקטואר-ראשי היברידי.
+                  זה היה שער האמינות הראשון — והוא שפתח את החדר הזה.
+                </p>
+                <div class="pm-op-contract">
+                  <strong>חוזה השלמות (לא ניתן למשא ומתן):</strong> הבינה המלאכותית ממליצה; ספר חשבונות תוספתי, משורשר-גיבוב, מחליט ומתעד.
+                  מודלים בפיתוח משותף מתחברים לשכבת הביקורת הקיימת. זו הארכיטקטורה שאליה הרגולטורים מתכנסים —
+                  והסיבה שחברת AI ציבורית יכולה להכניס מודלים לחיתום, תביעות וסימולציה אקטוארית בלי לרשת קופסה שחורה.
+                </div>
+              </div>
+              <div class="pm-op-col">
+                <h4>מה ההון באמת קונה</h4>
+                <p>
+                  לא כתיבה מחדש. מסלול בן 12 חודשים, בשערים, עד מכירה ראשונה: תנאי פוליסה, חתימת אקטואר ממונה, אבטחה/QA,
+                  מעורבות רשות שוק ההון, ביטוח וחיסכון, והסכמי הפצה. הטכנולוגיה (פלטפורמה + ענן/AI) היא 40.3% מתקציב הבניה של ₪6.0M;
+                  משפט ורגולציה 14.7%; היתר אקטואריה, QA, שיווק טרום-השקה, הנהלה, ועתודה של כ-11.7%.
+                  מכירות לא מתחילות לפני שער 5. עתודות תביעות אינן נרשמות כהכנסה של PHINS.
+                </p>
+                <h4>שערי ביצוע (הון משוחרר מול השלמה)</h4>
+                <div class="pm-op-gates">
+                  <span class="pm-op-gate">ש0 גיוס וצוות</span>
+                  <span class="pm-op-gate">ש1 תנאים משפטיים</span>
+                  <span class="pm-op-gate">ש2 פלטפורמה ותמחור</span>
+                  <span class="pm-op-gate">ש3 QA ואבטחה</span>
+                  <span class="pm-op-gate">ש4 רגולציה</span>
+                  <span class="pm-op-gate launch">ש5 השקה 1.1.2027</span>
+                  <span class="pm-op-gate">ש6 1,000 פוליסות</span>
+                  <span class="pm-op-gate">ש7 24k בתוקף / סבב A</span>
+                </div>
+              </div>
+            </div>
+            <h4 class="pm-op-book-label">הספר — מודל ישראל אחד</h4>
+            <div class="pm-op-table-wrap">
+                <table class="pm-op-table">
+                  <thead>
+                    <tr>
+                      <th>סעיף (₪)</th>
+                      <th class="num">2027</th>
+                      <th class="num">2028</th>
+                      <th class="num">2029</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>פוליסות פעילות לסוף שנה</td><td class="num" data-live="eoy" data-i="0">24,000</td><td class="num" data-live="eoy" data-i="1">94,080</td><td class="num" data-live="eoy" data-i="2">230,554</td></tr>
+                    <tr><td>ממוצע בתוקף</td><td class="num" data-live="avg" data-i="0">12,000</td><td class="num" data-live="avg" data-i="1">59,040</td><td class="num" data-live="avg" data-i="2">162,317</td></tr>
+                    <tr><td>פרמיה ברוטו (סיכון)</td><td class="num" data-live="gwp_m" data-i="0">54.2M</td><td class="num" data-live="gwp_m" data-i="1">266.7M</td><td class="num" data-live="gwp_m" data-i="2">733.3M</td></tr>
+                    <tr class="hi"><td>הכנסה נטו PHINS (<span data-live="take_pct">25%</span>)</td><td class="num" data-live="nr_m" data-i="0">13.6M</td><td class="num" data-live="nr_m" data-i="1">66.7M</td><td class="num" data-live="nr_m" data-i="2">183.3M</td></tr>
+                    <tr><td>EBITDA</td><td class="num" data-live="ebitda_m" data-i="0">(18.8)M</td><td class="num" data-live="ebitda_m" data-i="1">0.3M</td><td class="num" data-live="ebitda_m" data-i="2">66.5M</td></tr>
+                  </tbody>
+                </table>
+            </div>
+            <p style="font-size:8.3pt;color:#334155;margin:6px 0 0;">
+              בסיס נעול: פרמיה טבלאית ₪<span data-live="premium">4,518</span> לשנה · <span data-live="take_pct">25%</span> PHINS / 75% ביטוח · נטישה 8% · CAC ≈ ₪650.
+              סיד ₪6.0M על ₪24M טרום-כסף / ₪30M אחרי-כסף. 2028 כבר חיובית ב-EBITDA; סבב A מממן סקייל, לא הישרדות.
+            </p>
+            <div class="pm-op-ask">
+              <div class="pm-op-ask-box primary">
+                <strong class="label" style="color:#15803d;">למה החדר הזה · הבקשה</strong>
+                חברת AI ציבורית אינה מתבקשת להפוך למבטחת. מוצעת לה כלכלה כפולה:
+                <strong>בעלות על מערכת ההפעלה בתנאי סיד</strong> (₪6.0M / ₪24M טרום-כסף, ניתן לכוונון או לסימולציה אקטוארית),
+                ו/או <strong>פיתוח משותף + רישיון לשוק ותמלוג על פרמיה</strong> ככל שנפתחים שווקי גל 1 על אותה ליבה.
+                הרחבה ל-OECD היא תצורה, לא ליבה שנייה.
+              </div>
+              <div class="pm-op-ask-box fallback">
+                <strong class="label" style="color:#1565c0;">חלופה והמשך</strong>
+                הון מתומחר או המרה אם מועדף תפקיד משקיע בלבד.
+                הבא: הסכם סודיות הדדי, מזכר תנאים, ובדיקת נאותות על הפלטפורמה החיה
+                (פוליסה → חיתום → חיוב → תביעה → ביטוח משנה, עם יומן ביקורת).
+                חבילת העבודה המלאה והעסקה הניתנת לכוונון — מתחת לעמוד זה.
+              </div>
+            </div>
+            <p class="pm-op-fine">
+              הנחות תכנון צופות-פני-עתיד בש״ח, הבסיס הקנוני; $ / € לפי שער חי. אינן התחייבות ואינן הכוונה.
+              אותו ספר ישראל מאוחד כמו בפרק פגישת המשקיע (₪4,518 · נתח 25% · 24,000 / 94,080 / 230,554).
+              רישיון, תמלוג ושווי הם פרמטרי עסקה להמחשה, הניתנים לכוונון בחבילת פגישה א׳.
+            </p>
+          </div>
+        </article>
+
+        <div class="pm-working-pack-label">Meeting A working pack — elevator, executive pitch, adjustable assumptions</div>
 
         <!-- ============ Meeting A — AI technology public company ============ -->
         <div class="exec-chart-panel" id="pm-track-a" style="border:2px solid #4338ca;background:linear-gradient(180deg,#f5f5ff 0%,#ffffff 55%);">
@@ -3033,7 +3790,7 @@
 
           <div style="border:1px solid #c7d2fe;background:#eef2ff;border-radius:10px;padding:10px 12px;margin-top:10px;" id="pm-a-elevator">
             <div style="font-size:7.6pt;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:#4338ca;margin-bottom:4px;"> Elevator pitch — 30 seconds</div>
-            <p style="font-size:8.6pt;margin:0;">PHINS is an <strong>AI-operated insurance operating system</strong> — 64+ deployed modules on an append-only, hash-chained ledger where <strong>AI recommends but never posts</strong>. We are opening the disability / long-term-care market: Israel first, then OECD markets on the same codebase. For a public AI-technology company, PHINS is a ready regulated-industry deployment surface: <strong>invest at seed terms, co-develop the stack, and open new markets together</strong> — equity plus recurring license-and-royalty technology revenue.</p>
+            <p style="font-size:8.6pt;margin:0;">PHINS is an <strong>AI-operated insurance operating system</strong> — <span data-live-modules>100</span> deployed service modules on an append-only, hash-chained ledger where <strong>AI recommends but never posts</strong>. We are opening the disability / long-term-care market: Israel first, then OECD markets on the same codebase. For a public AI-technology company, PHINS is a ready regulated-industry deployment surface: <strong>invest at seed terms, co-develop the stack, and open new markets together</strong> — equity plus recurring license-and-royalty technology revenue.</p>
           </div>
 
           <div style="border:1px solid var(--border);background:#f8fafc;border-radius:10px;padding:10px 12px;margin-top:10px;" id="pm-a-exec">
@@ -3078,6 +3835,9 @@
           </div>
         </div>
 
+      </div><!-- /#pm-panel-a -->
+
+      <div id="pm-panel-b" class="pm-tab-panel" role="tabpanel" aria-labelledby="pm-tab-b" hidden>
         <!-- ============ Meeting B — insurance company CEO (agents) ============ -->
         <div class="exec-chart-panel" id="pm-track-b" style="border:2px solid #0f766e;background:linear-gradient(180deg,#f0fdfa 0%,#ffffff 55%);">
           <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0f766e;margin-bottom:6px;">Meeting B · 14:15 · Agents orientation</div>
@@ -3134,10 +3894,10 @@
             </div>
           </div>
         </div>
-      </div>
+      </div><!-- /#pm-panel-b -->
 
       <div class="exec-integrity-note">
-        <strong>Data integrity notice:</strong> Both meeting packs derive every figure from the same unified IL model used across this dashboard (ILS 4,518 table-driven premium, 25% PHINS take, average in-force 12,000 / 59,040 / 162,317, sales from 1 Jan 2027), so the tech-partner economics (Meeting A) and the agent-force economics (Meeting B) always reconcile with the investor section above — the agent plan is derived <em>from</em> the policy ramp, never the other way around. All amounts are forward-looking planning assumptions in ₪ (ILS), the canonical base; $ / € equivalents convert at a live exchange rate (<span id="pm-integrity-fx">live FX — loading…</span>) from a single USD snapshot. Valuations may be hand-set or derived from the deterministic actuarial appraisal simulation (seed 20260713; reproducible bit-for-bit with a verifiable content hash). License, royalty, and commission terms are illustrative deal parameters, adjustable per meeting, and never overwrite the canonical base. These packs are stored locally in this browser and do not write to the platform ledger.
+        <strong>Data integrity notice:</strong> Both meeting packs derive every figure from the same unified IL model used across this dashboard (ILS 4,518 table-driven premium, 25% PHINS take, average in-force 12,000 / 59,040 / 162,317, sales from 1 Jan 2027), so the tech-partner economics (Meeting A) and the agent-force economics (Meeting B) always reconcile with the investor section above — the agent plan is derived <em>from</em> the policy ramp, never the other way around. All amounts are forward-looking planning assumptions in ₪ (ILS), the canonical base; $ / € equivalents convert at a live exchange rate (<span id="pm-integrity-fx">live FX — loading…</span>) from a single USD snapshot. Valuations may be hand-set or derived from the deterministic actuarial appraisal simulation (seed 20260713; reproducible bit-for-bit with a verifiable content hash). License, royalty, and commission terms are illustrative deal parameters, adjustable per meeting, and never overwrite the canonical base. These packs are stored locally in this browser and do not write to the platform ledger. The Meeting A one-pager restates that same book at 30,000 feet in English and Hebrew; it does not introduce a second model.
       </div>
     </section>
 
@@ -3193,7 +3953,7 @@
                 <tr style="background:#ffffff;">
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">00–03</td>
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">Opening — PHINS in 90 seconds</td>
-                  <td style="padding:5px 8px;border-top:1px solid var(--border);">AI-operated insurance operating system, 64+ deployed modules on an append-only hash-chained ledger — <strong>AI recommends, the ledger decides</strong>. Disability / LTC severity product; Israel first.</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">AI-operated insurance operating system, <span data-live-modules>100</span> deployed modules on an append-only hash-chained ledger — <strong>AI recommends, the ledger decides</strong>. Disability / LTC severity product; Israel first.</td>
                 </tr>
                 <tr style="background:#f8fafc;">
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">03–09</td>
@@ -3320,7 +4080,7 @@
                 <tr style="background:#ffffff;">
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">00–05</td>
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">Opening — PHINS in five minutes</td>
-                  <td style="padding:5px 8px;border-top:1px solid var(--border);">AI-operated insurance operating system, 64+ deployed modules on an append-only hash-chained ledger — <strong>AI recommends, the ledger decides</strong>. State the goal of the session up front: a pre-ruling path that approves all PHINS assumptions.</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">AI-operated insurance operating system, <span data-live-modules>100</span> deployed modules on an append-only hash-chained ledger — <strong>AI recommends, the ledger decides</strong>. State the goal of the session up front: a pre-ruling path that approves all PHINS assumptions.</td>
                 </tr>
                 <tr style="background:#f8fafc;">
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">05–15</td>
@@ -4367,7 +5127,7 @@
             </div>
             <div class="exec-tech-card">
               <div class="etc-icon"></div>
-              <h4>64+ Modular Services</h4>
+              <h4><span data-live-modules>100</span> Modular Services</h4>
               <p>Service-oriented design: billing, actuarial, risk, trading, foundations, marketplace, delivery bidding, and BI analytics operate independently and scale on demand.</p>
             </div>
             <div class="exec-tech-card">
@@ -5034,7 +5794,7 @@
       </div>
 
       <div class="exec-integrity-note">
-        <strong>Data integrity notice:</strong> This executive summary contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included. Charts represent indexed capability scores and proportional engineering allocations, not financial projections. Portugal market data is sourced from ASF, Banco de Portugal, OECD, and INE official publications. All capability maturity scores reflect current deployed platform state across 64+ service modules. AI cost assessment based on published cloud provider pricing (June 2025) and Israel commercial infrastructure rates.
+        <strong>Data integrity notice:</strong> This executive summary contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included. Charts represent indexed capability scores and proportional engineering allocations, not financial projections. Portugal market data is sourced from ASF, Banco de Portugal, OECD, and INE official publications. All capability maturity scores reflect current deployed platform state across <span data-live-modules>100</span> service modules. AI cost assessment based on published cloud provider pricing (June 2025) and Israel commercial infrastructure rates.
       </div>
     </section>
 
@@ -5947,7 +6707,7 @@
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;" id="bp-tech-indicators">
           <div style="border:1px solid var(--border);border-radius:14px;padding:14px;background:#fff;">
             <div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">Platform Modules</div>
-            <div style="font-size:16pt;font-weight:850;color:var(--blue-dark);">64+</div>
+            <div style="font-size:16pt;font-weight:850;color:var(--blue-dark);" data-live-modules>100</div>
             <div style="font-size:7pt;color:var(--text-soft);">Deployed service modules</div>
           </div>
           <div style="border:1px solid var(--border);border-radius:14px;padding:14px;background:#fff;">
@@ -6046,7 +6806,7 @@
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;" id="bp-thesis-cards">
             <div style="border:1px solid var(--border);border-radius:12px;padding:14px;background:linear-gradient(180deg,#f0f5ff,#fff);">
               <div style="font-size:10pt;margin-bottom:6px;">Software Platform</div>
-              <div style="font-size:8pt;color:var(--text-sub);">PHINS is an <strong>insurance operating system</strong>, not a single product. 64+ modular services create SaaS licensing potential per jurisdiction. Each JV market adds a recurring technology royalty stream without proportional engineering cost.</div>
+              <div style="font-size:8pt;color:var(--text-sub);">PHINS is an <strong>insurance operating system</strong>, not a single product. <span data-live-modules>100</span> modular services create SaaS licensing potential per jurisdiction. Each JV market adds a recurring technology royalty stream without proportional engineering cost.</div>
             </div>
             <div style="border:1px solid var(--border);border-radius:12px;padding:14px;background:linear-gradient(180deg,#f0fff4,#fff);">
               <div style="font-size:10pt;margin-bottom:6px;">JV Multiplier Effect</div>
@@ -6103,6 +6863,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
+  <script src="/platform-facts.js"></script>
   <script src="/phins-pdf-brand.js"></script>
   <script src="/phins-scenario-lab-pdf.js"></script>
   <script>
@@ -7510,7 +8271,7 @@
         para("Cost-optimized path: Start with L40S Cluster ($85–140K) for Phase 2 inference, add Lambda Hyperplane ($250–350K) for Phase 3 training. Total: $335K–$490K over 18 months.", 8.5, 13);
         para("Enterprise path: Single NVIDIA DGX H100 ($320–420K) for Phase 2+3 combined. Premium pricing offset by NVIDIA enterprise support and certified stack.", 8.5, 13);
 
-        var integrityNotice = "Data integrity notice: This executive summary contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included. Charts represent indexed capability scores and proportional engineering allocations, not financial projections. Portugal market data is sourced from ASF, Banco de Portugal, OECD, and INE official publications. All capability maturity scores reflect current deployed platform state across 64+ service modules. AI cost assessment based on published cloud provider pricing and Israel commercial infrastructure rates.";
+        var integrityNotice = "Data integrity notice: This executive summary contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included. Charts represent indexed capability scores and proportional engineering allocations, not financial projections. Portugal market data is sourced from ASF, Banco de Portugal, OECD, and INE official publications. All capability maturity scores reflect current deployed platform state across " + ((window.PhinsPlatformFacts && window.PhinsPlatformFacts.modules(100)) || 100) + " service modules. AI cost assessment based on published cloud provider pricing and Israel commercial infrastructure rates.";
         var intNote = doc.splitTextToSize(integrityNotice, tw - 16);
         var intNoteHeight = Math.max(42, intNote.length * 9 + 14);
         ensureSpace(intNoteHeight + 18);
@@ -7844,7 +8605,7 @@
 
           subheading("Investment Highlights");
           var highlights = [
-            "AI-native platform with 64+ deployed service modules across underwriting, claims, billing, trading, and marketplace",
+            "AI-native platform with " + ((window.PhinsPlatformFacts && window.PhinsPlatformFacts.modules(100)) || 100) + " deployed service modules across underwriting, claims, billing, trading, and marketplace",
             "92% underwriting automation, 88% claims triage automation, 96% billing automation — industry-leading cost structure",
             "Blockchain-anchored NFT transaction ledger ensuring tamper-proof data integrity across the policy lifecycle",
             "Health marketplace with AI-ranked delivery bidding, supplier ecosystem, and integrated wallet infrastructure",
@@ -7953,7 +8714,7 @@
           var valPoints = [
             "AI-native architecture (not bolt-on automation): 92% underwriting, 88% claims, 96% billing automation deployed",
             "Multi-revenue-stream model: insurance premiums + wallet fees + marketplace commissions + investment management",
-            "64+ modular services operating independently — each a potential standalone SaaS vertical",
+            ((window.PhinsPlatformFacts && window.PhinsPlatformFacts.modules(100)) || 100) + " modular services operating independently — each a potential standalone SaaS vertical",
             "Blockchain-anchored data integrity creates institutional-grade audit trail for regulators and reinsurers",
             "26-market regulatory adapter architecture — not a single-market platform",
             "Network effects: supplier marketplace, community foundations, and delivery bidding create compounding value",
@@ -8616,7 +9377,7 @@
 
             heading("Why Technology Investors — Not Insurance Capital", 14);
             var thesisPoints = [
-              "Software platform with 64+ modular services — each deployable as standalone SaaS vertical",
+              "Software platform with " + ((window.PhinsPlatformFacts && window.PhinsPlatformFacts.modules(100)) || 100) + " modular services — each deployable as standalone SaaS vertical",
               "Recurring revenue: technology royalties (" + royaltyRate + "% GWP), revenue share (" + revenueSharePct + "% net), SaaS fees ($" + formatInteger(saasFee) + "/yr)",
               "JV model: " + eqMin + "-" + eqMax + "% equity ensures majority control without full balance-sheet risk",
               "Capital-light: reinsurance cession offloads underwriting risk; PHINS retains technology margin",
@@ -9329,6 +10090,100 @@
 
       recompute();
       loadFx();
+
+      // ---- Meeting A / Meeting B tabs + bilingual one-pager ----
+      var TAB_A_IDS = {
+        "meeting-a": 1, "meeting-a-onepager": 1, "pm-panel-a": 1,
+        "pm-track-a": 1, "pm-tab-a": 1, "pm-a-elevator": 1, "pm-a-exec": 1
+      };
+      var TAB_B_IDS = {
+        "meeting-b": 1, "pm-panel-b": 1, "pm-track-b": 1,
+        "pm-tab-b": 1, "pm-b-elevator": 1, "pm-b-exec": 1
+      };
+
+      function selectPartnerTab(track, opts) {
+        var t = track === "b" ? "b" : "a";
+        var panelA = $("pm-panel-a");
+        var panelB = $("pm-panel-b");
+        var tabA = $("pm-tab-a");
+        var tabB = $("pm-tab-b");
+        if (panelA) panelA.hidden = t !== "a";
+        if (panelB) panelB.hidden = t !== "b";
+        if (tabA) {
+          tabA.setAttribute("aria-selected", t === "a" ? "true" : "false");
+          tabA.tabIndex = t === "a" ? 0 : -1;
+        }
+        if (tabB) {
+          tabB.setAttribute("aria-selected", t === "b" ? "true" : "false");
+          tabB.tabIndex = t === "b" ? 0 : -1;
+        }
+        if (opts && opts.hash) {
+          try { history.replaceState(null, "", t === "b" ? "#pm-track-b" : "#meeting-a-onepager"); } catch (e) {}
+        }
+      }
+
+      window.phinsOpenPartnerMeetingTab = function (id) {
+        if (!id) return;
+        if (TAB_B_IDS[id]) selectPartnerTab("b");
+        else if (TAB_A_IDS[id] || id === "partner-meetings-13jul") selectPartnerTab("a");
+      };
+
+      ["pm-tab-a", "pm-tab-b"].forEach(function (tid) {
+        var btn = $(tid);
+        if (!btn) return;
+        btn.addEventListener("click", function () {
+          selectPartnerTab(btn.getAttribute("data-track"), { hash: true });
+        });
+      });
+
+      var opRoot = $("meeting-a-onepager");
+      function setOpLang(lang) {
+        if (!opRoot) return;
+        var useHe = lang === "he";
+        opRoot.setAttribute("data-lang", useHe ? "he" : "en");
+        opRoot.querySelectorAll("[data-op-copy]").forEach(function (sheet) {
+          sheet.hidden = (sheet.getAttribute("data-op-copy") === "he") !== useHe;
+        });
+        opRoot.querySelectorAll(".pm-op-lang-btn").forEach(function (b) {
+          b.setAttribute("aria-pressed", b.getAttribute("data-op-lang") === (useHe ? "he" : "en") ? "true" : "false");
+        });
+        try { localStorage.setItem("phins.partner.aitech.onepager.lang", useHe ? "he" : "en"); } catch (e) {}
+      }
+      if (opRoot) {
+        opRoot.querySelectorAll(".pm-op-lang-btn").forEach(function (b) {
+          b.addEventListener("click", function () { setOpLang(b.getAttribute("data-op-lang")); });
+        });
+        var savedLang = "en";
+        try { savedLang = localStorage.getItem("phins.partner.aitech.onepager.lang") || "en"; } catch (e) {}
+        setOpLang(savedLang === "he" ? "he" : "en");
+      }
+      var printBtn = $("pm-op-print");
+      if (printBtn) {
+        printBtn.addEventListener("click", function () {
+          document.documentElement.classList.add("print-pm-onepager");
+          selectPartnerTab("a");
+          window.print();
+        });
+        window.addEventListener("afterprint", function () {
+          document.documentElement.classList.remove("print-pm-onepager");
+        });
+      }
+
+      var bootHash = (location.hash || "").replace(/^#/, "");
+      if (TAB_B_IDS[bootHash]) selectPartnerTab("b");
+      else selectPartnerTab("a");
+
+      window.addEventListener("phins:platform-facts", function (ev) {
+        var book = ev.detail && ev.detail.investor_book;
+        if (!book) return;
+        if (book.eoy_in_force) BASE.eoyPolicies = book.eoy_in_force.slice();
+        if (book.premium) BASE.premium = book.premium;
+        if (book.take_rate != null) BASE.takeRate = book.take_rate;
+        if (book.churn != null) BASE.churn = book.churn;
+        if (cfg.aPremium === 4518 || cfg.aPremium == null) cfg.aPremium = BASE.premium;
+        if (cfg.bPremium === 4518 || cfg.bPremium == null) cfg.bPremium = BASE.premium;
+        recompute();
+      });
     })();
   </script>
 
@@ -9364,6 +10219,15 @@
       // 2029 base metrics (ILS) used by the income-multiple basis — these are the
       // exact figures shown in the income table, so the valuation reconciles.
       var METRIC_2029 = { net_revenue: 183337052, ebitda: 66468812, gwp: 733348206 };
+      window.addEventListener("phins:platform-facts", function (ev) {
+        var book = ev.detail && ev.detail.investor_book;
+        if (!book) return;
+        if (book.net_revenue && book.net_revenue[2] != null) METRIC_2029.net_revenue = Math.round(book.net_revenue[2]);
+        if (book.ebitda && book.ebitda[2] != null) METRIC_2029.ebitda = Math.round(book.ebitda[2]);
+        if (book.gwp && book.gwp[2] != null) METRIC_2029.gwp = Math.round(book.gwp[2]);
+        if (cfg.valBasis === "multiple") applyMultiple();
+        syncInputsFromCfg(); recompute();
+      });
       try {
         var saved = JSON.parse(localStorage.getItem(CFG_STORE_ID) || "null");
         if (saved && typeof saved === "object") Object.assign(cfg, saved);
@@ -10391,6 +11255,18 @@
         "il-meeting-diary": "investor-meeting-section",
         "investor-configurator": "investor-meeting-section",
         "investor-deck-config": "investor-meeting-section",
+        "meeting-a": "partner-meetings-13jul",
+        "meeting-a-onepager": "partner-meetings-13jul",
+        "pm-panel-a": "partner-meetings-13jul",
+        "pm-panel-b": "partner-meetings-13jul",
+        "pm-track-a": "partner-meetings-13jul",
+        "pm-track-b": "partner-meetings-13jul",
+        "pm-tab-a": "partner-meetings-13jul",
+        "pm-tab-b": "partner-meetings-13jul",
+        "pm-a-elevator": "partner-meetings-13jul",
+        "pm-a-exec": "partner-meetings-13jul",
+        "pm-b-elevator": "partner-meetings-13jul",
+        "pm-b-exec": "partner-meetings-13jul",
         "fintl-5aug-panel": "fintl-vc-meetings-aug",
         "fintl-6aug-panel": "fintl-vc-meetings-aug",
         "grove-presentation-timeline": "grove-vc-meeting-19aug",
@@ -10441,6 +11317,9 @@
         var section = document.getElementById(parentId);
         if (section && section.classList.contains("pitch-fold")) {
           setOpen(section, true);
+        }
+        if (typeof window.phinsOpenPartnerMeetingTab === "function") {
+          window.phinsOpenPartnerMeetingTab(id);
         }
         return document.getElementById(id) || section;
       }
