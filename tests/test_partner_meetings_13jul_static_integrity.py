@@ -104,6 +104,35 @@ def test_pitch_dashboard_partner_meetings_data_integrity():
     assert "ILS 4,518 table-driven premium" in pd or "4,518" in pd
     # the agent plan derives FROM the policy ramp (single source of truth)
     assert "never the other way around" in pd
+    assert "The Meeting A one-pager restates that same book" in pd
+
+
+def test_pitch_dashboard_meeting_a_tab_and_onepager():
+    pd = _read(STATIC / "pitch-dashboard.html")
+    assert 'id="pm-tab-a"' in pd
+    assert 'id="pm-tab-b"' in pd
+    assert 'role="tablist"' in pd
+    assert 'id="pm-panel-a"' in pd
+    assert 'id="pm-panel-b"' in pd
+    assert 'id="meeting-a"' in pd
+    assert 'id="meeting-a-onepager"' in pd
+    assert "#meeting-a-onepager" in pd
+    assert "30,000-foot executive one-pager" in pd or "30,000-ft" in pd
+    assert "30,000 feet" in pd
+    assert 'lang="en"' in pd and 'lang="he"' in pd
+    assert 'dir="rtl"' in pd
+    assert "data-op-lang=\"en\"" in pd
+    assert "data-op-lang=\"he\"" in pd
+    assert "תמצית מנהלים בעמוד אחד" in pd
+    assert "מערכת הפעלה ביטוחית בנויה" in pd
+    assert "AI recommends" in pd
+    assert "הבינה המלאכותית ממליצה" in pd
+    assert "Gate 5" in pd or "G5 1 Jan 2027" in pd
+    assert "phinsOpenPartnerMeetingTab" in pd
+    assert "print-pm-onepager" in pd
+    # one-pager restates the investor-meeting book, not a second model
+    for token in ("₪4,518", "25%", "24,000", "94,080", "230,554", "₪6.0M", "₪24M"):
+        assert token in pd.split('id="meeting-a-onepager"', 1)[1].split('id="pm-track-a"', 1)[0]
 
 
 def test_pitch_dashboard_diary_seeds_13jul_meetings():
