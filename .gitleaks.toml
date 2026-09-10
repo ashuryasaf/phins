@@ -35,5 +35,6 @@ regexes = [
     '''\btoken_version\s*[:=]\s*[12]''',
     '''['"]jti['"]\s*:\s*(?:token_jti|claims\.jti|None|['"]['"])''',
     '''['"]token['"]\s*:\s*token\s*,''',
+    '''\bkey\s*===\s*["']REDACTED["']''',
     '''PHINS_EMERGENCY_UNLOCK_KEY''',
 ]
