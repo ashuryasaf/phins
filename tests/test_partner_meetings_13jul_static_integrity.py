@@ -130,9 +130,28 @@ def test_pitch_dashboard_meeting_a_tab_and_onepager():
     assert "Gate 5" in pd or "G5 1 Jan 2027" in pd
     assert "phinsOpenPartnerMeetingTab" in pd
     assert "print-pm-onepager" in pd
+    onepager = pd.split('id="meeting-a-onepager"', 1)[1].split('id="pm-track-a"', 1)[0]
     # one-pager restates the investor-meeting book, not a second model
-    for token in ("₪4,518", "25%", "24,000", "94,080", "230,554", "₪6.0M", "₪24M"):
-        assert token in pd.split('id="meeting-a-onepager"', 1)[1].split('id="pm-track-a"', 1)[0]
+    for token in ("₪4,518", "25%", "24,000", "94,080", "230,554", "₪6.0M", "₪24M",
+                  "54.2M", "266.7M", "733.3M", "13.6M", "66.7M", "183.3M",
+                  "40.3%", "14.7%", "11.7%"):
+        assert token in onepager
+    # module count must match the live service layer (64+ is a stale under-count)
+    services = Path(__file__).resolve().parents[1] / "services"
+    module_count = len(list(services.glob("*.py")))
+    assert "64+" not in onepager
+    assert f">{module_count}</div>" in onepager or f">{module_count} service" in onepager
+    assert f"{module_count} service modules" in onepager
+    assert f"{module_count} מודולי שירות" in onepager
+    # persistency × premium identity (avg in-force × ₪4,518)
+    avg = (12000, 59040, 162317)
+    prem = 4518
+    gwp = [a * prem for a in avg]
+    nr = [g * 0.25 for g in gwp]
+    assert gwp == [54216000, 266742720, 733348206]
+    assert nr == [13554000, 66685680, 183337051.5]
+    ebitda = [nr[0] - 32400000, nr[1] - 66420000, nr[2] - 116868240]
+    assert [round(x) for x in ebitda] == [-18846000, 265680, 66468812]
 
 
 def test_pitch_dashboard_diary_seeds_13jul_meetings():
