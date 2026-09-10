@@ -1880,9 +1880,10 @@
       white-space: nowrap;
     }
 
-    .pm-op-sheet[dir="rtl"] .pm-op-table td.num,
-    .pm-op-sheet[dir="rtl"] .pm-op-table th.num {
-      text-align: left;
+    .pm-op-sheet[dir="rtl"] .pm-op-table th:first-child,
+    .pm-op-sheet[dir="rtl"] .pm-op-table td:first-child {
+      direction: rtl;
+      text-align: right;
     }
 
     .pm-op-table tr.hi td {
