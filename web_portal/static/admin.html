@@ -1464,6 +1464,9 @@
           </button>
         </div>
       </div>
+
+      <!-- Premium tie-out: Sales Division monthly premium vs dashboard Total Revenue (filled by Generate Report) -->
+      <div id="sales-premium-reconciliation" style="display: none; background: #fff; border: 1px solid rgba(21, 101, 192, 0.25); border-radius: 12px; padding: 16px; margin-bottom: 20px;"></div>
       
       <div style="background: #e7f3ff; border-left: 4px solid #1565c0; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px;">
         <strong>Enhanced Policy Creation Available</strong><br>
@@ -7324,6 +7327,75 @@
       }
     }
     
+    // Render the premium tie-out panel (Sales Division monthly premium vs
+    // dashboard Total Revenue) from /api/admin/premium-reconciliation.
+    function renderPremiumReconciliation(r) {
+      const panel = document.getElementById('sales-premium-reconciliation');
+      if (!panel || !r) return;
+      const esc = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[ch]));
+      const money = (v) => '$' + formatNumber(Number(v) || 0, 2);
+      const sr = r.sales_report || {};
+      const dash = r.dashboard || {};
+      const integrity = r.integrity || {};
+      const ok = !!r.is_consistent;
+
+      const statusRows = Object.entries(sr.by_status || {}).map(([st, v]) =>
+        `<tr><td>${esc(st)}</td><td style="text-align:right">${v.count}</td>` +
+        `<td style="text-align:right">${money(v.monthly_premium)}</td>` +
+        `<td style="text-align:right">${money(v.annual_premium)}</td></tr>`).join('');
+
+      const bridgeRows = (r.bridge || []).map(b => {
+        const subtotal = b.step === 'active_monthly_premium_dashboard_universe' || b.step === 'dashboard_total_revenue';
+        return `<tr style="${subtotal ? 'font-weight:600;border-top:1px solid #cfd8dc' : ''}">` +
+          `<td>${esc(b.note)}</td><td style="text-align:right">${money(b.amount)}</td></tr>`;
+      }).join('');
+
+      const checkRows = (r.checks || []).map(c => {
+        const detail = c.violations != null
+          ? `${c.violations} violation(s)`
+          : `${money(c.left)} vs ${money(c.right)} (diff ${money(c.difference)})`;
+        return `<tr><td><span style="color:${c.ok ? '#10b981' : '#dc3545'};font-weight:600">${c.ok ? 'OK' : 'FAIL'}</span></td>` +
+          `<td>${esc(c.check.replace(/_/g, ' '))}</td><td>${esc(detail)}</td></tr>`;
+      }).join('');
+
+      const issues = [];
+      (integrity.missing_monthly_premium || []).forEach(id => issues.push(`${id}: monthly_premium missing (derived from annual / 12)`));
+      (integrity.monthly_annual_mismatch || []).forEach(m =>
+        issues.push(`${m.policy_id}: monthly ${money(m.monthly_premium)} vs expected ${money(m.expected_monthly)} from annual ${money(m.annual_premium)}`));
+      (integrity.orphaned_policies || []).forEach(id => issues.push(`${id}: no customer record (in dashboard, not in this report)`));
+
+      panel.innerHTML = `
+        <h4 style="margin:0 0 10px 0; display:flex; align-items:center; gap:10px; color:#0d47a1;">
+          Premium Tie-Out: Sales Division vs Dashboard "Total Revenue"
+          <span class="badge ${ok ? 'badge-success' : 'badge-orange'}">${ok ? 'CONSISTENT' : 'DISCREPANCIES'}</span>
+          <span style="margin-left:auto; font-size:12px; font-weight:normal; color:#666;">tolerance ${money(r.tolerance)}</span>
+        </h4>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">
+          <div>
+            <div style="font-size:12px; color:#666; margin-bottom:4px;">Sales Division report by status (monthly_premium)</div>
+            <table class="data-table" style="width:100%; font-size:13px;">
+              <thead><tr><th>Status</th><th style="text-align:right">Policies</th><th style="text-align:right">Monthly</th><th style="text-align:right">Annual</th></tr></thead>
+              <tbody>${statusRows}
+                <tr style="font-weight:600;border-top:1px solid #cfd8dc"><td>All statuses</td><td style="text-align:right">${sr.all_statuses?.count ?? 0}</td><td style="text-align:right">${money(sr.all_statuses?.monthly_premium)}</td><td style="text-align:right">${money(sr.all_statuses?.annual_premium)}</td></tr>
+              </tbody>
+            </table>
+            <div style="font-size:12px; color:#666; margin-top:8px;">Dashboard: Total Revenue ${money(dash.total_revenue)} (annual, ${dash.active_policies ?? 0} active) = ${money(dash.monthly_premium_income)} / month</div>
+          </div>
+          <div>
+            <div style="font-size:12px; color:#666; margin-bottom:4px;">Bridge: report monthly premium to dashboard Total Revenue</div>
+            <table class="data-table" style="width:100%; font-size:13px;"><tbody>${bridgeRows}</tbody></table>
+          </div>
+        </div>
+        <div style="margin-top:12px;">
+          <div style="font-size:12px; color:#666; margin-bottom:4px;">Integrity checks</div>
+          <table class="data-table" style="width:100%; font-size:13px;"><tbody>${checkRows}</tbody></table>
+          ${issues.length ? `<ul style="margin:8px 0 0 18px; font-size:13px; color:#b45309;">${issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}
+        </div>`;
+      panel.style.display = 'block';
+    }
+
     // Generate policy report
     async function generatePolicyReport() {
       const statusEl = document.getElementById('sales-pipeline-status');
@@ -7392,40 +7464,22 @@
         
         // Tie the premium totals out to the dashboard "Total Revenue" using the
         // server-side reconciliation (same policy set, single source of truth).
-        let premiumSummary =
-          `Monthly Premium (all statuses): ${formatCurrency(totalMonthlyPremium)}\n` +
-          `Annual Premium (all statuses): ${formatCurrency(totalAnnualPremium)}\n` +
-          `Reconciliation vs dashboard: unavailable`;
+        // Rendered on-page because browser alerts truncate long messages.
+        let reconLine = `Monthly Premium (all statuses): ${formatCurrency(totalMonthlyPremium)} - reconciliation unavailable`;
         try {
           const reconRes = await fetch('/api/admin/premium-reconciliation', {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           if (reconRes.ok) {
             const r = await reconRes.json();
-            const sr = r.sales_report || {};
-            const activeSr = sr.active || {};
-            const pipelineSr = sr.pipeline || {};
-            const allSr = sr.all_statuses || {};
-            const dash = r.dashboard || {};
-            const integrity = r.integrity || {};
-            const issues = [];
-            if ((integrity.missing_monthly_premium || []).length) {
-              issues.push(`${integrity.missing_monthly_premium.length} policy(ies) missing monthly_premium (derived from annual/12)`);
-            }
-            if ((integrity.monthly_annual_mismatch || []).length) {
-              issues.push(`${integrity.monthly_annual_mismatch.length} policy(ies) where monthly x 12 != annual`);
-            }
-            if ((integrity.orphaned_policies || []).length) {
-              issues.push(`${integrity.orphaned_policies.length} policy(ies) without a customer record (counted by dashboard, not in this report)`);
-            }
-            premiumSummary =
-              `Monthly Premium - active (ties to dashboard): ${formatCurrency(activeSr.monthly_premium || 0)}\n` +
-              `Monthly Premium - pipeline (pending/other): ${formatCurrency(pipelineSr.monthly_premium || 0)}\n` +
-              `Monthly Premium - all statuses: ${formatCurrency(allSr.monthly_premium || 0)}\n` +
-              `Annual Revenue Run-Rate (active) = Dashboard Total Revenue: ${formatCurrency(dash.total_revenue || 0)}\n` +
-              `Dashboard Monthly Premium Income (annual / 12): ${formatCurrency(dash.monthly_premium_income || 0)}\n\n` +
-              `Reconciliation: ${r.is_consistent ? 'CONSISTENT' : 'DISCREPANCIES FOUND'}` +
-              (issues.length ? `\n- ${issues.join('\n- ')}` : '');
+            renderPremiumReconciliation(r);
+            const activeMonthly = (r.sales_report?.active?.monthly_premium) || 0;
+            const pipelineMonthly = (r.sales_report?.pipeline?.monthly_premium) || 0;
+            reconLine =
+              `Monthly Premium - active (ties to dashboard): $${formatNumber(activeMonthly, 2)}\n` +
+              `Monthly Premium - pipeline (pending/other): $${formatNumber(pipelineMonthly, 2)}\n` +
+              `Dashboard Total Revenue (annual run-rate): $${formatNumber(r.dashboard?.total_revenue || 0, 2)}\n` +
+              `Reconciliation: ${r.is_consistent ? 'CONSISTENT' : 'DISCREPANCIES FOUND'} - see panel in Sales Division`;
           }
         } catch (reconErr) {
           console.warn('Premium reconciliation unavailable:', reconErr);
@@ -7433,13 +7487,10 @@
 
         statusEl.innerHTML = `<span style="color: #10b981;"> Report generated</span>`;
         alert(` Policy Report Generated!\n\n` +
-          `Total Policies: ${policies.length}\n` +
-          `Active: ${active}\n` +
-          `Pending: ${pending}\n` +
-          `Cancelled: ${cancelled}\n\n` +
+          `Total Policies: ${policies.length} (Active ${active} / Pending ${pending} / Cancelled ${cancelled})\n` +
           `Total Coverage: ${formatCurrency(totalCoverage)}\n` +
-          `${premiumSummary}\n` +
-          `Investment Value: ${formatCurrency(totalInvestment)}`);
+          `Investment Value: ${formatCurrency(totalInvestment)}\n\n` +
+          reconLine);
         
       } catch (err) {
         statusEl.innerHTML = '<span style="color: #dc3545;"> Report failed</span>';
