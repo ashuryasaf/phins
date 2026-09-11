@@ -332,6 +332,31 @@ def test_smoker_factor_proposal_is_derived_from_live_config_and_capped(report):
     assert move["action"]["ui_link"].startswith("/actuary-dashboard.html#section-")
 
 
+def test_smoker_advisory_scales_live_factor_until_gap_closes():
+    def _results(smoker_lr, neutral):
+        return {"underwriting": {
+            "loss_ratio_by_smoking_status": [
+                {"key": "current", "expected_loss_ratio_true_world_pct": smoker_lr},
+                {"key": "never", "expected_loss_ratio_true_world_pct": 65.0},
+            ],
+            "demographic_factors_neutral": neutral, "auto_approval": {}, "decline_threshold_sensitivity": [],
+        }}
+    ctx = {"assumptions": {"underwriting_config": {
+        "smoker_mortality_factor": 1.25, "smoker_disability_factor": 1.25, "decline_threshold": 9}}}
+
+    # A partially set factor with a residual gap is still surfaced, as an assumption gap not an anomaly,
+    # and the proposal scales the live factor rather than assuming it is 1.0.
+    moves = mc.derive_next_moves(_results(110.0, False), [], ctx, observed_unchanged=True)
+    move = next(m for m in moves if m["id"] == "uw_smoker_demographic_factors")
+    assert move["trigger"] == "inconsistency"
+    assert move["action"]["target"]["current"]["smoker_mortality_factor"] == 1.25
+    assert move["action"]["target"]["proposed"]["smoker_mortality_factor"] == round(1.25 * 110.0 / 65.0, 2)
+
+    # Once the gap is inside tolerance no adjustment is proposed.
+    moves = mc.derive_next_moves(_results(72.0, False), [], ctx, observed_unchanged=True)
+    assert not any(m["id"] == "uw_smoker_demographic_factors" for m in moves)
+
+
 def test_mutated_observed_inputs_raise_a_blocking_anomaly():
     ctx = {"assumptions": {"underwriting_config": {}}}
     moves = mc.derive_next_moves({}, [], ctx, observed_unchanged=False)

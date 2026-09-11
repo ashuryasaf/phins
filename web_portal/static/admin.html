@@ -449,6 +449,21 @@
       background: rgba(255,255,255,0.25);
       transform: translateY(-1px);
     }
+    /* Buttons rendered inside light result cards (Monte Carlo next moves). */
+    .admin-mc-btn {
+      background: #ffffff;
+      border: 1px solid #90a4ae;
+      color: #263238;
+      padding: 5px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.76rem;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+    .admin-mc-btn:hover { background: #eceff1; transform: translateY(-1px); }
+    .admin-mc-btn.primary { background: #6a1b9a; border-color: #6a1b9a; color: #ffffff; }
+    .admin-mc-btn.primary:hover { background: #4a148c; }
     .admin-ai-quick-btn {
       background: rgba(255,255,255,0.15);
       border: 1px solid rgba(255,255,255,0.3);
@@ -3536,10 +3551,10 @@
         const target = action.target || {};
         const buttons = [];
         if (action.kind === 'adjust' && action.adjustable_in_phins) {
-          buttons.push(`<button class="admin-ai-action-btn" style="background:#6a1b9a;color:#fff;" onclick="adminMcApplyFix('${adminAssistantEscapeHtml(m.id)}')">Review &amp; apply fix</button>`);
+          buttons.push(`<button class="admin-mc-btn primary" onclick="adminMcApplyFix('${adminAssistantEscapeHtml(m.id)}')">Review &amp; apply fix</button>`);
         }
         if (action.ui_link) {
-          buttons.push(`<button class="admin-ai-action-btn" onclick="adminMcOpenSource('${adminAssistantEscapeHtml(m.id)}')">Open source</button>`);
+          buttons.push(`<button class="admin-mc-btn" onclick="adminMcOpenSource('${adminAssistantEscapeHtml(m.id)}')">Open source</button>`);
         }
         const proposed = target.proposed ? `<div style="font-size:0.76rem;color:#37474f;margin-top:4px;"><span style="font-weight:600;">Proposed:</span> ${adminMcFormatKv(target.proposed)}${target.current ? ` <span style="color:#78909c;">(current: ${adminMcFormatKv(target.current)})</span>` : ''}</div>` : '';
         const adjNote = action.adjustable_in_phins
@@ -3641,8 +3656,8 @@
           <div style="font-weight:600;color:${verified ? '#2e7d32' : '#ef6c00'};">${verified ? 'Applied and verified' : 'Applied, but read-back differs from proposal'} · config ${adminAssistantEscapeHtml(String(applied.current_version || ''))} / ${adminAssistantEscapeHtml(String(newCfg.config_version || ''))} · ${persistNote}</div>
           <div style="color:#546e7a;margin-top:3px;">Audit reason recorded with results_sha256 ${adminAssistantEscapeHtml(seal.slice(0, 16))}…</div>
           <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
-            <button class="admin-ai-action-btn" onclick="adminAssistantQuickAction('run_monte_carlo_evaluation')">Re-run evaluation</button>
-            <button class="admin-ai-action-btn" onclick="adminMcOpenSource('${adminAssistantEscapeHtml(move.id)}')">Open config &amp; versions</button>
+            <button class="admin-mc-btn primary" onclick="adminAssistantQuickAction('run_monte_carlo_evaluation')">Re-run evaluation</button>
+            <button class="admin-mc-btn" onclick="adminMcOpenSource('${adminAssistantEscapeHtml(move.id)}')">Open config &amp; versions</button>
           </div>
         </div>`);
         adminAssistantSetStatus(verified ? 'success' : 'warning', verified ? ` Applied ${move.id}; re-run to verify` : ' Applied with read-back mismatch');
@@ -3656,7 +3671,12 @@
       adminAssistantSetStatus('ready', ' Running Monte Carlo evaluation...');
       const area = document.getElementById('admin-ai-response-area');
       const p = ADMIN_MC_EVAL_PARAMS;
-      if (area) area.innerHTML = `<div style="text-align:center;padding:20px;"><div style="font-weight:600;">Running Monte Carlo evaluation...</div><div style="color:#546e7a;font-size:0.85rem;margin-top:4px;">${p.lives.toLocaleString()} synthetic lives × ${p.trials.toLocaleString()} trials · read-only, seeded</div></div>`;
+      if (area) {
+        area.innerHTML = `<div style="text-align:center;padding:20px;"><div style="font-weight:600;">Running Monte Carlo evaluation...</div><div style="color:#546e7a;font-size:0.85rem;margin-top:4px;">${p.lives.toLocaleString()} synthetic lives × ${p.trials.toLocaleString()} trials · read-only, seeded</div></div>`;
+        // Re-runs are triggered from deep inside the previous report; keep the viewport on the panel.
+        const panel = document.getElementById('admin-ai-assistant-panel') || area;
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
       const t0 = performance.now();
       try {
         const qs = new URLSearchParams({ lives: String(p.lives), trials: String(p.trials), bootstrap: String(p.bootstrap) });

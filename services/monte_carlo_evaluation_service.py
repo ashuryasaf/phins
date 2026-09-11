@@ -1470,13 +1470,16 @@ def derive_findings(results: Dict[str, Any], ctx: Dict[str, Any]) -> List[Dict[s
     uw = results.get("underwriting")
     if uw:
         by_smoke = {row["key"]: row for row in uw.get("loss_ratio_by_smoking_status", [])}
-        if uw.get("demographic_factors_neutral") and "current" in by_smoke and "never" in by_smoke:
+        if "current" in by_smoke and "never" in by_smoke:
             gap = by_smoke["current"]["expected_loss_ratio_true_world_pct"] - by_smoke["never"]["expected_loss_ratio_true_world_pct"]
+            neutral = bool(uw.get("demographic_factors_neutral"))
+            lead = ("Smoker demographic factors are 1.0 (neutral) while the scorer penalises smoking; "
+                    if neutral else "Smoker demographic factors are set but do not close the gap; ")
             add("underwriting", "warning" if gap > 10 else "info",
-                f"Smoker demographic factors are 1.0 (neutral) while the scorer penalises smoking; "
-                f"smoker vs never-smoker expected loss-ratio gap is {gap:.1f} pts under world relative risks.",
+                lead + f"smoker vs never-smoker expected loss-ratio gap is {gap:.1f} pts under world relative risks.",
                 {"smoker_lr": by_smoke["current"]["expected_loss_ratio_true_world_pct"],
-                 "never_lr": by_smoke["never"]["expected_loss_ratio_true_world_pct"]},
+                 "never_lr": by_smoke["never"]["expected_loss_ratio_true_world_pct"],
+                 "factors_neutral": neutral},
                 "Set smoker_mortality_factor / smoker_disability_factor from experience so pricing and UW scoring agree.")
         aa = uw.get("auto_approval", {})
         if aa.get("auto_approvable_in_top_hazard_decile", 0) > 0:
@@ -1680,35 +1683,52 @@ def derive_next_moves(results: Dict[str, Any], findings: List[Dict[str, Any]],
 
     uw = results.get("underwriting") or {}
     by_smoke = {row["key"]: row for row in uw.get("loss_ratio_by_smoking_status", [])}
-    if uw.get("demographic_factors_neutral") and "current" in by_smoke and "never" in by_smoke:
+    if "current" in by_smoke and "never" in by_smoke:
         never_lr = by_smoke["never"]["expected_loss_ratio_true_world_pct"] or 0.0
         smoker_lr = by_smoke["current"]["expected_loss_ratio_true_world_pct"] or 0.0
         gap = smoker_lr - never_lr
         if gap > _SMOKER_LR_GAP_PTS and never_lr > 0:
+            neutral = bool(uw.get("demographic_factors_neutral"))
             ratio = smoker_lr / never_lr
+
+            def _scaled(key: str, r: float) -> float:
+                # The loss ratios were simulated under the live factor, so the
+                # first-order correction scales that factor by the residual ratio.
+                live = uw_cfg.get(key)
+                live_f = float(live) if live is not None else 1.0
+                return _clamp_factor(live_f * r)
+
             proposed: Dict[str, Any] = {
-                "smoker_mortality_factor": _clamp_factor(ratio),
-                "smoker_disability_factor": _clamp_factor(ratio),
+                "smoker_mortality_factor": _scaled("smoker_mortality_factor", ratio),
+                "smoker_disability_factor": _scaled("smoker_disability_factor", ratio),
             }
             current = {k: uw_cfg.get(k) for k in proposed}
             if "former" in by_smoke:
                 former_ratio = (by_smoke["former"]["expected_loss_ratio_true_world_pct"] or 0.0) / never_lr
                 if former_ratio > 1.05:
-                    proposed["former_smoker_mortality_factor"] = _clamp_factor(former_ratio)
-                    proposed["former_smoker_disability_factor"] = _clamp_factor(former_ratio)
+                    proposed["former_smoker_mortality_factor"] = _scaled("former_smoker_mortality_factor", former_ratio)
+                    proposed["former_smoker_disability_factor"] = _scaled("former_smoker_disability_factor", former_ratio)
                     current["former_smoker_mortality_factor"] = uw_cfg.get("former_smoker_mortality_factor")
                     current["former_smoker_disability_factor"] = uw_cfg.get("former_smoker_disability_factor")
-            moves.append(_adjust_move(
-                "uw_smoker_demographic_factors", "underwriting", 1,
-                "Align smoker pricing factors with the smoker/never loss-ratio gap",
-                f"Pricing treats smokers as neutral (factor 1.0) while the risk scorer penalises smoking; "
-                f"simulated smoker loss ratio {smoker_lr:.1f}% vs {never_lr:.1f}% for never-smokers "
-                f"({gap:.1f} pts). Proposed factors equal the simulated loss-ratio ratio, capped at 3.0; "
-                f"validate against experience before relying on them.",
-                {"smoker_lr_pct": smoker_lr, "never_lr_pct": never_lr, "gap_pts": round(gap, 2),
-                 "ratio": round(ratio, 3)},
-                current, proposed,
-                "services/actuarial_service.py:UnderwritingConfig.smoker_mortality_factor", "anomaly"))
+            # Drop keys where the clamp leaves the live value unchanged (nothing to apply).
+            for key in [k for k in proposed if current.get(k) is not None and abs(float(current[k]) - proposed[k]) < 1e-9]:
+                proposed.pop(key)
+                current.pop(key)
+            if proposed:
+                lead = ("Pricing treats smokers as neutral (factor 1.0) while the risk scorer penalises smoking; "
+                        if neutral else
+                        "Smoker pricing factors are set but the residual smoker/never loss-ratio gap remains; ")
+                moves.append(_adjust_move(
+                    "uw_smoker_demographic_factors", "underwriting", 1,
+                    "Align smoker pricing factors with the smoker/never loss-ratio gap",
+                    lead + f"simulated smoker loss ratio {smoker_lr:.1f}% vs {never_lr:.1f}% for never-smokers "
+                    f"({gap:.1f} pts). Proposed factors scale the live factors by the simulated loss-ratio ratio, "
+                    f"capped at 3.0; validate against experience before relying on them.",
+                    {"smoker_lr_pct": smoker_lr, "never_lr_pct": never_lr, "gap_pts": round(gap, 2),
+                     "ratio": round(ratio, 3), "factors_neutral": neutral},
+                    current, proposed,
+                    "services/actuarial_service.py:UnderwritingConfig.smoker_mortality_factor",
+                    "anomaly" if neutral else "inconsistency"))
 
     aa = uw.get("auto_approval") or {}
     if (aa.get("auto_approvable_in_top_hazard_decile") or 0) > 0:
@@ -1776,19 +1796,21 @@ def derive_next_moves(results: Dict[str, Any], findings: List[Dict[str, Any]],
         suff = ib.get("probability_reserve_config_ibnr_sufficient")
         if suff is not None and suff < _IBNR_SUFFICIENCY_MIN:
             unreported = ib.get("unreported_share_of_year1_claims") or {}
-            p95 = unreported.get("p95")
-            proposed_ibnr = round(2 * (100.0 * p95)) / 2 if p95 is not None else None
+            p75 = unreported.get("p75")
+            # Best estimate plus a prudence margin (p75); p95 is reported as the stress value.
+            proposed_ibnr = round(2 * (100.0 * p75)) / 2 if p75 is not None else None
             moves.append(_redirect_move(
                 "act_ibnr_pct", "actuarial", 1,
                 "Raise the IBNR provision used in reserve projections",
                 f"IBNR at {ib.get('reserve_config_ibnr_pct_of_claims')}% of claims is sufficient in "
                 f"{100 * suff:.1f}% of trials; the reporting-lag simulation leaves a median "
-                f"{100 * (unreported.get('p50') or 0):.1f}% (p95 {100 * (p95 or 0):.1f}%) of year-1 claims "
-                f"unreported. Enter the proposed percentage in the Reserves projection form; it is a per-projection "
-                f"input, not a persisted setting.",
+                f"{100 * (unreported.get('p50') or 0):.1f}% of year-1 claims unreported "
+                f"(p75 {100 * (p75 or 0):.1f}%, p95 {100 * (unreported.get('p95') or 0):.1f}%). Enter the proposed "
+                f"percentage in the Reserves projection form; it is a per-projection input, not a persisted setting.",
                 ib, "services/actuarial_service.py:ReserveConfig.ibnr_pct", "inconsistency",
                 ACTUARY_RESERVES_LINK,
-                proposed={"ibnr_pct": proposed_ibnr, "basis": "p95 of unreported share"},
+                proposed={"ibnr_pct": proposed_ibnr, "basis": "p75 of unreported share",
+                          "stress_p95_pct": _r(100 * unreported["p95"], 1) if unreported.get("p95") is not None else None},
                 adjustable_note="Per-projection input on the Reserves form (POST /api/actuarial/reserves/project)."))
         p65 = actu.get("probability_year1_lr_exceeds_65pct_assumption")
         if p65 is not None and p65 > _LR_ASSUMPTION_EXCEEDANCE_MAX:

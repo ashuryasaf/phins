@@ -340,6 +340,54 @@ The gates are safe and conservative; the cost is manual load.
   `statement`, `metric`, `recommendation`), not to choose thresholds — in
   line with `docs/ai_surface_design_principles.md`.
 
+### 5.4 BI conclusions and admin next moves (in the report)
+
+Each report now carries two derived blocks so the dashboard does not have to
+interpret raw findings:
+
+- `conclusions` — `overall_status` (`consistent`, `inconsistencies_detected`,
+  `anomalies_detected`), a headline, counts, one row per evaluated area with a
+  status chip, a one-sentence `bi_conclusion`, the BI snapshot metrics that
+  area should persist, and short `bi_usage` / `ai_usage` guidance lists.
+  An *anomaly* is PHINS disagreeing with itself (pricing factors neutral while
+  the scorer penalises smoking; two in-house definitions of "annual expected
+  claims" 29 pts apart; assumed vs realised automation mix; the evaluation
+  mirror disagreeing with the live recommender; observed inputs mutating
+  during a run). An *inconsistency* is a PHINS assumption disagreeing with the
+  simulated world (reserve coverage, IBNR sufficiency, 65% loss ratio, sales
+  attainment, AI cost-minimum threshold, claims leakage).
+- `next_moves` — deterministic, priority-sorted advisories. Every move names
+  its `source_ref` (the code that owns the assumption) and an `action.kind`:
+  `adjust` when PHINS exposes an audited config path, `redirect` when the
+  value is a per-run input or a code constant, `investigate` for anomalies,
+  `monitor` when the evidence supports the current rule.
+
+The advisories are rule-based on purpose. An LLM narrative would be
+non-deterministic, break the hash seal, and add no evidence; PHINS's existing
+"AI insights" (balance-sheet) follow the same rule-based pattern.
+
+**Apply contract (data integrity).** Only `adjust` moves can be applied, and
+only through `POST /api/actuarial/config`, the existing audited, versioned
+underwriting/pricing endpoint (`ActuarialTablesStore.update_config` writes an
+audit entry and an append-only `config_history` revision, so every change is
+restorable from the Actuary dashboard versions bar). The proposal carries the
+`current` live values it was derived from; the admin UI
+
+1. shows a confirmation with current → proposed values,
+2. re-reads `GET /api/actuarial/config` and aborts if any `current` value
+   drifted since the evaluation ("configuration drifted"),
+3. posts the payload with `change_reason` = engine version + `results_sha256`
+   + move id, which `update_config` stores in the audit entry,
+4. verifies the read-back equals the proposal and offers a re-run.
+
+The engine itself never writes (`integrity.proposals_applied_by_engine` is
+always `false`; `next_moves_sha256` seals the advisories). Everything not
+reachable through that endpoint — the 150% reserve constant, claims-bot
+cut-offs, AI env-var thresholds, IBNR on the reserve projection form, the
+revenue-forecast growth parameter — is a `redirect` with a proposed value and
+a deep link (`/actuary-dashboard.html#section-reserves`, etc.); the admin
+changes it at source.
+
 ## 6. Limitations
 
 - The world is a model. Relative risks, condition prevalence, fraud
@@ -373,5 +421,11 @@ pytest tests/test_monte_carlo_evaluation.py -q
 Response shape: `engine_version`, `parameters`, `world_assumptions`,
 `phins_assumptions`, `assumption_provenance`, `observed_inputs`, `results`
 (one key per module), `findings` (area / severity / statement / metric /
-recommendation) and `integrity` (hashes, `read_only`, `side_effects: []`,
-`observed_inputs_unchanged`).
+recommendation), `conclusions`, `next_moves` (§5.4) and `integrity` (hashes,
+`read_only`, `side_effects: []`, `observed_inputs_unchanged`,
+`proposals_applied_by_engine: false`).
+
+Dashboard: Admin → Admin AI Mic → **Monte Carlo Eval** (or say/type "run
+monte carlo evaluation"). The panel renders the metric cards, BI conclusions,
+the next-move cards with **Review & apply fix** / **Open source** buttons, and
+the findings list.

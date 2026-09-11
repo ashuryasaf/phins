@@ -369,6 +369,9 @@ def test_admin_ai_monte_carlo_conclusions_and_guarded_apply_flow():
     assert "onclick=\"adminMcOpenSource('${adminAssistantEscapeHtml(m.id)}')\"" in content
     assert "Review &amp; apply fix" in content
     assert ">Open source</button>" in content
+    # Light-card button style (the dark-panel .admin-ai-action-btn is unreadable on the cards).
+    assert ".admin-mc-btn {" in content
+    assert 'class="admin-mc-btn primary" onclick="adminMcApplyFix(' in content
 
     apply_fn = re.search(
         r"async function adminMcApplyFix\(moveId\)\s*\{(.*?)\n\s*async function adminRunMonteCarloEvaluation",
