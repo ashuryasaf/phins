@@ -170,7 +170,8 @@ def test_all_modules_present_with_core_metrics(report):
     assert claims["mirror_agreement_with_live_recommender"] == 1.0
     live = claims["live_thresholds"]
     assert abs(live["auto_approve_share"] + live["auto_deny_share"] + live["manual_share"] - 1.0) < 1e-6
-    assert len(claims["threshold_sweep"]) == 9
+    assert len(claims["threshold_sweep"]) == 12
+    assert {row["approve_partial"] for row in claims["threshold_sweep"]} == {0.65, 0.70, 0.75, 0.80}
 
     sales = res["sales"]
     assert sales["phins_forecast"]["monthly_growth"] == 0.05

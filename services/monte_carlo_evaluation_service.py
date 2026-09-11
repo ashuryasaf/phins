@@ -522,16 +522,20 @@ def _expected_annual_loss(life: Dict[str, Any], truth: bool = True,
 
 def evaluate_risk_assessment(rng: random.Random, lives: List[Dict[str, Any]],
                              params: EvaluationParams, ctx: Dict[str, Any]) -> Dict[str, Any]:
-    from services.underwriting_risk_scoring import score_risk_inputs
+    from services.underwriting_risk_scoring import assess_application
 
     H = params.horizon_years
     scores, labels, hazards, categories, recs, adjustments = [], [], [], [], [], []
     for life in lives:
-        result = score_risk_inputs(
-            age=life["age"], medical_conditions=life["conditions"],
-            smoking_status=life["smoking_status"], claims_count=life["claims_count"],
-            bmi=life["bmi"], disability_pct=None,
-        )
+        # Same extraction + scoring path production uses for an application
+        # record (adds ADL-impairment / obesity conditions exactly as it would).
+        result = assess_application({
+            "age": life["age"], "smoking_status": life["smoking_status"],
+            "bmi": life["bmi"], "adl_level": life["adl"],
+            "medical_conditions": life["conditions"],
+        }, claims_count=life["claims_count"])
+        if result.get("overall_risk") is None:
+            raise RuntimeError(f"underwriting scorer failed: {result.get('error')}")
         p_annual = _annual_claim_probability(life, truth=True)
         p_horizon = 1 - (1 - p_annual) ** H
         y = 1 if rng.random() < p_horizon else 0
@@ -754,7 +758,16 @@ def evaluate_underwriting_rules(rng: random.Random, lives: List[Dict[str, Any]],
     manual_hazard = _mean([_annual_claim_probability(l) for l in lives if not l["auto_approvable"]]) if auto_n < n else None
     hazards_sorted = sorted(_annual_claim_probability(l) for l in lives)
     top_decile_cut = _percentile(hazards_sorted, 0.90)
-    auto_top_decile = sum(1 for l in lives if l["auto_approvable"] and _annual_claim_probability(l) >= top_decile_cut)
+    auto_top_lives = [l for l in lives if l["auto_approvable"] and _annual_claim_probability(l) >= top_decile_cut]
+    auto_top_decile = len(auto_top_lives)
+    auto_top_profile = {
+        "count": auto_top_decile,
+        "mean_age": _r(_mean([l["age"] for l in auto_top_lives]), 1) if auto_top_lives else None,
+        "mean_adl": _r(_mean([l["adl"] for l in auto_top_lives]), 2) if auto_top_lives else None,
+        "mean_bmi": _r(_mean([l["bmi"] for l in auto_top_lives]), 1) if auto_top_lives else None,
+        "mean_prior_claims": _r(_mean([l["claims_count"] for l in auto_top_lives]), 2) if auto_top_lives else None,
+        "top_decile_hazard_cut": _r(top_decile_cut, 6),
+    }
 
     # Decline-threshold sensitivity (deterministic expected values, priced by the kernel).
     sensitivity = []
@@ -802,6 +815,7 @@ def evaluate_underwriting_rules(rng: random.Random, lives: List[Dict[str, Any]],
             "mean_annual_hazard_auto_approvable": _r(auto_hazard, 6),
             "mean_annual_hazard_manual_queue": _r(manual_hazard, 6),
             "auto_approvable_in_top_hazard_decile": auto_top_decile,
+            "auto_approvable_top_decile_profile": auto_top_profile,
             "gates": {
                 "max_adl": cfg.auto_approve_max_adl, "age": [cfg.auto_approve_min_age, cfg.auto_approve_max_age],
                 "max_risk_score": cfg.auto_approve_max_risk_score,
@@ -1133,16 +1147,21 @@ def evaluate_claims_triage(rng: random.Random, params: EvaluationParams,
     auth_legit = [r["auth"] for r in records if not r["fraud"]]
     auc = auc_score([r["auth"] for r in records], [0 if r["fraud"] else 1 for r in records])
 
+    # The partial-approval cut-off is the lever that admits fraud (anything
+    # >= it and non-critical is paid); approve_full only splits full/partial.
     sweep = []
-    for approve_full in (0.80, 0.85, 0.90):
+    for approve_partial in (0.65, 0.70, 0.75, 0.80):
         for deny in (0.40, 0.45, 0.50):
+            approve_full = round(max(0.85, approve_partial + 0.05), 2)
             decisions = [_recommend_with_thresholds(
                 r["auth"], r["critical"], r["investigation"], r["has_hidden"], r["causal"],
-                r["within_contest"], approve_full, min(approve_full - 0.10, 0.70), deny) for r in records]
+                r["within_contest"], approve_full, approve_partial, deny) for r in records]
             s = _summarize(decisions)
-            sweep.append({"approve_full": approve_full, "deny": deny,
+            sweep.append({"approve_full": approve_full, "approve_partial": approve_partial, "deny": deny,
                           "fraud_leakage_rate": s["fraud_leakage_rate"],
+                          "fraud_leakage_amount_share": s["fraud_leakage_amount_share"],
                           "legit_false_denial_rate": s["legit_false_denial_rate"],
+                          "legit_manual_friction_rate": s["legit_manual_friction_rate"],
                           "manual_share": s["manual_share"]})
 
     assumed = ctx["assumptions"]["automation_base_rates"]["claims"]
@@ -1454,9 +1473,13 @@ def derive_findings(results: Dict[str, Any], ctx: Dict[str, Any]) -> List[Dict[s
                 "Set smoker_mortality_factor / smoker_disability_factor from experience so pricing and UW scoring agree.")
         aa = uw.get("auto_approval", {})
         if aa.get("auto_approvable_in_top_hazard_decile", 0) > 0:
-            add("underwriting", "warning", "Some lives passing every auto-approval gate sit in the top hazard decile.",
-                aa["auto_approvable_in_top_hazard_decile"],
-                "Add BMI and prior-claims gates (they are scored but not gated) before enabling auto-approval.")
+            profile = aa.get("auto_approvable_top_decile_profile") or {}
+            add("underwriting", "warning",
+                f"{aa['auto_approvable_in_top_hazard_decile']} lives passing every auto-approval gate sit in the top "
+                f"hazard decile (mean age {profile.get('mean_age')}, mean ADL {profile.get('mean_adl')}).",
+                profile,
+                "Tighten the age gate toward the table breakpoints (e.g. 50) and gate on BMI / prior claims, "
+                "which are scored but not gated, before enabling auto-approval.")
         add("underwriting", "info", f"Expected loss ratio on PHINS tables {uw['expected_loss_ratio_phins_tables_pct']}% "
             f"vs {uw['expected_loss_ratio_true_world_pct']}% under world hazards; reinsurance band {uw['reinsurance_band_true_world']}.",
             uw["decline_threshold_sensitivity"],
