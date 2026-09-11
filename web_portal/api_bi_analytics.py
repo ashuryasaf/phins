@@ -10,6 +10,7 @@ Endpoints:
 - GET /api/bi/supplier-analytics - Supplier ecosystem analytics
 - GET /api/bi/insights - AI-powered insights and recommendations
 - GET /api/bi/revenue-forecast - Revenue forecasting
+- GET /api/bi/monte-carlo-evaluation - Monte Carlo evaluation of rules/assumptions
 - GET /api/integrity/validate - Platform integrity check
 """
 
@@ -192,6 +193,33 @@ def handle_bi_snapshot_capture(handler, data_sources: dict) -> tuple:
             dashboard, source=str(data_sources.get('_snapshot_source') or 'api'),
         )
         return 201, record
+    except Exception as e:
+        return 500, {'error': str(e)}
+
+
+def handle_monte_carlo_evaluation(handler, data_sources: dict, params: dict = None) -> tuple:
+    """Handle GET /api/bi/monte-carlo-evaluation.
+
+    Read-only Monte Carlo evaluation of PHINS's risk-scoring, underwriting,
+    actuarial, claims-triage, sales-forecast and AI-threshold assumptions.
+    Query parameters (all optional, all bounded by the service):
+    ``seed``, ``lives``, ``trials``, ``horizon_years``, ``bootstrap``,
+    ``modules`` (comma list of risk,underwriting,actuarial,claims,sales,ai)
+    and ``world.<assumption>`` overrides. Live policies/claims are read only
+    to seed the observed MRR; the response carries an ``integrity`` block
+    proving the inputs were not modified.
+    """
+    try:
+        from services.monte_carlo_evaluation_service import (
+            get_monte_carlo_evaluation_service, params_from_query,
+        )
+        eval_params = params_from_query(params or {})
+        observed = {
+            'policies': data_sources.get('policies', {}) or {},
+            'claims': data_sources.get('claims', {}) or {},
+        }
+        report = get_monte_carlo_evaluation_service().run(eval_params, observed=observed)
+        return 200, report
     except Exception as e:
         return 500, {'error': str(e)}
 
