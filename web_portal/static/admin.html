@@ -3477,6 +3477,181 @@
       return cards.join('');
     }
 
+    // Last sealed report; next-move actions are resolved from it by id so the UI
+    // never applies anything that is not in the evaluated proposal.
+    let adminMcLastReport = null;
+
+    const ADMIN_MC_STATUS_STYLE = {
+      consistent: { bg: '#e8f5e9', fg: '#2e7d32', label: 'Consistent' },
+      inconsistencies_detected: { bg: '#fff8e1', fg: '#ef6c00', label: 'Inconsistencies detected' },
+      anomalies_detected: { bg: '#ffebee', fg: '#c62828', label: 'Anomalies detected' },
+      inconsistent: { bg: '#fff8e1', fg: '#ef6c00', label: 'inconsistent' },
+      anomalous: { bg: '#ffebee', fg: '#c62828', label: 'anomalous' },
+    };
+
+    function adminMcStatusChip(status) {
+      const s = ADMIN_MC_STATUS_STYLE[status] || { bg: '#eceff1', fg: '#37474f', label: status || 'n/a' };
+      return `<span style="padding:2px 8px;border-radius:12px;background:${s.bg};color:${s.fg};font-weight:600;font-size:0.76rem;white-space:nowrap;">${adminAssistantEscapeHtml(s.label)}</span>`;
+    }
+
+    function adminMcConclusionsHtml(conclusions) {
+      if (!conclusions || typeof conclusions !== 'object') return '';
+      const areas = Array.isArray(conclusions.areas) ? conclusions.areas : [];
+      const counts = conclusions.counts || {};
+      const bi = Array.isArray(conclusions.bi_usage) ? conclusions.bi_usage : [];
+      const ai = Array.isArray(conclusions.ai_usage) ? conclusions.ai_usage : [];
+      return `
+        <div id="admin-mc-conclusions" style="border:1px solid #e0e0e0;border-radius:10px;padding:10px 12px;margin-bottom:10px;background:#fafafa;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+            <div style="font-weight:700;font-size:0.95rem;">BI Conclusions</div>
+            ${adminMcStatusChip(conclusions.overall_status)}
+          </div>
+          <div style="font-size:0.86rem;color:#37474f;margin-bottom:8px;">${adminAssistantEscapeHtml(conclusions.headline || '')}</div>
+          <div style="font-size:0.76rem;color:#546e7a;margin-bottom:8px;">
+            ${Number(counts.anomalies || 0)} anomalies · ${Number(counts.inconsistencies || 0)} assumption gaps · ${Number(counts.next_moves || 0)} next moves · ${Number(counts.adjustable_in_phins || 0)} adjustable from PHINS
+          </div>
+          <div style="display:grid;gap:5px;">
+            ${areas.map(a => `<div style="display:grid;grid-template-columns:150px auto 1fr;gap:8px;align-items:start;font-size:0.8rem;padding:6px 8px;background:#fff;border-radius:6px;">
+              <div style="font-weight:600;">${adminAssistantEscapeHtml(a.label || a.area || '')}</div>
+              <div>${adminMcStatusChip(a.status)}</div>
+              <div style="color:#37474f;">${adminAssistantEscapeHtml(a.bi_conclusion || '')}</div>
+            </div>`).join('')}
+          </div>
+          ${(bi.length || ai.length) ? `<details style="margin-top:8px;font-size:0.78rem;color:#546e7a;"><summary style="cursor:pointer;font-weight:600;">BI &amp; AI usage guidance</summary>
+            <ul style="margin:6px 0 0 16px;padding:0;">${bi.concat(ai).map(t => `<li>${adminAssistantEscapeHtml(t)}</li>`).join('')}</ul></details>` : ''}
+        </div>`;
+    }
+
+    function adminMcFormatKv(obj) {
+      if (!obj || typeof obj !== 'object') return '';
+      return Object.entries(obj).map(([k, v]) => `${adminAssistantEscapeHtml(k)}=${adminAssistantEscapeHtml(typeof v === 'object' ? JSON.stringify(v) : String(v))}`).join(', ');
+    }
+
+    function adminMcNextMovesHtml(moves) {
+      if (!Array.isArray(moves) || !moves.length) return '';
+      const triggerLabel = { anomaly: 'ANOMALY', inconsistency: 'ASSUMPTION GAP', none: 'OK' };
+      const triggerBg = { anomaly: '#ffebee', inconsistency: '#fff8e1', none: '#e8f5e9' };
+      const cards = moves.map(m => {
+        const action = m.action || {};
+        const target = action.target || {};
+        const buttons = [];
+        if (action.kind === 'adjust' && action.adjustable_in_phins) {
+          buttons.push(`<button class="admin-ai-action-btn" style="background:#6a1b9a;color:#fff;" onclick="adminMcApplyFix('${adminAssistantEscapeHtml(m.id)}')">Review &amp; apply fix</button>`);
+        }
+        if (action.ui_link) {
+          buttons.push(`<button class="admin-ai-action-btn" onclick="adminMcOpenSource('${adminAssistantEscapeHtml(m.id)}')">Open source</button>`);
+        }
+        const proposed = target.proposed ? `<div style="font-size:0.76rem;color:#37474f;margin-top:4px;"><span style="font-weight:600;">Proposed:</span> ${adminMcFormatKv(target.proposed)}${target.current ? ` <span style="color:#78909c;">(current: ${adminMcFormatKv(target.current)})</span>` : ''}</div>` : '';
+        const adjNote = action.adjustable_in_phins
+          ? '<span style="color:#2e7d32;">Adjustable from PHINS · audited · reversible via config versions</span>'
+          : `<span style="color:#78909c;">${adminAssistantEscapeHtml(action.adjustable_note || 'Not adjustable from the dashboard; change at source.')}</span>`;
+        return `<div id="admin-mc-move-${adminAssistantEscapeHtml(m.id)}" style="padding:8px 10px;border-radius:8px;background:${triggerBg[m.trigger] || '#f5f5f5'};font-size:0.83rem;">
+          <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;">
+            <div style="font-weight:600;">P${adminAssistantEscapeHtml(String(m.priority))} · ${adminAssistantEscapeHtml(String(m.area || '').toUpperCase())} · ${adminAssistantEscapeHtml(triggerLabel[m.trigger] || String(m.trigger || ''))}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">${buttons.join('')}</div>
+          </div>
+          <div style="font-weight:600;color:#263238;margin-top:3px;">${adminAssistantEscapeHtml(m.title || '')}</div>
+          <div style="color:#37474f;">${adminAssistantEscapeHtml(m.why || '')}</div>
+          ${proposed}
+          <div style="font-size:0.74rem;margin-top:4px;">${adjNote} · <code style="font-size:0.72rem;">${adminAssistantEscapeHtml(action.source_ref || '')}</code></div>
+          <div id="admin-mc-move-result-${adminAssistantEscapeHtml(m.id)}"></div>
+        </div>`;
+      });
+      return `
+        <div style="font-weight:600;font-size:0.9rem;margin:6px 0;">Suggested next moves (${moves.length})</div>
+        <div style="display:grid;gap:6px;margin-bottom:10px;">${cards.join('')}</div>`;
+    }
+
+    function adminMcFindMove(moveId) {
+      const moves = adminMcLastReport && Array.isArray(adminMcLastReport.next_moves) ? adminMcLastReport.next_moves : [];
+      return moves.find(m => m.id === moveId) || null;
+    }
+
+    function adminMcOpenSource(moveId) {
+      const move = adminMcFindMove(moveId);
+      const link = move && move.action ? move.action.ui_link : null;
+      if (!link) { adminAssistantSetStatus('warning', ' No dashboard target for this move'); return; }
+      if (link.startsWith('/admin.html#')) {
+        const tabId = link.split('#')[1];
+        adminAssistantSwitchTab(tabId);
+        adminAssistantNavigateToTabSection();
+        return;
+      }
+      window.open(link, '_blank', 'noopener');
+      adminAssistantSetStatus('success', ` Opened ${link}`);
+    }
+
+    function adminMcNumbersEqual(a, b) {
+      if (a === null || a === undefined || b === null || b === undefined) return a === b;
+      const na = Number(a), nb = Number(b);
+      if (Number.isFinite(na) && Number.isFinite(nb)) return Math.abs(na - nb) < 1e-9;
+      return String(a) === String(b);
+    }
+
+    async function adminMcApplyFix(moveId) {
+      const move = adminMcFindMove(moveId);
+      const action = move && move.action;
+      const target = action && action.target;
+      const resultEl = document.getElementById(`admin-mc-move-result-${moveId}`);
+      const showResult = (html) => { if (resultEl) resultEl.innerHTML = html; };
+      if (!move || !action || action.kind !== 'adjust' || !action.adjustable_in_phins || !target || !target.api) {
+        adminAssistantSetStatus('warning', ' This move is not adjustable from PHINS');
+        return;
+      }
+      if (target.type !== 'underwriting_config' || target.api.path !== '/api/actuarial/config' || target.api.method !== 'POST') {
+        // The UI only knows how to drive the audited underwriting config endpoint.
+        adminAssistantSetStatus('warning', ' Unsupported adjustment target');
+        return;
+      }
+      const seal = (adminMcLastReport.integrity && adminMcLastReport.integrity.results_sha256) || '';
+      const changeLines = Object.entries(target.proposed || {}).map(([k, v]) => `  ${k}: ${target.current ? target.current[k] : '?'} → ${v}`).join('\n');
+      const confirmed = window.confirm(` Apply Monte Carlo advisory to live underwriting config?\n\n${move.title}\n\n${changeLines}\n\nThe change is audited (ActuarialTablesStore.update_config), saved as a new config version and reversible from the Actuary dashboard versions bar. Live values are re-read first and the apply is aborted if they no longer match this evaluation.`);
+      if (!confirmed) { adminAssistantSetStatus('ready', ' Apply cancelled'); return; }
+
+      adminAssistantSetStatus('ready', ' Verifying live configuration...');
+      showResult('<div style="font-size:0.78rem;color:#546e7a;margin-top:6px;">Verifying live values match the evaluated ones…</div>');
+      try {
+        const liveRes = await fetch(target.api.read_back.path, { headers: { 'Authorization': `Bearer ${token}` } });
+        const liveData = await liveRes.json();
+        if (!liveRes.ok) throw new Error(liveData.error || 'Could not read live configuration');
+        const liveCfg = liveData.config || {};
+        const drifted = Object.entries(target.current || {}).filter(([k, v]) => !adminMcNumbersEqual(liveCfg[k], v));
+        if (drifted.length) {
+          showResult(`<div style="font-size:0.78rem;color:#c62828;margin-top:6px;font-weight:600;">Aborted: live configuration changed since this evaluation (${drifted.map(([k]) => k).join(', ')}). Re-run the evaluation before applying.</div>`);
+          adminAssistantSetStatus('warning', ' Apply aborted: configuration drifted');
+          return;
+        }
+        adminAssistantSetStatus('ready', ' Applying audited configuration change...');
+        const payload = Object.assign({}, target.payload || target.proposed, {
+          change_reason: `monte_carlo_evaluation ${adminMcLastReport.engine_version || ''} results_sha256=${seal} move=${move.id}`,
+        });
+        const applyRes = await fetch(target.api.path, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const applied = await applyRes.json();
+        if (!applyRes.ok) throw new Error(applied.error || 'Configuration update failed');
+        const newCfg = applied.config || {};
+        const verified = Object.entries(target.proposed || {}).every(([k, v]) => adminMcNumbersEqual(newCfg[k], v));
+        const persistNote = applied.persisted === false
+          ? `<span style="color:#c62828;">not persisted${applied.persistence_warning ? ` (${adminAssistantEscapeHtml(applied.persistence_warning)})` : ''}</span>`
+          : `<span style="color:#2e7d32;">persisted${applied.persisted_to_database ? ' to database' : ''}</span>`;
+        showResult(`<div style="font-size:0.78rem;margin-top:6px;padding:6px 8px;border-radius:6px;background:${verified ? '#e8f5e9' : '#fff8e1'};">
+          <div style="font-weight:600;color:${verified ? '#2e7d32' : '#ef6c00'};">${verified ? 'Applied and verified' : 'Applied, but read-back differs from proposal'} · config ${adminAssistantEscapeHtml(String(applied.current_version || ''))} / ${adminAssistantEscapeHtml(String(newCfg.config_version || ''))} · ${persistNote}</div>
+          <div style="color:#546e7a;margin-top:3px;">Audit reason recorded with results_sha256 ${adminAssistantEscapeHtml(seal.slice(0, 16))}…</div>
+          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="admin-ai-action-btn" onclick="adminAssistantQuickAction('run_monte_carlo_evaluation')">Re-run evaluation</button>
+            <button class="admin-ai-action-btn" onclick="adminMcOpenSource('${adminAssistantEscapeHtml(move.id)}')">Open config &amp; versions</button>
+          </div>
+        </div>`);
+        adminAssistantSetStatus(verified ? 'success' : 'warning', verified ? ` Applied ${move.id}; re-run to verify` : ' Applied with read-back mismatch');
+      } catch (err) {
+        showResult(`<div style="font-size:0.78rem;color:#c62828;margin-top:6px;font-weight:600;">Apply failed: ${adminAssistantEscapeHtml(err?.message || 'unknown error')}</div>`);
+        adminAssistantSetStatus('error', ' Apply failed');
+      }
+    }
+
     async function adminRunMonteCarloEvaluation() {
       adminAssistantSetStatus('ready', ' Running Monte Carlo evaluation...');
       const area = document.getElementById('admin-ai-response-area');
@@ -3500,6 +3675,7 @@
           && integrity.observed_inputs_unchanged !== false;
         const severityBg = { critical: '#ffebee', warning: '#fff8e1', info: '#e3f2fd' };
         const shortSha = (integrity.results_sha256 || '').slice(0, 16);
+        adminMcLastReport = data;
         if (area) {
           area.innerHTML = `
             <div style="font-weight:700;font-size:1.02rem;margin-bottom:6px;">Monte Carlo Methodology Evaluation</div>
@@ -3514,6 +3690,8 @@
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px;">
               ${adminMcModuleCards(results)}
             </div>
+            ${adminMcConclusionsHtml(data.conclusions)}
+            ${adminMcNextMovesHtml(data.next_moves)}
             <div style="font-weight:600;font-size:0.9rem;margin:6px 0;">Findings (${findings.length})</div>
             <div style="display:grid;gap:6px;max-height:260px;overflow:auto;">
               ${findings.length ? findings.map(f => `<div style="padding:8px 10px;border-radius:8px;background:${severityBg[f.severity] || '#f5f5f5'};font-size:0.83rem;">

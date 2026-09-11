@@ -907,11 +907,16 @@ class ActuarialTablesStore:
         self.config.last_modified = datetime.now().isoformat()
         self.config.modified_by = user
         
-        # Audit log
-        self._log_change('update_config', user, {
+        # Audit log. ``change_reason`` is an optional, non-behavioral note
+        # (e.g. the Monte Carlo evaluation seal that motivated the change).
+        audit_details = {
             'old_config': old_config,
-            'new_config': asdict(self.config)
-        })
+            'new_config': asdict(self.config),
+        }
+        reason = updates.get('change_reason')
+        if isinstance(reason, str) and reason.strip():
+            audit_details['change_reason'] = reason.strip()[:500]
+        self._log_change('update_config', user, audit_details)
         self._snapshot_config_revision('update_config', user)
 
         result = {'success': True, 'config': asdict(self.config)}

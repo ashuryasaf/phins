@@ -274,6 +274,101 @@ def test_route_registered_in_server_source():
     assert "handle_monte_carlo_evaluation" in src
 
 
+# ── conclusions and next moves ───────────────────────────────────────────────
+
+def test_conclusions_summarise_every_evaluated_area(report):
+    c = report["conclusions"]
+    assert c["overall_status"] in {"consistent", "inconsistencies_detected", "anomalies_detected"}
+    assert c["headline"]
+    assert {a["area"] for a in c["areas"]} == set(report["results"])
+    for area in c["areas"]:
+        assert area["status"] in {"consistent", "inconsistent", "anomalous"}
+        assert area["bi_conclusion"]
+        assert area["snapshot_metrics"], "each area must name BI snapshot metrics"
+        for mid in area["next_move_ids"]:
+            assert any(m["id"] == mid for m in report["next_moves"])
+    counts = c["counts"]
+    assert counts["next_moves"] == len(report["next_moves"])
+    assert counts["adjustable_in_phins"] == sum(1 for m in report["next_moves"] if m["action"]["kind"] == "adjust")
+    assert c["bi_usage"] and c["ai_usage"]
+
+
+def test_next_moves_never_apply_anything_and_declare_how_to_act(report):
+    moves = report["next_moves"]
+    assert moves, "the evaluated defaults are known to raise advisories"
+    assert report["integrity"]["proposals_applied_by_engine"] is False
+    assert report["integrity"]["next_moves_sha256"] == mc._sha256_of(moves)
+    for m in moves:
+        assert m["trigger"] in {"anomaly", "inconsistency", "none"}
+        assert m["action"]["kind"] in {"adjust", "redirect", "investigate", "monitor"}
+        assert m["action"]["source_ref"], "every advisory must point at the owning code"
+        assert m["integrity"]["applied_by_engine"] is False
+        if m["action"]["kind"] == "adjust":
+            assert m["action"]["adjustable_in_phins"] is True
+            assert m["integrity"]["requires_admin_confirmation"] is True
+            assert m["integrity"]["verify_live_values_before_apply"] is True
+            target = m["action"]["target"]
+            assert target["api"] == mc.UW_CONFIG_API
+            assert set(target["payload"]) == set(target["proposed"])
+            assert set(target["current"]) == set(target["proposed"]), "each proposed key must carry its live value"
+        else:
+            assert m["action"]["adjustable_in_phins"] is False
+            assert m["integrity"]["requires_admin_confirmation"] is False
+    # Sorted by priority so the dashboard shows the most urgent first.
+    assert [m["priority"] for m in moves] == sorted(m["priority"] for m in moves)
+
+
+def test_smoker_factor_proposal_is_derived_from_live_config_and_capped(report):
+    move = next((m for m in report["next_moves"] if m["id"] == "uw_smoker_demographic_factors"), None)
+    assert move is not None, "neutral smoker factors + scorer penalty is a known PHINS anomaly"
+    assert move["trigger"] == "anomaly"
+    live_cfg = report["phins_assumptions"]["underwriting_config"]
+    target = move["action"]["target"]
+    for key, value in target["current"].items():
+        assert value == live_cfg[key]
+    for key, value in target["proposed"].items():
+        assert 1.0 <= value <= 3.0
+        assert value > target["current"][key]
+    assert move["action"]["ui_link"].startswith("/actuary-dashboard.html#section-")
+
+
+def test_mutated_observed_inputs_raise_a_blocking_anomaly():
+    ctx = {"assumptions": {"underwriting_config": {}}}
+    moves = mc.derive_next_moves({}, [], ctx, observed_unchanged=False)
+    assert moves[0]["id"] == "integrity_observed_inputs_mutated"
+    assert moves[0]["priority"] == 0 and moves[0]["action"]["kind"] == "investigate"
+    conclusions = mc.derive_conclusions({}, [], moves, _FAST, observed_unchanged=False)
+    assert conclusions["overall_status"] == "anomalies_detected"
+    assert any(a["area"] == "integrity" and a["status"] == "anomalous" for a in conclusions["areas"])
+
+
+def test_no_findings_yields_consistent_conclusion():
+    conclusions = mc.derive_conclusions({}, [], [], _FAST, observed_unchanged=True)
+    assert conclusions["overall_status"] == "consistent"
+    assert conclusions["counts"]["next_moves"] == 0
+
+
+def test_update_config_records_change_reason_in_audit_without_changing_behaviour():
+    from services.actuarial_service import ActuarialTablesStore
+    store = ActuarialTablesStore()
+    before = store.public_config_dict()
+    result = store.update_config(
+        {"smoker_mortality_factor": before["smoker_mortality_factor"], "change_reason": "  mc-eval results_sha256=abc  "},
+        "tester",
+    )
+    assert result["success"] is True
+    entry = store.get_audit_log()[-1]
+    assert entry["action"] == "update_config"
+    assert entry["details"]["change_reason"] == "mc-eval results_sha256=abc"
+    # Unknown/empty reasons are ignored and never stored.
+    store.update_config({"smoker_mortality_factor": before["smoker_mortality_factor"], "change_reason": "   "}, "tester")
+    assert "change_reason" not in store.get_audit_log()[-1]["details"]
+    after = store.public_config_dict()
+    volatile = {"config_version", "last_modified", "modified_by", "state_revision"}
+    assert {k: v for k, v in after.items() if k not in volatile} == \
+        {k: v for k, v in before.items() if k not in volatile}
+
+
 class TestHTTP:
     def test_requires_privileged_role(self):
         resp = requests.get(f"{BASE_URL}/api/bi/monte-carlo-evaluation")
@@ -296,3 +391,6 @@ class TestHTTP:
                                       "bootstrap_samples": 10, "modules": ["risk", "ai"]}
         assert body["integrity"]["read_only"] is True
         assert body["integrity"]["observed_inputs_unchanged"] is True
+        assert body["integrity"]["proposals_applied_by_engine"] is False
+        assert {a["area"] for a in body["conclusions"]["areas"]} == {"risk", "ai"}
+        assert isinstance(body["next_moves"], list)

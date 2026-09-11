@@ -1388,6 +1388,9 @@ def run_evaluation(params: Optional[EvaluationParams] = None,
 
     findings = derive_findings(results, ctx)
     observed_fp_after = _sha256_of(observed) if observed is not None else None
+    observed_unchanged = (observed_fp_before == observed_fp_after) if observed is not None else None
+    next_moves = derive_next_moves(results, findings, ctx, observed_unchanged)
+    conclusions = derive_conclusions(results, findings, next_moves, params, observed_unchanged)
     finished = datetime.now(timezone.utc)
 
     run_params = {
@@ -1405,6 +1408,8 @@ def run_evaluation(params: Optional[EvaluationParams] = None,
         "observed_inputs": _observed_summary(observed),
         "results": results,
         "findings": findings,
+        "conclusions": conclusions,
+        "next_moves": next_moves,
     }
     report["integrity"] = {
         "read_only": True,
@@ -1415,8 +1420,10 @@ def run_evaluation(params: Optional[EvaluationParams] = None,
         "world_assumptions_sha256": _sha256_of(world),
         "phins_assumptions_sha256": _sha256_of(ctx["assumptions"]),
         "results_sha256": _sha256_of(results),
+        "next_moves_sha256": _sha256_of(next_moves),
+        "proposals_applied_by_engine": False,
         "observed_inputs_fingerprint": observed_fp_before,
-        "observed_inputs_unchanged": (observed_fp_before == observed_fp_after) if observed is not None else None,
+        "observed_inputs_unchanged": observed_unchanged,
         "started_at": started.isoformat(),
         "duration_seconds": round((finished - started).total_seconds(), 3),
     }
@@ -1560,6 +1567,473 @@ def derive_findings(results: Dict[str, Any], ctx: Dict[str, Any]) -> List[Dict[s
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Next moves (deterministic admin advisories) and BI conclusions
+# ─────────────────────────────────────────────────────────────────────────────
+
+# The only write path the advisories may point at. It is the existing, audited,
+# versioned underwriting/pricing config endpoint (ActuarialTablesStore.update_config
+# appends to config_history so any change can be restored from the versions bar).
+UW_CONFIG_API = {"method": "POST", "path": "/api/actuarial/config",
+                 "read_back": {"method": "GET", "path": "/api/actuarial/config"}}
+ACTUARY_UW_LINK = "/actuary-dashboard.html#section-underwriting"
+ACTUARY_RESERVES_LINK = "/actuary-dashboard.html#section-reserves"
+
+# Thresholds that separate "assumption disagrees with the simulated world"
+# (inconsistency) from "PHINS disagrees with itself" (anomaly).
+_LR_ASSUMPTION_EXCEEDANCE_MAX = 0.50
+_RESERVE_COVERAGE_MIN = 0.99
+_IBNR_SUFFICIENCY_MIN = 0.90
+_SALES_ATTAINMENT_MIN = 0.50
+_CLAIMS_LEAKAGE_MAX = 0.05
+_SMOKER_LR_GAP_PTS = 10.0
+_METHOD_DISAGREEMENT_PTS = 5.0
+_MIX_DISAGREEMENT_PTS = 0.15
+
+
+def _integrity_block(kind: str, adjustable: bool, audited_by: Optional[str] = None,
+                     reversible: Optional[bool] = None) -> Dict[str, Any]:
+    """Every advisory states how it may be acted on without touching data itself."""
+    return {
+        "applied_by_engine": False,
+        "requires_admin_confirmation": kind == "adjust",
+        "adjustable_in_phins": adjustable,
+        "audited_by": audited_by,
+        "reversible": reversible,
+        "verify_live_values_before_apply": kind == "adjust",
+        "re_evaluate_after_apply": kind == "adjust",
+    }
+
+
+def _adjust_move(move_id: str, area: str, priority: int, title: str, why: str,
+                 evidence: Any, current: Dict[str, Any], proposed: Dict[str, Any],
+                 source_ref: str, trigger: str, ui_link: str = ACTUARY_UW_LINK) -> Dict[str, Any]:
+    return {
+        "id": move_id, "area": area, "priority": priority, "trigger": trigger,
+        "title": title, "why": why, "evidence": evidence,
+        "action": {
+            "kind": "adjust",
+            "adjustable_in_phins": True,
+            "target": {
+                "type": "underwriting_config",
+                "label": "Actuary dashboard → Underwriting / Pricing Parameters",
+                "api": UW_CONFIG_API,
+                "payload": dict(proposed),
+                "current": current,
+                "proposed": proposed,
+            },
+            "source_ref": source_ref,
+            "ui_link": ui_link,
+        },
+        "integrity": _integrity_block(
+            "adjust", True,
+            audited_by="ActuarialTablesStore.update_config (audit log + append-only config_history revision)",
+            reversible=True),
+    }
+
+
+def _redirect_move(move_id: str, area: str, priority: int, title: str, why: str,
+                   evidence: Any, source_ref: str, trigger: str, ui_link: Optional[str],
+                   proposed: Optional[Dict[str, Any]] = None, kind: str = "redirect",
+                   adjustable_note: Optional[str] = None) -> Dict[str, Any]:
+    return {
+        "id": move_id, "area": area, "priority": priority, "trigger": trigger,
+        "title": title, "why": why, "evidence": evidence,
+        "action": {
+            "kind": kind,
+            "adjustable_in_phins": False,
+            "adjustable_note": adjustable_note,
+            "target": {"type": "source", "proposed": proposed} if proposed else {"type": "source"},
+            "source_ref": source_ref,
+            "ui_link": ui_link,
+        },
+        "integrity": _integrity_block(kind, False),
+    }
+
+
+def _clamp_factor(x: float, lo: float = 1.0, hi: float = 3.0) -> float:
+    return round(max(lo, min(hi, x)), 2)
+
+
+def derive_next_moves(results: Dict[str, Any], findings: List[Dict[str, Any]],
+                      ctx: Dict[str, Any], observed_unchanged: Optional[bool]) -> List[Dict[str, Any]]:
+    """Translate findings into explicit admin advisories.
+
+    Advisories are deterministic functions of the sealed results. Where PHINS
+    exposes an audited configuration path the advisory carries an ``adjust``
+    action with the exact payload plus the live values it was derived from, so
+    the UI can refuse to apply it if the configuration has drifted since the
+    evaluation. Everything else is a ``redirect`` to the code/dashboard that
+    owns the assumption. The engine never applies anything.
+    """
+    moves: List[Dict[str, Any]] = []
+    uw_cfg = (ctx.get("assumptions") or {}).get("underwriting_config") or {}
+
+    if observed_unchanged is False:
+        moves.append(_redirect_move(
+            "integrity_observed_inputs_mutated", "integrity", 0,
+            "Stop: observed inputs changed during the evaluation",
+            "The fingerprint of the observed policies/claims differed after the run. Treat every "
+            "number in this report as untrusted until the engine is audited.",
+            {"observed_inputs_unchanged": False},
+            "services/monte_carlo_evaluation_service.py:run_evaluation", "anomaly", None,
+            kind="investigate"))
+
+    uw = results.get("underwriting") or {}
+    by_smoke = {row["key"]: row for row in uw.get("loss_ratio_by_smoking_status", [])}
+    if uw.get("demographic_factors_neutral") and "current" in by_smoke and "never" in by_smoke:
+        never_lr = by_smoke["never"]["expected_loss_ratio_true_world_pct"] or 0.0
+        smoker_lr = by_smoke["current"]["expected_loss_ratio_true_world_pct"] or 0.0
+        gap = smoker_lr - never_lr
+        if gap > _SMOKER_LR_GAP_PTS and never_lr > 0:
+            ratio = smoker_lr / never_lr
+            proposed: Dict[str, Any] = {
+                "smoker_mortality_factor": _clamp_factor(ratio),
+                "smoker_disability_factor": _clamp_factor(ratio),
+            }
+            current = {k: uw_cfg.get(k) for k in proposed}
+            if "former" in by_smoke:
+                former_ratio = (by_smoke["former"]["expected_loss_ratio_true_world_pct"] or 0.0) / never_lr
+                if former_ratio > 1.05:
+                    proposed["former_smoker_mortality_factor"] = _clamp_factor(former_ratio)
+                    proposed["former_smoker_disability_factor"] = _clamp_factor(former_ratio)
+                    current["former_smoker_mortality_factor"] = uw_cfg.get("former_smoker_mortality_factor")
+                    current["former_smoker_disability_factor"] = uw_cfg.get("former_smoker_disability_factor")
+            moves.append(_adjust_move(
+                "uw_smoker_demographic_factors", "underwriting", 1,
+                "Align smoker pricing factors with the smoker/never loss-ratio gap",
+                f"Pricing treats smokers as neutral (factor 1.0) while the risk scorer penalises smoking; "
+                f"simulated smoker loss ratio {smoker_lr:.1f}% vs {never_lr:.1f}% for never-smokers "
+                f"({gap:.1f} pts). Proposed factors equal the simulated loss-ratio ratio, capped at 3.0; "
+                f"validate against experience before relying on them.",
+                {"smoker_lr_pct": smoker_lr, "never_lr_pct": never_lr, "gap_pts": round(gap, 2),
+                 "ratio": round(ratio, 3)},
+                current, proposed,
+                "services/actuarial_service.py:UnderwritingConfig.smoker_mortality_factor", "anomaly"))
+
+    aa = uw.get("auto_approval") or {}
+    if (aa.get("auto_approvable_in_top_hazard_decile") or 0) > 0:
+        gates = aa.get("gates") or {}
+        age_gate = gates.get("age") or [uw_cfg.get("auto_approve_min_age"), uw_cfg.get("auto_approve_max_age")]
+        current_max_age = age_gate[1] if len(age_gate) > 1 else uw_cfg.get("auto_approve_max_age")
+        profile = aa.get("auto_approvable_top_decile_profile") or {}
+        proposed_max_age = 50
+        if current_max_age is not None and int(current_max_age) > proposed_max_age:
+            moves.append(_adjust_move(
+                "uw_auto_approve_age_gate", "underwriting", 2 if aa.get("enabled_live") else 3,
+                "Tighten the auto-approval age gate before enabling clean issuance",
+                f"{aa['auto_approvable_in_top_hazard_decile']} lives that pass every auto-approval gate sit in the "
+                f"top hazard decile (mean age {profile.get('mean_age')}, mean ADL {profile.get('mean_adl')}). "
+                f"Auto-approval is currently {'ENABLED' if aa.get('enabled_live') else 'disabled'}; the gate "
+                f"matters the moment it is switched on.",
+                profile,
+                {"auto_approve_max_age": current_max_age}, {"auto_approve_max_age": proposed_max_age},
+                "services/actuarial_service.py:UnderwritingConfig.auto_approve_max_age", "inconsistency"))
+
+    sens = uw.get("decline_threshold_sensitivity") or []
+    live_thr = uw_cfg.get("decline_threshold")
+    base = next((r for r in sens if r.get("decline_threshold_adl") == live_thr), None)
+    if base is not None:
+        better = [r for r in sens
+                  if r["decline_threshold_adl"] < live_thr
+                  and (base["expected_loss_ratio_true_world_pct"] - r["expected_loss_ratio_true_world_pct"]) >= 1.0
+                  and (r.get("declined_share") or 0) <= 0.02]
+        if better:
+            pick = max(better, key=lambda r: r["decline_threshold_adl"])
+            moves.append(_adjust_move(
+                "uw_decline_threshold", "underwriting", 2,
+                f"Lower the ADL decline threshold to {pick['decline_threshold_adl']}",
+                f"Declining at ADL ≥ {pick['decline_threshold_adl']} lowers the expected loss ratio by "
+                f"{base['expected_loss_ratio_true_world_pct'] - pick['expected_loss_ratio_true_world_pct']:.1f} pts "
+                f"while declining {100 * pick['declined_share']:.2f}% of applicants.",
+                sens, {"decline_threshold": live_thr}, {"decline_threshold": pick["decline_threshold_adl"]},
+                "services/actuarial_service.py:UnderwritingConfig.decline_threshold", "inconsistency"))
+        else:
+            moves.append(_redirect_move(
+                "uw_decline_threshold_hold", "underwriting", 3,
+                f"Keep the ADL decline threshold at {live_thr}",
+                "No neighbouring threshold improves the expected loss ratio by ≥ 1 pt at ≤ 2% declines; "
+                "the sensitivity table supports the current rule.",
+                sens, "services/actuarial_service.py:UnderwritingConfig.decline_threshold", "none",
+                ACTUARY_UW_LINK, kind="monitor"))
+
+    actu = results.get("actuarial") or {}
+    if actu:
+        reserve = actu.get("reserve_rule_150pct") or {}
+        cover = reserve.get("probability_year1_claims_within_reserve")
+        if cover is not None and cover < _RESERVE_COVERAGE_MIN:
+            moves.append(_redirect_move(
+                "act_reserve_multiple", "actuarial", 1,
+                "Replace the flat 150% reserve multiple with a size-aware VaR/TVaR requirement",
+                f"The 1.5× rule covers year-1 claims in only {100 * cover:.1f}% of trials at "
+                f"{actu.get('eligible_lives')} lives; 99% coverage needs "
+                f"{reserve.get('multiple_needed_for_99pct_coverage')}× expected claims. The multiple is a "
+                f"hard-coded constant, so this requires a code change rather than a dashboard setting.",
+                reserve, "services/actuarial_service.py:PortfolioSimulator (reserve_requirement = expected × 1.5)",
+                "inconsistency", ACTUARY_RESERVES_LINK,
+                proposed={"reserve_multiple": reserve.get("multiple_needed_for_99pct_coverage")},
+                adjustable_note="Constant in code; not exposed via /api/actuarial/config."))
+        ib = actu.get("ibnr") or {}
+        suff = ib.get("probability_reserve_config_ibnr_sufficient")
+        if suff is not None and suff < _IBNR_SUFFICIENCY_MIN:
+            unreported = ib.get("unreported_share_of_year1_claims") or {}
+            p95 = unreported.get("p95")
+            proposed_ibnr = round(2 * (100.0 * p95)) / 2 if p95 is not None else None
+            moves.append(_redirect_move(
+                "act_ibnr_pct", "actuarial", 1,
+                "Raise the IBNR provision used in reserve projections",
+                f"IBNR at {ib.get('reserve_config_ibnr_pct_of_claims')}% of claims is sufficient in "
+                f"{100 * suff:.1f}% of trials; the reporting-lag simulation leaves a median "
+                f"{100 * (unreported.get('p50') or 0):.1f}% (p95 {100 * (p95 or 0):.1f}%) of year-1 claims "
+                f"unreported. Enter the proposed percentage in the Reserves projection form; it is a per-projection "
+                f"input, not a persisted setting.",
+                ib, "services/actuarial_service.py:ReserveConfig.ibnr_pct", "inconsistency",
+                ACTUARY_RESERVES_LINK,
+                proposed={"ibnr_pct": proposed_ibnr, "basis": "p95 of unreported share"},
+                adjustable_note="Per-projection input on the Reserves form (POST /api/actuarial/reserves/project)."))
+        p65 = actu.get("probability_year1_lr_exceeds_65pct_assumption")
+        if p65 is not None and p65 > _LR_ASSUMPTION_EXCEEDANCE_MAX:
+            y1 = actu.get("year1_loss_ratio_pct") or {}
+            moves.append(_redirect_move(
+                "act_lr_assumption", "actuarial", 2,
+                "Re-base the 65% loss-ratio assumption on the simulated distribution",
+                f"P(year-1 loss ratio > 65%) = {100 * p65:.0f}%. Simulated p50 {y1.get('p50')}%, p95 {y1.get('p95')}%. "
+                f"Publish the distribution rather than the point assumption.",
+                y1, "services/reserves_reporting_service.py (loss_ratio_assumption 0.65)", "inconsistency",
+                ACTUARY_RESERVES_LINK, proposed={"loss_ratio_assumption_pct": y1.get("p50")},
+                adjustable_note="Constant in code; expose as a reporting parameter."))
+        tables_lr = actu.get("expected_loss_ratio_phins_tables_pct")
+        sim_lr = actu.get("phins_simulator_loss_ratio_pct")
+        if tables_lr is not None and sim_lr is not None and abs(tables_lr - sim_lr) > _METHOD_DISAGREEMENT_PTS:
+            moves.append(_redirect_move(
+                "act_method_disagreement", "actuarial", 1,
+                "Reconcile the two PHINS definitions of annual expected claims",
+                f"Year-1 table-based expected loss ratio is {tables_lr}% while PortfolioSimulator's "
+                f"'annual expected claims' (PV of claims over term ÷ average term, which bakes in ageing) gives "
+                f"{sim_lr}% on the same lives ({abs(tables_lr - sim_lr):.1f} pts apart). The 150% reserve rule and "
+                f"the dashboard loss ratio therefore measure different things; label both bases explicitly.",
+                {"tables_pct": tables_lr, "simulator_pct": sim_lr},
+                "services/actuarial_service.py:PortfolioSimulator vs pricing_kernel.price_policy", "anomaly",
+                ACTUARY_RESERVES_LINK, kind="investigate"))
+
+    cl = results.get("claims") or {}
+    if cl:
+        live = cl.get("live_thresholds") or {}
+        leak = live.get("fraud_leakage_rate") or 0.0
+        sweep = cl.get("threshold_sweep") or []
+        assumed_manual = ((cl.get("assumed_automation_mix") or {}).get("manual_review")) or 0.45
+        if leak > _CLAIMS_LEAKAGE_MAX and sweep:
+            feasible = [r for r in sweep if (r.get("manual_share") or 0) <= assumed_manual]
+            pick = min(feasible or sweep,
+                       key=lambda r: (r.get("fraud_leakage_rate") or 0) + (r.get("legit_false_denial_rate") or 0))
+            moves.append(_redirect_move(
+                "claims_partial_approval_threshold", "claims", 1,
+                f"Raise the claims partial-approval cut-off to {pick.get('approve_partial')}",
+                f"Live thresholds pay {100 * leak:.1f}% of fraudulent claims. In the sweep, approve_partial="
+                f"{pick.get('approve_partial')} / deny={pick.get('deny')} cuts leakage to "
+                f"{100 * (pick.get('fraud_leakage_rate') or 0):.1f}% with manual share "
+                f"{100 * (pick.get('manual_share') or 0):.0f}%.",
+                {"live": live, "pick": pick},
+                "services/claims_bot_service.py:ClaimsBotService._make_recommendation", "inconsistency", None,
+                proposed={"approve_partial": pick.get("approve_partial"), "deny": pick.get("deny")},
+                adjustable_note="Constants in code; not exposed via API."))
+        mix_gap = cl.get("manual_share_vs_assumed")
+        if mix_gap is not None and abs(mix_gap) > _MIX_DISAGREEMENT_PTS:
+            moves.append(_redirect_move(
+                "claims_automation_base_rates", "claims", 2,
+                "Drive claims automation KPIs from the observed decision mix",
+                f"Simulated manual-review share is {100 * live.get('manual_share', 0):.0f}% vs the fixed "
+                f"AutomationMetrics assumption of {100 * assumed_manual:.0f}%.",
+                {"simulated_manual": live.get("manual_share"), "assumed_manual": assumed_manual},
+                "services/actuarial_service.py:AutomationMetrics.BASE_RATES", "anomaly", None,
+                kind="investigate"))
+        if (cl.get("mirror_agreement_with_live_recommender") or 1.0) < 1.0:
+            moves.append(_redirect_move(
+                "claims_mirror_disagreement", "claims", 0,
+                "Evaluation mirror disagrees with the live claims recommender",
+                "The threshold sweep re-implements the recommender; disagreement means the sweep cannot be trusted.",
+                cl.get("mirror_agreement_with_live_recommender"),
+                "services/monte_carlo_evaluation_service.py:_recommend_with_thresholds", "anomaly", None,
+                kind="investigate"))
+
+    sales = results.get("sales") or {}
+    if sales.get("checkpoints"):
+        last = sales["checkpoints"][-1]
+        attain = last.get("probability_meets_deterministic")
+        if attain is not None and attain < _SALES_ATTAINMENT_MIN:
+            p50 = (last.get("mc_multiple") or {}).get("p50")
+            months = last.get("month") or 12
+            monthly_p50 = round(p50 ** (1.0 / months) - 1.0, 4) if p50 and p50 > 0 else None
+            moves.append(_redirect_move(
+                "sales_growth_assumption", "sales", 2,
+                "Forecast revenue with the simulated median growth and publish bands",
+                f"The {100 * sales['phins_forecast']['monthly_growth']:.0f}%/month assumption is met in "
+                f"{100 * attain:.1f}% of paths at month {months}. The simulated median path implies "
+                f"{100 * (monthly_p50 or 0):.2f}%/month. Pass it as growth_rate to /api/bi/revenue-forecast and "
+                f"show p10/p50/p90 instead of a single line.",
+                last, "services/bi_analytics_service.py:predict_revenue_forecast", "inconsistency",
+                "/admin.html#analytics",
+                proposed={"growth_rate": monthly_p50, "api": "GET /api/bi/revenue-forecast?growth_rate=<value>"},
+                adjustable_note="Per-request query parameter; no persisted setting."))
+
+    ai = results.get("ai") or {}
+    if ai:
+        live_thr_ai = ai.get("live_thresholds") or {}
+        best = ai.get("lowest_cost_threshold") or {}
+        if best and live_thr_ai.get("accept") is not None and best.get("accept") != live_thr_ai.get("accept"):
+            moves.append(_redirect_move(
+                "ai_accept_threshold", "ai", 2,
+                f"Move the AI accept threshold to {best.get('accept')}",
+                f"At the configured error:review cost ratio the cost-minimising accept threshold is "
+                f"{best.get('accept')} (live {live_thr_ai.get('accept')}).",
+                {"live": live_thr_ai, "lowest_cost": best, "costs": ai.get("cost_units")},
+                "PHINS_AI_ACCEPT_THRESHOLD / services/llm_providers.py:review_disposition", "inconsistency", None,
+                proposed={"PHINS_AI_ACCEPT_THRESHOLD": best.get("accept")},
+                adjustable_note="Environment variable; change at deploy time."))
+        else:
+            moves.append(_redirect_move(
+                "ai_accept_threshold_hold", "ai", 3,
+                f"Keep the AI accept threshold at {live_thr_ai.get('accept')}",
+                "The live threshold is already the cost minimum for the configured error:review ratio.",
+                {"live": live_thr_ai, "costs": ai.get("cost_units")},
+                "services/llm_providers.py:review_disposition", "none", None, kind="monitor"))
+        uwa = ai.get("underwriting_automation") or {}
+        if (uwa.get("false_approve_rate_among_bad") or 0) > 0.05:
+            moves.append(_redirect_move(
+                "ai_uw_thresholds", "ai", 1,
+                "Tighten AI underwriting auto-approval",
+                f"Gates approve {100 * uwa['false_approve_rate_among_bad']:.1f}% of bad applicants automatically.",
+                uwa, "services/ai_threshold_config.py:ThresholdConfig", "inconsistency", None,
+                adjustable_note="Promote per-segment thresholds via ai_threshold_config (recommend-only, audited)."))
+
+    priority_order = {0: 0, 1: 1, 2: 2, 3: 3}
+    moves.sort(key=lambda m: (priority_order.get(m["priority"], 9), m["area"], m["id"]))
+    return moves
+
+
+_AREA_LABELS = {
+    "risk": "Risk assessment", "underwriting": "Underwriting rules", "actuarial": "Actuarial metrics",
+    "claims": "Claims triage", "sales": "Sales assumptions", "ai": "AI usage", "integrity": "Evaluation integrity",
+}
+
+_BI_SNAPSHOT_METRICS = {
+    "risk": ["risk_scorer_auc", "risk_scorer_auc_ci95", "risk_band_observed_claim_rates"],
+    "underwriting": ["expected_loss_ratio_tables_pct", "expected_loss_ratio_experience_pct",
+                     "loss_ratio_by_smoking_status", "auto_approval_top_decile_leak_count"],
+    "actuarial": ["year1_loss_ratio_p50_p95_p99", "reserve_coverage_probability", "ibnr_sufficiency_probability",
+                  "antiselection_lr_drift_pts"],
+    "claims": ["claims_fraud_leakage_rate", "claims_manual_share", "claims_legit_false_denial_rate"],
+    "sales": ["mrr_forecast_p10_p50_p90", "forecast_attainment_probability"],
+    "ai": ["ai_accepted_error_rate", "ai_human_review_load", "ai_uw_false_approve_rate"],
+}
+
+
+def derive_conclusions(results: Dict[str, Any], findings: List[Dict[str, Any]],
+                       next_moves: List[Dict[str, Any]], params: EvaluationParams,
+                       observed_unchanged: Optional[bool]) -> Dict[str, Any]:
+    """Roll findings and advisories up into a BI-facing verdict per area and overall."""
+    anomalies = [m for m in next_moves if m["trigger"] == "anomaly"]
+    inconsistencies = [m for m in next_moves if m["trigger"] == "inconsistency"]
+    sev_counts = {"critical": 0, "warning": 0, "info": 0}
+    for f in findings:
+        sev_counts[f["severity"]] = sev_counts.get(f["severity"], 0) + 1
+
+    if observed_unchanged is False or any(m["priority"] == 0 for m in next_moves):
+        overall = "anomalies_detected"
+    elif anomalies:
+        overall = "anomalies_detected"
+    elif inconsistencies or sev_counts["critical"] or sev_counts["warning"]:
+        overall = "inconsistencies_detected"
+    else:
+        overall = "consistent"
+
+    areas: List[Dict[str, Any]] = []
+    for area in list(results.keys()) + (["integrity"] if observed_unchanged is False else []):
+        area_moves = [m for m in next_moves if m["area"] == area]
+        area_findings = [f for f in findings if f["area"] == area]
+        if any(m["trigger"] == "anomaly" for m in area_moves):
+            status = "anomalous"
+        elif any(m["trigger"] == "inconsistency" for m in area_moves) or any(f["severity"] != "info" for f in area_findings):
+            status = "inconsistent"
+        else:
+            status = "consistent"
+        top = next((f for f in area_findings if f["severity"] == "critical"), None) \
+            or next((f for f in area_findings if f["severity"] == "warning"), None) \
+            or (area_findings[0] if area_findings else None)
+        adjustable = [m["id"] for m in area_moves if m["action"]["adjustable_in_phins"]]
+        areas.append({
+            "area": area,
+            "label": _AREA_LABELS.get(area, area),
+            "status": status,
+            "headline": top["statement"] if top else "No findings raised.",
+            "bi_conclusion": _bi_conclusion_for(area, status, results.get(area) or {}, area_moves),
+            "next_move_ids": [m["id"] for m in area_moves],
+            "adjustable_move_ids": adjustable,
+            "snapshot_metrics": _BI_SNAPSHOT_METRICS.get(area, []),
+        })
+
+    n_adjust = sum(1 for m in next_moves if m["action"]["kind"] == "adjust")
+    headline = {
+        "consistent": "PHINS assumptions are consistent with the simulated world; keep monitoring the listed KPIs.",
+        "inconsistencies_detected": f"{len(inconsistencies)} assumption(s) disagree with the simulated world; "
+                                    f"{n_adjust} can be adjusted from PHINS after confirmation.",
+        "anomalies_detected": f"{len(anomalies)} internal inconsistenc{'y' if len(anomalies) == 1 else 'ies'} in PHINS "
+                              f"rules detected alongside {len(inconsistencies)} assumption gap(s); resolve anomalies first.",
+    }[overall]
+
+    return {
+        "overall_status": overall,
+        "headline": headline,
+        "sample": {"lives": params.lives, "trials": params.trials, "horizon_years": params.horizon_years},
+        "counts": {**sev_counts, "anomalies": len(anomalies), "inconsistencies": len(inconsistencies),
+                   "next_moves": len(next_moves), "adjustable_in_phins": n_adjust},
+        "areas": areas,
+        "bi_usage": [
+            "Persist the distribution metrics listed per area in the BI snapshot; point estimates hide tail risk.",
+            "Render the risk score with band-level observed claim rates; never label it a probability.",
+            "Alert when the live decision mix drifts from the mix this evaluation predicts for the live thresholds.",
+            "Re-run this evaluation after any config change and compare results_sha256 to the sealed baseline.",
+        ],
+        "ai_usage": [
+            "Advisories here are deterministic and rule-based; an LLM narrative would break the hash seal and add no evidence.",
+            "Keep AI outputs advisory until accepted-error telemetry exists; thresholds should be set from measured cost.",
+            "Use per-segment calibration (ai_threshold_config) only once each segment has ≥ 20 logged overrides.",
+        ],
+    }
+
+
+def _bi_conclusion_for(area: str, status: str, res: Dict[str, Any], moves: List[Dict[str, Any]]) -> str:
+    """One-sentence BI reading per area, phrased for the dashboard."""
+    if area == "risk":
+        auc = res.get("auc")
+        return (f"Scorer ranks risk (AUC {auc:.3f}) but is not calibrated as a probability; report band rates, not the score."
+                if auc is not None else "Risk module not run.")
+    if area == "underwriting":
+        return ("Pricing and scoring disagree on smoking; align demographic factors before trusting band loss ratios."
+                if any(m["id"] == "uw_smoker_demographic_factors" for m in moves)
+                else "Underwriting rules price the simulated book consistently; monitor the decline sensitivity table.")
+    if area == "actuarial":
+        rr = (res.get("reserve_rule_150pct") or {}).get("probability_year1_claims_within_reserve")
+        ib = (res.get("ibnr") or {}).get("probability_reserve_config_ibnr_sufficient")
+        return (f"Reserve rule covers year-1 in {100 * (rr or 0):.0f}% of trials and IBNR is sufficient in "
+                f"{100 * (ib or 0):.0f}%; publish p50/p95/p99 loss ratios instead of the 65% point assumption.")
+    if area == "claims":
+        live = res.get("live_thresholds") or {}
+        return (f"Triage pays {100 * (live.get('fraud_leakage_rate') or 0):.1f}% of fraud with "
+                f"{100 * (live.get('manual_share') or 0):.0f}% manual share; automation KPIs should follow the observed mix.")
+    if area == "sales":
+        last = (res.get("checkpoints") or [{}])[-1]
+        return (f"Deterministic forecast attained in {100 * (last.get('probability_meets_deterministic') or 0):.0f}% of paths; "
+                f"show p10/p50/p90 bands in revenue dashboards.")
+    if area == "ai":
+        return ("Live accept threshold is at the cost minimum; the advisory cap keeps every LLM assessment under human review."
+                if status == "consistent" else
+                "Cost-weighted sweep disagrees with live AI thresholds; set thresholds from an explicit cost ratio.")
+    if area == "integrity":
+        return "Observed inputs changed during the run; the report is untrusted."
+    return "No conclusion."
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Singleton accessor (mirrors other services; the service is stateless)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1585,7 +2059,8 @@ def get_monte_carlo_evaluation_service() -> MonteCarloEvaluationService:
 
 __all__ = [
     "ENGINE_VERSION", "ALL_MODULES", "WorldAssumptions", "EvaluationParams",
-    "params_from_query", "run_evaluation", "derive_findings",
+    "params_from_query", "run_evaluation", "derive_findings", "derive_next_moves",
+    "derive_conclusions", "UW_CONFIG_API",
     "MonteCarloEvaluationService", "get_monte_carlo_evaluation_service",
     "auc_score", "brier_score", "wilson_interval", "spearman",
 ]
