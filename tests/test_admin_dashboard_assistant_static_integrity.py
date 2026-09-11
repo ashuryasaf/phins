@@ -311,3 +311,43 @@ def test_admin_mobile_nav_uses_navy_glass_not_blue_stripe_gradient():
     assert "-webkit-text-fill-color: #eaf1ff;" in content
     assert "#admin-ai-assistant-panel" in content
     assert "#091126" in content
+
+
+def test_admin_ai_monte_carlo_evaluation_button_wired_read_only():
+    content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
+
+    # Quick-action button is present and routes through the assistant action registry.
+    assert 'id="admin-ai-monte-carlo-btn"' in content
+    assert "adminAssistantQuickAction('run_monte_carlo_evaluation')" in content
+    assert ">Monte Carlo Eval</button>" in content
+
+    # Registry entry is read-only (no confirmation gate needed) and maps to the operations domain.
+    registry = re.search(
+        r"run_monte_carlo_evaluation:\s*\{(.*?)\n\s*\},", content, flags=re.S
+    )
+    assert registry, "expected run_monte_carlo_evaluation action registry entry"
+    assert "adminRunMonteCarloEvaluation()" in registry.group(1)
+    assert "integrity: 'safe'" in registry.group(1)
+    assert "confirm:" not in registry.group(1)
+    assert "run_monte_carlo_evaluation: 'operations'" in content
+    assert "'run_actuary_simulation', 'run_monte_carlo_evaluation'" in content
+
+    # Voice/text commands resolve to the action.
+    assert "action: 'run_monte_carlo_evaluation'" in content
+    assert "'monte carlo'" in content
+    assert '"Run Monte Carlo evaluation"' in content
+
+    # Runner hits the read-only BI endpoint with GET only and surfaces the integrity seal.
+    runner = re.search(
+        r"async function adminRunMonteCarloEvaluation\(\)\s*\{(.*?)\n\s*async function adminRunSystemHealth",
+        content,
+        flags=re.S,
+    )
+    assert runner, "expected adminRunMonteCarloEvaluation implementation"
+    body = runner.group(1)
+    assert "/api/bi/monte-carlo-evaluation?" in body
+    assert "method: 'POST'" not in body
+    assert "integrity.read_only === true" in body
+    assert "integrity.side_effects" in body
+    assert "observed_inputs_unchanged" in body
+    assert "results_sha256" in body
