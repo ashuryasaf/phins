@@ -311,3 +311,92 @@ def test_admin_mobile_nav_uses_navy_glass_not_blue_stripe_gradient():
     assert "-webkit-text-fill-color: #eaf1ff;" in content
     assert "#admin-ai-assistant-panel" in content
     assert "#091126" in content
+
+
+def test_admin_ai_monte_carlo_evaluation_button_wired_read_only():
+    content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
+
+    # Quick-action button is present and routes through the assistant action registry.
+    assert 'id="admin-ai-monte-carlo-btn"' in content
+    assert "adminAssistantQuickAction('run_monte_carlo_evaluation')" in content
+    assert ">Monte Carlo Eval</button>" in content
+
+    # Registry entry is read-only (no confirmation gate needed) and maps to the operations domain.
+    registry = re.search(
+        r"run_monte_carlo_evaluation:\s*\{(.*?)\n\s*\},", content, flags=re.S
+    )
+    assert registry, "expected run_monte_carlo_evaluation action registry entry"
+    assert "adminRunMonteCarloEvaluation()" in registry.group(1)
+    assert "integrity: 'safe'" in registry.group(1)
+    assert "confirm:" not in registry.group(1)
+    assert "run_monte_carlo_evaluation: 'operations'" in content
+    assert "'run_actuary_simulation', 'run_monte_carlo_evaluation'" in content
+
+    # Voice/text commands resolve to the action.
+    assert "action: 'run_monte_carlo_evaluation'" in content
+    assert "'monte carlo'" in content
+    assert '"Run Monte Carlo evaluation"' in content
+
+    # Runner hits the read-only BI endpoint with GET only and surfaces the integrity seal.
+    runner = re.search(
+        r"async function adminRunMonteCarloEvaluation\(\)\s*\{(.*?)\n\s*async function adminRunSystemHealth",
+        content,
+        flags=re.S,
+    )
+    assert runner, "expected adminRunMonteCarloEvaluation implementation"
+    body = runner.group(1)
+    assert "/api/bi/monte-carlo-evaluation?" in body
+    assert "method: 'POST'" not in body
+    assert "integrity.read_only === true" in body
+    assert "integrity.side_effects" in body
+    assert "observed_inputs_unchanged" in body
+    assert "results_sha256" in body
+
+
+def test_admin_ai_monte_carlo_conclusions_and_guarded_apply_flow():
+    content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
+
+    # Conclusions + next moves are rendered from the sealed report.
+    assert "function adminMcConclusionsHtml(" in content
+    assert "function adminMcNextMovesHtml(" in content
+    assert "adminMcConclusionsHtml(data.conclusions)" in content
+    assert "adminMcNextMovesHtml(data.next_moves)" in content
+    assert 'id="admin-mc-conclusions"' in content
+    assert "Suggested next moves" in content
+
+    # Fix / redirect buttons exist and route through the move id, never free-form payloads.
+    assert "onclick=\"adminMcApplyFix('${adminAssistantEscapeHtml(m.id)}')\"" in content
+    assert "onclick=\"adminMcOpenSource('${adminAssistantEscapeHtml(m.id)}')\"" in content
+    assert "Review &amp; apply fix" in content
+    assert ">Open source</button>" in content
+    # Light-card button style (the dark-panel .admin-ai-action-btn is unreadable on the cards).
+    assert ".admin-mc-btn {" in content
+    assert 'class="admin-mc-btn primary" onclick="adminMcApplyFix(' in content
+
+    apply_fn = re.search(
+        r"async function adminMcApplyFix\(moveId\)\s*\{(.*?)\n\s*async function adminRunMonteCarloEvaluation",
+        content,
+        flags=re.S,
+    )
+    assert apply_fn, "expected adminMcApplyFix implementation"
+    body = apply_fn.group(1)
+    # Only the audited underwriting config endpoint may be driven, only for adjustable moves.
+    assert "action.kind !== 'adjust'" in body
+    assert "target.api.path !== '/api/actuarial/config'" in body
+    # Confirmation gate, live-value verification before write, and audit reason with the seal.
+    assert "window.confirm(` Apply Monte Carlo advisory to live underwriting config?" in body
+    assert "target.api.read_back.path" in body
+    assert "Aborted: live configuration changed since this evaluation" in body
+    assert "change_reason:" in body and "results_sha256=" in body
+    # Post-apply read-back verification and re-run affordance.
+    assert "Applied and verified" in body
+    assert "adminAssistantQuickAction('run_monte_carlo_evaluation')" in body
+
+
+def test_actuary_dashboard_supports_section_deep_links():
+    actuary = (ADMIN_DASHBOARD_PATH.parent / "actuary-dashboard.html").read_text(encoding="utf-8")
+    assert "function openSectionFromHash()" in actuary
+    assert "openSectionFromHash();" in actuary
+    assert "window.addEventListener('hashchange', openSectionFromHash);" in actuary
+    for section in ("section-underwriting", "section-reserves"):
+        assert f'<section id="{section}"' in actuary

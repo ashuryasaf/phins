@@ -3807,12 +3807,31 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         // show live balance-sheet figures instead of static zeros.
         loadReinsuranceOverview();
         loadReinsuranceContracts();
+        openSectionFromHash();
         
       } catch (err) {
         console.error('Auth error:', err);
         window.location.href = '/admin.html';
       }
     }
+
+    // Deep links such as /actuary-dashboard.html#section-underwriting (used by
+    // the admin Monte Carlo "Open source" buttons) land on the named section.
+    function openSectionFromHash() {
+      const hash = (window.location.hash || '').replace(/^#/, '');
+      if (!hash) return;
+      const sectionId = hash.startsWith('section-') ? hash.slice('section-'.length) : hash;
+      const section = document.getElementById(`section-${sectionId}`);
+      if (!section) return;
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      section.classList.add('active');
+      const nav = Array.from(document.querySelectorAll('.nav-item'))
+        .find(n => (n.getAttribute('onclick') || '').includes(`showSection('${sectionId}')`));
+      if (nav) nav.classList.add('active');
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    window.addEventListener('hashchange', openSectionFromHash);
     
     function logout() {
       localStorage.removeItem('phins_token');
