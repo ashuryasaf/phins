@@ -1473,14 +1473,21 @@ def derive_findings(results: Dict[str, Any], ctx: Dict[str, Any]) -> List[Dict[s
         if "current" in by_smoke and "never" in by_smoke:
             gap = by_smoke["current"]["expected_loss_ratio_true_world_pct"] - by_smoke["never"]["expected_loss_ratio_true_world_pct"]
             neutral = bool(uw.get("demographic_factors_neutral"))
-            lead = ("Smoker demographic factors are 1.0 (neutral) while the scorer penalises smoking; "
-                    if neutral else "Smoker demographic factors are set but do not close the gap; ")
-            add("underwriting", "warning" if gap > 10 else "info",
+            residual = gap > _SMOKER_LR_GAP_PTS
+            if neutral:
+                lead = "Smoker demographic factors are 1.0 (neutral) while the scorer penalises smoking; "
+            elif residual:
+                lead = "Smoker demographic factors are set but do not close the gap; "
+            else:
+                lead = "Smoker demographic factors are set and leave no material gap; "
+            add("underwriting", "warning" if residual else "info",
                 lead + f"smoker vs never-smoker expected loss-ratio gap is {gap:.1f} pts under world relative risks.",
                 {"smoker_lr": by_smoke["current"]["expected_loss_ratio_true_world_pct"],
                  "never_lr": by_smoke["never"]["expected_loss_ratio_true_world_pct"],
                  "factors_neutral": neutral},
-                "Set smoker_mortality_factor / smoker_disability_factor from experience so pricing and UW scoring agree.")
+                "Set smoker_mortality_factor / smoker_disability_factor from experience so pricing and UW scoring agree."
+                if neutral or residual else
+                "Keep the current factors and re-check the gap as experience accumulates.")
         aa = uw.get("auto_approval", {})
         if aa.get("auto_approvable_in_top_hazard_decile", 0) > 0:
             profile = aa.get("auto_approvable_top_decile_profile") or {}

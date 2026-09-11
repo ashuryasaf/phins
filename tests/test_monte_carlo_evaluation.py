@@ -340,6 +340,8 @@ def test_smoker_advisory_scales_live_factor_until_gap_closes():
                 {"key": "never", "expected_loss_ratio_true_world_pct": 65.0},
             ],
             "demographic_factors_neutral": neutral, "auto_approval": {}, "decline_threshold_sensitivity": [],
+            "expected_loss_ratio_phins_tables_pct": 60.0, "expected_loss_ratio_true_world_pct": 70.0,
+            "reinsurance_band_true_world": "standard",
         }}
     ctx = {"assumptions": {"underwriting_config": {
         "smoker_mortality_factor": 1.25, "smoker_disability_factor": 1.25, "decline_threshold": 9}}}
@@ -355,6 +357,20 @@ def test_smoker_advisory_scales_live_factor_until_gap_closes():
     # Once the gap is inside tolerance no adjustment is proposed.
     moves = mc.derive_next_moves(_results(72.0, False), [], ctx, observed_unchanged=True)
     assert not any(m["id"] == "uw_smoker_demographic_factors" for m in moves)
+
+    # The finding must agree with the advisory: a closed gap is not reported as unclosed.
+    def _gap_finding(smoker_lr):
+        return next(f for f in mc.derive_findings(_results(smoker_lr, False), ctx)
+                    if "loss-ratio gap" in f["statement"])
+
+    closed = _gap_finding(72.0)
+    assert closed["severity"] == "info"
+    assert "do not close the gap" not in closed["statement"]
+    assert "no material gap" in closed["statement"]
+
+    residual = _gap_finding(110.0)
+    assert residual["severity"] == "warning"
+    assert "do not close the gap" in residual["statement"]
 
 
 def test_mutated_observed_inputs_raise_a_blocking_anomaly():
