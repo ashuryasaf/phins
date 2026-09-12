@@ -1052,7 +1052,14 @@
             backgroundColor: '#ffffff',
             useCORS: true,
             logging: false,
-            windowWidth: node.scrollWidth
+            windowWidth: node.scrollWidth,
+            // The on-screen shield is a viewBox-only SVG; html2canvas can
+            // drop dimensionless SVG <img>s, so rasterize with the PNG.
+            onclone: (clonedDoc) => {
+              clonedDoc.querySelectorAll('img[src="/phins-logo.svg"]').forEach((img) => {
+                img.src = '/phins-logo.png';
+              });
+            }
           });
           const img = canvas.toDataURL('image/png');
           const ratio = canvas.width / canvas.height;

@@ -238,10 +238,13 @@ def test_preruling_brief_pdf_preserves_content():
 
 def test_dashboard_offers_preruling_brief_pdf():
     pd = _read(STATIC / "pitch-dashboard.html")
-    # open action points at the PDF
-    assert ('/investor-docs/regulatory-preruling-avi-ovadia-brief.pdf"'
-            ' target="_blank" rel="noopener" class="exec-dl-btn">📄 Open'
-            ' Pre-Ruling Brief') in pd
+    # open action points at the PDF (decorative emoji were removed from
+    # investor chrome, so match the label itself)
+    import re
+    assert re.search(
+        r'/investor-docs/regulatory-preruling-avi-ovadia-brief\.pdf"'
+        r' target="_blank" rel="noopener" class="exec-dl-btn">\s*Open'
+        r' Pre-Ruling Brief', pd)
     # an explicit downloadable PDF link is present
     assert ('/investor-docs/regulatory-preruling-avi-ovadia-brief.pdf"'
             ' target="_blank" rel="noopener" class="exec-dl-btn" download') in pd

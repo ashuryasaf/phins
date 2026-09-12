@@ -314,5 +314,18 @@ def test_investor_business_plan_hebrew_locale_for_ils():
 
 
 def test_il_pitch_links_data_room():
-    il = _read(STATIC / "israel-capital-markets-pitch.html")
-    assert "/corporate-legal-dashboard.html" in il
+    # The per-jurisdiction israel-capital-markets-pitch.html was folded into
+    # the parameterised capital-markets-pitch.html (?jurisdiction=israel,
+    # rendered from /jurisdictions.json); its back cover must keep linking
+    # the Corporate / Legal & Funding data room.
+    import json
+
+    pitch = _read(STATIC / "capital-markets-pitch.html")
+    assert "/corporate-legal-dashboard.html" in pitch
+    assert "/jurisdictions.json" in pitch
+    jurisdictions = json.loads(_read(STATIC / "jurisdictions.json"))["jurisdictions"]
+    il = next(j for j in jurisdictions if j["id"] == "israel")
+    assert il["currency"] == "ILS"
+    # the pitch dashboard still reaches the IL pitch through the new URL
+    pd = _read(STATIC / "pitch-dashboard.html")
+    assert "/capital-markets-pitch.html?jurisdiction=israel" in pd
