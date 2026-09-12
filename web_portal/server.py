@@ -17626,6 +17626,7 @@ For claims or questions, please contact:
             '/api/bi/customer-analytics', '/api/bi/supplier-analytics',
             '/api/bi/insights', '/api/bi/revenue-forecast',
             '/api/bi/snapshots', '/api/bi/monte-carlo-evaluation',
+            '/api/bi/loss-ratio-by-smoking',
         ):
             if not require_role(session, ['admin', 'accountant', 'underwriter']):
                 self._set_json_headers(403)
@@ -17647,6 +17648,7 @@ For claims or questions, please contact:
                     'health_wallets': HEALTH_WALLETS,
                     'investment_accounts': INVESTMENT_ACCOUNTS,
                     'transaction_ledger': TRANSACTION_LEDGER,
+                    'underwriting_applications': UNDERWRITING_APPLICATIONS,
                     'deliveries': {},
                 }
                 if path == '/api/bi/executive-dashboard':
@@ -17667,6 +17669,10 @@ For claims or questions, please contact:
                     mc_params = {k: (v[0] if isinstance(v, list) and v else v)
                                  for k, v in qs.items()}
                     status_code, payload = _bi.handle_monte_carlo_evaluation(self, data_sources, mc_params)
+                elif path == '/api/bi/loss-ratio-by-smoking':
+                    slice_params = {k: (v[0] if isinstance(v, list) and v else v)
+                                    for k, v in qs.items()}
+                    status_code, payload = _bi.handle_loss_ratio_by_smoking(self, data_sources, slice_params)
                 else:  # /api/bi/revenue-forecast
                     forecast_params = {k: (v[0] if isinstance(v, list) and v else v)
                                        for k, v in qs.items()}

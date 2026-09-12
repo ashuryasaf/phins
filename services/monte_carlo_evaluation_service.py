@@ -1391,6 +1391,40 @@ def _observed_summary(observed: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _observed_smoking_experience(observed: Optional[Dict[str, Any]], ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Observed smoker/nonsmoker loss ratios from real PHINS data (read-only).
+
+    Used to base the smoker-factor proposal on experience rather than on the
+    synthetic world whenever both cohorts have enough lives.
+    """
+    if not observed or not observed.get("policies"):
+        return {"used": False, "sufficient": False}
+    try:
+        from services.bi_analytics_service import loss_ratio_by_smoking_status
+        uw_cfg = ctx.get("assumptions", {}).get("underwriting_config", {}) or {}
+        report = loss_ratio_by_smoking_status(
+            observed.get("customers") or {}, observed.get("policies") or {}, observed.get("claims") or {},
+            underwriting_applications=observed.get("underwriting_applications") or {},
+            pricing_factors={k: uw_cfg.get(k) for k in ("smoker_mortality_factor", "smoker_disability_factor")},
+        )
+    except Exception as exc:  # pragma: no cover - defensive; the slice is optional evidence
+        return {"used": False, "sufficient": False, "error": str(exc)}
+    comparison = report.get("comparison") or {}
+    return {
+        "used": True,
+        "sufficient": bool(comparison.get("sufficient")),
+        "smoker_lives": comparison.get("smoker_lives"),
+        "nonsmoker_lives": comparison.get("nonsmoker_lives"),
+        "min_lives_per_cohort": comparison.get("min_lives_per_cohort"),
+        "smoker_to_nonsmoker_loss_ratio_ratio": comparison.get("smoker_to_nonsmoker_loss_ratio_ratio"),
+        "gap_pts": comparison.get("gap_pts"),
+        "implied_factors": comparison.get("implied_factors"),
+        "cohorts": {row["cohort"]: {"lives": row["lives"], "incurred_loss_ratio_pct": row["incurred_loss_ratio_pct"]}
+                    for row in report.get("cohorts", [])},
+        "endpoint": "GET /api/bi/loss-ratio-by-smoking",
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Orchestrator
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1428,6 +1462,7 @@ def run_evaluation(params: Optional[EvaluationParams] = None,
         results["ai"] = evaluate_ai_thresholds(rng, params, ctx)
 
     findings = derive_findings(results, ctx)
+    ctx["observed_smoking_experience"] = _observed_smoking_experience(observed, ctx)
     observed_fp_after = _sha256_of(observed) if observed is not None else None
     observed_unchanged = (observed_fp_before == observed_fp_after) if observed is not None else None
     next_moves = derive_next_moves(results, findings, ctx, observed_unchanged)
@@ -1446,7 +1481,7 @@ def run_evaluation(params: Optional[EvaluationParams] = None,
         "world_assumptions": world,
         "phins_assumptions": ctx["assumptions"],
         "assumption_provenance": ctx["provenance"],
-        "observed_inputs": _observed_summary(observed),
+        "observed_inputs": dict(_observed_summary(observed), smoking_experience=ctx["observed_smoking_experience"]),
         "results": results,
         "findings": findings,
         "conclusions": conclusions,
@@ -1752,7 +1787,17 @@ def derive_next_moves(results: Dict[str, Any], findings: List[Dict[str, Any]],
         gap = smoker_lr - never_lr
         if gap > _SMOKER_LR_GAP_PTS and never_lr > 0:
             neutral = bool(uw.get("demographic_factors_neutral"))
-            ratio = smoker_lr / never_lr
+            world_ratio = smoker_lr / never_lr
+            # Prefer PHINS's own experience over the synthetic world once both
+            # cohorts have enough lives; otherwise fall back to the world and say so.
+            experience = ctx.get("observed_smoking_experience") or {}
+            observed_ratio = experience.get("smoker_to_nonsmoker_loss_ratio_ratio")
+            if experience.get("sufficient") and observed_ratio:
+                ratio = float(observed_ratio)
+                ratio_basis = "observed_experience"
+            else:
+                ratio = world_ratio
+                ratio_basis = "simulated_world"
 
             def _scaled(key: str, r: float) -> float:
                 # The loss ratios were simulated under the live factor, so the
@@ -1781,14 +1826,27 @@ def derive_next_moves(results: Dict[str, Any], findings: List[Dict[str, Any]],
                 lead = ("Pricing treats smokers as neutral (factor 1.0) while the risk scorer penalises smoking; "
                         if neutral else
                         "Smoker pricing factors are set but the residual smoker/never loss-ratio gap remains; ")
+                if ratio_basis == "observed_experience":
+                    basis_text = (
+                        f"Proposed factors scale the live factors by PHINS's OBSERVED smoker/nonsmoker loss-ratio "
+                        f"ratio ({ratio:.3f}, {experience.get('smoker_lives')} smoker / "
+                        f"{experience.get('nonsmoker_lives')} nonsmoker active lives), capped at 3.0; the simulated "
+                        f"world ratio was {world_ratio:.3f}.")
+                else:
+                    basis_text = (
+                        f"Proposed factors scale the live factors by the SIMULATED loss-ratio ratio, capped at 3.0. "
+                        f"PHINS experience is not yet sufficient to replace it "
+                        f"({experience.get('smoker_lives') or 0} smoker / {experience.get('nonsmoker_lives') or 0} "
+                        f"nonsmoker active lives; {experience.get('min_lives_per_cohort') or 30} needed per cohort) — "
+                        f"validate at GET /api/bi/loss-ratio-by-smoking before relying on them.")
                 moves.append(_adjust_move(
                     "uw_smoker_demographic_factors", "underwriting", 1,
                     "Align smoker pricing factors with the smoker/never loss-ratio gap",
                     lead + f"simulated smoker loss ratio {smoker_lr:.1f}% vs {never_lr:.1f}% for never-smokers "
-                    f"({gap:.1f} pts). Proposed factors scale the live factors by the simulated loss-ratio ratio, "
-                    f"capped at 3.0; validate against experience before relying on them.",
+                    f"({gap:.1f} pts). " + basis_text,
                     {"smoker_lr_pct": smoker_lr, "never_lr_pct": never_lr, "gap_pts": round(gap, 2),
-                     "ratio": round(ratio, 3), "factors_neutral": neutral},
+                     "ratio": round(ratio, 3), "ratio_basis": ratio_basis, "world_ratio": round(world_ratio, 3),
+                     "factors_neutral": neutral, "observed_experience": experience},
                     current, proposed,
                     "services/actuarial_service.py:UnderwritingConfig.smoker_mortality_factor",
                     "anomaly" if neutral else "inconsistency"))

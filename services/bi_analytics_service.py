@@ -37,6 +37,173 @@ from services import kpi_definitions as kpi
 
 logger = logging.getLogger('phins.bi_analytics')
 
+# Minimum lives per smoking cohort before the slice publishes a loss-ratio
+# comparison. Below this the cohort is reported with ``insufficient_data`` and
+# no implied pricing factor is derived (claim counts are too volatile).
+SMOKING_SLICE_MIN_LIVES = 30
+SMOKING_COHORTS = ('smoker', 'former', 'nonsmoker', 'unknown')
+_INCURRED_CLAIM_STATUSES = ('approved', 'paid', 'closed')
+
+
+def _normalize_smoking(raw: Any) -> str:
+    """Map free-text smoking status onto the pricing kernel's cohorts.
+
+    Reuses the kernel's normaliser so this slice groups lives exactly the way
+    pricing does; anything the kernel cannot classify is ``unknown``.
+    """
+    try:
+        from services.pricing_kernel import _normalize_smoking_status
+        return _normalize_smoking_status(raw) or 'unknown'
+    except Exception:
+        return 'unknown'
+
+
+def _resolve_smoking_status(policy: Dict[str, Any], customer: Optional[Dict[str, Any]],
+                            latest_application: Optional[Dict[str, Any]]) -> str:
+    for source in (policy, customer or {}, latest_application or {}):
+        for key in ('smoking_status', 'smoker', 'tobacco', 'smoking'):
+            value = source.get(key)
+            if value is not None and value != '':
+                return _normalize_smoking(value)
+    return 'unknown'
+
+
+def _latest_applications_by_customer(applications: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    latest: Dict[str, Dict[str, Any]] = {}
+    for app in (applications or {}).values():
+        if not isinstance(app, dict):
+            continue
+        cid = app.get('customer_id')
+        if not cid:
+            continue
+        stamp = str(app.get('submitted_at') or app.get('created_at') or '')
+        if cid not in latest or stamp >= str(latest[cid].get('submitted_at') or latest[cid].get('created_at') or ''):
+            latest[cid] = app
+    return latest
+
+
+def loss_ratio_by_smoking_status(
+    customers: Dict[str, Any],
+    policies: Dict[str, Any],
+    claims: Dict[str, Any],
+    underwriting_applications: Optional[Dict[str, Any]] = None,
+    pricing_factors: Optional[Dict[str, Any]] = None,
+    min_lives: int = SMOKING_SLICE_MIN_LIVES,
+) -> Dict[str, Any]:
+    """Observed loss ratio by smoking cohort from real policies and claims.
+
+    Read-only. Premium base is the annual premium of active policies (the
+    same base as the BI ``loss_ratio`` KPI); claims are attributed to the
+    cohort of their policy (falling back to the claimant's customer record).
+    ``claims_incurred`` counts approved/paid/closed claims at approved amount;
+    ``claims_paid`` counts paid claims only (the KPI basis).
+
+    When both the smoker and nonsmoker cohorts reach ``min_lives`` the slice
+    reports the smoker/nonsmoker loss-ratio ratio and, if ``pricing_factors``
+    (the live ``smoker_mortality_factor`` / ``smoker_disability_factor``) are
+    supplied, the factor that ratio implies: premium already scales with the
+    live factor, so a residual loss-ratio ratio ``r`` implies ``factor × r``.
+    Nothing is written; the response says where the factor is adjusted.
+    """
+    latest_apps = _latest_applications_by_customer(underwriting_applications)
+    cohorts: Dict[str, Dict[str, Any]] = {
+        key: {'cohort': key, 'lives': 0, 'annual_premium': 0.0, 'claims_count': 0,
+              'claims_incurred': 0.0, 'claims_paid': 0.0}
+        for key in SMOKING_COHORTS
+    }
+    policy_cohort: Dict[str, str] = {}
+    customer_cohort: Dict[str, str] = {}
+
+    for pid, policy in (policies or {}).items():
+        if not isinstance(policy, dict):
+            continue
+        cid = policy.get('customer_id')
+        customer = (customers or {}).get(cid) if cid else None
+        cohort = _resolve_smoking_status(policy, customer if isinstance(customer, dict) else None,
+                                         latest_apps.get(cid) if cid else None)
+        policy_cohort[str(policy.get('id') or policy.get('policy_id') or pid)] = cohort
+        policy_cohort[str(pid)] = cohort
+        if cid and cid not in customer_cohort:
+            customer_cohort[str(cid)] = cohort
+        if str(policy.get('status', '')).lower() != 'active':
+            continue
+        row = cohorts[cohort]
+        row['lives'] += 1
+        row['annual_premium'] += kpi._num(policy.get('annual_premium'))
+
+    unattributed = 0
+    for claim in (claims or {}).values():
+        if not isinstance(claim, dict):
+            continue
+        status = str(claim.get('status', '')).lower()
+        if status not in _INCURRED_CLAIM_STATUSES:
+            continue
+        cohort = policy_cohort.get(str(claim.get('policy_id') or ''))
+        if cohort is None:
+            cohort = customer_cohort.get(str(claim.get('customer_id') or ''))
+        if cohort is None:
+            cohort = 'unknown'
+            unattributed += 1
+        amount = kpi._num(claim.get('approved_amount', claim.get('claimed_amount')))
+        row = cohorts[cohort]
+        row['claims_count'] += 1
+        row['claims_incurred'] += amount
+        if status == 'paid':
+            row['claims_paid'] += amount
+
+    rows: List[Dict[str, Any]] = []
+    for key in SMOKING_COHORTS:
+        row = cohorts[key]
+        premium = row['annual_premium']
+        row['annual_premium'] = round(premium, 2)
+        row['claims_incurred'] = round(row['claims_incurred'], 2)
+        row['claims_paid'] = round(row['claims_paid'], 2)
+        row['loss_ratio_pct'] = round(kpi.loss_ratio_pct(row['claims_paid'], premium), 2)
+        row['incurred_loss_ratio_pct'] = round(kpi.loss_ratio_pct(row['claims_incurred'], premium), 2)
+        row['insufficient_data'] = row['lives'] < int(min_lives)
+        rows.append(row)
+    by_cohort = {row['cohort']: row for row in rows}
+
+    smoker, nonsmoker = by_cohort['smoker'], by_cohort['nonsmoker']
+    sufficient = (not smoker['insufficient_data'] and not nonsmoker['insufficient_data']
+                  and nonsmoker['incurred_loss_ratio_pct'] > 0)
+    comparison: Dict[str, Any] = {
+        'sufficient': sufficient,
+        'min_lives_per_cohort': int(min_lives),
+        'smoker_lives': smoker['lives'],
+        'nonsmoker_lives': nonsmoker['lives'],
+        'basis': 'incurred (approved/paid/closed) claims ÷ annual premium of active policies',
+    }
+    if sufficient:
+        ratio = smoker['incurred_loss_ratio_pct'] / nonsmoker['incurred_loss_ratio_pct']
+        comparison['smoker_to_nonsmoker_loss_ratio_ratio'] = round(ratio, 4)
+        comparison['gap_pts'] = round(smoker['incurred_loss_ratio_pct'] - nonsmoker['incurred_loss_ratio_pct'], 2)
+        if pricing_factors:
+            implied = {}
+            for key in ('smoker_mortality_factor', 'smoker_disability_factor'):
+                live = pricing_factors.get(key)
+                if live is not None:
+                    implied[key] = round(max(1.0, min(3.0, kpi._num(live, 1.0) * ratio)), 4)
+            comparison['live_factors'] = {k: pricing_factors.get(k) for k in ('smoker_mortality_factor', 'smoker_disability_factor')}
+            comparison['implied_factors'] = implied
+            comparison['implied_factor_basis'] = 'live factor × observed smoker/nonsmoker loss-ratio ratio, clamped 1.0–3.0'
+    else:
+        comparison['reason'] = (
+            'nonsmoker cohort has no incurred claims' if not nonsmoker['insufficient_data'] and not smoker['insufficient_data']
+            else f'need at least {int(min_lives)} active lives in both the smoker and nonsmoker cohorts'
+        )
+
+    return {
+        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'read_only': True,
+        'source': 'observed_policies_and_claims',
+        'loss_ratio_basis': kpi.LOSS_RATIO_BASES['paid_claims'],
+        'cohorts': rows,
+        'claims_unattributed_to_policy_or_customer': unattributed,
+        'comparison': comparison,
+        'adjust_via': 'POST /api/actuarial/config {"smoker_mortality_factor": <f>, "smoker_disability_factor": <f>, "change_reason": "..."}',
+    }
+
 
 # ---------------------------------------------------------------------------
 # Enums and dataclasses
@@ -854,6 +1021,34 @@ class BIAnalyticsService:
             'forecast_months': months_ahead,
             'forecast': forecast,
         }
+
+    # ------------------------------------------------------------------
+    # Experience slices (read-only, real data)
+    # ------------------------------------------------------------------
+
+    def get_loss_ratio_by_smoking_status(
+        self,
+        customers: Dict[str, Any],
+        policies: Dict[str, Any],
+        claims: Dict[str, Any],
+        underwriting_applications: Optional[Dict[str, Any]] = None,
+        pricing_factors: Optional[Dict[str, Any]] = None,
+        min_lives: int = SMOKING_SLICE_MIN_LIVES,
+    ) -> Dict[str, Any]:
+        """Cached wrapper around :func:`loss_ratio_by_smoking_status`."""
+        fingerprint = self._fingerprint(
+            customers, policies, claims, underwriting_applications or {}, pricing_factors or {}, min_lives
+        )
+        return self._cached(
+            'loss_ratio_by_smoking_status',
+            fingerprint,
+            lambda: loss_ratio_by_smoking_status(
+                customers, policies, claims,
+                underwriting_applications=underwriting_applications,
+                pricing_factors=pricing_factors,
+                min_lives=min_lives,
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Health score helpers
