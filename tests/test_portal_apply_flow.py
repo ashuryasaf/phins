@@ -9,10 +9,13 @@ import web_portal.server as portal
 
 
 class ServerThread(threading.Thread):
-    def __init__(self, port):
+    def __init__(self, port: int = 0):
         super().__init__(daemon=True)
-        self.port = port
+        # Port 0 -> kernel-assigned free port, published as ``self.port`` so
+        # suites never collide with each other, a dev server or a parallel
+        # pytest worker on a fixed number.
         self.httpd = HTTPServer(('127.0.0.1', port), portal.PortalHandler)
+        self.port = self.httpd.server_address[1]
 
     def run(self):
         self.httpd.serve_forever()
@@ -36,8 +39,8 @@ def _post(url, payload):
 
 def test_apply_flow_provisions_account_and_status():
     # pick a non-default port to avoid conflicts
-    port = 8011
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
 

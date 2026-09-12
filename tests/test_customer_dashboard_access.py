@@ -24,10 +24,13 @@ import web_portal.server as portal
 
 class ServerThread(threading.Thread):
     """Thread to run the HTTP server in background"""
-    def __init__(self, port):
+    def __init__(self, port: int = 0):
         super().__init__(daemon=True)
-        self.port = port
+        # Port 0 -> kernel-assigned free port, published as ``self.port`` so
+        # suites never collide with each other, a dev server or a parallel
+        # pytest worker on a fixed number.
         self.httpd = HTTPServer(('127.0.0.1', port), portal.PortalHandler)
+        self.port = self.httpd.server_address[1]
 
     def run(self):
         self.httpd.serve_forever()
@@ -140,8 +143,8 @@ def test_auto_generated_customer_id_format():
 
 def test_customer_id_persistence():
     """Verify auto-generated customer_id is persisted to in-memory storage"""
-    port = 8053
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -170,8 +173,8 @@ def test_customer_id_persistence():
 
 def test_non_customer_role_can_have_null_customer_id():
     """Verify non-customer roles (admin, underwriter, etc.) can have None customer_id"""
-    port = 8054
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     

@@ -26,10 +26,13 @@ import web_portal.server as portal
 
 class ServerThread(threading.Thread):
     """Thread to run the HTTP server in background"""
-    def __init__(self, port):
+    def __init__(self, port: int = 0):
         super().__init__(daemon=True)
-        self.port = port
+        # Port 0 -> kernel-assigned free port, published as ``self.port`` so
+        # suites never collide with each other, a dev server or a parallel
+        # pytest worker on a fixed number.
         self.httpd = HTTPServer(('127.0.0.1', port), portal.PortalHandler)
+        self.port = self.httpd.server_address[1]
 
     def run(self):
         self.httpd.serve_forever()
@@ -62,8 +65,8 @@ def _post(url, payload, token=None):
 
 def test_rate_limiting():
     """Test that rate limiting blocks excessive requests"""
-    port = 8061
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -95,8 +98,8 @@ def test_rate_limiting():
 
 def test_sql_injection_blocking():
     """Test SQL injection attempts are blocked"""
-    port = 8062
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -130,8 +133,8 @@ def test_sql_injection_blocking():
 
 def test_xss_prevention():
     """Test XSS attempts are blocked"""
-    port = 8063
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -163,8 +166,8 @@ def test_xss_prevention():
 
 def test_path_traversal_blocking():
     """Test path traversal attempts are blocked"""
-    port = 8064
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -189,8 +192,8 @@ def test_path_traversal_blocking():
 
 def test_command_injection_detection():
     """Test command injection attempts are detected"""
-    port = 8065
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -222,8 +225,8 @@ def test_command_injection_detection():
 
 def test_malicious_payload_blocking():
     """Test various malicious payloads are blocked"""
-    port = 8066
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -256,8 +259,8 @@ def test_malicious_payload_blocking():
 
 def test_session_timeout():
     """Test that sessions expire after timeout period"""
-    port = 8067
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -284,8 +287,8 @@ def test_session_timeout():
 
 def test_security_headers():
     """Test that security headers are set on responses"""
-    port = 8068
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -313,8 +316,8 @@ def test_security_headers():
 
 def test_failed_login_attempts():
     """Test that failed login attempts are tracked"""
-    port = 8069
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -340,8 +343,8 @@ def test_failed_login_attempts():
 
 def test_input_sanitization():
     """Test that dangerous input is sanitized"""
-    port = 8070
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -367,8 +370,8 @@ def test_input_sanitization():
 
 def test_email_validation():
     """Test email validation works correctly"""
-    port = 8071
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -403,8 +406,8 @@ def test_email_validation():
 
 def test_amount_validation():
     """Test monetary amount validation"""
-    port = 8072
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -434,8 +437,8 @@ def test_amount_validation():
 
 def test_token_validation():
     """Test that invalid tokens are rejected"""
-    port = 8073
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -460,8 +463,8 @@ def test_token_validation():
 
 def test_json_parsing_errors():
     """Test that malformed JSON is handled properly"""
-    port = 8074
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -484,8 +487,8 @@ def test_json_parsing_errors():
 
 def test_missing_required_fields():
     """Test that missing required fields are caught"""
-    port = 8075
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -514,8 +517,8 @@ def test_missing_required_fields():
 
 def test_password_strength_requirements():
     """Test password strength requirements"""
-    port = 8076
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -540,8 +543,8 @@ def test_password_strength_requirements():
 
 def test_duplicate_prevention():
     """Test duplicate record prevention"""
-    port = 8077
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -575,8 +578,8 @@ def test_duplicate_prevention():
 
 def test_unauthorized_access():
     """Test that unauthorized access to protected endpoints is blocked"""
-    port = 8078
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -602,8 +605,8 @@ def test_unauthorized_access():
 
 def test_cleanup_functionality():
     """Test that stale data cleanup works"""
-    port = 8079
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     

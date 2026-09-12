@@ -212,10 +212,11 @@ def test_apply_uploaded_table_to_store_round_trip():
 # ----------------------------------------------------------------------------
 
 class _ServerThread(threading.Thread):
-    def __init__(self, port: int):
+    def __init__(self, port: int = 0):
         super().__init__(daemon=True)
-        self.port = port
+        # Port 0 -> kernel-assigned free port, published as ``self.port``.
         self.httpd = HTTPServer(('127.0.0.1', port), portal.PortalHandler)
+        self.port = self.httpd.server_address[1]
 
     def run(self):
         self.httpd.serve_forever()
@@ -244,8 +245,8 @@ def _get(url: str, token: str | None = None):
 
 
 def test_actuarial_endpoints_end_to_end(tmp_path):
-    port = 8174
-    srv = _ServerThread(port)
+    srv = _ServerThread()
+    port = srv.port
     srv.start()
     try:
         time.sleep(0.3)

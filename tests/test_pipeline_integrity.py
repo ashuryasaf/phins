@@ -30,10 +30,13 @@ from services.pipeline_integrity_service import (
 
 class ServerThread(threading.Thread):
     """Thread to run the HTTP server in background"""
-    def __init__(self, port):
+    def __init__(self, port: int = 0):
         super().__init__(daemon=True)
-        self.port = port
+        # Port 0 -> kernel-assigned free port, published as ``self.port`` so
+        # suites never collide with each other, a dev server or a parallel
+        # pytest worker on a fixed number.
         self.httpd = HTTPServer(('127.0.0.1', port), portal.PortalHandler)
+        self.port = self.httpd.server_address[1]
 
     def run(self):
         self.httpd.serve_forever()
@@ -282,8 +285,8 @@ class TestEndToEndPipelineIntegrity:
     
     def test_full_pipeline_with_savings(self):
         """Test complete pipeline from application to billing with savings tracking"""
-        port = 8150
-        srv = ServerThread(port)
+        srv = ServerThread()
+        port = srv.port
         srv.start()
         time.sleep(0.5)
         
@@ -431,8 +434,8 @@ class TestEndToEndPipelineIntegrity:
     
     def test_premium_calculation_integrity(self):
         """Test that premium calculations are consistent through pipeline"""
-        port = 8151
-        srv = ServerThread(port)
+        srv = ServerThread()
+        port = srv.port
         srv.start()
         time.sleep(0.5)
         

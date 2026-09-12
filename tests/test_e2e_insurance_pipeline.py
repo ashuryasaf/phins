@@ -21,10 +21,13 @@ import web_portal.server as portal
 
 class ServerThread(threading.Thread):
     """Thread to run the HTTP server in background"""
-    def __init__(self, port):
+    def __init__(self, port: int = 0):
         super().__init__(daemon=True)
-        self.port = port
+        # Port 0 -> kernel-assigned free port, published as ``self.port`` so
+        # suites never collide with each other, a dev server or a parallel
+        # pytest worker on a fixed number.
         self.httpd = HTTPServer(('127.0.0.1', port), portal.PortalHandler)
+        self.port = self.httpd.server_address[1]
 
     def run(self):
         self.httpd.serve_forever()
@@ -57,8 +60,8 @@ def _post(url, payload, token=None):
 
 def test_customer_application_flow():
     """Test customer can apply for insurance and get account provisioned"""
-    port = 8021
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     
@@ -114,8 +117,8 @@ def test_customer_application_flow():
 
 def test_authentication_and_portal_access():
     """Test authentication workflow and session management"""
-    port = 8022
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     
@@ -168,8 +171,8 @@ def test_authentication_and_portal_access():
 
 def test_underwriting_workflow():
     """Test complete underwriting workflow from pending to approval"""
-    port = 8023
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     
@@ -234,8 +237,8 @@ def test_underwriting_workflow():
 
 def test_claims_processing_workflow():
     """Test complete claims workflow from filing to payment"""
-    port = 8024
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     
@@ -333,8 +336,8 @@ def test_claims_processing_workflow():
 
 def test_business_intelligence_endpoints():
     """Test BI endpoints for actuarial, underwriting, and accounting data"""
-    port = 8025
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     
@@ -390,8 +393,8 @@ def test_business_intelligence_endpoints():
 
 def test_role_based_access_control():
     """Test that role-based access control works properly"""
-    port = 8026
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     
@@ -480,8 +483,8 @@ def test_complete_customer_journey():
     11. Customer views billing history
     12. Admin views audit logs
     """
-    port = 8027
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     
@@ -651,8 +654,8 @@ def test_complete_customer_journey():
 
 def test_pagination_functionality():
     """Test pagination works correctly for policies and claims"""
-    port = 8028
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     

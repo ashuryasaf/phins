@@ -101,7 +101,9 @@ def _isolate_state():
     # (root conftest's pytest_runtest_setup clears _TEST_PORTS_INITIALIZED.)
     init_set = getattr(portal, '_TEST_PORTS_INITIALIZED', None)
     if isinstance(init_set, set):
-        init_set.update({8000, 8769, int(os.environ.get("TEST_PORT", "8000"))})
+        init_set.add(int(os.environ.get("TEST_PORT", "8000")))
+        if _PIPELINE_SERVER_PORT:
+            init_set.add(_PIPELINE_SERVER_PORT)
     yield
 
 
@@ -288,12 +290,19 @@ def test_database_dict_ttl_zero_disables_cache(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+# Bound port of the module-scoped auth server; read by ``_isolate_state`` so
+# the per-port wipe is disarmed for whichever free port the kernel handed us.
+_PIPELINE_SERVER_PORT: int = 0
+
+
 @pytest.fixture(scope='module')
 def _pipeline_auth_server():
     """Run a real ThreadingHTTPServer so we can exercise the dispatcher path
     end-to-end (including session resolution from the Authorization header)."""
-    port = 8769
-    httpd = ThreadingHTTPServer(('127.0.0.1', port), portal.PortalHandler)
+    global _PIPELINE_SERVER_PORT
+    httpd = ThreadingHTTPServer(('127.0.0.1', 0), portal.PortalHandler)
+    port = httpd.server_address[1]
+    _PIPELINE_SERVER_PORT = port
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     # Mark the port as already initialised so the per-port test wipe at the
@@ -306,6 +315,7 @@ def _pipeline_auth_server():
         httpd.shutdown()
     except Exception:
         pass
+    _PIPELINE_SERVER_PORT = 0
 
 
 def _post(port: int, path: str, payload: dict, token: str | None = None):
