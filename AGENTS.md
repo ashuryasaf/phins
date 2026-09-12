@@ -299,7 +299,9 @@ Environment variables commonly used:
   `DB_PASSWORD`
 - **Server:** `PORT`, `HOST`, `BASE_URL`, `PHINS_ENVIRONMENT`,
   `POPULATE_DEMO_DATA`
-- **Test:** `PHINS_TEST_MODE`, `TEST_BASE_URL`, `TEST_PORT`
+- **Test:** `PHINS_TEST_MODE`, `TEST_BASE_URL`, `TEST_PORT`,
+  `PHINS_ACTUARIAL_STATE_PATH`, `PHINS_INVITATION_CODES_PATH`,
+  `PHINS_BI_SNAPSHOT_DIR`
 - **Ledger:** `ENABLE_LEDGER_PERSISTENCE`, `LEDGER_PERSISTENCE_VERBOSE`,
   `LEDGER_PERSISTENCE_LOG_INTERVAL`, `PHINS_LEDGER_DB_AUTOREPAIR`
 - **Media:** `MEDIA_PROVIDER_WEBHOOK_SECRET`, `DEFAULT_MEDIA_SUBTITLE_PROVIDER`,
@@ -368,6 +370,19 @@ Important test harness facts:
   falls back to a free kernel-assigned port if `8000` is busy; the bound
   port is published via `TEST_PORT` and `TEST_BASE_URL`, so tests should
   read `TEST_BASE_URL` rather than hardcoding `http://localhost:8000`
+- Tests that mark a port as initialised (`_TEST_PORTS_INITIALIZED.add(...)`)
+  or open raw sockets must derive the port from `TEST_PORT`, never `8000`
+- Self-hosted `ServerThread`/`HTTPServer` helpers inside tests bind port `0`
+  and read the kernel-assigned port from `server_address`; do not add fixed
+  `80xx` ports
+- Persisted state is redirected per session so runs never dirty the checkout:
+  `PHINS_ACTUARIAL_STATE_PATH` (central pricing snapshot) and
+  `PHINS_INVITATION_CODES_PATH` (temp copy of
+  `database/invitation_codes.json`) point at `/tmp` files removed at
+  session end; `PHINS_BI_SNAPSHOT_DIR` likewise
+- The actuarial store is a process-wide singleton; a test that promotes a
+  rate table or config must restore it (`reset_tables_to_default`,
+  `update_config` back) or use an isolated `ActuarialTablesStore()`
 - **`tests/conftest.py`** only adds `sys.path` and sets `PHINS_TEST_MODE`; it
   does **not** start the server
 - Tests reset in-memory portal state between cases (clears `POLICIES`,
@@ -451,4 +466,4 @@ If you update this file again:
 
 ---
 
-Last updated: August 18, 2026
+Last updated: September 12, 2026
