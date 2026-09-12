@@ -18359,6 +18359,37 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
+        if path == '/api/claims/bot-threshold-calibration':
+            # Claims-bot authenticity cut-offs tested against reviewer final
+            # decisions on record. Read-only; proposes nothing below the
+            # minimum labelled sample and never changes the live constants.
+            if not require_role(session, ['admin', 'claims_adjuster', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin, Claims or Actuary role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.assessment_record_service import get_assessment_record_service
+                from services.claims_bot_service import calibrate_claims_thresholds
+                records = get_assessment_record_service().list_records(
+                    assessment_type='claims_fraud', page=1, page_size=200)
+                items = list(records.get('items') or [])
+                total = int(records.get('total') or 0)
+                page = 2
+                while len(items) < total and page <= 100:
+                    more = get_assessment_record_service().list_records(
+                        assessment_type='claims_fraud', page=page, page_size=200)
+                    if not more.get('items'):
+                        break
+                    items.extend(more['items'])
+                    page += 1
+                report = calibrate_claims_thresholds(items)
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'success': True, 'calibration': report}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
         if path == '/api/actuarial/claims-lag':
             # Observed incident→report lag on real claims and the IBNR share it
             # implies. Read-only; proposes nothing below the minimum sample.

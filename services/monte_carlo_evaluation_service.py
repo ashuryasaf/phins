@@ -2028,7 +2028,9 @@ def derive_next_moves(results: Dict[str, Any], findings: List[Dict[str, Any]],
                 {"live": live, "pick": pick},
                 "services/claims_bot_service.py:ClaimsBotService._make_recommendation", "inconsistency", None,
                 proposed={"approve_partial": pick.get("approve_partial"), "deny": pick.get("deny")},
-                adjustable_note="Constants in code; not exposed via API."))
+                adjustable_note="Constants in code; not exposed via API. Before changing them, read "
+                                "GET /api/claims/bot-threshold-calibration: it tests the cut-offs against "
+                                "reviewer decisions on record and proposes nothing below 30 labelled claims."))
         mix_gap = cl.get("manual_share_vs_assumed")
         if mix_gap is not None and abs(mix_gap) > _MIX_DISAGREEMENT_PTS:
             obs_mix = ((ctx.get("observed_automation_mix") or {}).get("claims")) or {}
