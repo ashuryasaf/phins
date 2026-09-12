@@ -6,7 +6,8 @@ thresholds — perform under a transparent stochastic world, with concrete
 recommendations for the methodology, the assumptions, and how BI and AI
 should consume the results.
 
-Engine: `services/monte_carlo_evaluation_service.py` (`mc-eval-1.0.0`).
+Engine: `services/monte_carlo_evaluation_service.py` (`mc-eval-1.0.1`;
+1.0.0 numbers are retained below where noted).
 API: `GET /api/bi/monte-carlo-evaluation`. CLI:
 `scripts/run_monte_carlo_evaluation.py`. Tests:
 `tests/test_monte_carlo_evaluation.py`.
@@ -175,28 +176,33 @@ Stochastic results:
 | P(year-1 LR > 100 %) | 2.4 % | 0.0 % | **25.1 %** |
 | P(year-1 LR > 65 % assumption) | 79.0 % | 9.0 % | 57.4 % |
 | 5-yr cumulative LR p05–p95 | 65.4–83.8 % | 42.7–58.6 % | 46.6–104.8 % |
-| 150 % reserve rule covers year-1 claims | 100 % | 100 % | **85.0 %** |
-| Multiple needed for 99 % coverage | 1.31× | 0.97× | **2.28×** |
+| PHINS reserve rule (1.5 × PV of expected claims over full term) covers year-1 claims | 100 % | 100 % | 100 % |
+| Year-1 volatility stress: 1.5 × *annual* expected claims covers year-1 claims (`year1_claims_stress`, not a PHINS rule) | 100 % | 100 % | **85.0 %** |
+| Year-1 claims VaR99 as multiple of annual expected claims | 1.31× | 0.97× | **2.28×** |
 | Unreported share of year-1 claims (mean / p95) | 12.5 % / 22.1 % | 12.3 % / 24.6 % | 12.4 % / 45.9 % |
 | `ReserveConfig` IBNR 10 % sufficient | 35.6 % | 41.5 % | 60.8 % |
 | `reserves_reporting` 9.75 %-of-premium sufficient | 58.6 % | 83.4 % | 66.2 % |
 | Anti-selective lapse drift, 5-yr cumulative LR | +0.34 pts | +0.14 pts | +0.31 pts |
 | Year-1 reinsurance band mix | 51 % medium, 43 % high, 5 % very_high | 71 % medium, 27 % low | 29 % very_high |
 
-> **Erratum (engine `mc-eval-1.0.0`).** The two "150 % reserve rule" rows
-> and conclusion 1 below test 1.5 × *annual* expected claims. PHINS's
-> `PortfolioSimulator` actually sets `reserve_requirement =
-> total_expected_claims × 1.5` where `total_expected_claims` is the PV over
-> the full term, i.e. roughly `avg_term` times larger. The rows are valid as
-> a year-1 claims-volatility stress; they are not a test of the rule PHINS
-> runs. See `docs/monte_carlo_remediation_assessment.md`, item A.
+> **Correction (engine `mc-eval-1.0.1`).** Engine 1.0.0 reported the
+> year-1 stress row as "the 150 % reserve rule". PHINS's `PortfolioSimulator`
+> actually sets `reserve_requirement = total_expected_claims × 1.5` where
+> `total_expected_claims` is the PV over the full term (`avg_term` times the
+> annual figure), and that rule covers year-1 claims in every trial at every
+> size tested. Since 1.0.1 the report carries both: `reserve_rule_150pct`
+> (`basis: pv_full_term_x1.5`, mirrors PHINS) and `year1_claims_stress`
+> (annual-basis volatility diagnostic). See
+> `docs/monte_carlo_remediation_assessment.md`, item A.
 
 What this says:
 
-1. The **flat 1.5× reserve multiple is a portfolio-size statement in
-   disguise**. At 20k lives it is comfortable (1.31× buys 99 %); at 2k lives
-   it fails in 15 % of years and 99 % coverage needs 2.28×. Claims volatility
-   scales ~1/√n; the rule does not.
+1. The **year-1 volatility stress is a portfolio-size statement**. At 20k
+   lives 1.5 × annual expected claims covers 99 % of years (VaR99 1.31×); at
+   2k lives it fails in 15 % of years and VaR99 is 2.28×. Claims volatility
+   scales ~1/√n. PHINS's full-term reserve is not at risk from this, but the
+   figure shown on dashboards must say what it is (a 1.5 × full-term PV, not
+   150 % of a year's claims) so that year-1 volatility is not read off it.
 2. Both IBNR rules are **below the lag-implied need** under a 45-day mean
    reporting lag (≈12.5 % of claims unreported at year-end), and they
    disagree with each other by construction (one is % of claims, one is % of
@@ -288,10 +294,11 @@ The gates are safe and conservative; the cost is manual load.
    `smoker_mortality_factor` / `smoker_disability_factor` (and former-smoker
    factors) from experience or a published table instead of 1.0. Today the
    scorer charges for smoking and the kernel does not.
-2. **Derive the reserve requirement from the distribution, not a flat
-   multiple.** Replace `expected × 1.5` with `max(1.5×, VaR99 or TVaR99 of
-   the simulated year-1 claims)`; the evaluation already returns
-   `multiple_needed_for_99pct_coverage`.
+2. **Label the reserve basis and publish year-1 volatility next to it.**
+   `reserve_requirement` is 1.5 × PV of expected claims over the full term
+   (`risk_metrics.reserve_requirement_basis`); show year-1 VaR99/TVaR99 from
+   `year1_claims_stress` beside it so claim-count volatility at the current
+   portfolio size is visible without misreading the full-term figure.
 3. **Unify IBNR.** One lag-based estimate (fit reporting lag from
    `filed_date − incident_date` on real claims) feeding both `ReserveConfig`
    and `reserves_reporting_service`; retire the 10 %-of-claims vs

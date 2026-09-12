@@ -51,7 +51,14 @@ from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-ENGINE_VERSION = "mc-eval-1.0.0"
+ENGINE_VERSION = "mc-eval-1.0.1"
+# 1.0.1: the 150% reserve rule is now mirrored on PHINS's actual basis
+# (1.5 × PV of expected claims over the full term); the former annual-basis
+# test is reported separately as ``year1_claims_stress``.
+
+# Mirror of PortfolioSimulator.risk_metrics['reserve_requirement'].
+RESERVE_REQUIREMENT_MULTIPLE = 1.5
+RESERVE_REQUIREMENT_BASIS = "pv_full_term_x1.5"
 
 ALL_MODULES: Tuple[str, ...] = (
     "risk", "underwriting", "actuarial", "claims", "sales", "ai",
@@ -389,7 +396,8 @@ def _load_phins_context() -> Dict[str, Any]:
             "high": "<=0.70 refer_senior_uw 50%+", "very_high": ">0.70 decline",
         },
         "automation_base_rates": act.AutomationMetrics.BASE_RATES,
-        "reserve_requirement_multiple": 1.5,
+        "reserve_requirement_multiple": RESERVE_REQUIREMENT_MULTIPLE,
+        "reserve_requirement_basis": RESERVE_REQUIREMENT_BASIS,
         "reserve_config": asdict(reserve_cfg),
         "reserves_reporting": {"loss_ratio_assumption": 0.65, "ibnr_factor_of_premium": 0.15},
         "reinsurance_bands": {"very_high": ">=95", "high": ">=75", "medium": ">=45", "low": "<45"},
@@ -974,7 +982,13 @@ def evaluate_actuarial_metrics(rng: random.Random, lives: List[Dict[str, Any]],
     avg_term = _mean([l["term"] for l in eligible]) if eligible else 17.5
     pv_total = sum(l.get("pv_total_risk_claims", 0.0) for l in eligible)
     phins_sim_expected_claims = pv_total / avg_term if avg_term else 0.0
-    reserve_requirement = phins_sim_expected_claims * 1.5
+    # The PHINS rule (PortfolioSimulator.risk_metrics): reserve_requirement =
+    # total_expected_claims × 1.5, where total_expected_claims is the PV of
+    # claims over the FULL remaining term — not one year of claims.
+    reserve_requirement = pv_total * RESERVE_REQUIREMENT_MULTIPLE
+    # Separate year-1 volatility stress: 1.5 × annual expected claims. This is
+    # a diagnostic, not a PHINS rule; engine 1.0.0 mislabelled it as the rule.
+    year1_stress_requirement = phins_sim_expected_claims * RESERVE_REQUIREMENT_MULTIPLE
 
     base = _simulate_portfolio_paths(rng, cells, ctx, params, antiselection=False)
     stress = _simulate_portfolio_paths(rng, cells, ctx, params, antiselection=True)
@@ -988,6 +1002,10 @@ def evaluate_actuarial_metrics(rng: random.Random, lives: List[Dict[str, Any]],
     ibnr_prem = base["ibnr_share_premium"]
     ibnr_needed_pct_of_premium_p95 = 100 * _percentile(sorted(ibnr_prem), 0.95)
     reserves_reporting_ibnr_pct = 100 * 0.65 * 0.15  # premium × loss ratio × factor
+    claims_y1_sorted = sorted(claims_y1)
+    claims_y1_p99 = _percentile(claims_y1_sorted, 0.99)
+    tail = [c for c in claims_y1_sorted if c >= claims_y1_p99] or claims_y1_sorted[-1:]
+    claims_y1_tvar99 = _mean(tail) if tail else 0.0
 
     band_counts: Dict[str, int] = {}
     for x in y1_pct:
@@ -1009,11 +1027,24 @@ def evaluate_actuarial_metrics(rng: random.Random, lives: List[Dict[str, Any]],
         "loss_ratio_by_year_mean_pct": [_r(100 * x, 2) for x in base["year_lr_means"]],
         "probability_year1_lr_exceeds_100pct": _r(sum(1 for x in y1 if x > 1.0) / len(y1)),
         "probability_year1_lr_exceeds_65pct_assumption": _r(sum(1 for x in y1 if x > 0.65) / len(y1)),
+        "phins_simulator_pv_total_claims": round(pv_total, 2),
         "reserve_rule_150pct": {
+            "basis": RESERVE_REQUIREMENT_BASIS,
+            "mirrors": "services/actuarial_service.py:PortfolioSimulator.risk_metrics.reserve_requirement",
             "reserve_requirement": round(reserve_requirement, 2),
+            "reserve_to_annual_expected_claims_multiple": _r(reserve_requirement / phins_sim_expected_claims if phins_sim_expected_claims else None, 3),
             "probability_year1_claims_within_reserve": _r(sum(1 for c in claims_y1 if c <= reserve_requirement) / len(claims_y1)),
-            "shortfall_p99": round(max(0.0, _percentile(sorted(claims_y1), 0.99) - reserve_requirement), 2),
-            "multiple_needed_for_99pct_coverage": _r(_percentile(sorted(claims_y1), 0.99) / phins_sim_expected_claims if phins_sim_expected_claims else None, 3),
+            "shortfall_p99": round(max(0.0, claims_y1_p99 - reserve_requirement), 2),
+            "multiple_needed_for_99pct_coverage": _r(claims_y1_p99 / pv_total if pv_total else None, 3),
+        },
+        "year1_claims_stress": {
+            "basis": "annual_expected_claims_x1.5 (volatility diagnostic; not a PHINS rule)",
+            "stress_requirement": round(year1_stress_requirement, 2),
+            "annual_expected_claims": round(phins_sim_expected_claims, 2),
+            "probability_year1_claims_within_stress": _r(sum(1 for c in claims_y1 if c <= year1_stress_requirement) / len(claims_y1)),
+            "shortfall_p99": round(max(0.0, claims_y1_p99 - year1_stress_requirement), 2),
+            "var99_multiple_of_annual_expected": _r(claims_y1_p99 / phins_sim_expected_claims if phins_sim_expected_claims else None, 3),
+            "tvar99_multiple_of_annual_expected": _r(claims_y1_tvar99 / phins_sim_expected_claims if phins_sim_expected_claims else None, 3),
         },
         "ibnr": {
             "unreported_share_of_year1_claims": _distribution(ibnr_claims),
@@ -1504,12 +1535,24 @@ def derive_findings(results: Dict[str, Any], ctx: Dict[str, Any]) -> List[Dict[s
 
     actu = results.get("actuarial")
     if actu:
-        p = actu["reserve_rule_150pct"]["probability_year1_claims_within_reserve"]
+        rr = actu["reserve_rule_150pct"]
+        p = rr["probability_year1_claims_within_reserve"]
         add("actuarial", "info" if p >= 0.99 else "warning" if p >= 0.95 else "critical",
-            f"The 150% reserve rule covers year-1 claims in {100 * p:.1f}% of trials "
-            f"(99% coverage needs {actu['reserve_rule_150pct']['multiple_needed_for_99pct_coverage']}× expected).",
-            actu["reserve_rule_150pct"],
-            "Replace the flat 1.5× multiple with a VaR/TVaR-based requirement from this distribution.")
+            f"PHINS's reserve rule (1.5 × PV of expected claims over the full term, "
+            f"{rr.get('reserve_to_annual_expected_claims_multiple')}× annual expected claims) covers year-1 claims "
+            f"in {100 * p:.1f}% of trials.",
+            rr,
+            "Label the basis of reserve_requirement on every surface that shows it; it is a full-term figure.")
+        st = actu.get("year1_claims_stress") or {}
+        ps = st.get("probability_year1_claims_within_stress")
+        if ps is not None:
+            add("actuarial", "info" if ps >= 0.99 else "warning",
+                f"Year-1 claims volatility: 1.5 × annual expected claims is exceeded in {100 * (1 - ps):.1f}% of trials "
+                f"at {actu.get('eligible_lives')} lives (VaR99 {st.get('var99_multiple_of_annual_expected')}×, "
+                f"TVaR99 {st.get('tvar99_multiple_of_annual_expected')}× annual expected). This is a size-driven "
+                f"diagnostic, not a PHINS rule.",
+                st,
+                "Publish year-1 VaR99/TVaR99 next to the reserve figure so volatility is visible at the current portfolio size.")
         ib = actu["ibnr"]
         add("actuarial", "info" if ib["probability_reserve_config_ibnr_sufficient"] >= 0.9 else "warning",
             f"IBNR 10% of claims is sufficient in {100 * ib['probability_reserve_config_ibnr_sufficient']:.1f}% of trials; "
@@ -1790,15 +1833,24 @@ def derive_next_moves(results: Dict[str, Any], findings: List[Dict[str, Any]],
         if cover is not None and cover < _RESERVE_COVERAGE_MIN:
             moves.append(_redirect_move(
                 "act_reserve_multiple", "actuarial", 1,
-                "Replace the flat 150% reserve multiple with a size-aware VaR/TVaR requirement",
-                f"The 1.5× rule covers year-1 claims in only {100 * cover:.1f}% of trials at "
-                f"{actu.get('eligible_lives')} lives; 99% coverage needs "
-                f"{reserve.get('multiple_needed_for_99pct_coverage')}× expected claims. The multiple is a "
-                f"hard-coded constant, so this requires a code change rather than a dashboard setting.",
-                reserve, "services/actuarial_service.py:PortfolioSimulator (reserve_requirement = expected × 1.5)",
-                "inconsistency", ACTUARY_RESERVES_LINK,
-                proposed={"reserve_multiple": reserve.get("multiple_needed_for_99pct_coverage")},
-                adjustable_note="Constant in code; not exposed via /api/actuarial/config."))
+                "Investigate the 150% full-term reserve rule against year-1 claims",
+                f"PHINS's reserve (1.5 × PV of expected claims over the full term) covers year-1 claims in only "
+                f"{100 * cover:.1f}% of trials at {actu.get('eligible_lives')} lives. A full-term reserve failing a "
+                f"one-year test indicates a pricing or term-mix problem in the simulated book, not a multiple to tune.",
+                reserve, "services/actuarial_service.py:PortfolioSimulator (reserve_requirement = PV over term × 1.5)",
+                "anomaly", ACTUARY_RESERVES_LINK, kind="investigate"))
+        stress = actu.get("year1_claims_stress") or {}
+        stress_cover = stress.get("probability_year1_claims_within_stress")
+        if stress_cover is not None and stress_cover < _RESERVE_COVERAGE_MIN:
+            moves.append(_redirect_move(
+                "act_year1_volatility", "actuarial", 3,
+                "Publish year-1 claims VaR99/TVaR99 alongside the reserve figure",
+                f"At {actu.get('eligible_lives')} lives, year-1 claims exceed 1.5 × annual expected claims in "
+                f"{100 * (1 - stress_cover):.1f}% of trials (VaR99 {stress.get('var99_multiple_of_annual_expected')}×, "
+                f"TVaR99 {stress.get('tvar99_multiple_of_annual_expected')}×). This is claim-count volatility at the "
+                f"current portfolio size (∝ 1/√n); it is not a PHINS rule and does not call for tightening a multiple.",
+                stress, "services/monte_carlo_evaluation_service.py:year1_claims_stress", "none",
+                ACTUARY_RESERVES_LINK, kind="monitor"))
         ib = actu.get("ibnr") or {}
         suff = ib.get("probability_reserve_config_ibnr_sufficient")
         if suff is not None and suff < _IBNR_SUFFICIENCY_MIN:
@@ -1948,8 +2000,8 @@ _BI_SNAPSHOT_METRICS = {
     "risk": ["risk_scorer_auc", "risk_scorer_auc_ci95", "risk_band_observed_claim_rates"],
     "underwriting": ["expected_loss_ratio_tables_pct", "expected_loss_ratio_experience_pct",
                      "loss_ratio_by_smoking_status", "auto_approval_top_decile_leak_count"],
-    "actuarial": ["year1_loss_ratio_p50_p95_p99", "reserve_coverage_probability", "ibnr_sufficiency_probability",
-                  "antiselection_lr_drift_pts"],
+    "actuarial": ["year1_loss_ratio_p50_p95_p99", "reserve_coverage_probability_pv_basis",
+                  "year1_claims_var99_tvar99_multiple", "ibnr_sufficiency_probability", "antiselection_lr_drift_pts"],
     "claims": ["claims_fraud_leakage_rate", "claims_manual_share", "claims_legit_false_denial_rate"],
     "sales": ["mrr_forecast_p10_p50_p90", "forecast_attainment_probability"],
     "ai": ["ai_accepted_error_rate", "ai_human_review_load", "ai_uw_false_approve_rate"],
@@ -2042,8 +2094,10 @@ def _bi_conclusion_for(area: str, status: str, res: Dict[str, Any], moves: List[
                 else "Underwriting rules price the simulated book consistently; monitor the decline sensitivity table.")
     if area == "actuarial":
         rr = (res.get("reserve_rule_150pct") or {}).get("probability_year1_claims_within_reserve")
+        st = (res.get("year1_claims_stress") or {}).get("probability_year1_claims_within_stress")
         ib = (res.get("ibnr") or {}).get("probability_reserve_config_ibnr_sufficient")
-        return (f"Reserve rule covers year-1 in {100 * (rr or 0):.0f}% of trials and IBNR is sufficient in "
+        return (f"Full-term 1.5× PV reserve covers year-1 in {100 * (rr or 0):.0f}% of trials "
+                f"(year-1 volatility stress {100 * (st or 0):.0f}%) and IBNR is sufficient in "
                 f"{100 * (ib or 0):.0f}%; publish p50/p95/p99 loss ratios instead of the 65% point assumption.")
     if area == "claims":
         live = res.get("live_thresholds") or {}

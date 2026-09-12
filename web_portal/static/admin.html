@@ -3466,9 +3466,12 @@
       }
       if (act) {
         const reserve = act.reserve_rule_150pct || {};
+        const stress = act.year1_claims_stress || {};
         const ibnr = act.ibnr || {};
-        cards.push(adminMcCard('150% reserve covers Y1', adminMcPct(reserve.probability_year1_claims_within_reserve), '#e8f5e9',
-          `needs ${adminMcNum(reserve.multiple_needed_for_99pct_coverage, 2)}× for 99%`));
+        cards.push(adminMcCard('1.5× PV reserve covers Y1', adminMcPct(reserve.probability_year1_claims_within_reserve), '#e8f5e9',
+          `PHINS rule · ${adminMcNum(reserve.reserve_to_annual_expected_claims_multiple, 1)}× annual expected`));
+        cards.push(adminMcCard('Y1 volatility stress (1.5× annual)', adminMcPct(stress.probability_year1_claims_within_stress), '#e8f5e9',
+          `VaR99 ${adminMcNum(stress.var99_multiple_of_annual_expected, 2)}× · not a PHINS rule`));
         cards.push(adminMcCard('IBNR 10% sufficient', adminMcPct(ibnr.probability_reserve_config_ibnr_sufficient), '#e8f5e9',
           `P(Y1 LR > 65%) ${adminMcPct(act.probability_year1_lr_exceeds_65pct_assumption)}`));
       }

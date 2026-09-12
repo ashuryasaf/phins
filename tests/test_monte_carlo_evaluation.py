@@ -188,6 +188,43 @@ def test_all_modules_present_with_core_metrics(report):
     assert 0.0 <= ai["underwriting_automation"]["manual_share"] <= 1.0
 
 
+def test_reserve_rule_mirrors_phins_portfolio_simulator_basis(report):
+    """Engine 1.0.1: the 150% rule is 1.5 × PV over the full term, exactly as
+    PortfolioSimulator.risk_metrics defines it; the year-1 stress is separate."""
+    from services.actuarial_service import PortfolioSimulator, SimulationParams, get_actuarial_store
+
+    # Pin the PHINS rule itself so a change there forces the mirror to be revisited.
+    sim = PortfolioSimulator(get_actuarial_store()).generate_portfolio(SimulationParams(
+        customer_count=60, age_min=25, age_max=55, coverage_min=100_000, coverage_max=300_000,
+        coverage_median=200_000, policy_term_mode="fixed", policy_term_fixed=10))
+    rm = sim["risk_metrics"]
+    assert rm["reserve_requirement"] == pytest.approx(round(rm["total_expected_claims"] * 1.5, 2), abs=0.02)
+    assert rm["annual_expected_claims"] * rm["avg_term_years"] == pytest.approx(rm["total_expected_claims"], rel=0.02)
+
+    actu = report["results"]["actuarial"]
+    rr = actu["reserve_rule_150pct"]
+    assert rr["basis"] == mc.RESERVE_REQUIREMENT_BASIS == "pv_full_term_x1.5"
+    assert rr["reserve_requirement"] == pytest.approx(round(actu["phins_simulator_pv_total_claims"] * 1.5, 2), abs=0.02)
+    # PV over ~17 years ÷ 1 year of claims: the full-term reserve dwarfs year-1 claims.
+    assert rr["reserve_to_annual_expected_claims_multiple"] > 5
+    assert rr["probability_year1_claims_within_reserve"] >= 0.99
+
+    st = actu["year1_claims_stress"]
+    assert "not a PHINS rule" in st["basis"]
+    assert st["stress_requirement"] == pytest.approx(round(st["annual_expected_claims"] * 1.5, 2), abs=0.02)
+    assert st["stress_requirement"] < rr["reserve_requirement"]
+    assert st["tvar99_multiple_of_annual_expected"] >= st["var99_multiple_of_annual_expected"]
+    assert report["engine_version"] == "mc-eval-1.0.1"
+    assert report["phins_assumptions"]["reserve_requirement_basis"] == "pv_full_term_x1.5"
+
+
+def test_reserve_next_move_never_proposes_tightening_a_multiple(report):
+    for m in report["next_moves"]:
+        if m["id"] in {"act_reserve_multiple", "act_year1_volatility"}:
+            assert m["action"]["kind"] in {"investigate", "monitor"}
+            assert not ((m["action"].get("target") or {}).get("proposed") or {}).get("reserve_multiple")
+
+
 def test_claims_mirror_matches_live_recommender_on_edge_cases():
     # Direct check of the movable-threshold mirror against the live rules.
     from services.claims_bot_service import ClaimsBotService, FraudIndicator, FraudIndicatorType, HiddenCondition
