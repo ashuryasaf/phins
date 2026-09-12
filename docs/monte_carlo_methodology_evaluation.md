@@ -183,6 +183,14 @@ Stochastic results:
 | Anti-selective lapse drift, 5-yr cumulative LR | +0.34 pts | +0.14 pts | +0.31 pts |
 | Year-1 reinsurance band mix | 51 % medium, 43 % high, 5 % very_high | 71 % medium, 27 % low | 29 % very_high |
 
+> **Erratum (engine `mc-eval-1.0.0`).** The two "150 % reserve rule" rows
+> and conclusion 1 below test 1.5 × *annual* expected claims. PHINS's
+> `PortfolioSimulator` actually sets `reserve_requirement =
+> total_expected_claims × 1.5` where `total_expected_claims` is the PV over
+> the full term, i.e. roughly `avg_term` times larger. The rows are valid as
+> a year-1 claims-volatility stress; they are not a test of the rule PHINS
+> runs. See `docs/monte_carlo_remediation_assessment.md`, item A.
+
 What this says:
 
 1. The **flat 1.5× reserve multiple is a portfolio-size statement in
