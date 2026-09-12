@@ -39,6 +39,21 @@ logger = logging.getLogger(__name__)
 
 ACTUARIAL_ACCESS_ROLES = ['admin', 'actuary']
 
+# =============================================================================
+# METRIC BASES (labels carried next to the numbers they describe)
+# =============================================================================
+
+# `risk_metrics.loss_ratio`: PV of expected claims over the full term ÷ average
+# term ÷ annual premium. Bakes ageing into a single "annual" figure.
+LOSS_RATIO_BASIS_LIFETIME_ANNUALISED = 'lifetime_annualised'
+# `risk_metrics.loss_ratio_year1`: undiscounted expected claims in the first
+# policy year at current attained ages ÷ annual premium.
+LOSS_RATIO_BASIS_YEAR1 = 'year1_attained_age'
+# `risk_metrics.reserve_requirement`: multiple × PV of expected claims over the
+# FULL remaining term (not a multiple of one year of claims).
+RESERVE_REQUIREMENT_MULTIPLE = 1.5
+RESERVE_REQUIREMENT_BASIS = 'pv_full_term_x1.5'
+
 def check_actuarial_access(user_role: str) -> bool:
     """Check if user has access to actuarial functions"""
     return user_role.lower() in ACTUARIAL_ACCESS_ROLES
@@ -419,6 +434,13 @@ def calculate_reinsurance_program(
         'protected_claims_pct': round(protected_claims_share * 100, 2),
         'avg_coverage_per_contract': round(avg_coverage, 2),
         'risk_band': risk_band,
+        # The band is classified on risk_metrics.loss_ratio (lifetime-annualised);
+        # the year-1 figure is carried alongside so a one-year treaty can be
+        # read against the matching basis.
+        'loss_ratio_basis': str(risk_metrics.get('loss_ratio_basis') or LOSS_RATIO_BASIS_LIFETIME_ANNUALISED),
+        'loss_ratio_pct': round(loss_ratio_pct, 2),
+        'loss_ratio_year1_pct': risk_metrics.get('loss_ratio_year1'),
+        'reserve_requirement_basis': str(risk_metrics.get('reserve_requirement_basis') or RESERVE_REQUIREMENT_BASIS),
         'ceded_exposure': round(ceded_exposure, 2),
         'ceded_expected_claims_annual': round(ceded_annual_claims, 2),
         'ceded_mortality_claims_annual': round(ceded_mortality_claims, 2),
@@ -1739,7 +1761,8 @@ class PortfolioSimulator:
             'risk_premium': 0,  # Risk component only (for loss ratio)
             'savings_premium': 0,
             'pv_mortality_claims': 0,
-            'pv_disability_claims': 0
+            'pv_disability_claims': 0,
+            'expected_claims_year1': 0,
         }
         
         # Generate each customer
@@ -1763,6 +1786,7 @@ class PortfolioSimulator:
             customer['savings_premium'] = premium['savings_premium']
             customer['pv_mortality'] = premium['pv_mortality']
             customer['pv_disability'] = premium['pv_disability']
+            customer['expected_claims_year1'] = premium.get('expected_claims_year1', 0.0)
             customer['integrity_hash'] = premium.get('integrity_hash')
             
             # Update totals
@@ -1772,6 +1796,7 @@ class PortfolioSimulator:
             totals['savings_premium'] += customer['savings_premium']
             totals['pv_mortality_claims'] += customer['pv_mortality']
             totals['pv_disability_claims'] += customer['pv_disability']
+            totals['expected_claims_year1'] += customer['expected_claims_year1']
             
             # Update demographics
             age_bracket = self._get_age_bracket(customer['age'])
@@ -1831,19 +1856,34 @@ class PortfolioSimulator:
         # Loss ratio on RISK premium only (excludes savings component)
         # This shows if risk pricing is adequate
         loss_ratio_on_risk = round((annual_expected_claims / totals['risk_premium']) * 100, 2) if totals['risk_premium'] > 0 else 0
+
+        # Year-1 basis: undiscounted expected claims in the first policy year
+        # at current attained ages. `loss_ratio` above is lifetime-annualised
+        # (PV over term ÷ avg term), which bakes ageing into a single figure;
+        # the two are different quantities and are labelled as such.
+        expected_claims_year1 = totals['expected_claims_year1']
+        loss_ratio_year1 = round((expected_claims_year1 / totals['annual_premium']) * 100, 2) if totals['annual_premium'] > 0 else 0
+        loss_ratio_year1_on_risk = round((expected_claims_year1 / totals['risk_premium']) * 100, 2) if totals['risk_premium'] > 0 else 0
         
         risk_metrics = {
             'pv_mortality_claims': round(totals['pv_mortality_claims'], 2),
             'pv_disability_claims': round(totals['pv_disability_claims'], 2),
             'total_expected_claims': round(total_expected_claims, 2),  # PV over full term
             'annual_expected_claims': round(annual_expected_claims, 2),  # Annualized
+            'expected_claims_year1': round(expected_claims_year1, 2),  # Year-1, undiscounted
             'total_risk_premium': round(totals['risk_premium'], 2),
             'total_savings_premium': round(totals['savings_premium'], 2),
             'loss_ratio': loss_ratio,  # Claims vs Total Premium (annual basis) - KEY METRIC
+            'loss_ratio_basis': LOSS_RATIO_BASIS_LIFETIME_ANNUALISED,
             'loss_ratio_on_risk': loss_ratio_on_risk,  # Claims vs Risk Premium only
+            'loss_ratio_year1': loss_ratio_year1,  # Year-1 expected claims vs Total Premium
+            'loss_ratio_year1_on_risk': loss_ratio_year1_on_risk,
+            'loss_ratio_year1_basis': LOSS_RATIO_BASIS_YEAR1,
             'mortality_pct_of_claims': round((totals['pv_mortality_claims'] / total_expected_claims) * 100, 2) if total_expected_claims > 0 else 0,
             'disability_pct_of_claims': round((totals['pv_disability_claims'] / total_expected_claims) * 100, 2) if total_expected_claims > 0 else 0,
-            'reserve_requirement': round(total_expected_claims * 1.5, 2),  # 150% of expected claims
+            'reserve_requirement': round(total_expected_claims * RESERVE_REQUIREMENT_MULTIPLE, 2),
+            'reserve_requirement_basis': RESERVE_REQUIREMENT_BASIS,  # 1.5 × PV of expected claims over the full term
+            'reserve_requirement_multiple': RESERVE_REQUIREMENT_MULTIPLE,
             'avg_term_years': round(avg_term, 1)
         }
         
@@ -2214,6 +2254,7 @@ class PortfolioSimulator:
             'savings_premium': components.savings_premium_annual,
             'pv_mortality': components.pv_mortality_claims,
             'pv_disability': components.pv_disability_claims,
+            'expected_claims_year1': components.expected_claims_year1,
             'integrity_hash': components.integrity_hash,
             'product_id': components.product_id,
             'age_curve_id': components.age_curve_id,

@@ -5134,8 +5134,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             <tr><td>PV Disability Claims</td><td><strong>${fmtCurrency(sim.risk_metrics.pv_disability_claims)}</strong></td><td style="color:var(--text-light);">${fmtPct(sim.risk_metrics.disability_pct_of_claims)} of claims</td></tr>
             <tr><td>Total Expected Claims (PV)</td><td><strong>${fmtCurrency(sim.risk_metrics.total_expected_claims)}</strong></td><td style="color:var(--text-light);">Full term liability</td></tr>
             <tr><td>Annual Expected Claims</td><td><strong>${fmtCurrency(sim.risk_metrics.annual_expected_claims || expectedClaims)}</strong></td><td style="color:var(--text-light);">Per year</td></tr>
-            <tr><td>Loss Ratio (Claims / Premium)</td><td><strong>${fmtPct(sim.risk_metrics.loss_ratio)}</strong></td><td style="color:var(--text-light);">Annual basis</td></tr>
-            <tr><td>Reserve Requirement (150%)</td><td><strong>${fmtCurrency(sim.risk_metrics.reserve_requirement)}</strong></td><td style="color:var(--text-light);">Regulatory reserve</td></tr>
+            <tr><td>Loss Ratio, lifetime-annualised (PV ÷ term ÷ Premium)</td><td><strong>${fmtPct(sim.risk_metrics.loss_ratio)}</strong></td><td style="color:var(--text-light);">Basis: ${sim.risk_metrics.loss_ratio_basis || 'lifetime_annualised'} — bakes ageing into one figure</td></tr>
+            ${sim.risk_metrics.loss_ratio_year1 !== undefined ? `<tr><td>Loss Ratio, year-1 (Expected Y1 Claims / Premium)</td><td><strong>${fmtPct(sim.risk_metrics.loss_ratio_year1)}</strong></td><td style="color:var(--text-light);">Basis: ${sim.risk_metrics.loss_ratio_year1_basis || 'year1_attained_age'} — ${fmtCurrency(sim.risk_metrics.expected_claims_year1)} expected in the first policy year</td></tr>` : ''}
+            <tr><td>Reserve Indication (1.5 × PV of expected claims over term)</td><td><strong>${fmtCurrency(sim.risk_metrics.reserve_requirement)}</strong></td><td style="color:var(--text-light);">Basis: ${sim.risk_metrics.reserve_requirement_basis || 'pv_full_term_x1.5'} — full-term figure, not 150% of one year's claims</td></tr>
           </table>
           <p style="margin-top:12px;font-size:0.85rem;color:var(--text-light);">
              <strong>Mutual Exclusivity:</strong> Each customer can have EITHER a mortality OR disability claim (not both). 

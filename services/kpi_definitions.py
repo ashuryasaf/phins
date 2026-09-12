@@ -36,11 +36,25 @@ def _num(value: Any, default: float = 0.0) -> float:
         return default
 
 
+# Three "loss ratio" bases coexist on the platform. Every surface that shows a
+# loss ratio should carry one of these labels next to the number.
+LOSS_RATIO_BASES: Dict[str, str] = {
+    # loss_ratio_pct(): realised claims paid ÷ annual premium revenue (BI KPI).
+    "paid_claims": "Claims paid ÷ annual premium revenue (realised, period basis)",
+    # PortfolioSimulator.risk_metrics.loss_ratio_year1: expected year-1 claims
+    # at current attained ages ÷ annual premium.
+    "year1_attained_age": "Expected year-1 claims (attained-age tables) ÷ annual premium",
+    # PortfolioSimulator.risk_metrics.loss_ratio: PV of expected claims over the
+    # full term ÷ average term ÷ annual premium (bakes ageing into one figure).
+    "lifetime_annualised": "PV of expected claims over term ÷ avg term ÷ annual premium",
+}
+
+
 def loss_ratio_pct(total_claims_paid: Any, annual_premium_revenue: Any) -> float:
     """Loss ratio as a percentage: claims paid / earned premium.
 
     Canonical denominator is **annual premium revenue**. Returns ``0.0`` when
-    there is no premium base.
+    there is no premium base. Basis: ``LOSS_RATIO_BASES['paid_claims']``.
     """
     paid = _num(total_claims_paid)
     premium = _num(annual_premium_revenue)
@@ -104,6 +118,7 @@ def reserve_adequacy_ratio(claims_reserve: Any, monthly_revenue: Any, months: in
 
 
 __all__ = [
+    "LOSS_RATIO_BASES",
     "loss_ratio_pct",
     "approval_rate_pct",
     "receivables_ratio_pct",

@@ -9726,8 +9726,9 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
         ('Customers Accepted', simulation.get('portfolio_summary', {}).get('accepted_customers', '')),
         ('Total Coverage', simulation.get('portfolio_summary', {}).get('total_coverage', '')),
         ('Total Annual Premium', simulation.get('portfolio_summary', {}).get('total_annual_premium', '')),
-        ('Loss Ratio %', simulation.get('risk_metrics', {}).get('loss_ratio', '')),
-        ('Reserve Requirement', simulation.get('risk_metrics', {}).get('reserve_requirement', '')),
+        ('Loss Ratio % (lifetime-annualised)', simulation.get('risk_metrics', {}).get('loss_ratio', '')),
+        ('Loss Ratio % (year-1)', simulation.get('risk_metrics', {}).get('loss_ratio_year1', '')),
+        ('Reserve Requirement (1.5 x PV over term)', simulation.get('risk_metrics', {}).get('reserve_requirement', '')),
         ('Reference Document', reference.get('source', {}).get('url', '')),
     ]
     cover_money_keys = {'Total Coverage', 'Total Annual Premium', 'Reserve Requirement'}
@@ -10128,8 +10129,9 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
         ['Accepted Customers', portfolio.get('accepted_customers', '')],
         ['Total Coverage (USD)', portfolio.get('total_coverage', '')],
         ['Total Annual Premium (USD)', portfolio.get('total_annual_premium', '')],
-        ['Loss Ratio %', risk.get('loss_ratio', '')],
-        ['Reserve Requirement (USD)', risk.get('reserve_requirement', '')],
+        ['Loss Ratio % (lifetime-annualised)', risk.get('loss_ratio', '')],
+        ['Loss Ratio % (year-1)', risk.get('loss_ratio_year1', '')],
+        ['Reserve Requirement (USD, 1.5 x PV over term)', risk.get('reserve_requirement', '')],
         ['Net Profit (USD)', prof.get('net_profit', '')],
         ['Components Reconcile', str(prof.get('components_match', ''))],
     ]

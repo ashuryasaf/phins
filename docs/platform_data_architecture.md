@@ -113,6 +113,29 @@ sequenceDiagram
 3. `TRANSACTION_LEDGER` remains API-compatible but is no longer a raw mutable sink.
 4. BI and actuarial summaries must treat invalid ledger chains as degraded data.
 5. Legacy snapshot data is repaired through hash-chain backfill on load.
+6. Every metric that has more than one basis on the platform carries its basis
+   label next to the number (see below). A basis label is additive metadata;
+   the numeric key it describes keeps its formula.
+
+## Metric bases
+
+Three quantities called "loss ratio" and two called "reserve requirement"
+coexist. They are different numbers and are labelled as such.
+
+| Key | Where | Basis label | Formula |
+|---|---|---|---|
+| `loss_ratio_pct` | `services/kpi_definitions.py`, BI KPIs | `paid_claims` | claims paid ÷ annual premium revenue (realised) |
+| `risk_metrics.loss_ratio_year1` | `PortfolioSimulator` | `year1_attained_age` | expected year-1 claims at current ages ÷ annual premium |
+| `risk_metrics.loss_ratio` | `PortfolioSimulator`, reinsurance band | `lifetime_annualised` | PV of expected claims over term ÷ avg term ÷ annual premium |
+| `risk_metrics.reserve_requirement` | `PortfolioSimulator`, reinsurance `reserve_relief`, actuary dashboard, exports | `pv_full_term_x1.5` | 1.5 × PV of expected claims over the full remaining term |
+| `summary.reserve_requirement` | `FinancialReportingService.generate_portfolio_report` | `coverage_x0.05_plus_savings_liability` | capital indication: 5 % of in-force coverage + savings liability |
+
+`kpi_definitions.LOSS_RATIO_BASES` lists the loss-ratio labels; the reinsurance
+program states `loss_ratio_basis` and `reserve_requirement_basis` so a quote
+can be read against the matching basis. The Monte Carlo evaluation
+(`services/monte_carlo_evaluation_service.py`) mirrors the reserve rule on the
+same `pv_full_term_x1.5` basis and reports the year-1 volatility diagnostic
+separately as `year1_claims_stress`.
 
 ## Recommended next increments
 

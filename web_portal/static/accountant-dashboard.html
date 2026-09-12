@@ -2028,7 +2028,7 @@
                         </div>
                         <div class="stat-card">
                             <div class="stat-value">${formatCurrency(data.summary.reserve_requirement)}</div>
-                            <div class="stat-label">Reserve Requirement</div>
+                            <div class="stat-label" title="${data.summary.reserve_requirement_basis || ''}">${data.summary.reserve_requirement_label || 'Capital Indication (5% coverage + savings)'}</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-value">${data.summary.solvency_ratio.toFixed(2)}</div>
@@ -2740,7 +2740,7 @@
                     { Metric: 'Annual Premiums', Value: lastPortfolioData.summary?.total_annual_premiums || 0 },
                     { Metric: 'Claims Liability', Value: lastPortfolioData.summary?.total_claims_liability || 0 },
                     { Metric: 'Savings Liability', Value: lastPortfolioData.summary?.total_savings_liability || 0 },
-                    { Metric: 'Reserve Requirement', Value: lastPortfolioData.summary?.reserve_requirement || 0 },
+                    { Metric: lastPortfolioData.summary?.reserve_requirement_label || 'Capital Indication (5% coverage + savings)', Value: lastPortfolioData.summary?.reserve_requirement || 0 },
                     { Metric: 'Solvency Ratio', Value: lastPortfolioData.summary?.solvency_ratio || 0 },
                 ];
                 
@@ -3112,7 +3112,7 @@
                         <div class="stat-card"><div class="stat-value">${s.total_policies || 0}</div><div class="stat-label">Total Policies</div></div>
                         <div class="stat-card"><div class="stat-value">${formatCurrency(s.total_coverage)}</div><div class="stat-label">Total Coverage</div></div>
                         <div class="stat-card"><div class="stat-value">${formatCurrency(s.total_annual_premiums)}</div><div class="stat-label">Annual Premiums</div></div>
-                        <div class="stat-card"><div class="stat-value">${formatCurrency(s.reserve_requirement)}</div><div class="stat-label">Reserve Requirement</div></div>
+                        <div class="stat-card"><div class="stat-value">${formatCurrency(s.reserve_requirement)}</div><div class="stat-label" title="${s.reserve_requirement_basis || ''}">${s.reserve_requirement_label || 'Capital Indication (5% coverage + savings)'}</div></div>
                         <div class="stat-card" style="background: linear-gradient(135deg, ${s.solvency_ratio >= 1 ? '#d4edda' : '#f8d7da'} 0%, #f8f9fa 100%);">
                             <div class="stat-value" style="color: ${s.solvency_ratio >= 1 ? '#28a745' : '#dc3545'};">${(s.solvency_ratio || 0).toFixed(2)}</div>
                             <div class="stat-label">Solvency Ratio</div>

@@ -708,6 +708,10 @@ class FinancialReportingService:
                 'total_claims_liability': round(total_claims_liability, 2),
                 'total_savings_liability': round(total_savings_liability, 2),
                 'reserve_requirement': round(total_coverage * 0.05 + total_savings_liability, 2),
+                # Distinct from PortfolioSimulator.risk_metrics.reserve_requirement
+                # (1.5 × PV of expected claims); this is a capital indication.
+                'reserve_requirement_basis': 'coverage_x0.05_plus_savings_liability',
+                'reserve_requirement_label': 'Capital indication (5% of coverage + savings liability)',
                 'solvency_ratio': round(total_premiums * 3 / max(total_claims_liability + total_savings_liability, 1), 2)
             },
             'risk_distribution': risk_distribution,

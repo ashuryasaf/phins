@@ -188,13 +188,21 @@ def test_all_modules_present_with_core_metrics(report):
     assert 0.0 <= ai["underwriting_automation"]["manual_share"] <= 1.0
 
 
-def test_reserve_rule_mirrors_phins_portfolio_simulator_basis(report):
+def test_reserve_rule_mirrors_phins_portfolio_simulator_basis(tmp_path, monkeypatch):
     """Engine 1.0.1: the 150% rule is 1.5 × PV over the full term, exactly as
     PortfolioSimulator.risk_metrics defines it; the year-1 stress is separate."""
-    from services.actuarial_service import PortfolioSimulator, SimulationParams, get_actuarial_store
+    import services.actuarial_service as asvc
+    from services.actuarial_service import ActuarialTablesStore, PortfolioSimulator, SimulationParams
+
+    # Isolated default store: other suites replace the global mortality table.
+    monkeypatch.setenv("PHINS_ACTUARIAL_STATE_PATH", str(tmp_path / "act.json"))
+    store = ActuarialTablesStore()
+    monkeypatch.setattr(asvc, "get_actuarial_store", lambda: store)
+    report = mc.run_evaluation(mc.EvaluationParams(seed=7, lives=300, trials=40, horizon_years=2,
+                                                   bootstrap_samples=5, modules=("actuarial",)))
 
     # Pin the PHINS rule itself so a change there forces the mirror to be revisited.
-    sim = PortfolioSimulator(get_actuarial_store()).generate_portfolio(SimulationParams(
+    sim = PortfolioSimulator(store).generate_portfolio(SimulationParams(
         customer_count=60, age_min=25, age_max=55, coverage_min=100_000, coverage_max=300_000,
         coverage_median=200_000, policy_term_mode="fixed", policy_term_fixed=10))
     rm = sim["risk_metrics"]
