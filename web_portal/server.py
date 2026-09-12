@@ -18645,11 +18645,17 @@ For claims or questions, please contact:
             try:
                 from services.actuarial_service import AutomationMetrics
                 customer_count = int(qs.get('customer_count', [100000])[0])
-                metrics = AutomationMetrics.calculate_automation_rates(customer_count)
+                # Observed decision mix from real records (read-only); each
+                # process falls back to the assumed BASE_RATES below the
+                # minimum sample and is labelled source: 'assumed'.
+                observed = AutomationMetrics.observe_automation_mix(
+                    UNDERWRITING_APPLICATIONS, CLAIMS, BILLING)
+                metrics = AutomationMetrics.calculate_automation_rates(customer_count, observed=observed)
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
                     'success': True,
-                    'metrics': metrics
+                    'metrics': metrics,
+                    'observed': observed,
                 }).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)

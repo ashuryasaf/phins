@@ -268,6 +268,7 @@ def handle_monte_carlo_evaluation(handler, data_sources: dict, params: dict = No
             # Read only, to validate smoker pricing factors against PHINS experience.
             'customers': data_sources.get('customers', {}) or {},
             'underwriting_applications': data_sources.get('underwriting_applications', {}) or {},
+            'billing': data_sources.get('billing', {}) or {},
         }
         report = get_monte_carlo_evaluation_service().run(eval_params, observed=observed)
         return 200, report

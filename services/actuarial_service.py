@@ -1622,30 +1622,163 @@ class AutomationMetrics:
                 return factor
         return 1.0
     
+    # Minimum decided records per process before the observed mix replaces
+    # the assumed BASE_RATES (below this a handful of decisions would swing
+    # the displayed percentages by tens of points).
+    OBSERVED_MIN_SAMPLE = 30
+
+    # Actors that mark a decision as taken by the platform rather than a person.
+    SYSTEM_ACTOR_PREFIXES = ('system', 'admin_pipeline', 'claims_bot', 'bot', 'auto')
+
     @classmethod
-    def calculate_automation_rates(cls, customer_count: int) -> Dict:
-        """Calculate automation rates for given portfolio size"""
+    def _is_system_actor(cls, actor: Any) -> bool:
+        text = str(actor or '').strip().lower()
+        return bool(text) and text.startswith(cls.SYSTEM_ACTOR_PREFIXES)
+
+    @classmethod
+    def observe_automation_mix(cls, underwriting_applications: Optional[Dict[str, Any]] = None,
+                               claims: Optional[Dict[str, Any]] = None,
+                               billing: Optional[Dict[str, Any]] = None,
+                               min_sample: int = OBSERVED_MIN_SAMPLE) -> Dict[str, Any]:
+        """Observed automation mix from real decision records (read-only).
+
+        Counts only *decided* records. A decision is automated when the actor
+        stamped on it is a platform actor (``system_auto_approve``,
+        ``admin_pipeline``, ``claims_bot`` …); everything else decided by a
+        person is ``manual_review``. Each process reports ``sample_size`` and
+        ``sufficient`` (>= ``min_sample``); callers fall back to
+        :attr:`BASE_RATES` when a process is not sufficient.
+        """
+        def _finish(counts: Dict[str, int], sample: int) -> Dict[str, Any]:
+            rates = {k: round(v / sample, 4) if sample else None for k, v in counts.items()}
+            return {'counts': dict(counts), 'sample_size': sample, 'min_sample': int(min_sample),
+                    'sufficient': sample >= int(min_sample), 'rates': rates}
+
+        uw_counts = {'auto_approve': 0, 'auto_decline': 0, 'auto_refer': 0, 'manual_review': 0}
+        uw_sample = 0
+        for app in (underwriting_applications or {}).values():
+            if not isinstance(app, dict):
+                continue
+            status = str(app.get('status', '')).lower()
+            if status not in ('approved', 'rejected', 'declined', 'referred'):
+                continue
+            uw_sample += 1
+            if status == 'approved' and cls._is_system_actor(app.get('approved_by')):
+                uw_counts['auto_approve'] += 1
+            elif status in ('rejected', 'declined') and cls._is_system_actor(
+                    app.get('rejected_by') or app.get('declined_by')):
+                uw_counts['auto_decline'] += 1
+            elif status == 'referred' and cls._is_system_actor(app.get('referred_by')):
+                uw_counts['auto_refer'] += 1
+            else:
+                uw_counts['manual_review'] += 1
+
+        cl_counts = {'auto_approve': 0, 'auto_decline': 0, 'auto_partial': 0, 'manual_review': 0}
+        cl_sample = 0
+        for claim in (claims or {}).values():
+            if not isinstance(claim, dict):
+                continue
+            status = str(claim.get('status', '')).lower()
+            if status not in ('approved', 'paid', 'closed', 'rejected', 'denied'):
+                continue
+            cl_sample += 1
+            actor = claim.get('approved_by') if status in ('approved', 'paid', 'closed') else (
+                claim.get('rejected_by') or claim.get('denied_by'))
+            if not cls._is_system_actor(actor) and not claim.get('auto_processed'):
+                cl_counts['manual_review'] += 1
+            elif status in ('rejected', 'denied'):
+                cl_counts['auto_decline'] += 1
+            else:
+                try:
+                    claimed = float(claim.get('claimed_amount') or 0.0)
+                    approved = float(claim.get('approved_amount') or 0.0)
+                except (TypeError, ValueError):
+                    claimed, approved = 0.0, 0.0
+                if claimed > 0 and approved < claimed - 1e-9:
+                    cl_counts['auto_partial'] += 1
+                else:
+                    cl_counts['auto_approve'] += 1
+
+        bl_counts = {'auto_collect': 0, 'auto_reminder': 0, 'manual_followup': 0}
+        bl_sample = 0
+        for bill in (billing or {}).values():
+            if not isinstance(bill, dict):
+                continue
+            status = str(bill.get('status', '')).lower()
+            if status not in ('paid', 'outstanding', 'overdue', 'partial', 'pending', 'unpaid'):
+                continue
+            bl_sample += 1
+            if status == 'paid' and (bill.get('auto_pay') is True or cls._is_system_actor(bill.get('paid_by'))):
+                bl_counts['auto_collect'] += 1
+            elif status != 'paid' and (bill.get('reminder_sent') or bill.get('reminders_sent')):
+                bl_counts['auto_reminder'] += 1
+            elif status == 'paid':
+                bl_counts['auto_collect'] += 1  # collected without follow-up
+            else:
+                bl_counts['manual_followup'] += 1
+
+        return {
+            'read_only': True,
+            'basis': 'decided records; automated = platform actor stamped on the decision',
+            'underwriting': _finish(uw_counts, uw_sample),
+            'claims': _finish(cl_counts, cl_sample),
+            'billing': _finish(bl_counts, bl_sample),
+        }
+
+    @classmethod
+    def calculate_automation_rates(cls, customer_count: int,
+                                   observed: Optional[Dict[str, Any]] = None) -> Dict:
+        """Automation rates for a portfolio size.
+
+        Without ``observed`` this is the historical scaled-``BASE_RATES``
+        display, byte-for-byte. With ``observed`` (from
+        :meth:`observe_automation_mix`) each process whose sample is
+        sufficient shows its observed mix instead and is labelled
+        ``source: 'observed'``; the others stay ``'assumed'``. Both are
+        reported so the assumed and observed mixes can be compared.
+        """
         scale = cls.get_scale_factor(customer_count)
         
         result = {
             'scale_factor': scale,
             'customer_count': customer_count
         }
+        sources: Dict[str, str] = {}
         
         for process, rates in cls.BASE_RATES.items():
-            result[process] = {}
+            # Assumed mix: unchanged historical computation.
+            assumed: Dict[str, Any] = {}
             total_auto = 0
             
             for action, base_rate in rates.items():
                 if action != 'manual_review':
                     # Scale automation rates up (capped at logical maximums)
                     scaled_rate = min(base_rate * scale, 0.95)
-                    result[process][action] = round(scaled_rate, 4)
+                    assumed[action] = round(scaled_rate, 4)
                     total_auto += scaled_rate
             
             # Manual review is what's left
-            result[process]['manual_review'] = round(max(0.05, 1 - total_auto), 4)
-            result[process]['total_automation_pct'] = round(1 - result[process]['manual_review'], 4)
+            assumed['manual_review'] = round(max(0.05, 1 - total_auto), 4)
+            assumed['total_automation_pct'] = round(1 - assumed['manual_review'], 4)
+
+            obs_process = (observed or {}).get(process) or {}
+            if obs_process.get('sufficient') and obs_process.get('rates'):
+                shown = {k: (v if v is not None else 0.0) for k, v in obs_process['rates'].items()}
+                manual_share = shown.get('manual_review', shown.get('manual_followup', 0.0))
+                shown['manual_review'] = manual_share
+                shown['total_automation_pct'] = round(1 - manual_share, 4)
+                shown['source'] = 'observed'
+                shown['sample_size'] = obs_process.get('sample_size')
+                shown['assumed'] = assumed
+                result[process] = shown
+                sources[process] = 'observed'
+            else:
+                assumed['source'] = 'assumed'
+                if observed is not None:
+                    assumed['sample_size'] = obs_process.get('sample_size', 0)
+                    assumed['observed_insufficient'] = True
+                result[process] = assumed
+                sources[process] = 'assumed'
         
         # Overall automation score
         overall = (
@@ -1654,6 +1787,8 @@ class AutomationMetrics:
             result['billing']['total_automation_pct'] * 0.25
         )
         result['overall_automation_pct'] = round(overall, 4)
+        result['sources'] = sources
+        result['min_observed_sample'] = cls.OBSERVED_MIN_SAMPLE
         
         return result
 

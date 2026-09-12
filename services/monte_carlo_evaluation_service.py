@@ -1431,6 +1431,26 @@ def _observed_smoking_experience(observed: Optional[Dict[str, Any]], ctx: Dict[s
     }
 
 
+def _observed_automation_mix(observed: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Observed automation mix from real decision records (read-only)."""
+    if not observed:
+        return {"used": False}
+    try:
+        from services import actuarial_service as act
+        mix = act.AutomationMetrics.observe_automation_mix(
+            observed.get("underwriting_applications") or {}, observed.get("claims") or {},
+            observed.get("billing") or {})
+    except Exception as exc:  # pragma: no cover - defensive; optional evidence
+        return {"used": False, "error": str(exc)}
+    return {
+        "used": True,
+        "endpoint": "GET /api/actuarial/automation-metrics",
+        "claims": {k: mix["claims"].get(k) for k in ("sample_size", "sufficient", "rates")},
+        "underwriting": {k: mix["underwriting"].get(k) for k in ("sample_size", "sufficient", "rates")},
+        "min_sample": mix["claims"].get("min_sample"),
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Orchestrator
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1469,6 +1489,7 @@ def run_evaluation(params: Optional[EvaluationParams] = None,
 
     findings = derive_findings(results, ctx)
     ctx["observed_smoking_experience"] = _observed_smoking_experience(observed, ctx)
+    ctx["observed_automation_mix"] = _observed_automation_mix(observed)
     observed_fp_after = _sha256_of(observed) if observed is not None else None
     observed_unchanged = (observed_fp_before == observed_fp_after) if observed is not None else None
     next_moves = derive_next_moves(results, findings, ctx, observed_unchanged)
@@ -1487,7 +1508,8 @@ def run_evaluation(params: Optional[EvaluationParams] = None,
         "world_assumptions": world,
         "phins_assumptions": ctx["assumptions"],
         "assumption_provenance": ctx["provenance"],
-        "observed_inputs": dict(_observed_summary(observed), smoking_experience=ctx["observed_smoking_experience"]),
+        "observed_inputs": dict(_observed_summary(observed), smoking_experience=ctx["observed_smoking_experience"],
+                                automation_mix=ctx["observed_automation_mix"]),
         "results": results,
         "findings": findings,
         "conclusions": conclusions,
@@ -2009,14 +2031,27 @@ def derive_next_moves(results: Dict[str, Any], findings: List[Dict[str, Any]],
                 adjustable_note="Constants in code; not exposed via API."))
         mix_gap = cl.get("manual_share_vs_assumed")
         if mix_gap is not None and abs(mix_gap) > _MIX_DISAGREEMENT_PTS:
+            obs_mix = ((ctx.get("observed_automation_mix") or {}).get("claims")) or {}
+            obs_rates = obs_mix.get("rates") or {}
+            if obs_mix.get("sufficient"):
+                obs_text = (f" PHINS's observed claims decision mix ({obs_mix.get('sample_size')} decided claims) has "
+                            f"manual review at {100 * (obs_rates.get('manual_review') or 0):.0f}%; "
+                            f"/api/actuarial/automation-metrics already shows it as source 'observed'.")
+                kind = "monitor"
+            else:
+                obs_text = (f" Only {obs_mix.get('sample_size') or 0} decided claims are on record "
+                            f"(need {(ctx.get('observed_automation_mix') or {}).get('min_sample') or 30}); until then "
+                            f"/api/actuarial/automation-metrics labels the claims mix source 'assumed'.")
+                kind = "investigate"
             moves.append(_redirect_move(
                 "claims_automation_base_rates", "claims", 2,
                 "Drive claims automation KPIs from the observed decision mix",
                 f"Simulated manual-review share is {100 * live.get('manual_share', 0):.0f}% vs the fixed "
-                f"AutomationMetrics assumption of {100 * assumed_manual:.0f}%.",
-                {"simulated_manual": live.get("manual_share"), "assumed_manual": assumed_manual},
-                "services/actuarial_service.py:AutomationMetrics.BASE_RATES", "anomaly", None,
-                kind="investigate"))
+                f"AutomationMetrics assumption of {100 * assumed_manual:.0f}%." + obs_text,
+                {"simulated_manual": live.get("manual_share"), "assumed_manual": assumed_manual,
+                 "observed": obs_mix},
+                "services/actuarial_service.py:AutomationMetrics.BASE_RATES", "anomaly",
+                "/actuary-dashboard.html", kind=kind))
         if (cl.get("mirror_agreement_with_live_recommender") or 1.0) < 1.0:
             moves.append(_redirect_move(
                 "claims_mirror_disagreement", "claims", 0,

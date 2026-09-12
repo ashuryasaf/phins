@@ -5236,14 +5236,23 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         if (data.success) {
           const m = data.metrics;
           const fmtPct = (n) => (n * 100).toFixed(1) + '%';
+          // Each process says whether its mix is observed from real decision
+          // records or still the assumed BASE_RATES (sample below minimum).
+          const sourceTag = (p) => {
+            const src = (p && p.source) || 'assumed';
+            const n = p && p.sample_size != null ? ` · ${p.sample_size} decided` : '';
+            const color = src === 'observed' ? '#2e7d32' : '#78909c';
+            return `<span style="font-size:0.75rem;color:${color};font-weight:600;margin-left:8px;">${src}${n}</span>`;
+          };
           
           document.getElementById('automation-results').innerHTML = `
             <div class="card">
               <div class="card-title">Results for ${count.toLocaleString()} Customers</div>
               <p>Scale Factor: <strong>${m.scale_factor}x</strong></p>
               <p>Overall Automation: <strong>${fmtPct(m.overall_automation_pct)}</strong></p>
+              <p style="font-size:0.8rem;color:var(--text-light);">Mix source per process: <em>observed</em> = real decision records (≥ ${m.min_observed_sample || 30} decided); <em>assumed</em> = scaled base rates.</p>
               
-              <h4 style="margin-top:20px;">Underwriting</h4>
+              <h4 style="margin-top:20px;">Underwriting ${sourceTag(m.underwriting)}</h4>
               <div class="progress-bar">
                 <div class="progress-fill" style="width:${m.underwriting.total_automation_pct * 100}%;">
                   ${fmtPct(m.underwriting.total_automation_pct)} Auto
@@ -5251,7 +5260,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
               </div>
               <p>Auto Approve: ${fmtPct(m.underwriting.auto_approve)} | Auto Decline: ${fmtPct(m.underwriting.auto_decline)} | Manual: ${fmtPct(m.underwriting.manual_review)}</p>
               
-              <h4 style="margin-top:20px;">Claims</h4>
+              <h4 style="margin-top:20px;">Claims ${sourceTag(m.claims)}</h4>
               <div class="progress-bar">
                 <div class="progress-fill" style="width:${m.claims.total_automation_pct * 100}%;">
                   ${fmtPct(m.claims.total_automation_pct)} Auto
@@ -5259,7 +5268,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
               </div>
               <p>Auto Approve: ${fmtPct(m.claims.auto_approve)} | Auto Decline: ${fmtPct(m.claims.auto_decline)} | Manual: ${fmtPct(m.claims.manual_review)}</p>
               
-              <h4 style="margin-top:20px;">Billing</h4>
+              <h4 style="margin-top:20px;">Billing ${sourceTag(m.billing)}</h4>
               <div class="progress-bar">
                 <div class="progress-fill" style="width:${m.billing.total_automation_pct * 100}%;">
                   ${fmtPct(m.billing.total_automation_pct)} Auto
