@@ -23,10 +23,13 @@ import web_portal.server as portal
 
 class ServerThread(threading.Thread):
     """Thread to run the HTTP server in background"""
-    def __init__(self, port):
+    def __init__(self, port: int = 0):
         super().__init__(daemon=True)
-        self.port = port
+        # Port 0 lets the kernel pick a free port so these self-hosted
+        # servers never collide with the conftest server, a dev server or a
+        # parallel pytest worker; the bound port is published as ``self.port``.
         self.httpd = HTTPServer(('127.0.0.1', port), portal.PortalHandler)
+        self.port = self.httpd.server_address[1]
 
     def run(self):
         self.httpd.serve_forever()
@@ -38,8 +41,8 @@ class ServerThread(threading.Thread):
 
 def test_server_starts():
     """Test server starts without errors"""
-    port = 8081
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     
@@ -51,8 +54,8 @@ def test_server_starts():
 
 def test_login_works():
     """Test basic login functionality"""
-    port = 8082
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -74,8 +77,8 @@ def test_login_works():
 
 def test_api_returns_json():
     """Test API endpoints return valid JSON"""
-    port = 8083
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -102,8 +105,8 @@ def test_api_returns_json():
 
 def test_admin_marketplace_page_contains_live_transaction_hooks():
     """Smoke test the admin marketplace page over HTTP."""
-    port = 8096
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
 
@@ -126,8 +129,8 @@ def test_admin_marketplace_page_contains_live_transaction_hooks():
 
 def test_supplier_portal_settlements_page_contains_live_pnl_hooks():
     """Smoke test the supplier portal page over HTTP."""
-    port = 8097
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
 
@@ -146,8 +149,8 @@ def test_supplier_portal_settlements_page_contains_live_pnl_hooks():
 
 def test_dashboard_health_wallet_contains_ai_search_supplier_offer_hooks():
     """Smoke test the customer dashboard health wallet AI search hooks."""
-    port = 8098
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
 
@@ -172,8 +175,8 @@ def test_dashboard_health_wallet_contains_ai_search_supplier_offer_hooks():
 
 def test_404_error_handling():
     """Test 404 errors are handled properly"""
-    port = 8084
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -191,8 +194,8 @@ def test_404_error_handling():
 
 def test_401_unauthorized():
     """Test 401 errors for unauthorized access"""
-    port = 8085
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -210,8 +213,8 @@ def test_401_unauthorized():
 
 def test_403_forbidden():
     """Test 403 errors for forbidden access"""
-    port = 8086
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -255,8 +258,8 @@ def test_403_forbidden():
 
 def test_policy_creation():
     """Test basic policy creation works"""
-    port = 8087
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -285,8 +288,8 @@ def test_policy_creation():
 
 def test_underwriting_workflow():
     """Test basic underwriting workflow"""
-    port = 8088
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -318,8 +321,8 @@ def test_underwriting_workflow():
 
 def test_claims_workflow():
     """Test basic claims workflow"""
-    port = 8089
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -357,8 +360,8 @@ def test_claims_workflow():
 
 def test_data_persists_in_memory():
     """Test data persists in memory during server lifetime"""
-    port = 8090
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -395,8 +398,8 @@ def test_data_persists_in_memory():
 
 def test_authentication_flow():
     """Test complete authentication flow"""
-    port = 8091
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -437,8 +440,8 @@ def test_authentication_flow():
 
 def test_billing_flow():
     """Test basic billing workflow"""
-    port = 8092
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -484,8 +487,8 @@ def test_billing_flow():
 
 def test_multiple_roles():
     """Test multiple user roles can login"""
-    port = 8093
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -514,8 +517,8 @@ def test_multiple_roles():
 
 def test_pagination_basic():
     """Test basic pagination functionality"""
-    port = 8094
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -548,8 +551,8 @@ def test_pagination_basic():
 
 def test_quick_end_to_end():
     """Quick end-to-end test of main workflow"""
-    port = 8095
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     

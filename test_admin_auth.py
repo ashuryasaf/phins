@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Test admin portal authentication"""
+import os
 import requests
 import json
 import sys
 
 # Test URL
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.environ.get("TEST_BASE_URL", "http://localhost:8000")
 REQUEST_TIMEOUT = 10
 
 # Demo accounts from server.py

@@ -3,11 +3,12 @@
 Integration test for risk-dashboard upload functionality
 Tests the full workflow: login -> upload -> verify
 """
+import os
 import requests
 import json
 import time
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.environ.get("TEST_BASE_URL", "http://localhost:8000")
 REQUEST_TIMEOUT = 10
 
 def test_risk_dashboard_integration():

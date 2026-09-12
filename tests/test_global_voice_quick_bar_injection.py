@@ -1,8 +1,10 @@
+import os
 from urllib.request import urlopen
 
 
 def _fetch(path: str) -> str:
-    with urlopen(f"http://localhost:8000{path}") as resp:
+    base = os.environ.get("TEST_BASE_URL", "http://localhost:8000")
+    with urlopen(f"{base}{path}") as resp:
         return resp.read().decode("utf-8")
 
 

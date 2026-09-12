@@ -11,12 +11,14 @@ customer_id and inflate or fabricate the signals downstream BI / actuarial
 
 from __future__ import annotations
 
+import os
+
 import requests
 
 import web_portal.server as portal
 
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.environ.get("TEST_BASE_URL", "http://localhost:8000")
 
 
 def _ensure_admin_user():

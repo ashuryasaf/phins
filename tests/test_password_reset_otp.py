@@ -13,6 +13,7 @@ These tests verify:
   - Data integrity: sessions are revoked after reset
 """
 
+import os
 import json
 import urllib.request
 import urllib.error
@@ -24,7 +25,7 @@ from services.otp_security_service import (
     OTPPurpose,
 )
 
-BASE = "http://localhost:8000"
+BASE = os.environ.get("TEST_BASE_URL", "http://localhost:8000")
 
 
 def _post(path, payload):

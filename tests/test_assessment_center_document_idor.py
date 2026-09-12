@@ -17,6 +17,8 @@ the document; admins still bypass.
 
 from __future__ import annotations
 
+import os
+
 import base64
 
 import requests
@@ -25,7 +27,7 @@ import web_portal.server as portal
 from web_portal import api_assessment_center as ac_api
 
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.environ.get("TEST_BASE_URL", "http://localhost:8000")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

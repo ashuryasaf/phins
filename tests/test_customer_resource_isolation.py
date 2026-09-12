@@ -1,10 +1,11 @@
+import os
 import json
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import web_portal.server as portal
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.environ.get("TEST_BASE_URL", "http://127.0.0.1:8000")
 
 
 def _get_json(url: str, token: str | None = None) -> tuple[int, str, dict]:

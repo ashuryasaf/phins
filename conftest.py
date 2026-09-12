@@ -69,6 +69,15 @@ os.environ.setdefault("PHINS_CONTRACT_PDF_BACKEND", "reportlab")
 os.environ.setdefault(
     "PHINS_BI_SNAPSHOT_DIR", str(Path(tempfile.gettempdir()) / "phins_test_bi_snapshots")
 )
+# Keep the central pricing store snapshot out of the repo's data/ directory
+# too. Tests that promote rate tables / configs persist through
+# ``actuarial_persistence``; writing into ``data/actuarial_store_state.json``
+# would leak one session's edits into the next (and into a dev server started
+# from the same checkout). A per-session path keeps every run hermetic.
+os.environ.setdefault(
+    "PHINS_ACTUARIAL_STATE_PATH",
+    str(Path(tempfile.gettempdir()) / f"phins_test_actuarial_state_{os.getpid()}.json"),
+)
 
 
 _httpd = None

@@ -10,6 +10,7 @@ Validates:
 - Data integrity: customer passwords remain unchanged when email overlaps
 """
 
+import os
 import json
 import urllib.request
 import urllib.error
@@ -21,7 +22,7 @@ from services.otp_security_service import (
     OTPPurpose,
 )
 
-BASE = "http://localhost:8000"
+BASE = os.environ.get("TEST_BASE_URL", "http://localhost:8000")
 
 
 def _post(path, payload):
