@@ -192,11 +192,19 @@ def test_apply_uploaded_table_to_store_round_trip():
         {'age_min': 30, 'age_max': 40, 'rate_per_1000': 0.9},
         {'age_min': 40, 'age_max': 50, 'rate_per_1000': 2.0},
     ]
-    result = apply_uploaded_table_to_store('mortality_rates', new_table, user='pytest')
-    assert result.get('success') is True
-    # Round-trip: rate at age 35 must come from the new table
-    rate = store.get_mortality_rate(35)
-    assert abs(rate - (0.9 / 1000.0)) < 1e-9
+    try:
+        result = apply_uploaded_table_to_store('mortality_rates', new_table, user='pytest')
+        assert result.get('success') is True
+        # Round-trip: rate at age 35 must come from the new table
+        rate = store.get_mortality_rate(35)
+        assert abs(rate - (0.9 / 1000.0)) < 1e-9
+    finally:
+        # The store is a process-wide singleton shared with every later test
+        # (pricing kernel, simulator, reserves). Leaving a two-band table in
+        # place zeroes mortality above age 50 and silently changes their
+        # numbers, so put the default table back.
+        store.reset_tables_to_default('mortality_rates', user='pytest')
+    assert abs(store.get_mortality_rate(35) - (1.2 / 1000.0)) < 1e-9
 
 
 # ----------------------------------------------------------------------------
@@ -204,10 +212,11 @@ def test_apply_uploaded_table_to_store_round_trip():
 # ----------------------------------------------------------------------------
 
 class _ServerThread(threading.Thread):
-    def __init__(self, port: int):
+    def __init__(self, port: int = 0):
         super().__init__(daemon=True)
-        self.port = port
+        # Port 0 -> kernel-assigned free port, published as ``self.port``.
         self.httpd = HTTPServer(('127.0.0.1', port), portal.PortalHandler)
+        self.port = self.httpd.server_address[1]
 
     def run(self):
         self.httpd.serve_forever()
@@ -236,8 +245,8 @@ def _get(url: str, token: str | None = None):
 
 
 def test_actuarial_endpoints_end_to_end(tmp_path):
-    port = 8174
-    srv = _ServerThread(port)
+    srv = _ServerThread()
+    port = srv.port
     srv.start()
     try:
         time.sleep(0.3)

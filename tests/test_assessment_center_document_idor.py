@@ -17,6 +17,8 @@ the document; admins still bypass.
 
 from __future__ import annotations
 
+import os
+
 import base64
 
 import requests
@@ -25,7 +27,7 @@ import web_portal.server as portal
 from web_portal import api_assessment_center as ac_api
 
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.environ.get("TEST_BASE_URL", "http://localhost:8000")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -42,15 +44,17 @@ def _ensure_admin_user():
     portal.USERS["admin"] = {**pw, "role": "admin", "name": "Admin User"}
 
 
-def _mark_test_port_initialized(port: int = 8000) -> None:
+def _mark_test_port_initialized(port: int | None = None) -> None:
     """Stop the dispatcher's per-port state wipe from clearing our seeded sessions.
 
     The conftest's ``pytest_runtest_setup`` hook clears
     ``_TEST_PORTS_INITIALIZED`` at the start of every test, so the next HTTP
-    request on port 8000 calls ``_ensure_test_port_state`` which clears
+    request on the embedded server port calls ``_ensure_test_port_state`` which clears
     ``SESSIONS``. We add the port back to the set after seeding so the test's
     first request keeps the seeded session intact.
     """
+    if port is None:
+        port = int(os.environ.get("TEST_PORT", "8000"))
     init_set = getattr(portal, "_TEST_PORTS_INITIALIZED", None)
     if isinstance(init_set, set):
         init_set.add(port)

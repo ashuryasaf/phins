@@ -23,10 +23,13 @@ import web_portal.server as portal
 
 
 class ServerThread(threading.Thread):
-    def __init__(self, port):
+    def __init__(self, port: int = 0):
         super().__init__(daemon=True)
-        self.port = port
+        # Port 0 -> kernel-assigned free port; published as ``self.port`` so
+        # the per-port state wipe and the base URL agree and no two suites
+        # (or a stray dev server) can collide on a fixed number.
         self.httpd = HTTPServer(('127.0.0.1', port), portal.PortalHandler)
+        self.port = self.httpd.server_address[1]
 
     def run(self):
         self.httpd.serve_forever()
@@ -124,8 +127,8 @@ def _inject_session(token, username, role, customer_id=''):
 
 def test_upload_document_with_document_type():
     """Test that document_type is stored during upload."""
-    port = 8200
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -161,8 +164,8 @@ def test_upload_document_with_document_type():
 
 def test_upload_all_document_types():
     """Test all standard document types can be uploaded."""
-    port = 8201
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -188,8 +191,8 @@ def test_upload_all_document_types():
 
 def test_documents_list_customer_sees_only_own():
     """Test that customers can only see their own documents."""
-    port = 8202
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -233,8 +236,8 @@ def test_documents_list_customer_sees_only_own():
 
 def test_documents_list_admin_sees_all():
     """Test that admin sees all customers' documents."""
-    port = 8203
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -261,10 +264,63 @@ def test_documents_list_admin_sees_all():
     srv.stop()
 
 
+def test_documents_list_tolerates_null_uploaded_at():
+    """A document stored without an upload timestamp must not 500 the listing.
+
+    Legacy / DB-hydrated vault rows can carry ``uploaded_at: None``; sorting
+    them against ISO strings used to raise ``TypeError`` and take the whole
+    documents list down for every caller.
+    """
+    srv = ServerThread()
+    port = srv.port
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token_admin = 'phins_test-admin-null-ts-token'
+    _inject_session(token_admin, 'admin', 'admin', '')
+
+    portal.POLICY_DOCUMENTS['DOC-NULL-TS'] = {
+        'id': 'DOC-NULL-TS',
+        'name': 'legacy_no_timestamp.pdf',
+        'type': 'application/pdf',
+        'size': 4,
+        'data': base64.b64encode(b'data').decode(),
+        'entity_type': 'general',
+        'document_type': 'medical',
+        'uploaded_by_customer': 'CUST-NULL-TS',
+        'uploaded_at': None,
+    }
+    portal.POLICY_DOCUMENTS['DOC-WITH-TS'] = {
+        'id': 'DOC-WITH-TS',
+        'name': 'dated.pdf',
+        'type': 'application/pdf',
+        'size': 4,
+        'data': base64.b64encode(b'data').decode(),
+        'entity_type': 'general',
+        'document_type': 'medical',
+        'uploaded_by_customer': 'CUST-NULL-TS',
+        'uploaded_at': datetime.now().isoformat(),
+    }
+    try:
+        status, resp = _get(base + '/api/documents/list', token_admin)
+        assert status == 200, resp
+        names = [d['name'] for d in resp['documents']]
+        assert 'legacy_no_timestamp.pdf' in names
+        assert 'dated.pdf' in names
+        # Dated documents sort first (newest first); undated sink to the end.
+        assert names.index('dated.pdf') < names.index('legacy_no_timestamp.pdf')
+    finally:
+        portal.POLICY_DOCUMENTS.pop('DOC-NULL-TS', None)
+        portal.POLICY_DOCUMENTS.pop('DOC-WITH-TS', None)
+        srv.stop()
+
+
 def test_documents_list_admin_filter_by_customer():
     """Test that admin can filter documents by customer_id."""
-    port = 8204
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -299,8 +355,8 @@ def test_documents_list_admin_filter_by_customer():
 
 def test_document_view_owner_can_access():
     """Test that document owner can view their document."""
-    port = 8205
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -332,8 +388,8 @@ def test_document_view_owner_can_access():
 
 def test_document_view_other_customer_denied():
     """Test that a different customer cannot view another's document."""
-    port = 8206
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -363,8 +419,8 @@ def test_document_view_other_customer_denied():
 
 def test_document_view_admin_can_access_any():
     """Test that admin can view any customer's document."""
-    port = 8207
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -396,8 +452,8 @@ def test_document_view_admin_can_access_any():
 
 def test_claims_adjuster_can_access_all_documents():
     """Claims adjuster role should have full document-center visibility."""
-    port = 8220
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -433,8 +489,8 @@ def test_claims_adjuster_can_access_all_documents():
 
 def test_staff_upload_can_assign_customer_owner_by_entity():
     """Admin/staff uploads linked to customer entity should be visible to that customer."""
-    port = 8221
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -466,8 +522,8 @@ def test_staff_upload_can_assign_customer_owner_by_entity():
 
 def test_admin_customers_for_documents_endpoint():
     """Test the admin-only endpoint to get customer list for filtering."""
-    port = 8208
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -492,8 +548,8 @@ def test_admin_customers_for_documents_endpoint():
 
 def test_document_view_requires_auth():
     """Test that unauthenticated requests are rejected."""
-    port = 8209
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -510,8 +566,8 @@ def test_document_view_requires_auth():
 
 def test_documents_list_includes_document_type_field():
     """Test that list response includes document_type for each document."""
-    port = 8210
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -542,8 +598,8 @@ def test_documents_list_includes_document_type_field():
 
 def test_analyze_medical_high_risk():
     """Analyze a medical document with terminal/high-risk content."""
-    port = 8211
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -589,8 +645,8 @@ def test_analyze_medical_high_risk():
 
 def test_analyze_death_certificate_genuine():
     """Analyze a death certificate with full authenticity markers."""
-    port = 8212
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -629,8 +685,8 @@ def test_analyze_death_certificate_genuine():
 
 def test_analyze_death_certificate_requires_inquiry():
     """Analyze a death certificate with insufficient authenticity markers."""
-    port = 8213
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -661,8 +717,8 @@ def test_analyze_death_certificate_requires_inquiry():
 
 def test_analyze_disability_certificate():
     """Analyze a disability certificate."""
-    port = 8214
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -700,8 +756,8 @@ def test_analyze_disability_certificate():
 
 def test_analyze_billing_overdue():
     """Analyze a billing statement with overdue indicators."""
-    port = 8215
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -730,8 +786,8 @@ def test_analyze_billing_overdue():
 
 def test_bill_payment_generates_accounting_book_and_invoice_documents():
     """Paying a bill should auto-generate accounting-book and invoice docs once."""
-    port = 8223
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -838,8 +894,8 @@ def test_bill_payment_generates_accounting_book_and_invoice_documents():
 
 def test_marketplace_purchase_generates_accounting_book_and_invoice_documents():
     """Service/product purchase should generate accounting documents linked to the purchase."""
-    port = 8224
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -903,8 +959,8 @@ def test_marketplace_purchase_generates_accounting_book_and_invoice_documents():
 
 def test_analyze_requires_auth():
     """Unauthenticated analyze request should be rejected."""
-    port = 8216
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -918,8 +974,8 @@ def test_analyze_requires_auth():
 
 def test_analyze_access_denied_for_other_customer():
     """Customer cannot analyze another customer's document."""
-    port = 8217
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -945,8 +1001,8 @@ def test_analyze_access_denied_for_other_customer():
 
 def test_analyze_admin_can_analyze_any_document():
     """Admin can analyze any customer's document."""
-    port = 8218
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -973,8 +1029,8 @@ def test_analyze_admin_can_analyze_any_document():
 
 def test_analyze_persists_result_in_list():
     """After analysis, ai_analysis should appear in /api/documents/list response."""
-    port = 8219
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
@@ -1034,8 +1090,8 @@ def test_seed_demo_documents_is_idempotent():
 
 def test_quote_submission_stores_registration_documents():
     """Quote submission must persist id/medical uploads into customer document center."""
-    port = 8222
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"

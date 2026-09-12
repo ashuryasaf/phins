@@ -38,13 +38,19 @@ from __future__ import annotations
 import http.client
 import http.server
 import json
+import os
 import socket
 
 import pytest
 
 
+def _test_port() -> int:
+    """Port of the conftest-embedded server (never assume 8000)."""
+    return int(os.environ.get("TEST_PORT", "8000"))
+
+
 def _get_response(path: str) -> tuple[int, bytes]:
-    conn = http.client.HTTPConnection("127.0.0.1", 8000, timeout=10)
+    conn = http.client.HTTPConnection("127.0.0.1", _test_port(), timeout=10)
     try:
         conn.request("GET", path)
         resp = conn.getresponse()
@@ -69,7 +75,7 @@ def test_billing_transactions_returns_200_with_data():
     # The first request to a port triggers ``_ensure_test_port_state`` which
     # clears in-memory stores. Mark the port as initialised up front so our
     # injected fixtures survive the next request.
-    portal._TEST_PORTS_INITIALIZED.add(8000)
+    portal._TEST_PORTS_INITIALIZED.add(_test_port())
 
     portal.CUSTOMERS["CUST-DISC-1"] = {
         "customer_id": "CUST-DISC-1",
@@ -105,7 +111,7 @@ def test_server_survives_client_disconnect_mid_request():
     when a peer disconnects abruptly (the same scenario the Railway log
     captured for /api/billing/transactions).
     """
-    sock = socket.create_connection(("127.0.0.1", 8000), timeout=5)
+    sock = socket.create_connection(("127.0.0.1", _test_port()), timeout=5)
     try:
         sock.sendall(b"GET /api/billing/transactions HTTP/1.1\r\nHost: localhost\r\n\r\n")
         try:

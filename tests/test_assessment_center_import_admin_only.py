@@ -11,12 +11,14 @@ customer_id and inflate or fabricate the signals downstream BI / actuarial
 
 from __future__ import annotations
 
+import os
+
 import requests
 
 import web_portal.server as portal
 
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.environ.get("TEST_BASE_URL", "http://localhost:8000")
 
 
 def _ensure_admin_user():
@@ -26,7 +28,9 @@ def _ensure_admin_user():
     portal.USERS["admin"] = {**pw, "role": "admin", "name": "Admin User"}
 
 
-def _mark_test_port_initialized(port: int = 8000) -> None:
+def _mark_test_port_initialized(port: int | None = None) -> None:
+    if port is None:
+        port = int(os.environ.get("TEST_PORT", "8000"))
     init_set = getattr(portal, "_TEST_PORTS_INITIALIZED", None)
     if isinstance(init_set, set):
         init_set.add(port)

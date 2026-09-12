@@ -21,10 +21,13 @@ import web_portal.server as portal
 
 class ServerThread(threading.Thread):
     """Thread to run the HTTP server in background"""
-    def __init__(self, port):
+    def __init__(self, port: int = 0):
         super().__init__(daemon=True)
-        self.port = port
+        # Port 0 -> kernel-assigned free port, published as ``self.port`` so
+        # suites never collide with each other, a dev server or a parallel
+        # pytest worker on a fixed number.
         self.httpd = HTTPServer(('127.0.0.1', port), portal.PortalHandler)
+        self.port = self.httpd.server_address[1]
 
     def run(self):
         self.httpd.serve_forever()
@@ -54,8 +57,8 @@ def _get(url, token=None):
 
 def test_policy_persistence():
     """Test policies persist in POLICIES dict"""
-    port = 8101
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -98,8 +101,8 @@ def test_policy_persistence():
 
 def test_customer_persistence():
     """Test customers persist in CUSTOMERS dict"""
-    port = 8102
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -150,8 +153,8 @@ def test_customer_persistence():
 
 def test_claims_persistence():
     """Test claims persist in CLAIMS dict"""
-    port = 8103
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -205,8 +208,8 @@ def test_claims_persistence():
 
 def test_underwriting_persistence():
     """Test underwriting applications persist in UNDERWRITING_APPLICATIONS dict"""
-    port = 8104
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -256,8 +259,8 @@ def test_underwriting_persistence():
 
 def test_sessions_persistence():
     """Test sessions persist in SESSIONS dict"""
-    port = 8105
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -314,8 +317,8 @@ def test_sessions_persistence():
 
 def test_billing_persistence():
     """Test billing records persist in BILLING dict"""
-    port = 8106
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -377,8 +380,8 @@ def test_billing_persistence():
 
 def test_data_relationships():
     """Test relationships between different data types persist correctly"""
-    port = 8107
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -446,8 +449,8 @@ def test_data_relationships():
 
 def test_data_survives_multiple_operations():
     """Test data persists through multiple operations"""
-    port = 8108
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -522,8 +525,8 @@ def test_data_survives_multiple_operations():
 
 def test_concurrent_data_access():
     """Test data remains consistent with concurrent access"""
-    port = 8109
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -559,8 +562,8 @@ def test_concurrent_data_access():
 
 def test_data_integrity_after_errors():
     """Test data integrity is maintained even after errors"""
-    port = 8110
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     

@@ -20,10 +20,13 @@ import web_portal.server as portal
 
 class ServerThread(threading.Thread):
     """Thread to run the HTTP server in background"""
-    def __init__(self, port):
+    def __init__(self, port: int = 0):
         super().__init__(daemon=True)
-        self.port = port
+        # Port 0 -> kernel-assigned free port, published as ``self.port`` so
+        # suites never collide with each other, a dev server or a parallel
+        # pytest worker on a fixed number.
         self.httpd = HTTPServer(('127.0.0.1', port), portal.PortalHandler)
+        self.port = self.httpd.server_address[1]
 
     def run(self):
         self.httpd.serve_forever()
@@ -56,8 +59,8 @@ def _post(url, payload, token=None):
 
 def test_approval_creates_billing():
     """Test that approving an underwriting application creates billing"""
-    port = 8050
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     
@@ -166,8 +169,8 @@ def test_approval_creates_billing():
 
 def test_approval_billing_with_multiple_policies():
     """Test billing works correctly with multiple policies"""
-    port = 8051
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     
@@ -264,8 +267,8 @@ def test_approval_billing_with_multiple_policies():
 
 def test_admin_approval_flow_desktop():
     """Test the complete admin approval flow as it appears on desktop"""
-    port = 8052
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     
@@ -360,8 +363,8 @@ def test_admin_approval_flow_desktop():
 
 def test_customer_validated_on_desktop():
     """Test customer can view active policy and billing on desktop"""
-    port = 8053
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.3)
     

@@ -28,10 +28,13 @@ import web_portal.server as portal
 
 class ServerThread(threading.Thread):
     """Thread to run the HTTP server in background"""
-    def __init__(self, port):
+    def __init__(self, port: int = 0):
         super().__init__(daemon=True)
-        self.port = port
+        # Port 0 -> kernel-assigned free port, published as ``self.port`` so
+        # suites never collide with each other, a dev server or a parallel
+        # pytest worker on a fixed number.
         self.httpd = HTTPServer(('127.0.0.1', port), portal.PortalHandler)
+        self.port = self.httpd.server_address[1]
 
     def run(self):
         self.httpd.serve_forever()
@@ -90,8 +93,8 @@ def _request_and_verify_registration_otp(base_url: str, email: str) -> str:
 
 def test_login_endpoint():
     """Test POST /api/login"""
-    port = 8031
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -156,8 +159,8 @@ def test_login_stores_v2_jti_in_session(monkeypatch):
     monkeypatch.setenv("SESSION_SECRET_KEY", "s" * 48)
     auth_tokens.set_secret_provider_for_tests(None)
 
-    port = 8039
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
 
@@ -368,8 +371,8 @@ def test_reconcile_fresh_start_with_db_reports_customer_query_failures(monkeypat
 
 
 def test_login_rejects_captcha_token_when_validation_errors(monkeypatch):
-    port = 8060
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
 
@@ -411,8 +414,8 @@ def test_login_rejects_captcha_token_when_validation_errors(monkeypatch):
 
 
 def test_login_requires_captcha_token_outside_test_mode(monkeypatch):
-    port = 8061
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
 
@@ -437,8 +440,8 @@ def test_login_requires_captcha_token_outside_test_mode(monkeypatch):
 
 
 def test_login_consumes_verified_captcha_token(monkeypatch):
-    port = 8062
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
 
@@ -486,8 +489,8 @@ def test_login_consumes_verified_captcha_token(monkeypatch):
 
 def test_register_endpoint():
     """Test POST /api/register (with invitation code)"""
-    port = 8032
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -542,8 +545,8 @@ def test_register_endpoint():
 
 def test_register_allows_legacy_invalid_verification_payload_when_invitation_is_valid():
     """Invitation-only registration should ignore legacy OTP payload fields."""
-    port = 8123
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
 
@@ -569,8 +572,8 @@ def test_register_allows_legacy_invalid_verification_payload_when_invitation_is_
 
 def test_registration_invitation_only_flow_preserves_data_integrity():
     """Invitation usage limits are enforced without any OTP dependency."""
-    port = 8125
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
 
@@ -655,8 +658,8 @@ def test_registration_invitation_only_flow_preserves_data_integrity():
 
 def test_otp_resend_endpoint_active():
     """OTP resend endpoint should actively issue a fresh code."""
-    port = 8124
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
 
@@ -694,8 +697,8 @@ def test_otp_resend_endpoint_active():
 
 def test_profile_endpoint():
     """Test GET /api/profile"""
-    port = 8033
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -728,8 +731,8 @@ def test_profile_endpoint():
 
 def test_policies_create_endpoint():
     """Test POST /api/policies/create"""
-    port = 8034
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -781,8 +784,8 @@ def test_policies_create_endpoint():
 
 def test_policies_list_endpoint():
     """Test GET /api/policies with pagination"""
-    port = 8035
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -820,8 +823,8 @@ def test_policies_list_endpoint():
 
 def test_policies_get_by_id_endpoint():
     """Test GET /api/policies?id={id}"""
-    port = 8036
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -857,8 +860,8 @@ def test_policies_get_by_id_endpoint():
 
 def test_underwriting_list_endpoint():
     """Test GET /api/underwriting"""
-    port = 8037
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -886,8 +889,8 @@ def test_underwriting_list_endpoint():
 
 def test_underwriting_approve_endpoint():
     """Test POST /api/underwriting/approve"""
-    port = 8038
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -923,8 +926,8 @@ def test_underwriting_approve_endpoint():
 
 def test_underwriting_reject_endpoint():
     """Test POST /api/underwriting/reject"""
-    port = 8039
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -963,8 +966,8 @@ def test_underwriting_reject_endpoint():
 
 def test_claims_create_endpoint():
     """Test POST /api/claims/create"""
-    port = 8040
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -1002,8 +1005,8 @@ def test_claims_create_endpoint():
 
 def test_claims_list_endpoint():
     """Test GET /api/claims with status filter"""
-    port = 8041
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -1047,8 +1050,8 @@ def test_claims_list_endpoint():
 
 def test_claims_approve_endpoint():
     """Test POST /api/claims/approve"""
-    port = 8042
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -1090,8 +1093,8 @@ def test_claims_approve_endpoint():
 
 def test_claims_reject_endpoint():
     """Test POST /api/claims/reject"""
-    port = 8043
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -1132,8 +1135,8 @@ def test_claims_reject_endpoint():
 
 def test_claims_pay_endpoint():
     """Test POST /api/claims/pay"""
-    port = 8044
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -1181,8 +1184,8 @@ def test_claims_pay_endpoint():
 
 def test_billing_create_endpoint():
     """Test POST /api/billing/create"""
-    port = 8045
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -1215,8 +1218,8 @@ def test_billing_create_endpoint():
 
 def test_billing_pay_endpoint():
     """Test POST /api/billing/pay"""
-    port = 8046
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -1263,8 +1266,8 @@ def test_billing_pay_endpoint():
 
 def test_customers_endpoint():
     """Test GET /api/customers"""
-    port = 8047
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -1291,8 +1294,8 @@ def test_customers_endpoint():
 
 def test_customer_status_endpoint():
     """Test GET /api/customer/status"""
-    port = 8048
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -1322,8 +1325,8 @@ def test_customer_status_endpoint():
 
 def test_metrics_endpoint():
     """Test GET /api/metrics"""
-    port = 8049
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -1341,8 +1344,8 @@ def test_metrics_endpoint():
 
 def test_metrics_endpoint_fallback_counts_partial_bills_as_outstanding():
     """Fallback metrics should count partial bills as outstanding, not pending bills."""
-    port = 8089
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     partial_id = 'TEST-METRICS-PARTIAL-001'
     pending_id = 'TEST-METRICS-PENDING-001'
     previous_bills = {
@@ -1401,8 +1404,8 @@ def test_metrics_endpoint_fallback_counts_partial_bills_as_outstanding():
 
 def test_metrics_endpoint_fallback_excludes_medical_assessment_from_pending_claims():
     """Fallback metrics should match the legacy pending-claims definition."""
-    port = 8091
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     pending_id = 'CLM-TEST-METRICS-PENDING-001'
     medical_id = 'CLM-TEST-METRICS-MEDICAL-001'
     previous_claims = {
@@ -1456,8 +1459,8 @@ def test_metrics_endpoint_fallback_excludes_medical_assessment_from_pending_clai
 
 def test_post_billing_stats_reports_unified_revenue():
     """POST /api/billing/stats should return policy revenue, not collected payments."""
-    port = 8090
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     policy_id = 'POL-TEST-BILLING-STATS-001'
     paid_bill_id = 'BILL-TEST-BILLING-STATS-PAID-001'
     partial_bill_id = 'BILL-TEST-BILLING-STATS-PARTIAL-001'
@@ -1566,8 +1569,8 @@ def test_post_billing_stats_reports_unified_revenue():
 
 def test_audit_endpoint():
     """Test GET /api/audit (admin only)"""
-    port = 8050
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -1601,8 +1604,8 @@ def test_audit_endpoint():
 
 def test_security_threats_endpoint():
     """Test GET /api/security/threats (admin only)"""
-    port = 8051
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -1629,8 +1632,8 @@ def test_security_threats_endpoint():
 
 def test_bi_actuary_endpoint():
     """Test GET /api/bi/actuary"""
-    port = 8052
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     
@@ -1659,8 +1662,8 @@ def test_bi_actuary_endpoint():
 
 def test_reinsurance_simulation_binding_updates_balance_sheet():
     """Simulation-backed reinsurance binding should book balance-sheet expense."""
-    port = 8152
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
 
@@ -1740,8 +1743,8 @@ def test_reinsurance_simulation_binding_updates_balance_sheet():
 
 def test_bi_underwriting_endpoint():
     """Test GET /api/bi/underwriting"""
-    port = 8053
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
 
@@ -1769,8 +1772,8 @@ def test_bi_underwriting_endpoint():
 
 def test_admin_balance_sheet_reflects_collected_premium_breakdown():
     """Admin balance sheet should expose collected premium totals and breakdown."""
-    port = 8054
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
 
@@ -1824,8 +1827,8 @@ def test_admin_balance_sheet_reflects_collected_premium_breakdown():
 
 def test_bi_accounting_endpoint():
     """Test GET /api/bi/accounting"""
-    port = 8054
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     

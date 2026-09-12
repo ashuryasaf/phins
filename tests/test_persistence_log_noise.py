@@ -12,6 +12,8 @@ Covers two fixes:
 
 from __future__ import annotations
 
+import os
+
 import io
 import urllib.request
 from contextlib import redirect_stdout, redirect_stderr
@@ -21,7 +23,7 @@ import pytest
 from web_portal import server as server_module
 
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.environ.get("TEST_BASE_URL", "http://localhost:8000")
 
 
 def _trigger_save():

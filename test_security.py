@@ -4,12 +4,13 @@ Security Testing Suite for PHINS Portal
 Tests injection attacks, rate limiting, IP blocking, and malicious activity detection
 """
 
+import os
 import json
 import time
 import requests
 from datetime import datetime
 
-BASE_URL = 'http://localhost:8000'
+BASE_URL = os.environ.get('TEST_BASE_URL', 'http://localhost:8000')
 
 def test_sql_injection():
     """Test SQL injection detection"""

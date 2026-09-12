@@ -1,8 +1,10 @@
+import os
 from urllib.request import Request, urlopen
 
 
 def test_favicon_serves_png_content_type():
-    req = Request("http://127.0.0.1:8000/favicon.ico")
+    base = os.environ.get("TEST_BASE_URL", "http://127.0.0.1:8000")
+    req = Request(f"{base}/favicon.ico")
     with urlopen(req, timeout=5) as resp:
         body = resp.read()
 

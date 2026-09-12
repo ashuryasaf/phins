@@ -99,6 +99,9 @@ def test_handle_otp_request_uses_demo_fallback_for_non_production_registration(m
 
     class _FakeOtpResult:
         success = True
+        # Mirrors ``SecurityResult.verification_id``: the delivery layer passes
+        # it to the SMS/2FA provider for verify-by-id flows.
+        verification_id = "OTP_TEST_DEV_FALLBACK"
 
         @staticmethod
         def to_dict():
@@ -150,6 +153,9 @@ def test_handle_otp_request_keeps_delivery_hard_fail_in_production(monkeypatch):
 
     class _FakeOtpResult:
         success = True
+        # Mirrors ``SecurityResult.verification_id``: the delivery layer passes
+        # it to the SMS/2FA provider for verify-by-id flows.
+        verification_id = "OTP_TEST_PROD_FAIL"
 
         @staticmethod
         def to_dict():

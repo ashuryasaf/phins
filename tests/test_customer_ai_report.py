@@ -20,10 +20,13 @@ import web_portal.server as portal
 
 
 class ServerThread(threading.Thread):
-    def __init__(self, port):
+    def __init__(self, port: int = 0):
         super().__init__(daemon=True)
-        self.port = port
+        # Port 0 -> kernel-assigned free port, published as ``self.port`` so
+        # suites never collide with each other, a dev server or a parallel
+        # pytest worker on a fixed number.
         self.httpd = HTTPServer(('127.0.0.1', port), portal.PortalHandler)
+        self.port = self.httpd.server_address[1]
 
     def run(self):
         self.httpd.serve_forever()
@@ -182,8 +185,8 @@ def _seed_data(customer_id):
 
 def test_ai_report_requires_auth():
     """Report endpoint rejects unauthenticated requests."""
-    port = 8180
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     try:
@@ -198,8 +201,8 @@ def test_ai_report_requires_auth():
 
 def test_ai_report_returns_valid_structure():
     """Report returns all expected sections with correct data."""
-    port = 8181
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     base = f"http://127.0.0.1:{port}"
@@ -255,8 +258,8 @@ def test_ai_report_returns_valid_structure():
 
 def test_ai_report_period_filtering():
     """Report respects period parameter."""
-    port = 8182
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     base = f"http://127.0.0.1:{port}"
@@ -274,8 +277,8 @@ def test_ai_report_period_filtering():
 
 def test_ai_report_custom_date_range():
     """Report accepts custom date range."""
-    port = 8183
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     base = f"http://127.0.0.1:{port}"
@@ -296,8 +299,8 @@ def test_ai_report_custom_date_range():
 
 def test_ai_report_no_mock_data():
     """With empty stores, report returns zeros, not fabricated data."""
-    port = 8184
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     base = f"http://127.0.0.1:{port}"
@@ -323,8 +326,8 @@ def test_ai_report_no_mock_data():
 
 def test_ai_report_customer_isolation():
     """Customer cannot see another customer's data."""
-    port = 8185
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     base = f"http://127.0.0.1:{port}"
@@ -358,8 +361,8 @@ def test_ai_report_exposes_demographics_for_unified_workbench():
     They come from the customer record first and fall back to the latest
     underwriting application, so this test seeds both to verify the merge.
     """
-    port = 8187
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     base = f"http://127.0.0.1:{port}"
@@ -409,8 +412,8 @@ def test_ai_report_falls_back_to_application_for_demographics():
     """When the customer record lacks demographics, fall back to the
     latest underwriting application so the Comprehensive Assessment bar
     still has lifestyle / age / smoking information to display."""
-    port = 8188
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     base = f"http://127.0.0.1:{port}"
@@ -448,8 +451,8 @@ def test_ai_report_falls_back_to_application_for_demographics():
 
 def test_ai_report_insights_generation():
     """AI insights reflect actual data conditions."""
-    port = 8186
-    srv = ServerThread(port)
+    srv = ServerThread()
+    port = srv.port
     srv.start()
     time.sleep(0.2)
     base = f"http://127.0.0.1:{port}"

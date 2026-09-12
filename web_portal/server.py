@@ -5023,8 +5023,13 @@ def append_customer_to_seeds(email: str, password: str, name: str, customer_id: 
         print(f"[SEEDS] Error appending customer to seeds: {e}")
 
 # ========== PERSISTENT INVITATION CODES STORAGE ==========
-# Store invitation codes in a git-tracked JSON file so they persist across Railway deployments
-INVITATION_CODES_FILE = os.path.join(os.path.dirname(__file__), '..', 'database', 'invitation_codes.json')
+# Store invitation codes in a git-tracked JSON file so they persist across Railway deployments.
+# ``PHINS_INVITATION_CODES_PATH`` redirects both load and save (the pytest
+# harness points it at a per-session temp copy so test runs never rewrite the
+# committed seed file).
+INVITATION_CODES_FILE = os.environ.get('PHINS_INVITATION_CODES_PATH') or os.path.join(
+    os.path.dirname(__file__), '..', 'database', 'invitation_codes.json'
+)
 
 def save_invitation_codes_to_file():
     """
@@ -11946,6 +11951,29 @@ def _password_reset_provider_deliverability() -> Tuple[bool, bool]:
         email_deliverable = get_active_email_provider_type() not in ('noop', 'mock')
         sms_deliverable = get_active_sms_provider_type() not in ('noop', 'mock')
         return email_deliverable, sms_deliverable
+    except Exception:
+        return True, True
+
+
+def _password_reset_provider_reports_delivery() -> Tuple[bool, bool]:
+    """Return (email_sends, sms_sends): what a *real* account's send would report.
+
+    Differs from :func:`_password_reset_provider_deliverability` only for the
+    ``mock`` provider: mock is not routed to (it never reaches a user) but it
+    does report a successful send, so a real account in a mock/test deployment
+    gets ``notification_sent: True``. The anti-enumeration decoy must mirror
+    that exact outcome, otherwise ``notification_sent`` becomes an oracle
+    that distinguishes existing accounts from unknown ones.
+    """
+    try:
+        from services.notification_service import (
+            get_active_email_provider_type,
+            get_active_sms_provider_type,
+        )
+        return (
+            get_active_email_provider_type() != 'noop',
+            get_active_sms_provider_type() != 'noop',
+        )
     except Exception:
         return True, True
 
@@ -22242,7 +22270,9 @@ For claims or questions, please contact:
                 except Exception as ac_err:
                     print(f"[assessment-center] List enrichment skipped: {ac_err}")
 
-                docs.sort(key=lambda d: d.get('uploaded_at', ''), reverse=True)
+                # ``uploaded_at`` can be stored as ``None`` (legacy/DB-hydrated
+                # rows); comparing None with str would 500 the whole listing.
+                docs.sort(key=lambda d: str(d.get('uploaded_at') or ''), reverse=True)
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
@@ -36202,6 +36232,7 @@ For claims or questions, please contact:
                 # when SMTP is unconfigured). Computed once and shared by the
                 # decoy so non-existent accounts mirror the real channel choice.
                 email_deliverable, sms_provider_deliverable = _password_reset_provider_deliverability()
+                email_reports_sent, sms_reports_sent = _password_reset_provider_reports_delivery()
 
                 def _decoy_reset_response():
                     """Structurally identical to a real response to prevent user enumeration.
@@ -36227,11 +36258,11 @@ For claims or questions, please contact:
                     # deliver, the decoy reports the same non-delivery wording
                     # and ``notification_sent: False`` that a real account gets.
                     if decoy_channel == 'sms':
-                        decoy_sent = sms_provider_deliverable
+                        decoy_sent = sms_reports_sent
                     elif decoy_channel == 'both':
-                        decoy_sent = email_deliverable or sms_provider_deliverable
+                        decoy_sent = email_reports_sent or sms_reports_sent
                     else:
-                        decoy_sent = email_deliverable
+                        decoy_sent = email_reports_sent
                     if decoy_channel == 'sms':
                         if decoy_sent:
                             decoy_message = 'If the account exists, a verification code has been sent to the registered phone number.'
