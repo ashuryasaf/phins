@@ -291,9 +291,13 @@ def test_unicorn_document_carries_branded_letterhead(fname):
 # ---------------------------------------------------------------------------
 
 def _templated_docs():
+    # The 26 per-jurisdiction pitch / NDA copies were consolidated into the
+    # parameterised capital-markets-pitch.html + nda.html (driven by
+    # /jurisdictions.json); the globs still pick up any per-country copy that
+    # is (re)introduced so it inherits the branding checks.
     docs = sorted(STATIC.glob("*capital-markets-pitch.html"))
     docs += sorted(STATIC.glob("*-prospectus.html"))
-    docs += sorted(STATIC.glob("nda-*.html"))
+    docs += sorted(STATIC.glob("nda*.html"))
     docs += [STATIC / "PHINS_Business_Plan_Presentation.html"]
     return docs
 
@@ -301,11 +305,18 @@ def _templated_docs():
 def test_templated_docs_discovered():
     names = {p.name for p in _templated_docs()}
     # representative anchors so the glob never silently goes empty
-    for expected in ("israel-capital-markets-pitch.html",
-                     "israel-isa-prospectus.html", "nda-israel.html",
+    for expected in ("capital-markets-pitch.html", "nda.html",
+                     "israel-isa-prospectus.html", "albania-afsa-prospectus.html",
                      "PHINS_Business_Plan_Presentation.html"):
         assert expected in names
-    assert len(names) >= 55
+    assert len(names) >= 5
+    # the parameterised pages must still serve every jurisdiction the
+    # per-country copies used to cover
+    import json
+    jurisdictions = json.loads(_read(STATIC / "jurisdictions.json"))["jurisdictions"]
+    ids = {j["id"] for j in jurisdictions}
+    assert {"israel", "usa", "albania"} <= ids
+    assert len(ids) >= 26
 
 
 @pytest.mark.parametrize("doc_path", _templated_docs(), ids=lambda p: p.name)

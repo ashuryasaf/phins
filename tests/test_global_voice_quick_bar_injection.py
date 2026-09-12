@@ -21,10 +21,17 @@ def test_ui_clarity_script_injected_on_login_html():
 
 
 def test_supplier_portal_supports_query_param_tab_activation():
+    # ?tab=<offers|orders|settlements|profile> deep links (used by the voice
+    # quick bar) activate the matching tab on load and fall back to "offers".
     content = _fetch("/supplier-portal.html")
     assert "function selectSupplierPortalTab(tabId)" in content
-    assert "const requestedTab = new URLSearchParams(window.location.search).get('tab');" in content
-    assert "selectSupplierPortalTab(requestedTab || 'offers');" in content
+    assert "function getSupplierPortalRequestedTab()" in content
+    assert "new URLSearchParams(window.location.search || '')" in content
+    assert "params.get('tab')" in content
+    assert "allowedTabs.has(normalized) ? normalized : 'offers'" in content
+    assert "selectSupplierPortalTab(getSupplierPortalRequestedTab());" in content
+    # clicking a tab keeps the URL shareable
+    assert "url.searchParams.set('tab', targetTab);" in content
 
 
 def test_ui_clarity_asset_contains_floating_voice_quick_actions_bootstrap():
@@ -73,10 +80,11 @@ def test_ui_clarity_asset_contains_supplier_voice_actions_and_hierarchy():
     assert 'id: "supplier_new_offer"' in content
     assert 'id: "supplier_logout"' in content
     assert "/supplier-portal.html" in content
-    assert "/supplier-portal.html?tab=orders" in content
-    assert "/supplier-portal.html?tab=settlements" in content
-    assert "/supplier-portal.html?tab=offers" in content
-    assert "/supplier-portal.html?tab=profile" in content
+    # supplier actions deep-link to portal tabs via buildSupplierPortalUrl
+    assert "function buildSupplierPortalUrl(tabId)" in content
+    assert "`/supplier-portal.html?tab=${encodeURIComponent(safeTab)}`" in content
+    for tab in ("orders", "settlements", "offers", "profile"):
+        assert f'buildSupplierPortalUrl("{tab}")' in content, tab
     assert "Opening supplier offer form." in content
     assert "Refreshing supplier dashboard." in content
     assert "Refreshing supplier settlements." in content
@@ -84,7 +92,10 @@ def test_ui_clarity_asset_contains_supplier_voice_actions_and_hierarchy():
     assert "Refreshing supplier offers." in content
     assert "supplier dispute" in content
     assert "supplier refund" in content
-    assert "supplier settlement status" in content
+    # "supplier settlement status" is routed by the substring intents
+    # "supplier settlement" / "settlement status" (both open the settlements tab)
+    assert 'q.includes("supplier settlement")' in content
+    assert 'q.includes("settlement status")' in content
 
 
 def test_ui_clarity_asset_requires_authenticated_session_before_render():

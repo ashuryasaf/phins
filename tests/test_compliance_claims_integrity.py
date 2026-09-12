@@ -46,17 +46,54 @@ def test_business_plan_presentation_copies_stay_in_sync():
     assert static_copy == source_copy
 
 
+AMBER_IN_PROGRESS = "#f59e0b"
+COMPLETION_GLYPHS = ("\u2705", "\u2713", "\u2714")  # ✅ ✓ ✔
+INVESTOR_PITCH_SURFACES = (
+    "pitch-dashboard.html",
+    "unicorn-investor-deck.html",
+    "unicorn-executive-summary.html",
+    "seed-investor-deck.html",
+)
+
+
 def test_pitch_pages_do_not_check_off_soc2():
-    # The IT Security Audit line mentions "SOC 2 Type II in progress", so it
-    # must carry the amber in-progress marker rather than a green checkmark.
-    pitch_pages = sorted(STATIC.glob("*-capital-markets-pitch.html"))
-    assert len(pitch_pages) >= 20, "pitch pages missing from static root"
+    # The 26 per-jurisdiction copies were consolidated into one parameterised
+    # capital-markets-pitch.html rendered from /jurisdictions.json; the glob
+    # still catches any per-country copy that is (re)introduced. Decorative
+    # glyphs were removed platform-wide, so the checklist's IT Security Audit
+    # line ("SOC 2 Type II in progress") must carry the amber in-progress
+    # marker rather than any completion checkmark.
+    import json
+
+    pitch_pages = sorted(STATIC.glob("*capital-markets-pitch.html"))
+    assert STATIC / "capital-markets-pitch.html" in pitch_pages, \
+        "parameterised pitch page missing from static root"
+    seen_in_progress = False
     for page in pitch_pages:
         text = _read(page)
+        assert "Type II Certified" not in text, page.name
         for line in text.splitlines():
             if "SOC 2 Type II in progress" in line:
-                assert "\u2705" not in line, f"{page.name}: {line.strip()}"
-                assert "\U0001f504" in line, f"{page.name}: {line.strip()}"
+                seen_in_progress = True
+                for glyph in COMPLETION_GLYPHS:
+                    assert glyph not in line, f"{page.name}: {line.strip()}"
+                assert AMBER_IN_PROGRESS in line, f"{page.name}: {line.strip()}"
+    assert seen_in_progress, "pitch page lost its SOC 2 in-progress line"
+
+    # every jurisdiction the deleted copies used to cover must still be served
+    # by the parameterised page
+    jurisdictions = json.loads(_read(STATIC / "jurisdictions.json"))["jurisdictions"]
+    assert len(jurisdictions) >= 26
+    assert {"israel", "usa"} <= {j["id"] for j in jurisdictions}
+
+    # the decks / pitch dashboard may describe a compliance-ready architecture
+    # but must never claim the attestation is complete
+    for rel in INVESTOR_PITCH_SURFACES:
+        for line in _read(STATIC / rel).splitlines():
+            if "SOC 2" in line or "SOC2" in line:
+                assert "Certified" not in line, f"{rel}: {line.strip()}"
+                for glyph in COMPLETION_GLYPHS:
+                    assert glyph not in line, f"{rel}: {line.strip()}"
 
 
 def test_legal_compliance_register_still_tracks_soc2():

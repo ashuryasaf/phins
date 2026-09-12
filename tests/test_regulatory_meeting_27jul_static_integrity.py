@@ -182,9 +182,12 @@ def test_meeting_brief_pdf_preserves_content():
 
 def test_dashboard_offers_meeting_brief_pdf():
     pd = _read(STATIC / "pitch-dashboard.html")
-    # open action points at the PDF
-    assert ('/investor-docs/regulatory-meeting-27jul-brief.pdf" target="_blank"'
-            ' rel="noopener" class="exec-dl-btn">📄 Open Meeting Brief') in pd
+    # open action points at the PDF (decorative emoji were removed from
+    # investor chrome, so match the label itself)
+    import re
+    assert re.search(
+        r'/investor-docs/regulatory-meeting-27jul-brief\.pdf" target="_blank"'
+        r' rel="noopener" class="exec-dl-btn">\s*Open Meeting Brief', pd)
     # an explicit downloadable PDF link is present
     assert ('/investor-docs/regulatory-meeting-27jul-brief.pdf" target="_blank"'
             ' rel="noopener" class="exec-dl-btn" download') in pd

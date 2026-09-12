@@ -158,7 +158,10 @@ def test_dashboard_health_wallet_contains_ai_search_supplier_offer_hooks():
     req = Request(base + "/dashboard.html")
     with urlopen(req) as resp:
         body = resp.read().decode("utf-8")
-        assert "🤖 AI Search Offers" in body
+        # decorative emoji were removed from operational dashboards; the
+        # quick-action button and its handler wiring remain
+        assert "AI Search Offers" in body
+        assert 'onclick="openHealthWalletAISearch()"' in body
         assert 'id="health-wallet-ai-search"' in body
         assert 'id="health-ai-search-query"' in body
         assert "Diabetes supplies" in body
