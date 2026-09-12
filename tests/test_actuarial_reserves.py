@@ -192,11 +192,19 @@ def test_apply_uploaded_table_to_store_round_trip():
         {'age_min': 30, 'age_max': 40, 'rate_per_1000': 0.9},
         {'age_min': 40, 'age_max': 50, 'rate_per_1000': 2.0},
     ]
-    result = apply_uploaded_table_to_store('mortality_rates', new_table, user='pytest')
-    assert result.get('success') is True
-    # Round-trip: rate at age 35 must come from the new table
-    rate = store.get_mortality_rate(35)
-    assert abs(rate - (0.9 / 1000.0)) < 1e-9
+    try:
+        result = apply_uploaded_table_to_store('mortality_rates', new_table, user='pytest')
+        assert result.get('success') is True
+        # Round-trip: rate at age 35 must come from the new table
+        rate = store.get_mortality_rate(35)
+        assert abs(rate - (0.9 / 1000.0)) < 1e-9
+    finally:
+        # The store is a process-wide singleton shared with every later test
+        # (pricing kernel, simulator, reserves). Leaving a two-band table in
+        # place zeroes mortality above age 50 and silently changes their
+        # numbers, so put the default table back.
+        store.reset_tables_to_default('mortality_rates', user='pytest')
+    assert abs(store.get_mortality_rate(35) - (1.2 / 1000.0)) < 1e-9
 
 
 # ----------------------------------------------------------------------------
