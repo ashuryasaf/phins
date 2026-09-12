@@ -3474,8 +3474,12 @@
           `VaR99 ${adminMcNum(stress.var99_multiple_of_annual_expected, 2)}× · not a PHINS rule`));
         const ibnrPct = ibnr.reserve_config_ibnr_pct_of_claims;
         const lrAssumption = act.loss_ratio_assumption_pct;
+        const ibnrTarget = ibnr.probability_of_sufficiency_target;
+        const ibnrVerdict = ibnr.reserve_config_ibnr_meets_target === undefined ? ''
+          : (ibnr.reserve_config_ibnr_meets_target ? ' ✓' : ' ✗');
+        const ibnrTargetText = ibnrTarget === undefined || ibnrTarget === null ? '' : ` · target ${adminMcPct(ibnrTarget, 0)}${ibnrVerdict}`;
         cards.push(adminMcCard(`IBNR ${ibnrPct === undefined || ibnrPct === null ? '' : adminMcNum(ibnrPct, 1) + '% '}sufficient`, adminMcPct(ibnr.probability_reserve_config_ibnr_sufficient), '#e8f5e9',
-          `P(Y1 LR > ${lrAssumption === undefined || lrAssumption === null ? '' : adminMcNum(lrAssumption, 0) + '%'} assumption) ${adminMcPct(act.probability_year1_lr_exceeds_65pct_assumption)}`));
+          `P(Y1 LR > ${lrAssumption === undefined || lrAssumption === null ? '' : adminMcNum(lrAssumption, 0) + '%'} assumption) ${adminMcPct(act.probability_year1_lr_exceeds_65pct_assumption)}${ibnrTargetText}`));
       }
       if (claims) {
         const live = claims.live_thresholds || {};
@@ -3485,8 +3489,9 @@
       if (sales) {
         const cps = Array.isArray(sales.checkpoints) ? sales.checkpoints : [];
         const y1 = cps.find(c => Number(c.month) === 12) || cps[cps.length - 1] || {};
+        const basis = sales.phins_forecast?.growth_basis === 'observed_policy_history' ? 'observed history' : 'legacy default';
         cards.push(adminMcCard('Sales forecast met (12m)', adminMcPct(y1.probability_meets_deterministic), '#ede7f6',
-          `assumes ${adminMcPct(sales.phins_forecast?.monthly_growth)}/month`));
+          `${adminMcPct(sales.phins_forecast?.monthly_growth, 2)}/month · ${basis}`));
       }
       if (ai) {
         const best = ai.lowest_cost_threshold || {};
@@ -3500,6 +3505,53 @@
     // Last sealed report; next-move actions are resolved from it by id so the UI
     // never applies anything that is not in the evaluated proposal.
     let adminMcLastReport = null;
+
+    // Seed policy. The quick-action button draws a fresh seed on every click so
+    // each run is a new Monte Carlo draw (the seed is printed and any run can be
+    // reproduced with scripts/run_monte_carlo_evaluation.py --seed N). After an
+    // audited config change the re-run pins the previous seed so the only
+    // difference between the two sealed reports is the configuration.
+    let adminMcPinnedSeed = null;
+
+    function adminMcFreshSeed() {
+      // 31-bit positive integer; the API bounds and echoes it in parameters.seed.
+      return (Date.now() % 2147483647) ^ Math.floor(Math.random() * 65536);
+    }
+
+    function adminMcRerun(sameSeed) {
+      adminMcPinnedSeed = (sameSeed && adminMcLastReport && adminMcLastReport.parameters)
+        ? adminMcLastReport.parameters.seed : null;
+      adminAssistantQuickAction('run_monte_carlo_evaluation');
+    }
+
+    // What the evaluation read from the live platform (read-only) vs. what it
+    // simulated, so the synthetic/live boundary is visible on the panel.
+    function adminMcLiveInputsHtml(observed, results) {
+      const o = observed || {};
+      const sales = (results || {}).sales || {};
+      const pf = sales.phins_forecast || {};
+      const og = pf.observed_growth || {};
+      const mix = (o.automation_mix || {}).claims || {};
+      const smoke = o.smoking_experience || {};
+      if (!o.used) {
+        return `<div style="font-size:0.78rem;color:#546e7a;margin:6px 0 10px;">Population: synthetic, seeded. Live inputs: none supplied — every metric is simulated against the live PHINS rules and tables.</div>`;
+      }
+      const growthText = pf.growth_basis === 'observed_policy_history'
+        ? `growth ${adminMcPct(pf.monthly_growth, 2)}/month from ${og.history_months} months of policy history`
+        : `growth basis legacy ${adminMcPct(pf.legacy_default_monthly_growth ?? 0.05, 0)}/month (history ${og.history_months ?? 0}/${og.min_history_months ?? 6} months)`;
+      const mixText = mix.sufficient
+        ? `claims decision mix observed (${mix.sample_size} decided)`
+        : `claims decision mix assumed (${mix.sample_size ?? 0} decided, need 30)`;
+      const smokeText = smoke.sufficient
+        ? `smoker/nonsmoker experience observed (${smoke.smoker_lives}/${smoke.nonsmoker_lives} lives)`
+        : `smoker experience insufficient (${smoke.smoker_lives ?? 0}/${smoke.nonsmoker_lives ?? 0} lives)`;
+      return `<div style="font-size:0.78rem;color:#37474f;margin:6px 0 10px;padding:8px 10px;border-radius:8px;background:#f5f7fa;">
+        <span style="font-weight:600;">Population:</span> synthetic, seeded (rules and tables are live).
+        <span style="font-weight:600;margin-left:6px;">Live inputs read (read-only):</span>
+        ${Number(o.policies_active || 0).toLocaleString()} active of ${Number(o.policies_total || 0).toLocaleString()} policies (MRR ${Number(o.observed_mrr || 0).toLocaleString()}),
+        ${Number(o.claims_total || 0).toLocaleString()} claims · ${adminAssistantEscapeHtml(growthText)} · ${adminAssistantEscapeHtml(mixText)} · ${adminAssistantEscapeHtml(smokeText)}.
+      </div>`;
+    }
 
     const ADMIN_MC_STATUS_STYLE = {
       consistent: { bg: '#e8f5e9', fg: '#2e7d32', label: 'Consistent' },
@@ -3661,7 +3713,7 @@
           <div style="font-weight:600;color:${verified ? '#2e7d32' : '#ef6c00'};">${verified ? 'Applied and verified' : 'Applied, but read-back differs from proposal'} · config ${adminAssistantEscapeHtml(String(applied.current_version || ''))} / ${adminAssistantEscapeHtml(String(newCfg.config_version || ''))} · ${persistNote}</div>
           <div style="color:#546e7a;margin-top:3px;">Audit reason recorded with results_sha256 ${adminAssistantEscapeHtml(seal.slice(0, 16))}…</div>
           <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
-            <button class="admin-mc-btn primary" onclick="adminAssistantQuickAction('run_monte_carlo_evaluation')">Re-run evaluation</button>
+            <button class="admin-mc-btn primary" onclick="adminMcRerun(true)" title="Same seed as this report: only the configuration differs between the two sealed runs">Re-run evaluation (same seed)</button>
             <button class="admin-mc-btn" onclick="adminMcOpenSource('${adminAssistantEscapeHtml(move.id)}')">Open config &amp; versions</button>
           </div>
         </div>`);
@@ -3683,8 +3735,11 @@
         panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
       const t0 = performance.now();
+      const seed = adminMcPinnedSeed !== null ? adminMcPinnedSeed : adminMcFreshSeed();
+      const seedPinned = adminMcPinnedSeed !== null;
+      adminMcPinnedSeed = null;
       try {
-        const qs = new URLSearchParams({ lives: String(p.lives), trials: String(p.trials), bootstrap: String(p.bootstrap) });
+        const qs = new URLSearchParams({ lives: String(p.lives), trials: String(p.trials), bootstrap: String(p.bootstrap), seed: String(seed) });
         const response = await fetch(`/api/bi/monte-carlo-evaluation?${qs.toString()}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -3706,12 +3761,15 @@
             <div style="font-weight:700;font-size:1.02rem;margin-bottom:6px;">Monte Carlo Methodology Evaluation</div>
             <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;font-size:0.78rem;">
               <span style="padding:3px 8px;border-radius:12px;background:${integrityOk ? '#e8f5e9' : '#ffebee'};color:${integrityOk ? '#2e7d32' : '#c62828'};font-weight:600;">${integrityOk ? 'Integrity: read-only, no side effects' : 'Integrity check failed'}</span>
-              <span style="padding:3px 8px;border-radius:12px;background:#eceff1;color:#37474f;">seed ${adminAssistantEscapeHtml(String(params.seed ?? ''))}</span>
+              <span style="padding:3px 8px;border-radius:12px;background:#eceff1;color:#37474f;" title="${seedPinned ? 'Pinned: same seed as the previous report' : 'Fresh draw: a new seed on every click; reproduce with scripts/run_monte_carlo_evaluation.py --seed'}">seed ${adminAssistantEscapeHtml(String(params.seed ?? ''))} · ${seedPinned ? 'pinned' : 'fresh draw'}</span>
               <span style="padding:3px 8px;border-radius:12px;background:#eceff1;color:#37474f;">${Number(params.lives || 0).toLocaleString()} lives × ${Number(params.trials || 0).toLocaleString()} trials</span>
               <span style="padding:3px 8px;border-radius:12px;background:#eceff1;color:#37474f;">${adminAssistantEscapeHtml(String(data.engine_version || ''))}</span>
               <span style="padding:3px 8px;border-radius:12px;background:#eceff1;color:#37474f;">${elapsedMs}ms</span>
               <span style="padding:3px 8px;border-radius:12px;background:#eceff1;color:#37474f;font-family:monospace;" title="results_sha256">sha ${adminAssistantEscapeHtml(shortSha)}…</span>
+              <button class="admin-mc-btn" style="padding:2px 8px;font-size:0.76rem;" onclick="adminMcRerun(true)" title="Repeat this exact draw (same seed) — use after a config change">Re-run same seed</button>
+              <button class="admin-mc-btn" style="padding:2px 8px;font-size:0.76rem;" onclick="adminMcRerun(false)" title="New seed: a fresh Monte Carlo draw against the same rules">New draw</button>
             </div>
+            ${adminMcLiveInputsHtml(data.observed_inputs, results)}
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px;">
               ${adminMcModuleCards(results)}
             </div>
