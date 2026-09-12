@@ -23,6 +23,7 @@ Public API (consumed by `web_portal/api_bi_analytics.py`):
 
 import hashlib
 import json
+import math
 import statistics
 import threading
 import time
@@ -43,6 +44,118 @@ logger = logging.getLogger('phins.bi_analytics')
 SMOKING_SLICE_MIN_LIVES = 30
 SMOKING_COHORTS = ('smoker', 'former', 'nonsmoker', 'unknown')
 _INCURRED_CLAIM_STATUSES = ('approved', 'paid', 'closed')
+
+# Revenue forecast defaults. The growth default is the legacy 5 %/month
+# assumption; it is only used when the caller passes no rate AND the book has
+# fewer than FORECAST_MIN_HISTORY_MONTHS complete months of policy history.
+FORECAST_DEFAULT_MONTHLY_GROWTH = 0.05
+FORECAST_DEFAULT_MONTHLY_GROWTH_SD = 0.04  # matches the Monte Carlo world default
+FORECAST_MIN_HISTORY_MONTHS = 6
+FORECAST_MAX_GROWTH_WINDOW_MONTHS = 12
+_POLICY_START_KEYS = ('start_date', 'effective_date', 'approval_date', 'created_at')
+
+
+def _parse_month(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        text = str(value).strip().replace('Z', '+00:00')
+        try:
+            dt = datetime.fromisoformat(text)
+        except ValueError:
+            try:
+                dt = datetime.strptime(text[:10], '%Y-%m-%d')
+            except ValueError:
+                return None
+    return dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+
+
+def _add_months(dt: datetime, n: int) -> datetime:
+    month_index = dt.month - 1 + n
+    return dt.replace(year=dt.year + month_index // 12, month=month_index % 12 + 1)
+
+
+def _months_between(a: datetime, b: datetime) -> int:
+    return (b.year - a.year) * 12 + (b.month - a.month)
+
+
+def observed_monthly_growth(policies: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Observed monthly MRR growth from policy start dates (read-only).
+
+    Builds the cumulative gross-adds MRR series by start month (every policy
+    that was ever issued, so cancellations do not distort the *growth*
+    estimate; churn is applied separately from the lapse table) up to the
+    last complete month, then takes the geometric mean growth over the last
+    ``FORECAST_MAX_GROWTH_WINDOW_MONTHS`` months of that series. Requires
+    ``FORECAST_MIN_HISTORY_MONTHS`` complete months from the first start
+    month; otherwise ``sufficient`` is False and no rate is returned.
+    """
+    now = (now or datetime.now(timezone.utc)).replace(tzinfo=None)
+    current_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    adds: Dict[datetime, float] = defaultdict(float)
+    for policy in (policies or {}).values():
+        if not isinstance(policy, dict):
+            continue
+        start = next((_parse_month(policy.get(k)) for k in _POLICY_START_KEYS if policy.get(k)), None)
+        if start is None or start >= current_month:
+            continue  # no date, or in the current (incomplete) month / future
+        adds[start] += kpi._num(policy.get('monthly_premium'))
+    if not adds:
+        return {'sufficient': False, 'history_months': 0, 'monthly_growth': None,
+                'reason': 'no policies with a start date before the current month'}
+
+    first = min(adds)
+    last_complete = _add_months(current_month, -1)
+    history_months = _months_between(first, last_complete) + 1
+    series: List[float] = []
+    cumulative = 0.0
+    month = first
+    while month <= last_complete:
+        cumulative += adds.get(month, 0.0)
+        series.append(cumulative)
+        month = _add_months(month, 1)
+
+    result: Dict[str, Any] = {
+        'history_months': history_months,
+        'first_start_month': first.strftime('%Y-%m'),
+        'last_complete_month': last_complete.strftime('%Y-%m'),
+        'mrr_gross_adds_last_complete_month': round(series[-1], 2),
+    }
+    if history_months < FORECAST_MIN_HISTORY_MONTHS:
+        result.update({'sufficient': False, 'monthly_growth': None,
+                       'reason': f'need {FORECAST_MIN_HISTORY_MONTHS} complete months of policy history'})
+        return result
+
+    window = min(FORECAST_MAX_GROWTH_WINDOW_MONTHS, len(series) - 1)
+    start_val, end_val = series[-1 - window], series[-1]
+    if start_val <= 0 or end_val <= 0:
+        result.update({'sufficient': False, 'monthly_growth': None,
+                       'reason': 'no MRR at the start of the growth window'})
+        return result
+    growth = (end_val / start_val) ** (1.0 / window) - 1.0
+    step_growth = [series[i] / series[i - 1] - 1.0 for i in range(len(series) - window, len(series))
+                   if series[i - 1] > 0]
+    sd = statistics.pstdev(step_growth) if len(step_growth) >= 2 else None
+    result.update({
+        'sufficient': True,
+        'monthly_growth': round(growth, 6),
+        'monthly_growth_sd': round(sd, 6) if sd is not None else None,
+        'window_months': window,
+        'basis': 'geometric mean monthly growth of cumulative gross-adds MRR over the window',
+    })
+    return result
+
+
+def _lapse_rate_year1_from_store() -> tuple:
+    """Year-1 lapse rate from the actuarial store, with a labelled fallback."""
+    try:
+        from services.actuarial_service import get_actuarial_store
+        store = get_actuarial_store()
+        return float(store.get_lapse_rate(1)), f'actuarial_lapse_table:{getattr(store, "current_version", "")}'
+    except Exception:
+        return 0.08, 'default_lapse_year1'
 
 
 def _normalize_smoking(raw: Any) -> str:
@@ -995,31 +1108,102 @@ class BIAnalyticsService:
     def predict_revenue_forecast(
         self,
         policies: Dict[str, Any],
-        historical_growth_rate: float = 0.05,
+        historical_growth_rate: Optional[float] = FORECAST_DEFAULT_MONTHLY_GROWTH,
         months_ahead: int = 12,
+        lapse_rate_year1: Optional[float] = None,
+        now: Optional[datetime] = None,
     ) -> Dict[str, Any]:
-        """Predict revenue forecast for the next N months."""
+        """Predict revenue forecast for the next N months.
+
+        ``forecast`` keeps its historical meaning — deterministic compounding
+        of current MRR at ``growth_rate`` with no churn — so existing consumers
+        are unchanged. Two additive blocks make the forecast honest:
+
+        * ``forecast_basis`` says where the growth rate came from. Pass
+          ``historical_growth_rate=None`` to derive it from observed policy
+          start dates; that only happens with at least
+          ``FORECAST_MIN_HISTORY_MONTHS`` complete months of history, otherwise
+          the default applies and the basis says so.
+        * ``bands`` gives p10/p50/p90 per month, net of the lapse-table
+          year-1 churn, using a closed-form log-normal random walk in monthly
+          growth (no RNG, so the result is reproducible for the same inputs).
+        """
         current_mrr = sum(
             p.get('monthly_premium', 0)
             for p in policies.values()
             if p.get('status') == 'active'
         )
 
+        observed = observed_monthly_growth(policies, now=now)
+        if historical_growth_rate is None:
+            if observed['sufficient']:
+                growth_rate = float(observed['monthly_growth'])
+                growth_source = 'observed_policy_start_dates'
+            else:
+                growth_rate = FORECAST_DEFAULT_MONTHLY_GROWTH
+                growth_source = 'default_insufficient_history'
+        else:
+            growth_rate = float(historical_growth_rate)
+            growth_source = 'caller_parameter'
+
+        if lapse_rate_year1 is None:
+            lapse_rate_year1, churn_source = _lapse_rate_year1_from_store()
+        else:
+            churn_source = 'caller_parameter'
+        lapse_rate_year1 = min(max(kpi._num(lapse_rate_year1), 0.0), 1.0)
+        monthly_churn = 1.0 - (1.0 - lapse_rate_year1) ** (1.0 / 12.0)
+
+        if observed['sufficient'] and observed.get('monthly_growth_sd') is not None:
+            growth_sd = float(observed['monthly_growth_sd'])
+            sd_source = 'observed_month_to_month_growth'
+        else:
+            growth_sd = FORECAST_DEFAULT_MONTHLY_GROWTH_SD
+            sd_source = 'default'
+        net_growth = growth_rate - monthly_churn
+        z90 = 1.2815515655446004  # one-sided 90 % normal quantile → p10 / p90
+
         forecast = []
+        bands = []
         for month in range(1, months_ahead + 1):
-            forecasted_mrr = current_mrr * ((1 + historical_growth_rate) ** month)
+            forecasted_mrr = current_mrr * ((1 + growth_rate) ** month)
             forecast.append({
                 'month': month,
                 'forecasted_mrr': round(forecasted_mrr, 2),
                 'forecasted_arr': round(forecasted_mrr * 12, 2),
             })
+            median = current_mrr * max(0.0, 1 + net_growth) ** month
+            spread = math.exp(z90 * growth_sd * math.sqrt(month))
+            bands.append({
+                'month': month,
+                'p10': round(median / spread, 2),
+                'p50': round(median, 2),
+                'p90': round(median * spread, 2),
+            })
 
         return {
             'current_mrr': round(current_mrr, 2),
             'current_arr': round(current_mrr * 12, 2),
-            'growth_rate': historical_growth_rate * 100,
+            'growth_rate': growth_rate * 100,
             'forecast_months': months_ahead,
             'forecast': forecast,
+            'forecast_basis': {
+                'growth_rate_source': growth_source,
+                'monthly_growth_rate': round(growth_rate, 6),
+                'observed_history_months': observed['history_months'],
+                'min_history_months': FORECAST_MIN_HISTORY_MONTHS,
+                'observed_monthly_growth': observed.get('monthly_growth'),
+                'observed_growth_window_months': observed.get('window_months'),
+                'lapse_rate_year1': round(lapse_rate_year1, 6),
+                'monthly_churn': round(monthly_churn, 6),
+                'churn_source': churn_source,
+                'net_monthly_growth': round(net_growth, 6),
+                'monthly_growth_sd': round(growth_sd, 6),
+                'growth_sd_source': sd_source,
+                'point_forecast': 'current_mrr × (1 + growth_rate)^month, no churn (legacy basis)',
+                'bands': 'p50 = current_mrr × (1 + growth_rate − monthly_churn)^month; '
+                         'p10/p90 = p50 × exp(∓1.2816 × sd × √month)',
+            },
+            'bands': bands,
         }
 
     # ------------------------------------------------------------------

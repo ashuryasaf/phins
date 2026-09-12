@@ -176,9 +176,14 @@ def handle_revenue_forecast(handler, policies: dict, params: dict = None) -> tup
     try:
         bi_service = get_bi_analytics_service()
         
-        # Extract query parameters
-        growth_rate = float(params.get('growth_rate', 0.05)) if params else 0.05
+        # Extract query parameters. Without an explicit growth_rate the
+        # service derives it from observed policy start dates (falling back
+        # to the default when history is short) and says so in forecast_basis.
+        growth_rate = None
+        if params and params.get('growth_rate') not in (None, ''):
+            growth_rate = float(params['growth_rate'])
         months_ahead = int(params.get('months_ahead', 12)) if params else 12
+        months_ahead = max(1, min(120, months_ahead))
         
         forecast = bi_service.predict_revenue_forecast(
             policies=policies,

@@ -418,7 +418,13 @@ def _load_phins_context() -> Dict[str, Any]:
             "hidden_condition_penalty": 0.3,
         },
         "bi_revenue_forecast": {"monthly_growth_default": 0.05, "months_ahead_default": 12,
-                                "churn_modelled": False},
+                                # Legacy point forecast compounds gross growth without churn; the
+                                # additive `bands` (p10/p50/p90) net out lapse-table churn and the
+                                # growth rate is observed from policy start dates when >= 6 months
+                                # of history exist (GET /api/bi/revenue-forecast without growth_rate).
+                                "churn_modelled": False,
+                                "churn_modelled_in_bands": True,
+                                "growth_observed_when_history_months_at_least": 6},
         "ai_review_disposition": {"accept": accept, "review": review,
                                   "advisory_confidence_cap": advisory_cap},
         "ai_underwriting_thresholds": {"approve": DEFAULT_APPROVE_THRESHOLD,
@@ -1642,7 +1648,8 @@ def derive_findings(results: Dict[str, Any], ctx: Dict[str, Any]) -> List[Dict[s
             f"(≈{sales['phins_forecast']['implied_annual_growth_pct']}%/yr) is met in "
             f"{100 * last['probability_meets_deterministic']:.1f}% of paths at month {last['month']}; "
             f"mean shortfall {last['mean_shortfall_vs_deterministic_pct']}%.",
-            last, "Return p10/p50/p90 bands and model churn from the lapse table in /api/bi/revenue-forecast.")
+            last, "Read /api/bi/revenue-forecast without growth_rate: the rate is observed from policy history when "
+                  "sufficient and the p10/p50/p90 bands net out lapse-table churn; the legacy point line is gross.")
 
     ai = results.get("ai")
     if ai:
@@ -2032,11 +2039,13 @@ def derive_next_moves(results: Dict[str, Any], findings: List[Dict[str, Any]],
                 "Forecast revenue with the simulated median growth and publish bands",
                 f"The {100 * sales['phins_forecast']['monthly_growth']:.0f}%/month assumption is met in "
                 f"{100 * attain:.1f}% of paths at month {months}. The simulated median path implies "
-                f"{100 * (monthly_p50 or 0):.2f}%/month. Pass it as growth_rate to /api/bi/revenue-forecast and "
-                f"show p10/p50/p90 instead of a single line.",
+                f"{100 * (monthly_p50 or 0):.2f}%/month. Call /api/bi/revenue-forecast without growth_rate so the "
+                f"rate comes from observed policy history (forecast_basis says which), and read the p10/p50/p90 "
+                f"bands rather than the single line.",
                 last, "services/bi_analytics_service.py:predict_revenue_forecast", "inconsistency",
                 "/admin.html#analytics",
-                proposed={"growth_rate": monthly_p50, "api": "GET /api/bi/revenue-forecast?growth_rate=<value>"},
+                proposed={"growth_rate": monthly_p50, "api": "GET /api/bi/revenue-forecast (omit growth_rate for observed; "
+                                                              "or ?growth_rate=<value>)"},
                 adjustable_note="Per-request query parameter; no persisted setting."))
 
     ai = results.get("ai") or {}
