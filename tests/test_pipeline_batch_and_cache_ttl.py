@@ -19,6 +19,7 @@ that together fix the two issues reported by admins:
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import importlib
@@ -100,7 +101,7 @@ def _isolate_state():
     # (root conftest's pytest_runtest_setup clears _TEST_PORTS_INITIALIZED.)
     init_set = getattr(portal, '_TEST_PORTS_INITIALIZED', None)
     if isinstance(init_set, set):
-        init_set.update({8000, 8769})
+        init_set.update({8000, 8769, int(os.environ.get("TEST_PORT", "8000"))})
     yield
 
 

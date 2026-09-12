@@ -28,7 +28,9 @@ def _ensure_admin_user():
     portal.USERS["admin"] = {**pw, "role": "admin", "name": "Admin User"}
 
 
-def _mark_test_port_initialized(port: int = 8000) -> None:
+def _mark_test_port_initialized(port: int | None = None) -> None:
+    if port is None:
+        port = int(os.environ.get("TEST_PORT", "8000"))
     init_set = getattr(portal, "_TEST_PORTS_INITIALIZED", None)
     if isinstance(init_set, set):
         init_set.add(port)

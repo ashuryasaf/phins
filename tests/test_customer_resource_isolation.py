@@ -30,7 +30,7 @@ def _get_json(url: str, token: str | None = None) -> tuple[int, str, dict]:
 
 def test_customer_without_customer_id_cannot_access_policy_or_claim():
     try:
-        portal._ensure_test_port_state(8000)
+        portal._ensure_test_port_state(int(os.environ.get("TEST_PORT", "8000")))
         portal.POLICIES["POL-TEST-ISO"] = {
             "id": "POL-TEST-ISO",
             "customer_id": "CUST-TARGET-001",
