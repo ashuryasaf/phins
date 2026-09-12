@@ -22,6 +22,25 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+# The service seeds each symbol with 50 "portfolio_seed" placeholder bars so
+# indicators can compute offline, but the live gates (get_market_overview,
+# /api/algo/indicators, live_only signals) deliberately ignore those placeholders
+# and require >= 15 non-seed bars.  Without an Alpaca connection nothing ever
+# produces such bars, so the overview is empty and the API reports rsi_14=None.
+# sync_market_prices() is the service's own offline path for externally
+# validated quotes ("synced" data source); feeding it a deterministic series
+# makes the live gates pass with no network or market-data provider.
+LIVE_SEED_BARS = 20
+LIVE_SEED_BASE_PRICES = {'SPY': 512.10, 'QQQ': 438.40}
+
+
+def seed_live_history(algo_service, base_prices=None, bars=LIVE_SEED_BARS):
+    """Append a deterministic synced price series for each symbol."""
+    for symbol, base in (base_prices or LIVE_SEED_BASE_PRICES).items():
+        for i in range(bars):
+            algo_service.sync_market_prices({symbol: round(base + i * 0.05, 2)})
+
+
 class TestAlgoTradingService(unittest.TestCase):
     """Test the algo trading service directly"""
     
@@ -117,19 +136,38 @@ class TestAlgoTradingService(unittest.TestCase):
         self.assertIsInstance(results, list)
         print(f"✓ Bot cycle executed: {len(results)} action(s)")
     
+    def test_market_overview_excludes_seed_only_symbols(self):
+        """Symbols with only placeholder bars must not appear in the overview"""
+        from services.algo_trading_service import AlgoTradingService
+        
+        fresh = AlgoTradingService(self.portfolio_service)
+        if fresh._has_live_data():
+            self.skipTest("Alpaca is connected and loaded live bars; seed-only gate not observable")
+        overview = fresh.get_market_overview()
+        
+        self.assertIn('timestamp', overview)
+        self.assertEqual(overview['assets'], [])
+        self.assertEqual(overview['data_source'], 'synced')
+        print("✓ Market Overview: seed-only book yields no assets")
+    
     def test_market_overview(self):
-        """Test market overview with signals"""
+        """Test market overview with signals once synced (live) bars exist"""
+        seed_live_history(self.algo_service)
         overview = self.algo_service.get_market_overview()
         
         self.assertIn('timestamp', overview)
         self.assertIn('assets', overview)
         self.assertGreater(len(overview['assets']), 0)
         
+        listed = {asset['symbol'] for asset in overview['assets']}
+        self.assertTrue(set(LIVE_SEED_BASE_PRICES).issubset(listed), listed)
+        
         for asset in overview['assets']:
             self.assertIn('symbol', asset)
             self.assertIn('price', asset)
             self.assertIn('signal', asset)
             self.assertIn('confidence', asset)
+            self.assertGreater(asset['price'], 0)
         
         print(f"✓ Market Overview: {len(overview['assets'])} assets analyzed")
     
@@ -227,14 +265,46 @@ class TestAlgoTradingAPI(unittest.TestCase):
         self.assertIn('assets', result['body'])
         print(f"✓ GET /api/algo/market-overview: {len(result['body']['assets'])} assets")
     
+    @staticmethod
+    def _fmt(value, spec='.2f'):
+        """Format numbers for log lines without crashing on None/non-numeric bodies."""
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return 'n/a'
+        return format(value, spec)
+    
+    def test_get_indicators_seed_only_is_not_live(self):
+        """Test GET /api/algo/indicators reports is_live=False with a null RSI for seed-only history"""
+        from services.algo_trading_service import get_algo_trading_service
+        
+        algo = get_algo_trading_service()
+        symbol = 'SEEDONLY-TEST'
+        algo.price_history.pop(symbol, None)
+        
+        result = self._request('GET', f'/api/algo/indicators?symbol={symbol}')
+        
+        self.assertEqual(result['status'], 200)
+        self.assertIs(result['body']['is_live'], False)
+        self.assertIsNone(result['body']['rsi_14'])
+        print(f"✓ GET /api/algo/indicators (no live bars): RSI={self._fmt(result['body']['rsi_14'])}")
+    
     def test_get_indicators(self):
         """Test GET /api/algo/indicators"""
+        from services.algo_trading_service import get_algo_trading_service
+        
+        # The route serves indicators only from live (non-seed) bars; the server
+        # and this test share the same service singleton, so sync a series into it.
+        seed_live_history(get_algo_trading_service(), {'SPY': LIVE_SEED_BASE_PRICES['SPY']})
+        
         result = self._request('GET', '/api/algo/indicators?symbol=SPY')
         
         self.assertEqual(result['status'], 200)
         self.assertIn('rsi_14', result['body'])
         self.assertIn('macd_line', result['body'])
-        print(f"✓ GET /api/algo/indicators: RSI={result['body']['rsi_14']:.2f}")
+        self.assertIs(result['body']['is_live'], True)
+        rsi = result['body']['rsi_14']
+        self.assertIsInstance(rsi, (int, float))
+        self.assertTrue(0 <= rsi <= 100, rsi)
+        print(f"✓ GET /api/algo/indicators: RSI={self._fmt(rsi)}")
     
     def test_get_signals(self):
         """Test GET /api/algo/signals"""
