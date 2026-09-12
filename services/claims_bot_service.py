@@ -1105,6 +1105,161 @@ class ClaimsBotService:
 _bot_instance: Optional[ClaimsBotService] = None
 
 
+# =============================================================================
+# Threshold calibration against reviewer decisions (read-only)
+# =============================================================================
+
+# Live authenticity cut-offs used by ClaimsBotService._make_recommendation.
+LIVE_AUTHENTICITY_THRESHOLDS = {'approve_full': 0.85, 'approve_partial': 0.70, 'deny': 0.45}
+# Minimum labelled decisions (reviewer approved or rejected a claim that has
+# an authenticity score on record) before any alternative is proposed.
+CALIBRATION_MIN_LABELLED = 30
+
+_APPROVING_DECISIONS = {'approved', 'auto_approved', 'paid'}
+_REJECTING_DECISIONS = {'rejected', 'denied'}
+
+
+def _authenticity_only_recommendation(authenticity: float, approve_full: float,
+                                      approve_partial: float, deny: float) -> str:
+    """The authenticity-only spine of ``_make_recommendation``.
+
+    Fraud indicators and hidden conditions are not on the assessment record,
+    so the sweep can only move the three authenticity cut-offs; the recorded
+    recommendation (which did see them) is reported separately.
+    """
+    if authenticity >= approve_full:
+        return 'approve'
+    if authenticity >= approve_partial:
+        return 'approve'  # approve_partial / refer_medical_review share this band
+    if authenticity < deny:
+        return 'deny'
+    return 'pending'
+
+
+def calibrate_claims_thresholds(assessment_records: List[Dict[str, Any]],
+                                min_labelled: int = CALIBRATION_MIN_LABELLED) -> Dict[str, Any]:
+    """Test the claims-bot authenticity cut-offs against reviewer decisions.
+
+    Input: assessment records of type ``claims_fraud`` (see
+    ``services/assessment_record_service.py``) carrying
+    ``details.authenticity_probability`` and the human ``decision`` attached
+    at approval/rejection time. Referred decisions are counted but carry no
+    approve/deny label.
+
+    For the live thresholds and a coarse grid of alternatives the report gives
+    the agreement of the authenticity-only recommendation with the reviewer's
+    final decision, plus the two costly disagreements: recommended approve but
+    reviewer rejected (leakage), recommended deny but reviewer approved
+    (false denial). Below ``min_labelled`` labelled decisions the report is
+    ``insufficient_data`` and proposes nothing. Read-only: the live cut-offs
+    are constants in ``_make_recommendation`` and are never changed here.
+    """
+    labelled: List[Tuple[float, str]] = []
+    referred = 0
+    without_score = 0
+    recorded_aligned = 0
+    recorded_labelled = 0
+    for rec in assessment_records or []:
+        if not isinstance(rec, dict) or str(rec.get('assessment_type') or '') != 'claims_fraud':
+            continue
+        decision = str(rec.get('decision') or '').strip().lower()
+        if not decision:
+            continue
+        details = rec.get('details') or {}
+        try:
+            auth = float(details.get('authenticity_probability'))
+        except (TypeError, ValueError):
+            without_score += 1
+            continue
+        if rec.get('decision_aligned') is not None:
+            recorded_labelled += 1
+            if rec.get('decision_aligned') is True:
+                recorded_aligned += 1
+        if decision in _APPROVING_DECISIONS:
+            labelled.append((auth, 'approve'))
+        elif decision in _REJECTING_DECISIONS:
+            labelled.append((auth, 'deny'))
+        else:
+            referred += 1
+
+    n = len(labelled)
+
+    def _score(approve_full: float, approve_partial: float, deny: float) -> Dict[str, Any]:
+        agree = leak = false_denial = pending = 0
+        for auth, label in labelled:
+            rec = _authenticity_only_recommendation(auth, approve_full, approve_partial, deny)
+            if rec == 'pending':
+                pending += 1
+            elif rec == label:
+                agree += 1
+            elif rec == 'approve':
+                leak += 1
+            else:
+                false_denial += 1
+        decided = n - pending
+        return {
+            'approve_full': approve_full, 'approve_partial': approve_partial, 'deny': deny,
+            'agreement_rate': round(agree / decided, 4) if decided else None,
+            'recommended_approve_reviewer_rejected': leak,
+            'recommended_deny_reviewer_approved': false_denial,
+            'pending_share': round(pending / n, 4) if n else None,
+            'disagreement_cost': leak + false_denial,
+        }
+
+    live = LIVE_AUTHENTICITY_THRESHOLDS
+    report: Dict[str, Any] = {
+        'read_only': True,
+        'source': 'assessment_records[claims_fraud] with reviewer decisions',
+        'labelled_decisions': n,
+        'referred_decisions_unlabelled': referred,
+        'decisions_without_authenticity_score': without_score,
+        'min_labelled': int(min_labelled),
+        'insufficient_data': n < int(min_labelled),
+        'live_thresholds': dict(live),
+        'recorded_recommendation_agreement_rate': (
+            round(recorded_aligned / recorded_labelled, 4) if recorded_labelled else None),
+        'basis': ('authenticity-only spine of _make_recommendation swept over a coarse grid; fraud indicators '
+                  'and hidden conditions are not on the record, so the sweep is a lower bound on the live logic'),
+        'adjust_via': ('constants in services/claims_bot_service.py:_make_recommendation; not exposed via API '
+                       '(change in code, with this report as evidence)'),
+    }
+    if n == 0:
+        report['live_performance'] = None
+        return report
+
+    report['live_performance'] = _score(live['approve_full'], live['approve_partial'], live['deny'])
+    if report['insufficient_data']:
+        return report
+
+    grid = []
+    for af in (0.75, 0.80, 0.85, 0.90, 0.95):
+        for ap in (0.60, 0.65, 0.70, 0.75, 0.80):
+            if ap >= af:
+                continue
+            for dn in (0.35, 0.40, 0.45, 0.50, 0.55):
+                if dn >= ap:
+                    continue
+                grid.append(_score(af, ap, dn))
+    # Fewest costly disagreements first; ties broken by leaving fewer claims pending,
+    # then by staying closest to the live cut-offs (conservative).
+    def _distance(row: Dict[str, Any]) -> float:
+        return abs(row['approve_full'] - live['approve_full']) + abs(row['approve_partial'] - live['approve_partial']) \
+            + abs(row['deny'] - live['deny'])
+    best = min(grid, key=lambda r: (r['disagreement_cost'], r['pending_share'] or 0.0, _distance(r)))
+    report['sweep_size'] = len(grid)
+    report['best_grid_point'] = best
+    live_perf = report['live_performance']
+    if best['disagreement_cost'] < live_perf['disagreement_cost']:
+        report['proposed_thresholds'] = {k: best[k] for k in ('approve_full', 'approve_partial', 'deny')}
+        report['proposal_basis'] = (
+            f"reduces costly disagreements with reviewers from {live_perf['disagreement_cost']} to "
+            f"{best['disagreement_cost']} on {n} labelled decisions; recommend-only")
+    else:
+        report['proposed_thresholds'] = None
+        report['proposal_basis'] = 'live thresholds are already the fewest-disagreement grid point'
+    return report
+
+
 def get_claims_bot_service(customers: Dict = None,
                            policies: Dict = None,
                            claims: Dict = None,
@@ -1144,6 +1299,9 @@ __all__ = [
     'ClaimsBotService',
     'get_claims_bot_service',
     'init_claims_bot_service',
+    'calibrate_claims_thresholds',
+    'LIVE_AUTHENTICITY_THRESHOLDS',
+    'CALIBRATION_MIN_LABELLED',
     'ClaimMetadataType',
     'FraudIndicatorType',
     'ClaimDecisionType',

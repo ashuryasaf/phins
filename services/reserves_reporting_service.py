@@ -107,8 +107,12 @@ class ReservesReportingService:
         self.transaction_ledger = transaction_ledger if transaction_ledger is not None else {}
         
         # Configuration
-        self.ibnr_factor = Decimal('0.15')  # 15% of annual premiums as IBNR default
-        self.loss_ratio_assumption = Decimal('0.65')  # 65% expected loss ratio
+        # Fallbacks when no actuarial store is attached. They equal the
+        # UnderwritingConfig defaults (ibnr_reporting_factor, loss_ratio_assumption),
+        # which are the audited source of these assumptions when a store is present.
+        self.ibnr_factor = Decimal('0.15')  # IBNR share of expected claims
+        self.loss_ratio_assumption = Decimal('0.65')  # expected loss ratio
+        self.ibnr_assumptions_used: Dict[str, Any] = {}
     
     def calculate_reserve_summary(self, as_of_date: str = None) -> ReserveSummary:
         """
@@ -226,27 +230,49 @@ class ReservesReportingService:
                     summary.claims_reserve_pending += claimed_amount
         
         # IBNR (Incurred But Not Reported) - statistical estimate
-        # Formula: IBNR = Annual Premiums × Loss Ratio × IBNR Factor
+        # Formula: IBNR = expected claims × IBNR share, where expected claims
+        # = Annual Risk Premium × loss-ratio assumption. Both the loss-ratio
+        # assumption and the IBNR share come from the audited actuarial config
+        # when a store is attached (UnderwritingConfig.loss_ratio_assumption,
+        # .ibnr_reporting_factor); the constructor constants are the fallback
+        # and equal the config defaults, so output is unchanged until an
+        # actuary saves a new assumption.
         annual_risk_premium = summary.gross_risk_reserve  # Simplified - assumes 1 year data
-        
-        # Use actuarial service if available for more precise IBNR
+        loss_ratio = self.loss_ratio_assumption
+        ibnr_factor = self.ibnr_factor
+        source = 'service_defaults'
         if self.actuarial_service:
             try:
-                # Get loss ratio from actuarial tables
-                store = self.actuarial_service
-                config = store.config if hasattr(store, 'config') else None
-                if config:
-                    # Use actuarial loss ratio assumption
-                    loss_ratio = Decimal('0.65')  # Standard assumption
-                    summary.claims_reserve_ibnr = (annual_risk_premium * loss_ratio * self.ibnr_factor).quantize(
-                        Decimal('0.01'))
-            except:
-                pass
-        
-        # Default IBNR calculation if actuarial service not available
-        if summary.claims_reserve_ibnr == 0:
-            summary.claims_reserve_ibnr = (annual_risk_premium * self.loss_ratio_assumption * self.ibnr_factor).quantize(
-                Decimal('0.01'))
+                config = getattr(self.actuarial_service, 'config', None)
+                if config is not None:
+                    loss_ratio = Decimal(str(getattr(config, 'loss_ratio_assumption', self.loss_ratio_assumption)))
+                    ibnr_factor = Decimal(str(getattr(config, 'ibnr_reporting_factor', self.ibnr_factor)))
+                    source = f"actuarial_config:{getattr(config, 'config_version', '')}"
+            except Exception:
+                loss_ratio = self.loss_ratio_assumption
+                ibnr_factor = self.ibnr_factor
+                source = 'service_defaults'
+
+        # Decimal arithmetic stays authoritative (cent-exact); the shared
+        # provision function supplies the labelled basis so this figure can be
+        # compared with ReserveCalculator's IBNR on equal terms.
+        summary.claims_reserve_ibnr = (annual_risk_premium * loss_ratio * ibnr_factor).quantize(Decimal('0.01'))
+        basis = 'share_of_expected_claims'
+        try:
+            from services.actuarial_service import ibnr_provision
+            basis = ibnr_provision(
+                float(annual_risk_premium * loss_ratio), float(ibnr_factor),
+                expected_claims_source='annual_risk_premium_x_loss_ratio_assumption',
+            )['basis']
+        except Exception:
+            pass
+        self.ibnr_assumptions_used = {
+            'loss_ratio_assumption': float(loss_ratio),
+            'ibnr_reporting_factor': float(ibnr_factor),
+            'expected_claims_source': 'annual_risk_premium_x_loss_ratio_assumption',
+            'basis': basis,
+            'source': source,
+        }
         
         # Total Claims Reserve
         summary.total_claims_reserve = summary.claims_reserve_pending + summary.claims_reserve_ibnr
@@ -389,6 +415,12 @@ class ReservesReportingService:
         Returns comprehensive report suitable for dashboards and regulatory reporting.
         """
         summary = self.calculate_reserve_summary()
+        used = dict(getattr(self, 'ibnr_assumptions_used', None) or {
+            'loss_ratio_assumption': float(self.loss_ratio_assumption),
+            'ibnr_reporting_factor': float(self.ibnr_factor),
+            'source': 'service_defaults',
+        })
+        loss_target = Decimal(str(used['loss_ratio_assumption']))
         
         return {
             'report_date': summary.as_of_date,
@@ -406,7 +438,11 @@ class ReservesReportingService:
                 'pending_claims_reserve': float(summary.claims_reserve_pending),
                 'ibnr_reserve': float(summary.claims_reserve_ibnr),
                 'total_claims_reserve': float(summary.total_claims_reserve),
-                'ibnr_methodology': f'Annual Premium × Loss Ratio ({float(self.loss_ratio_assumption)*100}%) × IBNR Factor ({float(self.ibnr_factor)*100}%)'
+                'ibnr_methodology': (
+                    f"Annual Premium × Loss Ratio ({used['loss_ratio_assumption'] * 100:g}%) × "
+                    f"IBNR Factor ({used['ibnr_reporting_factor'] * 100:g}%)"
+                ),
+                'ibnr_assumptions': used,
             },
             
             # Paid Claims Section
@@ -459,14 +495,18 @@ class ReservesReportingService:
             # Summary Status
             'status': {
                 'reserve_adequacy': 'adequate' if summary.solvency_ratio >= Decimal('1.5') else 'watch' if summary.solvency_ratio >= Decimal('1.0') else 'deficient',
-                'loss_performance': 'good' if summary.loss_ratio <= Decimal('0.65') else 'acceptable' if summary.loss_ratio <= Decimal('0.80') else 'poor',
-                'recommendations': self._generate_recommendations(summary)
+                'loss_performance': 'good' if summary.loss_ratio <= loss_target else 'acceptable' if summary.loss_ratio <= Decimal('0.80') else 'poor',
+                'loss_performance_target_pct': float(loss_target * 100),
+                'recommendations': self._generate_recommendations(summary, loss_target)
             }
         }
     
-    def _generate_recommendations(self, summary: ReserveSummary) -> List[str]:
+    def _generate_recommendations(self, summary: ReserveSummary,
+                                  loss_target: Optional[Decimal] = None) -> List[str]:
         """Generate recommendations based on reserve status"""
         recommendations = []
+        if loss_target is None:
+            loss_target = self.loss_ratio_assumption
         
         if summary.solvency_ratio < Decimal('1.0'):
             recommendations.append('URGENT: Solvency ratio below 100% - consider increasing reserves')
@@ -475,8 +515,8 @@ class ReservesReportingService:
         
         if summary.loss_ratio > Decimal('0.80'):
             recommendations.append('Review underwriting criteria - loss ratio exceeds 80%')
-        elif summary.loss_ratio > Decimal('0.65'):
-            recommendations.append('Loss ratio above target 65% - review claims experience')
+        elif summary.loss_ratio > loss_target:
+            recommendations.append(f'Loss ratio above target {float(loss_target) * 100:g}% - review claims experience')
         
         if summary.net_risk_reserve < 0:
             recommendations.append('CRITICAL: Net risk reserve is negative - immediate action required')

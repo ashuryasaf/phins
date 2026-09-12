@@ -23,6 +23,7 @@ Public API (consumed by `web_portal/api_bi_analytics.py`):
 
 import hashlib
 import json
+import math
 import statistics
 import threading
 import time
@@ -36,6 +37,334 @@ import logging
 from services import kpi_definitions as kpi
 
 logger = logging.getLogger('phins.bi_analytics')
+
+# Minimum lives per smoking cohort before the slice publishes a loss-ratio
+# comparison. Below this the cohort is reported with ``insufficient_data`` and
+# no implied pricing factor is derived (claim counts are too volatile).
+SMOKING_SLICE_MIN_LIVES = 30
+# Claims are matched to the annual premium base with a trailing window, so the
+# ratio is a period loss ratio rather than all-time claims over today's premium.
+SMOKING_SLICE_WINDOW_MONTHS = 12
+SMOKING_COHORTS = ('smoker', 'former', 'nonsmoker', 'unknown')
+_INCURRED_CLAIM_STATUSES = ('approved', 'paid', 'closed')
+_CLAIM_DATE_KEYS = ('incident_date', 'date_of_incident', 'loss_date', 'event_date',
+                    'reported_date', 'filed_date', 'submitted_at', 'created_at')
+
+# Revenue forecast defaults. The growth default is the legacy 5 %/month
+# assumption; it is only used when the caller passes no rate AND the book has
+# fewer than FORECAST_MIN_HISTORY_MONTHS complete months of policy history.
+FORECAST_DEFAULT_MONTHLY_GROWTH = 0.05
+FORECAST_DEFAULT_MONTHLY_GROWTH_SD = 0.04  # matches the Monte Carlo world default
+FORECAST_MIN_HISTORY_MONTHS = 6
+FORECAST_MAX_GROWTH_WINDOW_MONTHS = 12
+_POLICY_START_KEYS = ('start_date', 'effective_date', 'approval_date', 'created_at')
+
+
+def _parse_month(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        text = str(value).strip().replace('Z', '+00:00')
+        try:
+            dt = datetime.fromisoformat(text)
+        except ValueError:
+            try:
+                dt = datetime.strptime(text[:10], '%Y-%m-%d')
+            except ValueError:
+                return None
+    return dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+
+
+def _add_months(dt: datetime, n: int) -> datetime:
+    month_index = dt.month - 1 + n
+    return dt.replace(year=dt.year + month_index // 12, month=month_index % 12 + 1)
+
+
+def _months_between(a: datetime, b: datetime) -> int:
+    return (b.year - a.year) * 12 + (b.month - a.month)
+
+
+def observed_monthly_growth(policies: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Observed monthly MRR growth from policy start dates (read-only).
+
+    Builds the *monthly* gross-adds MRR series by start month (every policy
+    that was ever issued, so cancellations do not distort the *growth*
+    estimate; churn is applied separately from the lapse table) up to the
+    last complete month, then compares the mean monthly adds of the two
+    halves of a window of at most ``FORECAST_MAX_GROWTH_WINDOW_MONTHS``
+    months. Growth is measured on that new-business run-rate rather than on
+    the accumulated book, because a stock that started from nothing grows
+    with the book's age (level sales for six months would read as ~40 %/month)
+    while the run-rate reads the sales trend the forecast compounds. Requires
+    ``FORECAST_MIN_HISTORY_MONTHS`` complete months from the first start
+    month; otherwise ``sufficient`` is False and no rate is returned.
+    """
+    now = (now or datetime.now(timezone.utc)).replace(tzinfo=None)
+    current_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    adds: Dict[datetime, float] = defaultdict(float)
+    for policy in (policies or {}).values():
+        if not isinstance(policy, dict):
+            continue
+        start = next((_parse_month(policy.get(k)) for k in _POLICY_START_KEYS if policy.get(k)), None)
+        if start is None or start >= current_month:
+            continue  # no date, or in the current (incomplete) month / future
+        adds[start] += kpi._num(policy.get('monthly_premium'))
+    if not adds:
+        return {'sufficient': False, 'history_months': 0, 'monthly_growth': None,
+                'reason': 'no policies with a start date before the current month'}
+
+    first = min(adds)
+    last_complete = _add_months(current_month, -1)
+    history_months = _months_between(first, last_complete) + 1
+    series: List[float] = []
+    month = first
+    while month <= last_complete:
+        series.append(adds.get(month, 0.0))
+        month = _add_months(month, 1)
+
+    result: Dict[str, Any] = {
+        'history_months': history_months,
+        'first_start_month': first.strftime('%Y-%m'),
+        'last_complete_month': last_complete.strftime('%Y-%m'),
+        'mrr_gross_adds_last_complete_month': round(series[-1], 2),
+    }
+    if history_months < FORECAST_MIN_HISTORY_MONTHS:
+        result.update({'sufficient': False, 'monthly_growth': None,
+                       'reason': f'need {FORECAST_MIN_HISTORY_MONTHS} complete months of policy history'})
+        return result
+
+    # Two equal halves of the window: the mean of each half averages out
+    # month-to-month noise, and their ratio is the growth over ``half`` months.
+    half = min(FORECAST_MAX_GROWTH_WINDOW_MONTHS // 2, len(series) // 2)
+    earlier = sum(series[-2 * half:-half]) / half
+    recent = sum(series[-half:]) / half
+    if earlier <= 0 or recent <= 0:
+        result.update({'sufficient': False, 'monthly_growth': None,
+                       'reason': 'no new business in one half of the growth window'})
+        return result
+    growth = (recent / earlier) ** (1.0 / half) - 1.0
+    step_growth = [series[i] / series[i - 1] - 1.0 for i in range(len(series) - 2 * half + 1, len(series))
+                   if series[i - 1] > 0]
+    sd = statistics.pstdev(step_growth) if len(step_growth) >= 2 else None
+    result.update({
+        'sufficient': True,
+        'monthly_growth': round(growth, 6),
+        'monthly_growth_sd': round(sd, 6) if sd is not None else None,
+        'window_months': 2 * half,
+        'basis': 'geometric growth between the mean monthly gross-adds MRR of the two halves of the window',
+    })
+    return result
+
+
+def _lapse_rate_year1_from_store() -> tuple:
+    """Year-1 lapse rate from the actuarial store, with a labelled fallback."""
+    try:
+        from services.actuarial_service import get_actuarial_store
+        store = get_actuarial_store()
+        return float(store.get_lapse_rate(1)), f'actuarial_lapse_table:{getattr(store, "current_version", "")}'
+    except Exception:
+        return 0.08, 'default_lapse_year1'
+
+
+def _normalize_smoking(raw: Any) -> str:
+    """Map free-text smoking status onto the pricing kernel's cohorts.
+
+    Reuses the kernel's normaliser so this slice groups lives exactly the way
+    pricing does; anything the kernel cannot classify is ``unknown``.
+    """
+    try:
+        from services.pricing_kernel import _normalize_smoking_status
+        return _normalize_smoking_status(raw) or 'unknown'
+    except Exception:
+        return 'unknown'
+
+
+def _resolve_smoking_status(policy: Dict[str, Any], customer: Optional[Dict[str, Any]],
+                            latest_application: Optional[Dict[str, Any]]) -> str:
+    for source in (policy, customer or {}, latest_application or {}):
+        for key in ('smoking_status', 'smoker', 'tobacco', 'smoking'):
+            value = source.get(key)
+            if value is not None and value != '':
+                return _normalize_smoking(value)
+    return 'unknown'
+
+
+def _latest_applications_by_customer(applications: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    latest: Dict[str, Dict[str, Any]] = {}
+    for app in (applications or {}).values():
+        if not isinstance(app, dict):
+            continue
+        cid = app.get('customer_id')
+        if not cid:
+            continue
+        stamp = str(app.get('submitted_at') or app.get('created_at') or '')
+        if cid not in latest or stamp >= str(latest[cid].get('submitted_at') or latest[cid].get('created_at') or ''):
+            latest[cid] = app
+    return latest
+
+
+def loss_ratio_by_smoking_status(
+    customers: Dict[str, Any],
+    policies: Dict[str, Any],
+    claims: Dict[str, Any],
+    underwriting_applications: Optional[Dict[str, Any]] = None,
+    pricing_factors: Optional[Dict[str, Any]] = None,
+    min_lives: int = SMOKING_SLICE_MIN_LIVES,
+    window_months: int = SMOKING_SLICE_WINDOW_MONTHS,
+    now: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    """Observed loss ratio by smoking cohort from real policies and claims.
+
+    Read-only. Premium base is the annual premium of active policies (the
+    same base as the BI ``loss_ratio`` KPI); claims are attributed to the
+    cohort of their policy (falling back to the claimant's customer record).
+    ``claims_incurred`` counts approved/paid/closed claims at approved amount;
+    ``claims_paid`` counts paid claims only (the KPI basis).
+
+    Numerator and denominator cover the same exposure: a claim only counts
+    when it belongs to the active book that supplies the premium, and only
+    when it falls inside the trailing ``window_months`` (0 disables the
+    window). Claims on lapsed policies and older claims are excluded and
+    counted separately, so cohorts with different tenure or lapse experience
+    are not compared on mismatched bases.
+
+    When both the smoker and nonsmoker cohorts reach ``min_lives`` the slice
+    reports the smoker/nonsmoker loss-ratio ratio and, if ``pricing_factors``
+    (the live ``smoker_mortality_factor`` / ``smoker_disability_factor``) are
+    supplied, the factor that ratio implies: premium already scales with the
+    live factor, so a residual loss-ratio ratio ``r`` implies ``factor × r``.
+    Nothing is written; the response says where the factor is adjusted.
+    """
+    latest_apps = _latest_applications_by_customer(underwriting_applications)
+    cohorts: Dict[str, Dict[str, Any]] = {
+        key: {'cohort': key, 'lives': 0, 'annual_premium': 0.0, 'claims_count': 0,
+              'claims_incurred': 0.0, 'claims_paid': 0.0}
+        for key in SMOKING_COHORTS
+    }
+    # Both maps cover the active premium base only; ``inactive_policy_ids``
+    # keeps the claims loop from charging a lapsed policy's claim to it.
+    policy_cohort: Dict[str, str] = {}
+    customer_cohort: Dict[str, str] = {}
+    inactive_policy_ids: set = set()
+
+    for pid, policy in (policies or {}).items():
+        if not isinstance(policy, dict):
+            continue
+        cid = policy.get('customer_id')
+        customer = (customers or {}).get(cid) if cid else None
+        cohort = _resolve_smoking_status(policy, customer if isinstance(customer, dict) else None,
+                                         latest_apps.get(cid) if cid else None)
+        keys = {str(policy.get('id') or policy.get('policy_id') or pid), str(pid)}
+        if str(policy.get('status', '')).lower() != 'active':
+            inactive_policy_ids.update(keys)
+            continue
+        for key in keys:
+            policy_cohort[key] = cohort
+        if cid and cid not in customer_cohort:
+            customer_cohort[str(cid)] = cohort
+        row = cohorts[cohort]
+        row['lives'] += 1
+        row['annual_premium'] += kpi._num(policy.get('annual_premium'))
+
+    cutoff = None
+    if int(window_months) > 0:
+        current_month = (now or datetime.now(timezone.utc)).replace(
+            tzinfo=None, day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+        cutoff = _add_months(current_month, -(int(window_months) - 1))
+
+    unattributed = 0
+    off_exposure = 0
+    outside_window = 0
+    undated = 0
+    for claim in (claims or {}).values():
+        if not isinstance(claim, dict):
+            continue
+        status = str(claim.get('status', '')).lower()
+        if status not in _INCURRED_CLAIM_STATUSES:
+            continue
+        claim_month = next((_parse_month(claim.get(k)) for k in _CLAIM_DATE_KEYS if claim.get(k)), None)
+        if claim_month is not None and cutoff is not None and claim_month < cutoff:
+            outside_window += 1
+            continue
+        policy_key = str(claim.get('policy_id') or '')
+        cohort = policy_cohort.get(policy_key)
+        if cohort is None and policy_key in inactive_policy_ids:
+            off_exposure += 1  # policy carries no premium in the base
+            continue
+        if claim_month is None:
+            undated += 1  # undated claims stay in; the count says how many
+        if cohort is None:
+            cohort = customer_cohort.get(str(claim.get('customer_id') or ''))
+        if cohort is None:
+            cohort = 'unknown'
+            unattributed += 1
+        amount = kpi._num(claim.get('approved_amount', claim.get('claimed_amount')))
+        row = cohorts[cohort]
+        row['claims_count'] += 1
+        row['claims_incurred'] += amount
+        if status == 'paid':
+            row['claims_paid'] += amount
+
+    rows: List[Dict[str, Any]] = []
+    for key in SMOKING_COHORTS:
+        row = cohorts[key]
+        premium = row['annual_premium']
+        row['annual_premium'] = round(premium, 2)
+        row['claims_incurred'] = round(row['claims_incurred'], 2)
+        row['claims_paid'] = round(row['claims_paid'], 2)
+        row['loss_ratio_pct'] = round(kpi.loss_ratio_pct(row['claims_paid'], premium), 2)
+        row['incurred_loss_ratio_pct'] = round(kpi.loss_ratio_pct(row['claims_incurred'], premium), 2)
+        row['insufficient_data'] = row['lives'] < int(min_lives)
+        rows.append(row)
+    by_cohort = {row['cohort']: row for row in rows}
+
+    smoker, nonsmoker = by_cohort['smoker'], by_cohort['nonsmoker']
+    sufficient = (not smoker['insufficient_data'] and not nonsmoker['insufficient_data']
+                  and nonsmoker['incurred_loss_ratio_pct'] > 0)
+    comparison: Dict[str, Any] = {
+        'sufficient': sufficient,
+        'min_lives_per_cohort': int(min_lives),
+        'smoker_lives': smoker['lives'],
+        'nonsmoker_lives': nonsmoker['lives'],
+        'basis': ('incurred (approved/paid/closed) claims on the active book, within the trailing '
+                  'window, ÷ annual premium of active policies'),
+    }
+    if sufficient:
+        ratio = smoker['incurred_loss_ratio_pct'] / nonsmoker['incurred_loss_ratio_pct']
+        comparison['smoker_to_nonsmoker_loss_ratio_ratio'] = round(ratio, 4)
+        comparison['gap_pts'] = round(smoker['incurred_loss_ratio_pct'] - nonsmoker['incurred_loss_ratio_pct'], 2)
+        if pricing_factors:
+            implied = {}
+            for key in ('smoker_mortality_factor', 'smoker_disability_factor'):
+                live = pricing_factors.get(key)
+                if live is not None:
+                    implied[key] = round(max(1.0, min(3.0, kpi._num(live, 1.0) * ratio)), 4)
+            comparison['live_factors'] = {k: pricing_factors.get(k) for k in ('smoker_mortality_factor', 'smoker_disability_factor')}
+            comparison['implied_factors'] = implied
+            comparison['implied_factor_basis'] = 'live factor × observed smoker/nonsmoker loss-ratio ratio, clamped 1.0–3.0'
+    else:
+        comparison['reason'] = (
+            'nonsmoker cohort has no incurred claims' if not nonsmoker['insufficient_data'] and not smoker['insufficient_data']
+            else f'need at least {int(min_lives)} active lives in both the smoker and nonsmoker cohorts'
+        )
+
+    return {
+        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'read_only': True,
+        'source': 'observed_policies_and_claims',
+        'loss_ratio_basis': kpi.LOSS_RATIO_BASES['paid_claims'],
+        'cohorts': rows,
+        'experience_window_months': int(window_months),
+        'claims_unattributed_to_policy_or_customer': unattributed,
+        'claims_excluded_off_active_exposure': off_exposure,
+        'claims_excluded_outside_window': outside_window,
+        'claims_without_a_date_included': undated,
+        'comparison': comparison,
+        'adjust_via': 'POST /api/actuarial/config {"smoker_mortality_factor": <f>, "smoker_disability_factor": <f>, "change_reason": "..."}',
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -828,32 +1157,131 @@ class BIAnalyticsService:
     def predict_revenue_forecast(
         self,
         policies: Dict[str, Any],
-        historical_growth_rate: float = 0.05,
+        historical_growth_rate: Optional[float] = FORECAST_DEFAULT_MONTHLY_GROWTH,
         months_ahead: int = 12,
+        lapse_rate_year1: Optional[float] = None,
+        now: Optional[datetime] = None,
     ) -> Dict[str, Any]:
-        """Predict revenue forecast for the next N months."""
+        """Predict revenue forecast for the next N months.
+
+        ``forecast`` keeps its historical meaning — deterministic compounding
+        of current MRR at ``growth_rate`` with no churn — so existing consumers
+        are unchanged. Two additive blocks make the forecast honest:
+
+        * ``forecast_basis`` says where the growth rate came from. Pass
+          ``historical_growth_rate=None`` to derive it from observed policy
+          start dates; that only happens with at least
+          ``FORECAST_MIN_HISTORY_MONTHS`` complete months of history, otherwise
+          the default applies and the basis says so.
+        * ``bands`` gives p10/p50/p90 per month, net of the lapse-table
+          year-1 churn, using a closed-form log-normal random walk in monthly
+          growth (no RNG, so the result is reproducible for the same inputs).
+        """
         current_mrr = sum(
             p.get('monthly_premium', 0)
             for p in policies.values()
             if p.get('status') == 'active'
         )
 
+        observed = observed_monthly_growth(policies, now=now)
+        if historical_growth_rate is None:
+            if observed['sufficient']:
+                growth_rate = float(observed['monthly_growth'])
+                growth_source = 'observed_policy_start_dates'
+            else:
+                growth_rate = FORECAST_DEFAULT_MONTHLY_GROWTH
+                growth_source = 'default_insufficient_history'
+        else:
+            growth_rate = float(historical_growth_rate)
+            growth_source = 'caller_parameter'
+
+        if lapse_rate_year1 is None:
+            lapse_rate_year1, churn_source = _lapse_rate_year1_from_store()
+        else:
+            churn_source = 'caller_parameter'
+        lapse_rate_year1 = min(max(kpi._num(lapse_rate_year1), 0.0), 1.0)
+        monthly_churn = 1.0 - (1.0 - lapse_rate_year1) ** (1.0 / 12.0)
+
+        if observed['sufficient'] and observed.get('monthly_growth_sd') is not None:
+            growth_sd = float(observed['monthly_growth_sd'])
+            sd_source = 'observed_month_to_month_growth'
+        else:
+            growth_sd = FORECAST_DEFAULT_MONTHLY_GROWTH_SD
+            sd_source = 'default'
+        net_growth = growth_rate - monthly_churn
+        z90 = 1.2815515655446004  # one-sided 90 % normal quantile → p10 / p90
+
         forecast = []
+        bands = []
         for month in range(1, months_ahead + 1):
-            forecasted_mrr = current_mrr * ((1 + historical_growth_rate) ** month)
+            forecasted_mrr = current_mrr * ((1 + growth_rate) ** month)
             forecast.append({
                 'month': month,
                 'forecasted_mrr': round(forecasted_mrr, 2),
                 'forecasted_arr': round(forecasted_mrr * 12, 2),
             })
+            median = current_mrr * max(0.0, 1 + net_growth) ** month
+            spread = math.exp(z90 * growth_sd * math.sqrt(month))
+            bands.append({
+                'month': month,
+                'p10': round(median / spread, 2),
+                'p50': round(median, 2),
+                'p90': round(median * spread, 2),
+            })
 
         return {
             'current_mrr': round(current_mrr, 2),
             'current_arr': round(current_mrr * 12, 2),
-            'growth_rate': historical_growth_rate * 100,
+            'growth_rate': growth_rate * 100,
             'forecast_months': months_ahead,
             'forecast': forecast,
+            'forecast_basis': {
+                'growth_rate_source': growth_source,
+                'monthly_growth_rate': round(growth_rate, 6),
+                'observed_history_months': observed['history_months'],
+                'min_history_months': FORECAST_MIN_HISTORY_MONTHS,
+                'observed_monthly_growth': observed.get('monthly_growth'),
+                'observed_growth_window_months': observed.get('window_months'),
+                'lapse_rate_year1': round(lapse_rate_year1, 6),
+                'monthly_churn': round(monthly_churn, 6),
+                'churn_source': churn_source,
+                'net_monthly_growth': round(net_growth, 6),
+                'monthly_growth_sd': round(growth_sd, 6),
+                'growth_sd_source': sd_source,
+                'point_forecast': 'current_mrr × (1 + growth_rate)^month, no churn (legacy basis)',
+                'bands': 'p50 = current_mrr × (1 + growth_rate − monthly_churn)^month; '
+                         'p10/p90 = p50 × exp(∓1.2816 × sd × √month)',
+            },
+            'bands': bands,
         }
+
+    # ------------------------------------------------------------------
+    # Experience slices (read-only, real data)
+    # ------------------------------------------------------------------
+
+    def get_loss_ratio_by_smoking_status(
+        self,
+        customers: Dict[str, Any],
+        policies: Dict[str, Any],
+        claims: Dict[str, Any],
+        underwriting_applications: Optional[Dict[str, Any]] = None,
+        pricing_factors: Optional[Dict[str, Any]] = None,
+        min_lives: int = SMOKING_SLICE_MIN_LIVES,
+    ) -> Dict[str, Any]:
+        """Cached wrapper around :func:`loss_ratio_by_smoking_status`."""
+        fingerprint = self._fingerprint(
+            customers, policies, claims, underwriting_applications or {}, pricing_factors or {}, min_lives
+        )
+        return self._cached(
+            'loss_ratio_by_smoking_status',
+            fingerprint,
+            lambda: loss_ratio_by_smoking_status(
+                customers, policies, claims,
+                underwriting_applications=underwriting_applications,
+                pricing_factors=pricing_factors,
+                min_lives=min_lives,
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Health score helpers

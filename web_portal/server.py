@@ -9726,8 +9726,9 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
         ('Customers Accepted', simulation.get('portfolio_summary', {}).get('accepted_customers', '')),
         ('Total Coverage', simulation.get('portfolio_summary', {}).get('total_coverage', '')),
         ('Total Annual Premium', simulation.get('portfolio_summary', {}).get('total_annual_premium', '')),
-        ('Loss Ratio %', simulation.get('risk_metrics', {}).get('loss_ratio', '')),
-        ('Reserve Requirement', simulation.get('risk_metrics', {}).get('reserve_requirement', '')),
+        ('Loss Ratio % (lifetime-annualised)', simulation.get('risk_metrics', {}).get('loss_ratio', '')),
+        ('Loss Ratio % (year-1)', simulation.get('risk_metrics', {}).get('loss_ratio_year1', '')),
+        ('Reserve Requirement (1.5 x PV over term)', simulation.get('risk_metrics', {}).get('reserve_requirement', '')),
         ('Reference Document', reference.get('source', {}).get('url', '')),
     ]
     cover_money_keys = {'Total Coverage', 'Total Annual Premium', 'Reserve Requirement'}
@@ -10128,8 +10129,9 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
         ['Accepted Customers', portfolio.get('accepted_customers', '')],
         ['Total Coverage (USD)', portfolio.get('total_coverage', '')],
         ['Total Annual Premium (USD)', portfolio.get('total_annual_premium', '')],
-        ['Loss Ratio %', risk.get('loss_ratio', '')],
-        ['Reserve Requirement (USD)', risk.get('reserve_requirement', '')],
+        ['Loss Ratio % (lifetime-annualised)', risk.get('loss_ratio', '')],
+        ['Loss Ratio % (year-1)', risk.get('loss_ratio_year1', '')],
+        ['Reserve Requirement (USD, 1.5 x PV over term)', risk.get('reserve_requirement', '')],
         ['Net Profit (USD)', prof.get('net_profit', '')],
         ['Components Reconcile', str(prof.get('components_match', ''))],
     ]
@@ -17624,6 +17626,7 @@ For claims or questions, please contact:
             '/api/bi/customer-analytics', '/api/bi/supplier-analytics',
             '/api/bi/insights', '/api/bi/revenue-forecast',
             '/api/bi/snapshots', '/api/bi/monte-carlo-evaluation',
+            '/api/bi/loss-ratio-by-smoking',
         ):
             if not require_role(session, ['admin', 'accountant', 'underwriter']):
                 self._set_json_headers(403)
@@ -17645,6 +17648,7 @@ For claims or questions, please contact:
                     'health_wallets': HEALTH_WALLETS,
                     'investment_accounts': INVESTMENT_ACCOUNTS,
                     'transaction_ledger': TRANSACTION_LEDGER,
+                    'underwriting_applications': UNDERWRITING_APPLICATIONS,
                     'deliveries': {},
                 }
                 if path == '/api/bi/executive-dashboard':
@@ -17665,6 +17669,10 @@ For claims or questions, please contact:
                     mc_params = {k: (v[0] if isinstance(v, list) and v else v)
                                  for k, v in qs.items()}
                     status_code, payload = _bi.handle_monte_carlo_evaluation(self, data_sources, mc_params)
+                elif path == '/api/bi/loss-ratio-by-smoking':
+                    slice_params = {k: (v[0] if isinstance(v, list) and v else v)
+                                    for k, v in qs.items()}
+                    status_code, payload = _bi.handle_loss_ratio_by_smoking(self, data_sources, slice_params)
                 else:  # /api/bi/revenue-forecast
                     forecast_params = {k: (v[0] if isinstance(v, list) and v else v)
                                        for k, v in qs.items()}
@@ -18351,6 +18359,54 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
+        if path == '/api/claims/bot-threshold-calibration':
+            # Claims-bot authenticity cut-offs tested against reviewer final
+            # decisions on record. Read-only; proposes nothing below the
+            # minimum labelled sample and never changes the live constants.
+            if not require_role(session, ['admin', 'claims_adjuster', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin, Claims or Actuary role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.assessment_record_service import get_assessment_record_service
+                from services.claims_bot_service import calibrate_claims_thresholds
+                records = get_assessment_record_service().list_records(
+                    assessment_type='claims_fraud', page=1, page_size=200)
+                items = list(records.get('items') or [])
+                total = int(records.get('total') or 0)
+                page = 2
+                while len(items) < total and page <= 100:
+                    more = get_assessment_record_service().list_records(
+                        assessment_type='claims_fraud', page=page, page_size=200)
+                    if not more.get('items'):
+                        break
+                    items.extend(more['items'])
+                    page += 1
+                report = calibrate_claims_thresholds(items)
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'success': True, 'calibration': report}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/actuarial/claims-lag':
+            # Observed incident→report lag on real claims and the IBNR share it
+            # implies. Read-only; proposes nothing below the minimum sample.
+            if not require_role(session, ['admin', 'actuary', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin, Actuary or Accountant role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.actuarial_service import claims_reporting_lag_report, get_actuarial_store
+                report = claims_reporting_lag_report(CLAIMS, get_actuarial_store())
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'success': True, 'claims_lag': report}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
         if path == '/api/actuarial/defaults':
             # Get default configuration and table values for reset functionality
             if not require_role(session, ['admin', 'actuary']):
@@ -18620,11 +18676,17 @@ For claims or questions, please contact:
             try:
                 from services.actuarial_service import AutomationMetrics
                 customer_count = int(qs.get('customer_count', [100000])[0])
-                metrics = AutomationMetrics.calculate_automation_rates(customer_count)
+                # Observed decision mix from real records (read-only); each
+                # process falls back to the assumed BASE_RATES below the
+                # minimum sample and is labelled source: 'assumed'.
+                observed = AutomationMetrics.observe_automation_mix(
+                    UNDERWRITING_APPLICATIONS, CLAIMS, BILLING)
+                metrics = AutomationMetrics.calculate_automation_rates(customer_count, observed=observed)
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
                     'success': True,
-                    'metrics': metrics
+                    'metrics': metrics,
+                    'observed': observed,
                 }).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)

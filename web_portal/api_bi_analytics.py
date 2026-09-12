@@ -10,6 +10,7 @@ Endpoints:
 - GET /api/bi/supplier-analytics - Supplier ecosystem analytics
 - GET /api/bi/insights - AI-powered insights and recommendations
 - GET /api/bi/revenue-forecast - Revenue forecasting
+- GET /api/bi/loss-ratio-by-smoking - Observed loss ratio by smoking cohort (read-only)
 - GET /api/bi/monte-carlo-evaluation - Monte Carlo evaluation of rules/assumptions
 - GET /api/integrity/validate - Platform integrity check
 """
@@ -128,14 +129,61 @@ def handle_ai_insights(handler, data_sources: dict) -> tuple:
         return 500, {'error': str(e)}
 
 
+def handle_loss_ratio_by_smoking(handler, data_sources: dict, params: dict = None) -> tuple:
+    """Handle GET /api/bi/loss-ratio-by-smoking (read-only experience slice).
+
+    Groups real active policies and their incurred claims by smoking cohort so
+    the smoker pricing factors can be validated against PHINS experience
+    rather than the Monte Carlo world. Nothing is written; the response names
+    the audited endpoint where the factors are adjusted.
+    """
+    try:
+        bi_service = get_bi_analytics_service()
+        min_lives = None
+        if params and params.get('min_lives') not in (None, ''):
+            min_lives = max(1, int(params['min_lives']))
+        pricing_factors = None
+        try:
+            from services.actuarial_service import get_actuarial_store
+            cfg = get_actuarial_store().config
+            pricing_factors = {
+                'smoker_mortality_factor': getattr(cfg, 'smoker_mortality_factor', None),
+                'smoker_disability_factor': getattr(cfg, 'smoker_disability_factor', None),
+                'config_version': getattr(cfg, 'config_version', None),
+            }
+        except Exception:
+            pricing_factors = None
+        kwargs = {}
+        if min_lives is not None:
+            kwargs['min_lives'] = min_lives
+        slice_report = bi_service.get_loss_ratio_by_smoking_status(
+            customers=data_sources.get('customers', {}) or {},
+            policies=data_sources.get('policies', {}) or {},
+            claims=data_sources.get('claims', {}) or {},
+            underwriting_applications=data_sources.get('underwriting_applications', {}) or {},
+            pricing_factors=pricing_factors,
+            **kwargs,
+        )
+        return 200, slice_report
+    except (TypeError, ValueError) as e:
+        return 400, {'error': f'Invalid parameter: {e}'}
+    except Exception as e:
+        return 500, {'error': str(e)}
+
+
 def handle_revenue_forecast(handler, policies: dict, params: dict = None) -> tuple:
     """Handle GET /api/bi/revenue-forecast"""
     try:
         bi_service = get_bi_analytics_service()
         
-        # Extract query parameters
-        growth_rate = float(params.get('growth_rate', 0.05)) if params else 0.05
+        # Extract query parameters. Without an explicit growth_rate the
+        # service derives it from observed policy start dates (falling back
+        # to the default when history is short) and says so in forecast_basis.
+        growth_rate = None
+        if params and params.get('growth_rate') not in (None, ''):
+            growth_rate = float(params['growth_rate'])
         months_ahead = int(params.get('months_ahead', 12)) if params else 12
+        months_ahead = max(1, min(120, months_ahead))
         
         forecast = bi_service.predict_revenue_forecast(
             policies=policies,
@@ -217,6 +265,10 @@ def handle_monte_carlo_evaluation(handler, data_sources: dict, params: dict = No
         observed = {
             'policies': data_sources.get('policies', {}) or {},
             'claims': data_sources.get('claims', {}) or {},
+            # Read only, to validate smoker pricing factors against PHINS experience.
+            'customers': data_sources.get('customers', {}) or {},
+            'underwriting_applications': data_sources.get('underwriting_applications', {}) or {},
+            'billing': data_sources.get('billing', {}) or {},
         }
         report = get_monte_carlo_evaluation_service().run(eval_params, observed=observed)
         return 200, report

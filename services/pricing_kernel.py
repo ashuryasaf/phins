@@ -543,6 +543,10 @@ class PremiumComponents:
     pv_total_risk_claims: float
     eligible: bool = True
     decline_reason: Optional[str] = None
+    # Undiscounted expected claims in the first policy year (attained-age
+    # tables, before lapse). Basis for a year-1 "paid claims / premium" loss
+    # ratio; distinct from pv_total_risk_claims / term (lifetime-annualised).
+    expected_claims_year1: float = 0.0
     coverage_amount: float = 0.0
     term_years: int = 0
     age: int = 0
@@ -852,6 +856,7 @@ def _pv_claims_mutually_exclusive(
 
     pv_mortality = 0.0
     pv_disability = 0.0
+    expected_claims_year1 = 0.0
     prob_alive_not_disabled = 1.0
 
     for year in range(1, term + 1):
@@ -887,10 +892,20 @@ def _pv_claims_mutually_exclusive(
         pv_mortality += life_sum * prob_die_this_year * discount
         if disability_active and benefit_pct > 0:
             pv_disability += disability_sum * benefit_pct * prob_disable_this_year * discount
+        if year == 1:
+            # Undiscounted, pre-lapse expected claims in the first policy year:
+            # the year-1 basis for a "paid claims / premium" loss ratio.
+            expected_claims_year1 = life_sum * prob_die_this_year
+            if disability_active and benefit_pct > 0:
+                expected_claims_year1 += disability_sum * benefit_pct * prob_disable_this_year
 
         prob_alive_not_disabled = prob_survive_death * max(0.0, 1.0 - dx)
 
-    return {"pv_mortality": pv_mortality, "pv_disability": pv_disability}
+    return {
+        "pv_mortality": pv_mortality,
+        "pv_disability": pv_disability,
+        "expected_claims_year1": expected_claims_year1,
+    }
 
 
 def _pv_claims_independent(
@@ -913,6 +928,7 @@ def _pv_claims_independent(
     demo_dis = float(demo["disability_factor"])
 
     pv_mortality = 0.0
+    expected_claims_year1 = 0.0
     for year in range(1, term + 1):
         current_age = age + year - 1
         qx = tables.mortality_qx(current_age, customer.cohort) * adl_mort_mult * demo_mort
@@ -931,6 +947,8 @@ def _pv_claims_independent(
                 lapse_survival *= max(0.0, 1.0 - tables.lapse_rate(y))
             discount *= lapse_survival
         pv_mortality += life_sum * death_prob * discount
+        if year == 1:
+            expected_claims_year1 += life_sum * death_prob
 
     pv_disability = 0.0
     if not exclude_disability and product.disability_share > 0.0:
@@ -957,8 +975,14 @@ def _pv_claims_independent(
                     lapse_survival *= max(0.0, 1.0 - tables.lapse_rate(y))
                 discount *= lapse_survival
             pv_disability += survival * dis_rate * disability_sum * benefit_pct * discount
+            if year == 1:
+                expected_claims_year1 += survival * dis_rate * disability_sum * benefit_pct
 
-    return {"pv_mortality": pv_mortality, "pv_disability": pv_disability}
+    return {
+        "pv_mortality": pv_mortality,
+        "pv_disability": pv_disability,
+        "expected_claims_year1": expected_claims_year1,
+    }
 
 
 def _round6(value: float) -> float:
@@ -1068,6 +1092,7 @@ def price_policy(
     pv_mortality = pv_payload["pv_mortality"]
     pv_disability = pv_payload["pv_disability"]
     pv_total = pv_mortality + pv_disability
+    expected_claims_year1 = float(pv_payload.get("expected_claims_year1", 0.0))
 
     risk_premium = pv_total / term
     mortality_premium = pv_mortality / term
@@ -1131,6 +1156,7 @@ def price_policy(
         pv_mortality_claims=round(pv_mortality, 2),
         pv_disability_claims=round(pv_disability, 2),
         pv_total_risk_claims=round(pv_total, 2),
+        expected_claims_year1=round(expected_claims_year1, 2),
         eligible=True,
         coverage_amount=float(coverage),
         term_years=int(term),

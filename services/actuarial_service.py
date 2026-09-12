@@ -39,6 +39,21 @@ logger = logging.getLogger(__name__)
 
 ACTUARIAL_ACCESS_ROLES = ['admin', 'actuary']
 
+# =============================================================================
+# METRIC BASES (labels carried next to the numbers they describe)
+# =============================================================================
+
+# `risk_metrics.loss_ratio`: PV of expected claims over the full term ÷ average
+# term ÷ annual premium. Bakes ageing into a single "annual" figure.
+LOSS_RATIO_BASIS_LIFETIME_ANNUALISED = 'lifetime_annualised'
+# `risk_metrics.loss_ratio_year1`: undiscounted expected claims in the first
+# policy year at current attained ages ÷ annual premium.
+LOSS_RATIO_BASIS_YEAR1 = 'year1_attained_age'
+# `risk_metrics.reserve_requirement`: multiple × PV of expected claims over the
+# FULL remaining term (not a multiple of one year of claims).
+RESERVE_REQUIREMENT_MULTIPLE = 1.5
+RESERVE_REQUIREMENT_BASIS = 'pv_full_term_x1.5'
+
 def check_actuarial_access(user_role: str) -> bool:
     """Check if user has access to actuarial functions"""
     return user_role.lower() in ACTUARIAL_ACCESS_ROLES
@@ -146,6 +161,21 @@ class UnderwritingConfig:
     auto_approve_max_risk_score: float = 0.25
     auto_approve_max_coverage: float = 500000.0
     auto_approve_require_clean_history: bool = True
+    # ------------------------------------------------------------------
+    # Reserving assumptions (audited, versioned, restorable like the rest).
+    #
+    # `ibnr_pct`: IBNR provision as a share of expected (in-force) claims.
+    #   Default for ReserveConfig.ibnr_pct when a projection omits it.
+    # `ibnr_reporting_factor`: share of expected claims held as IBNR on the
+    #   accounting reserve summary (reserves_reporting_service).
+    # `loss_ratio_assumption`: expected loss ratio used to turn premium into
+    #   expected claims on the reserve summary.
+    # Defaults equal the constants these replaced, so adopting them is a
+    # refactor with no numeric change until an actuary saves a new value.
+    # ------------------------------------------------------------------
+    ibnr_pct: float = 0.10
+    ibnr_reporting_factor: float = 0.15
+    loss_ratio_assumption: float = 0.65
     # Bumped on every durable dashboard save so priced snapshots pin a revision.
     config_version: str = 'cfg_v1'
     last_modified: str = ''
@@ -419,6 +449,13 @@ def calculate_reinsurance_program(
         'protected_claims_pct': round(protected_claims_share * 100, 2),
         'avg_coverage_per_contract': round(avg_coverage, 2),
         'risk_band': risk_band,
+        # The band is classified on risk_metrics.loss_ratio (lifetime-annualised);
+        # the year-1 figure is carried alongside so a one-year treaty can be
+        # read against the matching basis.
+        'loss_ratio_basis': str(risk_metrics.get('loss_ratio_basis') or LOSS_RATIO_BASIS_LIFETIME_ANNUALISED),
+        'loss_ratio_pct': round(loss_ratio_pct, 2),
+        'loss_ratio_year1_pct': risk_metrics.get('loss_ratio_year1'),
+        'reserve_requirement_basis': str(risk_metrics.get('reserve_requirement_basis') or RESERVE_REQUIREMENT_BASIS),
         'ceded_exposure': round(ceded_exposure, 2),
         'ceded_expected_claims_annual': round(ceded_annual_claims, 2),
         'ceded_mortality_claims_annual': round(ceded_mortality_claims, 2),
@@ -901,6 +938,20 @@ class ActuarialTablesStore:
                 updates['auto_approve_require_clean_history']
             )
 
+        # Reserving assumptions. Accept fraction (0..1) or percentage (>1).
+        if 'ibnr_pct' in updates:
+            raw = float(updates['ibnr_pct'])
+            self.config.ibnr_pct = _clamp(raw / 100.0 if raw > 1.0 else raw, 0.0, 1.0)
+        if 'ibnr_reporting_factor' in updates:
+            raw = float(updates['ibnr_reporting_factor'])
+            self.config.ibnr_reporting_factor = _clamp(raw / 100.0 if raw > 1.0 else raw, 0.0, 1.0)
+        if 'loss_ratio_assumption' in updates:
+            raw = float(updates['loss_ratio_assumption'])
+            # Ratios up to 200 % are valid fractions for this field, so only a
+            # value above that ceiling can be percentage input (65 -> 0.65);
+            # 1.5 keeps its meaning of 150 %.
+            self.config.loss_ratio_assumption = _clamp(raw / 100.0 if raw > 2.0 else raw, 0.0, 2.0)
+
         # Bump config revision so priced policies can pin dashboard saves.
         self.config.config_version = _next_config_version(self.config.config_version)
 
@@ -1088,6 +1139,9 @@ class ActuarialTablesStore:
             'auto_approve_max_risk_score': 0.25,
             'auto_approve_max_coverage': 500000.0,
             'auto_approve_require_clean_history': True,
+            'ibnr_pct': 0.10,
+            'ibnr_reporting_factor': 0.15,
+            'loss_ratio_assumption': 0.65,
             'config_version': 'cfg_v1',
         }
     
@@ -1224,6 +1278,9 @@ class ActuarialTablesStore:
             auto_approve_require_clean_history=bool(
                 defaults.get('auto_approve_require_clean_history', True)
             ),
+            ibnr_pct=float(defaults.get('ibnr_pct', 0.10)),
+            ibnr_reporting_factor=float(defaults.get('ibnr_reporting_factor', 0.15)),
+            loss_ratio_assumption=float(defaults.get('loss_ratio_assumption', 0.65)),
             config_version=str(defaults.get('config_version', 'cfg_v1')),
             last_modified=datetime.now().isoformat(),
             modified_by=user
@@ -1568,30 +1625,170 @@ class AutomationMetrics:
                 return factor
         return 1.0
     
+    # Minimum decided records per process before the observed mix replaces
+    # the assumed BASE_RATES (below this a handful of decisions would swing
+    # the displayed percentages by tens of points).
+    OBSERVED_MIN_SAMPLE = 30
+
+    # Actors that mark a decision as taken by the platform rather than a person.
+    SYSTEM_ACTOR_PREFIXES = ('system', 'admin_pipeline', 'claims_bot', 'bot', 'auto')
+
     @classmethod
-    def calculate_automation_rates(cls, customer_count: int) -> Dict:
-        """Calculate automation rates for given portfolio size"""
+    def _is_system_actor(cls, actor: Any) -> bool:
+        """True only when a prefix matches a whole token of the actor.
+
+        ``system_auto_approve`` / ``bot_3`` / ``auto-pay`` are platform actors;
+        human names that merely begin with those letters (``Botros``,
+        ``Autumn Reid``) stay manual.
+        """
+        text = str(actor or '').strip().lower()
+        return any(
+            text == prefix or (text.startswith(prefix) and not text[len(prefix)].isalnum())
+            for prefix in cls.SYSTEM_ACTOR_PREFIXES
+        )
+
+    @classmethod
+    def observe_automation_mix(cls, underwriting_applications: Optional[Dict[str, Any]] = None,
+                               claims: Optional[Dict[str, Any]] = None,
+                               billing: Optional[Dict[str, Any]] = None,
+                               min_sample: int = OBSERVED_MIN_SAMPLE) -> Dict[str, Any]:
+        """Observed automation mix from real decision records (read-only).
+
+        Counts only *decided* records. A decision is automated when the actor
+        stamped on it is a platform actor (``system_auto_approve``,
+        ``admin_pipeline``, ``claims_bot`` …); everything else decided by a
+        person is ``manual_review``. Each process reports ``sample_size`` and
+        ``sufficient`` (>= ``min_sample``); callers fall back to
+        :attr:`BASE_RATES` when a process is not sufficient.
+        """
+        def _finish(counts: Dict[str, int], sample: int) -> Dict[str, Any]:
+            rates = {k: round(v / sample, 4) if sample else None for k, v in counts.items()}
+            return {'counts': dict(counts), 'sample_size': sample, 'min_sample': int(min_sample),
+                    'sufficient': sample >= int(min_sample), 'rates': rates}
+
+        uw_counts = {'auto_approve': 0, 'auto_decline': 0, 'auto_refer': 0, 'manual_review': 0}
+        uw_sample = 0
+        for app in (underwriting_applications or {}).values():
+            if not isinstance(app, dict):
+                continue
+            status = str(app.get('status', '')).lower()
+            if status not in ('approved', 'rejected', 'declined', 'referred'):
+                continue
+            uw_sample += 1
+            if status == 'approved' and cls._is_system_actor(app.get('approved_by')):
+                uw_counts['auto_approve'] += 1
+            elif status in ('rejected', 'declined') and cls._is_system_actor(
+                    app.get('rejected_by') or app.get('declined_by')):
+                uw_counts['auto_decline'] += 1
+            elif status == 'referred' and cls._is_system_actor(app.get('referred_by')):
+                uw_counts['auto_refer'] += 1
+            else:
+                uw_counts['manual_review'] += 1
+
+        cl_counts = {'auto_approve': 0, 'auto_decline': 0, 'auto_partial': 0, 'manual_review': 0}
+        cl_sample = 0
+        for claim in (claims or {}).values():
+            if not isinstance(claim, dict):
+                continue
+            status = str(claim.get('status', '')).lower()
+            if status not in ('approved', 'paid', 'closed', 'rejected', 'denied'):
+                continue
+            cl_sample += 1
+            actor = claim.get('approved_by') if status in ('approved', 'paid', 'closed') else (
+                claim.get('rejected_by') or claim.get('denied_by'))
+            if not cls._is_system_actor(actor) and not claim.get('auto_processed'):
+                cl_counts['manual_review'] += 1
+            elif status in ('rejected', 'denied'):
+                cl_counts['auto_decline'] += 1
+            else:
+                try:
+                    claimed = float(claim.get('claimed_amount') or 0.0)
+                    approved = float(claim.get('approved_amount') or 0.0)
+                except (TypeError, ValueError):
+                    claimed, approved = 0.0, 0.0
+                if claimed > 0 and approved < claimed - 1e-9:
+                    cl_counts['auto_partial'] += 1
+                else:
+                    cl_counts['auto_approve'] += 1
+
+        bl_counts = {'auto_collect': 0, 'auto_reminder': 0, 'manual_followup': 0}
+        bl_sample = 0
+        for bill in (billing or {}).values():
+            if not isinstance(bill, dict):
+                continue
+            status = str(bill.get('status', '')).lower()
+            if status not in ('paid', 'outstanding', 'overdue', 'partial', 'pending', 'unpaid'):
+                continue
+            bl_sample += 1
+            if status == 'paid' and (bill.get('auto_pay') is True or cls._is_system_actor(bill.get('paid_by'))):
+                bl_counts['auto_collect'] += 1
+            elif status != 'paid' and (bill.get('reminder_sent') or bill.get('reminders_sent')):
+                bl_counts['auto_reminder'] += 1
+            else:
+                bl_counts['manual_followup'] += 1
+
+        return {
+            'read_only': True,
+            'basis': 'decided records; automated = platform actor stamped on the decision',
+            'underwriting': _finish(uw_counts, uw_sample),
+            'claims': _finish(cl_counts, cl_sample),
+            'billing': _finish(bl_counts, bl_sample),
+        }
+
+    @classmethod
+    def calculate_automation_rates(cls, customer_count: int,
+                                   observed: Optional[Dict[str, Any]] = None) -> Dict:
+        """Automation rates for a portfolio size.
+
+        Without ``observed`` this is the historical scaled-``BASE_RATES``
+        display, byte-for-byte. With ``observed`` (from
+        :meth:`observe_automation_mix`) each process whose sample is
+        sufficient shows its observed mix instead and is labelled
+        ``source: 'observed'``; the others stay ``'assumed'``. Both are
+        reported so the assumed and observed mixes can be compared.
+        """
         scale = cls.get_scale_factor(customer_count)
         
         result = {
             'scale_factor': scale,
             'customer_count': customer_count
         }
+        sources: Dict[str, str] = {}
         
         for process, rates in cls.BASE_RATES.items():
-            result[process] = {}
+            # Assumed mix: unchanged historical computation.
+            assumed: Dict[str, Any] = {}
             total_auto = 0
             
             for action, base_rate in rates.items():
                 if action != 'manual_review':
                     # Scale automation rates up (capped at logical maximums)
                     scaled_rate = min(base_rate * scale, 0.95)
-                    result[process][action] = round(scaled_rate, 4)
+                    assumed[action] = round(scaled_rate, 4)
                     total_auto += scaled_rate
             
             # Manual review is what's left
-            result[process]['manual_review'] = round(max(0.05, 1 - total_auto), 4)
-            result[process]['total_automation_pct'] = round(1 - result[process]['manual_review'], 4)
+            assumed['manual_review'] = round(max(0.05, 1 - total_auto), 4)
+            assumed['total_automation_pct'] = round(1 - assumed['manual_review'], 4)
+
+            obs_process = (observed or {}).get(process) or {}
+            if obs_process.get('sufficient') and obs_process.get('rates'):
+                shown = {k: (v if v is not None else 0.0) for k, v in obs_process['rates'].items()}
+                manual_share = shown.get('manual_review', shown.get('manual_followup', 0.0))
+                shown['manual_review'] = manual_share
+                shown['total_automation_pct'] = round(1 - manual_share, 4)
+                shown['source'] = 'observed'
+                shown['sample_size'] = obs_process.get('sample_size')
+                shown['assumed'] = assumed
+                result[process] = shown
+                sources[process] = 'observed'
+            else:
+                assumed['source'] = 'assumed'
+                if observed is not None:
+                    assumed['sample_size'] = obs_process.get('sample_size', 0)
+                    assumed['observed_insufficient'] = True
+                result[process] = assumed
+                sources[process] = 'assumed'
         
         # Overall automation score
         overall = (
@@ -1600,6 +1797,8 @@ class AutomationMetrics:
             result['billing']['total_automation_pct'] * 0.25
         )
         result['overall_automation_pct'] = round(overall, 4)
+        result['sources'] = sources
+        result['min_observed_sample'] = cls.OBSERVED_MIN_SAMPLE
         
         return result
 
@@ -1739,7 +1938,8 @@ class PortfolioSimulator:
             'risk_premium': 0,  # Risk component only (for loss ratio)
             'savings_premium': 0,
             'pv_mortality_claims': 0,
-            'pv_disability_claims': 0
+            'pv_disability_claims': 0,
+            'expected_claims_year1': 0,
         }
         
         # Generate each customer
@@ -1763,6 +1963,7 @@ class PortfolioSimulator:
             customer['savings_premium'] = premium['savings_premium']
             customer['pv_mortality'] = premium['pv_mortality']
             customer['pv_disability'] = premium['pv_disability']
+            customer['expected_claims_year1'] = premium.get('expected_claims_year1', 0.0)
             customer['integrity_hash'] = premium.get('integrity_hash')
             
             # Update totals
@@ -1772,6 +1973,7 @@ class PortfolioSimulator:
             totals['savings_premium'] += customer['savings_premium']
             totals['pv_mortality_claims'] += customer['pv_mortality']
             totals['pv_disability_claims'] += customer['pv_disability']
+            totals['expected_claims_year1'] += customer['expected_claims_year1']
             
             # Update demographics
             age_bracket = self._get_age_bracket(customer['age'])
@@ -1831,19 +2033,34 @@ class PortfolioSimulator:
         # Loss ratio on RISK premium only (excludes savings component)
         # This shows if risk pricing is adequate
         loss_ratio_on_risk = round((annual_expected_claims / totals['risk_premium']) * 100, 2) if totals['risk_premium'] > 0 else 0
+
+        # Year-1 basis: undiscounted expected claims in the first policy year
+        # at current attained ages. `loss_ratio` above is lifetime-annualised
+        # (PV over term ÷ avg term), which bakes ageing into a single figure;
+        # the two are different quantities and are labelled as such.
+        expected_claims_year1 = totals['expected_claims_year1']
+        loss_ratio_year1 = round((expected_claims_year1 / totals['annual_premium']) * 100, 2) if totals['annual_premium'] > 0 else 0
+        loss_ratio_year1_on_risk = round((expected_claims_year1 / totals['risk_premium']) * 100, 2) if totals['risk_premium'] > 0 else 0
         
         risk_metrics = {
             'pv_mortality_claims': round(totals['pv_mortality_claims'], 2),
             'pv_disability_claims': round(totals['pv_disability_claims'], 2),
             'total_expected_claims': round(total_expected_claims, 2),  # PV over full term
             'annual_expected_claims': round(annual_expected_claims, 2),  # Annualized
+            'expected_claims_year1': round(expected_claims_year1, 2),  # Year-1, undiscounted
             'total_risk_premium': round(totals['risk_premium'], 2),
             'total_savings_premium': round(totals['savings_premium'], 2),
             'loss_ratio': loss_ratio,  # Claims vs Total Premium (annual basis) - KEY METRIC
+            'loss_ratio_basis': LOSS_RATIO_BASIS_LIFETIME_ANNUALISED,
             'loss_ratio_on_risk': loss_ratio_on_risk,  # Claims vs Risk Premium only
+            'loss_ratio_year1': loss_ratio_year1,  # Year-1 expected claims vs Total Premium
+            'loss_ratio_year1_on_risk': loss_ratio_year1_on_risk,
+            'loss_ratio_year1_basis': LOSS_RATIO_BASIS_YEAR1,
             'mortality_pct_of_claims': round((totals['pv_mortality_claims'] / total_expected_claims) * 100, 2) if total_expected_claims > 0 else 0,
             'disability_pct_of_claims': round((totals['pv_disability_claims'] / total_expected_claims) * 100, 2) if total_expected_claims > 0 else 0,
-            'reserve_requirement': round(total_expected_claims * 1.5, 2),  # 150% of expected claims
+            'reserve_requirement': round(total_expected_claims * RESERVE_REQUIREMENT_MULTIPLE, 2),
+            'reserve_requirement_basis': RESERVE_REQUIREMENT_BASIS,  # 1.5 × PV of expected claims over the full term
+            'reserve_requirement_multiple': RESERVE_REQUIREMENT_MULTIPLE,
             'avg_term_years': round(avg_term, 1)
         }
         
@@ -2214,6 +2431,7 @@ class PortfolioSimulator:
             'savings_premium': components.savings_premium_annual,
             'pv_mortality': components.pv_mortality_claims,
             'pv_disability': components.pv_disability_claims,
+            'expected_claims_year1': components.expected_claims_year1,
             'integrity_hash': components.integrity_hash,
             'product_id': components.product_id,
             'age_curve_id': components.age_curve_id,
@@ -3333,12 +3551,53 @@ def _pct_auto(v: float) -> float:
     return v / 100.0 if abs(v) > 1.0 else v
 
 
-def _coerce_reserve_config(payload: Optional[Dict[str, Any]]) -> ReserveConfig:
+# =============================================================================
+# IBNR — one provision function for every caller
+# =============================================================================
+
+IBNR_BASIS_SHARE_OF_EXPECTED_CLAIMS = 'share_of_expected_claims'
+
+
+def ibnr_provision(expected_claims: float, ibnr_pct: float, *,
+                   expected_claims_source: str) -> Dict[str, Any]:
+    """IBNR = expected claims × ibnr share.
+
+    Both platform IBNR rules reduce to this form. ``ReserveCalculator`` passes
+    in-force expected claims from the priced book; the accounting reserve
+    summary passes ``annual risk premium × loss_ratio_assumption``. Callers
+    state where their expected-claims figure came from so the two provisions
+    can be compared on a labelled basis instead of by construction.
+    """
+    ec = max(0.0, float(expected_claims or 0.0))
+    pct = _clamp(float(ibnr_pct or 0.0), 0.0, 1.0)
+    return {
+        'ibnr': ec * pct,
+        'ibnr_pct': pct,
+        'expected_claims': ec,
+        'expected_claims_source': str(expected_claims_source),
+        'basis': IBNR_BASIS_SHARE_OF_EXPECTED_CLAIMS,
+    }
+
+
+def _coerce_reserve_config(payload: Optional[Dict[str, Any]],
+                           tables_store: Optional['ActuarialTablesStore'] = None) -> ReserveConfig:
+    """Build a ReserveConfig from a projection payload.
+
+    ``ibnr_pct`` defaults to the audited ``UnderwritingConfig.ibnr_pct`` of the
+    (given or global) store when the payload omits it, so a projection run
+    without an explicit IBNR input follows the actuary-saved assumption.
+    """
     payload = payload or {}
+    default_ibnr = 0.10
+    try:
+        store = tables_store or get_actuarial_store()
+        default_ibnr = float(getattr(store.config, 'ibnr_pct', default_ibnr))
+    except Exception:
+        pass
     return ReserveConfig(
         dividends_pct=_clamp(_pct_auto(float(payload.get('dividends_pct', 0.30) or 0.0)), 0.0, 1.0),
         tax_pct=_clamp(_pct_auto(float(payload.get('tax_pct', 0.23) or 0.0)), 0.0, 0.6),
-        ibnr_pct=_clamp(_pct_auto(float(payload.get('ibnr_pct', 0.10) or 0.0)), 0.0, 1.0),
+        ibnr_pct=_clamp(_pct_auto(float(payload.get('ibnr_pct', default_ibnr) or 0.0)), 0.0, 1.0),
         reserve_contribution_pct=_clamp(
             _pct_auto(float(payload.get('reserve_contribution_pct', 0.40) or 0.0)), 0.0, 1.0
         ),
@@ -3655,8 +3914,9 @@ class ReserveCalculator:
                 priced_savings_contribution + post_hoc_savings_contribution
             )
 
-            # IBNR provision: incurred-claims method
-            ibnr = in_force_claims * config.ibnr_pct
+            # IBNR provision: incurred-claims method (shared provision function)
+            ibnr = ibnr_provision(in_force_claims, config.ibnr_pct,
+                                  expected_claims_source='in_force_expected_claims')['ibnr']
 
             # IFRS 17 release: CSM amortized over remaining coverage units;
             # BEL and RA wind down proportionally to in-force decay.
@@ -3920,6 +4180,12 @@ class ReserveCalculator:
             'projection_years': projection_years,
             'avg_term_years': round(avg_term, 2),
             'config': asdict(config),
+            'ibnr_basis': {
+                'basis': IBNR_BASIS_SHARE_OF_EXPECTED_CLAIMS,
+                'expected_claims_source': 'in_force_expected_claims',
+                'ibnr_pct': config.ibnr_pct,
+                'config_default_ibnr_pct': float(getattr(self.tables.config, 'ibnr_pct', 0.10)),
+            },
             'yearly_projection': yearly,
             'totals': totals,
             'opening_balances': {
@@ -3994,6 +4260,126 @@ class ReserveCalculator:
 
 def get_reserve_calculator() -> ReserveCalculator:
     return ReserveCalculator()
+
+
+# =============================================================================
+# OBSERVED CLAIMS REPORTING LAG (read-only, calibrates the IBNR share)
+# =============================================================================
+
+CLAIMS_LAG_MIN_SAMPLE = 30
+_CLAIM_INCIDENT_KEYS = ('incident_date', 'date_of_incident', 'loss_date', 'event_date')
+_CLAIM_REPORTED_KEYS = ('reported_date', 'filed_date', 'submitted_at', 'created_at', 'created_date')
+
+
+def _parse_claim_dt(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+    try:
+        text = str(value).strip().replace('Z', '+00:00')
+        parsed = datetime.fromisoformat(text)
+        return parsed.replace(tzinfo=None)
+    except Exception:
+        try:
+            return datetime.strptime(str(value)[:10], '%Y-%m-%d')
+        except Exception:
+            return None
+
+
+def _lag_percentile(sorted_xs: List[float], q: float) -> float:
+    if not sorted_xs:
+        return 0.0
+    if len(sorted_xs) == 1:
+        return sorted_xs[0]
+    pos = q * (len(sorted_xs) - 1)
+    lo = int(math.floor(pos))
+    hi = min(lo + 1, len(sorted_xs) - 1)
+    return sorted_xs[lo] + (sorted_xs[hi] - sorted_xs[lo]) * (pos - lo)
+
+
+def claims_reporting_lag_report(claims: Dict[str, Any],
+                                tables_store: Optional['ActuarialTablesStore'] = None,
+                                min_sample: int = CLAIMS_LAG_MIN_SAMPLE) -> Dict[str, Any]:
+    """Observed incident→report lag on real claims and the IBNR share it implies.
+
+    Read-only. Uses every claim that carries both an incident date and a
+    report/filing date; ignores the rest and says how many were ignored.
+    The implied IBNR share assumes claims incur uniformly through the year:
+    the share of a year's claims still unreported at year-end is
+    ``E[min(lag, 365)] / 365``. Below ``min_sample`` usable claims the report
+    is marked ``insufficient_data`` and proposes nothing.
+    """
+    lags: List[float] = []
+    skipped = 0
+    for claim in (claims or {}).values():
+        if not isinstance(claim, dict):
+            skipped += 1
+            continue
+        incident = next((_parse_claim_dt(claim.get(k)) for k in _CLAIM_INCIDENT_KEYS if claim.get(k)), None)
+        reported = next((_parse_claim_dt(claim.get(k)) for k in _CLAIM_REPORTED_KEYS if claim.get(k)), None)
+        if incident is None or reported is None:
+            skipped += 1
+            continue
+        lag_days = (reported - incident).total_seconds() / 86400.0
+        if lag_days < 0 or lag_days > 3650:
+            skipped += 1  # implausible ordering or > 10 years: not a reporting lag
+            continue
+        lags.append(lag_days)
+
+    lags.sort()
+    n = len(lags)
+    store = None
+    try:
+        store = tables_store or get_actuarial_store()
+    except Exception:
+        store = None
+    cfg = getattr(store, 'config', None)
+    current = {
+        'ibnr_pct': float(getattr(cfg, 'ibnr_pct', 0.10)) if cfg else 0.10,
+        'ibnr_reporting_factor': float(getattr(cfg, 'ibnr_reporting_factor', 0.15)) if cfg else 0.15,
+        'loss_ratio_assumption': float(getattr(cfg, 'loss_ratio_assumption', 0.65)) if cfg else 0.65,
+        'config_version': str(getattr(cfg, 'config_version', '')) if cfg else '',
+    }
+    report: Dict[str, Any] = {
+        'read_only': True,
+        'sample_size': n,
+        'claims_without_both_dates': skipped,
+        'min_sample': int(min_sample),
+        'insufficient_data': n < int(min_sample),
+        'current_config': current,
+        'basis': 'share_of_annual_claims_unreported_at_year_end = E[min(lag_days, 365)] / 365',
+        'adjust_via': 'POST /api/actuarial/config {"ibnr_pct": <fraction>, "change_reason": "..."}',
+    }
+    if n == 0:
+        report['lag_days'] = None
+        report['implied_ibnr_pct_of_annual_claims'] = None
+        return report
+
+    mean = sum(lags) / n
+    capped_mean = sum(min(x, 365.0) for x in lags) / n
+    implied = capped_mean / 365.0
+    report['lag_days'] = {
+        'mean': round(mean, 2),
+        'p50': round(_lag_percentile(lags, 0.50), 2),
+        'p75': round(_lag_percentile(lags, 0.75), 2),
+        'p95': round(_lag_percentile(lags, 0.95), 2),
+        'max': round(lags[-1], 2),
+    }
+    report['implied_ibnr_pct_of_annual_claims'] = round(implied, 4)
+    report['current_vs_implied'] = {
+        'ibnr_pct_gap': round(current['ibnr_pct'] - implied, 4),
+        'ibnr_reporting_factor_gap': round(current['ibnr_reporting_factor'] - implied, 4),
+        'current_ibnr_pct_covers_implied': current['ibnr_pct'] >= implied,
+    }
+    if not report['insufficient_data']:
+        # Best estimate plus a prudence margin: p75 of the per-claim capped
+        # lag share. Rounded to the nearest half point so the proposal reads
+        # as an assumption, not a spurious-precision statistic.
+        p75_share = _lag_percentile([min(x, 365.0) / 365.0 for x in lags], 0.75)
+        report['proposed_ibnr_pct'] = round(round(2 * 100.0 * max(implied, p75_share)) / 2 / 100.0, 4)
+        report['proposal_basis'] = 'max(mean capped-lag share, p75 capped-lag share), rounded to 0.5 pt'
+    return report
 
 
 # =============================================================================

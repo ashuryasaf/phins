@@ -51,7 +51,14 @@ from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-ENGINE_VERSION = "mc-eval-1.0.0"
+ENGINE_VERSION = "mc-eval-1.0.1"
+# 1.0.1: the 150% reserve rule is now mirrored on PHINS's actual basis
+# (1.5 × PV of expected claims over the full term); the former annual-basis
+# test is reported separately as ``year1_claims_stress``.
+
+# Mirror of PortfolioSimulator.risk_metrics['reserve_requirement'].
+RESERVE_REQUIREMENT_MULTIPLE = 1.5
+RESERVE_REQUIREMENT_BASIS = "pv_full_term_x1.5"
 
 ALL_MODULES: Tuple[str, ...] = (
     "risk", "underwriting", "actuarial", "claims", "sales", "ai",
@@ -350,7 +357,11 @@ def _load_phins_context() -> Dict[str, Any]:
     store = act.get_actuarial_store()
     cfg = store.config
     tables = store.get_current_tables()
-    reserve_cfg = act.ReserveConfig()
+    # Reserving assumptions come from the audited UnderwritingConfig
+    # (ibnr_pct, ibnr_reporting_factor, loss_ratio_assumption).
+    reserve_cfg = act._coerce_reserve_config(None, store)
+    reserves_reporting_lr = float(getattr(cfg, "loss_ratio_assumption", 0.65))
+    reserves_reporting_factor = float(getattr(cfg, "ibnr_reporting_factor", 0.15))
 
     accept = float(os.environ.get("PHINS_AI_ACCEPT_THRESHOLD", "0.90"))
     review = float(os.environ.get("PHINS_AI_REVIEW_THRESHOLD", "0.70"))
@@ -389,9 +400,13 @@ def _load_phins_context() -> Dict[str, Any]:
             "high": "<=0.70 refer_senior_uw 50%+", "very_high": ">0.70 decline",
         },
         "automation_base_rates": act.AutomationMetrics.BASE_RATES,
-        "reserve_requirement_multiple": 1.5,
+        "reserve_requirement_multiple": RESERVE_REQUIREMENT_MULTIPLE,
+        "reserve_requirement_basis": RESERVE_REQUIREMENT_BASIS,
         "reserve_config": asdict(reserve_cfg),
-        "reserves_reporting": {"loss_ratio_assumption": 0.65, "ibnr_factor_of_premium": 0.15},
+        "reserves_reporting": {"loss_ratio_assumption": reserves_reporting_lr,
+                               "ibnr_reporting_factor": reserves_reporting_factor,
+                               "ibnr_pct_of_premium": reserves_reporting_lr * reserves_reporting_factor,
+                               "basis": "share_of_expected_claims (expected = premium × loss_ratio_assumption)"},
         "reinsurance_bands": {"very_high": ">=95", "high": ">=75", "medium": ">=45", "low": "<45"},
         "claims_bot": {
             "score_weights": ClaimsBotService.SCORE_WEIGHTS,
@@ -403,7 +418,13 @@ def _load_phins_context() -> Dict[str, Any]:
             "hidden_condition_penalty": 0.3,
         },
         "bi_revenue_forecast": {"monthly_growth_default": 0.05, "months_ahead_default": 12,
-                                "churn_modelled": False},
+                                # Legacy point forecast compounds gross growth without churn; the
+                                # additive `bands` (p10/p50/p90) net out lapse-table churn and the
+                                # growth rate is observed from policy start dates when >= 6 months
+                                # of history exist (GET /api/bi/revenue-forecast without growth_rate).
+                                "churn_modelled": False,
+                                "churn_modelled_in_bands": True,
+                                "growth_observed_when_history_months_at_least": 6},
         "ai_review_disposition": {"accept": accept, "review": review,
                                   "advisory_confidence_cap": advisory_cap},
         "ai_underwriting_thresholds": {"approve": DEFAULT_APPROVE_THRESHOLD,
@@ -416,8 +437,8 @@ def _load_phins_context() -> Dict[str, Any]:
         {"assumption": "condition loadings", "source": "services/chat_application_service.py:_CONDITION_KEYWORDS"},
         {"assumption": "premium decomposition", "source": "services/pricing_kernel.py:price_policy"},
         {"assumption": "reserve requirement 150%, automation base rates", "source": "services/actuarial_service.py:PortfolioSimulator/AutomationMetrics"},
-        {"assumption": "IBNR 10% of claims", "source": "services/actuarial_service.py:ReserveConfig"},
-        {"assumption": "IBNR = premium × 65% × 15%", "source": "services/reserves_reporting_service.py"},
+        {"assumption": "IBNR share of expected claims (ibnr_pct)", "source": "services/actuarial_service.py:UnderwritingConfig.ibnr_pct → ReserveConfig"},
+        {"assumption": "IBNR = premium × loss_ratio_assumption × ibnr_reporting_factor", "source": "services/actuarial_service.py:UnderwritingConfig → reserves_reporting_service"},
         {"assumption": "claims authenticity weights/thresholds", "source": "services/claims_bot_service.py:ClaimsBotService"},
         {"assumption": "5%/month MRR growth", "source": "services/bi_analytics_service.py:predict_revenue_forecast"},
         {"assumption": "AI accept/review thresholds", "source": "services/llm_providers.py:review_disposition"},
@@ -974,7 +995,13 @@ def evaluate_actuarial_metrics(rng: random.Random, lives: List[Dict[str, Any]],
     avg_term = _mean([l["term"] for l in eligible]) if eligible else 17.5
     pv_total = sum(l.get("pv_total_risk_claims", 0.0) for l in eligible)
     phins_sim_expected_claims = pv_total / avg_term if avg_term else 0.0
-    reserve_requirement = phins_sim_expected_claims * 1.5
+    # The PHINS rule (PortfolioSimulator.risk_metrics): reserve_requirement =
+    # total_expected_claims × 1.5, where total_expected_claims is the PV of
+    # claims over the FULL remaining term — not one year of claims.
+    reserve_requirement = pv_total * RESERVE_REQUIREMENT_MULTIPLE
+    # Separate year-1 volatility stress: 1.5 × annual expected claims. This is
+    # a diagnostic, not a PHINS rule; engine 1.0.0 mislabelled it as the rule.
+    year1_stress_requirement = phins_sim_expected_claims * RESERVE_REQUIREMENT_MULTIPLE
 
     base = _simulate_portfolio_paths(rng, cells, ctx, params, antiselection=False)
     stress = _simulate_portfolio_paths(rng, cells, ctx, params, antiselection=True)
@@ -987,7 +1014,13 @@ def evaluate_actuarial_metrics(rng: random.Random, lives: List[Dict[str, Any]],
     ibnr_claims = base["ibnr_share_claims"]
     ibnr_prem = base["ibnr_share_premium"]
     ibnr_needed_pct_of_premium_p95 = 100 * _percentile(sorted(ibnr_prem), 0.95)
-    reserves_reporting_ibnr_pct = 100 * 0.65 * 0.15  # premium × loss ratio × factor
+    rr_assume = ctx["assumptions"]["reserves_reporting"]
+    lr_assumption = float(rr_assume["loss_ratio_assumption"])
+    reserves_reporting_ibnr_pct = 100 * lr_assumption * float(rr_assume["ibnr_reporting_factor"])  # % of premium
+    claims_y1_sorted = sorted(claims_y1)
+    claims_y1_p99 = _percentile(claims_y1_sorted, 0.99)
+    tail = [c for c in claims_y1_sorted if c >= claims_y1_p99] or claims_y1_sorted[-1:]
+    claims_y1_tvar99 = _mean(tail) if tail else 0.0
 
     band_counts: Dict[str, int] = {}
     for x in y1_pct:
@@ -1008,12 +1041,26 @@ def evaluate_actuarial_metrics(rng: random.Random, lives: List[Dict[str, Any]],
         "cumulative_loss_ratio_pct": _distribution([100 * x for x in base["cum_lr"]]),
         "loss_ratio_by_year_mean_pct": [_r(100 * x, 2) for x in base["year_lr_means"]],
         "probability_year1_lr_exceeds_100pct": _r(sum(1 for x in y1 if x > 1.0) / len(y1)),
-        "probability_year1_lr_exceeds_65pct_assumption": _r(sum(1 for x in y1 if x > 0.65) / len(y1)),
+        "loss_ratio_assumption_pct": _r(100 * lr_assumption, 2),
+        "probability_year1_lr_exceeds_65pct_assumption": _r(sum(1 for x in y1 if x > lr_assumption) / len(y1)),
+        "phins_simulator_pv_total_claims": round(pv_total, 2),
         "reserve_rule_150pct": {
+            "basis": RESERVE_REQUIREMENT_BASIS,
+            "mirrors": "services/actuarial_service.py:PortfolioSimulator.risk_metrics.reserve_requirement",
             "reserve_requirement": round(reserve_requirement, 2),
+            "reserve_to_annual_expected_claims_multiple": _r(reserve_requirement / phins_sim_expected_claims if phins_sim_expected_claims else None, 3),
             "probability_year1_claims_within_reserve": _r(sum(1 for c in claims_y1 if c <= reserve_requirement) / len(claims_y1)),
-            "shortfall_p99": round(max(0.0, _percentile(sorted(claims_y1), 0.99) - reserve_requirement), 2),
-            "multiple_needed_for_99pct_coverage": _r(_percentile(sorted(claims_y1), 0.99) / phins_sim_expected_claims if phins_sim_expected_claims else None, 3),
+            "shortfall_p99": round(max(0.0, claims_y1_p99 - reserve_requirement), 2),
+            "multiple_needed_for_99pct_coverage": _r(claims_y1_p99 / pv_total if pv_total else None, 3),
+        },
+        "year1_claims_stress": {
+            "basis": "annual_expected_claims_x1.5 (volatility diagnostic; not a PHINS rule)",
+            "stress_requirement": round(year1_stress_requirement, 2),
+            "annual_expected_claims": round(phins_sim_expected_claims, 2),
+            "probability_year1_claims_within_stress": _r(sum(1 for c in claims_y1 if c <= year1_stress_requirement) / len(claims_y1)),
+            "shortfall_p99": round(max(0.0, claims_y1_p99 - year1_stress_requirement), 2),
+            "var99_multiple_of_annual_expected": _r(claims_y1_p99 / phins_sim_expected_claims if phins_sim_expected_claims else None, 3),
+            "tvar99_multiple_of_annual_expected": _r(claims_y1_tvar99 / phins_sim_expected_claims if phins_sim_expected_claims else None, 3),
         },
         "ibnr": {
             "unreported_share_of_year1_claims": _distribution(ibnr_claims),
@@ -1350,6 +1397,60 @@ def _observed_summary(observed: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _observed_smoking_experience(observed: Optional[Dict[str, Any]], ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Observed smoker/nonsmoker loss ratios from real PHINS data (read-only).
+
+    Used to base the smoker-factor proposal on experience rather than on the
+    synthetic world whenever both cohorts have enough lives.
+    """
+    if not observed or not observed.get("policies"):
+        return {"used": False, "sufficient": False}
+    try:
+        from services.bi_analytics_service import loss_ratio_by_smoking_status
+        uw_cfg = ctx.get("assumptions", {}).get("underwriting_config", {}) or {}
+        report = loss_ratio_by_smoking_status(
+            observed.get("customers") or {}, observed.get("policies") or {}, observed.get("claims") or {},
+            underwriting_applications=observed.get("underwriting_applications") or {},
+            pricing_factors={k: uw_cfg.get(k) for k in ("smoker_mortality_factor", "smoker_disability_factor")},
+        )
+    except Exception as exc:  # pragma: no cover - defensive; the slice is optional evidence
+        return {"used": False, "sufficient": False, "error": str(exc)}
+    comparison = report.get("comparison") or {}
+    return {
+        "used": True,
+        "sufficient": bool(comparison.get("sufficient")),
+        "smoker_lives": comparison.get("smoker_lives"),
+        "nonsmoker_lives": comparison.get("nonsmoker_lives"),
+        "min_lives_per_cohort": comparison.get("min_lives_per_cohort"),
+        "smoker_to_nonsmoker_loss_ratio_ratio": comparison.get("smoker_to_nonsmoker_loss_ratio_ratio"),
+        "gap_pts": comparison.get("gap_pts"),
+        "implied_factors": comparison.get("implied_factors"),
+        "cohorts": {row["cohort"]: {"lives": row["lives"], "incurred_loss_ratio_pct": row["incurred_loss_ratio_pct"]}
+                    for row in report.get("cohorts", [])},
+        "endpoint": "GET /api/bi/loss-ratio-by-smoking",
+    }
+
+
+def _observed_automation_mix(observed: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Observed automation mix from real decision records (read-only)."""
+    if not observed:
+        return {"used": False}
+    try:
+        from services import actuarial_service as act
+        mix = act.AutomationMetrics.observe_automation_mix(
+            observed.get("underwriting_applications") or {}, observed.get("claims") or {},
+            observed.get("billing") or {})
+    except Exception as exc:  # pragma: no cover - defensive; optional evidence
+        return {"used": False, "error": str(exc)}
+    return {
+        "used": True,
+        "endpoint": "GET /api/actuarial/automation-metrics",
+        "claims": {k: mix["claims"].get(k) for k in ("sample_size", "sufficient", "rates")},
+        "underwriting": {k: mix["underwriting"].get(k) for k in ("sample_size", "sufficient", "rates")},
+        "min_sample": mix["claims"].get("min_sample"),
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Orchestrator
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1387,6 +1488,8 @@ def run_evaluation(params: Optional[EvaluationParams] = None,
         results["ai"] = evaluate_ai_thresholds(rng, params, ctx)
 
     findings = derive_findings(results, ctx)
+    ctx["observed_smoking_experience"] = _observed_smoking_experience(observed, ctx)
+    ctx["observed_automation_mix"] = _observed_automation_mix(observed)
     observed_fp_after = _sha256_of(observed) if observed is not None else None
     observed_unchanged = (observed_fp_before == observed_fp_after) if observed is not None else None
     next_moves = derive_next_moves(results, findings, ctx, observed_unchanged)
@@ -1405,7 +1508,8 @@ def run_evaluation(params: Optional[EvaluationParams] = None,
         "world_assumptions": world,
         "phins_assumptions": ctx["assumptions"],
         "assumption_provenance": ctx["provenance"],
-        "observed_inputs": _observed_summary(observed),
+        "observed_inputs": dict(_observed_summary(observed), smoking_experience=ctx["observed_smoking_experience"],
+                                automation_mix=ctx["observed_automation_mix"]),
         "results": results,
         "findings": findings,
         "conclusions": conclusions,
@@ -1504,21 +1608,36 @@ def derive_findings(results: Dict[str, Any], ctx: Dict[str, Any]) -> List[Dict[s
 
     actu = results.get("actuarial")
     if actu:
-        p = actu["reserve_rule_150pct"]["probability_year1_claims_within_reserve"]
+        rr = actu["reserve_rule_150pct"]
+        p = rr["probability_year1_claims_within_reserve"]
         add("actuarial", "info" if p >= 0.99 else "warning" if p >= 0.95 else "critical",
-            f"The 150% reserve rule covers year-1 claims in {100 * p:.1f}% of trials "
-            f"(99% coverage needs {actu['reserve_rule_150pct']['multiple_needed_for_99pct_coverage']}× expected).",
-            actu["reserve_rule_150pct"],
-            "Replace the flat 1.5× multiple with a VaR/TVaR-based requirement from this distribution.")
+            f"PHINS's reserve rule (1.5 × PV of expected claims over the full term, "
+            f"{rr.get('reserve_to_annual_expected_claims_multiple')}× annual expected claims) covers year-1 claims "
+            f"in {100 * p:.1f}% of trials.",
+            rr,
+            "Label the basis of reserve_requirement on every surface that shows it; it is a full-term figure.")
+        st = actu.get("year1_claims_stress") or {}
+        ps = st.get("probability_year1_claims_within_stress")
+        if ps is not None:
+            add("actuarial", "info" if ps >= 0.99 else "warning",
+                f"Year-1 claims volatility: 1.5 × annual expected claims is exceeded in {100 * (1 - ps):.1f}% of trials "
+                f"at {actu.get('eligible_lives')} lives (VaR99 {st.get('var99_multiple_of_annual_expected')}×, "
+                f"TVaR99 {st.get('tvar99_multiple_of_annual_expected')}× annual expected). This is a size-driven "
+                f"diagnostic, not a PHINS rule.",
+                st,
+                "Publish year-1 VaR99/TVaR99 next to the reserve figure so volatility is visible at the current portfolio size.")
         ib = actu["ibnr"]
         add("actuarial", "info" if ib["probability_reserve_config_ibnr_sufficient"] >= 0.9 else "warning",
-            f"IBNR 10% of claims is sufficient in {100 * ib['probability_reserve_config_ibnr_sufficient']:.1f}% of trials; "
-            f"the premium-based 9.75% rule is sufficient in {100 * ib['probability_reserves_reporting_ibnr_sufficient']:.1f}%.",
+            f"IBNR {ib['reserve_config_ibnr_pct_of_claims']:g}% of claims (UnderwritingConfig.ibnr_pct) is sufficient in "
+            f"{100 * ib['probability_reserve_config_ibnr_sufficient']:.1f}% of trials; the premium-based "
+            f"{ib['reserves_reporting_ibnr_pct_of_premium']}%-of-premium rule (loss_ratio_assumption × "
+            f"ibnr_reporting_factor) is sufficient in {100 * ib['probability_reserves_reporting_ibnr_sufficient']:.1f}%.",
             {"unreported_share": ib["unreported_share_of_year1_claims"]},
-            "Reconcile the two IBNR rules (ReserveConfig vs reserves_reporting) to one lag-based estimate.")
+            "Both IBNR rules now read audited UnderwritingConfig fields; calibrate them from GET /api/actuarial/claims-lag "
+            "once enough claims carry incident and reported dates.")
         p100 = actu["probability_year1_lr_exceeds_100pct"]
         add("actuarial", "info" if p100 < 0.05 else "warning",
-            f"P(year-1 loss ratio > 100%) = {100 * p100:.1f}%; P(> 65% assumption) = "
+            f"P(year-1 loss ratio > 100%) = {100 * p100:.1f}%; P(> {actu.get('loss_ratio_assumption_pct')}% assumption) = "
             f"{100 * actu['probability_year1_lr_exceeds_65pct_assumption']:.1f}%.",
             actu["year1_loss_ratio_pct"],
             "Persist the loss-ratio distribution (p50/p95/p99) as BI snapshot metrics, not only the point estimate.")
@@ -1551,7 +1670,8 @@ def derive_findings(results: Dict[str, Any], ctx: Dict[str, Any]) -> List[Dict[s
             f"(≈{sales['phins_forecast']['implied_annual_growth_pct']}%/yr) is met in "
             f"{100 * last['probability_meets_deterministic']:.1f}% of paths at month {last['month']}; "
             f"mean shortfall {last['mean_shortfall_vs_deterministic_pct']}%.",
-            last, "Return p10/p50/p90 bands and model churn from the lapse table in /api/bi/revenue-forecast.")
+            last, "Read /api/bi/revenue-forecast without growth_rate: the rate is observed from policy history when "
+                  "sufficient and the p10/p50/p90 bands net out lapse-table churn; the legacy point line is gross.")
 
     ai = results.get("ai")
     if ai:
@@ -1696,7 +1816,17 @@ def derive_next_moves(results: Dict[str, Any], findings: List[Dict[str, Any]],
         gap = smoker_lr - never_lr
         if gap > _SMOKER_LR_GAP_PTS and never_lr > 0:
             neutral = bool(uw.get("demographic_factors_neutral"))
-            ratio = smoker_lr / never_lr
+            world_ratio = smoker_lr / never_lr
+            # Prefer PHINS's own experience over the synthetic world once both
+            # cohorts have enough lives; otherwise fall back to the world and say so.
+            experience = ctx.get("observed_smoking_experience") or {}
+            observed_ratio = experience.get("smoker_to_nonsmoker_loss_ratio_ratio")
+            if experience.get("sufficient") and observed_ratio:
+                ratio = float(observed_ratio)
+                ratio_basis = "observed_experience"
+            else:
+                ratio = world_ratio
+                ratio_basis = "simulated_world"
 
             def _scaled(key: str, r: float) -> float:
                 # The loss ratios were simulated under the live factor, so the
@@ -1725,14 +1855,27 @@ def derive_next_moves(results: Dict[str, Any], findings: List[Dict[str, Any]],
                 lead = ("Pricing treats smokers as neutral (factor 1.0) while the risk scorer penalises smoking; "
                         if neutral else
                         "Smoker pricing factors are set but the residual smoker/never loss-ratio gap remains; ")
+                if ratio_basis == "observed_experience":
+                    basis_text = (
+                        f"Proposed factors scale the live factors by PHINS's OBSERVED smoker/nonsmoker loss-ratio "
+                        f"ratio ({ratio:.3f}, {experience.get('smoker_lives')} smoker / "
+                        f"{experience.get('nonsmoker_lives')} nonsmoker active lives), capped at 3.0; the simulated "
+                        f"world ratio was {world_ratio:.3f}.")
+                else:
+                    basis_text = (
+                        f"Proposed factors scale the live factors by the SIMULATED loss-ratio ratio, capped at 3.0. "
+                        f"PHINS experience is not yet sufficient to replace it "
+                        f"({experience.get('smoker_lives') or 0} smoker / {experience.get('nonsmoker_lives') or 0} "
+                        f"nonsmoker active lives; {experience.get('min_lives_per_cohort') or 30} needed per cohort) — "
+                        f"validate at GET /api/bi/loss-ratio-by-smoking before relying on them.")
                 moves.append(_adjust_move(
                     "uw_smoker_demographic_factors", "underwriting", 1,
                     "Align smoker pricing factors with the smoker/never loss-ratio gap",
                     lead + f"simulated smoker loss ratio {smoker_lr:.1f}% vs {never_lr:.1f}% for never-smokers "
-                    f"({gap:.1f} pts). Proposed factors scale the live factors by the simulated loss-ratio ratio, "
-                    f"capped at 3.0; validate against experience before relying on them.",
+                    f"({gap:.1f} pts). " + basis_text,
                     {"smoker_lr_pct": smoker_lr, "never_lr_pct": never_lr, "gap_pts": round(gap, 2),
-                     "ratio": round(ratio, 3), "factors_neutral": neutral},
+                     "ratio": round(ratio, 3), "ratio_basis": ratio_basis, "world_ratio": round(world_ratio, 3),
+                     "factors_neutral": neutral, "observed_experience": experience},
                     current, proposed,
                     "services/actuarial_service.py:UnderwritingConfig.smoker_mortality_factor",
                     "anomaly" if neutral else "inconsistency"))
@@ -1790,46 +1933,67 @@ def derive_next_moves(results: Dict[str, Any], findings: List[Dict[str, Any]],
         if cover is not None and cover < _RESERVE_COVERAGE_MIN:
             moves.append(_redirect_move(
                 "act_reserve_multiple", "actuarial", 1,
-                "Replace the flat 150% reserve multiple with a size-aware VaR/TVaR requirement",
-                f"The 1.5× rule covers year-1 claims in only {100 * cover:.1f}% of trials at "
-                f"{actu.get('eligible_lives')} lives; 99% coverage needs "
-                f"{reserve.get('multiple_needed_for_99pct_coverage')}× expected claims. The multiple is a "
-                f"hard-coded constant, so this requires a code change rather than a dashboard setting.",
-                reserve, "services/actuarial_service.py:PortfolioSimulator (reserve_requirement = expected × 1.5)",
-                "inconsistency", ACTUARY_RESERVES_LINK,
-                proposed={"reserve_multiple": reserve.get("multiple_needed_for_99pct_coverage")},
-                adjustable_note="Constant in code; not exposed via /api/actuarial/config."))
+                "Investigate the 150% full-term reserve rule against year-1 claims",
+                f"PHINS's reserve (1.5 × PV of expected claims over the full term) covers year-1 claims in only "
+                f"{100 * cover:.1f}% of trials at {actu.get('eligible_lives')} lives. A full-term reserve failing a "
+                f"one-year test indicates a pricing or term-mix problem in the simulated book, not a multiple to tune.",
+                reserve, "services/actuarial_service.py:PortfolioSimulator (reserve_requirement = PV over term × 1.5)",
+                "anomaly", ACTUARY_RESERVES_LINK, kind="investigate"))
+        stress = actu.get("year1_claims_stress") or {}
+        stress_cover = stress.get("probability_year1_claims_within_stress")
+        if stress_cover is not None and stress_cover < _RESERVE_COVERAGE_MIN:
+            moves.append(_redirect_move(
+                "act_year1_volatility", "actuarial", 3,
+                "Publish year-1 claims VaR99/TVaR99 alongside the reserve figure",
+                f"At {actu.get('eligible_lives')} lives, year-1 claims exceed 1.5 × annual expected claims in "
+                f"{100 * (1 - stress_cover):.1f}% of trials (VaR99 {stress.get('var99_multiple_of_annual_expected')}×, "
+                f"TVaR99 {stress.get('tvar99_multiple_of_annual_expected')}×). This is claim-count volatility at the "
+                f"current portfolio size (∝ 1/√n); it is not a PHINS rule and does not call for tightening a multiple.",
+                stress, "services/monte_carlo_evaluation_service.py:year1_claims_stress", "none",
+                ACTUARY_RESERVES_LINK, kind="monitor"))
         ib = actu.get("ibnr") or {}
         suff = ib.get("probability_reserve_config_ibnr_sufficient")
         if suff is not None and suff < _IBNR_SUFFICIENCY_MIN:
             unreported = ib.get("unreported_share_of_year1_claims") or {}
             p75 = unreported.get("p75")
             # Best estimate plus a prudence margin (p75); p95 is reported as the stress value.
-            proposed_ibnr = round(2 * (100.0 * p75)) / 2 if p75 is not None else None
-            moves.append(_redirect_move(
-                "act_ibnr_pct", "actuarial", 1,
-                "Raise the IBNR provision used in reserve projections",
-                f"IBNR at {ib.get('reserve_config_ibnr_pct_of_claims')}% of claims is sufficient in "
-                f"{100 * suff:.1f}% of trials; the reporting-lag simulation leaves a median "
-                f"{100 * (unreported.get('p50') or 0):.1f}% of year-1 claims unreported "
-                f"(p75 {100 * (p75 or 0):.1f}%, p95 {100 * (unreported.get('p95') or 0):.1f}%). Enter the proposed "
-                f"percentage in the Reserves projection form; it is a per-projection input, not a persisted setting.",
-                ib, "services/actuarial_service.py:ReserveConfig.ibnr_pct", "inconsistency",
-                ACTUARY_RESERVES_LINK,
-                proposed={"ibnr_pct": proposed_ibnr, "basis": "p75 of unreported share",
-                          "stress_p95_pct": _r(100 * unreported["p95"], 1) if unreported.get("p95") is not None else None},
-                adjustable_note="Per-projection input on the Reserves form (POST /api/actuarial/reserves/project)."))
+            # Proposed value is a fraction (UnderwritingConfig.ibnr_pct is stored 0..1);
+            # rounded to the nearest 0.5 percentage point.
+            proposed_ibnr = round(2 * (100.0 * p75)) / 2 / 100.0 if p75 is not None else None
+            current_ibnr = (ib.get("reserve_config_ibnr_pct_of_claims") or 0.0) / 100.0
+            if proposed_ibnr is not None and proposed_ibnr > current_ibnr:
+                moves.append(_adjust_move(
+                    "act_ibnr_pct", "actuarial", 1,
+                    "Raise the default IBNR provision (UnderwritingConfig.ibnr_pct)",
+                    f"IBNR at {100 * current_ibnr:g}% of claims is sufficient in {100 * suff:.1f}% of trials; the "
+                    f"reporting-lag simulation leaves a median {100 * (unreported.get('p50') or 0):.1f}% of year-1 "
+                    f"claims unreported (p75 {100 * p75:.1f}%, p95 {100 * (unreported.get('p95') or 0):.1f}%). "
+                    f"The proposal is the p75 unreported share (best estimate plus prudence margin), rounded to 0.5 pt. "
+                    f"It becomes the default for reserve projections; a per-projection override remains available "
+                    f"on the Reserves form. Cross-check against observed lags at GET /api/actuarial/claims-lag.",
+                    {"ibnr": ib, "stress_p95_pct": _r(100 * unreported["p95"], 1) if unreported.get("p95") is not None else None},
+                    current={"ibnr_pct": _r(current_ibnr, 4)},
+                    proposed={"ibnr_pct": _r(proposed_ibnr, 4)},
+                    source_ref="services/actuarial_service.py:UnderwritingConfig.ibnr_pct → ReserveConfig.ibnr_pct",
+                    trigger="inconsistency", ui_link=ACTUARY_RESERVES_LINK))
+        lr_assumption_pct = actu.get("loss_ratio_assumption_pct")
         p65 = actu.get("probability_year1_lr_exceeds_65pct_assumption")
         if p65 is not None and p65 > _LR_ASSUMPTION_EXCEEDANCE_MAX:
             y1 = actu.get("year1_loss_ratio_pct") or {}
-            moves.append(_redirect_move(
-                "act_lr_assumption", "actuarial", 2,
-                "Re-base the 65% loss-ratio assumption on the simulated distribution",
-                f"P(year-1 loss ratio > 65%) = {100 * p65:.0f}%. Simulated p50 {y1.get('p50')}%, p95 {y1.get('p95')}%. "
-                f"Publish the distribution rather than the point assumption.",
-                y1, "services/reserves_reporting_service.py (loss_ratio_assumption 0.65)", "inconsistency",
-                ACTUARY_RESERVES_LINK, proposed={"loss_ratio_assumption_pct": y1.get("p50")},
-                adjustable_note="Constant in code; expose as a reporting parameter."))
+            p50 = y1.get("p50")
+            if p50 is not None and lr_assumption_pct is not None:
+                moves.append(_adjust_move(
+                    "act_lr_assumption", "actuarial", 2,
+                    f"Re-base the {lr_assumption_pct:g}% loss-ratio assumption on the simulated median",
+                    f"P(year-1 loss ratio > {lr_assumption_pct:g}%) = {100 * p65:.0f}%. Simulated p50 {p50}%, "
+                    f"p95 {y1.get('p95')}%. The assumption drives the reserves-reporting IBNR and the loss-performance "
+                    f"status; proposing the simulated median keeps it a best estimate (the distribution p50/p95/p99 is "
+                    f"published as BI snapshot metrics).",
+                    y1,
+                    current={"loss_ratio_assumption": _r(lr_assumption_pct / 100.0, 4)},
+                    proposed={"loss_ratio_assumption": _r(p50 / 100.0, 4)},
+                    source_ref="services/actuarial_service.py:UnderwritingConfig.loss_ratio_assumption → reserves_reporting_service",
+                    trigger="inconsistency", ui_link=ACTUARY_RESERVES_LINK))
         tables_lr = actu.get("expected_loss_ratio_phins_tables_pct")
         sim_lr = actu.get("phins_simulator_loss_ratio_pct")
         if tables_lr is not None and sim_lr is not None and abs(tables_lr - sim_lr) > _METHOD_DISAGREEMENT_PTS:
@@ -1864,17 +2028,32 @@ def derive_next_moves(results: Dict[str, Any], findings: List[Dict[str, Any]],
                 {"live": live, "pick": pick},
                 "services/claims_bot_service.py:ClaimsBotService._make_recommendation", "inconsistency", None,
                 proposed={"approve_partial": pick.get("approve_partial"), "deny": pick.get("deny")},
-                adjustable_note="Constants in code; not exposed via API."))
+                adjustable_note="Constants in code; not exposed via API. Before changing them, read "
+                                "GET /api/claims/bot-threshold-calibration: it tests the cut-offs against "
+                                "reviewer decisions on record and proposes nothing below 30 labelled claims."))
         mix_gap = cl.get("manual_share_vs_assumed")
         if mix_gap is not None and abs(mix_gap) > _MIX_DISAGREEMENT_PTS:
+            obs_mix = ((ctx.get("observed_automation_mix") or {}).get("claims")) or {}
+            obs_rates = obs_mix.get("rates") or {}
+            if obs_mix.get("sufficient"):
+                obs_text = (f" PHINS's observed claims decision mix ({obs_mix.get('sample_size')} decided claims) has "
+                            f"manual review at {100 * (obs_rates.get('manual_review') or 0):.0f}%; "
+                            f"/api/actuarial/automation-metrics already shows it as source 'observed'.")
+                kind = "monitor"
+            else:
+                obs_text = (f" Only {obs_mix.get('sample_size') or 0} decided claims are on record "
+                            f"(need {(ctx.get('observed_automation_mix') or {}).get('min_sample') or 30}); until then "
+                            f"/api/actuarial/automation-metrics labels the claims mix source 'assumed'.")
+                kind = "investigate"
             moves.append(_redirect_move(
                 "claims_automation_base_rates", "claims", 2,
                 "Drive claims automation KPIs from the observed decision mix",
                 f"Simulated manual-review share is {100 * live.get('manual_share', 0):.0f}% vs the fixed "
-                f"AutomationMetrics assumption of {100 * assumed_manual:.0f}%.",
-                {"simulated_manual": live.get("manual_share"), "assumed_manual": assumed_manual},
-                "services/actuarial_service.py:AutomationMetrics.BASE_RATES", "anomaly", None,
-                kind="investigate"))
+                f"AutomationMetrics assumption of {100 * assumed_manual:.0f}%." + obs_text,
+                {"simulated_manual": live.get("manual_share"), "assumed_manual": assumed_manual,
+                 "observed": obs_mix},
+                "services/actuarial_service.py:AutomationMetrics.BASE_RATES", "anomaly",
+                "/actuary-dashboard.html", kind=kind))
         if (cl.get("mirror_agreement_with_live_recommender") or 1.0) < 1.0:
             moves.append(_redirect_move(
                 "claims_mirror_disagreement", "claims", 0,
@@ -1897,11 +2076,13 @@ def derive_next_moves(results: Dict[str, Any], findings: List[Dict[str, Any]],
                 "Forecast revenue with the simulated median growth and publish bands",
                 f"The {100 * sales['phins_forecast']['monthly_growth']:.0f}%/month assumption is met in "
                 f"{100 * attain:.1f}% of paths at month {months}. The simulated median path implies "
-                f"{100 * (monthly_p50 or 0):.2f}%/month. Pass it as growth_rate to /api/bi/revenue-forecast and "
-                f"show p10/p50/p90 instead of a single line.",
+                f"{100 * (monthly_p50 or 0):.2f}%/month. Call /api/bi/revenue-forecast without growth_rate so the "
+                f"rate comes from observed policy history (forecast_basis says which), and read the p10/p50/p90 "
+                f"bands rather than the single line.",
                 last, "services/bi_analytics_service.py:predict_revenue_forecast", "inconsistency",
                 "/admin.html#analytics",
-                proposed={"growth_rate": monthly_p50, "api": "GET /api/bi/revenue-forecast?growth_rate=<value>"},
+                proposed={"growth_rate": monthly_p50, "api": "GET /api/bi/revenue-forecast (omit growth_rate for observed; "
+                                                              "or ?growth_rate=<value>)"},
                 adjustable_note="Per-request query parameter; no persisted setting."))
 
     ai = results.get("ai") or {}
@@ -1948,8 +2129,8 @@ _BI_SNAPSHOT_METRICS = {
     "risk": ["risk_scorer_auc", "risk_scorer_auc_ci95", "risk_band_observed_claim_rates"],
     "underwriting": ["expected_loss_ratio_tables_pct", "expected_loss_ratio_experience_pct",
                      "loss_ratio_by_smoking_status", "auto_approval_top_decile_leak_count"],
-    "actuarial": ["year1_loss_ratio_p50_p95_p99", "reserve_coverage_probability", "ibnr_sufficiency_probability",
-                  "antiselection_lr_drift_pts"],
+    "actuarial": ["year1_loss_ratio_p50_p95_p99", "reserve_coverage_probability_pv_basis",
+                  "year1_claims_var99_tvar99_multiple", "ibnr_sufficiency_probability", "antiselection_lr_drift_pts"],
     "claims": ["claims_fraud_leakage_rate", "claims_manual_share", "claims_legit_false_denial_rate"],
     "sales": ["mrr_forecast_p10_p50_p90", "forecast_attainment_probability"],
     "ai": ["ai_accepted_error_rate", "ai_human_review_load", "ai_uw_false_approve_rate"],
@@ -2042,8 +2223,10 @@ def _bi_conclusion_for(area: str, status: str, res: Dict[str, Any], moves: List[
                 else "Underwriting rules price the simulated book consistently; monitor the decline sensitivity table.")
     if area == "actuarial":
         rr = (res.get("reserve_rule_150pct") or {}).get("probability_year1_claims_within_reserve")
+        st = (res.get("year1_claims_stress") or {}).get("probability_year1_claims_within_stress")
         ib = (res.get("ibnr") or {}).get("probability_reserve_config_ibnr_sufficient")
-        return (f"Reserve rule covers year-1 in {100 * (rr or 0):.0f}% of trials and IBNR is sufficient in "
+        return (f"Full-term 1.5× PV reserve covers year-1 in {100 * (rr or 0):.0f}% of trials "
+                f"(year-1 volatility stress {100 * (st or 0):.0f}%) and IBNR is sufficient in "
                 f"{100 * (ib or 0):.0f}%; publish p50/p95/p99 loss ratios instead of the 65% point assumption.")
     if area == "claims":
         live = res.get("live_thresholds") or {}
