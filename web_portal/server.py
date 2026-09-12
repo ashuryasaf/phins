@@ -15586,6 +15586,12 @@ For claims or questions, please contact:
             self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
             self.send_header('Pragma', 'no-cache')
             self.send_header('Expires', '0')
+        elif lowered.endswith('.html'):
+            # Dashboards are served without ETag/Last-Modified, so a bare
+            # response lets browsers apply heuristic caching and keep showing
+            # the pre-deploy page (observed on admin.html after a release).
+            # no-cache makes every navigation revalidate against the server.
+            self.send_header('Cache-Control', 'no-cache')
         self.end_headers()
 
     def _serve_media_file(self, file_path: str) -> None:
