@@ -161,6 +161,21 @@ class UnderwritingConfig:
     auto_approve_max_risk_score: float = 0.25
     auto_approve_max_coverage: float = 500000.0
     auto_approve_require_clean_history: bool = True
+    # ------------------------------------------------------------------
+    # Reserving assumptions (audited, versioned, restorable like the rest).
+    #
+    # `ibnr_pct`: IBNR provision as a share of expected (in-force) claims.
+    #   Default for ReserveConfig.ibnr_pct when a projection omits it.
+    # `ibnr_reporting_factor`: share of expected claims held as IBNR on the
+    #   accounting reserve summary (reserves_reporting_service).
+    # `loss_ratio_assumption`: expected loss ratio used to turn premium into
+    #   expected claims on the reserve summary.
+    # Defaults equal the constants these replaced, so adopting them is a
+    # refactor with no numeric change until an actuary saves a new value.
+    # ------------------------------------------------------------------
+    ibnr_pct: float = 0.10
+    ibnr_reporting_factor: float = 0.15
+    loss_ratio_assumption: float = 0.65
     # Bumped on every durable dashboard save so priced snapshots pin a revision.
     config_version: str = 'cfg_v1'
     last_modified: str = ''
@@ -923,6 +938,17 @@ class ActuarialTablesStore:
                 updates['auto_approve_require_clean_history']
             )
 
+        # Reserving assumptions. Accept fraction (0..1) or percentage (>1).
+        if 'ibnr_pct' in updates:
+            raw = float(updates['ibnr_pct'])
+            self.config.ibnr_pct = _clamp(raw / 100.0 if raw > 1.0 else raw, 0.0, 1.0)
+        if 'ibnr_reporting_factor' in updates:
+            raw = float(updates['ibnr_reporting_factor'])
+            self.config.ibnr_reporting_factor = _clamp(raw / 100.0 if raw > 1.0 else raw, 0.0, 1.0)
+        if 'loss_ratio_assumption' in updates:
+            raw = float(updates['loss_ratio_assumption'])
+            self.config.loss_ratio_assumption = _clamp(raw / 100.0 if raw > 1.0 else raw, 0.0, 2.0)
+
         # Bump config revision so priced policies can pin dashboard saves.
         self.config.config_version = _next_config_version(self.config.config_version)
 
@@ -1110,6 +1136,9 @@ class ActuarialTablesStore:
             'auto_approve_max_risk_score': 0.25,
             'auto_approve_max_coverage': 500000.0,
             'auto_approve_require_clean_history': True,
+            'ibnr_pct': 0.10,
+            'ibnr_reporting_factor': 0.15,
+            'loss_ratio_assumption': 0.65,
             'config_version': 'cfg_v1',
         }
     
@@ -1246,6 +1275,9 @@ class ActuarialTablesStore:
             auto_approve_require_clean_history=bool(
                 defaults.get('auto_approve_require_clean_history', True)
             ),
+            ibnr_pct=float(defaults.get('ibnr_pct', 0.10)),
+            ibnr_reporting_factor=float(defaults.get('ibnr_reporting_factor', 0.15)),
+            loss_ratio_assumption=float(defaults.get('loss_ratio_assumption', 0.65)),
             config_version=str(defaults.get('config_version', 'cfg_v1')),
             last_modified=datetime.now().isoformat(),
             modified_by=user
@@ -3374,12 +3406,53 @@ def _pct_auto(v: float) -> float:
     return v / 100.0 if abs(v) > 1.0 else v
 
 
-def _coerce_reserve_config(payload: Optional[Dict[str, Any]]) -> ReserveConfig:
+# =============================================================================
+# IBNR — one provision function for every caller
+# =============================================================================
+
+IBNR_BASIS_SHARE_OF_EXPECTED_CLAIMS = 'share_of_expected_claims'
+
+
+def ibnr_provision(expected_claims: float, ibnr_pct: float, *,
+                   expected_claims_source: str) -> Dict[str, Any]:
+    """IBNR = expected claims × ibnr share.
+
+    Both platform IBNR rules reduce to this form. ``ReserveCalculator`` passes
+    in-force expected claims from the priced book; the accounting reserve
+    summary passes ``annual risk premium × loss_ratio_assumption``. Callers
+    state where their expected-claims figure came from so the two provisions
+    can be compared on a labelled basis instead of by construction.
+    """
+    ec = max(0.0, float(expected_claims or 0.0))
+    pct = _clamp(float(ibnr_pct or 0.0), 0.0, 1.0)
+    return {
+        'ibnr': ec * pct,
+        'ibnr_pct': pct,
+        'expected_claims': ec,
+        'expected_claims_source': str(expected_claims_source),
+        'basis': IBNR_BASIS_SHARE_OF_EXPECTED_CLAIMS,
+    }
+
+
+def _coerce_reserve_config(payload: Optional[Dict[str, Any]],
+                           tables_store: Optional['ActuarialTablesStore'] = None) -> ReserveConfig:
+    """Build a ReserveConfig from a projection payload.
+
+    ``ibnr_pct`` defaults to the audited ``UnderwritingConfig.ibnr_pct`` of the
+    (given or global) store when the payload omits it, so a projection run
+    without an explicit IBNR input follows the actuary-saved assumption.
+    """
     payload = payload or {}
+    default_ibnr = 0.10
+    try:
+        store = tables_store or get_actuarial_store()
+        default_ibnr = float(getattr(store.config, 'ibnr_pct', default_ibnr))
+    except Exception:
+        pass
     return ReserveConfig(
         dividends_pct=_clamp(_pct_auto(float(payload.get('dividends_pct', 0.30) or 0.0)), 0.0, 1.0),
         tax_pct=_clamp(_pct_auto(float(payload.get('tax_pct', 0.23) or 0.0)), 0.0, 0.6),
-        ibnr_pct=_clamp(_pct_auto(float(payload.get('ibnr_pct', 0.10) or 0.0)), 0.0, 1.0),
+        ibnr_pct=_clamp(_pct_auto(float(payload.get('ibnr_pct', default_ibnr) or 0.0)), 0.0, 1.0),
         reserve_contribution_pct=_clamp(
             _pct_auto(float(payload.get('reserve_contribution_pct', 0.40) or 0.0)), 0.0, 1.0
         ),
@@ -3696,8 +3769,9 @@ class ReserveCalculator:
                 priced_savings_contribution + post_hoc_savings_contribution
             )
 
-            # IBNR provision: incurred-claims method
-            ibnr = in_force_claims * config.ibnr_pct
+            # IBNR provision: incurred-claims method (shared provision function)
+            ibnr = ibnr_provision(in_force_claims, config.ibnr_pct,
+                                  expected_claims_source='in_force_expected_claims')['ibnr']
 
             # IFRS 17 release: CSM amortized over remaining coverage units;
             # BEL and RA wind down proportionally to in-force decay.
@@ -3961,6 +4035,12 @@ class ReserveCalculator:
             'projection_years': projection_years,
             'avg_term_years': round(avg_term, 2),
             'config': asdict(config),
+            'ibnr_basis': {
+                'basis': IBNR_BASIS_SHARE_OF_EXPECTED_CLAIMS,
+                'expected_claims_source': 'in_force_expected_claims',
+                'ibnr_pct': config.ibnr_pct,
+                'config_default_ibnr_pct': float(getattr(self.tables.config, 'ibnr_pct', 0.10)),
+            },
             'yearly_projection': yearly,
             'totals': totals,
             'opening_balances': {
@@ -4035,6 +4115,126 @@ class ReserveCalculator:
 
 def get_reserve_calculator() -> ReserveCalculator:
     return ReserveCalculator()
+
+
+# =============================================================================
+# OBSERVED CLAIMS REPORTING LAG (read-only, calibrates the IBNR share)
+# =============================================================================
+
+CLAIMS_LAG_MIN_SAMPLE = 30
+_CLAIM_INCIDENT_KEYS = ('incident_date', 'date_of_incident', 'loss_date', 'event_date')
+_CLAIM_REPORTED_KEYS = ('reported_date', 'filed_date', 'submitted_at', 'created_at', 'created_date')
+
+
+def _parse_claim_dt(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+    try:
+        text = str(value).strip().replace('Z', '+00:00')
+        parsed = datetime.fromisoformat(text)
+        return parsed.replace(tzinfo=None)
+    except Exception:
+        try:
+            return datetime.strptime(str(value)[:10], '%Y-%m-%d')
+        except Exception:
+            return None
+
+
+def _lag_percentile(sorted_xs: List[float], q: float) -> float:
+    if not sorted_xs:
+        return 0.0
+    if len(sorted_xs) == 1:
+        return sorted_xs[0]
+    pos = q * (len(sorted_xs) - 1)
+    lo = int(math.floor(pos))
+    hi = min(lo + 1, len(sorted_xs) - 1)
+    return sorted_xs[lo] + (sorted_xs[hi] - sorted_xs[lo]) * (pos - lo)
+
+
+def claims_reporting_lag_report(claims: Dict[str, Any],
+                                tables_store: Optional['ActuarialTablesStore'] = None,
+                                min_sample: int = CLAIMS_LAG_MIN_SAMPLE) -> Dict[str, Any]:
+    """Observed incident→report lag on real claims and the IBNR share it implies.
+
+    Read-only. Uses every claim that carries both an incident date and a
+    report/filing date; ignores the rest and says how many were ignored.
+    The implied IBNR share assumes claims incur uniformly through the year:
+    the share of a year's claims still unreported at year-end is
+    ``E[min(lag, 365)] / 365``. Below ``min_sample`` usable claims the report
+    is marked ``insufficient_data`` and proposes nothing.
+    """
+    lags: List[float] = []
+    skipped = 0
+    for claim in (claims or {}).values():
+        if not isinstance(claim, dict):
+            skipped += 1
+            continue
+        incident = next((_parse_claim_dt(claim.get(k)) for k in _CLAIM_INCIDENT_KEYS if claim.get(k)), None)
+        reported = next((_parse_claim_dt(claim.get(k)) for k in _CLAIM_REPORTED_KEYS if claim.get(k)), None)
+        if incident is None or reported is None:
+            skipped += 1
+            continue
+        lag_days = (reported - incident).total_seconds() / 86400.0
+        if lag_days < 0 or lag_days > 3650:
+            skipped += 1  # implausible ordering or > 10 years: not a reporting lag
+            continue
+        lags.append(lag_days)
+
+    lags.sort()
+    n = len(lags)
+    store = None
+    try:
+        store = tables_store or get_actuarial_store()
+    except Exception:
+        store = None
+    cfg = getattr(store, 'config', None)
+    current = {
+        'ibnr_pct': float(getattr(cfg, 'ibnr_pct', 0.10)) if cfg else 0.10,
+        'ibnr_reporting_factor': float(getattr(cfg, 'ibnr_reporting_factor', 0.15)) if cfg else 0.15,
+        'loss_ratio_assumption': float(getattr(cfg, 'loss_ratio_assumption', 0.65)) if cfg else 0.65,
+        'config_version': str(getattr(cfg, 'config_version', '')) if cfg else '',
+    }
+    report: Dict[str, Any] = {
+        'read_only': True,
+        'sample_size': n,
+        'claims_without_both_dates': skipped,
+        'min_sample': int(min_sample),
+        'insufficient_data': n < int(min_sample),
+        'current_config': current,
+        'basis': 'share_of_annual_claims_unreported_at_year_end = E[min(lag_days, 365)] / 365',
+        'adjust_via': 'POST /api/actuarial/config {"ibnr_pct": <fraction>, "change_reason": "..."}',
+    }
+    if n == 0:
+        report['lag_days'] = None
+        report['implied_ibnr_pct_of_annual_claims'] = None
+        return report
+
+    mean = sum(lags) / n
+    capped_mean = sum(min(x, 365.0) for x in lags) / n
+    implied = capped_mean / 365.0
+    report['lag_days'] = {
+        'mean': round(mean, 2),
+        'p50': round(_lag_percentile(lags, 0.50), 2),
+        'p75': round(_lag_percentile(lags, 0.75), 2),
+        'p95': round(_lag_percentile(lags, 0.95), 2),
+        'max': round(lags[-1], 2),
+    }
+    report['implied_ibnr_pct_of_annual_claims'] = round(implied, 4)
+    report['current_vs_implied'] = {
+        'ibnr_pct_gap': round(current['ibnr_pct'] - implied, 4),
+        'ibnr_reporting_factor_gap': round(current['ibnr_reporting_factor'] - implied, 4),
+        'current_ibnr_pct_covers_implied': current['ibnr_pct'] >= implied,
+    }
+    if not report['insufficient_data']:
+        # Best estimate plus a prudence margin: p75 of the per-claim capped
+        # lag share. Rounded to the nearest half point so the proposal reads
+        # as an assumption, not a spurious-precision statistic.
+        p75_share = _lag_percentile([min(x, 365.0) / 365.0 for x in lags], 0.75)
+        report['proposed_ibnr_pct'] = round(round(2 * 100.0 * max(implied, p75_share)) / 2 / 100.0, 4)
+        report['proposal_basis'] = 'max(mean capped-lag share, p75 capped-lag share), rounded to 0.5 pt'
+    return report
 
 
 # =============================================================================

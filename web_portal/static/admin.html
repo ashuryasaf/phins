@@ -3472,8 +3472,10 @@
           `PHINS rule · ${adminMcNum(reserve.reserve_to_annual_expected_claims_multiple, 1)}× annual expected`));
         cards.push(adminMcCard('Y1 volatility stress (1.5× annual)', adminMcPct(stress.probability_year1_claims_within_stress), '#e8f5e9',
           `VaR99 ${adminMcNum(stress.var99_multiple_of_annual_expected, 2)}× · not a PHINS rule`));
-        cards.push(adminMcCard('IBNR 10% sufficient', adminMcPct(ibnr.probability_reserve_config_ibnr_sufficient), '#e8f5e9',
-          `P(Y1 LR > 65%) ${adminMcPct(act.probability_year1_lr_exceeds_65pct_assumption)}`));
+        const ibnrPct = ibnr.reserve_config_ibnr_pct_of_claims;
+        const lrAssumption = act.loss_ratio_assumption_pct;
+        cards.push(adminMcCard(`IBNR ${ibnrPct === undefined || ibnrPct === null ? '' : adminMcNum(ibnrPct, 1) + '% '}sufficient`, adminMcPct(ibnr.probability_reserve_config_ibnr_sufficient), '#e8f5e9',
+          `P(Y1 LR > ${lrAssumption === undefined || lrAssumption === null ? '' : adminMcNum(lrAssumption, 0) + '%'} assumption) ${adminMcPct(act.probability_year1_lr_exceeds_65pct_assumption)}`));
       }
       if (claims) {
         const live = claims.live_thresholds || {};

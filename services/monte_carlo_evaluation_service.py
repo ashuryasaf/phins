@@ -357,7 +357,11 @@ def _load_phins_context() -> Dict[str, Any]:
     store = act.get_actuarial_store()
     cfg = store.config
     tables = store.get_current_tables()
-    reserve_cfg = act.ReserveConfig()
+    # Reserving assumptions come from the audited UnderwritingConfig
+    # (ibnr_pct, ibnr_reporting_factor, loss_ratio_assumption).
+    reserve_cfg = act._coerce_reserve_config(None, store)
+    reserves_reporting_lr = float(getattr(cfg, "loss_ratio_assumption", 0.65))
+    reserves_reporting_factor = float(getattr(cfg, "ibnr_reporting_factor", 0.15))
 
     accept = float(os.environ.get("PHINS_AI_ACCEPT_THRESHOLD", "0.90"))
     review = float(os.environ.get("PHINS_AI_REVIEW_THRESHOLD", "0.70"))
@@ -399,7 +403,10 @@ def _load_phins_context() -> Dict[str, Any]:
         "reserve_requirement_multiple": RESERVE_REQUIREMENT_MULTIPLE,
         "reserve_requirement_basis": RESERVE_REQUIREMENT_BASIS,
         "reserve_config": asdict(reserve_cfg),
-        "reserves_reporting": {"loss_ratio_assumption": 0.65, "ibnr_factor_of_premium": 0.15},
+        "reserves_reporting": {"loss_ratio_assumption": reserves_reporting_lr,
+                               "ibnr_reporting_factor": reserves_reporting_factor,
+                               "ibnr_pct_of_premium": reserves_reporting_lr * reserves_reporting_factor,
+                               "basis": "share_of_expected_claims (expected = premium × loss_ratio_assumption)"},
         "reinsurance_bands": {"very_high": ">=95", "high": ">=75", "medium": ">=45", "low": "<45"},
         "claims_bot": {
             "score_weights": ClaimsBotService.SCORE_WEIGHTS,
@@ -424,8 +431,8 @@ def _load_phins_context() -> Dict[str, Any]:
         {"assumption": "condition loadings", "source": "services/chat_application_service.py:_CONDITION_KEYWORDS"},
         {"assumption": "premium decomposition", "source": "services/pricing_kernel.py:price_policy"},
         {"assumption": "reserve requirement 150%, automation base rates", "source": "services/actuarial_service.py:PortfolioSimulator/AutomationMetrics"},
-        {"assumption": "IBNR 10% of claims", "source": "services/actuarial_service.py:ReserveConfig"},
-        {"assumption": "IBNR = premium × 65% × 15%", "source": "services/reserves_reporting_service.py"},
+        {"assumption": "IBNR share of expected claims (ibnr_pct)", "source": "services/actuarial_service.py:UnderwritingConfig.ibnr_pct → ReserveConfig"},
+        {"assumption": "IBNR = premium × loss_ratio_assumption × ibnr_reporting_factor", "source": "services/actuarial_service.py:UnderwritingConfig → reserves_reporting_service"},
         {"assumption": "claims authenticity weights/thresholds", "source": "services/claims_bot_service.py:ClaimsBotService"},
         {"assumption": "5%/month MRR growth", "source": "services/bi_analytics_service.py:predict_revenue_forecast"},
         {"assumption": "AI accept/review thresholds", "source": "services/llm_providers.py:review_disposition"},
@@ -1001,7 +1008,9 @@ def evaluate_actuarial_metrics(rng: random.Random, lives: List[Dict[str, Any]],
     ibnr_claims = base["ibnr_share_claims"]
     ibnr_prem = base["ibnr_share_premium"]
     ibnr_needed_pct_of_premium_p95 = 100 * _percentile(sorted(ibnr_prem), 0.95)
-    reserves_reporting_ibnr_pct = 100 * 0.65 * 0.15  # premium × loss ratio × factor
+    rr_assume = ctx["assumptions"]["reserves_reporting"]
+    lr_assumption = float(rr_assume["loss_ratio_assumption"])
+    reserves_reporting_ibnr_pct = 100 * lr_assumption * float(rr_assume["ibnr_reporting_factor"])  # % of premium
     claims_y1_sorted = sorted(claims_y1)
     claims_y1_p99 = _percentile(claims_y1_sorted, 0.99)
     tail = [c for c in claims_y1_sorted if c >= claims_y1_p99] or claims_y1_sorted[-1:]
@@ -1026,7 +1035,8 @@ def evaluate_actuarial_metrics(rng: random.Random, lives: List[Dict[str, Any]],
         "cumulative_loss_ratio_pct": _distribution([100 * x for x in base["cum_lr"]]),
         "loss_ratio_by_year_mean_pct": [_r(100 * x, 2) for x in base["year_lr_means"]],
         "probability_year1_lr_exceeds_100pct": _r(sum(1 for x in y1 if x > 1.0) / len(y1)),
-        "probability_year1_lr_exceeds_65pct_assumption": _r(sum(1 for x in y1 if x > 0.65) / len(y1)),
+        "loss_ratio_assumption_pct": _r(100 * lr_assumption, 2),
+        "probability_year1_lr_exceeds_65pct_assumption": _r(sum(1 for x in y1 if x > lr_assumption) / len(y1)),
         "phins_simulator_pv_total_claims": round(pv_total, 2),
         "reserve_rule_150pct": {
             "basis": RESERVE_REQUIREMENT_BASIS,
@@ -1555,13 +1565,16 @@ def derive_findings(results: Dict[str, Any], ctx: Dict[str, Any]) -> List[Dict[s
                 "Publish year-1 VaR99/TVaR99 next to the reserve figure so volatility is visible at the current portfolio size.")
         ib = actu["ibnr"]
         add("actuarial", "info" if ib["probability_reserve_config_ibnr_sufficient"] >= 0.9 else "warning",
-            f"IBNR 10% of claims is sufficient in {100 * ib['probability_reserve_config_ibnr_sufficient']:.1f}% of trials; "
-            f"the premium-based 9.75% rule is sufficient in {100 * ib['probability_reserves_reporting_ibnr_sufficient']:.1f}%.",
+            f"IBNR {ib['reserve_config_ibnr_pct_of_claims']:g}% of claims (UnderwritingConfig.ibnr_pct) is sufficient in "
+            f"{100 * ib['probability_reserve_config_ibnr_sufficient']:.1f}% of trials; the premium-based "
+            f"{ib['reserves_reporting_ibnr_pct_of_premium']}%-of-premium rule (loss_ratio_assumption × "
+            f"ibnr_reporting_factor) is sufficient in {100 * ib['probability_reserves_reporting_ibnr_sufficient']:.1f}%.",
             {"unreported_share": ib["unreported_share_of_year1_claims"]},
-            "Reconcile the two IBNR rules (ReserveConfig vs reserves_reporting) to one lag-based estimate.")
+            "Both IBNR rules now read audited UnderwritingConfig fields; calibrate them from GET /api/actuarial/claims-lag "
+            "once enough claims carry incident and reported dates.")
         p100 = actu["probability_year1_lr_exceeds_100pct"]
         add("actuarial", "info" if p100 < 0.05 else "warning",
-            f"P(year-1 loss ratio > 100%) = {100 * p100:.1f}%; P(> 65% assumption) = "
+            f"P(year-1 loss ratio > 100%) = {100 * p100:.1f}%; P(> {actu.get('loss_ratio_assumption_pct')}% assumption) = "
             f"{100 * actu['probability_year1_lr_exceeds_65pct_assumption']:.1f}%.",
             actu["year1_loss_ratio_pct"],
             "Persist the loss-ratio distribution (p50/p95/p99) as BI snapshot metrics, not only the point estimate.")
@@ -1857,31 +1870,43 @@ def derive_next_moves(results: Dict[str, Any], findings: List[Dict[str, Any]],
             unreported = ib.get("unreported_share_of_year1_claims") or {}
             p75 = unreported.get("p75")
             # Best estimate plus a prudence margin (p75); p95 is reported as the stress value.
-            proposed_ibnr = round(2 * (100.0 * p75)) / 2 if p75 is not None else None
-            moves.append(_redirect_move(
-                "act_ibnr_pct", "actuarial", 1,
-                "Raise the IBNR provision used in reserve projections",
-                f"IBNR at {ib.get('reserve_config_ibnr_pct_of_claims')}% of claims is sufficient in "
-                f"{100 * suff:.1f}% of trials; the reporting-lag simulation leaves a median "
-                f"{100 * (unreported.get('p50') or 0):.1f}% of year-1 claims unreported "
-                f"(p75 {100 * (p75 or 0):.1f}%, p95 {100 * (unreported.get('p95') or 0):.1f}%). Enter the proposed "
-                f"percentage in the Reserves projection form; it is a per-projection input, not a persisted setting.",
-                ib, "services/actuarial_service.py:ReserveConfig.ibnr_pct", "inconsistency",
-                ACTUARY_RESERVES_LINK,
-                proposed={"ibnr_pct": proposed_ibnr, "basis": "p75 of unreported share",
-                          "stress_p95_pct": _r(100 * unreported["p95"], 1) if unreported.get("p95") is not None else None},
-                adjustable_note="Per-projection input on the Reserves form (POST /api/actuarial/reserves/project)."))
+            # Proposed value is a fraction (UnderwritingConfig.ibnr_pct is stored 0..1);
+            # rounded to the nearest 0.5 percentage point.
+            proposed_ibnr = round(2 * (100.0 * p75)) / 2 / 100.0 if p75 is not None else None
+            current_ibnr = (ib.get("reserve_config_ibnr_pct_of_claims") or 0.0) / 100.0
+            if proposed_ibnr is not None and proposed_ibnr > current_ibnr:
+                moves.append(_adjust_move(
+                    "act_ibnr_pct", "actuarial", 1,
+                    "Raise the default IBNR provision (UnderwritingConfig.ibnr_pct)",
+                    f"IBNR at {100 * current_ibnr:g}% of claims is sufficient in {100 * suff:.1f}% of trials; the "
+                    f"reporting-lag simulation leaves a median {100 * (unreported.get('p50') or 0):.1f}% of year-1 "
+                    f"claims unreported (p75 {100 * p75:.1f}%, p95 {100 * (unreported.get('p95') or 0):.1f}%). "
+                    f"The proposal is the p75 unreported share (best estimate plus prudence margin), rounded to 0.5 pt. "
+                    f"It becomes the default for reserve projections; a per-projection override remains available "
+                    f"on the Reserves form. Cross-check against observed lags at GET /api/actuarial/claims-lag.",
+                    {"ibnr": ib, "stress_p95_pct": _r(100 * unreported["p95"], 1) if unreported.get("p95") is not None else None},
+                    current={"ibnr_pct": _r(current_ibnr, 4)},
+                    proposed={"ibnr_pct": _r(proposed_ibnr, 4)},
+                    source_ref="services/actuarial_service.py:UnderwritingConfig.ibnr_pct → ReserveConfig.ibnr_pct",
+                    trigger="inconsistency", ui_link=ACTUARY_RESERVES_LINK))
+        lr_assumption_pct = actu.get("loss_ratio_assumption_pct")
         p65 = actu.get("probability_year1_lr_exceeds_65pct_assumption")
         if p65 is not None and p65 > _LR_ASSUMPTION_EXCEEDANCE_MAX:
             y1 = actu.get("year1_loss_ratio_pct") or {}
-            moves.append(_redirect_move(
-                "act_lr_assumption", "actuarial", 2,
-                "Re-base the 65% loss-ratio assumption on the simulated distribution",
-                f"P(year-1 loss ratio > 65%) = {100 * p65:.0f}%. Simulated p50 {y1.get('p50')}%, p95 {y1.get('p95')}%. "
-                f"Publish the distribution rather than the point assumption.",
-                y1, "services/reserves_reporting_service.py (loss_ratio_assumption 0.65)", "inconsistency",
-                ACTUARY_RESERVES_LINK, proposed={"loss_ratio_assumption_pct": y1.get("p50")},
-                adjustable_note="Constant in code; expose as a reporting parameter."))
+            p50 = y1.get("p50")
+            if p50 is not None and lr_assumption_pct is not None:
+                moves.append(_adjust_move(
+                    "act_lr_assumption", "actuarial", 2,
+                    f"Re-base the {lr_assumption_pct:g}% loss-ratio assumption on the simulated median",
+                    f"P(year-1 loss ratio > {lr_assumption_pct:g}%) = {100 * p65:.0f}%. Simulated p50 {p50}%, "
+                    f"p95 {y1.get('p95')}%. The assumption drives the reserves-reporting IBNR and the loss-performance "
+                    f"status; proposing the simulated median keeps it a best estimate (the distribution p50/p95/p99 is "
+                    f"published as BI snapshot metrics).",
+                    y1,
+                    current={"loss_ratio_assumption": _r(lr_assumption_pct / 100.0, 4)},
+                    proposed={"loss_ratio_assumption": _r(p50 / 100.0, 4)},
+                    source_ref="services/actuarial_service.py:UnderwritingConfig.loss_ratio_assumption → reserves_reporting_service",
+                    trigger="inconsistency", ui_link=ACTUARY_RESERVES_LINK))
         tables_lr = actu.get("expected_loss_ratio_phins_tables_pct")
         sim_lr = actu.get("phins_simulator_loss_ratio_pct")
         if tables_lr is not None and sim_lr is not None and abs(tables_lr - sim_lr) > _METHOD_DISAGREEMENT_PTS:

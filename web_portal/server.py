@@ -18353,6 +18353,23 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
+        if path == '/api/actuarial/claims-lag':
+            # Observed incident→report lag on real claims and the IBNR share it
+            # implies. Read-only; proposes nothing below the minimum sample.
+            if not require_role(session, ['admin', 'actuary', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin, Actuary or Accountant role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.actuarial_service import claims_reporting_lag_report, get_actuarial_store
+                report = claims_reporting_lag_report(CLAIMS, get_actuarial_store())
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'success': True, 'claims_lag': report}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
         if path == '/api/actuarial/defaults':
             # Get default configuration and table values for reset functionality
             if not require_role(session, ['admin', 'actuary']):
