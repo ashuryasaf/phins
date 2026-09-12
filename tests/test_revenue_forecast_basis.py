@@ -21,23 +21,20 @@ NOW = datetime(2026, 9, 12, 10, 0, 0)
 
 
 def _book(months_of_history: int, monthly_growth: float = 0.03, base_mrr: float = 1000.0):
-    """Policies issued monthly so cumulative gross-adds MRR grows geometrically.
+    """Policies issued monthly so the monthly gross-adds MRR grows geometrically.
 
     Last start month is the last *complete* month before NOW (August 2026).
     """
     policies = {}
-    cumulative_target = base_mrr
-    prev_total = 0.0
+    add = base_mrr
     for i in range(months_of_history):
         month_index = (8 - 1) - (months_of_history - 1 - i)  # 0-based month for August = 7
         year, month = 2026 + month_index // 12, month_index % 12 + 1
-        add = cumulative_target - prev_total
         policies[f"POL-{i}"] = {
             "status": "active", "monthly_premium": round(add, 4),
             "start_date": f"{year:04d}-{month:02d}-15T09:00:00",
         }
-        prev_total = cumulative_target
-        cumulative_target *= 1 + monthly_growth
+        add *= 1 + monthly_growth
     return policies
 
 
@@ -97,6 +94,18 @@ def test_sufficient_history_uses_observed_growth():
     # Explicit rate still overrides observation.
     forced = svc.predict_revenue_forecast(policies, historical_growth_rate=0.05, months_ahead=1, lapse_rate_year1=0.08)
     assert forced["forecast_basis"]["growth_rate_source"] == "caller_parameter"
+
+
+def test_level_sales_are_not_read_as_growth():
+    """Steady sales must read as flat, not as the young book's own age."""
+    svc = bi.BIAnalyticsService()
+    policies = _book(months_of_history=6, monthly_growth=0.0)
+    obs = observed_monthly_growth(policies, now=NOW)
+    assert obs["sufficient"] is True
+    assert obs["monthly_growth"] == pytest.approx(0.0, abs=1e-6)
+    out = svc.predict_revenue_forecast(policies, historical_growth_rate=None, months_ahead=12,
+                                       lapse_rate_year1=0.08, now=NOW)
+    assert out["forecast"][-1]["forecasted_mrr"] == pytest.approx(out["current_mrr"], rel=1e-6)
 
 
 def test_observed_growth_ignores_current_month_and_undated_policies():

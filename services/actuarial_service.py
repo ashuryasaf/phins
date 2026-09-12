@@ -947,7 +947,10 @@ class ActuarialTablesStore:
             self.config.ibnr_reporting_factor = _clamp(raw / 100.0 if raw > 1.0 else raw, 0.0, 1.0)
         if 'loss_ratio_assumption' in updates:
             raw = float(updates['loss_ratio_assumption'])
-            self.config.loss_ratio_assumption = _clamp(raw / 100.0 if raw > 1.0 else raw, 0.0, 2.0)
+            # Ratios up to 200 % are valid fractions for this field, so only a
+            # value above that ceiling can be percentage input (65 -> 0.65);
+            # 1.5 keeps its meaning of 150 %.
+            self.config.loss_ratio_assumption = _clamp(raw / 100.0 if raw > 2.0 else raw, 0.0, 2.0)
 
         # Bump config revision so priced policies can pin dashboard saves.
         self.config.config_version = _next_config_version(self.config.config_version)
@@ -1632,8 +1635,17 @@ class AutomationMetrics:
 
     @classmethod
     def _is_system_actor(cls, actor: Any) -> bool:
+        """True only when a prefix matches a whole token of the actor.
+
+        ``system_auto_approve`` / ``bot_3`` / ``auto-pay`` are platform actors;
+        human names that merely begin with those letters (``Botros``,
+        ``Autumn Reid``) stay manual.
+        """
         text = str(actor or '').strip().lower()
-        return bool(text) and text.startswith(cls.SYSTEM_ACTOR_PREFIXES)
+        return any(
+            text == prefix or (text.startswith(prefix) and not text[len(prefix)].isalnum())
+            for prefix in cls.SYSTEM_ACTOR_PREFIXES
+        )
 
     @classmethod
     def observe_automation_mix(cls, underwriting_applications: Optional[Dict[str, Any]] = None,
@@ -1712,8 +1724,6 @@ class AutomationMetrics:
                 bl_counts['auto_collect'] += 1
             elif status != 'paid' and (bill.get('reminder_sent') or bill.get('reminders_sent')):
                 bl_counts['auto_reminder'] += 1
-            elif status == 'paid':
-                bl_counts['auto_collect'] += 1  # collected without follow-up
             else:
                 bl_counts['manual_followup'] += 1
 

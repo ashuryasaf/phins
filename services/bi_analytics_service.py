@@ -42,8 +42,13 @@ logger = logging.getLogger('phins.bi_analytics')
 # comparison. Below this the cohort is reported with ``insufficient_data`` and
 # no implied pricing factor is derived (claim counts are too volatile).
 SMOKING_SLICE_MIN_LIVES = 30
+# Claims are matched to the annual premium base with a trailing window, so the
+# ratio is a period loss ratio rather than all-time claims over today's premium.
+SMOKING_SLICE_WINDOW_MONTHS = 12
 SMOKING_COHORTS = ('smoker', 'former', 'nonsmoker', 'unknown')
 _INCURRED_CLAIM_STATUSES = ('approved', 'paid', 'closed')
+_CLAIM_DATE_KEYS = ('incident_date', 'date_of_incident', 'loss_date', 'event_date',
+                    'reported_date', 'filed_date', 'submitted_at', 'created_at')
 
 # Revenue forecast defaults. The growth default is the legacy 5 %/month
 # assumption; it is only used when the caller passes no rate AND the book has
@@ -84,11 +89,15 @@ def _months_between(a: datetime, b: datetime) -> int:
 def observed_monthly_growth(policies: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
     """Observed monthly MRR growth from policy start dates (read-only).
 
-    Builds the cumulative gross-adds MRR series by start month (every policy
+    Builds the *monthly* gross-adds MRR series by start month (every policy
     that was ever issued, so cancellations do not distort the *growth*
     estimate; churn is applied separately from the lapse table) up to the
-    last complete month, then takes the geometric mean growth over the last
-    ``FORECAST_MAX_GROWTH_WINDOW_MONTHS`` months of that series. Requires
+    last complete month, then compares the mean monthly adds of the two
+    halves of a window of at most ``FORECAST_MAX_GROWTH_WINDOW_MONTHS``
+    months. Growth is measured on that new-business run-rate rather than on
+    the accumulated book, because a stock that started from nothing grows
+    with the book's age (level sales for six months would read as ~40 %/month)
+    while the run-rate reads the sales trend the forecast compounds. Requires
     ``FORECAST_MIN_HISTORY_MONTHS`` complete months from the first start
     month; otherwise ``sufficient`` is False and no rate is returned.
     """
@@ -110,11 +119,9 @@ def observed_monthly_growth(policies: Dict[str, Any], now: Optional[datetime] = 
     last_complete = _add_months(current_month, -1)
     history_months = _months_between(first, last_complete) + 1
     series: List[float] = []
-    cumulative = 0.0
     month = first
     while month <= last_complete:
-        cumulative += adds.get(month, 0.0)
-        series.append(cumulative)
+        series.append(adds.get(month, 0.0))
         month = _add_months(month, 1)
 
     result: Dict[str, Any] = {
@@ -128,22 +135,25 @@ def observed_monthly_growth(policies: Dict[str, Any], now: Optional[datetime] = 
                        'reason': f'need {FORECAST_MIN_HISTORY_MONTHS} complete months of policy history'})
         return result
 
-    window = min(FORECAST_MAX_GROWTH_WINDOW_MONTHS, len(series) - 1)
-    start_val, end_val = series[-1 - window], series[-1]
-    if start_val <= 0 or end_val <= 0:
+    # Two equal halves of the window: the mean of each half averages out
+    # month-to-month noise, and their ratio is the growth over ``half`` months.
+    half = min(FORECAST_MAX_GROWTH_WINDOW_MONTHS // 2, len(series) // 2)
+    earlier = sum(series[-2 * half:-half]) / half
+    recent = sum(series[-half:]) / half
+    if earlier <= 0 or recent <= 0:
         result.update({'sufficient': False, 'monthly_growth': None,
-                       'reason': 'no MRR at the start of the growth window'})
+                       'reason': 'no new business in one half of the growth window'})
         return result
-    growth = (end_val / start_val) ** (1.0 / window) - 1.0
-    step_growth = [series[i] / series[i - 1] - 1.0 for i in range(len(series) - window, len(series))
+    growth = (recent / earlier) ** (1.0 / half) - 1.0
+    step_growth = [series[i] / series[i - 1] - 1.0 for i in range(len(series) - 2 * half + 1, len(series))
                    if series[i - 1] > 0]
     sd = statistics.pstdev(step_growth) if len(step_growth) >= 2 else None
     result.update({
         'sufficient': True,
         'monthly_growth': round(growth, 6),
         'monthly_growth_sd': round(sd, 6) if sd is not None else None,
-        'window_months': window,
-        'basis': 'geometric mean monthly growth of cumulative gross-adds MRR over the window',
+        'window_months': 2 * half,
+        'basis': 'geometric growth between the mean monthly gross-adds MRR of the two halves of the window',
     })
     return result
 
@@ -202,6 +212,8 @@ def loss_ratio_by_smoking_status(
     underwriting_applications: Optional[Dict[str, Any]] = None,
     pricing_factors: Optional[Dict[str, Any]] = None,
     min_lives: int = SMOKING_SLICE_MIN_LIVES,
+    window_months: int = SMOKING_SLICE_WINDOW_MONTHS,
+    now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     """Observed loss ratio by smoking cohort from real policies and claims.
 
@@ -210,6 +222,13 @@ def loss_ratio_by_smoking_status(
     cohort of their policy (falling back to the claimant's customer record).
     ``claims_incurred`` counts approved/paid/closed claims at approved amount;
     ``claims_paid`` counts paid claims only (the KPI basis).
+
+    Numerator and denominator cover the same exposure: a claim only counts
+    when it belongs to the active book that supplies the premium, and only
+    when it falls inside the trailing ``window_months`` (0 disables the
+    window). Claims on lapsed policies and older claims are excluded and
+    counted separately, so cohorts with different tenure or lapse experience
+    are not compared on mismatched bases.
 
     When both the smoker and nonsmoker cohorts reach ``min_lives`` the slice
     reports the smoker/nonsmoker loss-ratio ratio and, if ``pricing_factors``
@@ -224,8 +243,11 @@ def loss_ratio_by_smoking_status(
               'claims_incurred': 0.0, 'claims_paid': 0.0}
         for key in SMOKING_COHORTS
     }
+    # Both maps cover the active premium base only; ``inactive_policy_ids``
+    # keeps the claims loop from charging a lapsed policy's claim to it.
     policy_cohort: Dict[str, str] = {}
     customer_cohort: Dict[str, str] = {}
+    inactive_policy_ids: set = set()
 
     for pid, policy in (policies or {}).items():
         if not isinstance(policy, dict):
@@ -234,24 +256,46 @@ def loss_ratio_by_smoking_status(
         customer = (customers or {}).get(cid) if cid else None
         cohort = _resolve_smoking_status(policy, customer if isinstance(customer, dict) else None,
                                          latest_apps.get(cid) if cid else None)
-        policy_cohort[str(policy.get('id') or policy.get('policy_id') or pid)] = cohort
-        policy_cohort[str(pid)] = cohort
+        keys = {str(policy.get('id') or policy.get('policy_id') or pid), str(pid)}
+        if str(policy.get('status', '')).lower() != 'active':
+            inactive_policy_ids.update(keys)
+            continue
+        for key in keys:
+            policy_cohort[key] = cohort
         if cid and cid not in customer_cohort:
             customer_cohort[str(cid)] = cohort
-        if str(policy.get('status', '')).lower() != 'active':
-            continue
         row = cohorts[cohort]
         row['lives'] += 1
         row['annual_premium'] += kpi._num(policy.get('annual_premium'))
 
+    cutoff = None
+    if int(window_months) > 0:
+        current_month = (now or datetime.now(timezone.utc)).replace(
+            tzinfo=None, day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+        cutoff = _add_months(current_month, -(int(window_months) - 1))
+
     unattributed = 0
+    off_exposure = 0
+    outside_window = 0
+    undated = 0
     for claim in (claims or {}).values():
         if not isinstance(claim, dict):
             continue
         status = str(claim.get('status', '')).lower()
         if status not in _INCURRED_CLAIM_STATUSES:
             continue
-        cohort = policy_cohort.get(str(claim.get('policy_id') or ''))
+        claim_month = next((_parse_month(claim.get(k)) for k in _CLAIM_DATE_KEYS if claim.get(k)), None)
+        if claim_month is not None and cutoff is not None and claim_month < cutoff:
+            outside_window += 1
+            continue
+        policy_key = str(claim.get('policy_id') or '')
+        cohort = policy_cohort.get(policy_key)
+        if cohort is None and policy_key in inactive_policy_ids:
+            off_exposure += 1  # policy carries no premium in the base
+            continue
+        if claim_month is None:
+            undated += 1  # undated claims stay in; the count says how many
         if cohort is None:
             cohort = customer_cohort.get(str(claim.get('customer_id') or ''))
         if cohort is None:
@@ -285,7 +329,8 @@ def loss_ratio_by_smoking_status(
         'min_lives_per_cohort': int(min_lives),
         'smoker_lives': smoker['lives'],
         'nonsmoker_lives': nonsmoker['lives'],
-        'basis': 'incurred (approved/paid/closed) claims ÷ annual premium of active policies',
+        'basis': ('incurred (approved/paid/closed) claims on the active book, within the trailing '
+                  'window, ÷ annual premium of active policies'),
     }
     if sufficient:
         ratio = smoker['incurred_loss_ratio_pct'] / nonsmoker['incurred_loss_ratio_pct']
@@ -312,7 +357,11 @@ def loss_ratio_by_smoking_status(
         'source': 'observed_policies_and_claims',
         'loss_ratio_basis': kpi.LOSS_RATIO_BASES['paid_claims'],
         'cohorts': rows,
+        'experience_window_months': int(window_months),
         'claims_unattributed_to_policy_or_customer': unattributed,
+        'claims_excluded_off_active_exposure': off_exposure,
+        'claims_excluded_outside_window': outside_window,
+        'claims_without_a_date_included': undated,
         'comparison': comparison,
         'adjust_via': 'POST /api/actuarial/config {"smoker_mortality_factor": <f>, "smoker_disability_factor": <f>, "change_reason": "..."}',
     }

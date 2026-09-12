@@ -102,6 +102,10 @@ def test_ibnr_pct_changes_only_via_audited_update_and_is_restorable(store):
     store.update_config({"ibnr_reporting_factor": 0.2, "loss_ratio_assumption": 250}, "actuary")
     assert store.config.ibnr_reporting_factor == pytest.approx(0.2)
     assert store.config.loss_ratio_assumption == pytest.approx(2.0)
+    # A loss ratio above 100 % is in range as a fraction, so it is kept as-is
+    # instead of being read as percentage input (1.5 means 150 %, not 1.5 %).
+    store.update_config({"loss_ratio_assumption": 1.5}, "actuary")
+    assert store.config.loss_ratio_assumption == pytest.approx(1.5)
 
     v2 = store.config.config_version
     # Restore the first saved revision (ibnr_pct 0.12, factor/LR still at defaults).

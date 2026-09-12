@@ -87,18 +87,38 @@ def test_status_resolution_falls_back_to_customer_and_application_and_unknown():
         "P6": {"customer_id": "C1", "status": "active", "annual_premium": 100, "smoking_status": "current"},  # policy wins
     }
     claims = {
-        "K1": {"policy_id": "P5", "status": "paid", "approved_amount": 10},   # cancelled policy → cohort still known
+        "K1": {"policy_id": "P5", "status": "paid", "approved_amount": 10},   # cancelled policy → off exposure
         "K2": {"customer_id": "C3", "status": "closed", "approved_amount": 20},  # no policy_id → via customer
         "K3": {"status": "paid", "approved_amount": 30},                        # nothing → unknown
         "K4": {"policy_id": "P1", "status": "pending", "claimed_amount": 999},  # not incurred
     }
     out = loss_ratio_by_smoking_status(customers, policies, claims, underwriting_applications=applications)
     by = {row["cohort"]: row for row in out["cohorts"]}
-    assert by["former"]["lives"] == 1 and by["former"]["claims_incurred"] == 10.0
+    assert by["former"]["lives"] == 1 and by["former"]["claims_incurred"] == 0.0
     assert by["smoker"]["lives"] == 2  # C2 via application + P6 via policy field
     assert by["nonsmoker"]["lives"] == 1 and by["nonsmoker"]["claims_incurred"] == 20.0
     assert by["unknown"]["lives"] == 1 and by["unknown"]["claims_incurred"] == 30.0
     assert out["claims_unattributed_to_policy_or_customer"] == 1
+    assert out["claims_excluded_off_active_exposure"] == 1
+
+
+def test_claims_outside_the_active_exposure_or_window_are_excluded():
+    """The numerator must cover the same book and period as the premium base."""
+    customers, policies, claims = _book(n_smokers=40, n_nonsmokers=40)
+    # A smoker lapses: neither the policy's premium nor its claim belongs to the base.
+    policies["POL-S1"]["status"] = "cancelled"
+    claims["CLM-S1"] = {"policy_id": "POL-S1", "customer_id": "CUST-S1", "status": "paid",
+                        "approved_amount": 50_000.0}
+    # An old claim on an active policy predates the trailing window.
+    claims["CLM-S0-old"] = {"policy_id": "POL-S0", "customer_id": "CUST-S0", "status": "paid",
+                            "approved_amount": 50_000.0, "incident_date": "2019-04-01"}
+    out = loss_ratio_by_smoking_status(customers, policies, claims)
+    by = {row["cohort"]: row for row in out["cohorts"]}
+    assert by["smoker"]["lives"] == 39  # the lapsed policy leaves the premium base
+    assert out["claims_excluded_off_active_exposure"] == 1
+    assert out["claims_excluded_outside_window"] == 1
+    assert by["smoker"]["claims_incurred"] == 20 * 900.0
+    assert out["experience_window_months"] == 12
 
 
 def test_service_wrapper_is_cached_and_invalidated_by_data_change():

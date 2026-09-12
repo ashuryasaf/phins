@@ -122,6 +122,18 @@ def test_small_sample_falls_back_to_assumed_and_is_labelled():
     assert out["overall_automation_pct"] == expected_overall
 
 
+def test_manually_collected_and_human_named_decisions_are_not_automated():
+    """A paid bill or a human reviewer must not be counted as platform work."""
+    bills = {f"BILL-{i}": {"status": "paid", "paid_by": "accountant"} for i in range(40)}
+    apps = {f"APP-{i}": {"status": "approved", "approved_by": "Autumn Reid"} for i in range(40)}
+    mix = AutomationMetrics.observe_automation_mix(apps, {}, bills)
+    assert mix["billing"]["counts"] == {"auto_collect": 0, "auto_reminder": 0, "manual_followup": 40}
+    assert mix["underwriting"]["counts"]["manual_review"] == 40
+    # Platform actors still register, including a suffixed identifier.
+    assert AutomationMetrics._is_system_actor("bot_3") is True
+    assert AutomationMetrics._is_system_actor("Botros") is False
+
+
 def test_observed_mix_never_mutates_inputs():
     apps, claims, bills = _decided_book()
     before = (repr(sorted(apps.items())), repr(sorted(claims.items())), repr(sorted(bills.items())))
