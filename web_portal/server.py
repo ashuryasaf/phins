@@ -22203,7 +22203,9 @@ For claims or questions, please contact:
                 except Exception as ac_err:
                     print(f"[assessment-center] List enrichment skipped: {ac_err}")
 
-                docs.sort(key=lambda d: d.get('uploaded_at', ''), reverse=True)
+                # ``uploaded_at`` can be stored as ``None`` (legacy/DB-hydrated
+                # rows); comparing None with str would 500 the whole listing.
+                docs.sort(key=lambda d: str(d.get('uploaded_at') or ''), reverse=True)
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
