@@ -12,13 +12,82 @@ Author: PHINS Platform
 """
 
 import pytest
+import struct
 import sys
 import os
+import zlib
 from datetime import datetime, date, timedelta
 import json
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+# ============================================================================
+# Offline fixture content
+# ============================================================================
+# The analyzers refuse to fabricate results: they only report what the supplied
+# bytes support and return processing_success=False when no content is given.
+# These helpers build deterministic, stdlib-only payloads (no Pillow/ffmpeg/STT)
+# so the analyzer tests exercise the real content path without any optional
+# dependency or network access.
+
+def _synthetic_png(width: int = 480, height: int = 640, min_size: int = 64 * 1024) -> bytes:
+    """PNG signature + valid IHDR chunk, zero-padded past the 5KB quality floor.
+
+    A portrait aspect ratio and >=5KB are what PhotoAnalyzer needs to emit a
+    portrait-shape hint (the only source of identity_confidence > 0).
+    """
+    ihdr = struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)
+    crc = zlib.crc32(b'IHDR' + ihdr) & 0xFFFFFFFF
+    data = b'\x89PNG\r\n\x1a\n' + struct.pack('>I', len(ihdr)) + b'IHDR' + ihdr + struct.pack('>I', crc)
+    return data + b'\x00' * max(0, min_size - len(data))
+
+
+def _synthetic_mp4(min_size: int = 64 * 1024) -> bytes:
+    """ISO BMFF header ('ftyp' box) so VideoAnalyzer recognises an mp4 container."""
+    ftyp = b'isom' + struct.pack('>I', 512) + b'isomiso2avc1mp41'
+    data = struct.pack('>I', 8 + len(ftyp)) + b'ftyp' + ftyp
+    return data + b'\x00' * max(0, min_size - len(data))
+
+
+def _synthetic_mp3(min_size: int = 64 * 1024) -> bytes:
+    """ID3v2 tag header followed by padding; opaque audio bytes for AudioAnalyzer."""
+    data = b'ID3\x04\x00\x00\x00\x00\x00\x00'
+    return data + b'\x00' * max(0, min_size - len(data))
+
+
+PASSPORT_TEXT = (
+    b"UNITED KINGDOM OF GREAT BRITAIN AND NORTHERN IRELAND\n"
+    b"Full Name: John Smith\n"
+    b"Date of Birth: 15/06/1985\n"
+    b"Nationality: British\n"
+    b"Passport No: 123456789\n"
+    b"Issue Date: 2020-01-10\n"
+    b"Expiry Date: 2035-01-10\n"
+    b"Gender: M\n"
+)
+
+DRIVING_LICENCE_TEXT = (
+    b"DVLA PHOTOCARD\n"
+    b"Name: John Smith\n"
+    b"Date of Birth: 15/06/1985\n"
+    b"Licence Number: SMITH856150JS9AB\n"
+    b"Issue Date: 2019-03-01\n"
+    b"Expiry Date: 2029-03-01\n"
+    b"Address: 123 Test Street, London\n"
+)
+
+DISABILITY_CERTIFICATE_TEXT = (
+    b"DISABILITY CERTIFICATE\n"
+    b"Full Name: John Smith\n"
+    b"Date of Birth: 15/06/1985\n"
+    b"Disability Type: Mobility impairment\n"
+    b"Disability Level: Moderate\n"
+    b"Issue Date: 2023-05-01\n"
+    b"Valid Until: 2033-05-01\n"
+    b"Issuing Authority: Department for Work and Pensions\n"
+)
 
 from services.underwriting_bot_service import (
     UnderwritingBotService,
@@ -175,10 +244,37 @@ class TestPhotoAnalyzer:
     """Tests for PhotoAnalyzer"""
     
     def test_photo_analysis_success(self):
-        """Test successful photo analysis"""
+        """Test successful photo analysis on a portrait-shaped PNG"""
         analyzer = PhotoAnalyzer()
+        photo_bytes = _synthetic_png(width=480, height=640)
         metadata = UnderwritingMetadata(
             id='META-001',
+            underwriting_id='UW-001',
+            customer_id='CUST-001',
+            metadata_type=MetadataType.PHOTO,
+            file_name='selfie.png',
+            file_path='/uploads/selfie.png',
+            file_hash='abc123',
+            file_size_bytes=len(photo_bytes),
+            mime_type='image/png',
+            upload_date=datetime.now()
+        )
+        
+        result = analyzer.analyze(metadata, file_content=photo_bytes)
+        
+        assert result['processing_success'] is True
+        assert 'features' in result
+        assert 'scores' in result
+        assert 'identity_confidence' in result['scores']
+        assert result['scores']['identity_confidence'] > 0
+        # No face-CV model ships with the service; the analyzer must say so.
+        assert 'NO_FACE_CV_MODEL' in result['flags']
+    
+    def test_photo_analysis_without_content_fails(self):
+        """Without bytes the analyzer must not invent a result"""
+        analyzer = PhotoAnalyzer()
+        metadata = UnderwritingMetadata(
+            id='META-001B',
             underwriting_id='UW-001',
             customer_id='CUST-001',
             metadata_type=MetadataType.PHOTO,
@@ -192,11 +288,9 @@ class TestPhotoAnalyzer:
         
         result = analyzer.analyze(metadata)
         
-        assert result['processing_success'] is True
-        assert 'features' in result
-        assert 'scores' in result
-        assert 'identity_confidence' in result['scores']
-        assert result['scores']['identity_confidence'] > 0
+        assert result['processing_success'] is False
+        assert 'MISSING_CONTENT' in result['flags']
+        assert result['scores']['identity_confidence'] == 0.0
     
     def test_photo_analysis_returns_quality_score(self):
         """Test that photo analysis returns quality score"""
@@ -280,6 +374,31 @@ class TestOfficialDocumentAnalyzer:
             underwriting_id='UW-001',
             customer_id='CUST-001',
             metadata_type=MetadataType.PASSPORT,
+            file_name='passport.txt',
+            file_path='/uploads/passport.txt',
+            file_hash='mno345',
+            file_size_bytes=len(PASSPORT_TEXT),
+            mime_type='text/plain',
+            upload_date=datetime.now()
+        )
+        
+        result = analyzer.analyze(metadata, file_content=PASSPORT_TEXT, document_type='passport')
+        
+        assert result['processing_success'] is True
+        assert result['document_type'] == 'passport'
+        assert 'extracted_fields' in result
+        assert result['extracted_fields']['full_name'] == 'John Smith'
+        assert result['extracted_fields']['date_of_birth'] == '1985-06-15'
+        assert result['extracted_fields']['passport_number'] == '123456789'
+    
+    def test_passport_analysis_without_content_fails(self):
+        """Without text or bytes the analyzer reports NO_CONTENT instead of inventing fields"""
+        analyzer = OfficialDocumentAnalyzer()
+        metadata = UnderwritingMetadata(
+            id='META-005B',
+            underwriting_id='UW-001',
+            customer_id='CUST-001',
+            metadata_type=MetadataType.PASSPORT,
             file_name='passport.pdf',
             file_path='/uploads/passport.pdf',
             file_hash='mno345',
@@ -290,11 +409,9 @@ class TestOfficialDocumentAnalyzer:
         
         result = analyzer.analyze(metadata, document_type='passport')
         
-        assert result['processing_success'] is True
-        assert result['document_type'] == 'passport'
-        assert 'extracted_fields' in result
-        assert 'full_name' in result['extracted_fields']
-        assert 'date_of_birth' in result['extracted_fields']
+        assert result['processing_success'] is False
+        assert 'NO_CONTENT' in result['flags']
+        assert result['extracted_fields'] == {}
     
     def test_driving_licence_analysis(self):
         """Test driving licence document analysis"""
@@ -304,19 +421,21 @@ class TestOfficialDocumentAnalyzer:
             underwriting_id='UW-001',
             customer_id='CUST-001',
             metadata_type=MetadataType.DRIVING_LICENCE,
-            file_name='driving_licence.jpg',
-            file_path='/uploads/driving_licence.jpg',
+            file_name='driving_licence.txt',
+            file_path='/uploads/driving_licence.txt',
             file_hash='pqr678',
-            file_size_bytes=250000,
-            mime_type='image/jpeg',
+            file_size_bytes=len(DRIVING_LICENCE_TEXT),
+            mime_type='text/plain',
             upload_date=datetime.now()
         )
         
-        result = analyzer.analyze(metadata, document_type='driving_licence')
+        result = analyzer.analyze(metadata, file_content=DRIVING_LICENCE_TEXT,
+                                  document_type='driving_licence')
         
         assert result['processing_success'] is True
         assert result['document_type'] == 'driving_licence'
-        assert 'licence_number' in result['extracted_fields']
+        assert result['extracted_fields']['licence_number'] == 'SMITH856150JS9AB'
+        assert result['extracted_fields']['expiry_date'] == '2029-03-01'
     
     def test_disability_certificate_analysis(self):
         """Test disability certificate analysis"""
@@ -326,28 +445,58 @@ class TestOfficialDocumentAnalyzer:
             underwriting_id='UW-001',
             customer_id='CUST-001',
             metadata_type=MetadataType.DISABILITY_CERTIFICATE,
-            file_name='disability_cert.pdf',
-            file_path='/uploads/disability_cert.pdf',
+            file_name='disability_cert.txt',
+            file_path='/uploads/disability_cert.txt',
             file_hash='stu901',
-            file_size_bytes=400000,
-            mime_type='application/pdf',
+            file_size_bytes=len(DISABILITY_CERTIFICATE_TEXT),
+            mime_type='text/plain',
             upload_date=datetime.now()
         )
         
-        result = analyzer.analyze(metadata, document_type='disability_certificate')
+        result = analyzer.analyze(metadata, file_content=DISABILITY_CERTIFICATE_TEXT,
+                                  document_type='disability_certificate')
         
         assert result['processing_success'] is True
         assert 'DISABILITY_DECLARED' in result['flags']
+        assert result['extracted_fields']['disability_type'] == 'Mobility impairment'
+        assert result['extracted_fields']['valid_until'] == '2033-05-01'
 
 
 class TestAudioAnalyzer:
     """Tests for AudioAnalyzer"""
     
     def test_audio_analysis_success(self):
-        """Test successful audio analysis"""
+        """Audio bytes are accepted; without an STT model the sentiment stays unknown"""
         analyzer = AudioAnalyzer()
+        audio_bytes = _synthetic_mp3()
         metadata = UnderwritingMetadata(
             id='META-008',
+            underwriting_id='UW-001',
+            customer_id='CUST-001',
+            metadata_type=MetadataType.AUDIO,
+            file_name='health_statement.mp3',
+            file_path='/uploads/health_statement.mp3',
+            file_hash='vwx234',
+            file_size_bytes=len(audio_bytes),
+            mime_type='audio/mpeg',
+            upload_date=datetime.now()
+        )
+        
+        result = analyzer.analyze(metadata, file_content=audio_bytes)
+        
+        assert result['processing_success'] is True
+        assert 'sentiment' in result
+        assert 'stress_level' in result['sentiment']
+        # The service ships no speech-to-text/sentiment model: it must label the
+        # degraded result rather than fabricate a stress reading.
+        assert result['sentiment']['stress_level'] is None
+        assert 'NO_STT_AVAILABLE' in result['flags']
+    
+    def test_audio_analysis_without_content_fails(self):
+        """No bytes and no transcription cannot be a successful analysis"""
+        analyzer = AudioAnalyzer()
+        metadata = UnderwritingMetadata(
+            id='META-008B',
             underwriting_id='UW-001',
             customer_id='CUST-001',
             metadata_type=MetadataType.AUDIO,
@@ -361,19 +510,47 @@ class TestAudioAnalyzer:
         
         result = analyzer.analyze(metadata)
         
-        assert result['processing_success'] is True
-        assert 'sentiment' in result
-        assert 'stress_level' in result['sentiment']
+        assert result['processing_success'] is False
+        assert 'MISSING_CONTENT' in result['flags']
 
 
 class TestVideoAnalyzer:
     """Tests for VideoAnalyzer"""
     
     def test_video_analysis_success(self):
-        """Test successful video analysis"""
+        """Video bytes are accepted; without a CV model liveness stays unknown"""
         analyzer = VideoAnalyzer()
+        video_bytes = _synthetic_mp4()
         metadata = UnderwritingMetadata(
             id='META-009',
+            underwriting_id='UW-001',
+            customer_id='CUST-001',
+            metadata_type=MetadataType.VIDEO,
+            file_name='identity_verification.mp4',
+            file_path='/uploads/identity_verification.mp4',
+            file_hash='yz0123',
+            file_size_bytes=len(video_bytes),
+            mime_type='video/mp4',
+            upload_date=datetime.now()
+        )
+        
+        result = analyzer.analyze(metadata, file_content=video_bytes)
+        
+        assert result['processing_success'] is True
+        assert 'identity_verification' in result
+        assert result['identity_verification']['container_hint'] == 'mp4'
+        assert 'liveness' in result
+        # No liveness/face model ships with the service, so a passing liveness
+        # check must never be asserted: the honest answer is "unknown".
+        assert result['liveness']['is_live'] is None
+        assert result['liveness']['spoof_detection'] == 'unknown'
+        assert 'NO_VIDEO_CV_MODEL' in result['flags']
+    
+    def test_video_analysis_without_content_fails(self):
+        """No bytes cannot be a successful analysis"""
+        analyzer = VideoAnalyzer()
+        metadata = UnderwritingMetadata(
+            id='META-009B',
             underwriting_id='UW-001',
             customer_id='CUST-001',
             metadata_type=MetadataType.VIDEO,
@@ -387,10 +564,8 @@ class TestVideoAnalyzer:
         
         result = analyzer.analyze(metadata)
         
-        assert result['processing_success'] is True
-        assert 'identity_verification' in result
-        assert 'liveness' in result
-        assert result['liveness']['is_live'] is True
+        assert result['processing_success'] is False
+        assert 'MISSING_CONTENT' in result['flags']
 
 
 # ============================================================================
@@ -552,16 +727,44 @@ class TestUnderwritingBotService:
         metadata = bot_service.add_metadata(
             assessment_id=assessment.id,
             metadata_type=MetadataType.PASSPORT,
+            file_name='passport.txt',
+            file_path='/uploads/passport.txt',
+            file_content=PASSPORT_TEXT,
+            mime_type='text/plain'
+        )
+        
+        # add_metadata only records hash/size (no PII bytes are retained), so the
+        # caller hands the content to process_metadata, as web_portal/server.py does.
+        result = bot_service.process_metadata(metadata.id, file_content=PASSPORT_TEXT)
+        
+        assert result['success'] is True
+        assert result['result']['processing_success'] is True
+        assert metadata.processing_status == ProcessingStatus.COMPLETED
+        assert metadata.validation_status == ValidationStatus.VALID
+        assert metadata.extracted_data['full_name'] == 'John Smith'
+    
+    def test_process_metadata_without_content_fails(self):
+        """Processing with no bytes must be recorded as FAILED, not silently pass"""
+        bot_service = UnderwritingBotService(customers={}, policies={}, underwriting_apps={}, claims={})
+        assessment = bot_service.start_assessment(
+            underwriting_id='UW-001',
+            customer_id='CUST-001',
+            policy_id='POL-001'
+        )
+        metadata = bot_service.add_metadata(
+            assessment_id=assessment.id,
+            metadata_type=MetadataType.PASSPORT,
             file_name='passport.pdf',
             file_path='/uploads/passport.pdf',
-            file_content=b'fake passport content',
             mime_type='application/pdf'
         )
         
         result = bot_service.process_metadata(metadata.id)
         
-        assert result['success'] is True
-        assert metadata.processing_status == ProcessingStatus.COMPLETED
+        assert result['success'] is True  # the call itself did not error
+        assert result['result']['processing_success'] is False
+        assert metadata.processing_status == ProcessingStatus.FAILED
+        assert metadata.validation_status == ValidationStatus.INVALID
     
     def test_process_all_metadata(self, bot_service):
         """Test processing all metadata in assessment"""
