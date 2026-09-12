@@ -11948,6 +11948,29 @@ def _password_reset_provider_deliverability() -> Tuple[bool, bool]:
         return True, True
 
 
+def _password_reset_provider_reports_delivery() -> Tuple[bool, bool]:
+    """Return (email_sends, sms_sends): what a *real* account's send would report.
+
+    Differs from :func:`_password_reset_provider_deliverability` only for the
+    ``mock`` provider: mock is not routed to (it never reaches a user) but it
+    does report a successful send, so a real account in a mock/test deployment
+    gets ``notification_sent: True``. The anti-enumeration decoy must mirror
+    that exact outcome, otherwise ``notification_sent`` becomes an oracle
+    that distinguishes existing accounts from unknown ones.
+    """
+    try:
+        from services.notification_service import (
+            get_active_email_provider_type,
+            get_active_sms_provider_type,
+        )
+        return (
+            get_active_email_provider_type() != 'noop',
+            get_active_sms_provider_type() != 'noop',
+        )
+    except Exception:
+        return True, True
+
+
 def _resolve_password_reset_channel(
     requested_channel: str,
     has_phone: bool,
@@ -36140,6 +36163,7 @@ For claims or questions, please contact:
                 # when SMTP is unconfigured). Computed once and shared by the
                 # decoy so non-existent accounts mirror the real channel choice.
                 email_deliverable, sms_provider_deliverable = _password_reset_provider_deliverability()
+                email_reports_sent, sms_reports_sent = _password_reset_provider_reports_delivery()
 
                 def _decoy_reset_response():
                     """Structurally identical to a real response to prevent user enumeration.
@@ -36165,11 +36189,11 @@ For claims or questions, please contact:
                     # deliver, the decoy reports the same non-delivery wording
                     # and ``notification_sent: False`` that a real account gets.
                     if decoy_channel == 'sms':
-                        decoy_sent = sms_provider_deliverable
+                        decoy_sent = sms_reports_sent
                     elif decoy_channel == 'both':
-                        decoy_sent = email_deliverable or sms_provider_deliverable
+                        decoy_sent = email_reports_sent or sms_reports_sent
                     else:
-                        decoy_sent = email_deliverable
+                        decoy_sent = email_reports_sent
                     if decoy_channel == 'sms':
                         if decoy_sent:
                             decoy_message = 'If the account exists, a verification code has been sent to the registered phone number.'

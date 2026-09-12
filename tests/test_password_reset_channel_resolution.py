@@ -74,3 +74,23 @@ def test_provider_deliverability_returns_bool_pair():
     email_ok, sms_ok = portal._password_reset_provider_deliverability()
     assert isinstance(email_ok, bool)
     assert isinstance(sms_ok, bool)
+
+
+def test_decoy_mirror_treats_mock_as_sent_and_noop_as_not_sent(monkeypatch):
+    """The decoy's ``notification_sent`` must equal what a real account gets.
+
+    A ``mock`` provider is never *routed to* (it reaches nobody) but it does
+    report a successful send, so a real account in a mock/test deployment gets
+    ``notification_sent: True``. Only ``noop`` reports a failed send.
+    """
+    import services.notification_service as ns
+
+    monkeypatch.setattr(ns, "get_active_email_provider_type", lambda: "mock")
+    monkeypatch.setattr(ns, "get_active_sms_provider_type", lambda: "mock")
+    assert portal._password_reset_provider_deliverability() == (False, False)
+    assert portal._password_reset_provider_reports_delivery() == (True, True)
+
+    monkeypatch.setattr(ns, "get_active_email_provider_type", lambda: "noop")
+    monkeypatch.setattr(ns, "get_active_sms_provider_type", lambda: "infobip")
+    assert portal._password_reset_provider_deliverability() == (False, True)
+    assert portal._password_reset_provider_reports_delivery() == (False, True)
