@@ -44,7 +44,7 @@ dialogue on future products.
 
 | Minutes | Segment | Talking points & source |
 |---|---|---|
-| 00–05 | Opening — PHINS in five minutes | AI-operated insurance operating system, **100 deployed modules** (live count from the `services/` layer) on an append-only hash-chained ledger — **AI recommends, the ledger decides**. State the goal up front: a pre-ruling path that approves all PHINS assumptions. |
+| 00–05 | Opening — PHINS in five minutes | AI-operated insurance operating system, **101 deployed modules** (live count from the `services/` layer) on an append-only hash-chained ledger — **AI recommends, the ledger decides**. State the goal up front: a pre-ruling path that approves all PHINS assumptions. |
 | 05–15 | PHINS insurance product — pre-ruling item 1 | Life insurance with a lifelong disability mechanism (1:4 · 1:1 from 65) per the published **Israel regulatory application memorandum (Hebrew)**; the exact product assumptions we ask the Authority to confirm in the pre-ruling. |
 | 15–25 | Functional MGA — the operational bridge | PHINS operates **underwriting, billing, claims, actuarial and policy administration** as the managerial and operational bridge between a **designated Israeli insurance company** (risk carrier — claims reserves stay on the carrier) and an **investment company** for the savings add-on risk (counterparties TBA). Governance: every decision ledger-logged and auditable by the Authority. |
 | 25–32 | Distribution | **Direct digital sales**, **collaborations** (bancassurance-style and affinity partners), and **licensed agents** — the licensing and supervision posture per channel, and how the platform enforces suitability and disclosure identically across all three. |

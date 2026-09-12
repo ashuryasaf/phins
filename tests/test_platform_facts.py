@@ -5,6 +5,12 @@ Covers:
   ``services/`` layer and the canonical IL book identity,
 - the public, read-only ``/api/platform/facts`` HTTP endpoint (always 200),
 - HTML surfaces that bind to the payload so stale ``64+`` claims cannot return.
+
+Module-count contract: every investor surface carries a static
+``<span data-live-modules>N</span>`` fallback (print / no-JS) that must equal
+``len(services/*.py)``. When a service module is added or removed, run
+``python3 scripts/sync_platform_facts.py`` (``--check`` reports drift without
+writing) to rewrite the fallbacks instead of editing each page by hand.
 """
 
 from __future__ import annotations
@@ -107,3 +113,19 @@ def test_investor_surfaces_bind_live_module_count(rel):
     assert "/platform-facts.js" in text
     count = _live_module_count()
     assert f">{count}<" in text
+
+
+def test_sync_platform_facts_script_reports_no_drift():
+    """``scripts/sync_platform_facts.py --check`` is the one-command fix for
+    module-count drift; it must agree with the surfaces committed here."""
+    import subprocess
+    import sys
+
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "sync_platform_facts.py"), "--check"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert f"({_live_module_count()})" in proc.stdout
