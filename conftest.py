@@ -78,6 +78,19 @@ os.environ.setdefault(
     "PHINS_ACTUARIAL_STATE_PATH",
     str(Path(tempfile.gettempdir()) / f"phins_test_actuarial_state_{os.getpid()}.json"),
 )
+# The portal persists invitation codes to a git-tracked seed file on every
+# code issue/redeem. Seed a per-session temp copy so startup still loads the
+# committed codes but test traffic never dirties the checkout (and
+# ``test_data_logic_regressions`` keeps reading the pristine seed).
+if "PHINS_INVITATION_CODES_PATH" not in os.environ:
+    _seed_codes = ROOT_DIR / "database" / "invitation_codes.json"
+    _tmp_codes = Path(tempfile.gettempdir()) / f"phins_test_invitation_codes_{os.getpid()}.json"
+    try:
+        if _seed_codes.exists():
+            _tmp_codes.write_bytes(_seed_codes.read_bytes())
+    except OSError:
+        pass
+    os.environ["PHINS_INVITATION_CODES_PATH"] = str(_tmp_codes)
 
 
 _httpd = None
@@ -121,6 +134,15 @@ def pytest_sessionfinish(session, exitstatus):  # type: ignore[no-redef]
         except Exception:
             pass
         _httpd = None
+    # Drop the per-session scratch copies of persisted state (see the env
+    # defaults at the top of this file) so /tmp does not accumulate them.
+    for var in ("PHINS_ACTUARIAL_STATE_PATH", "PHINS_INVITATION_CODES_PATH"):
+        path = os.environ.get(var, "")
+        if f"_{os.getpid()}.json" in path:
+            try:
+                Path(path).unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def pytest_runtest_setup(item):  # type: ignore[no-redef]

@@ -5023,8 +5023,13 @@ def append_customer_to_seeds(email: str, password: str, name: str, customer_id: 
         print(f"[SEEDS] Error appending customer to seeds: {e}")
 
 # ========== PERSISTENT INVITATION CODES STORAGE ==========
-# Store invitation codes in a git-tracked JSON file so they persist across Railway deployments
-INVITATION_CODES_FILE = os.path.join(os.path.dirname(__file__), '..', 'database', 'invitation_codes.json')
+# Store invitation codes in a git-tracked JSON file so they persist across Railway deployments.
+# ``PHINS_INVITATION_CODES_PATH`` redirects both load and save (the pytest
+# harness points it at a per-session temp copy so test runs never rewrite the
+# committed seed file).
+INVITATION_CODES_FILE = os.environ.get('PHINS_INVITATION_CODES_PATH') or os.path.join(
+    os.path.dirname(__file__), '..', 'database', 'invitation_codes.json'
+)
 
 def save_invitation_codes_to_file():
     """
