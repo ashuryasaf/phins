@@ -82,8 +82,12 @@ def test_business_plan_pdf_preserves_canonical_figures():
 
 def test_dashboard_card_opens_and_downloads_pdf():
     pd = (STATIC / "pitch-dashboard.html").read_text(encoding="utf-8")
-    # the open action now points at the PDF (was a blank .md octet-stream)
-    assert '/PHINS_Business_Plan_Executive.pdf" target="_blank" rel="noopener" class="exec-dl-btn">📄 Open Business Plan' in pd
+    # the open action now points at the PDF (was a blank .md octet-stream);
+    # decorative emoji were removed from investor chrome, so match the label
+    import re
+    assert re.search(
+        r'/PHINS_Business_Plan_Executive\.pdf" target="_blank" rel="noopener"'
+        r' class="exec-dl-btn">\s*Open Business Plan', pd)
     # an explicit downloadable PDF link is present
     assert '/PHINS_Business_Plan_Executive.pdf" target="_blank" rel="noopener" class="exec-dl-btn" download' in pd
     # the canonical markdown source remains linked
