@@ -444,3 +444,30 @@ Dashboard: Admin → Admin AI Mic → **Monte Carlo Eval** (or say/type "run
 monte carlo evaluation"). The panel renders the metric cards, BI conclusions,
 the next-move cards with **Review & apply fix** / **Open source** buttons, and
 the findings list.
+
+### 7.1 Companion read-only reports (remediation items D, E, J, K)
+
+These exist so that an advisory can be checked against PHINS's own
+experience before anything is applied. None of them writes; each states the
+audited path that would change the underlying value and refuses to propose
+below its minimum sample.
+
+| Report | Route (roles) | What it reads | Proposes when |
+|---|---|---|---|
+| Observed claims reporting lag → implied IBNR share | `GET /api/actuarial/claims-lag` (admin, actuary, accountant) | claims with incident and reported dates | ≥ 30 claims with both dates |
+| Loss ratio by smoking cohort | `GET /api/bi/loss-ratio-by-smoking[?min_lives=30]` (admin, accountant, underwriter) | active policies, incurred claims, customer / application smoking status | ≥ 30 active lives in both smoker and nonsmoker cohorts |
+| Observed automation mix | `GET /api/actuarial/automation-metrics` (admin, actuary) — `metrics.<process>.source` is `observed` or `assumed` | decided underwriting applications, claims, bills | ≥ 30 decided records per process |
+| Claims-bot threshold calibration | `GET /api/claims/bot-threshold-calibration` (admin, claims_adjuster, actuary) | `claims_fraud` assessment records with reviewer decisions | ≥ 30 labelled (approved/rejected) decisions |
+| Revenue forecast basis | `GET /api/bi/revenue-forecast` without `growth_rate` — `forecast_basis.growth_rate_source` | policy start dates, lapse table year 1 | ≥ 6 complete months of policy history (else labelled default) |
+
+Reserving assumptions are now audited config fields on `UnderwritingConfig`
+(`ibnr_pct` 0.10, `ibnr_reporting_factor` 0.15, `loss_ratio_assumption`
+0.65), changed only via `POST /api/actuarial/config` with a `change_reason`,
+versioned in `config_history` and restorable from the Actuary versions bar.
+Defaults equal the previous hard-coded constants, so no figure moves until an
+actuary saves a new assumption. The engine's `act_ibnr_pct` and
+`act_lr_assumption` advisories are therefore guarded **adjust** moves, and the
+`uw_smoker_demographic_factors` proposal scales by PHINS's observed
+smoker/nonsmoker loss-ratio ratio whenever the smoking slice is sufficient
+(`evidence.ratio_basis` = `observed_experience`), otherwise by the simulated
+world and says so.

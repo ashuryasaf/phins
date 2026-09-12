@@ -7,9 +7,12 @@ each finding to its root cause in code, proposes a fix, states the
 data-integrity guard the fix must carry, and places it on an
 urgent / important matrix.
 
-**This is an assessment. No behavioural fix has been applied.** Every
-proposal below is additive or versioned; none rewrites stored ledger,
-audit, config-history or policy data.
+Sections 1–4 are the assessment as written before any fix. Section 5
+records what was then implemented, item by item, in the recommended order
+(A → B → G → H → I → C → D → E → F → J → K; L is monitor-only). Every
+change is additive or versioned; none rewrites stored ledger, audit,
+config-history or policy data, and the evaluation engine still writes
+nothing (`proposals_applied_by_engine: false`).
 
 ## 0. The run being assessed
 
@@ -345,3 +348,20 @@ Reported consistent. No action.
 - It does not decide the correct reinsurance loss-ratio basis (B) or the
   correct IBNR constant (D); both need PHINS's own experience data first,
   and the recommended first steps are read-only reports that produce it.
+
+## 5. Remediation status
+
+| Item | Status | What landed | Integrity guard in place | Tests |
+|---|---|---|---|---|
+| **A** | Done | Engine `mc-eval-1.0.1` mirrors the 150 % rule on PHINS's full-term PV basis (`reserve_rule_150pct.basis = pv_full_term_x1.5`); year-1 claim volatility reported separately as `year1_claims_stress` (VaR99/TVaR99, "not a PHINS rule"). `act_reserve_multiple` is an *investigate* move and never proposes a multiple. | Engine read-only; `RESERVE_REQUIREMENT_MULTIPLE` shared constant pinned to `PortfolioSimulator` | `tests/test_monte_carlo_evaluation.py` (PV-basis mirror on isolated store; no-tightening guard) |
+| **B** | Done | `risk_metrics` gains `loss_ratio_basis`, `loss_ratio_year1`, `loss_ratio_year1_on_risk`, `expected_claims_year1`; reinsurance output labels its basis; `kpi_definitions.LOSS_RATIO_BASES`; actuary dashboard and export rows relabelled. | Additive keys only; legacy keys numerically unchanged (asserted) | `tests/test_actuarial_metric_bases.py` |
+| **C** | Done | `reserve_requirement_basis` / `reserve_requirement_multiple` on `risk_metrics`; `financial_reporting_service` labels its capital indication `coverage_x0.05_plus_savings_liability`; `docs/platform_data_architecture.md` metric-bases table. | Additive | `tests/test_actuarial_metric_bases.py` |
+| **D** | Done | One `ibnr_provision()` (basis `share_of_expected_claims`) used by `ReserveCalculator` (`ibnr_basis` block) and labelled in `reserves_reporting`; `ibnr_pct`, `ibnr_reporting_factor`, `loss_ratio_assumption` are audited `UnderwritingConfig` fields (defaults 0.10 / 0.15 / 0.65 = former constants); Reserves form defaults from config; `GET /api/actuarial/claims-lag` observed lag → implied share (≥ 30 claims). `act_ibnr_pct` is a guarded *adjust* move. | `update_config` audit + `config_history` + restore; characterisation: output cent-equal at defaults with and without store; nothing written by the report | `tests/test_ibnr_unification.py` |
+| **E** | Done | `GET /api/bi/loss-ratio-by-smoking`: real active policies + incurred claims by kernel smoking cohort, `min_lives` guard (30), implied factor = live × observed LR ratio (clamped 1–3). MC `uw_smoker_demographic_factors` scales by the observed ratio when sufficient (`ratio_basis: observed_experience`), else labels `simulated_world`. | Read-only slice; apply path unchanged (audited `update_config`, drift check) | `tests/test_loss_ratio_by_smoking.py` |
+| **F** | Done | `predict_revenue_forecast`: growth observed from policy start dates (≥ 6 complete months, else labelled default), lapse-table year-1 churn, additive `bands` (p10/p50/p90, closed-form) and `forecast_basis`; legacy `forecast` key unchanged. Route omits `growth_rate` → observed. | Additive; explicit `growth_rate` still overrides | `tests/test_revenue_forecast_basis.py` |
+| **G** | Done | `reserves_reporting_service` reads `loss_ratio_assumption` / `ibnr_reporting_factor` from the attached store (source `actuarial_config:<version>`), falls back to the same constants; `ibnr_assumptions` and `loss_performance_target_pct` published. | Decimal arithmetic unchanged; characterised cent-equal | `tests/test_ibnr_unification.py` |
+| **H** | Done | Actuary dashboard row reads "Reserve Indication (1.5 × PV of expected claims over term)"; accountant dashboard labels the capital indication from `reserve_requirement_label`. | Label only | static integrity suites |
+| **I** | Done | Methodology §4.3 split into PHINS PV rule vs year-1 stress rows; correction note; conclusion and recommendation rewritten; §7.1 lists the companion reports. | Docs | — |
+| **J** | Done | `AutomationMetrics.observe_automation_mix()` from decided underwriting/claims/billing records; `calculate_automation_rates(count, observed=…)` shows the observed mix per process at ≥ 30 decided records and labels every process `source: observed|assumed` (route, dashboard tag, MC evidence). | Assumed path byte-for-byte legacy (characterised); inputs never mutated | `tests/test_automation_metrics_observed.py` |
+| **K** | Done | `calibrate_claims_thresholds()` sweeps the authenticity cut-offs against reviewer decisions on `claims_fraud` assessment records; `GET /api/claims/bot-threshold-calibration`; proposes only below-live disagreement at ≥ 30 labelled decisions. Live constants unchanged. | Recommend-only; `adjust_via` names the code constant | `tests/test_claims_bot_threshold_calibration.py` |
+| **L** | Monitor | No change. | — | — |
