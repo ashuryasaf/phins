@@ -35,6 +35,8 @@ logger = logging.getLogger('phins.agent_metrics')
 
 _RESERVOIR = max(16, int(os.environ.get('PHINS_AGENT_METRICS_RESERVOIR', '512')))
 _MAX_DECISION_LABELS = 64
+_PUBLIC_FIELDS = ('calls', 'errors', 'error_rate', 'in_flight', 'latency_ms',
+                  'gauges', 'last_call_at')
 
 _DEFAULT_SLO_P95_MS = float(os.environ.get('PHINS_AGENT_SLO_P95_MS', '5000'))
 _DEFAULT_SLO_ERROR_RATE = float(os.environ.get('PHINS_AGENT_SLO_ERROR_RATE', '0.05'))
@@ -170,6 +172,19 @@ def snapshot_all() -> Dict[str, Dict[str, Any]]:
     return {agent_id: snapshot(agent_id) for agent_id in ids}
 
 
+def public_snapshot_all() -> Dict[str, Dict[str, Any]]:
+    """Snapshot for unauthenticated surfaces: counts and latency only.
+
+    Drops ``last_error``/``last_error_at`` (raw exception text can carry
+    customer, claim or document ids) and the decision-label counts, both of
+    which stay on the admin agent-health view.
+    """
+    return {
+        agent_id: {key: value for key, value in snap.items() if key in _PUBLIC_FIELDS}
+        for agent_id, snap in snapshot_all().items()
+    }
+
+
 def reset(agent_id: Optional[str] = None) -> None:
     """Clear metrics (tests / operator reset). Does not touch agent state."""
     with _LOCK:
@@ -263,6 +278,6 @@ def instrument_agent(agent_id: str, *, decision_key: Optional[str] = None,
 
 
 __all__ = [
-    'record', 'set_gauge', 'snapshot', 'snapshot_all', 'reset', 'check_slo',
-    'instrument_agent',
+    'record', 'set_gauge', 'snapshot', 'snapshot_all', 'public_snapshot_all',
+    'reset', 'check_slo', 'instrument_agent',
 ]

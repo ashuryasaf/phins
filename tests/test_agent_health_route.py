@@ -118,6 +118,20 @@ def test_metrics_endpoint_exposes_agents_block_over_http():
     agent_metrics.reset()
 
 
+def test_metrics_endpoint_withholds_agent_error_text_over_http():
+    """The endpoint is unauthenticated, so error text must not ship on it."""
+    agent_metrics.reset()
+    agent_metrics.record('bi_analytics', 3.5, error='ValueError: Customer CUST-001 not found',
+                         decision='auto_approve')
+    status, body = _get('/api/metrics')
+    assert status == 200
+    snap = body['metrics']['agents']['bi_analytics']
+    assert snap['errors'] == 1
+    assert 'last_error' not in snap and 'decisions' not in snap
+    assert 'CUST-001' not in json.dumps(body)
+    agent_metrics.reset()
+
+
 def test_agent_health_over_http_enforces_admin():
     # The embedded server clears in-memory state on its first request per
     # port (_ensure_test_port_state), so probe unauthenticated first and seed

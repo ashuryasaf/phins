@@ -3,6 +3,7 @@ Tests for services/agent_metrics.py — observation-only instrumentation.
 """
 
 import enum
+import json
 
 import pytest
 
@@ -148,3 +149,13 @@ def test_snapshot_all_sorted():
     m.record("b", 1.0)
     m.record("a", 1.0)
     assert list(m.snapshot_all().keys()) == ["a", "b"]
+
+
+def test_public_snapshot_all_withholds_error_text_and_decisions():
+    m.record("a", 1.0, decision="auto_approve")
+    m.record("a", 2.0, error="ValueError: Customer CUST-001 not found")
+    snap = m.public_snapshot_all()["a"]
+    assert snap["calls"] == 2 and snap["errors"] == 1
+    assert set(snap) == {"calls", "errors", "error_rate", "in_flight",
+                         "latency_ms", "gauges", "last_call_at"}
+    assert "CUST-001" not in json.dumps(snap)
