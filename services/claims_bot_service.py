@@ -1312,7 +1312,7 @@ def _claims_bot_health() -> Dict[str, Any]:
         'initialized': True,
         'reports_retained': len(getattr(instance, 'reports', {}) or {}),
         'retention_cap': ClaimsBotService.MAX_RETAINED_REPORTS,
-        'model_version': getattr(instance, 'model_version', None),
+        'version': getattr(instance, 'version', None),
     }
 
 
