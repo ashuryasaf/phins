@@ -31,6 +31,8 @@ from dataclasses import dataclass, field, asdict
 import random
 import base64
 
+from services.agent_metrics import instrument_agent
+
 logger = logging.getLogger('phins.ai_risk_reports')
 
 
@@ -1544,6 +1546,7 @@ class AIRiskReportsService:
             'page_count': page_count
         }
     
+    @instrument_agent('ai_risk_reports')
     def analyze(self, document_id: str) -> AnalysisResult:
         """
         Perform advanced AI/BI analysis on parsed document using inductive reasoning.
@@ -2837,6 +2840,7 @@ class AIRiskReportsService:
         
         return metrics
     
+    @instrument_agent('ai_risk_reports', decision_key='language')
     def generate_report(self, analysis_id: str, language: str = None) -> GeneratedReport:
         """Generate a comprehensive report from analysis results"""
         if analysis_id not in self.analyses:
@@ -5227,3 +5231,43 @@ def init_ai_reports_service(load_persisted: bool = True) -> AIRiskReportsService
     if load_persisted:
         _ai_reports_service.load_data()
     return _ai_reports_service
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# ---------------------------------------------------------------------------
+def _risk_reports_health() -> Dict[str, Any]:
+    """Read-only probe: never instantiates the service or loads persisted data."""
+    instance = _ai_reports_service
+    if instance is None:
+        return {'status': 'ok', 'initialized': False}
+    return {
+        'status': 'ok',
+        'initialized': True,
+        'documents': len(getattr(instance, 'documents', {}) or {}),
+        'analyses': len(getattr(instance, 'analyses', {}) or {}),
+        'reports': len(getattr(instance, 'reports', {}) or {}),
+    }
+
+
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='ai_risk_reports',
+        name='AI Risk Reports',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Ingests uploaded CSV/XLS/ZIP documents and produces statistical '
+            'risk analyses and bilingual reports with charts and recommendations.'
+        ),
+        entry_url='/risk-reports-dashboard.html',
+        api={'method': 'POST', 'path': '/api/reports/generate'},
+        roles=('admin', 'underwriter', 'analyst', 'actuary'),
+        deterministic=True,
+        sample_prompts=(
+            'Analyze this policy export and generate a risk report',
+        ),
+    ), health_fn=_risk_reports_health)
+except Exception as _reg_exc:  # pragma: no cover
+    logger.warning("AI risk reports agent registration skipped: %s", _reg_exc)

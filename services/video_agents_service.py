@@ -41,6 +41,8 @@ try:
 except ImportError:
     MEDIA_GENERATION_AVAILABLE = False
 
+from services.agent_metrics import instrument_agent, set_gauge as _set_agent_gauge
+
 logger = logging.getLogger('phins.video_agents')
 
 
@@ -385,6 +387,7 @@ class VideoAgentsService:
             "service_available": True,
         }
 
+    @instrument_agent('video_agents', decision_key='status')
     def submit_video_job(
         self,
         *,
@@ -582,6 +585,7 @@ class VideoAgentsService:
             })
         return final_job
 
+    @instrument_agent('video_agents')
     def submit_batch(
         self,
         *,
@@ -1021,3 +1025,53 @@ def get_video_agents_service() -> VideoAgentsService:
             if _video_agents_service is None:
                 _video_agents_service = VideoAgentsService()
     return _video_agents_service
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# ---------------------------------------------------------------------------
+def _video_agents_health() -> Dict[str, Any]:
+    """Read-only probe over the in-memory job store; never submits work."""
+    jobs = _job_store.list_all()
+    by_status: Dict[str, int] = {}
+    for job in jobs:
+        key = str(job.get('status') or 'unknown')
+        by_status[key] = by_status.get(key, 0) + 1
+    active = by_status.get('queued', 0) + by_status.get('processing', 0)
+    _set_agent_gauge('video_agents', 'active_jobs', active)
+    return {
+        'status': 'ok' if MEDIA_GENERATION_AVAILABLE else 'degraded',
+        'media_generation_available': MEDIA_GENERATION_AVAILABLE,
+        'initialized': _video_agents_service is not None,
+        'jobs_total': len(jobs),
+        'jobs_by_status': by_status,
+        'caps': {
+            'per_user_per_day': _MAX_JOBS_PER_USER_PER_DAY,
+            'per_campaign': _MAX_JOBS_PER_CAMPAIGN,
+            'per_day': _MAX_JOBS_PER_DAY,
+        },
+    }
+
+
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='video_agents',
+        name='Video Agents',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Generates insurance-workflow videos (introductions, regulatory, '
+            'application/underwriting/claims assistants) with cost controls.'
+        ),
+        entry_url='/video-agents.html',
+        api={'method': 'POST', 'path': '/api/admin/media/video-jobs/batch'},
+        roles=('admin', 'media'),
+        deterministic=False,
+        executes_async=True,
+        sample_prompts=(
+            'Generate an introduction video for this campaign',
+        ),
+    ), health_fn=_video_agents_health)
+except Exception as _reg_exc:  # pragma: no cover
+    logger.warning("video agents registration skipped: %s", _reg_exc)

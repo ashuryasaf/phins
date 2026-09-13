@@ -49,6 +49,8 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from services.agent_metrics import instrument_agent
+
 logger = logging.getLogger("phins.assessment_ai")
 
 # Advisory output can never claim high confidence - it is a summary for a human
@@ -156,6 +158,7 @@ class AssessmentAIService:
 
     # ── Public API ────────────────────────────────────────────────────────
 
+    @instrument_agent('assessment_ai', decision_key='mode')
     def generate_narrative(
         self,
         analysis_payload: Dict[str, Any],
@@ -221,6 +224,7 @@ class AssessmentAIService:
         )
         return narrative
 
+    @instrument_agent('assessment_ai', decision_key='mode')
     def generate_structured_assessment(
         self,
         analysis_payload: Dict[str, Any],
@@ -666,3 +670,44 @@ def get_assessment_ai_service() -> AssessmentAIService:
     if _assessment_ai_service is None:
         _assessment_ai_service = AssessmentAIService()
     return _assessment_ai_service
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# ---------------------------------------------------------------------------
+def _assessment_ai_health() -> Dict[str, Any]:
+    """Read-only probe: reports the configured mode without instantiating."""
+    instance = _assessment_ai_service
+    enabled = str(os.environ.get("PHINS_ASSESSMENT_AI_ENABLED", "")).strip().lower() in ("1", "true", "yes", "on")
+    endpoint_configured = bool(os.environ.get("PHINS_ASSESSMENT_AI_ENDPOINT"))
+    return {
+        'status': 'ok',
+        'initialized': instance is not None,
+        'llm_enabled_flag': enabled,
+        'endpoint_configured': endpoint_configured,
+        'mode': 'live_llm' if (enabled and endpoint_configured) else 'deterministic_offline',
+    }
+
+
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='assessment_ai',
+        name='Assessment AI Narrative',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Produces an advisory, non-authoritative narrative summary of an '
+            'assessment from already-extracted facts. Never issues an '
+            'underwriting decision; flags items for human review.'
+        ),
+        entry_url='/assessment-center.html',
+        api={'method': 'POST', 'path': '/api/assessment-center/analysis'},
+        roles=('admin', 'underwriter', 'analyst'),
+        deterministic=False,
+        sample_prompts=(
+            'Summarize the assessment findings for this applicant',
+        ),
+    ), health_fn=_assessment_ai_health)
+except Exception as _reg_exc:  # pragma: no cover
+    logger.warning("assessment AI agent registration skipped: %s", _reg_exc)

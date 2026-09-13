@@ -30,6 +30,14 @@ except Exception:  # pragma: no cover - defensive import guard
 
 logger = logging.getLogger('phins.ai_automation')
 
+# Observation-only instrumentation (services/agent_metrics.py). Guarded so the
+# controller keeps working if imported outside the repo root.
+try:
+    from services.agent_metrics import instrument_agent
+except Exception:  # pragma: no cover - defensive import guard
+    def instrument_agent(*_args, **_kwargs):
+        return lambda fn: fn
+
 
 class AutomationDecision(Enum):
     """Automation decision types"""
@@ -170,6 +178,7 @@ class AIAutomationController:
     # AUTO-QUOTE GENERATION
     # =========================================================================
     
+    @instrument_agent('ai_automation_controller', decision_key='decision')
     def generate_auto_quote(self, customer_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Automatically generate insurance quote using ML models.
@@ -275,6 +284,7 @@ class AIAutomationController:
     # AUTOMATED UNDERWRITING
     # =========================================================================
     
+    @instrument_agent('ai_automation_controller', decision_fn=lambda r: r[0])
     def auto_underwrite(self, application_data: Dict[str, Any]) -> Tuple[AutomationDecision, Dict[str, Any]]:
         """
         Automatically assess underwriting application.
@@ -431,6 +441,7 @@ class AIAutomationController:
     # SMART CLAIMS PROCESSING
     # =========================================================================
     
+    @instrument_agent('ai_automation_controller', decision_fn=lambda r: r[0])
     def auto_process_claim(self, claim_data: Dict[str, Any]) -> Tuple[AutomationDecision, Dict[str, Any]]:
         """
         Automatically process insurance claim.
@@ -618,6 +629,50 @@ def get_automation_controller() -> AIAutomationController:
     if _controller_instance is None:
         _controller_instance = AIAutomationController()
     return _controller_instance
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# The controller is a library consumed in-process (no HTTP route of its own),
+# so ``api.method`` is ``LIB``.
+# ---------------------------------------------------------------------------
+def _controller_health() -> Dict[str, Any]:
+    """Read-only probe: never instantiates the controller."""
+    instance = _controller_instance
+    if instance is None:
+        return {'status': 'ok', 'initialized': False, 'ai_support': _AI_SUPPORT}
+    return {
+        'status': 'ok',
+        'initialized': True,
+        'ai_support': _AI_SUPPORT,
+        'auto_approve_threshold': getattr(instance, 'auto_approve_threshold', None),
+        'auto_reject_threshold': getattr(instance, 'auto_reject_threshold', None),
+    }
+
+
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='ai_automation_controller',
+        name='AI Automation Controller',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Rule-based orchestrator for auto-quotes, automated underwriting '
+            'gates, smart claims processing, and fraud heuristics. Rules are '
+            'authoritative; a registered model may inform a score but never decides.'
+        ),
+        entry_url='/admin.html',
+        api={'method': 'LIB', 'path': 'ai_automation_controller.get_automation_controller'},
+        roles=('admin', 'underwriter', 'claims_adjuster'),
+        deterministic=True,
+        sample_prompts=(
+            'Generate an auto-quote for a 35-year-old non-smoker',
+            'Should this application be auto-approved?',
+        ),
+    ), health_fn=_controller_health)
+except Exception as _reg_exc:  # pragma: no cover
+    logger.warning("automation controller agent registration skipped: %s", _reg_exc)
 
 # =========================================================================
 # BACKWARD COMPATIBILITY - Function-based API

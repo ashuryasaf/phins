@@ -40,6 +40,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+from services.agent_metrics import instrument_agent  # noqa: E402
+
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 def _resolve_document_storage_root() -> str:
@@ -202,6 +204,7 @@ class DocumentProcessingService:
 
     # ── Upload ────────────────────────────────────────────────────────────────
 
+    @instrument_agent('document_intelligence')
     def upload_document(
         self,
         *,
@@ -546,6 +549,7 @@ class DocumentProcessingService:
 
     # ── Processing pipeline ───────────────────────────────────────────────────
 
+    @instrument_agent('document_intelligence')
     def process_document(self, doc_id: str, job_types: Optional[List[str]] = None) -> List[ProcessingResult]:
         """Run one or more processing jobs on an already-uploaded document."""
         record = self._load_record(doc_id)
@@ -1896,3 +1900,46 @@ def reset_document_service() -> None:
     """Reset the singleton (mainly for tests)."""
     global _default_service
     _default_service = None
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# ---------------------------------------------------------------------------
+def _document_intelligence_health() -> Dict[str, Any]:
+    """Read-only probe: never instantiates the service or touches storage."""
+    instance = _default_service
+    payload: Dict[str, Any] = {
+        'status': 'ok',
+        'initialized': instance is not None,
+        'async_enabled': str(os.environ.get('PHINS_DOC_ASYNC', '')).strip().lower() in ('1', 'true', 'yes', 'on'),
+    }
+    if instance is not None:
+        payload['db_backed'] = getattr(instance, 'db_manager', None) is not None
+    return payload
+
+
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='document_intelligence',
+        name='Document Intelligence',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Single upload pipeline for every file on the platform: checksum '
+            'integrity, MIME/category classification, OCR and parsing, medical/'
+            'legal/identity extraction, fact provenance, and an async job queue '
+            'with retries and dead-letter handling.'
+        ),
+        entry_url='/admin.html',
+        api={'method': 'GET', 'path': '/api/doc-service/jobs'},
+        roles=('admin', 'underwriter', 'claims_adjuster', 'media'),
+        deterministic=True,
+        executes_async=True,
+        sample_prompts=(
+            'Show the document processing queue',
+            'Requeue dead-letter document jobs',
+        ),
+    ), health_fn=_document_intelligence_health)
+except Exception as _reg_exc:  # pragma: no cover
+    logger.warning("document intelligence agent registration skipped: %s", _reg_exc)

@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
+from services.agent_metrics import instrument_agent
 from services.notification_service import (
     NotificationChannel,
     NotificationPriority,
@@ -298,6 +299,8 @@ class CustomerCommunicationAgent:
 </html>
 """.strip()
 
+    @instrument_agent('customer_communication',
+                      decision_fn=lambda r: 'sent' if r.get('success') else 'failed')
     def send_welcome_package(
         self,
         *,
@@ -428,6 +431,8 @@ class CustomerCommunicationAgent:
     _MAX_SUBJECT = 140
     _MAX_MESSAGE = 4000
 
+    @instrument_agent('customer_communication',
+                      decision_fn=lambda r: 'sent' if r.get('success') else 'failed')
     def send_customer_outreach(
         self,
         *,
@@ -823,3 +828,32 @@ def get_customer_communication_agent(notification_service=None) -> CustomerCommu
     """Factory helper for customer communication agent."""
     return CustomerCommunicationAgent(notification_service=notification_service)
 
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# ---------------------------------------------------------------------------
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='customer_communication',
+        name='Customer Communication Agent',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Branded welcome packages and executive summaries delivered over '
+            'email and WhatsApp, with optional OTP-gated delivery for '
+            'sensitive notifications.'
+        ),
+        entry_url='/admin.html',
+        api={'method': 'POST', 'path': '/api/security/communications/welcome-report'},
+        roles=('admin',),
+        deterministic=True,
+        sample_prompts=(
+            'Send the welcome package to customer CUST-1001',
+        ),
+    ))
+except Exception as _reg_exc:  # pragma: no cover
+    import logging as _logging
+    _logging.getLogger('phins.customer_communication').warning(
+        "customer communication agent registration skipped: %s", _reg_exc)

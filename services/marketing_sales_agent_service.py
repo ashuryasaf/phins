@@ -26,6 +26,8 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from services.agent_metrics import instrument_agent
+
 
 ALLOWED_VERTICALS = {"insurance", "investments", "health_wallet"}
 ALLOWED_OBJECTIVES = {"growth", "retention", "cross_sell", "reactivation"}
@@ -367,6 +369,7 @@ class MarketingSalesAgentService:
         expected = self._campaign_payload_signature(payload)
         return hmac.compare_digest(expected, str(signature or ""))
 
+    @instrument_agent('marketing_sales', decision_key='vertical')
     def generate_campaign(
         self,
         *,
@@ -548,3 +551,41 @@ def get_marketing_sales_agent_service(secret_key: Optional[str] = None) -> Marke
         _marketing_sales_agent_service = MarketingSalesAgentService(secret_key=secret_key)
     return _marketing_sales_agent_service
 
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# ---------------------------------------------------------------------------
+def _marketing_agent_health() -> Dict[str, Any]:
+    """Read-only probe: reports whether a dedicated signing secret is configured."""
+    return {
+        'status': 'ok',
+        'initialized': _marketing_sales_agent_service is not None,
+        'dedicated_secret_configured': bool(os.environ.get("PHINS_MARKETING_AGENT_SECRET")),
+    }
+
+
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='marketing_sales',
+        name='Marketing / Sales Agent',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Generates HMAC-signed AI + BI campaign plans (sales playbooks, story '
+            'outlines, article briefs, video blueprints, social distribution) for '
+            'insurance, investment, and health-wallet growth.'
+        ),
+        entry_url='/admin-media.html',
+        api={'method': 'GET', 'path': '/api/admin/marketing-sales-agent'},
+        roles=('admin', 'media'),
+        deterministic=True,
+        sample_prompts=(
+            'Build a retention campaign for the insurance vertical',
+        ),
+    ), health_fn=_marketing_agent_health)
+except Exception as _reg_exc:  # pragma: no cover
+    import logging as _logging
+    _logging.getLogger('phins.marketing_sales_agent').warning(
+        "marketing/sales agent registration skipped: %s", _reg_exc)

@@ -146,6 +146,11 @@ def test_every_registered_api_path_is_routed():
         if desc.id not in EXPECTED_AGENT_IDS:
             continue
         path = desc.api.get("path", "")
+        if desc.api.get("method") == "LIB":
+            # In-process library agents point at a Python symbol instead.
+            module_name, _, attr = path.rpartition(".")
+            assert hasattr(importlib.import_module(module_name), attr), path
+            continue
         assert path and path in sources, f"{desc.id}: {path} not routed"
 
 

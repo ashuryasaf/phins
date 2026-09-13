@@ -29,6 +29,11 @@ import math
 import os
 import struct
 import tempfile
+import logging
+
+from services.agent_metrics import instrument_agent
+
+_logger = logging.getLogger('phins.underwriting_bot')
 
 
 # ============================================================================
@@ -1736,6 +1741,7 @@ class UnderwritingBotService:
             metadata.updated_date = datetime.now()
             return {'success': False, 'error': str(e)}
     
+    @instrument_agent('underwriting_bot')
     def process_all_metadata(self, assessment_id: str) -> Dict[str, Any]:
         """
         Process all metadata items in an assessment.
@@ -1775,6 +1781,7 @@ class UnderwritingBotService:
     # Risk Assessment
     # =========================================================================
     
+    @instrument_agent('underwriting_bot', decision_key='recommendation')
     def run_risk_assessment(self, assessment_id: str) -> RiskAssessmentReport:
         """
         Run full risk assessment for an assessment.
@@ -2101,6 +2108,49 @@ def init_underwriting_bot_service(customers: Dict,
         pipeline_service=pipeline_service
     )
     return _bot_instance
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# ---------------------------------------------------------------------------
+def _underwriting_bot_health() -> Dict[str, Any]:
+    """Read-only probe: never instantiates the service."""
+    instance = _bot_instance
+    if instance is None:
+        return {'status': 'ok', 'initialized': False}
+    return {
+        'status': 'ok',
+        'initialized': True,
+        'bot_id': getattr(instance, 'bot_id', None),
+        'version': getattr(instance, 'version', None),
+        'assessments': len(getattr(instance, 'assessments', {}) or {}),
+        'reports': len(getattr(instance, 'reports', {}) or {}),
+    }
+
+
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='underwriting_bot',
+        name='Underwriting Bot',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Processes application evidence (photos, medical reports, official '
+            'documents, audio, video), scores risk with a deterministic engine, '
+            'and recommends an underwriting decision without modifying customer data.'
+        ),
+        entry_url='/risk-dashboard.html',
+        api={'method': 'POST', 'path': '/api/risk-dashboard/ai-assess'},
+        roles=('admin', 'underwriter'),
+        deterministic=True,
+        sample_prompts=(
+            'Assess the uploaded medical report for this applicant',
+            'What is the risk level for assessment UWA-1234?',
+        ),
+    ), health_fn=_underwriting_bot_health)
+except Exception as _reg_exc:  # pragma: no cover
+    _logger.warning("underwriting bot agent registration skipped: %s", _reg_exc)
 
 
 __all__ = [
