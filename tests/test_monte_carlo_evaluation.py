@@ -340,25 +340,37 @@ def _mix_ctx(sample_size, sufficient, source):
 def test_claims_mix_gap_is_assumption_gap_until_observed_data_is_sufficient():
     """Production run: 19 decided claims (<30) — simulated 19% vs assumed 45%
     is an assumption gap, not PHINS disagreeing with itself."""
-    moves = mc.derive_next_moves(_claims_results(), [], _mix_ctx(19, False, "assumed"), True)
+    results, ctx = _claims_results(), _mix_ctx(19, False, "assumed")
+    findings = mc.derive_findings(results, ctx)
+    assert next(f for f in findings if "manual-review share" in f["statement"])["severity"] == "warning"
+    moves = mc.derive_next_moves(results, findings, ctx, True)
     m = next(m for m in moves if m["id"] == "claims_automation_base_rates")
     assert m["trigger"] == "inconsistency" and m["action"]["kind"] == "investigate" and m["priority"] == 2
     assert "Only 19 decided claims are on record (need 30)" in m["why"]
-    conclusions = mc.derive_conclusions(_claims_results(), [], moves, _FAST, True)
+    conclusions = mc.derive_conclusions(results, findings, moves, _FAST, True)
     area = next(a for a in conclusions["areas"] if a["area"] == "claims")
     assert area["status"] == "inconsistent"
     assert "once 30 decided claims are on record (19 now)" in area["bi_conclusion"]
 
 
 def test_claims_mix_gap_is_monitor_when_live_kpi_already_observed_and_anomaly_when_ignored():
-    moves = mc.derive_next_moves(_claims_results(), [], _mix_ctx(40, True, "observed"), True)
+    results, ctx = _claims_results(), _mix_ctx(40, True, "observed")
+    findings = mc.derive_findings(results, ctx)
+    mix_finding = next(f for f in findings if "manual-review share" in f["statement"])
+    assert mix_finding["severity"] == "info"
+    assert "40 observed decisions" in mix_finding["statement"]
+    moves = mc.derive_next_moves(results, findings, ctx, True)
     m = next(m for m in moves if m["id"] == "claims_automation_base_rates")
     assert m["trigger"] == "none" and m["action"]["kind"] == "monitor"
-    area = next(a for a in mc.derive_conclusions(_claims_results(), [], moves, _FAST, True)["areas"] if a["area"] == "claims")
-    assert area["status"] == "consistent"
+    conclusions = mc.derive_conclusions(results, findings, moves, _FAST, True)
+    area = next(a for a in conclusions["areas"] if a["area"] == "claims")
+    assert area["status"] == "consistent" and conclusions["overall_status"] == "consistent"
     assert "already follow the observed mix (40 decided claims)" in area["bi_conclusion"]
 
-    moves = mc.derive_next_moves(_claims_results(), [], _mix_ctx(40, True, "assumed"), True)
+    ctx = _mix_ctx(40, True, "assumed")
+    findings = mc.derive_findings(results, ctx)
+    assert next(f for f in findings if "manual-review share" in f["statement"])["severity"] == "warning"
+    moves = mc.derive_next_moves(results, findings, ctx, True)
     m = next(m for m in moves if m["id"] == "claims_automation_base_rates")
     assert m["trigger"] == "anomaly" and m["priority"] == 1
     assert "ignores sufficient observed data" in m["why"]

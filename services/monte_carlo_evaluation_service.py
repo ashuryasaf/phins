@@ -1606,9 +1606,11 @@ def run_evaluation(params: Optional[EvaluationParams] = None,
     if "ai" in modules:
         results["ai"] = evaluate_ai_thresholds(rng, params, ctx)
 
-    findings = derive_findings(results, ctx)
+    # Observed evidence has to be in ctx before the findings: the claims mix
+    # finding grades itself against the source label the live KPI reports.
     ctx["observed_smoking_experience"] = _observed_smoking_experience(observed, ctx)
     ctx["observed_automation_mix"] = _observed_automation_mix(observed)
+    findings = derive_findings(results, ctx)
     observed_fp_after = _sha256_of(observed) if observed is not None else None
     observed_unchanged = (observed_fp_before == observed_fp_after) if observed is not None else None
     next_moves = derive_next_moves(results, findings, ctx, observed_unchanged)
@@ -1798,9 +1800,19 @@ def derive_findings(results: Dict[str, Any], ctx: Dict[str, Any]) -> List[Dict[s
             f"denies {100 * (live.get('legit_false_denial_rate') or 0):.2f}% of legitimate ones "
             f"(AUC {(cl.get('authenticity_auc_legit_vs_fraud') or 0):.3f}).",
             live, "Log decision/override pairs and re-fit the six component weights; the 0.85/0.70/0.45 cut-offs are untested constants.")
-        add("claims", "info" if abs(cl.get("manual_share_vs_assumed") or 0) < 0.10 else "warning",
-            f"Simulated manual-review share differs from the AutomationMetrics assumption by {100 * (cl.get('manual_share_vs_assumed') or 0):+.1f} pts.",
-            {"simulated": live["manual_share"], "assumed": cl["assumed_automation_mix"]["manual_review"]},
+        mix_gap = cl.get("manual_share_vs_assumed") or 0
+        # The fixed assumption only matters while the live KPI still falls back to
+        # it; /api/actuarial/automation-metrics reports the observed mix instead
+        # once enough claims are decided, so the gap is then informational.
+        obs_mix = (ctx.get("observed_automation_mix") or {}).get("claims") or {}
+        mix_observed_live = bool(obs_mix.get("sufficient")) and obs_mix.get("source") == "observed"
+        add("claims", "info" if abs(mix_gap) < 0.10 or mix_observed_live else "warning",
+            f"Simulated manual-review share differs from the AutomationMetrics assumption by {100 * mix_gap:+.1f} pts."
+            + (f" /api/actuarial/automation-metrics already sources the claims mix from "
+               f"{obs_mix.get('sample_size')} observed decisions, so the assumption is a fallback only."
+               if mix_observed_live else ""),
+            {"simulated": live["manual_share"], "assumed": cl["assumed_automation_mix"]["manual_review"],
+             "observed_source": obs_mix.get("source")},
             "Drive automation KPIs from observed decision mix rather than fixed base rates.")
         if (cl.get("mirror_agreement_with_live_recommender") or 0) < 1.0:
             add("claims", "warning", "Threshold-sweep mirror disagrees with the live recommender on some cases.",
