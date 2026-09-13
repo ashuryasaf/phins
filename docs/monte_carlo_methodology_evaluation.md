@@ -6,8 +6,8 @@ thresholds — perform under a transparent stochastic world, with concrete
 recommendations for the methodology, the assumptions, and how BI and AI
 should consume the results.
 
-Engine: `services/monte_carlo_evaluation_service.py` (`mc-eval-1.0.1`;
-1.0.0 numbers are retained below where noted).
+Engine: `services/monte_carlo_evaluation_service.py` (`mc-eval-1.0.2`;
+1.0.0/1.0.1 numbers are retained below where noted).
 API: `GET /api/bi/monte-carlo-evaluation`. CLI:
 `scripts/run_monte_carlo_evaluation.py`. Tests:
 `tests/test_monte_carlo_evaluation.py`.
@@ -19,7 +19,7 @@ The evaluation is **diagnostic BI**: it recommends, it never changes a rule.
 | Guarantee | How it is enforced |
 |---|---|
 | Read-only | No writes to stores, DB, ledger, BI snapshots or audit logs. PHINS assumptions are *read* from the live objects (`ActuarialTablesStore`, `UnderwritingConfig`, `ClaimsBotService`, env thresholds) and snapshotted into the report with a SHA-256. A test asserts the actuarial config and tables are byte-identical after a run. |
-| Deterministic | One `random.Random(seed)`; identical seed + parameters ⇒ identical `results_sha256` (verified across processes: `30dd1328…` for the deep run below). |
+| Deterministic | One `random.Random(seed)`; identical seed + parameters ⇒ identical `results_sha256` (verified across processes: `30dd1328…` for the deep run below). The population is synthetic; live data enters only as labelled evidence (`observed_inputs`: MRR start, growth basis, smoking experience, automation mix). A re-run with the same seed against unchanged rules therefore returns the same numbers by design — that is the seal working, not stale or mock data. The admin panel draws a fresh seed per click and pins the seed only for like-for-like re-runs after a config change. |
 | Synthetic population | Lives are generated, never taken from customer records. Optional live `policies`/`claims` are read only for aggregate MRR, fingerprinted before/after, and the report carries `observed_inputs_unchanged`. |
 | Explicit world model | Every "truth" that is not a PHINS assumption lives in `WorldAssumptions`, is adjustable (`world.<name>` query params, `--world name=value`) and hashed into `world_assumptions_sha256`. |
 | Bounded compute | `lives ≤ 50 000`, `trials ≤ 20 000`, `bootstrap ≤ 2 000`, `horizon ≤ 30` years. Default API call (2 000 lives, 400 trials) runs in ≈2–4 s. |
@@ -365,12 +365,57 @@ interpret raw findings:
   status chip, a one-sentence `bi_conclusion`, the BI snapshot metrics that
   area should persist, and short `bi_usage` / `ai_usage` guidance lists.
   An *anomaly* is PHINS disagreeing with itself (pricing factors neutral while
-  the scorer penalises smoking; two in-house definitions of "annual expected
-  claims" 29 pts apart; assumed vs realised automation mix; the evaluation
-  mirror disagreeing with the live recommender; observed inputs mutating
-  during a run). An *inconsistency* is a PHINS assumption disagreeing with the
-  simulated world (reserve coverage, IBNR sufficiency, 65% loss ratio, sales
-  attainment, AI cost-minimum threshold, claims leakage).
+  the scorer penalises smoking; the live automation-metrics KPI still
+  labelling its mix `assumed` although ≥ 30 decided claims are on record; the
+  evaluation mirror disagreeing with the live recommender; observed inputs
+  mutating during a run). An *inconsistency* is a PHINS assumption
+  disagreeing with the simulated world (reserve coverage, IBNR sufficiency,
+  the configured loss-ratio assumption, sales attainment, AI cost-minimum
+  threshold, claims leakage, band loadings below the world excess hazard,
+  assumed automation mix vs the simulated mix while observed data is still
+  insufficient).
+
+  **Verdicts follow the remediated source (engine `mc-eval-1.0.2`).** The
+  engine's own advice must be able to clear its own verdict, otherwise the
+  report keeps flagging what was already fixed:
+
+  - *Year-1 vs lifetime loss ratio.* 1.0.1 raised a P1 anomaly asking to
+    "label both bases explicitly". Since remediation item B/C
+    `PortfolioSimulator.risk_metrics` carries `loss_ratio_basis`,
+    `loss_ratio_year1_basis` and `reserve_requirement_basis`; the engine reads
+    those labels (`phins_assumptions.loss_ratio_bases.labelled_at_source`) and
+    reports the 33.7 % vs 72.5 % gap as a P3 `monitor` move
+    (`act_method_bases_labelled`): two labelled quantities that differ by the
+    ageing of the book inside the term. The anomaly (`act_method_disagreement`)
+    only returns if the labels disappear from source.
+  - *IBNR probability of sufficiency.* The p75 unreported share is proposed as
+    the provision (best estimate + prudence margin), so the verdict is judged
+    at the same 75 % probability-of-sufficiency target
+    (`IBNR_PROBABILITY_OF_SUFFICIENCY_TARGET`), not at an unreachable 90 %.
+    The trial frequency is compared with the target through its Wilson 95 %
+    interval (`probability_reserve_config_ibnr_sufficient_ci95`,
+    `reserve_config_ibnr_meets_target`): 74.7 % of 300 trials is
+    indistinguishable from 75 % and passes; 57 % fails and proposes p75.
+  - *Claims automation mix.* Simulated vs assumed is an assumption gap
+    (`inconsistency`, P2) until PHINS has ≥ 30 decided claims; once it has,
+    the move is `monitor` if `GET /api/actuarial/automation-metrics` already
+    labels the mix `observed` (item J) and an `anomaly` only if the live KPI
+    ignores that data. The evidence carries the label the endpoint would
+    show, computed by the same call.
+  - *Sales growth basis.* `predict_revenue_forecast` derives its rate from
+    observed policy history when ≥ 6 complete months exist (item F), so the
+    module evaluates whichever basis the live endpoint uses and says which
+    (`phins_forecast.growth_basis`: `observed_policy_history` or
+    `legacy_default`, with `observed_growth` and the attainment of the legacy
+    5 %/month line under the evaluated drift).
+  - *Band loadings.* The risk warning "applied loadings under-cover the world
+    excess hazard" now has a matching P2 `investigate` move
+    (`risk_band_loadings`) so the risk area's `inconsistent` status is never
+    left without a next move; it proposes nothing to apply because the
+    "required" figure comes from the simulated world.
+  - Conclusions quote the live loss-ratio assumption and one decimal (99.7 %
+    is not "100 %"); AI accepted-error figures are marked counterfactual while
+    the 0.4 advisory cap forces full human review.
 - `next_moves` — deterministic, priority-sorted advisories. Every move names
   its `source_ref` (the code that owns the assumption) and an `action.kind`:
   `adjust` when PHINS exposes an audited config path, `redirect` when the

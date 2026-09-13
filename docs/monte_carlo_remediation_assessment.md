@@ -365,3 +365,28 @@ Reported consistent. No action.
 | **J** | Done | `AutomationMetrics.observe_automation_mix()` from decided underwriting/claims/billing records; `calculate_automation_rates(count, observed=…)` shows the observed mix per process at ≥ 30 decided records and labels every process `source: observed|assumed` (route, dashboard tag, MC evidence). | Assumed path byte-for-byte legacy (characterised); inputs never mutated | `tests/test_automation_metrics_observed.py` |
 | **K** | Done | `calibrate_claims_thresholds()` sweeps the authenticity cut-offs against reviewer decisions on `claims_fraud` assessment records; `GET /api/claims/bot-threshold-calibration`; proposes only below-live disagreement at ≥ 30 labelled decisions. Live constants unchanged. | Recommend-only; `adjust_via` names the code constant | `tests/test_claims_bot_threshold_calibration.py` |
 | **L** | Monitor | No change. | — | — |
+
+### 5.1 Post-deployment review of the first production run (engine `mc-eval-1.0.2`)
+
+The first production run after A–K landed (seed 20260911, 2 000 lives × 300
+trials, `sha bdce7d71…`) still read "Anomalies detected: 2 anomalies". Both
+were the engine failing to recognise its own remediation, not new defects:
+
+| Reported | Assessment | Change in `mc-eval-1.0.2` |
+|---|---|---|
+| P1 anomaly "Reconcile the two PHINS definitions of annual expected claims" (33.66 % vs 72.45 %) | Its own advice was "label both bases explicitly" — done in B/C. The two figures are different labelled quantities (year-1 attained-age vs lifetime-annualised); the gap is the ageing of the book. | Reads `loss_ratio_bases.labelled_at_source` from `actuarial_service`; reports a P3 `monitor` move `act_method_bases_labelled`; the anomaly returns only if the labels vanish. |
+| P2 anomaly "Drive claims automation KPIs from the observed decision mix" (19 % simulated vs 45 % assumed; 19 decided claims) | Simulated vs assumed is an assumption gap by the report's own definition; J already switches the live KPI to observed data at 30 decided claims. | `inconsistency`/P2 until ≥ 30 decided claims; `monitor` when the live endpoint already labels the mix `observed`; `anomaly` only if it ignores sufficient data. Evidence carries the label the endpoint would show. |
+| "IBNR 23 % sufficient 74.7 %" flagged as a warning | The 23 % provision *is* the engine's own p75 proposal from the previous run; a p75 provision is sufficient in ~75 % of trials by construction, so a 90 % pass mark could never be met. | Verdict at the 75 % probability-of-sufficiency target through the Wilson 95 % interval of the trial frequency; 74.7 %/300 passes, the card shows the target and verdict. |
+| Conclusion "(year-1 volatility stress 100 %)" beside a card reading 99.7 %; "instead of the 65 % point assumption" hard-coded | Rounding and a stale constant. | One decimal; quotes `loss_ratio_assumption_pct`. |
+| Risk area `inconsistent` with no next move | The band-loading warning had no advisory. | `risk_band_loadings` P2 `investigate` move (proposes nothing; validates against observed band rates first). |
+| Sales "assumes 5.0 %/month" | F made the live endpoint use observed history when ≥ 6 complete months exist; the module still tested only the legacy constant. | Evaluates the basis the live endpoint uses and labels it (`growth_basis`), keeping the legacy line's attainment visible. |
+| AI "error rate among auto-accepted 1.2 %; human load 84 %" beside "cap → 100 % review" | Counterfactual figures without the cap. | Statement says so explicitly. |
+| Identical numbers on every click | Deterministic seed 20260911 hard-wired in the panel; the population is synthetic by design. | Panel draws a fresh seed per click (echoed as "fresh draw"), pins it only for like-for-like re-runs after a config change, and shows a live-inputs strip stating what was read from the platform. Dashboards send `Cache-Control: no-cache` so a deploy is never masked by a cached page. |
+
+Data-integrity rules of §3 hold: the engine still writes nothing, every
+number is unchanged for a given seed and configuration (`results_sha256`
+changes only because new keys are added: IBNR CI/target/verdict, growth
+basis, basis labels), and every reclassification is derived from a fact read
+from source (`actuarial_service` basis constants, the automation-metrics
+call the endpoint makes, `observed_monthly_growth`), never from a hard-coded
+"resolved" flag.

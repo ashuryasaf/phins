@@ -388,9 +388,45 @@ def test_admin_ai_monte_carlo_conclusions_and_guarded_apply_flow():
     assert "target.api.read_back.path" in body
     assert "Aborted: live configuration changed since this evaluation" in body
     assert "change_reason:" in body and "results_sha256=" in body
-    # Post-apply read-back verification and re-run affordance.
+    # Post-apply read-back verification and re-run affordance. The re-run pins
+    # the previous seed so the only difference between the two sealed reports
+    # is the configuration change.
     assert "Applied and verified" in body
-    assert "adminAssistantQuickAction('run_monte_carlo_evaluation')" in body
+    assert 'onclick="adminMcRerun(true)"' in body
+    assert "Re-run evaluation (same seed)" in body
+    rerun = re.search(r"function adminMcRerun\(sameSeed\)\s*\{(.*?)\n\s*\}", content, flags=re.S)
+    assert rerun, "expected adminMcRerun implementation"
+    assert "adminMcLastReport.parameters.seed" in rerun.group(1)
+    assert "adminAssistantQuickAction('run_monte_carlo_evaluation')" in rerun.group(1)
+
+
+def test_admin_ai_monte_carlo_runner_draws_a_fresh_seed_and_shows_live_inputs():
+    """Every click is a new Monte Carlo draw (seed sent explicitly and echoed),
+    the seed can be pinned for like-for-like re-runs, and the panel states which
+    inputs were live vs. synthetic so a deterministic result is never mistaken
+    for stale or mock data."""
+    content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
+    runner = re.search(
+        r"async function adminRunMonteCarloEvaluation\(\)\s*\{(.*?)\n\s*async function adminRunSystemHealth",
+        content,
+        flags=re.S,
+    )
+    assert runner, "expected adminRunMonteCarloEvaluation implementation"
+    body = runner.group(1)
+    assert "adminMcPinnedSeed !== null ? adminMcPinnedSeed : adminMcFreshSeed()" in body
+    assert "seed: String(seed)" in body
+    assert "adminMcPinnedSeed = null;" in body
+    assert "'pinned' : 'fresh draw'" in body
+    assert 'onclick="adminMcRerun(false)"' in body and "New draw" in body
+    assert "adminMcLiveInputsHtml(data.observed_inputs, results)" in body
+    assert "function adminMcLiveInputsHtml(observed, results)" in content
+    assert "Population:</span> synthetic, seeded" in content
+    assert "Live inputs read (read-only):" in content
+    # IBNR card shows the probability-of-sufficiency target and verdict from the engine.
+    assert "ibnr.probability_of_sufficiency_target" in content
+    assert "ibnr.reserve_config_ibnr_meets_target" in content
+    # Sales card names the growth basis the live forecast endpoint uses.
+    assert "growth_basis === 'observed_policy_history'" in content
 
 
 def test_actuary_dashboard_supports_section_deep_links():
