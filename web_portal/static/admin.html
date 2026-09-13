@@ -3476,7 +3476,7 @@
         const lrAssumption = act.loss_ratio_assumption_pct;
         const ibnrTarget = ibnr.probability_of_sufficiency_target;
         const ibnrVerdict = ibnr.reserve_config_ibnr_meets_target === undefined ? ''
-          : (ibnr.reserve_config_ibnr_meets_target ? ' ✓' : ' ✗');
+          : (ibnr.reserve_config_ibnr_meets_target ? ' met' : ' missed');
         const ibnrTargetText = ibnrTarget === undefined || ibnrTarget === null ? '' : ` · target ${adminMcPct(ibnrTarget, 0)}${ibnrVerdict}`;
         cards.push(adminMcCard(`IBNR ${ibnrPct === undefined || ibnrPct === null ? '' : adminMcNum(ibnrPct, 1) + '% '}sufficient`, adminMcPct(ibnr.probability_reserve_config_ibnr_sufficient), '#e8f5e9',
           `P(Y1 LR > ${lrAssumption === undefined || lrAssumption === null ? '' : adminMcNum(lrAssumption, 0) + '%'} assumption) ${adminMcPct(act.probability_year1_lr_exceeds_65pct_assumption)}${ibnrTargetText}`));
