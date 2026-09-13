@@ -1122,7 +1122,112 @@
         } catch (_) { /* non-fatal */ }
       })();
     </script>
-    
+
+    <!-- AI Agents Operations (read-only view of /api/admin/ai-agents/health) -->
+    <div id="ai-agents-ops" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" style="margin-top: 24px; background: linear-gradient(135deg, #f7f5ff 0%, #ede7f6 100%); border: 1px solid rgba(94, 53, 177, 0.14); border-radius: 12px; padding: 20px;">
+      <div class="section-header" style="margin-bottom: 12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <h3 style="margin: 0; color: #4527a0;">AI Agents Operations</h3>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <span id="ai-agents-ops-summary" style="font-size:12px; color:#5e35b1;">Loading…</span>
+          <button type="button" onclick="loadAIAgentsOps()" style="background:#5e35b1;color:#fff;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;">Refresh</button>
+        </div>
+      </div>
+      <div id="ai-agents-ops-breaches" style="display:none; margin-bottom:12px; padding:10px 12px; background:#fff3e0; border:1px solid #ffb74d; border-radius:8px; color:#e65100; font-size:13px;"></div>
+      <div style="overflow-x:auto;">
+        <table id="ai-agents-ops-table" style="width:100%; border-collapse:collapse; background:#fff; border-radius:8px; font-size:13px;">
+          <thead>
+            <tr style="text-align:left; color:#4527a0; border-bottom:2px solid #d1c4e9;">
+              <th style="padding:8px;">Agent</th>
+              <th style="padding:8px;">Health</th>
+              <th style="padding:8px;">Calls</th>
+              <th style="padding:8px;">Errors</th>
+              <th style="padding:8px;">p95 ms</th>
+              <th style="padding:8px;">Decisions</th>
+              <th style="padding:8px;">Flags</th>
+              <th style="padding:8px;">Last call</th>
+            </tr>
+          </thead>
+          <tbody id="ai-agents-ops-body">
+            <tr><td colspan="8" style="padding:12px; color:#666;">Loading agent health…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:8px; font-size:11px; color:#666;">
+        Read-only probes. Counters are in-process since the last restart; decisions are label counts only (records stay in the AI decision log).
+      </div>
+    </div>
+
+    <script>
+      function _aiAgentsEsc(v) {
+        return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+      }
+
+      async function loadAIAgentsOps() {
+        var body = document.getElementById('ai-agents-ops-body');
+        var summary = document.getElementById('ai-agents-ops-summary');
+        var breachBox = document.getElementById('ai-agents-ops-breaches');
+        if (!body) return;
+        try {
+          var token = localStorage.getItem('phins_token');
+          if (!token) { if (summary) summary.textContent = 'Sign in required'; return; }
+          var res = await fetch('/api/admin/ai-agents/health', { headers: { 'Authorization': 'Bearer ' + token } });
+          if (!res.ok) {
+            if (summary) summary.textContent = 'Unavailable (' + res.status + ')';
+            body.innerHTML = '<tr><td colspan="8" style="padding:12px; color:#c62828;">Agent health unavailable.</td></tr>';
+            return;
+          }
+          var data = await res.json();
+          var agents = data.agents || [];
+          var hs = data.health_summary || {};
+          if (summary) {
+            summary.textContent = (data.agent_count || agents.length) + ' agents · ok ' + (hs.ok || 0) +
+              ' · degraded ' + (hs.degraded || 0) + ' · unavailable ' + (hs.unavailable || 0);
+          }
+          var breaches = data.slo_breaches || [];
+          var failures = Object.keys(data.load_failures || {});
+          if (breachBox) {
+            if (breaches.length || failures.length) {
+              var parts = breaches.map(function (b) {
+                return _aiAgentsEsc(b.agent_id) + ': ' + _aiAgentsEsc(b.kind) + ' ' + _aiAgentsEsc(b.value) + ' > ' + _aiAgentsEsc(b.limit);
+              });
+              failures.forEach(function (m) { parts.push('not loaded: ' + _aiAgentsEsc(m)); });
+              breachBox.innerHTML = '<strong>SLO / load issues:</strong> ' + parts.join(' · ');
+              breachBox.style.display = 'block';
+            } else {
+              breachBox.style.display = 'none';
+            }
+          }
+          var colors = { ok: '#2e7d32', degraded: '#ef6c00', unavailable: '#c62828', unknown: '#757575' };
+          body.innerHTML = agents.map(function (a) {
+            var h = a.health || {}; var m = a.metrics || {}; var lat = m.latency_ms || {};
+            var decisions = Object.keys(m.decisions || {}).map(function (k) {
+              return _aiAgentsEsc(k) + ' ' + _aiAgentsEsc(m.decisions[k]);
+            }).join(', ');
+            var flags = [];
+            if (a.deterministic === false) flags.push('LLM');
+            if (a.executes_async) flags.push('async');
+            if (a.moves_money) flags.push('money');
+            var color = colors[h.status] || colors.unknown;
+            return '<tr style="border-bottom:1px solid #ede7f6;">' +
+              '<td style="padding:8px;"><strong>' + _aiAgentsEsc(a.name) + '</strong><br><span style="color:#888; font-size:11px;">' + _aiAgentsEsc(a.id) + ' · ' + _aiAgentsEsc(a.api && a.api.method) + ' ' + _aiAgentsEsc(a.api && a.api.path) + '</span></td>' +
+              '<td style="padding:8px; color:' + color + '; font-weight:600;">' + _aiAgentsEsc(h.status || 'unknown') + '</td>' +
+              '<td style="padding:8px;">' + _aiAgentsEsc(m.calls || 0) + '</td>' +
+              '<td style="padding:8px;">' + _aiAgentsEsc(m.errors || 0) + (m.calls ? ' (' + Math.round((m.error_rate || 0) * 1000) / 10 + '%)' : '') + '</td>' +
+              '<td style="padding:8px;">' + _aiAgentsEsc(lat.p95 == null ? '—' : lat.p95) + '</td>' +
+              '<td style="padding:8px;">' + (decisions || '—') + '</td>' +
+              '<td style="padding:8px;">' + (flags.length ? _aiAgentsEsc(flags.join(' · ')) : '—') + '</td>' +
+              '<td style="padding:8px; color:#666;">' + _aiAgentsEsc(m.last_call_at ? String(m.last_call_at).replace('T', ' ').slice(0, 19) : '—') + '</td>' +
+              '</tr>';
+          }).join('') || '<tr><td colspan="8" style="padding:12px; color:#666;">No agents registered.</td></tr>';
+        } catch (_) {
+          if (summary) summary.textContent = 'Unavailable';
+        }
+      }
+      loadAIAgentsOps();
+    </script>
+
     <!-- Pipeline Overview -->
     <div id="pipeline-overview" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" style="margin-top: 24px; background: linear-gradient(135deg, #f5f9ff 0%, #e3f2fd 100%); border: 1px solid rgba(21, 101, 192, 0.12); border-radius: 12px; padding: 20px;">
       <div class="section-header" style="margin-bottom: 16px;">

@@ -1,10 +1,11 @@
 # PHINS Agent Operations — Optimization Design
 
-> **Status: DESIGN — no code yet.** This document turns the agent inventory and
-> the optimization proposal into a concrete, file-level plan with a test plan
-> per workstream. It is the model of record for the implementation PRs that
-> follow. Each workstream is independently shippable; sequencing is by
-> dependency (§D), not calendar.
+> **Status: IMPLEMENTING — §D step 1 (A1 + A5) shipped.** This document turns
+> the agent inventory and the optimization proposal into a concrete,
+> file-level plan with a test plan per workstream. It is the model of record
+> for the implementation PRs that follow. Each workstream is independently
+> shippable; sequencing is by dependency (§D), not calendar. See
+> §G for what is in the tree versus still planned.
 >
 > Governing constraint (unchanged): **AI recommends, the ledger decides.**
 > Nothing here moves payout, pricing, underwriting, or trade-execution
@@ -12,14 +13,14 @@
 
 ## 0. Scope and inventory
 
-Software operators in scope (14; the investor deck's "15" counted the removed
-Investment AI):
+Software operators in scope (15 modules below; the investor deck's "15" counted
+the removed Investment AI and not the Underwriting Assistant):
 
 | # | Agent | Module | Lines | Entry routes today |
 |---|---|---|---|---|
 | 1 | Underwriting Bot | `services/underwriting_bot_service.py` | 2127 | `POST /api/risk-dashboard/ai-assess` (inline, `server.py`) |
 | 2 | Claims Bot | `services/claims_bot_service.py` | 1311 | `POST /api/claims/probability-report`, `GET /api/claims/bot-threshold-calibration` |
-| 3 | AI Automation Controller | `ai_automation_controller.py` | 838 | called from quote/UW/claims handlers in `server.py` |
+| 3 | AI Automation Controller | `ai_automation_controller.py` | 838 | library only — no `server.py`/extension route references it; exercised by root `test_integration.py`, `test_pr_complete.py` |
 | 4 | Underwriting Assistant | `underwriting_assistant.py` | — | library used by `service_agent.py`, demos, CLI |
 | 5 | Assessment AI (Hermes) | `services/assessment_ai_service.py` | 668 | `POST /api/assessment-center/analysis` (`api_assessment_center.py`) |
 | 6 | Pension Data Agent | `services/pension_data_agent.py` | 2226 | `/api/mislaka/{import,policies,summary,report,companies,status,affiliations}` |
@@ -706,6 +707,47 @@ all new env vars documented in `AGENTS.md` §7.
 | Shared helper swap changes edge-case behavior | Parity tests over edge fixtures before each swap |
 | Two customer agents merged; `test_service_agent.py` depends on old shape | Compatibility shim keeps `CustomerServiceAgent` importable |
 
+## G. Implementation status
+
+### Shipped — §D step 1: A1 + A5 foundation
+
+| Piece | Where | Notes |
+|---|---|---|
+| Runtime contract | `services/agent_runtime.py` | `AgentDescriptor`, `register()`, `registry()`, `health()`, `metrics()`, `overview()`. Discovery only; probes are read-only and never raise; same-module re-registration is idempotent, cross-module id claims are rejected. |
+| Canonical helpers | `services/agent_helpers.py` | `safe_float/safe_int/status_lower/status_eq/status_in/utc_now_iso`. Variants of the private copies (comma stripping, `str()` coercion, finite-only, falsy-as-empty, no-strip) are explicit keyword options so any adoption is byte-for-byte identical. Parity tests in `tests/test_agent_helpers.py` cover the copies in `customer_communication_agent`, `marketing_sales_agent_service`, `ai_trading_engine`, `metrics_service`, and `web_portal/server.py`. The private copies are **not yet swapped**; that happens one module per commit with the parity test as the gate. |
+| Per-agent metrics | `services/agent_metrics.py` | `instrument_agent` decorator (calls, errors, bounded latency reservoir, decision-label counts, in-flight), `set_gauge`, `snapshot_all`, `check_slo` (`PHINS_AGENT_SLO_P95_MS`, `PHINS_AGENT_SLO_ERROR_RATE`, `PHINS_AGENT_SLO_MIN_CALLS`). Observation only: arguments and results pass through untouched, exceptions re-raise unchanged. |
+| Registration + instrumentation | all 15 agent modules (§0 table plus `underwriting_assistant`) | Each module appends a `register(AgentDescriptor(...), health_fn=...)` block and decorates its entry methods. Health probes read module singletons only; they never instantiate a service. |
+| Catalog | `services/ai_capabilities.py` | `ensure_agents_loaded()` imports `AGENT_MODULES` (guarded) and the catalog is static entries (text authoritative) merged with registry descriptors: 6 → 15 entries. `help_text(role, include_health=True)` attaches health + metrics for admin surfaces only. |
+| Health route | `web_portal/api_extensions.py` → `GET /api/admin/ai-agents/health` | Admin only (401/403 otherwise). Returns descriptors, health, metrics, `slo_breaches`, `load_failures`, `health_summary`. |
+| Metrics block | `web_portal/server.py` → `GET /api/metrics` | `metrics.agents` = `snapshot_all()` (counts/latency only; no PII, no decision payloads). Business metrics unchanged. |
+| Admin panel | `web_portal/static/admin.html` → `#ai-agents-ops` | Collapsed-by-default table over the health route with SLO/load-failure banner; all server values HTML-escaped. |
+| Tests | `tests/test_agent_runtime.py`, `tests/test_agent_helpers.py`, `tests/test_agent_metrics.py`, `tests/test_agent_health_route.py`, `tests/test_admin_ai_agents_ops_static_integrity.py`, `tests/test_ai_capabilities.py` | Includes: every registered HTTP `api.path` is present in a real dispatcher; `LIB` agents resolve to an importable symbol; health view does not instantiate singletons. |
+
+Deviations from the A1/A5 text above, and why:
+
+- **The decorator does not write `ai_decision_log` records.** Emitting from the
+  decorator as well as from the controller would double-record decisions.
+  Decision *records* stay with the agents that own them; the decorator only
+  counts labels. A6 will derive distributions from the log, not the counter.
+- **Three agents have no HTTP route of their own** and are registered with
+  `api.method = "LIB"`: `ai_automation_controller` (only exercised by root
+  `test_integration.py`/`test_pr_complete.py`), `underwriting_assistant`, and
+  `customer_service` (`service_agent.py`). The investor deck counts them; the
+  portal does not currently call them. B2/B7 decide whether to wire or retire.
+- **SLO evaluation is in-process** (`check_slo` surfaced by the health route
+  and the admin panel) rather than a `scheduler/runner.py` job. The metrics
+  live in the web process; a cron process would see an empty snapshot until
+  A4 persists them. `scheduler/runner.py` is a one-line delegate for monthly
+  auto-pay and was left untouched.
+- **15 agents, not 14**: `underwriting_assistant` is registered separately
+  from `customer_service` because they are distinct modules with distinct
+  entry points.
+
+### Next — §D step 2
+
+A2 external-call gateway and B12 trading safety controls (independent; see
+§A2 and §B12 for touch points and tests).
+
 ---
 
-_Last updated: September 13, 2026 — initial design, no implementation._
+_Last updated: September 13, 2026 — A1 + A5 shipped; A2/B12 next._
