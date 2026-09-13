@@ -2994,6 +2994,43 @@ def handle_admin_all_activities(session: Dict, query_params: Dict) -> Tuple[int,
 
 
 # ============================================================================
+# AI AGENT HEALTH (admin operations surface)
+# ============================================================================
+
+def handle_ai_agents_health(session: Optional[Dict], query_params: Optional[Dict] = None) -> Tuple[int, Dict]:
+    """GET /api/admin/ai-agents/health
+
+    One read-only view of every registered software agent: descriptor,
+    health probe, in-process metrics snapshot, SLO breaches, and any agent
+    module that failed to import. Admin only; probes never mutate state.
+    """
+    if not session:
+        return 401, {"error": "Authentication required"}
+    if str(session.get('role') or '').strip().lower() != 'admin':
+        return 403, {"error": "Admin access required"}
+    try:
+        from services import ai_capabilities, agent_runtime, agent_metrics
+        load_failures = ai_capabilities.ensure_agents_loaded()
+        agents = agent_runtime.overview()
+        breaches = agent_metrics.check_slo()
+        status_counts: Dict[str, int] = {}
+        for agent in agents:
+            key = str(agent.get('health', {}).get('status') or 'unknown')
+            status_counts[key] = status_counts.get(key, 0) + 1
+        return 200, {
+            'agents': agents,
+            'agent_count': len(agents),
+            'health_summary': status_counts,
+            'slo_breaches': breaches,
+            'load_failures': load_failures,
+            'generated_at': datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as exc:  # noqa: BLE001 - operations view must degrade, not 500-loop
+        logger.warning("ai agents health view failed: %s", exc)
+        return 500, {"error": "Agent health unavailable"}
+
+
+# ============================================================================
 # VIDEO AGENTS ENDPOINTS
 # ============================================================================
 
@@ -3267,6 +3304,10 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     Dispatch GET requests to appropriate handlers.
     Returns (status_code, response_dict) or None if path not handled.
     """
+    # Admin operations view over every registered software agent.
+    if path == '/api/admin/ai-agents/health':
+        return handle_ai_agents_health(session, query_params)
+
     # Aspire-Invest Israel-pilot identity (planning calculator — no PII).
     if path == '/api/pitch/aspire-identity':
         try:
