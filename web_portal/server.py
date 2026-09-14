@@ -14268,6 +14268,26 @@ class PortalHandler(BaseHTTPRequestHandler):
         token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
         return validate_session(token) if token else None
 
+    def _autopilot_control_actor(self, body_data: Optional[Dict[str, Any]] = None,
+                                 qs: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """Who may operate the AutoPilot safety controls (halt/resume/promote).
+
+        Either the terminal access key (the credential that can already create
+        and execute bots) or an admin session. Returns an actor label for the
+        audit row, or ``None`` when neither credential is valid.
+        """
+        session = self._get_session()
+        if session and require_role(session, ['admin']):
+            return f"admin:{session.get('username')}"
+        ai_key = self.headers.get('X-Terminal-Key', '')
+        if not ai_key and body_data:
+            ai_key = str(body_data.get('api_key', '') or '')
+        if not ai_key and qs:
+            ai_key = (qs.get('api_key', ['']) or [''])[0]
+        if terminal_access_enabled and ai_key and validate_terminal_access(ai_key):
+            return 'terminal_key'
+        return None
+
     def _request_is_secure(self) -> bool:
         """Whether the original client request arrived over HTTPS.
 
@@ -27723,6 +27743,25 @@ For claims or questions, please contact:
 
         # ========== AUTO-PILOT & SCREENER API (GET) ==========
 
+        if path == '/api/terminal/autopilot/halt':
+            # Safety-control status: effective halt (env or runtime), promoted
+            # strategy versions. Terminal key or admin session.
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            if not self._autopilot_control_actor(None, qs):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            from services.trading_platform_service import get_autopilot_engine
+            engine = get_autopilot_engine()
+            payload = engine.halt_status()
+            payload['promoted_versions'] = engine.promoted_versions()
+            self._set_json_headers()
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
         if path == '/api/terminal/autopilot/bots':
             if not trading_platform_enabled:
                 self._set_json_headers(503)
@@ -35201,6 +35240,48 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             return
         # ========== AUTO-PILOT API (POST) ==========
+
+        if path in ('/api/terminal/autopilot/halt', '/api/terminal/autopilot/resume',
+                    '/api/terminal/autopilot/promote'):
+            # B12 safety controls. Halting is always allowed to succeed; a
+            # PHINS_TRADING_HALT env halt cannot be lifted here.
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            try:
+                body_data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                body_data = {}
+            if not isinstance(body_data, dict):
+                body_data = {}
+            actor = self._autopilot_control_actor(body_data)
+            if not actor:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            from services.trading_platform_service import get_autopilot_engine
+            engine = get_autopilot_engine()
+            if path.endswith('/halt'):
+                reason = str(body_data.get('reason') or 'manual halt')[:200]
+                result = engine.halt_trading(reason, actor=actor)
+            elif path.endswith('/resume'):
+                result = engine.resume_trading(actor=actor)
+            else:
+                strategy = str(body_data.get('strategy') or body_data.get('strategy_name') or '')
+                version = str(body_data.get('version') or '')
+                if not strategy or not version:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'strategy and version required'}).encode('utf-8'))
+                    return
+                result = engine.promote_strategy_version(strategy, version, actor=actor)
+                if 'error' in result:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+                    return
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
 
         if path == '/api/terminal/autopilot/create':
             if not trading_platform_enabled:
