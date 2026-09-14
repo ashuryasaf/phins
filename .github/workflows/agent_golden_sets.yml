@@ -62,9 +62,6 @@ jobs:
         run: |
           python scripts/run_agent_eval.py golden
 
-      - name: Harness unit tests
-        env:
-          USE_DATABASE: 'false'
-          PHINS_TEST_MODE: 'true'
-        run: |
-          python -m pytest tests/test_agent_eval.py -q --tb=short
+      # The harness's own unit tests (tests/test_agent_eval.py) run with the
+      # rest of the suite via pytest, which needs requirements-dev.txt; this
+      # job deliberately installs runtime deps only and stays a fixture gate.
