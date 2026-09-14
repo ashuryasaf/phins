@@ -130,6 +130,42 @@ def enqueue_probability_report(queue: AgentJobQueue, *, claim_id: str, claim: Di
     )
 
 
+def sanitize_claim_probability_report(report: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a safe report payload for UI usage.
+
+    Removes raw evidence arrays that can expose unnecessary sensitive details.
+    Shared by the web route and the standalone worker so both paths serve the
+    identical redaction (``web_portal/server.py`` delegates here).
+    """
+    if not isinstance(report, dict):
+        return {}
+
+    def _severity(value) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    sanitized = dict(report)
+    fraud_section = sanitized.get('fraud_indicators')
+    if isinstance(fraud_section, dict):
+        cleaned_indicators = []
+        for indicator in fraud_section.get('indicators', []):
+            if not isinstance(indicator, dict):
+                continue
+            cleaned = dict(indicator)
+            cleaned.pop('evidence', None)
+            cleaned_indicators.append(cleaned)
+        fraud_section = dict(fraud_section)
+        fraud_section['indicators'] = cleaned_indicators
+        fraud_section['count'] = len(cleaned_indicators)
+        fraud_section['high_severity_count'] = sum(
+            1 for item in cleaned_indicators if _severity(item.get('severity')) > 0.7
+        )
+        sanitized['fraud_indicators'] = fraud_section
+    return sanitized
+
+
 def make_handler(context):
     def _handle(job: Dict[str, Any]) -> Dict[str, Any]:
         params = job.get('input_params') or {}
@@ -137,9 +173,8 @@ def make_handler(context):
         report = generate_probability_report(context, claim_id)
         if report is None:
             raise RuntimeError('Failed to generate probability report')
-        sanitize = context.sanitize_claim_report
-        if sanitize is not None:
-            report = sanitize(report)
+        sanitize = context.sanitize_claim_report or sanitize_claim_probability_report
+        report = sanitize(report)
         return response_body(report)
     return _handle
 

@@ -8,10 +8,12 @@ computed (golden parity), so a caller receives the same payload whether it
 arrived inline (200) or via ``GET /api/jobs/{id}`` after a 202.
 
 ``register_all(queue, context)`` binds every adapter onto a queue. The two
-bots operate on the portal's in-memory stores, which only the web process
-holds, so their handlers are registered only when a ``JobContext`` is
-supplied; a standalone worker without one simply never claims those types
-(see ``AgentJobQueue._claim_due``).
+bots read the portal's customer/policy/claim stores, so their handlers are
+registered only when a ``JobContext`` is supplied; a queue without one simply
+never claims those types (see ``AgentJobQueue._claim_due``). In DB mode the
+standalone worker builds that context from the database-backed dicts
+(``worker_context()``) — since A4 every agent's own state is durable, so the
+worker computes exactly what the web process would.
 """
 
 from dataclasses import dataclass, field
@@ -37,6 +39,30 @@ class JobContext:
     claims: Dict[str, Any] = field(default_factory=dict)
     audit: Any = None
     sanitize_claim_report: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None
+
+
+def worker_context(audit: Any = None) -> JobContext:
+    """A ``JobContext`` over the database-backed stores for a standalone worker.
+
+    Requires DB mode: ``database.data_access`` dicts read/write the same rows
+    the web process serves, so a bot job here sees the same customers,
+    policies, claims and applications a request thread would.
+    """
+    from database.data_access import (
+        CLAIMS as DB_CLAIMS, CUSTOMERS as DB_CUSTOMERS, POLICIES as DB_POLICIES,
+        UNDERWRITING_APPLICATIONS as DB_UNDERWRITING,
+    )
+    if audit is None:
+        try:
+            from services.audit_service import AuditService
+            audit = AuditService()
+        except Exception:
+            audit = None
+    return JobContext(
+        customers=DB_CUSTOMERS, policies=DB_POLICIES, underwriting_apps=DB_UNDERWRITING,
+        claims=DB_CLAIMS, audit=audit,
+        sanitize_claim_report=claims_bot_job.sanitize_claim_probability_report,
+    )
 
 
 def register_all(queue: AgentJobQueue, context: Optional[JobContext] = None) -> AgentJobQueue:

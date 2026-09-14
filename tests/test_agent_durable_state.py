@@ -386,6 +386,63 @@ def test_risk_reports_legacy_json_is_migrated_once_into_the_table(risk_db_mode, 
     assert rebooted.load_data() is True and analysis.id in rebooted.analyses
 
 
+# --------------------------------------------------------------------------
+# Standalone worker: every adapter bound over the database-backed stores
+# --------------------------------------------------------------------------
+def test_standalone_worker_context_runs_claims_bot_job_with_web_parity(db_mode):
+    from services import jobs as agent_jobs
+    from services.agent_job_queue import AgentJobQueue
+    from database.manager import DatabaseManager
+
+    db = DatabaseManager()
+    context = agent_jobs.worker_context(audit=None)
+    assert context.sanitize_claim_report is agent_jobs.claims_bot_job.sanitize_claim_probability_report
+
+    marker = f"A4-{os.getpid()}"
+    context.customers[f"CUST-{marker}"] = {"id": f"CUST-{marker}", "name": "Durable Customer",
+                                           "email": f"{marker}@example.com"}
+    context.policies[f"POL-{marker}"] = {"id": f"POL-{marker}", "customer_id": f"CUST-{marker}",
+                                         "start_date": "2020-01-01", "coverage_amount": 100000,
+                                         "status": "active", "type": "health", "annual_premium": 1200.0}
+    context.claims[f"CLM-{marker}"] = {"id": f"CLM-{marker}", "customer_id": f"CUST-{marker}",
+                                       "policy_id": f"POL-{marker}", "claimed_amount": 1000,
+                                       "filed_date": "2024-01-01", "type": "medical",
+                                       "status": "pending"}
+    try:
+        worker = AgentJobQueue(db_manager=db, poll_interval=0.01)
+        agent_jobs.register_all(worker, context)
+        assert agent_jobs.claims_bot_job.JOB_TYPE in worker.handlers()
+        assert agent_jobs.underwriting_bot_job.JOB_TYPE in worker.handlers()
+        assert agent_jobs.video_job.JOB_TYPE in worker.handlers()
+
+        job = agent_jobs.claims_bot_job.enqueue_probability_report(
+            worker, claim_id=f"CLM-{marker}", claim=context.claims[f"CLM-{marker}"],
+            submitted_by="adjuster")
+        assert worker.process_once()["completed"] == 1
+        row = worker.get_job(job["id"])
+        assert row["status"] == "completed", row
+        result = row["result"]["report"] if "report" in row["result"] else row["result"]
+        assert result["claim_id"] == f"CLM-{marker}"
+        for indicator in result["fraud_indicators"]["indicators"]:
+            assert "evidence" not in indicator                     # redacted like the web route
+
+        # The report the worker produced is in the durable store, so the web
+        # process (a peer instance of the bot) can serve it by id.
+        from database.manager import DatabaseManager as _DM
+        with _DM() as peer_db:
+            stored = list(peer_db.agent_artifacts.iter_payloads('claims_bot', 'probability_report'))
+        assert [p[1]["claim_id"] for p in stored] == [f"CLM-{marker}"]
+    finally:
+        for store, key in ((context.claims, f"CLM-{marker}"), (context.policies, f"POL-{marker}"),
+                           (context.customers, f"CUST-{marker}")):
+            store.pop(key, None)
+        from database.models import DocumentProcessingJob
+        session = db.processing_jobs.session
+        session.query(DocumentProcessingJob).filter(
+            DocumentProcessingJob.subject_id == f"CLM-{marker}").delete(synchronize_session=False)
+        session.commit()
+
+
 def test_memory_mode_is_untouched(monkeypatch):
     monkeypatch.setattr(hs, 'db_mode_enabled', lambda: False)
     monkeypatch.setattr(bridge, 'record_ai_audit', lambda *a, **k: False)

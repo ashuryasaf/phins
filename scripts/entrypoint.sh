@@ -16,8 +16,9 @@
 #               (requires USE_DATABASE=true so jobs/documents are shared
 #               with the web process; in-process worker threads inside
 #               "serve" are the default and need no extra service).
-#               Documents only: agent jobs (PHINS_AGENT_ASYNC) run on the
-#               web process's threads because their state lives there.
+#               Also drains the agent jobs (PHINS_AGENT_ASYNC): their state
+#               is durable (A4), so set PHINS_WORKER_AGENT_JOBS=false only
+#               to keep this process to documents.
 #   db-init   - bootstrap the database (manual; NOT called automatically
 #               from serve to avoid multi-replica race conditions and to
 #               prevent default-admin credentials from being seeded into

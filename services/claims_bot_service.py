@@ -626,7 +626,7 @@ class ClaimsBotService:
             score -= 0.5
         
         # Check description quality
-        description = claim.get('description', '')
+        description = claim.get('description') or ''  # DB rows carry None, not ''
         if len(description) > 50:
             score += 0.05  # Detailed description
         
