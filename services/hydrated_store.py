@@ -199,7 +199,7 @@ class HydratedStore(MutableMapping):
     def __init__(self, name: str, *, loader: Loader, saver: Saver,
                  deleter: Optional[Deleter] = None, ttl: Optional[float] = None,
                  full_resync_interval: Optional[float] = None,
-                 enabled: Callable[[], bool] = db_mode_enabled,
+                 enabled: Optional[Callable[[], bool]] = None,
                  on_error: Optional[Callable[[str, Exception], None]] = None):
         self.name = name
         self._loader = loader
@@ -225,8 +225,10 @@ class HydratedStore(MutableMapping):
     # -- introspection -----------------------------------------------------
     @property
     def durable(self) -> bool:
+        # ``db_mode_enabled`` is looked up at call time so the portal's runtime
+        # DB-mode flip (and test monkeypatching) is honoured.
         try:
-            return bool(self._enabled())
+            return bool((self._enabled or db_mode_enabled)())
         except Exception:
             return False
 
@@ -427,7 +429,116 @@ class HydratedStore(MutableMapping):
             }
 
 
+# --------------------------------------------------------------------------
+# ArtifactStore: HydratedStore over the generic ``agent_artifacts`` table
+# --------------------------------------------------------------------------
+
+def _db_manager():
+    from database.manager import DatabaseManager
+    return DatabaseManager()
+
+
+class ArtifactStore(HydratedStore):
+    """A ``HydratedStore`` whose rows live in ``agent_artifacts``.
+
+    ``encode``/``decode`` convert between the agent's record object and the
+    JSON payload (defaults to the lossless dataclass codec when ``record_type``
+    is given). ``subject`` maps a record to ``(subject_type, subject_id)`` for
+    the row's index columns. ``prune_durable(keep)`` is the DB-side retention
+    rule (oldest by ``created_date``), mirrored into the cache.
+    """
+
+    def __init__(self, name: str, *, agent_id: str, kind: str,
+                 record_type: Optional[type] = None,
+                 encode: Optional[Callable[[Any], Any]] = None,
+                 decode: Optional[Callable[[Any], Any]] = None,
+                 subject: Optional[Callable[[Any], Tuple[Optional[str], Optional[str]]]] = None,
+                 db_factory: Callable[[], Any] = _db_manager, **kw):
+        self.agent_id = agent_id
+        self.kind = kind
+        self._encode = encode or to_jsonable
+        if decode is None:
+            if record_type is None:
+                decode = lambda payload: payload  # noqa: E731
+            else:
+                decode = lambda payload: from_jsonable(record_type, payload)  # noqa: E731
+        self._decode = decode
+        self._subject = subject
+        self._db_factory = db_factory
+        super().__init__(name, loader=self._load, saver=self._save, deleter=self._remove, **kw)
+
+    def _load(self, since):
+        with self._db_factory() as db:
+            for aid, payload, updated, _meta in db.agent_artifacts.iter_payloads(
+                    self.agent_id, self.kind, since):
+                try:
+                    yield aid, self._decode(payload), updated
+                except Exception as exc:  # a row that no longer decodes is skipped, not served
+                    logger.warning("hydrated_store[%s] cannot decode %s: %s", self.name, aid, exc)
+
+    def _save(self, key, value):
+        subject_type, subject_id = (None, None)
+        if self._subject is not None:
+            try:
+                subject_type, subject_id = self._subject(value)
+            except Exception:
+                subject_type, subject_id = (None, None)
+        with self._db_factory() as db:
+            db.agent_artifacts.upsert(
+                key, agent_id=self.agent_id, kind=self.kind, payload=self._encode(value),
+                subject_type=subject_type, subject_id=subject_id)
+
+    def _remove(self, key):
+        with self._db_factory() as db:
+            db.agent_artifacts.delete_artifact(key)
+
+    def prune_durable(self, keep: int) -> list:
+        """Delete the oldest rows beyond ``keep`` in the table; drop them from
+        the cache. Returns the deleted ids. No-op (empty list) in memory mode."""
+        if not self.durable:
+            return []
+        try:
+            with self._db_factory() as db:
+                victims = db.agent_artifacts.prune(self.agent_id, self.kind, keep)
+        except Exception as exc:
+            self._report('prune', exc)
+            return []
+        with self._lock:
+            for vid in victims:
+                self._data.pop(vid, None)
+        return victims
+
+
+_SHARED: Dict[str, ArtifactStore] = {}
+_SHARED_LOCK = threading.Lock()
+
+
+def artifact_store(name: str, **kw) -> ArtifactStore:
+    """An ``ArtifactStore`` for an agent's record family.
+
+    Services are often instantiated per request or per job; in DB mode that
+    would re-hydrate the whole table for every instance, so the store (and
+    its cache) is shared process-wide by ``name`` when DB mode is on at
+    construction. In memory mode each caller gets its own private store so
+    the pre-A4 per-instance dict semantics are unchanged.
+    """
+    if not db_mode_enabled():
+        return ArtifactStore(name, **kw)
+    with _SHARED_LOCK:
+        store = _SHARED.get(name)
+        if store is None:
+            store = ArtifactStore(name, **kw)
+            _SHARED[name] = store
+        return store
+
+
+def reset_shared_stores() -> None:
+    """Forget the process-wide stores (tests / DB-mode flips)."""
+    with _SHARED_LOCK:
+        _SHARED.clear()
+
+
 __all__ = [
-    'DEFAULT_FULL_RESYNC', 'DEFAULT_TTL', 'FULL_RESYNC_ENV', 'HYDRATE_TTL_ENV',
+    'ArtifactStore', 'artifact_store', 'reset_shared_stores', 'DEFAULT_FULL_RESYNC', 'DEFAULT_TTL', 'FULL_RESYNC_ENV', 'HYDRATE_TTL_ENV',
     'HydratedStore', 'RefreshCoalescer', 'db_mode_enabled', 'from_jsonable', 'to_jsonable',
 ]
