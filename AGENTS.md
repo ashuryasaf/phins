@@ -18,7 +18,7 @@ PHINS is a Python platform built around:
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (221 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (223 files) and root-level `test_*.py` (11 files)
 - one generalized job queue (`services/agent_job_queue.py`, table
  `document_processing_jobs`, rows keyed by `subject_type`/`subject_id` and
  `submitted_by`; retries, dead-letter, idempotency keys, handler registry —
@@ -31,6 +31,18 @@ PHINS is a Python platform built around:
  `GET /api/jobs/{id}` (submitter or staff only, 404 otherwise) —
  dashboards do this through `static/agent-jobs.js` (`phinsAwaitJob`).
  With the flags off the same adapter functions run inline (golden parity).
+- durable agent state (`services/hydrated_store.py`, A4): each agent's own
+ working records — Claims Bot probability reports, Underwriting Bot
+ assessments/metadata/reports, AI Risk Reports documents/analyses/reports —
+ live in `agent_artifacts` (one generic table, lossless dataclass codec,
+ sha256 checksum verified on load) and Video Agents jobs in `video_jobs`,
+ behind a `HydratedStore` read-through cache (TTL-coalesced incremental
+ hydration by `updated_date`, periodic full resync, durable write before
+ cache write; a failed durable write is reported and retained, never
+ silently dropped). Retention caps are DB-side prunes. In memory mode the
+ same objects are plain per-instance dicts, so both flows behave as before.
+ Because that state is durable, `entrypoint.sh worker` binds every agent
+ adapter over the database-backed stores (`services.jobs.worker_context`).
  Facts carry evidence provenance (source snippet, char offsets, PDF page,
  audio/video timestamps) and cross-document contradictions are recorded as
  `contradiction` facts, never silently resolved
@@ -95,10 +107,11 @@ Preferred file-by-task:
 |                                        # (includes `static/locales/he.json` Hebrew i18n)
 |- prompts/                             # versioned LLM prompt templates
 |  `- assessment/                       # narrative/onboarding/service/termination v1
-|- services/                            # 107 service modules
+|- services/                            # 108 service modules
 |  |- agent_job_queue.py                # generalized job queue (retry/DLQ/handlers)
 |  |- document_job_worker.py            # document binding over the job queue
-|  |- jobs/                             # agent job adapters (202 routes)
+|  |- jobs/                             # agent job adapters (202 routes; worker_context)
+|  |- hydrated_store.py                 # A4 read-through cache over durable agent tables
 |  |- llm_providers.py                  # vendor-neutral LLM + schema validation
 |  |- transcription_providers.py        # audio speech-to-text abstraction
 |  |- external_call_gateway.py          # cache/budget/breaker/retry for provider HTTP
@@ -114,7 +127,7 @@ Preferred file-by-task:
 |  |- seeds.py
 |  |- migrate_data.py
 |  |- migrations/
-|  |- repositories/                     # 18 *_repository.py + base.py
+|  |- repositories/                     # 20 *_repository.py + base.py
 |- security/
 |  |- vault.py
 |  |- auth_tokens.py
@@ -131,7 +144,7 @@ Preferred file-by-task:
 |  `- runner.py
 |- scripts/                             # operational utilities
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/worker/db-init)
-|- tests/                               # 221 test files
+|- tests/                               # 223 test files
 |- docs/
 |  |- platform_data_architecture.md
 |  |- health_marketplace_architecture.md
@@ -199,6 +212,9 @@ Database patterns:
   `remittances`, `payer_receivables`, `idempotency`, `outbox`
 - Agent ecosystem: `agents`, `agent_invitations`, `agent_affiliations`,
   `agent_commissions`
+- Assessment loop / intake / AI cost: `assessment_records`,
+  `business_inquiries`, `ai_usage`
+- Durable agent state (A4): `agent_artifacts`, `video_jobs`
 
 Common ID prefixes:
 
@@ -262,8 +278,8 @@ When changing persistence or schema behavior:
 Key facts:
 
 - Storage modes include in-memory, SQLite, and PostgreSQL.
-- `DatabaseManager` exposes 37 repository properties (see §4 for the full list).
-- Repository modules (15 `*_repository.py` + `base.py`):
+- `DatabaseManager` exposes 42 repository properties (see §4 for the full list).
+- Repository modules (20 `*_repository.py` + `base.py`):
   `customer_repository.py`, `policy_repository.py`, `claim_repository.py`,
   `underwriting_repository.py`, `billing_repository.py`,
   `user_repository.py`, `session_repository.py`, `audit_repository.py`,
@@ -273,8 +289,13 @@ Key facts:
   ledger repositories), `marketplace_repository.py` (bundles wallet,
   payment-intent, refund, journal, settlement, external-payer,
   marketplace-claim, remittance, receivable, idempotency, and outbox
-  repositories), and `agent_repository.py` (bundles agent, agent-invitation,
-  agent-affiliation, and agent-commission repositories).
+  repositories), `agent_repository.py` (bundles agent, agent-invitation,
+  agent-affiliation, and agent-commission repositories),
+  `assessment_record_repository.py`, `business_inquiry_repository.py`,
+  `ai_usage_repository.py`, `agent_artifact_repository.py` (generic durable
+  agent state, sha256-checksummed payloads verified on load, DB-side prune)
+  and `video_job_repository.py` (video job lifecycle; `mark_terminal` is a
+  conditional UPDATE so exactly one racer wins).
 - Connection handling includes recovery logic; avoid bypassing existing session
   patterns without a clear reason.
 
@@ -326,7 +347,13 @@ Environment variables commonly used:
  202 + `poll_url`; default off), `PHINS_DOC_WORKER_CONCURRENCY` (base
  threads), `PHINS_JOB_WORKER_MAX_CONCURRENCY` (burst ceiling),
  `PHINS_JOB_WORKER_IDLE_POLLS`, `PHINS_DOC_WORKER_POLL_INTERVAL`,
- `PHINS_DOC_RETRY_SCHEDULE`, `PHINS_DOC_CLAIM_TIMEOUT`
+ `PHINS_DOC_RETRY_SCHEDULE`, `PHINS_DOC_CLAIM_TIMEOUT`,
+ `PHINS_WORKER_AGENT_JOBS` (standalone worker also drains agent jobs;
+ default true)
+- **Durable agent state:** `PHINS_AGENT_HYDRATE_TTL` (read-path refresh
+ coalescing, default 1.5s; shared with AgentOS),
+ `PHINS_AGENT_FULL_RESYNC_SECONDS` (full re-pull that reflects peer
+ deletions, default 60)
 - **Transcription:** `PHINS_TRANSCRIPTION_PROVIDER`
  (`openai_compatible`|`disabled`), `PHINS_TRANSCRIPTION_ENDPOINT`,
  `PHINS_TRANSCRIPTION_API_KEY`, `PHINS_TRANSCRIPTION_MODEL`
@@ -422,7 +449,7 @@ Important test harness facts:
 - Tests reset in-memory portal state between cases (clears `POLICIES`,
   `CLAIMS`, `CUSTOMERS`, `SESSIONS`, `BILLING`, etc.)
 - Options wheel service and document processing service are also reset per test
-- 221 test files under `tests/`, 11 root-level `test_*.py` files
+- 223 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
