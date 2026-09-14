@@ -288,6 +288,20 @@ def _resolve_session_email(session: Dict[str, Any]) -> str:
     return str(customer.get('email') or '').strip()
 
 
+def _portal_module():
+    """The already-loaded portal server module, whatever name it was
+    imported under (``web_portal.server`` in pytest, ``server`` on the
+    fallback import path, ``__main__`` when run directly). Never re-imports
+    a second copy of the server."""
+    import sys as _sys
+    for name in ('web_portal.server', 'server', '__main__'):
+        module = _sys.modules.get(name)
+        if module is not None and hasattr(module, 'get_agent_job_queue'):
+            return module
+    from web_portal import server as module  # last resort (not yet loaded)
+    return module
+
+
 def _runtime_environment_name() -> str:
     """Best-effort runtime environment detector."""
     for env_key in ('PHINS_ENV', 'ENVIRONMENT', 'RAILWAY_ENVIRONMENT_NAME', 'NODE_ENV'):
@@ -3157,8 +3171,7 @@ def handle_video_jobs_submit(session: Optional[Dict], body_data: Dict) -> Tuple[
     ).strip()
 
     try:
-        svc = get_video_agents_service()
-        job = svc.submit_video_job(
+        params = dict(
             campaign_id=campaign_id,
             provider=provider,
             pipeline_type=pipeline_type,
@@ -3176,6 +3189,27 @@ def handle_video_jobs_submit(session: Optional[Dict], body_data: Dict) -> Tuple[
             submitted_by=submitted_by,
             metadata=body_data.get("metadata") if isinstance(body_data.get("metadata"), dict) else {},
         )
+
+        # A3: under PHINS_AGENT_ASYNC the provider round-trip leaves the
+        # request thread; the client polls poll_url for the video job dict.
+        from services.agent_job_queue import agent_async_enabled
+        if agent_async_enabled():
+            from services.jobs import queued_response, video_job
+            from services.video_agents_service import SUPPORTED_PIPELINE_TYPES
+            # Cheap, side-effect-free validation stays inline so a bad request
+            # is a 400 rather than a queued job that fails; the daily caps are
+            # evaluated by the handler at execution time like the service does.
+            if pipeline_type not in SUPPORTED_PIPELINE_TYPES:
+                return 400, {"error": (f"Unsupported pipeline type: {pipeline_type!r}. "
+                                       f"Supported: {sorted(SUPPORTED_PIPELINE_TYPES)}")}
+            queued = video_job.enqueue_submit(
+                _portal_module().get_agent_job_queue(), params=params, submitted_by=submitted_by,
+                idempotency_key=(str(body_data.get("idempotency_key") or "").strip() or None),
+            )
+            return 202, queued_response(queued)
+
+        svc = get_video_agents_service()
+        job = svc.submit_video_job(**params)
         return 201, {"job": job, "success": True}
     except ValueError as exc:
         return 400, {"error": str(exc)}
