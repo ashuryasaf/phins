@@ -743,11 +743,36 @@ Deviations from the A1/A5 text above, and why:
   from `customer_service` because they are distinct modules with distinct
   entry points.
 
-### Next — §D step 2
+### Shipped — §D step 2 (part): B12 AutoPilot safety controls
 
-A2 external-call gateway and B12 trading safety controls (independent; see
-§A2 and §B12 for touch points and tests).
+| Piece | Where | Notes |
+|---|---|---|
+| Kill switch | `services/ai_trading_engine.py` (`env_trading_halted`, `AutoPilotEngine.halt_trading/resume_trading/halt_status`) | Two levels: `PHINS_TRADING_HALT` (operator; read on every call; cannot be lifted via API) and a runtime halt. `execute_bot_trades` refuses before any evaluation or broker call and re-checks before **each** order so a halt that trips mid-run stops the remaining orders. Halt/resume are audited (`ai_trading_halted` / `ai_trading_resumed`, entity `trading_control`) and published as the `halted` gauge. |
+| Loss caps | `AutoPilotEngine._loss_cap_block_locked` | Per-bot (`max_daily_loss`, existing) **and** global across bots (`PHINS_TRADING_GLOBAL_DAILY_LOSS_PCT` default 5% of portfolio, `PHINS_TRADING_GLOBAL_DAILY_LOSS_ABS` optional; the tighter wins). Evaluated before the loop and again before each submission. Blocks are audited (`ai_bot_trade_blocked`) and counted on the bot (`blocked_count`, `last_block`). `daily_pnl` now rolls over per UTC day (`pnl_day`); previously nothing ever called `reset_daily_pnl`, so the cap compared against a lifetime figure. |
+| Shadow / paper mode | `strategy_version` on the bot; `AutoPilotEngine.promote_strategy_version/promoted_versions` | Only promoted versions (default `1.0`, `DEFAULT_STRATEGY_VERSION`) submit. Unpromoted versions, or `config.shadow=true`, record intents in `shadow_trades` (bounded, 500) — never in `trades`/`trade_count`, so P&L, win-rate and `record_trade_exit` matching are untouched. Audited as `ai_bot_trade_shadow`. Promotion is audited and takes effect on the next execution. |
+| Fail-closed audit | `_audit_bot_trade(..., required=)` + execution path | The helper now **returns** whether a row persisted (still never raises). Before `submit_order` an `ai_bot_trade_intent` row is written; when `audit_required(platform)` and it did not persist, the order is not submitted, the run stops, and `audit_degraded_at` is set on the halt status. Policy `PHINS_TRADING_AUDIT_REQUIRED`: `auto` (default) = required exactly when the platform reports `is_connected` (paper or live broker), `true` always, `false` never. Post-execution row keeps parity; its result is stored on the trade as `audit_persisted`. |
+| Routes | `web_portal/server.py` → `GET/POST /api/terminal/autopilot/halt`, `POST .../resume`, `POST .../promote` | Terminal access key **or** admin session (`PortalHandler._autopilot_control_actor`); the actor label is carried into the audit row. Existing autopilot routes and their response shapes are unchanged; `bots`/`create`/`performance` gain `mode`, `strategy_version`, `shadow_trade_count`, `blocked_count`. |
+| UI | `web_portal/static/trading-terminal.html` AutoPilot tab | Halt banner + HALT ALL / RESUME ALL (env halt shown as non-resumable), Mode column (LIVE/SHADOW + version), shadow/blocked counts, EXEC gated while halted. Server text HTML-escaped. `algo-trading.html` has no AutoPilot surface, so it was left untouched. |
+| Tests | `tests/test_ai_trading_safety.py` (22), `tests/test_autopilot_safety_routes.py` (6, HTTP through the embedded server), `tests/test_trading_terminal_static_integrity.py` (+4) | Existing `test_ai_trading_engine.py`, `test_algo_trading.py`, `test_trading_platform_service.py`, `test_ai_audit_bridge.py` pass unchanged. |
+
+Deviations from the B12 text above, and why:
+
+- **Demo/simulated platforms keep best-effort audit.** In `auto` mode the
+  fail-closed rule applies only when `submit_order` reaches a real broker;
+  otherwise every in-memory demo and test run would submit nothing without a
+  database. Set `PHINS_TRADING_AUDIT_REQUIRED=true` to fail closed everywhere.
+- **Halt is not admin-only.** The terminal access key already authorizes
+  bot creation and execution, and the terminal UI has no session, so the same
+  credential may halt/resume; an admin session also works. The env switch is
+  the level that only an operator can lift.
+- **Halt responses stay HTTP 200** with `[{"error": "Trading halted", ...}]`
+  from `/execute`, matching the existing "Daily loss limit reached" shape the
+  terminal UI already handles.
+
+### Next — §D step 2 (remaining)
+
+A2 external-call gateway (see §A2 for touch points and tests).
 
 ---
 
-_Last updated: September 13, 2026 — A1 + A5 shipped; A2/B12 next._
+_Last updated: September 14, 2026 — A1 + A5 + B12 shipped; A2 next._
