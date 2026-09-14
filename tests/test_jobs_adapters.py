@@ -31,7 +31,7 @@ from services.jobs import (
 )
 
 VOLATILE = {
-    'id', 'assessment_id', 'report_id', 'analysis_id', 'document_id',
+    'id', 'assessment_id', 'report_id', 'analysis_id', 'document_id', 'decision_id',
     'analyzed_at', 'assessment_date', 'created_at', 'updated_at', 'timestamp',
     'generated_at', 'generated_date', 'analysis_date', 'created_date',
     'processing_time_seconds', 'processing_time_ms', 'completed_at',
