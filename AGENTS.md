@@ -13,7 +13,7 @@ PHINS is a Python platform built around:
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`, `api_agent_ecosystem.py`,
   `api_assessment_center.py`)
-- service-layer logic in `services/` (109 modules)
+- service-layer logic in `services/` (111 top-level modules plus the `automation/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
@@ -94,6 +94,30 @@ PHINS is a Python platform built around:
  contradiction detection as bucket lookups); `DocumentProcessingService`
  caches OCR per `(sha256, page, langs, dpi)` and fans pages out over
  `PHINS_OCR_POOL_SIZE` threads — a failed page is never cached
+- the Pension Data Agent as a package (B5): `services/pension/{schema,profile,
+ parsers,report,cache,agent}.py`, with `services/pension_data_agent.py` the
+ re-exporting facade (`MislakaSchemaMapping` still imports from there). Tag
+ spellings are precompiled once (`CompiledFields`), `_find_text` reads a
+ per-parse thread-local text index, and files at or above
+ `PHINS_PENSION_STREAM_MIN_BYTES` (8 MiB) go through the `defusedxml`
+ `iterparse` path that harvests and releases one provider block at a time —
+ same output as the tree parser, malformed XML and entities still rejected.
+ `ParseResultCache` keys the *parser output* (XML dict, ZIP profile) by
+ `sha256 + PARSER_VERSION` in a process LRU plus `agent_artifacts`
+ (`pension_data_agent` / `parse_result`) in DB mode; values are deep-copied
+ both ways, a bad checksum or old version is skipped, and the durable tier
+ pauses 60 s after a DB error. Bump `PARSER_VERSION` when parser output
+ changes
+- AI Risk Reports as a package (B9): `services/risk_reports/{models,parsers,
+ analysis,charts,render,service}.py`; `services/ai_risk_reports_service.py`
+ is the facade and forwards `AI_REPORTS_DATA_FILE` and the singleton slot in
+ both directions, so patching the facade still steers the service.
+ `parse_content()` is the pure dispatcher `parse_file()` wraps. PDF and
+ image text comes from `DocumentProcessingService` (pypdf → regex → OCR with
+ the B4 page cache) as `page_N_text` / `ocr_text` rows plus `parsed['text']`
+ and `text_pages`; when present it decides the analysis language and feeds
+ Hebrew field extraction. Charts are client-rendered JSON configs built
+ eagerly (0.03–0.16 ms; no lazy render or chart cache by design)
 
 Runtime defaults are important:
 
@@ -130,6 +154,8 @@ Preferred file-by-task:
 | Agent thresholds / calibration | `services/agent_eval.py`, `services/ai_threshold_config.py`, `web_portal/api_extensions.py` (`/api/admin/ai-agents/eval`, `/thresholds/promote`) |
 | LLM prompts / structured output | `prompts/`, `schemas/*.json`, `services/llm_providers.py`, `services/assessment_ai_service.py`; refresh `tests/golden/assessment_ai/` deliberately |
 | Underwriting Bot / Claims Bot evidence | `services/evidence_facts.py`, `services/underwriting_bot/*.py`, `services/claims_bot_service.py`, `services/model_shadow.py`; tests in `tests/test_evidence_pipeline.py` |
+| Mislaka / pension parsing | `services/pension/{schema,parsers,cache,agent}.py` (facade `services/pension_data_agent.py`); tests in `tests/test_pension_agent.py` |
+| Risk Reports intake / analysis / report text | `services/risk_reports/{parsers,analysis,render,charts,service}.py` (facade `services/ai_risk_reports_service.py`); tests in `tests/test_risk_reports_package.py`, `tests/test_ai_risk_reports.py` |
 
 ## 2) High-Value Paths
 
@@ -168,6 +194,10 @@ Preferred file-by-task:
 |  |- underwriting_bot_service.py       # facade re-exporting the package
 |  |- evidence_facts.py                 # B1 shared evidence pipeline (facts_for, bundles, FeatureCache)
 |  |- model_shadow.py                   # B1 shadow scoring + drift monitor (never decides)
+|  |- pension/                          # B5 package: schema (mapping + CompiledFields), parsers (tree + iterparse), cache, report, agent
+|  |- pension_data_agent.py             # facade re-exporting the package
+|  |- risk_reports/                     # B9 package: models, parsers (DocumentProcessingService text), analysis, charts, render, service
+|  |- ai_risk_reports_service.py        # facade (two-way forwarding of AI_REPORTS_DATA_FILE / singleton)
 |  |- agent_job_queue.py                # generalized job queue (retry/DLQ/handlers)
 |  |- document_job_worker.py            # document binding over the job queue
 |  |- jobs/                             # agent job adapters (202 routes; worker_context)
@@ -422,6 +452,10 @@ Environment variables commonly used:
 - **Model shadow (B1):** `PHINS_AI_DRIFT_THRESHOLD` (p95 divergence, default
  0.25), `PHINS_AI_DRIFT_WINDOW` (200), `PHINS_AI_DRIFT_MIN_SAMPLES` (20),
  `PHINS_MODEL_DIR` (registry artifacts; none by default)
+- **Pension parsing (B5):** `PHINS_PENSION_STREAM_MIN_BYTES` (iterparse
+ threshold, default 8 MiB; `0` streams everything),
+ `PHINS_PENSION_PARSE_CACHE` (default true), `PHINS_PENSION_PARSE_CACHE_MAX`
+ (process LRU and durable row bound, default 128)
 - **Transcription:** `PHINS_TRANSCRIPTION_PROVIDER`
  (`openai_compatible`|`disabled`), `PHINS_TRANSCRIPTION_ENDPOINT`,
  `PHINS_TRANSCRIPTION_API_KEY`, `PHINS_TRANSCRIPTION_MODEL`
