@@ -90,7 +90,9 @@ Preferred file-by-task:
 |  |- document_job_worker.py            # async doc queue worker (retry/DLQ)
 |  |- llm_providers.py                  # vendor-neutral LLM + schema validation
 |  |- transcription_providers.py        # audio speech-to-text abstraction
-|  `- ai_usage_service.py               # AI/parse cost metering
+|  |- external_call_gateway.py          # cache/budget/breaker/retry for provider HTTP
+|  |- circuit_breaker.py                # shared breaker (gateway + SMTP)
+|  `- ai_usage_service.py               # AI/parse cost metering (agent_id, blocked)
 |- database/
 |  |- config.py
 |  |- manager.py
@@ -322,6 +324,18 @@ Environment variables commonly used:
 - **AI cost prices:** `PHINS_AI_PRICE_INPUT_PER_MTOK`,
  `PHINS_AI_PRICE_OUTPUT_PER_MTOK`, `PHINS_AI_PRICE_PARSE_PER_PAGE`,
  `PHINS_AI_PRICE_TRANSCRIPTION_PER_MIN`
+- **External-call gateway** (`services/external_call_gateway.py`; every LLM,
+  transcription and video-provider HTTP call goes through it):
+  `PHINS_AI_DAILY_CALL_BUDGET`, `PHINS_AI_DAILY_TOKEN_BUDGET` (per
+  customer/agent/UTC day, `0` = unlimited; over budget raises
+  `BudgetExceeded` before the provider is contacted and records a
+  `blocked=true` usage row), `PHINS_GATEWAY_CACHE_TTL` (seconds, default
+  `3600`, `0` disables the response cache), `PHINS_GATEWAY_MAX_RETRIES`
+  (default `2`; media `submit` is never retried),
+  `PHINS_GATEWAY_RETRY_BASE_SECS`, `PHINS_GATEWAY_RETRY_CAP_SECS`,
+  `PHINS_GATEWAY_CB_FAILURE_THRESHOLD`,
+  `PHINS_GATEWAY_CB_RECOVERY_TIMEOUT_SECS`; state is visible under
+  `gateway` in `GET /api/admin/ai-agents/health`
 - **Auto-pay:** `PHINS_DEFAULT_AUTO_PAY_CARD_NUMBER`,
   `MONTHLY_AUTO_PAY_COMMAND_TOKEN`
 - **AutoPilot trading safety:** `PHINS_TRADING_HALT` (operator kill switch;

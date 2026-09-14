@@ -264,6 +264,7 @@ class AssessmentAIService:
         provider = get_llm_provider()
         provider.usage_hook = self._usage_hook(
             customer_id=customer_id, prompt_version=template.prompt_id)
+        provider.call_context = {"customer_id": customer_id}  # gateway budget scope
         if self.is_llm_enabled():
             try:
                 evidence_for_model = evidence
@@ -613,6 +614,7 @@ class AssessmentAIService:
             customer_id=analysis_payload.get("customer_id"),
             prompt_version=template.prompt_id,
         )
+        provider.call_context = {"customer_id": analysis_payload.get("customer_id")}
         return provider.completion(
             template.system_prompt,
             json.dumps(user_payload, ensure_ascii=False, default=str),

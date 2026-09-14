@@ -1051,6 +1051,10 @@ class AIUsageRecord(Base):
     # document_parse | ocr | transcription | llm_completion | video_analysis
     model = Column(String(120), nullable=True)
     prompt_version = Column(String(60), nullable=True)
+    # Software agent that made the call (services/agent_runtime.py ids).
+    agent_id = Column(String(80), nullable=True, index=True)
+    # True when the external-call gateway refused the call (budget exhausted).
+    blocked = Column(Boolean, nullable=False, default=False)
 
     pages = Column(Integer, nullable=True)
     input_tokens = Column(Integer, nullable=True)
@@ -1079,6 +1083,8 @@ class AIUsageRecord(Base):
             'operation': self.operation,
             'model': self.model,
             'prompt_version': self.prompt_version,
+            'agent_id': self.agent_id,
+            'blocked': bool(self.blocked),
             'pages': self.pages,
             'input_tokens': self.input_tokens,
             'output_tokens': self.output_tokens,
