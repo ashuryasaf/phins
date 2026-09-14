@@ -3051,6 +3051,179 @@ def handle_ai_agents_health(session: Optional[Dict], query_params: Optional[Dict
 
 
 # ============================================================================
+# AI AGENT EVALUATION + THRESHOLD PROMOTION (A6)
+# ============================================================================
+
+AI_AGENTS_EVAL_PREFIX = '/api/admin/ai-agents/eval/'
+AI_AGENTS_PROMOTE_PATH = '/api/admin/ai-agents/thresholds/promote'
+_EVAL_ROLES = {'admin', 'actuary'}
+
+
+def _query_scalar(query_params: Optional[Dict], key: str) -> Optional[str]:
+    value = (query_params or {}).get(key)
+    if isinstance(value, (list, tuple)):
+        return str(value[0]) if value else None
+    return None if value is None else str(value)
+
+
+def handle_ai_agent_eval(agent_id: str, session: Optional[Dict],
+                         query_params: Optional[Dict] = None) -> Tuple[int, Dict]:
+    """GET /api/admin/ai-agents/eval/{agent_id}
+
+    Read-only replay of the agent's logged decisions against the human
+    outcomes that followed, per segment, plus a recommend-only threshold
+    proposal. Admin or actuary. Never mutates configuration.
+    Query: ``min_samples`` (int), ``target_precision`` (0-1],
+    ``implicit`` (``false`` to count only explicit human overrides).
+    """
+    if not session:
+        return 401, {"error": "Authentication required"}
+    if str(session.get('role') or '').strip().lower() not in _EVAL_ROLES:
+        return 403, {"error": "Admin or Actuary role required"}
+    from services import agent_eval
+    agent_id = str(agent_id or '').strip()
+    if agent_id not in agent_eval.EVALUATORS:
+        return 404, {"error": f"No evaluator for agent {agent_id!r}",
+                     "available": sorted(agent_eval.EVALUATORS)}
+    kwargs: Dict[str, Any] = {}
+    try:
+        min_samples = _query_scalar(query_params, 'min_samples')
+        target = _query_scalar(query_params, 'target_precision')
+        implicit = _query_scalar(query_params, 'implicit')
+        if agent_id == 'claims_bot':
+            if min_samples is not None:
+                kwargs['min_labelled'] = int(min_samples)
+        else:
+            if min_samples is not None:
+                kwargs['min_samples'] = int(min_samples)
+            if target is not None:
+                kwargs['target_precision'] = float(target)
+            if implicit is not None:
+                kwargs['include_implicit'] = str(implicit).strip().lower() not in ('0', 'false', 'no')
+        if kwargs.get('min_samples', 1) < 1 or kwargs.get('min_labelled', 1) < 1:
+            raise ValueError('min_samples must be >= 1')
+    except (TypeError, ValueError) as exc:
+        return 400, {"error": f"Invalid query parameter: {exc}"}
+    try:
+        report = agent_eval.evaluate(agent_id, **kwargs)
+    except ValueError as exc:
+        return 400, {"error": str(exc)}
+    except Exception as exc:  # noqa: BLE001 - evaluation is a view; degrade, never 500-loop
+        logger.warning("agent eval failed for %s: %s", agent_id, exc)
+        return 500, {"error": "Agent evaluation unavailable"}
+    return 200, {"success": True, "evaluation": report}
+
+
+def handle_ai_agent_threshold_promote(session: Optional[Dict], body: Optional[Dict]) -> Tuple[int, Dict]:
+    """POST /api/admin/ai-agents/thresholds/promote
+
+    Body: ``{"segment": "...", "approve": 0.9, "reject": 0.1, "reason": "..."}``.
+    Admin only. Applies ``ThresholdConfig.promote`` and records the change
+    twice, before/after: a durable ``audit_logs`` row and an append-only
+    ``ai_decision_log`` record (``decision_type='threshold_promotion'``), so
+    the calibration loop's one mutating step is as traceable as the
+    decisions it changes. Fails closed: if the audit record cannot be
+    written, the promotion is rolled back.
+    """
+    if not session:
+        return 401, {"error": "Authentication required"}
+    if str(session.get('role') or '').strip().lower() != 'admin':
+        return 403, {"error": "Admin access required"}
+    body = body if isinstance(body, dict) else {}
+    segment = str(body.get('segment') or '').strip()
+    if not segment:
+        return 400, {"error": "segment is required"}
+    try:
+        approve = float(body.get('approve'))
+        reject = float(body.get('reject'))
+    except (TypeError, ValueError):
+        return 400, {"error": "approve and reject must be numbers"}
+    if not (0.0 <= approve <= 1.0 and 0.0 <= reject <= 1.0):
+        return 400, {"error": "approve and reject must be within [0, 1]"}
+    if reject >= approve:
+        return 400, {"error": "reject threshold must be below approve threshold"}
+    reason = str(body.get('reason') or '').strip()
+    if not reason:
+        return 400, {"error": "reason is required (recorded in the audit trail)"}
+
+    from services.ai_threshold_config import get_threshold_config
+    config = get_threshold_config()
+    before = config.export()
+    before_segment = dict(before['segments'].get(segment) or
+                          {'approve': before['default_approve'], 'reject': before['default_reject'],
+                           'source': 'default'})
+    try:
+        config.promote(segment, approve, reject)
+    except ValueError as exc:
+        return 400, {"error": str(exc)}
+    after = config.export()
+    after_segment = dict(after['segments'][segment])
+    username = str(session.get('username') or 'admin')
+    details = {
+        'segment': segment,
+        'before': before_segment,
+        'after': after_segment,
+        'reason': reason,
+        'promoted_by': username,
+        'promoted_at': datetime.now(timezone.utc).isoformat(),
+    }
+
+    decision_id = ''
+    try:
+        from services.ai_decision_log import get_ai_decision_log
+        decision_id = get_ai_decision_log().record(
+            decision_type='threshold_promotion',
+            inputs={'segment': segment, 'before': before_segment, 'reason': reason},
+            output={'decision': 'promoted', 'after': after_segment},
+            entity_type='threshold_segment',
+            entity_id=segment,
+            model_version='rules-v1',
+            segment=segment,
+        )
+    except Exception as exc:  # noqa: BLE001 - handled by the fail-closed check below
+        logger.warning("threshold promotion decision-log record failed: %s", exc)
+    if not decision_id:
+        config.import_(before)
+        return 503, {"error": "Promotion rolled back: audit record could not be written"}
+    details['decision_id'] = decision_id
+
+    audit_id = None
+    try:
+        portal_audit = _portal_audit_service()
+        if portal_audit is not None:
+            event = portal_audit.log(username, 'ai_threshold_promoted', 'threshold_segment', segment, details)
+            audit_id = (event or {}).get('id')
+        else:
+            from services.ai_audit_bridge import record_ai_audit
+            if record_ai_audit(action='ai_threshold_promoted', entity_type='threshold_segment',
+                               entity_id=segment, details=details, username=username):
+                audit_id = 'audit_logs'
+    except Exception as exc:  # noqa: BLE001 - the decision-log record above is the fail-closed gate
+        logger.warning("threshold promotion audit row failed (non-fatal): %s", exc)
+
+    return 200, {
+        "success": True,
+        "segment": segment,
+        "before": before_segment,
+        "after": after_segment,
+        "decision_id": decision_id,
+        "audit_id": audit_id,
+        "config": after,
+    }
+
+
+def _portal_audit_service():
+    """The portal's ``AuditService`` when the server module is loaded (either
+    import spelling), else ``None`` so the caller falls back to the bridge."""
+    import sys
+    for name in ('web_portal.server', 'server'):
+        module = sys.modules.get(name)
+        if module is not None and getattr(module, 'audit', None) is not None:
+            return module.audit
+    return None
+
+
+# ============================================================================
 # VIDEO AGENTS ENDPOINTS
 # ============================================================================
 
@@ -3348,6 +3521,10 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     if path == '/api/admin/ai-agents/health':
         return handle_ai_agents_health(session, query_params)
 
+    # Read-only decision replay + recommend-only threshold proposal (A6).
+    if path.startswith(AI_AGENTS_EVAL_PREFIX):
+        return handle_ai_agent_eval(path[len(AI_AGENTS_EVAL_PREFIX):].strip('/'), session, query_params)
+
     # Aspire-Invest Israel-pilot identity (planning calculator — no PII).
     if path == '/api/pitch/aspire-identity':
         try:
@@ -3561,6 +3738,10 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
     Dispatch POST requests to appropriate handlers.
     Returns (status_code, response_dict) or None if path not handled.
     """
+    # Audited threshold promotion (A6) — the calibration loop's one mutating step.
+    if path == AI_AGENTS_PROMOTE_PATH:
+        return handle_ai_agent_threshold_promote(session, body_data)
+
     # Security: CAPTCHA
     if path == '/api/security/captcha':
         return handle_captcha_create(client_ip, body_data)

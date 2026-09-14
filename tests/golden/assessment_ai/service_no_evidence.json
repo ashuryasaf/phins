@@ -1,0 +1,27 @@
+{
+  "description": "Deterministic narrative when the analysis carries no source-linked evidence: must say so, never invent facts.",
+  "expected": {
+    "advisory": true,
+    "analysis_type": "service",
+    "confidence": 0.4,
+    "evidence": [],
+    "evidence_count": 0,
+    "facts_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "highlights": [],
+    "mode": "deterministic",
+    "model": "deterministic-offline",
+    "needs_review": true,
+    "prompt_version": "narrative-v1",
+    "summary_text": "Advisory summary for customer GOLDEN-AI-2 (service).\nNo source-linked evidence was available for this analysis.\nThis advisory summary introduces no new facts; verify against the linked source documents before acting."
+  },
+  "input": {
+    "analysis": {
+      "analysis_type": "service",
+      "customer_id": "GOLDEN-AI-2",
+      "description": {},
+      "risk": null
+    },
+    "customer_id": "GOLDEN-AI-2"
+  },
+  "name": "service_no_evidence"
+}

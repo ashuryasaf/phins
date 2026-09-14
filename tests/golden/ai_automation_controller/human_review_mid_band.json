@@ -1,0 +1,19 @@
+{
+  "description": "Mid-band score between the cut-offs routes to human review with the medium-priority suggestion.",
+  "expected": {
+    "decision": "human_review",
+    "review_priority": "medium",
+    "risk_score": 0.7474999999999999,
+    "segment": "25_34|nurse",
+    "suggested_action": "approve_with_conditions"
+  },
+  "input": {
+    "age": 30,
+    "application_id": "GOLDEN-UW-3",
+    "health_score": 0.95,
+    "income": 90000,
+    "occupation": "nurse",
+    "smoker": false
+  },
+  "name": "human_review_mid_band"
+}

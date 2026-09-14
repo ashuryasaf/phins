@@ -1,0 +1,131 @@
+{
+  "description": "Deterministic narrative over an onboarding analysis with identity and medical evidence from two documents.",
+  "expected": {
+    "advisory": true,
+    "analysis_type": "onboarding",
+    "confidence": 0.4,
+    "evidence": [
+      {
+        "category": "Identity",
+        "confidence": 0.98,
+        "document_id": "DOC-GOLD-1",
+        "document_name": "passport.pdf",
+        "document_type": "passport",
+        "label": "full_name",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source": "ocr"
+      },
+      {
+        "category": "Medical",
+        "confidence": 0.77,
+        "document_id": "DOC-GOLD-2",
+        "document_name": "health_declaration.pdf",
+        "document_type": "health_form",
+        "label": "bmi",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "source": "form_field"
+      },
+      {
+        "category": "Medical",
+        "confidence": 0.91,
+        "document_id": "DOC-GOLD-2",
+        "document_name": "health_declaration.pdf",
+        "document_type": "health_form",
+        "label": "smoker_status",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "source": "form_field"
+      }
+    ],
+    "evidence_count": 3,
+    "facts_digest": "e1a60b236cb641bc7b91a49ed4d4c28b4c5988a52e33542918181816993e16c6",
+    "highlights": [
+      {
+        "category": "Identity",
+        "confidence": 0.98,
+        "document_id": "DOC-GOLD-1",
+        "label": "full_name",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "category": "Medical",
+        "confidence": 0.91,
+        "document_id": "DOC-GOLD-2",
+        "label": "smoker_status",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "category": "Medical",
+        "confidence": 0.77,
+        "document_id": "DOC-GOLD-2",
+        "label": "bmi",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "mode": "deterministic",
+    "model": "deterministic-offline",
+    "needs_review": true,
+    "prompt_version": "narrative-v1",
+    "summary_text": "Advisory summary for customer GOLDEN-AI-1 (onboarding).\nReviewed 0 extracted fact(s) across 0 document(s).\nKey evidence (highest confidence, with provenance):\n  - Identity/full_name [doc=DOC-GOLD-1 sha=aaaaaaaaaaaa conf=0.98]\n  - Medical/smoker_status [doc=DOC-GOLD-2 sha=bbbbbbbbbbbb conf=0.91]\n  - Medical/bmi [doc=DOC-GOLD-2 sha=bbbbbbbbbbbb conf=0.77]\nThis advisory summary introduces no new facts; verify against the linked source documents before acting."
+  },
+  "input": {
+    "analysis": {
+      "analysis_type": "onboarding",
+      "contradictions": [],
+      "customer_id": "GOLDEN-AI-1",
+      "description": {
+        "sections": [
+          {
+            "by_label": {
+              "full_name": [
+                {
+                  "confidence": 0.98,
+                  "document_id": "DOC-GOLD-1",
+                  "document_name": "passport.pdf",
+                  "document_type": "passport",
+                  "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "source": "ocr"
+                }
+              ]
+            },
+            "category": "Identity"
+          },
+          {
+            "by_label": {
+              "bmi": [
+                {
+                  "confidence": 0.77,
+                  "document_id": "DOC-GOLD-2",
+                  "document_name": "health_declaration.pdf",
+                  "document_type": "health_form",
+                  "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "source": "form_field"
+                }
+              ],
+              "smoker_status": [
+                {
+                  "confidence": 0.91,
+                  "document_id": "DOC-GOLD-2",
+                  "document_name": "health_declaration.pdf",
+                  "document_type": "health_form",
+                  "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "source": "form_field"
+                }
+              ]
+            },
+            "category": "Medical"
+          }
+        ]
+      },
+      "risk": {
+        "factors": [
+          "bmi",
+          "smoker_status"
+        ],
+        "level": "medium",
+        "score": 42
+      }
+    },
+    "customer_id": "GOLDEN-AI-1"
+  },
+  "name": "onboarding_two_documents"
+}
