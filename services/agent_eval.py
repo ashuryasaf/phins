@@ -513,7 +513,7 @@ def evaluate_underwriting_bot(
     payload['live_rules'] = rules
     proposal = propose_thresholds(samples, scorer=underwriting_scorer, current=live,
                                   target_precision=target_precision, min_samples=min_samples)
-    for entry in proposal.values():
+    for entry in (proposal.get('proposals') or {}).values():
         if isinstance(entry, dict) and entry.get('approve') is not None:
             entry['risk_rules'] = {
                 'conditional_approve_max_risk': round(1.0 - float(entry['approve']), 6),

@@ -323,11 +323,12 @@ class ClaimsBotService:
         self.bot_id = f"CLM-BOT-{uuid.uuid4().hex[:8]}"
         self.version = "1.0.0"
         
-        # Data stores (READ-ONLY)
-        self._customers = customers or {}
-        self._policies = policies or {}
-        self._claims = claims or {}
-        self._underwriting = underwriting or {}
+        # Data stores (READ-ONLY). Empty portal dicts keep their identity so
+        # records added after start-up are visible to this instance.
+        self._customers = customers if customers is not None else {}
+        self._policies = policies if policies is not None else {}
+        self._claims = claims if claims is not None else {}
+        self._underwriting = underwriting if underwriting is not None else {}
         self._audit = audit_service
         
         # Bot's own data (WRITE allowed). Durable in DB mode (A4): rows in

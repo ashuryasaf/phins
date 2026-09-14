@@ -71,11 +71,13 @@ class UnderwritingBotService:
         self.bot_id = f"UW-BOT-{uuid.uuid4().hex[:8]}"
         self.version = "1.0.0"
         
-        # Data stores (preserving references, never resetting)
-        self._customers = customers or {}
-        self._policies = policies or {}
-        self._underwriting = underwriting_apps or {}
-        self._claims = claims or {}
+        # Data stores (preserving references, never resetting). An empty
+        # portal dict is still the live dict: keep the reference so records
+        # added after start-up are visible and the accessor can recognise it.
+        self._customers = customers if customers is not None else {}
+        self._policies = policies if policies is not None else {}
+        self._underwriting = underwriting_apps if underwriting_apps is not None else {}
+        self._claims = claims if claims is not None else {}
         self._audit = audit_service
         self._pipeline = pipeline_service
         
@@ -373,6 +375,8 @@ class UnderwritingBotService:
         return result
 
     _EVIDENCE_SKIP_TYPES = ('document_meta', 'extraction_hint', 'contradiction')
+    # Analyzer flags meaning "nothing to parse" (as opposed to a real failure).
+    _NO_BYTES_FLAGS = ('MISSING_CONTENT', 'NO_CONTENT', 'NO_TEXT_CONTENT')
 
     def _merge_evidence_facts(self, metadata: UnderwritingMetadata, result: Dict[str, Any]) -> None:
         """Consume Document Intelligence facts for ``metadata.document_id``.
@@ -402,7 +406,7 @@ class UnderwritingBotService:
         } for f in facts[:200]]
         flags = result.setdefault('flags', [])
         fields_key = 'extracted_fields' if 'extracted_fields' in result or 'features' not in result else 'features'
-        fields = result.setdefault(fields_key, {}) or {}
+        fields = result.get(fields_key)
         if not isinstance(fields, dict):
             fields = {}
             result[fields_key] = fields
@@ -412,16 +416,18 @@ class UnderwritingBotService:
                 fields[label] = f.get('value')
         if facts:
             flags.append('EVIDENCE_FROM_DOCUMENT_PIPELINE')
-            scores = result.setdefault('scores', {}) or {}
+            scores = result.get('scores')
             if not isinstance(scores, dict):
                 scores = {}
                 result['scores'] = scores
             top = max(float(f.get('confidence') or 0.0) for f in facts)
             scores['evidence_confidence'] = round(top, 3)
-            if not any(scores.get(k) is not None for k in
-                       ('authenticity_score', 'quality_score', 'completeness_score', 'identity_confidence')):
+            if (not any(scores.get(k) is not None for k in
+                        ('authenticity_score', 'quality_score', 'identity_confidence'))
+                    and not scores.get('completeness_score')):
                 scores['completeness_score'] = round(top, 3)
-            if not result.get('processing_success') and 'MISSING_CONTENT' in flags:
+            if not result.get('processing_success') and any(
+                    f in flags for f in self._NO_BYTES_FLAGS):
                 # No bytes were supplied but the pipeline already extracted
                 # the document: the facts are the evidence.
                 result['processing_success'] = True
