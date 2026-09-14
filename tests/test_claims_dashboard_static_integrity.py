@@ -6,7 +6,14 @@ CLAIMS_DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "web_portal" / "st
 
 
 def _extract_inline_scripts(html: str) -> list[str]:
-    return re.findall(r"<script(?:[^>]*)>(.*?)</script>", html, flags=re.S)
+    # Inline blocks only; external includes (<script src=...>) are not page logic.
+    return re.findall(r"<script(?![^>]*\bsrc=)(?:[^>]*)>(.*?)</script>", html, flags=re.S)
+
+
+def test_claims_dashboard_loads_agent_job_polling_helper():
+    content = CLAIMS_DASHBOARD_PATH.read_text(encoding="utf-8")
+    assert '<script src="/agent-jobs.js"></script>' in content
+    assert "phinsAwaitJob(await fetch('/api/claims/probability-report'" in content
 
 
 def test_claims_dashboard_main_script_is_not_truncated():

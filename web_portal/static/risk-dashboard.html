@@ -1217,6 +1217,7 @@
     }
   </style>
   <link rel="stylesheet" href="/phins-theme.css">
+  <script src="/agent-jobs.js"></script>
 </head>
 <body>
   <!-- Header — PR #433 navy/gold chrome -->
@@ -1530,7 +1531,7 @@
           // Analyze
           processingMessage.textContent = `Analyzing ${file.name}...`;
           
-          const analyzeResponse = await fetch('/api/reports/analyze', {
+          const analyzeResponse = await phinsAwaitJob(await fetch('/api/reports/analyze', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -1539,7 +1540,7 @@
             body: JSON.stringify({
               document_id: uploadResult.document_id
             })
-          });
+          }));
           
           const analysis = await analyzeResponse.json();
           if (analysis.id) {
@@ -1557,7 +1558,7 @@
         const selectedLanguage = document.getElementById('reportLanguage').value;
         const language = selectedLanguage === 'auto' ? null : selectedLanguage;
         
-        const reportResponse = await fetch('/api/reports/generate', {
+        const reportResponse = await phinsAwaitJob(await fetch('/api/reports/generate', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1567,7 +1568,7 @@
             analysis_id: allAnalyses[0].id,
             language: language
           })
-        });
+        }));
         
         currentReport = await reportResponse.json();
         currentAnalysis = allAnalyses[0];
