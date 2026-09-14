@@ -1,6 +1,6 @@
 # PHINS Agent Operations — Optimization Design
 
-> **Status: IMPLEMENTING — §D steps 1–4 (A1, A5, B12, A2, A3, A4) shipped.** This document turns
+> **Status: IMPLEMENTING — §D steps 1–5 (A1, A5, B12, A2, A3, A4, A6, B2, B3) shipped.** This document turns
 > the agent inventory and the optimization proposal into a concrete,
 > file-level plan with a test plan per workstream. It is the model of record
 > for the implementation PRs that follow. Each workstream is independently
@@ -861,12 +861,46 @@ Deviations from the A4 text above, and why:
 - **`database/__init__.py` untouched**: `create_all` and the schema
   fingerprint already cover new tables (see the Schema row).
 
-### Remaining — §D steps 5–6
+### Shipped — §D step 5: A6 evaluation harness, B2 controller split, B3 Assessment AI golden set
+
+| Piece | Where | Notes |
+|---|---|---|
+| Harness | `services/agent_eval.py` (new) — `LabelledSample`, `samples_from_decision_log`, `underwriting_scorer`, `confusion_counts`, `score_segment`, `replay`, `propose_thresholds`, `evaluate(agent_id)`, `run_golden` / `run_all_golden`, `register_golden_runner` | Read-only over the append-only decision log / assessment records / fixture files. `replay` reports per-segment confusion, approve/reject precision-recall-F1, agreement rate, review share, override rate and the two costly disagreements (`approved_but_rejected`, `rejected_but_approved`); segments below `min_samples` are `insufficient_data`. Labels: a human override is **explicit**; an un-overridden auto approve/reject is an **implicit** confirmation, counted separately (`implicit=false` excludes them); `human_review` without an override is unlabelled. `propose_thresholds` picks, per segment, the most automated grid cut-off meeting `target_precision`, is monotone in the target, and — an addition to the §A6 text — enforces an **evidence floor**: a cut-off may move toward more automation only if the newly automated band holds ≥ `max(5, min_samples//4)` labelled decisions, and never past the highest/lowest reviewed score in that band. Precision alone cannot vouch for a band nobody has reviewed. Never promotes. |
+| Claims Bot | `services/claims_bot_service.py` | `calibrate_claims_thresholds` keeps its report shape and grid but tallies through `agent_eval.confusion_counts` (`tests/test_claims_bot_threshold_calibration.py` unchanged, 7/7). Exposed as `evaluate('claims_bot')`. |
+| Threshold snapshot | `services/ai_threshold_config.py` — `ThresholdConfig.export()` / `import_(snapshot)` | Deep-copied snapshot for before/after audit records and test teardown; `import_` validates every segment like `promote` and replaces the map atomically (all-or-nothing). |
+| Routes | `web_portal/api_extensions.py` — `GET /api/admin/ai-agents/eval/{agent_id}` (admin/actuary; `min_samples`, `target_precision`, `implicit`), `POST /api/admin/ai-agents/thresholds/promote` (admin); `web_portal/server.py` forwards the `/api/admin/ai-agents/` POST prefix to the extension dispatcher | Promotion requires `segment`, `approve`, `reject`, `reason`; validates ranges and `reject < approve`; records **before/after** twice — an `ai_decision_log` row (`decision_type=threshold_promotion`, the fail-closed gate: if it cannot be written the promotion is rolled back with 503) and an `ai_threshold_promoted` audit row through the portal `AuditService` (durable in DB mode, in-memory otherwise; `record_ai_audit` fallback when the server module is not loaded). Unknown agent → 404 with the available list. |
+| CLI + CI | `scripts/run_agent_eval.py` (`golden [--agent] [--update] [--json]`, `replay <agent> [--decisions|--records] [--min-samples] [--target-precision] [--explicit-only]`), `.github/workflows/agent_golden_sets.yml` | Golden fixtures `tests/golden/<agent>/*.json` = `{name, input, expected}`; only the keys `expected` lists are frozen (additive output changes never break a fixture; a changed value or missing key does; floats at 1e-6). `--update` rewrites `expected` keeping the fixture's key selection — an intentional, reviewed change. The CI job runs on `ai_automation_controller.py`, `services/**`, `prompts/**`, `schemas/**`, `tests/golden/**` changes. During this step the gate caught the `narrative-v1 → narrative-v2` prompt change before the fixtures were deliberately updated. |
+| B2 split | `services/automation/{types,quoting,underwriting_gate,fraud,claims_gate,billing_schedule}.py` (new); `ai_automation_controller.py` orchestrates and re-exports every historical name | Rules are pure functions (no metrics, log, registry). `billing_schedule.next_quarter_start` / `invoice_due_date` is the single due-date path (assessment **D3 resolved**; Dec 31 / Jan 1 / Q4-start / leap-day / century edges tested). `segment_key` is derived on every underwriting decision; results and the decision-log row carry `segment`, `confidence_band` (`auto_approve` / `review_upper` / `review_lower` / `auto_reject` / `fraud_hold`) and `threshold_margin` (distance to the nearest cut-off). The function-based `auto_underwrite` gains the same three keys additively. Metrics counters, result dicts and `auto_generate_invoice`'s datetime shape are unchanged. |
+| B3 prompts | `prompts/__init__.py` (`PromptTemplate.sha256`, `.provenance()`; `list_prompts` includes `sha256`), `prompts/assessment/narrative_v2.py` (new, structured), `schemas/assessment_narrative.json` (new), `services/llm_providers.py` (`load_schema(name)`; validator gains `minItems`/`maxItems`) | `narrative-v1` stays registered and immutable (pin with `PHINS_ASSESSMENT_NARRATIVE_PROMPT_VERSION=1`); `get_prompt("narrative")` now resolves to v2, whose response must validate against `schemas/assessment_narrative.json` (`summary_text`, `key_points[{point, evidence_index}]`, `review_flags`, `needs_review`). |
+| B3 service | `services/assessment_ai_service.py` | Every narrative, its audit record and the persisted assessment artefact carry `prompt_id`, `prompt_version` (kept as the platform-wide versioned-id string), `prompt_version_number`, `prompt_sha256`, `schema_id`. The live path is `structured_completion` (provider retries a schema-invalid reply `PHINS_LLM_VALIDATION_RETRIES` times with the errors appended); the service re-validates the object, rejects `needs_review != true` and any `evidence_index` outside the evidence it sent, and on any failure falls back to the deterministic narrative with `fallback_reason` recorded in the narrative and the audit trail. `key_points` / `review_flags` are new additive fields (empty in deterministic mode). Production redaction unchanged. |
+| Golden sets | `tests/golden/ai_automation_controller/` (3: auto-approve, auto-reject, mid-band review), `tests/golden/assessment_ai/` (2: two-document onboarding, no-evidence service) | Controller fixtures freeze `decision`, `risk_score`, `segment`, `confidence_band`, `threshold_margin` and the ladder's details; narrative fixtures freeze mode/model, prompt provenance (including `prompt_sha256`), `summary_text`, `highlights`, `evidence`, `facts_digest`, `key_points`, `review_flags`. |
+| Docs | `AGENTS.md`, `AI_ARCHITECTURE.md` (module layout, calibration loop replaces "edit the constants"), `PHINS_PLATFORM_ASSESSMENT.md` (D3 marked resolved) | |
+| Tests | `tests/test_agent_eval.py` (19), `tests/test_billing_schedule.py` (23), `tests/test_assessment_ai_narrative.py` (+7), `tests/test_llm_providers.py` (registry/provenance asserts) | Replay P/R/confusion on a synthetic labelled set; min-sample guard; explicit/implicit/skip mapping; monotone proposals, unreachable target, evidence floor; `ThresholdConfig` round-trip and all-or-nothing import; end-to-end replay over the real decision log with a promoted segment (config restored); golden pass/fail/missing-key/error/update; committed fixtures pass; eval route authz/404/400/200; promote route validation, admin-only, before/after in decision log and audit row, rollback when the decision log refuses; both routes over HTTP through the embedded server. B2: quarter edges, single schedule path via frozen clock, re-exports, rule/controller parity, `confidence_band`, promoted segment changes only its own segment. B3: prompt hash on narrative and audit, hash changes only with text, valid structured reply used, schema-invalid reply retried then deterministic fallback with reason, service rejects out-of-range `evidence_index` / `needs_review=false`, production payload redacted, pinned v1 free-text path. |
+
+Deviations from the §A6/§B2/§B3 text above, and why:
+
+- **Evidence floor on proposals** (not in §A6): a target-precision search
+  over a sparse log would otherwise recommend widening automation into score
+  bands with zero reviewed decisions; in regulated underwriting a proposal has
+  to point at the reviews that justify it.
+- **`prompt_version` stays a string** (`narrative-v2`), with the integer in
+  `prompt_version_number`: usage metering, persisted artefacts and existing
+  tests already treat `prompt_version` as the versioned id.
+- **`services/automation/claims_gate.py`** is a fifth module beyond the four
+  §B2 lists: the claims ladder is neither fraud nor underwriting.
+- **Promotion is admin-only** (eval is admin/actuary): it is the one mutating
+  step and the test plan already required non-admin → 403.
+- **Evaluators exist for `ai_automation_controller` and `claims_bot`**: they
+  are the two agents whose decisions and human outcomes are both on record
+  (`ai_decision_log` and `claims_fraud` assessment records). The Underwriting
+  Bot's `apply_decision` has no logged human counter-decision yet; it joins
+  the harness with B1.
+
+### Remaining — §D step 6
 
 | Step | Workstream | Status |
 |---|---|---|
-| 5 | A6 evaluation harness (§A6), B2 controller split, B3 golden sets | Not started. |
-| 6 | Per-agent refactors B1, B4, B5, B6, B7, B8, B9, B10, B11 (§B) and human AgentOS follow-ups (§C) | Not started. B12 shipped in step 2. |
+| 6 | Per-agent refactors B1, B4, B5, B6, B7, B8, B9, B10, B11 (§B) and human AgentOS follow-ups (§C) | Not started. B12 shipped in step 2; B2 and B3 in step 5. |
 
 Health of what has shipped (checked on `main` after PR #589):
 `GET /api/admin/ai-agents/health` reports 15 agents, all `ok`, no SLO
@@ -874,4 +908,4 @@ breaches, no load failures; gateway idle with no open breakers.
 
 ---
 
-_Last updated: September 14, 2026 — A1 + A5 + B12 + A2 (+ tenant-scoped budgets) + A3 + A4 shipped; A6 next._
+_Last updated: September 14, 2026 — A1 + A5 + B12 + A2 (+ tenant-scoped budgets) + A3 + A4 + A6 + B2 + B3 shipped; §D step 6 (per-agent refactors) next._
