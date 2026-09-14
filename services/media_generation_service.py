@@ -39,6 +39,9 @@ from typing import Any, Dict, Optional
 
 from security.network import validated_urlopen
 
+#: Agent attribution for gateway budgets and usage rows (agent_runtime id).
+_MEDIA_AGENT_ID = "video_agents"
+
 
 class MediaGenerationError(RuntimeError):
     """Raised when a media generation provider call fails."""
@@ -667,9 +670,31 @@ class MediaGenerationService:
         ``MediaGenerationError`` instead of letting the cryptic default reach
         the UI.
         """
-        try:
+        from services.external_call_gateway import GatewayError, get_gateway
+
+        def request_fn() -> bytes:
             with validated_urlopen(request, timeout=timeout, allowed_schemes=("https",)) as response:
-                raw = response.read()
+                return response.read()
+
+        # Gateway policy (design §A2): breaker per provider host, jittered
+        # retry for transient failures on idempotent operations only — a
+        # ``submit`` creates a paid job, so a 5xx after the provider may have
+        # accepted it is never retried (that would double-bill). Submits are
+        # metered as one usage row each; polls/downloads are not billable.
+        provider_kind = provider_label.split("/")[0].strip().lower() or "media"
+        try:
+            raw = get_gateway().call(
+                provider_kind,
+                request_fn,
+                endpoint=urllib.parse.urlparse(request.full_url).netloc,
+                operation=f"video_{operation}",
+                agent_id=_MEDIA_AGENT_ID,
+                max_retries=None if operation != "submit" else 0,
+                meter=(operation == "submit"),
+                usage_from=lambda _raw: {"model": None},
+            )
+        except GatewayError as exc:
+            raise MediaGenerationError(f"{provider_label} {operation} refused: {exc}") from exc
         except urllib.error.HTTPError as exc:
             try:
                 body_bytes = exc.read() or b""
