@@ -893,14 +893,47 @@ Deviations from the §A6/§B2/§B3 text above, and why:
 - **Evaluators exist for `ai_automation_controller` and `claims_bot`**: they
   are the two agents whose decisions and human outcomes are both on record
   (`ai_decision_log` and `claims_fraud` assessment records). The Underwriting
-  Bot's `apply_decision` has no logged human counter-decision yet; it joins
-  the harness with B1.
+  Bot's `apply_decision` had no logged human counter-decision at that point;
+  it joined the harness in step 6 (B1, below).
 
-### Remaining — §D step 6
+### Shipped — §D step 6 (part 1): B1 Underwriting Bot + Claims Bot, B4 Document Intelligence
+
+| Piece | Where | Notes |
+|---|---|---|
+| Fact-store indexes (B4) | `services/assessment_center_service.py` — `_by_document` (`source_document_id → facts`), `_by_field` (`customer_id → (fact_type, label) → facts`), `facts_for_documents(ids)`, `_index_fact` / `_rebuild_indexes` | Maintained incrementally in `_store_facts`, rebuilt on retention trim and disk load, cleared on `reset`. `detect_fact_conflicts` now visits only the `(fact_type, label)` buckets that can conflict (`CONFLICT_SENSITIVE_LABELS` + numeric `CONFLICT_NUMERIC_TYPES`) instead of scanning every fact; `get_document_assessments` reads the document index. Output of both is unchanged — contradictions are still stored as `contradiction` facts and both values stay on file. |
+| OCR page cache (B4) | `services/document_processing_service.py` — class-level LRU keyed `(sha256(bytes), page, langs, dpi)`; `ocr_cache_stats()` / `reset_ocr_cache()`; `PHINS_OCR_POOL_SIZE` (default 2), `PHINS_OCR_CACHE_MAX_ENTRIES` (default 2000) | A PDF whose page count and every page text are cached is returned without rasterising; otherwise pages fan out over a `ThreadPoolExecutor` bounded by the pool size and `PHINS_OCR_MAX_PDF_PAGES`. A page whose OCR raised is returned as `''` and **not** cached, so the next run retries it. Single images cache under page `0`. `document_intelligence` health reports `ocr_cache` counters. |
+| Shared evidence pipeline (B1) | `services/evidence_facts.py` (new) — `facts_for(document_ids)`, `documents_for_entity(entity_type, entity_id)`, `bundle_for` / `bundle_for_entity` → `EvidenceBundle` (facts, contradictions citing those documents, order-independent SHA fingerprint, provenance projection), `FeatureCache` (`(namespace, sha256)` LRU, deep-copied in and out) | Read side of the fact store for the bots; writes nothing. Contradictions travel with the bundle so a consumer can lower a score and flag a human, never resolve. |
+| Underwriting Bot package (B1) | `services/underwriting_bot/{report,features,service}.py` (new); `services/underwriting_bot_service.py` is a facade re-exporting every historical name (plus `ALLOWED_UPLOAD_DIRS`, `validate_file_path`, `sanitize_filename`) | Enums/dataclasses/`RiskAssessmentEngine` in `report`; path validation + analyzers in `features`; orchestration and accessors in `service`. The durable codec is annotation-driven, so rows written before the move load unchanged. Agent descriptor keeps `module='services.underwriting_bot_service'`. |
+| Underwriting Bot behaviour (B1) | `services/underwriting_bot/service.py` — `add_metadata(document_id=…)`, `_analyze_with_cache`, `_merge_evidence_facts`, `run_risk_assessment` → `_shadow` + `_record_decision`, `apply_decision` → `_record_override`, `get_underwriting_bot_service` rebinding; `services/underwriting_bot/features.py` — `AudioAnalyzer._transcribe` | Analyzer results are cached by `(analyzer, sha256(bytes), day)`; degraded results (`NO_STT_AVAILABLE`, `STT_FAILED`, `MISSING_CONTENT`) are never cached so enabling a provider takes effect immediately. A metadata item linked to a `document_id` consumes the pipeline's facts: they fill gaps in what the analyzer read from the bytes (bytes win), are attached with full provenance under `evidence_facts`, and can stand alone when no bytes were supplied (`EVIDENCE_FROM_DOCUMENT_PIPELINE`). A recorded contradiction flags `SUSPICIOUS_EVIDENCE_CONTRADICTION` → `ValidationStatus.SUSPICIOUS`. Audio: caller transcript wins, else `get_transcription_provider().transcribe(...)`; `NO_STT_AVAILABLE` only when the provider is disabled, `STT_FAILED` when a configured provider errors, `stt` block records provider/model/language/segments. Every recommendation is appended to `ai_decision_log` (`decision_type=underwriting_bot_assessment`, `segment` from the customer snapshot, `rule_score` = `overall_risk_score`, shadow fields) and the report carries `decision_id` + `model_shadow`; a human `apply_decision` that differs from the recommendation (or sets `override_recommendation`) is recorded as the override — `decided_by='bot'` never is. The accessor rebuilds the singleton only when a caller passes store objects that differ by identity (a different `JobContext`), and both bots now keep the reference to an **empty** portal dict instead of replacing it with a fresh `{}`. |
+| Claims Bot (B1) | `services/claims_bot_service.py` — `_evidence_bundle`, `_analyze_document_authenticity(claim, evidence)`, `_append_evidence_findings`, `_provenance_refs`, `_shadow`, `_record_decision`; `ClaimProbabilityReport.{evidence, evidence_provenance, decision_id, model_shadow}` | Documents attached to the claim through the document service count as supporting evidence (+0.05, same as `claim['files']`); a recorded contradiction subtracts 0.25 and adds a red flag naming the field; a document with no extractable text subtracts 0.05. Reports carry provenance **references** (fact id, document id/sha, page, offsets, timestamps) — never the source snippet — so the UI payload stays free of raw document text. Every report is logged (`decision_type=claims_bot_assessment`) with `rule_score` = authenticity probability and the `claims_scorer` shadow. |
+| Model shadow (B1) | `services/model_shadow.py` (new) — `shadow_score(model_name, features, rule_score)` → `ShadowResult.as_log_fields()` (`rule_score`, `model_score`, `model_version`, `divergence`, `drift_alert`), `DriftMonitor` (rolling window p95 vs `PHINS_AI_DRIFT_THRESHOLD`, default 0.25; `PHINS_AI_DRIFT_WINDOW` 200; `PHINS_AI_DRIFT_MIN_SAMPLES` 20) | The model informs the log only; both bots' decisions are computed before it is consulted. Registry/model failures degrade to `model_score=None`, `model_version=rules-v1`. A drift alert fires once per breach episode (re-armed when the window recovers) as an `ai_model_drift` audit row via `record_ai_audit`. |
+| Harness | `services/agent_eval.py` — `evaluate_underwriting_bot`, `EVALUATORS['underwriting_bot']`; `scripts/run_agent_eval.py` help text | Replays `underwriting_bot_assessment` decisions on `1 - risk_score` against the inverted `RiskAssessmentEngine.DECISION_RULES` (`conditional_approve_max_risk`, `refer_max_risk`); proposals are reported per segment in both spaces (`risk_rules`). Reachable through `GET /api/admin/ai-agents/eval/underwriting_bot` and the CLI unchanged. |
+| Job adapter | `services/jobs/underwriting_bot_job.py` | Uses `get_underwriting_bot_service(...)` (shared read-through cache) instead of a fresh service per upload; response gains `decision_id`, `model_shadow`. `tests/test_jobs_adapters.py` treats `decision_id` as volatile like `report_id`. |
+| Tests | `tests/test_evidence_pipeline.py` (32) | Indexes exact and consistent through trim/reload/reset, conflict detection equals the full-scan result; OCR: second run never rasterises, failed page retried, pool/cap respected, health counters; bundles (facts + contradictions + fingerprint + provenance), deleted documents excluded, feature cache bounded/copy-isolated; shadow: rules-only default, divergence, model errors degrade, alert once per episode and re-armed, audit row; bot STT (provider used, disabled vs failed, caller transcript wins), cache hit on identical bytes only and isolation from the stored object, facts consumed without bytes with provenance, contradiction → suspicious, bytes win over facts; decision logged with rule/model scores and segment, shadow never changes the recommendation, human counter-decision recorded and bot decision not, customers/claims deep-equal after a full run, harness evaluates the bot; accessor rebinding, facade/package identity, job adapter shares the instance; Claims Bot: pipeline docs raise the document score with snippet-free provenance and a logged decision, contradiction lowers it and is flagged with both values kept, shadow never changes the decision, report still generates when the document service is down. |
+
+Deviations from the §B1/§B4 text above, and why:
+
+- **Analyzers stay** — the bots still parse bytes when they are given bytes.
+  The route accepts raw uploads that never pass through the document service;
+  removing the parsers would break that path. The pipeline's facts are
+  consumed whenever a `document_id` is linked, fill gaps, and can stand alone.
+- **Claims Bot has no separate audio path**: claim audio reaches the bot as a
+  document-service record whose transcript (`_analyze_audio` already uses the
+  transcription provider) is on the fact store, so the STT change is in the
+  Underwriting Bot's `AudioAnalyzer` only.
+- **Claims Bot evidence features are not SHA-cached**: facts for unchanged
+  bytes can still arrive later (async enrichment), so a content-keyed cache
+  would serve a stale bundle; the indexed lookup is already O(documents).
+- **Feature-cache key includes the day** so an expiry-based analyzer verdict
+  cannot outlive its expiry date in cache.
+- **`decision_id`** was added to the bots' reports (not in §B1) because the
+  human counter-decision has to name the AI decision it answers.
+
+### Remaining — §D step 6 (part 2)
 
 | Step | Workstream | Status |
 |---|---|---|
-| 6 | Per-agent refactors B1, B4, B5, B6, B7, B8, B9, B10, B11 (§B) and human AgentOS follow-ups (§C) | Not started. B12 shipped in step 2; B2 and B3 in step 5. |
+| 6 | Per-agent refactors B5, B6, B7, B8, B9, B10, B11 (§B) and human AgentOS follow-ups (§C) | Not started. B12 shipped in step 2; B2 and B3 in step 5; B1 and B4 in step 6 part 1. |
 
 Health of what has shipped (checked on `main` after PR #589):
 `GET /api/admin/ai-agents/health` reports 15 agents, all `ok`, no SLO
@@ -908,4 +941,4 @@ breaches, no load failures; gateway idle with no open breakers.
 
 ---
 
-_Last updated: September 14, 2026 — A1 + A5 + B12 + A2 (+ tenant-scoped budgets) + A3 + A4 + A6 + B2 + B3 shipped; §D step 6 (per-agent refactors) next._
+_Last updated: September 14, 2026 — A1 + A5 + B12 + A2 (+ tenant-scoped budgets) + A3 + A4 + A6 + B2 + B3 + B1 + B4 shipped; §D step 6 part 2 (B5–B11, §C) next._
