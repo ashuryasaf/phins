@@ -98,8 +98,16 @@ class AIUsageService:
         output_tokens: Optional[int] = None,
         media_seconds: Optional[float] = None,
         duration_ms: Optional[int] = None,
+        agent_id: Optional[str] = None,
+        blocked: bool = False,
     ) -> Dict[str, Any]:
-        """Meter one operation. Never raises into the caller."""
+        """Meter one operation. Never raises into the caller.
+
+        ``agent_id`` names the software agent that made the call (see
+        ``services/agent_runtime.py``); ``blocked=True`` records a call the
+        external-call gateway refused (budget exhausted) so refusals show up
+        in cost reporting with zero cost.
+        """
         try:
             prices = current_unit_prices()
             record = {
@@ -110,6 +118,8 @@ class AIUsageService:
                 "job_id": job_id or None,
                 "provider": str(provider or "unknown"),
                 "operation": str(operation or "unknown"),
+                "agent_id": str(agent_id) if agent_id else None,
+                "blocked": bool(blocked),
                 "model": model,
                 "prompt_version": prompt_version,
                 "pages": int(pages) if pages else None,
@@ -142,6 +152,7 @@ class AIUsageService:
         """Adapter for ``LLMProvider.usage_hook``: merges call context
         (customer/assessment/document ids) into every metered LLM call."""
         context = dict(context or {})
+        context_agent = context.pop("agent_id", None)
 
         def _hook(record: Dict[str, Any]) -> None:
             self.record_usage(
@@ -151,6 +162,7 @@ class AIUsageService:
                 input_tokens=record.get("input_tokens"),
                 output_tokens=record.get("output_tokens"),
                 duration_ms=record.get("duration_ms"),
+                agent_id=record.get("agent_id") or context_agent,
                 **context,
             )
         return _hook
@@ -212,7 +224,7 @@ class AIUsageService:
 
         key_field = {
             "provider": "provider", "operation": "operation",
-            "customer": "customer_id", "model": "model",
+            "customer": "customer_id", "model": "model", "agent": "agent_id",
         }.get(group_by, "provider")
         with self._lock:
             records = list(self._records)
@@ -221,11 +233,13 @@ class AIUsageService:
         buckets: Dict[Any, Dict[str, Any]] = {}
         for r in records:
             bucket = buckets.setdefault(r.get(key_field), {
-                "key": r.get(key_field), "operations": 0, "estimated_cost": 0.0,
+                "key": r.get(key_field), "operations": 0, "blocked": 0, "estimated_cost": 0.0,
                 "input_tokens": 0, "output_tokens": 0, "pages": 0,
                 "media_seconds": 0.0,
             })
             bucket["operations"] += 1
+            if r.get("blocked"):
+                bucket["blocked"] += 1
             bucket["estimated_cost"] = round(
                 bucket["estimated_cost"] + (r.get("estimated_cost") or 0.0), 6)
             bucket["input_tokens"] += r.get("input_tokens") or 0
@@ -239,6 +253,7 @@ class AIUsageService:
     def _with_totals(groups: List[Dict[str, Any]]) -> Dict[str, Any]:
         totals = {
             "operations": sum(g["operations"] for g in groups),
+            "blocked": sum(int(g.get("blocked") or 0) for g in groups),
             "estimated_cost": round(sum(g["estimated_cost"] for g in groups), 6),
             "input_tokens": sum(g["input_tokens"] for g in groups),
             "output_tokens": sum(g["output_tokens"] for g in groups),
