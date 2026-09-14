@@ -8,17 +8,17 @@ override this document.
 
 PHINS is a Python platform built around:
 
-- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~50k lines)
-- optional extension routing in `web_portal/api_extensions.py` (~3450 lines)
+- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~56k lines)
+- optional extension routing in `web_portal/api_extensions.py` (~3680 lines)
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`, `api_agent_ecosystem.py`,
-  `api_assessment_center.py`)
-- service-layer logic in `services/` (97 modules)
+  `api_assessment_center.py`, `api_chat_application.py`)
+- service-layer logic in `services/` (101 modules)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (178 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (208 files) and root-level `test_*.py` (11 files)
 - an async document intelligence pipeline: uploads can enqueue enrichment
  (`PHINS_DOC_ASYNC=true`) into `document_processing_jobs`, drained by
  `services/document_job_worker.py` (retries, dead-letter, idempotency keys);
@@ -50,6 +50,7 @@ Preferred file-by-task:
 | Delivery/bidding API | `web_portal/api_delivery_bidding.py`, `services/delivery_bidding_service.py` |
 | Agent ecosystem API | `web_portal/api_agent_ecosystem.py`, `services/agent_ecosystem_service.py` |
 | Assessment center API | `web_portal/api_assessment_center.py`, `services/assessment_center_service.py` |
+| Chat-application API | `web_portal/api_chat_application.py`, `services/chat_application_service.py` |
 | Business rule/workflow | `services/`, then the route or engine that calls it |
 | Database/schema/repository | `database/models.py`, `database/manager.py`, `database/repositories/`, `database/config.py` |
 | Billing/accounting behavior | `billing_engine.py`, `accounting_engine.py`, related tests |
@@ -81,12 +82,13 @@ Preferred file-by-task:
 |  |- api_delivery_bidding.py
 |  |- api_agent_ecosystem.py
 |  |- api_assessment_center.py
+|  |- api_chat_application.py
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
 |                                        # (includes `static/locales/he.json` Hebrew i18n)
 |- prompts/                             # versioned LLM prompt templates
 |  `- assessment/                       # narrative/onboarding/service/termination v1
-|- services/                            # 97 service modules
+|- services/                            # 101 service modules
 |  |- document_job_worker.py            # async doc queue worker (retry/DLQ)
 |  |- llm_providers.py                  # vendor-neutral LLM + schema validation
 |  |- transcription_providers.py        # audio speech-to-text abstraction
@@ -118,7 +120,7 @@ Preferred file-by-task:
 |  `- runner.py
 |- scripts/                             # operational utilities
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/worker/db-init)
-|- tests/                               # 178 test files
+|- tests/                               # 208 test files
 |- docs/
 |  |- platform_data_architecture.md
 |  |- health_marketplace_architecture.md
@@ -186,6 +188,7 @@ Database patterns:
   `remittances`, `payer_receivables`, `idempotency`, `outbox`
 - Agent ecosystem: `agents`, `agent_invitations`, `agent_affiliations`,
   `agent_commissions`
+- Assessment/BI: `assessment_records`, `business_inquiries`, `ai_usage`
 
 Common ID prefixes:
 
@@ -210,7 +213,8 @@ When changing or adding an API endpoint:
 2. Check whether the endpoint belongs in `server.py`,
    `web_portal/api_extensions.py`, `web_portal/api_bi_analytics.py`,
    `web_portal/api_delivery_bidding.py`, `web_portal/api_agent_ecosystem.py`,
-   or `web_portal/api_assessment_center.py`.
+   `web_portal/api_assessment_center.py`, or
+   `web_portal/api_chat_application.py`.
 3. Verify the extension is actually wired; `server.py` imports extension
    dispatchers conditionally and can run without them.
 4. Reuse service-layer logic from `services/` instead of embedding new business
@@ -249,13 +253,15 @@ When changing persistence or schema behavior:
 Key facts:
 
 - Storage modes include in-memory, SQLite, and PostgreSQL.
-- `DatabaseManager` exposes 37 repository properties (see §4 for the full list).
-- Repository modules (15 `*_repository.py` + `base.py`):
+- `DatabaseManager` exposes 40 repository properties (see §4 for the full list).
+- Repository modules (18 `*_repository.py` + `base.py`):
   `customer_repository.py`, `policy_repository.py`, `claim_repository.py`,
   `underwriting_repository.py`, `billing_repository.py`,
   `user_repository.py`, `session_repository.py`, `audit_repository.py`,
   `platform_ledger_repository.py`, `actuarial_repository.py`,
-  `token_repository.py`, `document_repository.py`, `supplier_repository.py`
+  `token_repository.py`, `document_repository.py`,
+  `assessment_record_repository.py`, `business_inquiry_repository.py`,
+  `ai_usage_repository.py`, `supplier_repository.py`
   (bundles supplier, invitation, offer, order, document, and supply-chain
   ledger repositories), `marketplace_repository.py` (bundles wallet,
   payment-intent, refund, journal, settlement, external-payer,
@@ -388,7 +394,7 @@ Important test harness facts:
 - Tests reset in-memory portal state between cases (clears `POLICIES`,
   `CLAIMS`, `CUSTOMERS`, `SESSIONS`, `BILLING`, etc.)
 - Options wheel service and document processing service are also reset per test
-- 178 test files under `tests/`, 11 root-level `test_*.py` files
+- 208 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -466,4 +472,4 @@ If you update this file again:
 
 ---
 
-Last updated: September 12, 2026
+Last updated: September 14, 2026
