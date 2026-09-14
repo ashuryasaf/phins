@@ -160,6 +160,88 @@ def test_transcription_identical_audio_is_not_billed_twice(monkeypatch, usage):
     gw.reset_gateway()
 
 
+def _asr_env(monkeypatch):
+    monkeypatch.setenv("PHINS_TRANSCRIPTION_PROVIDER", "openai_compatible")
+    monkeypatch.setenv("PHINS_TRANSCRIPTION_ENDPOINT", "https://asr.example/v1/audio/transcriptions")
+    monkeypatch.setenv("PHINS_TRANSCRIPTION_API_KEY", "k")
+
+
+def test_transcription_budget_is_scoped_per_customer_not_global(monkeypatch, usage):
+    """One tenant exhausting its daily cap must not block another tenant's
+    transcriptions, and the refusal must be attributed to the right tenant."""
+    from services.transcription_providers import get_transcription_provider
+    gw.reset_gateway()
+    _asr_env(monkeypatch)
+    monkeypatch.setenv(gw.DAILY_CALL_BUDGET_ENV, "1")
+    monkeypatch.setattr("requests.post", lambda *a, **k: _FakeResponse(
+        {"text": "hello", "duration": 2.0, "segments": []}))
+    provider = get_transcription_provider()
+
+    provider.transcribe(b"a-1", context={"customer_id": "CUST-A", "document_id": "DOC-A1"})
+    with pytest.raises(BudgetExceeded):
+        provider.transcribe(b"a-2", context={"customer_id": "CUST-A", "document_id": "DOC-A2"})
+    # Tenant B is untouched by A's exhaustion.
+    provider.transcribe(b"b-1", context={"customer_id": "CUST-B"})
+
+    g = gw.get_gateway()
+    assert g.budget_usage("CUST-A", "transcription")["calls"] == 1
+    assert g.budget_usage("CUST-B", "transcription")["calls"] == 1
+    assert g.budget_usage("global", "transcription")["calls"] == 0
+
+    rows = usage.list_records(operation="transcription")
+    by_customer = {r["customer_id"]: r for r in rows if not r["blocked"]}
+    assert set(by_customer) == {"CUST-A", "CUST-B"}
+    assert by_customer["CUST-A"]["document_id"] == "DOC-A1"
+    blocked = [r for r in rows if r["blocked"]]
+    assert len(blocked) == 1 and blocked[0]["customer_id"] == "CUST-A"
+    gw.reset_gateway()
+
+
+def test_transcription_without_context_keeps_working_on_global_scope(monkeypatch, usage):
+    """Backwards compatibility: callers that pass no context still transcribe."""
+    from services.transcription_providers import get_transcription_provider
+    gw.reset_gateway()
+    _asr_env(monkeypatch)
+    monkeypatch.setattr("requests.post", lambda *a, **k: _FakeResponse({"text": "x", "duration": 1.0}))
+    assert get_transcription_provider().transcribe(b"raw")["text"] == "x"
+    assert gw.get_gateway().budget_usage("global", "transcription")["calls"] == 1
+    assert usage.list_records(operation="transcription")[0]["customer_id"] is None
+    gw.reset_gateway()
+
+
+def test_document_pipeline_attributes_transcription_to_the_owning_customer(monkeypatch, usage, tmp_path):
+    """The document service binds the document (and its customer) to the
+    processing thread so the transcription call is budgeted and metered per
+    customer without the provider knowing about documents."""
+    import base64
+    from services.document_processing_service import DocumentProcessingService
+    gw.reset_gateway()
+    _asr_env(monkeypatch)
+    seen = []
+
+    def fake_post(*a, **k):
+        seen.append(k["files"]["file"][1])
+        return _FakeResponse({"text": "spoken words", "duration": 4.0, "segments": []})
+
+    monkeypatch.setattr("requests.post", fake_post)
+    svc = DocumentProcessingService(storage_root=str(tmp_path))
+    doc = svc.upload_document(
+        file_name="note.mp3", mime_type="audio/mpeg",
+        file_data_b64=base64.b64encode(b"ID3fake-audio-bytes").decode(),
+        customer_id="CUST-DOC", category="general")
+    doc_id = doc.document_id
+
+    rows = usage.list_records(operation="transcription")
+    assert seen == [b"ID3fake-audio-bytes"]
+    assert len(rows) == 1
+    assert rows[0]["customer_id"] == "CUST-DOC" and rows[0]["document_id"] == doc_id
+    assert gw.get_gateway().budget_usage("CUST-DOC", "transcription")["calls"] == 1
+    assert gw.get_gateway().budget_usage("global", "transcription")["calls"] == 0
+    # The thread-local scope is released after processing.
+    assert svc._current_document_context() == {}
+    gw.reset_gateway()
+
+
 class _Ctx:
     """Stand-in for the ``validated_urlopen`` response context manager."""
 
@@ -236,6 +318,59 @@ def test_media_polls_stay_outside_the_daily_call_budget(monkeypatch, usage):
         read("submit")
     assert read("poll") == {"ok": True}        # in-flight jobs can still be polled
     gw.reset_gateway()
+
+
+def test_media_submit_budget_is_scoped_per_submitter(monkeypatch, usage):
+    """Video submits are charged to the submitting user (or customer), never
+    to a shared bucket, so one user's spend cannot block another's."""
+    from services import media_generation_service as mgs
+    gw.reset_gateway()
+    monkeypatch.setenv(gw.DAILY_CALL_BUDGET_ENV, "1")
+    monkeypatch.setattr(mgs, "validated_urlopen",
+                        lambda request, timeout=None, allowed_schemes=None:
+                        _Ctx(json.dumps({"ok": True}).encode()))
+    req = urllib.request.Request("https://api.klingapi.com/v1/videos/text2video", data=b"{}", method="POST")
+
+    def submit(**attribution):
+        return mgs.MediaGenerationService._read_json_with_diagnostics(
+            req, timeout=5, provider_label="Kling", operation="submit", attribution=attribution)
+
+    assert submit(user_id="alice", job_id="J-1") == {"ok": True}
+    with pytest.raises(mgs.MediaGenerationError, match="refused"):
+        submit(user_id="alice", job_id="J-2")
+    assert submit(user_id="bob", job_id="J-3") == {"ok": True}
+    # A job on a customer's behalf is scoped to that customer, not the operator.
+    assert submit(user_id="alice", customer_id="CUST-V", job_id="J-4") == {"ok": True}
+
+    g = gw.get_gateway()
+    assert g.budget_usage("user:alice", "video_agents")["calls"] == 1
+    assert g.budget_usage("user:bob", "video_agents")["calls"] == 1
+    assert g.budget_usage("CUST-V", "video_agents")["calls"] == 1
+    assert g.budget_usage("global", "video_agents")["calls"] == 0
+
+    rows = usage.list_records(provider="kling")
+    assert {r["job_id"] for r in rows if not r["blocked"]} == {"J-1", "J-3", "J-4"}
+    assert [r["job_id"] for r in rows if r["blocked"]] == ["J-2"]
+    assert [r["customer_id"] for r in rows if r["job_id"] == "J-4"] == ["CUST-V"]
+    gw.reset_gateway()
+
+
+def test_video_agents_service_passes_submitter_attribution(monkeypatch):
+    """The job orchestrator hands user + job ids to the media service."""
+    from unittest.mock import MagicMock
+    from services import video_agents_service as vas
+    media = MagicMock()
+    media.supported_provider_config.return_value = {"gemini": {"enabled": True}}
+    media.submit_video_generation.return_value = {"provider_job_id": "op-1", "provider_state": {}}
+    monkeypatch.setattr(vas, "MEDIA_GENERATION_AVAILABLE", True)
+    monkeypatch.setattr(vas, "get_media_generation_service", lambda: media)
+    monkeypatch.setattr(vas, "_job_store", vas._JobStore())  # isolated job store
+
+    job = vas.VideoAgentsService().submit_video_job(
+        campaign_id="camp-attr", pipeline_type="introductions", provider="gemini",
+        submitted_by="marketing_lead", poll_mode="webhook")
+    kwargs = media.submit_video_generation.call_args.kwargs
+    assert kwargs["attribution"] == {"user_id": "marketing_lead", "job_id": job["id"]}
 
 
 def test_media_circuit_open_is_reported_as_media_error(monkeypatch):

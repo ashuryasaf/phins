@@ -31,8 +31,10 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from enum import Enum
@@ -200,7 +202,40 @@ class DocumentProcessingService:
         self.storage_root = storage_root or DOCUMENT_STORAGE_ROOT
         self.db_manager = db_manager
         self._inmemory_store: Dict[str, Dict[str, Any]] = {}
+        # Per-thread "document being processed" so deep helpers (e.g. the
+        # transcription call) can attribute provider spend to the owning
+        # customer without threading ids through every handler signature.
+        self._doc_scope = threading.local()
         os.makedirs(self.storage_root, exist_ok=True)
+
+    # ── Document scope (attribution for provider calls) ───────────────────────
+
+    def _record_customer_id(self, doc_id: str) -> Optional[str]:
+        try:
+            record = self._load_record(doc_id)
+        except Exception:
+            return None
+        if record is None:
+            return None
+        value = record.get('customer_id') if isinstance(record, dict) else getattr(record, 'customer_id', None)
+        return str(value) if value else None
+
+    @contextmanager
+    def _document_scope(self, doc_id: str):
+        """Bind ``doc_id`` (and its owning customer) to the current thread for
+        the duration of a processing pass. Nested scopes restore the outer one."""
+        previous = getattr(self._doc_scope, 'context', None)
+        self._doc_scope.context = {
+            'document_id': doc_id,
+            'customer_id': self._record_customer_id(doc_id),
+        }
+        try:
+            yield self._doc_scope.context
+        finally:
+            self._doc_scope.context = previous
+
+    def _current_document_context(self) -> Dict[str, Any]:
+        return dict(getattr(self._doc_scope, 'context', None) or {})
 
     # ── Upload ────────────────────────────────────────────────────────────────
 
@@ -349,11 +384,7 @@ class DocumentProcessingService:
         unless a managed-parser page price is configured). Never fatal."""
         try:
             from services.ai_usage_service import get_ai_usage_service
-            record = self._load_record(doc_id)
-            customer_id = None
-            if record is not None:
-                customer_id = (record.get('customer_id') if isinstance(record, dict)
-                               else record.customer_id) or None
+            customer_id = self._record_customer_id(doc_id)
             pages = (extracted.get('metadata') or {}).get('pages')
             get_ai_usage_service().record_usage(
                 provider='self_hosted',
@@ -749,6 +780,10 @@ class DocumentProcessingService:
 
     def _run_immediate_processing(self, doc_id: str, raw: bytes, mime: str, ext: str) -> Dict[str, Any]:
         """Run lightweight processing synchronously on upload."""
+        with self._document_scope(doc_id):
+            return self._run_immediate_processing_scoped(doc_id, raw, mime, ext)
+
+    def _run_immediate_processing_scoped(self, doc_id: str, raw: bytes, mime: str, ext: str) -> Dict[str, Any]:
         result: Dict[str, Any] = {}
         try:
             result['metadata'] = self._extract_metadata(raw, mime, ext)
@@ -847,7 +882,8 @@ class DocumentProcessingService:
         try:
             handler = self._job_handlers.get(job_type)
             if handler:
-                result_data = handler(self, raw, mime, ext)
+                with self._document_scope(doc_id):
+                    result_data = handler(self, raw, mime, ext)
             else:
                 result_data = {'note': f'No specialised handler for {job_type}'}
         except Exception as e:
@@ -1654,8 +1690,11 @@ class DocumentProcessingService:
         except ImportError:
             return None
         try:
+            # Attribute provider spend (and the gateway's daily budget) to the
+            # document's owning customer rather than a shared global bucket.
             return get_transcription_provider().transcribe(
-                raw, file_name=f'media{default_ext}', mime_type=mime)
+                raw, file_name=f'media{default_ext}', mime_type=mime,
+                context=self._current_document_context())
         except TranscriptionUnavailableError:
             return None
         except Exception as exc:

@@ -518,6 +518,7 @@ class VideoAgentsService:
                     image_data_url=image_data_url,
                     callback_url=callback_url,
                     metadata=metadata or {},
+                    attribution={"user_id": submitted_by, "job_id": job_id},
                 )
 
                 # Update job with provider response
@@ -838,6 +839,7 @@ class VideoAgentsService:
                     image_data_url=job.get("image_data_url", ""),
                     callback_url=job.get("callback_url", ""),
                     metadata=job.get("metadata") or {},
+                    attribution={"user_id": job.get("submitted_by", ""), "job_id": job_id},
                 )
 
                 _job_store.update(job_id, {
