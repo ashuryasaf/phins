@@ -257,6 +257,33 @@ class DocumentProcessingJobRepository(BaseRepository):
             logger.error(f"Error fetching jobs by type {job_type}: {e}")
             return []
 
+    def find_jobs(self, status: Optional[str] = None,
+                  subject_type: Optional[str] = None,
+                  subject_id: Optional[str] = None,
+                  job_type: Optional[str] = None,
+                  submitted_by: Optional[str] = None,
+                  limit: int = 50) -> List[DocumentProcessingJob]:
+        """Filtered listing for the agent-generic queue (newest first)."""
+        try:
+            query = self.session.query(DocumentProcessingJob)
+            if status:
+                query = query.filter(DocumentProcessingJob.status == status)
+            if subject_type:
+                query = query.filter(DocumentProcessingJob.subject_type == subject_type)
+            if subject_id:
+                query = query.filter(DocumentProcessingJob.subject_id == subject_id)
+            if job_type:
+                query = query.filter(DocumentProcessingJob.job_type == job_type)
+            if submitted_by:
+                query = query.filter(DocumentProcessingJob.submitted_by == submitted_by)
+            return (
+                query.order_by(desc(DocumentProcessingJob.created_date))
+                .limit(limit).all()
+            )
+        except SQLAlchemyError as e:
+            logger.error(f"Error listing jobs: {e}")
+            return []
+
     def get_by_idempotency_key(self, key: str) -> Optional[DocumentProcessingJob]:
         try:
             return (
