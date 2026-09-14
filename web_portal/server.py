@@ -56119,8 +56119,10 @@ def run_server(port: int = PORT) -> None:
         from services.document_processing_service import async_processing_enabled
         from services.agent_job_queue import agent_async_enabled
         if async_processing_enabled() or agent_async_enabled():
-            from services.document_job_worker import get_document_job_worker
-            _doc_worker = get_document_job_worker(doc_service=get_document_service())
+            # Bind every adapter before the threads start so agent jobs left
+            # pending in the database by a previous process are claimed at
+            # boot, not only after the first request touches a route.
+            _doc_worker = get_agent_job_queue()
             # One queue serves every agent (A3): document events keep their
             # historical ledger names; other subjects are recorded under
             # ``job.*`` with their own entity type.
