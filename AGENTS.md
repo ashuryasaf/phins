@@ -324,6 +324,13 @@ Environment variables commonly used:
  `PHINS_AI_PRICE_TRANSCRIPTION_PER_MIN`
 - **Auto-pay:** `PHINS_DEFAULT_AUTO_PAY_CARD_NUMBER`,
   `MONTHLY_AUTO_PAY_COMMAND_TOKEN`
+- **AutoPilot trading safety:** `PHINS_TRADING_HALT` (operator kill switch;
+  read on every execution, cannot be lifted via the API),
+  `PHINS_TRADING_AUDIT_REQUIRED` (`auto`|`true`|`false`; `auto` fails closed
+  whenever the broker reports a live connection),
+  `PHINS_TRADING_GLOBAL_DAILY_LOSS_PCT` (default `0.05` of portfolio),
+  `PHINS_TRADING_GLOBAL_DAILY_LOSS_ABS` (currency amount, `0` = off);
+  runtime halt/resume/promote via `/api/terminal/autopilot/{halt,resume,promote}`
 - **Security:** `SESSION_SECRET_KEY`, `PHINS_ENCRYPTION_KEY`,
   `PHINS_ENFORCE_SECRET_POLICY`, `PHINS_EMERGENCY_UNLOCK_KEY`,
   `ALLOW_LEGACY_DEMO_PASSWORDS`

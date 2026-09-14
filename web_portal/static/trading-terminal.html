@@ -293,7 +293,9 @@
                 </div>
                 <button onclick="createBot()" style="background:var(--green);color:#000;border:none;padding:8px 18px;font-weight:700;font-size:18px;cursor:pointer;font-family:inherit;border-radius:3px;">CREATE BOT</button>
                 <button onclick="loadBots()" style="background:var(--gold);color:#000;border:none;padding:8px 18px;font-weight:700;font-size:18px;cursor:pointer;font-family:inherit;border-radius:3px;">REFRESH</button>
+                <button id="apHaltBtn" onclick="toggleTradingHalt()" style="background:var(--red);color:#fff;border:none;padding:8px 18px;font-weight:700;font-size:18px;cursor:pointer;font-family:inherit;border-radius:3px;margin-left:auto;">HALT ALL</button>
             </div>
+            <div id="apHaltBanner" style="display:none;background:rgba(255,68,68,0.15);border:1px solid var(--red);color:var(--red);padding:6px 10px;margin-bottom:8px;font-weight:700;font-size:16px;border-radius:3px;"></div>
             <div id="autopilotPanel" style="overflow-y:auto;max-height:220px;">Create an auto-pilot bot to start AI-driven trading...</div>
         </div>
         <div id="tab-scanner" class="tab-content">
@@ -1894,23 +1896,79 @@ async function createBot() {
     } catch(e) { showToast('Error: ' + e.message, 'error'); }
 }
 
+// --- AutoPilot safety controls (kill switch) ---
+const apEscape = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+let apHalted = false;
+
+async function loadHaltStatus() {
+    try {
+        const h = await apiFetch('/api/terminal/autopilot/halt');
+        if (!h || h.error) return;
+        apHalted = !!h.halted;
+        const banner = $('apHaltBanner');
+        const btn = $('apHaltBtn');
+        if (apHalted) {
+            const src = h.source === 'env' ? 'operator env switch' : ('runtime' + (h.actor ? ' by ' + apEscape(h.actor) : ''));
+            banner.innerHTML = 'TRADING HALTED (' + src + ') — ' + apEscape(h.reason || '') +
+                (h.audit_degraded_at ? ' · audit store degraded since ' + apEscape(h.audit_degraded_at) : '');
+            banner.style.display = 'block';
+            btn.textContent = h.source === 'env' ? 'HALTED (ENV)' : 'RESUME ALL';
+            btn.style.background = h.source === 'env' ? 'var(--muted)' : 'var(--green)';
+            btn.style.color = '#000';
+            btn.disabled = h.source === 'env';
+        } else {
+            banner.style.display = 'none';
+            btn.textContent = 'HALT ALL';
+            btn.style.background = 'var(--red)';
+            btn.style.color = '#fff';
+            btn.disabled = false;
+        }
+    } catch (e) { /* status is advisory; bot list still loads */ }
+}
+
+async function toggleTradingHalt() {
+    if (apHalted) {
+        if (!confirm('Resume AutoPilot trading? Bots will submit real orders again.')) return;
+        const d = await apiPost('/api/terminal/autopilot/resume', {});
+        if (d.error) { showToast('Resume failed: ' + d.error, 'error'); return; }
+        showToast(d.halted ? 'Still halted: ' + (d.note || d.reason || '') : 'AutoPilot trading resumed', d.halted ? 'warn' : 'success');
+    } else {
+        const reason = prompt('Halt ALL AutoPilot trading. Reason:', 'manual halt');
+        if (reason === null) return;
+        const d = await apiPost('/api/terminal/autopilot/halt', { reason: reason || 'manual halt' });
+        if (d.error) { showToast('Halt failed: ' + d.error, 'error'); return; }
+        showToast('AutoPilot trading HALTED', 'warn');
+    }
+    loadBots();
+}
+
 async function loadBots() {
     $('autopilotPanel').innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">Loading bots...</div>';
+    loadHaltStatus();
     try {
         const bots = await apiFetch('/api/terminal/autopilot/bots');
         if (!Array.isArray(bots) || bots.length === 0) {
             $('autopilotPanel').innerHTML = '<div style="color:var(--muted);padding:10px;">No bots created yet. Use the form above to create one.</div>';
             return;
         }
-        let html = '<table class="scanner-table"><thead><tr><th>ID</th><th>Strategy</th><th>Symbols</th><th>Status</th><th>Trades</th><th>P&L</th><th>Actions</th></tr></thead><tbody>';
+        let html = '<table class="scanner-table"><thead><tr><th>ID</th><th>Strategy</th><th>Mode</th><th>Symbols</th><th>Status</th><th>Trades</th><th>P&L</th><th>Actions</th></tr></thead><tbody>';
         bots.forEach(b => {
             const statusColor = b.status === 'active' ? 'var(--green)' : (b.status === 'paused' ? 'var(--gold)' : 'var(--red)');
+            const shadow = b.mode === 'shadow';
+            const modeCell = shadow
+                ? `<span style="color:var(--cyan);font-weight:700;" title="Strategy version ${apEscape(b.strategy_version)} is not promoted: intents are recorded, no orders are submitted.">SHADOW</span>`
+                : `<span style="color:var(--green);font-weight:700;">LIVE</span>`;
+            const tradesCell = shadow
+                ? `${b.trade_count || 0} <span style="color:var(--muted);font-size:14px;">(+${b.shadow_trade_count || 0} shadow)</span>`
+                : `${b.trade_count || 0}${b.blocked_count ? ` <span style="color:var(--red);font-size:14px;" title="Orders blocked by halt / loss cap / audit">(${b.blocked_count} blocked)</span>` : ''}`;
             html += `<tr>
                 <td style="color:var(--gold);font-weight:700;font-size:16px;">${(b.id||'').substring(0,12)}</td>
-                <td>${b.strategy_name || b.strategy || ''}</td>
+                <td>${b.strategy_name || b.strategy || ''} <span style="color:var(--muted);font-size:14px;">v${apEscape(b.strategy_version || '1.0')}</span></td>
+                <td>${modeCell}</td>
                 <td style="color:var(--muted);font-size:16px;">${(b.symbols||[]).join(', ')}</td>
                 <td style="color:${statusColor};font-weight:700;">${(b.status||'').toUpperCase()}</td>
-                <td>${b.trade_count || 0}</td>
+                <td>${tradesCell}</td>
                 <td class="acct-val ${(b.total_pnl||0)>=0?'up':'down'}">$${(b.total_pnl||0).toFixed(2)}</td>
                 <td style="display:flex;gap:4px;">
                     <button onclick="evaluateBot('${b.id}')" style="background:var(--cyan);color:#000;border:none;padding:2px 8px;border-radius:2px;cursor:pointer;font-family:inherit;font-size:16px;">EVAL</button>
@@ -1943,15 +2001,22 @@ async function evaluateBot(botId) {
 }
 
 async function executeBot(botId) {
-    if (!confirm('Execute bot trades? This will submit real orders to Alpaca.')) return;
+    if (apHalted) { showToast('Trading is halted. Resume before executing.', 'error'); return; }
+    if (!confirm('Execute bot trades? Live bots submit real orders to Alpaca; shadow bots only record intents.')) return;
     showToast('Executing bot trades...', 'warn');
     try {
         const d = await apiPost('/api/terminal/autopilot/execute', { bot_id: botId });
         if (Array.isArray(d) && d.length > 0 && d[0].error) {
-            showToast('Execution error: ' + d[0].error, 'error');
+            showToast('Execution blocked: ' + d[0].error + (d[0].reason && d[0].reason !== d[0].error ? ' (' + d[0].reason + ')' : ''), 'error');
         } else {
-            const count = Array.isArray(d) ? d.length : 0;
-            showToast(count + ' trade(s) executed', 'success');
+            const items = Array.isArray(d) ? d : [];
+            const shadow = items.filter(t => t.shadow).length;
+            const blocked = items.filter(t => t.blocked).length;
+            const live = items.length - shadow - blocked;
+            let msg = live + ' trade(s) executed';
+            if (shadow) msg += ', ' + shadow + ' shadow intent(s) recorded';
+            if (blocked) msg += ', ' + blocked + ' blocked';
+            showToast(msg, blocked ? 'warn' : 'success');
         }
         loadBots();
         setTimeout(() => { loadPositions(); loadAccount(); }, 1500);
