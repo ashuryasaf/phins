@@ -42,6 +42,7 @@ except ImportError:
     MEDIA_GENERATION_AVAILABLE = False
 
 from services.agent_metrics import instrument_agent, set_gauge as _set_agent_gauge
+from services.hydrated_store import HydratedStore
 
 logger = logging.getLogger('phins.video_agents')
 
@@ -130,36 +131,74 @@ SUPPORTED_PIPELINE_TYPES = set(_PIPELINE_PROMPTS.keys())
 # ---------------------------------------------------------------------------
 
 class _JobStore:
-    """Thread-safe in-memory job store with basic indexing."""
+    """Thread-safe job store with basic indexing.
 
-    def __init__(self) -> None:
+    Memory mode: a process-local dict (pre-A4 behaviour). DB mode (A4): the
+    ``video_jobs`` table is the truth behind a read-through ``HydratedStore``
+    cache, so webhook, poller and every web instance agree on a job's
+    lifecycle. ``update``/``mark_terminal`` are conditional UPDATEs in the
+    table (optimistic concurrency; ``mark_terminal`` additionally refuses
+    already-terminal rows) so exactly one racer performs the terminal
+    transition — the same guarantee the in-memory lock gives, now across
+    processes.
+    """
+
+    TERMINAL = frozenset({"completed", "failed", "cancelled"})
+
+    def __init__(self, enabled=None) -> None:
         self._lock = threading.Lock()
-        # job_id -> job dict
-        self._jobs: Dict[str, Dict[str, Any]] = {}
-        # campaign_id -> [job_id, ...]
-        self._by_campaign: Dict[str, List[str]] = {}
-        # user_id -> [job_id, ...]
-        self._by_user: Dict[str, List[str]] = {}
+        self._store = HydratedStore(
+            "video_agents.jobs", loader=self._load, saver=self._save,
+            deleter=self._remove, enabled=enabled)
 
+    # -- durable plumbing (DB mode only) ------------------------------------
+    @staticmethod
+    def _db():
+        from database.manager import DatabaseManager
+        return DatabaseManager()
+
+    def _load(self, since):
+        with self._db() as db:
+            yield from db.video_jobs.iter_jobs(since)
+
+    def _save(self, key, job):
+        with self._db() as db:
+            db.video_jobs.upsert(job)
+
+    def _remove(self, key):
+        with self._db() as db:
+            db.video_jobs.delete_job(key)
+
+    @property
+    def durable(self) -> bool:
+        return self._store.durable
+
+    def snapshot(self) -> Dict[str, Any]:
+        return self._store.snapshot()
+
+    # -- API (unchanged) ----------------------------------------------------
     def add(self, job: Dict[str, Any]) -> None:
-        job_id = job["id"]
-        campaign_id = job.get("campaign_id", "")
-        user_id = job.get("submitted_by", "")
         with self._lock:
-            self._jobs[job_id] = job
-            if campaign_id:
-                self._by_campaign.setdefault(campaign_id, []).append(job_id)
-            if user_id:
-                self._by_user.setdefault(user_id, []).append(job_id)
+            self._store.put(job["id"], job)
 
     def get(self, job_id: str) -> Optional[Dict[str, Any]]:
-        with self._lock:
-            job = self._jobs.get(job_id)
-            return dict(job) if job else None
+        job = self._store.get(job_id)
+        return dict(job) if job else None
 
     def update(self, job_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if self.durable:
+            try:
+                with self._db() as db:
+                    merged = db.video_jobs.update_fields(job_id, updates)
+            except Exception as exc:
+                logger.warning("video_jobs update failed for %s: %s", job_id, exc)
+                merged = None
+            if merged is None:
+                return None
+            self._store.set_local(job_id, merged)
+            return dict(merged)
         with self._lock:
-            job = self._jobs.get(job_id)
+            job = self._store.get(job_id)
             if job is None:
                 return None
             job.update(updates)
@@ -175,47 +214,59 @@ class _JobStore:
         lets callers emit exactly one terminal audit event per job lifecycle
         even when webhook and polling paths race.
         """
+        if self.durable:
+            try:
+                with self._db() as db:
+                    merged = db.video_jobs.mark_terminal(job_id, updates, tuple(self.TERMINAL))
+            except Exception as exc:
+                logger.warning("video_jobs mark_terminal failed for %s: %s", job_id, exc)
+                merged = None
+            if merged is None:
+                # Refresh the cache so the caller sees who won.
+                self._store.coalescer.reset()
+                return None
+            self._store.set_local(job_id, merged)
+            return dict(merged)
         with self._lock:
-            job = self._jobs.get(job_id)
+            job = self._store.get(job_id)
             if job is None:
                 return None
-            if job.get("status") in {"completed", "failed", "cancelled"}:
+            if job.get("status") in self.TERMINAL:
                 return None
             job.update(updates)
             job["updated_at"] = datetime.now(timezone.utc).isoformat()
             return dict(job)
 
     def list_by_campaign(self, campaign_id: str) -> List[Dict[str, Any]]:
-        with self._lock:
-            ids = list(self._by_campaign.get(campaign_id, []))
-        return [j for j in (self.get(jid) for jid in ids) if j is not None]
+        if not campaign_id:
+            return []
+        jobs = [dict(j) for j in self._store.values() if j.get("campaign_id", "") == campaign_id]
+        jobs.sort(key=lambda j: str(j.get("created_at", "")))
+        return jobs
 
     def list_all(self) -> List[Dict[str, Any]]:
-        with self._lock:
-            return [dict(j) for j in self._jobs.values()]
+        return [dict(j) for j in self._store.values()]
 
     def count_user_jobs_today(self, user_id: str) -> int:
+        if not user_id:
+            return 0
         today = datetime.now(timezone.utc).date().isoformat()
-        with self._lock:
-            ids = list(self._by_user.get(user_id, []))
-        count = 0
-        for jid in ids:
-            job = self.get(jid)
-            if job and str(job.get("created_at", "")).startswith(today):
-                count += 1
-        return count
+        return sum(
+            1 for j in self._store.values()
+            if j.get("submitted_by", "") == user_id and str(j.get("created_at", "")).startswith(today)
+        )
 
     def count_campaign_jobs(self, campaign_id: str) -> int:
-        with self._lock:
-            return len(self._by_campaign.get(campaign_id, []))
+        if not campaign_id:
+            return 0
+        return sum(1 for j in self._store.values() if j.get("campaign_id", "") == campaign_id)
 
     def count_all_jobs_today(self) -> int:
         today = datetime.now(timezone.utc).date().isoformat()
-        with self._lock:
-            return sum(
-                1 for j in self._jobs.values()
-                if str(j.get("created_at", "")).startswith(today)
-            )
+        return sum(
+            1 for j in self._store.values()
+            if str(j.get("created_at", "")).startswith(today)
+        )
 
 
 _job_store = _JobStore()

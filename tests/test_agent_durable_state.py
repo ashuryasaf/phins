@@ -202,6 +202,107 @@ def test_underwriting_retention_prunes_in_db(db_mode):
     assert set(bot.assessments.keys()) == set(ids[-2:])
 
 
+# --------------------------------------------------------------------------
+# Video Agents _JobStore
+# --------------------------------------------------------------------------
+def _purge_video_jobs():
+    from database.manager import DatabaseManager
+    from database.models import VideoJob
+    with DatabaseManager() as db:
+        session = db.video_jobs.session
+        session.query(VideoJob).delete(synchronize_session=False)
+        session.commit()
+
+
+@pytest.fixture
+def video_db_mode(db_mode):
+    _purge_video_jobs()
+    yield
+    _purge_video_jobs()
+
+
+def _video_job(job_id, **extra):
+    from datetime import datetime, timezone
+    job = {"id": job_id, "campaign_id": "CMP-A4", "submitted_by": "media_ad",
+           "provider": "mock", "provider_job_id": f"p-{job_id}", "pipeline_type": "explainer",
+           "status": "processing", "progress_pct": 5,
+           "created_at": datetime.now(timezone.utc).isoformat(), "provider_state": {}}
+    job.update(extra)
+    return job
+
+
+def test_video_job_store_is_durable_and_shared(video_db_mode):
+    import services.video_agents_service as mod
+    store = mod._JobStore()
+    assert store.durable is True
+    store.add(_video_job("VJ-A4-1"))
+    store.add(_video_job("VJ-A4-2", campaign_id="CMP-OTHER", submitted_by="someone"))
+    assert store.update("VJ-A4-1", {"progress_pct": 40})["progress_pct"] == 40
+    assert store.update("VJ-nope", {"x": 1}) is None
+
+    # A fresh store (restart / peer instance) sees the same jobs and counts.
+    peer = mod._JobStore()
+    assert peer.get("VJ-A4-1")["progress_pct"] == 40
+    assert {j["id"] for j in peer.list_all()} == {"VJ-A4-1", "VJ-A4-2"}
+    assert [j["id"] for j in peer.list_by_campaign("CMP-A4")] == ["VJ-A4-1"]
+    assert peer.count_campaign_jobs("CMP-A4") == 1
+    assert peer.count_user_jobs_today("media_ad") == 1
+    assert peer.count_all_jobs_today() == 2
+    assert peer.snapshot()["durable"] is True
+
+
+def test_video_mark_terminal_wins_exactly_once_across_stores(video_db_mode):
+    """Webhook and poller on different instances: one terminal transition."""
+    import threading
+    import services.video_agents_service as mod
+    webhook_side, poller_side = mod._JobStore(), mod._JobStore()
+    webhook_side.add(_video_job("VJ-RACE"))
+    assert poller_side.get("VJ-RACE")["status"] == "processing"
+
+    barrier = threading.Barrier(2)
+    results = {}
+
+    def run(name, store, status):
+        barrier.wait()
+        results[name] = store.mark_terminal("VJ-RACE", {"status": status, "by": name})
+
+    threads = [threading.Thread(target=run, args=("webhook", webhook_side, "completed")),
+               threading.Thread(target=run, args=("poller", poller_side, "failed"))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+    winners = [k for k, v in results.items() if v is not None]
+    assert len(winners) == 1, results
+    winner = winners[0]
+    for store in (webhook_side, poller_side):
+        store._store.coalescer.reset()
+        final = store.get("VJ-RACE")
+        assert final["by"] == winner and final["status"] == results[winner]["status"]
+        assert store.mark_terminal("VJ-RACE", {"status": "cancelled"}) is None   # already terminal
+    assert webhook_side.mark_terminal("VJ-missing", {"status": "failed"}) is None
+
+
+def test_video_webhook_handler_uses_durable_store(video_db_mode, monkeypatch):
+    import services.video_agents_service as mod
+    monkeypatch.setattr(mod, "_job_store", mod._JobStore())
+    monkeypatch.setattr(mod, "_video_agents_service", None)
+    mod._job_store.add(_video_job("VJ-WH", provider="kling", provider_job_id="k-1"))
+    events = []
+    monkeypatch.setattr(mod, "_audit_video_event", lambda *a, **k: events.append(a[0]))
+    service = mod.VideoAgentsService()
+    first = service.handle_webhook("VJ-WH", {"data": {"task_status": "succeed",
+                                                      "url": "https://cdn/x.mp4"}})
+    second = service.handle_webhook("VJ-WH", {"data": {"task_status": "succeed"}})
+    assert first is not None and first["status"] == "completed"
+    assert first["download_url"] == "https://cdn/x.mp4"
+    assert second["status"] == "completed" and second["download_url"] == "https://cdn/x.mp4"
+    assert service.handle_webhook("VJ-missing", {"status": "failed"}) is None
+    assert events.count("video_job_completed") == 1                # audited exactly once
+    # A different process reading the table sees the terminal state.
+    assert mod._JobStore().get("VJ-WH")["status"] == "completed"
+
+
 def test_memory_mode_is_untouched(monkeypatch):
     monkeypatch.setattr(hs, 'db_mode_enabled', lambda: False)
     monkeypatch.setattr(bridge, 'record_ai_audit', lambda *a, **k: False)
