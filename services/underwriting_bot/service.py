@@ -405,7 +405,10 @@ class UnderwritingBotService:
             'confidence': f.get('confidence'), 'provenance': provenance_of(f),
         } for f in facts[:200]]
         flags = result.setdefault('flags', [])
-        fields_key = 'extracted_fields' if 'extracted_fields' in result or 'features' not in result else 'features'
+        # Only a dict-shaped field map can absorb facts; analyzers whose
+        # ``features`` is a list (photo) keep it and get ``extracted_fields``.
+        fields_key = ('features' if 'extracted_fields' not in result
+                      and isinstance(result.get('features'), dict) else 'extracted_fields')
         fields = result.get(fields_key)
         if not isinstance(fields, dict):
             fields = {}

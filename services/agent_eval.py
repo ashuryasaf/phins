@@ -88,6 +88,21 @@ def underwriting_scorer(score: float, thresholds: Dict[str, float]) -> str:
     return REVIEW
 
 
+def underwriting_bot_scorer(score: float, thresholds: Dict[str, float]) -> str:
+    """The rule spine of ``RiskAssessmentEngine`` in the inverted score space.
+
+    The engine's risk bands are closed on the upper side (``risk_score <=
+    refer_max_risk`` still refers, decline is the remaining ``else``), so on
+    ``1 - risk_score`` the reject side is strict: ``score < reject`` is
+    ``risk_score > refer_max_risk``.
+    """
+    if score >= float(thresholds['approve']):
+        return APPROVE
+    if score < float(thresholds['reject']):
+        return REJECT
+    return REVIEW
+
+
 # ---------------------------------------------------------------------------
 # Samples
 # ---------------------------------------------------------------------------
@@ -505,13 +520,13 @@ def evaluate_underwriting_bot(
         decisions, decision_type='underwriting_bot_assessment', score_key='risk_score',
         include_implicit=include_implicit)
     samples = [_dc.replace(s, score=round(1.0 - s.score, 6)) for s in raw]
-    report = replay(samples, underwriting_scorer, live, agent_id='underwriting_bot',
+    report = replay(samples, underwriting_bot_scorer, live, agent_id='underwriting_bot',
                     min_samples=min_samples, skipped=skipped)
     payload = report.to_dict()
     payload['decisions_seen'] = len(decisions)
     payload['score_direction'] = '1 - risk_score'
     payload['live_rules'] = rules
-    proposal = propose_thresholds(samples, scorer=underwriting_scorer, current=live,
+    proposal = propose_thresholds(samples, scorer=underwriting_bot_scorer, current=live,
                                   target_precision=target_precision, min_samples=min_samples)
     for entry in (proposal.get('proposals') or {}).values():
         if isinstance(entry, dict) and entry.get('approve') is not None:
@@ -765,7 +780,7 @@ def _ensure_default_runners() -> None:
 __all__ = [
     'APPROVE', 'REJECT', 'REVIEW', 'LABELS',
     'LabelledSample', 'SegmentReport', 'EvalReport', 'ClassMetrics',
-    'normalise_label', 'underwriting_scorer', 'samples_from_decision_log',
+    'normalise_label', 'underwriting_scorer', 'underwriting_bot_scorer', 'samples_from_decision_log',
     'confusion_counts', 'score_segment', 'replay', 'propose_thresholds',
     'evaluate', 'evaluate_automation_controller', 'evaluate_claims_bot', 'evaluate_underwriting_bot',
     'EVALUATORS',

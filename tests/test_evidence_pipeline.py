@@ -24,8 +24,10 @@ Covers:
 import base64
 import copy
 import os
+import struct
 import sys
 import types
+import zlib
 from datetime import datetime, date
 
 import pytest
@@ -417,6 +419,17 @@ PASSPORT = (b"PASSPORT\nPassport No: 123456789\nSurname: SMITH\nGiven Names: JOH
             b"Date of Birth: 15 MAR 1985\nDate of Expiry: 01 JAN 2030\nNationality: BRITISH\n")
 
 
+def _portrait_png(width: int = 480, height: int = 640, min_size: int = 8 * 1024) -> bytes:
+    """PNG signature + valid IHDR, padded past the PhotoAnalyzer 5KB quality floor."""
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    crc = zlib.crc32(b"IHDR" + ihdr) & 0xFFFFFFFF
+    head = b"\x89PNG\r\n\x1a\n" + struct.pack(">I", len(ihdr)) + b"IHDR" + ihdr + struct.pack(">I", crc)
+    return head + b"\x00" * max(0, min_size - len(head))
+
+
+PORTRAIT_PNG = _portrait_png()
+
+
 class TestUnderwritingBotEvidence:
     def test_feature_cache_hits_on_identical_bytes_only(self, wired):
         bot = _bot()
@@ -487,6 +500,19 @@ class TestUnderwritingBotEvidence:
         assert from_bytes and all(res["extracted_fields"][k] == v for k, v in from_bytes.items())  # bytes win
         assert res["extracted_fields"]["id_number"] == "123456782"                                # gap from facts
         assert "id_number" not in from_bytes
+
+    def test_photo_features_survive_the_fact_merge(self, wired):
+        doc_service, center = wired
+        up = _upload(doc_service, center, "Teudat Zehut: 123456782", customer_id="CUST-1")
+        bot = _bot()
+        a = bot.start_assessment(underwriting_id="UW-5", customer_id="CUST-1", policy_id="POL-1")
+        m = bot.add_metadata(a.id, MetadataType.PHOTO, "face.png", "", file_content=PORTRAIT_PNG,
+                             document_id=up.document_id, mime_type="image/png")
+        res = bot.process_metadata(m.id, file_content=PORTRAIT_PNG)["result"]
+        names = {f["name"] for f in res["features"]}                       # analyzer output kept as-is
+        assert {"detected_format", "image_quality", "portrait_shape_hint"} <= names
+        assert res["extracted_fields"]["id_number"] == "123456782"         # facts land beside it
+        assert bot.metadata_store[m.id].extracted_data["id_number"] == "123456782"
 
 
 class TestUnderwritingBotDecisionLoop:
@@ -564,6 +590,21 @@ class TestUnderwritingBotDecisionLoop:
         for entry in proposals.values():
             assert "risk_rules" in entry
             assert entry["risk_rules"]["refer_max_risk"] == pytest.approx(1 - entry["reject"])
+
+    def test_replay_scorer_matches_the_engine_risk_bands(self):
+        from services.agent_eval import APPROVE, REJECT, REVIEW, underwriting_bot_scorer
+        from services.underwriting_bot.report import RiskAssessmentEngine
+        rules = RiskAssessmentEngine.DECISION_RULES
+        live = {"approve": round(1 - rules["conditional_approve_max_risk"], 6),
+                "reject": round(1 - rules["refer_max_risk"], 6)}
+
+        def verdict(risk):
+            return underwriting_bot_scorer(round(1 - risk, 6), live)
+
+        # the engine's bands are closed on the upper side: 0.55 approves, 0.75 still refers
+        assert verdict(rules["conditional_approve_max_risk"]) == APPROVE
+        assert verdict(rules["refer_max_risk"]) == REVIEW
+        assert verdict(rules["refer_max_risk"] + 0.01) == REJECT
 
 
 class TestUnderwritingBotAccessorAndFacade:
