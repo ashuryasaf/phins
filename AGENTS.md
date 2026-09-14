@@ -13,12 +13,12 @@ PHINS is a Python platform built around:
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`, `api_agent_ecosystem.py`,
   `api_assessment_center.py`)
-- service-layer logic in `services/` (97 modules)
+- service-layer logic in `services/` (109 modules)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (223 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (225 files) and root-level `test_*.py` (11 files)
 - one generalized job queue (`services/agent_job_queue.py`, table
  `document_processing_jobs`, rows keyed by `subject_type`/`subject_id` and
  `submitted_by`; retries, dead-letter, idempotency keys, handler registry —
@@ -46,6 +46,32 @@ PHINS is a Python platform built around:
  Facts carry evidence provenance (source snippet, char offsets, PDF page,
  audio/video timestamps) and cross-document contradictions are recorded as
  `contradiction` facts, never silently resolved
+- an evaluation and calibration loop (`services/agent_eval.py`, A6): agent
+ decisions are **replayed** read-only against recorded human outcomes
+ (`ai_decision_log` overrides for the automation controller, `claims_fraud`
+ assessment records for the Claims Bot) into per-segment
+ precision/recall/confusion reports; `propose_thresholds` only
+ **recommends** cut-offs (target precision, monotone, evidence floor — never
+ into a score band nobody reviewed) and promotion is a separate audited
+ admin step (`POST /api/admin/ai-agents/thresholds/promote` writes
+ before/after to `ai_decision_log` and the audit trail, fail-closed).
+ Golden sets in `tests/golden/<agent>/*.json` freeze the listed `expected`
+ keys per agent and gate CI (`.github/workflows/agent_golden_sets.yml`,
+ `scripts/run_agent_eval.py golden`); `--update` is a deliberate, reviewed
+ change, never an automatic one
+- rule/orchestration split for the automation controller (B2): the pure rules
+ live in `services/automation/{quoting,underwriting_gate,fraud,claims_gate,
+ billing_schedule,types}.py`; `ai_automation_controller.py` orchestrates
+ (metrics, decision log, registry) and re-exports every historical name.
+ Underwriting results carry `segment`, `confidence_band`, `threshold_margin`.
+ `billing_schedule.invoice_due_date` is the single due-date path
+- prompt provenance (B3): every registered `PromptTemplate` exposes
+ `provenance()` (`prompt_id`, `prompt_version`, `prompt_version_number`,
+ `prompt_sha256`) and the Assessment AI stamps it, plus `schema_id` and any
+ `fallback_reason`, on the narrative, the audit record and the persisted
+ artefact; `narrative-v2` is structured (`schemas/assessment_narrative.json`)
+ and a schema-invalid or unavailable LLM reply falls back to the
+ deterministic narrative rather than an unvalidated one
 
 Runtime defaults are important:
 
@@ -78,6 +104,9 @@ Preferred file-by-task:
 | Scheduled jobs | `scheduler/runner.py`, `scripts/run_monthly_auto_pay.py` |
 | Test harness/debugging | root `conftest.py`, affected `tests/test_*.py`, root `test_*.py` |
 | Deployment/config | `DEPLOYMENT.md`, `RAILWAY_*.md`, `railway.json`, `render.yaml`, `Dockerfile` |
+| Agent decision rules (quote/underwrite/fraud/claims/billing) | `services/automation/*.py`, then `ai_automation_controller.py`; refresh `tests/golden/ai_automation_controller/` deliberately |
+| Agent thresholds / calibration | `services/agent_eval.py`, `services/ai_threshold_config.py`, `web_portal/api_extensions.py` (`/api/admin/ai-agents/eval`, `/thresholds/promote`) |
+| LLM prompts / structured output | `prompts/`, `schemas/*.json`, `services/llm_providers.py`, `services/assessment_ai_service.py`; refresh `tests/golden/assessment_ai/` deliberately |
 
 ## 2) High-Value Paths
 
@@ -105,9 +134,13 @@ Preferred file-by-task:
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
 |                                        # (includes `static/locales/he.json` Hebrew i18n)
-|- prompts/                             # versioned LLM prompt templates
-|  `- assessment/                       # narrative/onboarding/service/termination v1
-|- services/                            # 108 service modules
+|- ai_automation_controller.py          # orchestration only; rules in services/automation/
+|- prompts/                             # versioned LLM prompt templates (sha256 provenance)
+|  `- assessment/                       # narrative v1 (free text) + v2 (structured); onboarding/service/termination v1
+|- schemas/                             # JSON schemas for structured LLM output
+|- services/                            # 109 service modules
+|  |- agent_eval.py                     # A6 replay / propose_thresholds / golden sets
+|  |- automation/                       # B2 pure rules: quoting, underwriting_gate, fraud, claims_gate, billing_schedule
 |  |- agent_job_queue.py                # generalized job queue (retry/DLQ/handlers)
 |  |- document_job_worker.py            # document binding over the job queue
 |  |- jobs/                             # agent job adapters (202 routes; worker_context)
@@ -143,8 +176,10 @@ Preferred file-by-task:
 |- scheduler/
 |  `- runner.py
 |- scripts/                             # operational utilities
+|  |- run_agent_eval.py                 # golden sets + decision replay CLI
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/worker/db-init)
-|- tests/                               # 223 test files
+|- tests/                               # 225 test files
+|  `- golden/<agent>/*.json             # frozen agent outputs ({name, input, expected})
 |- docs/
 |  |- platform_data_architecture.md
 |  |- health_marketplace_architecture.md
@@ -153,7 +188,7 @@ Preferred file-by-task:
 |  |- ai_surface_design_principles.md
 |  |- INVESTOR_AI_BI_OPTIMIZATION_REVIEW.md
 |  `- uml/
-`- .github/workflows/                   # CI (visual_test, security_scan)
+`- .github/workflows/                   # CI (visual_test, security_scan, agent_golden_sets)
 ```
 
 Start with adjacent code before adding helpers, modules, or abstractions.
@@ -360,7 +395,10 @@ Environment variables commonly used:
 - **Advisory LLM:** `PHINS_ASSESSMENT_AI_ENABLED`, `PHINS_ASSESSMENT_AI_ENDPOINT`,
  `PHINS_ASSESSMENT_AI_API_KEY`, `PHINS_ASSESSMENT_AI_MODEL`,
  `PHINS_LLM_ESCALATION_MODEL`, `PHINS_AI_ACCEPT_THRESHOLD`,
- `PHINS_AI_REVIEW_THRESHOLD`
+ `PHINS_AI_REVIEW_THRESHOLD`, `PHINS_LLM_VALIDATION_RETRIES` (schema-invalid
+ structured replies re-asked with the errors appended, default `2`, then
+ deterministic fallback), `PHINS_ASSESSMENT_NARRATIVE_PROMPT_VERSION` (pin
+ the narrative prompt, e.g. `1` for free-text v1; default = latest v2)
 - **AI cost prices:** `PHINS_AI_PRICE_INPUT_PER_MTOK`,
  `PHINS_AI_PRICE_OUTPUT_PER_MTOK`, `PHINS_AI_PRICE_PARSE_PER_PAGE`,
  `PHINS_AI_PRICE_TRANSCRIPTION_PER_MIN`
@@ -420,6 +458,9 @@ pytest tests/test_billing_engine.py
 pytest tests/test_accounting_engine.py
 pytest tests/ -q --tb=line
 bash RUN_ALL_TESTS.sh
+python3 scripts/run_agent_eval.py golden            # agent golden sets (CI gate)
+python3 scripts/run_agent_eval.py golden --update   # deliberate fixture refresh; review the diff
+python3 scripts/run_agent_eval.py replay ai_automation_controller --decisions log.json
 ```
 
 Important test harness facts:
@@ -449,7 +490,14 @@ Important test harness facts:
 - Tests reset in-memory portal state between cases (clears `POLICIES`,
   `CLAIMS`, `CUSTOMERS`, `SESSIONS`, `BILLING`, etc.)
 - Options wheel service and document processing service are also reset per test
-- 223 test files under `tests/`, 11 root-level `test_*.py` files
+- `ThresholdConfig` (`services/ai_threshold_config.py`) and `AIDecisionLog`
+  are process-wide singletons; a test that promotes a segment must restore
+  the snapshot (`cfg.export()` before, `cfg.import_(snap)` after) or clear
+  the log it appended to
+- Golden fixtures only freeze the keys listed under `expected`; adding output
+  keys never breaks one, changing a frozen value does — update the fixture
+  in the same PR as the behaviour change and say why
+- 225 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -504,6 +552,14 @@ referenced files, commands, paths, and ports still exist.
 - Repairs that rewrite ledger/audit rows must write their forensic before/after
   journal first (fail closed) and verify the result after commit — see
   `PlatformEventLedgerService.persist_chain_to_db`.
+- AI decision thresholds are never edited in code or by an evaluator. The
+  harness (`services/agent_eval.py`) is read-only and only recommends;
+  the only mutating path is the admin promotion route, which records the
+  before/after snapshot in `ai_decision_log` before it takes effect and
+  rolls back if that row cannot be written.
+- Structured LLM output is validated twice (provider against the schema,
+  service against its own evidence); a reply that fails is replaced by the
+  deterministic result with `fallback_reason` recorded, never used as-is.
 
 ## 11) Minimal Task Workflow
 

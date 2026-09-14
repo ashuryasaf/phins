@@ -17,6 +17,8 @@ Rules:
   ``services.llm_providers.structured_completion``).
 """
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
@@ -30,6 +32,35 @@ class PromptTemplate:
     version: int
     system_prompt: str
     response_schema: Optional[Dict[str, Any]] = field(default=None)
+
+    @property
+    def sha256(self) -> str:
+        """Content hash of the prompt text and its response schema.
+
+        ``prompt_id`` names a version; the hash proves the text behind it.
+        Recorded next to ``prompt_id`` on every artefact so an edit to a
+        registered template (which the registry forbids but cannot detect at
+        runtime) is visible in the audit trail and fails the golden set.
+        """
+        payload = json.dumps(
+            {"system_prompt": self.system_prompt, "response_schema": self.response_schema},
+            sort_keys=True, ensure_ascii=False, separators=(",", ":"),
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def provenance(self) -> Dict[str, Any]:
+        """The fields every generated artefact must carry.
+
+        ``prompt_version`` keeps the platform-wide meaning it already has on
+        artefacts and usage rows — the versioned id string (``narrative-v2``);
+        ``prompt_version_number`` is the integer, ``prompt_sha256`` the text.
+        """
+        return {
+            "prompt_id": self.prompt_id,
+            "prompt_version": self.prompt_id,
+            "prompt_version_number": self.version,
+            "prompt_sha256": self.sha256,
+        }
 
 
 _REGISTRY: Dict[str, PromptTemplate] = {}
@@ -63,6 +94,7 @@ def list_prompts() -> Dict[str, Dict[str, Any]]:
             "assessment_type": t.assessment_type,
             "version": t.version,
             "has_schema": t.response_schema is not None,
+            "sha256": t.sha256,
         }
         for prompt_id, t in sorted(_REGISTRY.items())
     }
@@ -70,6 +102,7 @@ def list_prompts() -> Dict[str, Dict[str, Any]]:
 
 # Import template modules for their registration side effects.
 from prompts.assessment import narrative_v1  # noqa: E402,F401
+from prompts.assessment import narrative_v2  # noqa: E402,F401
 from prompts.assessment import onboarding_v1  # noqa: E402,F401
 from prompts.assessment import service_v1  # noqa: E402,F401
 from prompts.assessment import termination_v1  # noqa: E402,F401

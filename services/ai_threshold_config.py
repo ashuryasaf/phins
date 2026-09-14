@@ -101,6 +101,38 @@ class ThresholdConfig:
             'segments': dict(self._segments),
         }
 
+    def export(self) -> Dict[str, Any]:
+        """Deep-copied snapshot for audit before/after records and test restore."""
+        return {
+            'default_approve': self.default_approve,
+            'default_reject': self.default_reject,
+            'segments': {seg: dict(values) for seg, values in self._segments.items()},
+        }
+
+    def import_(self, snapshot: Dict[str, Any]) -> None:
+        """Restore a snapshot produced by :meth:`export`.
+
+        Validates every segment the same way :meth:`promote` does, then
+        replaces the whole segment map atomically (all-or-nothing), so a bad
+        snapshot cannot leave the config half-applied.
+        """
+        if not isinstance(snapshot, dict):
+            raise ValueError('snapshot must be a dict')
+        approve_default = float(snapshot.get('default_approve', self.default_approve))
+        reject_default = float(snapshot.get('default_reject', self.default_reject))
+        if reject_default >= approve_default:
+            raise ValueError('default reject threshold must be below default approve threshold')
+        validated: Dict[str, Dict[str, float]] = {}
+        for seg, values in (snapshot.get('segments') or {}).items():
+            approve = max(0.0, min(1.0, float(values['approve'])))
+            reject = max(0.0, min(1.0, float(values['reject'])))
+            if reject >= approve:
+                raise ValueError(f'segment {seg}: reject threshold must be below approve threshold')
+            validated[str(seg)] = {'approve': approve, 'reject': reject}
+        self.default_approve = approve_default
+        self.default_reject = reject_default
+        self._segments = validated
+
 
 def calibrate_thresholds(
     decisions: List[Dict[str, Any]],

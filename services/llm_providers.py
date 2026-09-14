@@ -61,12 +61,36 @@ def _truthy(value: Optional[str]) -> bool:
 
 # ── Minimal JSON-schema validation (stdlib-only) ──────────────────────────────
 
+_SCHEMA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "schemas")
+_SCHEMA_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+def load_schema(name: str) -> Dict[str, Any]:
+    """Load ``schemas/<name>.json`` (cached, returned as a fresh copy).
+
+    Response schemas live as files so a prompt template, the provider's
+    validation and the golden-set fixtures all read the same definition.
+    ``KeyError`` when the schema file does not exist.
+    """
+    key = str(name).strip()
+    if not re.fullmatch(r"[A-Za-z0-9_\-]+", key):
+        raise KeyError(f"invalid schema name {name!r}")
+    if key not in _SCHEMA_CACHE:
+        path = os.path.join(_SCHEMA_DIR, f"{key}.json")
+        if not os.path.isfile(path):
+            raise KeyError(f"schema {name!r} not found under {_SCHEMA_DIR}")
+        with open(path, "r", encoding="utf-8") as fh:
+            _SCHEMA_CACHE[key] = json.load(fh)
+    return json.loads(json.dumps(_SCHEMA_CACHE[key]))
+
+
 def validate_json_schema(instance: Any, schema: Dict[str, Any], path: str = "$") -> List[str]:
     """Validate ``instance`` against a JSON-schema subset; returns error list.
 
     Supports the keywords the assessment schemas use: type, required,
-    properties, items, enum, minimum, maximum, minLength, maxLength and
-    boolean additionalProperties. Deliberately small — no new dependency.
+    properties, items, minItems, maxItems, enum, minimum, maximum, minLength,
+    maxLength and boolean additionalProperties. Deliberately small — no new
+    dependency.
     """
     errors: List[str] = []
 
@@ -112,9 +136,14 @@ def validate_json_schema(instance: Any, schema: Dict[str, Any], path: str = "$")
             elif schema.get("additionalProperties") is False:
                 errors.append(f"{path}: unexpected property '{key}'")
 
-    if isinstance(instance, list) and "items" in schema:
-        for index, item in enumerate(instance):
-            errors.extend(validate_json_schema(item, schema["items"], f"{path}[{index}]"))
+    if isinstance(instance, list):
+        if "minItems" in schema and len(instance) < schema["minItems"]:
+            errors.append(f"{path}: fewer items than minItems {schema['minItems']}")
+        if "maxItems" in schema and len(instance) > schema["maxItems"]:
+            errors.append(f"{path}: more items than maxItems {schema['maxItems']}")
+        if "items" in schema:
+            for index, item in enumerate(instance):
+                errors.extend(validate_json_schema(item, schema["items"], f"{path}[{index}]"))
 
     return errors
 

@@ -1201,18 +1201,26 @@ def calibrate_claims_thresholds(assessment_records: List[Dict[str, Any]],
 
     n = len(labelled)
 
+    # The confusion tally is the shared evaluation primitive (A6); this
+    # function keeps its bespoke report shape and thresholds on top of it.
+    from services import agent_eval
+    samples = [agent_eval.LabelledSample(score=auth,
+                                         label=agent_eval.APPROVE if label == 'approve' else agent_eval.REJECT)
+               for auth, label in labelled]
+
+    def _claims_scorer(score: float, thresholds: Dict[str, float]) -> str:
+        rec = _authenticity_only_recommendation(
+            score, thresholds['approve_full'], thresholds['approve_partial'], thresholds['deny'])
+        return {'approve': agent_eval.APPROVE, 'deny': agent_eval.REJECT}.get(rec, agent_eval.REVIEW)
+
     def _score(approve_full: float, approve_partial: float, deny: float) -> Dict[str, Any]:
-        agree = leak = false_denial = pending = 0
-        for auth, label in labelled:
-            rec = _authenticity_only_recommendation(auth, approve_full, approve_partial, deny)
-            if rec == 'pending':
-                pending += 1
-            elif rec == label:
-                agree += 1
-            elif rec == 'approve':
-                leak += 1
-            else:
-                false_denial += 1
+        table = agent_eval.confusion_counts(
+            samples, _claims_scorer,
+            {'approve_full': approve_full, 'approve_partial': approve_partial, 'deny': deny})
+        pending = sum(table[agent_eval.REVIEW].values())
+        agree = table[agent_eval.APPROVE][agent_eval.APPROVE] + table[agent_eval.REJECT][agent_eval.REJECT]
+        leak = table[agent_eval.APPROVE][agent_eval.REJECT]
+        false_denial = table[agent_eval.REJECT][agent_eval.APPROVE]
         decided = n - pending
         return {
             'approve_full': approve_full, 'approve_partial': approve_partial, 'deny': deny,

@@ -10,12 +10,17 @@ Features:
 - Integration with existing engines (underwriting, billing, accounting)
 """
 
-from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional, Tuple
-from datetime import datetime, date
-from enum import Enum
+from datetime import datetime
 import logging
 import random
+
+# Rules live in services/automation/* (design §B2); this module orchestrates
+# them with metrics, the append-only decision log, per-segment thresholds and
+# the model registry, and keeps every historically importable name.
+from services.automation.types import AutomationDecision, FraudRisk, AutomationMetrics
+from services.automation import billing_schedule, claims_gate, fraud as fraud_rules, quoting
+from services.automation import underwriting_gate
 
 # AI-1/AI-2/AI-3 wiring. These are light, dependency-free modules; importing them
 # never pulls in a numeric/ML stack. All are best-effort: if anything here fails
@@ -37,41 +42,6 @@ try:
 except Exception:  # pragma: no cover - defensive import guard
     def instrument_agent(*_args, **_kwargs):
         return lambda fn: fn
-
-
-class AutomationDecision(Enum):
-    """Automation decision types"""
-    AUTO_APPROVE = "auto_approve"
-    AUTO_REJECT = "auto_reject"
-    HUMAN_REVIEW = "human_review"
-    NEEDS_MORE_INFO = "needs_more_info"
-
-
-class FraudRisk(Enum):
-    """Fraud risk levels"""
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
-
-
-@dataclass
-class AutomationMetrics:
-    """Metrics for automation performance"""
-    total_processed: int = 0
-    auto_approved: int = 0
-    auto_rejected: int = 0
-    human_review: int = 0
-    fraud_detected: int = 0
-    average_processing_time_ms: float = 0.0
-    accuracy_rate: float = 0.0
-    
-    def get_automation_rate(self) -> float:
-        """Calculate percentage of automated decisions"""
-        if self.total_processed == 0:
-            return 0.0
-        automated = self.auto_approved + self.auto_rejected
-        return (automated / self.total_processed) * 100
 
 
 class AIAutomationController:
@@ -155,9 +125,9 @@ class AIAutomationController:
         Defaults to the controller's global constants, so behavior is identical
         to the pre-segmentation controller unless thresholds were promoted.
         """
+        seg = segment_key(application_data) if _AI_SUPPORT else 'global'
         if not self._thresholds:
-            return self.auto_approve_threshold, self.auto_reject_threshold, 'global'
-        seg = segment_key(application_data)
+            return self.auto_approve_threshold, self.auto_reject_threshold, seg
         approve, reject = self._thresholds.get(seg)
         return approve, reject, seg
 
@@ -189,64 +159,17 @@ class AIAutomationController:
         Returns:
             Quote with premium, coverage, and confidence score
         """
-        age = customer_data.get('age', 30)
-        occupation = customer_data.get('occupation', 'office_worker')
-        health_score = customer_data.get('health_score', 7)  # 1-10 scale
-        coverage_amount = customer_data.get('coverage_amount', 500000)
-        smoking = customer_data.get('smoking', False)
-        
-        # Calculate base premium using simple risk model
-        # In production, this would use actual ML models
-        base_premium = coverage_amount * 0.0012  # Base rate 0.12%
-        
-        # Age factor
-        if age < 25:
-            age_multiplier = 1.2
-        elif age < 35:
-            age_multiplier = 1.0
-        elif age < 45:
-            age_multiplier = 1.15
-        elif age < 55:
-            age_multiplier = 1.35
-        else:
-            age_multiplier = 1.6
-        
-        # Health factor
-        health_multiplier = 2.0 - (health_score / 10)  # 1.0 to 1.9
-        
-        # Smoking factor
-        smoking_multiplier = 1.5 if smoking else 1.0
-        
-        # Occupation factor
-        occupation_risk = {
-            'office_worker': 1.0,
-            'healthcare': 1.1,
-            'construction': 1.4,
-            'transportation': 1.3,
-            'emergency_services': 1.5,
-            'manual_labor': 1.35
-        }
-        occupation_multiplier = occupation_risk.get(occupation, 1.2)
-        
-        # Calculate final premium
-        annual_premium = base_premium * age_multiplier * health_multiplier * smoking_multiplier * occupation_multiplier
-        monthly_premium = annual_premium / 12
-        
-        # Calculate confidence score
-        confidence = self._calculate_quote_confidence(customer_data)
-        
+        computed = quoting.compute_quote(customer_data)
+        coverage_amount = computed['coverage_amount']
+        confidence = computed['confidence_score']
+
         quote = {
             'quote_id': f"QT-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}",
-            'annual_premium': round(annual_premium, 2),
-            'monthly_premium': round(monthly_premium, 2),
+            'annual_premium': computed['annual_premium'],
+            'monthly_premium': computed['monthly_premium'],
             'coverage_amount': coverage_amount,
             'confidence_score': confidence,
-            'risk_factors': {
-                'age': age_multiplier,
-                'health': health_multiplier,
-                'smoking': smoking_multiplier,
-                'occupation': occupation_multiplier
-            },
+            'risk_factors': computed['risk_factors'],
             'generated_at': datetime.now().isoformat(),
             'valid_until': (datetime.now().replace(hour=23, minute=59, second=59)).isoformat()
         }
@@ -268,18 +191,8 @@ class AIAutomationController:
     
     def _calculate_quote_confidence(self, customer_data: Dict[str, Any]) -> float:
         """Calculate confidence score for quote"""
-        # Factors that increase confidence
-        confidence = 0.7  # Base confidence
-        
-        if customer_data.get('complete_medical_history'):
-            confidence += 0.15
-        if customer_data.get('stable_employment'):
-            confidence += 0.1
-        if customer_data.get('no_pre_existing_conditions'):
-            confidence += 0.05
-        
-        return min(confidence, 1.0)
-    
+        return quoting.quote_confidence(customer_data)
+
     # =========================================================================
     # AUTOMATED UNDERWRITING
     # =========================================================================
@@ -306,41 +219,19 @@ class AIAutomationController:
         # AI-3: a trained model may *inform* (logged for drift) but rules decide.
         model_score, model_version = self._model_score('underwriting', application_data)
 
-        # Check for fraud first
-        if fraud_risk in [FraudRisk.HIGH, FraudRisk.CRITICAL]:
+        decision, details = underwriting_gate.gate(risk_score, fraud_risk, approve_threshold, reject_threshold)
+        fraud_hold = decision == AutomationDecision.HUMAN_REVIEW and details.get('requires_investigation') is True
+        if fraud_hold:
             self.metrics.fraud_detected += 1
             self.metrics.human_review += 1
-            decision = AutomationDecision.HUMAN_REVIEW
-            details = {
-                'reason': 'Potential fraud detected',
-                'fraud_risk': fraud_risk.value,
-                'requires_investigation': True
-            }
-        # Auto-decision based on risk score
-        elif risk_score >= approve_threshold:
+        elif decision == AutomationDecision.AUTO_APPROVE:
             self.metrics.auto_approved += 1
-            decision = AutomationDecision.AUTO_APPROVE
-            details = {
-                'risk_score': risk_score,
-                'premium_adjustment': 1.0,  # No adjustment
-                'conditions': []
-            }
-        elif risk_score <= reject_threshold:
+        elif decision == AutomationDecision.AUTO_REJECT:
             self.metrics.auto_rejected += 1
-            decision = AutomationDecision.AUTO_REJECT
-            details = {
-                'risk_score': risk_score,
-                'rejection_reason': 'Risk score too low for coverage'
-            }
         else:
-            # Mid-range - needs human review
             self.metrics.human_review += 1
-            decision = AutomationDecision.HUMAN_REVIEW
-            details = {
-                'risk_score': risk_score,
-                'review_priority': 'medium' if risk_score > 0.5 else 'high',
-                'suggested_action': 'approve_with_conditions' if risk_score > 0.5 else 'request_medical_exam'
-            }
+        band = underwriting_gate.confidence_band(risk_score, approve_threshold, reject_threshold,
+                                                 fraud_hold=fraud_hold)
 
         # AI-1: persist the decision (append-only, advisory; never moves money).
         decision_id = self._log_decision(
@@ -353,6 +244,8 @@ class AIAutomationController:
                 'reject_threshold': reject_threshold,
                 'fraud_risk': fraud_risk.value,
                 'model_score': model_score,
+                'confidence_band': band['band'],
+                'threshold_margin': band['margin'],
             },
             entity_type='underwriting_application',
             entity_id=application_data.get('application_id') or application_data.get('id'),
@@ -363,80 +256,18 @@ class AIAutomationController:
         if decision_id:
             details['decision_id'] = decision_id
         details['segment'] = segment
+        details['confidence_band'] = band['band']
+        details['threshold_margin'] = band['margin']
         return (decision, details)
     
     def _assess_risk(self, application_data: Dict[str, Any]) -> float:
-        """
-        Assess risk score (0.0 to 1.0, higher is better).
-        In production, this would use trained ML models.
-        """
-        score = 0.5  # Start at neutral
-        
-        # Age factor
-        age = application_data.get('age', 30)
-        if 25 <= age <= 45:
-            score += 0.2
-        elif 18 <= age < 25 or 45 < age <= 55:
-            score += 0.1
-        elif age > 65:
-            score -= 0.2
-        
-        # Health factors
-        if not application_data.get('smoker', False):
-            score += 0.1
-        else:
-            score -= 0.15
-        
-        if not application_data.get('pre_existing_conditions', False):
-            score += 0.15
-        else:
-            score -= 0.2
-        
-        health_score = application_data.get('health_score', 5)
-        score += (health_score - 5) * 0.05  # +/- based on health
-        
-        # Employment stability
-        if application_data.get('employment_stable', False):
-            score += 0.1
-        
-        # Normalize to 0-1 range
-        return max(0.0, min(1.0, score))
-    
+        """Rule risk score (0.0 to 1.0, higher is better)."""
+        return underwriting_gate.assess_risk(application_data)
+
     def _detect_fraud(self, application_data: Dict[str, Any]) -> FraudRisk:
-        """
-        Detect potential fraud in application.
-        Uses pattern matching and anomaly detection.
-        """
-        fraud_indicators = 0
-        
-        # Check for suspicious patterns
-        if application_data.get('multiple_applications_same_day', False):
-            fraud_indicators += 2
-        
-        if application_data.get('inconsistent_information', False):
-            fraud_indicators += 3
-        
-        if application_data.get('high_coverage_new_customer', False):
-            fraud_indicators += 1
-        
-        if application_data.get('suspicious_documents', False):
-            fraud_indicators += 3
-        
-        # Recent claim history
-        recent_claims = application_data.get('recent_claims_count', 0)
-        if recent_claims > 2:
-            fraud_indicators += 2
-        
-        # Map indicators to risk level
-        if fraud_indicators >= 5:
-            return FraudRisk.CRITICAL
-        elif fraud_indicators >= 3:
-            return FraudRisk.HIGH
-        elif fraud_indicators >= 1:
-            return FraudRisk.MEDIUM
-        else:
-            return FraudRisk.LOW
-    
+        """Detect potential fraud in application."""
+        return fraud_rules.application_fraud_risk(application_data)
+
     # =========================================================================
     # SMART CLAIMS PROCESSING
     # =========================================================================
@@ -454,51 +285,7 @@ class AIAutomationController:
         """
         claim_amount = claim_data.get('claimed_amount', 0)
         claim_type = claim_data.get('type', 'unknown')
-        policy_coverage = claim_data.get('policy_coverage', 0)
-        fraud_risk = FraudRisk.LOW
-
-        # Auto-approve low-value straightforward claims
-        if claim_amount < 1000 and claim_type in ['medical', 'dental']:
-            decision = AutomationDecision.AUTO_APPROVE
-            details = {
-                'approved_amount': claim_amount,
-                'reason': 'Low-value claim with standard documentation',
-                'payment_method': 'direct_deposit'
-            }
-        else:
-            # Check fraud risk
-            fraud_risk = self._detect_claim_fraud(claim_data)
-            if fraud_risk in [FraudRisk.HIGH, FraudRisk.CRITICAL]:
-                decision = AutomationDecision.HUMAN_REVIEW
-                details = {
-                    'reason': 'Potential fraud detected in claim',
-                    'fraud_risk': fraud_risk.value,
-                    'requires_investigation': True
-                }
-            # Check if claim exceeds coverage
-            elif claim_amount > policy_coverage:
-                decision = AutomationDecision.HUMAN_REVIEW
-                details = {
-                    'reason': 'Claim exceeds policy coverage',
-                    'suggested_action': 'approve_partial',
-                    'max_approved_amount': policy_coverage
-                }
-            # Complex claims need human review
-            elif claim_type in ['disability', 'death', 'major_medical']:
-                decision = AutomationDecision.HUMAN_REVIEW
-                details = {
-                    'reason': 'Complex claim type requires adjuster review',
-                    'priority': 'high'
-                }
-            else:
-                # Medium-value claims with complete documentation
-                decision = AutomationDecision.HUMAN_REVIEW
-                details = {
-                    'reason': 'Standard review required',
-                    'priority': 'normal',
-                    'suggested_action': 'approve',
-                    'suggested_amount': claim_amount
-                }
+        decision, details, fraud_risk = claims_gate.gate(claim_data)
 
         # AI-1: persist the claim decision (append-only; advisory, never posts).
         decision_id = self._log_decision(
@@ -520,36 +307,8 @@ class AIAutomationController:
     
     def _detect_claim_fraud(self, claim_data: Dict[str, Any]) -> FraudRisk:
         """Detect potential fraud in claim submission"""
-        fraud_score = 0
-        
-        # Multiple claims in short period
-        if claim_data.get('recent_claims_count', 0) > 3:
-            fraud_score += 2
-        
-        # Claim shortly after policy start
-        days_since_policy = claim_data.get('days_since_policy_start', 365)
-        if days_since_policy < 30:
-            fraud_score += 1
-        
-        # Missing or incomplete documentation
-        if not claim_data.get('has_complete_documentation', True):
-            fraud_score += 1
-        
-        # Unusually high amount
-        average_claim = claim_data.get('average_claim_for_type', 5000)
-        claim_amount = claim_data.get('claimed_amount', 0)
-        if claim_amount > average_claim * 3:
-            fraud_score += 2
-        
-        if fraud_score >= 4:
-            return FraudRisk.CRITICAL
-        elif fraud_score >= 2:
-            return FraudRisk.HIGH
-        elif fraud_score >= 1:
-            return FraudRisk.MEDIUM
-        else:
-            return FraudRisk.LOW
-    
+        return fraud_rules.claim_fraud_risk(claim_data)
+
     # =========================================================================
     # BILLING AUTOMATION
     # =========================================================================
@@ -563,32 +322,11 @@ class AIAutomationController:
         premium_amount = policy_data.get('premium_amount', 0)
         billing_frequency = policy_data.get('billing_frequency', 'monthly')
         
-        # Calculate due date based on frequency
-        if billing_frequency == 'monthly':
-            due_date = datetime.now().replace(day=1)
-        elif billing_frequency == 'quarterly':
-            # First day of next quarter with proper year rollover
-            current_month = datetime.now().month
-            current_year = datetime.now().year
-            next_quarter_month = ((current_month - 1) // 3 + 1) * 3 + 1
-            if next_quarter_month > 12:
-                next_quarter_month = 1
-            # Calculate next quarter properly (Q1=Jan, Q2=Apr, Q3=Jul, Q4=Oct)
-            current_month = datetime.now().month
-            current_year = datetime.now().year
-            # Get current quarter (0-3) and calculate next quarter
-            current_quarter = (current_month - 1) // 3
-            next_quarter = (current_quarter + 1) % 4
-            # Map quarters to first month: [1, 4, 7, 10]
-            quarter_months = [1, 4, 7, 10]
-            next_quarter_month = quarter_months[next_quarter]
-            # Handle year rollover when going from Q4 to Q1
-            if next_quarter == 0:  # Q1 of next year
-                current_year += 1
-            due_date = datetime.now().replace(year=current_year, month=next_quarter_month, day=1)
-        else:  # annual
-            due_date = datetime.now().replace(month=1, day=1)
-        
+        # One due-date path per frequency (D3 fix); keeps the historical
+        # datetime shape (due date at generation time-of-day).
+        now = datetime.now()
+        due_date = datetime.combine(billing_schedule.invoice_due_date(billing_frequency, now), now.time())
+
         return {
             'invoice_id': f"INV-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}",
             'policy_id': policy_id,
@@ -743,7 +481,10 @@ def auto_underwrite(data: Dict[str, Any]) -> Dict[str, Any]:
         'risk_level': risk_level,
         'reasons': [details.get('reason', 'standard_assessment')],
         'requires_medical_exam': risk_score < 0.7,
-        'recommended_premium_adjustment': round((1.0 - risk_score) * 50, 2)
+        'recommended_premium_adjustment': round((1.0 - risk_score) * 50, 2),
+        'segment': details.get('segment'),
+        'confidence_band': details.get('confidence_band'),
+        'threshold_margin': details.get('threshold_margin'),
     }
 
 
@@ -799,82 +540,7 @@ def detect_fraud(data: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Dictionary with fraud_risk_level, fraud_score, flags, and recommended_action
     """
-    # Calculate fraud score based on indicators (replicate detection logic)
-    fraud_score = 0.0
-    flags = []
-    
-    # Multiple applications from same IP
-    multiple_apps = data.get('multiple_applications', 0)
-    if multiple_apps >= 5:
-        fraud_score += 0.4
-        flags.append('multiple_applications_same_ip')
-    elif multiple_apps >= 3:
-        fraud_score += 0.2
-        flags.append('several_applications_same_ip')
-    
-    # Unrealistic claim amount
-    claim_amount = data.get('claim_amount', 0)
-    policy_age_days = data.get('policy_age_days', 365)
-    
-    if claim_amount > 0:
-        if claim_amount > 500000:
-            fraud_score += 0.3
-            flags.append('unusually_high_claim_amount')
-        
-        # Claim too soon after policy start
-        if policy_age_days < 30 and claim_amount > 10000:
-            fraud_score += 0.4
-            flags.append('claim_shortly_after_policy_start')
-    
-    # High claim frequency
-    claim_frequency = data.get('claim_frequency', 0)
-    if claim_frequency >= 5:
-        fraud_score += 0.3
-        flags.append('excessive_claim_frequency')
-    elif claim_frequency >= 3:
-        fraud_score += 0.15
-        flags.append('high_claim_frequency')
-    
-    # Data inconsistencies
-    if data.get('inconsistent_data', False):
-        fraud_score += 0.25
-        flags.append('data_inconsistencies_detected')
-    
-    # Round-number claims
-    if claim_amount > 0 and claim_amount % 1000 == 0 and claim_amount >= 5000:
-        fraud_score += 0.1
-        flags.append('suspicious_round_number_claim')
-    
-    # Application velocity
-    application_velocity = data.get('applications_last_24h', 0)
-    if application_velocity >= 10:
-        fraud_score += 0.5
-        flags.append('suspicious_application_velocity')
-    
-    # Ensure fraud score is between 0 and 1
-    fraud_score = min(1.0, fraud_score)
-    
-    # Determine risk level
-    if fraud_score >= 0.7:
-        fraud_risk_level = 'CRITICAL'
-        recommended_action = 'BLOCK_AND_INVESTIGATE'
-    elif fraud_score >= 0.5:
-        fraud_risk_level = 'HIGH'
-        recommended_action = 'MANUAL_REVIEW_REQUIRED'
-    elif fraud_score >= 0.3:
-        fraud_risk_level = 'MEDIUM'
-        recommended_action = 'ENHANCED_VERIFICATION'
-    else:
-        fraud_risk_level = 'LOW'
-        recommended_action = 'PROCEED_NORMALLY'
-    
-    return {
-        'fraud_risk_level': fraud_risk_level,
-        'fraud_score': round(fraud_score, 2),
-        'flags': flags,
-        'recommended_action': recommended_action,
-        'requires_investigation': fraud_score >= 0.5
-    }
+    return fraud_rules.activity_fraud_report(data)
 
 
 # Export public interface
