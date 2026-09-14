@@ -77,6 +77,24 @@ def test_llm_identical_prompt_is_served_from_cache_without_second_hook_call(llm,
     assert llm.completion("sys", "different") == "hi" and len(posts) == 2
 
 
+def test_llm_schema_invalid_completion_is_not_cached(llm, monkeypatch):
+    """An unusable reply must not be replayed — and re-validated — forever."""
+    replies = ["nonsense", '{"a": 1}', '{"a": 2}']
+    posts = []
+    monkeypatch.setattr("requests.post", lambda *a, **k: posts.append(k) or _FakeResponse(
+        _llm_payload(replies.pop(0))))
+    schema = {"type": "object", "required": ["a"]}
+
+    assert llm.structured_completion("sys", "user", schema) == {"a": 1}
+    assert len(posts) == 2  # the invalid reply, then the corrected retry
+    # The original prompt cached nothing, so it is asked again...
+    assert llm.structured_completion("sys", "user", schema) == {"a": 2}
+    assert len(posts) == 3
+    # ...and this time the valid answer is what the cache holds.
+    assert llm.structured_completion("sys", "user", schema) == {"a": 2}
+    assert len(posts) == 3
+
+
 def test_llm_transient_error_is_retried_then_succeeds(llm, monkeypatch):
     responses = [_FakeResponse({}, status=503), _FakeResponse(_llm_payload("ok"))]
     monkeypatch.setattr("requests.post", lambda *a, **k: responses.pop(0))
@@ -142,25 +160,28 @@ def test_transcription_identical_audio_is_not_billed_twice(monkeypatch, usage):
     gw.reset_gateway()
 
 
+class _Ctx:
+    """Stand-in for the ``validated_urlopen`` response context manager."""
+
+    def __init__(self, body):
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self):
+        return self.body
+
+
 def test_media_submit_is_never_retried_but_poll_is(monkeypatch, usage):
     from services import media_generation_service as mgs
     gw.reset_gateway()
     gw.get_gateway()._sleep = lambda s: None
     monkeypatch.setenv(gw.MAX_RETRIES_ENV, "2")
     attempts = {'n': 0}
-
-    class _Ctx:
-        def __init__(self, body):
-            self.body = body
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-        def read(self):
-            return self.body
 
     def flaky(request, timeout=None, allowed_schemes=None):
         attempts['n'] += 1
@@ -190,6 +211,30 @@ def test_media_submit_is_never_retried_but_poll_is(monkeypatch, usage):
         req, timeout=5, provider_label="Kling", operation="submit")
     rows = usage.list_records(provider="kling")
     assert len(rows) == 1 and rows[0]["operation"] == "video_submit" and rows[0]["agent_id"] == "video_agents"
+    gw.reset_gateway()
+
+
+def test_media_polls_stay_outside_the_daily_call_budget(monkeypatch, usage):
+    """Polling an already-paid job must never be charged the cap, nor refused by it."""
+    from services import media_generation_service as mgs
+    gw.reset_gateway()
+    monkeypatch.setenv(gw.DAILY_CALL_BUDGET_ENV, "1")
+    monkeypatch.setattr(mgs, "validated_urlopen",
+                        lambda request, timeout=None, allowed_schemes=None:
+                        _Ctx(json.dumps({"ok": True}).encode()))
+    req = urllib.request.Request("https://api.klingapi.com/v1/videos/text2video", method="GET")
+
+    def read(operation):
+        return mgs.MediaGenerationService._read_json_with_diagnostics(
+            req, timeout=5, provider_label="Kling", operation=operation)
+
+    for _ in range(3):
+        assert read("poll") == {"ok": True}
+    assert gw.get_gateway().budget_usage("global", "video_agents")["calls"] == 0
+    assert read("submit") == {"ok": True}      # the one billable call the cap allows
+    with pytest.raises(mgs.MediaGenerationError, match="refused"):
+        read("submit")
+    assert read("poll") == {"ok": True}        # in-flight jobs can still be polled
     gw.reset_gateway()
 
 

@@ -680,8 +680,12 @@ class MediaGenerationService:
         # retry for transient failures on idempotent operations only — a
         # ``submit`` creates a paid job, so a 5xx after the provider may have
         # accepted it is never retried (that would double-bill). Submits are
-        # metered as one usage row each; polls/downloads are not billable.
+        # metered as one usage row each and charged to the daily budget;
+        # polls/downloads are not billable, so they stay outside the budget —
+        # otherwise routine polling would exhaust the cap and strand the
+        # already-paid jobs it is polling for.
         provider_kind = provider_label.split("/")[0].strip().lower() or "media"
+        billable = operation == "submit"
         try:
             raw = get_gateway().call(
                 provider_kind,
@@ -689,8 +693,9 @@ class MediaGenerationService:
                 endpoint=urllib.parse.urlparse(request.full_url).netloc,
                 operation=f"video_{operation}",
                 agent_id=_MEDIA_AGENT_ID,
-                max_retries=None if operation != "submit" else 0,
-                meter=(operation == "submit"),
+                max_retries=0 if billable else None,
+                budget=billable,
+                meter=billable,
                 usage_from=lambda _raw: {"model": None},
             )
         except GatewayError as exc:

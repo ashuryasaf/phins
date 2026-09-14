@@ -10,13 +10,17 @@ The gateway wraps a caller-supplied ``request_fn`` and adds, in this order:
 1. **Response cache** - opt-in per call via ``cache_key``; successful results
    are kept for ``PHINS_GATEWAY_CACHE_TTL`` seconds (default 3600, ``0``
    disables). Cached values are deep-copied on the way in and out so a
-   caller can never mutate what another caller receives.
+   caller can never mutate what another caller receives. A caller that can
+   only judge a result after the fact (schema validation) passes
+   ``cache_when`` so an unusable result is returned but never stored.
 2. **Budget enforcement** - per ``(budget_scope, agent_id, UTC day)`` call and
    token caps (``PHINS_AI_DAILY_CALL_BUDGET``, ``PHINS_AI_DAILY_TOKEN_BUDGET``;
    ``0`` = unlimited). Over budget raises :class:`BudgetExceeded` *before*
    the provider is contacted and records a ``blocked=True`` usage row so the
    refusal is visible in cost reporting. Callers fall back to their
-   deterministic path exactly as they do for any provider failure.
+   deterministic path exactly as they do for any provider failure. Calls the
+   provider does not bill (polling an already-paid job) pass ``budget=False``
+   so they neither consume nor are refused by the cap.
 3. **Circuit breaker** per ``(provider_kind, endpoint)`` - the shared
    :class:`services.circuit_breaker.CircuitBreaker`; an open breaker raises
    :class:`CircuitOpen` without contacting the provider.
@@ -260,6 +264,17 @@ class ExternalCallGateway:
                     self._cache.pop(stale_key, None)
             self._cache[key] = (time.monotonic() + ttl, stored)
 
+    @staticmethod
+    def _is_cacheable(result: Any, cache_when: Optional[Callable[[Any], bool]]) -> bool:
+        """A caller-supplied predicate keeps unusable results out of the cache."""
+        if cache_when is None:
+            return True
+        try:
+            return bool(cache_when(result))
+        except Exception as exc:  # noqa: BLE001 - a failing predicate only skips the cache
+            logger.debug("gateway cache predicate failed: %s", exc)
+            return False
+
     # ---- metering ------------------------------------------------------------
 
     @staticmethod
@@ -296,8 +311,10 @@ class ExternalCallGateway:
         operation: str = 'external_call',
         agent_id: str = 'unknown',
         budget_scope: Optional[str] = None,
+        budget: bool = True,
         cache_key: Optional[str] = None,
         cache_ttl: Optional[float] = None,
+        cache_when: Optional[Callable[[Any], bool]] = None,
         max_retries: Optional[int] = None,
         usage_from: Optional[Callable[[Any], Dict[str, Any]]] = None,
         meter: bool = True,
@@ -319,15 +336,16 @@ class ExternalCallGateway:
                 self._stats['cache_hits'] += 1
             return cached
 
-        try:
-            self._check_budget(scope, agent_id)
-        except BudgetExceeded as exc:
-            with self._lock:
-                self._stats['budget_blocks'] += 1
-            logger.warning("gateway blocked %s/%s: %s", agent_id, operation, exc)
-            self._record_usage(provider_kind=provider_kind, operation=operation, agent_id=agent_id,
-                               usage={}, context=context, duration_ms=0, blocked=True)
-            raise
+        if budget:
+            try:
+                self._check_budget(scope, agent_id)
+            except BudgetExceeded as exc:
+                with self._lock:
+                    self._stats['budget_blocks'] += 1
+                logger.warning("gateway blocked %s/%s: %s", agent_id, operation, exc)
+                self._record_usage(provider_kind=provider_kind, operation=operation, agent_id=agent_id,
+                                   usage={}, context=context, duration_ms=0, blocked=True)
+                raise
 
         cb = self.breaker(provider_kind, endpoint)
         if not cb.allow_request():
@@ -378,12 +396,14 @@ class ExternalCallGateway:
                 except Exception as exc:  # noqa: BLE001 - never let accounting break the result
                     logger.debug("gateway usage extraction failed: %s", exc)
             tokens = float(usage.get('input_tokens') or 0) + float(usage.get('output_tokens') or 0)
-            self._charge_budget(scope, agent_id, tokens)
+            if budget:
+                self._charge_budget(scope, agent_id, tokens)
             if meter:
                 self._record_usage(provider_kind=provider_kind, operation=operation,
                                    agent_id=agent_id, usage=usage, context=context,
                                    duration_ms=duration_ms)
-            self._cache_put(cache_key, result, ttl)
+            if self._is_cacheable(result, cache_when):
+                self._cache_put(cache_key, result, ttl)
             return result
 
     # ---- introspection ---------------------------------------------------------

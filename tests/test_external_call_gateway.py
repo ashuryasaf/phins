@@ -113,6 +113,16 @@ def test_cache_key_is_canonical_and_order_independent(gateway):
     assert a == b and a != c and len(a) == 64
 
 
+def test_cache_when_keeps_rejected_results_out_of_the_cache(gateway):
+    fn = _counter(["bad", "good", "unreached"])
+    key = gateway.make_cache_key("llm", "k")
+    accept = lambda r: r == "good"
+    assert gateway.call("llm", fn, cache_key=key, cache_when=accept) == "bad"
+    assert gateway.call("llm", fn, cache_key=key, cache_when=accept) == "good"
+    assert gateway.call("llm", fn, cache_key=key, cache_when=accept) == "good"
+    assert fn.calls['n'] == 2
+
+
 def test_failures_are_never_cached(gateway):
     fn = _counter([ValueError("bad"), "ok"])
     key = gateway.make_cache_key("llm", "k")
@@ -153,6 +163,19 @@ def test_token_budget_counts_extracted_usage(gateway, monkeypatch):
     with pytest.raises(BudgetExceeded) as exc:
         gateway.call("llm", _counter(["c"]), agent_id="x", usage_from=tokens)
     assert exc.value.kind == "token" and exc.value.used == 120
+
+
+def test_non_billable_calls_neither_consume_nor_hit_the_budget(gateway, monkeypatch):
+    monkeypatch.setenv(gw.DAILY_CALL_BUDGET_ENV, "1")
+    fn = _counter(["poll", "poll", "submit", "over"])
+    for _ in range(2):
+        gateway.call("kling", fn, agent_id="video_agents", budget=False, meter=False)
+    assert gateway.budget_usage("global", "video_agents") == {"calls": 0, "tokens": 0}
+    gateway.call("kling", fn, agent_id="video_agents")
+    with pytest.raises(BudgetExceeded):
+        gateway.call("kling", fn, agent_id="video_agents")
+    # ...and polling an already-paid job still works once the cap is spent.
+    assert gateway.call("kling", fn, agent_id="video_agents", budget=False) == "over"
 
 
 def test_budget_unlimited_by_default(gateway):
