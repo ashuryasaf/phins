@@ -28,6 +28,7 @@ import math
 import random
 
 from services.agent_metrics import instrument_agent
+from services.hydrated_store import artifact_store
 
 logger = logging.getLogger('phins.claims_bot')
 
@@ -316,8 +317,15 @@ class ClaimsBotService:
         self._underwriting = underwriting or {}
         self._audit = audit_service
         
-        # Bot's own data (WRITE allowed)
-        self.reports: Dict[str, ClaimProbabilityReport] = {}
+        # Bot's own data (WRITE allowed). Durable in DB mode (A4): rows in
+        # ``agent_artifacts`` (agent claims_bot / kind probability_report) with a
+        # read-through cache, so reports survive restarts and every web/worker
+        # instance sees the same set. Plain dict semantics in memory mode.
+        self.reports: Dict[str, ClaimProbabilityReport] = artifact_store(
+            'claims_bot.reports', agent_id='claims_bot', kind='probability_report',
+            record_type=ClaimProbabilityReport,
+            subject=lambda r: ('claim', r.claim_id),
+        )
         
         print(f"[CLAIMS-BOT] Initialized: {self.bot_id}")
     
@@ -539,13 +547,19 @@ class ClaimsBotService:
             logger.warning("claims_bot report persistence skipped: %s", exc)
 
     def _enforce_report_cap(self) -> None:
-        """Keep at most ``MAX_RETAINED_REPORTS`` reports in memory.
+        """Keep at most ``MAX_RETAINED_REPORTS`` reports (memory or table).
 
         Probability reports are advisory artifacts (the authoritative claim
         state lives on the claim record), so evicting the oldest ones is safe
         and prevents unbounded growth in long-lived processes.
         """
         try:
+            if getattr(self.reports, 'durable', False):
+                # DB-side prune: the table is the shared truth, so the cap is
+                # enforced there (oldest by created_date) and mirrored into
+                # this instance's cache.
+                self.reports.prune_durable(self.MAX_RETAINED_REPORTS)
+                return
             overflow = len(self.reports) - self.MAX_RETAINED_REPORTS
             if overflow <= 0:
                 return
@@ -612,7 +626,7 @@ class ClaimsBotService:
             score -= 0.5
         
         # Check description quality
-        description = claim.get('description', '')
+        description = claim.get('description') or ''  # DB rows carry None, not ''
         if len(description) > 50:
             score += 0.05  # Detailed description
         
@@ -1307,11 +1321,16 @@ def _claims_bot_health() -> Dict[str, Any]:
     instance = _bot_instance
     if instance is None:
         return {'status': 'ok', 'initialized': False, 'reports_retained': 0}
+    reports = getattr(instance, 'reports', {})
+    # Probe the cache, not the table: a health check must not issue queries.
+    store = reports.snapshot() if hasattr(reports, 'snapshot') else None
     return {
         'status': 'ok',
         'initialized': True,
-        'reports_retained': len(getattr(instance, 'reports', {}) or {}),
+        'reports_retained': store['cached'] if store else len(reports or {}),
         'retention_cap': ClaimsBotService.MAX_RETAINED_REPORTS,
+        'durable': bool(store and store['durable']),
+        'store': store,
         'version': getattr(instance, 'version', None),
     }
 

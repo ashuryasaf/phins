@@ -21,6 +21,8 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, date, timedelta
 from enum import Enum
 from typing import Dict, List, Any, Optional, Tuple, Callable
+
+from services.hydrated_store import artifact_store
 import hashlib
 import json
 import uuid
@@ -1496,6 +1498,11 @@ class UnderwritingBotService:
     6. Makes or recommends underwriting decisions
     
     IMPORTANT: This service NEVER modifies existing customer data.
+
+    Retention: the bot's own artifacts are advisory (the authoritative
+    decision lives on the underwriting application), so at most
+    ``MAX_RETAINED_ASSESSMENTS`` assessments/reports are kept — a DB-side
+    prune in durable mode, oldest-first eviction in memory mode.
     All customer data (details, transactions, investments, claims) is READ-ONLY.
     """
     
@@ -1528,10 +1535,21 @@ class UnderwritingBotService:
         self._audit = audit_service
         self._pipeline = pipeline_service
         
-        # Bot-specific data stores (new data only)
-        self.assessments: Dict[str, BotAssessment] = {}
-        self.metadata_store: Dict[str, UnderwritingMetadata] = {}
-        self.reports: Dict[str, RiskAssessmentReport] = {}
+        # Bot-specific data stores (new data only). Durable in DB mode (A4):
+        # rows in ``agent_artifacts`` (agent underwriting_bot) behind a
+        # read-through cache, so a multi-step assessment survives a restart
+        # and any web/worker instance can continue it. Every step method
+        # re-reads its assessment from the store and checkpoints it at the
+        # end, because a hydrated object is a copy, not the one mutated here.
+        self.assessments: Dict[str, BotAssessment] = artifact_store(
+            'underwriting_bot.assessments', agent_id='underwriting_bot', kind='assessment',
+            record_type=BotAssessment, subject=lambda a: ('application', a.underwriting_id))
+        self.metadata_store: Dict[str, UnderwritingMetadata] = artifact_store(
+            'underwriting_bot.metadata', agent_id='underwriting_bot', kind='metadata',
+            record_type=UnderwritingMetadata, subject=lambda m: ('application', m.underwriting_id))
+        self.reports: Dict[str, RiskAssessmentReport] = artifact_store(
+            'underwriting_bot.reports', agent_id='underwriting_bot', kind='risk_report',
+            record_type=RiskAssessmentReport, subject=lambda r: ('application', r.underwriting_id))
         
         # Initialize analyzers
         self.photo_analyzer = PhotoAnalyzer()
@@ -1613,8 +1631,31 @@ class UnderwritingBotService:
             'existing_policies': existing_policies,
             'existing_claims': existing_claims
         })
+        self._enforce_retention()
         
         return assessment
+
+    MAX_RETAINED_ASSESSMENTS = 5000
+
+    def _enforce_retention(self) -> None:
+        """Cap the bot's artifact stores (see class docstring)."""
+        cap = self.MAX_RETAINED_ASSESSMENTS
+        try:
+            if getattr(self.assessments, 'durable', False):
+                self.assessments.prune_durable(cap)
+                self.reports.prune_durable(cap)
+                self.metadata_store.prune_durable(cap * 10)
+                return
+            for store, key in ((self.assessments, lambda a: a.started_at),
+                               (self.reports, lambda r: r.created_date),
+                               (self.metadata_store, lambda m: m.created_date)):
+                limit = cap * 10 if store is self.metadata_store else cap
+                overflow = len(store) - limit
+                if overflow > 0:
+                    for item in sorted(store.values(), key=key)[:overflow]:
+                        store.pop(item.id, None)
+        except Exception as exc:
+            _logger.warning("underwriting_bot retention enforcement failed: %s", exc)
     
     def add_metadata(self,
                     assessment_id: str,
@@ -1665,6 +1706,7 @@ class UnderwritingBotService:
         
         assessment.metadata_items.append(metadata)
         self.metadata_store[metadata_id] = metadata
+        self._checkpoint(assessment)
         
         self._log_event('bot', 'metadata_added', 'metadata', metadata_id, {
             'assessment_id': assessment_id,
@@ -1674,9 +1716,13 @@ class UnderwritingBotService:
         
         return metadata
     
-    def process_metadata(self, metadata_id: str, file_content: bytes = None) -> Dict[str, Any]:
+    def process_metadata(self, metadata_id: str, file_content: bytes = None,
+                         assessment: Optional['BotAssessment'] = None) -> Dict[str, Any]:
         """
         Process a single metadata item through appropriate analyzer.
+
+        ``assessment`` lets ``process_all_metadata`` pass the object it is
+        mutating so the processed item is synced into that same object.
         """
         metadata = self.metadata_store.get(metadata_id)
         if not metadata:
@@ -1733,13 +1779,41 @@ class UnderwritingBotService:
                 metadata.validation_notes = result.get('error', 'Processing failed')
             
             metadata.updated_date = datetime.now()
+            self._sync_metadata(metadata, assessment)
             return {'success': True, 'result': result}
             
         except Exception as e:
             metadata.processing_status = ProcessingStatus.FAILED
             metadata.validation_notes = str(e)
             metadata.updated_date = datetime.now()
+            self._sync_metadata(metadata, assessment)
             return {'success': False, 'error': str(e)}
+
+    def _checkpoint(self, assessment: 'BotAssessment') -> None:
+        """Write the assessment back to its store (durable write in DB mode)."""
+        self.assessments[assessment.id] = assessment
+
+    def _sync_metadata(self, metadata: 'UnderwritingMetadata',
+                       assessment: Optional['BotAssessment'] = None) -> None:
+        """Persist a processed metadata item and mirror it into its assessment.
+
+        In memory mode the assessment's list holds the very same object, so
+        this is a no-op rewrite; after a hydration it is a copy that must be
+        replaced by id. When ``assessment`` is not given the owning one is
+        looked up and checkpointed here.
+        """
+        self.metadata_store[metadata.id] = metadata
+        owners = [assessment] if assessment is not None else [
+            a for a in self.assessments.values()
+            if a.underwriting_id == metadata.underwriting_id
+            and any(m.id == metadata.id for m in a.metadata_items)
+        ]
+        for owner in owners:
+            for idx, item in enumerate(owner.metadata_items):
+                if item.id == metadata.id and item is not metadata:
+                    owner.metadata_items[idx] = metadata
+            if assessment is None:
+                self._checkpoint(owner)
     
     @instrument_agent('underwriting_bot')
     def process_all_metadata(self, assessment_id: str) -> Dict[str, Any]:
@@ -1755,8 +1829,8 @@ class UnderwritingBotService:
         results = []
         all_passed = True
         
-        for metadata in assessment.metadata_items:
-            result = self.process_metadata(metadata.id)
+        for metadata in list(assessment.metadata_items):
+            result = self.process_metadata(metadata.id, assessment=assessment)
             results.append({
                 'metadata_id': metadata.id,
                 'type': metadata.metadata_type.value,
@@ -1769,6 +1843,7 @@ class UnderwritingBotService:
             assessment.status = AssessmentStatus.VALIDATION_FAILED
         else:
             assessment.status = AssessmentStatus.PROCESSING
+        self._checkpoint(assessment)
         
         return {
             'success': all_passed,
@@ -1921,6 +1996,7 @@ class UnderwritingBotService:
         self.reports[report_id] = report
         assessment.risk_report = report
         assessment.status = AssessmentStatus.DECISION_READY
+        self._checkpoint(assessment)
         
         self._log_event('bot', 'risk_assessment_complete', 'report', report_id, {
             'assessment_id': assessment_id,
@@ -1998,6 +2074,9 @@ class UnderwritingBotService:
         # Update assessment status
         assessment.status = new_status
         assessment.completed_at = datetime.now()
+        if assessment.risk_report is not None:
+            self.reports[assessment.risk_report.id] = assessment.risk_report
+        self._checkpoint(assessment)
         
         # Update underwriting application (additive only, never resets data)
         uw_app = self._underwriting.get(assessment.underwriting_id)
@@ -2118,13 +2197,19 @@ def _underwriting_bot_health() -> Dict[str, Any]:
     instance = _bot_instance
     if instance is None:
         return {'status': 'ok', 'initialized': False}
+    def _cached(store) -> int:
+        # Probe the cache, not the table: a health check must not issue queries.
+        return store.snapshot()['cached'] if hasattr(store, 'snapshot') else len(store or {})
+
+    assessments = getattr(instance, 'assessments', {})
     return {
         'status': 'ok',
         'initialized': True,
         'bot_id': getattr(instance, 'bot_id', None),
         'version': getattr(instance, 'version', None),
-        'assessments': len(getattr(instance, 'assessments', {}) or {}),
-        'reports': len(getattr(instance, 'reports', {}) or {}),
+        'assessments': _cached(assessments),
+        'reports': _cached(getattr(instance, 'reports', {})),
+        'durable': bool(getattr(assessments, 'durable', False)),
     }
 
 

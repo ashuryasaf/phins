@@ -1,6 +1,6 @@
 # PHINS Agent Operations — Optimization Design
 
-> **Status: IMPLEMENTING — §D step 1 (A1 + A5) shipped.** This document turns
+> **Status: IMPLEMENTING — §D steps 1–4 (A1, A5, B12, A2, A3, A4) shipped.** This document turns
 > the agent inventory and the optimization proposal into a concrete,
 > file-level plan with a test plan per workstream. It is the model of record
 > for the implementation PRs that follow. Each workstream is independently
@@ -825,11 +825,46 @@ Deviations from the A3 text above, and why:
   the Routes row); the dashboard uses the inline batch route, which keeps its
   own queue and was not part of A3.
 
-### Remaining — §D steps 4–6
+### Shipped — §D step 4: A4 durable agent state
+
+| Piece | Where | Notes |
+|---|---|---|
+| Store | `services/hydrated_store.py` (new) — `RefreshCoalescer(ttl)`, `db_mode_enabled()`, `to_jsonable`/`from_jsonable`, `HydratedStore(loader, saver, deleter, key_fn, ttl, full_resync_seconds, enabled)`, `ArtifactStore`, `artifact_store(agent_id, kind, cls)`, `reset_shared_stores()` | A `MutableMapping`, so every consumer keeps its `dict` call sites. Read path: TTL-coalesced (`PHINS_AGENT_HYDRATE_TTL`, shared with AgentOS) **incremental** hydration by `updated_date` watermark, plus a periodic full re-pull (`PHINS_AGENT_FULL_RESYNC_SECONDS`, default 60) so a peer's deletes are seen. Write path: durable write **first**, then cache; a failed durable write raises the error to the caller's log, keeps the record in cache and in an `unsaved` set that is re-merged after every full resync, so nothing is silently dropped and the health probe can count it. Loader failures serve the current cache and are reported (`load_failures`), never treated as "empty". Codec is lossless for nested dataclasses, `Enum`, `datetime` and dict/list containers, and refuses unknown objects rather than stringifying them. `enabled` is re-evaluated per call, so runtime database recovery / tests flipping `USE_DATABASE` take effect without re-instantiation. In memory mode a store is a plain per-instance dict with no table access at all. |
+| Schema | `database/models.py` (`AgentArtifact`: `id`, `agent_id`, `subject_type`, `subject_id`, `kind`, `payload_json`, `checksum`, `created_date`, `updated_date`, all lookup columns indexed; `VideoJob`: lifecycle columns + `payload_json`) | No `database/__init__.py` change was needed: both tables are in `Base.metadata`, `create_all` creates them and `_schema_fingerprint()` folds every table name in, so an already-initialised deployment re-runs the DDL sync once on first boot after deploy (verified against SQLite). |
+| Repos | `database/repositories/agent_artifact_repository.py`, `video_job_repository.py` (new); `DatabaseManager.agent_artifacts`, `.video_jobs` | Artifacts: `canonical_payload()` = sorted-key JSON + sha256; `upsert` is idempotent and leaves `subject_type`/`subject_id` alone when the caller omits them; every load path runs `_verified()`, and a row whose checksum does not match its payload is **skipped and logged**, never served; `prune(agent_id, kind, keep)` deletes oldest-first by `updated_date`. Video jobs: `mark_terminal` and `update_fields` are read-merge-CAS conditional UPDATEs on `status` (+`updated_at`), so of two racers exactly one row transition commits and the loser is told so — the in-process `_JobStore` guarantee now holds across processes. |
+| Claims Bot | `services/claims_bot_service.py` | `self.reports` is `artifact_store("claims_bot", "probability_report", ClaimProbabilityReport)`. `MAX_RETAINED_REPORTS` is a DB-side `prune_durable` in DB mode (in-memory eviction otherwise). `_claims_bot_health` reads `snapshot()` (cached counts, `durable`, `unsaved`, `load_failures`) — no table query on the health path. `_analyze_document_authenticity` now tolerates a `None` description, which the DB-backed `CLAIMS` dict yields where the in-memory dict yielded `''`. |
+| Underwriting Bot | `services/underwriting_bot_service.py` | `assessments`, `metadata_store`, `reports` are all artifact stores; every mutation point (`start_assessment`, `add_metadata`, `process_metadata`, `process_all_metadata`, `run_risk_assessment`, `apply_decision`) checkpoints the owning assessment, so a **multi-step assessment started in one process can be continued and decided in another** with identical `extracted_data`. `MAX_RETAINED_ASSESSMENTS` with `prune_durable`. |
+| Video Agents | `services/video_agents_service.py` | `_JobStore` keeps its API but is a `HydratedStore` over `video_jobs`; `update`/`mark_terminal` go through the repository's conditional UPDATE in DB mode, so the webhook handler and a poller in different processes cannot both finalise a job. Per-user/per-campaign/per-day counts read the cache. |
+| Risk Reports | `services/ai_risk_reports_service.py` | `documents`, `analyses`, `reports` are artifact stores. `save_data()` is a no-op for the default path in DB mode (each write already went to the table); `load_data()` performs a **one-time migration** of an existing legacy JSON file into `agent_artifacts` only when the table is empty for that agent, so no records are duplicated or lost on the first durable boot. Memory mode keeps the JSON file exactly as before. |
+| AgentOS | `services/agent_ecosystem_service.py` | Adopts `RefreshCoalescer` and `db_mode_enabled()`; behaviour unchanged (`tests/test_agent_ecosystem.py`, `test_agent_runtime.py` green). |
+| Worker | `services/jobs/__init__.py` (`worker_context()`), `services/jobs/claims_bot_job.py` (`sanitize_claim_probability_report` moved here; `web_portal/server.py` delegates to it), `scripts/run_document_worker.py`, `scripts/entrypoint.sh` | With agent state durable, the standalone `entrypoint.sh worker` now binds **every** adapter (`PHINS_WORKER_AGENT_JOBS`, default true) over the `database.data_access` DB-backed dicts and a real `AuditService`; it produces the same sanitised report body as the web process for the same claim (parity test). `PHINS_WORKER_AGENT_JOBS=false` restores documents-only. |
+| Docs | `AGENTS.md` | Durable-state paragraph, `agent_artifacts`/`video_jobs` in the repository list, the two new environment variables and `PHINS_WORKER_AGENT_JOBS`, refreshed module/repository counts (108 services, 20 repositories, 42 `DatabaseManager` properties, 223 test files). |
+| Tests | `tests/test_hydrated_store.py` (16), `tests/test_agent_durable_state.py` (13) | Store: TTL gating/force/reset; memory mode never touches the table; write-then-forced-refresh; incremental hydration and full resync surfacing peer deletes; loader and saver failure handling (cache served, error reported, unsaved retained); `enabled` re-evaluation; lossless codec round-trip. Repos over one shared SQLite file: cross-instance visibility, corrupted-checksum row skipped, `prune`, `mark_terminal` race (exactly one winner). End-to-end in DB mode: claims report survives restart and is shared; retention is a DB prune; health probe reports durability without querying; underwriting assessment continued by a fresh instance; `process_all_metadata` keeps items/status consistent; video store durable and shared, webhook path, cross-store terminal race; risk-reports pipeline continued by a peer; legacy JSON migrated once; standalone worker ↔ web parity for the claims job; memory mode untouched. Existing `test_claims_bot*.py`, `test_underwriting_bot*.py`, `test_video_agents_service.py`, `test_ai_risk_reports.py`, `test_ai_audit_bridge.py`, `test_jobs_adapters.py`, `test_agent_ecosystem.py`, `test_agent_runtime.py` pass unchanged. |
+
+Deviations from the A4 text above, and why:
+
+- **Constructor shape** is `HydratedStore(loader, saver, deleter, ...)` rather
+  than `HydratedStore(table_repo, ...)`: the four consumers need different
+  repository methods (artifact upsert vs. video conditional update), and
+  passing callables keeps the store free of any repository import, so it is
+  testable with a fake table.
+- **`updated_date` added** to `agent_artifacts` beyond the listed columns:
+  incremental hydration and oldest-first pruning both need it.
+- **Underwriting assessments and metadata** are durable too, not only its
+  reports: a report cannot be regenerated after a restart if the assessment
+  it summarises is gone, and the multi-step flow is exactly the case a
+  restart breaks.
+- **Shared store instances in DB mode** (`artifact_store` returns one object
+  per `(agent_id, kind)` per process): two `ClaimsBotService` instances in
+  one process would otherwise hydrate the same rows twice. Memory mode keeps
+  per-instance dicts so existing unit tests see isolated state.
+- **`database/__init__.py` untouched**: `create_all` and the schema
+  fingerprint already cover new tables (see the Schema row).
+
+### Remaining — §D steps 5–6
 
 | Step | Workstream | Status |
 |---|---|---|
-| 4 | A4 durable agent state (§A4) | Not started. A3 unblocks it: once Claims Bot reports, Risk Reports analyses and the video `_JobStore` are table-backed, `register_all` can bind their handlers in the standalone worker too. |
 | 5 | A6 evaluation harness (§A6), B2 controller split, B3 golden sets | Not started. |
 | 6 | Per-agent refactors B1, B4, B5, B6, B7, B8, B9, B10, B11 (§B) and human AgentOS follow-ups (§C) | Not started. B12 shipped in step 2. |
 
@@ -839,4 +874,4 @@ breaches, no load failures; gateway idle with no open breakers.
 
 ---
 
-_Last updated: September 14, 2026 — A1 + A5 + B12 + A2 (+ tenant-scoped budgets) + A3 shipped; A4 next._
+_Last updated: September 14, 2026 — A1 + A5 + B12 + A2 (+ tenant-scoped budgets) + A3 + A4 shipped; A6 next._

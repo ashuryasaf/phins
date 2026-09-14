@@ -11317,27 +11317,11 @@ def sanitize_claim_probability_report(report: Dict[str, Any]) -> Dict[str, Any]:
     """
     Return a safe report payload for UI usage.
     Removes raw evidence arrays that can expose unnecessary sensitive details.
+    Shared with the standalone worker (services/jobs/claims_bot_job.py) so the
+    async and inline paths redact identically.
     """
-    if not isinstance(report, dict):
-        return {}
-    sanitized = dict(report)
-    fraud_section = sanitized.get('fraud_indicators')
-    if isinstance(fraud_section, dict):
-        cleaned_indicators = []
-        for indicator in fraud_section.get('indicators', []):
-            if not isinstance(indicator, dict):
-                continue
-            cleaned = dict(indicator)
-            cleaned.pop('evidence', None)
-            cleaned_indicators.append(cleaned)
-        fraud_section = dict(fraud_section)
-        fraud_section['indicators'] = cleaned_indicators
-        fraud_section['count'] = len(cleaned_indicators)
-        fraud_section['high_severity_count'] = sum(
-            1 for item in cleaned_indicators if safe_float(item.get('severity'), 0.0) > 0.7
-        )
-        sanitized['fraud_indicators'] = fraud_section
-    return sanitized
+    from services.jobs.claims_bot_job import sanitize_claim_probability_report as _shared
+    return _shared(report)
 
 def _inject_ui_clarity_script(html_content: str) -> str:
     """

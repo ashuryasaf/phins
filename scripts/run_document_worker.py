@@ -10,13 +10,14 @@ Requires ``USE_DATABASE=true``: a separate process can only share documents
 and job rows with the web process through the database. Without a database
 the in-process worker inside ``serve`` mode is the only valid topology.
 
-Scope: this process binds the *document* handlers only. The agent jobs queued
-under ``PHINS_AGENT_ASYNC`` (claims/underwriting bots, risk reports, Mislaka
-import, video submit) read and write state that lives inside the web process
-(in-memory stores, the AI-reports JSON file, the video ``_JobStore``), so
-only the web process claims them; a worker never claims a job type it has no
-handler for (``AgentJobQueue._claim_due``). They become eligible for this
-worker once their state is durable (design §A4).
+Scope: binds the document handlers *and* every agent adapter (claims /
+underwriting bots, risk reports, Mislaka import, video submit). Since A4 the
+agents' own state is durable (``agent_artifacts`` / ``video_jobs`` behind a
+read-through cache) and the bots read the database-backed customer/policy/
+claim stores, so a job computed here is identical to one computed on the web
+process. Set ``PHINS_WORKER_AGENT_JOBS=false`` to restrict this process to
+documents again; a worker never claims a job type it has no handler for
+(``AgentJobQueue._claim_due``).
 
 Usage:
     ./scripts/entrypoint.sh worker            # run until terminated
@@ -51,6 +52,11 @@ def main(argv=None):
     doc_service = get_document_service(db_manager=db_manager)
     worker = get_document_job_worker(doc_service=doc_service, db_manager=db_manager)
 
+    agent_jobs = str(os.environ.get('PHINS_WORKER_AGENT_JOBS', 'true')).lower() in ('1', 'true', 'yes', 'y')
+    if agent_jobs:
+        from services import jobs as agent_job_adapters
+        agent_job_adapters.register_all(worker, agent_job_adapters.worker_context())
+
     if once:
         stats = worker.process_once(limit=int(os.environ.get('PHINS_DOC_WORKER_BATCH', '50')))
         print(f"run_document_worker: {stats}")
@@ -66,7 +72,7 @@ def main(argv=None):
 
     print(f"run_document_worker: started (worker_id={worker.worker_id}, "
           f"concurrency={worker.concurrency}, poll={worker.poll_interval}s, "
-          f"retries={worker.retry_schedule}s)")
+          f"retries={worker.retry_schedule}s, handlers={sorted(worker.handlers())})")
     worker.start()
     try:
         while not stop['requested']:
