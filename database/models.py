@@ -2988,3 +2988,74 @@ class BusinessInquiry(Base):
             'updated_at': self.updated_at,
             'status_history': history,
         }
+
+
+class AgentArtifact(Base):
+    """Durable working artifact of a software agent (A4).
+
+    One generic table for every agent's own records — Claims Bot probability
+    reports, Underwriting Bot assessments/reports, AI Risk Reports documents/
+    analyses/reports — so a restart or a peer instance sees the same state.
+    ``payload_json`` is the lossless codec form (``services.hydrated_store``),
+    not the rounded presentation ``to_dict``. ``checksum`` is the sha256 of the
+    payload so tampering or a torn write is detectable on load.
+
+    This is a NEW table - it does not modify any existing data.
+    """
+    __tablename__ = 'agent_artifacts'
+
+    id = Column(String(120), primary_key=True)
+    # services/agent_runtime.py agent id, e.g. claims_bot, underwriting_bot, ai_risk_reports
+    agent_id = Column(String(80), nullable=False, index=True)
+    # What the artifact is about (claim / application / customer ...) and which one.
+    subject_type = Column(String(50), nullable=True, index=True)
+    subject_id = Column(String(120), nullable=True, index=True)
+    # Record family inside the agent: probability_report, assessment, analysis, ...
+    kind = Column(String(60), nullable=False, index=True)
+    payload_json = Column(Text, nullable=False)
+    checksum = Column(String(64), nullable=False)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+                          nullable=False, index=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'agent_id': self.agent_id,
+            'subject_type': self.subject_type,
+            'subject_id': self.subject_id,
+            'kind': self.kind,
+            'payload': json.loads(self.payload_json) if self.payload_json else None,
+            'checksum': self.checksum,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+            'updated_date': self.updated_date.isoformat() if self.updated_date else None,
+        }
+
+
+class VideoJob(Base):
+    """Video Agents generation job (A4): the durable form of the in-memory
+    ``_JobStore`` so webhook, poller and every web instance agree on the job's
+    lifecycle. Lifecycle columns are indexed for the dashboard's filters; the
+    full job dict lives in ``payload_json``. Terminal transitions are made with
+    a conditional UPDATE on ``status`` so exactly one racer wins.
+
+    This is a NEW table - it does not modify any existing data.
+    """
+    __tablename__ = 'video_jobs'
+
+    id = Column(String(120), primary_key=True)
+    campaign_id = Column(String(120), nullable=True, index=True)
+    submitted_by = Column(String(100), nullable=True, index=True)
+    provider = Column(String(40), nullable=True, index=True)
+    provider_job_id = Column(String(200), nullable=True, index=True)
+    pipeline_type = Column(String(60), nullable=True)
+    status = Column(String(30), nullable=False, default='queued', index=True)
+    # ISO timestamp the service stamped on the job (kept verbatim for the daily caps).
+    created_at = Column(String(40), nullable=True, index=True)
+    payload_json = Column(Text, nullable=False)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+                          nullable=False, index=True)
+
+    def to_dict(self):
+        return json.loads(self.payload_json) if self.payload_json else {}

@@ -56,6 +56,8 @@ from database.repositories import (
     AssessmentRecordRepository,
     BusinessInquiryRepository,
     AIUsageRepository,
+    AgentArtifactRepository,
+    VideoJobRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -131,6 +133,9 @@ class DatabaseManager:
         self._business_inquiries = None
         # AI usage / cost accounting.
         self._ai_usage = None
+        # Durable agent state (A4): generic artifacts + video job lifecycle.
+        self._agent_artifacts = None
+        self._video_jobs = None
     
     def _ensure_session(self) -> Session:
         """
@@ -189,6 +194,8 @@ class DatabaseManager:
         self._assessment_records = None
         self._business_inquiries = None
         self._ai_usage = None
+        self._agent_artifacts = None
+        self._video_jobs = None
     
     @property
     def customers(self) -> CustomerRepository:
@@ -479,6 +486,20 @@ class DatabaseManager:
         if self._ai_usage is None:
             self._ai_usage = AIUsageRepository(self._ensure_session())
         return self._ai_usage
+
+    @property
+    def agent_artifacts(self) -> AgentArtifactRepository:
+        """Get durable agent-artifact repository (A4 agent working state)."""
+        if self._agent_artifacts is None:
+            self._agent_artifacts = AgentArtifactRepository(self._ensure_session())
+        return self._agent_artifacts
+
+    @property
+    def video_jobs(self) -> VideoJobRepository:
+        """Get Video Agents job repository (A4 durable job lifecycle)."""
+        if self._video_jobs is None:
+            self._video_jobs = VideoJobRepository(self._ensure_session())
+        return self._video_jobs
 
     def commit(self):
         """Commit current transaction"""
