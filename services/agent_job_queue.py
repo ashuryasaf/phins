@@ -18,8 +18,9 @@ Semantics (unchanged from the document worker, now per job type):
   ``document_id`` and mirror it into the subject pair.
 * **Handlers** — ``register_handler(job_type, fn)``; ``fn(job) -> result``
   receives the job view (a dict) and returns a JSON-serialisable result.
-  A job whose type has no registered handler fails like any other transient
-  error and dead-letters after ``max_attempts`` — never silently dropped.
+  A worker only claims job types it has a handler for, so a job nobody in
+  the process can run stays ``pending`` (visible in ``queue_stats``) for a
+  worker that can — it is never taken, failed and dead-lettered by mistake.
 * **Idempotency** — duplicate ``idempotency_key`` enqueues return the
   existing job; a completed job with the same key is not re-run.
 * **Retries** — transient failures back off along ``PHINS_DOC_RETRY_SCHEDULE``
@@ -267,11 +268,18 @@ class AgentJobQueue:
         return stats
 
     def _claim_due(self, limit: int) -> List[Dict[str, Any]]:
+        # Only claim what this process can execute: a worker lacking the
+        # handler must leave the job pending for one that has it, never take
+        # it, fail it and burn its retries.
+        job_types = self.handlers()
+        if not job_types:
+            return []
         if self._use_db():
             try:
                 rows = self.db_manager.processing_jobs.claim_due_jobs(
                     worker_id=self.worker_id, limit=limit,
                     claim_timeout_seconds=self.claim_timeout,
+                    job_types=job_types,
                 )
                 return [row.to_dict() for row in rows]
             except Exception as exc:
@@ -283,10 +291,11 @@ class AgentJobQueue:
         with self._lock:
             due = [
                 j for j in self._inmemory_jobs
-                if j['status'] == 'pending'
-                or (j['status'] in ('failed', 'claimed')
-                    and j.get('next_retry_at') is not None
-                    and j['next_retry_at'] <= now)
+                if j['job_type'] in job_types and (
+                    j['status'] == 'pending'
+                    or (j['status'] in ('failed', 'claimed')
+                        and j.get('next_retry_at') is not None
+                        and j['next_retry_at'] <= now))
             ]
             due.sort(key=lambda j: (j.get('priority', 100), j['created_date']))
             for job in due[:limit]:

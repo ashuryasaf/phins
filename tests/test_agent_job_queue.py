@@ -95,14 +95,37 @@ def test_enqueue_requires_a_subject(queue):
         queue.register_handler("x", "not-callable")
 
 
-def test_unregistered_job_type_retries_then_dead_letters(queue):
+def test_unhandled_job_type_is_left_pending_for_a_capable_worker(queue):
+    """A worker without the handler must not claim (and burn retries on) a
+    job another worker can run; the job stays pending and visible."""
+    queue.register_handler("known", lambda job: 1)
     job = queue.enqueue(job_type="mystery", subject_type="report", subject_id="R-1",
                         max_attempts=2)
-    assert queue.process_once()["failed"] == 1
+    queue.enqueue(job_type="known", subject_type="report", subject_id="R-2")
+    stats = queue.process_once()
+    assert stats == {"claimed": 1, "completed": 1, "failed": 0, "dead_letter": 0}
+    assert queue.get_job(job["id"])["status"] == "pending"
+    assert queue.queue_stats() == {"pending": 1, "completed": 1}
+
+    # A worker that gains the handler picks it up unchanged.
+    queue.register_handler("mystery", lambda job: {"solved": True})
+    assert queue.process_once()["completed"] == 1
+    assert queue.get_job(job["id"])["result"] == {"solved": True}
+
+
+def test_handler_removed_between_claim_and_run_fails_not_lost(queue):
+    queue.register_handler("t", lambda job: 1)
+    job = queue.enqueue(job_type="t", subject_type="x", subject_id="1", max_attempts=1)
+    claimed = queue._claim_due(limit=1)
+    queue.unregister_handler("t")
+    assert queue._execute(claimed[0]) == "dead_letter"
     assert "no handler registered" in queue.get_job(job["id"])["error_message"]
-    _force_due(queue)
-    assert queue.process_once()["dead_letter"] == 1
-    assert queue.get_job(job["id"])["status"] == "dead_letter"
+
+
+def test_queue_with_no_handlers_claims_nothing(queue):
+    queue.enqueue(job_type="t", subject_type="x", subject_id="1")
+    assert queue.process_once()["claimed"] == 0
+    assert queue.queue_stats() == {"pending": 1}
 
 
 def test_handlers_are_per_type_and_replaceable(queue):
@@ -377,6 +400,12 @@ def test_sqlite_persists_non_document_jobs_with_null_document_id():
         # Duplicate delivery through the DB unique key returns the same row.
         assert q.enqueue(job_type="claims_bot", subject_type="claim", subject_id=marker,
                          idempotency_key=f"{marker}:claims_bot")["id"] == job["id"]
+
+        # A second worker on the same table without this handler leaves it alone.
+        other = AgentJobQueue(db_manager=db, poll_interval=0.01)
+        other.register_handler("something_else", lambda job: 1)
+        assert other.process_once()["claimed"] == 0
+        assert q.get_job(job["id"])["status"] == "pending"
 
         stats = q.process_once()
         assert stats["completed"] == 1
