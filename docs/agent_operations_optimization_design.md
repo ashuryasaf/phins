@@ -1,6 +1,6 @@
 # PHINS Agent Operations — Optimization Design
 
-> **Status: IMPLEMENTING — §D steps 1–5 (A1, A5, B12, A2, A3, A4, A6, B2, B3) shipped.** This document turns
+> **Status: IMPLEMENTING — §D steps 1–5 (A1, A5, B12, A2, A3, A4, A6, B2, B3) and step 6 parts 1–2 (B1, B4, B5, B9) shipped.** This document turns
 > the agent inventory and the optimization proposal into a concrete,
 > file-level plan with a test plan per workstream. It is the model of record
 > for the implementation PRs that follow. Each workstream is independently
@@ -929,11 +929,45 @@ Deviations from the §B1/§B4 text above, and why:
 - **`decision_id`** was added to the bots' reports (not in §B1) because the
   human counter-decision has to name the AI decision it answers.
 
-### Remaining — §D step 6 (part 2)
+### Shipped — §D step 6 (part 2): B5 Pension Data Agent, B9 AI Risk Reports
+
+| Piece | Where | Notes |
+|---|---|---|
+| Pension package (B5) | `services/pension/{schema,profile,parsers,report,cache,agent}.py` (new); `services/pension_data_agent.py` is a facade re-exporting every historical name (`__getattr__` forwards the `_pension_agent` singleton slot) | `MislakaSchemaMapping` moved verbatim into `schema` together with `tag_variants` / `CompiledFields` (every tag's spelling variants precompiled once at import); `ClientProfile` in `profile`; `MislakaParserMixin` (XML tree + streaming, Excel, CSV) in `parsers`; enrichment, health score, report and recommendations in `report`; `PensionDataAgent`, accessors, health probe and registration in `agent`. `services/mislaka_affiliations.py` and `web_portal/server.py` keep importing `MislakaSchemaMapping` from the facade. Agent descriptor keeps `module='services.pension_data_agent'`. |
+| Per-parse text index (B5) | `services/pension/parsers.py` — `_parse_context` (thread-local `_ParseContext`), `_text_index`, `_forget_index`, `_find_text(elem, variants)` | One pass builds `element → {tag → text}`; `_find_text` becomes a dict lookup instead of a `.//` scan per candidate spelling per field. Semantics equal `find()` (first match in document order), verified against the old implementation on the fixture set; the index is released per provider block (tree path) so peak memory stays bounded. |
+| Streaming parser (B5) | `services/pension/parsers.py` — `_parse_mislaka_xml_streaming` (`defusedxml` `iterparse`, `start`/`end` events), `_harvest_block`, `_release_block`, `_assemble`; `PHINS_PENSION_STREAM_MIN_BYTES` (default 8 MiB) | Files at or above the threshold are parsed block by block: each provider subtree is harvested into the accumulator and cleared from the tree before the next one is read. Output is identical to the tree parser on every fixture (asserted); malformed XML and entity declarations are rejected on both paths (`defusedxml` stays in the path — no `lxml` bypass); an undeclared legacy encoding (`windows-1255` without an XML declaration) falls back to the tree parser rather than mis-decoding. Measured on a synthetic 4 × 25-account file: 3.6× lower peak allocation and ~2× faster than the tree parse. Health reports `stream_min_bytes`. |
+| Parse-result cache (B5) | `services/pension/cache.py` (new) — `ParseResultCache.get/put(kind, sha256)`, key `PENSION-{xml\|zip}-{sha256}-v{PARSER_VERSION}`; process LRU (`PHINS_PENSION_PARSE_CACHE_MAX`, default 128) plus, in DB mode, rows in `agent_artifacts` (`agent_id=pension_data_agent`, `kind=parse_result`); `PHINS_PENSION_PARSE_CACHE=false` disables | Only the deterministic parser output is cached — the `_parse_mislaka_xml` dict for an XML and the aggregated `ClientProfile.to_dict()` for a ZIP — never the enriched/report layer, which depends on the clock. Values are deep-copied on both sides so a consumer normalising the client block in place (Risk Reports does) cannot poison the cache; a checksum-failed or older-`PARSER_VERSION` row is skipped, never served; malformed input is never cached. After a database error the durable tier is paused for 60 s (`durable_paused` in health) so a broken table cannot slow every parse. `process_xml_content` / `process_zip_content` consult it; a ZIP miss still reuses cached members. |
+| Risk Reports package (B9) | `services/risk_reports/{models,parsers,analysis,charts,render,service}.py` (new, sliced verbatim by method); `services/ai_risk_reports_service.py` is a facade re-exporting the package and forwarding `AI_REPORTS_DATA_FILE` and the `_ai_reports_service` slot **both ways** (module-class swap), so `monkeypatch.setattr(facade, …)` still steers the service | `AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)` keeps orchestration (`parse_file`, `analyze`, `generate_report`), the A4 stores, authorisation, persistence and registration; `parse_content(filename, bytes, type) → (parsed, encoding)` is the pure dispatcher `parse_file` wraps. Output verified byte-identical to the pre-split module for CSV (English, Hebrew, ID/savings), Mislaka XML, mixed-shape XML, ZIP, PDF and PNG inputs across parsed data, analysis, report and download summary. Descriptor keeps `module='services.ai_risk_reports_service'`. |
+| Extractor delegation (B9) | `services/risk_reports/parsers.py` — `_parse_pdf`, `_parse_image` call `DocumentProcessingService._extract_pdf_text_with_pages` / `_image_metadata` / `_ocr_image_bytes` through `get_document_service()` | PDF text (pypdf text layer → regex → OCR, with the B4 page cache) arrives as one `page_N_text` row per page (capped at 4,000 chars per row, 50 pages) plus `parsed['text']`, `text_pages` (page → char offsets) and `text_extraction`; image OCR as an `ocr_text` row. The extractor's "no text" marker and sub-threshold text keep the historical metadata-only table, as does an unavailable extractor. `page_count` is exact when the page tree was read (`/Type /Pages` nodes no longer count as pages). `analyze()` uses the extracted text for language detection and Hebrew field extraction when present — tabular uploads have no `text` and are analysed exactly as before. |
+| Charts (B9) | `services/risk_reports/charts.py` | Unchanged builders, measured: 0.03 ms (5 configs, CSV) to 0.16 ms (pension fixture), ≤ 1.6 % of `generate_report`; 0.1–8 % of the report payload; JSON only. |
+| Tests | `tests/test_pension_agent.py` (31), `tests/test_risk_reports_package.py` (31) | Pension: facade identity, `mislaka_affiliations` mapping, descriptor module; `_find_text` index semantics and thread-locality; streaming == tree on every fixture, threshold selects the path, peak-memory bound, malformed/entity rejection on both paths, legacy-encoding fallback, blocks released; cache keying (version + kind), copy isolation, LRU bound and disable flag, XML served from cache with report regenerated, ZIP by archive and member hash, poisoning impossible, malformed never cached, broken durable tier paused; durable round trip across "processes"/peers, corrupted row skipped, old version ignored, peer parse reused without the parser; Risk Reports parse the same XML once across two uploads. Risk Reports: facade re-exports and two-way forwarding (path honoured by `save_data`), descriptor/capabilities module, layers usable standalone; `parse_content == parse_file` for 8 input kinds, purity, malformed ZIP fails closed, unknown binary fallback, Hebrew/Arabic detection unchanged; PDF text layer reaches rows with page offsets, Hebrew text drives language + policy-number factor + Hebrew report, filename hint, no-text/marker/unavailable-extractor degrade to the legacy table, image dimensions + OCR from the shared extractor, per-row cap; charts are JSON without rendered payloads, cost bound, gauge first; JSON persistence round trip. |
+
+Deviations from the §B5/§B9 text above, and why:
+
+- **No lazy chart rendering / `agent_artifacts` chart cache.** The design
+  assumed charts were rendered server-side. They are `ChartConfig` data
+  (labels, values, thresholds) the dashboard draws in the browser; building
+  them costs 0.03–0.16 ms against a 10–56 ms report. A cache layer would add a
+  read path and an invalidation rule for no measurable gain, so charts stay in
+  the report as before.
+- **CSV/Excel parsing is not delegated** to `DocumentProcessingService`. Its
+  `_parse_csv_table` is a plain-comma reader; Risk Reports' `_parse_csv`
+  handles delimiter sniffing, BOMs and `windows-1255`, and `_parse_excel`
+  recognises Mislaka Excel exports. Delegation was limited to PDF and image
+  text extraction, where the document service is strictly more capable.
+- **XML parse results are cached, not only ZIP profiles.** Risk Reports
+  uploads single XML files far more often than archives; caching the
+  per-file parser output also lets a ZIP miss reuse already-seen members.
+- **`POST /api/mislaka/import`** was already on the job queue from A3
+  (`services/jobs/pension_import_job.py`); nothing to move.
+- **`page_count` changed** for PDFs whose only `/Type /Page` hits were the
+  page-tree node: it was over-counted by one before.
+
+### Remaining — §D step 6 (part 3)
 
 | Step | Workstream | Status |
 |---|---|---|
-| 6 | Per-agent refactors B5, B6, B7, B8, B9, B10, B11 (§B) and human AgentOS follow-ups (§C) | Not started. B12 shipped in step 2; B2 and B3 in step 5; B1 and B4 in step 6 part 1. |
+| 6 | Per-agent refactors B6, B7, B8, B10, B11 (§B) and human AgentOS follow-ups (§C) | Not started. B12 shipped in step 2; B2 and B3 in step 5; B1 and B4 in step 6 part 1; B5 and B9 in step 6 part 2. |
 
 Health of what has shipped (checked on `main` after PR #589):
 `GET /api/admin/ai-agents/health` reports 15 agents, all `ok`, no SLO
@@ -941,4 +975,4 @@ breaches, no load failures; gateway idle with no open breakers.
 
 ---
 
-_Last updated: September 14, 2026 — A1 + A5 + B12 + A2 (+ tenant-scoped budgets) + A3 + A4 + A6 + B2 + B3 + B1 + B4 shipped; §D step 6 part 2 (B5–B11, §C) next._
+_Last updated: September 14, 2026 — A1 + A5 + B12 + A2 (+ tenant-scoped budgets) + A3 + A4 + A6 + B2 + B3 + B1 + B4 + B5 + B9 shipped; §D step 6 part 3 (B6, B7, B8, B10, B11, §C) next._
