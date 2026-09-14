@@ -104,6 +104,128 @@ def test_summarize_by_provider_and_operation(service, monkeypatch):
     assert filtered["totals"]["operations"] == 0
 
 
+def test_summarize_by_agent_counts_blocked_calls(service, monkeypatch):
+    monkeypatch.setenv("PHINS_AI_PRICE_INPUT_PER_MTOK", "1.0")
+    service.record_usage(provider="openai_compatible", operation="llm_completion",
+                         agent_id="assessment_ai", input_tokens=1_000_000)
+    service.record_usage(provider="openai_compatible", operation="llm_completion",
+                         agent_id="assessment_ai", blocked=True)
+    service.record_usage(provider="openai_compatible", operation="transcription",
+                         agent_id="document_intelligence", media_seconds=30)
+    service.record_usage(provider="self_hosted", operation="document_parse", pages=2)
+
+    summary = service.summarize(group_by="agent")
+    by_key = {g["key"]: g for g in summary["groups"]}
+    assert set(by_key) == {"assessment_ai", "document_intelligence", None}
+    assert by_key["assessment_ai"]["operations"] == 2
+    assert by_key["assessment_ai"]["blocked"] == 1
+    # A blocked call never contributes cost or tokens.
+    assert by_key["assessment_ai"]["estimated_cost"] == pytest.approx(1.0)
+    assert by_key["assessment_ai"]["input_tokens"] == 1_000_000
+    assert by_key["document_intelligence"]["blocked"] == 0
+    assert summary["totals"]["operations"] == 4
+    assert summary["totals"]["blocked"] == 1
+
+    blocked_row = [r for r in service.list_records() if r["blocked"]][0]
+    assert blocked_row["estimated_cost"] == 0.0
+    assert blocked_row["agent_id"] == "assessment_ai"
+
+
+# ── Database-backed path ──────────────────────────────────────────────────────
+
+def _sqlite_db_manager():
+    from database import init_database
+    from database.manager import DatabaseManager
+    init_database()
+    return DatabaseManager()
+
+
+def test_db_backed_records_persist_agent_and_blocked_and_aggregate_by_agent():
+    """The SQLAlchemy path must carry agent_id/blocked end to end: create ->
+    list_filtered -> aggregate(group_by='agent')."""
+    from database.models import AIUsageRecord
+
+    db = _sqlite_db_manager()
+    marker = f"CUST-AIU-{os.getpid()}"
+    try:
+        service = AIUsageService(db_manager=db)
+        service.record_usage(provider="openai_compatible", operation="llm_completion",
+                             customer_id=marker, agent_id="assessment_ai",
+                             input_tokens=10, output_tokens=5)
+        service.record_usage(provider="openai_compatible", operation="llm_completion",
+                             customer_id=marker, agent_id="assessment_ai", blocked=True)
+        service.record_usage(provider="openai_compatible", operation="transcription",
+                             customer_id=marker, agent_id="document_intelligence",
+                             media_seconds=12)
+
+        rows = service.list_records(customer_id=marker)
+        assert len(rows) == 3
+        assert {r["agent_id"] for r in rows} == {"assessment_ai", "document_intelligence"}
+        assert sum(1 for r in rows if r["blocked"]) == 1
+        # Blocked rows are stored with zero cost and no tokens (nothing was consumed).
+        blocked = [r for r in rows if r["blocked"]][0]
+        assert blocked["estimated_cost"] == 0.0
+        assert blocked["input_tokens"] is None
+
+        summary = service.summarize(group_by="agent", customer_id=marker)
+        by_key = {g["key"]: g for g in summary["groups"]}
+        assert by_key["assessment_ai"]["operations"] == 2
+        assert by_key["assessment_ai"]["blocked"] == 1
+        assert by_key["assessment_ai"]["input_tokens"] == 10
+        assert by_key["document_intelligence"]["blocked"] == 0
+        assert summary["totals"]["blocked"] == 1
+        assert summary["totals"]["operations"] == 3
+
+        # Existing group keys are unaffected by the new column.
+        by_provider = service.summarize(group_by="provider", customer_id=marker)
+        assert by_provider["totals"]["operations"] == 3
+        assert by_provider["groups"][0]["blocked"] == 1
+    finally:
+        try:
+            session = db._ensure_session()
+            session.query(AIUsageRecord).filter(
+                AIUsageRecord.customer_id == marker).delete(synchronize_session=False)
+            session.commit()
+        finally:
+            db.close()
+
+
+def test_upgrade_schema_adds_agent_and_blocked_to_pre_gateway_table(tmp_path):
+    """A database created before A2 lacks the two columns; upgrade_schema must
+    add them without touching existing rows, and 'blocked' must default to
+    false for those rows."""
+    from sqlalchemy import create_engine, inspect, text
+    from database import upgrade_schema
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE ai_usage_records ("
+            " id VARCHAR(80) PRIMARY KEY, provider VARCHAR(60), operation VARCHAR(60),"
+            " customer_id VARCHAR(80), estimated_cost FLOAT, input_tokens INTEGER,"
+            " output_tokens INTEGER, pages INTEGER, media_seconds FLOAT,"
+            " created_date DATETIME)"))
+        conn.execute(text(
+            "INSERT INTO ai_usage_records (id, provider, operation, customer_id, estimated_cost)"
+            " VALUES ('AIU-LEGACY', 'openai_compatible', 'llm_completion', 'CUST-L', 0.5)"))
+
+    assert upgrade_schema(engine) is True
+    columns = {c["name"] for c in inspect(engine).get_columns("ai_usage_records")}
+    assert {"agent_id", "blocked"} <= columns
+    # Idempotent: a second run is a no-op and still reports success.
+    assert upgrade_schema(engine) is True
+
+    with engine.connect() as conn:
+        row = conn.execute(text(
+            "SELECT provider, estimated_cost, agent_id, blocked FROM ai_usage_records"
+            " WHERE id='AIU-LEGACY'")).one()
+    assert row[0] == "openai_compatible"
+    assert row[1] == 0.5
+    assert row[2] is None
+    assert not row[3]
+    engine.dispose()
+
+
 # ── Provider hook integration ─────────────────────────────────────────────────
 
 class _FakeResponse:

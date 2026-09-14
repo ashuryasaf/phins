@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.exc import SQLAlchemyError
 
 from .base import BaseRepository
@@ -62,11 +62,13 @@ class AIUsageRepository(BaseRepository):
             'operation': AIUsageRecord.operation,
             'customer': AIUsageRecord.customer_id,
             'model': AIUsageRecord.model,
+            'agent': AIUsageRecord.agent_id,
         }.get(group_by, AIUsageRecord.provider)
         try:
             query = self.session.query(
                 column.label('key'),
                 func.count(AIUsageRecord.id).label('operations'),
+                func.coalesce(func.sum(case((AIUsageRecord.blocked.is_(True), 1), else_=0)), 0).label('blocked'),
                 func.coalesce(func.sum(AIUsageRecord.estimated_cost), 0.0).label('estimated_cost'),
                 func.coalesce(func.sum(AIUsageRecord.input_tokens), 0).label('input_tokens'),
                 func.coalesce(func.sum(AIUsageRecord.output_tokens), 0).label('output_tokens'),
@@ -80,6 +82,7 @@ class AIUsageRepository(BaseRepository):
                 {
                     'key': row.key,
                     'operations': int(row.operations),
+                    'blocked': int(row.blocked or 0),
                     'estimated_cost': round(float(row.estimated_cost), 6),
                     'input_tokens': int(row.input_tokens),
                     'output_tokens': int(row.output_tokens),
