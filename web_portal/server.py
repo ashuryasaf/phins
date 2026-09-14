@@ -56151,24 +56151,33 @@ def run_server(port: int = PORT) -> None:
     # back to the synchronous upload path, never blocks serving traffic.
     try:
         from services.document_processing_service import async_processing_enabled
-        if async_processing_enabled():
+        from services.agent_job_queue import agent_async_enabled
+        if async_processing_enabled() or agent_async_enabled():
             from services.document_job_worker import get_document_job_worker
             _doc_worker = get_document_job_worker(doc_service=get_document_service())
-            _doc_worker.event_hook = lambda event_type, doc_id, payload: (
+            # One queue serves every agent (A3): document events keep their
+            # historical ledger names; other subjects are recorded under
+            # ``job.*`` with their own entity type.
+            _doc_worker.event_hook = lambda event_type, subject_id, payload: (
                 platform_event_ledger.append_event(
-                    event_type=f"document.{event_type.lower()}",
-                    entity_type='document',
-                    entity_id=doc_id,
+                    event_type=(
+                        f"document.{event_type.lower()}"
+                        if payload.get('subject_type', 'document') == 'document'
+                        else f"job.{event_type.lower()}"
+                    ),
+                    entity_type=payload.get('subject_type', 'document'),
+                    entity_id=subject_id,
                     actor='document_job_worker',
                     payload=payload,
                     ledger_type='event',
                 )
             )
             _doc_worker.start()
-            print(f"📄 Async document worker started "
-                  f"({_doc_worker.concurrency} threads, retries {_doc_worker.retry_schedule}s)")
+            print(f"📄 Async job queue started "
+                  f"({_doc_worker.concurrency}-{_doc_worker.max_concurrency} threads, "
+                  f"retries {_doc_worker.retry_schedule}s)")
     except Exception as _worker_exc:
-        print(f"   ⚠️  Async document worker not started: {_worker_exc}")
+        print(f"   ⚠️  Async job queue not started: {_worker_exc}")
 
     server_address = (HOST, port)
     httpd = ThreadingHTTPServer(server_address, PortalHandler)
