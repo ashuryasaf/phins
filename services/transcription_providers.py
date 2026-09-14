@@ -46,11 +46,17 @@ class TranscriptionUnavailableError(RuntimeError):
 
 
 class AudioTranscriptionProvider:
-    """Provider interface for speech-to-text."""
+    """Provider interface for speech-to-text.
+
+    ``context`` (optional) carries attribution for cost accounting and the
+    external-call gateway's per-customer daily budget: ``customer_id``,
+    ``document_id``, ``job_id``. Providers must accept and may ignore it.
+    """
 
     def transcribe(self, raw: bytes, *, file_name: str = "audio.mp3",
                    mime_type: str = "audio/mpeg",
-                   language_hint: Optional[str] = None) -> Dict[str, Any]:
+                   language_hint: Optional[str] = None,
+                   context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         raise NotImplementedError
 
     def describe(self) -> Dict[str, Any]:
@@ -59,7 +65,7 @@ class AudioTranscriptionProvider:
 
 class DisabledTranscriptionProvider(AudioTranscriptionProvider):
     def transcribe(self, raw, *, file_name="audio.mp3", mime_type="audio/mpeg",
-                   language_hint=None):
+                   language_hint=None, context=None):
         raise TranscriptionUnavailableError(
             "No transcription provider configured "
             "(set PHINS_TRANSCRIPTION_PROVIDER=openai_compatible)")
@@ -88,8 +94,16 @@ class OpenAICompatibleTranscriptionProvider(AudioTranscriptionProvider):
 
     def transcribe(self, raw: bytes, *, file_name: str = "audio.mp3",
                    mime_type: str = "audio/mpeg",
-                   language_hint: Optional[str] = None) -> Dict[str, Any]:
+                   language_hint: Optional[str] = None,
+                   context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         import requests
+
+        # Attribution for the budget scope and the usage row. Only known keys
+        # are kept so a caller cannot smuggle arbitrary fields into metering.
+        call_context = {
+            key: str(value) for key, value in (context or {}).items()
+            if key in ("customer_id", "document_id", "job_id") and value
+        }
 
         if not raw:
             raise ValueError("Empty audio payload")
@@ -127,7 +141,7 @@ class OpenAICompatibleTranscriptionProvider(AudioTranscriptionProvider):
             payload = response.json()
             duration_ms = int((time.time() - start) * 1000)
             result = self._parse_payload(payload, duration_ms)
-            self._meter(result)
+            self._meter(result, call_context)
             return result
 
         # Gateway: breaker + jittered retry + budget. Audio payloads are
@@ -141,6 +155,7 @@ class OpenAICompatibleTranscriptionProvider(AudioTranscriptionProvider):
             endpoint=self.endpoint,
             operation="transcription",
             agent_id=self.agent_id,
+            context=call_context,  # budget scope = customer_id when known
             cache_key=gateway.make_cache_key(
                 "transcription", self.endpoint, self.model, language_hint,
                 hashlib.sha256(raw).hexdigest()),
@@ -182,9 +197,11 @@ class OpenAICompatibleTranscriptionProvider(AudioTranscriptionProvider):
             "request_duration_ms": duration_ms,
         }
 
-    def _meter(self, result: Dict[str, Any]) -> None:
+    def _meter(self, result: Dict[str, Any],
+               context: Optional[Dict[str, Any]] = None) -> None:
         try:
             from services.ai_usage_service import get_ai_usage_service
+            context = context or {}
             get_ai_usage_service().record_usage(
                 provider=result.get("provider", "openai_compatible"),
                 operation="transcription",
@@ -192,6 +209,9 @@ class OpenAICompatibleTranscriptionProvider(AudioTranscriptionProvider):
                 media_seconds=result.get("duration_seconds"),
                 duration_ms=result.get("request_duration_ms"),
                 agent_id=self.agent_id,
+                customer_id=context.get("customer_id"),
+                document_id=context.get("document_id"),
+                job_id=context.get("job_id"),
             )
         except Exception as exc:
             logger.debug("Transcription usage metering skipped: %s", exc)
