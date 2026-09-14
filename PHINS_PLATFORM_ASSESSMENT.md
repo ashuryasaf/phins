@@ -124,7 +124,7 @@ These are concrete, file-and-line defects to address first. Each one is debuggab
 |---|---|---|---|---|
 | D1 | Critical | `services/bi_analytics_service.py:30` | All `/api/bi/*` endpoints 500 | `SyntaxError` (see §2.2) |
 | D2 | Critical | `web_portal/server.py:1497-1502` | "Integrity check shows PASS but customer says data missing" | Global rebinding split-brain (§2.1) |
-| D3 | High | `ai_automation_controller.py:411-434` | Quarterly invoice due date may land on wrong year edge | Two competing quarter-rollover code paths in the same function; second overrides first but the first sets `current_year` first |
+| D3 | High | `ai_automation_controller.py:411-434` | Quarterly invoice due date may land on wrong year edge | Two competing quarter-rollover code paths in the same function; second overrides first but the first sets `current_year` first. **Resolved** (design §B2): one path per frequency in `services/automation/billing_schedule.py` (`next_quarter_start`), edge-tested in `tests/test_billing_schedule.py` |
 | D4 | High | `accounting_engine.py` vs `services/billing_service.py` | Pennies-per-month reconciliation drift | Decimal/float mixing (§2.3) |
 | D5 | High | `services/data_integrity_service.py:89-92` | "After DB recovery, integrity service still operates on empty dict" | Constructor captures dict by reference |
 | D6 | Medium | `web_portal/server.py:12175` (`do_GET`) | Difficult to attribute regressions to specific routes | Single ~14k-line method; debugger frame is useless |

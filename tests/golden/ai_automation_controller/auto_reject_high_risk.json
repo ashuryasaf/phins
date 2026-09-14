@@ -1,10 +1,12 @@
 {
   "description": "Over-65 smoker with pre-existing conditions and poor health score: rule score floors at 0.0, below the 0.15 reject cut-off.",
   "expected": {
+    "confidence_band": "auto_reject",
     "decision": "auto_reject",
     "rejection_reason": "Risk score too low for coverage",
     "risk_score": 0.0,
-    "segment": "65_plus|retired"
+    "segment": "65_plus|retired",
+    "threshold_margin": 0.15
   },
   "input": {
     "age": 70,
