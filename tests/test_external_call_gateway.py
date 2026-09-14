@@ -235,6 +235,24 @@ def test_breaker_half_open_probe_then_recovers(gateway, monkeypatch):
     assert cb.state == "closed"
 
 
+def test_interrupted_half_open_probe_does_not_strand_the_breaker(gateway, monkeypatch):
+    monkeypatch.setenv(gw.BREAKER_THRESHOLD_ENV, "1")
+    monkeypatch.setenv(gw.BREAKER_RECOVERY_ENV, "0")
+    with pytest.raises(_Transient):
+        gateway.call("llm", _counter([_Transient("down")]), max_retries=0)
+    cb = gateway.breaker("llm", "")
+    assert cb.state == "half_open"  # recovery timeout 0 → immediately probing
+
+    def interrupted():
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        gateway.call("llm", interrupted, max_retries=0)
+    # The abandoned probe slot was released: the next probe is admitted and can close the breaker.
+    assert gateway.call("llm", _counter(["recovered"]), max_retries=0) == "recovered"
+    assert cb.state == "closed"
+
+
 def test_is_transient_classification():
     assert is_transient(_HTTP(429)) and is_transient(_HTTP(503)) and is_transient(_HTTP(408))
     assert not is_transient(_HTTP(400)) and not is_transient(_HTTP(401)) and not is_transient(_HTTP(404))

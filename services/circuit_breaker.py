@@ -90,6 +90,16 @@ class CircuitBreaker:
                 self._state = 'closed'
                 self._opened_at = None
 
+    def release_probe(self) -> None:
+        """Free the half-open probe slot without recording an outcome.
+
+        Used when a probe is abandoned (e.g. the calling thread is unwound by
+        a ``BaseException``) so one interrupted request cannot leave the
+        breaker permanently half-open with a phantom probe in flight.
+        """
+        with self._lock:
+            self._half_open_probe_in_flight = False
+
     def record_failure(self, error: str) -> None:
         with self._lock:
             self._consecutive_failures += 1

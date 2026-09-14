@@ -363,6 +363,11 @@ class ExternalCallGateway:
                     delay = random.uniform(0, min(cap, base * (2 ** (attempt - 1))))
                 self._sleep(min(cap, delay))
                 continue
+            except BaseException:
+                # Thread unwound mid-request (KeyboardInterrupt, SystemExit):
+                # no outcome to record, but never strand a half-open probe.
+                cb.release_probe()
+                raise
 
             cb.record_success()
             duration_ms = int((time.time() - started) * 1000)
