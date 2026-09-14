@@ -255,6 +255,9 @@ _UPGRADE_NEW_COLUMNS = [
     ('document_processing_jobs', 'priority', 'INTEGER', '100'),
     ('document_processing_jobs', 'idempotency_key', 'VARCHAR(200)', None),
     ('document_processing_jobs', 'worker_id', 'VARCHAR(100)', None),
+    # External-call gateway (agent attribution + budget refusals) on AI usage rows.
+    ('ai_usage_records', 'agent_id', 'VARCHAR(80)', None),
+    ('ai_usage_records', 'blocked', 'BOOLEAN', 'FALSE'),
 ]
 # Columns whose declared type must be widened on existing databases
 # (table_name, column_name, new_type).

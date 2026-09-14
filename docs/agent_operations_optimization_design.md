@@ -769,10 +769,39 @@ Deviations from the B12 text above, and why:
   from `/execute`, matching the existing "Daily loss limit reached" shape the
   terminal UI already handles.
 
-### Next — §D step 2 (remaining)
+### Shipped — §D step 2 (remaining): A2 external-call gateway
 
-A2 external-call gateway (see §A2 for touch points and tests).
+| Piece | Where | Notes |
+|---|---|---|
+| Shared breaker | `services/circuit_breaker.py` (new); `services/notification_service.py` | `CircuitBreaker` lifted verbatim from `_SMTPCircuitBreaker`, which now subclasses it and only binds the SMTP thresholds/name. `test_notification_service.py` passes unchanged. |
+| Gateway | `services/external_call_gateway.py` (new) — `ExternalCallGateway.call(provider_kind, request_fn, *, endpoint, operation, agent_id, budget_scope, budget, cache_key, cache_ttl, cache_when, max_retries, usage_from, meter, context)` | Order of policy: cache → budget → breaker → retry → meter. Cache values are deep-copied in **and** out (a caller can never mutate what another caller receives); failures are never cached, and neither is a result the caller's `cache_when` predicate rejects (schema-invalid completions). Budget is per `(scope, agent_id, UTC day)`; scope defaults to `context.customer_id`, else `global`; calls the provider does not bill pass `budget=False` and are neither charged nor refused. `BudgetExceeded` is raised **before** the provider is contacted and a `blocked=True` usage row (zero cost, no tokens) is recorded so refusals show in cost reporting. Transient = connection/timeout or HTTP 408/425/429/5xx; only those retry (full jitter, `Retry-After` honoured) and count toward the breaker. `snapshot()` / `reset()` for the admin health view and tests; `conftest.py` resets it before every test. |
+| Metering schema | `services/ai_usage_service.py`, `database/models.py` (`AIUsageRecord.agent_id`, `.blocked`), `database/repositories/ai_usage_repository.py`, `database/__init__.py` (`_UPGRADE_NEW_COLUMNS`) | `record_usage(agent_id=, blocked=)`, `summarize(group_by="agent")`, `blocked` count per bucket and in totals, in memory **and** in SQL (`SUM(CASE WHEN blocked ...)`). Existing databases get both columns via `upgrade_schema`; `blocked` defaults to false for pre-existing rows. `usage_hook` no longer mutates the caller's context dict. |
+| LLM | `services/llm_providers.py` (`OpenAICompatibleProvider._chat`), `services/assessment_ai_service.py` | HTTP + parse + `usage_hook` run **inside** `request_fn`, so the hook fires exactly once per real provider call — never on a cache hit, never on a failed attempt. Cache key = sha256 of endpoint + full chat payload (model, messages, temperature 0). Per-call usage is captured in a local box (provider instances are shared). `structured_completion` caches only schema-valid completions, so a bad reply is never replayed for later identical prompts. `agent_id` (default `assessment_ai`) and `call_context` (assessment service sets `customer_id`) drive budget scope and usage attribution. Budget refusal surfaces as a provider failure → the existing deterministic fallback. |
+| Transcription | `services/transcription_providers.py` | Cache key = sha256 of the audio bytes + model + language hint, so an identical upload is not transcribed or billed twice within the TTL. Parsing and `_meter` also moved inside `request_fn` (one usage row per real call). |
+| Media generation | `services/media_generation_service.py` (`_read_json_with_diagnostics`) | Breaker per provider host. `submit` is **never retried** (a 5xx after the provider may already have accepted a paid job would double-bill) and is metered as `video_submit` and charged to the daily budget; `poll`/`download` retry, are not billable, and pass `budget=False` so polling an in-flight job can neither exhaust the cap nor be refused by it. No cache on any media call (poll results change). Gateway refusals raise `MediaGenerationError` like any provider failure. |
+| Admin view | `web_portal/api_extensions.py` → `GET /api/admin/ai-agents/health` | Additive `gateway` block: stats, breaker states, today's budget usage. |
+| Tests | `tests/test_external_call_gateway.py` (18), `tests/test_gateway_provider_integration.py` (8), `tests/test_ai_usage_service.py` (+3: `group_by="agent"`, SQLite persistence round-trip for `agent_id`/`blocked`, legacy-table `upgrade_schema`) | Existing `test_llm_providers.py`, `test_transcription_providers.py`, `test_video_agents_service.py`, `test_video_agents_integrity.py`, `test_notification_service.py`, `test_media_processing.py`, `test_assessment_*` pass unchanged. |
+
+Deviations from the A2 text above, and why:
+
+- **No `ai_call_cache` table.** The cache is in-memory only (bounded, 2048
+  entries, soonest-expiring evicted first). A durable cache would add one
+  write per external call and a stale-completion risk across deploys for a
+  saving that only matters within a process's lifetime; revisit with A4 if
+  cross-instance hit rates justify it.
+- **Provider-invocation cases live in `tests/test_gateway_provider_integration.py`**
+  rather than one per existing provider suite, so the wiring can be reviewed
+  and reverted as a unit; the existing suites are left byte-for-byte unchanged
+  as the "gateway is transparent" proof.
+- **Video Agents' job caps were not replaced.** They cap *jobs per user per
+  day* (a product rule); the gateway caps *provider calls/tokens per
+  customer/agent/day* (a cost rule). Both apply; unifying them would change
+  product behaviour, which is out of scope here.
+
+### Next — §D step 3
+
+A3 generalized job queue (see §A3), then A4 durable agent state.
 
 ---
 
-_Last updated: September 14, 2026 — A1 + A5 + B12 shipped; A2 next._
+_Last updated: September 14, 2026 — A1 + A5 + B12 + A2 shipped; A3 next._

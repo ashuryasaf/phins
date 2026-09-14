@@ -3017,12 +3017,18 @@ def handle_ai_agents_health(session: Optional[Dict], query_params: Optional[Dict
         for agent in agents:
             key = str(agent.get('health', {}).get('status') or 'unknown')
             status_counts[key] = status_counts.get(key, 0) + 1
+        try:
+            from services.external_call_gateway import get_gateway
+            gateway = get_gateway().snapshot()
+        except Exception as exc:  # noqa: BLE001 - gateway view is additive
+            gateway = {'error': str(exc)}
         return 200, {
             'agents': agents,
             'agent_count': len(agents),
             'health_summary': status_counts,
             'slo_breaches': breaches,
             'load_failures': load_failures,
+            'gateway': gateway,
             'generated_at': datetime.now(timezone.utc).isoformat(),
         }
     except Exception as exc:  # noqa: BLE001 - operations view must degrade, not 500-loop

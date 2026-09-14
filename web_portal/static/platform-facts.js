@@ -11,7 +11,7 @@
 (function (global) {
   "use strict";
 
-  var FALLBACK_MODULES = 104;
+  var FALLBACK_MODULES = 106;
   var facts = {
     service_modules: FALLBACK_MODULES,
     investor_book: null,

@@ -42,7 +42,7 @@ import logging
 import os
 import re
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +144,11 @@ class LLMProvider:
 
     #: set by consumers (e.g. ai_usage_service) to meter every call.
     usage_hook: Optional[Callable[[Dict[str, Any]], None]] = None
+    #: Agent attribution for gateway budget scoping and usage rows; consumers
+    #: that own the provider instance (e.g. assessment_ai_service) override it.
+    agent_id: str = "assessment_ai"
+    #: Merged into gateway budget/usage context (customer_id, document_id, ...).
+    call_context: Optional[Dict[str, Any]] = None
 
     def completion(self, system_prompt: str, user_content: str, *,
                    escalate: bool = False) -> str:
@@ -193,42 +198,80 @@ class OpenAICompatibleProvider(LLMProvider):
 
     # ── HTTP core ─────────────────────────────────────────────────────────
 
-    def _chat(self, messages: List[Dict[str, str]], model: str) -> str:
-        import requests
+    def _chat(self, messages: List[Dict[str, str]], model: str, *,
+              cache_when: Optional[Callable[[str], bool]] = None) -> str:
+        """One chat completion through the external-call gateway.
+
+        The gateway supplies the response cache, daily budget, circuit
+        breaker and jittered retry (design §A2). The HTTP request, response
+        parsing and the ``usage_hook`` notification live inside
+        ``request_fn`` so the hook fires exactly once per *real* provider
+        call — never for a cache hit, never for a failed attempt.
+
+        ``cache_when`` lets a caller that validates the completion keep an
+        unusable one out of the cache.
+        """
         from security.network import assert_safe_provider_url
+        from services.external_call_gateway import get_gateway
 
         assert_safe_provider_url(self.endpoint)
-        start = time.time()
-        response = requests.post(
-            self.endpoint,
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
+        payload = {"model": model, "messages": messages, "temperature": 0.0}
+        usage_box: Dict[str, Any] = {}  # per-call; provider instances may be shared
+
+        def request_fn() -> str:
+            import requests
+
+            start = time.time()
+            response = requests.post(
+                self.endpoint,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            data = response.json()
+            duration_ms = int((time.time() - start) * 1000)
+
+            usage = data.get("usage") or {}
+            self._notify_usage({
+                "provider": "openai_compatible",
+                "operation": "llm_completion",
+                "model": model,
+                "agent_id": self.agent_id,
+                "input_tokens": int(usage.get("prompt_tokens") or 0),
+                "output_tokens": int(usage.get("completion_tokens") or 0),
+                "duration_ms": duration_ms,
+            })
+            usage_box.update(usage)
+
+            content = (
+                data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            )
+            content = (content or "").strip()
+            if not content:
+                raise ValueError("Empty completion from LLM endpoint")
+            return content
+
+        gateway = get_gateway()
+        return gateway.call(
+            "llm",
+            request_fn,
+            endpoint=self.endpoint,
+            operation="llm_completion",
+            agent_id=self.agent_id,
+            context=dict(self.call_context or {}),
+            cache_key=gateway.make_cache_key("llm", self.endpoint, payload),
+            cache_when=cache_when,
+            usage_from=lambda _content: {
+                "input_tokens": int(usage_box.get("prompt_tokens") or 0),
+                "output_tokens": int(usage_box.get("completion_tokens") or 0),
+                "model": model,
             },
-            json={"model": model, "messages": messages, "temperature": 0.0},
-            timeout=self.timeout,
+            meter=False,  # the usage_hook above is the metering point (richer context)
         )
-        response.raise_for_status()
-        data = response.json()
-        duration_ms = int((time.time() - start) * 1000)
-
-        usage = data.get("usage") or {}
-        self._notify_usage({
-            "provider": "openai_compatible",
-            "operation": "llm_completion",
-            "model": model,
-            "input_tokens": int(usage.get("prompt_tokens") or 0),
-            "output_tokens": int(usage.get("completion_tokens") or 0),
-            "duration_ms": duration_ms,
-        })
-
-        content = (
-            data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        )
-        content = (content or "").strip()
-        if not content:
-            raise ValueError("Empty completion from LLM endpoint")
-        return content
 
     def _notify_usage(self, record: Dict[str, Any]) -> None:
         if not self.usage_hook:
@@ -274,14 +317,16 @@ class OpenAICompatibleProvider(LLMProvider):
 
         last_errors: List[str] = []
         for attempt in range(1 + max(0, self.validation_retries)):
-            content = self._chat(messages, model)
-            parsed = _parse_json_lenient(content)
-            if parsed is None:
-                last_errors = ["response is not valid JSON"]
-            else:
-                last_errors = validate_json_schema(parsed, schema)
-                if not last_errors:
-                    return parsed
+            # Only a completion that satisfies the schema is worth caching;
+            # caching an invalid one would replay it — and burn a validation
+            # retry — on every later identical prompt.
+            content = self._chat(
+                messages, model,
+                cache_when=lambda text: not _parse_and_validate(text, schema)[1],
+            )
+            parsed, last_errors = _parse_and_validate(content, schema)
+            if not last_errors:
+                return parsed
             logger.warning(
                 "LLM structured output invalid (attempt %d): %s",
                 attempt + 1, "; ".join(last_errors[:5]),
@@ -297,6 +342,14 @@ class OpenAICompatibleProvider(LLMProvider):
             "LLM response failed schema validation after retries: "
             + "; ".join(last_errors[:10])
         )
+
+
+def _parse_and_validate(content: str, schema: Dict[str, Any]) -> Tuple[Any, List[str]]:
+    """Parse a completion and validate it; returns ``(parsed, errors)``."""
+    parsed = _parse_json_lenient(content)
+    if parsed is None:
+        return None, ["response is not valid JSON"]
+    return parsed, validate_json_schema(parsed, schema)
 
 
 def _parse_json_lenient(content: str) -> Optional[Any]:
