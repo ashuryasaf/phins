@@ -27,6 +27,8 @@ import uuid
 import math
 import random
 
+from services.agent_metrics import instrument_agent
+
 logger = logging.getLogger('phins.claims_bot')
 
 
@@ -362,6 +364,7 @@ class ClaimsBotService:
     # Core Analysis Methods
     # =========================================================================
     
+    @instrument_agent('claims_bot', decision_key='recommendation')
     def generate_probability_report(self, claim_id: str) -> Optional[ClaimProbabilityReport]:
         """
         Generate a comprehensive probability report for a claim.
@@ -1293,6 +1296,49 @@ def init_claims_bot_service(customers: Dict,
         audit_service=audit_service
     )
     return _bot_instance
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# See docs/agent_operations_optimization_design.md §A1.
+# ---------------------------------------------------------------------------
+def _claims_bot_health() -> Dict[str, Any]:
+    """Read-only probe: never instantiates the service."""
+    instance = _bot_instance
+    if instance is None:
+        return {'status': 'ok', 'initialized': False, 'reports_retained': 0}
+    return {
+        'status': 'ok',
+        'initialized': True,
+        'reports_retained': len(getattr(instance, 'reports', {}) or {}),
+        'retention_cap': ClaimsBotService.MAX_RETAINED_REPORTS,
+        'version': getattr(instance, 'version', None),
+    }
+
+
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='claims_bot',
+        name='Claims Probability Bot',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Generates a fraud/authenticity probability report for a claim by '
+            'cross-referencing documents, medical consistency, timing, amount, '
+            'customer history, and underwriting alignment.'
+        ),
+        entry_url='/claims-adjuster-dashboard.html',
+        api={'method': 'POST', 'path': '/api/claims/probability-report'},
+        roles=('admin', 'claims_adjuster', 'underwriter'),
+        deterministic=True,
+        sample_prompts=(
+            'Generate a probability report for claim CLM-12345',
+            'Is there fraud risk on this claim?',
+        ),
+    ), health_fn=_claims_bot_health)
+except Exception as _reg_exc:  # pragma: no cover - registration must never break the agent
+    logger.warning("claims bot agent registration skipped: %s", _reg_exc)
 
 
 __all__ = [

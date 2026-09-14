@@ -19448,6 +19448,15 @@ For claims or questions, please contact:
                     'billing': {'overdue': m['overdue_count'],
                                 'outstanding': outstanding_count}
                 }
+            # Per-agent operational counters (calls/errors/latency only; no
+            # PII, no decision payloads). This endpoint is unauthenticated, so
+            # error text and decision labels stay on the admin health view.
+            # Failure here must not hide the business metrics above.
+            try:
+                from services.agent_metrics import public_snapshot_all as _agent_snapshot_all
+                data['agents'] = _agent_snapshot_all()
+            except Exception:
+                data['agents'] = {}
             self._set_json_headers()
             self.wfile.write(json.dumps({'metrics': data, 'ts': datetime.now().isoformat()}).encode('utf-8'))
             return

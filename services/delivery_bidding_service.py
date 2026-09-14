@@ -32,6 +32,8 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 import logging
 
+from services.agent_metrics import instrument_agent
+
 logger = logging.getLogger('phins.delivery_bidding')
 
 
@@ -362,6 +364,8 @@ class DeliveryBiddingService:
     # BIDDING SYSTEM
     # =========================================================================
 
+    @instrument_agent('delivery_bidding',
+                      decision_fn=lambda r: 'accepted' if r.get('success') else 'rejected')
     def submit_bid(self,
                    request_id: str,
                    supplier_id: str,
@@ -499,6 +503,8 @@ class DeliveryBiddingService:
             'bids': [b.to_dict() for b in bids]
         }
 
+    @instrument_agent('delivery_bidding',
+                      decision_fn=lambda r: 'selected' if r.get('success') else 'rejected')
     def select_bid(self, request_id: str, bid_id: str, selected_by: str = "customer") -> Dict[str, Any]:
         if request_id not in self.delivery_requests:
             return {'success': False, 'error': 'Request not found'}
@@ -592,6 +598,8 @@ class DeliveryBiddingService:
             'status': 'bid_selected'
         }
 
+    @instrument_agent('delivery_bidding',
+                      decision_fn=lambda r: 'auto_selected' if r.get('success') else 'no_selection')
     def auto_select_best_bid(self, request_id: str) -> Dict[str, Any]:
         bids_result = self.get_bids_for_request(request_id)
         if not bids_result['success']:
@@ -820,3 +828,43 @@ def init_delivery_bidding_service(**kwargs) -> DeliveryBiddingService:
     global _delivery_service
     _delivery_service = DeliveryBiddingService(**kwargs)
     return _delivery_service
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# ---------------------------------------------------------------------------
+def _delivery_bidding_health() -> Dict[str, Any]:
+    """Read-only probe: never instantiates the service."""
+    instance = _delivery_service
+    if instance is None:
+        return {'status': 'ok', 'initialized': False}
+    return {
+        'status': 'ok',
+        'initialized': True,
+        'delivery_requests': len(getattr(instance, 'delivery_requests', {}) or {}),
+        'delivery_bids': len(getattr(instance, 'delivery_bids', {}) or {}),
+    }
+
+
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='delivery_bidding',
+        name='Delivery Bidding AI',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Location-based marketplace delivery bidding: ranks supplier bids, '
+            'auto-selects the best offer, tracks fulfilment, and settles through '
+            'the health wallet.'
+        ),
+        entry_url='/admin-supplier-dashboard.html',
+        api={'method': 'POST', 'path': '/api/delivery/evaluate-bids'},
+        roles=('admin', 'supplier', 'customer'),
+        deterministic=True,
+        sample_prompts=(
+            'Rank the bids for delivery request DLV-1001',
+        ),
+    ), health_fn=_delivery_bidding_health)
+except Exception as _reg_exc:  # pragma: no cover
+    logger.warning("delivery bidding agent registration skipped: %s", _reg_exc)

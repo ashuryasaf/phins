@@ -20,6 +20,16 @@ from typing import List, Optional, Dict, Any, Callable
 from datetime import datetime, date, timedelta
 import json
 from abc import ABC, abstractmethod
+import logging
+
+# Observation-only instrumentation (services/agent_metrics.py). Guarded so the
+# module keeps working when imported from the CLI/demo outside the repo root.
+try:
+    from services.agent_metrics import instrument_agent
+except Exception:  # pragma: no cover - defensive import guard
+    def instrument_agent(*_args, **_kwargs):
+        return lambda fn: fn
+
 from customer_validation import (
     Customer, HealthAssessment, Validator, Gender,
     SmokingStatus, PersonalStatus, DocumentType
@@ -635,6 +645,7 @@ class UnderwritingAssistant:
         # Default
         return 0.5
     
+    @instrument_agent('underwriting_assistant', decision_fn=lambda r: r)
     def make_underwriting_decision(
         self,
         session: UnderwritingSession,
@@ -1160,3 +1171,34 @@ class DivisionalReporter:
             "year_3": annual_premium * loss_ratio * 1.1,
             "total_3_years": annual_premium * loss_ratio * 3.15
         }
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# The assistant is an in-process library (CLI/demo + service agent); no HTTP
+# route of its own, so ``api.method`` is ``LIB``.
+# ---------------------------------------------------------------------------
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='underwriting_assistant',
+        name='Underwriting Assistant',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Guided direct-underwriting workflow: validation questionnaire, '
+            'health scoring, document verification, multi-channel delivery, and '
+            'reports to the actuary, risk, and claims divisions.'
+        ),
+        entry_url='/underwriter-dashboard.html',
+        api={'method': 'LIB', 'path': 'underwriting_assistant.UnderwritingAssistant'},
+        roles=('admin', 'underwriter'),
+        deterministic=True,
+        sample_prompts=(
+            'Start an underwriting session for this applicant',
+            'Which documents are still unverified?',
+        ),
+    ))
+except Exception as _reg_exc:  # pragma: no cover
+    logging.getLogger('phins.underwriting_assistant').warning(
+        "underwriting assistant agent registration skipped: %s", _reg_exc)

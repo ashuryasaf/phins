@@ -54,6 +54,8 @@ from typing import Dict, List, Any, Optional, Tuple, Set
 from dataclasses import dataclass, asdict, field
 from defusedxml import ElementTree as defused_etree
 
+from services.agent_metrics import instrument_agent
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -635,6 +637,7 @@ class PensionDataAgent:
         self.schema_mapping = MislakaSchemaMapping()
         self.schema_cache = {}
     
+    @instrument_agent('pension_data_agent')
     def process_xml_content(self, xml_content: bytes) -> Dict[str, Any]:
         """
         Process a single XML content and generate report.
@@ -662,6 +665,7 @@ class PensionDataAgent:
             'schema_version': data.get('header', {}).get('schema_version', 'Unknown'),
         }
     
+    @instrument_agent('pension_data_agent')
     def process_zip_content(self, zip_content: bytes) -> Dict[str, Any]:
         """
         Process a ZIP file containing Mislaka XML and Excel files.
@@ -2224,3 +2228,39 @@ def is_pension_xml(content: bytes) -> bool:
         return any(marker in content_str for marker in markers)
     except:
         return False
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# ---------------------------------------------------------------------------
+def _pension_agent_health() -> Dict[str, Any]:
+    """Read-only probe: never instantiates the agent."""
+    return {
+        'status': 'ok',
+        'initialized': _pension_agent is not None,
+        'lxml_available': LXML_AVAILABLE,
+    }
+
+
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='pension_data_agent',
+        name='Pension Data Agent (Mislaka)',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Parses Israeli Mislaka clearinghouse XML/ZIP exports (holdings, '
+            'severance, event, transference interfaces), aggregates a client '
+            'profile, and renders Hebrew/English pension reports.'
+        ),
+        entry_url='/risk-reports-dashboard.html',
+        api={'method': 'POST', 'path': '/api/mislaka/import'},
+        roles=('admin', 'underwriter', 'actuary'),
+        deterministic=True,
+        sample_prompts=(
+            'Import this Mislaka ZIP and summarise the pension holdings',
+        ),
+    ), health_fn=_pension_agent_health)
+except Exception as _reg_exc:  # pragma: no cover
+    logger.warning("pension data agent registration skipped: %s", _reg_exc)

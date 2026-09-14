@@ -35,6 +35,7 @@ from typing import Any, Callable, Dict, List, Optional
 import logging
 
 from services import kpi_definitions as kpi
+from services.agent_metrics import instrument_agent
 
 logger = logging.getLogger('phins.bi_analytics')
 
@@ -559,6 +560,7 @@ class BIAnalyticsService:
     # Executive dashboard
     # ------------------------------------------------------------------
 
+    @instrument_agent('bi_analytics')
     def get_executive_dashboard(
         self,
         customers: Dict[str, Any],
@@ -1049,6 +1051,7 @@ class BIAnalyticsService:
     # AI insights and forecasting
     # ------------------------------------------------------------------
 
+    @instrument_agent('bi_analytics')
     def generate_ai_insights(
         self,
         dashboard_data: Dict[str, Any],
@@ -1358,6 +1361,45 @@ def init_bi_analytics_service(*_args, **_kwargs) -> BIAnalyticsService:
     global _bi_analytics_service
     _bi_analytics_service = BIAnalyticsService()
     return _bi_analytics_service
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# ---------------------------------------------------------------------------
+def _bi_analytics_health() -> Dict[str, Any]:
+    """Read-only probe: never instantiates the service."""
+    instance = _bi_analytics_service
+    if instance is None:
+        return {'status': 'ok', 'initialized': False}
+    return {
+        'status': 'ok',
+        'initialized': True,
+        'cache_ttl_seconds': getattr(instance, 'cache_ttl_seconds', None),
+    }
+
+
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='bi_analytics',
+        name='BI Analytics & Insights',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Executive, delivery, customer, and supplier dashboards plus '
+            'rule-based AI insights and revenue forecasting.'
+        ),
+        entry_url='/admin.html',
+        api={'method': 'GET', 'path': '/api/bi/insights'},
+        roles=('admin', 'accountant', 'underwriter'),
+        deterministic=True,
+        sample_prompts=(
+            'What are the current BI insights?',
+            'Forecast revenue for the next 6 months',
+        ),
+    ), health_fn=_bi_analytics_health)
+except Exception as _reg_exc:  # pragma: no cover
+    logger.warning("BI analytics agent registration skipped: %s", _reg_exc)
 
 
 __all__ = [

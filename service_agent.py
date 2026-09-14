@@ -11,6 +11,14 @@ from datetime import datetime
 from underwriting_assistant import NotificationManager, DivisionalReporter
 from customer_validation import CustomerValidationService, Customer
 
+# Observation-only instrumentation (services/agent_metrics.py). Guarded so the
+# module keeps working when imported outside the repo root.
+try:
+    from services.agent_metrics import instrument_agent
+except Exception:  # pragma: no cover - defensive import guard
+    def instrument_agent(*_args, **_kwargs):
+        return lambda fn: fn
+
 
 class CustomerServiceAgent:
     """Agent focused on client service, correspondence and upsales.
@@ -48,6 +56,7 @@ class CustomerServiceAgent:
         if "upsell_offer" not in nm.templates:
             nm.templates["upsell_offer"] = nm.templates.get("uw_approved")
 
+    @instrument_agent('customer_service')
     def handle_inquiry(self, customer_id: str, channel: str, message: str) -> Dict[str, Any]:
         """Handle a customer inquiry and send acknowledgement.
 
@@ -153,6 +162,7 @@ class CustomerServiceAgent:
         """Append an interaction record for auditing and follow-up."""
         self.interactions.append(interaction)
 
+    @instrument_agent('customer_service', decision_fn=lambda r: 'escalated')
     def escalate_to_human(self, customer_id: str, reason: str, assigned_team: str = "Service Team") -> Dict[str, Any]:
         """Create an escalation report for human follow-up and return it."""
         customer = self.customer_service.get_customer_by_id(customer_id)
@@ -175,3 +185,34 @@ class CustomerServiceAgent:
 
         self.reporter.reports.append(report)
         return report
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# In-process library (no HTTP route of its own), so ``api.method`` is ``LIB``.
+# ---------------------------------------------------------------------------
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='customer_service',
+        name='Customer Service Agent',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Handles customer inquiries with acknowledgements, sends templated '
+            'correspondence, suggests rule-based upsell offers, logs '
+            'interactions, and escalates complex cases to human teams.'
+        ),
+        entry_url='/admin.html',
+        api={'method': 'LIB', 'path': 'service_agent.CustomerServiceAgent'},
+        roles=('admin',),
+        deterministic=True,
+        sample_prompts=(
+            'Acknowledge the inquiry from customer CUST-1001',
+            'Escalate this case to the claims team',
+        ),
+    ))
+except Exception as _reg_exc:  # pragma: no cover
+    import logging as _logging
+    _logging.getLogger('phins.customer_service_agent').warning(
+        "customer service agent registration skipped: %s", _reg_exc)

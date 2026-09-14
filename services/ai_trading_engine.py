@@ -19,6 +19,8 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
+from services.agent_metrics import instrument_agent
+
 logger = logging.getLogger('phins.ai_trading_engine')
 
 
@@ -1341,6 +1343,7 @@ class AutoPilotEngine:
             })
         return result
 
+    @instrument_agent('ai_trading_engine')
     def create_bot(
         self,
         strategy_name: str,
@@ -1448,6 +1451,8 @@ class AutoPilotEngine:
 
         return results
 
+    @instrument_agent('ai_trading_engine',
+                      decision_fn=lambda r: f"trades:{len(r)}" if isinstance(r, list) else None)
     def execute_bot_trades(
         self,
         bot_id: str,
@@ -1816,3 +1821,50 @@ def _bb_position(ind: Dict[str, Any], price: float) -> Optional[str]:
     if bbm is not None:
         return "above_mid" if price >= bbm else "below_mid"
     return "in_band"
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# ---------------------------------------------------------------------------
+def _trading_engine_health() -> Dict[str, Any]:
+    """Read-only probe. The AutoPilot singleton lives in
+    ``services.trading_platform_service``; it is looked up through
+    ``sys.modules`` so this probe never imports or instantiates it."""
+    import sys as _sys
+    platform_mod = _sys.modules.get('services.trading_platform_service')
+    engine = getattr(platform_mod, '_autopilot_engine', None) if platform_mod else None
+    payload: Dict[str, Any] = {
+        'status': 'ok',
+        'initialized': engine is not None,
+        'strategies': sorted(STRATEGY_REGISTRY.keys()),
+    }
+    if engine is not None:
+        bots = getattr(engine, '_bots', {}) or {}
+        payload['bots_total'] = len(bots)
+        payload['bots_active'] = sum(1 for b in bots.values() if str(b.get('status') or '').lower() == 'active')
+    return payload
+
+
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='ai_trading_engine',
+        name='AI Trading & AutoPilot',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Computes signals and risk metrics and runs rule-based AutoPilot '
+            'bots. Trade execution is risk-gated and audit-logged.'
+        ),
+        entry_url='/trading-terminal.html',
+        api={'method': 'GET', 'path': '/api/terminal/copilot'},
+        roles=('admin', 'customer'),
+        deterministic=True,
+        moves_money=True,
+        sample_prompts=(
+            'What is the copilot signal for TSLA?',
+            'Show AutoPilot bot performance',
+        ),
+    ), health_fn=_trading_engine_health)
+except Exception as _reg_exc:  # pragma: no cover
+    logger.warning("AI trading engine registration skipped: %s", _reg_exc)
