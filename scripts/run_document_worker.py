@@ -10,6 +10,14 @@ Requires ``USE_DATABASE=true``: a separate process can only share documents
 and job rows with the web process through the database. Without a database
 the in-process worker inside ``serve`` mode is the only valid topology.
 
+Scope: this process binds the *document* handlers only. The agent jobs queued
+under ``PHINS_AGENT_ASYNC`` (claims/underwriting bots, risk reports, Mislaka
+import, video submit) read and write state that lives inside the web process
+(in-memory stores, the AI-reports JSON file, the video ``_JobStore``), so
+only the web process claims them; a worker never claims a job type it has no
+handler for (``AgentJobQueue._claim_due``). They become eligible for this
+worker once their state is durable (design §A4).
+
 Usage:
     ./scripts/entrypoint.sh worker            # run until terminated
     ./scripts/entrypoint.sh worker --once     # single drain pass (cron-able)

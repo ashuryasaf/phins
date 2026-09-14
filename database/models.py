@@ -2720,8 +2720,17 @@ class DocumentProcessingJob(Base):
     __tablename__ = 'document_processing_jobs'
 
     id = Column(String(120), primary_key=True)
+    # Nullable since the queue became agent-generic (A3): document jobs still
+    # set it; other agents identify their work via subject_type/subject_id.
     document_id = Column(String(120), ForeignKey('documents.id', ondelete='CASCADE'),
-                         nullable=False, index=True)
+                         nullable=True, index=True)
+    # Generic subject of the job: ('document', DOC-...), ('claim', CLM-...),
+    # ('application', ...), ('report', ...), ('pension_import', ...),
+    # ('video_job', ...). Document jobs mirror document_id here.
+    subject_type = Column(String(50), nullable=True, index=True)
+    subject_id = Column(String(120), nullable=True, index=True)
+    # Principal that submitted the job; GET /api/jobs/{id} is scoped to it.
+    submitted_by = Column(String(100), nullable=True, index=True)
     job_type = Column(String(50), nullable=False, index=True)
     status = Column(String(30), nullable=False, default='pending', index=True)
     input_params = Column(Text, nullable=True)
@@ -2743,6 +2752,9 @@ class DocumentProcessingJob(Base):
         return {
             'id': self.id,
             'document_id': self.document_id,
+            'subject_type': self.subject_type,
+            'subject_id': self.subject_id,
+            'submitted_by': self.submitted_by,
             'job_type': self.job_type,
             'status': self.status,
             'input_params': json.loads(self.input_params) if self.input_params else None,

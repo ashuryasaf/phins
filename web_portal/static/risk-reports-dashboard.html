@@ -1915,6 +1915,7 @@
     }
   </style>
   <link rel="stylesheet" href="/phins-theme.css">
+  <script src="/agent-jobs.js"></script>
 </head>
 <body>
   <!-- Header — PR #433 navy/gold chrome -->
@@ -2822,7 +2823,7 @@
           // Analyze with inductive reasoning
           processingMessage.textContent = `AI analyzing patterns in ${file.name}...`;
           
-          const analyzeResponse = await fetch('/api/reports/analyze', {
+          const analyzeResponse = await phinsAwaitJob(await fetch('/api/reports/analyze', {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
@@ -2831,7 +2832,7 @@
             body: JSON.stringify({
               document_id: parseResult.document_id
             })
-          });
+          }));
           
           const analyzeResult = await analyzeResponse.json();
           if (!analyzeResponse.ok || analyzeResult.error || !analyzeResult.id) {
@@ -2854,7 +2855,7 @@
         const language = outputLanguage.value === 'auto' ? null : outputLanguage.value;
         const lastAnalysis = allResults[allResults.length - 1];
         
-        const reportResponse = await fetch('/api/reports/generate', {
+        const reportResponse = await phinsAwaitJob(await fetch('/api/reports/generate', {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
@@ -2864,7 +2865,7 @@
             analysis_id: lastAnalysis.id,
             language: language
           })
-        });
+        }));
         
         currentReport = await reportResponse.json();
         if (!reportResponse.ok || currentReport.error) {
@@ -4552,7 +4553,7 @@
       
       try {
         // Call import API
-        const response = await fetch('/api/mislaka/import', {
+        const response = await phinsAwaitJob(await fetch('/api/mislaka/import', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -4562,6 +4563,8 @@
             id_number: idNumber,
             product_type: productType
           })
+        }), {
+          onProgress: () => { statusMsg.textContent = 'Mislaka import queued, waiting for the pension data agent...'; }
         });
         
         const data = await response.json();

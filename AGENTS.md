@@ -18,11 +18,20 @@ PHINS is a Python platform built around:
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (178 files) and root-level `test_*.py` (11 files)
-- an async document intelligence pipeline: uploads can enqueue enrichment
- (`PHINS_DOC_ASYNC=true`) into `document_processing_jobs`, drained by
- `services/document_job_worker.py` (retries, dead-letter, idempotency keys);
- facts carry evidence provenance (source snippet, char offsets, PDF page,
+- both `tests/test_*.py` (221 files) and root-level `test_*.py` (11 files)
+- one generalized job queue (`services/agent_job_queue.py`, table
+ `document_processing_jobs`, rows keyed by `subject_type`/`subject_id` and
+ `submitted_by`; retries, dead-letter, idempotency keys, handler registry —
+ a worker only claims job types it has a handler for). Documents enqueue
+ enrichment under `PHINS_DOC_ASYNC=true` via the `document_job_worker.py`
+ binding; the agent routes (claims probability report, underwriting
+ AI-assess, risk-report analyze/generate, Mislaka import, video submit)
+ enqueue under `PHINS_AGENT_ASYNC=true` via `services/jobs/*_job.py`
+ adapters and answer `202 {job_id, status, poll_url}`; clients poll
+ `GET /api/jobs/{id}` (submitter or staff only, 404 otherwise) —
+ dashboards do this through `static/agent-jobs.js` (`phinsAwaitJob`).
+ With the flags off the same adapter functions run inline (golden parity).
+ Facts carry evidence provenance (source snippet, char offsets, PDF page,
  audio/video timestamps) and cross-document contradictions are recorded as
  `contradiction` facts, never silently resolved
 
@@ -86,8 +95,10 @@ Preferred file-by-task:
 |                                        # (includes `static/locales/he.json` Hebrew i18n)
 |- prompts/                             # versioned LLM prompt templates
 |  `- assessment/                       # narrative/onboarding/service/termination v1
-|- services/                            # 97 service modules
-|  |- document_job_worker.py            # async doc queue worker (retry/DLQ)
+|- services/                            # 107 service modules
+|  |- agent_job_queue.py                # generalized job queue (retry/DLQ/handlers)
+|  |- document_job_worker.py            # document binding over the job queue
+|  |- jobs/                             # agent job adapters (202 routes)
 |  |- llm_providers.py                  # vendor-neutral LLM + schema validation
 |  |- transcription_providers.py        # audio speech-to-text abstraction
 |  |- external_call_gateway.py          # cache/budget/breaker/retry for provider HTTP
@@ -120,7 +131,7 @@ Preferred file-by-task:
 |  `- runner.py
 |- scripts/                             # operational utilities
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/worker/db-init)
-|- tests/                               # 178 test files
+|- tests/                               # 221 test files
 |- docs/
 |  |- platform_data_architecture.md
 |  |- health_marketplace_architecture.md
@@ -310,10 +321,12 @@ Environment variables commonly used:
  `DEFAULT_MEDIA_VIDEO_PROVIDER`, `PHINS_MEDIA_INLINE_MAX_BYTES`,
  `PHINS_MAX_MEDIA_UPLOAD_SIZE` (0 = no HTTP cap),
  `PHINS_DEFAULT_MEDIA_ASSET_MAX_BYTES` (scanner/disk cap, default 2GB)
-- **Document pipeline:** `PHINS_DOC_ASYNC` (enqueue enrichment instead of
- inline processing; default off), `PHINS_DOC_WORKER_CONCURRENCY`,
- `PHINS_DOC_WORKER_POLL_INTERVAL`, `PHINS_DOC_RETRY_SCHEDULE`,
- `PHINS_DOC_CLAIM_TIMEOUT`
+- **Job queue:** `PHINS_DOC_ASYNC` (documents enqueue enrichment instead of
+ inline processing; default off), `PHINS_AGENT_ASYNC` (agent routes answer
+ 202 + `poll_url`; default off), `PHINS_DOC_WORKER_CONCURRENCY` (base
+ threads), `PHINS_JOB_WORKER_MAX_CONCURRENCY` (burst ceiling),
+ `PHINS_JOB_WORKER_IDLE_POLLS`, `PHINS_DOC_WORKER_POLL_INTERVAL`,
+ `PHINS_DOC_RETRY_SCHEDULE`, `PHINS_DOC_CLAIM_TIMEOUT`
 - **Transcription:** `PHINS_TRANSCRIPTION_PROVIDER`
  (`openai_compatible`|`disabled`), `PHINS_TRANSCRIPTION_ENDPOINT`,
  `PHINS_TRANSCRIPTION_API_KEY`, `PHINS_TRANSCRIPTION_MODEL`
@@ -409,7 +422,7 @@ Important test harness facts:
 - Tests reset in-memory portal state between cases (clears `POLICIES`,
   `CLAIMS`, `CUSTOMERS`, `SESSIONS`, `BILLING`, etc.)
 - Options wheel service and document processing service are also reset per test
-- 178 test files under `tests/`, 11 root-level `test_*.py` files
+- 221 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -487,4 +500,4 @@ If you update this file again:
 
 ---
 
-Last updated: September 12, 2026
+Last updated: September 14, 2026

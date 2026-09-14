@@ -7897,6 +7897,71 @@ try:
 except Exception:
     audit = None
 
+
+def get_agent_job_queue():
+    """The process-wide agent job queue with every adapter bound (A3).
+
+    Documents are bound by ``get_document_job_worker``; the agent adapters in
+    ``services.jobs`` are bound here with a ``JobContext`` over the portal's
+    live in-memory stores, so a job handler sees exactly what a request
+    thread sees. Idempotent and cheap after the first call; re-binds
+    automatically if the singleton was reset (tests).
+    """
+    from services.document_job_worker import get_document_job_worker
+    from services import jobs as agent_jobs
+
+    queue = get_document_job_worker(doc_service=get_document_service())
+    bound = getattr(queue, '_agent_job_context', None)
+    # Re-bind when the singleton is new or the store globals were rebound
+    # (the database-recovery path swaps the dicts for DB-backed views).
+    stale = (
+        bound is None
+        or bound.customers is not CUSTOMERS
+        or bound.policies is not POLICIES
+        or bound.underwriting_apps is not UNDERWRITING_APPLICATIONS
+        or bound.claims is not CLAIMS
+    )
+    if stale or agent_jobs.claims_bot_job.JOB_TYPE not in queue.handlers():
+        context = agent_jobs.JobContext(
+            customers=CUSTOMERS,
+            policies=POLICIES,
+            underwriting_apps=UNDERWRITING_APPLICATIONS,
+            claims=CLAIMS,
+            audit=audit,
+            sanitize_claim_report=sanitize_claim_probability_report,
+        )
+        agent_jobs.register_all(queue, context)
+        queue._agent_job_context = context
+    return queue
+
+
+def get_agent_job_context():
+    """The ``JobContext`` the synchronous routes hand to the shared adapter
+    functions (same stores the queued path uses)."""
+    return get_agent_job_queue()._agent_job_context
+
+
+def _job_visible_to(job: Dict[str, Any], session: Optional[Dict[str, Any]]) -> bool:
+    """Submitter-or-admin scope for ``GET /api/jobs/{id}``.
+
+    The submitter is matched on every identity a session carries (username,
+    user_id, customer_id) because routes record whichever of those they
+    resolved; staff document-admin roles may read any job.
+    """
+    if not session:
+        return False
+    if is_document_admin_role(get_effective_role(session)):
+        return True
+    submitted_by = str(job.get('submitted_by') or '').strip()
+    if not submitted_by:
+        return False
+    identities = {
+        str(session.get(key) or '').strip()
+        for key in ('username', 'user_id', 'customer_id')
+    }
+    identities.discard('')
+    return submitted_by in identities
+
 # Pipeline service for automatic workflow progression
 pipeline_service = None
 try:
@@ -15795,14 +15860,24 @@ For claims or questions, please contact:
 
             # Async document-processing queue depth (when the worker is active)
             document_processing = {'async_enabled': False}
+            agent_jobs_health = {'async_enabled': False}
             try:
                 from services.document_processing_service import async_processing_enabled
-                if async_processing_enabled():
+                from services.agent_job_queue import agent_async_enabled
+                if async_processing_enabled() or agent_async_enabled():
                     from services.document_job_worker import get_document_job_worker
                     worker = get_document_job_worker()
-                    document_processing = {
-                        'async_enabled': True,
-                        'queue': worker.queue_stats(),
+                    queue_stats = worker.queue_stats()
+                    if async_processing_enabled():
+                        document_processing = {
+                            'async_enabled': True,
+                            'queue': queue_stats,
+                        }
+                    agent_jobs_health = {
+                        'async_enabled': agent_async_enabled(),
+                        'queue': queue_stats,
+                        'threads': worker.active_threads(),
+                        'max_threads': worker.max_concurrency,
                     }
             except Exception:
                 pass
@@ -15818,6 +15893,7 @@ For claims or questions, please contact:
                 'customers_available': customers_count,
                 'notifications': notification_health,
                 'document_processing': document_processing,
+                'agent_jobs': agent_jobs_health,
                 'version': '2.0.0'
             }
             
@@ -22607,18 +22683,47 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Staff access required'}).encode('utf-8'))
                 return
             try:
-                from services.document_job_worker import get_document_job_worker
-                worker = get_document_job_worker()
+                from services.jobs import public_job_view
+                worker = get_agent_job_queue()
                 jobs = worker.list_jobs(
                     status=qs.get('status', [None])[0],
                     document_id=qs.get('document_id', [None])[0],
+                    subject_type=qs.get('subject_type', [None])[0],
+                    subject_id=qs.get('subject_id', [None])[0],
+                    job_type=qs.get('job_type', [None])[0],
+                    submitted_by=qs.get('submitted_by', [None])[0],
                     limit=safe_int(qs.get('limit', ['50'])[0], 50),
                 )
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
-                    'jobs': jobs,
+                    'jobs': [public_job_view(j) for j in jobs],
                     'queue': worker.queue_stats(),
+                    'handlers': worker.handlers(),
+                    'threads': worker.active_threads(),
                 }, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # GET /api/jobs/{job_id} - Poll an agent job submitted under
+        # PHINS_AGENT_ASYNC. Scoped to the submitter or staff; any other
+        # principal gets 404 so job ids cannot be enumerated.
+        if path.startswith('/api/jobs/') and path.count('/') == 3:
+            job_id = path[len('/api/jobs/'):].strip()
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                from services.jobs import public_job_view
+                job = get_agent_job_queue().get_job(job_id) if job_id else None
+                if job is None or not _job_visible_to(job, session):
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Job not found'}).encode('utf-8'))
+                    return
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(public_job_view(job), default=str).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
@@ -34442,12 +34547,22 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': auth_error}).encode('utf-8'))
                     return
                 
-                # Run analysis
-                analysis = service.analyze(document_id)
-                
-                # Convert to dict for JSON
-                result = service.to_dict(analysis)
-                result['success'] = True
+                from services.agent_job_queue import agent_async_enabled
+                from services.jobs import queued_response, risk_report_job
+
+                if agent_async_enabled():
+                    job = risk_report_job.enqueue_analyze(
+                        get_agent_job_queue(),
+                        document_id=document_id,
+                        submitted_by=str(user_id),
+                        idempotency_key=(str(data.get('idempotency_key') or '').strip() or None),
+                    )
+                    self._set_json_headers(202)
+                    self.wfile.write(json.dumps(queued_response(job)).encode('utf-8'))
+                    return
+
+                # Run analysis (same function the queued path runs)
+                result = risk_report_job.run_analyze(document_id)
                 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
@@ -34510,12 +34625,23 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': auth_error}).encode('utf-8'))
                     return
                 
-                # Generate report
-                report = service.generate_report(analysis_id, language)
-                
-                # Convert to dict for JSON
-                result = service.to_dict(report)
-                result['success'] = True
+                from services.agent_job_queue import agent_async_enabled
+                from services.jobs import queued_response, risk_report_job
+
+                if agent_async_enabled():
+                    job = risk_report_job.enqueue_generate(
+                        get_agent_job_queue(),
+                        analysis_id=analysis_id,
+                        language=language,
+                        submitted_by=str(user_id),
+                        idempotency_key=(str(data.get('idempotency_key') or '').strip() or None),
+                    )
+                    self._set_json_headers(202)
+                    self.wfile.write(json.dumps(queued_response(job)).encode('utf-8'))
+                    return
+
+                # Generate report (same function the queued path runs)
+                result = risk_report_job.run_generate(analysis_id, language)
                 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
@@ -34889,94 +35015,61 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'ID number required'}).encode('utf-8'))
                     return
                 
+                # Pension Data Agent import. The body (Mislaka fetch -> Hebrew
+                # CSV -> parse -> analyse -> Hebrew report) lives in
+                # services/jobs/pension_import_job.py so the synchronous path
+                # and the queued path (PHINS_AGENT_ASYNC -> 202) are identical.
+                from services.agent_job_queue import agent_async_enabled
+                from services.jobs import pension_import_job, queued_response
                 from services.mislaka_api_service import get_mislaka_service
-                from services.ai_risk_reports_service import get_ai_reports_service
-                
-                mislaka = get_mislaka_service()
-                
-                if not mislaka.is_configured():
+
+                # Configuration is checked before anything is queued so an
+                # unconfigured deployment still answers 503 immediately.
+                if not get_mislaka_service().is_configured():
                     self._set_json_headers(503)
                     self.wfile.write(json.dumps({
                         'error': 'Mislaka API not configured'
                     }).encode('utf-8'))
                     return
-                
-                # Get policies from Mislaka
-                result = mislaka.get_person_policies(id_number)
-                
-                if result.status.value != 'success' or not result.policies:
-                    self._set_json_headers(404)
-                    self.wfile.write(json.dumps({
-                        'error': 'No policies found',
-                        'message': result.error_message or 'No policies returned from Mislaka'
-                    }).encode('utf-8'))
-                    return
-                
-                # Convert policies to CSV format for AI analysis
-                import csv
-                import io
-                
-                csv_buffer = io.StringIO()
-                fieldnames = [
-                    'מספר פוליסה', 'סוג מוצר', 'חברה', 'תאריך תחילה', 
-                    'סטטוס', 'פרמיה חודשית', 'סכום כיסוי', 'ערך צבירה',
-                    'דמי ניהול', 'מסלול השקעה', 'מוטבים'
-                ]
-                writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames)
-                writer.writeheader()
-                
-                for p in result.policies:
-                    writer.writerow({
-                        'מספר פוליסה': p.policy_number,
-                        'סוג מוצר': p.product_type,
-                        'חברה': p.company_name,
-                        'תאריך תחילה': p.start_date,
-                        'סטטוס': p.status,
-                        'פרמיה חודשית': p.premium_monthly,
-                        'סכום כיסוי': p.cover_amount,
-                        'ערך צבירה': p.accumulated_value,
-                        'דמי ניהול': f"{p.management_fee_percent}%",
-                        'מסלול השקעה': p.investment_track,
-                        'מוטבים': ', '.join(p.beneficiaries) if p.beneficiaries else ''
-                    })
-                
-                csv_content = csv_buffer.getvalue().encode('utf-8')
-                
-                # Import to AI Reports service
-                ai_service = get_ai_reports_service()
-                
+
                 user_id, user_role, _username, context_error = self._resolve_reports_user_context(session)
                 if context_error:
                     self._set_json_headers(403)
                     self.wfile.write(json.dumps({'error': context_error}).encode('utf-8'))
                     return
-                
-                # Parse the CSV
-                doc_result = ai_service.parse_file(
-                    filename=f'mislaka_policies_{id_number[-4:]}.csv',
-                    file_content=csv_content,
-                    file_type='csv',
-                    owner_id=user_id,
-                    owner_role=user_role
-                )
-                
-                # Run analysis
-                analysis = ai_service.analyze(doc_result['document_id'])
-                
-                # Generate report
-                report = ai_service.generate_report(analysis.id, language='hebrew')
-                
+
+                if agent_async_enabled():
+                    job = pension_import_job.enqueue_pension_import(
+                        get_agent_job_queue(),
+                        id_number=id_number,
+                        user_id=str(user_id),
+                        user_role=user_role,
+                        submitted_by=str(user_id),
+                        idempotency_key=(str(data.get('idempotency_key') or '').strip() or None),
+                    )
+                    self._set_json_headers(202)
+                    self.wfile.write(json.dumps(queued_response(job)).encode('utf-8'))
+                    return
+
+                try:
+                    payload = pension_import_job.run_pension_import(
+                        id_number=id_number, user_id=str(user_id), user_role=user_role)
+                except pension_import_job.MislakaNotConfigured:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'Mislaka API not configured'
+                    }).encode('utf-8'))
+                    return
+                except pension_import_job.NoPoliciesFound as not_found:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({
+                        'error': 'No policies found',
+                        'message': not_found.message
+                    }).encode('utf-8'))
+                    return
+
                 self._set_json_headers(200)
-                self.wfile.write(json.dumps({
-                    'success': True,
-                    'message': f'Imported {len(result.policies)} policies from Mislaka',
-                    'document_id': doc_result['document_id'],
-                    'analysis_id': analysis.id,
-                    'report_id': report.id,
-                    'policies_count': len(result.policies),
-                    'total_accumulated': result.total_accumulated,
-                    'total_monthly_premium': result.total_monthly_premium
-                }, ensure_ascii=False).encode('utf-8'))
+                self.wfile.write(json.dumps(payload, ensure_ascii=False).encode('utf-8'))
                 return
                 
             except Exception as e:
@@ -40375,97 +40468,38 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Unsupported file type. Use PDF, images, or documents.'}).encode('utf-8'))
                     return
                 
-                # Import and use underwriting bot service for AI assessment
+                # Underwriting Bot assessment. The body lives in
+                # services/jobs/underwriting_bot_job.py so the synchronous
+                # path and the queued path (PHINS_AGENT_ASYNC -> 202) compute
+                # the identical payload.
                 try:
-                    from services.underwriting_bot_service import (
-                        UnderwritingBotService, MetadataType, RiskLevel, DecisionRecommendation
-                    )
-                    
-                    # Initialize bot service with existing data stores
-                    bot_service = UnderwritingBotService(
-                        customers=CUSTOMERS,
-                        policies=POLICIES,
-                        underwriting_apps=UNDERWRITING_APPLICATIONS,
-                        claims=CLAIMS,
-                        audit_service=audit
-                    )
-                    
-                    # Determine metadata type from file extension
-                    metadata_type = MetadataType.OTHER_DOCUMENT
-                    if lower_name.endswith('.pdf'):
-                        # Attempt to determine if it's a medical report or other document
-                        metadata_type = MetadataType.MEDICAL_REPORT
-                    elif lower_name.endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff')):
-                        metadata_type = MetadataType.PHOTO
-                    elif lower_name.endswith(('.doc', '.docx')):
-                        metadata_type = MetadataType.OTHER_DOCUMENT
-                    
-                    # Generate assessment ID
-                    assessment_id = f"AI-ASSESS-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
-                    
-                    # Start an assessment
-                    assessment = bot_service.start_assessment(
-                        underwriting_id=assessment_id,
-                        customer_id=f"UPLOAD-{datetime.now().strftime('%Y%m%d')}",
-                        policy_id=f"POL-UPLOAD-{random.randint(1000,9999)}"
-                    )
-                    
-                    # Add the uploaded file as metadata
-                    metadata = bot_service.add_metadata(
-                        assessment_id=assessment.id,
-                        metadata_type=metadata_type,
-                        file_name=filename,
-                        file_path='',  # No file path needed for direct content
+                    from services.agent_job_queue import agent_async_enabled
+                    from services.jobs import queued_response, underwriting_bot_job
+
+                    if agent_async_enabled():
+                        job = underwriting_bot_job.enqueue_ai_assessment(
+                            get_agent_job_queue(),
+                            filename=filename,
+                            file_content=file_content,
+                            mime_type=up.get('content_type', ''),
+                            actor=actor,
+                            submitted_by=actor,
+                        )
+                        self._set_json_headers(202)
+                        self.wfile.write(json.dumps(queued_response(job)).encode('utf-8'))
+                        return
+
+                    assessment_result = underwriting_bot_job.run_ai_assessment(
+                        get_agent_job_context(),
+                        filename=filename,
                         file_content=file_content,
-                        mime_type=up.get('content_type', '')
+                        mime_type=up.get('content_type', ''),
+                        actor=actor,
                     )
-                    
-                    # Process the metadata
-                    process_result = bot_service.process_metadata(metadata.id, file_content=file_content)
-                    
-                    # Run risk assessment
-                    report = bot_service.run_risk_assessment(assessment.id)
-                    
-                    # Build response
-                    assessment_result = {
-                        'assessment_id': assessment.id,
-                        'report_id': report.id,
-                        'risk_score': report.overall_risk_score,
-                        'risk_level': report.risk_level.value if hasattr(report.risk_level, 'value') else str(report.risk_level),
-                        'recommendation': report.recommendation.value if hasattr(report.recommendation, 'value') else str(report.recommendation),
-                        'confidence_level': report.confidence_level,
-                        'identity_verified': report.identity_verified,
-                        'identity_score': report.identity_score,
-                        'document_score': report.document_score,
-                        'medical_score': report.medical_score,
-                        'behavioral_score': report.behavioral_score,
-                        'fraud_score': report.fraud_score,
-                        'explanation': report.explanation,
-                        'risk_factors': [rf.to_dict() for rf in report.risk_factors] if report.risk_factors else [],
-                        'processing_time_seconds': report.processing_time_seconds,
-                        'file_analyzed': filename,
-                        'file_size': file_size,
-                        'analyzed_by': actor,
-                        'analyzed_at': datetime.now().isoformat()
-                    }
-                    
-                    if audit:
-                        try:
-                            audit.log(actor, 'ai_assessment', 'risk_dashboard', assessment.id, {
-                                'file_name': filename,
-                                'risk_score': report.overall_risk_score,
-                                'risk_level': report.risk_level.value if hasattr(report.risk_level, 'value') else str(report.risk_level),
-                                'recommendation': report.recommendation.value if hasattr(report.recommendation, 'value') else str(report.recommendation)
-                            })
-                        except Exception:
-                            pass
-                    
                     self._set_json_headers(200)
-                    self.wfile.write(json.dumps({
-                        'success': True,
-                        'message': 'AI assessment completed successfully',
-                        'assessment': assessment_result
-                    }).encode('utf-8'))
+                    self.wfile.write(json.dumps(
+                        underwriting_bot_job.response_body(assessment_result)
+                    ).encode('utf-8'))
                     
                 except ImportError as e:
                     # Fallback to simulated AI assessment if service not available
@@ -45858,102 +45892,34 @@ For claims or questions, please contact:
                         self.wfile.write(json.dumps({'error': f'Claim {claim_id} not found'}).encode('utf-8'))
                         return
                 
-                # Initialize Claims Bot Service
-                try:
-                    from services.claims_bot_service import get_claims_bot_service, init_claims_bot_service
-                    claims_bot = init_claims_bot_service(
-                        customers=CUSTOMERS,
-                        policies=POLICIES,
-                        claims=CLAIMS,
-                        underwriting=UNDERWRITING_APPLICATIONS,
-                        audit_service=audit if 'audit' in dir() else None
+                # Claims Bot report. The body (full bot + basic-scoring
+                # fallback) lives in services/jobs/claims_bot_job.py so the
+                # synchronous path and the queued path (PHINS_AGENT_ASYNC ->
+                # 202) compute the identical payload.
+                from services.agent_job_queue import agent_async_enabled
+                from services.jobs import claims_bot_job, queued_response
+
+                report_actor = (
+                    (session or {}).get('username')
+                    or session_customer_id
+                    or ('test' if PHINS_TEST_MODE else 'anonymous')
+                )
+                if agent_async_enabled():
+                    job = claims_bot_job.enqueue_probability_report(
+                        get_agent_job_queue(),
+                        claim_id=claim_id,
+                        claim=claim,
+                        submitted_by=str(report_actor),
                     )
-                except ImportError:
-                    claims_bot = None
-                
-                if not claims_bot:
-                    # Fallback: Generate a basic probability report without the full service
-                    customer_id = claim.get('customer_id', '')
-                    policy_id = claim.get('policy_id', '')
-                    claimed_amount = float(claim.get('claimed_amount', 0) or 0)
-                    
-                    # Find underwriting data
-                    uw_data = None
-                    for uw_id, uw in UNDERWRITING_APPLICATIONS.items():
-                        if uw.get('customer_id') == customer_id or uw.get('policy_id') == policy_id:
-                            uw_data = uw
-                            break
-                    
-                    # Calculate basic scores
-                    policy = POLICIES.get(policy_id, {})
-                    coverage = float(policy.get('coverage_amount', 500000) or 500000)
-                    amount_ratio = claimed_amount / coverage if coverage > 0 else 0
-                    
-                    # Base authenticity score
-                    auth_score = 0.75
-                    if amount_ratio > 0.9:
-                        auth_score -= 0.2
-                    elif amount_ratio > 0.7:
-                        auth_score -= 0.1
-                    
-                    # Adjust for underwriting data
-                    if uw_data:
-                        if uw_data.get('medical_conditions'):
-                            auth_score += 0.05
-                        if uw_data.get('identity_verified'):
-                            auth_score += 0.05
-                    
-                    auth_score = max(0.1, min(0.95, auth_score))
-                    
-                    report = {
-                        'id': f"PROB-RPT-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                        'claim_id': claim_id,
-                        'customer_id': customer_id,
-                        'policy_id': policy_id,
-                        'assessment_date': datetime.now().isoformat(),
-                        'authenticity_probability': auth_score,
-                        'authenticity_percentage': f"{auth_score * 100:.1f}%",
-                        'fraud_probability': 1 - auth_score,
-                        'fraud_percentage': f"{(1 - auth_score) * 100:.1f}%",
-                        'component_scores': {
-                            'document_authenticity': 0.85,
-                            'medical_consistency': 0.80,
-                            'timing_legitimacy': 0.75,
-                            'amount_reasonability': 1 - (amount_ratio * 0.5),
-                            'customer_history': 0.85,
-                            'underwriting_alignment': 0.80 if uw_data else 0.50
-                        },
-                        'hidden_conditions': {
-                            'detected': 0,
-                            'conditions': [],
-                            'impact_score': 0
-                        },
-                        'fraud_indicators': {
-                            'count': 0,
-                            'indicators': [],
-                            'high_severity_count': 0
-                        },
-                        'recommendation': 'approve_full' if auth_score >= 0.7 else 'refer_investigation',
-                        'recommendation_display': 'Approve Full' if auth_score >= 0.7 else 'Refer Investigation',
-                        'confidence_level': 0.75,
-                        'risk_level': 'low' if auth_score >= 0.8 else ('medium' if auth_score >= 0.6 else 'high'),
-                        'explanation': f"Basic assessment completed. Authenticity probability: {auth_score:.1%}",
-                        'ai_analysis': {
-                            'summary': f"This claim has been assessed with {auth_score:.1%} authenticity probability.",
-                            'key_findings': [f"Claim amount ratio: {amount_ratio:.1%} of coverage"],
-                            'red_flags': [] if auth_score >= 0.7 else ['Amount ratio high'],
-                            'green_flags': ['Documentation provided'] if claim.get('files_count', 0) > 0 else []
-                        }
-                    }
-                else:
-                    # Use full Claims Bot Service
-                    prob_report = claims_bot.generate_probability_report(claim_id)
-                    if prob_report:
-                        report = prob_report.to_dict()
-                    else:
-                        self._set_json_headers(500)
-                        self.wfile.write(json.dumps({'error': 'Failed to generate probability report'}).encode('utf-8'))
-                        return
+                    self._set_json_headers(202)
+                    self.wfile.write(json.dumps(queued_response(job)).encode('utf-8'))
+                    return
+
+                report = claims_bot_job.generate_probability_report(get_agent_job_context(), claim_id)
+                if not report:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': 'Failed to generate probability report'}).encode('utf-8'))
+                    return
                 
                 report = sanitize_claim_probability_report(report)
                 self._set_json_headers()
@@ -56151,24 +56117,35 @@ def run_server(port: int = PORT) -> None:
     # back to the synchronous upload path, never blocks serving traffic.
     try:
         from services.document_processing_service import async_processing_enabled
-        if async_processing_enabled():
-            from services.document_job_worker import get_document_job_worker
-            _doc_worker = get_document_job_worker(doc_service=get_document_service())
-            _doc_worker.event_hook = lambda event_type, doc_id, payload: (
+        from services.agent_job_queue import agent_async_enabled
+        if async_processing_enabled() or agent_async_enabled():
+            # Bind every adapter before the threads start so agent jobs left
+            # pending in the database by a previous process are claimed at
+            # boot, not only after the first request touches a route.
+            _doc_worker = get_agent_job_queue()
+            # One queue serves every agent (A3): document events keep their
+            # historical ledger names; other subjects are recorded under
+            # ``job.*`` with their own entity type.
+            _doc_worker.event_hook = lambda event_type, subject_id, payload: (
                 platform_event_ledger.append_event(
-                    event_type=f"document.{event_type.lower()}",
-                    entity_type='document',
-                    entity_id=doc_id,
+                    event_type=(
+                        f"document.{event_type.lower()}"
+                        if payload.get('subject_type', 'document') == 'document'
+                        else f"job.{event_type.lower()}"
+                    ),
+                    entity_type=payload.get('subject_type', 'document'),
+                    entity_id=subject_id,
                     actor='document_job_worker',
                     payload=payload,
                     ledger_type='event',
                 )
             )
             _doc_worker.start()
-            print(f"📄 Async document worker started "
-                  f"({_doc_worker.concurrency} threads, retries {_doc_worker.retry_schedule}s)")
+            print(f"📄 Async job queue started "
+                  f"({_doc_worker.concurrency}-{_doc_worker.max_concurrency} threads, "
+                  f"retries {_doc_worker.retry_schedule}s)")
     except Exception as _worker_exc:
-        print(f"   ⚠️  Async document worker not started: {_worker_exc}")
+        print(f"   ⚠️  Async job queue not started: {_worker_exc}")
 
     server_address = (HOST, port)
     httpd = ThreadingHTTPServer(server_address, PortalHandler)
