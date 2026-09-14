@@ -468,3 +468,21 @@ def test_eval_and_promote_over_http(restore_threshold_config, clean_decision_log
         with portal.STATE_LOCK:
             portal.SESSIONS.pop('phins_eval_actuary', None)
             portal.SESSIONS.pop('phins_eval_admin', None)
+
+
+def test_propose_thresholds_never_widens_into_an_unreviewed_band():
+    """Every labelled score is either >= 0.85 or <= 0.15: there is no reviewer
+    evidence between the cut-offs, so no proposal may move into that band even
+    though precision would be 1.0 there."""
+    samples = _samples([(0.95, APPROVE)] * 15 + [(0.05, REJECT)] * 15)
+    out = propose_thresholds(samples, current={'approve': 0.85, 'reject': 0.15},
+                             target_precision=0.9, min_samples=10)
+    seg = out['proposals']['global']
+    assert (seg['approve'], seg['reject']) == (0.85, 0.15)
+    assert seg['changes'] is False
+    assert out['evidence_floor'] == 5
+    # With reviewed decisions in the band, the same target may widen.
+    reviewed = samples + _samples([(0.3, REJECT)] * 6)
+    seg = propose_thresholds(reviewed, current={'approve': 0.85, 'reject': 0.15},
+                             target_precision=0.9, min_samples=10)['proposals']['global']
+    assert seg['reject'] == 0.3 and seg['approve'] == 0.85

@@ -1,0 +1,70 @@
+name: Agent golden sets
+
+# A6 regression gate: every committed fixture under tests/golden/<agent>/ is
+# re-run against the live agent code. A scorer, rule, or prompt change that
+# alters an agent's output fails this job until the fixture is deliberately
+# updated (scripts/run_agent_eval.py golden --update) and the diff reviewed.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ai_automation_controller.py'
+      - 'services/**'
+      - 'prompts/**'
+      - 'schemas/**'
+      - 'tests/golden/**'
+      - 'scripts/run_agent_eval.py'
+      - '.github/workflows/agent_golden_sets.yml'
+  pull_request:
+    paths:
+      - 'ai_automation_controller.py'
+      - 'services/**'
+      - 'prompts/**'
+      - 'schemas/**'
+      - 'tests/golden/**'
+      - 'scripts/run_agent_eval.py'
+      - '.github/workflows/agent_golden_sets.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  golden:
+    name: Replay golden fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run golden sets
+        env:
+          USE_DATABASE: 'false'
+          PHINS_TEST_MODE: 'true'
+          PHINS_ASSESSMENT_AI_ENABLED: 'false'
+        run: |
+          python scripts/run_agent_eval.py golden
+
+      - name: Harness unit tests
+        env:
+          USE_DATABASE: 'false'
+          PHINS_TEST_MODE: 'true'
+        run: |
+          python -m pytest tests/test_agent_eval.py -q --tb=short

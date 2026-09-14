@@ -332,6 +332,7 @@ def propose_thresholds(
     approve_grid: Sequence[float] = DEFAULT_APPROVE_GRID,
     reject_grid: Sequence[float] = DEFAULT_REJECT_GRID,
     segments: Optional[Iterable[str]] = None,
+    evidence_floor: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Candidate ``(approve, reject)`` per segment that meets ``target_precision``.
 
@@ -344,12 +345,20 @@ def propose_thresholds(
     never chosen. Raising ``target_precision`` can only move approve up and
     reject down (monotone), which keeps proposals explainable.
 
+    Evidence floor: a cut-off may move toward *more* automation than
+    ``current`` only if the band it newly automates (``[cand, current)`` for
+    approve, ``(current, cand]`` for reject) holds at least
+    ``evidence_floor`` labelled decisions. Precision alone cannot vouch for
+    a band nobody has reviewed. Moving toward less automation needs no such
+    evidence.
+
     Never mutates any live configuration.
     """
     target = float(target_precision)
     if not 0.0 < target <= 1.0:
         raise ValueError('target_precision must be in (0, 1]')
     current = dict(current or {'approve': 0.85, 'reject': 0.15})
+    floor = int(evidence_floor) if evidence_floor is not None else max(5, int(min_samples) // 4)
     by_segment: Dict[str, List[LabelledSample]] = {}
     for s in samples:
         by_segment.setdefault(s.segment, []).append(s)
@@ -363,9 +372,17 @@ def propose_thresholds(
             proposals[seg] = {'samples': n, 'status': 'insufficient_data',
                               'approve': current['approve'], 'reject': current['reject']}
             continue
+        cur_approve = float(current['approve'])
+        cur_reject = float(current['reject'])
         approve_pick = None
         approve_precision = None
         for cand in sorted(float(a) for a in approve_grid):
+            if cand < cur_approve:
+                band = [s.score for s in items if cand <= s.score < cur_approve]
+                if len(band) < floor:
+                    continue
+                # Never extrapolate below the lowest reviewed score in the band.
+                cand = round(max(cand, min(band)), 4)
             precision, predicted = _precision_at(items, scorer, {'approve': cand, 'reject': 0.0}, APPROVE)
             if predicted and precision is not None and precision >= target:
                 approve_pick, approve_precision = cand, precision
@@ -375,6 +392,12 @@ def propose_thresholds(
         for cand in sorted((float(r) for r in reject_grid), reverse=True):
             if approve_pick is not None and cand >= approve_pick:
                 continue
+            if cand > cur_reject:
+                band = [s.score for s in items if cur_reject < s.score <= cand]
+                if len(band) < floor:
+                    continue
+                # Never extrapolate above the highest reviewed score in the band.
+                cand = round(min(cand, max(band)), 4)
             precision, predicted = _precision_at(items, scorer, {'approve': 1.01, 'reject': cand}, REJECT)
             if predicted and precision is not None and precision >= target:
                 reject_pick, reject_precision = cand, precision
@@ -414,6 +437,7 @@ def propose_thresholds(
         'read_only': True,
         'target_precision': target,
         'min_samples': int(min_samples),
+        'evidence_floor': floor,
         'proposals': proposals,
         'note': 'recommend-only; promote explicitly via POST /api/admin/ai-agents/thresholds/promote',
     }
