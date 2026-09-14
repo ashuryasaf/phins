@@ -28,9 +28,12 @@ def run_ai_assessment(context, *, filename: str, file_content: bytes,
                       mime_type: str, actor: str) -> Dict[str, Any]:
     """Run the Underwriting Bot over one uploaded file; returns the
     ``assessment`` payload of the synchronous response."""
-    from services.underwriting_bot_service import UnderwritingBotService, MetadataType
+    from services.underwriting_bot_service import get_underwriting_bot_service, MetadataType
 
-    bot_service = UnderwritingBotService(
+    # Process-wide instance (B1): its artifact stores' read-through cache is
+    # reused across requests instead of being rebuilt per upload. The
+    # accessor rebinds when this context's stores differ from the bound ones.
+    bot_service = get_underwriting_bot_service(
         customers=context.customers,
         policies=context.policies,
         underwriting_apps=context.underwriting_apps,
@@ -84,6 +87,8 @@ def run_ai_assessment(context, *, filename: str, file_content: bytes,
         'explanation': report.explanation,
         'risk_factors': [rf.to_dict() for rf in report.risk_factors] if report.risk_factors else [],
         'processing_time_seconds': report.processing_time_seconds,
+        'decision_id': report.decision_id,
+        'model_shadow': dict(report.model_shadow or {}),
         'file_analyzed': filename,
         'file_size': len(file_content),
         'analyzed_by': actor,

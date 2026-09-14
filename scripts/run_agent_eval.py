@@ -113,7 +113,7 @@ def main(argv=None):
     golden.set_defaults(func=cmd_golden)
 
     replay = sub.add_parser('replay', help='replay logged decisions against human outcomes')
-    replay.add_argument('agent', help='agent id (ai_automation_controller | claims_bot)')
+    replay.add_argument('agent', help='agent id (ai_automation_controller | claims_bot | underwriting_bot)')
     replay.add_argument('--decisions', help='JSON export of decision-log records')
     replay.add_argument('--records', help='JSON export of claims_fraud assessment records')
     replay.add_argument('--min-samples', type=int, default=None)

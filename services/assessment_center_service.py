@@ -585,6 +585,14 @@ class AssessmentCenterService:
         os.makedirs(self._fact_store_dir, exist_ok=True)
         # In-memory mirror of facts keyed by customer_id.
         self._facts: Dict[str, List[Fact]] = {}
+        # Secondary indexes (B4) maintained alongside ``_facts`` so the two
+        # hot lookups are dictionary reads, not scans over every customer:
+        #   * ``_by_document``: source_document_id -> facts (evidence pipeline,
+        #     per-document summaries)
+        #   * ``_by_field``: customer_id -> (fact_type, label) -> facts
+        #     (cross-document contradiction detection)
+        self._by_document: Dict[str, List[Fact]] = {}
+        self._by_field: Dict[str, Dict[Tuple[str, str], List[Fact]]] = {}
         # External fact bundles keyed by (customer_id, source).
         self._external: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
         self._load_from_disk()
@@ -602,8 +610,53 @@ class AssessmentCenterService:
         """Drop all in-memory state and persisted facts. Mainly used by tests."""
         with self._lock:
             self._facts.clear()
+            self._by_document.clear()
+            self._by_field.clear()
             self._external.clear()
             self._clear_persisted_facts()
+
+    # ── Fact indexes (B4) ────────────────────────────────────────────────
+
+    def _index_fact(self, fact: Fact) -> None:
+        """Add one fact to the secondary indexes. Caller holds ``_lock``."""
+        if fact.source_document_id:
+            self._by_document.setdefault(fact.source_document_id, []).append(fact)
+        self._by_field.setdefault(fact.customer_id, {}).setdefault(
+            (fact.fact_type, fact.label), []).append(fact)
+
+    def _rebuild_indexes(self, customer_id: Optional[str] = None) -> None:
+        """Recompute the indexes for one customer (or all). Caller holds ``_lock``.
+
+        Used after a bulk replacement of a customer's fact list (disk load,
+        retention trim) where incremental maintenance would be error-prone.
+        """
+        customers = [customer_id] if customer_id else list(self._facts)
+        for cust in customers:
+            stale = self._by_field.pop(cust, {})
+            for facts in stale.values():
+                for f in facts:
+                    if f.source_document_id and f.source_document_id in self._by_document:
+                        bucket = [x for x in self._by_document[f.source_document_id] if x is not f]
+                        if bucket:
+                            self._by_document[f.source_document_id] = bucket
+                        else:
+                            del self._by_document[f.source_document_id]
+            for f in self._facts.get(cust, ()):
+                self._index_fact(f)
+
+    def facts_for_documents(self, document_ids: Iterable[str]) -> List[Fact]:
+        """Every fact whose ``source_document_id`` is one of ``document_ids``.
+
+        Indexed lookup (no scan over other customers' facts); the shared
+        evidence pipeline (``services.evidence_facts``) is built on it.
+        Provenance fields on the returned facts are untouched.
+        """
+        wanted = [d for d in dict.fromkeys(document_ids) if d]
+        with self._lock:
+            out: List[Fact] = []
+            for doc_id in wanted:
+                out.extend(self._by_document.get(doc_id, ()))
+            return out
 
     def _clear_persisted_facts(self) -> None:
         """Remove all JSON fact files from the fact store directory."""
@@ -1679,17 +1732,14 @@ class AssessmentCenterService:
         wanted = {d for d in document_ids if d}
         if not wanted:
             return {}
-        with self._lock:
-            all_facts = [f for facts in self._facts.values() for f in facts]
+        doc_facts = self.facts_for_documents(wanted)
         out: Dict[str, Dict[str, Any]] = {d: {
             "facts_extracted": 0,
             "by_type": {},
             "top_confidence": 0.0,
             "customer_id": "",
         } for d in wanted}
-        for f in all_facts:
-            if f.source_document_id not in wanted:
-                continue
+        for f in doc_facts:
             entry = out[f.source_document_id]
             entry["facts_extracted"] += 1
             entry["by_type"][f.fact_type] = entry["by_type"].get(f.fact_type, 0) + 1
@@ -2387,8 +2437,16 @@ class AssessmentCenterService:
         single true value per customer (id number, DOB, vitals, IBAN) and
         numeric insurance/savings amounts with the same label are compared.
         """
+        # Indexed (B4): only the (fact_type, label) buckets that can conflict
+        # are visited, so the pass costs O(comparable facts), not O(all facts).
         with self._lock:
-            facts = list(self._facts.get(customer_id, ()))
+            by_field = self._by_field.get(customer_id, {})
+            facts = [
+                f
+                for key, bucket in by_field.items()
+                if key in CONFLICT_SENSITIVE_LABELS or key[0] in CONFLICT_NUMERIC_TYPES
+                for f in bucket
+            ]
 
         # Each claim: {'keys': frozenset of comparison keys, 'value', 'document_ids'}.
         # Dates carry multiple interpretation keys (day-first vs month-first)
@@ -2885,6 +2943,7 @@ class AssessmentCenterService:
                 if key in seen:
                     continue
                 existing.append(f)
+                self._index_fact(f)
                 seen.add(key)
             # Bound the per-customer fact list so a runaway document or a
             # malicious upload can't blow the process memory budget. We keep
@@ -2897,6 +2956,7 @@ class AssessmentCenterService:
                 )
                 self._facts[customer_id] = existing[-MAX_FACTS_PER_CUSTOMER:]
                 existing = self._facts[customer_id]
+                self._rebuild_indexes(customer_id)
             self._persist_customer(customer_id, existing)
 
     @staticmethod
@@ -3039,6 +3099,7 @@ class AssessmentCenterService:
                     if facts:
                         with self._lock:
                             self._facts[cust] = facts
+                            self._rebuild_indexes(cust)
                 except Exception as exc:
                     logger.warning("Failed loading fact file %s: %s", path, exc)
         except Exception as exc:

@@ -183,6 +183,14 @@ class ClaimProbabilityReport:
     evidence_processed: int = 0
     processing_time_seconds: float = 0.0
     model_version: str = "1.0.0"
+    # Shared evidence pipeline (B1): summary of the Document Intelligence
+    # facts consumed for this claim and their provenance references
+    # (fact ids / document ids / page / offsets — never the snippet text).
+    evidence: Dict[str, Any] = field(default_factory=dict)
+    evidence_provenance: List[Dict[str, Any]] = field(default_factory=list)
+    # Calibration loop: AI decision-log id and the shadow model comparison.
+    decision_id: str = ""
+    model_shadow: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -246,11 +254,16 @@ class ClaimProbabilityReport:
                 'green_flags': self.green_flags
             },
             
+            # Shared evidence pipeline
+            'evidence': {**dict(self.evidence), 'provenance': list(self.evidence_provenance)},
+            
             # Metadata
             'metadata': {
                 'evidence_processed': self.evidence_processed,
                 'processing_time_seconds': round(self.processing_time_seconds, 3),
-                'model_version': self.model_version
+                'model_version': self.model_version,
+                'decision_id': self.decision_id,
+                'model_shadow': dict(self.model_shadow),
             }
         }
 
@@ -310,11 +323,12 @@ class ClaimsBotService:
         self.bot_id = f"CLM-BOT-{uuid.uuid4().hex[:8]}"
         self.version = "1.0.0"
         
-        # Data stores (READ-ONLY)
-        self._customers = customers or {}
-        self._policies = policies or {}
-        self._claims = claims or {}
-        self._underwriting = underwriting or {}
+        # Data stores (READ-ONLY). Empty portal dicts keep their identity so
+        # records added after start-up are visible to this instance.
+        self._customers = customers if customers is not None else {}
+        self._policies = policies if policies is not None else {}
+        self._claims = claims if claims is not None else {}
+        self._underwriting = underwriting if underwriting is not None else {}
         self._audit = audit_service
         
         # Bot's own data (WRITE allowed). Durable in DB mode (A4): rows in
@@ -410,8 +424,12 @@ class ClaimsBotService:
             years_since_policy = days_since_policy / 365.25
             within_contestability = years_since_policy < self.CONTESTABILITY_PERIOD_YEARS
         
+        # Shared evidence pipeline (B1): facts the Document Intelligence
+        # pipeline already extracted from this claim's documents.
+        evidence = self._evidence_bundle(claim_id, customer_id)
+        
         # Calculate component scores
-        document_score = self._analyze_document_authenticity(claim)
+        document_score = self._analyze_document_authenticity(claim, evidence)
         medical_score = self._analyze_medical_consistency(claim, underwriting)
         timing_score = self._analyze_timing_legitimacy(claim, policy, days_since_policy)
         amount_score = self._analyze_amount_reasonability(claim, policy)
@@ -466,6 +484,18 @@ class ClaimsBotService:
             claim, authenticity_probability, fraud_indicators,
             hidden_conditions, risk_level
         )
+        self._append_evidence_findings(evidence, key_findings, red_flags)
+
+        # Shadow model + AI decision log (B1): the rules above decided; the
+        # ``claims_scorer`` artifact (if any) is compared and logged only.
+        shadow_features = {
+            'document_score': document_score, 'medical_score': medical_score,
+            'timing_score': timing_score, 'amount_score': amount_score,
+            'history_score': history_score, 'uw_alignment_score': uw_alignment_score,
+            'fraud_indicators': len(fraud_indicators), 'hidden_conditions': len(hidden_conditions),
+            'days_since_policy': days_since_policy,
+        }
+        shadow = self._shadow(shadow_features, authenticity_probability, claim_id)
         
         # Create report
         report_id = self._generate_id('PROB-RPT')
@@ -497,9 +527,13 @@ class ClaimsBotService:
             key_findings=key_findings,
             red_flags=red_flags,
             green_flags=green_flags,
-            evidence_processed=len(claim.get('files', [])) or 1,
-            processing_time_seconds=(datetime.now() - start_time).total_seconds()
+            evidence_processed=(len(claim.get('files', [])) + (evidence.document_count if evidence else 0)) or 1,
+            processing_time_seconds=(datetime.now() - start_time).total_seconds(),
+            evidence=evidence.to_dict() if evidence else {},
+            evidence_provenance=self._provenance_refs(evidence),
+            model_shadow=shadow,
         )
+        report.decision_id = self._record_decision(report, shadow_features, shadow, customer)
         
         # Store report (bounded to avoid unbounded memory growth on a
         # long-running server; oldest reports are evicted first).
@@ -610,20 +644,34 @@ class ClaimsBotService:
         except:
             return None
     
-    def _analyze_document_authenticity(self, claim: Dict) -> float:
-        """Analyze document authenticity score"""
+    def _analyze_document_authenticity(self, claim: Dict, evidence=None) -> float:
+        """Analyze document authenticity score.
+
+        ``evidence`` is the claim's :class:`~services.evidence_facts.EvidenceBundle`
+        (documents ingested through Document Intelligence). Pipeline documents
+        count as supporting evidence exactly like ``claim['files']``; a
+        recorded cross-document contradiction lowers the score and is
+        surfaced as a red flag — it is never resolved here.
+        """
         score = 0.85  # Base score
         
         # Check for files/evidence
         files = claim.get('files', [])
         files_count = claim.get('files_count', 0)
+        pipeline_docs = evidence.document_count if evidence is not None else 0
         
-        if files or files_count > 0:
+        if files or files_count > 0 or pipeline_docs > 0:
             score += 0.05  # Has supporting documents
         
         # Check for tampering flags (simulated)
         if claim.get('tampering_detected'):
             score -= 0.5
+
+        if evidence is not None:
+            if evidence.contradictions:
+                score -= 0.25  # documents disagree on a one-true-value field
+            if evidence.extraction_incomplete():
+                score -= 0.05  # a document yielded no text (scan/OCR gap)
         
         # Check description quality
         description = claim.get('description') or ''  # DB rows carry None, not ''
@@ -631,6 +679,92 @@ class ClaimsBotService:
             score += 0.05  # Detailed description
         
         return max(0.0, min(1.0, score))
+
+    # ---- Shared evidence pipeline / model shadow (B1) ----------------------
+
+    SHADOW_MODEL_NAME = 'claims_scorer'
+    MAX_PROVENANCE_REFS = 100
+
+    def _evidence_bundle(self, claim_id: str, customer_id: Optional[str]):
+        """Facts for the documents attached to ``claim_id``; None if unavailable."""
+        try:
+            from services.evidence_facts import bundle_for_entity
+            return bundle_for_entity('claim', claim_id, customer_id=customer_id)
+        except Exception as exc:  # advisory input, never a dependency
+            logger.warning("claims_bot evidence bundle skipped for %s: %s", claim_id, exc)
+            return None
+
+    @classmethod
+    def _provenance_refs(cls, evidence) -> List[Dict[str, Any]]:
+        """Provenance references without the source snippet (no raw text in reports)."""
+        if evidence is None:
+            return []
+        refs = []
+        for f in evidence.facts[:cls.MAX_PROVENANCE_REFS]:
+            refs.append({
+                'fact_id': f.get('fact_id'), 'fact_type': f.get('fact_type'),
+                'label': f.get('label'), 'confidence': f.get('confidence'),
+                'document_id': f.get('source_document_id'),
+                'document_sha256': f.get('source_document_sha256'),
+                'page': f.get('page'), 'char_start': f.get('char_start'),
+                'char_end': f.get('char_end'), 'timestamp_start': f.get('timestamp_start'),
+                'timestamp_end': f.get('timestamp_end'),
+            })
+        return refs
+
+    @staticmethod
+    def _append_evidence_findings(evidence, key_findings: List[str], red_flags: List[str]) -> None:
+        if evidence is None or (not evidence.facts and not evidence.contradictions):
+            return
+        if evidence.facts:
+            key_findings.append(
+                f"{evidence.fact_count} fact(s) from {evidence.document_count} pipeline document(s) "
+                f"consumed with provenance")
+        for c in evidence.contradictions[:10]:
+            field_name = (c.get('metadata') or {}).get('label') or c.get('label') or 'field'
+            red_flags.append(f"Cross-document contradiction on {field_name} (recorded by Document Intelligence)")
+        if evidence.extraction_incomplete():
+            red_flags.append("A claim document yielded no extractable text")
+
+    def _shadow(self, features: Dict[str, Any], rule_score: float, claim_id: str) -> Dict[str, Any]:
+        try:
+            from services.model_shadow import shadow_score
+            return shadow_score(self.SHADOW_MODEL_NAME, features, rule_score,
+                                agent_id='claims_bot', entity_id=claim_id).as_log_fields()
+        except Exception as exc:
+            logger.warning("claims_bot model shadow skipped: %s", exc)
+            return {'rule_score': round(float(rule_score), 4), 'model_score': None,
+                    'model_version': 'rules-v1', 'divergence': None, 'drift_alert': False}
+
+    def _record_decision(self, report: 'ClaimProbabilityReport', features: Dict[str, Any],
+                         shadow: Dict[str, Any], customer: Dict[str, Any]) -> str:
+        """Append the recommendation to the AI decision log; '' if unavailable."""
+        try:
+            from services.ai_decision_log import get_ai_decision_log
+            try:
+                from services.ai_threshold_config import segment_key
+                segment = segment_key(dict(customer or {}))
+            except Exception:
+                segment = 'global'
+            return get_ai_decision_log().record(
+                decision_type='claims_bot_assessment',
+                output={
+                    'decision': report.recommendation.value,
+                    'authenticity_probability': round(report.authenticity_probability, 4),
+                    'risk_level': report.risk_level,
+                    'report_id': report.id,
+                    **shadow,
+                },
+                inputs={k: (round(v, 4) if isinstance(v, float) else v) for k, v in features.items()},
+                entity_type='claim',
+                entity_id=report.claim_id,
+                model_version=shadow.get('model_version') or 'rules-v1',
+                confidence=report.confidence_level,
+                segment=segment,
+            ) or ''
+        except Exception as exc:
+            logger.warning("claims_bot decision log unavailable for %s: %s", report.id, exc)
+            return ''
     
     def _analyze_medical_consistency(self, claim: Dict, underwriting: Dict) -> float:
         """Analyze medical consistency with underwriting data"""

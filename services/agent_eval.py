@@ -88,6 +88,21 @@ def underwriting_scorer(score: float, thresholds: Dict[str, float]) -> str:
     return REVIEW
 
 
+def underwriting_bot_scorer(score: float, thresholds: Dict[str, float]) -> str:
+    """The rule spine of ``RiskAssessmentEngine`` in the inverted score space.
+
+    The engine's risk bands are closed on the upper side (``risk_score <=
+    refer_max_risk`` still refers, decline is the remaining ``else``), so on
+    ``1 - risk_score`` the reject side is strict: ``score < reject`` is
+    ``risk_score > refer_max_risk``.
+    """
+    if score >= float(thresholds['approve']):
+        return APPROVE
+    if score < float(thresholds['reject']):
+        return REJECT
+    return REVIEW
+
+
 # ---------------------------------------------------------------------------
 # Samples
 # ---------------------------------------------------------------------------
@@ -475,6 +490,54 @@ def evaluate_automation_controller(
     return payload
 
 
+def evaluate_underwriting_bot(
+    decisions: Optional[Iterable[Dict[str, Any]]] = None,
+    *,
+    min_samples: int = DEFAULT_MIN_SAMPLES,
+    target_precision: float = DEFAULT_TARGET_PRECISION,
+    include_implicit: bool = True,
+) -> Dict[str, Any]:
+    """Replay the Underwriting Bot's recommendations against its
+    ``RiskAssessmentEngine.DECISION_RULES`` and attach a proposal (B1).
+
+    The bot scores *risk* (higher is worse), so samples are replayed on
+    ``1 - risk_score`` and the live cut-offs are the inverted
+    ``conditional_approve_max_risk`` / ``refer_max_risk``; the proposal is
+    reported in both spaces. Reads only the decision log. The identity /
+    fraud / document gates that force ``refer_manual`` are not on the score
+    axis and are outside the replay, like the controller's fraud gate.
+    """
+    import dataclasses as _dc
+    from services.underwriting_bot.report import RiskAssessmentEngine
+    if decisions is None:
+        from services.ai_decision_log import get_ai_decision_log
+        decisions = get_ai_decision_log().all('underwriting_bot_assessment')
+    decisions = list(decisions)
+    rules = dict(RiskAssessmentEngine.DECISION_RULES)
+    live = {'approve': round(1.0 - rules['conditional_approve_max_risk'], 6),
+            'reject': round(1.0 - rules['refer_max_risk'], 6)}
+    raw, skipped = samples_from_decision_log(
+        decisions, decision_type='underwriting_bot_assessment', score_key='risk_score',
+        include_implicit=include_implicit)
+    samples = [_dc.replace(s, score=round(1.0 - s.score, 6)) for s in raw]
+    report = replay(samples, underwriting_bot_scorer, live, agent_id='underwriting_bot',
+                    min_samples=min_samples, skipped=skipped)
+    payload = report.to_dict()
+    payload['decisions_seen'] = len(decisions)
+    payload['score_direction'] = '1 - risk_score'
+    payload['live_rules'] = rules
+    proposal = propose_thresholds(samples, scorer=underwriting_bot_scorer, current=live,
+                                  target_precision=target_precision, min_samples=min_samples)
+    for entry in (proposal.get('proposals') or {}).values():
+        if isinstance(entry, dict) and entry.get('approve') is not None:
+            entry['risk_rules'] = {
+                'conditional_approve_max_risk': round(1.0 - float(entry['approve']), 6),
+                'refer_max_risk': round(1.0 - float(entry['reject']), 6),
+            }
+    payload['proposal'] = proposal
+    return payload
+
+
 def evaluate_claims_bot(assessment_records: Optional[Iterable[Dict[str, Any]]] = None,
                         *, min_labelled: Optional[int] = None) -> Dict[str, Any]:
     """The Claims Bot's authenticity calibration, reachable under one agent-eval
@@ -510,6 +573,7 @@ def _all_claims_fraud_records() -> List[Dict[str, Any]]:
 EVALUATORS: Dict[str, Callable[..., Dict[str, Any]]] = {
     'ai_automation_controller': evaluate_automation_controller,
     'claims_bot': evaluate_claims_bot,
+    'underwriting_bot': evaluate_underwriting_bot,
 }
 
 
@@ -716,9 +780,10 @@ def _ensure_default_runners() -> None:
 __all__ = [
     'APPROVE', 'REJECT', 'REVIEW', 'LABELS',
     'LabelledSample', 'SegmentReport', 'EvalReport', 'ClassMetrics',
-    'normalise_label', 'underwriting_scorer', 'samples_from_decision_log',
+    'normalise_label', 'underwriting_scorer', 'underwriting_bot_scorer', 'samples_from_decision_log',
     'confusion_counts', 'score_segment', 'replay', 'propose_thresholds',
-    'evaluate', 'evaluate_automation_controller', 'evaluate_claims_bot', 'EVALUATORS',
+    'evaluate', 'evaluate_automation_controller', 'evaluate_claims_bot', 'evaluate_underwriting_bot',
+    'EVALUATORS',
     'run_golden', 'run_all_golden', 'register_golden_runner', 'golden_runners',
     'default_fixtures_root',
 ]

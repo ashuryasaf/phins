@@ -30,6 +30,7 @@ VOLATILE = {
     'assessment_date', 'created_at', 'updated_at', 'timestamp', 'generated_at',
     'generated_date', 'analysis_date', 'created_date', 'processing_time_seconds',
     'processing_time_ms', 'completed_at', 'upload_date', 'processed_at', 'request_id',
+    'decision_id',
 }
 
 

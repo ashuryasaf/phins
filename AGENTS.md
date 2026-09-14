@@ -72,6 +72,28 @@ PHINS is a Python platform built around:
  artefact; `narrative-v2` is structured (`schemas/assessment_narrative.json`)
  and a schema-invalid or unavailable LLM reply falls back to the
  deterministic narrative rather than an unvalidated one
+- a shared evidence pipeline for the Underwriting Bot and the Claims Bot (B1):
+ `services/evidence_facts.py` is the read side of the fact store
+ (`facts_for`, `bundle_for_entity`, SHA-keyed `FeatureCache`); a metadata item
+ linked to a `document_id` consumes the pipeline's facts with provenance
+ (bytes still win when supplied) and a recorded contradiction sends it to
+ `SUSPICIOUS` / lowers the claim document score — never resolved by a bot.
+ Audio goes through `transcription_providers` (`NO_STT_AVAILABLE` only when
+ disabled, `STT_FAILED` on provider error). Both bots log every
+ recommendation to `ai_decision_log` (`underwriting_bot_assessment`,
+ `claims_bot_assessment`) with `rule_score` / `model_score` / `divergence`
+ from `services/model_shadow.py` — the registry model (`uw_scorer`,
+ `claims_scorer`) never changes a decision; p95 drift over
+ `PHINS_AI_DRIFT_THRESHOLD` writes an `ai_model_drift` audit row once per
+ episode. Human `apply_decision` counter-decisions are recorded as overrides,
+ so `evaluate('underwriting_bot')` replays them. The bot lives in
+ `services/underwriting_bot/{report,features,service}.py`;
+ `services/underwriting_bot_service.py` is the re-exporting facade
+- fact-store indexes and an OCR page cache (B4): `AssessmentCenterService`
+ keeps `_by_document` / `_by_field` indexes (`facts_for_documents`,
+ contradiction detection as bucket lookups); `DocumentProcessingService`
+ caches OCR per `(sha256, page, langs, dpi)` and fans pages out over
+ `PHINS_OCR_POOL_SIZE` threads — a failed page is never cached
 
 Runtime defaults are important:
 
@@ -107,6 +129,7 @@ Preferred file-by-task:
 | Agent decision rules (quote/underwrite/fraud/claims/billing) | `services/automation/*.py`, then `ai_automation_controller.py`; refresh `tests/golden/ai_automation_controller/` deliberately |
 | Agent thresholds / calibration | `services/agent_eval.py`, `services/ai_threshold_config.py`, `web_portal/api_extensions.py` (`/api/admin/ai-agents/eval`, `/thresholds/promote`) |
 | LLM prompts / structured output | `prompts/`, `schemas/*.json`, `services/llm_providers.py`, `services/assessment_ai_service.py`; refresh `tests/golden/assessment_ai/` deliberately |
+| Underwriting Bot / Claims Bot evidence | `services/evidence_facts.py`, `services/underwriting_bot/*.py`, `services/claims_bot_service.py`, `services/model_shadow.py`; tests in `tests/test_evidence_pipeline.py` |
 
 ## 2) High-Value Paths
 
@@ -138,9 +161,13 @@ Preferred file-by-task:
 |- prompts/                             # versioned LLM prompt templates (sha256 provenance)
 |  `- assessment/                       # narrative v1 (free text) + v2 (structured); onboarding/service/termination v1
 |- schemas/                             # JSON schemas for structured LLM output
-|- services/                            # 109 service modules
+|- services/                            # 111 service modules
 |  |- agent_eval.py                     # A6 replay / propose_thresholds / golden sets
 |  |- automation/                       # B2 pure rules: quoting, underwriting_gate, fraud, claims_gate, billing_schedule
+|  |- underwriting_bot/                 # B1 package: report (model+engine), features (analyzers), service
+|  |- underwriting_bot_service.py       # facade re-exporting the package
+|  |- evidence_facts.py                 # B1 shared evidence pipeline (facts_for, bundles, FeatureCache)
+|  |- model_shadow.py                   # B1 shadow scoring + drift monitor (never decides)
 |  |- agent_job_queue.py                # generalized job queue (retry/DLQ/handlers)
 |  |- document_job_worker.py            # document binding over the job queue
 |  |- jobs/                             # agent job adapters (202 routes; worker_context)
@@ -389,6 +416,12 @@ Environment variables commonly used:
  coalescing, default 1.5s; shared with AgentOS),
  `PHINS_AGENT_FULL_RESYNC_SECONDS` (full re-pull that reflects peer
  deletions, default 60)
+- **OCR / evidence (B4, B1):** `PHINS_OCR_POOL_SIZE` (page fan-out, default
+ 2), `PHINS_OCR_CACHE_MAX_ENTRIES` (default 2000),
+ `PHINS_EVIDENCE_FEATURE_CACHE_MAX` (default 4096)
+- **Model shadow (B1):** `PHINS_AI_DRIFT_THRESHOLD` (p95 divergence, default
+ 0.25), `PHINS_AI_DRIFT_WINDOW` (200), `PHINS_AI_DRIFT_MIN_SAMPLES` (20),
+ `PHINS_MODEL_DIR` (registry artifacts; none by default)
 - **Transcription:** `PHINS_TRANSCRIPTION_PROVIDER`
  (`openai_compatible`|`disabled`), `PHINS_TRANSCRIPTION_ENDPOINT`,
  `PHINS_TRANSCRIPTION_API_KEY`, `PHINS_TRANSCRIPTION_MODEL`

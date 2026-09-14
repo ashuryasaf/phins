@@ -34,6 +34,8 @@ import tempfile
 import threading
 import time
 import uuid
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
@@ -1129,6 +1131,46 @@ class DocumentProcessingService:
     _OCR_MAX_PDF_PAGES = int(os.environ.get('PHINS_OCR_MAX_PDF_PAGES', '15'))
     _OCR_MAX_IMAGE_BYTES = int(os.environ.get('PHINS_OCR_MAX_IMAGE_BYTES', 25 * 1024 * 1024))
     _OCR_MIN_TEXT_THRESHOLD = int(os.environ.get('PHINS_OCR_MIN_TEXT_THRESHOLD', '40'))
+    # B4: page-level OCR results are cached process-wide keyed by
+    # (sha256(bytes), page, langs, dpi), so a re-upload or re-scoring of the
+    # same file never re-runs Tesseract; pages of one PDF are OCR'd by a small
+    # bounded pool. ``PHINS_OCR_POOL_SIZE=1`` keeps the sequential behaviour.
+    _OCR_POOL_SIZE = max(1, int(os.environ.get('PHINS_OCR_POOL_SIZE', '2')))
+    _OCR_CACHE_MAX_ENTRIES = max(0, int(os.environ.get('PHINS_OCR_CACHE_MAX_ENTRIES', '2000')))
+    _ocr_cache: 'OrderedDict[Tuple[str, int, str, int], str]' = OrderedDict()
+    _ocr_cache_lock = threading.Lock()
+    _ocr_cache_stats = {'hits': 0, 'misses': 0}
+
+    @classmethod
+    def _ocr_cache_get(cls, key: Tuple[str, int, str, int]) -> Optional[str]:
+        with cls._ocr_cache_lock:
+            if key in cls._ocr_cache:
+                cls._ocr_cache.move_to_end(key)
+                cls._ocr_cache_stats['hits'] += 1
+                return cls._ocr_cache[key]
+            cls._ocr_cache_stats['misses'] += 1
+            return None
+
+    @classmethod
+    def _ocr_cache_put(cls, key: Tuple[str, int, str, int], text: str) -> None:
+        if cls._OCR_CACHE_MAX_ENTRIES <= 0:
+            return
+        with cls._ocr_cache_lock:
+            cls._ocr_cache[key] = text
+            cls._ocr_cache.move_to_end(key)
+            while len(cls._ocr_cache) > cls._OCR_CACHE_MAX_ENTRIES:
+                cls._ocr_cache.popitem(last=False)
+
+    @classmethod
+    def ocr_cache_stats(cls) -> Dict[str, int]:
+        with cls._ocr_cache_lock:
+            return {'entries': len(cls._ocr_cache), **cls._ocr_cache_stats}
+
+    @classmethod
+    def reset_ocr_cache(cls) -> None:
+        with cls._ocr_cache_lock:
+            cls._ocr_cache.clear()
+            cls._ocr_cache_stats.update(hits=0, misses=0)
 
     @staticmethod
     def _has_meaningful_text(text: str) -> bool:
@@ -1189,13 +1231,19 @@ class DocumentProcessingService:
         except ImportError:
             return ''
         ocr_langs = self._ocr_langs_for_hint(lang_hint)
+        cache_key = (hashlib.sha256(raw).hexdigest(), 0, ocr_langs, 0)
+        cached = self._ocr_cache_get(cache_key)
+        if cached is not None:
+            return cached
         try:
             import io as _io
             with Image.open(_io.BytesIO(raw)) as img:
                 if img.mode not in ('RGB', 'L'):
                     img = img.convert('RGB')
                 text = pytesseract.image_to_string(img, lang=ocr_langs)
-            return (text or '').strip()
+            text = (text or '').strip()
+            self._ocr_cache_put(cache_key, text)
+            return text
         except pytesseract.TesseractNotFoundError:
             return ''
         except Exception as exc:
@@ -1213,29 +1261,68 @@ class DocumentProcessingService:
         scanned document can't blow the request budget. Returns []
         if pdf2image / poppler / tesseract aren't all available.
         Empty pages are kept as '' so chunk index == page number - 1.
+
+        Each page result is cached by ``(sha256(pdf), page, langs, dpi)``;
+        a PDF whose pages are all cached is not rasterised at all, and the
+        pages still to be OCR'd fan out over ``PHINS_OCR_POOL_SIZE`` threads.
         """
         try:
             from pdf2image import convert_from_bytes  # type: ignore
             import pytesseract  # type: ignore
         except ImportError:
             return []
+        ocr_langs = self._ocr_langs_for_hint(lang_hint)
+        digest = hashlib.sha256(raw).hexdigest()
+        max_pages = self._OCR_MAX_PDF_PAGES
+
+        def _key(page_no: int) -> Tuple[str, int, str, int]:
+            return (digest, page_no, ocr_langs, self._OCR_DPI)
+
+        # Fast path: a previous run recorded this file's page count and every
+        # page text is still cached -> no rasterisation, no Tesseract.
+        page_count = self._ocr_cache_get((digest, -1, ocr_langs, self._OCR_DPI))
+        if page_count is not None:
+            try:
+                n_pages = int(page_count)
+            except ValueError:
+                n_pages = -1
+            if n_pages >= 0:
+                cached_chunks = [self._ocr_cache_get(_key(p)) for p in range(1, n_pages + 1)]
+                if all(c is not None for c in cached_chunks):
+                    return cached_chunks if any(cached_chunks) else []
+
         try:
             pages = convert_from_bytes(raw, dpi=self._OCR_DPI,
-                                       first_page=1, last_page=self._OCR_MAX_PDF_PAGES)
+                                       first_page=1, last_page=max_pages)
         except Exception as exc:
             logger.debug('pdf2image rasterisation failed: %s', exc)
             return []
-        ocr_langs = self._ocr_langs_for_hint(lang_hint)
-        chunks = []
-        for page_img in pages:
+        pages = list(pages)[:max_pages]
+
+        def _ocr_page(index: int, page_img) -> str:
+            page_no = index + 1
+            cached = self._ocr_cache_get(_key(page_no))
+            if cached is not None:
+                return cached
             try:
                 if page_img.mode not in ('RGB', 'L'):
                     page_img = page_img.convert('RGB')
-                page_text = pytesseract.image_to_string(page_img, lang=ocr_langs)
-                chunks.append((page_text or '').strip())
+                text = (pytesseract.image_to_string(page_img, lang=ocr_langs) or '').strip()
             except Exception as exc:
                 logger.debug('OCR page failed: %s', exc)
-                chunks.append('')
+                return ''
+            self._ocr_cache_put(_key(page_no), text)
+            return text
+
+        if not pages:
+            chunks: List[str] = []
+        elif self._OCR_POOL_SIZE <= 1 or len(pages) == 1:
+            chunks = [_ocr_page(i, img) for i, img in enumerate(pages)]
+        else:
+            with ThreadPoolExecutor(max_workers=min(self._OCR_POOL_SIZE, len(pages)),
+                                    thread_name_prefix='phins-ocr') as pool:
+                chunks = list(pool.map(lambda item: _ocr_page(*item), enumerate(pages)))
+        self._ocr_cache_put((digest, -1, ocr_langs, self._OCR_DPI), str(len(pages)))
         if not any(chunks):
             return []
         return chunks
@@ -1954,6 +2041,7 @@ def _document_intelligence_health() -> Dict[str, Any]:
     }
     if instance is not None:
         payload['db_backed'] = getattr(instance, 'db_manager', None) is not None
+    payload['ocr_cache'] = DocumentProcessingService.ocr_cache_stats()
     return payload
 
 
