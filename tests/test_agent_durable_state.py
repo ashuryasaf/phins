@@ -7,6 +7,8 @@ peer instance by constructing a fresh service / wiping the cache.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 import services.hydrated_store as hs
@@ -301,6 +303,87 @@ def test_video_webhook_handler_uses_durable_store(video_db_mode, monkeypatch):
     assert events.count("video_job_completed") == 1                # audited exactly once
     # A different process reading the table sees the terminal state.
     assert mod._JobStore().get("VJ-WH")["status"] == "completed"
+
+
+# --------------------------------------------------------------------------
+# AI Risk Reports
+# --------------------------------------------------------------------------
+CSV = (b"policy_number,coverage_amount,premium,claim_count,risk_score\n"
+       b"POL-001,100000,500,0,0.2\nPOL-002,200000,750,1,0.5\nPOL-003,150000,600,0,0.3\n"
+       b"POL-004,90000,400,2,0.8\n")
+
+
+@pytest.fixture
+def risk_db_mode(db_mode, tmp_path, monkeypatch):
+    import services.ai_risk_reports_service as mod
+    _purge('ai_risk_reports')
+    monkeypatch.setattr(mod, 'AI_REPORTS_DATA_FILE', str(tmp_path / 'never_written.json'))
+    yield mod
+    _purge('ai_risk_reports')
+
+
+def test_risk_reports_pipeline_is_durable_and_peer_can_continue(risk_db_mode):
+    mod = risk_db_mode
+    first = mod.AIRiskReportsService()
+    assert first._durable() is True
+    parsed = first.parse_file('policies.csv', CSV, 'csv', owner_id='CUST-1', owner_role='customer')
+    doc_id = parsed['document_id']
+    analysis = first.analyze(doc_id)
+    report = first.generate_report(analysis.id)
+    assert not os.path.exists(mod.AI_REPORTS_DATA_FILE)              # no JSON file in DB mode
+    assert first.save_data() is True
+
+    # Restart / peer: nothing cached, everything hydrates from the table —
+    # including the parsed rows, so the peer can analyse and report itself.
+    hs.reset_shared_stores()
+    for store in (first.documents, first.analyses, first.reports):
+        store.reset()
+    second = mod.AIRiskReportsService()
+    assert second.load_data() is True                                 # table wins over the file
+    doc = second.documents[doc_id]
+    assert doc['row_count'] == 4 and len(doc['parsed_data']['rows']) == 4
+    restored_analysis = second.analyses[analysis.id]
+    assert second.to_dict(restored_analysis) == second.to_dict(analysis)
+    assert second.to_dict(second.reports[report.id]) == second.to_dict(report)
+    assert isinstance(restored_analysis.anomalies, list)
+    assert restored_analysis.data_classification is analysis.data_classification
+
+    again = second.analyze(doc_id)                                    # peer re-analyses the same upload
+    assert again.document_id == doc_id and again.id != analysis.id
+    second_report = second.generate_report(again.id)
+    first.reports.coalescer.reset()
+    assert second_report.id in first.reports                          # visible to the first instance
+    listed = second.get_reports_for_user('CUST-1', 'customer')
+    assert {r['report_id'] for r in listed} == {report.id, second_report.id}
+
+    from database.manager import DatabaseManager
+    with DatabaseManager() as db:
+        assert db.agent_artifacts.count_for('ai_risk_reports', 'document') == 1
+        assert db.agent_artifacts.count_for('ai_risk_reports', 'analysis') == 2
+        assert db.agent_artifacts.count_for('ai_risk_reports', 'report') == 2
+
+
+def test_risk_reports_legacy_json_is_migrated_once_into_the_table(risk_db_mode, tmp_path):
+    mod = risk_db_mode
+    # A pre-A4 deployment saved its state to the JSON file in memory mode.
+    legacy = mod.AIRiskReportsService()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(hs, 'db_mode_enabled', lambda: False)
+        memory_only = mod.AIRiskReportsService()
+        parsed = memory_only.parse_file('legacy.csv', CSV, 'csv', owner_id='CUST-9', owner_role='customer')
+        analysis = memory_only.analyze(parsed['document_id'])
+        assert memory_only.save_data() is True and os.path.exists(mod.AI_REPORTS_DATA_FILE)
+    # First DB-mode boot with an empty table reads the file (write-through
+    # migrates it); the second boot ignores the file because rows exist.
+    assert legacy.load_data() is True
+    assert analysis.id in legacy.analyses
+    from database.manager import DatabaseManager
+    with DatabaseManager() as db:
+        assert db.agent_artifacts.count_for('ai_risk_reports', 'analysis') == 1
+    os.remove(mod.AI_REPORTS_DATA_FILE)
+    hs.reset_shared_stores()
+    rebooted = mod.AIRiskReportsService()
+    assert rebooted.load_data() is True and analysis.id in rebooted.analyses
 
 
 def test_memory_mode_is_untouched(monkeypatch):

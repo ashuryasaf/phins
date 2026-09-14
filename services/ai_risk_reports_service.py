@@ -32,6 +32,7 @@ import random
 import base64
 
 from services.agent_metrics import instrument_agent
+from services.hydrated_store import artifact_store
 
 logger = logging.getLogger('phins.ai_risk_reports')
 
@@ -494,9 +495,24 @@ class AIRiskReportsService:
     """Main service for AI-powered risk and reports analysis"""
     
     def __init__(self):
-        self.documents: Dict[str, Dict] = {}
-        self.analyses: Dict[str, AnalysisResult] = {}
-        self.reports: Dict[str, GeneratedReport] = {}
+        # Durable in DB mode (A4): rows in ``agent_artifacts`` (agent
+        # ai_risk_reports) behind a read-through cache so uploads, analyses and
+        # reports survive restarts and are visible to every web/worker
+        # instance (the parsed rows travel with the document so a peer can run
+        # the analysis). In memory mode these are per-instance dicts and the
+        # JSON file in ``AI_REPORTS_DATA_FILE`` remains the persistence layer.
+        self.documents: Dict[str, Dict] = artifact_store(
+            'ai_risk_reports.documents', agent_id='ai_risk_reports', kind='document',
+            subject=lambda d: ('owner', str(d.get('owner_id') or '') or None))
+        self.analyses: Dict[str, AnalysisResult] = artifact_store(
+            'ai_risk_reports.analyses', agent_id='ai_risk_reports', kind='analysis',
+            record_type=AnalysisResult, subject=lambda a: ('document', a.document_id))
+        self.reports: Dict[str, GeneratedReport] = artifact_store(
+            'ai_risk_reports.reports', agent_id='ai_risk_reports', kind='report',
+            record_type=GeneratedReport, subject=lambda r: ('analysis', r.analysis_id))
+
+    def _durable(self) -> bool:
+        return bool(getattr(self.documents, 'durable', False))
     
     def parse_file(self, filename: str, file_content: bytes, file_type: str, 
                    owner_id: str = None, owner_role: str = None) -> Dict[str, Any]:
@@ -5004,6 +5020,10 @@ Factors Affecting Score:
             True if successful, False otherwise
         """
         if filepath is None:
+            if self._durable():
+                # The agent_artifacts table is the store in DB mode; every
+                # write above already went through it.
+                return True
             filepath = AI_REPORTS_DATA_FILE
         
         try:
@@ -5074,6 +5094,11 @@ Factors Affecting Score:
         """
         if filepath is None:
             filepath = AI_REPORTS_DATA_FILE
+            if self._durable() and (len(self.documents) or len(self.analyses) or len(self.reports)):
+                # DB mode with durable rows present: the table is the source
+                # of truth; the legacy JSON file is only read once to migrate
+                # a pre-A4 deployment whose table is still empty.
+                return True
         
         if not os.path.exists(filepath):
             print(f"[AI_REPORTS] No saved data file found at {filepath}")
@@ -5241,12 +5266,18 @@ def _risk_reports_health() -> Dict[str, Any]:
     instance = _ai_reports_service
     if instance is None:
         return {'status': 'ok', 'initialized': False}
+    def _cached(store) -> int:
+        # Probe the cache, not the table: a health check must not issue queries.
+        return store.snapshot()['cached'] if hasattr(store, 'snapshot') else len(store or {})
+
+    documents = getattr(instance, 'documents', {})
     return {
         'status': 'ok',
         'initialized': True,
-        'documents': len(getattr(instance, 'documents', {}) or {}),
-        'analyses': len(getattr(instance, 'analyses', {}) or {}),
-        'reports': len(getattr(instance, 'reports', {}) or {}),
+        'documents': _cached(documents),
+        'analyses': _cached(getattr(instance, 'analyses', {})),
+        'reports': _cached(getattr(instance, 'reports', {})),
+        'durable': bool(getattr(documents, 'durable', False)),
     }
 
 
