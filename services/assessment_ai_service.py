@@ -176,15 +176,21 @@ class AssessmentAIService:
         options = dict(options or {})
         evidence = self._collect_evidence(analysis_payload)
         facts_digest = self._facts_digest(evidence)
+        template = self._narrative_template()
 
         mode = "deterministic"
         summary_text = ""
+        structured: Dict[str, Any] = {}
+        fallback_reason: Optional[str] = None
         if self.is_llm_enabled():
             try:
-                summary_text = self._llm_summary(analysis_payload, evidence)
+                structured = self._llm_structured_narrative(analysis_payload, evidence, template)
+                summary_text = str(structured.get("summary_text") or "")
                 mode = "llm"
             except Exception as exc:  # noqa: BLE001 - any failure => safe fallback
                 logger.warning("Assessment AI live path failed, using deterministic fallback: %s", exc)
+                fallback_reason = f"{type(exc).__name__}: {exc}"[:300]
+                structured = {}
                 summary_text = ""
                 mode = "deterministic"
 
@@ -195,7 +201,9 @@ class AssessmentAIService:
             "source": "assessment_ai",
             "mode": mode,
             "model": self.model if mode == "llm" else "deterministic-offline",
-            "prompt_version": self._narrative_prompt_id(),
+            # Prompt provenance (B3): id names the version, sha256 proves the text.
+            **template.provenance(),
+            "schema_id": (template.response_schema or {}).get("$id"),
             "advisory": True,
             "needs_review": True,
             "confidence": _MAX_ADVISORY_CONFIDENCE,
@@ -203,6 +211,8 @@ class AssessmentAIService:
             "analysis_type": analysis_payload.get("analysis_type"),
             "generated_at": datetime.utcnow().isoformat() + "Z",
             "summary_text": summary_text,
+            "key_points": list(structured.get("key_points") or []),
+            "review_flags": list(structured.get("review_flags") or []),
             "highlights": self._highlights(analysis_payload, evidence),
             "evidence": evidence,
             "evidence_count": len(evidence),
@@ -213,6 +223,8 @@ class AssessmentAIService:
                 "before any decision."
             ),
         }
+        if fallback_reason:
+            narrative["fallback_reason"] = fallback_reason
 
         self._record_audit(customer_id, narrative, facts_digest)
         self._persist_artifact(
@@ -345,12 +357,16 @@ class AssessmentAIService:
         )
         return artifact
 
+    def _narrative_template(self):
+        """The registered narrative template (latest version, or the one
+        pinned by ``PHINS_ASSESSMENT_NARRATIVE_PROMPT_VERSION``)."""
+        from prompts import get_prompt
+        pinned = os.environ.get("PHINS_ASSESSMENT_NARRATIVE_PROMPT_VERSION", "").strip()
+        version = int(pinned) if pinned.isdigit() else None
+        return get_prompt("narrative", version=version)
+
     def _narrative_prompt_id(self) -> str:
-        try:
-            from prompts import get_prompt
-            return get_prompt("narrative").prompt_id
-        except Exception:
-            return "narrative-v1"
+        return self._narrative_template().prompt_id
 
     @staticmethod
     def _contradiction_summaries(customer_id: str) -> List[str]:
@@ -443,6 +459,10 @@ class AssessmentAIService:
                     "mode": artifact.get("mode"),
                     "model": artifact.get("model"),
                     "prompt_version": artifact.get("prompt_version"),
+                    "prompt_id": artifact.get("prompt_id"),
+                    "prompt_sha256": artifact.get("prompt_sha256"),
+                    "schema_id": artifact.get("schema_id"),
+                    "fallback_reason": artifact.get("fallback_reason"),
                     "facts_digest": artifact.get("facts_digest"),
                     "evidence_count": artifact.get("evidence_count"),
                     "review_disposition": artifact.get("review_disposition"),
@@ -583,19 +603,26 @@ class AssessmentAIService:
 
     # ── Live-LLM path (opt-in, egress-aware) ─────────────────────────────
 
-    def _llm_summary(
+    def _llm_structured_narrative(
         self,
         analysis_payload: Dict[str, Any],
         evidence: List[Dict[str, Any]],
-    ) -> str:
-        """Summarise the evidence through the configured LLM provider.
+        template,
+    ) -> Dict[str, Any]:
+        """Summarise the evidence through the configured LLM provider as a
+        schema-validated object (``schemas/assessment_narrative.json``).
 
-        Raises on any failure so the caller falls back to the deterministic
-        path. Only the evidence trail (optionally value-redacted) is sent —
-        never raw documents (AI data minimisation).
+        The provider retries a schema-invalid reply with the validation
+        errors appended (``PHINS_LLM_VALIDATION_RETRIES``) and raises
+        ``LLMValidationError`` once the budget is spent; this method validates
+        the returned object once more so an invalid narrative can never be
+        persisted, and raises on any failure so the caller falls back to the
+        deterministic path. Only the evidence trail (optionally
+        value-redacted) is sent — never raw documents (AI data minimisation).
+        A template without a response schema (v1) is served as free text
+        wrapped into the same shape.
         """
-        from prompts import get_prompt
-        from services.llm_providers import get_llm_provider
+        from services.llm_providers import get_llm_provider, validate_json_schema
 
         evidence_for_model = evidence
         risk_for_model = analysis_payload.get("risk")
@@ -603,7 +630,6 @@ class AssessmentAIService:
             evidence_for_model = redact_evidence_for_model(evidence)
             risk_for_model = redact_risk_for_model(risk_for_model)
 
-        template = get_prompt("narrative")
         user_payload = {
             "analysis_type": analysis_payload.get("analysis_type"),
             "evidence": evidence_for_model,
@@ -615,10 +641,24 @@ class AssessmentAIService:
             prompt_version=template.prompt_id,
         )
         provider.call_context = {"customer_id": analysis_payload.get("customer_id")}
-        return provider.completion(
-            template.system_prompt,
-            json.dumps(user_payload, ensure_ascii=False, default=str),
-        )
+        user_content = json.dumps(user_payload, ensure_ascii=False, default=str)
+        if template.response_schema is None:
+            text = provider.completion(template.system_prompt, user_content)
+            if not str(text or "").strip():
+                raise ValueError("empty completion")
+            return {"summary_text": str(text), "key_points": [], "review_flags": [], "needs_review": True}
+
+        result = provider.structured_completion(template.system_prompt, user_content, template.response_schema)
+        errors = validate_json_schema(result, template.response_schema)
+        if errors:
+            raise ValueError("structured narrative failed schema validation: " + "; ".join(errors[:5]))
+        if result.get("needs_review") is not True:
+            raise ValueError("structured narrative must set needs_review=true")
+        for point in result.get("key_points") or []:
+            index = point.get("evidence_index")
+            if index is not None and not (0 <= int(index) < len(evidence)):
+                raise ValueError(f"key point cites evidence_index {index} outside the {len(evidence)} supplied items")
+        return result
 
     @staticmethod
     def _usage_hook(customer_id: Optional[str], prompt_version: Optional[str]):
@@ -646,6 +686,12 @@ class AssessmentAIService:
             "analysis_type": narrative.get("analysis_type"),
             "mode": narrative.get("mode"),
             "model": narrative.get("model"),
+            "prompt_id": narrative.get("prompt_id"),
+            "prompt_version": narrative.get("prompt_version"),
+            "prompt_version_number": narrative.get("prompt_version_number"),
+            "prompt_sha256": narrative.get("prompt_sha256"),
+            "schema_id": narrative.get("schema_id"),
+            "fallback_reason": narrative.get("fallback_reason"),
             "evidence_count": narrative.get("evidence_count"),
             "facts_digest": facts_digest,
         }

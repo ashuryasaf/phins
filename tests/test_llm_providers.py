@@ -227,10 +227,14 @@ def test_prompt_registry_versions():
     assert onboarding.response_schema is not None
     assert get_prompt("service").prompt_id == "service-v1"
     assert get_prompt("termination").prompt_id == "termination-v1"
-    assert get_prompt("narrative").response_schema is None
+    # narrative-v1 (free text) stays registered; v2 is the structured latest.
+    assert get_prompt("narrative", version=1).response_schema is None
+    assert get_prompt("narrative").prompt_id == "narrative-v2"
+    assert get_prompt("narrative").response_schema["$id"] == "phins:schemas/assessment_narrative"
     catalog = list_prompts()
     assert set(catalog) >= {"onboarding-v1", "service-v1", "termination-v1",
-                            "narrative-v1"}
+                            "narrative-v1", "narrative-v2"}
+    assert all(len(entry["sha256"]) == 64 for entry in catalog.values())
     with pytest.raises(KeyError):
         get_prompt("unknown-type")
     with pytest.raises(KeyError):
@@ -343,5 +347,13 @@ def test_narrative_records_prompt_version(ai_service, monkeypatch):
     monkeypatch.delenv("PHINS_ASSESSMENT_AI_ENABLED", raising=False)
     narrative = ai_service.generate_narrative(
         _ANALYSIS_PAYLOAD, customer_id="CUST-AI4")
-    assert narrative["prompt_version"] == "narrative-v1"
+    # Latest registered narrative prompt (v2, structured); v1 stays pinnable.
+    assert narrative["prompt_version"] == "narrative-v2"
+    assert narrative["prompt_id"] == "narrative-v2"
+    assert narrative["prompt_version_number"] == 2
+    assert len(narrative["prompt_sha256"]) == 64
     assert narrative["advisory"] is True
+    monkeypatch.setenv("PHINS_ASSESSMENT_NARRATIVE_PROMPT_VERSION", "1")
+    pinned = ai_service.generate_narrative(_ANALYSIS_PAYLOAD, customer_id="CUST-AI4")
+    assert pinned["prompt_version"] == "narrative-v1" and pinned["prompt_version_number"] == 1
+    assert pinned["prompt_sha256"] != narrative["prompt_sha256"]

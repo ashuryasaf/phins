@@ -61,10 +61,16 @@
         "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       }
     ],
+    "key_points": [],
     "mode": "deterministic",
     "model": "deterministic-offline",
     "needs_review": true,
-    "prompt_version": "narrative-v1",
+    "prompt_id": "narrative-v2",
+    "prompt_sha256": "600e0efba01435b08bc154d49672e2694440417c579a519e5e32b61d9bb6bd2b",
+    "prompt_version": "narrative-v2",
+    "prompt_version_number": 2,
+    "review_flags": [],
+    "schema_id": "phins:schemas/assessment_narrative",
     "summary_text": "Advisory summary for customer GOLDEN-AI-1 (onboarding).\nReviewed 0 extracted fact(s) across 0 document(s).\nKey evidence (highest confidence, with provenance):\n  - Identity/full_name [doc=DOC-GOLD-1 sha=aaaaaaaaaaaa conf=0.98]\n  - Medical/smoker_status [doc=DOC-GOLD-2 sha=bbbbbbbbbbbb conf=0.91]\n  - Medical/bmi [doc=DOC-GOLD-2 sha=bbbbbbbbbbbb conf=0.77]\nThis advisory summary introduces no new facts; verify against the linked source documents before acting."
   },
   "input": {
