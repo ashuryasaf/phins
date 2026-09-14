@@ -163,7 +163,11 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
         # =====================================================================
         
         hebrew_extracted = {}
-        if lang_code == 'hebrew' or any(re.search(r'[\u0590-\u05FF]', str(v)) for row in rows[:10] for v in row.values()):
+        # The extracted PDF/image text is scanned on its own: its page rows sit
+        # after the metadata rows, so the row sample below never reaches them,
+        # and a number-heavy or bilingual document can still detect as English.
+        has_hebrew_content = bool(re.search(r'[\u0590-\u05FF]', content_text[:200_000]))
+        if lang_code == 'hebrew' or has_hebrew_content or any(re.search(r'[\u0590-\u05FF]', str(v)) for row in rows[:10] for v in row.values()):
             hebrew_extracted = self._extract_hebrew_document_data(all_text, rows)
         
         # =====================================================================

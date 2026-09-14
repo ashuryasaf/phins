@@ -261,6 +261,31 @@ class TestExtractorDelegation:
         report = service.generate_report(analysis.id)
         assert report.language == 'hebrew' and report.sections
 
+    def test_number_heavy_bilingual_pdf_still_extracts_hebrew_fields(self, service, monkeypatch):
+        pytest.importorskip('pypdf')
+        # A policy table of IDs and amounts with sparse Hebrew labels does not
+        # classify as Hebrew, and its page rows sit after the metadata rows, so
+        # only the extracted text itself can gate the field extraction.
+        from services.document_processing_service import DocumentProcessingService
+        body = "\n".join([
+            "Policy Schedule / Table of Benefits",
+            "ID 123456789  Ref 998877  Branch 0042  Agent 5512  Code 7781",
+            "מספר פוליסה: 778-2210",
+            "Gross 1,250.00  Net 1,100.00  Tax 150.00  Total 1,275.00",
+            "פרמיה: 250",
+            "סכום ביטוח: 500,000",
+            "תאריך תחילה: 01/01/2024",
+        ] + [f"Line {i}  value {i * 7}  amount {i * 13}.00" for i in range(80)])
+        pages = [{'page': 1, 'char_start': 0, 'char_end': len(body)}]
+        monkeypatch.setattr(DocumentProcessingService, '_extract_pdf_text_with_pages',
+                            lambda self, raw, *, lang_hint=None: (body, pages))
+        doc = service.parse_file('policy_schedule.pdf', TEXT_PDF, 'pdf',
+                                 owner_id='CUST-1', owner_role='customer')
+        analysis = service.analyze(doc['document_id'])
+        assert analysis.language != 'hebrew'
+        names = {f.name for f in analysis.extracted_factors}
+        assert any('778-2210' in str(f.value) for f in analysis.extracted_factors), names
+
     def test_hebrew_filename_passes_a_language_hint(self, service, monkeypatch):
         from services.document_processing_service import DocumentProcessingService
         seen = []
