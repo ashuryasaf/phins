@@ -780,7 +780,8 @@ Deviations from the B12 text above, and why:
 | Transcription | `services/transcription_providers.py` | Cache key = sha256 of the audio bytes + model + language hint, so an identical upload is not transcribed or billed twice within the TTL. Parsing and `_meter` also moved inside `request_fn` (one usage row per real call). |
 | Media generation | `services/media_generation_service.py` (`_read_json_with_diagnostics`) | Breaker per provider host. `submit` is **never retried** (a 5xx after the provider may already have accepted a paid job would double-bill) and is metered as `video_submit` and charged to the daily budget; `poll`/`download` retry, are not billable, and pass `budget=False` so polling an in-flight job can neither exhaust the cap nor be refused by it. No cache on any media call (poll results change). Gateway refusals raise `MediaGenerationError` like any provider failure. |
 | Admin view | `web_portal/api_extensions.py` → `GET /api/admin/ai-agents/health` | Additive `gateway` block: stats, breaker states, today's budget usage. |
-| Tests | `tests/test_external_call_gateway.py` (18), `tests/test_gateway_provider_integration.py` (8), `tests/test_ai_usage_service.py` (+3: `group_by="agent"`, SQLite persistence round-trip for `agent_id`/`blocked`, legacy-table `upgrade_schema`) | Existing `test_llm_providers.py`, `test_transcription_providers.py`, `test_video_agents_service.py`, `test_video_agents_integrity.py`, `test_notification_service.py`, `test_media_processing.py`, `test_assessment_*` pass unchanged. |
+| Tenant-scoped budgets (follow-up, PR #589) | `services/transcription_providers.py` (`transcribe(..., context=)`), `services/document_processing_service.py` (thread-local document scope), `services/media_generation_service.py` (`submit_video_generation(..., attribution=)`), `services/video_agents_service.py` | Closes the #588 security finding: transcription and video submits no longer fall back to one shared `global` bucket. Transcription is scoped by the owning customer (the document service binds `document_id`/`customer_id` to the processing thread for the duration of a pass, released in `finally`, so the 12 `(raw, mime, ext)` handlers are untouched); video submits scope to the customer when present, else `user:<submitter>`. Only `customer_id`/`document_id`/`job_id` are accepted from caller context so nothing else can reach metering. |
+| Tests | `tests/test_external_call_gateway.py` (19), `tests/test_gateway_provider_integration.py` (15), `tests/test_ai_usage_service.py` (+3: `group_by="agent"`, SQLite persistence round-trip for `agent_id`/`blocked`, legacy-table `upgrade_schema`) | Existing `test_llm_providers.py`, `test_transcription_providers.py`, `test_video_agents_service.py`, `test_video_agents_integrity.py`, `test_notification_service.py`, `test_media_processing.py`, `test_document*`, `test_assessment_*` pass unchanged. |
 
 Deviations from the A2 text above, and why:
 
@@ -798,10 +799,19 @@ Deviations from the A2 text above, and why:
   customer/agent/day* (a cost rule). Both apply; unifying them would change
   product behaviour, which is out of scope here.
 
-### Next — §D step 3
+### Remaining — §D steps 3–6
 
-A3 generalized job queue (see §A3), then A4 durable agent state.
+| Step | Workstream | Status |
+|---|---|---|
+| 3 | A3 generalized job queue (§A3) | Not started. Design decision taken: keep one `document_processing_jobs` table; `document_id` becomes nullable via `ALTER COLUMN ... DROP NOT NULL` on PostgreSQL and a guarded table rebuild on SQLite (which cannot alter columns). Two tables would need two claim queries and weaken priority ordering. Migrate Document Intelligence first, then B1 bots, B5 pension, B9 risk reports, B8 video. |
+| 4 | A4 durable agent state (§A4) | Not started; depends on A3 for the migrated agents. |
+| 5 | A6 evaluation harness (§A6), B2 controller split, B3 golden sets | Not started. |
+| 6 | Per-agent refactors B1, B4, B5, B6, B7, B8, B9, B10, B11 (§B) and human AgentOS follow-ups (§C) | Not started. B12 shipped in step 2. |
+
+Health of what has shipped (checked on `main` after PR #589):
+`GET /api/admin/ai-agents/health` reports 15 agents, all `ok`, no SLO
+breaches, no load failures; gateway idle with no open breakers.
 
 ---
 
-_Last updated: September 14, 2026 — A1 + A5 + B12 + A2 shipped; A3 next._
+_Last updated: September 14, 2026 — A1 + A5 + B12 + A2 (+ tenant-scoped budgets) shipped; A3 next._
