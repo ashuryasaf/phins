@@ -26,13 +26,15 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import secrets
-import sys
 import threading
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
+
+from services.hydrated_store import (
+    DEFAULT_TTL, HYDRATE_TTL_ENV, RefreshCoalescer, _env_float, db_mode_enabled,
+)
 
 # ---------------------------------------------------------------------------
 # Module state (authoritative in-memory working store)
@@ -55,11 +57,12 @@ _GENESIS_HASH = "0" * 64
 # (an agent/invitation/affiliation/suspension created on one instance becomes
 # visible on the others) instead of each instance reading a stale snapshot it
 # loaded once at startup. Writes force a fresh pull before deciding.
+# The TTL gate itself is the shared ``RefreshCoalescer`` (A4,
+# ``services/hydrated_store.py``); ``_last_hydrate`` is kept as the module-level
+# mirror callers/tests reset to force an immediate refresh.
 _last_hydrate = 0.0
-try:
-    _HYDRATE_TTL = float(os.environ.get("PHINS_AGENT_HYDRATE_TTL", "1.5"))
-except (TypeError, ValueError):
-    _HYDRATE_TTL = 1.5
+_HYDRATE = RefreshCoalescer(_env_float(HYDRATE_TTL_ENV, DEFAULT_TTL))
+_HYDRATE_TTL = _HYDRATE.ttl
 
 VALID_INVITEE_TYPES = ("customer", "supplier", "agent")
 VALID_BASES = ("premium", "gmv", "one_time")
@@ -83,11 +86,7 @@ def _db_enabled() -> bool:
     (commissions/affiliations diverging from accrual data). Falls back to the
     env var only when the portal module is not loaded (e.g. isolated unit use).
     """
-    portal = sys.modules.get("web_portal.server")
-    if portal is not None:
-        return bool(getattr(portal, "USE_DATABASE", False)
-                    and getattr(portal, "database_enabled", False))
-    return os.environ.get("USE_DATABASE", "true").lower() not in ("false", "0", "no")
+    return db_mode_enabled()
 
 
 def normalize_rate(value: Any, default: float = 0.0) -> float:
@@ -384,7 +383,7 @@ def _hydrate_from_db(force: bool = False) -> None:
     if not _db_enabled():
         return
     now = time.monotonic()
-    if not force and (now - _last_hydrate) < _HYDRATE_TTL:
+    if not force and _last_hydrate and not _HYDRATE.due():
         return
     try:
         with _db() as db:
@@ -430,6 +429,7 @@ def _hydrate_from_db(force: bool = False) -> None:
         _ACCRUED_KEYS.clear(); _ACCRUED_KEYS.update(new_accrued_keys)
         COMMISSION_LEDGER[:] = new_ledger
         _last_hydrate = now
+        _HYDRATE.mark()
     except Exception:
         # Durability/refresh is best-effort; keep serving the current cache and
         # retry on the next call instead of failing the request.
@@ -452,6 +452,7 @@ def reset_agent_ecosystem() -> None:
         _ACCRUED_KEYS.clear()
         global _last_hydrate
         _last_hydrate = 0.0
+        _HYDRATE.reset()
 
 
 def ensure_demo_agent() -> Dict[str, Any]:
