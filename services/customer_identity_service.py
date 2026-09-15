@@ -412,7 +412,11 @@ def matches(record: Optional[Dict[str, Any]], national_id: Any, nationality: Any
 # Lookup / uniqueness
 # ---------------------------------------------------------------------------
 def _db_enabled() -> bool:
-    return str(os.environ.get("USE_DATABASE", "")).lower() in ("true", "1", "yes")
+    # Same rule as web_portal/server.py and security/keyring.py: database mode
+    # is the default and only an explicit opt-out disables it. Reading an unset
+    # variable as "off" would keep the vault blob in process memory while the
+    # customer row lives in the shared database.
+    return str(os.environ.get("USE_DATABASE", "true")).strip().lower() not in ("false", "0", "no")
 
 
 def find_customer_id_by_identity(nationality: str, national_id_hash: str,
