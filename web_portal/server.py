@@ -2723,6 +2723,60 @@ def marketing_state_dict() -> Dict[str, Any]:
     return state
 
 
+def marketing_cohort_targeting_requested(value: Any) -> bool:
+    """Parse the optional ``cohorts`` / ``cohort_targeting`` flag (B7)."""
+    if isinstance(value, bool):
+        return value
+    return str(value or '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def marketing_customer_analytics() -> Optional[Dict[str, Any]]:
+    """BI customer analytics used as optional cohort targeting input (B7).
+
+    Read through the (cached, fingerprint-guarded) BI service so the cohorts a
+    plan is derived from are exactly what ``/api/bi/customers`` reports for
+    the same data. Never raises: no BI → broad targeting.
+    """
+    try:
+        from services.bi_analytics_service import get_bi_analytics_service
+        sources = bi_data_sources()
+        return get_bi_analytics_service().get_customer_analytics(
+            sources['customers'],
+            sources['health_wallets'],
+            sources['investment_accounts'],
+            sources['transaction_ledger'],
+            sources['policies'],
+        )
+    except Exception as exc:
+        print(f"[marketing] cohort targeting unavailable: {exc}")
+        return None
+
+
+def generate_marketing_campaign(service, *, actor: str, vertical: Any, objective: Any, persona: Any,
+                                region: Any, budget_tier: Any, social_networks: Any,
+                                cohort_targeting: bool) -> Dict[str, Any]:
+    """One call site for both the GET generate route and publish-with-regenerate."""
+    if not isinstance(social_networks, list):
+        social_networks = []
+    return service.generate_campaign(
+        customers=CUSTOMERS,
+        policies=POLICIES,
+        billing=BILLING,
+        claims=CLAIMS,
+        health_wallets=HEALTH_WALLETS,
+        investment_accounts=INVESTMENT_ACCOUNTS,
+        transaction_ledger=TRANSACTION_LEDGER,
+        vertical=vertical,
+        objective=objective,
+        persona=persona,
+        region=region,
+        budget_tier=budget_tier,
+        social_networks=social_networks,
+        generated_by=actor,
+        customer_analytics=marketing_customer_analytics() if cohort_targeting else None,
+    )
+
+
 def _copy_json_value(value: Any) -> Any:
     """Return a JSON-safe deep copy to avoid shared mutable references."""
     try:
@@ -16961,33 +17015,38 @@ For claims or questions, please contact:
                 budget_tier = qs.get('budget_tier', ['balanced'])[0]
                 networks_csv = qs.get('networks', [''])[0]
                 social_networks = [n.strip().lower() for n in str(networks_csv).split(',') if n.strip()]
+                cohort_targeting = marketing_cohort_targeting_requested(qs.get('cohorts', [''])[0])
 
                 service = get_marketing_sales_agent_service()
-                campaign_data = service.generate_campaign(
-                    customers=CUSTOMERS,
-                    policies=POLICIES,
-                    billing=BILLING,
-                    claims=CLAIMS,
-                    health_wallets=HEALTH_WALLETS,
-                    investment_accounts=INVESTMENT_ACCOUNTS,
-                    transaction_ledger=TRANSACTION_LEDGER,
+                actor = (session or {}).get('username', 'admin')
+                campaign_data = generate_marketing_campaign(
+                    service,
+                    actor=actor,
                     vertical=vertical,
                     objective=objective,
                     persona=persona,
                     region=region,
                     budget_tier=budget_tier,
                     social_networks=social_networks,
-                    generated_by=(session or {}).get('username', 'admin'),
+                    cohort_targeting=cohort_targeting,
                 )
 
-                actor = (session or {}).get('username', 'admin')
                 generated_campaign = campaign_data.get('campaign') if isinstance(campaign_data, dict) else {}
                 generated_integrity = campaign_data.get('integrity') if isinstance(campaign_data, dict) else {}
+                plan_cache = campaign_data.get('plan_cache') if isinstance(campaign_data, dict) else {}
+                existing_entry = get_marketing_campaign_entry(str(generated_campaign.get('campaign_id') or ''))
+                # Same inputs → same plan (cache hit): keep the stored
+                # lifecycle/assets (it may already be published) instead of
+                # resetting the envelope to a fresh "generated" state.
+                lifecycle_status = 'generated'
+                if plan_cache.get('hit') and existing_entry:
+                    lifecycle_status = str(existing_entry.get('lifecycle_status') or 'generated')
+                    generated_integrity = dict(existing_entry.get('integrity') or generated_integrity)
                 latest_entry = store_marketing_campaign_entry(
                     campaign_payload=generated_campaign if isinstance(generated_campaign, dict) else {},
                     integrity_payload=generated_integrity if isinstance(generated_integrity, dict) else {},
                     actor=actor,
-                    lifecycle_status='generated',
+                    lifecycle_status=lifecycle_status,
                 )
                 save_ledger_data()
 
@@ -16996,6 +17055,8 @@ For claims or questions, please contact:
                     'success': True,
                     'generated': campaign_data,
                     'latest_campaign': latest_entry,
+                    'plan_cache': plan_cache,
+                    'cohort_targeting': cohort_targeting,
                 }, default=str).encode('utf-8'))
                 return
             except Exception as e:
@@ -17029,6 +17090,10 @@ For claims or questions, please contact:
                 latest_copy = dict(latest_campaign)
                 latest_copy['integrity'] = dict(integrity_payload)
                 latest_copy['integrity']['verified'] = bool(verified)
+                if str(latest_copy.get('lifecycle_status') or '') == 'published':
+                    # B7: a published plan must also match its hash-chained anchor.
+                    latest_copy['integrity']['ledger_anchor'] = service.verify_publication(
+                        TRANSACTION_LEDGER, campaign_payload, integrity_payload)
 
                 campaign_id = str(campaign_payload.get('campaign_id') or '')
                 video_jobs = video_generation_jobs_for_campaign_response(campaign_id) if campaign_id else []
@@ -32862,21 +32927,17 @@ For claims or questions, please contact:
                         integrity_payload = {}
 
                 if not campaign_payload:
-                    generated = service.generate_campaign(
-                        customers=CUSTOMERS,
-                        policies=POLICIES,
-                        billing=BILLING,
-                        claims=CLAIMS,
-                        health_wallets=HEALTH_WALLETS,
-                        investment_accounts=INVESTMENT_ACCOUNTS,
-                        transaction_ledger=TRANSACTION_LEDGER,
+                    generated = generate_marketing_campaign(
+                        service,
+                        actor=publisher,
                         vertical=data.get('vertical', 'insurance'),
                         objective=data.get('objective', 'growth'),
                         persona=data.get('persona', 'families'),
                         region=data.get('region', 'global'),
                         budget_tier=data.get('budget_tier', 'balanced'),
                         social_networks=social_networks,
-                        generated_by=publisher,
+                        cohort_targeting=marketing_cohort_targeting_requested(
+                            data.get('cohort_targeting', data.get('cohorts'))),
                     )
                     campaign_payload = generated.get('campaign', {}) if isinstance(generated, dict) else {}
                     integrity_payload = generated.get('integrity', {}) if isinstance(generated, dict) else {}
@@ -32889,8 +32950,32 @@ For claims or questions, please contact:
                 campaign_id = str(campaign_payload.get('campaign_id') or f"MKT-{uuid.uuid4().hex[:10]}")
                 published_at = datetime.now().isoformat()
 
-                # Convert campaign artifacts into media-brief assets for /admin-media.
+                # B7: anchor (campaign_id, signature, input_hash) on the platform
+                # ledger BEFORE any side effect. A plan whose signature no longer
+                # verifies, or a ledger that cannot be written, aborts the publish
+                # with nothing minted and nothing marked published.
                 briefs = service.build_media_briefs(campaign_payload)
+                try:
+                    ledger_anchor = service.anchor_publication(
+                        platform_event_ledger,
+                        campaign_payload,
+                        integrity_payload,
+                        publisher=publisher,
+                        assets_created=len(briefs),
+                    )
+                except ValueError as exc:
+                    self._set_json_headers(409)
+                    self.wfile.write(json.dumps({'error': f'Campaign integrity check failed: {exc}'}).encode('utf-8'))
+                    return
+                except Exception as exc:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({'error': f'Ledger anchor failed; campaign not published: {exc}'}).encode('utf-8'))
+                    return
+                integrity_payload = dict(integrity_payload)
+                integrity_payload['ledger_anchor'] = ledger_anchor
+                integrity_payload.setdefault('input_hash', campaign_payload.get('input_hash', ''))
+
+                # Convert campaign artifacts into media-brief assets for /admin-media.
                 created_assets = []
                 for brief in briefs:
                     asset_id = f"media-{uuid.uuid4().hex[:12]}"
@@ -32945,6 +33030,8 @@ For claims or questions, please contact:
                     'objective': campaign_payload.get('scope', {}).get('objective'),
                     'assets_created': len(created_assets),
                     'integrity_signature': integrity_payload.get('signature', ''),
+                    'input_hash': integrity_payload.get('input_hash', ''),
+                    'ledger_entry_id': ledger_anchor.get('entry_id'),
                     'source': campaign_source,
                 }
                 published_campaigns.append(summary_entry)
@@ -32977,6 +33064,7 @@ For claims or questions, please contact:
                     'published_count': len(published_campaigns),
                     'created_assets': created_assets,
                     'campaign_source': campaign_source,
+                    'ledger_anchor': ledger_anchor,
                 }, default=str).encode('utf-8'))
                 return
             except Exception as e:
@@ -35009,8 +35097,10 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'No file content provided'}).encode('utf-8'))
                     return
                 
-                # Decode base64 content
-                import base64
+                # Decode base64 content (module-level ``base64`` is already
+                # imported; a bare ``import base64`` here would shadow it as a
+                # do_POST local and break every earlier route in this method
+                # that uses it, e.g. the marketing publish route).
                 try:
                     file_content = base64.b64decode(content_b64)
                 except Exception as decode_err:
