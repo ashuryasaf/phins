@@ -7130,6 +7130,44 @@ def _prepare_auto_pay_bill(
     return bill, 'created'
 
 
+def agent_ecosystem_data_sources() -> Dict[str, Any]:
+    """Portal stores handed to ``web_portal/api_agent_ecosystem.py`` (AgentOS).
+
+    Paid bills drive per-renewal commission accrual (§C); the wallet /
+    investment / transaction stores feed the subtree-scoped broker funnel; the
+    platform event ledger anchors executed payout runs.
+    """
+    return {
+        'customers': CUSTOMERS, 'policies': POLICIES, 'suppliers': SUPPLIERS,
+        'bills': BILLING,
+        'health_wallets': HEALTH_WALLETS,
+        'investment_accounts': INVESTMENT_ACCOUNTS,
+        'transaction_ledger': TRANSACTION_LEDGER,
+        'platform_ledger': platform_event_ledger,
+    }
+
+
+def accrue_agent_commission_for_paid_bills(bill_ids: List[str]) -> None:
+    """Billing hook (§C): a premium bill that just became ``paid`` accrues the
+    referring agent's term commission (renewal terms recur once per policy
+    year). Best-effort and idempotent — the agent dashboards recompute from the
+    bill book anyway, so a failure here can never lose or double an accrual.
+    """
+    if not bill_ids:
+        return
+    try:
+        from services import agent_ecosystem_service as _aes
+        for bill_id in bill_ids:
+            bill = BILLING.get(bill_id)
+            if not isinstance(bill, dict) or not status_eq(bill, 'paid'):
+                continue
+            policy = POLICIES.get(bill.get('policy_id'))
+            if isinstance(policy, dict):
+                _aes.accrue_for_paid_bill(bill, policy)
+    except Exception as agent_hook_err:
+        print(f"[AGENTOS] Commission hook skipped: {agent_hook_err}")
+
+
 def process_customer_premium_payment(
     customer_id: str,
     amount: float,
@@ -7258,6 +7296,7 @@ def process_customer_premium_payment(
 
     amount_applied_to_bills = round(amount - remaining_amount, 2)
     unbilled_premium_amount = round(max(0.0, remaining_amount), 2)
+    accrue_agent_commission_for_paid_bills(bills_paid)
 
     try:
         record_premium_revenue(
@@ -18367,9 +18406,7 @@ For claims or questions, please contact:
                     'username': (session or {}).get('username'),
                     'customer_id': (session or {}).get('customer_id'),
                 }
-                status_code, payload = _agt.handle_get(path, qs, _agt_ctx, {
-                    'customers': CUSTOMERS, 'policies': POLICIES, 'suppliers': SUPPLIERS,
-                })
+                status_code, payload = _agt.handle_get(path, qs, _agt_ctx, agent_ecosystem_data_sources())
             except Exception as agt_exc:
                 status_code, payload = 500, {'error': str(agt_exc)}
             self._set_json_headers(status_code)
@@ -32543,9 +32580,8 @@ For claims or questions, please contact:
                     'username': (session or {}).get('username'),
                     'customer_id': (session or {}).get('customer_id'),
                 }
-                status_code, payload = _agt.handle_post(path, qs_post, _agt_ctx, agt_body, {
-                    'customers': CUSTOMERS, 'policies': POLICIES, 'suppliers': SUPPLIERS,
-                })
+                status_code, payload = _agt.handle_post(path, qs_post, _agt_ctx, agt_body,
+                                                        agent_ecosystem_data_sources())
             except Exception as agt_exc:
                 status_code, payload = 500, {'error': str(agt_exc)}
             self._set_json_headers(status_code)

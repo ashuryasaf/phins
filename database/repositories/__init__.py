@@ -47,6 +47,7 @@ from .agent_repository import (
     AgentInvitationRepository,
     AgentAffiliationRepository,
     AgentCommissionRepository,
+    AgentPayoutRepository,
 )
 from .assessment_record_repository import AssessmentRecordRepository
 from .business_inquiry_repository import BusinessInquiryRepository
@@ -93,6 +94,7 @@ __all__ = [
     'AgentInvitationRepository',
     'AgentAffiliationRepository',
     'AgentCommissionRepository',
+    'AgentPayoutRepository',
     'AssessmentRecordRepository',
     'BusinessInquiryRepository',
     'AIUsageRepository',

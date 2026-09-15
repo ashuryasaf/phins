@@ -53,6 +53,7 @@ from database.repositories import (
     AgentInvitationRepository,
     AgentAffiliationRepository,
     AgentCommissionRepository,
+    AgentPayoutRepository,
     AssessmentRecordRepository,
     BusinessInquiryRepository,
     AIUsageRepository,
@@ -127,6 +128,7 @@ class DatabaseManager:
         self._agent_invitations = None
         self._agent_affiliations = None
         self._agent_commissions = None
+        self._agent_payouts = None
         # Assessment loop repositories.
         self._assessment_records = None
         # Business Relations (contact / demo inquiries).
@@ -191,6 +193,7 @@ class DatabaseManager:
         self._agent_invitations = None
         self._agent_affiliations = None
         self._agent_commissions = None
+        self._agent_payouts = None
         self._assessment_records = None
         self._business_inquiries = None
         self._ai_usage = None
@@ -465,6 +468,13 @@ class DatabaseManager:
         if self._agent_commissions is None:
             self._agent_commissions = AgentCommissionRepository(self._ensure_session())
         return self._agent_commissions
+
+    @property
+    def agent_payouts(self) -> AgentPayoutRepository:
+        """Get agent payout-run repository."""
+        if self._agent_payouts is None:
+            self._agent_payouts = AgentPayoutRepository(self._ensure_session())
+        return self._agent_payouts
 
     @property
     def assessment_records(self) -> AssessmentRecordRepository:

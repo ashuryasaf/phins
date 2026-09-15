@@ -342,7 +342,7 @@ Database patterns:
   `supplier_settlement_items`, `external_payers`, `marketplace_claims`,
   `remittances`, `payer_receivables`, `idempotency`, `outbox`
 - Agent ecosystem: `agents`, `agent_invitations`, `agent_affiliations`,
-  `agent_commissions`
+  `agent_commissions`, `agent_payouts`
 - Assessment loop / intake / AI cost: `assessment_records`,
   `business_inquiries`, `ai_usage`
 - Durable agent state (A4): `agent_artifacts`, `video_jobs`
@@ -360,7 +360,8 @@ Common ID prefixes:
 - Ledger: `LEDGER`
 - Credit: `CREDIT`
 - Agent: `AGT` (invitation `AGI`, affiliation `AFF`, commission `COMM`,
-  agent ledger `AGLEDGER`)
+  payout run `APAY`, agent ledger `AGLEDGER`, platform-ledger payout anchor
+  `AGPAY-{payout_id}`)
 
 ## 5) API Task Playbook
 
@@ -409,7 +410,7 @@ When changing persistence or schema behavior:
 Key facts:
 
 - Storage modes include in-memory, SQLite, and PostgreSQL.
-- `DatabaseManager` exposes 42 repository properties (see §4 for the full list).
+- `DatabaseManager` exposes 43 repository properties (see §4 for the full list).
 - Repository modules (20 `*_repository.py` + `base.py`):
   `customer_repository.py`, `policy_repository.py`, `claim_repository.py`,
   `underwriting_repository.py`, `billing_repository.py`,
@@ -421,7 +422,7 @@ Key facts:
   payment-intent, refund, journal, settlement, external-payer,
   marketplace-claim, remittance, receivable, idempotency, and outbox
   repositories), `agent_repository.py` (bundles agent, agent-invitation,
-  agent-affiliation, and agent-commission repositories),
+  agent-affiliation, agent-commission, and agent-payout repositories),
   `assessment_record_repository.py`, `business_inquiry_repository.py`,
   `ai_usage_repository.py`, `agent_artifact_repository.py` (generic durable
   agent state, sha256-checksummed payloads verified on load, DB-side prune)
@@ -650,6 +651,11 @@ referenced files, commands, paths, and ports still exist.
 - The two `conftest.py` files (root vs `tests/`) serve different purposes;
   putting server setup in `tests/conftest.py` will not apply to root-level
   test files.
+- `detect_sql_injection` in `web_portal/server.py` matches substrings such as
+  `EXECUTE`, `UPDATE `, `DROP TABLE`, `--` in query-string values and logs a
+  "SQL Injection Attempt" (which can trip the client-IP block and fail every
+  later test in the session). Do not name a status/enum value or query
+  parameter after one (AgentOS payouts use `settled`, not `executed`).
 
 ## 10) Security and Reliability
 

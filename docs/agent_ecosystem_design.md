@@ -7,11 +7,12 @@
 > **Confirmed decisions (formerly §9 open questions):**
 > 1. Hierarchy: `parent_agent_id` reserved on the model; **single-level payouts in v1**.
 > 2. Commission basis: **all three supported** (`premium` default, `gmv`, `one_time`).
-> 3. **Recurring while active** (v1 accrues once per policy; per-renewal keyed by
->    period is the documented follow-up).
+> 3. **Recurring while active** — once per policy for the initial term, then once
+>    per renewal term (keyed by `period`, driven by the paid premium bill book; §C).
 > 4. Customer visibility: **yes** — `referring_agent_id` is surfaced ("referred by").
 > 5. Demo agent: **seeded** (`agent` / `PHINS_AGENT_PASSWORD`; demo `agent123` in test mode).
-> 6. Payouts: **accrual + dashboard in v1**; `agent_payouts` settlement is a follow-up.
+> 6. Payouts: accrual + dashboard in v1; **`agent_payouts` runs (calculated → settled,
+>    platform-ledger anchored) shipped in §C** together with the broker funnel.
 
 ## Implemented in v1
 
@@ -61,6 +62,84 @@ hash-chained platform event ledger. Covered by `test_http_admin_reset_agent_pass
   ISO strings were rejected by the SQLite `DateTime` columns (datetime columns are now
   left to their DB defaults). Covered by `test_db_mode_durability_survives_restart` and
   `test_db_mode_cross_instance_visibility`.
+
+### §C follow-ups (shipped): per-renewal commission, payout runs, broker funnel
+
+Companion to `docs/agent_operations_optimization_design.md` §C / §G.
+
+- **Per-renewal recurring commission.** `AgentCommission.period` distinguishes the
+  once-per-policy initial-term accrual (`period=''`, `source_event_id=policy:{id}`,
+  `source_type=policy_premium`) from a renewal term (`period=YYYY-MM-DD` term start,
+  `source_event_id=policy:{id}:{period}`, `source_type=policy_renewal`). The renewal
+  term of a bill is derived deterministically by `renewal_period_for_bill` from the
+  policy anniversary (`start_date`/`effective_date`/… normalised to midnight; Feb 29
+  rolls to Feb 28) and the bill's `billing_period_start`/`due_date`/`paid_date`; a
+  policy with no start date or an unpaid bill never accrues (under-count is possible,
+  double-count is not). The in-memory idempotency key is
+  `(source_event_id, affiliation_id, period)`; because the period is embedded in
+  `source_event_id`, the existing two-column DB unique constraint still enforces it
+  with no migration of a monetary table. Accrual is driven three ways, all idempotent:
+  the billing hook `accrue_for_paid_bill` (called from `process_customer_premium_payment`
+  via `accrue_agent_commission_for_paid_bills` in `server.py`), the read-time
+  `recompute_commissions(policies, bills)` sweep, and admin recompute.
+  `connection_integrity` now audits every commission row (`amount = base_amount × rate`),
+  treats renewals as recurring add-ons on top of the initial term, and checks
+  payout linkage (`payout_id` ↔ run, `payable`/`paid` ↔ run status).
+- **Payout runs** (`agent_payouts`, id prefix `APAY`). `run_payouts(agent_id?,
+  idempotency_key?)` sweeps `accrued` commissions into one `calculated` run per agent
+  (suspended agents are skipped and reported), copying amounts and content-addressing
+  the run by `commissions_hash`; swept commissions move to `payable`. The run and
+  the commission rows it owns are written in **one durable transaction**
+  (`_persist_records`); if that write fails the in-memory move is rolled back and
+  the accruals stay re-sweepable — no row is ever left `payable` under a run that
+  never landed. Cross-instance: `agent_payouts` carries unique keys on
+  `commissions_hash` and on `run_key = f"{idempotency_key}:{agent_id}"`, and the
+  sweep first reconciles against the durable table, so two app instances cannot
+  pay the same accrual set twice. A repeated caller key returns **every** run that
+  request created (the whole batch) untouched. `settle_payout(payout_id,
+  external_payout_reference?)` re-verifies the swept set (existence, ownership,
+  linkage, `payable` status, per-row arithmetic, `gross_amount = Σ amount`, hash chain),
+  appends the `agent.payout.settled` anchor on the **platform event ledger**
+  (deterministic id `AGPAY-{payout_id}`, so a retry re-uses the anchor) **before**
+  any status changes, then marks commissions `paid` and the run `settled` in one
+  durable write. If no platform ledger is available, the anchor write raises, or the
+  ledger returns no anchor, nothing changes (fail closed — a run is never `settled`
+  without its anchor); settling a settled run returns `already_settled`. Like supplier
+  settlements it records the external reference and never calls a payment rail.
+  Renewal terms are derived only from coverage dates (`start_date`, `effective_date`);
+  record timestamps (`created_date`, `created_at`, `application_date`) never define
+  an anniversary, so a policy without a coverage start accrues no renewal.
+- **Broker funnel.** `agent_funnel` reports stage counts and conversion %
+  (`invitations_created → approved → redeemed → affiliated_customers →
+  customers_with_policy → customers_paying → customers_renewed`), commission totals
+  (lifetime / initial / renewal / accrued / payable / paid), payout counts, and a BI
+  summary computed by `bi_analytics_service` **restricted to the agent's own affiliated
+  customers** with the per-customer `top_customers` block dropped — aggregates only,
+  no PII, no other agent's subtree.
+- **Routes.** Agent: `GET /api/agent/funnel`, `GET /api/agent/payouts`. Admin:
+  `GET /api/admin/agents/funnel?agent_id=`, `GET /api/admin/agents/payouts[?agent_id=&status=]`,
+  `POST /api/admin/agents/payouts/run {agent_id?, idempotency_key?, settle?,
+  external_payout_reference?}`, `POST /api/admin/agents/payouts/settle {payout_id,
+  external_payout_reference?}`. `run` with `settle: true` settles every run of the
+  batch that is still `calculated` — also on a reused key, so a retry finishes what a
+  crash left unsettled — and reports any settle failure as `409` (the runs created
+  are still returned); `settle` reports a ledger outage as `503`. Both portals gained
+  a funnel / payout-runs card
+  (`agent-portal.html`, `admin-agents.html`). The lifecycle verb is *settle* rather than
+  *execute*: `detect_sql_injection` (`web_portal/server.py`) flags the substring `EXECUTE`
+  in query strings, so `?status=executed` would have been logged and blocked as an
+  injection attempt.
+- **Tests** (`tests/test_agent_ecosystem.py`): renewal accrues once per term and never
+  twice, follows the policy anniversary (not the calendar year), never accrues without
+  a start date or paid status; billing hook on premium payment; payout run idempotent
+  on caller key / content / status and settlement anchored on the platform ledger;
+  settlement fails closed on a tampered swept set, on an anchor-write failure, without
+  a platform ledger and when the ledger returns no anchor; a reused key returns the
+  whole batch; record timestamps never accrue a renewal; suspended agents skipped;
+  funnel scoped to the agent's subtree; HTTP role scope for every new route, run+settle
+  failure is a 409 and the retry finishes the batch; DB mode: renewals + payouts survive
+  a restart, a failed run/settlement write never half-persists, concurrent instances
+  cannot double-pay (durable reconcile + unique keys).
 
 Render the diagrams:
 
@@ -157,6 +236,8 @@ booking, **never** booked as new PHINS revenue.
 - `GET /api/agent/network/suppliers`
 - `GET /api/agent/income/summary` — accrued / payable / paid totals + counts
 - `GET /api/agent/income/ledger` — per-affiliation commission lines
+- `GET /api/agent/funnel` — broker funnel (own subtree, aggregates only) — §C
+- `GET /api/agent/payouts` — own payout runs — §C
 
 **Admin (role=admin) — Agents Management:**
 - `GET/POST /api/admin/agents`, `PATCH /api/admin/agents/{id}` (suspend, default rate)
@@ -165,7 +246,9 @@ booking, **never** booked as new PHINS revenue.
 - `POST /api/admin/agent-invitations/{code}/reject`
 - `GET /api/admin/agents/{id}/affiliations` (network tree)
 - `GET /api/admin/agents/{id}/commissions`
-- `POST /api/admin/agents/{id}/payouts` (settlement run — phase 2)
+- `POST /api/admin/agents/payouts/run`, `POST /api/admin/agents/payouts/settle`,
+  `GET /api/admin/agents/payouts`, `GET /api/admin/agents/funnel?agent_id=` — §C
+  (shipped as flat admin routes rather than `/agents/{id}/payouts`)
 
 **Public/redemption:** reuse `/api/invitations/validate?code=`; redemption happens in
 the existing register/apply and supplier-register flows, creating the affiliation with
@@ -203,11 +286,14 @@ behind the new role, so existing flows are unaffected.
 All six decisions were confirmed (see the status box at the top) and are implemented
 in v1. Tracked follow-ups:
 
-- **Per-renewal accrual**: extend `accrue_for_policy` to key on billing period so
-  recurring premium accrues each cycle (v1 accrues once per policy).
-- **Automatic event hooks**: subscribe accrual directly to the billing "premium paid"
-  and marketplace "order settled" events (v1 drives accrual idempotently from the
-  policy/premium book on view + admin recompute).
-- **Sub-agent payouts** and the `agent_payouts` settlement run.
+- ~~**Per-renewal accrual**~~ — shipped (§C): `accrue_for_policy(policy, period)` keyed
+  on the renewal term, driven by paid premium bills.
+- **Automatic event hooks**: the billing "premium paid" hook is shipped (§C,
+  `accrue_agent_commission_for_paid_bills`); the marketplace "order settled" hook
+  remains a follow-up (the `gmv` basis is accepted on invitations but nothing drives
+  its accrual from the order book yet; premium basis is driven from the policy and
+  paid-bill books).
+- ~~**`agent_payouts` settlement run**~~ — shipped (§C). **Sub-agent payouts**
+  (hierarchy roll-up) remain a follow-up.
 - **Self-serve redemption** inside the customer/supplier registration flows (v1 redeems
   via the admin endpoint, which is sufficient to prove the full lifecycle).
