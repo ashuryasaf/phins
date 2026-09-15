@@ -709,7 +709,10 @@ referenced files, commands, paths, and ports still exist.
   `reveal_national_id()` is server-side only (Mislaka). Nationality is an ISO
   alpha-2 code via `services/countries.py`. Never add a plaintext `id_number`
   field to a pipeline record — stamp `customer_identity` and, on a conflicting
-  payload, `identity_mismatch=True` for review instead of overwriting.
+  payload, `identity_mismatch=True` for review instead of overwriting. External
+  lookups that need the number (Mislaka) go through `resolve_lookup_id()`;
+  IDs read out of documents (assessment facts, risk reports) are only
+  compared with the master (`matches()`), never written to it.
 
 ## 11) Minimal Task Workflow
 
