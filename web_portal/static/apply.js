@@ -536,7 +536,40 @@ function setupApplyAssist() {
     }
     if (occupation) suggest.attach(occupation, { kind: 'occupation' });
     if (medications) suggest.attach(medications, { kind: 'medication' });
+    const nationality = document.getElementById('nationality');
+    if (nationality) {
+        suggest.attach(nationality, { kind: 'country', limit: 8, onSelect: updateNationalIdHint });
+        nationality.addEventListener('blur', updateNationalIdHint);
+        if (country) {
+            // Default nationality to the residence country once; the applicant can change it.
+            country.addEventListener('blur', () => {
+                if (!nationality.value.trim() && country.value.trim()) {
+                    nationality.value = country.value.trim();
+                    updateNationalIdHint();
+                }
+            });
+        }
+    }
     composeApplyPhone();
+}
+
+async function updateNationalIdHint() {
+    const nationality = document.getElementById('nationality');
+    const hint = document.getElementById('nationality-hint');
+    const idHint = document.getElementById('national-id-hint');
+    if (!nationality || !nationality.value.trim()) return;
+    try {
+        const res = await fetch(`/api/identity/rules?nationality=${encodeURIComponent(nationality.value.trim())}`);
+        if (!res.ok) {
+            if (hint) hint.textContent = 'Please pick a country from the list';
+            return;
+        }
+        const rule = await res.json();
+        if (hint) hint.textContent = rule.nationality_name ? `Recorded as ${rule.nationality_name} (${rule.nationality})` : '';
+        if (idHint) idHint.textContent = `${rule.label} - e.g. ${rule.example}. Stored encrypted.`;
+    } catch (e) {
+        // Hint only; validation happens on submit.
+    }
 }
 
 function composeApplyPhone() {
@@ -1037,6 +1070,33 @@ function validateField(field) {
                     errorMessage = 'Please enter at least 2 characters';
                 }
                 break;
+
+            case 'nationality':
+                if (field.value.trim().length < 2) {
+                    isValid = false;
+                    errorMessage = 'Please select your nationality';
+                }
+                break;
+
+            case 'national-id': {
+                // Same rule set as the server (services/customer_identity_service):
+                // Israeli IDs get the checksum client-side; other nationalities
+                // are checked for shape here and fully on the server.
+                const raw = field.value.replace(/[\s\-\.]/g, '').toUpperCase();
+                const natVal = ((document.getElementById('nationality') || {}).value || '').trim().toLowerCase();
+                const isIsrael = /^(il|isr|israel|ישראל)$/.test(natVal);
+                if (!raw) {
+                    isValid = false;
+                    errorMessage = 'Please enter your personal ID number';
+                } else if (isIsrael && !israeliIdChecksumOk(raw)) {
+                    isValid = false;
+                    errorMessage = 'That Israeli ID number does not pass the checksum - please double-check the digits';
+                } else if (!isIsrael && !/^[A-Z0-9]{4,20}$/.test(raw)) {
+                    isValid = false;
+                    errorMessage = 'Please enter 4-20 letters or digits';
+                }
+                break;
+            }
                 
             case 'dob':
                 // Age validation: must be 18-100 years old
@@ -1086,6 +1146,20 @@ function validateField(field) {
     }
     
     return isValid;
+}
+
+function israeliIdChecksumOk(value) {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (!/^\d{5,9}$/.test(digits)) return false;
+    const padded = digits.padStart(9, '0');
+    if (/^(\d)\1{8}$/.test(padded)) return false;
+    let total = 0;
+    for (let i = 0; i < 9; i++) {
+        let weighted = Number(padded[i]) * (i % 2 === 0 ? 1 : 2);
+        if (weighted > 9) weighted -= 9;
+        total += weighted;
+    }
+    return total % 10 === 0;
 }
 
 function validateStep(step) {
@@ -1170,6 +1244,8 @@ function saveStepData(step) {
                 dob: document.getElementById('dob').value,
                 gender: document.getElementById('gender').value,
                 country: document.getElementById('country').value,
+                nationality: (document.getElementById('nationality') || {}).value || '',
+                nationalId: (document.getElementById('national-id') || {}).value || '',
                 address: document.getElementById('address').value,
                 city: document.getElementById('city').value,
                 state: document.getElementById('state').value,
@@ -1449,6 +1525,10 @@ async function handleSubmit(e) {
             customer_state: formData.personal.state || '',
             customer_zip: formData.personal.zip || '',
             customer_country: formData.personal.country || '',
+            // Identity master: recorded once on the customer (encrypted); the
+            // application itself only keeps a masked reference.
+            nationality: formData.personal.nationality || '',
+            id_number: formData.personal.nationalId || '',
             customer_occupation: formData.personal.occupation || '',
             otp_verification_id: applyOtpState.verificationId || '',
             otp_verified: !!applyOtpState.verified,

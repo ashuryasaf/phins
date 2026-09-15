@@ -76,6 +76,7 @@ _SIG_PNG = (
 def _signature_payload(name, id_number="123456782"):
     return {
         "name": name,
+        "nationality": "Israel",
         "id_number": id_number,
         "signature_data": _SIG_PNG,
         "method": "drawn_canvas",

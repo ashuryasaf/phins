@@ -1629,6 +1629,40 @@
       </div>
     </div>
 
+    <!-- One-time mandatory identity capture (personal ID + nationality).
+         Shown when /api/customer/identity reports required=true; cannot be
+         dismissed until the server accepts the values. -->
+    <div id="identity-gate-modal" role="dialog" aria-modal="true" aria-labelledby="identity-gate-title"
+         style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(13,42,92,0.72); z-index: 3000; justify-content: center; align-items: center;">
+      <div style="background: white; border-radius: 16px; padding: 32px; max-width: 520px; width: 92%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.35);">
+        <h2 id="identity-gate-title" style="margin: 0 0 8px 0;">Confirm your identity</h2>
+        <p style="color: #555; margin: 0 0 20px 0;">
+          To keep your policies, claims and assessments tied to you, we need your personal ID number and nationality once. It is stored encrypted and never shown in full again.
+        </p>
+        <div style="margin-bottom: 16px;">
+          <label for="identity-nationality" style="display: block; margin-bottom: 8px; font-weight: 500;">Nationality</label>
+          <input type="text" id="identity-nationality" list="identity-nationality-options" placeholder="Start typing: Israel, USA, UK..." autocomplete="off" data-no-i18n
+                 style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px;">
+          <datalist id="identity-nationality-options"></datalist>
+          <p id="identity-nationality-hint" style="font-size: 0.8rem; color: #666; margin-top: 4px;"></p>
+        </div>
+        <div style="margin-bottom: 16px;">
+          <label for="identity-national-id" style="display: block; margin-bottom: 8px; font-weight: 500;">Personal ID number</label>
+          <input type="text" id="identity-national-id" placeholder="National ID / Teudat Zehut" autocomplete="off" inputmode="numeric" data-no-i18n
+                 style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px;">
+          <p id="identity-national-id-hint" style="font-size: 0.8rem; color: #666; margin-top: 4px;">Digits only for Israeli IDs; letters and digits elsewhere.</p>
+        </div>
+        <div id="identity-gate-error" style="display: none; background: #fdecea; color: #b71c1c; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 0.9rem;"></div>
+        <button id="identity-gate-submit" onclick="submitIdentityGate()"
+                style="width: 100%; background: linear-gradient(135deg, #0d2a5c 0%, #1e5aa8 100%); color: white; border: none; padding: 14px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">
+          Save and continue
+        </button>
+        <p style="text-align: center; color: #666; font-size: 0.8rem; margin-top: 14px;">
+          This step is required once. Corrections afterwards are handled by PHINS support and are fully audited.
+        </p>
+      </div>
+    </div>
+
     <!-- Original Simple Billing Section (kept for reference but hidden) -->
     <section id="billing" class="section-content" style="display: none;">
       <h2>My Billing & Payments</h2>
@@ -4075,6 +4109,10 @@
         // Load customer info first, then other data
         // Use Promise.allSettled to continue even if some requests fail
         await loadCustomerInfo();
+
+        // Mandatory one-time identity capture (personal ID + nationality).
+        // The overlay blocks the dashboard until the server accepts it.
+        enforceIdentityGate();
         
         // Load all other data in parallel, allowing partial failures
         const results = await Promise.allSettled([
@@ -4122,6 +4160,117 @@
       setTimeout(hideSplashScreen, 1500);
     });
     
+    // ==================== IDENTITY GATE (one-time, mandatory) ====================
+    let identityGateOpen = false;
+    let identityLookupTimer = null;
+
+    async function enforceIdentityGate() {
+      if (!authToken) return;
+      try {
+        const res = await fetch('/api/customer/identity', {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (!res.ok) return; // never lock a customer out because the check failed
+        const status = await res.json();
+        if (status && status.required) {
+          openIdentityGate();
+        }
+      } catch (err) {
+        console.warn('[Identity Gate] status check failed:', err);
+      }
+    }
+
+    function openIdentityGate() {
+      const modal = document.getElementById('identity-gate-modal');
+      if (!modal) return;
+      identityGateOpen = true;
+      hideSplashScreen();
+      modal.style.display = 'flex';
+      const nationality = document.getElementById('identity-nationality');
+      nationality.addEventListener('input', () => {
+        clearTimeout(identityLookupTimer);
+        identityLookupTimer = setTimeout(() => refreshIdentityCountries(nationality.value), 120);
+      });
+      nationality.addEventListener('change', refreshIdentityRule);
+      nationality.addEventListener('blur', refreshIdentityRule);
+      document.getElementById('identity-national-id').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') submitIdentityGate();
+      });
+      refreshIdentityCountries('');
+      setTimeout(() => nationality.focus(), 50);
+    }
+
+    // Country list comes from the server so autocomplete and storage agree on
+    // the ISO code ("Israel", "ISR", "ישראל" all resolve to IL).
+    async function refreshIdentityCountries(query) {
+      const list = document.getElementById('identity-nationality-options');
+      if (!list) return;
+      try {
+        const res = await fetch(`/api/identity/countries?q=${encodeURIComponent(query || '')}&limit=10`);
+        if (!res.ok) return;
+        const data = await res.json();
+        list.innerHTML = (data.items || [])
+          .map(c => `<option value="${c.name}">${c.code}</option>`)
+          .join('');
+      } catch (err) {
+        // Autocomplete is assistive only.
+      }
+    }
+
+    async function refreshIdentityRule() {
+      const value = (document.getElementById('identity-nationality').value || '').trim();
+      const hint = document.getElementById('identity-nationality-hint');
+      const idHint = document.getElementById('identity-national-id-hint');
+      if (!value) return;
+      try {
+        const res = await fetch(`/api/identity/rules?nationality=${encodeURIComponent(value)}`);
+        if (!res.ok) {
+          hint.textContent = 'Please pick a country from the list';
+          return;
+        }
+        const rule = await res.json();
+        hint.textContent = `Recorded as ${rule.nationality_name} (${rule.nationality})`;
+        idHint.textContent = `${rule.label} - e.g. ${rule.example}`;
+      } catch (err) {
+        // Hint only; the server validates on submit.
+      }
+    }
+
+    async function submitIdentityGate() {
+      const nationality = (document.getElementById('identity-nationality').value || '').trim();
+      const nationalId = (document.getElementById('identity-national-id').value || '').trim();
+      const errorBox = document.getElementById('identity-gate-error');
+      const button = document.getElementById('identity-gate-submit');
+      errorBox.style.display = 'none';
+      if (!nationality || !nationalId) {
+        errorBox.textContent = 'Both nationality and personal ID number are required.';
+        errorBox.style.display = 'block';
+        return;
+      }
+      button.disabled = true;
+      try {
+        const res = await fetch('/api/customer/identity', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nationality, national_id: nationalId })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          errorBox.textContent = data.error || 'Could not save your identity. Please check the values.';
+          errorBox.style.display = 'block';
+          return;
+        }
+        identityGateOpen = false;
+        document.getElementById('identity-gate-modal').style.display = 'none';
+        showNotification(`Identity confirmed (${data.nationality_name || data.nationality}, ID ${data.national_id_masked}).`, 'success');
+      } catch (err) {
+        errorBox.textContent = 'Network error - please try again.';
+        errorBox.style.display = 'block';
+      } finally {
+        button.disabled = false;
+      }
+    }
+
     // Load customer info and update the info panel
     async function loadCustomerInfo() {
       if (!customerId) {

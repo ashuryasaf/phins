@@ -13,7 +13,7 @@ PHINS is a Python platform built around:
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`, `api_agent_ecosystem.py`,
   `api_assessment_center.py`)
-- service-layer logic in `services/` (111 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
+- service-layer logic in `services/` (113 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
@@ -556,6 +556,12 @@ Environment variables commonly used:
 - **Security:** `SESSION_SECRET_KEY`, `PHINS_ENCRYPTION_KEY`,
   `PHINS_ENFORCE_SECRET_POLICY`, `PHINS_EMERGENCY_UNLOCK_KEY`,
   `ALLOW_LEGACY_DEMO_PASSWORDS`
+- **Customer identity (personal ID + nationality):**
+  `PHINS_IDENTITY_REQUIRED` (strict gate on applications/claims; defaults
+  on except under `PHINS_TEST_MODE`), `PHINS_IDENTITY_HASH_KEY` (lookup-hash
+  key; falls back to `PHINS_ENCRYPTION_KEY`),
+  `PHINS_IDENTITY_ALLOW_PLAINTEXT_VAULT` (dev-only; without a Fernet key the
+  service otherwise refuses to store an ID, 503 `identity_vault_unavailable`)
 - **Integrations:** `PLAID_*`, `STRIPE_*`, `ACH_*`, `ALPACA_*`, `COINBASE_*`,
   `IB_*`, `WEBHOOK_BASE_URL`, `ALPHA_VANTAGE_API_KEY`
 
@@ -695,6 +701,15 @@ referenced files, commands, paths, and ports still exist.
 - Structured LLM output is validated twice (provider against the schema,
   service against its own evidence); a reply that fails is replaced by the
   deterministic result with `fallback_reason` recorded, never used as-is.
+- A customer's personal ID number has exactly one writer:
+  `services/customer_identity_service.py` (`set_identity` /
+  `reconcile_pipeline_identity`). Records, responses, audit rows and ledger
+  anchors carry only `nationality` + `national_id_hash` + `national_id_last4`
+  (`identity_reference()`); the number lives in the vault and
+  `reveal_national_id()` is server-side only (Mislaka). Nationality is an ISO
+  alpha-2 code via `services/countries.py`. Never add a plaintext `id_number`
+  field to a pipeline record — stamp `customer_identity` and, on a conflicting
+  payload, `identity_mismatch=True` for review instead of overwriting.
 
 ## 11) Minimal Task Workflow
 

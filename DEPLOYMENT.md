@@ -228,6 +228,28 @@ build time past ~10 minutes). The pipeline degrades to a stub when ffmpeg is
 missing. To bake ffmpeg into a custom image, rebuild with
 `--build-arg INSTALL_FFMPEG=1` (or set that build argument in Railway).
 
+### Customer identity (personal ID + nationality) environment variables
+
+Customers record their personal ID number and nationality once (at
+registration, in the first application, or through the one-time dashboard
+prompt on their next login). The number is stored only encrypted; records and
+responses carry a keyed hash and the last four characters.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PHINS_ENCRYPTION_KEY` | — | **Required in production.** Fernet key used to vault the ID number. Without it the service refuses to store an ID (`503 identity_vault_unavailable`) rather than write it in clear. |
+| `PHINS_IDENTITY_HASH_KEY` | falls back to `PHINS_ENCRYPTION_KEY` | Key for the lookup hash (`national_id_hash`). Must stay stable for the life of the data — rotating it orphans uniqueness checks. |
+| `PHINS_IDENTITY_REQUIRED` | on (off under `PHINS_TEST_MODE`) | Strict gate: applications and claims are rejected (400 `identity_required` / 409 `identity_mismatch`) before any row is written unless the customer's identity is recorded and consistent. Set `false` during a soft rollout; the login prompt still collects it. |
+| `PHINS_IDENTITY_ALLOW_PLAINTEXT_VAULT` | `false` | Local-development escape hatch only. |
+
+Schema: `upgrade_schema()` (run at startup / `entrypoint.sh db-init`) adds the
+`customers.nationality`, `national_id_hash`, `national_id_last4`,
+`national_id_encrypted`, `identity_captured_at`, `identity_source`,
+`identity_history` columns and the unique index `ux_customers_identity`.
+Rollout progress: `GET /api/admin/customers/identity/report` (admin).
+Corrections: `POST /api/admin/customers/identity` with a `reason` (audited,
+ledger-anchored, previous hash kept in `identity_history`).
+
 ### Alpaca Trading Terminal environment variables
 
 To enable the live trading terminal with Alpaca Markets, set these environment

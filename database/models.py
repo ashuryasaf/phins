@@ -5,7 +5,7 @@ These models define the database schema for all core entities in the system.
 Supports both SQLite (development) and PostgreSQL (production).
 """
 
-from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, Text, ForeignKey, Enum as SQLEnum, UniqueConstraint
+from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, Text, ForeignKey, Enum as SQLEnum, UniqueConstraint, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -89,6 +89,22 @@ class Customer(Base):
     # Agent ecosystem: referring agent (nullable; one active affiliation per principal)
     referring_agent_id = Column(String(50), nullable=True, index=True)
 
+    # Identity master (services/customer_identity_service.py is the only writer).
+    # The personal ID number is stored encrypted (vault blob) plus a keyed hash
+    # for uniqueness/equality and the last 4 characters for display; the
+    # (nationality, hash) pair is unique across customers (see __table_args__).
+    nationality = Column(String(2), nullable=True)           # ISO 3166-1 alpha-2
+    national_id_hash = Column(String(64), nullable=True)
+    national_id_last4 = Column(String(4), nullable=True)
+    national_id_encrypted = Column(Text, nullable=True)
+    identity_captured_at = Column(String(40), nullable=True)
+    identity_source = Column(String(30), nullable=True)      # registration|login_prompt|application|...
+    identity_history = Column(Text, nullable=True)           # append-only JSON list of corrections
+
+    __table_args__ = (
+        Index('ux_customers_identity', 'nationality', 'national_id_hash', unique=True),
+    )
+
     # Timestamps
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -98,7 +114,13 @@ class Customer(Base):
     claims = relationship("Claim", back_populates="customer", cascade="all, delete-orphan")
     
     def to_dict(self, include_auth: bool = False):
-        """Convert model to dictionary"""
+        """Convert model to dictionary.
+
+        The encrypted personal ID is deliberately omitted (like the password
+        hash): customer dicts are returned by many endpoints, and the identity
+        service reads the blob straight from the row when a regulated pipeline
+        needs it.
+        """
         data = {
             'id': self.id,
             'name': self.name,
@@ -116,6 +138,12 @@ class Customer(Base):
             'occupation': self.occupation,
             'portal_active': self.portal_active,
             'referring_agent_id': self.referring_agent_id,
+            'nationality': self.nationality,
+            'national_id_hash': self.national_id_hash,
+            'national_id_last4': self.national_id_last4,
+            'identity_captured_at': self.identity_captured_at,
+            'identity_source': self.identity_source,
+            'identity_history': self.identity_history,
             'last_login': self.last_login.isoformat() if self.last_login else None,
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'updated_date': self.updated_date.isoformat() if self.updated_date else None

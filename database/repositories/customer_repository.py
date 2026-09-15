@@ -21,6 +21,17 @@ class CustomerRepository(BaseRepository[Customer]):
     def get_by_email(self, email: str) -> Optional[Customer]:
         """Get customer by email address (also used for login)"""
         return self.find_one_by(email=email.lower() if email else None)
+
+    def get_by_identity(self, nationality: str, national_id_hash: str) -> Optional[Customer]:
+        """Get the customer holding a (nationality, personal-ID hash) pair.
+
+        Used by the identity service to enforce "one person, one customer"
+        across app instances before the unique index would reject the write.
+        """
+        if not nationality or not national_id_hash:
+            return None
+        return self.find_one_by(nationality=str(nationality).upper(),
+                                national_id_hash=str(national_id_hash))
     
     def authenticate(self, email: str, password_hash: str) -> Optional[Customer]:
         """

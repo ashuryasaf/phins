@@ -584,11 +584,14 @@
     function renderSignature(input) {
         const namePh = escapeHtml(input.placeholder || 'Full legal name');
         const idPh = escapeHtml(input.id_placeholder || 'National ID / Teudat Zehut');
+        const natPh = escapeHtml(input.nationality_placeholder || 'Nationality (e.g. Israel, USA)');
         dockHtml(`
             <div class="dock-label">Electronic signature (mandatory)</div>
             <div class="sig-fields">
                 <input class="dock-input" id="dock-field" type="text"
                        placeholder="${namePh}" autocomplete="name">
+                <input class="dock-input" id="dock-nationality" type="text"
+                       placeholder="${natPh}" autocomplete="off" data-no-i18n>
                 <input class="dock-input" id="dock-id-number" type="text"
                        placeholder="${idPh}" inputmode="numeric" autocomplete="off"
                        data-no-i18n>
@@ -655,16 +658,29 @@
         });
 
         const field = $('dock-field');
+        const nationalityField = $('dock-nationality');
+        if (nationalityField) {
+            // Prefill with the residence country typed earlier; the applicant
+            // can change it (nationality is not always the country of residence).
+            const residence = input.nationality_default || '';
+            if (residence && !nationalityField.value) nationalityField.value = residence;
+            if (window.PhinsApplySuggest) {
+                window.PhinsApplySuggest.attach(nationalityField, { kind: 'country', limit: 8 });
+            }
+        }
         focusWithoutScroll(field);
         const send = () => {
             const name = field.value.trim();
+            const nationality = (nationalityField ? nationalityField.value : '').trim();
             const idNumber = ($('dock-id-number').value || '').trim();
             if (!name) { dockError('Please type your full legal name.'); return; }
+            if (!nationality) { dockError('Please select your nationality.'); return; }
             if (!idNumber) { dockError('Please enter your ID number.'); return; }
             if (!hasInk) { dockError('Please draw your signature in the panel.'); return; }
             const signatureData = canvas.toDataURL('image/png');
             submitAnswer({
                 name,
+                nationality,
                 id_number: idNumber,
                 signature_data: signatureData,
                 method: 'drawn_canvas',

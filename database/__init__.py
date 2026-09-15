@@ -239,6 +239,14 @@ _UPGRADE_NEW_COLUMNS = [
     # Agent ecosystem: referring agent linkage
     ('customers', 'referring_agent_id', 'VARCHAR(50)', None),
     ('suppliers', 'referring_agent_id', 'VARCHAR(50)', None),
+    # Customer identity master: nationality + encrypted personal ID (+ hash/last4).
+    ('customers', 'nationality', 'VARCHAR(2)', None),
+    ('customers', 'national_id_hash', 'VARCHAR(64)', None),
+    ('customers', 'national_id_last4', 'VARCHAR(4)', None),
+    ('customers', 'national_id_encrypted', 'TEXT', None),
+    ('customers', 'identity_captured_at', 'VARCHAR(40)', None),
+    ('customers', 'identity_source', 'VARCHAR(30)', None),
+    ('customers', 'identity_history', 'TEXT', None),
     # Agent ecosystem §C: per-renewal period + payout sweep on commissions.
     ('agent_commissions', 'period', 'VARCHAR(40)', "''"),
     ('agent_commissions', 'payout_id', 'VARCHAR(80)', None),
@@ -272,6 +280,15 @@ _UPGRADE_NEW_COLUMNS = [
 _UPGRADE_COLUMN_WIDENING = [
     ('sessions', 'token', 'VARCHAR(512)'),
 ]
+# Indexes to add on existing tables (table_name, index_name, columns, unique).
+# create_all() only builds indexes for brand-new tables, so an index declared
+# on a model after the table shipped has to be created here.
+_UPGRADE_NEW_INDEXES = [
+    # One person, one customer: (nationality, national_id_hash) unique. NULLs
+    # are distinct on both SQLite and PostgreSQL, so customers without an
+    # identity yet do not collide.
+    ('customers', 'ux_customers_identity', ('nationality', 'national_id_hash'), True),
+]
 # Columns that were NOT NULL and are now nullable (table_name, column_name).
 # PostgreSQL: ``ALTER COLUMN ... DROP NOT NULL``. SQLite cannot alter a
 # column, so the table is rebuilt from the ORM definition inside one
@@ -304,6 +321,9 @@ def _schema_fingerprint() -> str:
     ))
     parts.append("column_widening=" + ";".join(
         f"{t}.{c}:{nt}" for t, c, nt in _UPGRADE_COLUMN_WIDENING
+    ))
+    parts.append("new_indexes=" + ";".join(
+        f"{t}.{n}:{','.join(cols)}:{int(u)}" for t, n, cols, u in _UPGRADE_NEW_INDEXES
     ))
     parts.append("nullable=" + ";".join(
         f"{t}.{c}" for t, c in _UPGRADE_NULLABLE_COLUMNS
@@ -489,6 +509,31 @@ def upgrade_schema(engine=None) -> bool:
                     else:
                         all_succeeded = False
                         logger.debug(f"Column widen {table_name}.{column_name}: {e}")
+
+        # Indexes declared on models after their table shipped.
+        for table_name, index_name, index_columns, unique in _UPGRADE_NEW_INDEXES:
+            if table_name not in inspector.get_table_names():
+                continue
+            existing_columns = {c['name'] for c in inspector.get_columns(table_name)}
+            if not set(index_columns) <= existing_columns:
+                # Column add failed above; that step already flagged the failure.
+                continue
+            try:
+                if any(ix.get('name') == index_name for ix in inspector.get_indexes(table_name)):
+                    continue
+            except Exception:
+                pass
+            try:
+                unique_sql = "UNIQUE " if unique else ""
+                conn.execute(text(
+                    f"CREATE {unique_sql}INDEX IF NOT EXISTS {index_name} "
+                    f"ON {table_name} ({', '.join(index_columns)})"
+                ))
+                conn.commit()
+                logger.info(f"Created index {index_name} on {table_name}")
+            except Exception as e:
+                all_succeeded = False
+                logger.warning(f"Could not create index {index_name} on {table_name}: {e}")
 
         # Relax NOT NULL on columns that became optional.
         for table_name, column_name in _UPGRADE_NULLABLE_COLUMNS:
