@@ -226,12 +226,14 @@ class TestVideoAgentsService:
             }
             with patch.object(mod, "get_media_generation_service", return_value=mock_media_svc):
                 svc = self._make_service()
-                # Submit 2 jobs (at limit)
-                for _ in range(2):
+                # Submit 2 distinct jobs (at limit). Identical requests are
+                # deduplicated (B8), so vary the prompt to consume the cap.
+                for i in range(2):
                     svc.submit_video_job(
                         campaign_id="MKT-004",
                         provider="gemini",
                         pipeline_type="introductions",
+                        prompt_override=f"variant {i}",
                         submitted_by="test_user",
                         poll_mode="webhook",
                     )
@@ -241,6 +243,7 @@ class TestVideoAgentsService:
                         campaign_id="MKT-004",
                         provider="gemini",
                         pipeline_type="introductions",
+                        prompt_override="variant 2",
                         submitted_by="test_user",
                         poll_mode="webhook",
                     )
