@@ -102,7 +102,21 @@ def run_pension_import(*, id_number: str, user_id: str, user_role: str) -> Dict[
 
 
 def subject_id_for(id_number: str) -> str:
-    return f"PERSON-{hashlib.sha256(id_number.encode('utf-8')).hexdigest()[:16]}"
+    """Job subject key for a person. Uses the identity master's keyed hash so
+    the queue never carries a value that a 9-digit brute force could invert;
+    the same person therefore maps to the same subject across pension jobs
+    and the customer record."""
+    cleaned = str(id_number or '').strip()
+    try:
+        from services.customer_identity_service import hash_national_id, normalize_national_id
+        try:
+            code, normalized = normalize_national_id(cleaned, 'IL')
+        except Exception:
+            code, normalized = 'IL', cleaned
+        digest = hash_national_id(code, normalized)
+    except ImportError:
+        digest = hashlib.sha256(cleaned.encode('utf-8')).hexdigest()
+    return f"PERSON-{digest[:16]}"
 
 
 def enqueue_pension_import(queue: AgentJobQueue, *, id_number: str, user_id: str,

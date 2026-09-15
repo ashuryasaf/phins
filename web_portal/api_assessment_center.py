@@ -264,6 +264,58 @@ def _identity_reference(customer_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _document_id_match(record: Optional[Dict[str, Any]], value: Any, country: Any) -> Optional[bool]:
+    """Compare one ID read out of a document with the identity master.
+
+    Extraction emits several ID-like facts from a single file (a passport
+    tagged ``ANY``, any 11-digit run tagged ``DE``), so only a fact from the
+    jurisdiction the master was recorded in can contradict it. A non-match from
+    any other jurisdiction is "not comparable" (None), never a conflict.
+    """
+    from services import customer_identity_service as cis
+    same = cis.matches(record, value, country)
+    declared = str(country or "").strip().upper()
+    if same is False and declared and cis.resolve_nationality(declared) != \
+            str((record or {}).get("nationality") or "").upper():
+        return None
+    return same
+
+
+def _document_identity_check(customer_id: str, facts: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Compare every ``id_number`` fact extracted from the customer's documents
+    with the identity master.
+
+    ``conflict`` is True when at least one document carries an ID of the
+    recorded jurisdiction that is not the recorded one (see
+    ``_document_id_match``) — surfaced for review, never auto-resolved and never
+    used to change the master. ``None`` fields mean no identity is recorded
+    yet, so nothing can be compared.
+    """
+    result: Dict[str, Any] = {"document_ids": 0, "matching": 0, "conflicting": 0,
+                              "conflict": False, "master_recorded": False}
+    try:
+        from services import customer_identity_service as cis
+    except ImportError:
+        return result
+    record = _portal_customers().get(customer_id) if customer_id else None
+    record = record if isinstance(record, dict) else None
+    result["master_recorded"] = cis.is_complete(record)
+    for fact in facts or ():
+        if not isinstance(fact, dict) or fact.get("fact_type") != "identity" or fact.get("label") != "id_number":
+            continue
+        result["document_ids"] += 1
+        if not result["master_recorded"]:
+            continue
+        country = str((fact.get("metadata") or {}).get("country") or "").strip() or None
+        same = _document_id_match(record, fact.get("value"), country)
+        if same is True:
+            result["matching"] += 1
+        elif same is False:
+            result["conflicting"] += 1
+    result["conflict"] = result["conflicting"] > 0
+    return result
+
+
 def _mislaka_identity_sync(customer_id: str, supplied_id: str, actor: str) -> Tuple[str, Optional[Tuple[int, Dict[str, Any]]]]:
     """Keep the Mislaka lookup ID consistent with the customer identity master.
 
@@ -279,31 +331,14 @@ def _mislaka_identity_sync(customer_id: str, supplied_id: str, actor: str) -> Tu
         from services import customer_identity_service as cis
     except ImportError:
         return supplied_id, None
-    customers = _portal_customers()
-    record = customers.get(customer_id) if customer_id else None
-    if not isinstance(record, dict):
-        return supplied_id, None
-    if cis.is_complete(record):
-        if not supplied_id:
-            return cis.reveal_national_id(customer_id) or "", None
-        if str(record.get("nationality")) == "IL" and cis.matches(record, supplied_id, "IL") is False:
-            return supplied_id, (409, {
-                "error": "id_number does not match the identity recorded for this customer",
-                "code": "identity_mismatch",
-            })
-        return supplied_id, None
-    if supplied_id:
-        import sys
-        portal = sys.modules.get("web_portal.server") or sys.modules.get("server")
-        result = cis.reconcile_pipeline_identity(
-            customers, customer_id, supplied_id, "IL", source="assessment", actor=actor,
-            mirrors=[getattr(portal, "REGISTERED_CUSTOMERS", {})] if portal is not None else [],
-            audit=getattr(portal, "audit", None),
-            ledger=getattr(portal, "platform_event_ledger", None),
-        )
-        if result.get("outcome") == "missing" and result.get("code") == "identity_in_use":
-            return supplied_id, (409, {"error": result.get("error"), "code": "identity_in_use"})
-    return supplied_id, None
+    import sys
+    portal = sys.modules.get("web_portal.server") or sys.modules.get("server")
+    return cis.resolve_lookup_id(
+        _portal_customers(), customer_id, supplied_id, source="assessment", actor=actor,
+        mirrors=[getattr(portal, "REGISTERED_CUSTOMERS", {})] if portal is not None else [],
+        audit=getattr(portal, "audit", None),
+        ledger=getattr(portal, "platform_event_ledger", None),
+    )
 
 
 def _resolve_customer(session: Dict[str, Any], requested_customer_id: str) -> Tuple[str, Optional[str]]:
@@ -1027,6 +1062,16 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
                     record = _portal_customers().get(cust)
                     profile["identity_master"] = cis.identity_status(
                         record if isinstance(record, dict) else None)
+                    # Each document-extracted ID is compared with the master so
+                    # a conflicting document is visible for review.
+                    identity = profile.get("identity") if isinstance(profile.get("identity"), dict) else {}
+                    for entry in identity.get("id_numbers") or []:
+                        if isinstance(entry, dict):
+                            entry["matches_master"] = _document_id_match(
+                                record if isinstance(record, dict) else None,
+                                entry.get("value"), entry.get("country") or None)
+                    profile["identity_master"]["document_check"] = _document_identity_check(
+                        cust, svc.get_facts(cust, "identity"))
                 except Exception as exc:
                     logger.debug("identity_master unavailable: %s", exc)
             return 200, profile
@@ -1223,16 +1268,23 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
                 artifact = get_assessment_ai_service().generate_structured_assessment(
                     analysis, customer_id=cust, assessment_type=assessment_type)
                 identity_ref = _identity_reference(cust)
+                doc_check = _document_identity_check(cust, svc.get_facts(cust, "identity"))
+                if isinstance(artifact, dict):
+                    artifact.setdefault("customer_identity", identity_ref)
+                    artifact["identity_mismatch"] = doc_check["conflict"]
                 return 201, {"frozen": True, "assessment_type": assessment_type,
                              "artifact": artifact,
                              "customer_identity": identity_ref,
-                             "identity_complete": identity_ref is not None}
+                             "identity_complete": identity_ref is not None,
+                             "identity_mismatch": doc_check["conflict"],
+                             "identity_document_check": doc_check}
 
             # customer_risk freeze: deterministic risk snapshot.
             from services.assessment_record_service import get_assessment_record_service
             risk = svc.compute_risk_indicators(cust)
             facts = svc.get_facts(cust)
             identity_ref = _identity_reference(cust)
+            doc_check = _document_identity_check(cust, facts)
             record = get_assessment_record_service().record_assessment(
                 subject_type="customer",
                 subject_id=cust,
@@ -1252,6 +1304,10 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
                     # to the person, not just the customer id.
                     "customer_identity": identity_ref,
                     "identity_complete": identity_ref is not None,
+                    # A document whose ID disagrees with the master is flagged
+                    # on the frozen snapshot for review, never reconciled here.
+                    "identity_mismatch": doc_check["conflict"],
+                    "identity_document_check": doc_check,
                 },
                 engine="assessment_center",
                 engine_version="freeze-1",
@@ -1260,7 +1316,8 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
             return 201, {"frozen": True, "assessment_type": "customer_risk",
                          "record": record,
                          "customer_identity": identity_ref,
-                         "identity_complete": identity_ref is not None}
+                         "identity_complete": identity_ref is not None,
+                         "identity_mismatch": doc_check["conflict"]}
 
         if path == "/api/assessment-center/mislaka/link":
             requested_customer = str(body.get("customer_id") or "").strip()

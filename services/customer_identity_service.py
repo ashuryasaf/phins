@@ -46,7 +46,7 @@ _LOCK = threading.RLock()
 
 IDENTITY_SOURCES = (
     "registration", "login_prompt", "application", "chat", "quote",
-    "assessment", "admin", "import",
+    "assessment", "pension", "admin", "import",
 )
 
 # Fields the service owns on a customer record (in-memory dict and DB row).
@@ -618,6 +618,46 @@ def reconcile_pipeline_identity(customers: Dict[str, Any], customer_id: str, nat
         return {"outcome": "missing", "reference": None, "error": str(exc), "code": exc.code}
     record = customers.get(customer_id)
     return {"outcome": "captured", "reference": identity_reference(record)}
+
+
+def resolve_lookup_id(customers: Dict[str, Any], customer_id: str, supplied_id: Any, *,
+                      source: str, actor: str, nationality: str = "IL",
+                      mirrors: Iterable[Dict[str, Any]] = (), audit: Any = None,
+                      ledger: Any = None) -> Tuple[str, Optional[Tuple[int, Dict[str, Any]]]]:
+    """Decide which personal ID a regulated external lookup (Mislaka pension
+    clearing house, national registries) may use for ``customer_id``.
+
+    * recorded identity + no ID supplied -> the recorded number, decrypted
+      server-side, so nobody re-types (or mistypes) it;
+    * recorded identity + a different ID -> (409 ``identity_mismatch``); the
+      supplied value is compared under the *recorded* nationality, so a
+      customer whose master is not ``nationality`` may still supply it;
+    * no recorded identity + a valid ID -> captured once through
+      ``set_identity`` (409 ``identity_in_use`` if another customer owns it);
+    * unknown customer -> the supplied value untouched.
+    Returns ``(id_to_use, error_response_or_None)``; the caller must never put
+    ``id_to_use`` in an HTTP response.
+    """
+    supplied = str(supplied_id or "").strip()
+    record = customers.get(customer_id) if (customer_id and hasattr(customers, "get")) else None
+    if not isinstance(record, dict):
+        return supplied, None
+    if is_complete(record):
+        if not supplied:
+            return reveal_national_id(customer_id) or "", None
+        if matches(record, supplied) is False:
+            return supplied, (409, {
+                "error": "id_number does not match the identity recorded for this customer",
+                "code": "identity_mismatch",
+            })
+        return supplied, None
+    if supplied:
+        result = reconcile_pipeline_identity(
+            customers, customer_id, supplied, nationality, source=source, actor=actor,
+            mirrors=mirrors, audit=audit, ledger=ledger)
+        if result.get("outcome") == "missing" and result.get("code") == "identity_in_use":
+            return supplied, (409, {"error": result.get("error"), "code": "identity_in_use"})
+    return supplied, None
 
 
 def completion_report(customers: Dict[str, Any]) -> Dict[str, Any]:
