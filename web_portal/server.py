@@ -26916,8 +26916,23 @@ For claims or questions, please contact:
                     raise ImportError('Cannot load connectors')
 
                 if t == 'ni':
-                    res = connectors.NationalInsuranceConnector().validate(national_id=value, dob=extra)
-                    result = {'status': res.status, 'details': res.details}
+                    # Format check comes from the identity master's per-country
+                    # rules (nationality via ?nationality=, default IL); the
+                    # number itself is never echoed back.
+                    try:
+                        from services import customer_identity_service as _cis
+                        _nat = qs.get('nationality', ['IL'])[0] or 'IL'
+                        try:
+                            _code, _norm = _cis.normalize_national_id(value, _nat)
+                            result = {'status': 'valid', 'details': {
+                                'nationality': _code, 'national_id_masked': _cis.mask_national_id(_norm)}}
+                        except _cis.IdentityError as _id_err:
+                            result = {'status': 'invalid', 'details': {
+                                'code': _id_err.code, 'reason': str(_id_err)}}
+                    except ImportError:
+                        res = connectors.NationalInsuranceConnector().validate(national_id=value, dob=extra)
+                        result = {'status': res.status, 'details': {
+                            k: v for k, v in res.details.items() if k != 'national_id'}}
                 elif t == 'card':
                     res = connectors.CreditCardIssuerConnector().validate(card_number=value, expiry=extra)
                     result = {'status': res.status, 'details': res.details}
@@ -36017,11 +36032,39 @@ For claims or questions, please contact:
                 body = self.rfile.read(length).decode('utf-8') if length else '{}'
                 data = json.loads(body)
                 
-                id_number = data.get('id_number', '')
-                
+                id_number = str(data.get('id_number') or '').strip()
+
+                user_id, user_role, _username, context_error = self._resolve_reports_user_context(session)
+                if context_error:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': context_error}).encode('utf-8'))
+                    return
+
+                # Identity master: a customer's import always runs on the ID
+                # recorded for them (filled in from the vault when omitted,
+                # refused when it contradicts the record, captured once when
+                # none is recorded yet). Staff may bind the import to a
+                # customer with ``customer_id``.
+                identity_customer = user_id if user_role == 'customer' else str(data.get('customer_id') or '').strip()
+                if identity_customer:
+                    try:
+                        from services import customer_identity_service as _cis
+                        id_number, identity_error = _cis.resolve_lookup_id(
+                            CUSTOMERS, identity_customer, id_number, source='pension',
+                            actor=str(session.get('username') or user_id),
+                            mirrors=[REGISTERED_CUSTOMERS], audit=audit,
+                            ledger=platform_event_ledger)
+                    except ImportError:
+                        identity_error = None
+                    if identity_error:
+                        self._set_json_headers(identity_error[0])
+                        self.wfile.write(json.dumps(identity_error[1]).encode('utf-8'))
+                        return
+
                 if not id_number:
                     self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': 'ID number required'}).encode('utf-8'))
+                    self.wfile.write(json.dumps({'error': 'ID number required',
+                                                 'code': 'identity_required'}).encode('utf-8'))
                     return
                 
                 # Pension Data Agent import. The body (Mislaka fetch -> Hebrew
@@ -36039,12 +36082,6 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({
                         'error': 'Mislaka API not configured'
                     }).encode('utf-8'))
-                    return
-
-                user_id, user_role, _username, context_error = self._resolve_reports_user_context(session)
-                if context_error:
-                    self._set_json_headers(403)
-                    self.wfile.write(json.dumps({'error': context_error}).encode('utf-8'))
                     return
 
                 if agent_async_enabled():

@@ -205,6 +205,13 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
         
         # Detect anomalies with statistical backing
         anomalies = self._detect_anomalies_advanced(rows, data_type, column_profiles)
+
+        # Identity master cross-check: an ID number read out of a customer's
+        # own document that is not the identity recorded for that customer is
+        # an anomaly for review (never used to change the record).
+        identity_check = self._identity_cross_check(doc, hebrew_extracted, lang_code)
+        if identity_check.get('anomaly') is not None:
+            anomalies.append(identity_check['anomaly'])
         
         # =====================================================================
         # PHASE 6: DOMAIN-SPECIFIC INSIGHTS
@@ -232,6 +239,8 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
         key_metrics = self._extract_key_metrics_advanced(
             rows, columns, data_type, column_profiles, correlations, domain_insights
         )
+        if identity_check.get('status'):
+            key_metrics['identity_check'] = identity_check['status']
         
         processing_time = int((datetime.now() - start_time).total_seconds() * 1000)
         
@@ -260,6 +269,49 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
         
         return result
 
+
+    def _identity_cross_check(self, doc: Dict[str, Any], hebrew_extracted: Dict[str, Any],
+                              lang_code: str) -> Dict[str, Any]:
+        """Compare the ID number extracted from a document with the identity
+        master of the customer who owns the document.
+
+        Returns ``{'status': {...}, 'anomaly': Anomaly|None}``; ``status`` is a
+        PII-free summary (``match`` / ``mismatch`` / ``no_master`` /
+        ``not_applicable``) written to ``key_metrics``. Staff uploads have no
+        owning customer, so nothing is compared.
+        """
+        extracted = str((hebrew_extracted or {}).get('id_number') or '').strip()
+        owner_id = str(doc.get('owner_id') or '').strip()
+        if not extracted or not owner_id or str(doc.get('owner_role') or '').lower() != 'customer':
+            return {'status': None, 'anomaly': None}
+        try:
+            import sys
+            from services import customer_identity_service as cis
+            portal = sys.modules.get('web_portal.server') or sys.modules.get('server')
+            customers = getattr(portal, 'CUSTOMERS', None) if portal is not None else None
+            record = customers.get(owner_id) if customers is not None and hasattr(customers, 'get') else None
+        except Exception as exc:  # the identity master is advisory for a report
+            logger.debug("identity cross-check unavailable: %s", exc)
+            return {'status': None, 'anomaly': None}
+        if not isinstance(record, dict) or not cis.is_complete(record):
+            return {'status': {'result': 'no_master', 'customer_id': owner_id}, 'anomaly': None}
+        same = cis.matches(record, extracted)
+        status = {'result': 'match' if same else 'mismatch', 'customer_id': owner_id,
+                  'document_id_last4': extracted[-4:], 'master_last4': record.get('national_id_last4')}
+        if same:
+            return {'status': status, 'anomaly': None}
+        is_hebrew = lang_code == 'hebrew'
+        return {'status': status, 'anomaly': Anomaly(
+            type='identity_mismatch',
+            severity=Severity.CRITICAL,
+            description=("מספר הזהות במסמך אינו תואם את הזהות הרשומה של הלקוח"
+                         if is_hebrew else
+                         "The ID number in this document does not match the identity recorded for the customer"),
+            affected_data=status,
+            recommendation=("יש לוודא שהמסמך שייך ללקוח לפני שימוש בדוח"
+                            if is_hebrew else
+                            "Confirm the document belongs to this customer before relying on the report"),
+        )}
 
     @instrument_agent('ai_risk_reports', decision_key='language')
     def generate_report(self, analysis_id: str, language: str = None) -> GeneratedReport:
