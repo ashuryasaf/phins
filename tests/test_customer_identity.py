@@ -653,6 +653,17 @@ def test_resolve_lookup_id_outcomes():
     assert err[0] == 409 and err[1]["code"] == "identity_in_use" and not cis.is_complete(customers["C2"])
 
 
+def test_resolve_lookup_id_compares_under_the_recorded_nationality():
+    customers = {"C1": {"id": "C1"}}
+    cis.set_identity(customers, "C1", US_SSN, "USA", source="registration", actor="t")
+    # the customer's own (non-IL) ID is accepted, not read as an Israeli number
+    assert cis.resolve_lookup_id(customers, "C1", US_SSN, source="pension", actor="t") == (US_SSN, None)
+    assert cis.resolve_lookup_id(customers, "C1", "", source="pension", actor="t") == ("123456789", None)
+    # a different ID is still refused
+    used, err = cis.resolve_lookup_id(customers, "C1", "123-45-6780", source="pension", actor="t")
+    assert err[0] == 409 and err[1]["code"] == "identity_mismatch"
+
+
 def test_pension_import_route_is_bound_to_the_identity_master():
     cid, rec = _customer()
     token = _session("customer", cid)
@@ -722,6 +733,17 @@ def test_assessment_documents_are_cross_checked_against_the_master():
     check = body["identity_master"]["document_check"]
     assert check["master_recorded"] and check["matching"] >= 1 and check["conflict"] is False
     assert all(e["matches_master"] is True for e in body["identity"]["id_numbers"])
+
+    # another ID-like number in the same file (a passport, extracted with
+    # country "ANY") belongs to no jurisdiction the master can be compared
+    # with, so it is "not comparable" rather than a contradiction
+    body, status = _upload(f"Customer: Match Person. ID {IL_ID}. Passport AB1234567.", "passport.txt")
+    assert status == 201, body
+    body, status = _get(f"/api/assessment-center/customer/{cid}/profile", token=token)
+    check = body["identity_master"]["document_check"]
+    assert check["conflicting"] == 0 and check["conflict"] is False
+    passports = [e for e in body["identity"]["id_numbers"] if e["country"] == "ANY"]
+    assert passports and all(e["matches_master"] is None for e in passports)
 
     body, status = _upload(f"Customer: Other Person. ID {IL_ID_2}. Diagnosis: none.", "conflict.txt")
     assert status == 201, body

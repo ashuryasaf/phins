@@ -264,12 +264,30 @@ def _identity_reference(customer_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _document_id_match(record: Optional[Dict[str, Any]], value: Any, country: Any) -> Optional[bool]:
+    """Compare one ID read out of a document with the identity master.
+
+    Extraction emits several ID-like facts from a single file (a passport
+    tagged ``ANY``, any 11-digit run tagged ``DE``), so only a fact from the
+    jurisdiction the master was recorded in can contradict it. A non-match from
+    any other jurisdiction is "not comparable" (None), never a conflict.
+    """
+    from services import customer_identity_service as cis
+    same = cis.matches(record, value, country)
+    declared = str(country or "").strip().upper()
+    if same is False and declared and cis.resolve_nationality(declared) != \
+            str((record or {}).get("nationality") or "").upper():
+        return None
+    return same
+
+
 def _document_identity_check(customer_id: str, facts: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Compare every ``id_number`` fact extracted from the customer's documents
     with the identity master.
 
-    ``conflict`` is True when at least one document carries an ID that is
-    not the recorded one — surfaced for review, never auto-resolved and never
+    ``conflict`` is True when at least one document carries an ID of the
+    recorded jurisdiction that is not the recorded one (see
+    ``_document_id_match``) — surfaced for review, never auto-resolved and never
     used to change the master. ``None`` fields mean no identity is recorded
     yet, so nothing can be compared.
     """
@@ -289,7 +307,7 @@ def _document_identity_check(customer_id: str, facts: List[Dict[str, Any]]) -> D
         if not result["master_recorded"]:
             continue
         country = str((fact.get("metadata") or {}).get("country") or "").strip() or None
-        same = cis.matches(record, fact.get("value"), country)
+        same = _document_id_match(record, fact.get("value"), country)
         if same is True:
             result["matching"] += 1
         elif same is False:
@@ -1049,7 +1067,7 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
                     identity = profile.get("identity") if isinstance(profile.get("identity"), dict) else {}
                     for entry in identity.get("id_numbers") or []:
                         if isinstance(entry, dict):
-                            entry["matches_master"] = cis.matches(
+                            entry["matches_master"] = _document_id_match(
                                 record if isinstance(record, dict) else None,
                                 entry.get("value"), entry.get("country") or None)
                     profile["identity_master"]["document_check"] = _document_identity_check(
