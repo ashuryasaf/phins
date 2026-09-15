@@ -4,8 +4,13 @@ PHINS Vault (Encryption Helpers)
 This module provides best-effort encryption for sensitive admin datasets
 (e.g., actuarial tables, regulated configuration) using Fernet (AES-128 + HMAC).
 
-Production guidance:
-- Set PHINS_ENCRYPTION_KEY to a Fernet key (base64 urlsafe, 32 bytes)
+Key resolution (see ``security/keyring.py``):
+- PHINS_ENCRYPTION_KEY, when set, is the primary key (base64 urlsafe, 32 bytes).
+- Otherwise a durable platform key is minted once and reused (``platform_keys``
+  table in database mode, ``PHINS_KEYRING_PATH`` file otherwise), so vaulted
+  data is encrypted at rest even on deployments that never set the variable.
+- Decryption tries every known key (MultiFernet), so blobs written under a
+  previous key stay readable after the operator introduces an explicit one.
 - Rotate keys using a proper KMS and re-encrypt stored payloads.
 """
 
@@ -13,7 +18,6 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -35,22 +39,25 @@ class VaultBlob:
 
 
 def _get_fernet():
+    """Return a MultiFernet over every known vault key (primary first), or
+    ``None`` when no key can be resolved at all."""
     # Import lazily so the repo can still run without cryptography installed.
-    from cryptography.fernet import Fernet  # type: ignore
+    from cryptography.fernet import Fernet, MultiFernet  # type: ignore
 
-    key = os.environ.get("PHINS_ENCRYPTION_KEY", "").strip()
-    if not key:
+    from security.keyring import vault_keys
+
+    fernets = []
+    for key in vault_keys():
+        # Basic sanity check: Fernet keys are urlsafe base64-encoded 32-byte keys.
+        try:
+            if len(base64.urlsafe_b64decode(key)) != 32:
+                continue
+        except Exception:
+            continue
+        fernets.append(Fernet(key.encode("utf-8")))
+    if not fernets:
         return None
-
-    # Basic sanity check: Fernet keys are urlsafe base64-encoded 32-byte keys.
-    try:
-        raw = base64.urlsafe_b64decode(key)
-        if len(raw) != 32:
-            return None
-    except Exception:
-        return None
-
-    return Fernet(key.encode("utf-8"))
+    return MultiFernet(fernets)
 
 
 def encrypt_json(data: Any) -> VaultBlob:

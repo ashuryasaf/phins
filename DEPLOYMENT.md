@@ -237,15 +237,19 @@ responses carry a keyed hash and the last four characters.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PHINS_ENCRYPTION_KEY` | — | **Required in production.** Fernet key used to vault the ID number. Without it the service refuses to store an ID (`503 identity_vault_unavailable`) rather than write it in clear. |
-| `PHINS_IDENTITY_HASH_KEY` | falls back to `PHINS_ENCRYPTION_KEY` | Key for the lookup hash (`national_id_hash`). Must stay stable for the life of the data — rotating it orphans uniqueness checks. |
+| `PHINS_ENCRYPTION_KEY` | keyring | Optional explicit Fernet key for the vault. When unset, the platform keyring (`security/keyring.py`) mints one durable data key per deployment on first use and stores it in the `platform_keys` table (database mode) or the `PHINS_KEYRING_PATH` file, so the ID is still encrypted at rest and every replica uses the same key. Setting the variable later keeps older blobs readable (the ring key stays a decrypt key). Only when *no* key can be resolved does the service refuse to store (`503 identity_vault_unavailable`) rather than write in clear. |
+| `PHINS_IDENTITY_HASH_KEY` | keyring | Optional explicit HMAC key for the lookup hash (`national_id_hash`). When unset the keyring mints an `identity-hash` key once (derived from `PHINS_ENCRYPTION_KEY` if that was set at the time, for continuity) and never replaces it. Must stay stable for the life of the data — changing it orphans uniqueness checks and every pipeline reference. |
+| `PHINS_KEYRING_PATH` | Railway volume / `/data` / temp dir | Key file location for in-memory (no database) deployments. Ignored in database mode, where the keys live in `platform_keys`. |
 | `PHINS_IDENTITY_REQUIRED` | on (off under `PHINS_TEST_MODE`) | Strict gate: applications and claims are rejected (400 `identity_required` / 409 `identity_mismatch`) before any row is written unless the customer's identity is recorded and consistent. Set `false` during a soft rollout; the login prompt still collects it. |
 | `PHINS_IDENTITY_ALLOW_PLAINTEXT_VAULT` | `false` | Local-development escape hatch only. |
 
 Schema: `upgrade_schema()` (run at startup / `entrypoint.sh db-init`) adds the
 `customers.nationality`, `national_id_hash`, `national_id_last4`,
 `national_id_encrypted`, `identity_captured_at`, `identity_source`,
-`identity_history` columns and the unique index `ux_customers_identity`.
+`identity_history` columns, the unique index `ux_customers_identity` and the
+`platform_keys` table. `GET /api/admin/customers/identity/report` returns a
+`vault` block (backend, key fingerprints, `ready`) so operators can confirm the
+keys without ever seeing key material.
 Rollout progress: `GET /api/admin/customers/identity/report` (admin).
 Corrections: `POST /api/admin/customers/identity` with a `reason` (audited,
 ledger-anchored, previous hash kept in `identity_history`).

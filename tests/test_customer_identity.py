@@ -780,18 +780,62 @@ def test_sqlite_schema_has_identity_columns_and_unique_index():
         conn.close()
 
 
-def test_vault_fails_closed_without_encryption_key(monkeypatch):
+def test_first_login_capture_without_encryption_key_uses_durable_keyring(monkeypatch, tmp_path):
+    """Regression for the production first-login failure after PR #600:
+    no PHINS_ENCRYPTION_KEY, not test mode -> the ID must still be stored,
+    encrypted with a keyring key that a second process can read back."""
+    from security import keyring
+
     monkeypatch.delenv("PHINS_ENCRYPTION_KEY", raising=False)
+    monkeypatch.delenv("PHINS_IDENTITY_HASH_KEY", raising=False)
     monkeypatch.delenv("PHINS_IDENTITY_ALLOW_PLAINTEXT_VAULT", raising=False)
     monkeypatch.setenv("PHINS_TEST_MODE", "false")
-    customers = {"C1": {"id": "C1"}}
-    with pytest.raises(cis.IdentityError) as exc:
-        cis.set_identity(customers, "C1", IL_ID, "IL", source="registration", actor="c1")
-    assert exc.value.code == "identity_vault_unavailable" and exc.value.status == 503
-    assert not cis.is_complete(customers["C1"]) and cis.reveal_national_id("C1") is None
+    monkeypatch.setenv("PHINS_KEYRING_PATH", str(tmp_path / "keyring.json"))
+    keyring.reset_cache()
+    try:
+        customers = {"C1": {"id": "C1"}}
+        result = cis.set_identity(customers, "C1", IL_ID, "IL", source="login_prompt", actor="c1")
+        assert result["complete"] and cis.is_complete(customers["C1"])
+        blob = json.loads(cis._load_encrypted("C1"))
+        assert blob["scheme"] == "fernet" and IL_ID not in blob["ciphertext"]
+        expected_hash = customers["C1"]["national_id_hash"]
 
-    monkeypatch.setenv("PHINS_IDENTITY_ALLOW_PLAINTEXT_VAULT", "true")
-    assert cis.set_identity(customers, "C1", IL_ID, "IL", source="registration", actor="c1")["complete"]
+        # "another replica": empty in-process caches, same keyring -> same key
+        cis.reset_process_state()
+        keyring.reset_cache()
+        cis._ENCRYPTED["C1"] = json.dumps(blob)
+        assert cis.reveal_national_id("C1") == IL_ID
+        assert cis.hash_national_id("IL", IL_ID) == expected_hash
+        assert cis.vault_status()["ready"] is True
+    finally:
+        keyring.reset_cache()
+
+
+def test_vault_fails_closed_when_keyring_unusable(monkeypatch, tmp_path):
+    from security import keyring
+
+    monkeypatch.delenv("PHINS_ENCRYPTION_KEY", raising=False)
+    monkeypatch.delenv("PHINS_IDENTITY_HASH_KEY", raising=False)
+    monkeypatch.delenv("PHINS_IDENTITY_ALLOW_PLAINTEXT_VAULT", raising=False)
+    monkeypatch.setenv("PHINS_TEST_MODE", "false")
+    # keyring path under a regular file: cannot be created -> no key anywhere
+    (tmp_path / "blocker").write_text("not a directory")
+    monkeypatch.setenv("PHINS_KEYRING_PATH", str(tmp_path / "blocker" / "keyring.json"))
+    keyring.reset_cache()
+    try:
+        customers = {"C1": {"id": "C1"}}
+        with pytest.raises(cis.IdentityError) as exc:
+            cis.set_identity(customers, "C1", IL_ID, "IL", source="registration", actor="c1")
+        assert exc.value.code == "identity_vault_unavailable" and exc.value.status == 503
+        assert not cis.is_complete(customers["C1"]) and cis.reveal_national_id("C1") is None
+        assert cis.vault_status()["ready"] is False
+
+        # dev opt-in still allows a plain vault once a hash key exists
+        monkeypatch.setenv("PHINS_IDENTITY_ALLOW_PLAINTEXT_VAULT", "true")
+        monkeypatch.setenv("PHINS_IDENTITY_HASH_KEY", "unit-test-hash-key")
+        assert cis.set_identity(customers, "C1", IL_ID, "IL", source="registration", actor="c1")["complete"]
+    finally:
+        keyring.reset_cache()
 
 
 def test_sqlite_identity_persists_through_database_dict(monkeypatch):

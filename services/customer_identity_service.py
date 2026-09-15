@@ -103,15 +103,23 @@ def strict_mode() -> bool:
 def _hash_key() -> bytes:
     """Deployment-stable key for the lookup hash.
 
-    Prefer a dedicated key, then the at-rest encryption key (both are meant to
-    be stable for the life of the data). A missing key falls back to a fixed
-    domain separator so in-memory/dev deployments stay deterministic.
+    ``PHINS_IDENTITY_HASH_KEY`` wins when set; otherwise the durable platform
+    keyring mints one ``identity-hash`` key per deployment and reuses it for
+    every customer (seeded from ``PHINS_ENCRYPTION_KEY`` when that was the
+    historical fallback, so pre-keyring hashes keep matching). The key is the
+    join key for every pipeline record that references a customer identity, so
+    it must never change for the life of the data — the keyring never replaces
+    an existing key. An unusable keyring fails closed rather than hashing with a
+    guessable constant.
     """
-    for var in ("PHINS_IDENTITY_HASH_KEY", "PHINS_ENCRYPTION_KEY"):
-        value = os.environ.get(var)
-        if value:
-            return value.encode("utf-8")
-    return b"phins-customer-identity-v1"
+    from security.keyring import KeyringError, identity_hash_key
+
+    try:
+        return identity_hash_key()
+    except KeyringError as exc:
+        raise IdentityError(
+            f"Identity keyring is unavailable ({exc}); the ID number was not processed",
+            "identity_vault_unavailable", 503) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -236,8 +244,10 @@ def _plaintext_vault_allowed() -> bool:
     """Whether an unkeyed vault (``scheme: plain``) may hold the ID.
 
     Only for the embedded test server or an explicit local-dev opt-in; a real
-    deployment without ``PHINS_ENCRYPTION_KEY`` must fail closed rather than
-    write a personal ID in clear.
+    deployment whose vault key cannot be resolved must fail closed rather than
+    write a personal ID in clear. In practice the platform keyring
+    (``security/keyring.py``) mints a durable key on first use, so this guard
+    only trips when that keyring itself is unusable.
     """
     for var in ("PHINS_IDENTITY_ALLOW_PLAINTEXT_VAULT", "PHINS_TEST_MODE"):
         if str(os.environ.get(var, "")).lower() in ("1", "true", "yes", "y", "on"):
@@ -249,9 +259,25 @@ def _encrypt(normalized_id: str, nationality: str) -> str:
     blob = encrypt_json({"national_id": normalized_id, "nationality": nationality})
     if blob.scheme != "fernet" and not _plaintext_vault_allowed():
         raise IdentityError(
-            "Identity vault is not configured (PHINS_ENCRYPTION_KEY); the ID number was not stored",
+            "Identity vault key is unavailable (platform keyring could not be read or created); "
+            "the ID number was not stored",
             "identity_vault_unavailable", 503)
     return blob.to_json()
+
+
+def vault_status() -> Dict[str, Any]:
+    """Operator-facing health of the identity vault/hash keys (fingerprints only)."""
+    from security.keyring import describe
+
+    info = describe()
+    keys = info.get("keys", {})
+    return {
+        "backend": info.get("backend"),
+        "path": info.get("path"),
+        "vault": keys.get("vault", {}),
+        "identity_hash": keys.get("identity-hash", {}),
+        "ready": bool(keys.get("vault", {}).get("available") and keys.get("identity-hash", {}).get("available")),
+    }
 
 
 def _store_encrypted(customer_id: str, blob: Optional[str]) -> None:

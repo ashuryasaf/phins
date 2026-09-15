@@ -4256,7 +4256,13 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          errorBox.textContent = data.error || 'Could not save your identity. Please check the values.';
+          // 5xx / vault faults are operator problems: show a stable, translatable
+          // customer message (nothing was stored) instead of the raw server text.
+          if (res.status >= 500 || data.code === 'identity_vault_unavailable') {
+            errorBox.textContent = 'We could not securely store your ID right now. Nothing was saved - please try again in a few minutes or contact PHINS support.';
+          } else {
+            errorBox.textContent = data.error || 'Could not save your identity. Please check the values.';
+          }
           errorBox.style.display = 'block';
           return;
         }
