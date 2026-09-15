@@ -8286,6 +8286,9 @@ except Exception:
 # poll handler, and a standalone worker without these stores never claims it.
 BI_MATERIALIZE_JOB_TYPE = 'bi_materialize'
 _BI_MATERIALIZE_PENDING = threading.Event()
+# Guards the check-and-set on _BI_MATERIALIZE_PENDING: request threads write
+# concurrently on the threaded server, and Event.is_set()/set() is not atomic.
+_BI_MATERIALIZE_SCHEDULE_LOCK = threading.Lock()
 _BI_HOOKS_BOUND = threading.Event()
 
 
@@ -8354,9 +8357,10 @@ def schedule_bi_materialize(store: str = '*', *, force: bool = False) -> Optiona
             return None
     except Exception:
         return None
-    if _BI_MATERIALIZE_PENDING.is_set() and not force:
-        return None
-    _BI_MATERIALIZE_PENDING.set()
+    with _BI_MATERIALIZE_SCHEDULE_LOCK:
+        if _BI_MATERIALIZE_PENDING.is_set() and not force:
+            return None
+        _BI_MATERIALIZE_PENDING.set()
     try:
         queue = get_agent_job_queue()
         bind_bi_materialize_handler(queue)

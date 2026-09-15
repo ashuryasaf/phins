@@ -17,6 +17,7 @@ Data-integrity contract under test:
 
 import json
 import os
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -454,6 +455,30 @@ class TestScheduledMaterialization:
         finally:
             singleton.remove_data_change_callback(portal.schedule_bi_materialize)
             portal._BI_HOOKS_BOUND.clear()
+            portal._BI_MATERIALIZE_PENDING.clear()
+
+    def test_concurrent_writes_still_collapse_into_one_pending_job(self, singleton, monkeypatch):
+        from services.agent_job_queue import AgentJobQueue
+        monkeypatch.setenv('PHINS_AGENT_ASYNC', '1')
+        monkeypatch.setenv('PHINS_BI_REMATERIALIZE_DELAY_SECONDS', '30')
+        queue = AgentJobQueue(poll_interval=0.01)
+        monkeypatch.setattr(portal, 'get_agent_job_queue', lambda: queue)
+        portal._BI_MATERIALIZE_PENDING.clear()
+        try:
+            start = threading.Barrier(8)
+
+            def _write():
+                start.wait()
+                portal.schedule_bi_materialize('policies')
+
+            threads = [threading.Thread(target=_write) for _ in range(8)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            rows = queue.list_jobs(job_type=portal.BI_MATERIALIZE_JOB_TYPE)
+            assert len(rows) == 1 and rows[0]['status'] == 'pending'
+        finally:
             portal._BI_MATERIALIZE_PENDING.clear()
 
     def test_write_hook_is_a_noop_without_the_agent_queue(self, singleton, monkeypatch):
