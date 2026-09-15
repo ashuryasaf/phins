@@ -28,7 +28,8 @@ Event names follow the canonical list in the architecture doc:
     claim.submitted, claim.adjudicated,
     remittance.received,
     refund.created, refund.completed,
-    integrity.violation_detected
+    integrity.violation_detected,
+    delivery.bidding_window_closed
 """
 
 from __future__ import annotations
@@ -64,6 +65,8 @@ CANONICAL_EVENT_TYPES = frozenset({
     'refund.created',
     'refund.completed',
     'integrity.violation_detected',
+    # B11: delivery bidding SLA clock (services/delivery_bidding_service.py)
+    'delivery.bidding_window_closed',
 })
 
 

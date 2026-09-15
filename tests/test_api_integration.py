@@ -867,9 +867,13 @@ def test_underwriting_list_endpoint():
     
     base = f"http://127.0.0.1:{port}"
     
-    # Create policies with underwriting apps
+    # Create policies with underwriting apps. Pin the customer ids: a random
+    # CUST-nnnnn id can collide with an id an earlier test suspended (the
+    # suspended set is process-wide), and /api/underwriting hides suspended
+    # customers' applications.
     for i in range(3):
         _post(base + "/api/policies/create", {
+            "customer_id": f"CUST-UWLIST-{i}",
             "customer_name": f"UW Test {i}",
             "customer_email": f"uw{i}@example.com",
             "type": "life",

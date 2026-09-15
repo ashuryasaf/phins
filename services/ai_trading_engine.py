@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import time
 import threading
 import uuid
@@ -19,30 +20,106 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
+from services.agent_metrics import instrument_agent, set_gauge
+
 logger = logging.getLogger('phins.ai_trading_engine')
 
 
-def _audit_bot_trade(trade_record: Dict[str, Any]) -> None:
-    """Mirror an executed bot trade into the durable audit store.
+# ---------------------------------------------------------------------------
+# Safety controls (B12): kill switch, loss caps, shadow mode, fail-closed audit
+# ---------------------------------------------------------------------------
 
-    Best-effort and non-fatal: automated trading is a money-movement path, so
-    each execution gets audit parity with the rest of the platform. A failure
-    here must never break trade execution. No-op without a database.
+TRADING_HALT_ENV = 'PHINS_TRADING_HALT'
+AUDIT_REQUIRED_ENV = 'PHINS_TRADING_AUDIT_REQUIRED'
+GLOBAL_DAILY_LOSS_PCT_ENV = 'PHINS_TRADING_GLOBAL_DAILY_LOSS_PCT'
+GLOBAL_DAILY_LOSS_ABS_ENV = 'PHINS_TRADING_GLOBAL_DAILY_LOSS_ABS'
+
+#: Strategy version every registered strategy ships as, and the only version
+#: promoted to live trading by default. Bots created on any other version run
+#: in shadow mode until an operator promotes that version.
+DEFAULT_STRATEGY_VERSION = '1.0'
+
+_TRUE_VALUES = ('1', 'true', 'yes', 'on')
+_FALSE_VALUES = ('0', 'false', 'no', 'off', '')
+_SHADOW_TRADE_RETENTION = 500
+
+
+def _env_flag(name: str) -> bool:
+    return str(os.environ.get(name, '') or '').strip().lower() in _TRUE_VALUES
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or str(raw).strip() == '':
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return default
+    return value if math.isfinite(value) and value >= 0 else default
+
+
+def env_trading_halted() -> bool:
+    """Operator kill switch. Read on every call so a redeploy/env change takes
+    effect immediately and cannot be lifted through the API."""
+    return _env_flag(TRADING_HALT_ENV)
+
+
+def audit_required(trading_platform: Any) -> bool:
+    """Whether trade execution must fail closed when the audit row cannot be
+    written.
+
+    ``PHINS_TRADING_AUDIT_REQUIRED``: ``true`` always, ``false`` never,
+    otherwise (``auto``) required exactly when the platform reports a live
+    broker connection (paper or live) — i.e. whenever ``submit_order`` reaches
+    a real broker. Demo/simulated platforms keep the historical best-effort
+    behaviour so no money can move unaudited but nothing else changes.
     """
+    raw = str(os.environ.get(AUDIT_REQUIRED_ENV, 'auto') or 'auto').strip().lower()
+    if raw in _TRUE_VALUES:
+        return True
+    if raw in _FALSE_VALUES:
+        return False
+    try:
+        return bool(getattr(trading_platform, 'is_connected', False))
+    except Exception:
+        return True  # unknown platform state: safest is to require the audit
+
+
+def _audit_bot_trade(
+    trade_record: Dict[str, Any],
+    *,
+    action: str = 'ai_bot_trade_executed',
+    entity_type: str = 'bot_trade',
+    required: bool = False,
+) -> bool:
+    """Mirror a bot-trading event into the durable audit store.
+
+    Never raises. Returns ``True`` only when a row was actually persisted so
+    the execution path can fail closed (``required=True``) when the audit
+    store is unavailable: the *caller* decides not to submit the order; this
+    helper only reports. Without a database it returns ``False``.
+    """
+    persisted = False
     try:
         from services.ai_audit_bridge import record_ai_audit
         order_result = trade_record.get('order_result') or {}
         success = not (isinstance(order_result, dict) and order_result.get('error'))
-        record_ai_audit(
-            action='ai_bot_trade_executed',
-            entity_type='bot_trade',
-            entity_id=trade_record.get('bot_id'),
+        persisted = bool(record_ai_audit(
+            action=action,
+            entity_type=entity_type,
+            entity_id=trade_record.get('bot_id') or trade_record.get('entity_id'),
             details=trade_record,
             username='ai_trading_engine',
             success=success,
-        )
+        ))
     except Exception as exc:  # never break the trade path
         logger.warning("bot trade audit mirror failed (non-fatal): %s", exc)
+        persisted = False
+    if required and not persisted:
+        logger.error("bot trade audit row could not be written; execution path will fail closed "
+                     "(bot=%s action=%s)", trade_record.get('bot_id'), action)
+    return persisted
 
 
 # ---------------------------------------------------------------------------
@@ -1326,6 +1403,151 @@ class AutoPilotEngine:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._bots: Dict[str, Dict[str, Any]] = {}
+        # Runtime kill switch (API-controlled). The env switch is read live.
+        self._halt: Dict[str, Any] = {'active': False, 'reason': None, 'actor': None, 'at': None}
+        # strategy_name -> set of versions allowed to submit real orders.
+        self._promoted_versions: Dict[str, set] = {
+            name: {DEFAULT_STRATEGY_VERSION} for name in STRATEGY_REGISTRY
+        }
+        self._audit_degraded_at: Optional[str] = None
+        self._publish_halt_gauge()
+
+    # ---- kill switch -----------------------------------------------------
+
+    def _publish_halt_gauge(self) -> None:
+        try:
+            set_gauge('ai_trading_engine', 'halted', 1.0 if self.halt_status()['halted'] else 0.0)
+        except Exception:  # metrics are observation only
+            pass
+
+    def halt_status(self) -> Dict[str, Any]:
+        """Effective halt state. ``source`` is ``env`` when the operator flag
+        is set (takes precedence and cannot be lifted via the API), ``runtime``
+        for an API halt, else ``None``."""
+        env_halted = env_trading_halted()
+        with self._lock:
+            runtime = dict(self._halt)
+        halted = env_halted or bool(runtime.get('active'))
+        source = 'env' if env_halted else ('runtime' if runtime.get('active') else None)
+        return {
+            'halted': halted,
+            'source': source,
+            'reason': (f'{TRADING_HALT_ENV} is set' if env_halted else runtime.get('reason')),
+            'actor': None if env_halted else runtime.get('actor'),
+            'at': runtime.get('at') if runtime.get('active') else None,
+            'env_flag': env_halted,
+            'runtime_flag': bool(runtime.get('active')),
+            'audit_degraded_at': self._audit_degraded_at,
+        }
+
+    def halt_trading(self, reason: str = 'manual halt', actor: str = 'api') -> Dict[str, Any]:
+        """Stop every ``execute_bot_trades`` call until resumed. Idempotent."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            self._halt = {'active': True, 'reason': str(reason or 'manual halt')[:200],
+                          'actor': str(actor or 'api')[:100], 'at': now}
+        _audit_bot_trade({'entity_id': 'autopilot', 'event': 'halt', 'reason': reason,
+                          'actor': actor, 'timestamp': now},
+                         action='ai_trading_halted', entity_type='trading_control')
+        logger.warning("AutoPilot trading HALTED by %s: %s", actor, reason)
+        self._publish_halt_gauge()
+        return self.halt_status()
+
+    def resume_trading(self, actor: str = 'api') -> Dict[str, Any]:
+        """Clear the runtime halt. The env switch, if set, still halts."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            was_active = bool(self._halt.get('active'))
+            self._halt = {'active': False, 'reason': None, 'actor': None, 'at': None}
+        if was_active:
+            _audit_bot_trade({'entity_id': 'autopilot', 'event': 'resume', 'actor': actor,
+                              'timestamp': now},
+                             action='ai_trading_resumed', entity_type='trading_control')
+            logger.warning("AutoPilot trading resumed by %s", actor)
+        self._publish_halt_gauge()
+        status = self.halt_status()
+        if status['env_flag']:
+            status['note'] = f'{TRADING_HALT_ENV} is set; trading stays halted until the operator clears it'
+        return status
+
+    # ---- strategy version promotion (shadow / paper mode) -------------------
+
+    def promoted_versions(self) -> Dict[str, List[str]]:
+        with self._lock:
+            return {name: sorted(versions) for name, versions in self._promoted_versions.items()}
+
+    def promote_strategy_version(self, strategy_name: str, version: str,
+                                 actor: str = 'api') -> Dict[str, Any]:
+        """Allow ``version`` of ``strategy_name`` to submit real orders. Bots
+        already running that version leave shadow mode on their next execution."""
+        if strategy_name not in STRATEGY_REGISTRY:
+            return {"error": f"Unknown strategy: {strategy_name}"}
+        version = str(version or '').strip()
+        if not version:
+            return {"error": "version required"}
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            self._promoted_versions.setdefault(strategy_name, set()).add(version)
+            promoted = sorted(self._promoted_versions[strategy_name])
+        _audit_bot_trade({'entity_id': strategy_name, 'event': 'promote', 'version': version,
+                          'actor': actor, 'timestamp': now},
+                         action='ai_trading_strategy_promoted', entity_type='trading_control')
+        logger.info("Strategy %s version %s promoted to live by %s", strategy_name, version, actor)
+        return {"strategy": strategy_name, "version": version, "promoted_versions": promoted}
+
+    def _bot_mode_locked(self, bot: Dict[str, Any]) -> str:
+        """``live`` only when the bot's strategy version is promoted and the bot
+        was not explicitly created as a paper bot. Caller holds the lock."""
+        if bot.get('config', {}).get('shadow'):
+            return 'shadow'
+        allowed = self._promoted_versions.get(bot.get('strategy_name'), set())
+        return 'live' if str(bot.get('strategy_version')) in allowed else 'shadow'
+
+    # ---- daily P&L bookkeeping ---------------------------------------------
+
+    @staticmethod
+    def _today() -> str:
+        return datetime.now(timezone.utc).date().isoformat()
+
+    def _roll_daily_pnl_locked(self, bot: Dict[str, Any]) -> None:
+        """Daily P&L is per UTC day; reset lazily when the day changes so the
+        loss cap never compares against a stale accumulated figure."""
+        today = self._today()
+        if bot.get('pnl_day') != today:
+            bot['daily_pnl'] = 0.0
+            bot['pnl_day'] = today
+
+    def _global_daily_pnl_locked(self) -> float:
+        total = 0.0
+        for other in self._bots.values():
+            self._roll_daily_pnl_locked(other)
+            total += _sf(other.get('daily_pnl'))
+        return total
+
+    def _loss_cap_block_locked(self, bot: Dict[str, Any], portfolio_val: float,
+                               config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Per-bot and global daily loss caps, evaluated before any submission.
+        Returns a block record or ``None``. Caller holds the lock."""
+        self._roll_daily_pnl_locked(bot)
+        max_daily_loss = _sf(config.get("max_daily_loss"), 0.02)
+        bot_cap = portfolio_val * max_daily_loss
+        if bot['daily_pnl'] < -bot_cap:
+            return {"error": "Daily loss limit reached", "blocked": True, "reason": "bot_daily_loss_cap",
+                    "daily_pnl": round(bot['daily_pnl'], 2), "cap": round(-bot_cap, 2)}
+        global_pnl = self._global_daily_pnl_locked()
+        pct_cap = portfolio_val * _env_float(GLOBAL_DAILY_LOSS_PCT_ENV, 0.05)
+        abs_cap = _env_float(GLOBAL_DAILY_LOSS_ABS_ENV, 0.0)
+        global_cap = min(c for c in (pct_cap, abs_cap) if c > 0) if (pct_cap > 0 or abs_cap > 0) else 0.0
+        if global_cap > 0 and global_pnl < -global_cap:
+            return {"error": "Global daily loss limit reached", "blocked": True,
+                    "reason": "global_daily_loss_cap",
+                    "global_daily_pnl": round(global_pnl, 2), "cap": round(-global_cap, 2)}
+        return None
+
+    def _record_block_locked(self, bot: Dict[str, Any], block: Dict[str, Any]) -> None:
+        bot['blocked_count'] = int(bot.get('blocked_count', 0)) + 1
+        bot['last_block'] = {**block, 'timestamp': datetime.now(timezone.utc).isoformat()}
+        bot['updated_at'] = datetime.now(timezone.utc).isoformat()
 
     @staticmethod
     def available_strategies() -> List[Dict[str, Any]]:
@@ -1341,6 +1563,7 @@ class AutoPilotEngine:
             })
         return result
 
+    @instrument_agent('ai_trading_engine')
     def create_bot(
         self,
         strategy_name: str,
@@ -1353,22 +1576,30 @@ class AutoPilotEngine:
 
         cfg = config or {}
         bot_id = f"BOT-{uuid.uuid4().hex[:8].upper()}"
+        strategy_version = str(cfg.get("strategy_version") or DEFAULT_STRATEGY_VERSION).strip()
 
         bot: Dict[str, Any] = {
             "id": bot_id,
             "strategy_name": strategy_name,
+            "strategy_version": strategy_version,
             "symbols": symbols,
             "config": {
                 "max_position_size": cfg.get("max_position_size", 0.05),
                 "max_daily_loss": cfg.get("max_daily_loss", 0.02),
                 "max_open_positions": cfg.get("max_open_positions", 5),
                 "risk_per_trade": cfg.get("risk_per_trade", 0.02),
+                # Explicit paper bot: never submits, regardless of promotion.
+                "shadow": bool(cfg.get("shadow", False)),
             },
             "status": "active",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat(),
-            "trades": [],
+            "trades": [],            # submitted orders only
+            "shadow_trades": [],     # intended-but-not-submitted (shadow mode)
+            "blocked_count": 0,
+            "last_block": None,
             "daily_pnl": 0.0,
+            "pnl_day": self._today(),
             "total_pnl": 0.0,
             "win_count": 0,
             "loss_count": 0,
@@ -1377,10 +1608,13 @@ class AutoPilotEngine:
 
         with self._lock:
             self._bots[bot_id] = bot
+            mode = self._bot_mode_locked(bot)
 
         return {
             "id": bot_id,
             "strategy": strategy_name,
+            "strategy_version": strategy_version,
+            "mode": mode,
             "symbols": symbols,
             "status": "active",
             "config": bot["config"],
@@ -1389,22 +1623,27 @@ class AutoPilotEngine:
     def get_bots(self) -> List[Dict[str, Any]]:
         """List all bots with status."""
         with self._lock:
-            return [
-                {
+            result = []
+            for b in self._bots.values():
+                self._roll_daily_pnl_locked(b)
+                result.append({
                     "id": b["id"],
                     "strategy": b["strategy_name"],
+                    "strategy_version": b.get("strategy_version", DEFAULT_STRATEGY_VERSION),
+                    "mode": self._bot_mode_locked(b),
                     "symbols": b["symbols"],
                     "status": b["status"],
                     "trade_count": b["trade_count"],
+                    "shadow_trade_count": len(b.get("shadow_trades", [])),
+                    "blocked_count": int(b.get("blocked_count", 0)),
                     "total_pnl": round(b["total_pnl"], 2),
                     "daily_pnl": round(b["daily_pnl"], 2),
                     "win_rate": round(
                         _safe_div(b["win_count"], b["win_count"] + b["loss_count"]) * 100, 1
                     ),
                     "created_at": b["created_at"],
-                }
-                for b in self._bots.values()
-            ]
+                })
+            return result
 
     def evaluate_bot(self, bot_id: str, bars_by_symbol: Optional[Dict[str, List[Dict]]] = None) -> Dict[str, Any]:
         """
@@ -1448,6 +1687,8 @@ class AutoPilotEngine:
 
         return results
 
+    @instrument_agent('ai_trading_engine',
+                      decision_fn=lambda r: f"trades:{len(r)}" if isinstance(r, list) else None)
     def execute_bot_trades(
         self,
         bot_id: str,
@@ -1465,6 +1706,16 @@ class AutoPilotEngine:
             if bot["status"] != "active":
                 return [{"error": f"Bot {bot_id} is {bot['status']}"}]
             config = dict(bot["config"])
+            mode = self._bot_mode_locked(bot)
+            strategy_version = bot.get("strategy_version", DEFAULT_STRATEGY_VERSION)
+
+        # Kill switch: checked before any evaluation or broker call.
+        halt = self.halt_status()
+        if halt["halted"]:
+            with self._lock:
+                self._record_block_locked(bot, {"reason": "halted", "source": halt["source"]})
+            return [{"error": "Trading halted", "halted": True, "blocked": True,
+                     "reason": halt["reason"], "source": halt["source"]}]
 
         eval_result = self.evaluate_bot(bot_id, bars_by_symbol)
         if "error" in eval_result:
@@ -1480,17 +1731,27 @@ class AutoPilotEngine:
 
         portfolio_val = _sf(account.get("portfolio_value")) or _sf(account.get("equity")) or 100000
         max_pos_size = config.get("max_position_size", 0.05)
-        max_daily_loss = config.get("max_daily_loss", 0.02)
         max_open = config.get("max_open_positions", 5)
 
         with self._lock:
-            if bot["daily_pnl"] < -(portfolio_val * max_daily_loss):
-                return [{"error": "Daily loss limit reached", "daily_pnl": bot["daily_pnl"]}]
+            block = self._loss_cap_block_locked(bot, portfolio_val, config)
+            if block:
+                self._record_block_locked(bot, block)
+        if block:
+            logger.warning("bot %s blocked before submission: %s", bot_id, block)
+            _audit_bot_trade({"bot_id": bot_id, **block}, action='ai_bot_trade_blocked')
+            return [block]
+
+        # Fail-closed audit applies only to real submissions.
+        require_audit = mode == 'live' and audit_required(trading_platform)
 
         open_count = len(positions)
         executed: List[Dict[str, Any]] = []
+        stop = False
 
         for sym, sig_data in eval_result.get("signals", {}).items():
+            if stop:
+                break
             for action in sig_data.get("actions", []):
                 side = action.get("side")
                 qty = int(action.get("qty", 0))
@@ -1519,6 +1780,70 @@ class AutoPilotEngine:
                 if not strategy_inst.risk_check(action_with_price, account, positions):
                     continue
 
+                intent = {
+                    "bot_id": bot_id,
+                    "strategy_version": strategy_version,
+                    "mode": mode,
+                    "symbol": sym,
+                    "side": side,
+                    "qty": qty,
+                    "price": price,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "reason": action.get("reason", ""),
+                    "confidence": action.get("confidence", 0.0),
+                }
+
+                # Shadow / paper mode: record the intended trade, submit nothing.
+                if mode == 'shadow':
+                    shadow_record = {**intent, "shadow": True,
+                                     "order_result": {"shadow": True, "submitted": False}}
+                    with self._lock:
+                        shadow_trades = self._bots[bot_id].setdefault("shadow_trades", [])
+                        shadow_trades.append(shadow_record)
+                        if len(shadow_trades) > _SHADOW_TRADE_RETENTION:
+                            del shadow_trades[:-_SHADOW_TRADE_RETENTION]
+                        self._bots[bot_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+                    _audit_bot_trade(shadow_record, action='ai_bot_trade_shadow')
+                    if side == "buy":
+                        open_count += 1
+                    executed.append(shadow_record)
+                    continue
+
+                # Re-check the gates immediately before each real submission so a
+                # halt or cap that trips mid-run stops the remaining orders.
+                halt = self.halt_status()
+                block = None
+                if halt["halted"]:
+                    block = {"error": "Trading halted", "halted": True, "blocked": True,
+                             "reason": halt["reason"], "source": halt["source"]}
+                else:
+                    with self._lock:
+                        block = self._loss_cap_block_locked(bot, portfolio_val, config)
+                if block:
+                    with self._lock:
+                        self._record_block_locked(bot, block)
+                    _audit_bot_trade({"bot_id": bot_id, **block}, action='ai_bot_trade_blocked')
+                    executed.append(block)
+                    stop = True
+                    break
+
+                # Fail-closed audit: the intent row must be durable before the
+                # order leaves the platform. Matches the ledger-repair posture
+                # in PlatformEventLedgerService.persist_chain_to_db.
+                intent_persisted = _audit_bot_trade({**intent, "phase": "intent"},
+                                                    action='ai_bot_trade_intent',
+                                                    required=require_audit)
+                if require_audit and not intent_persisted:
+                    block = {"error": "Audit store unavailable; order not submitted",
+                             "blocked": True, "reason": "audit_unavailable",
+                             "symbol": sym, "side": side, "qty": qty}
+                    with self._lock:
+                        self._record_block_locked(bot, block)
+                        self._audit_degraded_at = datetime.now(timezone.utc).isoformat()
+                    executed.append(block)
+                    stop = True
+                    break
+
                 try:
                     order_result = trading_platform.submit_order(
                         symbol=sym,
@@ -1531,15 +1856,9 @@ class AutoPilotEngine:
                     order_result = {"error": str(e)}
 
                 trade_record = {
-                    "bot_id": bot_id,
-                    "symbol": sym,
-                    "side": side,
-                    "qty": qty,
-                    "price": price,
+                    **intent,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "order_result": order_result,
-                    "reason": action.get("reason", ""),
-                    "confidence": action.get("confidence", 0.0),
                 }
 
                 with self._lock:
@@ -1547,8 +1866,13 @@ class AutoPilotEngine:
                     self._bots[bot_id]["trade_count"] += 1
                     self._bots[bot_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
 
-                # Durable audit parity for this money-movement path.
-                _audit_bot_trade(trade_record)
+                # Durable audit parity for this money-movement path. The order
+                # has already left, so this cannot be undone; a failure here is
+                # recorded on the trade and surfaced on the halt status.
+                trade_record["audit_persisted"] = _audit_bot_trade(trade_record, required=require_audit)
+                if require_audit and not trade_record["audit_persisted"]:
+                    with self._lock:
+                        self._audit_degraded_at = datetime.now(timezone.utc).isoformat()
 
                 if side == "buy":
                     open_count += 1
@@ -1580,6 +1904,7 @@ class AutoPilotEngine:
             entry["pnl"] = round(pnl, 2)
             entry["exit_timestamp"] = datetime.now(timezone.utc).isoformat()
 
+            self._roll_daily_pnl_locked(bot)
             bot["total_pnl"] += pnl
             bot["daily_pnl"] += pnl
             if pnl >= 0:
@@ -1597,6 +1922,7 @@ class AutoPilotEngine:
             if not bot:
                 return {"error": f"Bot {bot_id} not found"}
 
+            self._roll_daily_pnl_locked(bot)
             total_trades = bot["win_count"] + bot["loss_count"]
             win_rate = round(_safe_div(bot["win_count"], total_trades) * 100, 1) if total_trades > 0 else 0.0
 
@@ -1610,7 +1936,13 @@ class AutoPilotEngine:
             return {
                 "bot_id": bot_id,
                 "strategy": bot["strategy_name"],
+                "strategy_version": bot.get("strategy_version", DEFAULT_STRATEGY_VERSION),
+                "mode": self._bot_mode_locked(bot),
                 "status": bot["status"],
+                "shadow_trade_count": len(bot.get("shadow_trades", [])),
+                "recent_shadow_trades": list(bot.get("shadow_trades", []))[-10:],
+                "blocked_count": int(bot.get("blocked_count", 0)),
+                "last_block": bot.get("last_block"),
                 "total_pnl": round(bot["total_pnl"], 2),
                 "daily_pnl": round(bot["daily_pnl"], 2),
                 "trade_count": bot["trade_count"],
@@ -1652,9 +1984,11 @@ class AutoPilotEngine:
 
     def reset_daily_pnl(self) -> None:
         """Reset daily P&L for all bots (call at start of trading day)."""
+        today = self._today()
         with self._lock:
             for bot in self._bots.values():
                 bot["daily_pnl"] = 0.0
+                bot["pnl_day"] = today
 
 
 # ---------------------------------------------------------------------------
@@ -1816,3 +2150,61 @@ def _bb_position(ind: Dict[str, Any], price: float) -> Optional[str]:
     if bbm is not None:
         return "above_mid" if price >= bbm else "below_mid"
     return "in_band"
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# ---------------------------------------------------------------------------
+def _trading_engine_health() -> Dict[str, Any]:
+    """Read-only probe. The AutoPilot singleton lives in
+    ``services.trading_platform_service``; it is looked up through
+    ``sys.modules`` so this probe never imports or instantiates it."""
+    import sys as _sys
+    platform_mod = _sys.modules.get('services.trading_platform_service')
+    engine = getattr(platform_mod, '_autopilot_engine', None) if platform_mod else None
+    payload: Dict[str, Any] = {
+        'status': 'ok',
+        'initialized': engine is not None,
+        'strategies': sorted(STRATEGY_REGISTRY.keys()),
+        'halted': env_trading_halted(),
+        'halt_source': 'env' if env_trading_halted() else None,
+    }
+    if engine is not None:
+        bots = getattr(engine, '_bots', {}) or {}
+        payload['bots_total'] = len(bots)
+        payload['bots_active'] = sum(1 for b in bots.values() if str(b.get('status') or '').lower() == 'active')
+        try:
+            halt = engine.halt_status()
+            payload['halted'] = bool(halt.get('halted'))
+            payload['halt_source'] = halt.get('source')
+            payload['audit_degraded_at'] = halt.get('audit_degraded_at')
+        except Exception:  # probe must never raise
+            pass
+    if payload['halted']:
+        payload['status'] = 'degraded'
+    return payload
+
+
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='ai_trading_engine',
+        name='AI Trading & AutoPilot',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Computes signals and risk metrics and runs rule-based AutoPilot '
+            'bots. Trade execution is risk-gated and audit-logged.'
+        ),
+        entry_url='/trading-terminal.html',
+        api={'method': 'GET', 'path': '/api/terminal/copilot'},
+        roles=('admin', 'customer'),
+        deterministic=True,
+        moves_money=True,
+        sample_prompts=(
+            'What is the copilot signal for TSLA?',
+            'Show AutoPilot bot performance',
+        ),
+    ), health_fn=_trading_engine_health)
+except Exception as _reg_exc:  # pragma: no cover
+    logger.warning("AI trading engine registration skipped: %s", _reg_exc)

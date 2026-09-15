@@ -257,6 +257,33 @@ class DocumentProcessingJobRepository(BaseRepository):
             logger.error(f"Error fetching jobs by type {job_type}: {e}")
             return []
 
+    def find_jobs(self, status: Optional[str] = None,
+                  subject_type: Optional[str] = None,
+                  subject_id: Optional[str] = None,
+                  job_type: Optional[str] = None,
+                  submitted_by: Optional[str] = None,
+                  limit: int = 50) -> List[DocumentProcessingJob]:
+        """Filtered listing for the agent-generic queue (newest first)."""
+        try:
+            query = self.session.query(DocumentProcessingJob)
+            if status:
+                query = query.filter(DocumentProcessingJob.status == status)
+            if subject_type:
+                query = query.filter(DocumentProcessingJob.subject_type == subject_type)
+            if subject_id:
+                query = query.filter(DocumentProcessingJob.subject_id == subject_id)
+            if job_type:
+                query = query.filter(DocumentProcessingJob.job_type == job_type)
+            if submitted_by:
+                query = query.filter(DocumentProcessingJob.submitted_by == submitted_by)
+            return (
+                query.order_by(desc(DocumentProcessingJob.created_date))
+                .limit(limit).all()
+            )
+        except SQLAlchemyError as e:
+            logger.error(f"Error listing jobs: {e}")
+            return []
+
     def get_by_idempotency_key(self, key: str) -> Optional[DocumentProcessingJob]:
         try:
             return (
@@ -269,33 +296,47 @@ class DocumentProcessingJobRepository(BaseRepository):
             return None
 
     def claim_due_jobs(self, worker_id: str, limit: int = 10,
-                       claim_timeout_seconds: int = 600) -> List[DocumentProcessingJob]:
+                       claim_timeout_seconds: int = 600,
+                       job_types: Optional[List[str]] = None) -> List[DocumentProcessingJob]:
         """Atomically claim jobs that are ready to run.
 
-        Ready means: status 'pending', or status 'failed' whose retry time has
+        Ready means: status 'pending' (with no deferral, or one whose
+        ``next_retry_at`` has passed), or status 'failed' whose retry time has
         arrived, or status 'claimed' whose claim expired (crashed worker).
         Claimed jobs get next_retry_at set to the claim expiry so a worker
         crash automatically releases them to the next claimer.
+
+        ``job_types`` restricts the claim to types this worker can execute so
+        a worker without the matching handler never takes (and fails) another
+        agent's job; ``None`` means any type.
         """
         from datetime import datetime, timedelta
         now = datetime.utcnow()
-        try:
-            due = (
-                self.session.query(DocumentProcessingJob)
-                .filter(
+        if job_types is not None and not job_types:
+            return []
+
+        def _due_query():
+            query = self.session.query(DocumentProcessingJob).filter(
+                (
                     (DocumentProcessingJob.status == 'pending')
-                    | (
-                        (DocumentProcessingJob.status.in_(('failed', 'claimed')))
-                        & (DocumentProcessingJob.next_retry_at != None)  # noqa: E711
-                        & (DocumentProcessingJob.next_retry_at <= now)
+                    & (
+                        (DocumentProcessingJob.next_retry_at == None)  # noqa: E711
+                        | (DocumentProcessingJob.next_retry_at <= now)
                     )
                 )
-                .order_by(DocumentProcessingJob.priority,
-                          DocumentProcessingJob.created_date)
-                .limit(limit)
-                .with_for_update(skip_locked=True)
-                .all()
+                | (
+                    (DocumentProcessingJob.status.in_(('failed', 'claimed')))
+                    & (DocumentProcessingJob.next_retry_at != None)  # noqa: E711
+                    & (DocumentProcessingJob.next_retry_at <= now)
+                )
             )
+            if job_types is not None:
+                query = query.filter(DocumentProcessingJob.job_type.in_(list(job_types)))
+            return query.order_by(DocumentProcessingJob.priority,
+                                  DocumentProcessingJob.created_date).limit(limit)
+
+        try:
+            due = _due_query().with_for_update(skip_locked=True).all()
             expiry = now + timedelta(seconds=claim_timeout_seconds)
             for job in due:
                 job.status = 'claimed'
@@ -308,23 +349,8 @@ class DocumentProcessingJobRepository(BaseRepository):
             self.session.rollback()
             # SQLite before 3.x row-locking support: retry without FOR UPDATE.
             try:
-                due = (
-                    self.session.query(DocumentProcessingJob)
-                    .filter(
-                        (DocumentProcessingJob.status == 'pending')
-                        | (
-                            (DocumentProcessingJob.status.in_(('failed', 'claimed')))
-                            & (DocumentProcessingJob.next_retry_at != None)  # noqa: E711
-                            & (DocumentProcessingJob.next_retry_at <= now)
-                        )
-                    )
-                    .order_by(DocumentProcessingJob.priority,
-                              DocumentProcessingJob.created_date)
-                    .limit(limit)
-                    .all()
-                )
-                from datetime import timedelta as _td
-                expiry = now + _td(seconds=claim_timeout_seconds)
+                due = _due_query().all()
+                expiry = now + timedelta(seconds=claim_timeout_seconds)
                 for job in due:
                     job.status = 'claimed'
                     job.worker_id = worker_id

@@ -1,0 +1,23 @@
+{
+  "description": "Prime-age non-smoker, no pre-existing conditions, stable job: rule score saturates at 1.0 and clears the 0.85 approve cut-off.",
+  "expected": {
+    "conditions": [],
+    "confidence_band": "auto_approve",
+    "decision": "auto_approve",
+    "premium_adjustment": 1.0,
+    "risk_score": 1.0,
+    "segment": "25_34|teacher",
+    "threshold_margin": 0.15
+  },
+  "input": {
+    "age": 30,
+    "application_id": "GOLDEN-UW-1",
+    "employment_stable": true,
+    "health_score": 9,
+    "income": 85000,
+    "occupation": "teacher",
+    "pre_existing_conditions": false,
+    "smoker": false
+  },
+  "name": "auto_approve_low_risk"
+}

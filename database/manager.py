@@ -53,9 +53,12 @@ from database.repositories import (
     AgentInvitationRepository,
     AgentAffiliationRepository,
     AgentCommissionRepository,
+    AgentPayoutRepository,
     AssessmentRecordRepository,
     BusinessInquiryRepository,
     AIUsageRepository,
+    AgentArtifactRepository,
+    VideoJobRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -125,12 +128,16 @@ class DatabaseManager:
         self._agent_invitations = None
         self._agent_affiliations = None
         self._agent_commissions = None
+        self._agent_payouts = None
         # Assessment loop repositories.
         self._assessment_records = None
         # Business Relations (contact / demo inquiries).
         self._business_inquiries = None
         # AI usage / cost accounting.
         self._ai_usage = None
+        # Durable agent state (A4): generic artifacts + video job lifecycle.
+        self._agent_artifacts = None
+        self._video_jobs = None
     
     def _ensure_session(self) -> Session:
         """
@@ -186,9 +193,12 @@ class DatabaseManager:
         self._agent_invitations = None
         self._agent_affiliations = None
         self._agent_commissions = None
+        self._agent_payouts = None
         self._assessment_records = None
         self._business_inquiries = None
         self._ai_usage = None
+        self._agent_artifacts = None
+        self._video_jobs = None
     
     @property
     def customers(self) -> CustomerRepository:
@@ -460,6 +470,13 @@ class DatabaseManager:
         return self._agent_commissions
 
     @property
+    def agent_payouts(self) -> AgentPayoutRepository:
+        """Get agent payout-run repository."""
+        if self._agent_payouts is None:
+            self._agent_payouts = AgentPayoutRepository(self._ensure_session())
+        return self._agent_payouts
+
+    @property
     def assessment_records(self) -> AssessmentRecordRepository:
         """Get assessment record repository (score → decision loop)."""
         if self._assessment_records is None:
@@ -479,6 +496,20 @@ class DatabaseManager:
         if self._ai_usage is None:
             self._ai_usage = AIUsageRepository(self._ensure_session())
         return self._ai_usage
+
+    @property
+    def agent_artifacts(self) -> AgentArtifactRepository:
+        """Get durable agent-artifact repository (A4 agent working state)."""
+        if self._agent_artifacts is None:
+            self._agent_artifacts = AgentArtifactRepository(self._ensure_session())
+        return self._agent_artifacts
+
+    @property
+    def video_jobs(self) -> VideoJobRepository:
+        """Get Video Agents job repository (A4 durable job lifecycle)."""
+        if self._video_jobs is None:
+            self._video_jobs = VideoJobRepository(self._ensure_session())
+        return self._video_jobs
 
     def commit(self):
         """Commit current transaction"""

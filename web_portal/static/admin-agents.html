@@ -407,6 +407,8 @@
     .pill.accepted { background: #e8f0fc; color: #0e2f63; }
     .pill.rejected, .pill.suspended, .pill.bad { background: #f8d7da; color: #721c24; }
     .pill.warn { background: #fff3cd; color: #856404; }
+    .pill.calculated { background: #fff3cd; color: #856404; }
+    .pill.settled { background: #d4edda; color: #155724; }
 
     .muted { color: #64748b; font-size: 0.82rem; }
     .note {
@@ -618,6 +620,22 @@
       </div>
 
       <div class="card">
+        <div class="card-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <h2 class="card-title">Payout runs <span class="muted">(accrued → payable → paid, ledger-anchored)</span></h2>
+          <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+            <div><label for="pay-ref">Payout reference (optional)</label><input id="pay-ref" placeholder="WIRE-2026-09"></div>
+            <button class="btn alt sm" id="pay-run">Run payouts (sweep accrued)</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data" id="pay-table">
+            <thead><tr><th>Run</th><th>Agent</th><th>Status</th><th>Commissions</th><th>Amount</th><th>Created</th><th>Anchor</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
         <h2 class="card-title">Commission ledger <span class="muted">(append-only, hash-chained)</span></h2>
         <div class="table-wrap">
           <table class="data" id="ledger-table">
@@ -687,7 +705,7 @@
       const t=await api('/api/admin/agents');
       if(t.status!==200){showApp(false);return;}
       showApp(true); $('#who').textContent='admin';
-      loadOverview();loadInvitations();loadAgents();loadIntegrity();loadLedger();
+      loadOverview();loadInvitations();loadAgents();loadIntegrity();loadLedger();loadPayouts();
     }
 
     async function loadOverview(){
@@ -802,6 +820,16 @@
       $('#ledger-table tbody').innerHTML=rows||'<tr><td colspan="5" class="muted">No ledger entries.</td></tr>';
     }
 
+    async function loadPayouts(){
+      const {body}=await api('/api/admin/agents/payouts');
+      const rows=(body.items||[]).map(p=>`<tr><td><code>${escHtml(p.id)}</code></td><td>${escHtml(p.agent_id)}</td>`+
+        `<td><span class="pill ${escHtml(p.status)}">${escHtml(p.status)}</span></td><td>${escHtml(p.commission_count)}</td><td>${fmt(p.gross_amount)}</td>`+
+        `<td>${escHtml((p.created_at||'').slice(0,10))}</td>`+
+        `<td>${p.platform_ledger_entry_id?`<code class="h">${escHtml(p.platform_ledger_entry_id)}</code>`:'<span class="muted">—</span>'}</td>`+
+        `<td>${p.status==='calculated'?`<button class="btn gold sm" data-settle="${escHtml(p.id)}">Settle</button>`:escHtml(p.external_payout_reference||'')}</td></tr>`).join('');
+      $('#pay-table tbody').innerHTML=rows||'<tr><td colspan="8" class="muted">No payout runs yet — accrued commissions are swept when you run payouts.</td></tr>';
+    }
+
     async function showNetwork(agentId,name){
       const {body}=await api('/api/admin/agents/network?agent_id='+encodeURIComponent(agentId));
       const rows=(body.items||[]).map(r=>({
@@ -874,6 +902,23 @@
       const {status,body}=await api('/api/admin/agents/recompute-commissions',{method:'POST',body:'{}'});
       toast(status===200?`Accrued ${body.created} new · ledger ${body.ledger_intact?'intact':'BROKEN'}`:'Failed');
       loadOverview();loadIntegrity();loadLedger();
+    });
+    $('#pay-run').addEventListener('click', async ()=>{
+      const ref=$('#pay-ref').value.trim();
+      const payload={idempotency_key:'ui-'+Date.now()};
+      const {status,body}=await api('/api/admin/agents/payouts/run',{method:'POST',body:JSON.stringify(payload)});
+      if(status!==200){toast((body&&body.error)||'Payout run failed');return;}
+      const skipped=(body.skipped_agents||[]).length;
+      toast(`${body.created} payout run${body.created===1?'':'s'} created${skipped?` · ${skipped} agent${skipped===1?'':'s'} skipped`:''} · ledger ${body.ledger_intact?'intact':'BROKEN'}`);
+      if(ref) $('#pay-ref').value=ref;
+      loadPayouts();loadOverview();loadLedger();
+    });
+    $('#pay-table').addEventListener('click', async e=>{
+      const t=e.target.closest('button[data-settle]'); if(!t) return;
+      const ref=$('#pay-ref').value.trim();
+      const {status,body}=await api('/api/admin/agents/payouts/settle',{method:'POST',body:JSON.stringify({payout_id:t.dataset.settle,external_payout_reference:ref||null})});
+      toast(status===200?`Settled · anchored ${body.payout&&body.payout.platform_ledger_entry_id?'on platform ledger':'on commission ledger'} · ledger ${body.ledger_intact?'intact':'BROKEN'}`:((body&&body.error)||'Settle failed'));
+      loadPayouts();loadOverview();loadLedger();loadIntegrity();
     });
     $('#repair-refs').addEventListener('click', async ()=>{
       const {status,body}=await api('/api/admin/agents/repair-referrals',{method:'POST',body:'{}'});

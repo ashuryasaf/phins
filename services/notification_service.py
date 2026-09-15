@@ -37,6 +37,7 @@ import threading
 import uuid
 
 from security.network import validated_urlopen
+from services.circuit_breaker import CircuitBreaker
 
 # Local imports
 try:
@@ -709,8 +710,69 @@ class TemplateEngine:
     """
     Simple template engine with Jinja2-style syntax.
     Supports {{ variable }} and basic conditionals.
+
+    Also hosts the process-wide **named template registry** (B6): agents
+    register ``template_id -> {subject, body, channel, ...}`` once and render
+    by id, so customer-facing copy lives in one place instead of per-agent
+    template dicts.
     """
-    
+
+    _registry: Dict[str, Dict[str, Any]] = {}
+    _registry_lock = threading.Lock()
+
+    @classmethod
+    def register_template(cls, template_id: str, *, body: str, subject: str = '',
+                          channel: str = 'email', signature_required: bool = False,
+                          description: str = '', replace: bool = False) -> Dict[str, Any]:
+        """Register a named template. Existing ids are kept unless ``replace``."""
+        key = str(template_id or '').strip()
+        if not key:
+            raise ValueError('template_id is required')
+        if not body:
+            raise ValueError('template body is required')
+        record = {
+            'template_id': key,
+            'subject': str(subject or ''),
+            'body': str(body),
+            'channel': str(channel or 'email').strip().lower(),
+            'signature_required': bool(signature_required),
+            'description': str(description or ''),
+        }
+        with cls._registry_lock:
+            if key in cls._registry and not replace:
+                return dict(cls._registry[key])
+            cls._registry[key] = record
+            return dict(record)
+
+    @classmethod
+    def get_template(cls, template_id: str) -> Optional[Dict[str, Any]]:
+        with cls._registry_lock:
+            record = cls._registry.get(str(template_id or '').strip())
+            return dict(record) if record else None
+
+    @classmethod
+    def registered_ids(cls) -> List[str]:
+        with cls._registry_lock:
+            return sorted(cls._registry)
+
+    @classmethod
+    def render_registered(cls, template_id: str, variables: Dict[str, Any]) -> Optional[Dict[str, str]]:
+        """``{'subject', 'body', 'channel'}`` rendered from a registered template, or None."""
+        record = cls.get_template(template_id)
+        if record is None:
+            return None
+        return {
+            'subject': cls.render(record['subject'], variables) if record['subject'] else '',
+            'body': cls.render(record['body'], variables),
+            'channel': record['channel'],
+            'signature_required': record['signature_required'],
+        }
+
+    @classmethod
+    def unregister_template(cls, template_id: str) -> bool:
+        with cls._registry_lock:
+            return cls._registry.pop(str(template_id or '').strip(), None) is not None
+
     @staticmethod
     def render(template: str, variables: Dict[str, Any]) -> str:
         """Render template with variables"""
@@ -1024,13 +1086,17 @@ def _plain_text_to_html(body: str) -> str:
     return f"<div>{escaped.replace(chr(10), '<br/>')}</div>"
 
 
-class _SMTPCircuitBreaker:
+class _SMTPCircuitBreaker(CircuitBreaker):
     """
     Circuit breaker for SMTP connections.
 
     Tracks consecutive failures and temporarily disables SMTP sends when
     the failure threshold is hit, preventing cascading connection storms
     against an unreachable mail server.
+
+    The state machine lives in ``services.circuit_breaker.CircuitBreaker``
+    (shared with the external-call gateway); this subclass only binds the
+    SMTP-specific thresholds and the "SMTP" label used in log lines.
 
     States:
         CLOSED  – normal operation, sends pass through.
@@ -1042,73 +1108,7 @@ class _SMTPCircuitBreaker:
     RECOVERY_TIMEOUT = int(os.environ.get('SMTP_CB_RECOVERY_TIMEOUT_SECS', '120'))
 
     def __init__(self) -> None:
-        self._lock = threading.RLock()
-        self._consecutive_failures: int = 0
-        self._state: str = 'closed'
-        self._opened_at: Optional[datetime] = None
-        self._last_failure_error: Optional[str] = None
-        self._half_open_probe_in_flight: bool = False
-
-    @property
-    def state(self) -> str:
-        with self._lock:
-            if self._state == 'open' and self._opened_at:
-                elapsed = (datetime.now(timezone.utc) - self._opened_at).total_seconds()
-                if elapsed >= self.RECOVERY_TIMEOUT:
-                    self._state = 'half_open'
-            return self._state
-
-    def allow_request(self) -> bool:
-        with self._lock:
-            current_state = self.state
-            if current_state == 'open':
-                return False
-            if current_state == 'half_open':
-                if self._half_open_probe_in_flight:
-                    return False
-                self._half_open_probe_in_flight = True
-            return True
-
-    def record_success(self) -> None:
-        with self._lock:
-            self._consecutive_failures = 0
-            self._state = 'closed'
-            self._opened_at = None
-            self._last_failure_error = None
-            self._half_open_probe_in_flight = False
-
-    def record_non_transient_failure(self) -> None:
-        with self._lock:
-            self._consecutive_failures = 0
-            self._last_failure_error = None
-            self._half_open_probe_in_flight = False
-            if self._state == 'half_open':
-                self._state = 'closed'
-                self._opened_at = None
-
-    def record_failure(self, error: str) -> None:
-        with self._lock:
-            self._consecutive_failures += 1
-            self._last_failure_error = error
-            self._half_open_probe_in_flight = False
-            if self._consecutive_failures >= self.FAILURE_THRESHOLD:
-                if self._state != 'open':
-                    logger.warning(
-                        "SMTP circuit breaker OPEN after %d consecutive failures (last: %s). "
-                        "Will retry after %ds.",
-                        self._consecutive_failures, error, self.RECOVERY_TIMEOUT,
-                    )
-                    self._state = 'open'
-                    self._opened_at = datetime.now(timezone.utc)
-
-    def get_status(self) -> Dict[str, Any]:
-        with self._lock:
-            return {
-                'state': self.state,
-                'consecutive_failures': self._consecutive_failures,
-                'last_failure': self._last_failure_error,
-                'opened_at': self._opened_at.isoformat() if self._opened_at else None,
-            }
+        super().__init__(name='SMTP')
 
 
 _smtp_circuit_breaker = _SMTPCircuitBreaker()

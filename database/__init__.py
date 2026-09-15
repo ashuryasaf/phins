@@ -239,6 +239,18 @@ _UPGRADE_NEW_COLUMNS = [
     # Agent ecosystem: referring agent linkage
     ('customers', 'referring_agent_id', 'VARCHAR(50)', None),
     ('suppliers', 'referring_agent_id', 'VARCHAR(50)', None),
+    # Customer identity master: nationality + encrypted personal ID (+ hash/last4).
+    ('customers', 'nationality', 'VARCHAR(2)', None),
+    ('customers', 'national_id_hash', 'VARCHAR(64)', None),
+    ('customers', 'national_id_last4', 'VARCHAR(4)', None),
+    ('customers', 'national_id_encrypted', 'TEXT', None),
+    ('customers', 'identity_captured_at', 'VARCHAR(40)', None),
+    ('customers', 'identity_source', 'VARCHAR(30)', None),
+    ('customers', 'identity_history', 'TEXT', None),
+    # Agent ecosystem §C: per-renewal period + payout sweep on commissions.
+    ('agent_commissions', 'period', 'VARCHAR(40)', "''"),
+    ('agent_commissions', 'payout_id', 'VARCHAR(80)', None),
+    ('agent_commissions', 'paid_at', 'VARCHAR(100)', None),
     # Chat "Phin" senior-review referral fields on underwriting applications
     # (rows opened without a policy by the chat ADL/eligibility bridge).
     ('underwriting_applications', 'customer_phone', 'VARCHAR(50)', None),
@@ -255,11 +267,34 @@ _UPGRADE_NEW_COLUMNS = [
     ('document_processing_jobs', 'priority', 'INTEGER', '100'),
     ('document_processing_jobs', 'idempotency_key', 'VARCHAR(200)', None),
     ('document_processing_jobs', 'worker_id', 'VARCHAR(100)', None),
+    # Generalized agent job queue (A3): non-document subjects + submitter scope.
+    ('document_processing_jobs', 'subject_type', 'VARCHAR(50)', None),
+    ('document_processing_jobs', 'subject_id', 'VARCHAR(120)', None),
+    ('document_processing_jobs', 'submitted_by', 'VARCHAR(100)', None),
+    # External-call gateway (agent attribution + budget refusals) on AI usage rows.
+    ('ai_usage_records', 'agent_id', 'VARCHAR(80)', None),
+    ('ai_usage_records', 'blocked', 'BOOLEAN', 'FALSE'),
 ]
 # Columns whose declared type must be widened on existing databases
 # (table_name, column_name, new_type).
 _UPGRADE_COLUMN_WIDENING = [
     ('sessions', 'token', 'VARCHAR(512)'),
+]
+# Indexes to add on existing tables (table_name, index_name, columns, unique).
+# create_all() only builds indexes for brand-new tables, so an index declared
+# on a model after the table shipped has to be created here.
+_UPGRADE_NEW_INDEXES = [
+    # One person, one customer: (nationality, national_id_hash) unique. NULLs
+    # are distinct on both SQLite and PostgreSQL, so customers without an
+    # identity yet do not collide.
+    ('customers', 'ux_customers_identity', ('nationality', 'national_id_hash'), True),
+]
+# Columns that were NOT NULL and are now nullable (table_name, column_name).
+# PostgreSQL: ``ALTER COLUMN ... DROP NOT NULL``. SQLite cannot alter a
+# column, so the table is rebuilt from the ORM definition inside one
+# transaction (see ``_sqlite_rebuild_table``).
+_UPGRADE_NULLABLE_COLUMNS = [
+    ('document_processing_jobs', 'document_id'),
 ]
 
 
@@ -286,6 +321,12 @@ def _schema_fingerprint() -> str:
     ))
     parts.append("column_widening=" + ";".join(
         f"{t}.{c}:{nt}" for t, c, nt in _UPGRADE_COLUMN_WIDENING
+    ))
+    parts.append("new_indexes=" + ";".join(
+        f"{t}.{n}:{','.join(cols)}:{int(u)}" for t, n, cols, u in _UPGRADE_NEW_INDEXES
+    ))
+    parts.append("nullable=" + ";".join(
+        f"{t}.{c}" for t, c in _UPGRADE_NULLABLE_COLUMNS
     ))
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
@@ -469,7 +510,122 @@ def upgrade_schema(engine=None) -> bool:
                         all_succeeded = False
                         logger.debug(f"Column widen {table_name}.{column_name}: {e}")
 
+        # Indexes declared on models after their table shipped.
+        for table_name, index_name, index_columns, unique in _UPGRADE_NEW_INDEXES:
+            if table_name not in inspector.get_table_names():
+                continue
+            existing_columns = {c['name'] for c in inspector.get_columns(table_name)}
+            if not set(index_columns) <= existing_columns:
+                # Column add failed above; that step already flagged the failure.
+                continue
+            try:
+                if any(ix.get('name') == index_name for ix in inspector.get_indexes(table_name)):
+                    continue
+            except Exception:
+                pass
+            try:
+                unique_sql = "UNIQUE " if unique else ""
+                conn.execute(text(
+                    f"CREATE {unique_sql}INDEX IF NOT EXISTS {index_name} "
+                    f"ON {table_name} ({', '.join(index_columns)})"
+                ))
+                conn.commit()
+                logger.info(f"Created index {index_name} on {table_name}")
+            except Exception as e:
+                all_succeeded = False
+                logger.warning(f"Could not create index {index_name} on {table_name}: {e}")
+
+        # Relax NOT NULL on columns that became optional.
+        for table_name, column_name in _UPGRADE_NULLABLE_COLUMNS:
+            if table_name not in inspector.get_table_names():
+                continue
+            current = {c['name']: c for c in inspector.get_columns(table_name)}
+            column = current.get(column_name)
+            if column is None or column.get('nullable', True):
+                continue
+            try:
+                if is_sqlite:
+                    _sqlite_rebuild_table(engine, table_name)
+                else:
+                    conn.execute(text(
+                        f"ALTER TABLE {table_name} ALTER COLUMN {column_name} DROP NOT NULL"
+                    ))
+                    conn.commit()
+                logger.info(f"Made {table_name}.{column_name} nullable")
+            except Exception as e:
+                all_succeeded = False
+                logger.warning(f"Could not make {table_name}.{column_name} nullable: {e}")
+
     return all_succeeded
+
+
+def _sqlite_rebuild_table(engine, table_name: str) -> None:
+    """Rebuild a SQLite table from its ORM definition, preserving every row.
+
+    SQLite has no ``ALTER COLUMN``, so relaxing a NOT NULL constraint needs the
+    documented rebuild: create the new shape under a temporary name, copy the
+    rows column-by-column, drop the old table, rename, recreate the indexes.
+    Everything after the temporary table is created runs in a single explicit
+    transaction and the copied row count is verified before the old table is
+    dropped, so a failure at any point leaves the original table untouched.
+
+    Fails closed (raises, no rebuild) when the live table holds a column the
+    ORM no longer declares: the rebuild would silently discard that data.
+    """
+    from sqlalchemy import MetaData, inspect, text
+    from sqlalchemy.schema import CreateIndex, CreateTable
+
+    table = Base.metadata.tables[table_name]
+    inspector = inspect(engine)
+    live_columns = [c['name'] for c in inspector.get_columns(table_name)]
+    declared = {c.name for c in table.columns}
+    unknown = [c for c in live_columns if c not in declared]
+    if unknown:
+        raise RuntimeError(
+            f"refusing to rebuild {table_name}: live columns {unknown} are not "
+            f"declared by the model and would be lost"
+        )
+    common = ", ".join(live_columns)
+    tmp_name = f"{table_name}__rebuild_tmp"
+    scratch = MetaData()
+    # Foreign keys compile only when their target table is in the same
+    # MetaData; copy the referenced tables (definition only, never created).
+    for fk in table.foreign_keys:
+        fk.column.table.to_metadata(scratch)
+    tmp_table = table.to_metadata(scratch, name=tmp_name)
+
+    with engine.connect() as conn:
+        conn.exec_driver_sql(f"DROP TABLE IF EXISTS {tmp_name}")
+        # CreateTable emits the bare table (no indexes), so index names cannot
+        # collide with the live table's while both exist.
+        conn.execute(CreateTable(tmp_table))
+        conn.exec_driver_sql("BEGIN")
+        try:
+            conn.exec_driver_sql(
+                f"INSERT INTO {tmp_name} ({common}) SELECT {common} FROM {table_name}"
+            )
+            before = conn.exec_driver_sql(f"SELECT COUNT(*) FROM {table_name}").scalar()
+            after = conn.exec_driver_sql(f"SELECT COUNT(*) FROM {tmp_name}").scalar()
+            if before != after:
+                raise RuntimeError(
+                    f"row count mismatch rebuilding {table_name}: {before} -> {after}"
+                )
+            conn.exec_driver_sql(f"DROP TABLE {table_name}")
+            conn.exec_driver_sql(f"ALTER TABLE {tmp_name} RENAME TO {table_name}")
+            for index in table.indexes:
+                conn.execute(CreateIndex(index))
+            conn.exec_driver_sql("COMMIT")
+        except Exception:
+            conn.exec_driver_sql("ROLLBACK")
+            conn.exec_driver_sql(f"DROP TABLE IF EXISTS {tmp_name}")
+            raise
+        finally:
+            # Release SQLAlchemy's own (driver-level no-op) transaction so the
+            # pooled connection is returned clean.
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
 
 def close_database():

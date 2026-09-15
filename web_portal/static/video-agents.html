@@ -397,9 +397,17 @@
                     <div class="field">
                         <label for="va-completion-mode">Completion Mode</label>
                         <select id="va-completion-mode">
-                            <option value="poll" selected>Background polling (recommended)</option>
+                            <option value="" selected>Server default (webhook when a callback URL is configured, else polling)</option>
                             <option value="webhook">Webhook first (with polling fallback)</option>
+                            <option value="poll">Background polling only</option>
                         </select>
+                    </div>
+                    <div class="field">
+                        <label for="va-force-regenerate">Duplicate requests</label>
+                        <label style="display:flex;align-items:center;gap:8px;font-weight:normal;">
+                            <input type="checkbox" id="va-force-regenerate">
+                            Force regenerate (otherwise an identical request reuses the existing job)
+                        </label>
                     </div>
                 </div>
                 <div class="field" style="margin-top: 10px;">
@@ -873,7 +881,7 @@
                 : '<div style="font-weight:700;margin-bottom:6px;">Provider connectivity</div>';
             panel.style.display = 'block';
             panel.innerHTML = heading + (rows || 'No providers reported.') +
-                `<div style="margin-top:8px;opacity:0.7;font-size:0.78rem;">Webhook base URL configured: ${diag?.media_callback_base_url_configured ? 'yes' : 'no'} · Default provider: ${escapeHtml(diag?.default_provider || 'gemini')}</div>`;
+                `<div style="margin-top:8px;opacity:0.7;font-size:0.78rem;">Webhook base URL configured: ${diag?.media_callback_base_url_configured ? 'yes' : 'no'} · Default completion mode: ${escapeHtml(diag?.default_completion_mode || 'poll')} · Default provider: ${escapeHtml(diag?.default_provider || 'gemini')}</div>`;
             applyProviderCapabilities({ providers, default_provider: diag?.default_provider });
         }
 
@@ -935,7 +943,8 @@
             }
             const providerModel = (document.getElementById('va-model')?.value || '').trim();
             const referenceImage = selectedReferenceImage();
-            const pollMode = (document.getElementById('va-completion-mode')?.value || 'poll').trim();
+            const pollMode = (document.getElementById('va-completion-mode')?.value || '').trim();
+            const forceRegenerate = Boolean(document.getElementById('va-force-regenerate')?.checked);
             const autoHero = Boolean(document.getElementById('va-auto-hero')?.checked);
             const promptOverride = (document.getElementById('va-prompt-override')?.value || '').trim();
             const pipelineType = document.getElementById('va-pipeline')?.value || 'introductions';
@@ -952,14 +961,27 @@
                         image_data_url: referenceImage ? (referenceImage.data || referenceImage.url || '') : '',
                         reference_image_asset_id: referenceImage ? referenceImage.id : '',
                         poll_mode: pollMode,
+                        force: forceRegenerate,
                         auto_publish_to_hero: autoHero,
                         pipeline_type: pipelineType,
                         prompt_override: promptOverride || buildPipelinePrompt(pipelineType)
                     })
                 });
-                const jobCount = result?.queued_jobs?.length || result?.jobs?.length || 0;
+                const jobCount = result?.queued_jobs?.length || 0;
+                const reusedCount = Number(result?.deduplicated_count || 0);
+                const effectiveMode = String(result?.poll_mode || '').trim();
                 await refreshVideoAgentJobs(true);
-                setStatus(`${jobCount} video job(s) queued with ${providerLabel}. Live job refresh will track progress and download the video automatically when ready.`, 'success');
+                const parts = [];
+                if (jobCount) {
+                    parts.push(`${jobCount} video job(s) queued with ${providerLabel}${effectiveMode ? ` (completion: ${effectiveMode})` : ''}.`);
+                }
+                if (reusedCount) {
+                    parts.push(`${reusedCount} identical request(s) already exist and were reused — tick "Force regenerate" to create new videos.`);
+                }
+                if (jobCount) {
+                    parts.push('Live job refresh will track progress and download the video automatically when ready.');
+                }
+                setStatus(parts.join(' ') || 'No new video jobs were created.', jobCount ? 'success' : 'info');
             } catch (err) {
                 // Surface the structured server diagnostics inline so the operator
                 // knows which env var to set, instead of just "HTTP 400".

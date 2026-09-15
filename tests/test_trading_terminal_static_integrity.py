@@ -26,3 +26,40 @@ def test_sector_heatmap_iterates_sector_object_entries():
 
     assert "Object.entries(d.sectors || {}).forEach(([name, s]) => {" in content
     assert "(d.sectors || []).forEach" not in content
+
+
+# --- B12 safety controls surfaced on the AutoPilot tab -----------------------
+
+def test_autopilot_tab_has_kill_switch_controls():
+    content = TRADING_TERMINAL_PATH.read_text(encoding="utf-8")
+
+    assert 'id="apHaltBtn"' in content and 'onclick="toggleTradingHalt()"' in content
+    assert 'id="apHaltBanner"' in content
+    assert "apiFetch('/api/terminal/autopilot/halt')" in content
+    assert "apiPost('/api/terminal/autopilot/halt'" in content
+    assert "apiPost('/api/terminal/autopilot/resume'" in content
+    # loadBots refreshes the halt state so the banner is never stale
+    assert "loadHaltStatus();" in content
+
+
+def test_autopilot_env_halt_cannot_be_resumed_from_ui():
+    content = TRADING_TERMINAL_PATH.read_text(encoding="utf-8")
+
+    assert "btn.disabled = h.source === 'env';" in content
+    assert "'HALTED (ENV)'" in content
+
+
+def test_autopilot_halt_reason_and_actor_are_escaped():
+    content = TRADING_TERMINAL_PATH.read_text(encoding="utf-8")
+
+    assert "apEscape(h.reason || '')" in content
+    assert "apEscape(h.actor)" in content
+    assert "apEscape(b.strategy_version" in content
+
+
+def test_autopilot_table_shows_mode_and_execute_is_gated_by_halt():
+    content = TRADING_TERMINAL_PATH.read_text(encoding="utf-8")
+
+    assert "<th>Mode</th>" in content
+    assert "b.mode === 'shadow'" in content
+    assert "if (apHalted) { showToast('Trading is halted. Resume before executing.', 'error'); return; }" in content

@@ -39,6 +39,9 @@ from typing import Any, Dict, Optional
 
 from security.network import validated_urlopen
 
+#: Agent attribution for gateway budgets and usage rows (agent_runtime id).
+_MEDIA_AGENT_ID = "video_agents"
+
 
 class MediaGenerationError(RuntimeError):
     """Raised when a media generation provider call fails."""
@@ -159,8 +162,14 @@ class MediaGenerationService:
         image_data_url: str = "",
         callback_url: str = "",
         metadata: Optional[Dict[str, Any]] = None,
+        attribution: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Submit a provider-backed video generation request."""
+        """Submit a provider-backed video generation request.
+
+        ``attribution`` (optional) names who the paid submit is for so the
+        external-call gateway budgets and meters it per submitter instead of
+        in one shared bucket: ``{"user_id": ..., "job_id": ..., "customer_id": ...}``.
+        """
         provider_name = str(provider or "").strip().lower()
         if provider_name not in self.SUPPORTED_PROVIDERS:
             raise MediaGenerationError(f"Unsupported video provider: {provider}")
@@ -178,6 +187,7 @@ class MediaGenerationService:
                 image_data_url=image_data_url,
                 callback_url=callback_url,
                 metadata=metadata or {},
+                attribution=attribution,
             )
 
         return self._submit_kling_video(
@@ -189,6 +199,7 @@ class MediaGenerationService:
             image_data_url=image_data_url,
             callback_url=callback_url,
             metadata=metadata or {},
+            attribution=attribution,
         )
 
     def poll_video_generation(
@@ -272,6 +283,7 @@ class MediaGenerationService:
         image_data_url: str,
         callback_url: str,
         metadata: Dict[str, Any],
+        attribution: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         if not self._gemini_api_key:
             raise MediaGenerationError("GEMINI_API_KEY is not configured")
@@ -319,6 +331,7 @@ class MediaGenerationService:
             timeout=60,
             provider_label="Gemini/Veo",
             operation="submit",
+            attribution=attribution,
         )
 
         operation_name = str(body.get("name") or "").strip()
@@ -403,6 +416,7 @@ class MediaGenerationService:
         image_data_url: str,
         callback_url: str,
         metadata: Dict[str, Any],
+        attribution: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         if not self._kling_credentials_available():
             raise MediaGenerationError("Kling credentials are not configured (set KLING_API_KEY or KLING_ACCESS_KEY + KLING_SECRET_KEY)")
@@ -474,6 +488,7 @@ class MediaGenerationService:
             timeout=60,
             provider_label="Kling",
             operation="submit",
+            attribution=attribution,
         )
 
         data = response_body.get("data") if isinstance(response_body.get("data"), dict) else response_body
@@ -657,6 +672,7 @@ class MediaGenerationService:
         timeout: float,
         provider_label: str,
         operation: str,
+        attribution: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Open *request* and decode JSON, surfacing provider error bodies.
 
@@ -667,9 +683,45 @@ class MediaGenerationService:
         ``MediaGenerationError`` instead of letting the cryptic default reach
         the UI.
         """
-        try:
+        from services.external_call_gateway import GatewayError, get_gateway
+
+        def request_fn() -> bytes:
             with validated_urlopen(request, timeout=timeout, allowed_schemes=("https",)) as response:
-                raw = response.read()
+                return response.read()
+
+        # Gateway policy (design §A2): breaker per provider host, jittered
+        # retry for transient failures on idempotent operations only — a
+        # ``submit`` creates a paid job, so a 5xx after the provider may have
+        # accepted it is never retried (that would double-bill). Submits are
+        # metered as one usage row each and charged to the daily budget;
+        # polls/downloads are not billable, so they stay outside the budget —
+        # otherwise routine polling would exhaust the cap and strand the
+        # already-paid jobs it is polling for.
+        provider_kind = provider_label.split("/")[0].strip().lower() or "media"
+        billable = operation == "submit"
+        # Budget scope: the customer when the job is on a customer's behalf,
+        # else the submitting user — never a shared global bucket, so one
+        # submitter cannot exhaust everyone else's daily video budget.
+        attribution = {k: str(v) for k, v in (attribution or {}).items() if v}
+        budget_scope = attribution.get("customer_id") or (
+            f"user:{attribution['user_id']}" if attribution.get("user_id") else None)
+        context = {k: attribution[k] for k in ("customer_id", "job_id") if k in attribution}
+        try:
+            raw = get_gateway().call(
+                provider_kind,
+                request_fn,
+                endpoint=urllib.parse.urlparse(request.full_url).netloc,
+                operation=f"video_{operation}",
+                agent_id=_MEDIA_AGENT_ID,
+                budget_scope=budget_scope,
+                context=context,
+                max_retries=0 if billable else None,
+                budget=billable,
+                meter=billable,
+                usage_from=lambda _raw: {"model": None},
+            )
+        except GatewayError as exc:
+            raise MediaGenerationError(f"{provider_label} {operation} refused: {exc}") from exc
         except urllib.error.HTTPError as exc:
             try:
                 body_bytes = exc.read() or b""

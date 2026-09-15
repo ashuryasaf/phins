@@ -15,20 +15,71 @@ The service focuses on practical campaign artifacts:
 - Social distribution plans
 
 All generated plans include an HMAC signature for integrity verification.
+
+B7 additions (see docs/agent_operations_optimization_design.md §B7):
+
+- every plan carries ``input_hash`` — a SHA-256 over the plan-determining
+  inputs (scope, networks, BI signals, cohorts, generator version) — inside
+  the signed payload, so the signature attests both the output and the
+  inputs it was derived from;
+- identical inputs return the *same* plan from an in-process cache (same
+  campaign id, same signature) instead of minting a near-duplicate;
+- optional BI cohort targeting derived from
+  ``bi_analytics_service.get_customer_analytics`` output re-orders the sales
+  playbooks deterministically and is part of the input hash;
+- publishing anchors ``(campaign_id, signature, input_hash)`` on the platform
+  event ledger (``PlatformEventLedgerService``), so a published plan can be
+  proven against a hash-chained record rather than only ``DESIGN_SETTINGS``.
 """
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import hmac
 import json
 import os
+import threading
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+
+from services.agent_metrics import instrument_agent
 
 
 ALLOWED_VERTICALS = {"insurance", "investments", "health_wallet"}
 ALLOWED_OBJECTIVES = {"growth", "retention", "cross_sell", "reactivation"}
+
+# Bump when the generator's output for the same inputs changes, so a cached
+# or anchored plan from older code is never mistaken for the current one.
+PLAN_VERSION = 2
+PLAN_CACHE_MAX_ENTRIES = 64
+
+# Platform-ledger event emitted once per (campaign_id, signature) on publish.
+MARKETING_PUBLISH_EVENT_TYPE = "marketing_campaign_published"
+MARKETING_LEDGER_ENTITY_TYPE = "marketing_campaign"
+
+# Cohort id -> (label, playbook it should lead with). Sizes come from the BI
+# customer-analytics summary; the mapping itself is fixed so the same BI
+# output always yields the same targeting.
+COHORT_DEFINITIONS: Dict[str, Dict[str, str]] = {
+    "wallet_gap": {
+        "label": "Customers without a health wallet",
+        "playbook": "Wallet First, Coverage Second",
+    },
+    "investment_gap": {
+        "label": "Customers without an investment account",
+        "playbook": "Investment Parallel Offer",
+    },
+    "policy_gap": {
+        "label": "Customers without an active policy",
+        "playbook": "Lifecycle Trigger Ladder",
+    },
+    "high_value": {
+        "label": "Top transacting customers",
+        "playbook": "Trust-to-Upgrade Flywheel",
+    },
+}
 
 SUPPORTED_NETWORKS = {
     "linkedin",
@@ -69,13 +120,155 @@ def _status(value: Any) -> str:
 class MarketingSalesAgentService:
     """AI + BI campaign generation service with signed payloads."""
 
-    def __init__(self, secret_key: Optional[str] = None):
+    def __init__(self, secret_key: Optional[str] = None, plan_cache_size: int = PLAN_CACHE_MAX_ENTRIES):
         self._secret_key = (
             secret_key
             or os.environ.get("PHINS_MARKETING_AGENT_SECRET")
             or os.environ.get("SESSION_SECRET_KEY")
             or "PHINS_MARKETING_AGENT_2026"
         )
+        # input_hash -> generated plan (deep-copied on the way in and out).
+        self._plan_cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+        self._plan_cache_size = max(0, int(plan_cache_size or 0))
+        self._plan_cache_lock = threading.Lock()
+        self._plan_cache_hits = 0
+        self._plan_cache_misses = 0
+
+    # ------------------------------------------------------------------
+    # B7: input hash, plan cache, cohorts
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _canonical(payload: Any) -> str:
+        return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str)
+
+    def compute_input_hash(
+        self,
+        *,
+        scope: Dict[str, Any],
+        networks: List[str],
+        bi_signals: Dict[str, Any],
+        cohorts: Optional[List[Dict[str, Any]]],
+    ) -> str:
+        """SHA-256 over everything that determines the plan body.
+
+        ``generated_by``/timestamps are deliberately excluded: they describe
+        *when/who*, not *what*; two operators asking for the same plan against
+        the same data should get the same plan.
+        """
+        material = {
+            "plan_version": PLAN_VERSION,
+            "scope": scope,
+            "networks": list(networks),
+            "bi_signals": bi_signals,
+            "cohorts": cohorts or [],
+        }
+        return hashlib.sha256(self._canonical(material).encode("utf-8")).hexdigest()
+
+    def _cache_get(self, input_hash: str) -> Optional[Dict[str, Any]]:
+        with self._plan_cache_lock:
+            hit = self._plan_cache.get(input_hash)
+            if hit is None:
+                self._plan_cache_misses += 1
+                return None
+            self._plan_cache.move_to_end(input_hash)
+            self._plan_cache_hits += 1
+            return copy.deepcopy(hit)
+
+    def _cache_put(self, input_hash: str, result: Dict[str, Any]) -> None:
+        if self._plan_cache_size <= 0:
+            return
+        with self._plan_cache_lock:
+            self._plan_cache[input_hash] = copy.deepcopy(result)
+            self._plan_cache.move_to_end(input_hash)
+            while len(self._plan_cache) > self._plan_cache_size:
+                self._plan_cache.popitem(last=False)
+
+    def clear_plan_cache(self) -> None:
+        with self._plan_cache_lock:
+            self._plan_cache.clear()
+
+    def plan_cache_stats(self) -> Dict[str, Any]:
+        with self._plan_cache_lock:
+            return {
+                "entries": len(self._plan_cache),
+                "max_entries": self._plan_cache_size,
+                "hits": self._plan_cache_hits,
+                "misses": self._plan_cache_misses,
+            }
+
+    @staticmethod
+    def derive_cohorts(customer_analytics: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Deterministic targeting cohorts from a BI customer-analytics payload.
+
+        Input is the dict returned by
+        ``BIAnalyticsService.get_customer_analytics`` (only its ``summary``
+        and ``top_customers`` sections are read). Output is sorted by size
+        (desc) then id, so identical BI output always yields identical
+        cohorts — and therefore an identical input hash. Cohorts of size 0
+        are dropped; no customer identifiers are copied into the plan.
+        """
+        if not isinstance(customer_analytics, dict):
+            return []
+        summary = customer_analytics.get("summary") or {}
+        if not isinstance(summary, dict):
+            summary = {}
+        total = max(_safe_int(summary.get("total_customers")), 0)
+        sizes = {
+            "wallet_gap": total - _safe_int(summary.get("customers_with_wallets")),
+            "investment_gap": total - _safe_int(summary.get("customers_with_investments")),
+            "policy_gap": total - _safe_int(summary.get("customers_with_policies")),
+            "high_value": len(customer_analytics.get("top_customers") or []),
+        }
+        cohorts: List[Dict[str, Any]] = []
+        for cohort_id, definition in COHORT_DEFINITIONS.items():
+            size = max(sizes.get(cohort_id, 0), 0)
+            if size <= 0:
+                continue
+            cohorts.append({
+                "cohort_id": cohort_id,
+                "label": definition["label"],
+                "size": size,
+                "share_pct": round((size / total) * 100, 2) if total else 0.0,
+                "lead_playbook": definition["playbook"],
+            })
+        cohorts.sort(key=lambda c: (-c["size"], c["cohort_id"]))
+        for priority, cohort in enumerate(cohorts, start=1):
+            cohort["priority"] = priority
+        return cohorts
+
+    @staticmethod
+    def _apply_cohort_targeting(
+        playbooks: List[Dict[str, Any]],
+        cohorts: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Re-order playbooks so the largest cohort's lead playbook comes first.
+
+        Pure function of (playbooks, cohorts); untouched playbooks keep their
+        relative order after the targeted ones.
+        """
+        if not cohorts:
+            return playbooks
+        lead_for: Dict[str, Dict[str, Any]] = {}
+        for cohort in cohorts:
+            lead_for.setdefault(str(cohort.get("lead_playbook") or ""), cohort)
+        targeted: List[Dict[str, Any]] = []
+        rest: List[Dict[str, Any]] = []
+        for playbook in playbooks:
+            cohort = lead_for.get(str(playbook.get("playbook") or ""))
+            if cohort is None:
+                rest.append(playbook)
+                continue
+            item = dict(playbook)
+            item["target_cohort"] = {
+                "cohort_id": cohort["cohort_id"],
+                "size": cohort["size"],
+                "share_pct": cohort["share_pct"],
+                "priority": cohort["priority"],
+            }
+            targeted.append(item)
+        targeted.sort(key=lambda p: p["target_cohort"]["priority"])
+        return targeted + rest
 
     def _normalize_vertical(self, vertical: Optional[str]) -> str:
         value = str(vertical or "insurance").strip().lower()
@@ -134,7 +327,15 @@ class MarketingSalesAgentService:
         investment_customers = len(investment_accounts or {})
         investment_total_balance = sum(_safe_float(a.get("balance", 0)) for a in (investment_accounts or {}).values())
 
-        ledger_volume = sum(abs(_safe_float(tx.get("amount", 0))) for tx in (transaction_ledger or {}).values())
+        # Non-monetary platform events (signature anchors, publication anchors,
+        # audit markers) are not commercial activity; counting them would make
+        # publishing a plan change the inputs of the very next plan.
+        financial_entries = [
+            tx for tx in (transaction_ledger or {}).values()
+            if isinstance(tx, dict)
+            and not (_status(tx.get("ledger_type")) == "event" and _safe_float(tx.get("amount", 0)) == 0.0)
+        ]
+        ledger_volume = sum(abs(_safe_float(tx.get("amount", 0))) for tx in financial_entries)
 
         customer_base = max(total_customers, 1)
         conversion_rate = round((active_policies / customer_base) * 100, 2)
@@ -168,7 +369,7 @@ class MarketingSalesAgentService:
                 "total_balance": round(investment_total_balance, 2),
             },
             "ledger": {
-                "transaction_count": len(transaction_ledger or {}),
+                "transaction_count": len(financial_entries),
                 "volume": round(ledger_volume, 2),
             },
         }
@@ -367,6 +568,7 @@ class MarketingSalesAgentService:
         expected = self._campaign_payload_signature(payload)
         return hmac.compare_digest(expected, str(signature or ""))
 
+    @instrument_agent('marketing_sales', decision_key='vertical')
     def generate_campaign(
         self,
         *,
@@ -384,12 +586,19 @@ class MarketingSalesAgentService:
         budget_tier: str,
         social_networks: Optional[List[str]],
         generated_by: str,
+        customer_analytics: Optional[Dict[str, Any]] = None,
+        use_cache: bool = True,
     ) -> Dict[str, Any]:
         normalized_vertical = self._normalize_vertical(vertical)
         normalized_objective = self._normalize_objective(objective)
         normalized_networks = self._normalize_networks(social_networks)
-        generated_at = datetime.now(timezone.utc).isoformat()
-        campaign_id = f"MKT-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+        scope = {
+            "vertical": normalized_vertical,
+            "objective": normalized_objective,
+            "persona": str(persona or "families").strip().lower(),
+            "region": str(region or "global").strip().lower(),
+            "budget_tier": str(budget_tier or "balanced").strip().lower(),
+        }
 
         bi_signals = self._build_bi_signals(
             customers=customers,
@@ -400,40 +609,59 @@ class MarketingSalesAgentService:
             investment_accounts=investment_accounts,
             transaction_ledger=transaction_ledger,
         )
+        cohorts = self.derive_cohorts(customer_analytics)
+        input_hash = self.compute_input_hash(
+            scope=scope, networks=normalized_networks, bi_signals=bi_signals, cohorts=cohorts,
+        )
+
+        if use_cache:
+            cached = self._cache_get(input_hash)
+            if cached is not None:
+                cached["plan_cache"] = {"hit": True, "input_hash": input_hash}
+                return cached
+
+        generated_at = datetime.now(timezone.utc).isoformat()
+        # The id is derived from the input hash (not the clock) so the same
+        # inputs name the same campaign across processes and restarts.
+        campaign_id = f"MKT-{input_hash[:16].upper()}"
         messaging = self._vertical_messaging(normalized_vertical)
 
         payload = {
             "campaign_id": campaign_id,
             "generated_at": generated_at,
             "generated_by": generated_by or "admin",
-            "scope": {
-                "vertical": normalized_vertical,
-                "objective": normalized_objective,
-                "persona": str(persona or "families").strip().lower(),
-                "region": str(region or "global").strip().lower(),
-                "budget_tier": str(budget_tier or "balanced").strip().lower(),
-            },
+            "plan_version": PLAN_VERSION,
+            "input_hash": input_hash,
+            "scope": scope,
             "value_messaging": messaging,
             "bi_signals": bi_signals,
-            "sales_playbooks": self._build_sales_playbooks(
-                normalized_vertical,
-                normalized_objective,
-                str(persona or "families").strip().lower(),
-                bi_signals,
+            "targeting": {
+                "mode": "bi_cohorts" if cohorts else "broad",
+                "source": "bi_analytics.customer_analytics" if cohorts else None,
+                "cohorts": cohorts,
+            },
+            "sales_playbooks": self._apply_cohort_targeting(
+                self._build_sales_playbooks(
+                    normalized_vertical,
+                    normalized_objective,
+                    scope["persona"],
+                    bi_signals,
+                ),
+                cohorts,
             ),
             "story_outlines": self._build_story_outlines(
                 normalized_vertical,
-                str(persona or "families").strip().lower(),
-                str(region or "global").strip().lower(),
+                scope["persona"],
+                scope["region"],
             ),
             "targeted_articles": self._build_article_briefs(
                 normalized_vertical,
                 normalized_objective,
-                str(persona or "families").strip().lower(),
+                scope["persona"],
             ),
             "ai_video_blueprints": self._build_video_blueprints(
                 normalized_vertical,
-                str(persona or "families").strip().lower(),
+                scope["persona"],
             ),
             "social_network_plan": self._build_social_plan(
                 normalized_networks,
@@ -454,9 +682,11 @@ class MarketingSalesAgentService:
             ],
             "data_integrity_controls": [
                 "Campaign payload signed with HMAC-SHA256.",
+                "Plan inputs hashed (input_hash) and covered by the signature.",
                 "BI metrics are generated from live server state snapshots.",
                 "Published assets include campaign trace tags.",
                 "Integrity verification required before media publication.",
+                "Publication anchors campaign id, signature and input hash on the platform event ledger.",
             ],
             "media_dashboard_bridge": {
                 "create_briefs": True,
@@ -466,14 +696,141 @@ class MarketingSalesAgentService:
         }
 
         signature = self._campaign_payload_signature(payload)
-        return {
+        result = {
             "campaign": payload,
             "integrity": {
                 "algorithm": "hmac-sha256",
                 "signature": signature,
+                "input_hash": input_hash,
                 "verified": self.verify_campaign_payload(payload, signature),
             },
         }
+        if use_cache:
+            self._cache_put(input_hash, result)
+        result["plan_cache"] = {"hit": False, "input_hash": input_hash}
+        return result
+
+    # ------------------------------------------------------------------
+    # B7: platform-ledger anchoring of published plans
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def publication_entry_id(campaign_id: str, signature: str) -> str:
+        """Deterministic ledger entry id for one (campaign, signature) pair.
+
+        Re-publishing the very same signed plan therefore reuses the existing
+        anchor (``append_event`` is idempotent on ``entry_id``) instead of
+        appending a second, contradictory record.
+        """
+        digest = hashlib.sha256(f"{campaign_id}|{signature}".encode("utf-8")).hexdigest()
+        return f"MKTPUB-{digest}"
+
+    def anchor_publication(
+        self,
+        ledger: Any,
+        campaign_payload: Dict[str, Any],
+        integrity_payload: Dict[str, Any],
+        *,
+        publisher: str,
+        assets_created: int = 0,
+    ) -> Dict[str, Any]:
+        """Append a ``marketing_campaign_published`` event to the platform ledger.
+
+        Fails closed: the signature is re-verified first and any ledger error
+        propagates, so a caller must not mark the campaign published (or mint
+        media assets) unless this returns. Returns the anchor summary the
+        caller should store next to the signature.
+        """
+        campaign_id = str((campaign_payload or {}).get("campaign_id") or "").strip()
+        signature = str((integrity_payload or {}).get("signature") or "").strip()
+        if not campaign_id or not signature:
+            raise ValueError("campaign_id and signature are required to anchor a publication")
+        if not self.verify_campaign_payload(campaign_payload, signature):
+            raise ValueError("campaign signature does not verify; refusing to anchor")
+
+        input_hash = str(campaign_payload.get("input_hash") or integrity_payload.get("input_hash") or "")
+        entry_id = self.publication_entry_id(campaign_id, signature)
+        memory_ledger = getattr(ledger, "transaction_ledger", None)
+        reused = bool(memory_ledger is not None and entry_id in memory_ledger)
+        scope = campaign_payload.get("scope") or {}
+
+        entry = ledger.append_event(
+            event_type=MARKETING_PUBLISH_EVENT_TYPE,
+            entity_type=MARKETING_LEDGER_ENTITY_TYPE,
+            entity_id=campaign_id,
+            actor=publisher or "admin",
+            source_system="marketing_sales_agent",
+            status="published",
+            entry_id=entry_id,
+            payload={
+                "campaign_id": campaign_id,
+                "signature": signature,
+                "signature_algorithm": str(integrity_payload.get("algorithm") or "hmac-sha256"),
+                "input_hash": input_hash,
+                "plan_version": _safe_int(campaign_payload.get("plan_version"), 1),
+                "vertical": scope.get("vertical"),
+                "objective": scope.get("objective"),
+                "assets_created": int(assets_created or 0),
+                "published_by": publisher or "admin",
+            },
+        )
+        return {
+            "entry_id": str(entry.get("id") or entry_id),
+            "entry_hash": str(entry.get("entry_hash") or ""),
+            "sequence_no": _safe_int(entry.get("sequence_no")),
+            "event_type": MARKETING_PUBLISH_EVENT_TYPE,
+            "anchored_at": str(entry.get("recorded_at") or entry.get("timestamp") or ""),
+            "reused": reused,
+        }
+
+    def verify_publication(
+        self,
+        transaction_ledger: Any,
+        campaign_payload: Dict[str, Any],
+        integrity_payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Check a stored campaign against its ledger anchor (read-only).
+
+        ``anchored`` is true only when the ledger row exists *and* records the
+        same signature and input hash the campaign carries now — a plan
+        edited after publication (or a forged signature) fails even if the
+        ``DESIGN_SETTINGS`` copy looks consistent with itself.
+        """
+        campaign_id = str((campaign_payload or {}).get("campaign_id") or "").strip()
+        signature = str((integrity_payload or {}).get("signature") or "").strip()
+        result: Dict[str, Any] = {
+            "anchored": False,
+            "entry_id": None,
+            "signature_matches": False,
+            "input_hash_matches": False,
+            "signature_verified": bool(
+                campaign_id and signature and self.verify_campaign_payload(campaign_payload, signature)
+            ),
+        }
+        if not campaign_id or not signature:
+            return result
+        entry_id = self.publication_entry_id(campaign_id, signature)
+        result["entry_id"] = entry_id
+        try:
+            entry = transaction_ledger.get(entry_id)
+        except Exception:
+            entry = None
+        if not isinstance(entry, dict):
+            return result
+        recorded = entry.get("payload") if isinstance(entry.get("payload"), dict) else entry
+        recorded_signature = str(recorded.get("signature") or "")
+        recorded_input_hash = str(recorded.get("input_hash") or "")
+        current_input_hash = str(campaign_payload.get("input_hash") or integrity_payload.get("input_hash") or "")
+        result["signature_matches"] = hmac.compare_digest(recorded_signature, signature)
+        result["input_hash_matches"] = hmac.compare_digest(recorded_input_hash, current_input_hash)
+        result["entry_hash"] = str(entry.get("entry_hash") or "")
+        result["sequence_no"] = _safe_int(entry.get("sequence_no"))
+        result["anchored"] = bool(
+            result["signature_verified"]
+            and result["signature_matches"]
+            and result["input_hash_matches"]
+        )
+        return result
 
     def build_media_briefs(self, campaign_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Convert a campaign into concise briefs suitable for media assets."""
@@ -548,3 +905,46 @@ def get_marketing_sales_agent_service(secret_key: Optional[str] = None) -> Marke
         _marketing_sales_agent_service = MarketingSalesAgentService(secret_key=secret_key)
     return _marketing_sales_agent_service
 
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# ---------------------------------------------------------------------------
+def _marketing_agent_health() -> Dict[str, Any]:
+    """Read-only probe: reports whether a dedicated signing secret is configured."""
+    info: Dict[str, Any] = {
+        'status': 'ok',
+        'initialized': _marketing_sales_agent_service is not None,
+        'dedicated_secret_configured': bool(os.environ.get("PHINS_MARKETING_AGENT_SECRET")),
+        'plan_version': PLAN_VERSION,
+        'publish_event_type': MARKETING_PUBLISH_EVENT_TYPE,
+    }
+    if _marketing_sales_agent_service is not None:
+        info['plan_cache'] = _marketing_sales_agent_service.plan_cache_stats()
+    return info
+
+
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='marketing_sales',
+        name='Marketing / Sales Agent',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Generates HMAC-signed AI + BI campaign plans (sales playbooks, story '
+            'outlines, article briefs, video blueprints, social distribution) for '
+            'insurance, investment, and health-wallet growth.'
+        ),
+        entry_url='/admin-media.html',
+        api={'method': 'GET', 'path': '/api/admin/marketing-sales-agent'},
+        roles=('admin', 'media'),
+        deterministic=True,
+        sample_prompts=(
+            'Build a retention campaign for the insurance vertical',
+        ),
+    ), health_fn=_marketing_agent_health)
+except Exception as _reg_exc:  # pragma: no cover
+    import logging as _logging
+    _logging.getLogger('phins.marketing_sales_agent').warning(
+        "marketing/sales agent registration skipped: %s", _reg_exc)

@@ -117,6 +117,28 @@ sequenceDiagram
    label next to the number (see below). A basis label is additive metadata;
    the numeric key it describes keeps its formula.
 
+## Customer identity master
+
+A customer's personal (national) ID number and nationality have one writer,
+`services/customer_identity_service.py`, and one durable home, the
+`customers` row. Every pipeline that learns the number — registration, the
+one-time login prompt, classic/chat apply, the quote form, claims, the
+assessment center's Mislaka link, admin correction — goes through
+`set_identity` / `reconcile_pipeline_identity`.
+
+| Concern | Rule |
+|---|---|
+| Nationality | Free text ("Israel", "ISR", "ישראל", "USA", "UK") resolves to ISO 3166-1 alpha-2 via `services/countries.py`; the code is what is stored. |
+| Validation | Per nationality: Israeli Teudat Zehut checksum, US SSN, UK NINO, Spanish DNI/NIE, Brazilian CPF, Italian codice fiscale, French NIR, Aadhaar; generic alphanumeric elsewhere. Separators are stripped, Israeli IDs zero-padded to 9. |
+| At rest | `national_id_hash` (HMAC-SHA256 keyed by `PHINS_IDENTITY_HASH_KEY` → `PHINS_ENCRYPTION_KEY`), `national_id_last4`, `nationality`, `identity_captured_at`, `identity_source`, `identity_history`; the number itself only in `national_id_encrypted` (Fernet vault). Without a key the service refuses to store (503) unless `PHINS_TEST_MODE` / `PHINS_IDENTITY_ALLOW_PLAINTEXT_VAULT`. |
+| Exposure | `Customer.to_dict()` never includes the blob. Responses, audit rows, ledger anchors and pipeline records carry `identity_reference()` = nationality + hash + last4 (+ masked). `reveal_national_id()` is server-side only (Mislaka lookup). |
+| Write-once | Same value again → idempotent (`changed=false`). Different value → 409 `identity_already_set`; only an admin with a `reason` may correct, appending the previous hash to `identity_history` and anchoring `customer.identity_corrected` on the platform ledger. |
+| One person, one customer | `(nationality, national_id_hash)` is checked in the service in every mode and enforced by the unique index `ux_customers_identity`. In DB mode the row is read back after the write; a write lost to the index (concurrent registration) is reported as 409 `identity_in_use` and rolled back, including the vault blob. |
+| Pipelines | Records carry `customer_identity` (the reference). A payload whose ID disagrees with the recorded identity is stamped `identity_mismatch=true` for review — the customer record is never overwritten by a pipeline. `PHINS_IDENTITY_REQUIRED=true` makes applications/claims reject a missing (400 `identity_required`) or conflicting (409) identity before any row is written. |
+| Existing customers | `/api/login` and `/api/session/validate` return `identity_required`; the dashboard shows a non-dismissable one-time modal that posts to `/api/customer/identity`. `/api/admin/customers/identity/report` tracks rollout completion. |
+| Regulated lookups | `resolve_lookup_id()` decides the ID a Mislaka call may use: recorded + omitted → vaulted number server-side; recorded + different → 409 `identity_mismatch`; none recorded + valid → captured once (`source=assessment` / `pension`). Used by the assessment-center Mislaka link and the Pension Data Agent (`POST /api/mislaka/import`, where staff bind with `customer_id`). Pension job `subject_id` is the keyed hash, not a bare SHA-256. |
+| Documents | IDs extracted from a customer's documents are compared with the master, never written to it: the assessment-center profile carries `identity.id_numbers[].matches_master` and `identity_master.document_check`; a frozen assessment carries `identity_mismatch`; a risk-report analysis adds a `critical` `identity_mismatch` anomaly and `key_metrics.identity_check`. |
+
 ## Metric bases
 
 Three quantities called "loss ratio" and two called "reserve requirement"

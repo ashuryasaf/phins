@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phins:schemas/assessment_narrative",
+  "title": "Assessment AI advisory narrative",
+  "description": "Structured advisory narrative over already-extracted facts. The model may only restate the evidence it was given; it never decides. Validated by services.llm_providers.validate_json_schema before anything is persisted.",
+  "type": "object",
+  "required": ["summary_text", "key_points", "review_flags", "needs_review"],
+  "additionalProperties": false,
+  "properties": {
+    "summary_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000,
+      "description": "Concise professional summary of the provided facts only."
+    },
+    "key_points": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "required": ["point"],
+        "additionalProperties": false,
+        "properties": {
+          "point": {"type": "string", "minLength": 1, "maxLength": 500},
+          "evidence_index": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Index into the evidence array the point is drawn from."
+          }
+        }
+      }
+    },
+    "review_flags": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {"type": "string", "minLength": 1, "maxLength": 500},
+      "description": "Anything a human must look at before any decision (gaps, contradictions, low-confidence evidence)."
+    },
+    "needs_review": {
+      "type": "boolean",
+      "description": "Always true: the narrative is advisory and never a decision."
+    }
+  }
+}

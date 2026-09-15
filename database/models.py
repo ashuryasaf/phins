@@ -5,7 +5,7 @@ These models define the database schema for all core entities in the system.
 Supports both SQLite (development) and PostgreSQL (production).
 """
 
-from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, Text, ForeignKey, Enum as SQLEnum, UniqueConstraint
+from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, Text, ForeignKey, Enum as SQLEnum, UniqueConstraint, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -89,6 +89,22 @@ class Customer(Base):
     # Agent ecosystem: referring agent (nullable; one active affiliation per principal)
     referring_agent_id = Column(String(50), nullable=True, index=True)
 
+    # Identity master (services/customer_identity_service.py is the only writer).
+    # The personal ID number is stored encrypted (vault blob) plus a keyed hash
+    # for uniqueness/equality and the last 4 characters for display; the
+    # (nationality, hash) pair is unique across customers (see __table_args__).
+    nationality = Column(String(2), nullable=True)           # ISO 3166-1 alpha-2
+    national_id_hash = Column(String(64), nullable=True)
+    national_id_last4 = Column(String(4), nullable=True)
+    national_id_encrypted = Column(Text, nullable=True)
+    identity_captured_at = Column(String(40), nullable=True)
+    identity_source = Column(String(30), nullable=True)      # registration|login_prompt|application|...
+    identity_history = Column(Text, nullable=True)           # append-only JSON list of corrections
+
+    __table_args__ = (
+        Index('ux_customers_identity', 'nationality', 'national_id_hash', unique=True),
+    )
+
     # Timestamps
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -98,7 +114,13 @@ class Customer(Base):
     claims = relationship("Claim", back_populates="customer", cascade="all, delete-orphan")
     
     def to_dict(self, include_auth: bool = False):
-        """Convert model to dictionary"""
+        """Convert model to dictionary.
+
+        The encrypted personal ID is deliberately omitted (like the password
+        hash): customer dicts are returned by many endpoints, and the identity
+        service reads the blob straight from the row when a regulated pipeline
+        needs it.
+        """
         data = {
             'id': self.id,
             'name': self.name,
@@ -116,6 +138,12 @@ class Customer(Base):
             'occupation': self.occupation,
             'portal_active': self.portal_active,
             'referring_agent_id': self.referring_agent_id,
+            'nationality': self.nationality,
+            'national_id_hash': self.national_id_hash,
+            'national_id_last4': self.national_id_last4,
+            'identity_captured_at': self.identity_captured_at,
+            'identity_source': self.identity_source,
+            'identity_history': self.identity_history,
             'last_login': self.last_login.isoformat() if self.last_login else None,
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'updated_date': self.updated_date.isoformat() if self.updated_date else None
@@ -1051,6 +1079,10 @@ class AIUsageRecord(Base):
     # document_parse | ocr | transcription | llm_completion | video_analysis
     model = Column(String(120), nullable=True)
     prompt_version = Column(String(60), nullable=True)
+    # Software agent that made the call (services/agent_runtime.py ids).
+    agent_id = Column(String(80), nullable=True, index=True)
+    # True when the external-call gateway refused the call (budget exhausted).
+    blocked = Column(Boolean, nullable=False, default=False)
 
     pages = Column(Integer, nullable=True)
     input_tokens = Column(Integer, nullable=True)
@@ -1079,6 +1111,8 @@ class AIUsageRecord(Base):
             'operation': self.operation,
             'model': self.model,
             'prompt_version': self.prompt_version,
+            'agent_id': self.agent_id,
+            'blocked': bool(self.blocked),
             'pages': self.pages,
             'input_tokens': self.input_tokens,
             'output_tokens': self.output_tokens,
@@ -2714,8 +2748,17 @@ class DocumentProcessingJob(Base):
     __tablename__ = 'document_processing_jobs'
 
     id = Column(String(120), primary_key=True)
+    # Nullable since the queue became agent-generic (A3): document jobs still
+    # set it; other agents identify their work via subject_type/subject_id.
     document_id = Column(String(120), ForeignKey('documents.id', ondelete='CASCADE'),
-                         nullable=False, index=True)
+                         nullable=True, index=True)
+    # Generic subject of the job: ('document', DOC-...), ('claim', CLM-...),
+    # ('application', ...), ('report', ...), ('pension_import', ...),
+    # ('video_job', ...). Document jobs mirror document_id here.
+    subject_type = Column(String(50), nullable=True, index=True)
+    subject_id = Column(String(120), nullable=True, index=True)
+    # Principal that submitted the job; GET /api/jobs/{id} is scoped to it.
+    submitted_by = Column(String(100), nullable=True, index=True)
     job_type = Column(String(50), nullable=False, index=True)
     status = Column(String(30), nullable=False, default='pending', index=True)
     input_params = Column(Text, nullable=True)
@@ -2737,6 +2780,9 @@ class DocumentProcessingJob(Base):
         return {
             'id': self.id,
             'document_id': self.document_id,
+            'subject_type': self.subject_type,
+            'subject_id': self.subject_id,
+            'submitted_by': self.submitted_by,
             'job_type': self.job_type,
             'status': self.status,
             'input_params': json.loads(self.input_params) if self.input_params else None,
@@ -2884,6 +2930,13 @@ class AgentCommission(Base):
     """A commission accrual, backed 1:1 by a hash-chained ledger entry.
 
     Idempotency: unique (source_event_id, affiliation_id) prevents double accrual.
+    Per-renewal accrual (§C) keys on (affiliation_id, source_event_id, period):
+    the initial term carries ``period=''`` and ``source_event_id=policy:{id}``;
+    each renewal term carries its term-start date as ``period`` and embeds it in
+    ``source_event_id`` (``policy:{id}:{period}``) so the existing two-column
+    unique constraint keeps enforcing one accrual per term on every database
+    that predates the ``period`` column (additive migration, no rewrite of
+    money rows).
     """
     __tablename__ = 'agent_commissions'
     __table_args__ = (
@@ -2897,13 +2950,16 @@ class AgentCommission(Base):
     agent_id = Column(String(50), index=True, nullable=False)
     affiliation_id = Column(String(60), index=True, nullable=False)
     source_event_id = Column(String(120), index=True, nullable=False)
-    source_type = Column(String(40), default='policy_premium')  # policy_premium|marketplace_order|bounty
+    source_type = Column(String(40), default='policy_premium')  # policy_premium|policy_renewal|marketplace_order|bounty
+    period = Column(String(40), default='', nullable=True)  # '' = initial term; renewal term start (YYYY-MM-DD)
     base_amount = Column(Float, default=0.0)
     rate = Column(Float, default=0.0)
     amount = Column(Float, default=0.0)
     currency = Column(String(12), default='USD')
     status = Column(String(20), default='accrued', index=True)  # accrued|payable|paid|reversed
     ledger_entry_id = Column(String(120), nullable=True)
+    payout_id = Column(String(80), nullable=True, index=True)  # APAY... once swept into a payout run
+    paid_at = Column(String(100), nullable=True)
     created_at = Column(String(100), nullable=False)
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -2914,13 +2970,94 @@ class AgentCommission(Base):
             'affiliation_id': self.affiliation_id,
             'source_event_id': self.source_event_id,
             'source_type': self.source_type,
+            'period': self.period or '',
             'base_amount': self.base_amount,
             'rate': self.rate,
             'amount': self.amount,
             'currency': self.currency,
             'status': self.status,
             'ledger_entry_id': self.ledger_entry_id,
+            'payout_id': self.payout_id,
+            'paid_at': self.paid_at,
             'created_at': self.created_at,
+        }
+
+
+class AgentPayout(Base):
+    """A commission payout run for one agent (§C, ``agent_payouts``).
+
+    Sweeps that agent's ``accrued`` commissions into one run (they become
+    ``payable``), then ``settle`` marks them ``paid`` and anchors the payout on
+    the platform event ledger. Commission amounts are never edited by a payout;
+    ``commissions_hash`` (sha256 of the sorted commission ids) lets an auditor
+    re-derive exactly which accruals the run settled. Follows the
+    ``supplier_settlement_service`` run model: ``calculated -> settled``.
+    """
+    __tablename__ = 'agent_payouts'
+    __table_args__ = (
+        # Schema-level idempotency on a monetary table: two app instances cannot
+        # both create a run for the same (caller key, agent) or the same swept
+        # accrual set, so the same commissions are never paid out twice. The
+        # caller key itself is shared by every run one request created, so a
+        # retry gets the whole batch back.
+        UniqueConstraint('run_key', name='uq_agent_payout_run_key'),
+        UniqueConstraint('commissions_hash', name='uq_agent_payout_commissions_hash'),
+    )
+
+    id = Column(String(80), primary_key=True)  # APAY...
+    agent_id = Column(String(50), index=True, nullable=False)
+    status = Column(String(20), default='calculated', index=True)  # calculated|settled
+    currency = Column(String(12), default='USD')
+    gross_amount = Column(Float, default=0.0)
+    commission_count = Column(Integer, default=0)
+    commission_ids = Column(Text, nullable=True)  # JSON array of COMM ids
+    commissions_hash = Column(String(64), index=True, nullable=True)
+    idempotency_key = Column(String(120), index=True, nullable=True)  # caller key, shared by the batch
+    run_key = Column(String(180), nullable=True)                       # f"{idempotency_key}:{agent_id}"
+    period_start = Column(String(100), nullable=True)  # earliest swept accrual
+    period_end = Column(String(100), nullable=True)    # latest swept accrual
+    created_by = Column(String(100), nullable=True)
+    settled_by = Column(String(100), nullable=True)
+    settled_at = Column(String(100), nullable=True)
+    external_payout_reference = Column(String(200), nullable=True)
+    ledger_entry_id = Column(String(120), nullable=True)           # agent commission ledger (calculated)
+    platform_ledger_entry_id = Column(String(120), nullable=True)  # platform event ledger anchor (settled)
+    platform_entry_hash = Column(String(128), nullable=True)
+    created_at = Column(String(100), nullable=False)
+    updated_at = Column(String(100), nullable=True)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        ids = []
+        if self.commission_ids:
+            try:
+                ids = json.loads(self.commission_ids)
+                if not isinstance(ids, list):
+                    ids = []
+            except Exception:
+                ids = []
+        return {
+            'id': self.id,
+            'agent_id': self.agent_id,
+            'status': self.status,
+            'currency': self.currency,
+            'gross_amount': self.gross_amount,
+            'commission_count': self.commission_count,
+            'commission_ids': ids,
+            'commissions_hash': self.commissions_hash,
+            'idempotency_key': self.idempotency_key,
+            'run_key': self.run_key,
+            'period_start': self.period_start,
+            'period_end': self.period_end,
+            'created_by': self.created_by,
+            'settled_by': self.settled_by,
+            'settled_at': self.settled_at,
+            'external_payout_reference': self.external_payout_reference,
+            'ledger_entry_id': self.ledger_entry_id,
+            'platform_ledger_entry_id': self.platform_ledger_entry_id,
+            'platform_entry_hash': self.platform_entry_hash,
+            'created_at': self.created_at,
+            'updated_at': self.updated_at,
         }
 
 
@@ -2970,3 +3107,74 @@ class BusinessInquiry(Base):
             'updated_at': self.updated_at,
             'status_history': history,
         }
+
+
+class AgentArtifact(Base):
+    """Durable working artifact of a software agent (A4).
+
+    One generic table for every agent's own records — Claims Bot probability
+    reports, Underwriting Bot assessments/reports, AI Risk Reports documents/
+    analyses/reports — so a restart or a peer instance sees the same state.
+    ``payload_json`` is the lossless codec form (``services.hydrated_store``),
+    not the rounded presentation ``to_dict``. ``checksum`` is the sha256 of the
+    payload so tampering or a torn write is detectable on load.
+
+    This is a NEW table - it does not modify any existing data.
+    """
+    __tablename__ = 'agent_artifacts'
+
+    id = Column(String(120), primary_key=True)
+    # services/agent_runtime.py agent id, e.g. claims_bot, underwriting_bot, ai_risk_reports
+    agent_id = Column(String(80), nullable=False, index=True)
+    # What the artifact is about (claim / application / customer ...) and which one.
+    subject_type = Column(String(50), nullable=True, index=True)
+    subject_id = Column(String(120), nullable=True, index=True)
+    # Record family inside the agent: probability_report, assessment, analysis, ...
+    kind = Column(String(60), nullable=False, index=True)
+    payload_json = Column(Text, nullable=False)
+    checksum = Column(String(64), nullable=False)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+                          nullable=False, index=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'agent_id': self.agent_id,
+            'subject_type': self.subject_type,
+            'subject_id': self.subject_id,
+            'kind': self.kind,
+            'payload': json.loads(self.payload_json) if self.payload_json else None,
+            'checksum': self.checksum,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+            'updated_date': self.updated_date.isoformat() if self.updated_date else None,
+        }
+
+
+class VideoJob(Base):
+    """Video Agents generation job (A4): the durable form of the in-memory
+    ``_JobStore`` so webhook, poller and every web instance agree on the job's
+    lifecycle. Lifecycle columns are indexed for the dashboard's filters; the
+    full job dict lives in ``payload_json``. Terminal transitions are made with
+    a conditional UPDATE on ``status`` so exactly one racer wins.
+
+    This is a NEW table - it does not modify any existing data.
+    """
+    __tablename__ = 'video_jobs'
+
+    id = Column(String(120), primary_key=True)
+    campaign_id = Column(String(120), nullable=True, index=True)
+    submitted_by = Column(String(100), nullable=True, index=True)
+    provider = Column(String(40), nullable=True, index=True)
+    provider_job_id = Column(String(200), nullable=True, index=True)
+    pipeline_type = Column(String(60), nullable=True)
+    status = Column(String(30), nullable=False, default='queued', index=True)
+    # ISO timestamp the service stamped on the job (kept verbatim for the daily caps).
+    created_at = Column(String(40), nullable=True, index=True)
+    payload_json = Column(Text, nullable=False)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+                          nullable=False, index=True)
+
+    def to_dict(self):
+        return json.loads(self.payload_json) if self.payload_json else {}

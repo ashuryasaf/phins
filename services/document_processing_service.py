@@ -31,14 +31,20 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 import time
 import uuid
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+from services.agent_metrics import instrument_agent  # noqa: E402
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -198,10 +204,44 @@ class DocumentProcessingService:
         self.storage_root = storage_root or DOCUMENT_STORAGE_ROOT
         self.db_manager = db_manager
         self._inmemory_store: Dict[str, Dict[str, Any]] = {}
+        # Per-thread "document being processed" so deep helpers (e.g. the
+        # transcription call) can attribute provider spend to the owning
+        # customer without threading ids through every handler signature.
+        self._doc_scope = threading.local()
         os.makedirs(self.storage_root, exist_ok=True)
+
+    # ── Document scope (attribution for provider calls) ───────────────────────
+
+    def _record_customer_id(self, doc_id: str) -> Optional[str]:
+        try:
+            record = self._load_record(doc_id)
+        except Exception:
+            return None
+        if record is None:
+            return None
+        value = record.get('customer_id') if isinstance(record, dict) else getattr(record, 'customer_id', None)
+        return str(value) if value else None
+
+    @contextmanager
+    def _document_scope(self, doc_id: str):
+        """Bind ``doc_id`` (and its owning customer) to the current thread for
+        the duration of a processing pass. Nested scopes restore the outer one."""
+        previous = getattr(self._doc_scope, 'context', None)
+        self._doc_scope.context = {
+            'document_id': doc_id,
+            'customer_id': self._record_customer_id(doc_id),
+        }
+        try:
+            yield self._doc_scope.context
+        finally:
+            self._doc_scope.context = previous
+
+    def _current_document_context(self) -> Dict[str, Any]:
+        return dict(getattr(self._doc_scope, 'context', None) or {})
 
     # ── Upload ────────────────────────────────────────────────────────────────
 
+    @instrument_agent('document_intelligence')
     def upload_document(
         self,
         *,
@@ -346,11 +386,7 @@ class DocumentProcessingService:
         unless a managed-parser page price is configured). Never fatal."""
         try:
             from services.ai_usage_service import get_ai_usage_service
-            record = self._load_record(doc_id)
-            customer_id = None
-            if record is not None:
-                customer_id = (record.get('customer_id') if isinstance(record, dict)
-                               else record.customer_id) or None
+            customer_id = self._record_customer_id(doc_id)
             pages = (extracted.get('metadata') or {}).get('pages')
             get_ai_usage_service().record_usage(
                 provider='self_hosted',
@@ -546,6 +582,7 @@ class DocumentProcessingService:
 
     # ── Processing pipeline ───────────────────────────────────────────────────
 
+    @instrument_agent('document_intelligence')
     def process_document(self, doc_id: str, job_types: Optional[List[str]] = None) -> List[ProcessingResult]:
         """Run one or more processing jobs on an already-uploaded document."""
         record = self._load_record(doc_id)
@@ -745,6 +782,10 @@ class DocumentProcessingService:
 
     def _run_immediate_processing(self, doc_id: str, raw: bytes, mime: str, ext: str) -> Dict[str, Any]:
         """Run lightweight processing synchronously on upload."""
+        with self._document_scope(doc_id):
+            return self._run_immediate_processing_scoped(doc_id, raw, mime, ext)
+
+    def _run_immediate_processing_scoped(self, doc_id: str, raw: bytes, mime: str, ext: str) -> Dict[str, Any]:
         result: Dict[str, Any] = {}
         try:
             result['metadata'] = self._extract_metadata(raw, mime, ext)
@@ -843,7 +884,8 @@ class DocumentProcessingService:
         try:
             handler = self._job_handlers.get(job_type)
             if handler:
-                result_data = handler(self, raw, mime, ext)
+                with self._document_scope(doc_id):
+                    result_data = handler(self, raw, mime, ext)
             else:
                 result_data = {'note': f'No specialised handler for {job_type}'}
         except Exception as e:
@@ -1089,6 +1131,46 @@ class DocumentProcessingService:
     _OCR_MAX_PDF_PAGES = int(os.environ.get('PHINS_OCR_MAX_PDF_PAGES', '15'))
     _OCR_MAX_IMAGE_BYTES = int(os.environ.get('PHINS_OCR_MAX_IMAGE_BYTES', 25 * 1024 * 1024))
     _OCR_MIN_TEXT_THRESHOLD = int(os.environ.get('PHINS_OCR_MIN_TEXT_THRESHOLD', '40'))
+    # B4: page-level OCR results are cached process-wide keyed by
+    # (sha256(bytes), page, langs, dpi), so a re-upload or re-scoring of the
+    # same file never re-runs Tesseract; pages of one PDF are OCR'd by a small
+    # bounded pool. ``PHINS_OCR_POOL_SIZE=1`` keeps the sequential behaviour.
+    _OCR_POOL_SIZE = max(1, int(os.environ.get('PHINS_OCR_POOL_SIZE', '2')))
+    _OCR_CACHE_MAX_ENTRIES = max(0, int(os.environ.get('PHINS_OCR_CACHE_MAX_ENTRIES', '2000')))
+    _ocr_cache: 'OrderedDict[Tuple[str, int, str, int], str]' = OrderedDict()
+    _ocr_cache_lock = threading.Lock()
+    _ocr_cache_stats = {'hits': 0, 'misses': 0}
+
+    @classmethod
+    def _ocr_cache_get(cls, key: Tuple[str, int, str, int]) -> Optional[str]:
+        with cls._ocr_cache_lock:
+            if key in cls._ocr_cache:
+                cls._ocr_cache.move_to_end(key)
+                cls._ocr_cache_stats['hits'] += 1
+                return cls._ocr_cache[key]
+            cls._ocr_cache_stats['misses'] += 1
+            return None
+
+    @classmethod
+    def _ocr_cache_put(cls, key: Tuple[str, int, str, int], text: str) -> None:
+        if cls._OCR_CACHE_MAX_ENTRIES <= 0:
+            return
+        with cls._ocr_cache_lock:
+            cls._ocr_cache[key] = text
+            cls._ocr_cache.move_to_end(key)
+            while len(cls._ocr_cache) > cls._OCR_CACHE_MAX_ENTRIES:
+                cls._ocr_cache.popitem(last=False)
+
+    @classmethod
+    def ocr_cache_stats(cls) -> Dict[str, int]:
+        with cls._ocr_cache_lock:
+            return {'entries': len(cls._ocr_cache), **cls._ocr_cache_stats}
+
+    @classmethod
+    def reset_ocr_cache(cls) -> None:
+        with cls._ocr_cache_lock:
+            cls._ocr_cache.clear()
+            cls._ocr_cache_stats.update(hits=0, misses=0)
 
     @staticmethod
     def _has_meaningful_text(text: str) -> bool:
@@ -1149,13 +1231,19 @@ class DocumentProcessingService:
         except ImportError:
             return ''
         ocr_langs = self._ocr_langs_for_hint(lang_hint)
+        cache_key = (hashlib.sha256(raw).hexdigest(), 0, ocr_langs, 0)
+        cached = self._ocr_cache_get(cache_key)
+        if cached is not None:
+            return cached
         try:
             import io as _io
             with Image.open(_io.BytesIO(raw)) as img:
                 if img.mode not in ('RGB', 'L'):
                     img = img.convert('RGB')
                 text = pytesseract.image_to_string(img, lang=ocr_langs)
-            return (text or '').strip()
+            text = (text or '').strip()
+            self._ocr_cache_put(cache_key, text)
+            return text
         except pytesseract.TesseractNotFoundError:
             return ''
         except Exception as exc:
@@ -1173,29 +1261,68 @@ class DocumentProcessingService:
         scanned document can't blow the request budget. Returns []
         if pdf2image / poppler / tesseract aren't all available.
         Empty pages are kept as '' so chunk index == page number - 1.
+
+        Each page result is cached by ``(sha256(pdf), page, langs, dpi)``;
+        a PDF whose pages are all cached is not rasterised at all, and the
+        pages still to be OCR'd fan out over ``PHINS_OCR_POOL_SIZE`` threads.
         """
         try:
             from pdf2image import convert_from_bytes  # type: ignore
             import pytesseract  # type: ignore
         except ImportError:
             return []
+        ocr_langs = self._ocr_langs_for_hint(lang_hint)
+        digest = hashlib.sha256(raw).hexdigest()
+        max_pages = self._OCR_MAX_PDF_PAGES
+
+        def _key(page_no: int) -> Tuple[str, int, str, int]:
+            return (digest, page_no, ocr_langs, self._OCR_DPI)
+
+        # Fast path: a previous run recorded this file's page count and every
+        # page text is still cached -> no rasterisation, no Tesseract.
+        page_count = self._ocr_cache_get((digest, -1, ocr_langs, self._OCR_DPI))
+        if page_count is not None:
+            try:
+                n_pages = int(page_count)
+            except ValueError:
+                n_pages = -1
+            if n_pages >= 0:
+                cached_chunks = [self._ocr_cache_get(_key(p)) for p in range(1, n_pages + 1)]
+                if all(c is not None for c in cached_chunks):
+                    return cached_chunks if any(cached_chunks) else []
+
         try:
             pages = convert_from_bytes(raw, dpi=self._OCR_DPI,
-                                       first_page=1, last_page=self._OCR_MAX_PDF_PAGES)
+                                       first_page=1, last_page=max_pages)
         except Exception as exc:
             logger.debug('pdf2image rasterisation failed: %s', exc)
             return []
-        ocr_langs = self._ocr_langs_for_hint(lang_hint)
-        chunks = []
-        for page_img in pages:
+        pages = list(pages)[:max_pages]
+
+        def _ocr_page(index: int, page_img) -> str:
+            page_no = index + 1
+            cached = self._ocr_cache_get(_key(page_no))
+            if cached is not None:
+                return cached
             try:
                 if page_img.mode not in ('RGB', 'L'):
                     page_img = page_img.convert('RGB')
-                page_text = pytesseract.image_to_string(page_img, lang=ocr_langs)
-                chunks.append((page_text or '').strip())
+                text = (pytesseract.image_to_string(page_img, lang=ocr_langs) or '').strip()
             except Exception as exc:
                 logger.debug('OCR page failed: %s', exc)
-                chunks.append('')
+                return ''
+            self._ocr_cache_put(_key(page_no), text)
+            return text
+
+        if not pages:
+            chunks: List[str] = []
+        elif self._OCR_POOL_SIZE <= 1 or len(pages) == 1:
+            chunks = [_ocr_page(i, img) for i, img in enumerate(pages)]
+        else:
+            with ThreadPoolExecutor(max_workers=min(self._OCR_POOL_SIZE, len(pages)),
+                                    thread_name_prefix='phins-ocr') as pool:
+                chunks = list(pool.map(lambda item: _ocr_page(*item), enumerate(pages)))
+        self._ocr_cache_put((digest, -1, ocr_langs, self._OCR_DPI), str(len(pages)))
         if not any(chunks):
             return []
         return chunks
@@ -1650,8 +1777,11 @@ class DocumentProcessingService:
         except ImportError:
             return None
         try:
+            # Attribute provider spend (and the gateway's daily budget) to the
+            # document's owning customer rather than a shared global bucket.
             return get_transcription_provider().transcribe(
-                raw, file_name=f'media{default_ext}', mime_type=mime)
+                raw, file_name=f'media{default_ext}', mime_type=mime,
+                context=self._current_document_context())
         except TranscriptionUnavailableError:
             return None
         except Exception as exc:
@@ -1896,3 +2026,47 @@ def reset_document_service() -> None:
     """Reset the singleton (mainly for tests)."""
     global _default_service
     _default_service = None
+
+
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# ---------------------------------------------------------------------------
+def _document_intelligence_health() -> Dict[str, Any]:
+    """Read-only probe: never instantiates the service or touches storage."""
+    instance = _default_service
+    payload: Dict[str, Any] = {
+        'status': 'ok',
+        'initialized': instance is not None,
+        'async_enabled': str(os.environ.get('PHINS_DOC_ASYNC', '')).strip().lower() in ('1', 'true', 'yes', 'on'),
+    }
+    if instance is not None:
+        payload['db_backed'] = getattr(instance, 'db_manager', None) is not None
+    payload['ocr_cache'] = DocumentProcessingService.ocr_cache_stats()
+    return payload
+
+
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='document_intelligence',
+        name='Document Intelligence',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Single upload pipeline for every file on the platform: checksum '
+            'integrity, MIME/category classification, OCR and parsing, medical/'
+            'legal/identity extraction, fact provenance, and an async job queue '
+            'with retries and dead-letter handling.'
+        ),
+        entry_url='/admin.html',
+        api={'method': 'GET', 'path': '/api/doc-service/jobs'},
+        roles=('admin', 'underwriter', 'claims_adjuster', 'media'),
+        deterministic=True,
+        executes_async=True,
+        sample_prompts=(
+            'Show the document processing queue',
+            'Requeue dead-letter document jobs',
+        ),
+    ), health_fn=_document_intelligence_health)
+except Exception as _reg_exc:  # pragma: no cover
+    logger.warning("document intelligence agent registration skipped: %s", _reg_exc)

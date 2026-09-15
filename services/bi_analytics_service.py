@@ -24,6 +24,7 @@ Public API (consumed by `web_portal/api_bi_analytics.py`):
 import hashlib
 import json
 import math
+import os
 import statistics
 import threading
 import time
@@ -35,6 +36,7 @@ from typing import Any, Callable, Dict, List, Optional
 import logging
 
 from services import kpi_definitions as kpi
+from services.agent_metrics import instrument_agent
 
 logger = logging.getLogger('phins.bi_analytics')
 
@@ -58,6 +60,52 @@ FORECAST_DEFAULT_MONTHLY_GROWTH_SD = 0.04  # matches the Monte Carlo world defau
 FORECAST_MIN_HISTORY_MONTHS = 6
 FORECAST_MAX_GROWTH_WINDOW_MONTHS = 12
 _POLICY_START_KEYS = ('start_date', 'effective_date', 'approval_date', 'created_at')
+
+# Mixed into every input fingerprint (B10). Bump when a dashboard's shape or
+# arithmetic changes so a materialized view written by older code is never
+# served by newer code even if the inputs are identical.
+VIEW_SCHEMA_VERSION = 1
+MATERIALIZED_VIEWS_FILENAME = 'materialized_views.json'
+
+
+def _resolve_materialized_path() -> str:
+    """``PHINS_BI_SNAPSHOT_DIR/materialized_views.json`` (same dir as BI-3 snapshots)."""
+    configured = os.environ.get('PHINS_BI_SNAPSHOT_DIR', '').strip()
+    if configured:
+        base = configured
+    else:
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base = os.path.join(root, 'data', 'bi_snapshots')
+    return os.path.join(base, MATERIALIZED_VIEWS_FILENAME)
+
+
+def _canonical_json(payload: Any) -> str:
+    return json.dumps(payload, sort_keys=True, separators=(',', ':'), default=str)
+
+
+def _record_sha256(record: Dict[str, Any]) -> str:
+    return hashlib.sha256(
+        _canonical_json({k: v for k, v in record.items() if k != 'record_sha256'}).encode('utf-8')
+    ).hexdigest()
+
+
+def _value_sha256(value: Any) -> str:
+    """Digest of a dashboard payload minus its own timestamp fields."""
+    if isinstance(value, dict):
+        value = {k: v for k, v in value.items() if k not in ('computed_at', 'generated_at')}
+    return hashlib.sha256(_canonical_json(value).encode('utf-8')).hexdigest()
+
+
+def _parse_iso(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def _parse_month(value: Any) -> Optional[datetime]:
@@ -478,7 +526,7 @@ class BIAnalyticsService:
     `web_portal/server.py`. (See `PHINS_PLATFORM_ASSESSMENT.md` §2.1.)
     """
 
-    def __init__(self, cache_ttl_seconds: int = 300):
+    def __init__(self, cache_ttl_seconds: int = 300, materialized_path: Optional[str] = None):
         # BI-2: the cache is now wired into every dashboard method. Each entry is
         # keyed by method name + a cheap content fingerprint of the inputs, so a
         # cached dashboard can never contradict a changed data store (when the
@@ -487,14 +535,78 @@ class BIAnalyticsService:
         self.cache: Dict[str, Dict[str, Any]] = {}
         self.cache_ttl_seconds = cache_ttl_seconds
         self._cache_lock = threading.Lock()
+        # B10: write-path invalidation. ``data_version`` climbs on every
+        # notified store write (DatabaseDict listener, ledger save, explicit
+        # hooks). It is diagnostic and drives re-materialization; it never
+        # *replaces* the fingerprint check below, so an un-hooked write can
+        # at worst cost a recompute, never serve a contradicting dashboard.
+        self.data_version = 0
+        self.last_data_change_at: Optional[str] = None
+        self._changed_stores: Dict[str, int] = defaultdict(int)
+        self._on_change: List[Callable[[str], None]] = []
+        # Per-store digest memo for versioned stores (``content_version()``):
+        # id(store) -> (version, digest). Lets the fingerprint be O(1) when a
+        # DatabaseDict reports no change instead of re-hashing every row.
+        self._source_digests: Dict[int, tuple] = {}
+        self._local = threading.local()
+        # B10: materialized views persisted under PHINS_BI_SNAPSHOT_DIR so a
+        # scheduler (or another process) can compute dashboards off the
+        # request path and a fresh, fingerprint-matching copy is served here.
+        self._materialized_path = materialized_path or _resolve_materialized_path()
+        self._materialized_lock = threading.RLock()
+        self._materialized_mtime: Optional[float] = None
+        self._materialized_records: Dict[str, Dict[str, Any]] = {}
+        self._load_materialized(force=True)
         logger.info("BI Analytics Service initialized")
 
     # ------------------------------------------------------------------
-    # Caching primitives (BI-2)
+    # Caching primitives (BI-2) + write-path invalidation (B10)
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _fingerprint(*sources: Any) -> str:
+    def _digest_store(src: Any) -> str:
+        """Content digest of one dict-like store (rows hashed in key order)."""
+        hasher = hashlib.sha256()
+        hasher.update(str(len(src)).encode())
+        # Sort keys so ordering never affects the fingerprint.
+        for key in sorted(src.keys(), key=str):
+            val = src[key]
+            hasher.update(repr(key).encode())
+            try:
+                hasher.update(json.dumps(val, sort_keys=True, default=str).encode())
+            except (TypeError, ValueError):
+                hasher.update(repr(val).encode())
+        return hasher.hexdigest()
+
+    def _source_digest(self, src: Any) -> str:
+        """Digest of one input, memoised for stores that publish a version.
+
+        A store exposing ``content_version()`` (``DatabaseDict``) bumps it on
+        every local write and on every refresh that loaded different rows, so
+        an unchanged version proves the rows are unchanged and the previous
+        digest is exact. Plain dicts (in-memory mode) are always re-hashed:
+        nothing tracks in-place edits there, and correctness comes first.
+        """
+        version_fn = getattr(src, 'content_version', None)
+        if callable(version_fn) and hasattr(src, 'keys'):
+            version = version_fn()  # freshness-checked: may refresh from the DB
+            memo = self._source_digests.get(id(src))
+            if memo is not None and memo[0] == version and memo[2] is src:
+                return memo[1]
+            # Snapshot the rows once (bulk read, no per-key queries) so the
+            # digest and the version agree.
+            rows = src if isinstance(src, dict) else dict(src.items())
+            digest = self._digest_store(rows)
+            self._source_digests[id(src)] = (version, digest, src)
+            return digest
+        if isinstance(src, dict) or hasattr(src, 'keys'):
+            return self._digest_store(src)
+        try:
+            return hashlib.sha256(json.dumps(src, sort_keys=True, default=str).encode()).hexdigest()
+        except (TypeError, ValueError):
+            return hashlib.sha256(repr(src).encode()).hexdigest()
+
+    def _fingerprint(self, *sources: Any) -> str:
         """Cheap, stable content fingerprint over dashboard inputs.
 
         Single pass over the inputs; far cheaper than the multi-aggregation
@@ -503,27 +615,15 @@ class BIAnalyticsService:
         hand-picked subset) so a cached dashboard can never contradict changed
         inputs — every KPI driver, including fields like ``bid_amount``,
         ``distance_km``, ``urgency``, ``customer_id`` and ``category``, is
-        covered.
+        covered. ``VIEW_SCHEMA_VERSION`` is mixed in so a materialized view
+        written by older dashboard code is never adopted by newer code.
         """
         hasher = hashlib.sha256()
+        hasher.update(f'schema:{VIEW_SCHEMA_VERSION}'.encode())
         for src in sources:
-            if isinstance(src, dict):
-                hasher.update(str(len(src)).encode())
-                # Sort keys so ordering never affects the fingerprint.
-                for key in sorted(src.keys(), key=str):
-                    val = src[key]
-                    hasher.update(repr(key).encode())
-                    try:
-                        hasher.update(
-                            json.dumps(val, sort_keys=True, default=str).encode()
-                        )
-                    except (TypeError, ValueError):
-                        hasher.update(repr(val).encode())
-            else:
-                try:
-                    hasher.update(json.dumps(src, sort_keys=True, default=str).encode())
-                except (TypeError, ValueError):
-                    hasher.update(repr(src).encode())
+            # ``None`` and ``{}`` are the same input to every dashboard
+            # (optional stores default to empty), so they must fingerprint alike.
+            hasher.update(self._source_digest({} if src is None else src).encode())
         return hasher.hexdigest()
 
     def _cached(self, key: str, fingerprint: str, compute: Callable[[], Any]) -> Any:
@@ -531,6 +631,9 @@ class BIAnalyticsService:
 
         On *any* doubt (TTL elapsed or fingerprint mismatch) we recompute, so the
         cache can only ever return data consistent with the current inputs.
+        A materialized copy written by a scheduler for the same fingerprint
+        counts as fresh when it is younger than the TTL. Every value carries
+        ``computed_at`` (UTC ISO) so a consumer can see how old it is.
         """
         now = time.monotonic()
         with self._cache_lock:
@@ -540,25 +643,281 @@ class BIAnalyticsService:
                 and entry.get('fingerprint') == fingerprint
                 and (now - entry.get('stored_at', 0)) < self.cache_ttl_seconds
             ):
+                entry['hits'] = entry.get('hits', 0) + 1
+                self._local.served_from = 'cache'
                 return entry['value']
+
+        materialized = self._materialized_entry(key, fingerprint)
+        if materialized is not None:
+            with self._cache_lock:
+                self.cache[key] = materialized
+            self._local.served_from = 'materialized'
+            return materialized['value']
+
         value = compute()
+        computed_at = datetime.now(timezone.utc).isoformat()
+        if isinstance(value, dict):
+            value['computed_at'] = computed_at
         with self._cache_lock:
             self.cache[key] = {
                 'fingerprint': fingerprint,
                 'stored_at': now,
+                'computed_at': computed_at,
+                'data_version': self.data_version,
+                'hits': 0,
                 'value': value,
             }
+        self._local.served_from = 'live'
         return value
+
+    def last_served_from(self) -> Optional[str]:
+        """How the most recent dashboard call on this thread was answered:
+        ``'cache'``, ``'materialized'`` or ``'live'``."""
+        return getattr(self._local, 'served_from', None)
+
+    def cache_entry(self, key: str) -> Optional[Dict[str, Any]]:
+        """Metadata (no value) for one cached view, or None."""
+        with self._cache_lock:
+            entry = self.cache.get(key)
+            if entry is None:
+                return None
+            return {
+                'computed_at': entry.get('computed_at'),
+                'age_seconds': round(time.monotonic() - entry.get('stored_at', 0), 3),
+                'data_version': entry.get('data_version'),
+                'hits': entry.get('hits', 0),
+                'fingerprint': entry.get('fingerprint'),
+            }
 
     def invalidate_cache(self) -> None:
         """Drop all cached dashboards (e.g. after a bulk data import)."""
         with self._cache_lock:
             self.cache.clear()
+            self._source_digests.clear()
+
+    def notify_data_change(self, store: str = '*') -> int:
+        """Write-path hook: a BI input store was (or may have been) written.
+
+        Bumps ``data_version`` and runs the registered ``on_data_change``
+        callbacks (the portal uses one to re-materialize dashboards off the
+        request path). Cached views are *not* dropped here: the fingerprint
+        decides on the next read whether the write actually changed a BI
+        input, so a burst of writes costs at most one recompute per view.
+        """
+        with self._cache_lock:
+            self.data_version += 1
+            self._changed_stores[str(store or '*')] += 1
+            self.last_data_change_at = datetime.now(timezone.utc).isoformat()
+            version = self.data_version
+            callbacks = list(self._on_change)
+        for callback in callbacks:
+            try:
+                callback(str(store or '*'))
+            except Exception as exc:  # a re-materialization hook must never break a write
+                logger.warning("BI data-change callback failed: %s", exc)
+        return version
+
+    def on_data_change(self, callback: Callable[[str], None]) -> None:
+        """Register ``callback(store)`` to run after each notified write."""
+        with self._cache_lock:
+            if callback not in self._on_change:
+                self._on_change.append(callback)
+
+    def remove_data_change_callback(self, callback: Callable[[str], None]) -> None:
+        with self._cache_lock:
+            if callback in self._on_change:
+                self._on_change.remove(callback)
+
+    # ------------------------------------------------------------------
+    # Materialized views (B10)
+    # ------------------------------------------------------------------
+
+    def _load_materialized(self, force: bool = False) -> None:
+        """(Re)load the materialized-view file when its mtime changed."""
+        path = self._materialized_path
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            with self._materialized_lock:
+                self._materialized_records = {}
+                self._materialized_mtime = None
+            return
+        if not force and mtime == self._materialized_mtime:
+            return
+        try:
+            with open(path, 'r', encoding='utf-8') as fh:
+                payload = json.load(fh)
+            views = payload.get('views') if isinstance(payload, dict) else None
+            records: Dict[str, Dict[str, Any]] = {}
+            for name, record in (views or {}).items():
+                if not isinstance(record, dict) or not isinstance(record.get('value'), dict):
+                    continue
+                if _record_sha256(record) != record.get('record_sha256'):
+                    logger.error("Materialized BI view %s failed its checksum in %s; ignored.", name, path)
+                    continue
+                records[str(name)] = record
+            with self._materialized_lock:
+                self._materialized_records = records
+                self._materialized_mtime = mtime
+        except Exception as exc:
+            logger.warning("Materialized BI views unreadable (%s): %s", path, exc)
+
+    def _materialized_entry(self, key: str, fingerprint: str) -> Optional[Dict[str, Any]]:
+        """A cache entry built from a fresh, fingerprint-matching materialized view."""
+        self._load_materialized()
+        with self._materialized_lock:
+            record = self._materialized_records.get(key)
+        if record is None or record.get('fingerprint') != fingerprint:
+            return None
+        computed_at = _parse_iso(record.get('computed_at'))
+        if computed_at is None:
+            return None
+        age = (datetime.now(timezone.utc) - computed_at).total_seconds()
+        if age < 0 or age >= self.cache_ttl_seconds:
+            return None
+        value = json.loads(json.dumps(record['value']))  # private copy
+        value['computed_at'] = record.get('computed_at')
+        return {
+            'fingerprint': fingerprint,
+            'stored_at': time.monotonic() - age,
+            'computed_at': record.get('computed_at'),
+            'data_version': record.get('data_version'),
+            'hits': 1,
+            'value': value,
+        }
+
+    def materialize_views(self, data_sources: Dict[str, Any], *, source: str = 'scheduler') -> Dict[str, Any]:
+        """Compute the standard dashboards and persist them as materialized views.
+
+        Runs the same getters a request would (so this process's cache is
+        warmed too) and upserts one record per view — ``executive_dashboard``,
+        ``revenue_forecast`` (default parameters) and ``customer_analytics`` —
+        into ``PHINS_BI_SNAPSHOT_DIR/materialized_views.json`` with the input
+        fingerprint, ``computed_at`` and a checksum. Idempotent: a re-run with
+        unchanged inputs rewrites the same view (fresh ``computed_at``); it
+        never accumulates records or duplicates history (that is the BI-3
+        snapshot log). Never raises: a persistence failure is reported.
+        """
+        ds = data_sources or {}
+        computed: Dict[str, Dict[str, Any]] = {}
+        errors: Dict[str, str] = {}
+
+        def _run(name: str, fn: Callable[[], Any]) -> None:
+            try:
+                value = fn()
+                entry = self.cache_entry(name)
+                if isinstance(value, dict) and entry is not None:
+                    computed[name] = {'value': value, 'fingerprint': entry['fingerprint'],
+                                      'computed_at': value.get('computed_at') or entry['computed_at']}
+            except Exception as exc:
+                errors[name] = str(exc)
+
+        _run('executive_dashboard', lambda: self.get_executive_dashboard(
+            customers=ds.get('customers', {}) or {}, policies=ds.get('policies', {}) or {},
+            claims=ds.get('claims', {}) or {}, billing=ds.get('billing', {}) or {},
+            balance_sheet=ds.get('balance_sheet', {}) or {}, suppliers=ds.get('suppliers', {}) or {},
+            deliveries=ds.get('deliveries', {}) or {}))
+        _run('revenue_forecast', lambda: self.predict_revenue_forecast(
+            policies=ds.get('policies', {}) or {}, historical_growth_rate=None))
+        _run('customer_analytics', lambda: self.get_customer_analytics(
+            customers=ds.get('customers', {}) or {}, health_wallets=ds.get('health_wallets', {}) or {},
+            investment_accounts=ds.get('investment_accounts', {}) or {},
+            transaction_ledger=ds.get('transaction_ledger', {}) or {},
+            policies=ds.get('policies', {}) or {}))
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        self._load_materialized()
+        with self._materialized_lock:
+            records = dict(self._materialized_records)
+            changed: Dict[str, bool] = {}
+            for name, item in computed.items():
+                previous = records.get(name)
+                record = {
+                    'view': name,
+                    'fingerprint': item['fingerprint'],
+                    'computed_at': item['computed_at'],
+                    'data_version': self.data_version,
+                    'source': source,
+                    'schema_version': VIEW_SCHEMA_VERSION,
+                    'value': item['value'],
+                }
+                record['record_sha256'] = _record_sha256(record)
+                changed[name] = (previous is None
+                                 or previous.get('fingerprint') != record['fingerprint']
+                                 or _value_sha256(previous.get('value')) != _value_sha256(record['value']))
+                records[name] = record
+            persisted, error = self._write_materialized(records, now_iso)
+            if persisted:
+                self._materialized_records = records
+                try:
+                    self._materialized_mtime = os.path.getmtime(self._materialized_path)
+                except OSError:
+                    pass
+        result = {
+            'success': not errors and persisted,
+            'written_at': now_iso,
+            'path': self._materialized_path,
+            'persisted': persisted,
+            'data_version': self.data_version,
+            'views': {name: {'computed_at': item['computed_at'], 'fingerprint': item['fingerprint'],
+                             'changed': changed.get(name, False)} for name, item in computed.items()},
+        }
+        if errors:
+            result['errors'] = errors
+        if error:
+            result['error'] = error
+        return result
+
+    def _write_materialized(self, records: Dict[str, Dict[str, Any]], written_at: str) -> tuple:
+        """Atomic replace of the materialized-view file. Returns (ok, error)."""
+        path = self._materialized_path
+        tmp_path = f'{path}.tmp-{os.getpid()}'
+        try:
+            os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+            payload = {'schema': VIEW_SCHEMA_VERSION, 'written_at': written_at, 'views': records}
+            with open(tmp_path, 'w', encoding='utf-8') as fh:
+                json.dump(payload, fh, ensure_ascii=False, default=str)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp_path, path)
+            return True, None
+        except Exception as exc:
+            logger.warning("Materialized BI views not persisted (%s): %s", path, exc)
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            return False, str(exc)
+
+    def materialized_views(self) -> Dict[str, Dict[str, Any]]:
+        """Metadata (no values) of the persisted materialized views."""
+        self._load_materialized()
+        with self._materialized_lock:
+            return {
+                name: {k: record.get(k) for k in ('computed_at', 'fingerprint', 'data_version', 'source')}
+                for name, record in self._materialized_records.items()
+            }
+
+    def describe(self) -> Dict[str, Any]:
+        """Diagnostics for the agent health probe (no dashboard values)."""
+        with self._cache_lock:
+            keys = list(self.cache.keys())
+            changed = dict(self._changed_stores)
+        return {
+            'cache_ttl_seconds': self.cache_ttl_seconds,
+            'data_version': self.data_version,
+            'last_data_change_at': self.last_data_change_at,
+            'changed_stores': changed,
+            'cached_views': {key: self.cache_entry(key) for key in keys},
+            'materialized_path': self._materialized_path,
+            'materialized_views': self.materialized_views(),
+        }
 
     # ------------------------------------------------------------------
     # Executive dashboard
     # ------------------------------------------------------------------
 
+    @instrument_agent('bi_analytics')
     def get_executive_dashboard(
         self,
         customers: Dict[str, Any],
@@ -1049,6 +1408,7 @@ class BIAnalyticsService:
     # AI insights and forecasting
     # ------------------------------------------------------------------
 
+    @instrument_agent('bi_analytics')
     def generate_ai_insights(
         self,
         dashboard_data: Dict[str, Any],
@@ -1162,7 +1522,7 @@ class BIAnalyticsService:
         lapse_rate_year1: Optional[float] = None,
         now: Optional[datetime] = None,
     ) -> Dict[str, Any]:
-        """Predict revenue forecast for the next N months.
+        """Predict revenue forecast for the next N months (cached, B10).
 
         ``forecast`` keeps its historical meaning — deterministic compounding
         of current MRR at ``growth_rate`` with no churn — so existing consumers
@@ -1176,7 +1536,39 @@ class BIAnalyticsService:
         * ``bands`` gives p10/p50/p90 per month, net of the lapse-table
           year-1 churn, using a closed-form log-normal random walk in monthly
           growth (no RNG, so the result is reproducible for the same inputs).
+
+        The result carries ``computed_at``. The route's default request
+        (``historical_growth_rate=None``, 12 months) is the ``revenue_forecast``
+        materialized view a scheduler can precompute; other parameter sets are
+        cached under their own key. The fingerprint includes the live lapse
+        rate, so an actuarial table promotion invalidates the forecast too.
+        Passing ``now`` bypasses the cache (test/what-if use).
         """
+        if now is not None:
+            return self._compute_revenue_forecast(
+                policies, historical_growth_rate, months_ahead, lapse_rate_year1, now)
+        if lapse_rate_year1 is None:
+            lapse_basis = _lapse_rate_year1_from_store()
+        else:
+            lapse_basis = (lapse_rate_year1, 'caller_parameter')
+        params = {'growth': historical_growth_rate, 'months': int(months_ahead), 'lapse': list(lapse_basis)}
+        is_default = historical_growth_rate is None and int(months_ahead) == 12 and lapse_rate_year1 is None
+        key = 'revenue_forecast' if is_default else 'revenue_forecast:custom'
+        return self._cached(
+            key,
+            self._fingerprint(policies, params),
+            lambda: self._compute_revenue_forecast(
+                policies, historical_growth_rate, months_ahead, lapse_rate_year1, None),
+        )
+
+    def _compute_revenue_forecast(
+        self,
+        policies: Dict[str, Any],
+        historical_growth_rate: Optional[float],
+        months_ahead: int,
+        lapse_rate_year1: Optional[float],
+        now: Optional[datetime],
+    ) -> Dict[str, Any]:
         current_mrr = sum(
             p.get('monthly_premium', 0)
             for p in policies.values()
@@ -1360,6 +1752,86 @@ def init_bi_analytics_service(*_args, **_kwargs) -> BIAnalyticsService:
     return _bi_analytics_service
 
 
+# ---------------------------------------------------------------------------
+# Agent runtime registration (discovery + health only; no behaviour change).
+# ---------------------------------------------------------------------------
+def _bi_analytics_health() -> Dict[str, Any]:
+    """Read-only probe: never instantiates the service."""
+    instance = _bi_analytics_service
+    if instance is None:
+        return {'status': 'ok', 'initialized': False}
+    payload: Dict[str, Any] = {'status': 'ok', 'initialized': True}
+    try:
+        payload.update(instance.describe())
+    except Exception as exc:  # the probe must never fail because of diagnostics
+        payload['cache_ttl_seconds'] = getattr(instance, 'cache_ttl_seconds', None)
+        payload['describe_error'] = str(exc)
+    return payload
+
+
+# Store names (DatabaseDict repository names) whose rows feed a BI view.
+BI_INPUT_REPOSITORIES = frozenset({'customers', 'policies', 'claims', 'billing', 'underwriting'})
+
+
+def _on_store_write(repository_name: str, operation: str) -> None:
+    """DatabaseDict write listener: forwards BI-relevant writes to the singleton.
+
+    Registered once at import; a service created later still receives the
+    notifications because the forward resolves the singleton at call time.
+    """
+    if repository_name not in BI_INPUT_REPOSITORIES:
+        return
+    instance = _bi_analytics_service
+    if instance is not None:
+        instance.notify_data_change(repository_name)
+
+
+def notify_bi_data_change(store: str = '*') -> Optional[int]:
+    """Module-level write hook for in-memory stores (``save_ledger_data`` etc.).
+
+    Cheap no-op until the singleton exists; never raises into a write path.
+    """
+    instance = _bi_analytics_service
+    if instance is None:
+        return None
+    try:
+        return instance.notify_data_change(store)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("BI data-change notification failed: %s", exc)
+        return None
+
+
+try:
+    from database import data_access as _data_access
+    _data_access.add_write_listener(_on_store_write)
+except Exception as _listener_exc:  # pragma: no cover - DB layer absent
+    logger.debug("BI write listener not attached: %s", _listener_exc)
+
+
+try:
+    from services.agent_runtime import AgentDescriptor as _AgentDescriptor, register as _register_agent
+    _register_agent(_AgentDescriptor(
+        id='bi_analytics',
+        name='BI Analytics & Insights',
+        version='1.0.0',
+        module=__name__,
+        description=(
+            'Executive, delivery, customer, and supplier dashboards plus '
+            'rule-based AI insights and revenue forecasting.'
+        ),
+        entry_url='/admin.html',
+        api={'method': 'GET', 'path': '/api/bi/insights'},
+        roles=('admin', 'accountant', 'underwriter'),
+        deterministic=True,
+        sample_prompts=(
+            'What are the current BI insights?',
+            'Forecast revenue for the next 6 months',
+        ),
+    ), health_fn=_bi_analytics_health)
+except Exception as _reg_exc:  # pragma: no cover
+    logger.warning("BI analytics agent registration skipped: %s", _reg_exc)
+
+
 __all__ = [
     'AlertSeverity',
     'BIAnalyticsService',
@@ -1368,6 +1840,9 @@ __all__ = [
     'MetricCategory',
     'StatisticalSummary',
     'TrendDirection',
+    'VIEW_SCHEMA_VERSION',
+    'BI_INPUT_REPOSITORIES',
     'get_bi_analytics_service',
     'init_bi_analytics_service',
+    'notify_bi_data_change',
 ]

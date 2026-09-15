@@ -32,6 +32,7 @@ Environment:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import time
@@ -45,11 +46,17 @@ class TranscriptionUnavailableError(RuntimeError):
 
 
 class AudioTranscriptionProvider:
-    """Provider interface for speech-to-text."""
+    """Provider interface for speech-to-text.
+
+    ``context`` (optional) carries attribution for cost accounting and the
+    external-call gateway's per-customer daily budget: ``customer_id``,
+    ``document_id``, ``job_id``. Providers must accept and may ignore it.
+    """
 
     def transcribe(self, raw: bytes, *, file_name: str = "audio.mp3",
                    mime_type: str = "audio/mpeg",
-                   language_hint: Optional[str] = None) -> Dict[str, Any]:
+                   language_hint: Optional[str] = None,
+                   context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         raise NotImplementedError
 
     def describe(self) -> Dict[str, Any]:
@@ -58,7 +65,7 @@ class AudioTranscriptionProvider:
 
 class DisabledTranscriptionProvider(AudioTranscriptionProvider):
     def transcribe(self, raw, *, file_name="audio.mp3", mime_type="audio/mpeg",
-                   language_hint=None):
+                   language_hint=None, context=None):
         raise TranscriptionUnavailableError(
             "No transcription provider configured "
             "(set PHINS_TRANSCRIPTION_PROVIDER=openai_compatible)")
@@ -69,6 +76,9 @@ class DisabledTranscriptionProvider(AudioTranscriptionProvider):
 
 class OpenAICompatibleTranscriptionProvider(AudioTranscriptionProvider):
     """Whisper-style multipart transcription over HTTP."""
+
+    #: Agent attribution for gateway budgets and usage rows.
+    agent_id: str = "transcription"
 
     def __init__(self, endpoint: str, api_key: str, model: str = "whisper-1",
                  timeout: float = 120.0):
@@ -84,8 +94,16 @@ class OpenAICompatibleTranscriptionProvider(AudioTranscriptionProvider):
 
     def transcribe(self, raw: bytes, *, file_name: str = "audio.mp3",
                    mime_type: str = "audio/mpeg",
-                   language_hint: Optional[str] = None) -> Dict[str, Any]:
+                   language_hint: Optional[str] = None,
+                   context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         import requests
+
+        # Attribution for the budget scope and the usage row. Only known keys
+        # are kept so a caller cannot smuggle arbitrary fields into metering.
+        call_context = {
+            key: str(value) for key, value in (context or {}).items()
+            if key in ("customer_id", "document_id", "job_id") and value
+        }
 
         if not raw:
             raise ValueError("Empty audio payload")
@@ -102,20 +120,49 @@ class OpenAICompatibleTranscriptionProvider(AudioTranscriptionProvider):
             data["language"] = language_hint
 
         from security.network import assert_safe_provider_url
+        from services.external_call_gateway import get_gateway
 
         assert_safe_provider_url(self.endpoint)
-        start = time.time()
-        response = requests.post(
-            self.endpoint,
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            files={"file": (file_name, raw, mime_type)},
-            data=data,
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        duration_ms = int((time.time() - start) * 1000)
 
+        def request_fn() -> Dict[str, Any]:
+            # Everything that must happen exactly once per *real* provider
+            # call lives here: the HTTP round trip, parsing, and metering.
+            # A cache hit returns the parsed result without re-entering, so
+            # a cached transcription is never billed a second time.
+            start = time.time()
+            response = requests.post(
+                self.endpoint,
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                files={"file": (file_name, raw, mime_type)},
+                data=data,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            duration_ms = int((time.time() - start) * 1000)
+            result = self._parse_payload(payload, duration_ms)
+            self._meter(result, call_context)
+            return result
+
+        # Gateway: breaker + jittered retry + budget. Audio payloads are
+        # content-hashed for the cache key so an identical upload is not
+        # transcribed (and billed) twice within the TTL. Metering stays in
+        # ``_meter`` (it knows the media duration); the gateway only budgets.
+        gateway = get_gateway()
+        return gateway.call(
+            "transcription",
+            request_fn,
+            endpoint=self.endpoint,
+            operation="transcription",
+            agent_id=self.agent_id,
+            context=call_context,  # budget scope = customer_id when known
+            cache_key=gateway.make_cache_key(
+                "transcription", self.endpoint, self.model, language_hint,
+                hashlib.sha256(raw).hexdigest()),
+            meter=False,
+        )
+
+    def _parse_payload(self, payload: Dict[str, Any], duration_ms: int) -> Dict[str, Any]:
         segments: List[Dict[str, Any]] = []
         for seg in payload.get("segments") or []:
             try:
@@ -140,7 +187,7 @@ class OpenAICompatibleTranscriptionProvider(AudioTranscriptionProvider):
         except (TypeError, ValueError):
             duration_seconds = None
 
-        result = {
+        return {
             "text": text,
             "language": payload.get("language"),
             "segments": segments,
@@ -149,19 +196,22 @@ class OpenAICompatibleTranscriptionProvider(AudioTranscriptionProvider):
             "duration_seconds": duration_seconds,
             "request_duration_ms": duration_ms,
         }
-        self._meter(result)
-        return result
 
-    @staticmethod
-    def _meter(result: Dict[str, Any]) -> None:
+    def _meter(self, result: Dict[str, Any],
+               context: Optional[Dict[str, Any]] = None) -> None:
         try:
             from services.ai_usage_service import get_ai_usage_service
+            context = context or {}
             get_ai_usage_service().record_usage(
                 provider=result.get("provider", "openai_compatible"),
                 operation="transcription",
                 model=result.get("model"),
                 media_seconds=result.get("duration_seconds"),
                 duration_ms=result.get("request_duration_ms"),
+                agent_id=self.agent_id,
+                customer_id=context.get("customer_id"),
+                document_id=context.get("document_id"),
+                job_id=context.get("job_id"),
             )
         except Exception as exc:
             logger.debug("Transcription usage metering skipped: %s", exc)

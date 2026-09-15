@@ -3,6 +3,7 @@ from pathlib import Path
 
 CLAIMS_DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "claims-adjuster-dashboard.html"
 SERVER_PATH = Path(__file__).resolve().parents[1] / "web_portal" / "server.py"
+CLAIMS_JOB_PATH = Path(__file__).resolve().parents[1] / "services" / "jobs" / "claims_bot_job.py"
 
 
 def test_claims_dashboard_escapes_dynamic_content_in_core_views():
@@ -49,8 +50,41 @@ def test_claims_server_enforces_claims_auth_and_state_transitions():
     assert "persist_claim_update_to_database(claim_id" in content
     assert "persist_claim_update_to_database(claim_id, claim)" not in content
     assert "sanitize_claim_probability_report(report)" in content
-    assert "cleaned.pop('evidence', None)" in content
+    # The evidence redaction lives in the shared adapter (A4) so the inline
+    # route and the standalone worker redact identically; server.py delegates.
+    assert "from services.jobs.claims_bot_job import sanitize_claim_probability_report" in content
+    shared = CLAIMS_JOB_PATH.read_text(encoding="utf-8")
+    assert "cleaned.pop('evidence', None)" in shared
     assert "Claim has already been paid" in content
+
+
+def test_claims_probability_report_sanitizer_strips_evidence_on_server_path():
+    import sys
+
+    root = str(Path(__file__).resolve().parents[1])
+    for entry in (root, str(Path(root) / "web_portal")):
+        if entry not in sys.path:
+            sys.path.insert(0, entry)
+    from web_portal import server
+
+    report = {
+        "claim_id": "CLM-1",
+        "risk_score": 0.4,
+        "fraud_indicators": {
+            "count": 2,
+            "high_severity_count": 0,
+            "indicators": [
+                {"type": "x", "evidence": ["raw doc text"], "severity": 0.9},
+                {"type": "y", "evidence": ["raw doc text"], "severity": 0.2},
+            ],
+        },
+    }
+    cleaned = server.sanitize_claim_probability_report(report)
+    assert "evidence" not in str(cleaned)
+    assert cleaned["fraud_indicators"]["count"] == 2
+    assert cleaned["fraud_indicators"]["high_severity_count"] == 1
+    # Input is left untouched so the compliance trail keeps the full record.
+    assert report["fraud_indicators"]["indicators"][0]["evidence"] == ["raw doc text"]
 
 def test_ui_clarity_injection_skips_script_blocks():
     content = SERVER_PATH.read_text(encoding="utf-8")

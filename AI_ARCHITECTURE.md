@@ -28,6 +28,31 @@ The central orchestrator for all AI-powered automation workflows.
 │  • Fraud Detection Engine                                   │
 │  • Billing Automation                                       │
 └─────────────────────────────────────────────────────────────┘
+```
+
+**Module layout (design §B2).** The root module `ai_automation_controller.py`
+is the orchestrator: it owns metrics, the append-only decision log, the
+per-segment `ThresholdConfig`, the model registry and the function-based
+compatibility API (`auto_quote`, `auto_underwrite`, `auto_process_claim`,
+`detect_fraud`). The rules themselves are pure functions under
+`services/automation/`:
+
+| Module | Rules |
+|---|---|
+| `services/automation/quoting.py` | premium multipliers, `compute_quote`, `quote_confidence` |
+| `services/automation/underwriting_gate.py` | `assess_risk`, decision ladder `gate`, `confidence_band`, `risk_level` |
+| `services/automation/fraud.py` | `application_fraud_risk`, `claim_fraud_risk`, `activity_fraud_report` |
+| `services/automation/claims_gate.py` | smart claims ladder |
+| `services/automation/billing_schedule.py` | `next_quarter_start`, `invoice_due_date` (one path per frequency; fixes assessment D3) |
+| `services/automation/types.py` | `AutomationDecision`, `FraudRisk`, `AutomationMetrics` |
+
+Every underwriting result carries `segment` (from
+`ai_threshold_config.segment_key`, `age_band|occupation`), `confidence_band`
+(`auto_approve` / `review_upper` / `review_lower` / `auto_reject` /
+`fraud_hold`) and `threshold_margin` (distance to the nearest cut-off), and
+the same fields are written to the decision log so calibration can see how
+close each decision was to the edge.
+
             │                  │                 │
             ▼                  ▼                 ▼
 ┌──────────────────┐ ┌──────────────┐ ┌─────────────────┐
@@ -374,16 +399,25 @@ metrics = controller.get_metrics()
 
 ### Threshold Configuration
 
-Edit `ai_automation_controller.py` to adjust decision thresholds:
+The global defaults live in `ai_automation_controller.py`
+(`auto_approve_threshold = 0.85`, `auto_reject_threshold = 0.15`); every
+segment inherits them until an operator promotes calibrated values. Do not
+edit the constants to tune a cohort — use the audited calibration loop
+(design §A6):
 
-```python
-class AIAutomationController:
-    def __init__(self):
-        # Adjust these for more/less aggressive automation
-        self.auto_approve_threshold = 0.85  # Higher = more selective
-        self.auto_reject_threshold = 0.15   # Lower = more selective
-        self.fraud_detection_enabled = True
-```
+1. `GET /api/admin/ai-agents/eval/ai_automation_controller` (admin/actuary)
+   replays the logged `underwrite` decisions against the human overrides that
+   followed and returns per-segment precision/recall plus a recommend-only
+   proposal (`?target_precision=0.95&min_samples=20`). A proposal never widens
+   automation into a score band with no reviewed decisions.
+2. `POST /api/admin/ai-agents/thresholds/promote` (admin) with
+   `{"segment": "35_44|teacher", "approve": 0.9, "reject": 0.1, "reason": "..."}`
+   applies `ThresholdConfig.promote` and records before/after in the audit log
+   and the decision log (`decision_type=threshold_promotion`); if the audit
+   record cannot be written the promotion is rolled back.
+3. `python3 scripts/run_agent_eval.py replay ai_automation_controller
+   --decisions export.json` runs the same replay offline; `golden` re-runs
+   `tests/golden/ai_automation_controller/*.json` (CI job *Agent golden sets*).
 
 ### Environment-Specific Settings
 

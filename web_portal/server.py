@@ -1555,6 +1555,40 @@ except ImportError:
         api_ac_post = None
         print("Warning: Assessment Center API not available.")
 
+# Customer identity master (personal ID + nationality): login gate flags,
+# one-time capture, admin correction, nationality autocomplete.
+try:
+    from web_portal.api_customer_identity import (
+        dispatch_get as api_identity_get,
+        dispatch_post as api_identity_post,
+        login_identity_flags as _login_identity_flags,
+    )
+    customer_identity_enabled = True
+    print("✓ Customer Identity API loaded")
+except ImportError:
+    try:
+        from api_customer_identity import (  # type: ignore
+            dispatch_get as api_identity_get,
+            dispatch_post as api_identity_post,
+            login_identity_flags as _login_identity_flags,
+        )
+        customer_identity_enabled = True
+        print("✓ Customer Identity API loaded")
+    except ImportError:
+        customer_identity_enabled = False
+        api_identity_get = None
+        api_identity_post = None
+
+        def _login_identity_flags(customer_id):  # type: ignore[misc]
+            return {}
+        print("Warning: Customer Identity API not available.")
+
+IDENTITY_API_PATHS = (
+    '/api/identity/countries', '/api/identity/rules',
+    '/api/customer/identity',
+    '/api/admin/customers/identity', '/api/admin/customers/identity/report',
+)
+
 # Import API extensions for the chat-style New Policy Application ("Phin")
 try:
     from web_portal.api_chat_application import (
@@ -2723,6 +2757,60 @@ def marketing_state_dict() -> Dict[str, Any]:
     return state
 
 
+def marketing_cohort_targeting_requested(value: Any) -> bool:
+    """Parse the optional ``cohorts`` / ``cohort_targeting`` flag (B7)."""
+    if isinstance(value, bool):
+        return value
+    return str(value or '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def marketing_customer_analytics() -> Optional[Dict[str, Any]]:
+    """BI customer analytics used as optional cohort targeting input (B7).
+
+    Read through the (cached, fingerprint-guarded) BI service so the cohorts a
+    plan is derived from are exactly what ``/api/bi/customers`` reports for
+    the same data. Never raises: no BI → broad targeting.
+    """
+    try:
+        from services.bi_analytics_service import get_bi_analytics_service
+        sources = bi_data_sources()
+        return get_bi_analytics_service().get_customer_analytics(
+            sources['customers'],
+            sources['health_wallets'],
+            sources['investment_accounts'],
+            sources['transaction_ledger'],
+            sources['policies'],
+        )
+    except Exception as exc:
+        print(f"[marketing] cohort targeting unavailable: {exc}")
+        return None
+
+
+def generate_marketing_campaign(service, *, actor: str, vertical: Any, objective: Any, persona: Any,
+                                region: Any, budget_tier: Any, social_networks: Any,
+                                cohort_targeting: bool) -> Dict[str, Any]:
+    """One call site for both the GET generate route and publish-with-regenerate."""
+    if not isinstance(social_networks, list):
+        social_networks = []
+    return service.generate_campaign(
+        customers=CUSTOMERS,
+        policies=POLICIES,
+        billing=BILLING,
+        claims=CLAIMS,
+        health_wallets=HEALTH_WALLETS,
+        investment_accounts=INVESTMENT_ACCOUNTS,
+        transaction_ledger=TRANSACTION_LEDGER,
+        vertical=vertical,
+        objective=objective,
+        persona=persona,
+        region=region,
+        budget_tier=budget_tier,
+        social_networks=social_networks,
+        generated_by=actor,
+        customer_analytics=marketing_customer_analytics() if cohort_targeting else None,
+    )
+
+
 def _copy_json_value(value: Any) -> Any:
     """Return a JSON-safe deep copy to avoid shared mutable references."""
     try:
@@ -3028,6 +3116,110 @@ def verify_media_provider_callback(headers: Any, raw_body: bytes, payload: Dict[
     return False
 
 
+# Replay protection for provider callbacks (B8). A verified callback can still
+# be captured and re-sent (or re-delivered by the provider); the checks below
+# make a second delivery inert. Two independent signals: an optional signed
+# timestamp must fall inside the window, and each delivery's nonce (header, or
+# the body hash when the provider sends none) may be accepted once per job.
+_MEDIA_WEBHOOK_SEEN: Dict[str, float] = {}
+_MEDIA_WEBHOOK_SEEN_LOCK = threading.Lock()
+_MEDIA_WEBHOOK_SEEN_MAX = 10000
+_MEDIA_WEBHOOK_DELIVERIES_PER_JOB = 32
+
+
+def media_webhook_replay_window_seconds() -> float:
+    """Accept callback timestamps within +/- this many seconds (``MEDIA_WEBHOOK_REPLAY_WINDOW_SECONDS``, default 300)."""
+    return max(safe_float(os.environ.get('MEDIA_WEBHOOK_REPLAY_WINDOW_SECONDS'), 300.0), 1.0)
+
+
+def _parse_webhook_timestamp(raw: Any) -> Optional[float]:
+    text = str(raw or '').strip()
+    if not text:
+        return None
+    try:
+        value = float(text)
+        # Millisecond epochs are unambiguous above year 5138 in seconds.
+        return value / 1000.0 if value > 1e11 else value
+    except ValueError:
+        pass
+    try:
+        parsed = datetime.fromisoformat(text.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
+
+def media_webhook_delivery_fingerprint(headers: Any, raw_body: bytes) -> str:
+    """Nonce the provider sent, else the SHA-256 of the exact bytes delivered."""
+    nonce = str(
+        headers.get('X-Media-Nonce')
+        or headers.get('X-Webhook-Nonce')
+        or headers.get('X-Webhook-Id')
+        or headers.get('X-Delivery-Id')
+        or ''
+    ).strip()
+    if nonce:
+        return 'nonce:' + hashlib.sha256(nonce.encode('utf-8')).hexdigest()
+    return 'body:' + hashlib.sha256(raw_body or b'').hexdigest()
+
+
+def check_media_webhook_replay(
+    job: Dict[str, Any],
+    headers: Any,
+    raw_body: bytes,
+    payload: Dict[str, Any],
+    *,
+    now: Optional[float] = None,
+) -> Optional[Tuple[int, str]]:
+    """Return ``(status, error)`` when the delivery must be refused, else ``None``.
+
+    Accepting a delivery records its fingerprint both in a bounded process
+    table and on the job record itself (persisted with the ledger snapshot),
+    so a replay is still recognised after a restart.
+    """
+    current = time.time() if now is None else float(now)
+    window = media_webhook_replay_window_seconds()
+
+    stamp = _parse_webhook_timestamp(
+        headers.get('X-Media-Timestamp')
+        or headers.get('X-Webhook-Timestamp')
+        or (payload.get('timestamp') if isinstance(payload, dict) else None)
+    )
+    if stamp is not None and abs(current - stamp) > window:
+        return 403, 'Webhook timestamp outside the accepted window'
+
+    fingerprint = media_webhook_delivery_fingerprint(headers, raw_body)
+    job_id = str(job.get('id') or '')
+    seen_key = f"{job_id}:{fingerprint}"
+    deliveries = job.get('webhook_deliveries')
+    if not isinstance(deliveries, list):
+        deliveries = []
+        job['webhook_deliveries'] = deliveries
+    if any(isinstance(entry, dict) and entry.get('fingerprint') == fingerprint for entry in deliveries):
+        return 409, 'Replayed webhook delivery'
+
+    with _MEDIA_WEBHOOK_SEEN_LOCK:
+        for key in [k for k, expires in _MEDIA_WEBHOOK_SEEN.items() if expires <= current]:
+            _MEDIA_WEBHOOK_SEEN.pop(key, None)
+        if seen_key in _MEDIA_WEBHOOK_SEEN:
+            return 409, 'Replayed webhook delivery'
+        if len(_MEDIA_WEBHOOK_SEEN) >= _MEDIA_WEBHOOK_SEEN_MAX:
+            oldest = min(_MEDIA_WEBHOOK_SEEN, key=_MEDIA_WEBHOOK_SEEN.get)
+            _MEDIA_WEBHOOK_SEEN.pop(oldest, None)
+        # Keep the fingerprint for two windows so a late replay just past the
+        # timestamp cutoff is caught by the nonce check as well.
+        _MEDIA_WEBHOOK_SEEN[seen_key] = current + 2 * window
+
+    deliveries.append({
+        'fingerprint': fingerprint,
+        'received_at': datetime.now().isoformat(),
+    })
+    del deliveries[:-_MEDIA_WEBHOOK_DELIVERIES_PER_JOB]
+    return None
+
+
 def update_video_generation_job_state(job: Dict[str, Any], payload: Dict[str, Any]) -> None:
     """Normalize provider job state onto a video generation job record."""
     if not isinstance(payload, dict):
@@ -3046,6 +3238,131 @@ def update_video_generation_job_state(job: Dict[str, Any], payload: Dict[str, An
         job['message'] = str(payload.get('message'))
     if payload.get('error'):
         job['error'] = str(payload.get('error'))
+
+
+# ---------------------------------------------------------------------------
+# Video generation: completion mode, request dedupe, per-job serialisation (B8)
+# ---------------------------------------------------------------------------
+
+MEDIA_VIDEO_TERMINAL_STATUSES = frozenset({'completed', 'failed', 'cancelled'})
+MEDIA_VIDEO_POLL_JOB_TYPE = 'video_generation_poll'
+MEDIA_VIDEO_POLL_INTERVAL_SECONDS = 5
+
+
+def media_video_default_completion_mode() -> str:
+    """Server default for how a video job learns it finished.
+
+    ``VIDEO_AGENTS_COMPLETION_MODE`` = ``webhook`` (default) or ``poll``.
+    Webhook is preferred because the provider tells us the moment the video is
+    ready and we stop hammering its status API; polling stays armed as the
+    fallback so a lost callback can never strand a job.
+    """
+    mode = str(os.environ.get('VIDEO_AGENTS_COMPLETION_MODE') or 'webhook').strip().lower()
+    return mode if mode in {'poll', 'webhook'} else 'webhook'
+
+
+def resolve_media_video_completion_mode(requested: Any, callback_base_url: str) -> str:
+    """Effective completion mode for a submission.
+
+    An explicit ``poll``/``webhook`` request wins; anything else takes the
+    server default. Webhook mode needs a public callback base URL to hand the
+    provider — without one the only mode that can work is polling, so that is
+    what is returned (and echoed to the client) rather than a webhook mode
+    that silently degrades.
+    """
+    requested_mode = str(requested or '').strip().lower()
+    mode = requested_mode if requested_mode in {'poll', 'webhook'} else media_video_default_completion_mode()
+    if mode == 'webhook' and not str(callback_base_url or '').strip():
+        return 'poll'
+    return mode
+
+
+def media_video_poll_timeout_seconds() -> float:
+    """Give up polling a provider job after this long (``VIDEO_AGENTS_POLL_TIMEOUT``, default 30 min)."""
+    return max(safe_float(os.environ.get('VIDEO_AGENTS_POLL_TIMEOUT'), 1800.0), 30.0)
+
+
+def build_media_video_prompt(campaign_id: str, blueprint: Dict[str, Any], prompt_override: str = '') -> str:
+    """Deterministic provider prompt for a campaign blueprint (shared by create + dedupe)."""
+    prompt_override = str(prompt_override or '').strip()
+    prompt_parts = [
+        prompt_override,
+        str(blueprint.get('title') or '').strip(),
+        str(blueprint.get('format') or '').strip(),
+        str(blueprint.get('voiceover_style') or '').strip(),
+    ]
+    storyboard = blueprint.get('storyboard') or []
+    if isinstance(storyboard, list) and storyboard:
+        prompt_parts.append('Storyboard: ' + ' '.join(str(item).strip() for item in storyboard if str(item).strip()))
+    prompt = '. '.join(part for part in prompt_parts if part)
+    return prompt or f"Marketing video for campaign {campaign_id}"
+
+
+def media_video_request_fingerprint(
+    *,
+    campaign_id: str,
+    blueprint_index: int,
+    provider: str,
+    provider_model: str,
+    prompt: str,
+    image_data_url: str = '',
+) -> str:
+    """Content hash of everything the provider would be asked to render.
+
+    Two submissions with the same fingerprint would produce (and bill) the
+    same video, so the newer one reuses the existing job unless forced.
+    """
+    material = json.dumps({
+        'campaign_id': str(campaign_id or ''),
+        'blueprint_index': safe_int(blueprint_index, -1),
+        'provider': str(provider or '').strip().lower(),
+        'provider_model': str(provider_model or '').strip(),
+        'prompt': str(prompt or '').strip(),
+        'image_sha256': hashlib.sha256(str(image_data_url or '').encode('utf-8')).hexdigest() if image_data_url else '',
+    }, sort_keys=True)
+    return hashlib.sha256(material.encode('utf-8')).hexdigest()
+
+
+def find_duplicate_media_video_job(fingerprint: str) -> Optional[Dict[str, Any]]:
+    """Newest queued/processing/completed video job with this request fingerprint.
+
+    Failed and cancelled jobs never satisfy a dedupe lookup: a fresh request
+    after a failure is a legitimate retry, not a duplicate.
+    """
+    if not fingerprint:
+        return None
+    match: Optional[Dict[str, Any]] = None
+    for job in MEDIA_PROCESSING_JOBS.values():
+        if not isinstance(job, dict) or str(job.get('job_kind') or '') != 'video_generation':
+            continue
+        if str(job.get('request_fingerprint') or '') != fingerprint:
+            continue
+        if str(job.get('status') or '').lower() not in {'queued', 'processing', 'completed'}:
+            continue
+        if match is None or str(job.get('requested_at') or '') > str(match.get('requested_at') or ''):
+            match = job
+    return match
+
+
+_MEDIA_JOB_LOCKS: Dict[str, threading.RLock] = {}
+_MEDIA_JOB_LOCKS_GUARD = threading.Lock()
+
+
+def media_job_lock(job_id: str) -> threading.RLock:
+    """Per-job re-entrant lock: poller, webhook and cancel serialise on it so a
+    job performs exactly one terminal transition however the completions race."""
+    key = str(job_id or '')
+    with _MEDIA_JOB_LOCKS_GUARD:
+        lock = _MEDIA_JOB_LOCKS.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _MEDIA_JOB_LOCKS[key] = lock
+            # Locks are tiny but the job table is unbounded; drop entries for
+            # jobs that no longer exist once the map grows.
+            if len(_MEDIA_JOB_LOCKS) > 2048:
+                for stale in [k for k in _MEDIA_JOB_LOCKS if k not in MEDIA_PROCESSING_JOBS and k != key]:
+                    _MEDIA_JOB_LOCKS.pop(stale, None)
+        return lock
 
 
 def create_media_video_job(
@@ -3082,18 +3399,7 @@ def create_media_video_job(
     callback_path = f"/api/provider/media-processing/callback?job_id={job_id}&token={callback_token}"
     callback_url = f"{callback_base_url.rstrip('/')}{callback_path}" if callback_base_url else callback_path
     prompt_override = str(prompt_override or '').strip()
-    prompt_parts = [
-        prompt_override,
-        str(blueprint.get('title') or '').strip(),
-        str(blueprint.get('format') or '').strip(),
-        str(blueprint.get('voiceover_style') or '').strip(),
-    ]
-    storyboard = blueprint.get('storyboard') or []
-    if isinstance(storyboard, list) and storyboard:
-        prompt_parts.append('Storyboard: ' + ' '.join(str(item).strip() for item in storyboard if str(item).strip()))
-    prompt = '. '.join(part for part in prompt_parts if part)
-    if not prompt:
-        prompt = f"Marketing video for campaign {campaign_id}"
+    prompt = build_media_video_prompt(campaign_id, blueprint, prompt_override)
 
     aspect_ratio = '16:9'
     format_hint = str(blueprint.get('format') or '').lower()
@@ -3134,6 +3440,15 @@ def create_media_video_job(
         'callback_token': callback_token,
         'callback_path': callback_path,
         'callback_url': callback_url,
+        'request_fingerprint': media_video_request_fingerprint(
+            campaign_id=campaign_id,
+            blueprint_index=blueprint_index,
+            provider=provider,
+            provider_model=provider_model,
+            prompt=prompt,
+            image_data_url=image_data_url,
+        ),
+        'webhook_deliveries': [],
     }
     MEDIA_PROCESSING_JOBS[job_id] = job
 
@@ -3343,11 +3658,23 @@ def build_video_job_reference_image_data_url(asset_id: str) -> str:
 
 
 def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Download a completed provider video and store it as a media asset."""
-    from services.media_generation_service import MediaGenerationError
+    """Download a completed provider video and store it as a media asset.
 
+    Serialised per job and a no-op once the job is terminal, so a webhook and
+    a poller that both learn of completion produce one download, one asset
+    and one terminal transition (the later caller gets the existing asset).
+    """
     if not isinstance(job, dict):
         return None
+    with media_job_lock(str(job.get('id') or '')):
+        if str(job.get('status') or '').lower() in MEDIA_VIDEO_TERMINAL_STATUSES:
+            asset = MEDIA_ASSETS.get(str(job.get('generated_asset_id') or ''))
+            return asset if isinstance(asset, dict) else None
+        return _finalize_media_video_job_locked(job, poll_result)
+
+
+def _finalize_media_video_job_locked(job: Dict[str, Any], poll_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    from services.media_generation_service import MediaGenerationError
 
     update_video_generation_job_state(job, poll_result)
     status_value = str(poll_result.get('status') or '').strip().lower()
@@ -3475,47 +3802,176 @@ def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -
     return asset
 
 
-def poll_and_finalize_media_video_job(job_id: str) -> None:
-    """Poll a provider-backed video generation job and finalize it if ready."""
+def _media_video_job_age_seconds(job: Dict[str, Any]) -> float:
+    try:
+        requested = datetime.fromisoformat(str(job.get('requested_at') or ''))
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, (datetime.now() - requested).total_seconds())
+
+
+def poll_media_video_job_once(job_id: str) -> Dict[str, Any]:
+    """Poll the provider once for ``job_id`` and finalize if it is ready.
+
+    Returns ``{'status': <job status>, 'rearm_in': seconds | None}`` —
+    ``rearm_in`` is set when the job is still in flight and the caller
+    should schedule the next poll. Never schedules anything itself, so the
+    queue handler and the thread scheduler share one implementation. A job
+    still in flight after ``VIDEO_AGENTS_POLL_TIMEOUT`` is failed here rather
+    than polled forever.
+    """
     from services.media_generation_service import MediaGenerationError
 
     job = MEDIA_PROCESSING_JOBS.get(job_id)
-    if not isinstance(job, dict):
-        return
-    if str(job.get('job_kind') or '') != 'video_generation':
-        return
-    if str(job.get('status') or '') in {'completed', 'failed', 'cancelled'}:
-        return
+    if not isinstance(job, dict) or str(job.get('job_kind') or '') != 'video_generation':
+        return {'status': 'missing', 'rearm_in': None}
 
-    service = get_media_generation_service()
+    with media_job_lock(job_id):
+        status = str(job.get('status') or '').strip().lower()
+        if status in MEDIA_VIDEO_TERMINAL_STATUSES:
+            return {'status': status, 'rearm_in': None}
+        if not str(job.get('provider_job_id') or '').strip():
+            # Not submitted yet (still in the serial submission queue); the
+            # submitter arms polling once the provider has accepted it.
+            return {'status': status, 'rearm_in': None}
+
+        service = get_media_generation_service()
+        try:
+            poll_result = service.poll_video_generation(
+                provider=str(job.get('provider') or ''),
+                provider_job_id=str(job.get('provider_job_id') or ''),
+                provider_state=job.get('provider_state') if isinstance(job.get('provider_state'), dict) else {},
+            )
+            update_video_generation_job_state(job, poll_result)
+            _finalize_media_video_job_locked(job, poll_result)
+        except MediaGenerationError as exc:
+            job['status'] = 'failed'
+            job['provider_status'] = 'failed'
+            job['completed_at'] = datetime.now().isoformat()
+            job['error'] = str(exc)
+            job['message'] = str(exc)
+        finally:
+            save_ledger_data()
+
+        status = str(job.get('status') or '').strip().lower()
+        if status not in {'queued', 'processing'}:
+            return {'status': status, 'rearm_in': None}
+        if _media_video_job_age_seconds(job) >= media_video_poll_timeout_seconds():
+            timeout_minutes = int(media_video_poll_timeout_seconds() // 60)
+            job['status'] = 'failed'
+            job['provider_status'] = 'timeout'
+            job['completed_at'] = datetime.now().isoformat()
+            job['error'] = f'Polling timed out after {timeout_minutes} minutes.'
+            job['message'] = job['error']
+            save_ledger_data()
+            return {'status': 'failed', 'rearm_in': None}
+        return {'status': status, 'rearm_in': MEDIA_VIDEO_POLL_INTERVAL_SECONDS}
+
+
+def poll_and_finalize_media_video_job(job_id: str) -> None:
+    """Poll a provider-backed video generation job; re-arm polling if still in flight."""
+    outcome = poll_media_video_job_once(job_id)
+    if outcome.get('rearm_in'):
+        schedule_media_job_poll(job_id, delay_seconds=outcome['rearm_in'])
+
+
+def _media_video_poll_via_queue() -> bool:
+    """Polls ride the durable agent job queue whenever it is running in this process."""
     try:
-        poll_result = service.poll_video_generation(
-            provider=str(job.get('provider') or ''),
-            provider_job_id=str(job.get('provider_job_id') or ''),
-            provider_state=job.get('provider_state') if isinstance(job.get('provider_state'), dict) else {},
-        )
-        update_video_generation_job_state(job, poll_result)
-        finalize_media_video_job(job, poll_result)
-        if str(job.get('status') or '').strip().lower() in {'queued', 'processing'}:
-            start_media_job_polling(job_id, delay_seconds=5)
-    except MediaGenerationError as exc:
-        job['status'] = 'failed'
-        job['completed_at'] = datetime.now().isoformat()
-        job['error'] = str(exc)
-        job['message'] = str(exc)
-    finally:
-        save_ledger_data()
+        from services.agent_job_queue import agent_async_enabled
+        return agent_async_enabled()
+    except Exception:
+        return False
 
 
-def start_media_job_polling(job_id: str, delay_seconds: int = 5) -> None:
-    """Poll a media generation job in the background once after a short delay."""
-    wait_seconds = max(safe_int(delay_seconds, 5), 1)
+def _media_video_poll_job_handler(queue_job: Dict[str, Any]) -> Dict[str, Any]:
+    """Queue handler: one provider poll; reschedules itself while in flight."""
+    from services.agent_job_queue import RescheduleJob
+
+    params = queue_job.get('input_params') or {}
+    if isinstance(params, str):
+        try:
+            params = json.loads(params)
+        except ValueError:
+            params = {}
+    job_id = str(params.get('job_id') or queue_job.get('subject_id') or '').strip()
+    outcome = poll_media_video_job_once(job_id)
+    if outcome.get('rearm_in'):
+        raise RescheduleJob(outcome['rearm_in'])
+    return {'job_id': job_id, 'status': outcome.get('status')}
+
+
+def bind_media_video_poll_handler(queue) -> None:
+    """Register the video poll handler on ``queue`` (idempotent)."""
+    if MEDIA_VIDEO_POLL_JOB_TYPE not in queue.handlers():
+        queue.register_handler(MEDIA_VIDEO_POLL_JOB_TYPE, _media_video_poll_job_handler)
+
+
+def schedule_media_job_poll(job_id: str, delay_seconds: Any = MEDIA_VIDEO_POLL_INTERVAL_SECONDS) -> str:
+    """Arm the next provider poll for ``job_id`` after ``delay_seconds``.
+
+    With the agent job queue running (``PHINS_AGENT_ASYNC``) the poll is one
+    durable ``video_generation_poll`` row keyed per video job, so a restart
+    re-arms it automatically and no two workers poll the same job. Otherwise
+    a daemon timer thread is used and :func:`rearm_media_video_jobs` restores
+    in-flight jobs at boot. Returns ``'queue'`` or ``'thread'``.
+    """
+    wait_seconds = max(safe_int(delay_seconds, MEDIA_VIDEO_POLL_INTERVAL_SECONDS), 1)
+    if _media_video_poll_via_queue():
+        try:
+            queue = get_agent_job_queue()
+            bind_media_video_poll_handler(queue)
+            queue.enqueue(
+                job_type=MEDIA_VIDEO_POLL_JOB_TYPE,
+                subject_type='video_job',
+                subject_id=str(job_id),
+                submitted_by='video_agents',
+                idempotency_key=f'video-poll:{job_id}',
+                input_params={'job_id': str(job_id)},
+                delay_seconds=wait_seconds,
+            )
+            return 'queue'
+        except Exception as exc:
+            print(f"⚠️  Video poll queue unavailable for {job_id}; using a timer thread: {exc}")
 
     def _runner() -> None:
         time.sleep(wait_seconds)
         poll_and_finalize_media_video_job(job_id)
 
-    threading.Thread(target=_runner, daemon=True).start()
+    threading.Thread(target=_runner, daemon=True, name=f'media-video-poll-{str(job_id)[-8:]}').start()
+    return 'thread'
+
+
+def start_media_job_polling(job_id: str, delay_seconds: int = 5) -> None:
+    """Poll a media generation job in the background after a short delay."""
+    schedule_media_job_poll(job_id, delay_seconds=delay_seconds)
+
+
+def rearm_media_video_jobs() -> Dict[str, int]:
+    """Re-arm video jobs a previous process left in flight.
+
+    Persistence keeps ``MEDIA_PROCESSING_JOBS`` across restarts but the
+    threads that were driving them do not survive, so without this every
+    restart stranded queued/processing videos forever. Jobs the provider has
+    not accepted yet go back onto the serial submission queue; accepted jobs
+    are polled again. Terminal jobs are untouched.
+    """
+    stats = {'submission': 0, 'polling': 0}
+    for job in list(MEDIA_PROCESSING_JOBS.values()):
+        if not isinstance(job, dict) or str(job.get('job_kind') or '') != 'video_generation':
+            continue
+        if str(job.get('status') or '').strip().lower() in MEDIA_VIDEO_TERMINAL_STATUSES:
+            continue
+        job_id = str(job.get('id') or '')
+        if not job_id:
+            continue
+        if not str(job.get('provider_job_id') or '').strip():
+            enqueue_media_video_submission(job_id)
+            stats['submission'] += 1
+        else:
+            schedule_media_job_poll(job_id, delay_seconds=1)
+            stats['polling'] += 1
+    return stats
 
 
 def video_generation_jobs_for_campaign_response(campaign_id: str) -> List[Dict[str, Any]]:
@@ -3757,6 +4213,9 @@ def diagnose_media_video_providers() -> Dict[str, Any]:
         'default_provider': str(capabilities.get('default_provider') or DEFAULT_MEDIA_VIDEO_PROVIDER),
         'any_connected': gemini_enabled or kling_enabled,
         'media_callback_base_url_configured': bool(configured_media_callback_base_url()),
+        # What a submission without an explicit poll_mode will do on this server.
+        'default_completion_mode': resolve_media_video_completion_mode('', configured_media_callback_base_url()),
+        'poll_scheduler': 'queue' if _media_video_poll_via_queue() else 'thread',
         'checked_at': datetime.now().isoformat(),
     }
 
@@ -4801,10 +5260,21 @@ def mark_ledger_dirty():
     Thread-safety: uses the same lock that guards ``save_ledger_data`` so the
     dirty flag cannot be cleared between a mutation and the corresponding
     periodic save window.
+
+    Every explicit ledger save follows a store mutation, so this is also the
+    in-memory write hook for the BI dashboards (B10): the BI service bumps
+    its ``data_version`` and, with the agent queue running, re-materializes
+    the dashboards off the request path. In DB mode the ``DatabaseDict``
+    write listener covers the same role for customers/policies/claims/billing.
     """
     global _persistence_dirty
     with _persistence_lock:
         _persistence_dirty = True
+    try:
+        from services.bi_analytics_service import notify_bi_data_change
+        notify_bi_data_change('ledger')
+    except Exception:
+        pass
 
 
 def verify_persistence_writable() -> bool:
@@ -6694,6 +7164,44 @@ def _prepare_auto_pay_bill(
     return bill, 'created'
 
 
+def agent_ecosystem_data_sources() -> Dict[str, Any]:
+    """Portal stores handed to ``web_portal/api_agent_ecosystem.py`` (AgentOS).
+
+    Paid bills drive per-renewal commission accrual (§C); the wallet /
+    investment / transaction stores feed the subtree-scoped broker funnel; the
+    platform event ledger anchors executed payout runs.
+    """
+    return {
+        'customers': CUSTOMERS, 'policies': POLICIES, 'suppliers': SUPPLIERS,
+        'bills': BILLING,
+        'health_wallets': HEALTH_WALLETS,
+        'investment_accounts': INVESTMENT_ACCOUNTS,
+        'transaction_ledger': TRANSACTION_LEDGER,
+        'platform_ledger': platform_event_ledger,
+    }
+
+
+def accrue_agent_commission_for_paid_bills(bill_ids: List[str]) -> None:
+    """Billing hook (§C): a premium bill that just became ``paid`` accrues the
+    referring agent's term commission (renewal terms recur once per policy
+    year). Best-effort and idempotent — the agent dashboards recompute from the
+    bill book anyway, so a failure here can never lose or double an accrual.
+    """
+    if not bill_ids:
+        return
+    try:
+        from services import agent_ecosystem_service as _aes
+        for bill_id in bill_ids:
+            bill = BILLING.get(bill_id)
+            if not isinstance(bill, dict) or not status_eq(bill, 'paid'):
+                continue
+            policy = POLICIES.get(bill.get('policy_id'))
+            if isinstance(policy, dict):
+                _aes.accrue_for_paid_bill(bill, policy)
+    except Exception as agent_hook_err:
+        print(f"[AGENTOS] Commission hook skipped: {agent_hook_err}")
+
+
 def process_customer_premium_payment(
     customer_id: str,
     amount: float,
@@ -6822,6 +7330,7 @@ def process_customer_premium_payment(
 
     amount_applied_to_bills = round(amount - remaining_amount, 2)
     unbilled_premium_amount = round(max(0.0, remaining_amount), 2)
+    accrue_agent_commission_for_paid_bills(bills_paid)
 
     try:
         record_premium_revenue(
@@ -7796,7 +8305,7 @@ def send_admin_customer_outreach(
             create_notification_service,
             should_use_mock_notifications,
         )
-        from services.customer_communication_agent import get_customer_communication_agent
+        from services.customer_agent.communication import get_customer_communication_agent
 
         notification_service = create_notification_service(
             use_mock=should_use_mock_notifications()
@@ -7817,6 +8326,7 @@ def send_admin_customer_outreach(
             accounts=accounts,
             login_url=login_url,
             actor=actor,
+            customer_record=customer,
         )
     except Exception as exc:
         return {
@@ -7832,6 +8342,53 @@ def send_admin_customer_outreach(
         'whatsapp': bool(phone),
     }
     return result
+
+
+def admin_customer_timeline(customer_id: str) -> Dict[str, Any]:
+    """Interaction timeline + consent + escalations for one stored customer (B6)."""
+    customer_id = str(customer_id or '').strip()
+    if not customer_id:
+        return {'success': False, 'error': 'customer_id is required'}
+    if customer_id not in CUSTOMERS:
+        return {'success': False, 'error': 'Customer not found'}
+    from services.customer_agent import customer_timeline
+    from services.customer_agent.consent import consent_enforced, daily_cap
+    view = customer_timeline(customer_id)
+    view['success'] = True
+    view['policy'] = {'consent_enforced': consent_enforced(), 'daily_cap': daily_cap()}
+    return view
+
+
+def admin_set_customer_consent(customer_id: str, *, channel: str, granted: Any,
+                               actor: Optional[str] = None, note: Optional[str] = None) -> Dict[str, Any]:
+    """Record an explicit WhatsApp/SMS consent grant or revocation (B6).
+
+    Explicit entries take precedence over flags on the customer record; every
+    change is an audited, timestamped row in the consent registry.
+    """
+    customer_id = str(customer_id or '').strip()
+    if not customer_id:
+        return {'success': False, 'error': 'customer_id is required'}
+    if customer_id not in CUSTOMERS:
+        return {'success': False, 'error': 'Customer not found'}
+    if isinstance(granted, str):
+        granted_flag = granted.strip().lower() in ('1', 'true', 'yes', 'y', 'on', 'granted')
+    else:
+        granted_flag = bool(granted)
+    from services.customer_agent import get_consent_registry, get_interaction_log
+    registry = get_consent_registry()
+    try:
+        record = registry.set(customer_id, channel, granted_flag, source='explicit',
+                              actor=actor or 'admin', note=(str(note)[:200] if note else None))
+    except ValueError as exc:
+        return {'success': False, 'error': str(exc)}
+    get_interaction_log().record(
+        customer_id=customer_id, agent='service_desk', kind='consent', channel=str(channel).lower(),
+        status='logged', actor=actor or 'admin',
+        detail=f"{'granted' if granted_flag else 'revoked'} {str(channel).lower()} consent",
+        metadata={'granted': granted_flag, 'source': 'explicit'},
+    )
+    return {'success': True, 'customer_id': customer_id, 'consent': record.to_dict()}
 
 
 def bootstrap_job_runtime() -> None:
@@ -7896,6 +8453,221 @@ try:
     audit = AuditService()
 except Exception:
     audit = None
+
+
+# ========== BI MATERIALIZATION (B10) ==========
+# The dashboards read the portal's live stores (including the in-memory
+# PHINS_BALANCE_SHEET), so the materialize job is bound here, like the video
+# poll handler, and a standalone worker without these stores never claims it.
+BI_MATERIALIZE_JOB_TYPE = 'bi_materialize'
+_BI_MATERIALIZE_PENDING = threading.Event()
+# Guards the check-and-set on _BI_MATERIALIZE_PENDING: request threads write
+# concurrently on the threaded server, and Event.is_set()/set() is not atomic.
+_BI_MATERIALIZE_SCHEDULE_LOCK = threading.Lock()
+_BI_HOOKS_BOUND = threading.Event()
+
+
+def bi_data_sources() -> Dict[str, Any]:
+    """The live stores every ``/api/bi/*`` view is computed from.
+
+    One definition for the GET routes, ``POST /api/bi/materialize``, the queue
+    job and the cron script, so a materialized view is always computed from
+    exactly the inputs a request would use (same fingerprint).
+    """
+    return {
+        'customers': CUSTOMERS,
+        'policies': POLICIES,
+        'claims': CLAIMS,
+        'billing': BILLING,
+        'balance_sheet': PHINS_BALANCE_SHEET,
+        'suppliers': SUPPLIERS,
+        'supplier_orders': SUPPLIER_ORDERS,
+        'health_wallets': HEALTH_WALLETS,
+        'investment_accounts': INVESTMENT_ACCOUNTS,
+        'transaction_ledger': TRANSACTION_LEDGER,
+        'underwriting_applications': UNDERWRITING_APPLICATIONS,
+        'deliveries': {},
+    }
+
+
+def portal_delivery_bidding_service():
+    """The delivery-bidding singleton bound to the portal's live stores (B11).
+
+    First call creates it over ``SUPPLIERS`` / ``HEALTH_WALLETS`` /
+    ``TRANSACTION_LEDGER`` with the master-ledger recorder, so a wallet debit
+    on bid selection lands in the same ledger a request thread reads. The
+    settled-outcomes accessor and outbox publisher are resolved by the
+    service module from ``USE_DATABASE``.
+    """
+    from services import delivery_bidding_service as _dlv_svc
+    if _dlv_svc._delivery_service is None:
+        _dlv_svc.init_delivery_bidding_service(
+            suppliers=SUPPLIERS,
+            health_wallets=HEALTH_WALLETS,
+            transaction_ledger=TRANSACTION_LEDGER,
+            record_transaction_func=record_transaction,
+        )
+    return _dlv_svc.get_delivery_bidding_service()
+
+
+def delivery_request_context(session: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Scope context the delivery API module enforces (role / customer / supplier)."""
+    portal_delivery_bidding_service()
+    session = session or {}
+    role = get_effective_role(session)
+    return {
+        'role': role,
+        'username': session.get('username'),
+        'customer_id': session.get('customer_id'),
+        'supplier_id': session.get('supplier_id') or (session.get('username') if role == 'supplier' else None),
+    }
+
+
+def bi_rematerialize_delay_seconds() -> float:
+    """Debounce window between a store write and the re-materialization job."""
+    try:
+        return max(0.0, float(os.environ.get('PHINS_BI_REMATERIALIZE_DELAY_SECONDS', '5') or 5))
+    except (TypeError, ValueError):
+        return 5.0
+
+
+def _bi_materialize_job_handler(queue_job: Dict[str, Any]) -> Dict[str, Any]:
+    """Queue handler: recompute + persist the materialized BI views.
+
+    Clears the pending flag *before* computing, so a write that lands during
+    the computation schedules a fresh job instead of being absorbed by this
+    one; the views therefore never settle on stale inputs.
+    """
+    from services.bi_analytics_service import get_bi_analytics_service
+    _BI_MATERIALIZE_PENDING.clear()
+    params = queue_job.get('input_params') or {}
+    return get_bi_analytics_service().materialize_views(
+        bi_data_sources(), source=str(params.get('source') or 'queue'))
+
+
+def bind_bi_materialize_handler(queue) -> None:
+    """Register the materialize handler on ``queue`` (idempotent)."""
+    if BI_MATERIALIZE_JOB_TYPE not in queue.handlers():
+        queue.register_handler(BI_MATERIALIZE_JOB_TYPE, _bi_materialize_job_handler)
+
+
+def schedule_bi_materialize(store: str = '*', *, force: bool = False) -> Optional[Dict[str, Any]]:
+    """Enqueue one debounced ``bi_materialize`` job after a store write.
+
+    Only when the agent job queue is running in this process; otherwise the
+    next ``/api/bi/*`` read recomputes on demand (fingerprint-guarded, so it
+    is correct either way). A burst of writes collapses into a single pending
+    job; ``force`` bypasses the debounce (operator request).
+    """
+    try:
+        from services.agent_job_queue import agent_async_enabled
+        if not agent_async_enabled():
+            return None
+    except Exception:
+        return None
+    with _BI_MATERIALIZE_SCHEDULE_LOCK:
+        if _BI_MATERIALIZE_PENDING.is_set() and not force:
+            return None
+        _BI_MATERIALIZE_PENDING.set()
+    try:
+        queue = get_agent_job_queue()
+        bind_bi_materialize_handler(queue)
+        return queue.enqueue(
+            job_type=BI_MATERIALIZE_JOB_TYPE,
+            subject_type='bi_views',
+            subject_id='standard',
+            submitted_by='system',
+            priority=200,
+            input_params={'source': 'write_hook', 'store': str(store)},
+            max_attempts=1,
+            delay_seconds=bi_rematerialize_delay_seconds(),
+        )
+    except Exception as exc:
+        _BI_MATERIALIZE_PENDING.clear()
+        print(f"⚠️  BI re-materialization not scheduled: {exc}")
+        return None
+
+
+def bind_bi_write_hooks() -> None:
+    """Attach the BI service's data-change callback once per process."""
+    if _BI_HOOKS_BOUND.is_set():
+        return
+    try:
+        from services.bi_analytics_service import get_bi_analytics_service
+        get_bi_analytics_service().on_data_change(schedule_bi_materialize)
+        _BI_HOOKS_BOUND.set()
+    except Exception as exc:
+        print(f"⚠️  BI write hooks not bound: {exc}")
+
+
+def get_agent_job_queue():
+    """The process-wide agent job queue with every adapter bound (A3).
+
+    Documents are bound by ``get_document_job_worker``; the agent adapters in
+    ``services.jobs`` are bound here with a ``JobContext`` over the portal's
+    live in-memory stores, so a job handler sees exactly what a request
+    thread sees. Idempotent and cheap after the first call; re-binds
+    automatically if the singleton was reset (tests).
+    """
+    from services.document_job_worker import get_document_job_worker
+    from services import jobs as agent_jobs
+
+    queue = get_document_job_worker(doc_service=get_document_service())
+    bound = getattr(queue, '_agent_job_context', None)
+    # Re-bind when the singleton is new or the store globals were rebound
+    # (the database-recovery path swaps the dicts for DB-backed views).
+    stale = (
+        bound is None
+        or bound.customers is not CUSTOMERS
+        or bound.policies is not POLICIES
+        or bound.underwriting_apps is not UNDERWRITING_APPLICATIONS
+        or bound.claims is not CLAIMS
+    )
+    if stale or agent_jobs.claims_bot_job.JOB_TYPE not in queue.handlers():
+        context = agent_jobs.JobContext(
+            customers=CUSTOMERS,
+            policies=POLICIES,
+            underwriting_apps=UNDERWRITING_APPLICATIONS,
+            claims=CLAIMS,
+            audit=audit,
+            sanitize_claim_report=sanitize_claim_probability_report,
+        )
+        agent_jobs.register_all(queue, context)
+        queue._agent_job_context = context
+    # Video poll rows need the portal's MEDIA_PROCESSING_JOBS, so the handler
+    # lives here rather than in services.jobs (a standalone worker without it
+    # leaves those rows pending for the web process).
+    bind_media_video_poll_handler(queue)
+    bind_bi_materialize_handler(queue)
+    return queue
+
+
+def get_agent_job_context():
+    """The ``JobContext`` the synchronous routes hand to the shared adapter
+    functions (same stores the queued path uses)."""
+    return get_agent_job_queue()._agent_job_context
+
+
+def _job_visible_to(job: Dict[str, Any], session: Optional[Dict[str, Any]]) -> bool:
+    """Submitter-or-admin scope for ``GET /api/jobs/{id}``.
+
+    The submitter is matched on every identity a session carries (username,
+    user_id, customer_id) because routes record whichever of those they
+    resolved; staff document-admin roles may read any job.
+    """
+    if not session:
+        return False
+    if is_document_admin_role(get_effective_role(session)):
+        return True
+    submitted_by = str(job.get('submitted_by') or '').strip()
+    if not submitted_by:
+        return False
+    identities = {
+        str(session.get(key) or '').strip()
+        for key in ('username', 'user_id', 'customer_id')
+    }
+    identities.discard('')
+    return submitted_by in identities
 
 # Pipeline service for automatic workflow progression
 pipeline_service = None
@@ -8669,6 +9441,93 @@ def compute_investor_valuation_sim(params):
 
 # Test mode (makes API/security behavior deterministic for CI)
 PHINS_TEST_MODE = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y')
+
+
+def _pipeline_identity(customer_id, national_id=None, nationality=None, *, source, actor='system'):
+    """Reconcile a pipeline payload (application/quote/claim) with the customer
+    identity master and return the service outcome.
+
+    ``outcome`` is one of ``consistent`` / ``captured`` / ``mismatch`` /
+    ``missing``; ``reference`` is the PII-free pointer (hash, last4,
+    nationality) to stamp on the pipeline record. Never returns the plaintext.
+    """
+    try:
+        from services import customer_identity_service as _cis
+    except ImportError:
+        return {'outcome': 'unavailable', 'reference': None, 'error': 'identity service unavailable'}
+    return _cis.reconcile_pipeline_identity(
+        CUSTOMERS, str(customer_id or ''), national_id, nationality,
+        source=source, actor=actor or 'system',
+        mirrors=[REGISTERED_CUSTOMERS] if 'REGISTERED_CUSTOMERS' in globals() else [],
+        audit=globals().get('audit'),
+        ledger=globals().get('platform_event_ledger'),
+    )
+
+
+def _identity_gate_error(result):
+    """Map a reconcile outcome to (status, error body) when the request must be
+    refused, or None when the pipeline may proceed.
+
+    Under ``PHINS_IDENTITY_REQUIRED`` (default outside test mode) a new
+    application/claim needs a complete, consistent identity: a missing one is
+    400 ``identity_required`` and a payload contradicting the recorded identity
+    is 409 ``identity_mismatch`` (never silently overwritten).
+    """
+    try:
+        from services import customer_identity_service as _cis
+        strict = _cis.strict_mode()
+    except ImportError:
+        return None
+    outcome = (result or {}).get('outcome')
+    if outcome == 'mismatch' and strict:
+        return 409, {'error': result.get('error') or 'national_id does not match the recorded identity',
+                     'code': 'identity_mismatch'}
+    if outcome == 'missing' and strict:
+        return 400, {'error': result.get('error') or 'national_id and nationality are required',
+                     'code': result.get('code') or 'identity_required'}
+    return None
+
+
+def _identity_masked(value):
+    try:
+        from services.customer_identity_service import mask_national_id
+        return mask_national_id(value)
+    except ImportError:
+        return None
+
+
+def _identity_precheck(customer_id, national_id=None, nationality=None):
+    """Strict-mode validation to run *before* a pipeline creates a customer.
+
+    Returns (status, error body) when the payload cannot satisfy the identity
+    requirement, so nothing partial (customer row, temp login) is created for a
+    request that will be refused; None when the pipeline may proceed to
+    ``_pipeline_identity``.
+    """
+    try:
+        from services import customer_identity_service as _cis
+    except ImportError:
+        return None
+    if not _cis.strict_mode():
+        return None
+    existing = CUSTOMERS.get(str(customer_id or '')) if customer_id else None
+    if _cis.is_complete(existing):
+        return None
+    try:
+        code, normalized = _cis.normalize_national_id(national_id, nationality)
+    except _cis.IdentityError as exc:
+        body = exc.to_dict()
+        if exc.code in ('national_id_required', 'nationality_invalid'):
+            body = {'error': 'national_id and nationality are required', 'code': 'identity_required',
+                    'detail': str(exc)}
+        return exc.status, body
+    holder = _cis.find_customer_id_by_identity(
+        code, _cis.hash_national_id(code, normalized), CUSTOMERS,
+        exclude_customer_id=str(customer_id or ''))
+    if holder:
+        return 409, {'error': 'This ID number is already registered to another customer',
+                     'code': 'identity_in_use'}
+    return None
 
 
 def _demo_otp_exposure_allowed() -> bool:
@@ -11252,27 +12111,11 @@ def sanitize_claim_probability_report(report: Dict[str, Any]) -> Dict[str, Any]:
     """
     Return a safe report payload for UI usage.
     Removes raw evidence arrays that can expose unnecessary sensitive details.
+    Shared with the standalone worker (services/jobs/claims_bot_job.py) so the
+    async and inline paths redact identically.
     """
-    if not isinstance(report, dict):
-        return {}
-    sanitized = dict(report)
-    fraud_section = sanitized.get('fraud_indicators')
-    if isinstance(fraud_section, dict):
-        cleaned_indicators = []
-        for indicator in fraud_section.get('indicators', []):
-            if not isinstance(indicator, dict):
-                continue
-            cleaned = dict(indicator)
-            cleaned.pop('evidence', None)
-            cleaned_indicators.append(cleaned)
-        fraud_section = dict(fraud_section)
-        fraud_section['indicators'] = cleaned_indicators
-        fraud_section['count'] = len(cleaned_indicators)
-        fraud_section['high_severity_count'] = sum(
-            1 for item in cleaned_indicators if safe_float(item.get('severity'), 0.0) > 0.7
-        )
-        sanitized['fraud_indicators'] = fraud_section
-    return sanitized
+    from services.jobs.claims_bot_job import sanitize_claim_probability_report as _shared
+    return _shared(report)
 
 def _inject_ui_clarity_script(html_content: str) -> str:
     """
@@ -14268,6 +15111,26 @@ class PortalHandler(BaseHTTPRequestHandler):
         token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
         return validate_session(token) if token else None
 
+    def _autopilot_control_actor(self, body_data: Optional[Dict[str, Any]] = None,
+                                 qs: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """Who may operate the AutoPilot safety controls (halt/resume/promote).
+
+        Either the terminal access key (the credential that can already create
+        and execute bots) or an admin session. Returns an actor label for the
+        audit row, or ``None`` when neither credential is valid.
+        """
+        session = self._get_session()
+        if session and require_role(session, ['admin']):
+            return f"admin:{session.get('username')}"
+        ai_key = self.headers.get('X-Terminal-Key', '')
+        if not ai_key and body_data:
+            ai_key = str(body_data.get('api_key', '') or '')
+        if not ai_key and qs:
+            ai_key = (qs.get('api_key', ['']) or [''])[0]
+        if terminal_access_enabled and ai_key and validate_terminal_access(ai_key):
+            return 'terminal_key'
+        return None
+
     def _request_is_secure(self) -> bool:
         """Whether the original client request arrived over HTTPS.
 
@@ -15775,14 +16638,24 @@ For claims or questions, please contact:
 
             # Async document-processing queue depth (when the worker is active)
             document_processing = {'async_enabled': False}
+            agent_jobs_health = {'async_enabled': False}
             try:
                 from services.document_processing_service import async_processing_enabled
-                if async_processing_enabled():
+                from services.agent_job_queue import agent_async_enabled
+                if async_processing_enabled() or agent_async_enabled():
                     from services.document_job_worker import get_document_job_worker
                     worker = get_document_job_worker()
-                    document_processing = {
-                        'async_enabled': True,
-                        'queue': worker.queue_stats(),
+                    queue_stats = worker.queue_stats()
+                    if async_processing_enabled():
+                        document_processing = {
+                            'async_enabled': True,
+                            'queue': queue_stats,
+                        }
+                    agent_jobs_health = {
+                        'async_enabled': agent_async_enabled(),
+                        'queue': queue_stats,
+                        'threads': worker.active_threads(),
+                        'max_threads': worker.max_concurrency,
                     }
             except Exception:
                 pass
@@ -15798,6 +16671,7 @@ For claims or questions, please contact:
                 'customers_available': customers_count,
                 'notifications': notification_health,
                 'document_processing': document_processing,
+                'agent_jobs': agent_jobs_health,
                 'version': '2.0.0'
             }
             
@@ -16117,14 +16991,20 @@ For claims or questions, please contact:
                 if not customer_id:
                     print(f"[SESSION VALIDATE] WARNING: Could not recover customer_id for {username}")
             
-            self._set_json_headers(200)
-            self.wfile.write(json.dumps({
+            validate_response = {
                 'valid': True,
                 'username': username,
                 'role': role,
                 'customer_id': customer_id,
                 'expires': session.get('expires')
-            }).encode('utf-8'))
+            }
+            if role == 'customer':
+                try:
+                    validate_response.update(_login_identity_flags(customer_id))
+                except Exception as identity_err:
+                    print(f"[SESSION VALIDATE] identity flags unavailable: {identity_err}")
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(validate_response).encode('utf-8'))
             return
         
         # Session verification endpoint (GET) - similar to validate but simpler
@@ -16347,6 +17227,24 @@ For claims or questions, please contact:
                 return
 
         # =====================================================================
+        # CUSTOMER IDENTITY (GET) - nationality autocomplete, ID rules,
+        # own/admin identity status (masked; never the plaintext number)
+        # =====================================================================
+        if customer_identity_enabled and api_identity_get and path in IDENTITY_API_PATHS:
+            try:
+                identity_result = api_identity_get(path, session, qs)
+                if identity_result is not None:
+                    status_code, response_data = identity_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+            except Exception as e:
+                print(f"Customer Identity error (GET {path}): {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
+
+        # =====================================================================
         # CHAT APPLICATION (GET) - conversational new-policy flow state,
         # journey (A-Z pipeline), staff funnel. Session optional (resume-code
         # scoped for applicants, role-gated for staff views).
@@ -16382,33 +17280,38 @@ For claims or questions, please contact:
                 budget_tier = qs.get('budget_tier', ['balanced'])[0]
                 networks_csv = qs.get('networks', [''])[0]
                 social_networks = [n.strip().lower() for n in str(networks_csv).split(',') if n.strip()]
+                cohort_targeting = marketing_cohort_targeting_requested(qs.get('cohorts', [''])[0])
 
                 service = get_marketing_sales_agent_service()
-                campaign_data = service.generate_campaign(
-                    customers=CUSTOMERS,
-                    policies=POLICIES,
-                    billing=BILLING,
-                    claims=CLAIMS,
-                    health_wallets=HEALTH_WALLETS,
-                    investment_accounts=INVESTMENT_ACCOUNTS,
-                    transaction_ledger=TRANSACTION_LEDGER,
+                actor = (session or {}).get('username', 'admin')
+                campaign_data = generate_marketing_campaign(
+                    service,
+                    actor=actor,
                     vertical=vertical,
                     objective=objective,
                     persona=persona,
                     region=region,
                     budget_tier=budget_tier,
                     social_networks=social_networks,
-                    generated_by=(session or {}).get('username', 'admin'),
+                    cohort_targeting=cohort_targeting,
                 )
 
-                actor = (session or {}).get('username', 'admin')
                 generated_campaign = campaign_data.get('campaign') if isinstance(campaign_data, dict) else {}
                 generated_integrity = campaign_data.get('integrity') if isinstance(campaign_data, dict) else {}
+                plan_cache = campaign_data.get('plan_cache') if isinstance(campaign_data, dict) else {}
+                existing_entry = get_marketing_campaign_entry(str(generated_campaign.get('campaign_id') or ''))
+                # Same inputs → same plan (cache hit): keep the stored
+                # lifecycle/assets (it may already be published) instead of
+                # resetting the envelope to a fresh "generated" state.
+                lifecycle_status = 'generated'
+                if plan_cache.get('hit') and existing_entry:
+                    lifecycle_status = str(existing_entry.get('lifecycle_status') or 'generated')
+                    generated_integrity = dict(existing_entry.get('integrity') or generated_integrity)
                 latest_entry = store_marketing_campaign_entry(
                     campaign_payload=generated_campaign if isinstance(generated_campaign, dict) else {},
                     integrity_payload=generated_integrity if isinstance(generated_integrity, dict) else {},
                     actor=actor,
-                    lifecycle_status='generated',
+                    lifecycle_status=lifecycle_status,
                 )
                 save_ledger_data()
 
@@ -16417,6 +17320,8 @@ For claims or questions, please contact:
                     'success': True,
                     'generated': campaign_data,
                     'latest_campaign': latest_entry,
+                    'plan_cache': plan_cache,
+                    'cohort_targeting': cohort_targeting,
                 }, default=str).encode('utf-8'))
                 return
             except Exception as e:
@@ -16450,6 +17355,10 @@ For claims or questions, please contact:
                 latest_copy = dict(latest_campaign)
                 latest_copy['integrity'] = dict(integrity_payload)
                 latest_copy['integrity']['verified'] = bool(verified)
+                if str(latest_copy.get('lifecycle_status') or '') == 'published':
+                    # B7: a published plan must also match its hash-chained anchor.
+                    latest_copy['integrity']['ledger_anchor'] = service.verify_publication(
+                        TRANSACTION_LEDGER, campaign_payload, integrity_payload)
 
                 campaign_id = str(campaign_payload.get('campaign_id') or '')
                 video_jobs = video_generation_jobs_for_campaign_response(campaign_id) if campaign_id else []
@@ -17642,11 +18551,25 @@ For claims or questions, please contact:
                     'username': (session or {}).get('username'),
                     'customer_id': (session or {}).get('customer_id'),
                 }
-                status_code, payload = _agt.handle_get(path, qs, _agt_ctx, {
-                    'customers': CUSTOMERS, 'policies': POLICIES, 'suppliers': SUPPLIERS,
-                })
+                status_code, payload = _agt.handle_get(path, qs, _agt_ctx, agent_ecosystem_data_sources())
             except Exception as agt_exc:
                 status_code, payload = 500, {'error': str(agt_exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
+        # ========== DELIVERY BIDDING AI (B11) ==========
+        # Wires services/delivery_bidding_service.py via web_portal/api_delivery_bidding.py.
+        # The module enforces scope (customer -> own requests, supplier -> itself).
+        if path.startswith('/api/delivery/'):
+            try:
+                try:
+                    from web_portal import api_delivery_bidding as _dlv
+                except Exception:
+                    import api_delivery_bidding as _dlv
+                status_code, payload = _dlv.handle_get(path, qs, delivery_request_context(session))
+            except Exception as dlv_exc:
+                status_code, payload = 500, {'error': str(dlv_exc)}
             self._set_json_headers(status_code)
             self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
@@ -17671,20 +18594,7 @@ For claims or questions, please contact:
                     from web_portal import api_bi_analytics as _bi
                 except Exception:
                     import api_bi_analytics as _bi  # fallback when run as a script
-                data_sources = {
-                    'customers': CUSTOMERS,
-                    'policies': POLICIES,
-                    'claims': CLAIMS,
-                    'billing': BILLING,
-                    'balance_sheet': PHINS_BALANCE_SHEET,
-                    'suppliers': SUPPLIERS,
-                    'supplier_orders': SUPPLIER_ORDERS,
-                    'health_wallets': HEALTH_WALLETS,
-                    'investment_accounts': INVESTMENT_ACCOUNTS,
-                    'transaction_ledger': TRANSACTION_LEDGER,
-                    'underwriting_applications': UNDERWRITING_APPLICATIONS,
-                    'deliveries': {},
-                }
+                data_sources = bi_data_sources()
                 if path == '/api/bi/executive-dashboard':
                     status_code, payload = _bi.handle_executive_dashboard(self, data_sources)
                 elif path == '/api/bi/delivery-analytics':
@@ -19448,6 +20358,15 @@ For claims or questions, please contact:
                     'billing': {'overdue': m['overdue_count'],
                                 'outstanding': outstanding_count}
                 }
+            # Per-agent operational counters (calls/errors/latency only; no
+            # PII, no decision payloads). This endpoint is unauthenticated, so
+            # error text and decision labels stay on the admin health view.
+            # Failure here must not hide the business metrics above.
+            try:
+                from services.agent_metrics import public_snapshot_all as _agent_snapshot_all
+                data['agents'] = _agent_snapshot_all()
+            except Exception:
+                data['agents'] = {}
             self._set_json_headers()
             self.wfile.write(json.dumps({'metrics': data, 'ts': datetime.now().isoformat()}).encode('utf-8'))
             return
@@ -22578,18 +23497,47 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Staff access required'}).encode('utf-8'))
                 return
             try:
-                from services.document_job_worker import get_document_job_worker
-                worker = get_document_job_worker()
+                from services.jobs import public_job_view
+                worker = get_agent_job_queue()
                 jobs = worker.list_jobs(
                     status=qs.get('status', [None])[0],
                     document_id=qs.get('document_id', [None])[0],
+                    subject_type=qs.get('subject_type', [None])[0],
+                    subject_id=qs.get('subject_id', [None])[0],
+                    job_type=qs.get('job_type', [None])[0],
+                    submitted_by=qs.get('submitted_by', [None])[0],
                     limit=safe_int(qs.get('limit', ['50'])[0], 50),
                 )
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
-                    'jobs': jobs,
+                    'jobs': [public_job_view(j) for j in jobs],
                     'queue': worker.queue_stats(),
+                    'handlers': worker.handlers(),
+                    'threads': worker.active_threads(),
                 }, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # GET /api/jobs/{job_id} - Poll an agent job submitted under
+        # PHINS_AGENT_ASYNC. Scoped to the submitter or staff; any other
+        # principal gets 404 so job ids cannot be enumerated.
+        if path.startswith('/api/jobs/') and path.count('/') == 3:
+            job_id = path[len('/api/jobs/'):].strip()
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                from services.jobs import public_job_view
+                job = get_agent_job_queue().get_job(job_id) if job_id else None
+                if job is None or not _job_visible_to(job, session):
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Job not found'}).encode('utf-8'))
+                    return
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(public_job_view(job), default=str).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
@@ -24368,7 +25316,29 @@ For claims or questions, please contact:
             return
         
         # ========== CUSTOMER DATA & PIPELINE VALIDATION API ==========
-        
+
+        # Admin: one customer's interaction timeline, consent and escalations (B6).
+        if path.startswith('/api/admin/customers/') and path.endswith('/interactions'):
+            if not require_role(session, ['admin', 'accountant', 'underwriter']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Unauthorized. Admin, accountant, or underwriter access required.'
+                }).encode('utf-8'))
+                return
+            parts = [p for p in path.split('/') if p]
+            # api / admin / customers / {id} / interactions
+            if len(parts) != 5 or parts[3] in ('upload', 'contact', 'consent', 'interactions'):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                return
+            view = admin_customer_timeline(parts[3])
+            status_code = 200 if view.get('success') else (
+                404 if view.get('error') == 'Customer not found' else 400
+            )
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(view, default=str).encode('utf-8'))
+            return
+
         # List all registered customers with their complete pipeline status
         if path == '/api/admin/customers':
             # Build comprehensive customer list with all related data
@@ -25946,8 +26916,23 @@ For claims or questions, please contact:
                     raise ImportError('Cannot load connectors')
 
                 if t == 'ni':
-                    res = connectors.NationalInsuranceConnector().validate(national_id=value, dob=extra)
-                    result = {'status': res.status, 'details': res.details}
+                    # Format check comes from the identity master's per-country
+                    # rules (nationality via ?nationality=, default IL); the
+                    # number itself is never echoed back.
+                    try:
+                        from services import customer_identity_service as _cis
+                        _nat = qs.get('nationality', ['IL'])[0] or 'IL'
+                        try:
+                            _code, _norm = _cis.normalize_national_id(value, _nat)
+                            result = {'status': 'valid', 'details': {
+                                'nationality': _code, 'national_id_masked': _cis.mask_national_id(_norm)}}
+                        except _cis.IdentityError as _id_err:
+                            result = {'status': 'invalid', 'details': {
+                                'code': _id_err.code, 'reason': str(_id_err)}}
+                    except ImportError:
+                        res = connectors.NationalInsuranceConnector().validate(national_id=value, dob=extra)
+                        result = {'status': res.status, 'details': {
+                            k: v for k, v in res.details.items() if k != 'national_id'}}
                 elif t == 'card':
                     res = connectors.CreditCardIssuerConnector().validate(card_number=value, expiry=extra)
                     result = {'status': res.status, 'details': res.details}
@@ -27713,6 +28698,25 @@ For claims or questions, please contact:
             return
 
         # ========== AUTO-PILOT & SCREENER API (GET) ==========
+
+        if path == '/api/terminal/autopilot/halt':
+            # Safety-control status: effective halt (env or runtime), promoted
+            # strategy versions. Terminal key or admin session.
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            if not self._autopilot_control_actor(None, qs):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            from services.trading_platform_service import get_autopilot_engine
+            engine = get_autopilot_engine()
+            payload = engine.halt_status()
+            payload['promoted_versions'] = engine.promoted_versions()
+            self._set_json_headers()
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
 
         if path == '/api/terminal/autopilot/bots':
             if not trading_platform_enabled:
@@ -31583,6 +32587,35 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
             return
 
+        # ========== DELIVERY BIDDING AI (B11) — mutations ==========
+        # Wires services/delivery_bidding_service.py via web_portal/api_delivery_bidding.py.
+        if path.startswith('/api/delivery/'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            try:
+                length = int(self.headers.get('Content-Length', 0) or 0)
+            except (TypeError, ValueError):
+                length = 0
+            raw_body = self.rfile.read(length).decode('utf-8') if length else ''
+            try:
+                dlv_body = json.loads(raw_body) if raw_body else {}
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            try:
+                try:
+                    from web_portal import api_delivery_bidding as _dlv
+                except Exception:
+                    import api_delivery_bidding as _dlv
+                status_code, payload = _dlv.handle_post(path, dlv_body, delivery_request_context(session))
+            except Exception as dlv_exc:
+                status_code, payload = 500, {'error': str(dlv_exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
         # ========== AGENT ECOSYSTEM (AgentOS) — mutations ==========
         # Wires services/agent_ecosystem_service.py via web_portal/api_agent_ecosystem.py.
         if (path.startswith('/api/agent/') or path.startswith('/api/admin/agent')):
@@ -31707,9 +32740,8 @@ For claims or questions, please contact:
                     'username': (session or {}).get('username'),
                     'customer_id': (session or {}).get('customer_id'),
                 }
-                status_code, payload = _agt.handle_post(path, qs_post, _agt_ctx, agt_body, {
-                    'customers': CUSTOMERS, 'policies': POLICIES, 'suppliers': SUPPLIERS,
-                })
+                status_code, payload = _agt.handle_post(path, qs_post, _agt_ctx, agt_body,
+                                                        agent_ecosystem_data_sources())
             except Exception as agt_exc:
                 status_code, payload = 500, {'error': str(agt_exc)}
             self._set_json_headers(status_code)
@@ -31755,7 +32787,8 @@ For claims or questions, please contact:
         # =====================================================================
         if api_extensions_enabled and api_ext_post:
             # These endpoints need JSON body parsing
-            security_paths = ['/api/security/', '/api/foundations', '/api/admin/foundations']
+            security_paths = ['/api/security/', '/api/foundations', '/api/admin/foundations',
+                              '/api/admin/ai-agents/']
             is_extension_path = any(path.startswith(p) for p in security_paths)
             
             if is_extension_path:
@@ -32094,6 +33127,40 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
                 return
 
+        # =====================================================================
+        # CUSTOMER IDENTITY (POST) - one-time customer capture of personal ID +
+        # nationality (login gate) and audited admin correction
+        # =====================================================================
+        if customer_identity_enabled and api_identity_post and path in IDENTITY_API_PATHS:
+            try:
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                session = validate_session(token) if token else None
+                if not session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length).decode('utf-8') if length else '{}'
+                try:
+                    body_data = json.loads(body)
+                except json.JSONDecodeError:
+                    body_data = {}
+                identity_result = api_identity_post(path, session, body_data)
+                if identity_result is not None:
+                    status_code, response_data = identity_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
+                return
+            except Exception as e:
+                print(f"Customer Identity error (POST {path}): {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
+
         # Design settings endpoint (POST) - Admin or Media role
         if path == '/api/design/settings':
             # Get auth token
@@ -32238,21 +33305,17 @@ For claims or questions, please contact:
                         integrity_payload = {}
 
                 if not campaign_payload:
-                    generated = service.generate_campaign(
-                        customers=CUSTOMERS,
-                        policies=POLICIES,
-                        billing=BILLING,
-                        claims=CLAIMS,
-                        health_wallets=HEALTH_WALLETS,
-                        investment_accounts=INVESTMENT_ACCOUNTS,
-                        transaction_ledger=TRANSACTION_LEDGER,
+                    generated = generate_marketing_campaign(
+                        service,
+                        actor=publisher,
                         vertical=data.get('vertical', 'insurance'),
                         objective=data.get('objective', 'growth'),
                         persona=data.get('persona', 'families'),
                         region=data.get('region', 'global'),
                         budget_tier=data.get('budget_tier', 'balanced'),
                         social_networks=social_networks,
-                        generated_by=publisher,
+                        cohort_targeting=marketing_cohort_targeting_requested(
+                            data.get('cohort_targeting', data.get('cohorts'))),
                     )
                     campaign_payload = generated.get('campaign', {}) if isinstance(generated, dict) else {}
                     integrity_payload = generated.get('integrity', {}) if isinstance(generated, dict) else {}
@@ -32265,8 +33328,32 @@ For claims or questions, please contact:
                 campaign_id = str(campaign_payload.get('campaign_id') or f"MKT-{uuid.uuid4().hex[:10]}")
                 published_at = datetime.now().isoformat()
 
-                # Convert campaign artifacts into media-brief assets for /admin-media.
+                # B7: anchor (campaign_id, signature, input_hash) on the platform
+                # ledger BEFORE any side effect. A plan whose signature no longer
+                # verifies, or a ledger that cannot be written, aborts the publish
+                # with nothing minted and nothing marked published.
                 briefs = service.build_media_briefs(campaign_payload)
+                try:
+                    ledger_anchor = service.anchor_publication(
+                        platform_event_ledger,
+                        campaign_payload,
+                        integrity_payload,
+                        publisher=publisher,
+                        assets_created=len(briefs),
+                    )
+                except ValueError as exc:
+                    self._set_json_headers(409)
+                    self.wfile.write(json.dumps({'error': f'Campaign integrity check failed: {exc}'}).encode('utf-8'))
+                    return
+                except Exception as exc:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({'error': f'Ledger anchor failed; campaign not published: {exc}'}).encode('utf-8'))
+                    return
+                integrity_payload = dict(integrity_payload)
+                integrity_payload['ledger_anchor'] = ledger_anchor
+                integrity_payload.setdefault('input_hash', campaign_payload.get('input_hash', ''))
+
+                # Convert campaign artifacts into media-brief assets for /admin-media.
                 created_assets = []
                 for brief in briefs:
                     asset_id = f"media-{uuid.uuid4().hex[:12]}"
@@ -32321,6 +33408,8 @@ For claims or questions, please contact:
                     'objective': campaign_payload.get('scope', {}).get('objective'),
                     'assets_created': len(created_assets),
                     'integrity_signature': integrity_payload.get('signature', ''),
+                    'input_hash': integrity_payload.get('input_hash', ''),
+                    'ledger_entry_id': ledger_anchor.get('entry_id'),
                     'source': campaign_source,
                 }
                 published_campaigns.append(summary_entry)
@@ -32353,6 +33442,7 @@ For claims or questions, please contact:
                     'published_count': len(published_campaigns),
                     'created_assets': created_assets,
                     'campaign_source': campaign_source,
+                    'ledger_anchor': ledger_anchor,
                 }, default=str).encode('utf-8'))
                 return
             except Exception as e:
@@ -33368,7 +34458,8 @@ For claims or questions, please contact:
             provider = str(data.get('provider') or DEFAULT_MEDIA_VIDEO_PROVIDER).strip().lower() or DEFAULT_MEDIA_VIDEO_PROVIDER
             provider_model = str(data.get('provider_model') or '').strip()
             callback_base_url = str(data.get('callback_base_url') or '').strip() or configured_media_callback_base_url()
-            poll_mode = str(data.get('poll_mode') or '').strip().lower()
+            poll_mode = resolve_media_video_completion_mode(data.get('poll_mode'), callback_base_url)
+            force_regenerate = bool(data.get('force') or data.get('force_regenerate'))
             image_data_url = resolve_media_video_job_image_data_url(data)
             auto_publish_to_hero = bool(data.get('auto_publish_to_hero'))
             prompt_override = str(data.get('prompt_override') or '').strip()
@@ -33406,12 +34497,29 @@ For claims or questions, please contact:
 
             try:
                 queued_jobs = []
-                if poll_mode == 'webhook' and callback_base_url:
+                reused_jobs = []
+                if poll_mode == 'webhook':
                     submission_poll_delay = max(safe_int(data.get('webhook_fallback_seconds'), 30), 5)
                 else:
                     submission_poll_delay = max(safe_int(data.get('poll_delay_seconds'), 1), 1)
 
                 for blueprint_index, blueprint in enumerate(blueprints):
+                    # An identical request (same blueprint, prompt, provider,
+                    # model and reference image) that is already in flight or
+                    # completed is reused instead of billed again; ``force``
+                    # opts out for a deliberate regeneration.
+                    if not force_regenerate:
+                        existing = find_duplicate_media_video_job(media_video_request_fingerprint(
+                            campaign_id=campaign_id,
+                            blueprint_index=blueprint_index,
+                            provider=provider,
+                            provider_model=provider_model,
+                            prompt=build_media_video_prompt(campaign_id, blueprint, prompt_override),
+                            image_data_url=image_data_url,
+                        ))
+                        if existing is not None:
+                            reused_jobs.append(existing)
+                            continue
                     # Queue the job locally without contacting the provider so
                     # a single bad blueprint or transient provider 400 cannot
                     # fail the whole batch HTTP request.  The serial submission
@@ -33439,16 +34547,24 @@ For claims or questions, please contact:
                         poll_delay_seconds=submission_poll_delay,
                     )
                 save_ledger_data()
+                message = f'Queued {len(queued_jobs)} video generation jobs'
+                if reused_jobs:
+                    message += f' ({len(reused_jobs)} identical request(s) already exist and were reused)'
                 self._set_json_headers(202)
                 self.wfile.write(json.dumps({
                     'success': True,
-                    'message': f'Queued {len(queued_jobs)} video generation jobs',
+                    'message': message,
                     'campaign_id': campaign_id,
                     'provider': provider,
                     'provider_model': provider_model,
-                    'poll_mode': poll_mode or 'poll',
+                    'poll_mode': poll_mode,
                     'webhook_callback_configured': bool(callback_base_url),
                     'queued_jobs': [serialize_media_job(job, include_callback=True) for job in queued_jobs],
+                    'reused_jobs': [
+                        dict(serialize_media_job(job, include_callback=True), deduplicated=True)
+                        for job in reused_jobs
+                    ],
+                    'deduplicated_count': len(reused_jobs),
                     'jobs': video_generation_jobs_for_campaign_response(campaign_id),
                     'submission_queue': {
                         'sequential': True,
@@ -33485,7 +34601,8 @@ For claims or questions, please contact:
             provider = str(data.get('provider') or DEFAULT_MEDIA_VIDEO_PROVIDER).strip().lower() or DEFAULT_MEDIA_VIDEO_PROVIDER
             provider_model = str(data.get('provider_model') or '').strip()
             callback_base_url = str(data.get('callback_base_url') or '').strip() or configured_media_callback_base_url()
-            poll_mode = str(data.get('poll_mode') or '').strip().lower()
+            poll_mode = resolve_media_video_completion_mode(data.get('poll_mode'), callback_base_url)
+            force_regenerate = bool(data.get('force') or data.get('force_regenerate'))
             image_data_url = resolve_media_video_job_image_data_url(data)
             auto_publish_to_hero = bool(data.get('auto_publish_to_hero'))
             prompt_override = str(data.get('prompt_override') or '').strip()
@@ -33519,6 +34636,29 @@ For claims or questions, please contact:
                 return
 
             try:
+                if not force_regenerate:
+                    existing = find_duplicate_media_video_job(media_video_request_fingerprint(
+                        campaign_id=campaign_id,
+                        blueprint_index=blueprint_index,
+                        provider=provider,
+                        provider_model=provider_model,
+                        prompt=build_media_video_prompt(campaign_id, blueprints[blueprint_index], prompt_override),
+                        image_data_url=image_data_url,
+                    ))
+                    if existing is not None:
+                        self._set_json_headers(200)
+                        self.wfile.write(json.dumps({
+                            'success': True,
+                            'deduplicated': True,
+                            'message': 'An identical video request already exists; returning the existing job.',
+                            'provider': provider,
+                            'provider_model': provider_model,
+                            'poll_mode': poll_mode,
+                            'webhook_callback_configured': bool(callback_base_url),
+                            'job': dict(serialize_media_job(existing, include_callback=True), deduplicated=True),
+                            'jobs': video_generation_jobs_for_campaign_response(campaign_id),
+                        }).encode('utf-8'))
+                        return
                 job = create_media_video_job(
                     campaign_id=campaign_id,
                     blueprint_index=blueprint_index,
@@ -33532,7 +34672,7 @@ For claims or questions, please contact:
                     prompt_override=prompt_override,
                 )
                 save_ledger_data()
-                if poll_mode == 'webhook' and callback_base_url:
+                if poll_mode == 'webhook':
                     fallback_delay = safe_int(data.get('webhook_fallback_seconds'), 30)
                     start_media_job_polling(job['id'], delay_seconds=max(fallback_delay, 5))
                 else:
@@ -33541,9 +34681,10 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({
                     'success': True,
                     'message': 'Video generation job queued',
+                    'deduplicated': False,
                     'provider': provider,
                     'provider_model': provider_model,
-                    'poll_mode': poll_mode or 'poll',
+                    'poll_mode': poll_mode,
                     'webhook_callback_configured': bool(callback_base_url),
                     'job': serialize_media_job(job, include_callback=True),
                     'jobs': video_generation_jobs_for_campaign_response(campaign_id),
@@ -33594,7 +34735,15 @@ For claims or questions, please contact:
             action = path.rsplit('/', 1)[-1]
             requested_by = (session or {}).get('username', 'admin')
             if action == 'cancel':
-                cancel_media_video_job(job, cancelled_by=requested_by)
+                with media_job_lock(job_id):
+                    if str(job.get('status') or '').lower() in MEDIA_VIDEO_TERMINAL_STATUSES:
+                        self._set_json_headers(409)
+                        self.wfile.write(json.dumps({
+                            'error': f"Job is already {job.get('status')}; nothing to cancel.",
+                            'job': serialize_media_job(job, include_callback=True),
+                        }).encode('utf-8'))
+                        return
+                    cancel_media_video_job(job, cancelled_by=requested_by)
                 save_ledger_data()
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
@@ -33673,7 +34822,7 @@ For claims or questions, please contact:
                 return
 
             callback_base_url = str(data.get('callback_base_url') or '').strip() or configured_media_callback_base_url()
-            poll_mode = str(data.get('poll_mode') or '').strip().lower()
+            poll_mode = resolve_media_video_completion_mode(data.get('poll_mode'), callback_base_url)
             try:
                 retried_job = retry_media_video_job(
                     job,
@@ -33685,7 +34834,7 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
                 return
 
-            if poll_mode == 'webhook' and callback_base_url:
+            if poll_mode == 'webhook':
                 fallback_delay = safe_int(data.get('webhook_fallback_seconds'), 30)
                 start_media_job_polling(retried_job['id'], delay_seconds=max(fallback_delay, 5))
             else:
@@ -33695,6 +34844,8 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({
                 'success': True,
                 'message': 'Video generation job retried',
+                'poll_mode': poll_mode,
+                'webhook_callback_configured': bool(callback_base_url),
                 'job': serialize_media_job(retried_job, include_callback=True),
                 'jobs': video_generation_jobs_for_campaign_response(job_campaign_id),
             }).encode('utf-8'))
@@ -33732,25 +34883,49 @@ For claims or questions, please contact:
                 return
 
             job_kind = str(job.get('job_kind') or 'subtitle')
-            if job_kind == 'video_generation':
-                asset = finalize_media_video_job(job, {
-                    'status': str(data.get('status') or data.get('state') or 'completed'),
-                    'provider_job_id': provider_job_id or str(job.get('provider_job_id') or ''),
-                    'download_url': str(data.get('download_url') or data.get('url') or '').strip(),
-                    'duration': data.get('duration'),
-                    'message': data.get('message') or 'Provider webhook completed the generated video.',
-                    'provider_state': data,
-                    'error': data.get('error'),
-                })
-                save_ledger_data()
-                self._set_json_headers(200)
-                self.wfile.write(json.dumps({
-                    'success': True,
-                    'job': serialize_media_job(job),
-                    'generated_video_asset': serialize_media_asset(asset) if asset else None,
-                }).encode('utf-8'))
-                return
-            asset, track = complete_media_subtitle_job(job, data)
+            with media_job_lock(str(job.get('id') or '')):
+                # Replay protection runs before any state change: a repeated
+                # delivery (same nonce/body) or a stale timestamp is refused
+                # and leaves the job exactly as it was.
+                refusal = check_media_webhook_replay(job, self.headers, raw_body, data)
+                if refusal is not None:
+                    refusal_status, refusal_error = refusal
+                    try:
+                        save_ledger_data()
+                    except Exception:
+                        pass
+                    self._set_json_headers(refusal_status)
+                    self.wfile.write(json.dumps({
+                        'error': refusal_error,
+                        'job_id': job.get('id'),
+                        'status': job.get('status'),
+                    }).encode('utf-8'))
+                    return
+
+                if job_kind == 'video_generation':
+                    already_terminal = str(job.get('status') or '').lower() in MEDIA_VIDEO_TERMINAL_STATUSES
+                    asset = finalize_media_video_job(job, {
+                        'status': str(data.get('status') or data.get('state') or 'completed'),
+                        'provider_job_id': provider_job_id or str(job.get('provider_job_id') or ''),
+                        'download_url': str(data.get('download_url') or data.get('url') or '').strip(),
+                        'duration': data.get('duration'),
+                        'message': data.get('message') or 'Provider webhook completed the generated video.',
+                        'provider_state': data,
+                        'error': data.get('error'),
+                    })
+                    save_ledger_data()
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        # True when the job had already reached a terminal state
+                        # (a poller won the race): nothing was downloaded or
+                        # published again; the existing asset is returned.
+                        'already_terminal': already_terminal,
+                        'job': serialize_media_job(job),
+                        'generated_video_asset': serialize_media_asset(asset) if asset else None,
+                    }).encode('utf-8'))
+                    return
+                asset, track = complete_media_subtitle_job(job, data)
             self._set_json_headers(200)
             self.wfile.write(json.dumps({
                 'success': True,
@@ -34300,8 +35475,10 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'No file content provided'}).encode('utf-8'))
                     return
                 
-                # Decode base64 content
-                import base64
+                # Decode base64 content (module-level ``base64`` is already
+                # imported; a bare ``import base64`` here would shadow it as a
+                # do_POST local and break every earlier route in this method
+                # that uses it, e.g. the marketing publish route).
                 try:
                     file_content = base64.b64decode(content_b64)
                 except Exception as decode_err:
@@ -34394,12 +35571,22 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': auth_error}).encode('utf-8'))
                     return
                 
-                # Run analysis
-                analysis = service.analyze(document_id)
-                
-                # Convert to dict for JSON
-                result = service.to_dict(analysis)
-                result['success'] = True
+                from services.agent_job_queue import agent_async_enabled
+                from services.jobs import queued_response, risk_report_job
+
+                if agent_async_enabled():
+                    job = risk_report_job.enqueue_analyze(
+                        get_agent_job_queue(),
+                        document_id=document_id,
+                        submitted_by=str(user_id),
+                        idempotency_key=(str(data.get('idempotency_key') or '').strip() or None),
+                    )
+                    self._set_json_headers(202)
+                    self.wfile.write(json.dumps(queued_response(job)).encode('utf-8'))
+                    return
+
+                # Run analysis (same function the queued path runs)
+                result = risk_report_job.run_analyze(document_id)
                 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
@@ -34462,12 +35649,23 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': auth_error}).encode('utf-8'))
                     return
                 
-                # Generate report
-                report = service.generate_report(analysis_id, language)
-                
-                # Convert to dict for JSON
-                result = service.to_dict(report)
-                result['success'] = True
+                from services.agent_job_queue import agent_async_enabled
+                from services.jobs import queued_response, risk_report_job
+
+                if agent_async_enabled():
+                    job = risk_report_job.enqueue_generate(
+                        get_agent_job_queue(),
+                        analysis_id=analysis_id,
+                        language=language,
+                        submitted_by=str(user_id),
+                        idempotency_key=(str(data.get('idempotency_key') or '').strip() or None),
+                    )
+                    self._set_json_headers(202)
+                    self.wfile.write(json.dumps(queued_response(job)).encode('utf-8'))
+                    return
+
+                # Generate report (same function the queued path runs)
+                result = risk_report_job.run_generate(analysis_id, language)
                 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
@@ -34834,101 +36032,90 @@ For claims or questions, please contact:
                 body = self.rfile.read(length).decode('utf-8') if length else '{}'
                 data = json.loads(body)
                 
-                id_number = data.get('id_number', '')
-                
-                if not id_number:
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': 'ID number required'}).encode('utf-8'))
-                    return
-                
-                from services.mislaka_api_service import get_mislaka_service
-                from services.ai_risk_reports_service import get_ai_reports_service
-                
-                mislaka = get_mislaka_service()
-                
-                if not mislaka.is_configured():
-                    self._set_json_headers(503)
-                    self.wfile.write(json.dumps({
-                        'error': 'Mislaka API not configured'
-                    }).encode('utf-8'))
-                    return
-                
-                # Get policies from Mislaka
-                result = mislaka.get_person_policies(id_number)
-                
-                if result.status.value != 'success' or not result.policies:
-                    self._set_json_headers(404)
-                    self.wfile.write(json.dumps({
-                        'error': 'No policies found',
-                        'message': result.error_message or 'No policies returned from Mislaka'
-                    }).encode('utf-8'))
-                    return
-                
-                # Convert policies to CSV format for AI analysis
-                import csv
-                import io
-                
-                csv_buffer = io.StringIO()
-                fieldnames = [
-                    'מספר פוליסה', 'סוג מוצר', 'חברה', 'תאריך תחילה', 
-                    'סטטוס', 'פרמיה חודשית', 'סכום כיסוי', 'ערך צבירה',
-                    'דמי ניהול', 'מסלול השקעה', 'מוטבים'
-                ]
-                writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames)
-                writer.writeheader()
-                
-                for p in result.policies:
-                    writer.writerow({
-                        'מספר פוליסה': p.policy_number,
-                        'סוג מוצר': p.product_type,
-                        'חברה': p.company_name,
-                        'תאריך תחילה': p.start_date,
-                        'סטטוס': p.status,
-                        'פרמיה חודשית': p.premium_monthly,
-                        'סכום כיסוי': p.cover_amount,
-                        'ערך צבירה': p.accumulated_value,
-                        'דמי ניהול': f"{p.management_fee_percent}%",
-                        'מסלול השקעה': p.investment_track,
-                        'מוטבים': ', '.join(p.beneficiaries) if p.beneficiaries else ''
-                    })
-                
-                csv_content = csv_buffer.getvalue().encode('utf-8')
-                
-                # Import to AI Reports service
-                ai_service = get_ai_reports_service()
-                
+                id_number = str(data.get('id_number') or '').strip()
+
                 user_id, user_role, _username, context_error = self._resolve_reports_user_context(session)
                 if context_error:
                     self._set_json_headers(403)
                     self.wfile.write(json.dumps({'error': context_error}).encode('utf-8'))
                     return
+
+                # Identity master: a customer's import always runs on the ID
+                # recorded for them (filled in from the vault when omitted,
+                # refused when it contradicts the record, captured once when
+                # none is recorded yet). Staff may bind the import to a
+                # customer with ``customer_id``.
+                identity_customer = user_id if user_role == 'customer' else str(data.get('customer_id') or '').strip()
+                if identity_customer:
+                    try:
+                        from services import customer_identity_service as _cis
+                        id_number, identity_error = _cis.resolve_lookup_id(
+                            CUSTOMERS, identity_customer, id_number, source='pension',
+                            actor=str(session.get('username') or user_id),
+                            mirrors=[REGISTERED_CUSTOMERS], audit=audit,
+                            ledger=platform_event_ledger)
+                    except ImportError:
+                        identity_error = None
+                    if identity_error:
+                        self._set_json_headers(identity_error[0])
+                        self.wfile.write(json.dumps(identity_error[1]).encode('utf-8'))
+                        return
+
+                if not id_number:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'ID number required',
+                                                 'code': 'identity_required'}).encode('utf-8'))
+                    return
                 
-                # Parse the CSV
-                doc_result = ai_service.parse_file(
-                    filename=f'mislaka_policies_{id_number[-4:]}.csv',
-                    file_content=csv_content,
-                    file_type='csv',
-                    owner_id=user_id,
-                    owner_role=user_role
-                )
-                
-                # Run analysis
-                analysis = ai_service.analyze(doc_result['document_id'])
-                
-                # Generate report
-                report = ai_service.generate_report(analysis.id, language='hebrew')
-                
+                # Pension Data Agent import. The body (Mislaka fetch -> Hebrew
+                # CSV -> parse -> analyse -> Hebrew report) lives in
+                # services/jobs/pension_import_job.py so the synchronous path
+                # and the queued path (PHINS_AGENT_ASYNC -> 202) are identical.
+                from services.agent_job_queue import agent_async_enabled
+                from services.jobs import pension_import_job, queued_response
+                from services.mislaka_api_service import get_mislaka_service
+
+                # Configuration is checked before anything is queued so an
+                # unconfigured deployment still answers 503 immediately.
+                if not get_mislaka_service().is_configured():
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'Mislaka API not configured'
+                    }).encode('utf-8'))
+                    return
+
+                if agent_async_enabled():
+                    job = pension_import_job.enqueue_pension_import(
+                        get_agent_job_queue(),
+                        id_number=id_number,
+                        user_id=str(user_id),
+                        user_role=user_role,
+                        submitted_by=str(user_id),
+                        idempotency_key=(str(data.get('idempotency_key') or '').strip() or None),
+                    )
+                    self._set_json_headers(202)
+                    self.wfile.write(json.dumps(queued_response(job)).encode('utf-8'))
+                    return
+
+                try:
+                    payload = pension_import_job.run_pension_import(
+                        id_number=id_number, user_id=str(user_id), user_role=user_role)
+                except pension_import_job.MislakaNotConfigured:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'Mislaka API not configured'
+                    }).encode('utf-8'))
+                    return
+                except pension_import_job.NoPoliciesFound as not_found:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({
+                        'error': 'No policies found',
+                        'message': not_found.message
+                    }).encode('utf-8'))
+                    return
+
                 self._set_json_headers(200)
-                self.wfile.write(json.dumps({
-                    'success': True,
-                    'message': f'Imported {len(result.policies)} policies from Mislaka',
-                    'document_id': doc_result['document_id'],
-                    'analysis_id': analysis.id,
-                    'report_id': report.id,
-                    'policies_count': len(result.policies),
-                    'total_accumulated': result.total_accumulated,
-                    'total_monthly_premium': result.total_monthly_premium
-                }, ensure_ascii=False).encode('utf-8'))
+                self.wfile.write(json.dumps(payload, ensure_ascii=False).encode('utf-8'))
                 return
                 
             except Exception as e:
@@ -35192,6 +36379,48 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             return
         # ========== AUTO-PILOT API (POST) ==========
+
+        if path in ('/api/terminal/autopilot/halt', '/api/terminal/autopilot/resume',
+                    '/api/terminal/autopilot/promote'):
+            # B12 safety controls. Halting is always allowed to succeed; a
+            # PHINS_TRADING_HALT env halt cannot be lifted here.
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            try:
+                body_data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                body_data = {}
+            if not isinstance(body_data, dict):
+                body_data = {}
+            actor = self._autopilot_control_actor(body_data)
+            if not actor:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            from services.trading_platform_service import get_autopilot_engine
+            engine = get_autopilot_engine()
+            if path.endswith('/halt'):
+                reason = str(body_data.get('reason') or 'manual halt')[:200]
+                result = engine.halt_trading(reason, actor=actor)
+            elif path.endswith('/resume'):
+                result = engine.resume_trading(actor=actor)
+            else:
+                strategy = str(body_data.get('strategy') or body_data.get('strategy_name') or '')
+                version = str(body_data.get('version') or '')
+                if not strategy or not version:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'strategy and version required'}).encode('utf-8'))
+                    return
+                result = engine.promote_strategy_version(strategy, version, actor=actor)
+                if 'error' in result:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+                    return
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
 
         if path == '/api/terminal/autopilot/create':
             if not trading_platform_enabled:
@@ -35538,8 +36767,7 @@ For claims or questions, please contact:
                         SESSIONS[token] = _session_payload
                     _persist_session_to_db(token, _session_payload)
                     
-                    self._set_json_headers()
-                    self.wfile.write(json.dumps({
+                    login_response = {
                         'success': True,
                         'token': token,
                         'username': username,
@@ -35547,7 +36775,16 @@ For claims or questions, please contact:
                         'name': name,
                         'customer_id': customer_id,
                         'expires': expires.isoformat()
-                    }).encode('utf-8'))
+                    }
+                    if role == 'customer':
+                        # One-time mandatory prompt: the dashboard blocks until
+                        # the customer records personal ID + nationality.
+                        try:
+                            login_response.update(_login_identity_flags(customer_id))
+                        except Exception as identity_err:
+                            print(f"[LOGIN] identity flags unavailable: {identity_err}")
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(login_response).encode('utf-8'))
                 else:
                     # Record failed login attempt
                     record_failed_login(client_ip, server_port)
@@ -35674,14 +36911,20 @@ For claims or questions, please contact:
                     print(f"[SESSION VALIDATE POST] WARNING: Could not recover customer_id for {username}")
             
             # Session is valid - return user info
-            self._set_json_headers(200)
-            self.wfile.write(json.dumps({
+            validate_response = {
                 'valid': True,
                 'username': username,
                 'role': role,
                 'customer_id': customer_id,
                 'expires': session.get('expires')
-            }).encode('utf-8'))
+            }
+            if role == 'customer':
+                try:
+                    validate_response.update(_login_identity_flags(customer_id))
+                except Exception as identity_err:
+                    print(f"[SESSION VALIDATE POST] identity flags unavailable: {identity_err}")
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(validate_response).encode('utf-8'))
             return
         
         # ========== TRACK MY APPLICATION (claim-code quick registry) ==========
@@ -35894,6 +37137,39 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
 
+                # Identity master: personal ID + nationality are captured at
+                # registration (mandatory in strict mode; otherwise the one-time
+                # login prompt collects them). Validated before any row is written.
+                reg_national_id = str(data.get('national_id') or data.get('id_number') or '').strip()
+                reg_nationality = str(data.get('nationality') or '').strip()
+                if reg_national_id or reg_nationality:
+                    try:
+                        from services import customer_identity_service as _cis
+                        _reg_code, _reg_norm = _cis.normalize_national_id(reg_national_id, reg_nationality)
+                        if _cis.find_customer_id_by_identity(
+                                _reg_code, _cis.hash_national_id(_reg_code, _reg_norm), CUSTOMERS):
+                            self._set_json_headers(409)
+                            self.wfile.write(json.dumps({
+                                'error': 'This ID number is already registered to another customer',
+                                'code': 'identity_in_use',
+                            }).encode('utf-8'))
+                            return
+                    except ImportError:
+                        pass
+                    except Exception as identity_err:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': str(identity_err),
+                            'code': getattr(identity_err, 'code', 'identity_invalid'),
+                        }).encode('utf-8'))
+                        return
+                else:
+                    identity_gate = _identity_precheck(None, reg_national_id, reg_nationality)
+                    if identity_gate:
+                        self._set_json_headers(identity_gate[0])
+                        self.wfile.write(json.dumps(identity_gate[1]).encode('utf-8'))
+                        return
+
                 # Registration is invitation-code-only. Legacy OTP fields in the payload
                 # are intentionally ignored to keep API compatibility with older clients.
 
@@ -36038,6 +37314,23 @@ For claims or questions, please contact:
                     CUSTOMERS[customer_id] = customer_record
                     REGISTERED_CUSTOMERS[customer_id] = customer_record
 
+                    if reg_national_id:
+                        identity_result = _pipeline_identity(
+                            customer_id, reg_national_id, reg_nationality,
+                            source='registration', actor=email,
+                        )
+                        if identity_result.get('outcome') not in ('captured', 'consistent'):
+                            # Pre-validated above; a failure here is a race with a
+                            # concurrent registration of the same ID. Undo the rows.
+                            CUSTOMERS.pop(customer_id, None)
+                            REGISTERED_CUSTOMERS.pop(customer_id, None)
+                            self._set_json_headers(409)
+                            self.wfile.write(json.dumps({
+                                'error': identity_result.get('error') or 'Unable to record identity',
+                                'code': identity_result.get('code') or 'identity_in_use',
+                            }).encode('utf-8'))
+                            return
+
                     USERS[email] = {
                         'hash': pwd_hash['hash'],
                         'salt': pwd_hash['salt'],
@@ -36134,7 +37427,7 @@ For claims or questions, please contact:
                         create_notification_service,
                         should_use_mock_notifications,
                     )
-                    from services.customer_communication_agent import get_customer_communication_agent
+                    from services.customer_agent.communication import get_customer_communication_agent
 
                     use_mock_notifications = should_use_mock_notifications()
 
@@ -36158,7 +37451,9 @@ For claims or questions, please contact:
                         accounts=account_snapshot,
                         communities=[],
                         whatsapp_phone=phone if phone else None,
-                        login_url='/login.html'
+                        login_url='/login.html',
+                        customer_record=customer_record,
+                        actor='registration',
                     )
                     welcome_notification_sent = bool(
                         welcome_package.get('email', {}).get('success')
@@ -40285,97 +41580,38 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Unsupported file type. Use PDF, images, or documents.'}).encode('utf-8'))
                     return
                 
-                # Import and use underwriting bot service for AI assessment
+                # Underwriting Bot assessment. The body lives in
+                # services/jobs/underwriting_bot_job.py so the synchronous
+                # path and the queued path (PHINS_AGENT_ASYNC -> 202) compute
+                # the identical payload.
                 try:
-                    from services.underwriting_bot_service import (
-                        UnderwritingBotService, MetadataType, RiskLevel, DecisionRecommendation
-                    )
-                    
-                    # Initialize bot service with existing data stores
-                    bot_service = UnderwritingBotService(
-                        customers=CUSTOMERS,
-                        policies=POLICIES,
-                        underwriting_apps=UNDERWRITING_APPLICATIONS,
-                        claims=CLAIMS,
-                        audit_service=audit
-                    )
-                    
-                    # Determine metadata type from file extension
-                    metadata_type = MetadataType.OTHER_DOCUMENT
-                    if lower_name.endswith('.pdf'):
-                        # Attempt to determine if it's a medical report or other document
-                        metadata_type = MetadataType.MEDICAL_REPORT
-                    elif lower_name.endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff')):
-                        metadata_type = MetadataType.PHOTO
-                    elif lower_name.endswith(('.doc', '.docx')):
-                        metadata_type = MetadataType.OTHER_DOCUMENT
-                    
-                    # Generate assessment ID
-                    assessment_id = f"AI-ASSESS-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
-                    
-                    # Start an assessment
-                    assessment = bot_service.start_assessment(
-                        underwriting_id=assessment_id,
-                        customer_id=f"UPLOAD-{datetime.now().strftime('%Y%m%d')}",
-                        policy_id=f"POL-UPLOAD-{random.randint(1000,9999)}"
-                    )
-                    
-                    # Add the uploaded file as metadata
-                    metadata = bot_service.add_metadata(
-                        assessment_id=assessment.id,
-                        metadata_type=metadata_type,
-                        file_name=filename,
-                        file_path='',  # No file path needed for direct content
+                    from services.agent_job_queue import agent_async_enabled
+                    from services.jobs import queued_response, underwriting_bot_job
+
+                    if agent_async_enabled():
+                        job = underwriting_bot_job.enqueue_ai_assessment(
+                            get_agent_job_queue(),
+                            filename=filename,
+                            file_content=file_content,
+                            mime_type=up.get('content_type', ''),
+                            actor=actor,
+                            submitted_by=actor,
+                        )
+                        self._set_json_headers(202)
+                        self.wfile.write(json.dumps(queued_response(job)).encode('utf-8'))
+                        return
+
+                    assessment_result = underwriting_bot_job.run_ai_assessment(
+                        get_agent_job_context(),
+                        filename=filename,
                         file_content=file_content,
-                        mime_type=up.get('content_type', '')
+                        mime_type=up.get('content_type', ''),
+                        actor=actor,
                     )
-                    
-                    # Process the metadata
-                    process_result = bot_service.process_metadata(metadata.id, file_content=file_content)
-                    
-                    # Run risk assessment
-                    report = bot_service.run_risk_assessment(assessment.id)
-                    
-                    # Build response
-                    assessment_result = {
-                        'assessment_id': assessment.id,
-                        'report_id': report.id,
-                        'risk_score': report.overall_risk_score,
-                        'risk_level': report.risk_level.value if hasattr(report.risk_level, 'value') else str(report.risk_level),
-                        'recommendation': report.recommendation.value if hasattr(report.recommendation, 'value') else str(report.recommendation),
-                        'confidence_level': report.confidence_level,
-                        'identity_verified': report.identity_verified,
-                        'identity_score': report.identity_score,
-                        'document_score': report.document_score,
-                        'medical_score': report.medical_score,
-                        'behavioral_score': report.behavioral_score,
-                        'fraud_score': report.fraud_score,
-                        'explanation': report.explanation,
-                        'risk_factors': [rf.to_dict() for rf in report.risk_factors] if report.risk_factors else [],
-                        'processing_time_seconds': report.processing_time_seconds,
-                        'file_analyzed': filename,
-                        'file_size': file_size,
-                        'analyzed_by': actor,
-                        'analyzed_at': datetime.now().isoformat()
-                    }
-                    
-                    if audit:
-                        try:
-                            audit.log(actor, 'ai_assessment', 'risk_dashboard', assessment.id, {
-                                'file_name': filename,
-                                'risk_score': report.overall_risk_score,
-                                'risk_level': report.risk_level.value if hasattr(report.risk_level, 'value') else str(report.risk_level),
-                                'recommendation': report.recommendation.value if hasattr(report.recommendation, 'value') else str(report.recommendation)
-                            })
-                        except Exception:
-                            pass
-                    
                     self._set_json_headers(200)
-                    self.wfile.write(json.dumps({
-                        'success': True,
-                        'message': 'AI assessment completed successfully',
-                        'assessment': assessment_result
-                    }).encode('utf-8'))
+                    self.wfile.write(json.dumps(
+                        underwriting_bot_job.response_body(assessment_result)
+                    ).encode('utf-8'))
                     
                 except ImportError as e:
                     # Fallback to simulated AI assessment if service not available
@@ -42912,6 +44148,36 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
 
+        # ========== BI MATERIALIZED VIEWS (B10) ==========
+        if path == '/api/bi/materialize':
+            _mat_auth_header = self.headers.get('Authorization', '')
+            _mat_token = _mat_auth_header.replace('Bearer ', '') if _mat_auth_header.startswith('Bearer ') else None
+            session = validate_session(_mat_token) if _mat_token else None
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            try:
+                try:
+                    from web_portal import api_bi_analytics as _bi
+                except Exception:
+                    import api_bi_analytics as _bi  # fallback when run as a script
+                data_sources = bi_data_sources()
+                data_sources['_materialize_source'] = 'api'
+                status_code, payload = _bi.handle_bi_materialize(self, data_sources)
+                if audit and status_code == 200:
+                    try:
+                        actor = (session.get('username') if session else None) or 'system'
+                        audit.log(actor, 'materialize', 'bi_views',
+                                  ','.join(sorted((payload.get('views') or {}).keys())), {})
+                    except Exception:
+                        pass
+            except Exception as bi_exc:
+                status_code, payload = 500, {'error': str(bi_exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
         # Classic apply.html actuarial quote (same kernel as create when
         # application_channel is classic). Chat uses /api/chat-application.
         if path == '/api/policies/quote':
@@ -43028,6 +44294,23 @@ For claims or questions, please contact:
                     str(data.get('application_channel') or '').strip().lower() == 'chat'
                 )
 
+                # Identity requirement is checked before any customer/login row is
+                # created so a refused application leaves nothing behind.
+                _signature_payload = data.get('signature') if isinstance(data.get('signature'), dict) else {}
+                _raw_national_id = (
+                    _signature_payload.get('id_number') or data.get('id_number')
+                    or data.get('national_id') or ''
+                )
+                _raw_nationality = (
+                    data.get('nationality') or data.get('customer_nationality')
+                    or _signature_payload.get('nationality') or ''
+                )
+                identity_gate = _identity_precheck(customer_id, _raw_national_id, _raw_nationality)
+                if identity_gate:
+                    self._set_json_headers(identity_gate[0])
+                    self.wfile.write(json.dumps(identity_gate[1]).encode('utf-8'))
+                    return
+
                 # Create customer if new (and no existing customer with same email)
                 if not existing_customer and customer_id not in CUSTOMERS:
                     try:
@@ -43069,6 +44352,22 @@ For claims or questions, please contact:
                         self._set_json_headers(400)
                         self.wfile.write(json.dumps({'error': 'Failed to create customer account'}).encode('utf-8'))
                         return
+
+                # Identity master: the applicant's personal ID + nationality are
+                # reconciled with the customer record (captured once, or checked
+                # against what is already recorded). The application keeps only a
+                # masked number and the PII-free reference.
+                identity_result = _pipeline_identity(
+                    customer_id, _raw_national_id, _raw_nationality,
+                    source='chat' if str(data.get('application_channel') or '').lower() == 'chat' else 'application',
+                    actor=customer_email or customer_id,
+                )
+                identity_gate = _identity_gate_error(identity_result)
+                if identity_gate:
+                    self._set_json_headers(identity_gate[0])
+                    self.wfile.write(json.dumps(identity_gate[1]).encode('utf-8'))
+                    return
+                _id_number_masked = _identity_masked(_raw_national_id) if _raw_national_id else None
                 
                 # Create underwriting application
                 uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
@@ -43275,11 +44574,8 @@ For claims or questions, please contact:
                         'signature_at': (data.get('signature') or {}).get('signed_at')
                         if isinstance(data.get('signature'), dict)
                         else None,
-                        'id_number': (
-                            (data.get('signature') or {}).get('id_number')
-                            if isinstance(data.get('signature'), dict)
-                            else None
-                        ) or data.get('id_number'),
+                        # Masked: the number itself lives encrypted on the customer.
+                        'id_number': _id_number_masked,
                         'signature_image_sha256': (
                             (data.get('signature') or {}).get('image_sha256')
                             if isinstance(data.get('signature'), dict) else None
@@ -43302,10 +44598,11 @@ For claims or questions, please contact:
                         if isinstance(data.get('signature'), dict) else None,
                     'signature_image_data': (data.get('signature') or {}).get('image_data')
                         if isinstance(data.get('signature'), dict) else None,
-                    'id_number': (
-                        (data.get('signature') or {}).get('id_number')
-                        if isinstance(data.get('signature'), dict) else None
-                    ) or data.get('id_number'),
+                    'id_number': _id_number_masked,
+                    # PII-free identity pointer (nationality, hash, last4) shared by
+                    # every pipeline; None when the customer has not recorded one yet.
+                    'customer_identity': identity_result.get('reference'),
+                    'identity_mismatch': identity_result.get('outcome') == 'mismatch',
                     'prior_disclosure': (data.get('prior_disclosure') or {}).get('text')
                         if isinstance(data.get('prior_disclosure'), dict)
                         else data.get('prior_disclosure'),
@@ -43541,6 +44838,13 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Invalid coverage amount'}).encode('utf-8'))
                     return
+                _raw_national_id = data.get('national_id') or data.get('id_number') or ''
+                _raw_nationality = data.get('nationality') or data.get('customer_nationality') or ''
+                identity_gate = _identity_precheck(customer_id, _raw_national_id, _raw_nationality)
+                if identity_gate:
+                    self._set_json_headers(identity_gate[0])
+                    self.wfile.write(json.dumps(identity_gate[1]).encode('utf-8'))
+                    return
                 # Upsert minimal customer record if needed
                 if customer_id not in CUSTOMERS:
                     CUSTOMERS[customer_id] = {
@@ -43549,6 +44853,15 @@ For claims or questions, please contact:
                         'email': data.get('customer_email', ''),
                         'created_date': datetime.now().isoformat()
                     }
+                identity_result = _pipeline_identity(
+                    customer_id, _raw_national_id, _raw_nationality,
+                    source='application', actor=data.get('customer_email') or customer_id,
+                )
+                identity_gate = _identity_gate_error(identity_result)
+                if identity_gate:
+                    self._set_json_headers(identity_gate[0])
+                    self.wfile.write(json.dumps(identity_gate[1]).encode('utf-8'))
+                    return
                 # Generate IDs
                 policy_id = generate_policy_id()
                 uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
@@ -43566,6 +44879,8 @@ For claims or questions, please contact:
                     'risk_score': data.get('risk_score', 'medium'),
                     'risk_assessment': data.get('risk_score', 'medium'),
                     'medical_exam_required': data.get('medical_exam_required', False),
+                    'customer_identity': identity_result.get('reference'),
+                    'identity_mismatch': identity_result.get('outcome') == 'mismatch',
                     'submitted_date': datetime.now().isoformat(),
                     'created_date': datetime.now().isoformat()
                 }
@@ -44911,6 +46226,21 @@ For claims or questions, please contact:
                         self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
                         return
                     data['customer_id'] = session_customer_id
+
+                # Identity master: a claim carries the claimant's PII-free identity
+                # reference. Customers must have completed the one-time identity
+                # prompt (strict mode); staff-filed claims on customers without
+                # one are stamped None and flagged for follow-up.
+                identity_result = _pipeline_identity(
+                    data.get('customer_id'), None, None,
+                    source='application', actor=(session.get('username') if session else 'system'),
+                )
+                if role == 'customer':
+                    identity_gate = _identity_gate_error(identity_result)
+                    if identity_gate:
+                        self._set_json_headers(identity_gate[0])
+                        self.wfile.write(json.dumps(identity_gate[1]).encode('utf-8'))
+                        return
                 
                 # Extract all claim data
                 claimed_amount = float(data.get('claimed_amount', 0))
@@ -44981,6 +46311,8 @@ For claims or questions, please contact:
                     'bank_details': bank_details if payment_destination == 'bank_transfer' else None,
                     'files': files_metadata,
                     'files_count': files_count,
+                    'customer_identity': identity_result.get('reference'),
+                    'identity_missing': identity_result.get('reference') is None,
                     'status': 'pending',
                     'filed_date': datetime.now().isoformat(),
                     'created_date': datetime.now().isoformat()
@@ -45768,102 +47100,34 @@ For claims or questions, please contact:
                         self.wfile.write(json.dumps({'error': f'Claim {claim_id} not found'}).encode('utf-8'))
                         return
                 
-                # Initialize Claims Bot Service
-                try:
-                    from services.claims_bot_service import get_claims_bot_service, init_claims_bot_service
-                    claims_bot = init_claims_bot_service(
-                        customers=CUSTOMERS,
-                        policies=POLICIES,
-                        claims=CLAIMS,
-                        underwriting=UNDERWRITING_APPLICATIONS,
-                        audit_service=audit if 'audit' in dir() else None
+                # Claims Bot report. The body (full bot + basic-scoring
+                # fallback) lives in services/jobs/claims_bot_job.py so the
+                # synchronous path and the queued path (PHINS_AGENT_ASYNC ->
+                # 202) compute the identical payload.
+                from services.agent_job_queue import agent_async_enabled
+                from services.jobs import claims_bot_job, queued_response
+
+                report_actor = (
+                    (session or {}).get('username')
+                    or session_customer_id
+                    or ('test' if PHINS_TEST_MODE else 'anonymous')
+                )
+                if agent_async_enabled():
+                    job = claims_bot_job.enqueue_probability_report(
+                        get_agent_job_queue(),
+                        claim_id=claim_id,
+                        claim=claim,
+                        submitted_by=str(report_actor),
                     )
-                except ImportError:
-                    claims_bot = None
-                
-                if not claims_bot:
-                    # Fallback: Generate a basic probability report without the full service
-                    customer_id = claim.get('customer_id', '')
-                    policy_id = claim.get('policy_id', '')
-                    claimed_amount = float(claim.get('claimed_amount', 0) or 0)
-                    
-                    # Find underwriting data
-                    uw_data = None
-                    for uw_id, uw in UNDERWRITING_APPLICATIONS.items():
-                        if uw.get('customer_id') == customer_id or uw.get('policy_id') == policy_id:
-                            uw_data = uw
-                            break
-                    
-                    # Calculate basic scores
-                    policy = POLICIES.get(policy_id, {})
-                    coverage = float(policy.get('coverage_amount', 500000) or 500000)
-                    amount_ratio = claimed_amount / coverage if coverage > 0 else 0
-                    
-                    # Base authenticity score
-                    auth_score = 0.75
-                    if amount_ratio > 0.9:
-                        auth_score -= 0.2
-                    elif amount_ratio > 0.7:
-                        auth_score -= 0.1
-                    
-                    # Adjust for underwriting data
-                    if uw_data:
-                        if uw_data.get('medical_conditions'):
-                            auth_score += 0.05
-                        if uw_data.get('identity_verified'):
-                            auth_score += 0.05
-                    
-                    auth_score = max(0.1, min(0.95, auth_score))
-                    
-                    report = {
-                        'id': f"PROB-RPT-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                        'claim_id': claim_id,
-                        'customer_id': customer_id,
-                        'policy_id': policy_id,
-                        'assessment_date': datetime.now().isoformat(),
-                        'authenticity_probability': auth_score,
-                        'authenticity_percentage': f"{auth_score * 100:.1f}%",
-                        'fraud_probability': 1 - auth_score,
-                        'fraud_percentage': f"{(1 - auth_score) * 100:.1f}%",
-                        'component_scores': {
-                            'document_authenticity': 0.85,
-                            'medical_consistency': 0.80,
-                            'timing_legitimacy': 0.75,
-                            'amount_reasonability': 1 - (amount_ratio * 0.5),
-                            'customer_history': 0.85,
-                            'underwriting_alignment': 0.80 if uw_data else 0.50
-                        },
-                        'hidden_conditions': {
-                            'detected': 0,
-                            'conditions': [],
-                            'impact_score': 0
-                        },
-                        'fraud_indicators': {
-                            'count': 0,
-                            'indicators': [],
-                            'high_severity_count': 0
-                        },
-                        'recommendation': 'approve_full' if auth_score >= 0.7 else 'refer_investigation',
-                        'recommendation_display': 'Approve Full' if auth_score >= 0.7 else 'Refer Investigation',
-                        'confidence_level': 0.75,
-                        'risk_level': 'low' if auth_score >= 0.8 else ('medium' if auth_score >= 0.6 else 'high'),
-                        'explanation': f"Basic assessment completed. Authenticity probability: {auth_score:.1%}",
-                        'ai_analysis': {
-                            'summary': f"This claim has been assessed with {auth_score:.1%} authenticity probability.",
-                            'key_findings': [f"Claim amount ratio: {amount_ratio:.1%} of coverage"],
-                            'red_flags': [] if auth_score >= 0.7 else ['Amount ratio high'],
-                            'green_flags': ['Documentation provided'] if claim.get('files_count', 0) > 0 else []
-                        }
-                    }
-                else:
-                    # Use full Claims Bot Service
-                    prob_report = claims_bot.generate_probability_report(claim_id)
-                    if prob_report:
-                        report = prob_report.to_dict()
-                    else:
-                        self._set_json_headers(500)
-                        self.wfile.write(json.dumps({'error': 'Failed to generate probability report'}).encode('utf-8'))
-                        return
+                    self._set_json_headers(202)
+                    self.wfile.write(json.dumps(queued_response(job)).encode('utf-8'))
+                    return
+
+                report = claims_bot_job.generate_probability_report(get_agent_job_context(), claim_id)
+                if not report:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': 'Failed to generate probability report'}).encode('utf-8'))
+                    return
                 
                 report = sanitize_claim_probability_report(report)
                 self._set_json_headers()
@@ -52547,6 +53811,43 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(report, default=str).encode('utf-8'))
             return
 
+        # Admin: record WhatsApp/SMS consent for a stored customer (B6).
+        if path.startswith('/api/admin/customers/') and path.endswith('/consent'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'accountant', 'underwriter']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Unauthorized. Admin, accountant, or underwriter access required.'
+                }).encode('utf-8'))
+                return
+            parts = [p for p in path.split('/') if p]
+            # api / admin / customers / {id} / consent
+            if len(parts) != 5 or parts[3] in ('upload', 'contact', 'consent'):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body) if body else {}
+            except Exception:
+                data = {}
+            if not isinstance(data, dict):
+                data = {}
+            report = admin_set_customer_consent(
+                parts[3],
+                channel=str(data.get('channel') or 'whatsapp'),
+                granted=data.get('granted', True),
+                actor=(session or {}).get('username', 'admin'),
+                note=data.get('note'),
+            )
+            status_code = 200 if report.get('success') else (
+                404 if report.get('error') == 'Customer not found' else 400
+            )
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(report, default=str).encode('utf-8'))
+            return
+
         # ========== CUSTOMER BILLING PROJECTIONS API (POST) ==========
         
         if path == '/api/billing/projections':
@@ -53642,11 +54943,21 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Missing required fields: first name, last name, and email'}).encode('utf-8'))
                 return
-            
+
             # Generate IDs
             customer_id = generate_customer_id()
             policy_id = generate_policy_id()
             uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+
+            # Identity master gate runs before the customer row exists so a
+            # refused quote leaves nothing behind.
+            _raw_national_id = _field('nationalId', 'national-id', 'national_id', 'id_number')
+            _raw_nationality = _field('nationality', 'citizenship')
+            identity_gate = _identity_precheck(customer_id, _raw_national_id, _raw_nationality)
+            if identity_gate:
+                self._set_json_headers(identity_gate[0])
+                self.wfile.write(json.dumps(identity_gate[1]).encode('utf-8'))
+                return
             
             # Create customer record
             customer_name = f"{first_name} {last_name}".strip()
@@ -53664,9 +54975,20 @@ For claims or questions, please contact:
                 'state': _field('state', 'stateProvince'),
                 'zip': _field('zip', 'postalCode'),
                 'occupation': _field('occupation'),
-                'national_id': _field('nationalId', 'national-id'),
                 'created_date': datetime.now().isoformat()
             }
+            # The number itself is stored encrypted on the customer by the
+            # identity service; the record only carries hash/last4/nationality.
+            identity_result = _pipeline_identity(
+                customer_id, _raw_national_id, _raw_nationality,
+                source='quote', actor=email_value or customer_id,
+            )
+            identity_gate = _identity_gate_error(identity_result)
+            if identity_gate:
+                CUSTOMERS.pop(customer_id, None)
+                self._set_json_headers(identity_gate[0])
+                self.wfile.write(json.dumps(identity_gate[1]).encode('utf-8'))
+                return
             
             # Provision portal login for the customer
             cust_email = CUSTOMERS[customer_id].get('email') or f"{customer_id.lower()}@example.com"
@@ -53725,6 +55047,8 @@ For claims or questions, please contact:
                 },
                 'risk_assessment': risk_score,
                 'medical_exam_required': medical_exam_required,
+                'customer_identity': identity_result.get('reference'),
+                'identity_mismatch': identity_result.get('outcome') == 'mismatch',
                 'submitted_date': datetime.now().isoformat()
             }
 
@@ -56061,24 +57385,58 @@ def run_server(port: int = PORT) -> None:
     # back to the synchronous upload path, never blocks serving traffic.
     try:
         from services.document_processing_service import async_processing_enabled
-        if async_processing_enabled():
-            from services.document_job_worker import get_document_job_worker
-            _doc_worker = get_document_job_worker(doc_service=get_document_service())
-            _doc_worker.event_hook = lambda event_type, doc_id, payload: (
+        from services.agent_job_queue import agent_async_enabled
+        if async_processing_enabled() or agent_async_enabled():
+            # Bind every adapter before the threads start so agent jobs left
+            # pending in the database by a previous process are claimed at
+            # boot, not only after the first request touches a route.
+            _doc_worker = get_agent_job_queue()
+            # One queue serves every agent (A3): document events keep their
+            # historical ledger names; other subjects are recorded under
+            # ``job.*`` with their own entity type.
+            _doc_worker.event_hook = lambda event_type, subject_id, payload: (
                 platform_event_ledger.append_event(
-                    event_type=f"document.{event_type.lower()}",
-                    entity_type='document',
-                    entity_id=doc_id,
+                    event_type=(
+                        f"document.{event_type.lower()}"
+                        if payload.get('subject_type', 'document') == 'document'
+                        else f"job.{event_type.lower()}"
+                    ),
+                    entity_type=payload.get('subject_type', 'document'),
+                    entity_id=subject_id,
                     actor='document_job_worker',
                     payload=payload,
                     ledger_type='event',
                 )
             )
             _doc_worker.start()
-            print(f"📄 Async document worker started "
-                  f"({_doc_worker.concurrency} threads, retries {_doc_worker.retry_schedule}s)")
+            print(f"📄 Async job queue started "
+                  f"({_doc_worker.concurrency}-{_doc_worker.max_concurrency} threads, "
+                  f"retries {_doc_worker.retry_schedule}s)")
+            # B11: one recurring SLA-clock row closes elapsed delivery bidding
+            # windows (idempotent key → shared across processes/restarts).
+            try:
+                from services.jobs import delivery_sla_job as _sla_job
+                _sla = _sla_job.ensure_sla_clock(_doc_worker)
+                print(f"⏱️  Delivery bidding SLA clock: {_sla.get('id')} "
+                      f"(every {_sla_job.tick_seconds():g}s)")
+            except Exception as _sla_exc:
+                print(f"   ⚠️  Delivery SLA clock not scheduled: {_sla_exc}")
     except Exception as _worker_exc:
-        print(f"   ⚠️  Async document worker not started: {_worker_exc}")
+        print(f"   ⚠️  Async job queue not started: {_worker_exc}")
+
+    # Video jobs a previous process left in flight get their submission or
+    # polling re-armed (B8); without this a restart stranded them forever.
+    try:
+        _rearmed = rearm_media_video_jobs()
+        if _rearmed['submission'] or _rearmed['polling']:
+            print(f"🎬 Video jobs re-armed after restart: "
+                  f"{_rearmed['submission']} awaiting submission, {_rearmed['polling']} polling")
+    except Exception as _rearm_exc:
+        print(f"   ⚠️  Video job re-arm skipped: {_rearm_exc}")
+
+    # BI dashboards: store writes bump the BI data version and, with the
+    # agent queue running, re-materialize the views off the request path (B10).
+    bind_bi_write_hooks()
 
     server_address = (HOST, port)
     httpd = ThreadingHTTPServer(server_address, PortalHandler)

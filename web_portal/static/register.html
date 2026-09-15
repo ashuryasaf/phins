@@ -440,6 +440,19 @@
           </div>
 
           <div class="form-group">
+            <label for="nationality">Nationality *</label>
+            <input type="text" id="nationality" name="nationality" list="nationality-options" required placeholder="e.g. Israel, USA" autocomplete="off" data-no-i18n />
+            <datalist id="nationality-options"></datalist>
+            <small id="nationality-hint"></small>
+          </div>
+
+          <div class="form-group">
+            <label for="national_id">Personal ID number *</label>
+            <input type="text" id="national_id" name="national_id" required placeholder="National ID / Teudat Zehut" autocomplete="off" inputmode="numeric" data-no-i18n />
+            <small id="national-id-hint">Stored encrypted and used only to verify your identity across your PHINS file.</small>
+          </div>
+
+          <div class="form-group">
             <label for="password">Password *</label>
             <input type="password" id="password" name="password" required placeholder="Create a strong password" />
             <div class="password-strength">

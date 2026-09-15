@@ -578,6 +578,7 @@
         }
     </style>
   <link rel="stylesheet" href="/phins-theme.css">
+  <script src="/agent-jobs.js"></script>
 </head>
 <body>
     <header class="phins-header">
@@ -1263,14 +1264,14 @@
             }
             
             try {
-                const response = await fetch('/api/claims/probability-report', {
+                const response = await phinsAwaitJob(await fetch('/api/claims/probability-report', {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({ id: claimId })
-                });
+                }), { token });
                 
                 if (!response.ok) {
                     throw new Error('Failed to generate probability report');
