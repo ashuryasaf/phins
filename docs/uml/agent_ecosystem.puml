@@ -123,12 +123,15 @@ class AgentCommission <<new>> #ccffcc {
   agent_id : FK -> Agent
   affiliation_id : FK -> AgentAffiliation
   source_event_id : ledger id (idempotency key)
-  source_type : policy_premium|marketplace_order
+  source_type : policy_premium|policy_renewal|marketplace_order
+  period : '' (initial term) | renewal-term start YYYY-MM-DD
   base_amount : Float
   rate : Float (locked)
   amount : Float = base_amount * rate
   currency
   status : accrued|payable|paid|reversed
+  payout_id : FK -> AgentPayout (nullable)
+  paid_at : nullable
   ledger_entry_id : FK -> PlatformLedgerEntry
 }
 
@@ -155,12 +158,20 @@ class Policy <<existing>> #white {
   id / customer_id / annual_premium
 }
 
-class AgentPayout <<new (phase 2)>> #ccffcc {
-  id : PK
+class AgentPayout <<new (§C)>> #ccffcc {
+  id : PK (APAY-...)
   agent_id : FK -> Agent
-  period
-  total_amount
-  status : pending|settled
+  status : calculated|settled
+  gross_amount : Float = sum(commission.amount)
+  commission_count / commission_ids (JSON)
+  commissions_hash : sha256(sorted ids)  ' content address
+  idempotency_key : caller key (nullable, unique)
+  period_start / period_end
+  created_by / settled_by / settled_at
+  external_payout_reference : nullable
+  ledger_entry_id : agent ledger (calculated)
+  platform_ledger_entry_id : AGPAY-{id} (settled anchor)
+  platform_entry_hash
 }
 
 User "1" -- "0..1" Agent
@@ -174,6 +185,8 @@ Customer "0..*" -- "0..1" Agent : referring_agent_id
 Supplier "0..*" -- "0..1" Agent : referring_agent_id
 Customer "1" -- "0..*" Policy
 Agent "1" -- "0..*" AgentPayout
+AgentPayout "0..1" -- "0..*" AgentCommission : sweeps (payable -> paid)
+AgentPayout "1" -- "0..1" PlatformLedgerEntry : settled anchor
 
 note bottom
   Integrity invariants:
@@ -182,7 +195,13 @@ note bottom
       invitation/affiliation version (append-only, never in-place edit).
   (3) Every AgentCommission row is backed 1:1 by a hash-chained ledger entry;
       reversals are compensating entries, never deletes.
-  (4) (source_event_id, affiliation_id) is unique -> idempotent accrual.
+  (4) (source_event_id, affiliation_id) is unique -> idempotent accrual;
+      a renewal term embeds its period in source_event_id
+      (policy:{id}:{YYYY-MM-DD}) so each term accrues once, never twice.
+  (5) A payout run copies commission amounts (never edits them); settlement
+      re-verifies the swept set (linkage, payable status, amount = base x rate,
+      gross = sum, chain intact) and writes the platform-ledger anchor BEFORE
+      any status moves -> fail closed.
 end note
 @enduml
 
@@ -292,9 +311,9 @@ end note
 @startuml agent_commission_state
 title State Machine — AgentCommission
 
-[*] --> accrued : revenue event (ledger append)
-accrued --> payable : period close / admin confirm
-payable --> paid : payout settlement run
+[*] --> accrued : revenue event (ledger append)\ninitial term or first paid bill of a renewal term
+accrued --> payable : admin payout run (swept into APAY run,\nrun status = calculated)
+payable --> paid : admin settles the run (platform-ledger anchor\nAGPAY-{run id} written first; run status = settled)
 accrued --> reversed : compensating ledger entry\n(e.g. refund / chargeback)
 payable --> reversed : compensating ledger entry
 paid --> [*]
