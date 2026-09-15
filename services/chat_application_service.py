@@ -355,10 +355,42 @@ def _israeli_id_checksum_ok(value: str) -> bool:
     return total % 10 == 0
 
 
-def _validate_id_number(raw: Any) -> Tuple[bool, str]:
+def _validate_nationality(raw: Any) -> Tuple[bool, str]:
+    """Resolve a typed nationality ("Israel", "ISR", "ישראל") to ISO alpha-2."""
+    text = str(raw or "").strip()
+    if not text:
+        return False, "Please select your nationality (start typing your country)."
+    try:
+        from services.customer_identity_service import resolve_nationality
+        code = resolve_nationality(text)
+    except ImportError:
+        code = text.upper() if re.fullmatch(r"[A-Za-z]{2}", text) else None
+    if not code:
+        return False, "I couldn't match that nationality - please pick a country from the list."
+    return True, code
+
+
+def _validate_id_number(raw: Any, nationality: Any = None) -> Tuple[bool, str]:
+    """Validate the personal ID for ``nationality`` via the identity master.
+
+    Same rules everywhere (registration, login prompt, classic apply, chat):
+    Israeli Teudat Zehut checksum, SSN/NINO/DNI/CPF formats, generic
+    alphanumerics elsewhere. Without a nationality the legacy heuristic
+    (9 digits => Israeli) is kept for older sessions.
+    """
     cleaned = re.sub(r"[\s\-]", "", str(raw or "").strip())
     if not cleaned:
         return False, "Please enter your national ID / Teudat Zehut number."
+    if nationality:
+        try:
+            from services.customer_identity_service import IdentityError, normalize_national_id
+            try:
+                _code, normalized = normalize_national_id(cleaned, nationality)
+                return True, normalized
+            except IdentityError as exc:
+                return False, f"{exc} - please double-check the digits."
+        except ImportError:
+            pass
     digits = re.sub(r"\D", "", cleaned)
     if len(digits) == 9 and digits == cleaned:
         if not _israeli_id_checksum_ok(digits):
@@ -418,7 +450,14 @@ def _validate_signature(value: Any, session: Dict[str, Any]) -> Tuple[bool, Any]
                 f"Signature must match the name on this application ({expected})."
             )
 
-    id_ok, id_val = _validate_id_number(value.get("id_number"))
+    # Nationality decides which ID format/checksum applies; it is mandatory so
+    # the identity master records (nationality, ID) together for this person.
+    nat_ok, nat_val = _validate_nationality(
+        value.get("nationality") or (session.get("answers") or {}).get("nationality"))
+    if not nat_ok:
+        return False, nat_val
+
+    id_ok, id_val = _validate_id_number(value.get("id_number"), nat_val)
     if not id_ok:
         return False, id_val
 
@@ -434,6 +473,7 @@ def _validate_signature(value: Any, session: Dict[str, Any]) -> Tuple[bool, Any]
     # payload; mark_submitted redacts the raw bytes afterward.
     return True, {
         "name": typed,
+        "nationality": nat_val,
         "id_number": id_val,
         "signature_data": str(value.get("signature_data")).strip(),
         "image_sha256": img_sha,
@@ -840,6 +880,14 @@ class ChatPolicyApplicationService:
                 or (session.get("contact") or {}).get("country")
                 or ""
             )
+        elif step["id"] == "signature":
+            # Signature panel asks for nationality (drives the ID format check);
+            # prefill with the residence country, editable by the applicant.
+            public_input["nationality_default"] = (
+                session.get("answers", {}).get("country")
+                or (session.get("contact") or {}).get("country")
+                or ""
+            )
         labels = public_input.get("labels") or {}
         # Ensure choice steps without English labels still get Hebrew labels.
         if step["id"] == "gender" and not labels:
@@ -968,6 +1016,7 @@ class ChatPolicyApplicationService:
             session["answers"]["signature_at"] = session["signature_at"]
             session["answers"]["signature_method"] = sig.get("method") or "drawn_canvas"
             session["answers"]["id_number"] = sig.get("id_number")
+            session["answers"]["nationality"] = sig.get("nationality")
             session["answers"]["signature_image_sha256"] = sig.get("image_sha256")
             # Keep raw PNG until finalize copies it into the UW payload.
             if sig.get("signature_data"):
@@ -979,6 +1028,7 @@ class ChatPolicyApplicationService:
                     "signature_at": session["signature_at"],
                     "signature_method": session["answers"]["signature_method"],
                     "id_number_last4": str(sig.get("id_number") or "")[-4:],
+                    "nationality": sig.get("nationality"),
                     "image_sha256": sig.get("image_sha256"),
                 }))
 
@@ -2154,11 +2204,13 @@ class ChatPolicyApplicationService:
                 "signed_at": answers.get("signature_at"),
                 "method": answers.get("signature_method") or "drawn_canvas",
                 "id_number": answers.get("id_number") or "",
+                "nationality": answers.get("nationality") or "",
                 "image_sha256": answers.get("signature_image_sha256") or "",
                 "image_data": answers.get("signature_data") or None,
                 "mandatory": True,
             },
             "id_number": answers.get("id_number") or "",
+            "nationality": answers.get("nationality") or "",
             "questionnaire_version": QUESTIONNAIRE_VERSION,
             "acknowledgements": [
                 "I confirm the answers I provided are accurate to the best of my knowledge.",

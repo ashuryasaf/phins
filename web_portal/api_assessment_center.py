@@ -244,6 +244,68 @@ def _normalise_customer_id(value: Any) -> str:
     return re.sub(r"\s+", "", str(value)).strip().upper()
 
 
+def _portal_customers() -> Dict[str, Any]:
+    """Live customer store of the already-imported portal (empty when standalone)."""
+    import sys
+    portal = sys.modules.get("web_portal.server") or sys.modules.get("server")
+    store = getattr(portal, "CUSTOMERS", None) if portal is not None else None
+    return store if store is not None else {}
+
+
+def _identity_reference(customer_id: str) -> Optional[Dict[str, Any]]:
+    """PII-free identity pointer stamped on assessment records (None when the
+    customer has not recorded a personal ID yet)."""
+    try:
+        from services import customer_identity_service as cis
+        record = _portal_customers().get(customer_id) if customer_id else None
+        return cis.identity_reference(record if isinstance(record, dict) else None)
+    except Exception as exc:  # never let identity lookup break an assessment
+        logger.debug("identity reference unavailable for %s: %s", customer_id, exc)
+        return None
+
+
+def _mislaka_identity_sync(customer_id: str, supplied_id: str, actor: str) -> Tuple[str, Optional[Tuple[int, Dict[str, Any]]]]:
+    """Keep the Mislaka lookup ID consistent with the customer identity master.
+
+    * recorded identity + no ID in the request -> use the recorded (decrypted
+      server-side) number so staff never re-type it;
+    * recorded identity + different ID -> 409 ``identity_mismatch`` (never
+      silently overwrite);
+    * no recorded identity + valid Israeli ID -> capture it once
+      (``source='assessment'``) so every later pipeline sees the same value.
+    Returns (id_number_to_use, error_response_or_None).
+    """
+    try:
+        from services import customer_identity_service as cis
+    except ImportError:
+        return supplied_id, None
+    customers = _portal_customers()
+    record = customers.get(customer_id) if customer_id else None
+    if not isinstance(record, dict):
+        return supplied_id, None
+    if cis.is_complete(record):
+        if not supplied_id:
+            return cis.reveal_national_id(customer_id) or "", None
+        if str(record.get("nationality")) == "IL" and cis.matches(record, supplied_id, "IL") is False:
+            return supplied_id, (409, {
+                "error": "id_number does not match the identity recorded for this customer",
+                "code": "identity_mismatch",
+            })
+        return supplied_id, None
+    if supplied_id:
+        import sys
+        portal = sys.modules.get("web_portal.server") or sys.modules.get("server")
+        result = cis.reconcile_pipeline_identity(
+            customers, customer_id, supplied_id, "IL", source="assessment", actor=actor,
+            mirrors=[getattr(portal, "REGISTERED_CUSTOMERS", {})] if portal is not None else [],
+            audit=getattr(portal, "audit", None),
+            ledger=getattr(portal, "platform_event_ledger", None),
+        )
+        if result.get("outcome") == "missing" and result.get("code") == "identity_in_use":
+            return supplied_id, (409, {"error": result.get("error"), "code": "identity_in_use"})
+    return supplied_id, None
+
+
 def _resolve_customer(session: Dict[str, Any], requested_customer_id: str) -> Tuple[str, Optional[str]]:
     """Return (customer_id, error). ``error`` is None on success.
 
@@ -956,7 +1018,18 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
     svc = _service()
     try:
         if resource == "profile":
-            return 200, svc.build_customer_360(cust)
+            profile = svc.build_customer_360(cust)
+            if isinstance(profile, dict):
+                # Master identity (masked) alongside the document-extracted IDs so
+                # reviewers can spot a document that disagrees with the record.
+                try:
+                    from services import customer_identity_service as cis
+                    record = _portal_customers().get(cust)
+                    profile["identity_master"] = cis.identity_status(
+                        record if isinstance(record, dict) else None)
+                except Exception as exc:
+                    logger.debug("identity_master unavailable: %s", exc)
+            return 200, profile
         if resource == "facts":
             fact_type = None
             if isinstance(query_params, dict):
@@ -1149,13 +1222,17 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
                 analysis = svc.run_analysis(cust, "unified")
                 artifact = get_assessment_ai_service().generate_structured_assessment(
                     analysis, customer_id=cust, assessment_type=assessment_type)
+                identity_ref = _identity_reference(cust)
                 return 201, {"frozen": True, "assessment_type": assessment_type,
-                             "artifact": artifact}
+                             "artifact": artifact,
+                             "customer_identity": identity_ref,
+                             "identity_complete": identity_ref is not None}
 
             # customer_risk freeze: deterministic risk snapshot.
             from services.assessment_record_service import get_assessment_record_service
             risk = svc.compute_risk_indicators(cust)
             facts = svc.get_facts(cust)
+            identity_ref = _identity_reference(cust)
             record = get_assessment_record_service().record_assessment(
                 subject_type="customer",
                 subject_id=cust,
@@ -1171,13 +1248,19 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
                     "fact_count": len(facts),
                     "contributors": risk.get("contributors") or [],
                     "contradictions": len(svc.detect_fact_conflicts(cust)),
+                    # PII-free identity pointer so the frozen snapshot is bound
+                    # to the person, not just the customer id.
+                    "customer_identity": identity_ref,
+                    "identity_complete": identity_ref is not None,
                 },
                 engine="assessment_center",
                 engine_version="freeze-1",
                 decided_by=session.get("username"),
             )
             return 201, {"frozen": True, "assessment_type": "customer_risk",
-                         "record": record}
+                         "record": record,
+                         "customer_identity": identity_ref,
+                         "identity_complete": identity_ref is not None}
 
         if path == "/api/assessment-center/mislaka/link":
             requested_customer = str(body.get("customer_id") or "").strip()
@@ -1185,7 +1268,13 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
             if err:
                 return 403, {"error": err}
 
-            id_number = str(body.get("id_number") or cust or "").strip()
+            id_number = str(body.get("id_number") or "").strip()
+            id_number, identity_error = _mislaka_identity_sync(
+                cust, id_number, actor=str(session.get("username") or "user"))
+            if identity_error:
+                return identity_error
+            if not id_number:
+                id_number = str(cust or "").strip()
             if not id_number.isdigit() or len(id_number) != 9:
                 return 400, {"error": "Israeli ID number (9 digits) required"}
 

@@ -1555,6 +1555,40 @@ except ImportError:
         api_ac_post = None
         print("Warning: Assessment Center API not available.")
 
+# Customer identity master (personal ID + nationality): login gate flags,
+# one-time capture, admin correction, nationality autocomplete.
+try:
+    from web_portal.api_customer_identity import (
+        dispatch_get as api_identity_get,
+        dispatch_post as api_identity_post,
+        login_identity_flags as _login_identity_flags,
+    )
+    customer_identity_enabled = True
+    print("✓ Customer Identity API loaded")
+except ImportError:
+    try:
+        from api_customer_identity import (  # type: ignore
+            dispatch_get as api_identity_get,
+            dispatch_post as api_identity_post,
+            login_identity_flags as _login_identity_flags,
+        )
+        customer_identity_enabled = True
+        print("✓ Customer Identity API loaded")
+    except ImportError:
+        customer_identity_enabled = False
+        api_identity_get = None
+        api_identity_post = None
+
+        def _login_identity_flags(customer_id):  # type: ignore[misc]
+            return {}
+        print("Warning: Customer Identity API not available.")
+
+IDENTITY_API_PATHS = (
+    '/api/identity/countries', '/api/identity/rules',
+    '/api/customer/identity',
+    '/api/admin/customers/identity', '/api/admin/customers/identity/report',
+)
+
 # Import API extensions for the chat-style New Policy Application ("Phin")
 try:
     from web_portal.api_chat_application import (
@@ -9409,6 +9443,93 @@ def compute_investor_valuation_sim(params):
 PHINS_TEST_MODE = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y')
 
 
+def _pipeline_identity(customer_id, national_id=None, nationality=None, *, source, actor='system'):
+    """Reconcile a pipeline payload (application/quote/claim) with the customer
+    identity master and return the service outcome.
+
+    ``outcome`` is one of ``consistent`` / ``captured`` / ``mismatch`` /
+    ``missing``; ``reference`` is the PII-free pointer (hash, last4,
+    nationality) to stamp on the pipeline record. Never returns the plaintext.
+    """
+    try:
+        from services import customer_identity_service as _cis
+    except ImportError:
+        return {'outcome': 'unavailable', 'reference': None, 'error': 'identity service unavailable'}
+    return _cis.reconcile_pipeline_identity(
+        CUSTOMERS, str(customer_id or ''), national_id, nationality,
+        source=source, actor=actor or 'system',
+        mirrors=[REGISTERED_CUSTOMERS] if 'REGISTERED_CUSTOMERS' in globals() else [],
+        audit=globals().get('audit'),
+        ledger=globals().get('platform_event_ledger'),
+    )
+
+
+def _identity_gate_error(result):
+    """Map a reconcile outcome to (status, error body) when the request must be
+    refused, or None when the pipeline may proceed.
+
+    Under ``PHINS_IDENTITY_REQUIRED`` (default outside test mode) a new
+    application/claim needs a complete, consistent identity: a missing one is
+    400 ``identity_required`` and a payload contradicting the recorded identity
+    is 409 ``identity_mismatch`` (never silently overwritten).
+    """
+    try:
+        from services import customer_identity_service as _cis
+        strict = _cis.strict_mode()
+    except ImportError:
+        return None
+    outcome = (result or {}).get('outcome')
+    if outcome == 'mismatch' and strict:
+        return 409, {'error': result.get('error') or 'national_id does not match the recorded identity',
+                     'code': 'identity_mismatch'}
+    if outcome == 'missing' and strict:
+        return 400, {'error': result.get('error') or 'national_id and nationality are required',
+                     'code': result.get('code') or 'identity_required'}
+    return None
+
+
+def _identity_masked(value):
+    try:
+        from services.customer_identity_service import mask_national_id
+        return mask_national_id(value)
+    except ImportError:
+        return None
+
+
+def _identity_precheck(customer_id, national_id=None, nationality=None):
+    """Strict-mode validation to run *before* a pipeline creates a customer.
+
+    Returns (status, error body) when the payload cannot satisfy the identity
+    requirement, so nothing partial (customer row, temp login) is created for a
+    request that will be refused; None when the pipeline may proceed to
+    ``_pipeline_identity``.
+    """
+    try:
+        from services import customer_identity_service as _cis
+    except ImportError:
+        return None
+    if not _cis.strict_mode():
+        return None
+    existing = CUSTOMERS.get(str(customer_id or '')) if customer_id else None
+    if _cis.is_complete(existing):
+        return None
+    try:
+        code, normalized = _cis.normalize_national_id(national_id, nationality)
+    except _cis.IdentityError as exc:
+        body = exc.to_dict()
+        if exc.code in ('national_id_required', 'nationality_invalid'):
+            body = {'error': 'national_id and nationality are required', 'code': 'identity_required',
+                    'detail': str(exc)}
+        return exc.status, body
+    holder = _cis.find_customer_id_by_identity(
+        code, _cis.hash_national_id(code, normalized), CUSTOMERS,
+        exclude_customer_id=str(customer_id or ''))
+    if holder:
+        return 409, {'error': 'This ID number is already registered to another customer',
+                     'code': 'identity_in_use'}
+    return None
+
+
 def _demo_otp_exposure_allowed() -> bool:
     """Whether a plaintext OTP may be echoed back to the caller.
 
@@ -16870,14 +16991,20 @@ For claims or questions, please contact:
                 if not customer_id:
                     print(f"[SESSION VALIDATE] WARNING: Could not recover customer_id for {username}")
             
-            self._set_json_headers(200)
-            self.wfile.write(json.dumps({
+            validate_response = {
                 'valid': True,
                 'username': username,
                 'role': role,
                 'customer_id': customer_id,
                 'expires': session.get('expires')
-            }).encode('utf-8'))
+            }
+            if role == 'customer':
+                try:
+                    validate_response.update(_login_identity_flags(customer_id))
+                except Exception as identity_err:
+                    print(f"[SESSION VALIDATE] identity flags unavailable: {identity_err}")
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(validate_response).encode('utf-8'))
             return
         
         # Session verification endpoint (GET) - similar to validate but simpler
@@ -17095,6 +17222,24 @@ For claims or questions, please contact:
                     return
             except Exception as e:
                 print(f"Assessment Center error (GET {path}): {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
+
+        # =====================================================================
+        # CUSTOMER IDENTITY (GET) - nationality autocomplete, ID rules,
+        # own/admin identity status (masked; never the plaintext number)
+        # =====================================================================
+        if customer_identity_enabled and api_identity_get and path in IDENTITY_API_PATHS:
+            try:
+                identity_result = api_identity_get(path, session, qs)
+                if identity_result is not None:
+                    status_code, response_data = identity_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+            except Exception as e:
+                print(f"Customer Identity error (GET {path}): {e}")
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
                 return
@@ -32967,6 +33112,40 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
                 return
 
+        # =====================================================================
+        # CUSTOMER IDENTITY (POST) - one-time customer capture of personal ID +
+        # nationality (login gate) and audited admin correction
+        # =====================================================================
+        if customer_identity_enabled and api_identity_post and path in IDENTITY_API_PATHS:
+            try:
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                session = validate_session(token) if token else None
+                if not session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length).decode('utf-8') if length else '{}'
+                try:
+                    body_data = json.loads(body)
+                except json.JSONDecodeError:
+                    body_data = {}
+                identity_result = api_identity_post(path, session, body_data)
+                if identity_result is not None:
+                    status_code, response_data = identity_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
+                return
+            except Exception as e:
+                print(f"Customer Identity error (POST {path}): {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
+
         # Design settings endpoint (POST) - Admin or Media role
         if path == '/api/design/settings':
             # Get auth token
@@ -36551,8 +36730,7 @@ For claims or questions, please contact:
                         SESSIONS[token] = _session_payload
                     _persist_session_to_db(token, _session_payload)
                     
-                    self._set_json_headers()
-                    self.wfile.write(json.dumps({
+                    login_response = {
                         'success': True,
                         'token': token,
                         'username': username,
@@ -36560,7 +36738,16 @@ For claims or questions, please contact:
                         'name': name,
                         'customer_id': customer_id,
                         'expires': expires.isoformat()
-                    }).encode('utf-8'))
+                    }
+                    if role == 'customer':
+                        # One-time mandatory prompt: the dashboard blocks until
+                        # the customer records personal ID + nationality.
+                        try:
+                            login_response.update(_login_identity_flags(customer_id))
+                        except Exception as identity_err:
+                            print(f"[LOGIN] identity flags unavailable: {identity_err}")
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(login_response).encode('utf-8'))
                 else:
                     # Record failed login attempt
                     record_failed_login(client_ip, server_port)
@@ -36687,14 +36874,20 @@ For claims or questions, please contact:
                     print(f"[SESSION VALIDATE POST] WARNING: Could not recover customer_id for {username}")
             
             # Session is valid - return user info
-            self._set_json_headers(200)
-            self.wfile.write(json.dumps({
+            validate_response = {
                 'valid': True,
                 'username': username,
                 'role': role,
                 'customer_id': customer_id,
                 'expires': session.get('expires')
-            }).encode('utf-8'))
+            }
+            if role == 'customer':
+                try:
+                    validate_response.update(_login_identity_flags(customer_id))
+                except Exception as identity_err:
+                    print(f"[SESSION VALIDATE POST] identity flags unavailable: {identity_err}")
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(validate_response).encode('utf-8'))
             return
         
         # ========== TRACK MY APPLICATION (claim-code quick registry) ==========
@@ -36907,6 +37100,39 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
 
+                # Identity master: personal ID + nationality are captured at
+                # registration (mandatory in strict mode; otherwise the one-time
+                # login prompt collects them). Validated before any row is written.
+                reg_national_id = str(data.get('national_id') or data.get('id_number') or '').strip()
+                reg_nationality = str(data.get('nationality') or '').strip()
+                if reg_national_id or reg_nationality:
+                    try:
+                        from services import customer_identity_service as _cis
+                        _reg_code, _reg_norm = _cis.normalize_national_id(reg_national_id, reg_nationality)
+                        if _cis.find_customer_id_by_identity(
+                                _reg_code, _cis.hash_national_id(_reg_code, _reg_norm), CUSTOMERS):
+                            self._set_json_headers(409)
+                            self.wfile.write(json.dumps({
+                                'error': 'This ID number is already registered to another customer',
+                                'code': 'identity_in_use',
+                            }).encode('utf-8'))
+                            return
+                    except ImportError:
+                        pass
+                    except Exception as identity_err:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': str(identity_err),
+                            'code': getattr(identity_err, 'code', 'identity_invalid'),
+                        }).encode('utf-8'))
+                        return
+                else:
+                    identity_gate = _identity_precheck(None, reg_national_id, reg_nationality)
+                    if identity_gate:
+                        self._set_json_headers(identity_gate[0])
+                        self.wfile.write(json.dumps(identity_gate[1]).encode('utf-8'))
+                        return
+
                 # Registration is invitation-code-only. Legacy OTP fields in the payload
                 # are intentionally ignored to keep API compatibility with older clients.
 
@@ -37050,6 +37276,23 @@ For claims or questions, please contact:
 
                     CUSTOMERS[customer_id] = customer_record
                     REGISTERED_CUSTOMERS[customer_id] = customer_record
+
+                    if reg_national_id:
+                        identity_result = _pipeline_identity(
+                            customer_id, reg_national_id, reg_nationality,
+                            source='registration', actor=email,
+                        )
+                        if identity_result.get('outcome') not in ('captured', 'consistent'):
+                            # Pre-validated above; a failure here is a race with a
+                            # concurrent registration of the same ID. Undo the rows.
+                            CUSTOMERS.pop(customer_id, None)
+                            REGISTERED_CUSTOMERS.pop(customer_id, None)
+                            self._set_json_headers(409)
+                            self.wfile.write(json.dumps({
+                                'error': identity_result.get('error') or 'Unable to record identity',
+                                'code': identity_result.get('code') or 'identity_in_use',
+                            }).encode('utf-8'))
+                            return
 
                     USERS[email] = {
                         'hash': pwd_hash['hash'],
@@ -44014,6 +44257,23 @@ For claims or questions, please contact:
                     str(data.get('application_channel') or '').strip().lower() == 'chat'
                 )
 
+                # Identity requirement is checked before any customer/login row is
+                # created so a refused application leaves nothing behind.
+                _signature_payload = data.get('signature') if isinstance(data.get('signature'), dict) else {}
+                _raw_national_id = (
+                    _signature_payload.get('id_number') or data.get('id_number')
+                    or data.get('national_id') or ''
+                )
+                _raw_nationality = (
+                    data.get('nationality') or data.get('customer_nationality')
+                    or _signature_payload.get('nationality') or ''
+                )
+                identity_gate = _identity_precheck(customer_id, _raw_national_id, _raw_nationality)
+                if identity_gate:
+                    self._set_json_headers(identity_gate[0])
+                    self.wfile.write(json.dumps(identity_gate[1]).encode('utf-8'))
+                    return
+
                 # Create customer if new (and no existing customer with same email)
                 if not existing_customer and customer_id not in CUSTOMERS:
                     try:
@@ -44055,6 +44315,22 @@ For claims or questions, please contact:
                         self._set_json_headers(400)
                         self.wfile.write(json.dumps({'error': 'Failed to create customer account'}).encode('utf-8'))
                         return
+
+                # Identity master: the applicant's personal ID + nationality are
+                # reconciled with the customer record (captured once, or checked
+                # against what is already recorded). The application keeps only a
+                # masked number and the PII-free reference.
+                identity_result = _pipeline_identity(
+                    customer_id, _raw_national_id, _raw_nationality,
+                    source='chat' if str(data.get('application_channel') or '').lower() == 'chat' else 'application',
+                    actor=customer_email or customer_id,
+                )
+                identity_gate = _identity_gate_error(identity_result)
+                if identity_gate:
+                    self._set_json_headers(identity_gate[0])
+                    self.wfile.write(json.dumps(identity_gate[1]).encode('utf-8'))
+                    return
+                _id_number_masked = _identity_masked(_raw_national_id) if _raw_national_id else None
                 
                 # Create underwriting application
                 uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
@@ -44261,11 +44537,8 @@ For claims or questions, please contact:
                         'signature_at': (data.get('signature') or {}).get('signed_at')
                         if isinstance(data.get('signature'), dict)
                         else None,
-                        'id_number': (
-                            (data.get('signature') or {}).get('id_number')
-                            if isinstance(data.get('signature'), dict)
-                            else None
-                        ) or data.get('id_number'),
+                        # Masked: the number itself lives encrypted on the customer.
+                        'id_number': _id_number_masked,
                         'signature_image_sha256': (
                             (data.get('signature') or {}).get('image_sha256')
                             if isinstance(data.get('signature'), dict) else None
@@ -44288,10 +44561,11 @@ For claims or questions, please contact:
                         if isinstance(data.get('signature'), dict) else None,
                     'signature_image_data': (data.get('signature') or {}).get('image_data')
                         if isinstance(data.get('signature'), dict) else None,
-                    'id_number': (
-                        (data.get('signature') or {}).get('id_number')
-                        if isinstance(data.get('signature'), dict) else None
-                    ) or data.get('id_number'),
+                    'id_number': _id_number_masked,
+                    # PII-free identity pointer (nationality, hash, last4) shared by
+                    # every pipeline; None when the customer has not recorded one yet.
+                    'customer_identity': identity_result.get('reference'),
+                    'identity_mismatch': identity_result.get('outcome') == 'mismatch',
                     'prior_disclosure': (data.get('prior_disclosure') or {}).get('text')
                         if isinstance(data.get('prior_disclosure'), dict)
                         else data.get('prior_disclosure'),
@@ -44527,6 +44801,13 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Invalid coverage amount'}).encode('utf-8'))
                     return
+                _raw_national_id = data.get('national_id') or data.get('id_number') or ''
+                _raw_nationality = data.get('nationality') or data.get('customer_nationality') or ''
+                identity_gate = _identity_precheck(customer_id, _raw_national_id, _raw_nationality)
+                if identity_gate:
+                    self._set_json_headers(identity_gate[0])
+                    self.wfile.write(json.dumps(identity_gate[1]).encode('utf-8'))
+                    return
                 # Upsert minimal customer record if needed
                 if customer_id not in CUSTOMERS:
                     CUSTOMERS[customer_id] = {
@@ -44535,6 +44816,15 @@ For claims or questions, please contact:
                         'email': data.get('customer_email', ''),
                         'created_date': datetime.now().isoformat()
                     }
+                identity_result = _pipeline_identity(
+                    customer_id, _raw_national_id, _raw_nationality,
+                    source='application', actor=data.get('customer_email') or customer_id,
+                )
+                identity_gate = _identity_gate_error(identity_result)
+                if identity_gate:
+                    self._set_json_headers(identity_gate[0])
+                    self.wfile.write(json.dumps(identity_gate[1]).encode('utf-8'))
+                    return
                 # Generate IDs
                 policy_id = generate_policy_id()
                 uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
@@ -44552,6 +44842,8 @@ For claims or questions, please contact:
                     'risk_score': data.get('risk_score', 'medium'),
                     'risk_assessment': data.get('risk_score', 'medium'),
                     'medical_exam_required': data.get('medical_exam_required', False),
+                    'customer_identity': identity_result.get('reference'),
+                    'identity_mismatch': identity_result.get('outcome') == 'mismatch',
                     'submitted_date': datetime.now().isoformat(),
                     'created_date': datetime.now().isoformat()
                 }
@@ -45897,6 +46189,21 @@ For claims or questions, please contact:
                         self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
                         return
                     data['customer_id'] = session_customer_id
+
+                # Identity master: a claim carries the claimant's PII-free identity
+                # reference. Customers must have completed the one-time identity
+                # prompt (strict mode); staff-filed claims on customers without
+                # one are stamped None and flagged for follow-up.
+                identity_result = _pipeline_identity(
+                    data.get('customer_id'), None, None,
+                    source='application', actor=(session.get('username') if session else 'system'),
+                )
+                if role == 'customer':
+                    identity_gate = _identity_gate_error(identity_result)
+                    if identity_gate:
+                        self._set_json_headers(identity_gate[0])
+                        self.wfile.write(json.dumps(identity_gate[1]).encode('utf-8'))
+                        return
                 
                 # Extract all claim data
                 claimed_amount = float(data.get('claimed_amount', 0))
@@ -45967,6 +46274,8 @@ For claims or questions, please contact:
                     'bank_details': bank_details if payment_destination == 'bank_transfer' else None,
                     'files': files_metadata,
                     'files_count': files_count,
+                    'customer_identity': identity_result.get('reference'),
+                    'identity_missing': identity_result.get('reference') is None,
                     'status': 'pending',
                     'filed_date': datetime.now().isoformat(),
                     'created_date': datetime.now().isoformat()
@@ -54597,11 +54906,21 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Missing required fields: first name, last name, and email'}).encode('utf-8'))
                 return
-            
+
             # Generate IDs
             customer_id = generate_customer_id()
             policy_id = generate_policy_id()
             uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+
+            # Identity master gate runs before the customer row exists so a
+            # refused quote leaves nothing behind.
+            _raw_national_id = _field('nationalId', 'national-id', 'national_id', 'id_number')
+            _raw_nationality = _field('nationality', 'citizenship')
+            identity_gate = _identity_precheck(customer_id, _raw_national_id, _raw_nationality)
+            if identity_gate:
+                self._set_json_headers(identity_gate[0])
+                self.wfile.write(json.dumps(identity_gate[1]).encode('utf-8'))
+                return
             
             # Create customer record
             customer_name = f"{first_name} {last_name}".strip()
@@ -54619,9 +54938,20 @@ For claims or questions, please contact:
                 'state': _field('state', 'stateProvince'),
                 'zip': _field('zip', 'postalCode'),
                 'occupation': _field('occupation'),
-                'national_id': _field('nationalId', 'national-id'),
                 'created_date': datetime.now().isoformat()
             }
+            # The number itself is stored encrypted on the customer by the
+            # identity service; the record only carries hash/last4/nationality.
+            identity_result = _pipeline_identity(
+                customer_id, _raw_national_id, _raw_nationality,
+                source='quote', actor=email_value or customer_id,
+            )
+            identity_gate = _identity_gate_error(identity_result)
+            if identity_gate:
+                CUSTOMERS.pop(customer_id, None)
+                self._set_json_headers(identity_gate[0])
+                self.wfile.write(json.dumps(identity_gate[1]).encode('utf-8'))
+                return
             
             # Provision portal login for the customer
             cust_email = CUSTOMERS[customer_id].get('email') or f"{customer_id.lower()}@example.com"
@@ -54680,6 +55010,8 @@ For claims or questions, please contact:
                 },
                 'risk_assessment': risk_score,
                 'medical_exam_required': medical_exam_required,
+                'customer_identity': identity_result.get('reference'),
+                'identity_mismatch': identity_result.get('outcome') == 'mismatch',
                 'submitted_date': datetime.now().isoformat()
             }
 
