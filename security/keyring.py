@@ -32,6 +32,11 @@ Resolution order (per purpose)
    record is encrypted/hashed with it, the key is authoritative for the life of
    the data; ``vault_keys()`` still returns *both* the env key and the ring key
    so blobs written under either remain decryptable (MultiFernet).
+4. ``identity-hash`` continuity: before the keyring existed the hash fell back
+   to the raw bytes of ``PHINS_ENCRYPTION_KEY``. That exact behaviour is kept
+   (an existing ring key > raw ``PHINS_ENCRYPTION_KEY`` > mint a ring key), so
+   no stored ``national_id_hash`` ever stops matching, and the env key is never
+   copied into the keyring store.
 
 Fingerprints (``sha256(material)[:16]``) are safe to log and are what
 ``describe()`` exposes to operators; key material never leaves this module
@@ -42,7 +47,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import hmac
 import json
 import logging
 import os
@@ -103,19 +107,13 @@ def _generate_material(purpose: str) -> str:
     return Fernet.generate_key().decode("ascii")
 
 
-def _seed_material(purpose: str) -> Optional[str]:
-    """Material to use when a purpose key is created for the first time.
-
-    ``identity-hash`` historically fell back to ``PHINS_ENCRYPTION_KEY``; when
-    that variable is set at creation time we persist a key *derived* from it so
-    hashes computed before the keyring existed keep matching. Random otherwise.
-    """
-    if purpose == PURPOSE_IDENTITY_HASH:
-        legacy = (os.environ.get("PHINS_ENCRYPTION_KEY") or "").strip()
-        if legacy:
-            digest = hmac.new(legacy.encode("utf-8"), b"phins-identity-hash-seed", hashlib.sha256).digest()
-            return base64.urlsafe_b64encode(digest).decode("ascii")
-    return None
+def _legacy_hash_material() -> Optional[str]:
+    """Pre-keyring behaviour: ``national_id_hash`` was keyed with the raw bytes
+    of ``PHINS_ENCRYPTION_KEY`` when no dedicated hash key was set. Deployments
+    that already hashed IDs that way must keep matching, so that exact value is
+    still used (in memory only — it is never copied into the keyring store)."""
+    value = (os.environ.get("PHINS_ENCRYPTION_KEY") or "").strip()
+    return value or None
 
 
 def _explicit_env(purpose: str) -> Optional[str]:
@@ -156,9 +154,11 @@ def _file_read(path: str) -> Dict[str, Any]:
 def _file_write(path: str, data: Dict[str, Any]) -> None:
     directory = os.path.dirname(path) or "."
     os.makedirs(directory, exist_ok=True)
-    tmp = f"{path}.{os.getpid()}.tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # mkstemp: unpredictable name, O_CREAT|O_EXCL (and O_NOFOLLOW where
+    # available), mode 0600 -- no symlink/pre-planted-file race in the key dir.
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".phins_keyring.", suffix=".tmp")
     try:
+        os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2, sort_keys=True)
             fh.flush()
@@ -180,13 +180,12 @@ def _file_get_or_create(purpose: str, create: bool) -> Optional[Dict[str, Any]]:
             return dict(entry, source=entry.get("source") or "file")
         if not create:
             return None
-        seed = _seed_material(purpose)
-        material = seed or _generate_material(purpose)
+        material = _generate_material(purpose)
         entry = {
             "material": material,
             "fingerprint": fingerprint(material),
             "created_at": datetime.utcnow().isoformat() + "Z",
-            "source": "derived" if seed else "generated",
+            "source": "generated",
         }
         data["keys"][purpose] = entry
         _file_write(path, data)
@@ -243,16 +242,21 @@ def _db_get_or_create(purpose: str, create: bool) -> Optional[Dict[str, Any]]:
             found = _read(session)
             if found or not create:
                 return found
-            seed = _seed_material(purpose)
-            material = seed or _generate_material(purpose)
+            material = _generate_material(purpose)
             session.add(PlatformKey(
                 id=key_id,
                 purpose=purpose,
                 material=material,
                 fingerprint=fingerprint(material),
-                source="derived" if seed else "generated",
+                source="generated",
                 created_by="keyring",
             ))
+            logger.warning(
+                "[SECURITY] keyring: minted the %s key into platform_keys (fingerprint %s). "
+                "It is stored alongside the data it protects; set %s from a KMS/secret "
+                "manager for key/ciphertext separation.",
+                purpose, fingerprint(material), _ENV_FOR_PURPOSE[purpose],
+            )
             try:
                 session.commit()
             except IntegrityError:
@@ -299,6 +303,17 @@ def resolve(purpose: str) -> Dict[str, Any]:
     explicit = _explicit_env(purpose)
     if explicit:
         return {"material": explicit, "fingerprint": fingerprint(explicit), "source": "env"}
+    if purpose == PURPOSE_IDENTITY_HASH:
+        # Continuity order: a ring key that already exists is authoritative
+        # (the deployment has hashed under it); otherwise the legacy
+        # PHINS_ENCRYPTION_KEY raw bytes reproduce every pre-keyring hash
+        # exactly; only a deployment with neither mints a ring key.
+        existing = ring_key(purpose, create=False)
+        if existing:
+            return existing
+        legacy = _legacy_hash_material()
+        if legacy:
+            return {"material": legacy, "fingerprint": fingerprint(legacy), "source": "legacy-encryption-key"}
     entry = ring_key(purpose, create=True)
     if not entry:
         raise KeyringError(f"no {purpose} key available")

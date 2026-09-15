@@ -104,9 +104,10 @@ def _hash_key() -> bytes:
     """Deployment-stable key for the lookup hash.
 
     ``PHINS_IDENTITY_HASH_KEY`` wins when set; otherwise the durable platform
-    keyring mints one ``identity-hash`` key per deployment and reuses it for
-    every customer (seeded from ``PHINS_ENCRYPTION_KEY`` when that was the
-    historical fallback, so pre-keyring hashes keep matching). The key is the
+    keyring answers: an existing ring ``identity-hash`` key, else the raw
+    ``PHINS_ENCRYPTION_KEY`` bytes (the historical fallback, so every
+    pre-keyring hash keeps matching byte for byte), else a ring key minted once
+    per deployment and reused for every customer. The key is the
     join key for every pipeline record that references a customer identity, so
     it must never change for the life of the data — the keyring never replaces
     an existing key. An unusable keyring fails closed rather than hashing with a

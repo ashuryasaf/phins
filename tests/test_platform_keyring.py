@@ -95,29 +95,52 @@ def test_invalid_env_key_is_ignored_not_used(monkeypatch):
     assert encrypt_json({"a": 1}).scheme == "fernet"
 
 
-def test_identity_hash_key_seeded_from_legacy_encryption_key(monkeypatch):
-    """Hashes computed before the keyring existed used PHINS_ENCRYPTION_KEY;
-    the minted identity-hash key is derived from it so they keep matching, and
-    once minted it stays put even if the env key later disappears."""
+def test_identity_hash_keeps_pre_keyring_values_under_legacy_encryption_key(monkeypatch, tmp_path):
+    """Before the keyring, national_id_hash was HMAC'd with the raw bytes of
+    PHINS_ENCRYPTION_KEY. A deployment upgraded with that variable set must
+    produce byte-identical hashes, and must never copy the env key into the
+    keyring store."""
+    import hashlib
+    import hmac
+
     from cryptography.fernet import Fernet
     from services import customer_identity_service as cis
 
     legacy = Fernet.generate_key().decode("ascii")
     monkeypatch.setenv("PHINS_ENCRYPTION_KEY", legacy)
     keyring.reset_cache()
-    minted = keyring.resolve(keyring.PURPOSE_IDENTITY_HASH)
-    assert minted["source"] == "derived"
-    h1 = cis.hash_national_id("IL", "123456782")
+    resolved = keyring.resolve(keyring.PURPOSE_IDENTITY_HASH)
+    assert resolved["source"] == "legacy-encryption-key" and resolved["material"] == legacy
+    pre_keyring_hash = hmac.new(legacy.encode("utf-8"), b"IL:123456782", hashlib.sha256).hexdigest()
+    assert cis.hash_national_id("IL", "123456782") == pre_keyring_hash
 
-    monkeypatch.delenv("PHINS_ENCRYPTION_KEY")
-    keyring.reset_cache()
-    assert keyring.resolve(keyring.PURPOSE_IDENTITY_HASH)["material"] == minted["material"]
-    assert cis.hash_national_id("IL", "123456782") == h1
+    # nothing about the hash key was written to the ring (vault key may be)
+    ring_file = tmp_path / "keyring.json"
+    stored = json.loads(ring_file.read_text())["keys"] if ring_file.exists() else {}
+    assert "identity-hash" not in stored
+    assert legacy not in ring_file.read_text() if ring_file.exists() else True
 
     # an explicit hash key always wins
     monkeypatch.setenv("PHINS_IDENTITY_HASH_KEY", "operator-hash-key")
     assert keyring.identity_hash_key() == b"operator-hash-key"
-    assert cis.hash_national_id("IL", "123456782") != h1
+    assert cis.hash_national_id("IL", "123456782") != pre_keyring_hash
+
+
+def test_existing_ring_hash_key_outranks_a_later_encryption_key(monkeypatch):
+    """A deployment that ran without any key minted a ring hash key and hashed
+    customers under it; introducing PHINS_ENCRYPTION_KEY afterwards must not
+    move the join key."""
+    from cryptography.fernet import Fernet
+    from services import customer_identity_service as cis
+
+    minted = keyring.resolve(keyring.PURPOSE_IDENTITY_HASH)
+    assert minted["source"] == "generated"
+    h1 = cis.hash_national_id("IL", "123456782")
+
+    monkeypatch.setenv("PHINS_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    keyring.reset_cache()
+    assert keyring.resolve(keyring.PURPOSE_IDENTITY_HASH)["material"] == minted["material"]
+    assert cis.hash_national_id("IL", "123456782") == h1
 
 
 def test_unusable_keyring_fails_closed(tmp_path, monkeypatch):
@@ -130,6 +153,21 @@ def test_unusable_keyring_fails_closed(tmp_path, monkeypatch):
     assert encrypt_json({"a": 1}).scheme == "plain"
     status = keyring.describe()
     assert status["keys"]["vault"]["available"] is False and "error" in status["keys"]["vault"]
+
+
+def test_file_write_does_not_follow_a_planted_symlink(tmp_path, monkeypatch):
+    """A pre-planted symlink at the old predictable temp name must be ignored:
+    the write goes through mkstemp (O_EXCL, random name) and only the final
+    rename touches the keyring path."""
+    victim = tmp_path / "victim.txt"
+    victim.write_text("do not overwrite")
+    planted = tmp_path / f"keyring.json.{os.getpid()}.tmp"
+    planted.symlink_to(victim)
+    keyring.resolve(keyring.PURPOSE_VAULT)
+    assert victim.read_text() == "do not overwrite"
+    assert planted.is_symlink()  # untouched
+    assert not [p for p in tmp_path.iterdir() if p.name.startswith(".phins_keyring.")]  # no temp litter
+    assert oct((tmp_path / "keyring.json").stat().st_mode & 0o777) == "0o600"
 
 
 def test_malformed_keyring_file_is_rejected_not_overwritten(tmp_path):
