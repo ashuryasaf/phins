@@ -24,12 +24,13 @@ Endpoints:
 
 Scope rules: a customer only sees/acts on requests whose ``customer_id`` is
 their own; a supplier only bids/updates as itself (``supplier_id`` from the
-session); admins are unrestricted.
+session) and only sees the requests it is assigned, has bid on, or is still
+eligible to bid on; admins are unrestricted.
 """
 
 from typing import Any, Dict, Optional, Tuple
 
-from services.delivery_bidding_service import get_delivery_bidding_service
+from services.delivery_bidding_service import DeliveryStatus, get_delivery_bidding_service
 
 Response = Tuple[int, Dict[str, Any]]
 
@@ -55,6 +56,22 @@ def _float(value: Any, default: Optional[float] = None) -> Optional[float]:
         return default
 
 
+def _supplier_may_see(supplier_id: str, request) -> bool:
+    """A supplier sees the requests it is assigned, has bid on, or may still bid on."""
+    if not supplier_id:
+        return False
+    if request.assigned_supplier_id == supplier_id:
+        return True
+    service = get_delivery_bidding_service()
+    if any(bid.supplier_id == supplier_id and bid.request_id == request.request_id
+           for bid in service.delivery_bids.values()):
+        return True
+    if request.status != DeliveryStatus.BIDDING_OPEN:
+        return False
+    return any(s['supplier_id'] == supplier_id
+               for s in service.eligible_suppliers_for(request.request_id).get('suppliers', []))
+
+
 def _request_visible(ctx: Dict[str, Any], request) -> bool:
     if _is_admin(ctx):
         return True
@@ -62,7 +79,7 @@ def _request_visible(ctx: Dict[str, Any], request) -> bool:
     if role == 'customer':
         return bool(ctx.get('customer_id')) and request.customer_id == ctx.get('customer_id')
     if role == 'supplier':
-        return True  # suppliers may inspect any open request to decide whether to bid
+        return _supplier_may_see(_session_supplier_id(ctx), request)
     return False
 
 

@@ -48,6 +48,12 @@ TRANSACTIONAL = 'transactional'
 RELATIONAL = 'relational'
 PURPOSES = (TRANSACTIONAL, RELATIONAL)
 
+# The cap counts in-flight ``pending`` rows, which only closes the window on two
+# concurrent sends if authorising and writing that row happen as one step. Both
+# facades hold this process-wide lock across the pair, so a send is reserved
+# before the next one counts the log.
+CAP_GATE_LOCK = threading.RLock()
+
 # Outreach templates -> purpose. Bills are account servicing; the rest is relations copy.
 TEMPLATE_PURPOSE = {
     'welcome': TRANSACTIONAL,
@@ -283,7 +289,8 @@ def reset_consent_registry() -> None:
 
 
 __all__ = [
-    'CONSENT_KIND', 'DAILY_CAP_ENV', 'DEFAULT_DAILY_CAP', 'ENFORCE_ENV', 'PURPOSES', 'RELATIONAL',
+    'CAP_GATE_LOCK', 'CONSENT_KIND', 'DAILY_CAP_ENV', 'DEFAULT_DAILY_CAP', 'ENFORCE_ENV',
+    'PURPOSES', 'RELATIONAL',
     'TEMPLATE_PURPOSE', 'TRANSACTIONAL', 'ChannelConsent', 'ConsentRecord', 'ConsentRegistry',
     'Decision', 'MessagingPolicy', 'consent_enforced', 'consent_from_record', 'daily_cap',
     'get_consent_registry', 'reset_consent_registry',
