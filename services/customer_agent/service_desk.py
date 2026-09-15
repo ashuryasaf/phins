@@ -44,7 +44,7 @@ from services.notification_service import (
     get_notification_service,
 )
 
-from .consent import TRANSACTIONAL, MessagingPolicy
+from .consent import CAP_GATE_LOCK, TRANSACTIONAL, MessagingPolicy
 from .escalation import Escalation, EscalationDesk, get_escalation_desk
 from .interaction_log import (
     MESSAGING_CHANNELS,
@@ -483,11 +483,6 @@ class CustomerServiceAgent:
             channel = 'email' if customer.email else 'portal'
         recipient = self._recipient_for(customer, channel) or customer.customer_id
 
-        # Gate first (so this send is not counted against itself), then the
-        # pending row, then the provider call, then the final status.
-        decision = self.messaging_policy.authorize(customer.customer_id, channel, purpose,
-                                                   customer_record=customer.record)
-
         def _base(interaction_id: str) -> Dict[str, Any]:
             return dict(
                 delivery_id=f"NOTIF_{customer.customer_id}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:6].upper()}",
@@ -497,6 +492,25 @@ class CustomerServiceAgent:
                 interaction_id=interaction_id,
                 metadata={'template': template_id, 'kind': kind, 'handled_by': self.agent_id},
             )
+
+        # Gate first (so this send is not counted against itself), then the
+        # pending row, then the provider call, then the final status. Gate and
+        # pending row are one locked step so two concurrent sends cannot both
+        # pass the daily cap (see CAP_GATE_LOCK).
+        with CAP_GATE_LOCK:
+            decision = self.messaging_policy.authorize(customer.customer_id, channel, purpose,
+                                                       customer_record=customer.record)
+            if decision.allowed:
+                if row is None:
+                    row = self.interaction_log.record(
+                        customer_id=customer.customer_id, agent=AGENT_NAME, kind=kind, channel=channel,
+                        status='pending', template=template_id, purpose=purpose, recipient=recipient,
+                        actor=actor, handled_by=self.agent_id,
+                        detail=self._clip(rendered['subject'] or rendered['body'], 300),
+                    )
+                    self._interaction_ids.append(row.interaction_id)
+                else:
+                    self.interaction_log.update(row.interaction_id, status='pending')
 
         if not decision.allowed:
             if row is None:
@@ -515,16 +529,6 @@ class CustomerServiceAgent:
             self._sink(delivery)
             return delivery
 
-        if row is None:
-            row = self.interaction_log.record(
-                customer_id=customer.customer_id, agent=AGENT_NAME, kind=kind, channel=channel,
-                status='pending', template=template_id, purpose=purpose, recipient=recipient,
-                actor=actor, handled_by=self.agent_id,
-                detail=self._clip(rendered['subject'] or rendered['body'], 300),
-            )
-            self._interaction_ids.append(row.interaction_id)
-        else:
-            self.interaction_log.update(row.interaction_id, status='pending')
         base = _base(row.interaction_id)
 
         request = NotificationRequest(

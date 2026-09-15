@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import threading
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -289,6 +291,31 @@ class TestDailyCap:
                                          kind='outreach', channel='sms', status='sent')
         assert MessagingPolicy().authorize('CUST-B6', 'sms', 'transactional').allowed is True
 
+    def test_concurrent_sends_cannot_squeeze_under_the_cap(self, monkeypatch):
+        # Authorising and reserving the pending row are one locked step
+        # (CAP_GATE_LOCK), so N overlapping sends yield exactly cap deliveries.
+        monkeypatch.setenv(DAILY_CAP_ENV, '5')
+        agent = _comm()
+        results = []
+        barrier = threading.Barrier(12)
+
+        def _send():
+            barrier.wait()
+            results.append(agent.send_customer_outreach(
+                customer_id='CUST-RACE', customer_name='R', email='r@phins.ai',
+                phone='+972501112233', template='bill', channels='whatsapp'))
+
+        threads = [threading.Thread(target=_send) for _ in range(12)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        successes = [r for r in results if r['success']]
+        refused = [r for r in results if not r['success']]
+        assert len(successes) == 5 and len(refused) == 7
+        assert {r['code'] for r in refused} == {'DAILY_CAP_REACHED'}
+        assert get_interaction_log().count_sent_today('CUST-RACE') == 5
+
     def test_service_desk_sms_ack_respects_cap(self, monkeypatch):
         monkeypatch.setenv(DAILY_CAP_ENV, '1')
         desk = _desk()
@@ -334,6 +361,29 @@ class TestOtpConsentCapture:
                                               email='o@phins.ai', phone='+14155551234',
                                               template='message', channels='whatsapp')
         assert follow['success'] is True
+
+    def test_otp_verified_against_an_email_grants_no_whatsapp_consent(self):
+        # Both sides must normalise to a real phone; an email identifier (or an
+        # unusable number) is not evidence the customer holds the WhatsApp channel.
+        service = create_notification_service(use_mock=True)
+        otp = service.send_otp(OTPRequest(
+            identifier='o@phins.ai', channel=NotificationChannel.EMAIL,
+            verification_type=VerificationType.ACCOUNT_ACTIVATION,
+        ))
+        assert otp.success
+        code = re.search(r'\b(\d{6})\b', str(service._email_provider.sent_emails[0])).group(1)
+        agent = CustomerCommunicationAgent(notification_service=service)
+        result = agent.send_welcome_package(
+            customer_id='CUST-OTP-E', customer_name='O', email='o@phins.ai',
+            whatsapp_phone='+14155551234', require_otp_validation=True,
+            otp_code=code, otp_identifier='o@phins.ai',
+        )
+        assert result['success'] is True, result
+        assert get_consent_registry().explicit('CUST-OTP-E', 'whatsapp') is None
+        follow = agent.send_customer_outreach(customer_id='CUST-OTP-E', customer_name='O',
+                                              email='o@phins.ai', phone='+14155551234',
+                                              template='message', channels='whatsapp')
+        assert follow['success'] is False and follow['code'] == 'CONSENT_REQUIRED'
 
     def test_failed_otp_records_nothing(self):
         service = create_notification_service(use_mock=True)

@@ -44,6 +44,7 @@ import json
 import math
 import hashlib
 import os
+import threading
 import uuid
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -387,6 +388,9 @@ class DeliveryBiddingService:
 
         self.supplier_metrics: Dict[str, Dict[str, Any]] = {}
         self._settled_cache: Dict[str, Optional[Dict[str, Any]]] = {}
+        # B11: serialises the elapsed-window close so the sweep, a late bid and
+        # a read cannot each emit their own ``bidding_window_closed`` event.
+        self._window_lock = threading.RLock()
 
         # B11: geohash index over open requests, keyed by pickup cell at every
         # precision 1..GEOHASH_INDEX_PRECISION: {precision: {cell: {request_id}}}
@@ -616,40 +620,48 @@ class DeliveryBiddingService:
         deadline = self._parse_ts(request.bidding_ends_at)
         return deadline is not None and now >= deadline
 
-    def _close_bidding_window(self, request: DeliveryRequest, now: datetime) -> Dict[str, Any]:
-        """Single terminal transition out of ``bidding_open`` for an elapsed window."""
-        pending = [b for b in self.delivery_bids.values()
-                   if b.request_id == request.request_id and b.status == BidStatus.PENDING]
-        pending.sort(key=lambda b: (b.ai_ranking if b.ai_ranking > 0 else 999, -b.ai_score))
-        closed_at = now.isoformat()
-        request.bidding_closed_at = closed_at
-        if pending:
-            request.status = DeliveryStatus.BIDDING_CLOSED
-            request.closed_reason = 'bidding_window_elapsed'
-            outcome = 'closed_with_bids'
-            note = f'Bidding window closed with {len(pending)} bid(s); awaiting selection'
-        else:
-            request.status = DeliveryStatus.CANCELLED
-            request.closed_reason = 'bidding_window_elapsed_no_bids'
-            outcome = 'cancelled_no_bids'
-            note = 'Bidding window closed with no bids; request cancelled'
-        self._unindex_request(request.request_id)
-        self._add_tracking_event(request.request_id, request.status, None, note, 'sla_clock')
-        event = self._emit_event(
-            BIDDING_WINDOW_CLOSED_EVENT, 'delivery_request', request.request_id, {
-                'request_id': request.request_id,
-                'order_id': request.order_id,
-                'customer_id': request.customer_id,
-                'outcome': outcome,
-                'status': request.status.value,
-                'bidding_ends_at': request.bidding_ends_at,
-                'closed_at': closed_at,
-                'bid_count': len(pending),
-                'recommended_bid_id': pending[0].bid_id if pending else None,
-                'recommended_supplier_id': pending[0].supplier_id if pending else None,
-            })
-        return {'request_id': request.request_id, 'outcome': outcome,
-                'status': request.status.value, 'bid_count': len(pending), 'event_id': event['id']}
+    def _close_bidding_window(self, request: DeliveryRequest, now: datetime) -> Optional[Dict[str, Any]]:
+        """Single terminal transition out of ``bidding_open`` for an elapsed window.
+
+        Serialised and re-checked under the lock: the sweep, a late bid and a
+        read can all see ``bidding_open`` before any of them writes, so only the
+        first one transitions and emits the event; the others get ``None``.
+        """
+        with self._window_lock:
+            if request.status != DeliveryStatus.BIDDING_OPEN:
+                return None
+            pending = [b for b in self.delivery_bids.values()
+                       if b.request_id == request.request_id and b.status == BidStatus.PENDING]
+            pending.sort(key=lambda b: (b.ai_ranking if b.ai_ranking > 0 else 999, -b.ai_score))
+            closed_at = now.isoformat()
+            request.bidding_closed_at = closed_at
+            if pending:
+                request.status = DeliveryStatus.BIDDING_CLOSED
+                request.closed_reason = 'bidding_window_elapsed'
+                outcome = 'closed_with_bids'
+                note = f'Bidding window closed with {len(pending)} bid(s); awaiting selection'
+            else:
+                request.status = DeliveryStatus.CANCELLED
+                request.closed_reason = 'bidding_window_elapsed_no_bids'
+                outcome = 'cancelled_no_bids'
+                note = 'Bidding window closed with no bids; request cancelled'
+            self._unindex_request(request.request_id)
+            self._add_tracking_event(request.request_id, request.status, None, note, 'sla_clock')
+            event = self._emit_event(
+                BIDDING_WINDOW_CLOSED_EVENT, 'delivery_request', request.request_id, {
+                    'request_id': request.request_id,
+                    'order_id': request.order_id,
+                    'customer_id': request.customer_id,
+                    'outcome': outcome,
+                    'status': request.status.value,
+                    'bidding_ends_at': request.bidding_ends_at,
+                    'closed_at': closed_at,
+                    'bid_count': len(pending),
+                    'recommended_bid_id': pending[0].bid_id if pending else None,
+                    'recommended_supplier_id': pending[0].supplier_id if pending else None,
+                })
+            return {'request_id': request.request_id, 'outcome': outcome,
+                    'status': request.status.value, 'bid_count': len(pending), 'event_id': event['id']}
 
     def expire_bidding_windows(self, now: Optional[datetime] = None) -> Dict[str, Any]:
         """Close every open request whose bidding window has elapsed (idempotent)."""
@@ -661,7 +673,9 @@ class DeliveryBiddingService:
             if not isinstance(request, DeliveryRequest) or request.status != DeliveryStatus.BIDDING_OPEN:
                 continue
             if self._window_elapsed(request, now):
-                closed.append(self._close_bidding_window(request, now))
+                transition = self._close_bidding_window(request, now)
+                if transition is not None:
+                    closed.append(transition)
         return {
             'success': True,
             'checked_at': now.isoformat(),

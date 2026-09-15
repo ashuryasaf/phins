@@ -42,7 +42,7 @@ from services.notification_service import (
     get_notification_service,
 )
 
-from .consent import RELATIONAL, TEMPLATE_PURPOSE, TRANSACTIONAL, MessagingPolicy
+from .consent import CAP_GATE_LOCK, RELATIONAL, TEMPLATE_PURPOSE, TRANSACTIONAL, MessagingPolicy
 from .escalation import Escalation, EscalationDesk, get_escalation_desk
 from .interaction_log import Interaction, InteractionLog, get_interaction_log
 
@@ -183,9 +183,19 @@ class CustomerCommunicationAgent:
         callers and the UI can tell a refused message from a provider failure.
         """
         channel = request.channel.value
-        decision = self.messaging_policy.authorize(
-            request.customer_id or '', channel, purpose, customer_record=customer_record,
-        )
+        # Authorising and reserving the pending row is one locked step so two
+        # concurrent sends cannot both pass the daily cap (see CAP_GATE_LOCK).
+        with CAP_GATE_LOCK:
+            decision = self.messaging_policy.authorize(
+                request.customer_id or '', channel, purpose, customer_record=customer_record,
+            )
+            row = None
+            if decision.allowed:
+                row = self.interaction_log.record(
+                    customer_id=request.customer_id or '', agent=AGENT_NAME, kind=kind,
+                    channel=channel, status='pending', template=template, purpose=purpose,
+                    recipient=request.recipient, actor=actor, metadata=dict(metadata or {}),
+                )
         if not decision.allowed:
             self.interaction_log.record(
                 customer_id=request.customer_id or '', agent=AGENT_NAME, kind=kind,
@@ -204,11 +214,6 @@ class CustomerCommunicationAgent:
                 'policy': decision.to_dict(),
             }
 
-        row = self.interaction_log.record(
-            customer_id=request.customer_id or '', agent=AGENT_NAME, kind=kind,
-            channel=channel, status='pending', template=template, purpose=purpose,
-            recipient=request.recipient, actor=actor, metadata=dict(metadata or {}),
-        )
         try:
             result = self._notification_service.send(request)
         except Exception as exc:
@@ -481,12 +486,10 @@ class CustomerCommunicationAgent:
 
         # A code verified against the customer's WhatsApp number is positive
         # evidence they hold that channel: keep it as consent so later
-        # relational messages have a basis on file.
-        if (
-            otp_verified_identifier
-            and whatsapp_phone
-            and self._normalize_phone(otp_verified_identifier) == self._normalize_phone(whatsapp_phone)
-        ):
+        # relational messages have a basis on file. Both sides must normalize to
+        # a real phone, so an email (or an unusable number) grants nothing.
+        otp_verified_phone = self._normalize_phone(otp_verified_identifier)
+        if otp_verified_phone and otp_verified_phone == self._normalize_phone(whatsapp_phone):
             try:
                 self.messaging_policy.registry.set(
                     customer_id, 'whatsapp', True, source='otp_verified',

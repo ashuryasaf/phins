@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -522,6 +523,35 @@ class TestSlaClock:
         assert second['open_remaining'] == 1
         assert svc.next_window_deadline() == svc.delivery_requests[live].bidding_ends_at
 
+    def test_concurrent_closers_emit_exactly_one_event(self, svc):
+        # The sweep, a late bid and a read can all see ``bidding_open`` before
+        # any of them writes; the transition is re-checked under a lock so only
+        # one closes the window and emits ``bidding_window_closed``.
+        rid = _create(svc)
+        _expire(svc, rid)
+        parties = 8
+        barrier = threading.Barrier(parties)
+        real_elapsed = svc._window_elapsed
+
+        def _elapsed_after_rendezvous(request, now):
+            barrier.wait()  # every sweep passes the status check before any writes
+            return real_elapsed(request, now)
+
+        svc._window_elapsed = _elapsed_after_rendezvous
+        sweeps = []
+        threads = [threading.Thread(target=lambda: sweeps.append(svc.expire_bidding_windows()))
+                   for _ in range(parties)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        closed = [e for e in svc.outbox_events if e['event_type'] == BIDDING_WINDOW_CLOSED_EVENT]
+        assert len(closed) == 1
+        assert sum(len(s['transitions']) for s in sweeps) == 1
+        assert svc.delivery_requests[rid].status == DeliveryStatus.CANCELLED
+        # A loser that races the winner gets None rather than a second transition.
+        assert svc._close_bidding_window(svc.delivery_requests[rid], datetime.now(timezone.utc)) is None
+
     def test_explicit_now_drives_the_clock(self, svc):
         rid = _create(svc)
         deadline = datetime.fromisoformat(svc.delivery_requests[rid].bidding_ends_at)
@@ -827,6 +857,10 @@ class TestHttpWiring:
         assert _http(f'{base}/api/delivery/bids/{rid}', token=tokens['customer2'])[0] == 403
         assert _http(f'{base}/api/delivery/bids/{rid}', token=tokens['admin'])[0] == 200
         assert _http(f'{base}/api/delivery/bids/DEL-NOPE', token=tokens['admin'])[0] == 404
+        # Suppliers: the one that bid sees the rivals' bids; the out-of-radius one
+        # (not eligible, never bid) does not.
+        assert _http(f'{base}/api/delivery/bids/{rid}', token=tokens['supplier_nyc'])[0] == 200
+        assert _http(f'{base}/api/delivery/bids/{rid}', token=tokens['supplier_la'])[0] == 403
 
         # Evaluate without auto-accept leaves the request open.
         status, evaluated = _http(f'{base}/api/delivery/evaluate-bids', method='POST', token=tokens['customer1'],
@@ -862,6 +896,9 @@ class TestHttpWiring:
         status, track = _http(f'{base}/api/delivery/track/{rid}', token=tokens['customer1'])
         assert status == 200 and track['current_status'] == 'picked_up'
         assert _http(f'{base}/api/delivery/track/{rid}', token=tokens['customer2'])[0] == 403
+        # Once the window is closed only the assigned supplier keeps visibility.
+        assert _http(f'{base}/api/delivery/track/{rid}', token=tokens['supplier_nyc'])[0] == 200
+        assert _http(f'{base}/api/delivery/track/{rid}', token=tokens['supplier_la'])[0] == 403
 
         # Analytics: supplier sees itself regardless of the query; admin may pick.
         status, own = _http(f'{base}/api/delivery/analytics?supplier_id=SUP-HTTP-LA', token=tokens['supplier_nyc'])
