@@ -88,16 +88,27 @@ Companion to `docs/agent_operations_optimization_design.md` §C / §G.
 - **Payout runs** (`agent_payouts`, id prefix `APAY`). `run_payouts(agent_id?,
   idempotency_key?)` sweeps `accrued` commissions into one `calculated` run per agent
   (suspended agents are skipped and reported), copying amounts and content-addressing
-  the run by `commissions_hash`; swept commissions move to `payable`. A repeated
-  caller key returns the original run untouched. `settle_payout(payout_id,
+  the run by `commissions_hash`; swept commissions move to `payable`. The run and
+  the commission rows it owns are written in **one durable transaction**
+  (`_persist_records`); if that write fails the in-memory move is rolled back and
+  the accruals stay re-sweepable — no row is ever left `payable` under a run that
+  never landed. Cross-instance: `agent_payouts` carries unique keys on
+  `commissions_hash` and on `run_key = f"{idempotency_key}:{agent_id}"`, and the
+  sweep first reconciles against the durable table, so two app instances cannot
+  pay the same accrual set twice. A repeated caller key returns **every** run that
+  request created (the whole batch) untouched. `settle_payout(payout_id,
   external_payout_reference?)` re-verifies the swept set (existence, ownership,
   linkage, `payable` status, per-row arithmetic, `gross_amount = Σ amount`, hash chain),
   appends the `agent.payout.settled` anchor on the **platform event ledger**
   (deterministic id `AGPAY-{payout_id}`, so a retry re-uses the anchor) **before**
-  any status changes, then marks commissions `paid` and the run `settled`. If the anchor
-  write raises, nothing changes (fail closed); settling a settled run returns
-  `already_settled`. Like supplier settlements it records the external reference and
-  never calls a payment rail.
+  any status changes, then marks commissions `paid` and the run `settled` in one
+  durable write. If no platform ledger is available, the anchor write raises, or the
+  ledger returns no anchor, nothing changes (fail closed — a run is never `settled`
+  without its anchor); settling a settled run returns `already_settled`. Like supplier
+  settlements it records the external reference and never calls a payment rail.
+  Renewal terms are derived only from coverage dates (`start_date`, `effective_date`);
+  record timestamps (`created_date`, `created_at`, `application_date`) never define
+  an anniversary, so a policy without a coverage start accrues no renewal.
 - **Broker funnel.** `agent_funnel` reports stage counts and conversion %
   (`invitations_created → approved → redeemed → affiliated_customers →
   customers_with_policy → customers_paying → customers_renewed`), commission totals
@@ -109,7 +120,11 @@ Companion to `docs/agent_operations_optimization_design.md` §C / §G.
   `GET /api/admin/agents/funnel?agent_id=`, `GET /api/admin/agents/payouts[?agent_id=&status=]`,
   `POST /api/admin/agents/payouts/run {agent_id?, idempotency_key?, settle?,
   external_payout_reference?}`, `POST /api/admin/agents/payouts/settle {payout_id,
-  external_payout_reference?}`. Both portals gained a funnel / payout-runs card
+  external_payout_reference?}`. `run` with `settle: true` settles every run of the
+  batch that is still `calculated` — also on a reused key, so a retry finishes what a
+  crash left unsettled — and reports any settle failure as `409` (the runs created
+  are still returned); `settle` reports a ledger outage as `503`. Both portals gained
+  a funnel / payout-runs card
   (`agent-portal.html`, `admin-agents.html`). The lifecycle verb is *settle* rather than
   *execute*: `detect_sql_injection` (`web_portal/server.py`) flags the substring `EXECUTE`
   in query strings, so `?status=executed` would have been logged and blocked as an
@@ -118,9 +133,13 @@ Companion to `docs/agent_operations_optimization_design.md` §C / §G.
   twice, follows the policy anniversary (not the calendar year), never accrues without
   a start date or paid status; billing hook on premium payment; payout run idempotent
   on caller key / content / status and settlement anchored on the platform ledger;
-  settlement fails closed on a tampered swept set and on an anchor-write failure;
-  suspended agents skipped; funnel scoped to the agent's subtree; HTTP role scope for
-  every new route; DB-mode renewals + payouts survive a restart.
+  settlement fails closed on a tampered swept set, on an anchor-write failure, without
+  a platform ledger and when the ledger returns no anchor; a reused key returns the
+  whole batch; record timestamps never accrue a renewal; suspended agents skipped;
+  funnel scoped to the agent's subtree; HTTP role scope for every new route, run+settle
+  failure is a 409 and the retry finishes the batch; DB mode: renewals + payouts survive
+  a restart, a failed run/settlement write never half-persists, concurrent instances
+  cannot double-pay (durable reconcile + unique keys).
 
 Render the diagrams:
 

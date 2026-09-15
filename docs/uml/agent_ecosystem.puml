@@ -164,8 +164,9 @@ class AgentPayout <<new (§C)>> #ccffcc {
   status : calculated|settled
   gross_amount : Float = sum(commission.amount)
   commission_count / commission_ids (JSON)
-  commissions_hash : sha256(sorted ids)  ' content address
-  idempotency_key : caller key (nullable, unique)
+  commissions_hash : sha256(sorted ids)  ' content address, UNIQUE
+  idempotency_key : caller key (shared by the batch)
+  run_key : "{idempotency_key}:{agent_id}" UNIQUE
   period_start / period_end
   created_by / settled_by / settled_at
   external_payout_reference : nullable
@@ -201,7 +202,11 @@ note bottom
   (5) A payout run copies commission amounts (never edits them); settlement
       re-verifies the swept set (linkage, payable status, amount = base x rate,
       gross = sum, chain intact) and writes the platform-ledger anchor BEFORE
-      any status moves -> fail closed.
+      any status moves -> fail closed (no ledger / no anchor = no settlement).
+  (6) Run + its commission rows persist in ONE transaction; unique
+      commissions_hash / run_key make a concurrent peer run fail closed.
+  (7) Renewal terms come only from coverage dates (start_date/effective_date),
+      never from record timestamps.
 end note
 @enduml
 
