@@ -2902,6 +2902,13 @@ class AgentCommission(Base):
     """A commission accrual, backed 1:1 by a hash-chained ledger entry.
 
     Idempotency: unique (source_event_id, affiliation_id) prevents double accrual.
+    Per-renewal accrual (§C) keys on (affiliation_id, source_event_id, period):
+    the initial term carries ``period=''`` and ``source_event_id=policy:{id}``;
+    each renewal term carries its term-start date as ``period`` and embeds it in
+    ``source_event_id`` (``policy:{id}:{period}``) so the existing two-column
+    unique constraint keeps enforcing one accrual per term on every database
+    that predates the ``period`` column (additive migration, no rewrite of
+    money rows).
     """
     __tablename__ = 'agent_commissions'
     __table_args__ = (
@@ -2915,13 +2922,16 @@ class AgentCommission(Base):
     agent_id = Column(String(50), index=True, nullable=False)
     affiliation_id = Column(String(60), index=True, nullable=False)
     source_event_id = Column(String(120), index=True, nullable=False)
-    source_type = Column(String(40), default='policy_premium')  # policy_premium|marketplace_order|bounty
+    source_type = Column(String(40), default='policy_premium')  # policy_premium|policy_renewal|marketplace_order|bounty
+    period = Column(String(40), default='', nullable=True)  # '' = initial term; renewal term start (YYYY-MM-DD)
     base_amount = Column(Float, default=0.0)
     rate = Column(Float, default=0.0)
     amount = Column(Float, default=0.0)
     currency = Column(String(12), default='USD')
     status = Column(String(20), default='accrued', index=True)  # accrued|payable|paid|reversed
     ledger_entry_id = Column(String(120), nullable=True)
+    payout_id = Column(String(80), nullable=True, index=True)  # APAY... once swept into a payout run
+    paid_at = Column(String(100), nullable=True)
     created_at = Column(String(100), nullable=False)
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -2932,13 +2942,83 @@ class AgentCommission(Base):
             'affiliation_id': self.affiliation_id,
             'source_event_id': self.source_event_id,
             'source_type': self.source_type,
+            'period': self.period or '',
             'base_amount': self.base_amount,
             'rate': self.rate,
             'amount': self.amount,
             'currency': self.currency,
             'status': self.status,
             'ledger_entry_id': self.ledger_entry_id,
+            'payout_id': self.payout_id,
+            'paid_at': self.paid_at,
             'created_at': self.created_at,
+        }
+
+
+class AgentPayout(Base):
+    """A commission payout run for one agent (§C, ``agent_payouts``).
+
+    Sweeps that agent's ``accrued`` commissions into one run (they become
+    ``payable``), then ``settle`` marks them ``paid`` and anchors the payout on
+    the platform event ledger. Commission amounts are never edited by a payout;
+    ``commissions_hash`` (sha256 of the sorted commission ids) lets an auditor
+    re-derive exactly which accruals the run settled. Follows the
+    ``supplier_settlement_service`` run model: ``calculated -> settled``.
+    """
+    __tablename__ = 'agent_payouts'
+
+    id = Column(String(80), primary_key=True)  # APAY...
+    agent_id = Column(String(50), index=True, nullable=False)
+    status = Column(String(20), default='calculated', index=True)  # calculated|settled
+    currency = Column(String(12), default='USD')
+    gross_amount = Column(Float, default=0.0)
+    commission_count = Column(Integer, default=0)
+    commission_ids = Column(Text, nullable=True)  # JSON array of COMM ids
+    commissions_hash = Column(String(64), index=True, nullable=True)
+    idempotency_key = Column(String(120), index=True, nullable=True)
+    period_start = Column(String(100), nullable=True)  # earliest swept accrual
+    period_end = Column(String(100), nullable=True)    # latest swept accrual
+    created_by = Column(String(100), nullable=True)
+    settled_by = Column(String(100), nullable=True)
+    settled_at = Column(String(100), nullable=True)
+    external_payout_reference = Column(String(200), nullable=True)
+    ledger_entry_id = Column(String(120), nullable=True)           # agent commission ledger (calculated)
+    platform_ledger_entry_id = Column(String(120), nullable=True)  # platform event ledger anchor (settled)
+    platform_entry_hash = Column(String(128), nullable=True)
+    created_at = Column(String(100), nullable=False)
+    updated_at = Column(String(100), nullable=True)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        ids = []
+        if self.commission_ids:
+            try:
+                ids = json.loads(self.commission_ids)
+                if not isinstance(ids, list):
+                    ids = []
+            except Exception:
+                ids = []
+        return {
+            'id': self.id,
+            'agent_id': self.agent_id,
+            'status': self.status,
+            'currency': self.currency,
+            'gross_amount': self.gross_amount,
+            'commission_count': self.commission_count,
+            'commission_ids': ids,
+            'commissions_hash': self.commissions_hash,
+            'idempotency_key': self.idempotency_key,
+            'period_start': self.period_start,
+            'period_end': self.period_end,
+            'created_by': self.created_by,
+            'settled_by': self.settled_by,
+            'settled_at': self.settled_at,
+            'external_payout_reference': self.external_payout_reference,
+            'ledger_entry_id': self.ledger_entry_id,
+            'platform_ledger_entry_id': self.platform_ledger_entry_id,
+            'platform_entry_hash': self.platform_entry_hash,
+            'created_at': self.created_at,
+            'updated_at': self.updated_at,
         }
 
 

@@ -17,6 +17,8 @@ Agent (role=agent, scoped to own subtree):
   GET  /api/agent/network/customers
   GET  /api/agent/invitations
   GET  /api/agent/ledger
+  GET  /api/agent/funnel            (§C broker funnel, subtree only)
+  GET  /api/agent/payouts           (§C own payout runs)
   POST /api/agent/invitations
 
 Admin (role=admin) — Agents Management:
@@ -24,13 +26,22 @@ Admin (role=admin) — Agents Management:
   GET  /api/admin/agent-invitations
   GET  /api/admin/agents/commissions
   GET  /api/admin/agents/integrity
+  GET  /api/admin/agents/funnel?agent_id=
+  GET  /api/admin/agents/payouts?agent_id=&status=
   POST /api/admin/agents
   POST /api/admin/agents/update
   POST /api/admin/agents/recompute-commissions
   POST /api/admin/agents/repair-referrals
+  POST /api/admin/agents/payouts/run      {agent_id?, idempotency_key?, settle?, external_payout_reference?}
+  POST /api/admin/agents/payouts/settle  {payout_id, external_payout_reference?}
   POST /api/admin/agent-invitations/approve
   POST /api/admin/agent-invitations/reject
   POST /api/admin/agent-invitations/redeem
+
+``data_sources`` (from server.py): customers, policies, suppliers, bills
+(paid bills drive per-renewal accrual), health_wallets / investment_accounts /
+transaction_ledger (subtree BI for the funnel) and platform_ledger (payout
+anchor). Every key is optional; the module degrades to policy-only accrual.
 
 Public:
   GET  /api/agent-invitations/validate?code=...
@@ -53,6 +64,24 @@ def _first(qs: Dict[str, Any], key: str, default: Any = None) -> Any:
 
 def _deny(msg: str = "Unauthorized") -> Tuple[int, Dict[str, Any]]:
     return 403, {"error": msg}
+
+
+def _recompute(data_sources: Dict[str, Any]) -> int:
+    """Idempotent accrual from the policy book plus paid bills (renewal terms)."""
+    return svc.recompute_commissions(data_sources.get("policies", {}) or {},
+                                     data_sources.get("bills") or {})
+
+
+def _funnel(agent_id: str, data_sources: Dict[str, Any]) -> Dict[str, Any]:
+    return svc.agent_funnel(
+        agent_id,
+        data_sources.get("customers", {}) or {},
+        data_sources.get("policies", {}) or {},
+        bills=data_sources.get("bills") or {},
+        health_wallets=data_sources.get("health_wallets") or {},
+        investment_accounts=data_sources.get("investment_accounts") or {},
+        transaction_ledger=data_sources.get("transaction_ledger") or {},
+    )
 
 
 def _resolve_agent(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -87,15 +116,15 @@ def handle_get(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             return 404, {"error": "No agent profile for this account"}
         aid = agent["id"]
         if path == "/api/agent/me":
-            svc.recompute_commissions(data_sources.get("policies", {}))
+            _recompute(data_sources)
             return 200, {"agent": agent, "summary": svc.income_summary(aid)}
         if path == "/api/agent/income/summary":
             # Revenue hook (v1): the policy/premium book drives accrual, applied
             # idempotently here so the dashboard reflects current realized premium.
-            svc.recompute_commissions(data_sources.get("policies", {}))
+            _recompute(data_sources)
             return 200, svc.income_summary(aid)
         if path == "/api/agent/network/customers":
-            svc.recompute_commissions(data_sources.get("policies", {}))
+            _recompute(data_sources)
             page = int(_first(qs, "page", 1) or 1)
             page_size = int(_first(qs, "page_size", 50) or 50)
             return 200, svc.network_customers(
@@ -105,6 +134,12 @@ def handle_get(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             return 200, {"items": svc.list_invitations(agent_id=aid)}
         if path == "/api/agent/ledger":
             return 200, {"items": svc.get_ledger(agent_id=aid)}
+        if path == "/api/agent/funnel":
+            _recompute(data_sources)
+            return 200, _funnel(aid, data_sources)
+        if path == "/api/agent/payouts":
+            status = _first(qs, "status")
+            return 200, {"items": svc.list_payouts(agent_id=aid, status=status)}
         return 404, {"error": "Unknown agent endpoint"}
 
     # ----- admin-scoped -----
@@ -117,11 +152,11 @@ def handle_get(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             status = _first(qs, "status")
             return 200, {"items": svc.list_invitations(status=status)}
         if path == "/api/admin/agents/commissions":
-            svc.recompute_commissions(data_sources.get("policies", {}))
+            _recompute(data_sources)
             agent_id = _first(qs, "agent_id")
             return 200, {"items": svc.list_commissions(agent_id=agent_id)}
         if path == "/api/admin/agents/overview":
-            svc.recompute_commissions(data_sources.get("policies", {}))
+            _recompute(data_sources)
             return 200, svc.community_overview()
         if path == "/api/admin/agents/affiliations":
             agent_id = _first(qs, "agent_id")
@@ -129,7 +164,7 @@ def handle_get(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
                 return 400, {"error": "agent_id is required"}
             return 200, {"items": svc.list_affiliations(agent_id)}
         if path == "/api/admin/agents/network":
-            svc.recompute_commissions(data_sources.get("policies", {}))
+            _recompute(data_sources)
             agent_id = _first(qs, "agent_id")
             if not agent_id:
                 return 400, {"error": "agent_id is required"}
@@ -143,12 +178,26 @@ def handle_get(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             return 200, {"items": svc.get_ledger(agent_id=agent_id),
                          "ledger_intact": svc.verify_ledger_integrity()}
         if path == "/api/admin/agents/integrity":
-            svc.recompute_commissions(data_sources.get("policies", {}))
+            _recompute(data_sources)
             return 200, svc.connection_integrity(
                 customers=data_sources.get("customers", {}),
                 policies=data_sources.get("policies", {}),
                 suppliers=data_sources.get("suppliers", {}),
             )
+        if path == "/api/admin/agents/funnel":
+            agent_id = _first(qs, "agent_id")
+            if not agent_id:
+                return 400, {"error": "agent_id is required"}
+            if not svc.get_agent(agent_id):
+                return 404, {"error": "Agent not found"}
+            _recompute(data_sources)
+            return 200, _funnel(agent_id, data_sources)
+        if path == "/api/admin/agents/payouts":
+            agent_id = _first(qs, "agent_id")
+            status = _first(qs, "status")
+            if status and status not in svc.PAYOUT_STATUSES:
+                return 400, {"error": f"status must be one of {', '.join(svc.PAYOUT_STATUSES)}"}
+            return 200, {"items": svc.list_payouts(agent_id=agent_id, status=status)}
         return 404, {"error": "Unknown admin agent endpoint"}
 
     return 404, {"error": "Unknown endpoint"}
@@ -209,8 +258,49 @@ def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             return (200, {"agent": agent}) if agent else (404, {"error": "Agent not found"})
 
         if path == "/api/admin/agents/recompute-commissions":
-            created = svc.recompute_commissions(data_sources.get("policies", {}))
+            created = _recompute(data_sources)
             return 200, {"created": created, "ledger_intact": svc.verify_ledger_integrity()}
+
+        if path == "/api/admin/agents/payouts/run":
+            agent_id = body.get("agent_id") or None
+            if agent_id and not svc.get_agent(agent_id):
+                return 404, {"error": "Agent not found"}
+            idem = body.get("idempotency_key")
+            if idem is not None and not isinstance(idem, str):
+                return 400, {"error": "idempotency_key must be a string"}
+            if idem and len(idem) > 120:
+                return 400, {"error": "idempotency_key too long (max 120)"}
+            # Sweep the latest accruals first so the run reflects the current book.
+            _recompute(data_sources)
+            result = svc.run_payouts(agent_id=agent_id, created_by=admin, idempotency_key=idem)
+            if body.get("settle") and not result.get("reused"):
+                reference = body.get("external_payout_reference")
+                settled = []
+                for pay in result["payouts"]:
+                    ok, out = svc.settle_payout(
+                        pay["id"], settled_by=admin, external_payout_reference=reference,
+                        platform_ledger=data_sources.get("platform_ledger"))
+                    if not ok:
+                        result["error_detail"] = out
+                        break
+                    settled.append(out)
+                result["payouts"] = settled + result["payouts"][len(settled):]
+                result["settled"] = len(settled)
+            return 200, result
+
+        if path == "/api/admin/agents/payouts/settle":
+            payout_id = body.get("payout_id")
+            if not payout_id:
+                return 400, {"error": "payout_id is required"}
+            reference = body.get("external_payout_reference")
+            if reference is not None and not isinstance(reference, str):
+                return 400, {"error": "external_payout_reference must be a string"}
+            ok, result = svc.settle_payout(
+                payout_id, settled_by=admin, external_payout_reference=reference or None,
+                platform_ledger=data_sources.get("platform_ledger"))
+            if ok:
+                return 200, {"payout": result, "ledger_intact": svc.verify_ledger_integrity()}
+            return (404 if result == "Payout not found" else 409), {"error": result}
 
         if path == "/api/admin/agents/repair-referrals":
             result = svc.repair_referring_links(

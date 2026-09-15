@@ -47,6 +47,12 @@
     #login{max-width:360px;margin:60px auto}
     .hidden{display:none}
     .note{background:#f0f4fa;border:1px solid var(--border);border-left:4px solid var(--blue-mid);border-radius:10px;padding:12px 14px;font-size:8.8pt;color:var(--sub);margin-top:10px}
+    .funnel{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+    .funnel .stage{background:#f0f4fa;border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+    .funnel .stage .n{font-size:16pt;font-weight:900;color:var(--blue-dark);line-height:1}
+    .funnel .stage .s{font-size:7.8pt;color:var(--soft);text-transform:uppercase;letter-spacing:.04em;margin-top:5px}
+    .funnel .stage .c{font-size:8pt;color:var(--green);font-weight:700;margin-top:3px}
+    .pill.calculated{background:#fff7e0;color:#8a6d00}.pill.settled{background:#dcfce7;color:#15803d}
     .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0f274d;color:#fff;padding:10px 16px;border-radius:10px;font-size:9pt;opacity:0;transition:.25s;z-index:9}
     .toast.show{opacity:1}
   </style>
@@ -105,8 +111,19 @@
       <div class="card" style="overflow-x:auto"><table id="inv-table"><thead><tr><th>Code</th><th>Type</th><th>Proposed</th><th>Locked</th><th>Status</th></tr></thead><tbody></tbody></table></div>
 
       <h2>My network (affiliated customers)</h2>
-      <div class="card" style="overflow-x:auto"><table id="net-table"><thead><tr><th>Customer</th><th>Status</th><th>Policies</th><th>Premium basis</th><th>Rate</th><th>Accrued commission</th></tr></thead><tbody></tbody></table>
+      <div class="card" style="overflow-x:auto"><table id="net-table"><thead><tr><th>Customer</th><th>Status</th><th>Policies</th><th>Premium basis</th><th>Rate</th><th>Accrued commission</th><th>Renewals</th></tr></thead><tbody></tbody></table>
         <p class="muted" style="margin-top:8px">Outline only — affiliated customers' PII/medical data is never exposed to agents.</p>
+      </div>
+
+      <h2>Broker funnel</h2>
+      <div class="card">
+        <div class="funnel" id="funnel"></div>
+        <p class="muted" id="funnel-note" style="margin-top:8px">Computed from your own invitations, affiliations and commission events only.</p>
+      </div>
+
+      <h2>Payouts</h2>
+      <div class="card" style="overflow-x:auto"><table id="pay-table"><thead><tr><th>Run</th><th>Status</th><th>Commissions</th><th>Amount</th><th>Created</th><th>Settled</th><th>Reference</th></tr></thead><tbody></tbody></table>
+        <p class="muted" style="margin-top:8px">Payout runs are created and settled by an admin; every settled run is anchored on the platform ledger.</p>
       </div>
     </div>
   </div>
@@ -174,7 +191,7 @@
       showApp(true);
       $('#who').textContent = (me.body.agent && me.body.agent.display_name) || 'Agent';
       renderKpis(me.body.summary);
-      loadInvitations(); loadNetwork();
+      loadInvitations(); loadNetwork(); loadFunnel(); loadPayouts();
     }
 
     function renderKpis(s){
@@ -183,7 +200,9 @@
       const cards = [
         ['Lifetime commission', fmt(s.lifetime_total)],
         ['Accrued', fmt(s.accrued_total)],
+        ['Payable (in payout run)', fmt(s.payable_total)],
         ['Paid out', fmt(s.paid_total)],
+        ['Renewal commission', fmt(s.renewal_total)],
         ['Affiliated customers', c.affiliated_customers||0],
         ['Pending invitations', c.invitations_pending_approval||0],
         ['Active invitations', c.invitations_active||0],
@@ -202,8 +221,29 @@
     async function loadNetwork(){
       const {body} = await api('/api/agent/network/customers');
       const rows = (body.items||[]).map(r=>`<tr><td>${escHtml(r.name)}</td><td>${escHtml(r.status)}</td><td>${r.policy_count}</td>`+
-        `<td>${fmt(r.premium_basis)}</td><td>${Math.round((r.commission_rate||0)*100)}%</td><td>${fmt(r.accrued_commission)}</td></tr>`).join('');
-      $('#net-table tbody').innerHTML = rows || '<tr><td colspan="6" class="muted">No affiliated customers yet.</td></tr>';
+        `<td>${fmt(r.premium_basis)}</td><td>${Math.round((r.commission_rate||0)*100)}%</td><td>${fmt(r.accrued_commission)}</td>`+
+        `<td>${r.renewal_periods||0} <span class="muted">(${fmt(r.renewal_commission)})</span></td></tr>`).join('');
+      $('#net-table tbody').innerHTML = rows || '<tr><td colspan="7" class="muted">No affiliated customers yet.</td></tr>';
+    }
+
+    const STAGE_LABELS = {invitations_created:'Invited', invitations_approved:'Approved', invitations_redeemed:'Redeemed',
+      affiliated_customers:'Affiliated', customers_with_policy:'With policy', customers_paying:'Paying premium', customers_renewed:'Renewed'};
+    async function loadFunnel(){
+      const {status, body} = await api('/api/agent/funnel');
+      if(status!==200){ $('#funnel').innerHTML = '<span class="muted">Funnel unavailable.</span>'; return; }
+      $('#funnel').innerHTML = (body.stages||[]).map((s,i)=>`<div class="stage"><div class="n">${s.count}</div><div class="s">${escHtml(STAGE_LABELS[s.stage]||s.stage)}</div>`+
+        `<div class="c">${i? (s.conversion_pct+'% of prev') : '&nbsp;'}</div></div>`).join('');
+      const bi = body.bi || {}; const c = body.commission || {};
+      $('#funnel-note').textContent = `Premium basis ${fmt((body.network||{}).premium_basis)} · lifetime commission ${fmt(c.lifetime_total)} · renewal ${fmt(c.renewal_total)}`+
+        (bi.policy_adoption_rate!=null ? ` · subtree policy adoption ${bi.policy_adoption_rate}%` : '') + ' — computed from your own subtree only.';
+    }
+
+    async function loadPayouts(){
+      const {body} = await api('/api/agent/payouts');
+      const rows = (body.items||[]).map(p=>`<tr><td><code>${escHtml(p.id)}</code></td><td><span class="pill ${escHtml(p.status)}">${escHtml(p.status)}</span></td>`+
+        `<td>${p.commission_count}</td><td>${fmt(p.gross_amount)}</td><td>${escHtml((p.created_at||'').slice(0,10))}</td>`+
+        `<td>${escHtml((p.settled_at||'').slice(0,10)||'—')}</td><td>${escHtml(p.external_payout_reference||'—')}</td></tr>`).join('');
+      $('#pay-table tbody').innerHTML = rows || '<tr><td colspan="7" class="muted">No payout runs yet.</td></tr>';
     }
 
     async function createInvitation(){

@@ -12,7 +12,9 @@ See docs/agent_ecosystem_design.md and docs/uml/agent_ecosystem.puml.
 from typing import List, Optional
 from sqlalchemy.orm import Session
 
-from database.models import Agent, AgentInvitation, AgentAffiliation, AgentCommission
+from database.models import (
+    Agent, AgentInvitation, AgentAffiliation, AgentCommission, AgentPayout,
+)
 from .base import BaseRepository
 
 
@@ -68,3 +70,28 @@ class AgentCommissionRepository(BaseRepository[AgentCommission]):
 
     def get_for_event(self, source_event_id: str, affiliation_id: str) -> Optional[AgentCommission]:
         return self.find_one_by(source_event_id=source_event_id, affiliation_id=affiliation_id)
+
+    def list_by_status(self, status: str) -> List[AgentCommission]:
+        return self.filter_by(status=status)
+
+    def list_for_payout(self, payout_id: str) -> List[AgentCommission]:
+        return self.filter_by(payout_id=payout_id)
+
+
+class AgentPayoutRepository(BaseRepository[AgentPayout]):
+    """CRUD for agent payout runs (§C; ``calculated -> settled``)."""
+
+    def __init__(self, session: Session):
+        super().__init__(AgentPayout, session)
+
+    def list_by_agent(self, agent_id: str) -> List[AgentPayout]:
+        return self.filter_by(agent_id=agent_id)
+
+    def list_by_status(self, status: str) -> List[AgentPayout]:
+        return self.filter_by(status=status)
+
+    def get_by_idempotency_key(self, idempotency_key: str) -> Optional[AgentPayout]:
+        return self.find_one_by(idempotency_key=idempotency_key)
+
+    def get_by_commissions_hash(self, commissions_hash: str) -> Optional[AgentPayout]:
+        return self.find_one_by(commissions_hash=commissions_hash)

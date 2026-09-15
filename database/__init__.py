@@ -239,6 +239,10 @@ _UPGRADE_NEW_COLUMNS = [
     # Agent ecosystem: referring agent linkage
     ('customers', 'referring_agent_id', 'VARCHAR(50)', None),
     ('suppliers', 'referring_agent_id', 'VARCHAR(50)', None),
+    # Agent ecosystem §C: per-renewal period + payout sweep on commissions.
+    ('agent_commissions', 'period', 'VARCHAR(40)', "''"),
+    ('agent_commissions', 'payout_id', 'VARCHAR(80)', None),
+    ('agent_commissions', 'paid_at', 'VARCHAR(100)', None),
     # Chat "Phin" senior-review referral fields on underwriting applications
     # (rows opened without a policy by the chat ADL/eligibility bridge).
     ('underwriting_applications', 'customer_phone', 'VARCHAR(50)', None),
