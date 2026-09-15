@@ -4256,19 +4256,29 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          // 5xx / vault faults are operator problems: show a stable, translatable
-          // customer message (nothing was stored) instead of the raw server text.
-          if (res.status >= 500 || data.code === 'identity_vault_unavailable') {
-            errorBox.textContent = 'We could not securely store your ID right now. Nothing was saved - please try again in a few minutes or contact PHINS support.';
+          // Map the service's error codes to stable customer sentences (translated
+          // via locales/*.json) instead of echoing raw server/operator text.
+          const messages = {
+            nationality_invalid: 'Please choose your nationality from the suggestions (for example Israel, USA).',
+            national_id_required: 'Please enter your personal ID number.',
+            national_id_invalid: 'This ID number is not valid for the selected nationality. Please check the digits and try again.',
+            identity_in_use: 'This ID number is already registered to another PHINS customer. If this is your number, contact PHINS support.',
+            identity_already_set: 'An identity is already recorded for this account. Contact PHINS support to correct it.',
+            identity_vault_unavailable: 'We could not securely store your ID right now. Nothing was saved - please try again in a few minutes or contact PHINS support.',
+            identity_store_failed: 'We could not securely store your ID right now. Nothing was saved - please try again in a few minutes or contact PHINS support.'
+          };
+          if (res.status >= 500 && !messages[data.code]) {
+            errorBox.textContent = messages.identity_vault_unavailable;
           } else {
-            errorBox.textContent = data.error || 'Could not save your identity. Please check the values.';
+            errorBox.textContent = messages[data.code] || 'Could not save your identity. Please check the values.';
           }
           errorBox.style.display = 'block';
           return;
         }
         identityGateOpen = false;
         document.getElementById('identity-gate-modal').style.display = 'none';
-        showNotification(`Identity confirmed (${data.nationality_name || data.nationality}, ID ${data.national_id_masked}).`, 'success');
+        const confirmed = (window.PhinsI18n && window.PhinsI18n.t('Identity confirmed')) || 'Identity confirmed';
+        showNotification(`${confirmed} (${data.nationality_name || data.nationality}, ID ${data.national_id_masked}).`, 'success');
       } catch (err) {
         errorBox.textContent = 'Network error - please try again.';
         errorBox.style.display = 'block';
