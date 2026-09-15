@@ -18,7 +18,7 @@ PHINS is a Python platform built around:
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (225 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (230 files) and root-level `test_*.py` (11 files)
 - one generalized job queue (`services/agent_job_queue.py`, table
  `document_processing_jobs`, rows keyed by `subject_type`/`subject_id` and
  `submitted_by`; retries, dead-letter, idempotency keys, handler registry —
@@ -405,8 +405,10 @@ When working on deployment or environment configuration:
 4. All manifests dispatch through `scripts/entrypoint.sh`
    (`serve` runs `python3 web_portal/server.py`; other modes: `cron`,
    `worker` (standalone async document worker, requires `USE_DATABASE=true`),
-   `bi-snapshot`, `db-init`, `shell`, `exec`). Keep startup behavior
-   compatible with it unless the task explicitly changes the entrypoint.
+   `bi-snapshot` (KPI snapshot + materialized `/api/bi/*` views;
+   `--snapshot-only` / `--materialize-only`), `db-init`, `shell`, `exec`).
+   Keep startup behavior compatible with it unless the task explicitly
+   changes the entrypoint.
 5. Document any environment-variable or operator-facing changes.
 
 Railway-specific docs (6 files):
@@ -434,6 +436,20 @@ Environment variables commonly used:
  `DEFAULT_MEDIA_VIDEO_PROVIDER`, `PHINS_MEDIA_INLINE_MAX_BYTES`,
  `PHINS_MAX_MEDIA_UPLOAD_SIZE` (0 = no HTTP cap),
  `PHINS_DEFAULT_MEDIA_ASSET_MAX_BYTES` (scanner/disk cap, default 2GB)
+- **Video agents (B8):** `VIDEO_AGENTS_COMPLETION_MODE` (`webhook` default,
+ `poll`; webhook resolves to poll without a `WEBHOOK_BASE_URL`),
+ `VIDEO_AGENTS_POLL_TIMEOUT` (fail a job still in flight after this many
+ seconds, default 1800), `MEDIA_WEBHOOK_REPLAY_WINDOW_SECONDS` (callback
+ timestamp tolerance, default 300); polls ride the agent queue when
+ `PHINS_AGENT_ASYNC` is on, and `rearm_media_video_jobs()` resumes
+ in-flight jobs at boot
+- **BI analytics (B10):** `PHINS_BI_SNAPSHOT_DIR` also holds
+ `materialized_views.json` (served by `/api/bi/*` when fingerprint, checksum
+ and age < cache TTL all match); `PHINS_BI_REMATERIALIZE_DELAY_SECONDS`
+ (debounce for the write-triggered `bi_materialize` queue job, default 5).
+ `DatabaseDict.content_version()` / `add_write_listener` in
+ `database/data_access.py` are the DB-mode write hooks; `mark_ledger_dirty()`
+ is the in-memory one
 - **Job queue:** `PHINS_DOC_ASYNC` (documents enqueue enrichment instead of
  inline processing; default off), `PHINS_AGENT_ASYNC` (agent routes answer
  202 + `poll_url`; default off), `PHINS_DOC_WORKER_CONCURRENCY` (base
@@ -564,7 +580,7 @@ Important test harness facts:
 - Golden fixtures only freeze the keys listed under `expected`; adding output
   keys never breaks one, changing a frozen value does — update the fixture
   in the same PR as the behaviour change and say why
-- 225 test files under `tests/`, 11 root-level `test_*.py` files
+- 230 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -650,4 +666,4 @@ If you update this file again:
 
 ---
 
-Last updated: September 14, 2026
+Last updated: September 15, 2026
