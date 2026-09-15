@@ -629,7 +629,9 @@ def resolve_lookup_id(customers: Dict[str, Any], customer_id: str, supplied_id: 
 
     * recorded identity + no ID supplied -> the recorded number, decrypted
       server-side, so nobody re-types (or mistypes) it;
-    * recorded identity + a different ID -> (409 ``identity_mismatch``);
+    * recorded identity + a different ID -> (409 ``identity_mismatch``); the
+      supplied value is compared under the *recorded* nationality, so a
+      customer whose master is not ``nationality`` may still supply it;
     * no recorded identity + a valid ID -> captured once through
       ``set_identity`` (409 ``identity_in_use`` if another customer owns it);
     * unknown customer -> the supplied value untouched.
@@ -643,7 +645,7 @@ def resolve_lookup_id(customers: Dict[str, Any], customer_id: str, supplied_id: 
     if is_complete(record):
         if not supplied:
             return reveal_national_id(customer_id) or "", None
-        if matches(record, supplied, nationality) is False:
+        if matches(record, supplied) is False:
             return supplied, (409, {
                 "error": "id_number does not match the identity recorded for this customer",
                 "code": "identity_mismatch",
