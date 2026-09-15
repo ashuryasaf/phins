@@ -596,6 +596,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const email = form.email.value.trim();
     const phone = form.phone.value.trim();
     const dob = form.dob.value;
+    const nationality = form.nationality ? form.nationality.value.trim() : '';
+    const nationalId = form.national_id ? form.national_id.value.trim() : '';
     const password = form.password.value;
     const confirmPassword = form.confirm_password.value;
     const captchaValue = captchaAnswer.value.trim();
@@ -616,6 +618,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (!fullName || !email || !password) {
       msg.textContent = 'Please fill in all required fields';
+      msg.style.color = '#dc3545';
+      return;
+    }
+
+    if (!nationality || !nationalId) {
+      msg.textContent = 'Nationality and personal ID number are required';
       msg.style.color = '#dc3545';
       return;
     }
@@ -676,6 +684,8 @@ document.addEventListener('DOMContentLoaded', function () {
         email: email,
         phone: phone,
         dob: dob,
+        nationality: nationality,
+        national_id: nationalId,
         password: password
       };
       persistPendingRegistrationState();
@@ -689,6 +699,56 @@ document.addEventListener('DOMContentLoaded', function () {
       submitBtn.disabled = false;
     }
   });
+
+  // ========== NATIONALITY AUTOCOMPLETE + ID FORMAT HINT ==========
+  // The country list and ID rules come from the server so every surface
+  // (registration, login prompt, apply) resolves nationality the same way.
+  const nationalityInput = form.nationality;
+  const nationalityOptions = document.getElementById('nationality-options');
+  const nationalityHint = document.getElementById('nationality-hint');
+  const nationalIdHint = document.getElementById('national-id-hint');
+  let nationalityLookupTimer = null;
+
+  async function refreshNationalityOptions(query) {
+    if (!nationalityOptions) return;
+    try {
+      const res = await fetch(`/api/identity/countries?q=${encodeURIComponent(query || '')}&limit=10`);
+      if (!res.ok) return;
+      const data = await res.json();
+      nationalityOptions.innerHTML = (data.items || [])
+        .map((c) => `<option value="${c.name}">${c.code}</option>`)
+        .join('');
+    } catch (e) {
+      // Autocomplete is assistive only.
+    }
+  }
+
+  async function refreshNationalIdHint() {
+    const value = nationalityInput ? nationalityInput.value.trim() : '';
+    if (!value) return;
+    try {
+      const res = await fetch(`/api/identity/rules?nationality=${encodeURIComponent(value)}`);
+      if (!res.ok) {
+        if (nationalityHint) nationalityHint.textContent = 'Please pick a country from the list';
+        return;
+      }
+      const rule = await res.json();
+      if (nationalityHint) nationalityHint.textContent = `Recorded as ${rule.nationality_name} (${rule.nationality})`;
+      if (nationalIdHint) nationalIdHint.textContent = `${rule.label} - e.g. ${rule.example}. Stored encrypted.`;
+    } catch (e) {
+      // Hint only; the server validates on submit.
+    }
+  }
+
+  if (nationalityInput) {
+    nationalityInput.addEventListener('input', () => {
+      clearTimeout(nationalityLookupTimer);
+      nationalityLookupTimer = setTimeout(() => refreshNationalityOptions(nationalityInput.value), 120);
+    });
+    nationalityInput.addEventListener('change', refreshNationalIdHint);
+    nationalityInput.addEventListener('blur', refreshNationalIdHint);
+    refreshNationalityOptions('');
+  }
 
   // Initialize
   restoreRegistrationDraft();
