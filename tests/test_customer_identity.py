@@ -75,6 +75,7 @@ def _session(role, customer_id=None, username=None):
     token = f"phins_identity-{uuid.uuid4().hex}"
     portal.SESSIONS[token] = {
         "username": username or f"{role}-identity-test",
+        "user_id": customer_id or username or f"{role}-identity-test",
         "role": role,
         "customer_id": customer_id,
         "expires": "2099-01-01T00:00:00",
@@ -631,6 +632,131 @@ def test_mislaka_link_captures_prefills_and_refuses_conflicting_ids():
     body, status = _post(path, {"customer_id": other, "id_number": IL_ID}, token=_session("customer", other))
     assert status == 409 and body["code"] == "identity_in_use"
     assert not cis.is_complete(portal.CUSTOMERS[other])
+
+
+def test_resolve_lookup_id_outcomes():
+    customers = {"C1": {"id": "C1"}, "C2": {"id": "C2"}}
+    # unknown customer: value passes through untouched
+    assert cis.resolve_lookup_id(customers, "NOPE", IL_ID, source="pension", actor="t") == (IL_ID, None)
+    # no identity yet and nothing supplied: nothing to use, no error (caller decides)
+    assert cis.resolve_lookup_id(customers, "C1", "", source="pension", actor="t") == ("", None)
+    # no identity yet + valid ID: captured once with the pipeline's source
+    used, err = cis.resolve_lookup_id(customers, "C1", IL_ID, source="pension", actor="t")
+    assert (used, err) == (IL_ID, None) and customers["C1"]["identity_source"] == "pension"
+    # recorded + omitted: the vaulted number is used server-side
+    assert cis.resolve_lookup_id(customers, "C1", None, source="pension", actor="t") == (IL_ID, None)
+    # recorded + different: refused
+    used, err = cis.resolve_lookup_id(customers, "C1", IL_ID_2, source="pension", actor="t")
+    assert err[0] == 409 and err[1]["code"] == "identity_mismatch"
+    # another customer supplying C1's ID: refused, nothing captured
+    used, err = cis.resolve_lookup_id(customers, "C2", IL_ID, source="pension", actor="t")
+    assert err[0] == 409 and err[1]["code"] == "identity_in_use" and not cis.is_complete(customers["C2"])
+
+
+def test_pension_import_route_is_bound_to_the_identity_master():
+    cid, rec = _customer()
+    token = _session("customer", cid)
+    path = "/api/mislaka/import"
+
+    # nothing recorded and nothing supplied -> the customer must record an ID first
+    body, status = _post(path, {}, token=token)
+    assert status == 400 and body["code"] == "identity_required"
+
+    # first import with a valid ID captures it (source=pension) before the Mislaka call
+    body, status = _post(path, {"id_number": IL_ID}, token=token)
+    assert status in (200, 202, 404, 503), body  # Mislaka may be unconfigured in this harness
+    assert cis.is_complete(rec) and rec["identity_source"] == "pension"
+    assert IL_ID not in json.dumps(body)
+
+    # a different ID for the same customer is refused before any lookup
+    body, status = _post(path, {"id_number": IL_ID_2}, token=token)
+    assert status == 409 and body["code"] == "identity_mismatch"
+
+    # omitting the ID is fine now: the recorded one is used server-side
+    body, status = _post(path, {}, token=token)
+    assert status != 400, body
+    assert IL_ID not in json.dumps(body)
+
+    # staff binding an import to a customer get the same guarantees
+    body, status = _post(path, {"customer_id": cid, "id_number": IL_ID_2}, token=_session("admin", username="admin"))
+    assert status == 409 and body["code"] == "identity_mismatch"
+
+
+def test_pension_job_subject_id_is_keyed_not_plain_sha256():
+    import hashlib
+    from services.jobs import pension_import_job
+    subject = pension_import_job.subject_id_for(IL_ID)
+    assert subject.startswith("PERSON-") and len(subject) == len("PERSON-") + 16
+    assert subject != f"PERSON-{hashlib.sha256(IL_ID.encode()).hexdigest()[:16]}"
+    assert subject == f"PERSON-{cis.hash_national_id('IL', IL_ID)[:16]}"
+    assert pension_import_job.subject_id_for("12345678-2") == subject  # normalised first
+
+
+def test_validate_route_uses_identity_rules_and_never_echoes_the_number():
+    body, status = _get(f"/api/validate?type=ni&value={IL_ID}")
+    assert status == 200 and body["status"] == "valid"
+    assert body["details"]["nationality"] == "IL" and body["details"]["national_id_masked"].endswith("6782")
+    assert IL_ID not in json.dumps(body)
+    body, status = _get("/api/validate?type=ni&value=123456789")
+    assert status == 200 and body["status"] == "invalid" and body["details"]["code"] == "national_id_invalid"
+    body, status = _get(f"/api/validate?type=ni&value={US_SSN}&nationality=USA")
+    assert status == 200 and body["status"] == "valid" and body["details"]["nationality"] == "US"
+
+
+def test_assessment_documents_are_cross_checked_against_the_master():
+    import base64
+    cid, rec = _customer()
+    cis.set_identity(portal.CUSTOMERS, cid, IL_ID, "IL", source="registration", actor="t")
+    token = _session("admin", username="admin")
+
+    def _upload(text, name):
+        return _post("/api/assessment-center/upload", {
+            "file_name": name, "mime_type": "text/plain", "customer_id": cid, "category": "general",
+            "file_data_b64": base64.b64encode(text.encode()).decode(),
+        }, token=token)
+
+    body, status = _upload(f"Customer: Match Person. ID {IL_ID}. Diagnosis: none.", "match.txt")
+    assert status == 201, body
+    body, status = _get(f"/api/assessment-center/customer/{cid}/profile", token=token)
+    assert status == 200
+    check = body["identity_master"]["document_check"]
+    assert check["master_recorded"] and check["matching"] >= 1 and check["conflict"] is False
+    assert all(e["matches_master"] is True for e in body["identity"]["id_numbers"])
+
+    body, status = _upload(f"Customer: Other Person. ID {IL_ID_2}. Diagnosis: none.", "conflict.txt")
+    assert status == 201, body
+    body, status = _get(f"/api/assessment-center/customer/{cid}/profile", token=token)
+    check = body["identity_master"]["document_check"]
+    assert check["conflicting"] >= 1 and check["conflict"] is True
+    assert any(e["matches_master"] is False for e in body["identity"]["id_numbers"])
+
+    body, status = _post("/api/assessment-center/freeze", {"customer_id": cid, "assessment_type": "customer_risk"}, token=token)
+    assert status == 201, body
+    assert body["identity_mismatch"] is True
+    assert body["record"]["details"]["identity_mismatch"] is True
+    assert body["record"]["details"]["customer_identity"]["national_id_hash"] == rec["national_id_hash"]
+    # the master is never changed by a conflicting document
+    assert rec["national_id_last4"] == "6782"
+
+
+def test_risk_report_analysis_flags_document_id_that_contradicts_master():
+    from services.ai_risk_reports_service import get_ai_reports_service
+    cid, rec = _customer()
+    cis.set_identity(portal.CUSTOMERS, cid, IL_ID, "IL", source="registration", actor="t")
+    svc = get_ai_reports_service()
+
+    doc = {"owner_id": cid, "owner_role": "customer"}
+    ok = svc._identity_cross_check(doc, {"id_number": IL_ID}, "hebrew")
+    assert ok["anomaly"] is None and ok["status"]["result"] == "match"
+    bad = svc._identity_cross_check(doc, {"id_number": IL_ID_2}, "hebrew")
+    assert bad["status"]["result"] == "mismatch" and bad["anomaly"].type == "identity_mismatch"
+    assert bad["anomaly"].severity.value == "critical"
+    assert IL_ID not in json.dumps(bad["status"]) and IL_ID_2 not in json.dumps(bad["status"])
+    # staff uploads have no owning customer -> nothing to compare
+    assert svc._identity_cross_check({"owner_id": "admin", "owner_role": "admin"}, {"id_number": IL_ID_2}, "english") == {"status": None, "anomaly": None}
+    # customer without a recorded identity -> reported, not flagged
+    other, _ = _customer()
+    assert svc._identity_cross_check({"owner_id": other, "owner_role": "customer"}, {"id_number": IL_ID_2}, "english")["status"]["result"] == "no_master"
 
 
 # ---------------------------------------------------------------------------
