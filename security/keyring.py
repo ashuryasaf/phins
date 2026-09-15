@@ -52,6 +52,7 @@ import logging
 import os
 import tempfile
 import threading
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -83,7 +84,11 @@ def _truthy(name: str) -> bool:
 
 
 def _db_enabled() -> bool:
-    return str(os.environ.get("USE_DATABASE", "")).lower() in ("true", "1", "yes")
+    # Same rule as web_portal/server.py: database mode is the documented
+    # default, so only an explicit opt-out selects the file backend. Reading it
+    # any other way would let a deployment that trusts the default keep its
+    # keys in a local file while its data lives in the shared database.
+    return str(os.environ.get("USE_DATABASE", "true")).strip().lower() not in ("false", "0", "no")
 
 
 def fingerprint(material: str) -> str:
@@ -171,36 +176,61 @@ def _file_write(path: str, data: Dict[str, Any]) -> None:
             pass
 
 
+@contextmanager
+def _file_mint_lock(path: str):
+    """Serialize the read-modify-write of the ring across processes.
+
+    Without it two processes minting *different* purposes each replace the file
+    with a snapshot that never held the other's key, so one key is lost. The
+    lock lives on a sidecar file because the ring itself is replaced (a new
+    inode) on every write. Platforms without ``fcntl`` keep the old behaviour.
+    """
+    try:
+        import fcntl  # type: ignore
+    except ImportError:  # pragma: no cover - non-POSIX
+        yield
+        return
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    fd = os.open(path + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
 def _file_get_or_create(purpose: str, create: bool) -> Optional[Dict[str, Any]]:
     path = keyring_path()
     try:
-        data = _file_read(path)
-        entry = data["keys"].get(purpose)
+        entry = _file_read(path)["keys"].get(purpose)
         if entry and entry.get("material"):
             return dict(entry, source=entry.get("source") or "file")
         if not create:
             return None
-        material = _generate_material(purpose)
-        entry = {
-            "material": material,
-            "fingerprint": fingerprint(material),
-            "created_at": datetime.utcnow().isoformat() + "Z",
-            "source": "generated",
-        }
-        data["keys"][purpose] = entry
-        _file_write(path, data)
-        # Re-read: another process may have won the race; the file on disk is
-        # the single source of truth.
-        persisted = _file_read(path)["keys"].get(purpose) or entry
-        if persisted.get("fingerprint") != entry["fingerprint"]:
-            logger.info("keyring: another process created the %s key first; using it", purpose)
+        with _file_mint_lock(path):
+            # Re-read under the lock: the file on disk is the single source of
+            # truth, and every purpose already in it must survive this write.
+            data = _file_read(path)
+            entry = data["keys"].get(purpose)
+            if entry and entry.get("material"):
+                logger.info("keyring: another process created the %s key first; using it", purpose)
+            else:
+                material = _generate_material(purpose)
+                entry = {
+                    "material": material,
+                    "fingerprint": fingerprint(material),
+                    "created_at": datetime.utcnow().isoformat() + "Z",
+                    "source": "generated",
+                }
+                data["keys"][purpose] = entry
+                _file_write(path, data)
         if path.startswith(tempfile.gettempdir()):
             logger.warning(
                 "keyring: %s key stored at ephemeral path %s — set PHINS_KEYRING_PATH "
                 "(or mount /data) so vaulted data survives a container restart",
                 purpose, path,
             )
-        return dict(persisted, source=persisted.get("source") or "file")
+        return dict(entry, source=entry.get("source") or "file")
     except KeyringError:
         raise
     except Exception as exc:

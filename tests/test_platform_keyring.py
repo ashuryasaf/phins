@@ -16,6 +16,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import time
 import uuid
 
 import pytest
@@ -170,6 +171,30 @@ def test_file_write_does_not_follow_a_planted_symlink(tmp_path, monkeypatch):
     assert oct((tmp_path / "keyring.json").stat().st_mode & 0o777) == "0o600"
 
 
+def test_concurrent_mints_of_different_purposes_keep_both_keys(tmp_path):
+    """Two processes minting different purposes at once must not overwrite each
+    other: a key that only ever existed in the loser's memory cannot decrypt or
+    rematch anything after a restart."""
+    ring = tmp_path / "keyring.json"
+    env = dict(os.environ, USE_DATABASE="false", PHINS_KEYRING_PATH=str(ring), PYTHONPATH=ROOT)
+    env.pop("PHINS_ENCRYPTION_KEY", None)
+    env.pop("PHINS_IDENTITY_HASH_KEY", None)
+    code = ("import sys, time\n"
+            "from security import keyring\n"
+            "time.sleep(max(0.0, float(sys.argv[2]) - time.time()))\n"
+            "print(keyring.resolve(sys.argv[1])['fingerprint'])\n")
+    start = time.time() + 2.0
+    procs = [subprocess.Popen([sys.executable, "-c", code, purpose, str(start)], env=env, cwd=ROOT,
+                              stdout=subprocess.PIPE, text=True)
+             for purpose in ("vault", "identity-hash")]
+    minted = [proc.communicate()[0].strip() for proc in procs]
+    assert all(proc.returncode == 0 for proc in procs)
+
+    stored = json.loads(ring.read_text())["keys"]
+    assert set(stored) == {"vault", "identity-hash"}
+    assert [stored["vault"]["fingerprint"], stored["identity-hash"]["fingerprint"]] == minted
+
+
 def test_malformed_keyring_file_is_rejected_not_overwritten(tmp_path):
     path = tmp_path / "keyring.json"
     path.write_text('{"version": 1, "keys": "oops"}')
@@ -216,6 +241,28 @@ def test_db_backend_persists_row_and_is_shared_across_processes(monkeypatch, tmp
         assert keyring.resolve(keyring.PURPOSE_IDENTITY_HASH)["fingerprint"] == outs[0].split()[1]
     finally:
         from database import reset_connection
+        reset_connection()
+
+
+def test_unset_use_database_selects_the_shared_database_backend(monkeypatch, tmp_path):
+    """The portal defaults USE_DATABASE to on; reading an unset variable as file
+    mode would mint per-replica keys beside data that lives in the database."""
+    monkeypatch.delenv("USE_DATABASE", raising=False)
+    monkeypatch.setenv("USE_SQLITE", "true")
+    db_path = tmp_path / "default_mode.db"
+    monkeypatch.setenv("SQLITE_PATH", str(db_path))
+    from database import init_database, reset_connection
+    reset_connection()
+    init_database()
+    keyring.reset_cache()
+    try:
+        assert keyring.resolve(keyring.PURPOSE_VAULT)["source"] == "generated"
+        assert not (tmp_path / "keyring.json").exists()
+        con = sqlite3.connect(str(db_path))
+        assert con.execute("SELECT purpose FROM platform_keys").fetchall() == [("vault",)]
+        con.close()
+        assert keyring.describe()["backend"] == "database"
+    finally:
         reset_connection()
 
 
