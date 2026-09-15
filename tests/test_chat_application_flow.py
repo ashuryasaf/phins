@@ -60,6 +60,7 @@ def _signature_payload(name, id_number="123456782"):
     """Drawn signature panel payload (name + Israeli ID + PNG)."""
     return {
         "name": name,
+        "nationality": "Israel",
         "id_number": id_number,
         "signature_data": _SIG_PNG,
         "method": "drawn_canvas",
