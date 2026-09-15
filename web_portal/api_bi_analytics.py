@@ -12,13 +12,35 @@ Endpoints:
 - GET /api/bi/revenue-forecast - Revenue forecasting
 - GET /api/bi/loss-ratio-by-smoking - Observed loss ratio by smoking cohort (read-only)
 - GET /api/bi/monte-carlo-evaluation - Monte Carlo evaluation of rules/assumptions
+- POST /api/bi/materialize - Recompute + persist the materialized dashboard views (B10)
 - GET /api/integrity/validate - Platform integrity check
+
+Every cached view response carries ``computed_at`` (UTC ISO, set when the
+view was computed), ``served_from`` (``cache`` | ``materialized`` | ``live``),
+``age_seconds`` and ``data_version`` (B10).
 """
 
 import json
 from services.bi_analytics_service import get_bi_analytics_service
 from services.platform_integrity_service import get_platform_integrity_service
 from services.delivery_bidding_service import get_delivery_bidding_service
+
+
+def with_freshness(bi_service, view_key: str, payload: dict) -> dict:
+    """Route-level copy of a cached view plus how fresh it is (B10).
+
+    ``computed_at`` is stamped by the service when the view is computed;
+    ``served_from`` says whether this call hit the in-process cache, adopted
+    a scheduler's materialized copy, or computed live; ``age_seconds`` is the
+    time since ``computed_at``. The cached object itself is never mutated.
+    """
+    meta = bi_service.cache_entry(view_key) or {}
+    out = dict(payload)
+    out['served_from'] = bi_service.last_served_from() or 'live'
+    out['age_seconds'] = meta.get('age_seconds', 0.0)
+    out['data_version'] = meta.get('data_version')
+    out['cache_ttl_seconds'] = bi_service.cache_ttl_seconds
+    return out
 
 
 def handle_executive_dashboard(handler, data_sources: dict) -> tuple:
@@ -36,7 +58,7 @@ def handle_executive_dashboard(handler, data_sources: dict) -> tuple:
             deliveries=data_sources.get('deliveries', {})
         )
         
-        return 200, dashboard
+        return 200, with_freshness(bi_service, 'executive_dashboard', dashboard)
     
     except Exception as e:
         return 500, {'error': str(e)}
@@ -56,7 +78,7 @@ def handle_delivery_analytics(handler) -> tuple:
             supplier_metrics=delivery_service.supplier_metrics
         )
         
-        return 200, analytics
+        return 200, with_freshness(bi_service, 'delivery_analytics', analytics)
     
     except Exception as e:
         return 500, {'error': str(e)}
@@ -75,7 +97,7 @@ def handle_customer_analytics(handler, data_sources: dict) -> tuple:
             policies=data_sources.get('policies', {})
         )
         
-        return 200, analytics
+        return 200, with_freshness(bi_service, 'customer_analytics', analytics)
     
     except Exception as e:
         return 500, {'error': str(e)}
@@ -93,7 +115,7 @@ def handle_supplier_analytics(handler, data_sources: dict) -> tuple:
             supplier_metrics=delivery_service.supplier_metrics
         )
         
-        return 200, analytics
+        return 200, with_freshness(bi_service, 'supplier_analytics', analytics)
     
     except Exception as e:
         return 500, {'error': str(e)}
@@ -115,6 +137,8 @@ def handle_ai_insights(handler, data_sources: dict) -> tuple:
             deliveries=data_sources.get('deliveries', {})
         )
         
+        dashboard_meta = with_freshness(bi_service, 'executive_dashboard', {})
+
         # Generate AI insights
         insights = bi_service.generate_ai_insights(dashboard)
         
@@ -122,7 +146,11 @@ def handle_ai_insights(handler, data_sources: dict) -> tuple:
             'dashboard_summary': dashboard.get('summary', {}),
             'health_scores': dashboard.get('health_scores', {}),
             'insights': insights,
-            'insight_count': len(insights)
+            'insight_count': len(insights),
+            'computed_at': dashboard.get('computed_at'),
+            'served_from': dashboard_meta['served_from'],
+            'age_seconds': dashboard_meta['age_seconds'],
+            'data_version': dashboard_meta['data_version'],
         }
     
     except Exception as e:
@@ -164,7 +192,7 @@ def handle_loss_ratio_by_smoking(handler, data_sources: dict, params: dict = Non
             pricing_factors=pricing_factors,
             **kwargs,
         )
-        return 200, slice_report
+        return 200, with_freshness(bi_service, 'loss_ratio_by_smoking_status', slice_report)
     except (TypeError, ValueError) as e:
         return 400, {'error': f'Invalid parameter: {e}'}
     except Exception as e:
@@ -172,7 +200,15 @@ def handle_loss_ratio_by_smoking(handler, data_sources: dict, params: dict = Non
 
 
 def handle_revenue_forecast(handler, policies: dict, params: dict = None) -> tuple:
-    """Handle GET /api/bi/revenue-forecast"""
+    """Handle GET /api/bi/revenue-forecast
+
+    The default request (no ``growth_rate``, 12 months) is the
+    ``revenue_forecast`` view a scheduler materializes (B10): when a copy
+    younger than the cache TTL exists for the current policy fingerprint it
+    is served with its ``computed_at``; otherwise the forecast is computed
+    live and becomes the cached copy. Custom parameters are computed on
+    demand under their own cache key.
+    """
     try:
         bi_service = get_bi_analytics_service()
         
@@ -190,9 +226,27 @@ def handle_revenue_forecast(handler, policies: dict, params: dict = None) -> tup
             historical_growth_rate=growth_rate,
             months_ahead=months_ahead
         )
-        
-        return 200, forecast
+        view_key = 'revenue_forecast' if growth_rate is None and months_ahead == 12 else 'revenue_forecast:custom'
+        return 200, with_freshness(bi_service, view_key, forecast)
     
+    except Exception as e:
+        return 500, {'error': str(e)}
+
+
+def handle_bi_materialize(handler, data_sources: dict) -> tuple:
+    """Handle POST /api/bi/materialize (B10).
+
+    Computes the standard dashboards from the live stores and upserts them as
+    materialized views (one record per view, checksummed) so subsequent
+    ``/api/bi/*`` reads and other processes serve them with ``computed_at``.
+    Idempotent: re-running with unchanged data rewrites the same views.
+    """
+    try:
+        bi_service = get_bi_analytics_service()
+        result = bi_service.materialize_views(
+            data_sources, source=str(data_sources.get('_materialize_source') or 'api'),
+        )
+        return (200 if result.get('success') else 503), result
     except Exception as e:
         return 500, {'error': str(e)}
 

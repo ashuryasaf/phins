@@ -5172,10 +5172,21 @@ def mark_ledger_dirty():
     Thread-safety: uses the same lock that guards ``save_ledger_data`` so the
     dirty flag cannot be cleared between a mutation and the corresponding
     periodic save window.
+
+    Every explicit ledger save follows a store mutation, so this is also the
+    in-memory write hook for the BI dashboards (B10): the BI service bumps
+    its ``data_version`` and, with the agent queue running, re-materializes
+    the dashboards off the request path. In DB mode the ``DatabaseDict``
+    write listener covers the same role for customers/policies/claims/billing.
     """
     global _persistence_dirty
     with _persistence_lock:
         _persistence_dirty = True
+    try:
+        from services.bi_analytics_service import notify_bi_data_change
+        notify_bi_data_change('ledger')
+    except Exception:
+        pass
 
 
 def verify_persistence_writable() -> bool:
@@ -8269,6 +8280,114 @@ except Exception:
     audit = None
 
 
+# ========== BI MATERIALIZATION (B10) ==========
+# The dashboards read the portal's live stores (including the in-memory
+# PHINS_BALANCE_SHEET), so the materialize job is bound here, like the video
+# poll handler, and a standalone worker without these stores never claims it.
+BI_MATERIALIZE_JOB_TYPE = 'bi_materialize'
+_BI_MATERIALIZE_PENDING = threading.Event()
+_BI_HOOKS_BOUND = threading.Event()
+
+
+def bi_data_sources() -> Dict[str, Any]:
+    """The live stores every ``/api/bi/*`` view is computed from.
+
+    One definition for the GET routes, ``POST /api/bi/materialize``, the queue
+    job and the cron script, so a materialized view is always computed from
+    exactly the inputs a request would use (same fingerprint).
+    """
+    return {
+        'customers': CUSTOMERS,
+        'policies': POLICIES,
+        'claims': CLAIMS,
+        'billing': BILLING,
+        'balance_sheet': PHINS_BALANCE_SHEET,
+        'suppliers': SUPPLIERS,
+        'supplier_orders': SUPPLIER_ORDERS,
+        'health_wallets': HEALTH_WALLETS,
+        'investment_accounts': INVESTMENT_ACCOUNTS,
+        'transaction_ledger': TRANSACTION_LEDGER,
+        'underwriting_applications': UNDERWRITING_APPLICATIONS,
+        'deliveries': {},
+    }
+
+
+def bi_rematerialize_delay_seconds() -> float:
+    """Debounce window between a store write and the re-materialization job."""
+    try:
+        return max(0.0, float(os.environ.get('PHINS_BI_REMATERIALIZE_DELAY_SECONDS', '5') or 5))
+    except (TypeError, ValueError):
+        return 5.0
+
+
+def _bi_materialize_job_handler(queue_job: Dict[str, Any]) -> Dict[str, Any]:
+    """Queue handler: recompute + persist the materialized BI views.
+
+    Clears the pending flag *before* computing, so a write that lands during
+    the computation schedules a fresh job instead of being absorbed by this
+    one; the views therefore never settle on stale inputs.
+    """
+    from services.bi_analytics_service import get_bi_analytics_service
+    _BI_MATERIALIZE_PENDING.clear()
+    params = queue_job.get('input_params') or {}
+    return get_bi_analytics_service().materialize_views(
+        bi_data_sources(), source=str(params.get('source') or 'queue'))
+
+
+def bind_bi_materialize_handler(queue) -> None:
+    """Register the materialize handler on ``queue`` (idempotent)."""
+    if BI_MATERIALIZE_JOB_TYPE not in queue.handlers():
+        queue.register_handler(BI_MATERIALIZE_JOB_TYPE, _bi_materialize_job_handler)
+
+
+def schedule_bi_materialize(store: str = '*', *, force: bool = False) -> Optional[Dict[str, Any]]:
+    """Enqueue one debounced ``bi_materialize`` job after a store write.
+
+    Only when the agent job queue is running in this process; otherwise the
+    next ``/api/bi/*`` read recomputes on demand (fingerprint-guarded, so it
+    is correct either way). A burst of writes collapses into a single pending
+    job; ``force`` bypasses the debounce (operator request).
+    """
+    try:
+        from services.agent_job_queue import agent_async_enabled
+        if not agent_async_enabled():
+            return None
+    except Exception:
+        return None
+    if _BI_MATERIALIZE_PENDING.is_set() and not force:
+        return None
+    _BI_MATERIALIZE_PENDING.set()
+    try:
+        queue = get_agent_job_queue()
+        bind_bi_materialize_handler(queue)
+        return queue.enqueue(
+            job_type=BI_MATERIALIZE_JOB_TYPE,
+            subject_type='bi_views',
+            subject_id='standard',
+            submitted_by='system',
+            priority=200,
+            input_params={'source': 'write_hook', 'store': str(store)},
+            max_attempts=1,
+            delay_seconds=bi_rematerialize_delay_seconds(),
+        )
+    except Exception as exc:
+        _BI_MATERIALIZE_PENDING.clear()
+        print(f"⚠️  BI re-materialization not scheduled: {exc}")
+        return None
+
+
+def bind_bi_write_hooks() -> None:
+    """Attach the BI service's data-change callback once per process."""
+    if _BI_HOOKS_BOUND.is_set():
+        return
+    try:
+        from services.bi_analytics_service import get_bi_analytics_service
+        get_bi_analytics_service().on_data_change(schedule_bi_materialize)
+        _BI_HOOKS_BOUND.set()
+    except Exception as exc:
+        print(f"⚠️  BI write hooks not bound: {exc}")
+
+
 def get_agent_job_queue():
     """The process-wide agent job queue with every adapter bound (A3).
 
@@ -8307,6 +8426,7 @@ def get_agent_job_queue():
     # lives here rather than in services.jobs (a standalone worker without it
     # leaves those rows pending for the web process).
     bind_media_video_poll_handler(queue)
+    bind_bi_materialize_handler(queue)
     return queue
 
 
@@ -18126,20 +18246,7 @@ For claims or questions, please contact:
                     from web_portal import api_bi_analytics as _bi
                 except Exception:
                     import api_bi_analytics as _bi  # fallback when run as a script
-                data_sources = {
-                    'customers': CUSTOMERS,
-                    'policies': POLICIES,
-                    'claims': CLAIMS,
-                    'billing': BILLING,
-                    'balance_sheet': PHINS_BALANCE_SHEET,
-                    'suppliers': SUPPLIERS,
-                    'supplier_orders': SUPPLIER_ORDERS,
-                    'health_wallets': HEALTH_WALLETS,
-                    'investment_accounts': INVESTMENT_ACCOUNTS,
-                    'transaction_ledger': TRANSACTION_LEDGER,
-                    'underwriting_applications': UNDERWRITING_APPLICATIONS,
-                    'deliveries': {},
-                }
+                data_sources = bi_data_sources()
                 if path == '/api/bi/executive-dashboard':
                     status_code, payload = _bi.handle_executive_dashboard(self, data_sources)
                 elif path == '/api/bi/delivery-analytics':
@@ -43481,6 +43588,36 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
 
+        # ========== BI MATERIALIZED VIEWS (B10) ==========
+        if path == '/api/bi/materialize':
+            _mat_auth_header = self.headers.get('Authorization', '')
+            _mat_token = _mat_auth_header.replace('Bearer ', '') if _mat_auth_header.startswith('Bearer ') else None
+            session = validate_session(_mat_token) if _mat_token else None
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            try:
+                try:
+                    from web_portal import api_bi_analytics as _bi
+                except Exception:
+                    import api_bi_analytics as _bi  # fallback when run as a script
+                data_sources = bi_data_sources()
+                data_sources['_materialize_source'] = 'api'
+                status_code, payload = _bi.handle_bi_materialize(self, data_sources)
+                if audit and status_code == 200:
+                    try:
+                        actor = (session.get('username') if session else None) or 'system'
+                        audit.log(actor, 'materialize', 'bi_views',
+                                  ','.join(sorted((payload.get('views') or {}).keys())), {})
+                    except Exception:
+                        pass
+            except Exception as bi_exc:
+                status_code, payload = 500, {'error': str(bi_exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
         # Classic apply.html actuarial quote (same kernel as create when
         # application_channel is classic). Chat uses /api/chat-application.
         if path == '/api/policies/quote':
@@ -56601,6 +56738,10 @@ def run_server(port: int = PORT) -> None:
                   f"{_rearmed['submission']} awaiting submission, {_rearmed['polling']} polling")
     except Exception as _rearm_exc:
         print(f"   ⚠️  Video job re-arm skipped: {_rearm_exc}")
+
+    # BI dashboards: store writes bump the BI data version and, with the
+    # agent queue running, re-materialize the views off the request path (B10).
+    bind_bi_write_hooks()
 
     server_address = (HOST, port)
     httpd = ThreadingHTTPServer(server_address, PortalHandler)
