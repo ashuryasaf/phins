@@ -243,6 +243,58 @@ class SupplierSettlementService:
         with self._db_manager_factory() as db:
             return [r.to_dict() for r in db.supplier_settlement_runs.get_by_supplier(supplier_id)]
 
+    def get_settled_outcomes(self, supplier_id: str) -> Optional[Dict[str, Any]]:
+        """Read-only outcome summary of a supplier's *executed* settlements (B11).
+
+        Only items of executed runs count (status ``paid``): a calculated but
+        unexecuted run is not yet an outcome. An order is a success unless it
+        carried a penalty; a run whose adjustment went negative after
+        execution (clawback) also counts against the supplier.
+
+        Returns ``None`` when the supplier has no executed settlements, so a
+        caller can distinguish "no history" from "poor history".
+        """
+        if not supplier_id:
+            return None
+        with self._db_manager_factory() as db:
+            runs = [r for r in db.supplier_settlement_runs.get_by_supplier(supplier_id)
+                    if str(getattr(r, 'status', '') or '') == 'executed']
+            if not runs:
+                return None
+            settled = penalized = 0
+            gross = penalties = 0.0
+            clawback_runs = 0
+            last_settled_at = None
+            for run in runs:
+                if float(run.adjustment_amount or 0.0) < 0:
+                    clawback_runs += 1
+                marker = run.updated_date or run.run_date
+                if marker and (last_settled_at is None or marker > last_settled_at):
+                    last_settled_at = marker
+                for item in db.supplier_settlement_items.get_for_run(run.id):
+                    if str(getattr(item, 'status', '') or '') != 'paid':
+                        continue
+                    settled += 1
+                    gross += float(item.gross_sales_amount or 0.0)
+                    penalty = float(item.penalty_amount or 0.0)
+                    if penalty > 0:
+                        penalized += 1
+                        penalties += penalty
+            if settled == 0:
+                return None
+            failures = min(settled, penalized + clawback_runs)
+            return {
+                'supplier_id': supplier_id,
+                'settled_orders': settled,
+                'penalized_orders': penalized,
+                'clawback_runs': clawback_runs,
+                'success_rate': round((settled - failures) / settled, 6),
+                'gross_settled_amount': round(gross, 2),
+                'penalty_total': round(penalties, 2),
+                'executed_runs': len(runs),
+                'last_settled_at': last_settled_at.isoformat() if last_settled_at else None,
+            }
+
 
 _supplier_settlement_service: Optional[SupplierSettlementService] = None
 

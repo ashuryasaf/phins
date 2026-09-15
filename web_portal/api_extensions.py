@@ -110,7 +110,7 @@ except ImportError:
     print("Warning: Community messaging service not available")
 
 try:
-    from services.customer_communication_agent import get_customer_communication_agent
+    from services.customer_agent.communication import get_customer_communication_agent
     CUSTOMER_COMMUNICATION_AGENT_AVAILABLE = True
 except ImportError:
     CUSTOMER_COMMUNICATION_AGENT_AVAILABLE = False
@@ -1182,6 +1182,7 @@ def handle_security_welcome_report(session: Dict, body_data: Dict) -> Tuple[int,
         otp_code=otp_code,
         otp_identifier=otp_identifier,
         otp_verification_type=otp_verification_type,
+        actor=str(session.get('username') or caller_user_id),
     )
 
     return (200 if result.get('success') else 400), result

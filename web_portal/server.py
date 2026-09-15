@@ -2723,6 +2723,60 @@ def marketing_state_dict() -> Dict[str, Any]:
     return state
 
 
+def marketing_cohort_targeting_requested(value: Any) -> bool:
+    """Parse the optional ``cohorts`` / ``cohort_targeting`` flag (B7)."""
+    if isinstance(value, bool):
+        return value
+    return str(value or '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def marketing_customer_analytics() -> Optional[Dict[str, Any]]:
+    """BI customer analytics used as optional cohort targeting input (B7).
+
+    Read through the (cached, fingerprint-guarded) BI service so the cohorts a
+    plan is derived from are exactly what ``/api/bi/customers`` reports for
+    the same data. Never raises: no BI → broad targeting.
+    """
+    try:
+        from services.bi_analytics_service import get_bi_analytics_service
+        sources = bi_data_sources()
+        return get_bi_analytics_service().get_customer_analytics(
+            sources['customers'],
+            sources['health_wallets'],
+            sources['investment_accounts'],
+            sources['transaction_ledger'],
+            sources['policies'],
+        )
+    except Exception as exc:
+        print(f"[marketing] cohort targeting unavailable: {exc}")
+        return None
+
+
+def generate_marketing_campaign(service, *, actor: str, vertical: Any, objective: Any, persona: Any,
+                                region: Any, budget_tier: Any, social_networks: Any,
+                                cohort_targeting: bool) -> Dict[str, Any]:
+    """One call site for both the GET generate route and publish-with-regenerate."""
+    if not isinstance(social_networks, list):
+        social_networks = []
+    return service.generate_campaign(
+        customers=CUSTOMERS,
+        policies=POLICIES,
+        billing=BILLING,
+        claims=CLAIMS,
+        health_wallets=HEALTH_WALLETS,
+        investment_accounts=INVESTMENT_ACCOUNTS,
+        transaction_ledger=TRANSACTION_LEDGER,
+        vertical=vertical,
+        objective=objective,
+        persona=persona,
+        region=region,
+        budget_tier=budget_tier,
+        social_networks=social_networks,
+        generated_by=actor,
+        customer_analytics=marketing_customer_analytics() if cohort_targeting else None,
+    )
+
+
 def _copy_json_value(value: Any) -> Any:
     """Return a JSON-safe deep copy to avoid shared mutable references."""
     try:
@@ -8178,7 +8232,7 @@ def send_admin_customer_outreach(
             create_notification_service,
             should_use_mock_notifications,
         )
-        from services.customer_communication_agent import get_customer_communication_agent
+        from services.customer_agent.communication import get_customer_communication_agent
 
         notification_service = create_notification_service(
             use_mock=should_use_mock_notifications()
@@ -8199,6 +8253,7 @@ def send_admin_customer_outreach(
             accounts=accounts,
             login_url=login_url,
             actor=actor,
+            customer_record=customer,
         )
     except Exception as exc:
         return {
@@ -8214,6 +8269,53 @@ def send_admin_customer_outreach(
         'whatsapp': bool(phone),
     }
     return result
+
+
+def admin_customer_timeline(customer_id: str) -> Dict[str, Any]:
+    """Interaction timeline + consent + escalations for one stored customer (B6)."""
+    customer_id = str(customer_id or '').strip()
+    if not customer_id:
+        return {'success': False, 'error': 'customer_id is required'}
+    if customer_id not in CUSTOMERS:
+        return {'success': False, 'error': 'Customer not found'}
+    from services.customer_agent import customer_timeline
+    from services.customer_agent.consent import consent_enforced, daily_cap
+    view = customer_timeline(customer_id)
+    view['success'] = True
+    view['policy'] = {'consent_enforced': consent_enforced(), 'daily_cap': daily_cap()}
+    return view
+
+
+def admin_set_customer_consent(customer_id: str, *, channel: str, granted: Any,
+                               actor: Optional[str] = None, note: Optional[str] = None) -> Dict[str, Any]:
+    """Record an explicit WhatsApp/SMS consent grant or revocation (B6).
+
+    Explicit entries take precedence over flags on the customer record; every
+    change is an audited, timestamped row in the consent registry.
+    """
+    customer_id = str(customer_id or '').strip()
+    if not customer_id:
+        return {'success': False, 'error': 'customer_id is required'}
+    if customer_id not in CUSTOMERS:
+        return {'success': False, 'error': 'Customer not found'}
+    if isinstance(granted, str):
+        granted_flag = granted.strip().lower() in ('1', 'true', 'yes', 'y', 'on', 'granted')
+    else:
+        granted_flag = bool(granted)
+    from services.customer_agent import get_consent_registry, get_interaction_log
+    registry = get_consent_registry()
+    try:
+        record = registry.set(customer_id, channel, granted_flag, source='explicit',
+                              actor=actor or 'admin', note=(str(note)[:200] if note else None))
+    except ValueError as exc:
+        return {'success': False, 'error': str(exc)}
+    get_interaction_log().record(
+        customer_id=customer_id, agent='service_desk', kind='consent', channel=str(channel).lower(),
+        status='logged', actor=actor or 'admin',
+        detail=f"{'granted' if granted_flag else 'revoked'} {str(channel).lower()} consent",
+        metadata={'granted': granted_flag, 'source': 'explicit'},
+    )
+    return {'success': True, 'customer_id': customer_id, 'consent': record.to_dict()}
 
 
 def bootstrap_job_runtime() -> None:
@@ -8312,6 +8414,39 @@ def bi_data_sources() -> Dict[str, Any]:
         'transaction_ledger': TRANSACTION_LEDGER,
         'underwriting_applications': UNDERWRITING_APPLICATIONS,
         'deliveries': {},
+    }
+
+
+def portal_delivery_bidding_service():
+    """The delivery-bidding singleton bound to the portal's live stores (B11).
+
+    First call creates it over ``SUPPLIERS`` / ``HEALTH_WALLETS`` /
+    ``TRANSACTION_LEDGER`` with the master-ledger recorder, so a wallet debit
+    on bid selection lands in the same ledger a request thread reads. The
+    settled-outcomes accessor and outbox publisher are resolved by the
+    service module from ``USE_DATABASE``.
+    """
+    from services import delivery_bidding_service as _dlv_svc
+    if _dlv_svc._delivery_service is None:
+        _dlv_svc.init_delivery_bidding_service(
+            suppliers=SUPPLIERS,
+            health_wallets=HEALTH_WALLETS,
+            transaction_ledger=TRANSACTION_LEDGER,
+            record_transaction_func=record_transaction,
+        )
+    return _dlv_svc.get_delivery_bidding_service()
+
+
+def delivery_request_context(session: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Scope context the delivery API module enforces (role / customer / supplier)."""
+    portal_delivery_bidding_service()
+    session = session or {}
+    role = get_effective_role(session)
+    return {
+        'role': role,
+        'username': session.get('username'),
+        'customer_id': session.get('customer_id'),
+        'supplier_id': session.get('supplier_id') or (session.get('username') if role == 'supplier' else None),
     }
 
 
@@ -16961,33 +17096,38 @@ For claims or questions, please contact:
                 budget_tier = qs.get('budget_tier', ['balanced'])[0]
                 networks_csv = qs.get('networks', [''])[0]
                 social_networks = [n.strip().lower() for n in str(networks_csv).split(',') if n.strip()]
+                cohort_targeting = marketing_cohort_targeting_requested(qs.get('cohorts', [''])[0])
 
                 service = get_marketing_sales_agent_service()
-                campaign_data = service.generate_campaign(
-                    customers=CUSTOMERS,
-                    policies=POLICIES,
-                    billing=BILLING,
-                    claims=CLAIMS,
-                    health_wallets=HEALTH_WALLETS,
-                    investment_accounts=INVESTMENT_ACCOUNTS,
-                    transaction_ledger=TRANSACTION_LEDGER,
+                actor = (session or {}).get('username', 'admin')
+                campaign_data = generate_marketing_campaign(
+                    service,
+                    actor=actor,
                     vertical=vertical,
                     objective=objective,
                     persona=persona,
                     region=region,
                     budget_tier=budget_tier,
                     social_networks=social_networks,
-                    generated_by=(session or {}).get('username', 'admin'),
+                    cohort_targeting=cohort_targeting,
                 )
 
-                actor = (session or {}).get('username', 'admin')
                 generated_campaign = campaign_data.get('campaign') if isinstance(campaign_data, dict) else {}
                 generated_integrity = campaign_data.get('integrity') if isinstance(campaign_data, dict) else {}
+                plan_cache = campaign_data.get('plan_cache') if isinstance(campaign_data, dict) else {}
+                existing_entry = get_marketing_campaign_entry(str(generated_campaign.get('campaign_id') or ''))
+                # Same inputs → same plan (cache hit): keep the stored
+                # lifecycle/assets (it may already be published) instead of
+                # resetting the envelope to a fresh "generated" state.
+                lifecycle_status = 'generated'
+                if plan_cache.get('hit') and existing_entry:
+                    lifecycle_status = str(existing_entry.get('lifecycle_status') or 'generated')
+                    generated_integrity = dict(existing_entry.get('integrity') or generated_integrity)
                 latest_entry = store_marketing_campaign_entry(
                     campaign_payload=generated_campaign if isinstance(generated_campaign, dict) else {},
                     integrity_payload=generated_integrity if isinstance(generated_integrity, dict) else {},
                     actor=actor,
-                    lifecycle_status='generated',
+                    lifecycle_status=lifecycle_status,
                 )
                 save_ledger_data()
 
@@ -16996,6 +17136,8 @@ For claims or questions, please contact:
                     'success': True,
                     'generated': campaign_data,
                     'latest_campaign': latest_entry,
+                    'plan_cache': plan_cache,
+                    'cohort_targeting': cohort_targeting,
                 }, default=str).encode('utf-8'))
                 return
             except Exception as e:
@@ -17029,6 +17171,10 @@ For claims or questions, please contact:
                 latest_copy = dict(latest_campaign)
                 latest_copy['integrity'] = dict(integrity_payload)
                 latest_copy['integrity']['verified'] = bool(verified)
+                if str(latest_copy.get('lifecycle_status') or '') == 'published':
+                    # B7: a published plan must also match its hash-chained anchor.
+                    latest_copy['integrity']['ledger_anchor'] = service.verify_publication(
+                        TRANSACTION_LEDGER, campaign_payload, integrity_payload)
 
                 campaign_id = str(campaign_payload.get('campaign_id') or '')
                 video_jobs = video_generation_jobs_for_campaign_response(campaign_id) if campaign_id else []
@@ -18226,6 +18372,22 @@ For claims or questions, please contact:
                 })
             except Exception as agt_exc:
                 status_code, payload = 500, {'error': str(agt_exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
+        # ========== DELIVERY BIDDING AI (B11) ==========
+        # Wires services/delivery_bidding_service.py via web_portal/api_delivery_bidding.py.
+        # The module enforces scope (customer -> own requests, supplier -> itself).
+        if path.startswith('/api/delivery/'):
+            try:
+                try:
+                    from web_portal import api_delivery_bidding as _dlv
+                except Exception:
+                    import api_delivery_bidding as _dlv
+                status_code, payload = _dlv.handle_get(path, qs, delivery_request_context(session))
+            except Exception as dlv_exc:
+                status_code, payload = 500, {'error': str(dlv_exc)}
             self._set_json_headers(status_code)
             self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
@@ -24972,7 +25134,29 @@ For claims or questions, please contact:
             return
         
         # ========== CUSTOMER DATA & PIPELINE VALIDATION API ==========
-        
+
+        # Admin: one customer's interaction timeline, consent and escalations (B6).
+        if path.startswith('/api/admin/customers/') and path.endswith('/interactions'):
+            if not require_role(session, ['admin', 'accountant', 'underwriter']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Unauthorized. Admin, accountant, or underwriter access required.'
+                }).encode('utf-8'))
+                return
+            parts = [p for p in path.split('/') if p]
+            # api / admin / customers / {id} / interactions
+            if len(parts) != 5 or parts[3] in ('upload', 'contact', 'consent', 'interactions'):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                return
+            view = admin_customer_timeline(parts[3])
+            status_code = 200 if view.get('success') else (
+                404 if view.get('error') == 'Customer not found' else 400
+            )
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(view, default=str).encode('utf-8'))
+            return
+
         # List all registered customers with their complete pipeline status
         if path == '/api/admin/customers':
             # Build comprehensive customer list with all related data
@@ -32206,6 +32390,35 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
             return
 
+        # ========== DELIVERY BIDDING AI (B11) — mutations ==========
+        # Wires services/delivery_bidding_service.py via web_portal/api_delivery_bidding.py.
+        if path.startswith('/api/delivery/'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            try:
+                length = int(self.headers.get('Content-Length', 0) or 0)
+            except (TypeError, ValueError):
+                length = 0
+            raw_body = self.rfile.read(length).decode('utf-8') if length else ''
+            try:
+                dlv_body = json.loads(raw_body) if raw_body else {}
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            try:
+                try:
+                    from web_portal import api_delivery_bidding as _dlv
+                except Exception:
+                    import api_delivery_bidding as _dlv
+                status_code, payload = _dlv.handle_post(path, dlv_body, delivery_request_context(session))
+            except Exception as dlv_exc:
+                status_code, payload = 500, {'error': str(dlv_exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
         # ========== AGENT ECOSYSTEM (AgentOS) — mutations ==========
         # Wires services/agent_ecosystem_service.py via web_portal/api_agent_ecosystem.py.
         if (path.startswith('/api/agent/') or path.startswith('/api/admin/agent')):
@@ -32862,21 +33075,17 @@ For claims or questions, please contact:
                         integrity_payload = {}
 
                 if not campaign_payload:
-                    generated = service.generate_campaign(
-                        customers=CUSTOMERS,
-                        policies=POLICIES,
-                        billing=BILLING,
-                        claims=CLAIMS,
-                        health_wallets=HEALTH_WALLETS,
-                        investment_accounts=INVESTMENT_ACCOUNTS,
-                        transaction_ledger=TRANSACTION_LEDGER,
+                    generated = generate_marketing_campaign(
+                        service,
+                        actor=publisher,
                         vertical=data.get('vertical', 'insurance'),
                         objective=data.get('objective', 'growth'),
                         persona=data.get('persona', 'families'),
                         region=data.get('region', 'global'),
                         budget_tier=data.get('budget_tier', 'balanced'),
                         social_networks=social_networks,
-                        generated_by=publisher,
+                        cohort_targeting=marketing_cohort_targeting_requested(
+                            data.get('cohort_targeting', data.get('cohorts'))),
                     )
                     campaign_payload = generated.get('campaign', {}) if isinstance(generated, dict) else {}
                     integrity_payload = generated.get('integrity', {}) if isinstance(generated, dict) else {}
@@ -32889,8 +33098,32 @@ For claims or questions, please contact:
                 campaign_id = str(campaign_payload.get('campaign_id') or f"MKT-{uuid.uuid4().hex[:10]}")
                 published_at = datetime.now().isoformat()
 
-                # Convert campaign artifacts into media-brief assets for /admin-media.
+                # B7: anchor (campaign_id, signature, input_hash) on the platform
+                # ledger BEFORE any side effect. A plan whose signature no longer
+                # verifies, or a ledger that cannot be written, aborts the publish
+                # with nothing minted and nothing marked published.
                 briefs = service.build_media_briefs(campaign_payload)
+                try:
+                    ledger_anchor = service.anchor_publication(
+                        platform_event_ledger,
+                        campaign_payload,
+                        integrity_payload,
+                        publisher=publisher,
+                        assets_created=len(briefs),
+                    )
+                except ValueError as exc:
+                    self._set_json_headers(409)
+                    self.wfile.write(json.dumps({'error': f'Campaign integrity check failed: {exc}'}).encode('utf-8'))
+                    return
+                except Exception as exc:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({'error': f'Ledger anchor failed; campaign not published: {exc}'}).encode('utf-8'))
+                    return
+                integrity_payload = dict(integrity_payload)
+                integrity_payload['ledger_anchor'] = ledger_anchor
+                integrity_payload.setdefault('input_hash', campaign_payload.get('input_hash', ''))
+
+                # Convert campaign artifacts into media-brief assets for /admin-media.
                 created_assets = []
                 for brief in briefs:
                     asset_id = f"media-{uuid.uuid4().hex[:12]}"
@@ -32945,6 +33178,8 @@ For claims or questions, please contact:
                     'objective': campaign_payload.get('scope', {}).get('objective'),
                     'assets_created': len(created_assets),
                     'integrity_signature': integrity_payload.get('signature', ''),
+                    'input_hash': integrity_payload.get('input_hash', ''),
+                    'ledger_entry_id': ledger_anchor.get('entry_id'),
                     'source': campaign_source,
                 }
                 published_campaigns.append(summary_entry)
@@ -32977,6 +33212,7 @@ For claims or questions, please contact:
                     'published_count': len(published_campaigns),
                     'created_assets': created_assets,
                     'campaign_source': campaign_source,
+                    'ledger_anchor': ledger_anchor,
                 }, default=str).encode('utf-8'))
                 return
             except Exception as e:
@@ -35009,8 +35245,10 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'No file content provided'}).encode('utf-8'))
                     return
                 
-                # Decode base64 content
-                import base64
+                # Decode base64 content (module-level ``base64`` is already
+                # imported; a bare ``import base64`` here would shadow it as a
+                # do_POST local and break every earlier route in this method
+                # that uses it, e.g. the marketing publish route).
                 try:
                     file_content = base64.b64decode(content_b64)
                 except Exception as decode_err:
@@ -36873,7 +37111,7 @@ For claims or questions, please contact:
                         create_notification_service,
                         should_use_mock_notifications,
                     )
-                    from services.customer_communication_agent import get_customer_communication_agent
+                    from services.customer_agent.communication import get_customer_communication_agent
 
                     use_mock_notifications = should_use_mock_notifications()
 
@@ -36897,7 +37135,9 @@ For claims or questions, please contact:
                         accounts=account_snapshot,
                         communities=[],
                         whatsapp_phone=phone if phone else None,
-                        login_url='/login.html'
+                        login_url='/login.html',
+                        customer_record=customer_record,
+                        actor='registration',
                     )
                     welcome_notification_sent = bool(
                         welcome_package.get('email', {}).get('success')
@@ -53189,6 +53429,43 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(report, default=str).encode('utf-8'))
             return
 
+        # Admin: record WhatsApp/SMS consent for a stored customer (B6).
+        if path.startswith('/api/admin/customers/') and path.endswith('/consent'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'accountant', 'underwriter']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Unauthorized. Admin, accountant, or underwriter access required.'
+                }).encode('utf-8'))
+                return
+            parts = [p for p in path.split('/') if p]
+            # api / admin / customers / {id} / consent
+            if len(parts) != 5 or parts[3] in ('upload', 'contact', 'consent'):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body) if body else {}
+            except Exception:
+                data = {}
+            if not isinstance(data, dict):
+                data = {}
+            report = admin_set_customer_consent(
+                parts[3],
+                channel=str(data.get('channel') or 'whatsapp'),
+                granted=data.get('granted', True),
+                actor=(session or {}).get('username', 'admin'),
+                note=data.get('note'),
+            )
+            status_code = 200 if report.get('success') else (
+                404 if report.get('error') == 'Customer not found' else 400
+            )
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(report, default=str).encode('utf-8'))
+            return
+
         # ========== CUSTOMER BILLING PROJECTIONS API (POST) ==========
         
         if path == '/api/billing/projections':
@@ -56730,6 +57007,15 @@ def run_server(port: int = PORT) -> None:
             print(f"📄 Async job queue started "
                   f"({_doc_worker.concurrency}-{_doc_worker.max_concurrency} threads, "
                   f"retries {_doc_worker.retry_schedule}s)")
+            # B11: one recurring SLA-clock row closes elapsed delivery bidding
+            # windows (idempotent key → shared across processes/restarts).
+            try:
+                from services.jobs import delivery_sla_job as _sla_job
+                _sla = _sla_job.ensure_sla_clock(_doc_worker)
+                print(f"⏱️  Delivery bidding SLA clock: {_sla.get('id')} "
+                      f"(every {_sla_job.tick_seconds():g}s)")
+            except Exception as _sla_exc:
+                print(f"   ⚠️  Delivery SLA clock not scheduled: {_sla_exc}")
     except Exception as _worker_exc:
         print(f"   ⚠️  Async job queue not started: {_worker_exc}")
 

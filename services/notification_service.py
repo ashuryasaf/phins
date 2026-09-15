@@ -710,8 +710,69 @@ class TemplateEngine:
     """
     Simple template engine with Jinja2-style syntax.
     Supports {{ variable }} and basic conditionals.
+
+    Also hosts the process-wide **named template registry** (B6): agents
+    register ``template_id -> {subject, body, channel, ...}`` once and render
+    by id, so customer-facing copy lives in one place instead of per-agent
+    template dicts.
     """
-    
+
+    _registry: Dict[str, Dict[str, Any]] = {}
+    _registry_lock = threading.Lock()
+
+    @classmethod
+    def register_template(cls, template_id: str, *, body: str, subject: str = '',
+                          channel: str = 'email', signature_required: bool = False,
+                          description: str = '', replace: bool = False) -> Dict[str, Any]:
+        """Register a named template. Existing ids are kept unless ``replace``."""
+        key = str(template_id or '').strip()
+        if not key:
+            raise ValueError('template_id is required')
+        if not body:
+            raise ValueError('template body is required')
+        record = {
+            'template_id': key,
+            'subject': str(subject or ''),
+            'body': str(body),
+            'channel': str(channel or 'email').strip().lower(),
+            'signature_required': bool(signature_required),
+            'description': str(description or ''),
+        }
+        with cls._registry_lock:
+            if key in cls._registry and not replace:
+                return dict(cls._registry[key])
+            cls._registry[key] = record
+            return dict(record)
+
+    @classmethod
+    def get_template(cls, template_id: str) -> Optional[Dict[str, Any]]:
+        with cls._registry_lock:
+            record = cls._registry.get(str(template_id or '').strip())
+            return dict(record) if record else None
+
+    @classmethod
+    def registered_ids(cls) -> List[str]:
+        with cls._registry_lock:
+            return sorted(cls._registry)
+
+    @classmethod
+    def render_registered(cls, template_id: str, variables: Dict[str, Any]) -> Optional[Dict[str, str]]:
+        """``{'subject', 'body', 'channel'}`` rendered from a registered template, or None."""
+        record = cls.get_template(template_id)
+        if record is None:
+            return None
+        return {
+            'subject': cls.render(record['subject'], variables) if record['subject'] else '',
+            'body': cls.render(record['body'], variables),
+            'channel': record['channel'],
+            'signature_required': record['signature_required'],
+        }
+
+    @classmethod
+    def unregister_template(cls, template_id: str) -> bool:
+        with cls._registry_lock:
+            return cls._registry.pop(str(template_id or '').strip(), None) is not None
+
     @staticmethod
     def render(template: str, variables: Dict[str, Any]) -> str:
         """Render template with variables"""

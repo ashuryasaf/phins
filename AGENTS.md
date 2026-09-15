@@ -13,12 +13,12 @@ PHINS is a Python platform built around:
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`, `api_agent_ecosystem.py`,
   `api_assessment_center.py`)
-- service-layer logic in `services/` (111 top-level modules plus the `automation/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
+- service-layer logic in `services/` (111 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (230 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (233 files) and root-level `test_*.py` (11 files)
 - one generalized job queue (`services/agent_job_queue.py`, table
  `document_processing_jobs`, rows keyed by `subject_type`/`subject_id` and
  `submitted_by`; retries, dead-letter, idempotency keys, handler registry —
@@ -118,6 +118,42 @@ PHINS is a Python platform built around:
  and `text_pages`; when present it decides the analysis language and feeds
  Hebrew field extraction. Charts are client-rendered JSON configs built
  eagerly (0.03–0.16 ms; no lazy render or chart cache by design)
+- customer-facing agents as a package (B6): `services/customer_agent/
+ {communication,service_desk,interaction_log,consent,escalation}.py`;
+ `services/customer_communication_agent.py` and root `service_agent.py` are
+ shims (agent ids `customer_communication` / `customer_service` unchanged).
+ Both facades write every touch to one `InteractionLog` (`agent_artifacts`
+ `customer_agent` / `interaction`, durable in DB mode) — `pending` before the
+ provider call, `sent` / `failed` / `refused` after, recipients masked. A
+ WhatsApp/SMS send passes `MessagingPolicy.authorize` first: relational copy
+ (`message`, `offer`) needs consent on file (explicit `ConsentRegistry` entry,
+ else customer-record flags), transactional copy (`welcome`, `bill`,
+ `reminder`, service acks) is blocked only by an explicit opt-out, and the
+ per-customer daily cap counts durable `sent` + `pending` rows. An OTP
+ verified against the WhatsApp number is recorded as `otp_verified` consent.
+ Escalations go through `EscalationDesk` (durable record → `AuditService`
+ `customer_agent.escalated` → timeline row). Service-desk copy lives in the
+ process-wide `TemplateEngine` registry (`register_template` /
+ `render_registered`). Admin surfaces: `POST /api/admin/customers/{id}/consent`,
+ `GET /api/admin/customers/{id}/interactions`; use `customer_record=` when
+ calling `send_customer_outreach` so record flags are honoured
+- marketing plans are content-addressed and ledger-anchored (B7):
+ `compute_input_hash` (scope + BI signals + cohorts + `PLAN_VERSION`) seeds
+ the `campaign_id`, sits inside the signed payload and keys an in-process
+ LRU; `anchor_publication` appends `marketing_campaign_published` to the
+ platform ledger **before** any publish side effect (409 on integrity
+ mismatch, 503 on ledger failure), `verify_publication` re-checks `/latest`.
+ BI cohorts (`derive_cohorts`) are opt-in per request (`cohorts=1`)
+- delivery bidding (B11): a pure-Python geohash index over open requests
+ (`find_open_requests_near`), supplier eligibility by haversine radius when
+ coordinates exist, `reliability_for` blends self-reported on-time % with
+ executed settlement outcomes (`SupplierSettlementService.get_settled_outcomes`,
+ ≥ 3 settled orders), and `expire_bidding_windows` closes elapsed windows
+ exactly once (`BIDDING_CLOSED` / `CANCELLED`) with one
+ `delivery.bidding_window_closed` outbox event — driven by the
+ `delivery_bidding_sla_tick` self-rescheduling queue row (`ensure_sla_clock`)
+ and lazily on read/bid. `/api/delivery/*` is wired through
+ `web_portal/api_delivery_bidding.py` with customer/supplier/admin scoping
 
 Runtime defaults are important:
 
@@ -141,6 +177,7 @@ Preferred file-by-task:
 | API route/response change | `web_portal/server.py`, then `web_portal/api_extensions.py` |
 | BI/analytics API | `web_portal/api_bi_analytics.py`, `services/bi_analytics_service.py` |
 | Delivery/bidding API | `web_portal/api_delivery_bidding.py`, `services/delivery_bidding_service.py` |
+| Customer messaging / consent / escalation | `services/customer_agent/`, `web_portal/server.py` (`/api/admin/customers/{id}/contact`, `.../consent`, `.../interactions`) |
 | Agent ecosystem API | `web_portal/api_agent_ecosystem.py`, `services/agent_ecosystem_service.py` |
 | Assessment center API | `web_portal/api_assessment_center.py`, `services/assessment_center_service.py` |
 | Business rule/workflow | `services/`, then the route or engine that calls it |
@@ -198,6 +235,8 @@ Preferred file-by-task:
 |  |- pension_data_agent.py             # facade re-exporting the package
 |  |- risk_reports/                     # B9 package: models, parsers (DocumentProcessingService text), analysis, charts, render, service
 |  |- ai_risk_reports_service.py        # facade (two-way forwarding of AI_REPORTS_DATA_FILE / singleton)
+|  |- customer_agent/                   # B6 package: communication + service_desk facades, interaction_log, consent, escalation
+|  |- customer_communication_agent.py   # shim -> customer_agent.communication
 |  |- agent_job_queue.py                # generalized job queue (retry/DLQ/handlers)
 |  |- document_job_worker.py            # document binding over the job queue
 |  |- jobs/                             # agent job adapters (202 routes; worker_context)
@@ -472,6 +511,13 @@ Environment variables commonly used:
  threshold, default 8 MiB; `0` streams everything),
  `PHINS_PENSION_PARSE_CACHE` (default true), `PHINS_PENSION_PARSE_CACHE_MAX`
  (process LRU and durable row bound, default 128)
+- **Customer messaging (B6):** `PHINS_CUSTOMER_DAILY_MESSAGE_CAP` (WhatsApp +
+ SMS per customer per UTC day, default 5, `0` disables),
+ `PHINS_CUSTOMER_MESSAGING_CONSENT_ENFORCED` (default on; off skips only the
+ consent check for relational copy — an explicit opt-out and the cap still
+ apply)
+- **Delivery bidding (B11):** `PHINS_DELIVERY_SLA_TICK_SECONDS` (SLA clock
+ interval for closing elapsed bidding windows, default 60)
 - **Transcription:** `PHINS_TRANSCRIPTION_PROVIDER`
  (`openai_compatible`|`disabled`), `PHINS_TRANSCRIPTION_ENDPOINT`,
  `PHINS_TRANSCRIPTION_API_KEY`, `PHINS_TRANSCRIPTION_MODEL`
@@ -580,7 +626,7 @@ Important test harness facts:
 - Golden fixtures only freeze the keys listed under `expected`; adding output
   keys never breaks one, changing a frozen value does — update the fixture
   in the same PR as the behaviour change and say why
-- 230 test files under `tests/`, 11 root-level `test_*.py` files
+- 233 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.

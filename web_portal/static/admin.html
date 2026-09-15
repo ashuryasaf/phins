@@ -2120,6 +2120,13 @@
           <label for="mkt-networks" style="font-size: 0.78rem; opacity: 0.82;">Social Networks (comma-separated)</label>
           <input id="mkt-networks" type="text" value="linkedin,x,facebook,instagram,youtube,whatsapp" style="width: 100%; margin-top: 4px; padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
         </div>
+        <div>
+          <label for="mkt-cohorts" style="font-size: 0.78rem; opacity: 0.82;">BI Cohort Targeting</label>
+          <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 0.85rem; cursor: pointer;">
+            <input id="mkt-cohorts" type="checkbox" checked>
+            Prioritize playbooks by BI customer cohorts
+          </label>
+        </div>
       </div>
 
       <div id="mkt-agent-status" style="background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 0.88rem;">
@@ -5115,7 +5122,8 @@
         persona: (document.getElementById('mkt-persona')?.value || 'families').trim(),
         region: (document.getElementById('mkt-region')?.value || 'global').trim(),
         budget_tier: (document.getElementById('mkt-budget-tier')?.value || 'balanced').trim(),
-        social_networks: socialNetworks
+        social_networks: socialNetworks,
+        cohort_targeting: !!document.getElementById('mkt-cohorts')?.checked
       };
     }
 
@@ -5544,9 +5552,20 @@
 
       const campaignId = campaign.campaign_id || '-';
       const generatedAt = campaign.generated_at ? new Date(campaign.generated_at).toLocaleString() : '-';
-      const integrityText = integrity.verified
+      let integrityText = integrity.verified
         ? `Verified (${String(integrity.algorithm || '').toUpperCase()})`
         : `Unverified (${String(integrity.algorithm || 'unknown').toUpperCase()})`;
+      const anchor = integrity.ledger_anchor || null;
+      if (anchor) {
+        const anchored = anchor.anchored === true || (anchor.entry_hash && anchor.anchored === undefined);
+        integrityText += anchored
+          ? ` · Ledger-anchored #${anchor.sequence_no || '?'}`
+          : ' · Ledger anchor MISSING';
+      }
+      const cohorts = campaign.targeting?.cohorts || [];
+      if (cohorts.length) {
+        integrityText += ` · ${cohorts.length} BI cohort${cohorts.length === 1 ? '' : 's'}`;
+      }
 
       const campaignIdEl = document.getElementById('mkt-campaign-id');
       const generatedAtEl = document.getElementById('mkt-generated-at');
@@ -5559,7 +5578,7 @@
 
       const salesHtml = renderMarketingList(campaign.sales_playbooks, (item) => `
         <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.15);">
-          <div style="font-weight:700;">${escapeMarketingHtml(item.playbook)}</div>
+          <div style="font-weight:700;">${escapeMarketingHtml(item.playbook)}${item.target_cohort ? ` <span style="font-size:0.72rem;opacity:0.85;font-weight:500;">· cohort ${escapeMarketingHtml(item.target_cohort.cohort_id)} (${escapeMarketingHtml(String(item.target_cohort.size))}, ${escapeMarketingHtml(String(item.target_cohort.share_pct))}%)</span>` : ''}</div>
           <div style="opacity:0.9;">${escapeMarketingHtml(item.how_it_works)}</div>
           <div style="font-size:0.8rem;opacity:0.85;margin-top:3px;">KPI: ${escapeMarketingHtml(item.kpi_target)}</div>
         </div>
@@ -5675,7 +5694,8 @@
           persona: params.persona,
           region: params.region,
           budget_tier: params.budget_tier,
-          networks: params.social_networks.join(',')
+          networks: params.social_networks.join(','),
+          cohorts: params.cohort_targeting ? '1' : '0'
         });
 
         setMarketingStatus('Generating AI + BI campaign plan...', 'info');
@@ -5698,7 +5718,8 @@
           renderMarketingCampaign(campaignPayload);
           await loadMarketingVideoJobs({ silent: true });
           const campaignId = campaignPayload?.campaign?.campaign_id || '';
-          setMarketingStatus(`Campaign ${campaignId} generated. Ready for Publish to Media or Video Generation.`, 'success');
+          const reused = data?.plan_cache?.hit ? ' Identical inputs: existing signed plan reused.' : '';
+          setMarketingStatus(`Campaign ${campaignId} generated.${reused} Ready for Publish to Media or Video Generation.`, 'success');
         } else {
           setMarketingStatus('Generation response did not include campaign details.', 'warning');
         }

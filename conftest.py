@@ -256,6 +256,14 @@ def pytest_runtest_setup(item):  # type: ignore[no-redef]
     except Exception:
         pass
 
+    # Reset the customer-agent shared log / consent registry / escalation desk
+    # so daily-cap and consent tests don't see each other's traffic.
+    try:
+        from services.customer_agent import reset_customer_agent_state
+        reset_customer_agent_state()
+    except Exception:
+        pass
+
     # Reset security hardening modules between tests.
     try:
         from security.firewall import reset_firewall
