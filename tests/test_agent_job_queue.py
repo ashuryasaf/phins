@@ -69,7 +69,7 @@ def test_dispatch_by_job_type_with_subject(queue):
     assert job["status"] == "pending"
 
     stats = queue.process_once()
-    assert stats == {"claimed": 1, "completed": 1, "failed": 0, "dead_letter": 0}
+    assert stats == {"claimed": 1, "completed": 1, "failed": 0, "dead_letter": 0, "rescheduled": 0}
     assert seen[0]["input_params"] == {"claim_id": "CLM-1"}
 
     done = queue.get_job(job["id"])
@@ -103,7 +103,7 @@ def test_unhandled_job_type_is_left_pending_for_a_capable_worker(queue):
                         max_attempts=2)
     queue.enqueue(job_type="known", subject_type="report", subject_id="R-2")
     stats = queue.process_once()
-    assert stats == {"claimed": 1, "completed": 1, "failed": 0, "dead_letter": 0}
+    assert stats == {"claimed": 1, "completed": 1, "failed": 0, "dead_letter": 0, "rescheduled": 0}
     assert queue.get_job(job["id"])["status"] == "pending"
     assert queue.queue_stats() == {"pending": 1, "completed": 1}
 
@@ -381,6 +381,104 @@ def _sqlite_db_manager():
     from database.manager import DatabaseManager
     init_database()
     return DatabaseManager()
+
+
+# ── Deferred work: delay_seconds + RescheduleJob (B8) ────────────────────────
+
+def test_delayed_enqueue_is_not_claimed_until_due(queue):
+    queue.register_handler("later", lambda job: {"ran": True})
+    job = queue.enqueue(job_type="later", subject_type="thing", subject_id="T-1", delay_seconds=3600)
+    assert job["status"] == "pending"
+    assert job["next_retry_at"] is not None
+    assert queue.process_once()["claimed"] == 0
+    assert queue.get_job(job["id"])["status"] == "pending"
+
+    queue._update_job(job["id"], {"next_retry_at": datetime.utcnow() - timedelta(seconds=1)})
+    stats = queue.process_once()
+    assert stats["claimed"] == 1 and stats["completed"] == 1
+    assert queue.get_job(job["id"])["result"] == {"ran": True}
+
+
+def test_reschedule_reuses_the_row_without_consuming_an_attempt(queue):
+    from services.agent_job_queue import RescheduleJob
+
+    calls = []
+
+    def handler(job):
+        calls.append(job["id"])
+        if len(calls) < 3:
+            raise RescheduleJob(0.5)
+        return {"polls": len(calls)}
+
+    queue.register_handler("poll", handler)
+    job = queue.enqueue(job_type="poll", subject_type="video_job", subject_id="V-1",
+                        idempotency_key="video-poll:V-1", max_attempts=1)
+
+    stats = queue.process_once()
+    assert stats == {"claimed": 1, "completed": 0, "failed": 0, "dead_letter": 0, "rescheduled": 1}
+    parked = queue.get_job(job["id"])
+    assert parked["status"] == "pending"
+    assert parked["attempts"] == 0          # not a retry
+    assert parked["error_message"] is None
+    assert parked["worker_id"] is None      # claim released
+    assert parked["next_retry_at"] is not None
+    # Still parked until the delay has elapsed.
+    assert queue.process_once()["claimed"] == 0
+    # The idempotency key keeps pointing at this one row while it is parked.
+    assert queue.enqueue(job_type="poll", subject_type="video_job", subject_id="V-1",
+                         idempotency_key="video-poll:V-1")["id"] == job["id"]
+
+    for _ in range(2):
+        queue._update_job(job["id"], {"next_retry_at": datetime.utcnow() - timedelta(seconds=1)})
+        queue.process_once()
+    done = queue.get_job(job["id"])
+    assert done["status"] == "completed"
+    assert done["result"] == {"polls": 3}
+    assert done["attempts"] == 1            # the completing run is the only attempt
+    assert calls == [job["id"]] * 3
+    # max_attempts=1 was never threatened by the two reschedules.
+    assert queue.list_jobs(status="dead_letter") == []
+
+
+def test_sqlite_deferred_row_survives_a_new_queue_instance():
+    """A parked (rescheduled) row is claimed by a *different* queue instance on
+    the same table once due — the restart re-arm guarantee video polling
+    relies on."""
+    from services.agent_job_queue import RescheduleJob
+    from database.models import DocumentProcessingJob
+
+    db = _sqlite_db_manager()
+    marker = f"VID-Q-{os.getpid()}"
+    try:
+        first = AgentJobQueue(db_manager=db, poll_interval=0.01)
+        first.register_handler("video_generation_poll", lambda job: (_ for _ in ()).throw(RescheduleJob(1800)))
+        job = first.enqueue(job_type="video_generation_poll", subject_type="video_job",
+                            subject_id=marker, idempotency_key=f"video-poll:{marker}")
+        assert first.process_once()["rescheduled"] == 1
+        row = first.get_job(job["id"])
+        assert row["status"] == "pending" and row["attempts"] == 0
+        # Not due: nobody claims it, not even the process that parked it.
+        assert first.process_once()["claimed"] == 0
+
+        # "Restart": a fresh queue object, same table, handler bound anew.
+        second = AgentJobQueue(db_manager=db, poll_interval=0.01)
+        second.register_handler("video_generation_poll", lambda job: {"status": "completed"})
+        assert second.process_once()["claimed"] == 0
+        session = db._ensure_session()
+        session.query(DocumentProcessingJob).filter(DocumentProcessingJob.id == job["id"]).update(
+            {"next_retry_at": datetime.utcnow() - timedelta(seconds=1)})
+        session.commit()
+        stats = second.process_once()
+        assert stats["claimed"] == 1 and stats["completed"] == 1
+        assert second.get_job(job["id"])["result"] == {"status": "completed"}
+    finally:
+        try:
+            session = db._ensure_session()
+            session.query(DocumentProcessingJob).filter(
+                DocumentProcessingJob.subject_id == marker).delete(synchronize_session=False)
+            session.commit()
+        finally:
+            db.close()
 
 
 def test_sqlite_persists_non_document_jobs_with_null_document_id():

@@ -300,7 +300,8 @@ class DocumentProcessingJobRepository(BaseRepository):
                        job_types: Optional[List[str]] = None) -> List[DocumentProcessingJob]:
         """Atomically claim jobs that are ready to run.
 
-        Ready means: status 'pending', or status 'failed' whose retry time has
+        Ready means: status 'pending' (with no deferral, or one whose
+        ``next_retry_at`` has passed), or status 'failed' whose retry time has
         arrived, or status 'claimed' whose claim expired (crashed worker).
         Claimed jobs get next_retry_at set to the claim expiry so a worker
         crash automatically releases them to the next claimer.
@@ -316,7 +317,13 @@ class DocumentProcessingJobRepository(BaseRepository):
 
         def _due_query():
             query = self.session.query(DocumentProcessingJob).filter(
-                (DocumentProcessingJob.status == 'pending')
+                (
+                    (DocumentProcessingJob.status == 'pending')
+                    & (
+                        (DocumentProcessingJob.next_retry_at == None)  # noqa: E711
+                        | (DocumentProcessingJob.next_retry_at <= now)
+                    )
+                )
                 | (
                     (DocumentProcessingJob.status.in_(('failed', 'claimed')))
                     & (DocumentProcessingJob.next_retry_at != None)  # noqa: E711
