@@ -8232,7 +8232,7 @@ def send_admin_customer_outreach(
             create_notification_service,
             should_use_mock_notifications,
         )
-        from services.customer_communication_agent import get_customer_communication_agent
+        from services.customer_agent.communication import get_customer_communication_agent
 
         notification_service = create_notification_service(
             use_mock=should_use_mock_notifications()
@@ -8253,6 +8253,7 @@ def send_admin_customer_outreach(
             accounts=accounts,
             login_url=login_url,
             actor=actor,
+            customer_record=customer,
         )
     except Exception as exc:
         return {
@@ -8268,6 +8269,53 @@ def send_admin_customer_outreach(
         'whatsapp': bool(phone),
     }
     return result
+
+
+def admin_customer_timeline(customer_id: str) -> Dict[str, Any]:
+    """Interaction timeline + consent + escalations for one stored customer (B6)."""
+    customer_id = str(customer_id or '').strip()
+    if not customer_id:
+        return {'success': False, 'error': 'customer_id is required'}
+    if customer_id not in CUSTOMERS:
+        return {'success': False, 'error': 'Customer not found'}
+    from services.customer_agent import customer_timeline
+    from services.customer_agent.consent import consent_enforced, daily_cap
+    view = customer_timeline(customer_id)
+    view['success'] = True
+    view['policy'] = {'consent_enforced': consent_enforced(), 'daily_cap': daily_cap()}
+    return view
+
+
+def admin_set_customer_consent(customer_id: str, *, channel: str, granted: Any,
+                               actor: Optional[str] = None, note: Optional[str] = None) -> Dict[str, Any]:
+    """Record an explicit WhatsApp/SMS consent grant or revocation (B6).
+
+    Explicit entries take precedence over flags on the customer record; every
+    change is an audited, timestamped row in the consent registry.
+    """
+    customer_id = str(customer_id or '').strip()
+    if not customer_id:
+        return {'success': False, 'error': 'customer_id is required'}
+    if customer_id not in CUSTOMERS:
+        return {'success': False, 'error': 'Customer not found'}
+    if isinstance(granted, str):
+        granted_flag = granted.strip().lower() in ('1', 'true', 'yes', 'y', 'on', 'granted')
+    else:
+        granted_flag = bool(granted)
+    from services.customer_agent import get_consent_registry, get_interaction_log
+    registry = get_consent_registry()
+    try:
+        record = registry.set(customer_id, channel, granted_flag, source='explicit',
+                              actor=actor or 'admin', note=(str(note)[:200] if note else None))
+    except ValueError as exc:
+        return {'success': False, 'error': str(exc)}
+    get_interaction_log().record(
+        customer_id=customer_id, agent='service_desk', kind='consent', channel=str(channel).lower(),
+        status='logged', actor=actor or 'admin',
+        detail=f"{'granted' if granted_flag else 'revoked'} {str(channel).lower()} consent",
+        metadata={'granted': granted_flag, 'source': 'explicit'},
+    )
+    return {'success': True, 'customer_id': customer_id, 'consent': record.to_dict()}
 
 
 def bootstrap_job_runtime() -> None:
@@ -25086,7 +25134,29 @@ For claims or questions, please contact:
             return
         
         # ========== CUSTOMER DATA & PIPELINE VALIDATION API ==========
-        
+
+        # Admin: one customer's interaction timeline, consent and escalations (B6).
+        if path.startswith('/api/admin/customers/') and path.endswith('/interactions'):
+            if not require_role(session, ['admin', 'accountant', 'underwriter']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Unauthorized. Admin, accountant, or underwriter access required.'
+                }).encode('utf-8'))
+                return
+            parts = [p for p in path.split('/') if p]
+            # api / admin / customers / {id} / interactions
+            if len(parts) != 5 or parts[3] in ('upload', 'contact', 'consent', 'interactions'):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                return
+            view = admin_customer_timeline(parts[3])
+            status_code = 200 if view.get('success') else (
+                404 if view.get('error') == 'Customer not found' else 400
+            )
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(view, default=str).encode('utf-8'))
+            return
+
         # List all registered customers with their complete pipeline status
         if path == '/api/admin/customers':
             # Build comprehensive customer list with all related data
@@ -37041,7 +37111,7 @@ For claims or questions, please contact:
                         create_notification_service,
                         should_use_mock_notifications,
                     )
-                    from services.customer_communication_agent import get_customer_communication_agent
+                    from services.customer_agent.communication import get_customer_communication_agent
 
                     use_mock_notifications = should_use_mock_notifications()
 
@@ -37065,7 +37135,9 @@ For claims or questions, please contact:
                         accounts=account_snapshot,
                         communities=[],
                         whatsapp_phone=phone if phone else None,
-                        login_url='/login.html'
+                        login_url='/login.html',
+                        customer_record=customer_record,
+                        actor='registration',
                     )
                     welcome_notification_sent = bool(
                         welcome_package.get('email', {}).get('success')
@@ -53349,6 +53421,43 @@ For claims or questions, please contact:
                 subject=data.get('subject'),
                 custom_message=data.get('message') or data.get('custom_message'),
                 actor=(session or {}).get('username', 'customer_relations'),
+            )
+            status_code = 200 if report.get('success') else (
+                404 if report.get('error') == 'Customer not found' else 400
+            )
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(report, default=str).encode('utf-8'))
+            return
+
+        # Admin: record WhatsApp/SMS consent for a stored customer (B6).
+        if path.startswith('/api/admin/customers/') and path.endswith('/consent'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'accountant', 'underwriter']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Unauthorized. Admin, accountant, or underwriter access required.'
+                }).encode('utf-8'))
+                return
+            parts = [p for p in path.split('/') if p]
+            # api / admin / customers / {id} / consent
+            if len(parts) != 5 or parts[3] in ('upload', 'contact', 'consent'):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body) if body else {}
+            except Exception:
+                data = {}
+            if not isinstance(data, dict):
+                data = {}
+            report = admin_set_customer_consent(
+                parts[3],
+                channel=str(data.get('channel') or 'whatsapp'),
+                granted=data.get('granted', True),
+                actor=(session or {}).get('username', 'admin'),
+                note=data.get('note'),
             )
             status_code = 200 if report.get('success') else (
                 404 if report.get('error') == 'Customer not found' else 400

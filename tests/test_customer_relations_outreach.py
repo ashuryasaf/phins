@@ -13,6 +13,7 @@ import urllib.request
 
 import pytest
 
+from services.customer_agent import get_consent_registry, reset_customer_agent_state
 from services.customer_communication_agent import CustomerCommunicationAgent
 from services.notification_service import (
     create_notification_service,
@@ -25,9 +26,11 @@ from services.notification_service import (
 def _reset_notifications():
     reset_global_rate_limiter()
     reset_notification_service()
+    reset_customer_agent_state()
     yield
     reset_global_rate_limiter()
     reset_notification_service()
+    reset_customer_agent_state()
 
 
 def _agent():
@@ -37,6 +40,8 @@ def _agent():
 
 
 def test_outreach_email_and_whatsapp_success():
+    # Relational WhatsApp copy needs consent on file (B6).
+    get_consent_registry().set("CUST-1", "whatsapp", True, source="explicit", actor="test")
     result = _agent().send_customer_outreach(
         customer_id="CUST-1",
         customer_name="Efrat PHINS",
@@ -52,6 +57,24 @@ def test_outreach_email_and_whatsapp_success():
     assert result["recipients"]["email"] == "e***@phins.ai"
     assert result["recipients"]["whatsapp"].endswith("6543")
     assert "Checking in" in result["subject"] or result["email"]["success"]
+
+
+def test_outreach_relational_whatsapp_refused_without_consent():
+    result = _agent().send_customer_outreach(
+        customer_id="CUST-1",
+        customer_name="Efrat PHINS",
+        email="efrat@phins.ai",
+        phone="+972509876543",
+        template="message",
+        channels="both",
+    )
+    # Email still goes; the WhatsApp leg is refused with the policy code.
+    assert result["success"] is False
+    assert result["email"]["success"] is True
+    assert result["whatsapp"]["success"] is False
+    assert result["whatsapp"]["status"] == "refused"
+    assert result["whatsapp"]["error_code"] == "CONSENT_REQUIRED"
+    assert result["code"] == "CONSENT_REQUIRED"
 
 
 def test_outreach_offer_and_bill_templates_include_record_data():
