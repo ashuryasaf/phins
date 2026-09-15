@@ -1,299 +1,293 @@
 """
 API Extensions for Delivery Bidding System
 ==========================================
-API endpoints for delivery bidding, supplier matching, and delivery tracking.
+Thin, role-scoped HTTP layer over ``services/delivery_bidding_service.py``.
+Wired from ``web_portal/server.py`` (``/api/delivery/*``); every handler
+returns ``(status_code, payload)`` and errors are ``{"error": "..."}``.
 
 Endpoints:
-- POST /api/delivery/request - Create delivery request
-- POST /api/delivery/bid - Submit supplier bid
-- GET /api/delivery/bids/<request_id> - Get bids for request
-- POST /api/delivery/accept-bid - Accept winning bid
-- POST /api/delivery/update-status - Update delivery status
-- GET /api/delivery/track/<delivery_id> - Track delivery
-- POST /api/delivery/pay - Process delivery payment
-- POST /api/delivery/rate - Rate completed delivery
-- GET /api/delivery/supplier-performance/<supplier_id> - Get supplier metrics
+- POST /api/delivery/request                 - create a delivery request (customer/admin)
+- GET  /api/delivery/nearby?latitude&longitude&radius_km
+                                              - open requests near a point via the
+                                                geohash index (supplier/admin)  [B11]
+- GET  /api/delivery/eligible/<request_id>    - suppliers eligible for a request (admin)
+- POST /api/delivery/bid                      - submit a supplier bid (supplier/admin)
+- GET  /api/delivery/bids/<request_id>        - ranked bids + ranking weights
+- POST /api/delivery/evaluate-bids            - AI recommendation for a request;
+                                                ``auto_accept`` selects it (customer/admin)
+- POST /api/delivery/accept-bid               - select a bid (customer/admin)
+- POST /api/delivery/update-status            - fulfilment status update (assigned supplier)
+- GET  /api/delivery/track/<request_id>       - tracking timeline
+- POST /api/delivery/expire-windows           - run the SLA sweep now (admin)     [B11]
+- GET  /api/delivery/analytics[?supplier_id=] - delivery analytics (admin; supplier: own)
+- GET  /api/delivery/insights                 - AI insights (admin)
+
+Scope rules: a customer only sees/acts on requests whose ``customer_id`` is
+their own; a supplier only bids/updates as itself (``supplier_id`` from the
+session); admins are unrestricted.
 """
 
-import json
-from datetime import datetime, timezone
+from typing import Any, Dict, Optional, Tuple
+
 from services.delivery_bidding_service import get_delivery_bidding_service
 
+Response = Tuple[int, Dict[str, Any]]
 
-def handle_delivery_request_create(handler, body: dict) -> tuple:
-    """Handle POST /api/delivery/request"""
+ADMIN_ROLES = ('admin',)
+
+
+def _role(ctx: Dict[str, Any]) -> str:
+    return str(ctx.get('role') or '').lower()
+
+
+def _is_admin(ctx: Dict[str, Any]) -> bool:
+    return _role(ctx) in ADMIN_ROLES
+
+
+def _session_supplier_id(ctx: Dict[str, Any]) -> str:
+    return str(ctx.get('supplier_id') or (ctx.get('username') if _role(ctx) == 'supplier' else '') or '')
+
+
+def _float(value: Any, default: Optional[float] = None) -> Optional[float]:
     try:
-        delivery_service = get_delivery_bidding_service()
-        
-        # Extract request data
-        customer_id = body.get('customer_id')
-        order_id = body.get('order_id')
-        pickup_location = body.get('pickup_location', {})
-        delivery_location = body.get('delivery_location', {})
-        item_details = body.get('item_details', {})
-        urgency = body.get('urgency', 'standard')
-        max_budget = body.get('max_budget')
-        preferred_time = body.get('preferred_time')
-        special_instructions = body.get('special_instructions')
-        
-        if not all([customer_id, order_id, pickup_location, delivery_location]):
-            return 400, {'error': 'Missing required fields'}
-        
-        result = delivery_service.create_delivery_request(
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _request_visible(ctx: Dict[str, Any], request) -> bool:
+    if _is_admin(ctx):
+        return True
+    role = _role(ctx)
+    if role == 'customer':
+        return bool(ctx.get('customer_id')) and request.customer_id == ctx.get('customer_id')
+    if role == 'supplier':
+        return True  # suppliers may inspect any open request to decide whether to bid
+    return False
+
+
+# ---------------------------------------------------------------------------
+# handlers
+# ---------------------------------------------------------------------------
+
+def handle_delivery_request_create(body: dict, ctx: Dict[str, Any]) -> Response:
+    if _role(ctx) not in ('admin', 'customer'):
+        return 403, {'error': 'Customer or admin access required'}
+    customer_id = str(body.get('customer_id') or ctx.get('customer_id') or '')
+    if _role(ctx) == 'customer':
+        customer_id = str(ctx.get('customer_id') or '')
+    order_id = body.get('order_id')
+    pickup_location = body.get('pickup_location') or {}
+    delivery_location = body.get('delivery_location') or {}
+    if not all([customer_id, order_id, pickup_location, delivery_location]):
+        return 400, {'error': 'Missing required fields: customer_id, order_id, pickup_location, delivery_location'}
+    try:
+        result = get_delivery_bidding_service().create_delivery_request(
+            order_id=str(order_id),
             customer_id=customer_id,
-            order_id=order_id,
             pickup_location=pickup_location,
             delivery_location=delivery_location,
-            item_details=item_details,
-            urgency=urgency,
-            max_budget=max_budget,
-            preferred_time=preferred_time,
-            special_instructions=special_instructions
+            package_info=body.get('package_info') or body.get('item_details') or {},
+            priority=str(body.get('priority') or body.get('urgency') or 'standard'),
+            max_price=_float(body.get('max_price', body.get('max_budget'))),
         )
-        
-        return 200, result
-    
-    except Exception as e:
-        return 500, {'error': str(e)}
+    except ValueError as exc:
+        return 400, {'error': str(exc)}
+    return 201, result
 
 
-def handle_delivery_bid_submit(handler, body: dict) -> tuple:
-    """Handle POST /api/delivery/bid"""
-    try:
-        delivery_service = get_delivery_bidding_service()
-        
-        # Extract bid data
-        request_id = body.get('request_id')
-        supplier_id = body.get('supplier_id')
-        bid_amount = body.get('bid_amount')
-        estimated_pickup_time = body.get('estimated_pickup_time')
-        estimated_delivery_time = body.get('estimated_delivery_time')
-        vehicle_type = body.get('vehicle_type', 'van')
-        notes = body.get('notes')
-        
-        if not all([request_id, supplier_id, bid_amount, estimated_pickup_time, estimated_delivery_time]):
-            return 400, {'error': 'Missing required fields'}
-        
-        result = delivery_service.submit_bid(
-            request_id=request_id,
-            supplier_id=supplier_id,
-            bid_amount=float(bid_amount),
-            estimated_pickup_time=estimated_pickup_time,
-            estimated_delivery_time=estimated_delivery_time,
-            vehicle_type=vehicle_type,
-            notes=notes
-        )
-        
-        return 200, result
-    
-    except Exception as e:
-        return 500, {'error': str(e)}
+def handle_delivery_nearby(qs: Dict[str, Any], ctx: Dict[str, Any]) -> Response:
+    if _role(ctx) not in ('admin', 'supplier'):
+        return 403, {'error': 'Supplier or admin access required'}
+
+    def first(key, default=None):
+        value = qs.get(key, default)
+        return value[0] if isinstance(value, list) and value else value
+
+    latitude = _float(first('latitude'))
+    longitude = _float(first('longitude'))
+    if latitude is None or longitude is None:
+        return 400, {'error': 'latitude and longitude are required'}
+    radius = _float(first('radius_km'), 50.0)
+    limit = first('limit')
+    result = get_delivery_bidding_service().find_open_requests_near(
+        latitude, longitude, radius_km=radius, limit=int(limit) if limit else None)
+    return 200, result
 
 
-def handle_delivery_bids_get(handler, request_id: str) -> tuple:
-    """Handle GET /api/delivery/bids/<request_id>"""
-    try:
-        delivery_service = get_delivery_bidding_service()
-        
-        request = delivery_service.delivery_requests.get(request_id)
-        if not request:
-            return 404, {'error': 'Delivery request not found'}
-        
-        # Get all bids for this request
-        bids = [delivery_service.delivery_bids[bid_id] 
-                for bid_id in request.get('bids', []) 
-                if bid_id in delivery_service.delivery_bids]
-        
-        return 200, {
-            'request_id': request_id,
-            'request': request,
-            'bids': bids,
-            'bid_count': len(bids)
-        }
-    
-    except Exception as e:
-        return 500, {'error': str(e)}
+def handle_delivery_eligible(request_id: str, ctx: Dict[str, Any]) -> Response:
+    if not _is_admin(ctx):
+        return 403, {'error': 'Admin access required'}
+    result = get_delivery_bidding_service().eligible_suppliers_for(request_id)
+    return (200 if result.get('success') else 404), result
 
 
-def handle_delivery_bid_accept(handler, body: dict) -> tuple:
-    """Handle POST /api/delivery/accept-bid"""
-    try:
-        delivery_service = get_delivery_bidding_service()
-        
-        request_id = body.get('request_id')
-        bid_id = body.get('bid_id')
-        accepted_by = body.get('accepted_by', 'SYSTEM')
-        
-        if not all([request_id, bid_id]):
-            return 400, {'error': 'Missing required fields'}
-        
-        result = delivery_service.accept_bid(
-            request_id=request_id,
-            bid_id=bid_id,
-            accepted_by=accepted_by
-        )
-        
-        return 200, result
-    
-    except Exception as e:
-        return 500, {'error': str(e)}
+def handle_delivery_bid_submit(body: dict, ctx: Dict[str, Any]) -> Response:
+    if _role(ctx) not in ('admin', 'supplier'):
+        return 403, {'error': 'Supplier or admin access required'}
+    supplier_id = str(body.get('supplier_id') or _session_supplier_id(ctx) or '')
+    if _role(ctx) == 'supplier':
+        own = _session_supplier_id(ctx)
+        if not own:
+            return 403, {'error': 'Supplier session has no supplier_id'}
+        if supplier_id and supplier_id != own:
+            return 403, {'error': 'A supplier may only bid as itself'}
+        supplier_id = own
+    request_id = body.get('request_id')
+    bid_price = _float(body.get('bid_price', body.get('bid_amount')))
+    pickup = body.get('estimated_pickup_time')
+    delivery = body.get('estimated_delivery_time')
+    if not all([request_id, supplier_id, pickup, delivery]) or bid_price is None:
+        return 400, {'error': 'Missing required fields: request_id, supplier_id, bid_price, '
+                              'estimated_pickup_time, estimated_delivery_time'}
+    result = get_delivery_bidding_service().submit_bid(
+        request_id=str(request_id),
+        supplier_id=supplier_id,
+        bid_price=bid_price,
+        estimated_pickup_time=str(pickup),
+        estimated_delivery_time=str(delivery),
+        vehicle_type=str(body.get('vehicle_type') or 'van'),
+        includes_insurance=bool(body.get('includes_insurance', True)),
+        notes=str(body.get('notes') or ''),
+    )
+    if not result.get('success'):
+        return 409, {'error': result.get('error', 'Bid rejected'), **{k: v for k, v in result.items() if k != 'success'}}
+    return 201, result
 
 
-def handle_delivery_bid_evaluate(handler, body: dict) -> tuple:
-    """Handle POST /api/delivery/evaluate-bids (AI evaluation)"""
-    try:
-        delivery_service = get_delivery_bidding_service()
-        
-        request_id = body.get('request_id')
-        auto_accept = body.get('auto_accept', False)
-        
-        if not request_id:
-            return 400, {'error': 'Missing request_id'}
-        
-        result = delivery_service.evaluate_bids_ai(
-            request_id=request_id,
-            auto_accept=auto_accept
-        )
-        
-        return 200, result
-    
-    except Exception as e:
-        return 500, {'error': str(e)}
+def handle_delivery_bids_get(request_id: str, ctx: Dict[str, Any]) -> Response:
+    service = get_delivery_bidding_service()
+    request = service.delivery_requests.get(request_id)
+    if request is None:
+        return 404, {'error': 'Delivery request not found'}
+    if not _request_visible(ctx, request):
+        return 403, {'error': 'Not authorized for this delivery request'}
+    return 200, service.get_bids_for_request(request_id)
 
 
-def handle_delivery_status_update(handler, body: dict) -> tuple:
-    """Handle POST /api/delivery/update-status"""
-    try:
-        delivery_service = get_delivery_bidding_service()
-        
-        delivery_id = body.get('delivery_id')
-        new_status = body.get('status')
-        location = body.get('location')
-        notes = body.get('notes')
-        updated_by = body.get('updated_by')
-        
-        if not all([delivery_id, new_status]):
-            return 400, {'error': 'Missing required fields'}
-        
-        result = delivery_service.update_delivery_status(
-            delivery_id=delivery_id,
-            new_status=new_status,
-            location=location,
-            notes=notes,
-            updated_by=updated_by
-        )
-        
-        return 200, result
-    
-    except Exception as e:
-        return 500, {'error': str(e)}
+def handle_delivery_bid_evaluate(body: dict, ctx: Dict[str, Any]) -> Response:
+    request_id = str(body.get('request_id') or '')
+    if not request_id:
+        return 400, {'error': 'Missing request_id'}
+    service = get_delivery_bidding_service()
+    request = service.delivery_requests.get(request_id)
+    if request is None:
+        return 404, {'error': 'Delivery request not found'}
+    if _role(ctx) not in ('admin', 'customer') or not _request_visible(ctx, request):
+        return 403, {'error': 'Not authorized for this delivery request'}
+    ranked = service.get_bids_for_request(request_id)
+    if bool(body.get('auto_accept')):
+        selected = service.auto_select_best_bid(request_id)
+        if not selected.get('success'):
+            return 409, {'error': selected.get('error', 'No bid selected'), 'evaluation': ranked}
+        return 200, {'evaluation': ranked, 'selection': selected}
+    return 200, {'evaluation': ranked, 'selection': None}
 
 
-def handle_delivery_track(handler, delivery_id: str) -> tuple:
-    """Handle GET /api/delivery/track/<delivery_id>"""
-    try:
-        delivery_service = get_delivery_bidding_service()
-        
-        result = delivery_service.get_delivery_status(delivery_id)
-        
-        if not result.get('success'):
-            return 404, result
-        
-        return 200, result
-    
-    except Exception as e:
-        return 500, {'error': str(e)}
+def handle_delivery_bid_accept(body: dict, ctx: Dict[str, Any]) -> Response:
+    request_id = str(body.get('request_id') or '')
+    bid_id = str(body.get('bid_id') or '')
+    if not request_id or not bid_id:
+        return 400, {'error': 'Missing required fields: request_id, bid_id'}
+    service = get_delivery_bidding_service()
+    request = service.delivery_requests.get(request_id)
+    if request is None:
+        return 404, {'error': 'Delivery request not found'}
+    if _role(ctx) not in ('admin', 'customer') or not _request_visible(ctx, request):
+        return 403, {'error': 'Not authorized for this delivery request'}
+    result = service.select_bid(request_id, bid_id, selected_by=str(ctx.get('username') or 'customer'))
+    if not result.get('success'):
+        return 409, {'error': result.get('error', 'Bid not selected')}
+    return 200, result
 
 
-def handle_delivery_payment(handler, body: dict, health_wallets: dict) -> tuple:
-    """Handle POST /api/delivery/pay"""
-    try:
-        delivery_service = get_delivery_bidding_service()
-        
-        delivery_id = body.get('delivery_id')
-        customer_id = body.get('customer_id')
-        
-        if not all([delivery_id, customer_id]):
-            return 400, {'error': 'Missing required fields'}
-        
-        # Get wallet balance
-        wallet = health_wallets.get(customer_id, {})
-        balance = wallet.get('balance', 0)
-        
-        # Define wallet transaction callback
-        def wallet_tx_callback(customer_id, amount, transaction_type, description, metadata):
-            # Record wallet transaction
-            tx_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            
-            wallet = health_wallets.get(customer_id, {})
-            prev_balance = wallet.get('balance', 0)
-            new_balance = prev_balance + amount
-            
-            wallet['balance'] = new_balance
-            tx = {
-                'transaction_id': tx_id,
-                'type': transaction_type,
-                'amount': amount,
-                'description': description,
-                'previous_balance': prev_balance,
-                'balance_after': new_balance,
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                **metadata
-            }
-            
-            if 'transactions' not in wallet:
-                wallet['transactions'] = []
-            wallet['transactions'].append(tx)
-            
-            return tx
-        
-        result = delivery_service.process_delivery_payment(
-            delivery_id=delivery_id,
-            customer_id=customer_id,
-            health_wallet_balance=balance,
-            wallet_transaction_callback=wallet_tx_callback
-        )
-        
-        return 200, result
-    
-    except Exception as e:
-        return 500, {'error': str(e)}
+def handle_delivery_status_update(body: dict, ctx: Dict[str, Any]) -> Response:
+    if _role(ctx) not in ('admin', 'supplier'):
+        return 403, {'error': 'Supplier or admin access required'}
+    request_id = str(body.get('request_id') or body.get('delivery_id') or '')
+    new_status = body.get('status')
+    if not request_id or not new_status:
+        return 400, {'error': 'Missing required fields: request_id, status'}
+    supplier_id = str(body.get('supplier_id') or _session_supplier_id(ctx) or '')
+    if _role(ctx) == 'supplier':
+        supplier_id = _session_supplier_id(ctx)
+    result = get_delivery_bidding_service().update_delivery_status(
+        request_id=request_id, new_status=str(new_status), supplier_id=supplier_id,
+        location=body.get('location'), notes=str(body.get('notes') or ''))
+    if not result.get('success'):
+        error = result.get('error', 'Update rejected')
+        return (403 if 'authorized' in error.lower() else 409), {'error': error}
+    return 200, result
 
 
-def handle_delivery_rate(handler, body: dict) -> tuple:
-    """Handle POST /api/delivery/rate"""
-    try:
-        delivery_service = get_delivery_bidding_service()
-        
-        delivery_id = body.get('delivery_id')
-        rating = body.get('rating')
-        review = body.get('review')
-        rated_by = body.get('rated_by')
-        
-        if not all([delivery_id, rating]):
-            return 400, {'error': 'Missing required fields'}
-        
-        result = delivery_service.rate_delivery(
-            delivery_id=delivery_id,
-            rating=float(rating),
-            review=review,
-            rated_by=rated_by
-        )
-        
-        return 200, result
-    
-    except Exception as e:
-        return 500, {'error': str(e)}
+def handle_delivery_track(request_id: str, ctx: Dict[str, Any]) -> Response:
+    service = get_delivery_bidding_service()
+    request = service.delivery_requests.get(request_id)
+    if request is None:
+        return 404, {'error': 'Delivery request not found'}
+    if not _request_visible(ctx, request):
+        return 403, {'error': 'Not authorized for this delivery request'}
+    return 200, service.get_delivery_tracking(request_id)
 
 
-def handle_supplier_performance_get(handler, supplier_id: str) -> tuple:
-    """Handle GET /api/delivery/supplier-performance/<supplier_id>"""
-    try:
-        delivery_service = get_delivery_bidding_service()
-        
-        result = delivery_service.get_supplier_performance(supplier_id)
-        
-        return 200, result
-    
-    except Exception as e:
-        return 500, {'error': str(e)}
+def handle_delivery_expire_windows(ctx: Dict[str, Any]) -> Response:
+    if not _is_admin(ctx):
+        return 403, {'error': 'Admin access required'}
+    return 200, get_delivery_bidding_service().expire_bidding_windows()
+
+
+def handle_delivery_analytics(qs: Dict[str, Any], ctx: Dict[str, Any]) -> Response:
+    value = qs.get('supplier_id')
+    supplier_id = value[0] if isinstance(value, list) and value else value
+    if _role(ctx) == 'supplier':
+        supplier_id = _session_supplier_id(ctx)
+    elif not _is_admin(ctx):
+        return 403, {'error': 'Admin or supplier access required'}
+    return 200, get_delivery_bidding_service().get_delivery_analytics(supplier_id or None)
+
+
+def handle_delivery_insights(ctx: Dict[str, Any]) -> Response:
+    if not _is_admin(ctx):
+        return 403, {'error': 'Admin access required'}
+    return 200, get_delivery_bidding_service().get_ai_delivery_insights()
+
+
+# ---------------------------------------------------------------------------
+# dispatchers used by server.py
+# ---------------------------------------------------------------------------
+
+def handle_get(path: str, qs: Dict[str, Any], ctx: Dict[str, Any]) -> Response:
+    if not ctx.get('username'):
+        return 401, {'error': 'Authentication required'}
+    if path == '/api/delivery/nearby':
+        return handle_delivery_nearby(qs, ctx)
+    if path.startswith('/api/delivery/eligible/'):
+        return handle_delivery_eligible(path.rsplit('/', 1)[1], ctx)
+    if path.startswith('/api/delivery/bids/'):
+        return handle_delivery_bids_get(path.rsplit('/', 1)[1], ctx)
+    if path.startswith('/api/delivery/track/'):
+        return handle_delivery_track(path.rsplit('/', 1)[1], ctx)
+    if path == '/api/delivery/analytics':
+        return handle_delivery_analytics(qs, ctx)
+    if path == '/api/delivery/insights':
+        return handle_delivery_insights(ctx)
+    return 404, {'error': 'Unknown delivery endpoint'}
+
+
+def handle_post(path: str, body: dict, ctx: Dict[str, Any]) -> Response:
+    if not ctx.get('username'):
+        return 401, {'error': 'Authentication required'}
+    body = body if isinstance(body, dict) else {}
+    if path == '/api/delivery/request':
+        return handle_delivery_request_create(body, ctx)
+    if path == '/api/delivery/bid':
+        return handle_delivery_bid_submit(body, ctx)
+    if path == '/api/delivery/evaluate-bids':
+        return handle_delivery_bid_evaluate(body, ctx)
+    if path == '/api/delivery/accept-bid':
+        return handle_delivery_bid_accept(body, ctx)
+    if path == '/api/delivery/update-status':
+        return handle_delivery_status_update(body, ctx)
+    if path == '/api/delivery/expire-windows':
+        return handle_delivery_expire_windows(ctx)
+    return 404, {'error': 'Unknown delivery endpoint'}

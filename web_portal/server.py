@@ -8369,6 +8369,39 @@ def bi_data_sources() -> Dict[str, Any]:
     }
 
 
+def portal_delivery_bidding_service():
+    """The delivery-bidding singleton bound to the portal's live stores (B11).
+
+    First call creates it over ``SUPPLIERS`` / ``HEALTH_WALLETS`` /
+    ``TRANSACTION_LEDGER`` with the master-ledger recorder, so a wallet debit
+    on bid selection lands in the same ledger a request thread reads. The
+    settled-outcomes accessor and outbox publisher are resolved by the
+    service module from ``USE_DATABASE``.
+    """
+    from services import delivery_bidding_service as _dlv_svc
+    if _dlv_svc._delivery_service is None:
+        _dlv_svc.init_delivery_bidding_service(
+            suppliers=SUPPLIERS,
+            health_wallets=HEALTH_WALLETS,
+            transaction_ledger=TRANSACTION_LEDGER,
+            record_transaction_func=record_transaction,
+        )
+    return _dlv_svc.get_delivery_bidding_service()
+
+
+def delivery_request_context(session: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Scope context the delivery API module enforces (role / customer / supplier)."""
+    portal_delivery_bidding_service()
+    session = session or {}
+    role = get_effective_role(session)
+    return {
+        'role': role,
+        'username': session.get('username'),
+        'customer_id': session.get('customer_id'),
+        'supplier_id': session.get('supplier_id') or (session.get('username') if role == 'supplier' else None),
+    }
+
+
 def bi_rematerialize_delay_seconds() -> float:
     """Debounce window between a store write and the re-materialization job."""
     try:
@@ -18291,6 +18324,22 @@ For claims or questions, please contact:
                 })
             except Exception as agt_exc:
                 status_code, payload = 500, {'error': str(agt_exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
+        # ========== DELIVERY BIDDING AI (B11) ==========
+        # Wires services/delivery_bidding_service.py via web_portal/api_delivery_bidding.py.
+        # The module enforces scope (customer -> own requests, supplier -> itself).
+        if path.startswith('/api/delivery/'):
+            try:
+                try:
+                    from web_portal import api_delivery_bidding as _dlv
+                except Exception:
+                    import api_delivery_bidding as _dlv
+                status_code, payload = _dlv.handle_get(path, qs, delivery_request_context(session))
+            except Exception as dlv_exc:
+                status_code, payload = 500, {'error': str(dlv_exc)}
             self._set_json_headers(status_code)
             self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
@@ -32269,6 +32318,35 @@ For claims or questions, please contact:
                 status_code, response_data = _legal_doc_verify(body_data)
             self._set_json_headers(status_code)
             self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+            return
+
+        # ========== DELIVERY BIDDING AI (B11) — mutations ==========
+        # Wires services/delivery_bidding_service.py via web_portal/api_delivery_bidding.py.
+        if path.startswith('/api/delivery/'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            try:
+                length = int(self.headers.get('Content-Length', 0) or 0)
+            except (TypeError, ValueError):
+                length = 0
+            raw_body = self.rfile.read(length).decode('utf-8') if length else ''
+            try:
+                dlv_body = json.loads(raw_body) if raw_body else {}
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            try:
+                try:
+                    from web_portal import api_delivery_bidding as _dlv
+                except Exception:
+                    import api_delivery_bidding as _dlv
+                status_code, payload = _dlv.handle_post(path, dlv_body, delivery_request_context(session))
+            except Exception as dlv_exc:
+                status_code, payload = 500, {'error': str(dlv_exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
 
         # ========== AGENT ECOSYSTEM (AgentOS) — mutations ==========
@@ -56820,6 +56898,15 @@ def run_server(port: int = PORT) -> None:
             print(f"📄 Async job queue started "
                   f"({_doc_worker.concurrency}-{_doc_worker.max_concurrency} threads, "
                   f"retries {_doc_worker.retry_schedule}s)")
+            # B11: one recurring SLA-clock row closes elapsed delivery bidding
+            # windows (idempotent key → shared across processes/restarts).
+            try:
+                from services.jobs import delivery_sla_job as _sla_job
+                _sla = _sla_job.ensure_sla_clock(_doc_worker)
+                print(f"⏱️  Delivery bidding SLA clock: {_sla.get('id')} "
+                      f"(every {_sla_job.tick_seconds():g}s)")
+            except Exception as _sla_exc:
+                print(f"   ⚠️  Delivery SLA clock not scheduled: {_sla_exc}")
     except Exception as _worker_exc:
         print(f"   ⚠️  Async job queue not started: {_worker_exc}")
 

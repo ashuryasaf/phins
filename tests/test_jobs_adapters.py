@@ -21,6 +21,7 @@ from services import jobs
 from services.jobs import (
     JobContext,
     claims_bot_job,
+    delivery_sla_job,
     pension_import_job,
     public_job_view,
     queued_response,
@@ -93,7 +94,7 @@ def test_register_all_binds_every_adapter(queue):
     register_all(queue)  # no context: bots are not bound
     assert set(queue.handlers()) == {
         risk_report_job.ANALYZE_JOB_TYPE, risk_report_job.GENERATE_JOB_TYPE,
-        pension_import_job.JOB_TYPE, video_job.JOB_TYPE,
+        pension_import_job.JOB_TYPE, video_job.JOB_TYPE, delivery_sla_job.JOB_TYPE,
     }
     register_all(queue, _context())
     assert underwriting_bot_job.JOB_TYPE in queue.handlers()
