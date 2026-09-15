@@ -2968,9 +2968,11 @@ class AgentPayout(Base):
     __tablename__ = 'agent_payouts'
     __table_args__ = (
         # Schema-level idempotency on a monetary table: two app instances cannot
-        # both create a run for the same caller key or the same swept accrual
-        # set, so the same commissions are never paid out twice.
-        UniqueConstraint('idempotency_key', name='uq_agent_payout_idempotency_key'),
+        # both create a run for the same (caller key, agent) or the same swept
+        # accrual set, so the same commissions are never paid out twice. The
+        # caller key itself is shared by every run one request created, so a
+        # retry gets the whole batch back.
+        UniqueConstraint('run_key', name='uq_agent_payout_run_key'),
         UniqueConstraint('commissions_hash', name='uq_agent_payout_commissions_hash'),
     )
 
@@ -2982,7 +2984,8 @@ class AgentPayout(Base):
     commission_count = Column(Integer, default=0)
     commission_ids = Column(Text, nullable=True)  # JSON array of COMM ids
     commissions_hash = Column(String(64), index=True, nullable=True)
-    idempotency_key = Column(String(120), index=True, nullable=True)
+    idempotency_key = Column(String(120), index=True, nullable=True)  # caller key, shared by the batch
+    run_key = Column(String(180), nullable=True)                       # f"{idempotency_key}:{agent_id}"
     period_start = Column(String(100), nullable=True)  # earliest swept accrual
     period_end = Column(String(100), nullable=True)    # latest swept accrual
     created_by = Column(String(100), nullable=True)
@@ -3015,6 +3018,7 @@ class AgentPayout(Base):
             'commission_ids': ids,
             'commissions_hash': self.commissions_hash,
             'idempotency_key': self.idempotency_key,
+            'run_key': self.run_key,
             'period_start': self.period_start,
             'period_end': self.period_end,
             'created_by': self.created_by,

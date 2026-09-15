@@ -494,13 +494,22 @@ def test_renewal_never_accrues_without_a_policy_start_date_or_paid_status():
     bills = {"B": _bill("B", "POL-NS", "CUST-NOSTART", "2030-01-01T00:00:00")}
     assert svc.recompute_commissions(policies, bills) == 1  # only the initial term
     assert svc.renewal_period_for_bill(policies["POL-NS"], bills["B"]) is None
+    # Record timestamps (present on every durable policy) are not coverage dates:
+    # a policy without a coverage start never accrues a renewal from them.
+    stamped = {"id": "POL-STAMP", "customer_id": "CUST-NOSTART", "annual_premium": 1000, "status": "active",
+               "created_date": "2020-01-01T00:00:00", "created_at": "2020-01-01", "application_date": "2019-12-01"}
+    assert svc._policy_term_start(stamped) is None
+    assert svc.renewal_period_for_bill(stamped, _bill("S", "POL-STAMP", "CUST-NOSTART", "2025-01-01")) is None
+    assert svc.accrue_for_paid_bill(_bill("S", "POL-STAMP", "CUST-NOSTART", "2025-01-01"), stamped)["period"] == svc.INITIAL_TERM
+    assert svc.recompute_commissions({"POL-STAMP": stamped}, {"S": _bill("S", "POL-STAMP", "CUST-NOSTART", "2025-01-01")}) == 0
+    assert svc.income_summary(agent["id"])["lifetime_total"] == 200.0  # two initial terms, no renewals
     # an unpaid bill in a later term of a dated policy is ignored by the hook
     policy = {"id": "POL-D", "customer_id": "CUST-NOSTART", "annual_premium": 1000,
               "status": "active", "start_date": "2020-01-01"}
     assert svc.accrue_for_paid_bill(_bill("X", "POL-D", "CUST-NOSTART", "2022-06-01", status="outstanding"), policy) is None
     # a bill for a different policy id than the one passed is refused
     assert svc.accrue_for_paid_bill(_bill("Y", "POL-OTHER", "CUST-NOSTART", "2022-06-01"), policy) is None
-    assert svc.income_summary(agent["id"])["lifetime_total"] == 100.0
+    assert svc.income_summary(agent["id"])["lifetime_total"] == 200.0
 
 
 def test_renewal_terms_follow_policy_anniversary_not_calendar_year():
@@ -663,6 +672,39 @@ def test_payout_run_skips_suspended_agents_and_scopes_by_agent():
     assert [p["agent_id"] for p in svc.list_payouts(status="calculated")].count(a1["id"]) == 1
 
 
+def test_payout_reused_key_returns_the_whole_batch_and_settle_needs_a_ledger():
+    a1, _ = _affiliate("CUST-B1", username="agent")
+    a2, _ = _affiliate("CUST-B2", username="agent2")
+    svc.recompute_commissions({
+        "P1": {"id": "P1", "customer_id": "CUST-B1", "annual_premium": 1000, "status": "active"},
+        "P2": {"id": "P2", "customer_id": "CUST-B2", "annual_premium": 2000, "status": "active"},
+    })
+    run = svc.run_payouts(created_by="admin", idempotency_key="batch-1")
+    assert run["created"] == 2
+    assert {p["idempotency_key"] for p in run["payouts"]} == {"batch-1"}
+    assert sorted(p["run_key"] for p in run["payouts"]) == sorted(f"batch-1:{a}" for a in (a1["id"], a2["id"]))
+    # A retry with the same key returns every run of the batch, not just the first.
+    again = svc.run_payouts(created_by="admin", idempotency_key="batch-1")
+    assert again["reused"] is True and again["created"] == 0
+    assert sorted(p["id"] for p in again["payouts"]) == sorted(p["id"] for p in run["payouts"])
+    # Without a platform ledger a run is never marked settled.
+    svc._platform_ledger_fallback = lambda: None  # isolate from the portal module loaded by conftest
+    try:
+        ok, err = svc.settle_payout(run["payouts"][0]["id"], settled_by="admin")
+    finally:
+        del svc._platform_ledger_fallback
+    assert ok is False and "ledger unavailable" in err
+    assert svc.get_payout(run["payouts"][0]["id"])["status"] == "calculated"
+    assert all(svc.COMMISSIONS[c]["status"] == "payable" for c in run["payouts"][0]["commission_ids"])
+    # A ledger that returns no anchor is refused the same way.
+    class _NoAnchor:
+        def append_event(self, **kw):
+            return {}
+    ok, err = svc.settle_payout(run["payouts"][0]["id"], settled_by="admin", platform_ledger=_NoAnchor())
+    assert ok is False and "did not return an anchor" in err
+    assert svc.get_payout(run["payouts"][0]["id"])["status"] == "calculated"
+
+
 # ---------------------------------------------------------------------------
 # §C — broker funnel: agent subtree only
 # ---------------------------------------------------------------------------
@@ -788,6 +830,34 @@ def test_http_funnel_and_payout_routes_with_role_scope():
     assert status == 200 and combo["created"] == 1 and combo["settled"] == 1, combo
     assert combo["payouts"][0]["status"] == "settled" and combo["payouts"][0]["gross_amount"] == 100.0
 
+    # A run whose settle fails is a 409 (not a hidden 200) and the run is still
+    # returned; the retry with the same key + settle finishes the batch.
+    portal.BILLING["BILL-HF-3"] = _bill("BILL-HF-3", "POL-HF-1", "CUST-HF-1", "2024-06-01")
+    real_append = portal.platform_event_ledger.append_event
+    portal.platform_event_ledger.append_event = lambda **kw: (_ for _ in ()).throw(RuntimeError("ledger down"))
+    try:
+        failed, status = _post("/api/admin/agents/payouts/run",
+                               {"settle": True, "idempotency_key": "http-retry"}, token=admin_token)
+    finally:
+        portal.platform_event_ledger.append_event = real_append
+    assert status == 409 and "could not be settled" in failed["error"], failed
+    assert failed["created"] == 1 and failed["settled"] == 0 and len(failed["settle_failures"]) == 1
+    assert "ledger down" in failed["settle_failures"][0]["error"]
+    stuck = failed["payouts"][0]
+    # The standalone settle route reports the same outage as a 503, nothing changed.
+    portal.platform_event_ledger.append_event = lambda **kw: (_ for _ in ()).throw(RuntimeError("ledger down"))
+    try:
+        assert _post("/api/admin/agents/payouts/settle", {"payout_id": stuck["id"]}, token=admin_token)[1] == 503
+    finally:
+        portal.platform_event_ledger.append_event = real_append
+    assert _get(f"/api/admin/agents/payouts?status=calculated", token=admin_token)[0]["items"][0]["id"] == stuck["id"]
+    assert stuck["status"] == "calculated" and stuck["idempotency_key"] == "http-retry"
+    retry, status = _post("/api/admin/agents/payouts/run",
+                          {"settle": True, "idempotency_key": "http-retry"}, token=admin_token)
+    assert status == 200 and retry["reused"] is True and retry["settled"] == 1, retry
+    assert retry["payouts"][0]["id"] == stuck["id"] and retry["payouts"][0]["status"] == "settled"
+    assert retry["payouts"][0]["platform_ledger_entry_id"] == f"AGPAY-{stuck['id']}"
+
 
 # ---------------------------------------------------------------------------
 # Persistence hardening: DB source-of-truth, restart durability, cross-instance
@@ -826,7 +896,7 @@ def test_db_mode_renewals_and_payouts_survive_restart(monkeypatch):
         rows = {r.source_event_id: r.to_dict() for r in db.agent_commissions.list_by_agent(agent["id"])}
         assert rows["policy:POL-DBPAY:2023-01-01"]["period"] == "2023-01-01"
         assert all(r["status"] == "paid" and r["payout_id"] == pay["id"] for r in rows.values())
-        durable = db.agent_payouts.get_by_idempotency_key("db-run").to_dict()
+        durable = db.agent_payouts.list_by_idempotency_key("db-run")[0].to_dict()
         assert durable["status"] == "settled" and sorted(durable["commission_ids"]) == sorted(pay["commission_ids"])
         assert durable["platform_ledger_entry_id"] == f"AGPAY-{pay['id']}"
 

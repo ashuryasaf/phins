@@ -272,20 +272,35 @@ def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
                 return 400, {"error": "idempotency_key too long (max 120)"}
             # Sweep the latest accruals first so the run reflects the current book.
             _recompute(data_sources)
+            reference = body.get("external_payout_reference")
+            if reference is not None and not isinstance(reference, str):
+                return 400, {"error": "external_payout_reference must be a string"}
             result = svc.run_payouts(agent_id=agent_id, created_by=admin, idempotency_key=idem)
-            if body.get("settle") and not result.get("reused"):
-                reference = body.get("external_payout_reference")
-                settled = []
-                for pay in result["payouts"]:
-                    ok, out = svc.settle_payout(
-                        pay["id"], settled_by=admin, external_payout_reference=reference,
-                        platform_ledger=data_sources.get("platform_ledger"))
-                    if not ok:
-                        result["error_detail"] = out
-                        break
-                    settled.append(out)
-                result["payouts"] = settled + result["payouts"][len(settled):]
+            if body.get("settle"):
+                # Settle every run of the batch that is still calculated — also on
+                # a reused key, so a retry finishes what an earlier attempt left
+                # unsettled. A settle failure is reported as an error (409), not a
+                # 200: the runs already created are returned so nothing is hidden.
+                settled, failures = [], []
+                for i, pay in enumerate(result["payouts"]):
+                    if pay.get("status") != "calculated":
+                        continue
+                    try:
+                        ok, out = svc.settle_payout(
+                            pay["id"], settled_by=admin, external_payout_reference=reference or None,
+                            platform_ledger=data_sources.get("platform_ledger"))
+                    except Exception as anchor_err:  # anchor write failed: nothing changed
+                        ok, out = False, f"Platform ledger unavailable: {anchor_err}"
+                    if ok:
+                        result["payouts"][i] = out
+                        settled.append(out["id"])
+                    else:
+                        failures.append({"payout_id": pay["id"], "error": out})
                 result["settled"] = len(settled)
+                result["ledger_intact"] = svc.verify_ledger_integrity()
+                if failures:
+                    return 409, {"error": f"{len(failures)} payout run(s) could not be settled",
+                                 "settle_failures": failures, **result}
             return 200, result
 
         if path == "/api/admin/agents/payouts/settle":
@@ -295,9 +310,12 @@ def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             reference = body.get("external_payout_reference")
             if reference is not None and not isinstance(reference, str):
                 return 400, {"error": "external_payout_reference must be a string"}
-            ok, result = svc.settle_payout(
-                payout_id, settled_by=admin, external_payout_reference=reference or None,
-                platform_ledger=data_sources.get("platform_ledger"))
+            try:
+                ok, result = svc.settle_payout(
+                    payout_id, settled_by=admin, external_payout_reference=reference or None,
+                    platform_ledger=data_sources.get("platform_ledger"))
+            except Exception as anchor_err:  # anchor write failed: nothing changed (fail closed)
+                return 503, {"error": f"Platform ledger unavailable: {anchor_err}"}
             if ok:
                 return 200, {"payout": result, "ledger_intact": svc.verify_ledger_integrity()}
             return (404 if result == "Payout not found" else 409), {"error": result}

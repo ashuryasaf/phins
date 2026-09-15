@@ -90,8 +90,12 @@ class AgentPayoutRepository(BaseRepository[AgentPayout]):
     def list_by_status(self, status: str) -> List[AgentPayout]:
         return self.filter_by(status=status)
 
-    def get_by_idempotency_key(self, idempotency_key: str) -> Optional[AgentPayout]:
-        return self.find_one_by(idempotency_key=idempotency_key)
+    def list_by_idempotency_key(self, idempotency_key: str) -> List[AgentPayout]:
+        """Every run one caller key created (one request may sweep several agents)."""
+        return self.filter_by(idempotency_key=idempotency_key)
+
+    def get_by_run_key(self, run_key: str) -> Optional[AgentPayout]:
+        return self.find_one_by(run_key=run_key)
 
     def get_by_commissions_hash(self, commissions_hash: str) -> Optional[AgentPayout]:
         return self.find_one_by(commissions_hash=commissions_hash)

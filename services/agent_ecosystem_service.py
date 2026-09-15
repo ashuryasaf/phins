@@ -32,6 +32,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import sys
 import threading
 import time
 from datetime import datetime, timedelta
@@ -169,21 +170,28 @@ def _ledger_append(event_type: str, agent_id: str, amount: float,
     entry_hash = hashlib.sha256((prev_hash + _canonical(body)).encode("utf-8")).hexdigest()
     entry = {**body, "id": f"AGLEDGER-{seq:08d}", "previous_hash": prev_hash, "entry_hash": entry_hash}
     COMMISSION_LEDGER.append(entry)
-    # Best-effort mirror into the platform-wide hash-chained ledger.
-    if mirror and _db_enabled():
-        try:
-            from web_portal.server import platform_event_ledger
-            platform_event_ledger.append_event(
-                event_type=event_type,
-                entity_type="agent_commission",
-                entity_id=payload.get("commission_id") or agent_id,
-                actor=agent_id,
-                amount=body["amount"],
-                payload=payload,
-            )
-        except Exception:
-            pass
+    if mirror:
+        _mirror_to_platform(entry)
     return entry
+
+
+def _mirror_to_platform(entry: Dict[str, Any]) -> None:
+    """Best-effort mirror of a commission-ledger entry into the platform-wide ledger (DB mode)."""
+    if not _db_enabled():
+        return
+    try:
+        from web_portal.server import platform_event_ledger
+        payload = entry["payload"]
+        platform_event_ledger.append_event(
+            event_type=entry["event_type"],
+            entity_type="agent_commission",
+            entity_id=payload.get("commission_id") or payload.get("payout_id") or entry["agent_id"],
+            actor=entry["agent_id"],
+            amount=entry["amount"],
+            payload=payload,
+        )
+    except Exception:
+        pass
 
 
 def verify_ledger_integrity() -> bool:
@@ -970,10 +978,19 @@ def _parse_dt(value: Any) -> Optional[datetime]:
     return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
 
 
+POLICY_TERM_START_FIELDS = ("start_date", "effective_date")
+
+
 def _policy_term_start(policy: Dict[str, Any]) -> Optional[datetime]:
-    """The policy's initial-term start; None when no date is recorded."""
-    for field in ("start_date", "effective_date", "issuance_date",
-                  "created_date", "created_at", "application_date"):
+    """The policy's initial-term (coverage) start; None when none is recorded.
+
+    Only coverage dates qualify. Record timestamps (``created_date``,
+    ``created_at``, ``application_date``) are present on every durable policy
+    and say when the row was written, not when cover began; using them would
+    let a policy with no coverage start mint renewal commissions on the wrong
+    anniversary. No coverage date -> no renewal accrual (under-count only).
+    """
+    for field in POLICY_TERM_START_FIELDS:
         parsed = _parse_dt(policy.get(field))
         if parsed is not None:
             # Terms roll on the anniversary *date*; the time of day the policy
@@ -1303,12 +1320,15 @@ def _payout_ledger_payload(pay: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _platform_ledger_fallback() -> Any:
-    """The portal's platform event ledger when the server module is loaded (DB mode)."""
-    if not _db_enabled():
-        return None
+    """The portal's platform event ledger when the server module is loaded.
+
+    Only an already-imported server module is used (``sys.modules``); the
+    service never triggers the portal import itself, so a standalone worker
+    without a ledger gets ``None`` and ``settle_payout`` refuses to settle.
+    """
     try:
-        from web_portal.server import platform_event_ledger
-        return platform_event_ledger
+        server = sys.modules.get("web_portal.server")
+        return getattr(server, "platform_event_ledger", None) if server is not None else None
     except Exception:
         return None
 
@@ -1325,7 +1345,10 @@ def _find_persisted_payout(*, idempotency_key: Optional[str] = None,
         return None
     try:
         with _db() as db:
-            row = db.agent_payouts.get_by_idempotency_key(idempotency_key) if idempotency_key else None
+            row = None
+            if idempotency_key:
+                rows = db.agent_payouts.list_by_idempotency_key(idempotency_key)
+                row = rows[0] if rows else None
             if row is None and commissions_hash:
                 row = db.agent_payouts.get_by_commissions_hash(commissions_hash)
             return row.to_dict() if row is not None else None
@@ -1333,16 +1356,28 @@ def _find_persisted_payout(*, idempotency_key: Optional[str] = None,
         return None
 
 
-def _find_payout_by_key(idempotency_key: Optional[str]) -> Optional[Dict[str, Any]]:
+def _find_payouts_by_key(idempotency_key: Optional[str]) -> List[Dict[str, Any]]:
+    """Every run a caller key created — the whole batch, not just the first.
+
+    One request may sweep several agents; a retry with the same key must get
+    all of those runs back (so a run-and-settle retry can finish settling the
+    ones a crash left ``calculated``). The cache is merged with the durable
+    table so a peer instance's runs for the key are seen too.
+    """
     if not idempotency_key:
-        return None
-    for pay in PAYOUTS.values():
-        if pay.get("idempotency_key") == idempotency_key:
-            return pay
-    persisted = _find_persisted_payout(idempotency_key=idempotency_key)
-    if persisted is not None:
-        PAYOUTS[persisted["id"]] = persisted
-    return persisted
+        return []
+    found = {p["id"]: p for p in PAYOUTS.values() if p.get("idempotency_key") == idempotency_key}
+    if _db_enabled():
+        try:
+            with _db() as db:
+                for row in db.agent_payouts.list_by_idempotency_key(idempotency_key):
+                    rec = row.to_dict()
+                    if rec["id"] not in found:
+                        PAYOUTS[rec["id"]] = rec
+                        found[rec["id"]] = rec
+        except Exception:
+            pass
+    return sorted(found.values(), key=lambda p: (p.get("agent_id") or "", p["id"]))
 
 
 def run_payouts(agent_id: Optional[str] = None, *, created_by: str = "admin",
@@ -1350,18 +1385,21 @@ def run_payouts(agent_id: Optional[str] = None, *, created_by: str = "admin",
     """Sweep ``accrued`` commissions into one payout run per agent.
 
     Idempotent three ways: (1) a caller ``idempotency_key`` seen before returns
-    the run it created without touching anything; (2) swept commissions move
-    to ``payable`` so a repeated run finds nothing new; (3) each run is content
-    addressed by ``commissions_hash``. Commission amounts are copied, never
-    edited. Suspended agents are skipped (their accruals stay ``accrued`` for
-    admin review). Returns ``{"payouts": [...], "created": n, "reused": bool}``.
+    every run that request created (the whole batch) without touching anything;
+    (2) swept commissions move to ``payable`` so a repeated run finds nothing
+    new; (3) each run is content addressed by ``commissions_hash`` and keyed by
+    ``run_key = f"{idempotency_key}:{agent_id}"`` — both unique in the durable
+    table, so a simultaneous peer run fails closed. Commission amounts are
+    copied, never edited. Suspended agents are skipped (their accruals stay
+    ``accrued`` for admin review). Returns ``{"payouts": [...], "created": n,
+    "reused": bool}``.
     """
     idempotency_key = (str(idempotency_key).strip() or None) if idempotency_key else None
     with _LOCK:
         _hydrate_from_db(force=True)
-        existing = _find_payout_by_key(idempotency_key)
-        if existing is not None:
-            return {"payouts": [dict(existing)], "created": 0, "reused": True,
+        existing = _find_payouts_by_key(idempotency_key)
+        if existing:
+            return {"payouts": [dict(p) for p in existing], "created": 0, "reused": True,
                     "skipped_agents": [], "ledger_intact": verify_ledger_integrity()}
 
         by_agent: Dict[str, List[Dict[str, Any]]] = {}
@@ -1406,8 +1444,10 @@ def run_payouts(agent_id: Optional[str] = None, *, created_by: str = "admin",
                 "commission_count": len(ids),
                 "commission_ids": ids,
                 "commissions_hash": commissions_hash,
-                # Only the first run created for a request carries the caller key.
-                "idempotency_key": idempotency_key if not payouts else None,
+                # Every run of this request carries the caller key (batch
+                # retrieval); run_key is the per-(key, agent) unique handle.
+                "idempotency_key": idempotency_key,
+                "run_key": f"{idempotency_key}:{aid}" if idempotency_key else None,
                 "period_start": comms[0].get("created_at"),
                 "period_end": comms[-1].get("created_at"),
                 "created_by": created_by,
@@ -1420,7 +1460,10 @@ def run_payouts(agent_id: Optional[str] = None, *, created_by: str = "admin",
                 "created_at": now,
                 "updated_at": now,
             }
-            entry = _ledger_append("agent.payout.calculated", aid, gross, _payout_ledger_payload(pay))
+            # Local chain first, platform mirror only once the run is durable:
+            # a failed persist must not leave an orphan event on the shared ledger.
+            entry = _ledger_append("agent.payout.calculated", aid, gross, _payout_ledger_payload(pay),
+                                   mirror=False)
             pay["ledger_entry_id"] = entry["id"]
             for comm in comms:
                 comm["status"] = "payable"
@@ -1438,6 +1481,7 @@ def run_payouts(agent_id: Optional[str] = None, *, created_by: str = "admin",
                 skipped.append({"agent_id": aid, "reason": "persist_failed",
                                 "commission_count": len(ids)})
                 continue
+            _mirror_to_platform(entry)
             PAYOUTS[pay["id"]] = pay
             payouts.append(dict(pay))
         return {"payouts": payouts, "created": len(payouts), "reused": False,
@@ -1481,7 +1525,8 @@ def settle_payout(payout_id: str, *, settled_by: str = "admin",
     Ledger-anchored and fail-closed: the swept set is re-verified (existence,
     ownership, linkage, ``payable`` status, per-row arithmetic, run total, hash
     chain) and the platform-ledger anchor is written *before* any status moves;
-    if the anchor write raises, nothing changes. Idempotent: settling an
+    if no platform ledger is available, or the anchor write raises, nothing
+    changes — a payout is never marked settled without its anchor. Idempotent: settling an
     already-settled run returns it unchanged (``already_settled``). Like
     ``supplier_settlement_service.execute_settlement_run`` this records the
     external payout reference; it never calls a payment rail itself.
@@ -1501,24 +1546,26 @@ def settle_payout(payout_id: str, *, settled_by: str = "admin",
 
         now = _now_iso()
         ledger = platform_ledger if platform_ledger is not None else _platform_ledger_fallback()
-        anchor_id = anchor_hash = None
-        if ledger is not None:
-            # Deterministic entry id: append_event is idempotent on it, so a
-            # retried settlement re-uses the same anchor instead of a duplicate.
-            anchored = ledger.append_event(
-                event_type="agent.payout.settled",
-                entity_type="agent_payout",
-                entity_id=pay["id"],
-                actor=settled_by,
-                amount=float(pay.get("gross_amount") or 0.0),
-                currency=pay.get("currency") or "USD",
-                payload={**_payout_ledger_payload(pay),
-                         "external_payout_reference": external_payout_reference,
-                         "settled_by": settled_by},
-                entry_id=f"AGPAY-{pay['id']}",
-            )
-            anchor_id = anchored.get("id")
-            anchor_hash = anchored.get("entry_hash")
+        if ledger is None:
+            return False, "Platform event ledger unavailable; settlement refused (nothing changed)"
+        # Deterministic entry id: append_event is idempotent on it, so a
+        # retried settlement re-uses the same anchor instead of a duplicate.
+        anchored = ledger.append_event(
+            event_type="agent.payout.settled",
+            entity_type="agent_payout",
+            entity_id=pay["id"],
+            actor=settled_by,
+            amount=float(pay.get("gross_amount") or 0.0),
+            currency=pay.get("currency") or "USD",
+            payload={**_payout_ledger_payload(pay),
+                     "external_payout_reference": external_payout_reference,
+                     "settled_by": settled_by},
+            entry_id=f"AGPAY-{pay['id']}",
+        )
+        anchor_id = anchored.get("id")
+        anchor_hash = anchored.get("entry_hash")
+        if not anchor_id or not anchor_hash:
+            return False, "Platform event ledger did not return an anchor; settlement refused (nothing changed)"
 
         pay["status"] = "settled"
         pay["settled_by"] = settled_by
