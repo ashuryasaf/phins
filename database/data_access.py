@@ -43,6 +43,33 @@ def _resolve_cache_ttl_seconds() -> float:
 
 DATABASE_DICT_CACHE_TTL_SECONDS: float = _resolve_cache_ttl_seconds()
 
+# Write listeners: ``fn(repository_name, operation)`` runs after every
+# successful DatabaseDict write ('set' | 'delete' | 'clear'). Used by derived
+# read models (BI dashboards) to learn that their inputs may have changed
+# without polling. A listener that raises never breaks the write.
+_WRITE_LISTENERS: List[Any] = []
+
+
+def add_write_listener(listener) -> None:
+    if listener not in _WRITE_LISTENERS:
+        _WRITE_LISTENERS.append(listener)
+
+
+def remove_write_listener(listener) -> None:
+    try:
+        _WRITE_LISTENERS.remove(listener)
+    except ValueError:
+        pass
+
+
+def _notify_write(repository_name: str, operation: str) -> None:
+    for listener in list(_WRITE_LISTENERS):
+        try:
+            listener(repository_name, operation)
+        except Exception as exc:  # never let a derived-view hook break a write
+            logger.warning("DatabaseDict write listener failed for %s/%s: %s",
+                           repository_name, operation, exc)
+
 
 def convert_datetime_strings(data: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -186,6 +213,28 @@ class DatabaseDict:
         # filed on Process A visible to an admin GET on Process B without
         # having to wait for an unrelated write to invalidate the cache.
         self._cache_loaded_at: float = 0.0
+        # Bumped whenever the content this dict exposes may differ from what
+        # a reader last saw: on every local write and on every refresh that
+        # loaded different rows (another process wrote). Readers that cache
+        # something derived from the whole store (BI fingerprints) key it on
+        # this number instead of re-hashing every row.
+        self._content_version: int = 0
+
+    def content_version(self) -> int:
+        """Freshness-checked content version.
+
+        Refreshes the bulk cache first when its TTL has elapsed, so a caller
+        that skips its own full scan because the version is unchanged still
+        observes rows written by another process within
+        ``DATABASE_DICT_CACHE_TTL_SECONDS`` — the same window ``values()``
+        honours.
+        """
+        if not self._is_cache_fresh():
+            self._refresh_cache()
+        return self._content_version
+
+    def _bump_content_version(self) -> None:
+        self._content_version += 1
 
     def _is_cache_fresh(self) -> bool:
         """Return True if the cache is both marked valid and within the TTL."""
@@ -260,7 +309,12 @@ class DatabaseDict:
                         return item.token
                     return str(item)
 
-                self._cache = {_key_for_item(item): item.to_dict() for item in items}
+                loaded = {_key_for_item(item): item.to_dict() for item in items}
+                # Only a real content change bumps the version, so a derived
+                # view is not recomputed just because the TTL elapsed.
+                if not self._cache_valid or loaded != self._cache:
+                    self._bump_content_version()
+                self._cache = loaded
                 self._cache_valid = True
                 self._cache_loaded_at = time.monotonic()
         
@@ -322,6 +376,8 @@ class DatabaseDict:
         self._execute_with_retry(_do_set)
         self._cache_valid = False
         self._cache_loaded_at = 0.0
+        self._bump_content_version()
+        _notify_write(self.repository_name, 'set')
     
     def __delitem__(self, key: str):
         """Delete item by key with automatic retry"""
@@ -334,6 +390,8 @@ class DatabaseDict:
         self._execute_with_retry(_do_delete)
         self._cache_valid = False
         self._cache_loaded_at = 0.0
+        self._bump_content_version()
+        _notify_write(self.repository_name, 'delete')
     
     def __contains__(self, key: str) -> bool:
         """Check if key exists with automatic retry"""
@@ -456,6 +514,8 @@ class DatabaseDict:
                     repo.delete(item_id)
         self._cache_valid = False
         self._cache_loaded_at = 0.0
+        self._bump_content_version()
+        _notify_write(self.repository_name, 'clear')
 
 
 # Global database-backed dictionaries (backward compatible with in-memory version)
@@ -490,5 +550,7 @@ __all__ = [
     'SESSIONS',
     'BILLING',
     'USERS_DB',
-    'get_db_backed_dicts'
+    'get_db_backed_dicts',
+    'add_write_listener',
+    'remove_write_listener',
 ]
