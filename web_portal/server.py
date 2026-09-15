@@ -3028,6 +3028,110 @@ def verify_media_provider_callback(headers: Any, raw_body: bytes, payload: Dict[
     return False
 
 
+# Replay protection for provider callbacks (B8). A verified callback can still
+# be captured and re-sent (or re-delivered by the provider); the checks below
+# make a second delivery inert. Two independent signals: an optional signed
+# timestamp must fall inside the window, and each delivery's nonce (header, or
+# the body hash when the provider sends none) may be accepted once per job.
+_MEDIA_WEBHOOK_SEEN: Dict[str, float] = {}
+_MEDIA_WEBHOOK_SEEN_LOCK = threading.Lock()
+_MEDIA_WEBHOOK_SEEN_MAX = 10000
+_MEDIA_WEBHOOK_DELIVERIES_PER_JOB = 32
+
+
+def media_webhook_replay_window_seconds() -> float:
+    """Accept callback timestamps within +/- this many seconds (``MEDIA_WEBHOOK_REPLAY_WINDOW_SECONDS``, default 300)."""
+    return max(safe_float(os.environ.get('MEDIA_WEBHOOK_REPLAY_WINDOW_SECONDS'), 300.0), 1.0)
+
+
+def _parse_webhook_timestamp(raw: Any) -> Optional[float]:
+    text = str(raw or '').strip()
+    if not text:
+        return None
+    try:
+        value = float(text)
+        # Millisecond epochs are unambiguous above year 5138 in seconds.
+        return value / 1000.0 if value > 1e11 else value
+    except ValueError:
+        pass
+    try:
+        parsed = datetime.fromisoformat(text.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
+
+def media_webhook_delivery_fingerprint(headers: Any, raw_body: bytes) -> str:
+    """Nonce the provider sent, else the SHA-256 of the exact bytes delivered."""
+    nonce = str(
+        headers.get('X-Media-Nonce')
+        or headers.get('X-Webhook-Nonce')
+        or headers.get('X-Webhook-Id')
+        or headers.get('X-Delivery-Id')
+        or ''
+    ).strip()
+    if nonce:
+        return 'nonce:' + hashlib.sha256(nonce.encode('utf-8')).hexdigest()
+    return 'body:' + hashlib.sha256(raw_body or b'').hexdigest()
+
+
+def check_media_webhook_replay(
+    job: Dict[str, Any],
+    headers: Any,
+    raw_body: bytes,
+    payload: Dict[str, Any],
+    *,
+    now: Optional[float] = None,
+) -> Optional[Tuple[int, str]]:
+    """Return ``(status, error)`` when the delivery must be refused, else ``None``.
+
+    Accepting a delivery records its fingerprint both in a bounded process
+    table and on the job record itself (persisted with the ledger snapshot),
+    so a replay is still recognised after a restart.
+    """
+    current = time.time() if now is None else float(now)
+    window = media_webhook_replay_window_seconds()
+
+    stamp = _parse_webhook_timestamp(
+        headers.get('X-Media-Timestamp')
+        or headers.get('X-Webhook-Timestamp')
+        or (payload.get('timestamp') if isinstance(payload, dict) else None)
+    )
+    if stamp is not None and abs(current - stamp) > window:
+        return 403, 'Webhook timestamp outside the accepted window'
+
+    fingerprint = media_webhook_delivery_fingerprint(headers, raw_body)
+    job_id = str(job.get('id') or '')
+    seen_key = f"{job_id}:{fingerprint}"
+    deliveries = job.get('webhook_deliveries')
+    if not isinstance(deliveries, list):
+        deliveries = []
+        job['webhook_deliveries'] = deliveries
+    if any(isinstance(entry, dict) and entry.get('fingerprint') == fingerprint for entry in deliveries):
+        return 409, 'Replayed webhook delivery'
+
+    with _MEDIA_WEBHOOK_SEEN_LOCK:
+        for key in [k for k, expires in _MEDIA_WEBHOOK_SEEN.items() if expires <= current]:
+            _MEDIA_WEBHOOK_SEEN.pop(key, None)
+        if seen_key in _MEDIA_WEBHOOK_SEEN:
+            return 409, 'Replayed webhook delivery'
+        if len(_MEDIA_WEBHOOK_SEEN) >= _MEDIA_WEBHOOK_SEEN_MAX:
+            oldest = min(_MEDIA_WEBHOOK_SEEN, key=_MEDIA_WEBHOOK_SEEN.get)
+            _MEDIA_WEBHOOK_SEEN.pop(oldest, None)
+        # Keep the fingerprint for two windows so a late replay just past the
+        # timestamp cutoff is caught by the nonce check as well.
+        _MEDIA_WEBHOOK_SEEN[seen_key] = current + 2 * window
+
+    deliveries.append({
+        'fingerprint': fingerprint,
+        'received_at': datetime.now().isoformat(),
+    })
+    del deliveries[:-_MEDIA_WEBHOOK_DELIVERIES_PER_JOB]
+    return None
+
+
 def update_video_generation_job_state(job: Dict[str, Any], payload: Dict[str, Any]) -> None:
     """Normalize provider job state onto a video generation job record."""
     if not isinstance(payload, dict):
@@ -3046,6 +3150,131 @@ def update_video_generation_job_state(job: Dict[str, Any], payload: Dict[str, An
         job['message'] = str(payload.get('message'))
     if payload.get('error'):
         job['error'] = str(payload.get('error'))
+
+
+# ---------------------------------------------------------------------------
+# Video generation: completion mode, request dedupe, per-job serialisation (B8)
+# ---------------------------------------------------------------------------
+
+MEDIA_VIDEO_TERMINAL_STATUSES = frozenset({'completed', 'failed', 'cancelled'})
+MEDIA_VIDEO_POLL_JOB_TYPE = 'video_generation_poll'
+MEDIA_VIDEO_POLL_INTERVAL_SECONDS = 5
+
+
+def media_video_default_completion_mode() -> str:
+    """Server default for how a video job learns it finished.
+
+    ``VIDEO_AGENTS_COMPLETION_MODE`` = ``webhook`` (default) or ``poll``.
+    Webhook is preferred because the provider tells us the moment the video is
+    ready and we stop hammering its status API; polling stays armed as the
+    fallback so a lost callback can never strand a job.
+    """
+    mode = str(os.environ.get('VIDEO_AGENTS_COMPLETION_MODE') or 'webhook').strip().lower()
+    return mode if mode in {'poll', 'webhook'} else 'webhook'
+
+
+def resolve_media_video_completion_mode(requested: Any, callback_base_url: str) -> str:
+    """Effective completion mode for a submission.
+
+    An explicit ``poll``/``webhook`` request wins; anything else takes the
+    server default. Webhook mode needs a public callback base URL to hand the
+    provider — without one the only mode that can work is polling, so that is
+    what is returned (and echoed to the client) rather than a webhook mode
+    that silently degrades.
+    """
+    requested_mode = str(requested or '').strip().lower()
+    mode = requested_mode if requested_mode in {'poll', 'webhook'} else media_video_default_completion_mode()
+    if mode == 'webhook' and not str(callback_base_url or '').strip():
+        return 'poll'
+    return mode
+
+
+def media_video_poll_timeout_seconds() -> float:
+    """Give up polling a provider job after this long (``VIDEO_AGENTS_POLL_TIMEOUT``, default 30 min)."""
+    return max(safe_float(os.environ.get('VIDEO_AGENTS_POLL_TIMEOUT'), 1800.0), 30.0)
+
+
+def build_media_video_prompt(campaign_id: str, blueprint: Dict[str, Any], prompt_override: str = '') -> str:
+    """Deterministic provider prompt for a campaign blueprint (shared by create + dedupe)."""
+    prompt_override = str(prompt_override or '').strip()
+    prompt_parts = [
+        prompt_override,
+        str(blueprint.get('title') or '').strip(),
+        str(blueprint.get('format') or '').strip(),
+        str(blueprint.get('voiceover_style') or '').strip(),
+    ]
+    storyboard = blueprint.get('storyboard') or []
+    if isinstance(storyboard, list) and storyboard:
+        prompt_parts.append('Storyboard: ' + ' '.join(str(item).strip() for item in storyboard if str(item).strip()))
+    prompt = '. '.join(part for part in prompt_parts if part)
+    return prompt or f"Marketing video for campaign {campaign_id}"
+
+
+def media_video_request_fingerprint(
+    *,
+    campaign_id: str,
+    blueprint_index: int,
+    provider: str,
+    provider_model: str,
+    prompt: str,
+    image_data_url: str = '',
+) -> str:
+    """Content hash of everything the provider would be asked to render.
+
+    Two submissions with the same fingerprint would produce (and bill) the
+    same video, so the newer one reuses the existing job unless forced.
+    """
+    material = json.dumps({
+        'campaign_id': str(campaign_id or ''),
+        'blueprint_index': safe_int(blueprint_index, -1),
+        'provider': str(provider or '').strip().lower(),
+        'provider_model': str(provider_model or '').strip(),
+        'prompt': str(prompt or '').strip(),
+        'image_sha256': hashlib.sha256(str(image_data_url or '').encode('utf-8')).hexdigest() if image_data_url else '',
+    }, sort_keys=True)
+    return hashlib.sha256(material.encode('utf-8')).hexdigest()
+
+
+def find_duplicate_media_video_job(fingerprint: str) -> Optional[Dict[str, Any]]:
+    """Newest queued/processing/completed video job with this request fingerprint.
+
+    Failed and cancelled jobs never satisfy a dedupe lookup: a fresh request
+    after a failure is a legitimate retry, not a duplicate.
+    """
+    if not fingerprint:
+        return None
+    match: Optional[Dict[str, Any]] = None
+    for job in MEDIA_PROCESSING_JOBS.values():
+        if not isinstance(job, dict) or str(job.get('job_kind') or '') != 'video_generation':
+            continue
+        if str(job.get('request_fingerprint') or '') != fingerprint:
+            continue
+        if str(job.get('status') or '').lower() not in {'queued', 'processing', 'completed'}:
+            continue
+        if match is None or str(job.get('requested_at') or '') > str(match.get('requested_at') or ''):
+            match = job
+    return match
+
+
+_MEDIA_JOB_LOCKS: Dict[str, threading.RLock] = {}
+_MEDIA_JOB_LOCKS_GUARD = threading.Lock()
+
+
+def media_job_lock(job_id: str) -> threading.RLock:
+    """Per-job re-entrant lock: poller, webhook and cancel serialise on it so a
+    job performs exactly one terminal transition however the completions race."""
+    key = str(job_id or '')
+    with _MEDIA_JOB_LOCKS_GUARD:
+        lock = _MEDIA_JOB_LOCKS.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _MEDIA_JOB_LOCKS[key] = lock
+            # Locks are tiny but the job table is unbounded; drop entries for
+            # jobs that no longer exist once the map grows.
+            if len(_MEDIA_JOB_LOCKS) > 2048:
+                for stale in [k for k in _MEDIA_JOB_LOCKS if k not in MEDIA_PROCESSING_JOBS and k != key]:
+                    _MEDIA_JOB_LOCKS.pop(stale, None)
+        return lock
 
 
 def create_media_video_job(
@@ -3082,18 +3311,7 @@ def create_media_video_job(
     callback_path = f"/api/provider/media-processing/callback?job_id={job_id}&token={callback_token}"
     callback_url = f"{callback_base_url.rstrip('/')}{callback_path}" if callback_base_url else callback_path
     prompt_override = str(prompt_override or '').strip()
-    prompt_parts = [
-        prompt_override,
-        str(blueprint.get('title') or '').strip(),
-        str(blueprint.get('format') or '').strip(),
-        str(blueprint.get('voiceover_style') or '').strip(),
-    ]
-    storyboard = blueprint.get('storyboard') or []
-    if isinstance(storyboard, list) and storyboard:
-        prompt_parts.append('Storyboard: ' + ' '.join(str(item).strip() for item in storyboard if str(item).strip()))
-    prompt = '. '.join(part for part in prompt_parts if part)
-    if not prompt:
-        prompt = f"Marketing video for campaign {campaign_id}"
+    prompt = build_media_video_prompt(campaign_id, blueprint, prompt_override)
 
     aspect_ratio = '16:9'
     format_hint = str(blueprint.get('format') or '').lower()
@@ -3134,6 +3352,15 @@ def create_media_video_job(
         'callback_token': callback_token,
         'callback_path': callback_path,
         'callback_url': callback_url,
+        'request_fingerprint': media_video_request_fingerprint(
+            campaign_id=campaign_id,
+            blueprint_index=blueprint_index,
+            provider=provider,
+            provider_model=provider_model,
+            prompt=prompt,
+            image_data_url=image_data_url,
+        ),
+        'webhook_deliveries': [],
     }
     MEDIA_PROCESSING_JOBS[job_id] = job
 
@@ -3343,11 +3570,23 @@ def build_video_job_reference_image_data_url(asset_id: str) -> str:
 
 
 def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Download a completed provider video and store it as a media asset."""
-    from services.media_generation_service import MediaGenerationError
+    """Download a completed provider video and store it as a media asset.
 
+    Serialised per job and a no-op once the job is terminal, so a webhook and
+    a poller that both learn of completion produce one download, one asset
+    and one terminal transition (the later caller gets the existing asset).
+    """
     if not isinstance(job, dict):
         return None
+    with media_job_lock(str(job.get('id') or '')):
+        if str(job.get('status') or '').lower() in MEDIA_VIDEO_TERMINAL_STATUSES:
+            asset = MEDIA_ASSETS.get(str(job.get('generated_asset_id') or ''))
+            return asset if isinstance(asset, dict) else None
+        return _finalize_media_video_job_locked(job, poll_result)
+
+
+def _finalize_media_video_job_locked(job: Dict[str, Any], poll_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    from services.media_generation_service import MediaGenerationError
 
     update_video_generation_job_state(job, poll_result)
     status_value = str(poll_result.get('status') or '').strip().lower()
@@ -3475,47 +3714,176 @@ def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -
     return asset
 
 
-def poll_and_finalize_media_video_job(job_id: str) -> None:
-    """Poll a provider-backed video generation job and finalize it if ready."""
+def _media_video_job_age_seconds(job: Dict[str, Any]) -> float:
+    try:
+        requested = datetime.fromisoformat(str(job.get('requested_at') or ''))
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, (datetime.now() - requested).total_seconds())
+
+
+def poll_media_video_job_once(job_id: str) -> Dict[str, Any]:
+    """Poll the provider once for ``job_id`` and finalize if it is ready.
+
+    Returns ``{'status': <job status>, 'rearm_in': seconds | None}`` —
+    ``rearm_in`` is set when the job is still in flight and the caller
+    should schedule the next poll. Never schedules anything itself, so the
+    queue handler and the thread scheduler share one implementation. A job
+    still in flight after ``VIDEO_AGENTS_POLL_TIMEOUT`` is failed here rather
+    than polled forever.
+    """
     from services.media_generation_service import MediaGenerationError
 
     job = MEDIA_PROCESSING_JOBS.get(job_id)
-    if not isinstance(job, dict):
-        return
-    if str(job.get('job_kind') or '') != 'video_generation':
-        return
-    if str(job.get('status') or '') in {'completed', 'failed', 'cancelled'}:
-        return
+    if not isinstance(job, dict) or str(job.get('job_kind') or '') != 'video_generation':
+        return {'status': 'missing', 'rearm_in': None}
 
-    service = get_media_generation_service()
+    with media_job_lock(job_id):
+        status = str(job.get('status') or '').strip().lower()
+        if status in MEDIA_VIDEO_TERMINAL_STATUSES:
+            return {'status': status, 'rearm_in': None}
+        if not str(job.get('provider_job_id') or '').strip():
+            # Not submitted yet (still in the serial submission queue); the
+            # submitter arms polling once the provider has accepted it.
+            return {'status': status, 'rearm_in': None}
+
+        service = get_media_generation_service()
+        try:
+            poll_result = service.poll_video_generation(
+                provider=str(job.get('provider') or ''),
+                provider_job_id=str(job.get('provider_job_id') or ''),
+                provider_state=job.get('provider_state') if isinstance(job.get('provider_state'), dict) else {},
+            )
+            update_video_generation_job_state(job, poll_result)
+            _finalize_media_video_job_locked(job, poll_result)
+        except MediaGenerationError as exc:
+            job['status'] = 'failed'
+            job['provider_status'] = 'failed'
+            job['completed_at'] = datetime.now().isoformat()
+            job['error'] = str(exc)
+            job['message'] = str(exc)
+        finally:
+            save_ledger_data()
+
+        status = str(job.get('status') or '').strip().lower()
+        if status not in {'queued', 'processing'}:
+            return {'status': status, 'rearm_in': None}
+        if _media_video_job_age_seconds(job) >= media_video_poll_timeout_seconds():
+            timeout_minutes = int(media_video_poll_timeout_seconds() // 60)
+            job['status'] = 'failed'
+            job['provider_status'] = 'timeout'
+            job['completed_at'] = datetime.now().isoformat()
+            job['error'] = f'Polling timed out after {timeout_minutes} minutes.'
+            job['message'] = job['error']
+            save_ledger_data()
+            return {'status': 'failed', 'rearm_in': None}
+        return {'status': status, 'rearm_in': MEDIA_VIDEO_POLL_INTERVAL_SECONDS}
+
+
+def poll_and_finalize_media_video_job(job_id: str) -> None:
+    """Poll a provider-backed video generation job; re-arm polling if still in flight."""
+    outcome = poll_media_video_job_once(job_id)
+    if outcome.get('rearm_in'):
+        schedule_media_job_poll(job_id, delay_seconds=outcome['rearm_in'])
+
+
+def _media_video_poll_via_queue() -> bool:
+    """Polls ride the durable agent job queue whenever it is running in this process."""
     try:
-        poll_result = service.poll_video_generation(
-            provider=str(job.get('provider') or ''),
-            provider_job_id=str(job.get('provider_job_id') or ''),
-            provider_state=job.get('provider_state') if isinstance(job.get('provider_state'), dict) else {},
-        )
-        update_video_generation_job_state(job, poll_result)
-        finalize_media_video_job(job, poll_result)
-        if str(job.get('status') or '').strip().lower() in {'queued', 'processing'}:
-            start_media_job_polling(job_id, delay_seconds=5)
-    except MediaGenerationError as exc:
-        job['status'] = 'failed'
-        job['completed_at'] = datetime.now().isoformat()
-        job['error'] = str(exc)
-        job['message'] = str(exc)
-    finally:
-        save_ledger_data()
+        from services.agent_job_queue import agent_async_enabled
+        return agent_async_enabled()
+    except Exception:
+        return False
 
 
-def start_media_job_polling(job_id: str, delay_seconds: int = 5) -> None:
-    """Poll a media generation job in the background once after a short delay."""
-    wait_seconds = max(safe_int(delay_seconds, 5), 1)
+def _media_video_poll_job_handler(queue_job: Dict[str, Any]) -> Dict[str, Any]:
+    """Queue handler: one provider poll; reschedules itself while in flight."""
+    from services.agent_job_queue import RescheduleJob
+
+    params = queue_job.get('input_params') or {}
+    if isinstance(params, str):
+        try:
+            params = json.loads(params)
+        except ValueError:
+            params = {}
+    job_id = str(params.get('job_id') or queue_job.get('subject_id') or '').strip()
+    outcome = poll_media_video_job_once(job_id)
+    if outcome.get('rearm_in'):
+        raise RescheduleJob(outcome['rearm_in'])
+    return {'job_id': job_id, 'status': outcome.get('status')}
+
+
+def bind_media_video_poll_handler(queue) -> None:
+    """Register the video poll handler on ``queue`` (idempotent)."""
+    if MEDIA_VIDEO_POLL_JOB_TYPE not in queue.handlers():
+        queue.register_handler(MEDIA_VIDEO_POLL_JOB_TYPE, _media_video_poll_job_handler)
+
+
+def schedule_media_job_poll(job_id: str, delay_seconds: Any = MEDIA_VIDEO_POLL_INTERVAL_SECONDS) -> str:
+    """Arm the next provider poll for ``job_id`` after ``delay_seconds``.
+
+    With the agent job queue running (``PHINS_AGENT_ASYNC``) the poll is one
+    durable ``video_generation_poll`` row keyed per video job, so a restart
+    re-arms it automatically and no two workers poll the same job. Otherwise
+    a daemon timer thread is used and :func:`rearm_media_video_jobs` restores
+    in-flight jobs at boot. Returns ``'queue'`` or ``'thread'``.
+    """
+    wait_seconds = max(safe_int(delay_seconds, MEDIA_VIDEO_POLL_INTERVAL_SECONDS), 1)
+    if _media_video_poll_via_queue():
+        try:
+            queue = get_agent_job_queue()
+            bind_media_video_poll_handler(queue)
+            queue.enqueue(
+                job_type=MEDIA_VIDEO_POLL_JOB_TYPE,
+                subject_type='video_job',
+                subject_id=str(job_id),
+                submitted_by='video_agents',
+                idempotency_key=f'video-poll:{job_id}',
+                input_params={'job_id': str(job_id)},
+                delay_seconds=wait_seconds,
+            )
+            return 'queue'
+        except Exception as exc:
+            print(f"⚠️  Video poll queue unavailable for {job_id}; using a timer thread: {exc}")
 
     def _runner() -> None:
         time.sleep(wait_seconds)
         poll_and_finalize_media_video_job(job_id)
 
-    threading.Thread(target=_runner, daemon=True).start()
+    threading.Thread(target=_runner, daemon=True, name=f'media-video-poll-{str(job_id)[-8:]}').start()
+    return 'thread'
+
+
+def start_media_job_polling(job_id: str, delay_seconds: int = 5) -> None:
+    """Poll a media generation job in the background after a short delay."""
+    schedule_media_job_poll(job_id, delay_seconds=delay_seconds)
+
+
+def rearm_media_video_jobs() -> Dict[str, int]:
+    """Re-arm video jobs a previous process left in flight.
+
+    Persistence keeps ``MEDIA_PROCESSING_JOBS`` across restarts but the
+    threads that were driving them do not survive, so without this every
+    restart stranded queued/processing videos forever. Jobs the provider has
+    not accepted yet go back onto the serial submission queue; accepted jobs
+    are polled again. Terminal jobs are untouched.
+    """
+    stats = {'submission': 0, 'polling': 0}
+    for job in list(MEDIA_PROCESSING_JOBS.values()):
+        if not isinstance(job, dict) or str(job.get('job_kind') or '') != 'video_generation':
+            continue
+        if str(job.get('status') or '').strip().lower() in MEDIA_VIDEO_TERMINAL_STATUSES:
+            continue
+        job_id = str(job.get('id') or '')
+        if not job_id:
+            continue
+        if not str(job.get('provider_job_id') or '').strip():
+            enqueue_media_video_submission(job_id)
+            stats['submission'] += 1
+        else:
+            schedule_media_job_poll(job_id, delay_seconds=1)
+            stats['polling'] += 1
+    return stats
 
 
 def video_generation_jobs_for_campaign_response(campaign_id: str) -> List[Dict[str, Any]]:
@@ -3757,6 +4125,9 @@ def diagnose_media_video_providers() -> Dict[str, Any]:
         'default_provider': str(capabilities.get('default_provider') or DEFAULT_MEDIA_VIDEO_PROVIDER),
         'any_connected': gemini_enabled or kling_enabled,
         'media_callback_base_url_configured': bool(configured_media_callback_base_url()),
+        # What a submission without an explicit poll_mode will do on this server.
+        'default_completion_mode': resolve_media_video_completion_mode('', configured_media_callback_base_url()),
+        'poll_scheduler': 'queue' if _media_video_poll_via_queue() else 'thread',
         'checked_at': datetime.now().isoformat(),
     }
 
@@ -4801,10 +5172,21 @@ def mark_ledger_dirty():
     Thread-safety: uses the same lock that guards ``save_ledger_data`` so the
     dirty flag cannot be cleared between a mutation and the corresponding
     periodic save window.
+
+    Every explicit ledger save follows a store mutation, so this is also the
+    in-memory write hook for the BI dashboards (B10): the BI service bumps
+    its ``data_version`` and, with the agent queue running, re-materializes
+    the dashboards off the request path. In DB mode the ``DatabaseDict``
+    write listener covers the same role for customers/policies/claims/billing.
     """
     global _persistence_dirty
     with _persistence_lock:
         _persistence_dirty = True
+    try:
+        from services.bi_analytics_service import notify_bi_data_change
+        notify_bi_data_change('ledger')
+    except Exception:
+        pass
 
 
 def verify_persistence_writable() -> bool:
@@ -7898,6 +8280,118 @@ except Exception:
     audit = None
 
 
+# ========== BI MATERIALIZATION (B10) ==========
+# The dashboards read the portal's live stores (including the in-memory
+# PHINS_BALANCE_SHEET), so the materialize job is bound here, like the video
+# poll handler, and a standalone worker without these stores never claims it.
+BI_MATERIALIZE_JOB_TYPE = 'bi_materialize'
+_BI_MATERIALIZE_PENDING = threading.Event()
+# Guards the check-and-set on _BI_MATERIALIZE_PENDING: request threads write
+# concurrently on the threaded server, and Event.is_set()/set() is not atomic.
+_BI_MATERIALIZE_SCHEDULE_LOCK = threading.Lock()
+_BI_HOOKS_BOUND = threading.Event()
+
+
+def bi_data_sources() -> Dict[str, Any]:
+    """The live stores every ``/api/bi/*`` view is computed from.
+
+    One definition for the GET routes, ``POST /api/bi/materialize``, the queue
+    job and the cron script, so a materialized view is always computed from
+    exactly the inputs a request would use (same fingerprint).
+    """
+    return {
+        'customers': CUSTOMERS,
+        'policies': POLICIES,
+        'claims': CLAIMS,
+        'billing': BILLING,
+        'balance_sheet': PHINS_BALANCE_SHEET,
+        'suppliers': SUPPLIERS,
+        'supplier_orders': SUPPLIER_ORDERS,
+        'health_wallets': HEALTH_WALLETS,
+        'investment_accounts': INVESTMENT_ACCOUNTS,
+        'transaction_ledger': TRANSACTION_LEDGER,
+        'underwriting_applications': UNDERWRITING_APPLICATIONS,
+        'deliveries': {},
+    }
+
+
+def bi_rematerialize_delay_seconds() -> float:
+    """Debounce window between a store write and the re-materialization job."""
+    try:
+        return max(0.0, float(os.environ.get('PHINS_BI_REMATERIALIZE_DELAY_SECONDS', '5') or 5))
+    except (TypeError, ValueError):
+        return 5.0
+
+
+def _bi_materialize_job_handler(queue_job: Dict[str, Any]) -> Dict[str, Any]:
+    """Queue handler: recompute + persist the materialized BI views.
+
+    Clears the pending flag *before* computing, so a write that lands during
+    the computation schedules a fresh job instead of being absorbed by this
+    one; the views therefore never settle on stale inputs.
+    """
+    from services.bi_analytics_service import get_bi_analytics_service
+    _BI_MATERIALIZE_PENDING.clear()
+    params = queue_job.get('input_params') or {}
+    return get_bi_analytics_service().materialize_views(
+        bi_data_sources(), source=str(params.get('source') or 'queue'))
+
+
+def bind_bi_materialize_handler(queue) -> None:
+    """Register the materialize handler on ``queue`` (idempotent)."""
+    if BI_MATERIALIZE_JOB_TYPE not in queue.handlers():
+        queue.register_handler(BI_MATERIALIZE_JOB_TYPE, _bi_materialize_job_handler)
+
+
+def schedule_bi_materialize(store: str = '*', *, force: bool = False) -> Optional[Dict[str, Any]]:
+    """Enqueue one debounced ``bi_materialize`` job after a store write.
+
+    Only when the agent job queue is running in this process; otherwise the
+    next ``/api/bi/*`` read recomputes on demand (fingerprint-guarded, so it
+    is correct either way). A burst of writes collapses into a single pending
+    job; ``force`` bypasses the debounce (operator request).
+    """
+    try:
+        from services.agent_job_queue import agent_async_enabled
+        if not agent_async_enabled():
+            return None
+    except Exception:
+        return None
+    with _BI_MATERIALIZE_SCHEDULE_LOCK:
+        if _BI_MATERIALIZE_PENDING.is_set() and not force:
+            return None
+        _BI_MATERIALIZE_PENDING.set()
+    try:
+        queue = get_agent_job_queue()
+        bind_bi_materialize_handler(queue)
+        return queue.enqueue(
+            job_type=BI_MATERIALIZE_JOB_TYPE,
+            subject_type='bi_views',
+            subject_id='standard',
+            submitted_by='system',
+            priority=200,
+            input_params={'source': 'write_hook', 'store': str(store)},
+            max_attempts=1,
+            delay_seconds=bi_rematerialize_delay_seconds(),
+        )
+    except Exception as exc:
+        _BI_MATERIALIZE_PENDING.clear()
+        print(f"⚠️  BI re-materialization not scheduled: {exc}")
+        return None
+
+
+def bind_bi_write_hooks() -> None:
+    """Attach the BI service's data-change callback once per process."""
+    if _BI_HOOKS_BOUND.is_set():
+        return
+    try:
+        from services.bi_analytics_service import get_bi_analytics_service
+        get_bi_analytics_service().on_data_change(schedule_bi_materialize)
+        _BI_HOOKS_BOUND.set()
+    except Exception as exc:
+        print(f"⚠️  BI write hooks not bound: {exc}")
+
+
 def get_agent_job_queue():
     """The process-wide agent job queue with every adapter bound (A3).
 
@@ -7932,6 +8426,11 @@ def get_agent_job_queue():
         )
         agent_jobs.register_all(queue, context)
         queue._agent_job_context = context
+    # Video poll rows need the portal's MEDIA_PROCESSING_JOBS, so the handler
+    # lives here rather than in services.jobs (a standalone worker without it
+    # leaves those rows pending for the web process).
+    bind_media_video_poll_handler(queue)
+    bind_bi_materialize_handler(queue)
     return queue
 
 
@@ -17751,20 +18250,7 @@ For claims or questions, please contact:
                     from web_portal import api_bi_analytics as _bi
                 except Exception:
                     import api_bi_analytics as _bi  # fallback when run as a script
-                data_sources = {
-                    'customers': CUSTOMERS,
-                    'policies': POLICIES,
-                    'claims': CLAIMS,
-                    'billing': BILLING,
-                    'balance_sheet': PHINS_BALANCE_SHEET,
-                    'suppliers': SUPPLIERS,
-                    'supplier_orders': SUPPLIER_ORDERS,
-                    'health_wallets': HEALTH_WALLETS,
-                    'investment_accounts': INVESTMENT_ACCOUNTS,
-                    'transaction_ledger': TRANSACTION_LEDGER,
-                    'underwriting_applications': UNDERWRITING_APPLICATIONS,
-                    'deliveries': {},
-                }
+                data_sources = bi_data_sources()
                 if path == '/api/bi/executive-dashboard':
                     status_code, payload = _bi.handle_executive_dashboard(self, data_sources)
                 elif path == '/api/bi/delivery-analytics':
@@ -33506,7 +33992,8 @@ For claims or questions, please contact:
             provider = str(data.get('provider') or DEFAULT_MEDIA_VIDEO_PROVIDER).strip().lower() or DEFAULT_MEDIA_VIDEO_PROVIDER
             provider_model = str(data.get('provider_model') or '').strip()
             callback_base_url = str(data.get('callback_base_url') or '').strip() or configured_media_callback_base_url()
-            poll_mode = str(data.get('poll_mode') or '').strip().lower()
+            poll_mode = resolve_media_video_completion_mode(data.get('poll_mode'), callback_base_url)
+            force_regenerate = bool(data.get('force') or data.get('force_regenerate'))
             image_data_url = resolve_media_video_job_image_data_url(data)
             auto_publish_to_hero = bool(data.get('auto_publish_to_hero'))
             prompt_override = str(data.get('prompt_override') or '').strip()
@@ -33544,12 +34031,29 @@ For claims or questions, please contact:
 
             try:
                 queued_jobs = []
-                if poll_mode == 'webhook' and callback_base_url:
+                reused_jobs = []
+                if poll_mode == 'webhook':
                     submission_poll_delay = max(safe_int(data.get('webhook_fallback_seconds'), 30), 5)
                 else:
                     submission_poll_delay = max(safe_int(data.get('poll_delay_seconds'), 1), 1)
 
                 for blueprint_index, blueprint in enumerate(blueprints):
+                    # An identical request (same blueprint, prompt, provider,
+                    # model and reference image) that is already in flight or
+                    # completed is reused instead of billed again; ``force``
+                    # opts out for a deliberate regeneration.
+                    if not force_regenerate:
+                        existing = find_duplicate_media_video_job(media_video_request_fingerprint(
+                            campaign_id=campaign_id,
+                            blueprint_index=blueprint_index,
+                            provider=provider,
+                            provider_model=provider_model,
+                            prompt=build_media_video_prompt(campaign_id, blueprint, prompt_override),
+                            image_data_url=image_data_url,
+                        ))
+                        if existing is not None:
+                            reused_jobs.append(existing)
+                            continue
                     # Queue the job locally without contacting the provider so
                     # a single bad blueprint or transient provider 400 cannot
                     # fail the whole batch HTTP request.  The serial submission
@@ -33577,16 +34081,24 @@ For claims or questions, please contact:
                         poll_delay_seconds=submission_poll_delay,
                     )
                 save_ledger_data()
+                message = f'Queued {len(queued_jobs)} video generation jobs'
+                if reused_jobs:
+                    message += f' ({len(reused_jobs)} identical request(s) already exist and were reused)'
                 self._set_json_headers(202)
                 self.wfile.write(json.dumps({
                     'success': True,
-                    'message': f'Queued {len(queued_jobs)} video generation jobs',
+                    'message': message,
                     'campaign_id': campaign_id,
                     'provider': provider,
                     'provider_model': provider_model,
-                    'poll_mode': poll_mode or 'poll',
+                    'poll_mode': poll_mode,
                     'webhook_callback_configured': bool(callback_base_url),
                     'queued_jobs': [serialize_media_job(job, include_callback=True) for job in queued_jobs],
+                    'reused_jobs': [
+                        dict(serialize_media_job(job, include_callback=True), deduplicated=True)
+                        for job in reused_jobs
+                    ],
+                    'deduplicated_count': len(reused_jobs),
                     'jobs': video_generation_jobs_for_campaign_response(campaign_id),
                     'submission_queue': {
                         'sequential': True,
@@ -33623,7 +34135,8 @@ For claims or questions, please contact:
             provider = str(data.get('provider') or DEFAULT_MEDIA_VIDEO_PROVIDER).strip().lower() or DEFAULT_MEDIA_VIDEO_PROVIDER
             provider_model = str(data.get('provider_model') or '').strip()
             callback_base_url = str(data.get('callback_base_url') or '').strip() or configured_media_callback_base_url()
-            poll_mode = str(data.get('poll_mode') or '').strip().lower()
+            poll_mode = resolve_media_video_completion_mode(data.get('poll_mode'), callback_base_url)
+            force_regenerate = bool(data.get('force') or data.get('force_regenerate'))
             image_data_url = resolve_media_video_job_image_data_url(data)
             auto_publish_to_hero = bool(data.get('auto_publish_to_hero'))
             prompt_override = str(data.get('prompt_override') or '').strip()
@@ -33657,6 +34170,29 @@ For claims or questions, please contact:
                 return
 
             try:
+                if not force_regenerate:
+                    existing = find_duplicate_media_video_job(media_video_request_fingerprint(
+                        campaign_id=campaign_id,
+                        blueprint_index=blueprint_index,
+                        provider=provider,
+                        provider_model=provider_model,
+                        prompt=build_media_video_prompt(campaign_id, blueprints[blueprint_index], prompt_override),
+                        image_data_url=image_data_url,
+                    ))
+                    if existing is not None:
+                        self._set_json_headers(200)
+                        self.wfile.write(json.dumps({
+                            'success': True,
+                            'deduplicated': True,
+                            'message': 'An identical video request already exists; returning the existing job.',
+                            'provider': provider,
+                            'provider_model': provider_model,
+                            'poll_mode': poll_mode,
+                            'webhook_callback_configured': bool(callback_base_url),
+                            'job': dict(serialize_media_job(existing, include_callback=True), deduplicated=True),
+                            'jobs': video_generation_jobs_for_campaign_response(campaign_id),
+                        }).encode('utf-8'))
+                        return
                 job = create_media_video_job(
                     campaign_id=campaign_id,
                     blueprint_index=blueprint_index,
@@ -33670,7 +34206,7 @@ For claims or questions, please contact:
                     prompt_override=prompt_override,
                 )
                 save_ledger_data()
-                if poll_mode == 'webhook' and callback_base_url:
+                if poll_mode == 'webhook':
                     fallback_delay = safe_int(data.get('webhook_fallback_seconds'), 30)
                     start_media_job_polling(job['id'], delay_seconds=max(fallback_delay, 5))
                 else:
@@ -33679,9 +34215,10 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({
                     'success': True,
                     'message': 'Video generation job queued',
+                    'deduplicated': False,
                     'provider': provider,
                     'provider_model': provider_model,
-                    'poll_mode': poll_mode or 'poll',
+                    'poll_mode': poll_mode,
                     'webhook_callback_configured': bool(callback_base_url),
                     'job': serialize_media_job(job, include_callback=True),
                     'jobs': video_generation_jobs_for_campaign_response(campaign_id),
@@ -33732,7 +34269,15 @@ For claims or questions, please contact:
             action = path.rsplit('/', 1)[-1]
             requested_by = (session or {}).get('username', 'admin')
             if action == 'cancel':
-                cancel_media_video_job(job, cancelled_by=requested_by)
+                with media_job_lock(job_id):
+                    if str(job.get('status') or '').lower() in MEDIA_VIDEO_TERMINAL_STATUSES:
+                        self._set_json_headers(409)
+                        self.wfile.write(json.dumps({
+                            'error': f"Job is already {job.get('status')}; nothing to cancel.",
+                            'job': serialize_media_job(job, include_callback=True),
+                        }).encode('utf-8'))
+                        return
+                    cancel_media_video_job(job, cancelled_by=requested_by)
                 save_ledger_data()
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
@@ -33811,7 +34356,7 @@ For claims or questions, please contact:
                 return
 
             callback_base_url = str(data.get('callback_base_url') or '').strip() or configured_media_callback_base_url()
-            poll_mode = str(data.get('poll_mode') or '').strip().lower()
+            poll_mode = resolve_media_video_completion_mode(data.get('poll_mode'), callback_base_url)
             try:
                 retried_job = retry_media_video_job(
                     job,
@@ -33823,7 +34368,7 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
                 return
 
-            if poll_mode == 'webhook' and callback_base_url:
+            if poll_mode == 'webhook':
                 fallback_delay = safe_int(data.get('webhook_fallback_seconds'), 30)
                 start_media_job_polling(retried_job['id'], delay_seconds=max(fallback_delay, 5))
             else:
@@ -33833,6 +34378,8 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({
                 'success': True,
                 'message': 'Video generation job retried',
+                'poll_mode': poll_mode,
+                'webhook_callback_configured': bool(callback_base_url),
                 'job': serialize_media_job(retried_job, include_callback=True),
                 'jobs': video_generation_jobs_for_campaign_response(job_campaign_id),
             }).encode('utf-8'))
@@ -33870,25 +34417,49 @@ For claims or questions, please contact:
                 return
 
             job_kind = str(job.get('job_kind') or 'subtitle')
-            if job_kind == 'video_generation':
-                asset = finalize_media_video_job(job, {
-                    'status': str(data.get('status') or data.get('state') or 'completed'),
-                    'provider_job_id': provider_job_id or str(job.get('provider_job_id') or ''),
-                    'download_url': str(data.get('download_url') or data.get('url') or '').strip(),
-                    'duration': data.get('duration'),
-                    'message': data.get('message') or 'Provider webhook completed the generated video.',
-                    'provider_state': data,
-                    'error': data.get('error'),
-                })
-                save_ledger_data()
-                self._set_json_headers(200)
-                self.wfile.write(json.dumps({
-                    'success': True,
-                    'job': serialize_media_job(job),
-                    'generated_video_asset': serialize_media_asset(asset) if asset else None,
-                }).encode('utf-8'))
-                return
-            asset, track = complete_media_subtitle_job(job, data)
+            with media_job_lock(str(job.get('id') or '')):
+                # Replay protection runs before any state change: a repeated
+                # delivery (same nonce/body) or a stale timestamp is refused
+                # and leaves the job exactly as it was.
+                refusal = check_media_webhook_replay(job, self.headers, raw_body, data)
+                if refusal is not None:
+                    refusal_status, refusal_error = refusal
+                    try:
+                        save_ledger_data()
+                    except Exception:
+                        pass
+                    self._set_json_headers(refusal_status)
+                    self.wfile.write(json.dumps({
+                        'error': refusal_error,
+                        'job_id': job.get('id'),
+                        'status': job.get('status'),
+                    }).encode('utf-8'))
+                    return
+
+                if job_kind == 'video_generation':
+                    already_terminal = str(job.get('status') or '').lower() in MEDIA_VIDEO_TERMINAL_STATUSES
+                    asset = finalize_media_video_job(job, {
+                        'status': str(data.get('status') or data.get('state') or 'completed'),
+                        'provider_job_id': provider_job_id or str(job.get('provider_job_id') or ''),
+                        'download_url': str(data.get('download_url') or data.get('url') or '').strip(),
+                        'duration': data.get('duration'),
+                        'message': data.get('message') or 'Provider webhook completed the generated video.',
+                        'provider_state': data,
+                        'error': data.get('error'),
+                    })
+                    save_ledger_data()
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        # True when the job had already reached a terminal state
+                        # (a poller won the race): nothing was downloaded or
+                        # published again; the existing asset is returned.
+                        'already_terminal': already_terminal,
+                        'job': serialize_media_job(job),
+                        'generated_video_asset': serialize_media_asset(asset) if asset else None,
+                    }).encode('utf-8'))
+                    return
+                asset, track = complete_media_subtitle_job(job, data)
             self._set_json_headers(200)
             self.wfile.write(json.dumps({
                 'success': True,
@@ -43013,6 +43584,36 @@ For claims or questions, please contact:
                         actor = (session.get('username') if session else None) or 'system'
                         audit.log(actor, 'capture', 'bi_snapshot',
                                   payload.get('snapshot_id', ''), {})
+                    except Exception:
+                        pass
+            except Exception as bi_exc:
+                status_code, payload = 500, {'error': str(bi_exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
+        # ========== BI MATERIALIZED VIEWS (B10) ==========
+        if path == '/api/bi/materialize':
+            _mat_auth_header = self.headers.get('Authorization', '')
+            _mat_token = _mat_auth_header.replace('Bearer ', '') if _mat_auth_header.startswith('Bearer ') else None
+            session = validate_session(_mat_token) if _mat_token else None
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            try:
+                try:
+                    from web_portal import api_bi_analytics as _bi
+                except Exception:
+                    import api_bi_analytics as _bi  # fallback when run as a script
+                data_sources = bi_data_sources()
+                data_sources['_materialize_source'] = 'api'
+                status_code, payload = _bi.handle_bi_materialize(self, data_sources)
+                if audit and status_code == 200:
+                    try:
+                        actor = (session.get('username') if session else None) or 'system'
+                        audit.log(actor, 'materialize', 'bi_views',
+                                  ','.join(sorted((payload.get('views') or {}).keys())), {})
                     except Exception:
                         pass
             except Exception as bi_exc:
@@ -56131,6 +56732,20 @@ def run_server(port: int = PORT) -> None:
                   f"retries {_doc_worker.retry_schedule}s)")
     except Exception as _worker_exc:
         print(f"   ⚠️  Async job queue not started: {_worker_exc}")
+
+    # Video jobs a previous process left in flight get their submission or
+    # polling re-armed (B8); without this a restart stranded them forever.
+    try:
+        _rearmed = rearm_media_video_jobs()
+        if _rearmed['submission'] or _rearmed['polling']:
+            print(f"🎬 Video jobs re-armed after restart: "
+                  f"{_rearmed['submission']} awaiting submission, {_rearmed['polling']} polling")
+    except Exception as _rearm_exc:
+        print(f"   ⚠️  Video job re-arm skipped: {_rearm_exc}")
+
+    # BI dashboards: store writes bump the BI data version and, with the
+    # agent queue running, re-materialize the views off the request path (B10).
+    bind_bi_write_hooks()
 
     server_address = (HOST, port)
     httpd = ThreadingHTTPServer(server_address, PortalHandler)

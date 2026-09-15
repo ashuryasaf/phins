@@ -28,6 +28,11 @@ Semantics (unchanged from the document worker, now per job type):
   action (requeue) instead of disappearing.
 * **Crash recovery** — a claim stamps its expiry into ``next_retry_at``; a
   crashed worker's claim simply expires and the job is claimable again.
+* **Deferred work** — ``enqueue(..., delay_seconds=N)`` parks a pending job
+  until ``next_retry_at``; a handler that raises :class:`RescheduleJob`
+  puts its *own* row back to pending for a later attempt without consuming
+  a retry, so a long poll loop (video generation) is one durable row that
+  survives a restart instead of a chain of rows or a lost thread.
 * **Concurrency** — ``PHINS_DOC_WORKER_CONCURRENCY`` threads always run;
   when ``PHINS_JOB_WORKER_MAX_CONCURRENCY`` is higher, extra threads are
   added while the pending backlog exceeds the running thread count and exit
@@ -61,6 +66,18 @@ DOCUMENT_SUBJECT = 'document'
 
 JobHandler = Callable[[Dict[str, Any]], Any]
 DeadLetterHook = Callable[[Dict[str, Any], str], None]
+
+
+class RescheduleJob(Exception):
+    """Raised by a handler to run the same job again after ``delay_seconds``.
+
+    Not a failure: the attempt counter is untouched and no error is recorded,
+    the row simply returns to ``pending`` with ``next_retry_at`` set.
+    """
+
+    def __init__(self, delay_seconds: float, message: str = ''):
+        self.delay_seconds = max(0.0, float(delay_seconds or 0))
+        super().__init__(message or f"reschedule in {self.delay_seconds:g}s")
 
 # Event names emitted through ``event_hook``. Document jobs keep the names the
 # platform event ledger has recorded since the pipeline shipped; every other
@@ -182,13 +199,15 @@ class AgentJobQueue:
         idempotency_key: Optional[str] = None,
         input_params: Optional[Dict[str, Any]] = None,
         max_attempts: Optional[int] = None,
+        delay_seconds: float = 0,
     ) -> Dict[str, Any]:
         """Queue a job. Duplicate idempotency keys return the existing job.
 
         A completed job with the same key is NOT re-run (duplicate delivery
         safety); operators can force a re-run by enqueueing without a key.
         Document jobs pass ``document_id``; every other agent passes
-        ``subject_type`` + ``subject_id``.
+        ``subject_type`` + ``subject_id``. ``delay_seconds`` defers the first
+        claim (the job is ``pending`` with ``next_retry_at`` in the future).
         """
         if not job_type:
             raise ValueError('job_type is required')
@@ -204,6 +223,10 @@ class AgentJobQueue:
             if existing is not None:
                 return existing
 
+        not_before = None
+        if delay_seconds and float(delay_seconds) > 0:
+            not_before = datetime.utcnow() + timedelta(seconds=float(delay_seconds))
+
         job = {
             'id': f"JOB-{uuid.uuid4().hex[:12].upper()}",
             'document_id': document_id,
@@ -214,7 +237,7 @@ class AgentJobQueue:
             'status': 'pending',
             'attempts': 0,
             'max_attempts': resolved_max,
-            'next_retry_at': None,
+            'next_retry_at': not_before,
             'priority': priority,
             'idempotency_key': idempotency_key,
             'worker_id': None,
@@ -260,7 +283,7 @@ class AgentJobQueue:
 
     def process_once(self, limit: int = 10) -> Dict[str, Any]:
         """Claim and run up to ``limit`` due jobs. Returns run statistics."""
-        stats = {'claimed': 0, 'completed': 0, 'failed': 0, 'dead_letter': 0}
+        stats = {'claimed': 0, 'completed': 0, 'failed': 0, 'dead_letter': 0, 'rescheduled': 0}
         for claimed in self._claim_due(limit):
             stats['claimed'] += 1
             outcome = self._execute(claimed)
@@ -292,7 +315,8 @@ class AgentJobQueue:
             due = [
                 j for j in self._inmemory_jobs
                 if j['job_type'] in job_types and (
-                    j['status'] == 'pending'
+                    (j['status'] == 'pending'
+                     and (j.get('next_retry_at') is None or j['next_retry_at'] <= now))
                     or (j['status'] in ('failed', 'claimed')
                         and j.get('next_retry_at') is not None
                         and j['next_retry_at'] <= now))
@@ -313,7 +337,7 @@ class AgentJobQueue:
         return handler
 
     def _execute(self, job: Dict[str, Any]) -> str:
-        """Run one claimed job; returns 'completed' | 'failed' | 'dead_letter'."""
+        """Run one claimed job; returns 'completed' | 'failed' | 'dead_letter' | 'rescheduled'."""
         job_id = job['id']
         job_type = job['job_type']
         attempts = int(job.get('attempts') or 0) + 1
@@ -323,7 +347,19 @@ class AgentJobQueue:
         self._emit('started', job, {'attempt': attempts})
         try:
             handler = self._resolve_handler(job_type)
-            result = handler(job)
+            try:
+                result = handler(job)
+            except RescheduleJob as again:
+                # Same row, later: no attempt consumed, no error recorded, and
+                # the claim is released so any worker with the handler can
+                # pick it up after the delay (or after a restart).
+                self._update_job(job_id, {
+                    'status': 'pending',
+                    'worker_id': None,
+                    'error_message': None,
+                    'next_retry_at': datetime.utcnow() + timedelta(seconds=again.delay_seconds),
+                })
+                return 'rescheduled'
             elapsed_ms = int((time.time() - start) * 1000)
             self._update_job(job_id, {
                 'status': 'completed',

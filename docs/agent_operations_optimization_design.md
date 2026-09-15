@@ -1,6 +1,6 @@
 # PHINS Agent Operations — Optimization Design
 
-> **Status: IMPLEMENTING — §D steps 1–5 (A1, A5, B12, A2, A3, A4, A6, B2, B3) and step 6 parts 1–2 (B1, B4, B5, B9) shipped.** This document turns
+> **Status: IMPLEMENTING — §D steps 1–5 (A1, A5, B12, A2, A3, A4, A6, B2, B3) and step 6 parts 1–3 (B1, B4, B5, B9, B8, B10) shipped.** This document turns
 > the agent inventory and the optimization proposal into a concrete,
 > file-level plan with a test plan per workstream. It is the model of record
 > for the implementation PRs that follow. Each workstream is independently
@@ -963,11 +963,45 @@ Deviations from the §B5/§B9 text above, and why:
 - **`page_count` changed** for PDFs whose only `/Type /Page` hits were the
   page-tree node: it was over-counted by one before.
 
-### Remaining — §D step 6 (part 3)
+### Shipped — §D step 6 (part 3): B8 Video Agents, B10 BI Analytics
+
+| Piece | Where | Notes |
+|---|---|---|
+| Deferred queue rows (A3 primitive for B8/B10) | `services/agent_job_queue.py` — `enqueue(..., delay_seconds=N)`, `RescheduleJob(delay)`; `database/repositories/document_repository.py` `_due_query` | A pending row is parked until `next_retry_at`; a handler that raises `RescheduleJob` puts its **own** row back to pending with a new `next_retry_at` — no attempt consumed, no error recorded, claim released — so a long poll loop is one durable row that survives a restart. SQLite/Postgres claim only pending rows whose `next_retry_at` is null or past (they were claimed immediately before). Stats gain `rescheduled`. |
+| Completion mode (B8) | `web_portal/server.py` — `media_video_default_completion_mode`, `resolve_media_video_completion_mode`, `VIDEO_AGENTS_COMPLETION_MODE`; mirrored in `services/video_agents_service.py` `resolve_completion_mode` | Server default is `webhook` (`VIDEO_AGENTS_COMPLETION_MODE`); an explicit `poll_mode` wins; webhook needs a callback base (request `callback_base_url`, else `WEBHOOK_BASE_URL`) and resolves to `poll` when none is configured, echoed to the client instead of a mode that silently degrades. The dashboard's `auto` sends no mode. The inline path arms the regular poll schedule in both modes, so a lost callback cannot strand a job; the service mirror arms its fallback after `VIDEO_AGENTS_WEBHOOK_FALLBACK_SECONDS`. `diagnose_media_video_providers()` reports `default_completion_mode` and `poll_scheduler`. |
+| Durable polls + restart re-arm (B8) | `web_portal/server.py` — `poll_media_video_job_once`, `schedule_media_job_poll`, `_media_video_poll_job_handler` (`video_generation_poll` rows, bound in `get_agent_job_queue`), `rearm_media_video_jobs()` at `run_server`; `VIDEO_AGENTS_POLL_TIMEOUT`; `services/video_agents_service.py` `_arm_completion_tracking`, `rearm_in_flight_jobs` | With `PHINS_AGENT_ASYNC` a job's polls are one self-rescheduling queue row keyed per video job (no second row while one is parked; any worker with the handler may pick it up); otherwise a daemon timer thread. At boot every job left `queued` (no provider id) or `processing` is re-armed; terminal jobs are not. A job that never completes within the timeout is failed with a reason rather than polled forever. The handler lives in the web process (needs `MEDIA_PROCESSING_JOBS`), like the BI handler below. |
+| Request dedupe (B8) | `web_portal/server.py` — `build_media_video_prompt`, `media_video_request_fingerprint`, `find_duplicate_media_video_job`; batch and single submit routes; `force_regenerate`; `services/video_agents_service.py` `request_fingerprint`, `_JobStore.find_duplicate`, `submit_video_job(force=)`; `video-agents.html` "Force regenerate" | Fingerprint over (campaign, agent, pipeline, prompt, provider, model, aspect, duration, reference image); identical requests reuse the existing non-terminal or completed job (`deduplicated: true`, `queued_count` vs `reused_count` in the batch response) unless forced. Failed/cancelled jobs are never reused. |
+| Replay-safe webhooks (B8) | `web_portal/server.py` — `check_media_webhook_replay`, `media_webhook_delivery_fingerprint`, `MEDIA_WEBHOOK_REPLAY_WINDOW_SECONDS` (default 300), per-job `webhook_deliveries` | After the existing HMAC check: a timestamp (header or payload) outside the window → 403; a delivery whose nonce (or body hash when no nonce) was already accepted for that job → 409; a delivery for an already-terminal job → 200 without re-processing. |
+| Single terminal transition (B8) | `web_portal/server.py` — `media_job_lock` (per-job `RLock`), `finalize_media_video_job`, cancel route; `services/video_agents_service.py` `handle_webhook` | Poll, webhook and cancel serialise per job and every terminal path re-reads status under the lock, so poll-then-webhook, webhook-then-poll and concurrent finalize yield exactly one terminal state and one asset download; cancelling a terminal job → 409. The service mirror had let a late webhook regress a terminal job — fixed. |
+| Write-path invalidation (B10) | `services/bi_analytics_service.py` — `data_version`, `notify_data_change(store)`, `on_data_change(cb)`, `notify_bi_data_change()`, `_on_store_write` (DatabaseDict listener, `BI_INPUT_REPOSITORIES`); `database/data_access.py` — `DatabaseDict.content_version()`, `add_write_listener`; `web_portal/server.py` `mark_ledger_dirty()` | Every DB write to customers/policies/claims/billing/underwriting and every in-memory ledger mutation (all explicit `save_ledger_data` calls go through `mark_ledger_dirty`) bumps the BI `data_version`. The **fingerprint check stays on every read**: `data_version` is additive (diagnostics + re-materialization trigger), so an un-hooked write can at most cost a recompute, never a cached dashboard that contradicts the stores. `content_version()` bumps on each local write and on each TTL refresh that loaded different rows, and refreshes first when the bulk cache is stale — an unchanged version therefore proves the rows are unchanged, and the per-store digest is memoised on it (fingerprint O(1) in DB mode when nothing moved). Plain dicts are always re-hashed. |
+| Materialized views (B10) | `services/bi_analytics_service.py` — `materialize_views(data_sources)`, `_materialized_entry`, `VIEW_SCHEMA_VERSION`, `PHINS_BI_SNAPSHOT_DIR/materialized_views.json`; `web_portal/api_bi_analytics.py` `with_freshness`, `handle_bi_materialize`; `POST /api/bi/materialize`; `scripts/run_bi_snapshot.py` (`entrypoint.sh bi-snapshot`, `--snapshot-only` / `--materialize-only`); `bi_materialize` queue rows (`schedule_bi_materialize`, `PHINS_BI_REMATERIALIZE_DELAY_SECONDS`, default 5 s) | `executive_dashboard`, `revenue_forecast` (default parameters) and `customer_analytics` are upserted — one checksummed record per view with input fingerprint, `computed_at`, `data_version`, schema version — by atomic file replace; idempotent (re-run with unchanged inputs reports `changed: false`). A read adopts a view only when its fingerprint equals the live inputs, its checksum verifies and it is younger than `cache_ttl_seconds`; the file's mtime is re-checked on every miss so a cron rewrite reaches a running process. Every `/api/bi/*` cached-view response carries `computed_at`, `served_from` (`cache` \| `materialized` \| `live`), `age_seconds`, `data_version`, `cache_ttl_seconds`. With the agent queue running, a store write enqueues one debounced `bi_materialize` row (a burst collapses into one pending job; the handler clears the flag before computing so a write during the computation schedules a fresh one). `bi_data_sources()` is the single definition of the live stores for GET routes, the materialize route, the queue job and the cron script, so all four fingerprint identically. |
+| Forecast as a materialized view (B10) | `services/bi_analytics_service.py` `predict_revenue_forecast` (cached wrapper) / `_compute_revenue_forecast` | The route's default request is the `revenue_forecast` view; other parameter sets cache under `revenue_forecast:custom`. The fingerprint includes the live year-1 lapse rate, so an actuarial table promotion invalidates the forecast; `now=` bypasses the cache. |
+| Tests | `tests/test_video_agents_lifecycle.py` (27), `tests/test_bi_materialized_views.py` (30), updates to `test_agent_job_queue.py`, `test_jobs_adapters.py`, `test_agent_async_routes.py`, `test_video_agents_service.py` | B8: completion-mode resolution and batch defaults, diagnostics; dedupe (batch, single, force, fingerprint coverage); replay refusal (409), stale/future timestamp (403), idempotent terminal delivery; poll-then-webhook, webhook-then-poll and concurrent finalize → one transition and one download; restart re-arm (queued/processing only), poll timeout, one self-rescheduling queue row, handler bound; service mirror parity. B10: notify/callback semantics (failing hook never breaks a write), in-place edit still caught, `content_version` on local/peer writes and unchanged refresh, listener filtering, digest memo, freshness on every view route, forecast keys/lapse/`now`, idempotent upsert, cross-process adoption with `computed_at`, stale/mismatched/tampered/schema-changed views refused, mtime pickup, persistence failure reported, health probe, materialize route, cron script (both flags), debounced queue job, HTTP wiring (403 → 200 → `served_from: cache`). |
+
+Deviations from the §B8/§B10 text above, and why:
+
+- **No new `video_jobs` table.** `MEDIA_PROCESSING_JOBS` is already a durable
+  A4 store (`services/jobs/video_job.py`, `VideoJob` model) and is what the
+  production HTTP path (`server.py`) reads; polls became queue rows and the
+  store is re-armed at boot, which is what the table was meant to buy.
+- **Dedupe key** is the full request fingerprint (campaign, agent, pipeline,
+  prompt, provider, model, aspect ratio, duration, reference image) rather
+  than `(pipeline_type, prompt, provider, model)`: two agents in one campaign
+  legitimately share a prompt template.
+- **`invalidate_cache()` is not called from write paths.** Dropping the cache
+  on every write would force a recompute even when the write touched no BI
+  input; `notify_data_change` bumps a version and lets the fingerprint decide,
+  which is both cheaper and equally safe (the fingerprint was, and is, the
+  correctness guard).
+- **`scheduler/runner.py` untouched.** It is the Railway cron shim for
+  monthly auto-pay; materialization rides the existing `bi-snapshot`
+  entrypoint (cron) plus the in-process debounced queue job.
+
+### Remaining — §D step 6 (part 4)
 
 | Step | Workstream | Status |
 |---|---|---|
-| 6 | Per-agent refactors B6, B7, B8, B10, B11 (§B) and human AgentOS follow-ups (§C) | Not started. B12 shipped in step 2; B2 and B3 in step 5; B1 and B4 in step 6 part 1; B5 and B9 in step 6 part 2. |
+| 6 | Per-agent refactors B6, B7, B11 (§B) and human AgentOS follow-ups (§C) | Not started. B12 shipped in step 2; B2 and B3 in step 5; B1 and B4 in step 6 part 1; B5 and B9 in part 2; B8 and B10 in part 3. |
 
 Health of what has shipped (checked on `main` after PR #589):
 `GET /api/admin/ai-agents/health` reports 15 agents, all `ok`, no SLO
@@ -975,4 +1009,4 @@ breaches, no load failures; gateway idle with no open breakers.
 
 ---
 
-_Last updated: September 14, 2026 — A1 + A5 + B12 + A2 (+ tenant-scoped budgets) + A3 + A4 + A6 + B2 + B3 + B1 + B4 + B5 + B9 shipped; §D step 6 part 3 (B6, B7, B8, B10, B11, §C) next._
+_Last updated: September 15, 2026 — A1 + A5 + B12 + A2 (+ tenant-scoped budgets) + A3 + A4 + A6 + B2 + B3 + B1 + B4 + B5 + B9 + B8 + B10 shipped; §D step 6 part 4 (B6, B7, B11, §C) next._

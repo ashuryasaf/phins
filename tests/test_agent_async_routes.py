@@ -402,8 +402,10 @@ def test_video_submit_202_flow(async_on, video_mod, monkeypatch):
     from web_portal.api_extensions import dispatch_post
     media_session = _seed_session('tok-media', 'media', username='media-1')
     cust_session = _seed_session('tok-cust', 'customer', username='cust', customer_id='CUST-V')
+    # ``force`` bypasses B8 request dedupe so the identical async submission
+    # below creates its own job and the two paths can be compared.
     payload = {'campaign_id': 'MKT-HTTP', 'provider': 'gemini', 'pipeline_type': 'introductions',
-               'poll_mode': 'webhook', 'title': 'Intro'}
+               'poll_mode': 'webhook', 'title': 'Intro', 'force': True}
     submit = '/api/admin/media/video-agents/submit'
     assert dispatch_post(submit, cust_session, payload, '127.0.0.1')[0] == 403
     assert dispatch_post(submit, None, payload, '127.0.0.1')[0] == 401
@@ -411,6 +413,10 @@ def test_video_submit_202_flow(async_on, video_mod, monkeypatch):
     monkeypatch.delenv('PHINS_AGENT_ASYNC')
     status, sync_body = dispatch_post(submit, media_session, payload, '127.0.0.1')
     assert status == 201, sync_body
+    # Same request without force: the existing job is returned, nothing new is created.
+    status, dup_body = dispatch_post(submit, media_session, {k: v for k, v in payload.items() if k != 'force'}, '127.0.0.1')
+    assert status == 200 and dup_body['deduplicated'] is True
+    assert dup_body['job']['id'] == sync_body['job']['id']
     monkeypatch.setenv('PHINS_AGENT_ASYNC', '1')
 
     status, body = dispatch_post(submit, media_session, payload, '127.0.0.1')

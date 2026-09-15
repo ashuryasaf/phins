@@ -21,12 +21,24 @@ Cost controls:
   - Global daily job cap (VIDEO_AGENTS_MAX_JOBS_PER_DAY, default 200)
 
 Completion modes:
-  - poll: background polling with exponential backoff (default)
-  - webhook: Kling/Gemini callback URL; falls back to polling on timeout
+  - webhook: provider callback URL first (server default when a callback URL
+    is supplied, ``VIDEO_AGENTS_COMPLETION_MODE``); a fallback poll is armed
+    after ``VIDEO_AGENTS_WEBHOOK_FALLBACK_SECONDS`` so a lost callback never
+    strands a job
+  - poll: background polling with exponential backoff (used automatically
+    when no callback URL is available)
+
+Request dedupe:
+  An identical ``(campaign_id, pipeline_type, prompt, provider, model)``
+  request that is queued, processing or completed returns the existing job
+  (``deduplicated: True``) instead of billing the provider twice;
+  ``force=True`` regenerates.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import threading
@@ -80,6 +92,38 @@ _POLL_INITIAL_DELAY = float(os.environ.get("VIDEO_AGENTS_POLL_INITIAL_DELAY", "1
 _POLL_BACKOFF_MULTIPLIER = float(os.environ.get("VIDEO_AGENTS_POLL_BACKOFF_MULTIPLIER", "1.5"))
 _POLL_MAX_DELAY = float(os.environ.get("VIDEO_AGENTS_POLL_MAX_DELAY", "120"))
 _POLL_TIMEOUT = float(os.environ.get("VIDEO_AGENTS_POLL_TIMEOUT", "1800"))  # 30 min
+
+# Completion: webhook first when the caller supplies a callback URL, with a
+# fallback poll armed after this many seconds (0 disables the fallback).
+_DEFAULT_COMPLETION_MODE = os.environ.get("VIDEO_AGENTS_COMPLETION_MODE", "webhook")
+_WEBHOOK_FALLBACK_SECONDS = float(os.environ.get("VIDEO_AGENTS_WEBHOOK_FALLBACK_SECONDS", "30"))
+
+
+def resolve_completion_mode(requested: str, callback_url: str) -> str:
+    """Effective completion mode: explicit ``poll``/``webhook`` wins, else the
+    server default; webhook without a callback URL degrades to ``poll``."""
+    mode = str(requested or "").strip().lower()
+    if mode not in {"poll", "webhook"}:
+        mode = str(_DEFAULT_COMPLETION_MODE or "webhook").strip().lower()
+        if mode not in {"poll", "webhook"}:
+            mode = "webhook"
+    if mode == "webhook" and not str(callback_url or "").strip():
+        return "poll"
+    return mode
+
+
+def request_fingerprint(*, campaign_id: str, pipeline_type: str, prompt: str,
+                        provider: str, provider_model: str) -> str:
+    """Content hash of what the provider would be asked to render."""
+    material = json.dumps({
+        "campaign_id": str(campaign_id or ""),
+        "pipeline_type": str(pipeline_type or "").strip().lower(),
+        "prompt": str(prompt or "").strip(),
+        "provider": str(provider or "").strip().lower(),
+        "provider_model": str(provider_model or "").strip(),
+    }, sort_keys=True)
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
 
 # Pipeline prompt templates
 _PIPELINE_PROMPTS: Dict[str, str] = {
@@ -247,6 +291,26 @@ class _JobStore:
     def list_all(self) -> List[Dict[str, Any]]:
         return [dict(j) for j in self._store.values()]
 
+    DEDUPE_STATUSES = frozenset({"queued", "processing", "completed"})
+
+    def find_duplicate(self, fingerprint: str) -> Optional[Dict[str, Any]]:
+        """Newest queued/processing/completed job with this request fingerprint.
+
+        Failed and cancelled jobs never match: resubmitting after a failure
+        is a retry, not a duplicate.
+        """
+        if not fingerprint:
+            return None
+        match: Optional[Dict[str, Any]] = None
+        for job in self._store.values():
+            if job.get("request_fingerprint") != fingerprint:
+                continue
+            if job.get("status") not in self.DEDUPE_STATUSES:
+                continue
+            if match is None or str(job.get("created_at", "")) > str(match.get("created_at", "")):
+                match = job
+        return dict(match) if match else None
+
     def count_user_jobs_today(self, user_id: str) -> int:
         if not user_id:
             return 0
@@ -276,14 +340,18 @@ _job_store = _JobStore()
 # Background polling worker
 # ---------------------------------------------------------------------------
 
-def _poll_job_background(job_id: str) -> None:
-    """Poll a provider job in a background thread until terminal state."""
-    delay = _POLL_INITIAL_DELAY
+def _poll_job_background(job_id: str, initial_delay: Optional[float] = None) -> None:
+    """Poll a provider job in a background thread until terminal state.
+
+    ``initial_delay`` overrides the first wait (webhook fallback); every
+    later wait backs off from the configured initial delay.
+    """
+    delay = _POLL_INITIAL_DELAY if initial_delay is None else max(float(initial_delay), 0.0)
     deadline = time.monotonic() + _POLL_TIMEOUT
 
     while time.monotonic() < deadline:
         time.sleep(delay)
-        delay = min(delay * _POLL_BACKOFF_MULTIPLIER, _POLL_MAX_DELAY)
+        delay = min(max(delay, _POLL_INITIAL_DELAY) * _POLL_BACKOFF_MULTIPLIER, _POLL_MAX_DELAY)
 
         job = _job_store.get(job_id)
         if job is None:
@@ -392,6 +460,71 @@ def _poll_job_background(job_id: str) -> None:
         })
 
 
+_ARMED_JOBS: set = set()
+_ARMED_LOCK = threading.Lock()
+
+
+def _start_poller(job_id: str, *, initial_delay: Optional[float], name: str) -> bool:
+    """Start one poller per job id; a second request for the same id is a no-op."""
+    with _ARMED_LOCK:
+        if job_id in _ARMED_JOBS:
+            return False
+        _ARMED_JOBS.add(job_id)
+
+    def _run() -> None:
+        try:
+            _poll_job_background(job_id, initial_delay=initial_delay)
+        finally:
+            with _ARMED_LOCK:
+                _ARMED_JOBS.discard(job_id)
+
+    threading.Thread(target=_run, daemon=True, name=name).start()
+    return True
+
+
+def _arm_completion_tracking(job_id: str, poll_mode: str) -> Optional[str]:
+    """Arm how the job learns it finished.
+
+    ``poll``: poller starts now. ``webhook``: the provider callback is the
+    primary path; a fallback poller starts after
+    ``VIDEO_AGENTS_WEBHOOK_FALLBACK_SECONDS`` (0 disables it) so a callback
+    that never arrives cannot strand the job. Returns what was armed.
+    """
+    if poll_mode == "webhook":
+        if _WEBHOOK_FALLBACK_SECONDS <= 0:
+            return None
+        _start_poller(job_id, initial_delay=_WEBHOOK_FALLBACK_SECONDS, name=f"video-fallback-{job_id[:8]}")
+        return "webhook_fallback"
+    _start_poller(job_id, initial_delay=None, name=f"video-poll-{job_id[:8]}")
+    return "poll"
+
+
+def rearm_in_flight_jobs() -> Dict[str, int]:
+    """Resume tracking for jobs a previous process left ``processing``.
+
+    In durable mode the store is hydrated from ``video_jobs`` at boot, but the
+    poller threads are gone; this re-arms one poller per accepted job so it
+    reaches a terminal state instead of staying ``processing`` forever.
+    Jobs without a provider id were never accepted and are failed explicitly.
+    """
+    stats = {"polling": 0, "failed": 0}
+    for job in _job_store.list_all():
+        if job.get("status") != "processing":
+            continue
+        job_id = str(job.get("id") or "")
+        if not job.get("provider_job_id"):
+            if _job_store.mark_terminal(job_id, {
+                "status": "failed",
+                "message": "Interrupted before the provider accepted the job.",
+                "progress_pct": 0,
+            }) is not None:
+                stats["failed"] += 1
+            continue
+        if _start_poller(job_id, initial_delay=1.0, name=f"video-rearm-{job_id[:8]}"):
+            stats["polling"] += 1
+    return stats
+
+
 # ---------------------------------------------------------------------------
 # Public service API
 # ---------------------------------------------------------------------------
@@ -453,17 +586,22 @@ class VideoAgentsService:
         resolution: str = "720p",
         image_data_url: str = "",
         reference_image_asset_id: str = "",
-        poll_mode: str = "poll",
+        poll_mode: str = "",
         auto_publish_to_hero: bool = False,
         callback_url: str = "",
         submitted_by: str = "admin",
         metadata: Optional[Dict[str, Any]] = None,
         blueprint_index: int = 0,
+        force: bool = False,
     ) -> Dict[str, Any]:
         """
         Submit a single video generation job.
 
-        Returns the created job dict.
+        Returns the created job dict — or, unless ``force`` is set, the
+        existing queued/processing/completed job for an identical request
+        (flagged ``deduplicated: True``) so the provider is not billed twice.
+        ``poll_mode`` empty means the server default (see
+        :func:`resolve_completion_mode`).
         Raises ValueError for validation errors.
         Raises RuntimeError for cost-control violations.
         """
@@ -475,6 +613,22 @@ class VideoAgentsService:
                 f"Unsupported pipeline type: {pipeline!r}. "
                 f"Supported: {sorted(SUPPORTED_PIPELINE_TYPES)}"
             )
+        poll_mode = resolve_completion_mode(poll_mode, callback_url)
+
+        # --- Build prompt and title (needed for dedupe before any cap is consumed) ---
+        resolved_title = str(title or _PIPELINE_TITLES.get(pipeline, "PHINS Video")).strip()
+        resolved_prompt = str(prompt_override or _PIPELINE_PROMPTS.get(pipeline, "")).strip()
+        if not resolved_prompt:
+            resolved_prompt = f"Create a professional insurance video for PHINS: {resolved_title}"
+        fingerprint = request_fingerprint(
+            campaign_id=campaign_id, pipeline_type=pipeline, prompt=resolved_prompt,
+            provider=provider_name, provider_model=provider_model,
+        )
+        if not force:
+            existing = _job_store.find_duplicate(fingerprint)
+            if existing is not None:
+                existing["deduplicated"] = True
+                return existing
 
         # --- Cost controls ---
         user_jobs_today = _job_store.count_user_jobs_today(submitted_by)
@@ -498,12 +652,6 @@ class VideoAgentsService:
                 f"Global daily job limit reached ({_MAX_JOBS_PER_DAY} jobs/day)."
             )
 
-        # --- Build prompt and title ---
-        resolved_title = str(title or _PIPELINE_TITLES.get(pipeline, "PHINS Video")).strip()
-        resolved_prompt = str(prompt_override or _PIPELINE_PROMPTS.get(pipeline, "")).strip()
-        if not resolved_prompt:
-            resolved_prompt = f"Create a professional insurance video for PHINS: {resolved_title}"
-
         # --- Create job record ---
         job_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
@@ -515,6 +663,7 @@ class VideoAgentsService:
             "provider": provider_name,
             "provider_model": provider_model,
             "prompt": resolved_prompt,
+            "request_fingerprint": fingerprint,
             "aspect_ratio": aspect_ratio,
             "duration_seconds": duration_seconds,
             "resolution": resolution,
@@ -586,15 +735,7 @@ class VideoAgentsService:
                     "error": "",
                 })
 
-                # Start background polling if poll mode
-                if poll_mode != "webhook":
-                    t = threading.Thread(
-                        target=_poll_job_background,
-                        args=(job_id,),
-                        daemon=True,
-                        name=f"video-poll-{job_id[:8]}",
-                    )
-                    t.start()
+                _arm_completion_tracking(job_id, poll_mode)
 
                 submission_error = None
                 break  # success
@@ -648,10 +789,12 @@ class VideoAgentsService:
         provider_model: str = "",
         image_data_url: str = "",
         reference_image_asset_id: str = "",
-        poll_mode: str = "poll",
+        poll_mode: str = "",
         auto_publish_to_hero: bool = False,
         submitted_by: str = "admin",
         metadata: Optional[Dict[str, Any]] = None,
+        callback_url: str = "",
+        force: bool = False,
     ) -> Dict[str, Any]:
         """
         Submit a batch of pipeline videos for a campaign.
@@ -659,7 +802,8 @@ class VideoAgentsService:
         If pipeline_type is specified, submits only that pipeline.
         Otherwise submits all pipeline types.
 
-        Returns a summary dict with queued_jobs list.
+        Returns a summary dict with queued_jobs list (``deduplicated_count``
+        says how many of them were existing identical jobs).
         """
         pipelines = (
             [pipeline_type]
@@ -682,9 +826,11 @@ class VideoAgentsService:
                     reference_image_asset_id=reference_image_asset_id,
                     poll_mode=poll_mode,
                     auto_publish_to_hero=auto_publish_to_hero,
+                    callback_url=callback_url,
                     submitted_by=submitted_by,
                     metadata=metadata,
                     blueprint_index=idx,
+                    force=force,
                 )
                 queued_jobs.append(job)
             except Exception as exc:
@@ -694,6 +840,7 @@ class VideoAgentsService:
             "queued_jobs": queued_jobs,
             "jobs": queued_jobs,  # alias for frontend compatibility
             "queued_count": len(queued_jobs),
+            "deduplicated_count": sum(1 for j in queued_jobs if j.get("deduplicated")),
             "error_count": len(errors),
             "errors": errors,
             "campaign_id": campaign_id,
@@ -903,15 +1050,8 @@ class VideoAgentsService:
                     "error": "",
                 })
 
-                poll_mode = job.get("poll_mode", "poll")
-                if poll_mode != "webhook":
-                    t = threading.Thread(
-                        target=_poll_job_background,
-                        args=(job_id,),
-                        daemon=True,
-                        name=f"video-retry-{job_id[:8]}",
-                    )
-                    t.start()
+                _arm_completion_tracking(
+                    job_id, resolve_completion_mode(job.get("poll_mode", ""), job.get("callback_url", "")))
 
                 submission_error = None
                 break
@@ -987,6 +1127,10 @@ class VideoAgentsService:
         job = _job_store.get(job_id)
         if job is None:
             return None
+        if job.get("status") in _JobStore.TERMINAL:
+            # A late or replayed callback never reopens a finished job (a
+            # "processing" payload after completion used to regress it).
+            return job
 
         # Normalize webhook payload (Kling and Gemini have different shapes)
         data = webhook_payload.get("data") if isinstance(webhook_payload.get("data"), dict) else webhook_payload
@@ -1103,6 +1247,12 @@ def _video_agents_health() -> Dict[str, Any]:
             'per_campaign': _MAX_JOBS_PER_CAMPAIGN,
             'per_day': _MAX_JOBS_PER_DAY,
         },
+        'completion': {
+            'default_mode': resolve_completion_mode('', 'callback'),
+            'webhook_fallback_seconds': _WEBHOOK_FALLBACK_SECONDS,
+            'poll_timeout_seconds': _POLL_TIMEOUT,
+        },
+        'pollers_armed': len(_ARMED_JOBS),
     }
 
 

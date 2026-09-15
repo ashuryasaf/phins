@@ -11,7 +11,9 @@
 # Modes:
 #   serve     - run the production web portal (default)
 #   cron      - run the monthly auto-pay batch (Render cron, Railway cron)
-#   bi-snapshot - capture a daily BI KPI snapshot (BI-3 trend history)
+#   bi-snapshot - capture a BI KPI snapshot (BI-3 trend history) and refresh
+#               the materialized dashboard views served by /api/bi/* (B10);
+#               --snapshot-only / --materialize-only narrow it
 #   worker    - run the standalone async document-processing worker
 #               (requires USE_DATABASE=true so jobs/documents are shared
 #               with the web process; in-process worker threads inside

@@ -358,8 +358,10 @@ def video_mod():
 
 def test_video_submit_parity(queue, video_mod):
     register_all(queue)
+    # ``force`` bypasses B8 request dedupe so the second, identical submission
+    # really creates a second job and the two code paths can be compared.
     params = {'campaign_id': 'MKT-A3', 'provider': 'gemini', 'pipeline_type': 'introductions',
-              'poll_mode': 'webhook', 'title': 'Intro', 'submitted_by': 'media_ad'}
+              'poll_mode': 'webhook', 'title': 'Intro', 'submitted_by': 'media_ad', 'force': True}
     sync = video_job.run_submit(**params)
     assert sync['job']['status'] == 'processing'
 
@@ -371,6 +373,14 @@ def test_video_submit_parity(queue, video_mod):
     assert done['result']['job']['provider_job_id'] == 'op-a3'
     assert done['result']['job']['submitted_by'] == 'media_ad'
     # Both submissions exist in the video job store (sync + async).
+    assert len(video_mod._job_store.list_all()) == 2
+
+    # Without force, the queued path deduplicates exactly like the sync path:
+    # the existing job comes back flagged and no third job is created.
+    dedupe_params = {k: v for k, v in params.items() if k != 'force'}
+    again = _run(queue, video_job.enqueue_submit(queue, params=dedupe_params, submitted_by='media_ad'))
+    assert again['result']['job']['deduplicated'] is True
+    assert again['result']['job']['id'] in {sync['job']['id'], done['result']['job']['id']}
     assert len(video_mod._job_store.list_all()) == 2
 
 

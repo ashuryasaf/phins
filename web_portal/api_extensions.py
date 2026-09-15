@@ -3356,11 +3356,12 @@ def handle_video_jobs_submit(session: Optional[Dict], body_data: Dict) -> Tuple[
             resolution=str(body_data.get("resolution") or "720p").strip(),
             image_data_url=str(body_data.get("image_data_url") or "").strip(),
             reference_image_asset_id=str(body_data.get("reference_image_asset_id") or "").strip(),
-            poll_mode=str(body_data.get("poll_mode") or "poll").strip(),
+            poll_mode=str(body_data.get("poll_mode") or "").strip(),
             auto_publish_to_hero=bool(body_data.get("auto_publish_to_hero")),
             callback_url=str(body_data.get("callback_url") or "").strip(),
             submitted_by=submitted_by,
             metadata=body_data.get("metadata") if isinstance(body_data.get("metadata"), dict) else {},
+            force=bool(body_data.get("force") or body_data.get("force_regenerate")),
         )
 
         # A3: under PHINS_AGENT_ASYNC the provider round-trip leaves the
@@ -3383,6 +3384,8 @@ def handle_video_jobs_submit(session: Optional[Dict], body_data: Dict) -> Tuple[
 
         svc = get_video_agents_service()
         job = svc.submit_video_job(**params)
+        if job.get("deduplicated"):
+            return 200, {"job": job, "success": True, "deduplicated": True}
         return 201, {"job": job, "success": True}
     except ValueError as exc:
         return 400, {"error": str(exc)}
@@ -3420,10 +3423,12 @@ def handle_video_jobs_batch(session: Optional[Dict], body_data: Dict) -> Tuple[i
             provider_model=str(body_data.get("provider_model") or "").strip(),
             image_data_url=str(body_data.get("image_data_url") or "").strip(),
             reference_image_asset_id=str(body_data.get("reference_image_asset_id") or "").strip(),
-            poll_mode=str(body_data.get("poll_mode") or "poll").strip(),
+            poll_mode=str(body_data.get("poll_mode") or "").strip(),
             auto_publish_to_hero=bool(body_data.get("auto_publish_to_hero")),
             submitted_by=submitted_by,
             metadata=body_data.get("metadata") if isinstance(body_data.get("metadata"), dict) else {},
+            callback_url=str(body_data.get("callback_url") or "").strip(),
+            force=bool(body_data.get("force") or body_data.get("force_regenerate")),
         )
         return 200, result
     except ValueError as exc:

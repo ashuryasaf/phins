@@ -27,6 +27,7 @@ SUBMIT_FIELDS = (
     'provider_model', 'aspect_ratio', 'duration_seconds', 'resolution',
     'image_data_url', 'reference_image_asset_id', 'poll_mode',
     'auto_publish_to_hero', 'callback_url', 'submitted_by', 'metadata',
+    'force',
 )
 
 
