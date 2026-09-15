@@ -558,10 +558,12 @@ Environment variables commonly used:
   `ALLOW_LEGACY_DEMO_PASSWORDS`
 - **Customer identity (personal ID + nationality):**
   `PHINS_IDENTITY_REQUIRED` (strict gate on applications/claims; defaults
-  on except under `PHINS_TEST_MODE`), `PHINS_IDENTITY_HASH_KEY` (lookup-hash
-  key; falls back to `PHINS_ENCRYPTION_KEY`),
-  `PHINS_IDENTITY_ALLOW_PLAINTEXT_VAULT` (dev-only; without a Fernet key the
-  service otherwise refuses to store an ID, 503 `identity_vault_unavailable`)
+  on except under `PHINS_TEST_MODE`), `PHINS_IDENTITY_HASH_KEY` (explicit
+  lookup-hash key; otherwise the platform keyring mints one),
+  `PHINS_KEYRING_PATH` (key file for no-database deployments),
+  `PHINS_IDENTITY_ALLOW_PLAINTEXT_VAULT` (dev-only; when no vault key can be
+  resolved at all the service refuses to store an ID, 503
+  `identity_vault_unavailable`)
 - **Integrations:** `PLAID_*`, `STRIPE_*`, `ACH_*`, `ALPACA_*`, `COINBASE_*`,
   `IB_*`, `WEBHOOK_BASE_URL`, `ALPHA_VANTAGE_API_KEY`
 
@@ -675,6 +677,12 @@ referenced files, commands, paths, and ports still exist.
   `headers.py`, `network.py`, `secrets_policy.py`, `firewall.py`,
   `intrusion_detector.py`, `request_sanitizer.py`, `file_scanner.py`,
   `confidential_access.py`); reuse them rather than rolling custom auth/crypto.
+- Data-at-rest keys come from `security/keyring.py`: `PHINS_ENCRYPTION_KEY` /
+  `PHINS_IDENTITY_HASH_KEY` when set, otherwise one durable key per purpose
+  minted on first use into `platform_keys` (DB mode) or `PHINS_KEYRING_PATH`.
+  Never replace an existing ring key, never log material (fingerprints only),
+  and route new encryption through `security.vault` so every vaulted dataset
+  shares the same key ring.
 - Static files under `web_portal/static/` are served with path-traversal
   protection only — they are **public** unless gated. Confidential material
   (`/internal/` investor plans, `/legal/` corporate instruments) goes through

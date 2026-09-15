@@ -756,6 +756,37 @@ class TokenRegistry(Base):
         }
 
 
+class PlatformKey(Base):
+    """Durable platform data-encryption keys (one key per purpose, many records).
+
+    Generated once per deployment when the operator has not supplied the
+    matching environment variable, so vaulted data (customer IDs, assessment
+    facts, actuarial tables) is encrypted at rest with a key that survives
+    restarts and is shared by every replica. See ``security/keyring.py``.
+    """
+
+    __tablename__ = "platform_keys"
+
+    id = Column(String(50), primary_key=True)  # KEY-<PURPOSE>
+    purpose = Column(String(50), nullable=False, unique=True, index=True)
+    material = Column(Text, nullable=False)  # key material (urlsafe base64)
+    fingerprint = Column(String(32), nullable=False)  # sha256(material)[:16], safe to log
+    source = Column(String(30), nullable=False, default="generated")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_by = Column(String(100), nullable=True)
+
+    def to_dict(self):
+        # Never include ``material``: this shape is for operator reports only.
+        return {
+            "id": self.id,
+            "purpose": self.purpose,
+            "fingerprint": self.fingerprint,
+            "source": self.source,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "created_by": self.created_by,
+        }
+
+
 # ============================================================================
 # Underwriting Bot Models (NEW - Additive Only, Preserves Existing Data)
 # ============================================================================

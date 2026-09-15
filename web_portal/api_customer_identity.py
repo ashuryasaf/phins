@@ -145,7 +145,12 @@ def dispatch_get(path: str, session: Optional[Dict[str, Any]], query: Dict[str, 
         if _role(session) not in ADMIN_ROLES:
             return 403, {"error": "Forbidden"}
         customers, _, _, _ = _stores()
-        return 200, identity.completion_report(customers)
+        report = identity.completion_report(customers)
+        try:
+            report["vault"] = identity.vault_status()
+        except Exception as exc:  # never let a keyring fault hide the counters
+            report["vault"] = {"ready": False, "error": str(exc)}
+        return 200, report
 
     return None
 
