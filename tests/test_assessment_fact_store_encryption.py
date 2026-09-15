@@ -2,10 +2,11 @@
 Tests for the encrypted, integrity-checked assessment fact store.
 
 The fact store holds PII (identity numbers, medical conditions, IBANs), so
-files are now written as vault envelopes: Fernet-encrypted when
-``PHINS_ENCRYPTION_KEY`` is configured, plain-scheme otherwise. Legacy
-plaintext files must keep loading (no data loss on upgrade) and payloads carry
-a ``facts_sha256`` tamper-evidence checksum.
+files are now written as vault envelopes: Fernet-encrypted with
+``PHINS_ENCRYPTION_KEY`` or, when that is not set, with the durable platform
+keyring key (``security/keyring.py``); plain-scheme only when no key at all can
+be resolved. Legacy plaintext files must keep loading (no data loss on
+upgrade) and payloads carry a ``facts_sha256`` tamper-evidence checksum.
 """
 
 from __future__ import annotations
@@ -36,18 +37,53 @@ def _fact_file(tmp_path, customer_id: str = "CUST-ENC-1"):
 
 
 class TestEnvelopeFormat:
-    def test_plain_envelope_without_key(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("PHINS_ENCRYPTION_KEY", raising=False)
-        svc = AssessmentCenterService(fact_store_dir=str(tmp_path))
-        _ingest_sample_fact(svc)
+    def test_keyring_encrypts_without_env_key(self, tmp_path, monkeypatch):
+        """No PHINS_ENCRYPTION_KEY: the platform keyring mints a durable key,
+        so PII is still encrypted at rest (never a plain envelope)."""
+        from security import keyring
 
-        with open(_fact_file(tmp_path), "r", encoding="utf-8") as fh:
-            raw = json.load(fh)
-        assert raw["format"] == FACT_STORE_FORMAT_V2
-        assert raw["scheme"] == "plain"
-        inner = json.loads(raw["ciphertext"])
-        assert inner["customer_id"] == "CUST-ENC-1"
-        assert inner["facts_sha256"]
+        monkeypatch.delenv("PHINS_ENCRYPTION_KEY", raising=False)
+        monkeypatch.setenv("PHINS_KEYRING_PATH", str(tmp_path / "keyring.json"))
+        keyring.reset_cache()
+        try:
+            svc = AssessmentCenterService(fact_store_dir=str(tmp_path))
+            _ingest_sample_fact(svc)
+
+            with open(_fact_file(tmp_path), "r", encoding="utf-8") as fh:
+                content = fh.read()
+            raw = json.loads(content)
+            assert raw["format"] == FACT_STORE_FORMAT_V2
+            assert raw["scheme"] == "fernet"
+            assert "123456782" not in content and "POL-777" not in content
+
+            # A fresh process (empty cache) reads the same key back from the ring.
+            keyring.reset_cache()
+            svc2 = AssessmentCenterService(fact_store_dir=str(tmp_path))
+            facts = svc2.get_facts("CUST-ENC-1")
+            assert any("POL-777" in json.dumps(f) for f in facts)
+        finally:
+            keyring.reset_cache()
+
+    def test_plain_envelope_only_when_no_key_can_be_resolved(self, tmp_path, monkeypatch):
+        from security import keyring
+
+        monkeypatch.delenv("PHINS_ENCRYPTION_KEY", raising=False)
+        # an unwritable keyring location: no key anywhere -> best-effort plain envelope
+        monkeypatch.setenv("PHINS_KEYRING_PATH", str(tmp_path / "not-a-dir" / "x" / "keyring.json"))
+        (tmp_path / "not-a-dir").write_text("file, not a directory")
+        keyring.reset_cache()
+        try:
+            svc = AssessmentCenterService(fact_store_dir=str(tmp_path))
+            _ingest_sample_fact(svc)
+            with open(_fact_file(tmp_path), "r", encoding="utf-8") as fh:
+                raw = json.load(fh)
+            assert raw["format"] == FACT_STORE_FORMAT_V2
+            assert raw["scheme"] == "plain"
+            inner = json.loads(raw["ciphertext"])
+            assert inner["customer_id"] == "CUST-ENC-1"
+            assert inner["facts_sha256"]
+        finally:
+            keyring.reset_cache()
 
     def test_fernet_encryption_with_key(self, tmp_path, monkeypatch):
         from cryptography.fernet import Fernet
@@ -155,15 +191,20 @@ class TestChecksum:
         assert len(c1) == 64
 
     def test_tampered_payload_detected_but_still_loads(self, tmp_path, monkeypatch, caplog):
+        from security.vault import decrypt_json
+
         monkeypatch.delenv("PHINS_ENCRYPTION_KEY", raising=False)
         svc = AssessmentCenterService(fact_store_dir=str(tmp_path))
         _ingest_sample_fact(svc, customer_id="CUST-TAMPER")
 
+        # The envelope is keyring-encrypted; an attacker who can decrypt (or a
+        # legacy plain envelope) edits a fact without refreshing the checksum.
         path = _fact_file(tmp_path, "CUST-TAMPER")
         with open(path, "r", encoding="utf-8") as fh:
             raw = json.load(fh)
-        inner = json.loads(raw["ciphertext"])
+        inner = decrypt_json(json.dumps({"scheme": raw["scheme"], "ciphertext": raw["ciphertext"]}))
         inner["facts"][0]["label"] = "tampered-label"
+        raw["scheme"] = "plain"
         raw["ciphertext"] = json.dumps(inner, separators=(",", ":"), sort_keys=True)
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(raw, fh)

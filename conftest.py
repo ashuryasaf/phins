@@ -78,6 +78,13 @@ os.environ.setdefault(
     "PHINS_ACTUARIAL_STATE_PATH",
     str(Path(tempfile.gettempdir()) / f"phins_test_actuarial_state_{os.getpid()}.json"),
 )
+# The platform keyring (security/keyring.py) mints durable vault/hash keys when
+# PHINS_ENCRYPTION_KEY is not set. Give each session its own key file so runs
+# never share (or leak) key material through the default temp-dir location.
+os.environ.setdefault(
+    "PHINS_KEYRING_PATH",
+    str(Path(tempfile.gettempdir()) / f"phins_test_keyring_{os.getpid()}.json"),
+)
 # The portal persists invitation codes to a git-tracked seed file on every
 # code issue/redeem. Seed a per-session temp copy so startup still loads the
 # committed codes but test traffic never dirties the checkout (and
@@ -136,7 +143,7 @@ def pytest_sessionfinish(session, exitstatus):  # type: ignore[no-redef]
         _httpd = None
     # Drop the per-session scratch copies of persisted state (see the env
     # defaults at the top of this file) so /tmp does not accumulate them.
-    for var in ("PHINS_ACTUARIAL_STATE_PATH", "PHINS_INVITATION_CODES_PATH"):
+    for var in ("PHINS_ACTUARIAL_STATE_PATH", "PHINS_INVITATION_CODES_PATH", "PHINS_KEYRING_PATH"):
         path = os.environ.get(var, "")
         if f"_{os.getpid()}.json" in path:
             try:
