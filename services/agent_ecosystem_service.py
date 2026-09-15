@@ -221,48 +221,79 @@ def _db():
     return DatabaseManager()
 
 
-def _persist(kind: str, record: Dict[str, Any]) -> bool:
-    """Best-effort durable write-through. Returns True on success (or when DB is
-    disabled and there is nothing to persist), False when the durable write
-    fails so callers can reconcile in-memory state (e.g. a lost unique-key race).
+_PERSIST_REPOS = {
+    "agent": ("agents", "id"),
+    "invitation": ("agent_invitations", "code"),
+    "affiliation": ("agent_affiliations", "id"),
+    "commission": ("agent_commissions", "id"),
+    "payout": ("agent_payouts", "id"),
+}
+
+
+def _persist_payload(model_class: Any, kind: str, record: Dict[str, Any]) -> Dict[str, Any]:
+    """Shape an in-memory record for its durable table."""
+    payload = dict(record)
+    if kind == "invitation":
+        payload["used_by"] = json.dumps(payload.get("used_by", []))
+    elif kind == "payout":
+        payload["commission_ids"] = json.dumps(list(payload.get("commission_ids") or []))
+    try:
+        columns = {c.name: c for c in model_class.__table__.columns}  # type: ignore[attr-defined]
+    except Exception:
+        return payload
+    # Drop in-memory-only fields so an older dict payload stays writable.
+    payload = {k: v for k, v in payload.items() if k in columns}
+    # The in-memory dicts carry ISO-string timestamps, but DateTime columns
+    # (e.g. agents.created_date/updated_date) reject strings on SQLite. Drop
+    # string-valued datetime fields so the column defaults
+    # (default/onupdate=datetime.utcnow) populate them durably.
+    try:
+        from sqlalchemy import DateTime as _SADateTime
+        for name, col in columns.items():
+            if isinstance(col.type, _SADateTime) and isinstance(payload.get(name), str):
+                payload.pop(name, None)
+    except Exception:
+        pass
+    return payload
+
+
+def _persist_records(items: List[Tuple[str, Dict[str, Any]]]) -> bool:
+    """Best-effort durable write-through for one or more records.
+
+    Every record is written inside a single transaction, so a group that belongs
+    together (a payout run and the commission rows it owns) either lands whole or
+    not at all — money rows can never end up pointing at a run that was never
+    persisted. Returns True on success (or when DB is disabled and there is
+    nothing to persist), False when the durable write fails so callers can
+    reconcile in-memory state (e.g. a lost unique-key race).
     """
-    if not _db_enabled():
+    if not _db_enabled() or not items:
         return True
     try:
         with _db() as db:
-            repo, pk = {
-                "agent": (db.agents, "id"),
-                "invitation": (db.agent_invitations, "code"),
-                "affiliation": (db.agent_affiliations, "id"),
-                "commission": (db.agent_commissions, "id"),
-                "payout": (db.agent_payouts, "id"),
-            }[kind]
-            payload = dict(record)
-            if kind == "invitation":
-                payload = dict(payload)
-                payload["used_by"] = json.dumps(payload.get("used_by", []))
-            elif kind == "payout":
-                payload["commission_ids"] = json.dumps(list(payload.get("commission_ids") or []))
-            # The in-memory dicts carry ISO-string timestamps, but DateTime
-            # columns (e.g. agents.created_date/updated_date) reject strings on
-            # SQLite. Drop string-valued datetime fields so the column defaults
-            # (default/onupdate=datetime.utcnow) populate them durably.
-            try:
-                from sqlalchemy import DateTime as _SADateTime
-                for _col in repo.model_class.__table__.columns:  # type: ignore[attr-defined]
-                    if isinstance(_col.type, _SADateTime) and isinstance(payload.get(_col.name), str):
-                        payload.pop(_col.name, None)
-            except Exception:
-                pass
-            key = payload.get(pk)
-            if key is not None and repo.get_by_id(key) is not None:
-                repo.update(key, **payload)
-            else:
-                repo.create(**payload)
+            for kind, record in items:
+                attr, pk = _PERSIST_REPOS[kind]
+                repo = getattr(db, attr)
+                payload = _persist_payload(repo.model_class, kind, record)
+                key = payload.get(pk)
+                row = repo.get_by_id(key) if key is not None else None
+                if row is None:
+                    repo.session.add(repo.model_class(**payload))
+                else:
+                    for field, value in payload.items():
+                        setattr(row, field, value)
+            # Commit inside the block so a constraint violation rolls the whole
+            # group back (and closes the session) instead of escaping on exit.
+            db.commit()
         return True
     except Exception:
         # Durability is best-effort; the in-memory store remains authoritative.
         return False
+
+
+def _persist(kind: str, record: Dict[str, Any]) -> bool:
+    """Durable write-through for a single record. See ``_persist_records``."""
+    return _persist_records([(kind, record)])
 
 
 def _find_persisted_commission(source_event_id: str,
@@ -1282,13 +1313,36 @@ def _platform_ledger_fallback() -> Any:
         return None
 
 
+def _find_persisted_payout(*, idempotency_key: Optional[str] = None,
+                           commissions_hash: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Look up a durable payout run by caller key or swept set. No-op when DB disabled.
+
+    Used for cross-instance idempotency on a monetary table: another app instance
+    may have created (and even settled) the run for this caller key / accrual set
+    before this instance's cache learned about it.
+    """
+    if not _db_enabled():
+        return None
+    try:
+        with _db() as db:
+            row = db.agent_payouts.get_by_idempotency_key(idempotency_key) if idempotency_key else None
+            if row is None and commissions_hash:
+                row = db.agent_payouts.get_by_commissions_hash(commissions_hash)
+            return row.to_dict() if row is not None else None
+    except Exception:
+        return None
+
+
 def _find_payout_by_key(idempotency_key: Optional[str]) -> Optional[Dict[str, Any]]:
     if not idempotency_key:
         return None
     for pay in PAYOUTS.values():
         if pay.get("idempotency_key") == idempotency_key:
             return pay
-    return None
+    persisted = _find_persisted_payout(idempotency_key=idempotency_key)
+    if persisted is not None:
+        PAYOUTS[persisted["id"]] = persisted
+    return persisted
 
 
 def run_payouts(agent_id: Optional[str] = None, *, created_by: str = "admin",
@@ -1332,6 +1386,16 @@ def run_payouts(agent_id: Optional[str] = None, *, created_by: str = "admin",
             if gross <= 0:
                 skipped.append({"agent_id": aid, "reason": "zero_amount", "commission_count": len(comms)})
                 continue
+            commissions_hash = _commissions_hash(ids)
+            # Cross-instance idempotency: a peer instance may already have swept
+            # exactly this accrual set before our cache caught up. Never write a
+            # second run for it — that would pay the same commissions twice. The
+            # unique keys on ``agent_payouts`` backstop the simultaneous race.
+            peer = _find_persisted_payout(commissions_hash=commissions_hash)
+            if peer is not None:
+                skipped.append({"agent_id": aid, "reason": "already_swept",
+                                "payout_id": peer.get("id"), "commission_count": len(ids)})
+                continue
             now = _now_iso()
             pay = {
                 "id": _gen_id("APAY"),
@@ -1341,7 +1405,7 @@ def run_payouts(agent_id: Optional[str] = None, *, created_by: str = "admin",
                 "gross_amount": gross,
                 "commission_count": len(ids),
                 "commission_ids": ids,
-                "commissions_hash": _commissions_hash(ids),
+                "commissions_hash": commissions_hash,
                 # Only the first run created for a request carries the caller key.
                 "idempotency_key": idempotency_key if not payouts else None,
                 "period_start": comms[0].get("created_at"),
@@ -1358,13 +1422,23 @@ def run_payouts(agent_id: Optional[str] = None, *, created_by: str = "admin",
             }
             entry = _ledger_append("agent.payout.calculated", aid, gross, _payout_ledger_payload(pay))
             pay["ledger_entry_id"] = entry["id"]
-            PAYOUTS[pay["id"]] = pay
             for comm in comms:
                 comm["status"] = "payable"
                 comm["payout_id"] = pay["id"]
                 comm["updated_at"] = now
-                _persist("commission", comm)
-            _persist("payout", pay)
+            # The run and the rows it owns are written together: on a durable
+            # failure (including a peer instance winning the unique-key race)
+            # nothing is left half-swept and the accruals stay re-sweepable.
+            if not _persist_records([("payout", pay)] + [("commission", c) for c in comms]):
+                for comm in comms:
+                    comm["status"] = "accrued"
+                    comm["payout_id"] = None
+                if COMMISSION_LEDGER and COMMISSION_LEDGER[-1]["id"] == entry["id"]:
+                    COMMISSION_LEDGER.pop()
+                skipped.append({"agent_id": aid, "reason": "persist_failed",
+                                "commission_count": len(ids)})
+                continue
+            PAYOUTS[pay["id"]] = pay
             payouts.append(dict(pay))
         return {"payouts": payouts, "created": len(payouts), "reused": False,
                 "skipped_agents": skipped, "ledger_intact": verify_ledger_integrity()}
@@ -1453,18 +1527,30 @@ def settle_payout(payout_id: str, *, settled_by: str = "admin",
         pay["platform_ledger_entry_id"] = anchor_id
         pay["platform_entry_hash"] = anchor_hash
         pay["updated_at"] = now
-        _ledger_append("agent.payout.settled", pay["agent_id"], pay["gross_amount"],
-                       {**_payout_ledger_payload(pay),
-                        "external_payout_reference": external_payout_reference,
-                        "platform_ledger_entry_id": anchor_id},
-                       mirror=False)
-        for cid in pay["commission_ids"]:
-            comm = COMMISSIONS[cid]
+        entry = _ledger_append("agent.payout.settled", pay["agent_id"], pay["gross_amount"],
+                               {**_payout_ledger_payload(pay),
+                                "external_payout_reference": external_payout_reference,
+                                "platform_ledger_entry_id": anchor_id},
+                               mirror=False)
+        comms = [COMMISSIONS[cid] for cid in pay["commission_ids"]]
+        for comm in comms:
             comm["status"] = "paid"
             comm["paid_at"] = now
             comm["updated_at"] = now
-            _persist("commission", comm)
-        _persist("payout", pay)
+        # Run and commissions move to settled/paid in one durable write: a
+        # partial write would strand ``paid`` rows under a run no later settle
+        # can pick up. The anchor is idempotent on its entry id, so a retry
+        # re-uses it rather than double-anchoring.
+        if not _persist_records([("payout", pay)] + [("commission", c) for c in comms]):
+            for comm in comms:
+                comm["status"] = "payable"
+                comm["paid_at"] = None
+            pay.update({"status": "calculated", "settled_by": None, "settled_at": None,
+                        "external_payout_reference": None, "platform_ledger_entry_id": None,
+                        "platform_entry_hash": None})
+            if COMMISSION_LEDGER and COMMISSION_LEDGER[-1]["id"] == entry["id"]:
+                COMMISSION_LEDGER.pop()
+            return False, "Payout settlement could not be persisted; nothing was changed"
         return True, dict(pay)
 
 

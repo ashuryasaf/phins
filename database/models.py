@@ -2966,6 +2966,13 @@ class AgentPayout(Base):
     ``supplier_settlement_service`` run model: ``calculated -> settled``.
     """
     __tablename__ = 'agent_payouts'
+    __table_args__ = (
+        # Schema-level idempotency on a monetary table: two app instances cannot
+        # both create a run for the same caller key or the same swept accrual
+        # set, so the same commissions are never paid out twice.
+        UniqueConstraint('idempotency_key', name='uq_agent_payout_idempotency_key'),
+        UniqueConstraint('commissions_hash', name='uq_agent_payout_commissions_hash'),
+    )
 
     id = Column(String(80), primary_key=True)  # APAY...
     agent_id = Column(String(50), index=True, nullable=False)

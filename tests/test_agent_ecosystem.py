@@ -907,6 +907,98 @@ def test_db_mode_hydration_preserves_lifecycle_events(monkeypatch):
     assert svc.verify_ledger_integrity() is True
 
 
+def test_db_mode_payout_run_and_settlement_never_half_persist(monkeypatch):
+    """A failed durable write leaves no money row stranded under a missing run."""
+    from database import init_database
+    from database.manager import DatabaseManager
+    monkeypatch.setattr(svc, "_db_enabled", lambda: True)
+    init_database()
+    svc.reset_agent_ecosystem()
+
+    agent = svc.create_agent("halfagent", "Half Agent", default_rate=10, created_by="admin")
+    _, inv = svc.create_invitation(agent["id"], "customer", proposed_rate=10)
+    svc.approve_invitation(inv["code"], 10, "admin")
+    assert svc.redeem_invitation(inv["code"], "customer", "CUST-HALF")[0]
+    svc.recompute_commissions({"POL-HALF": {"id": "POL-HALF", "customer_id": "CUST-HALF",
+                                            "annual_premium": 1000, "status": "active"}})
+
+    # The sweep cannot persist: commissions stay accrued and re-sweepable.
+    monkeypatch.setattr(svc, "_persist_records", lambda items: False)
+    run = svc.run_payouts(created_by="admin")
+    assert run["created"] == 0
+    assert run["skipped_agents"] == [{"agent_id": agent["id"], "reason": "persist_failed",
+                                      "commission_count": 1}]
+    assert svc.income_summary(agent["id"])["accrued_total"] == 100.0
+    with DatabaseManager() as db:
+        assert db.agent_payouts.list_by_agent(agent["id"]) == []
+        assert all(r.status == "accrued" and not r.payout_id
+                   for r in db.agent_commissions.list_by_agent(agent["id"]))
+
+    monkeypatch.undo()
+    monkeypatch.setattr(svc, "_db_enabled", lambda: True)
+    pay = svc.run_payouts(created_by="admin")["payouts"][0]
+
+    # The settlement cannot persist: the run stays calculated, nothing is paid.
+    ledger = _FakePlatformLedger()
+    monkeypatch.setattr(svc, "_persist_records", lambda items: False)
+    ok, err = svc.settle_payout(pay["id"], settled_by="admin", platform_ledger=ledger)
+    assert ok is False and "persist" in err
+    assert svc.get_payout(pay["id"])["status"] == "calculated"
+    assert all(svc.COMMISSIONS[c]["status"] == "payable" for c in pay["commission_ids"])
+    assert svc.verify_ledger_integrity() is True
+
+    # Retrying settles cleanly and re-uses the idempotent anchor.
+    monkeypatch.undo()
+    monkeypatch.setattr(svc, "_db_enabled", lambda: True)
+    ok, settled = svc.settle_payout(pay["id"], settled_by="admin", platform_ledger=ledger)
+    assert ok and settled["status"] == "settled"
+    assert list(ledger.transaction_ledger) == [f"AGPAY-{pay['id']}"]  # one anchor, re-used
+    with DatabaseManager() as db:
+        assert db.agent_payouts.get_by_id(pay["id"]).status == "settled"
+        assert all(r.status == "paid" for r in db.agent_commissions.list_by_agent(agent["id"]))
+
+
+def test_db_mode_concurrent_payout_runs_cannot_double_pay(monkeypatch):
+    """The same accrual set is never swept into a second run by a peer instance."""
+    from database import init_database
+    from database.manager import DatabaseManager
+    monkeypatch.setattr(svc, "_db_enabled", lambda: True)
+    init_database()
+    svc.reset_agent_ecosystem()
+
+    agent = svc.create_agent("raceagent", "Race Agent", default_rate=10, created_by="admin")
+    _, inv = svc.create_invitation(agent["id"], "customer", proposed_rate=10)
+    svc.approve_invitation(inv["code"], 10, "admin")
+    assert svc.redeem_invitation(inv["code"], "customer", "CUST-RACE")[0]
+    svc.recompute_commissions({"POL-RACE": {"id": "POL-RACE", "customer_id": "CUST-RACE",
+                                            "annual_premium": 1000, "status": "active"}})
+    peer_run = svc.run_payouts(created_by="peer")["payouts"][0]
+
+    # A peer instance wrote that run; this instance's cache is stale (its refresh
+    # is failing) and still believes the accruals are free to sweep.
+    monkeypatch.setattr(svc, "_hydrate_from_db", lambda force=False: None)
+    svc.PAYOUTS.pop(peer_run["id"], None)
+    for cid in peer_run["commission_ids"]:
+        svc.COMMISSIONS[cid].update({"status": "accrued", "payout_id": None})
+    again = svc.run_payouts(created_by="admin")
+    assert again["created"] == 0
+    assert again["skipped_agents"] == [{"agent_id": agent["id"], "reason": "already_swept",
+                                        "payout_id": peer_run["id"], "commission_count": 1}]
+
+    # Even without that read, the durable unique key refuses the duplicate run.
+    duplicate = {**peer_run, "id": "APAY-DUPLICATE"}
+    assert svc._persist_records([("payout", duplicate)]) is False
+    with DatabaseManager() as db:
+        assert [p.id for p in db.agent_payouts.list_by_agent(agent["id"])] == [peer_run["id"]]
+
+    # A caller key another instance used is found durably, not re-run.
+    with DatabaseManager() as db:
+        db.agent_payouts.update(peer_run["id"], idempotency_key="race-key")
+    svc.PAYOUTS.clear()
+    reused = svc.run_payouts(created_by="admin", idempotency_key="race-key")
+    assert reused["reused"] is True and reused["payouts"][0]["id"] == peer_run["id"]
+
+
 def test_db_mode_cross_instance_visibility(monkeypatch):
     from database import init_database
     from database.manager import DatabaseManager
