@@ -1442,15 +1442,29 @@ def init_claims_bot_service(customers: Dict,
                             claims: Dict,
                             underwriting: Dict,
                             audit_service = None) -> ClaimsBotService:
-    """Initialize claims bot service with dependencies"""
+    """Initialize claims bot service with dependencies.
+
+    Reuses the process singleton when it already exists so approve/pay
+    snapshots and explicit probability-report requests share one durable
+    report store instead of minting a new ``CLM-BOT-*`` id on every call
+    (observed as repeated ``[CLAIMS-BOT] Initialized`` lines in deploy logs).
+    """
     global _bot_instance
-    _bot_instance = ClaimsBotService(
-        customers=customers,
-        policies=policies,
-        claims=claims,
-        underwriting=underwriting,
-        audit_service=audit_service
-    )
+    if _bot_instance is None:
+        _bot_instance = ClaimsBotService(
+            customers=customers,
+            policies=policies,
+            claims=claims,
+            underwriting=underwriting,
+            audit_service=audit_service
+        )
+        return _bot_instance
+    _bot_instance._customers = customers
+    _bot_instance._policies = policies
+    _bot_instance._claims = claims
+    _bot_instance._underwriting = underwriting
+    if audit_service is not None:
+        _bot_instance._audit = audit_service
     return _bot_instance
 
 

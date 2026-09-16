@@ -153,6 +153,19 @@ class DatabaseManager:
             self._session = get_db_session(max_retries=self._max_retries)
             self._owns_session = True
         return self._session
+
+    @property
+    def session(self) -> Session:
+        """Public SQLAlchemy session used by repositories and call sites.
+
+        ``DatabaseManager`` keeps the session private as ``_session`` and
+        creates it lazily. Several write paths historically used ``db.session``
+        (claim persist, user seed, auto-generated customers). Without this
+        alias those updates logged
+        ``'DatabaseManager' object has no attribute 'session'`` and skipped
+        the durable write.
+        """
+        return self._ensure_session()
     
     def _reset_repositories(self):
         """Reset all repository references (used after session reset)"""

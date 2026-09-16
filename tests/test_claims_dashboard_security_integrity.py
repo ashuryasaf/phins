@@ -49,6 +49,8 @@ def test_claims_server_enforces_claims_auth_and_state_transitions():
     # Data integrity and leakage controls should exist.
     assert "persist_claim_update_to_database(claim_id" in content
     assert "persist_claim_update_to_database(claim_id, claim)" not in content
+    assert "db.claims.update(claim_id, **db_updates)" in content
+    assert "ClaimRepository(db.session)" not in content
     assert "sanitize_claim_probability_report(report)" in content
     # The evidence redaction lives in the shared adapter (A4) so the inline
     # route and the standalone worker redact identically; server.py delegates.

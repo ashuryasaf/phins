@@ -5305,6 +5305,53 @@ def verify_persistence_writable() -> bool:
         return False
 
 
+def _freeze_for_json(value, *, _depth: int = 0):
+    """Copy a live mapping/list so json.dump cannot race concurrent mutations.
+
+    Production logs after PR #603 showed
+    ``[PERSISTENCE] Error saving ledger data: dictionary changed size during
+    iteration`` while a claim payment mutated NFT/transaction dicts on another
+    thread. Snapshotting under the persistence lock (retrying a racing
+    ``items()``) keeps the on-disk ledger a consistent point-in-time copy.
+    A persistent race fails closed rather than writing empty collections.
+    """
+    if _depth > 12:
+        return value
+    if isinstance(value, dict):
+        items = None
+        last_err = None
+        for _ in range(3):
+            try:
+                items = list(value.items())
+                break
+            except RuntimeError as exc:
+                last_err = exc
+                continue
+        if items is None:
+            # Fail closed: an empty mapping would wipe NFT/transaction
+            # snapshots on disk. save_ledger_data then keeps the previous file.
+            raise RuntimeError(
+                "ledger snapshot raced a live dict; refusing empty freeze"
+            ) from last_err
+        return {k: _freeze_for_json(v, _depth=_depth + 1) for k, v in items}
+    if isinstance(value, (list, tuple)):
+        seq = None
+        last_err = None
+        for _ in range(3):
+            try:
+                seq = list(value)
+                break
+            except RuntimeError as exc:
+                last_err = exc
+                continue
+        if seq is None:
+            raise RuntimeError(
+                "ledger snapshot raced a live list; refusing empty freeze"
+            ) from last_err
+        return [_freeze_for_json(v, _depth=_depth + 1) for v in seq]
+    return value
+
+
 def save_ledger_data(_periodic: bool = False):
     """Save all ledger data to persistent storage.
 
@@ -5400,10 +5447,24 @@ def save_ledger_data(_periodic: bool = False):
                 data['claims'] = {}
                 data['claim_files'] = CLAIM_FILES
             
-            # Write to temp file first, then rename for atomic operation
+            # Write to temp file first, then rename for atomic operation.
+            # Freeze live dicts first so concurrent mutations cannot raise
+            # "dictionary changed size during iteration" mid-dump. Retry the
+            # whole freeze; if it still races, raise so the previous file is
+            # kept instead of writing empty collections.
+            snapshot = None
+            freeze_err = None
+            for _ in range(3):
+                try:
+                    snapshot = _freeze_for_json(data)
+                    break
+                except RuntimeError as exc:
+                    freeze_err = exc
+            if snapshot is None:
+                raise freeze_err or RuntimeError("ledger snapshot failed")
             temp_file = LEDGER_PERSISTENCE_FILE + '.tmp'
             with open(temp_file, 'w') as f:
-                json.dump(data, f, default=str, indent=2)
+                json.dump(snapshot, f, default=str, indent=2)
             
             # Atomic rename
             os.rename(temp_file, LEDGER_PERSISTENCE_FILE)
@@ -11793,16 +11854,13 @@ def get_customer_id_guaranteed(username: str, role: str) -> str | None:
         if USE_DATABASE and database_enabled:
             try:
                 from database.manager import DatabaseManager
-                from database.models import Customer
                 with DatabaseManager() as db:
-                    db_customer = Customer(
+                    db.customers.create(
                         id=new_customer_id,
                         email=username.lower(),
                         name=username.split('@')[0].title(),
-                        portal_active=True
+                        portal_active=True,
                     )
-                    db.session.add(db_customer)
-                    db.commit()
                     print(f"[AUTH] Persisted auto-generated customer {new_customer_id} to database")
             except Exception as e:
                 print(f"[AUTH] Could not persist auto-generated customer to DB (non-critical): {e}")
@@ -12099,10 +12157,13 @@ def persist_claim_update_to_database(claim_id: str, updates: Dict[str, Any]) -> 
                 pass
     try:
         from database.manager import DatabaseManager
-        from database.repositories.claim_repository import ClaimRepository
         with DatabaseManager() as db:
-            claim_repo = ClaimRepository(db.session)
-            claim_repo.update(claim_id, **db_updates)
+            updated = db.claims.update(claim_id, **db_updates)
+            if updated is None:
+                print(
+                    f"[CLAIMS API] Database update note for {claim_id}: "
+                    "claim row not found"
+                )
     except Exception as e:
         print(f"[CLAIMS API] Database update note for {claim_id}: {e}")
 
@@ -14804,6 +14865,58 @@ _BOT_PROBE_PATH_PATTERNS = (
 )
 
 
+_ACCESS_LOG_PII_QUERY_KEYS = frozenset({
+    'customer_id',
+    'email',
+    'phone',
+    'otp',
+    'otp_code',
+    'national_id',
+    'id_number',
+    'resume_code',
+    'password',
+    'ssn',
+    'id_num',
+})
+
+
+def _redact_pii_query(raw: str) -> str:
+    """Mask identifier/PII query values in access-log request lines.
+
+    Deploy logs after PR #603 recorded
+    ``GET /api/risk-assessment/report?customer_id=CUST-SHOSH-001`` in clear
+    text. Customer ids and emails are not credentials, but they are still
+    identifiers and must not sit in the operator log stream.
+    """
+    text = str(raw or '')
+    base, sep, rest = text.partition('?')
+    if not sep:
+        return text
+    query, space, proto = rest.partition(' ')
+    parts = []
+    for part in query.split('&'):
+        if not part:
+            continue
+        name, eq, _value = part.partition('=')
+        if eq and name.strip().lower() in _ACCESS_LOG_PII_QUERY_KEYS:
+            parts.append(f'{name}=REDACTED')
+        else:
+            parts.append(part)
+    suffix = f' {proto}' if space else ''
+    return f"{base}?{'&'.join(parts)}{suffix}"
+
+
+def _redact_access_log_line(raw: str) -> str:
+    """Redact credentials then PII before writing an access-log line."""
+    line = str(raw or '')
+    try:
+        if confidential_access is not None:
+            line = confidential_access.redact_sensitive_query(line)
+    except Exception:
+        pass
+    return _redact_pii_query(line)
+
+
 def _is_bot_probe_path(path: str) -> bool:
     """Return True for paths matching common opportunistic scan patterns.
 
@@ -15076,23 +15189,16 @@ class PortalHandler(BaseHTTPRequestHandler):
                     pass
         except Exception:
             pass
-        # Never persist a confidential access token in the access log: the
-        # ?access_token= exchange is redirected to a bare URL, but the request
-        # that carried it still passes through here.
-        try:
-            if (
-                _confidential_access_enabled
-                and confidential_access.has_sensitive_query(getattr(self, 'requestline', '') or '')
-            ):
-                original_requestline = self.requestline
-                try:
-                    self.requestline = confidential_access.redact_sensitive_query(original_requestline)
-                    super().log_request(code, size)
-                finally:
-                    self.requestline = original_requestline
-                return
-        except Exception:
-            pass
+        # Never persist credentials or customer identifiers in the access log.
+        original_requestline = getattr(self, 'requestline', '') or ''
+        redacted = _redact_access_log_line(original_requestline)
+        if redacted != original_requestline:
+            try:
+                self.requestline = redacted
+                super().log_request(code, size)
+            finally:
+                self.requestline = original_requestline
+            return
         super().log_request(code, size)
 
     def _set_json_headers(self, status: int = 200) -> None:
@@ -29139,6 +29245,49 @@ For claims or questions, please contact:
             return
 
         # ===================== REINSURANCE (ACTUARY/ADMIN) =====================
+        # Admin dashboard historically fetched this collection path; the
+        # detailed routes live under /providers, /contracts, /quote.
+        if path == '/api/reinsurance':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            providers = []
+            partners = []
+            if reinsurance_enabled and reinsurance_service:
+                providers = list(reinsurance_service.providers() or [])
+                for provider in providers:
+                    partners.append({
+                        'name': provider.get('name'),
+                        'type': 'provider',
+                        'ceded_amount': 0,
+                        'commission_rate': 0,
+                        'status': 'Configured' if provider.get('configured') else 'Not configured',
+                    })
+            with STATE_LOCK:
+                contracts = sorted(
+                    REINSURANCE_CONTRACTS.values(),
+                    key=lambda x: x.get('created_at', ''),
+                    reverse=True,
+                )
+            for row in contracts:
+                partners.append({
+                    'name': row.get('name') or row.get('provider') or 'Contract',
+                    'type': row.get('product') or 'treaty',
+                    'ceded_amount': safe_float(
+                        row.get('annual_reinsurance_expense', row.get('annual_premium', 0))
+                    ),
+                    'commission_rate': safe_float(row.get('ceded_share_pct'), 0.0),
+                    'status': row.get('status') or 'bound',
+                })
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'partners': partners,
+                'providers': providers,
+                'items': contracts,
+            }, default=str).encode('utf-8'))
+            return
+
         if path == '/api/reinsurance/providers':
             if not require_role(session, ['admin', 'actuary']):
                 self._set_json_headers(403)
@@ -32509,6 +32658,28 @@ For claims or questions, please contact:
         parsed = urlparse.urlparse(self.path)
         path = parsed.path
         qs_post = urlparse.parse_qs(parsed.query)
+
+        # Chat apply is a static page. POSTs here are form-fallback or
+        # crawler hits (seen repeatedly as 404 in production after PR #603).
+        # Redirect to GET so a JS-disabled resume submit is not a dead end
+        # and does not look like a missing application API.
+        if path in ('/apply-chat.html', '/apply.html'):
+            if content_length > 0:
+                try:
+                    remaining = content_length
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(65536, remaining))
+                        if not chunk:
+                            break
+                        remaining -= len(chunk)
+                except Exception:
+                    pass
+            self.send_response(303)
+            self.send_header('Location', path)
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return
+
 
         for key, values in qs_post.items():
             for value in values:
@@ -41141,7 +41312,7 @@ For claims or questions, please contact:
                                     occupation=str(r.get('occupation') or '').strip() or None,
                                 )
                                 # DatabaseManager keeps a private session; access it directly for bulk insert.
-                                db._ensure_session().add(cust)  # type: ignore[attr-defined]
+                                db.session.add(cust)
                                 created += 1
                             except Exception as e:
                                 errors.append({"row": i, "error": str(e)})
@@ -46350,9 +46521,8 @@ For claims or questions, please contact:
                 try:
                     if USE_DATABASE and database_enabled:
                         from database.manager import DatabaseManager
-                        from database.repositories.claim_repository import ClaimRepository
                         with DatabaseManager() as db:
-                            claim_repo = ClaimRepository(db.session)
+                            claim_repo = db.claims
                             # Check if claim already exists
                             existing = claim_repo.get_by_id(claim_id)
                             if not existing:
@@ -57244,9 +57414,8 @@ def run_server(port: int = PORT) -> None:
             if demo_data_seeding_enabled():
                 try:
                     from database.manager import DatabaseManager
-                    from database.repositories.user_repository import UserRepository
                     with DatabaseManager() as db:
-                        user_repo = UserRepository(db.session)
+                        user_repo = db.users
 
                         # Users to ensure exist - passwords from environment variables
                         ensure_users = [
