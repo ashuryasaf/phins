@@ -344,6 +344,28 @@ class TestClaimsAutomation:
         new_balance = orchestrator.health_wallets['CUST-001']['balance']
         assert new_balance > old_balance
 
+    def test_auto_approve_writes_claim_cash_to_ledger(self, orchestrator):
+        result = orchestrator.automate_claim_processing('CLM-001')
+        assert result['decision'] == 'auto_approve'
+        cash = [
+            tx for tx in orchestrator.transaction_ledger.values()
+            if isinstance(tx, dict) and tx.get('type') == 'claim_payment_received'
+        ]
+        assert len(cash) == 1
+        assert cash[0]['metadata']['claim_id'] == 'CLM-001'
+        assert cash[0]['amount'] == 1500.0
+        orchestrator._process_claim_payout(
+            orchestrator.claims['CLM-001'],
+            orchestrator.policies['POL-001'],
+            'CUST-001',
+            1500.0,
+        )
+        cash_again = [
+            tx for tx in orchestrator.transaction_ledger.values()
+            if isinstance(tx, dict) and tx.get('type') == 'claim_payment_received'
+        ]
+        assert len(cash_again) == 1
+
     def test_fraud_score_early_claim(self, orchestrator):
         orchestrator.claims['CLM-EARLY'] = {
             'id': 'CLM-EARLY',

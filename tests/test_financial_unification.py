@@ -12,14 +12,18 @@ from services.financial_unification_service import (
     PREMIUM_AUDIT_TYPES,
     PREMIUM_CASH_TYPES,
     accounting_book_totals,
+    apply_ledger_derived_balance_sheet,
     economic_claims_reserve,
+    ensure_seed_claims_reserve,
     kernel_components_from_policy,
     ledger_cash_total,
     pin_kernel_fields_on_policy,
     post_collected_premiums_to_accounting,
     post_premium_to_accounting_book,
     reconcile_financial_books,
+    repair_financial_books,
     resolve_premium_split,
+    savings_and_investments_books,
     sum_paid_claim_records,
 )
 
@@ -758,3 +762,274 @@ def test_simulate_coverage_quotes_through_calculate_premium():
     assert "premium_data = calculate_premium(quote_payload)" in text
     assert "base_rates = {'life': 0.012" not in text
     assert "calculate_age_adjusted_premium(base_annual_premium" not in text
+
+
+def _repair_fixture(risk_pct=100.0):
+    """Paid bill + paid claim with no customer-ledger rows (early durability gap)."""
+    annual = 1200.0
+    risk = round(annual * risk_pct / 100.0, 2)
+    savings = round(annual - risk, 2)
+    policies = {
+        "POL-R": {
+            "id": "POL-R",
+            "customer_id": "CUST-R",
+            "annual_premium": annual,
+            "risk_premium_annual": risk,
+            "savings_premium_annual": savings,
+            "pricing_source": "pricing_kernel",
+        }
+    }
+    billing = {
+        "BILL-R": {
+            "id": "BILL-R",
+            "bill_id": "BILL-R",
+            "policy_id": "POL-R",
+            "customer_id": "CUST-R",
+            "amount": 100.0,
+            "amount_paid": 100.0,
+            "status": "paid",
+        }
+    }
+    claims = {
+        "CLM-R": {
+            "id": "CLM-R",
+            "customer_id": "CUST-R",
+            "policy_id": "POL-R",
+            "status": "paid",
+            "paid_amount": 40.0,
+        }
+    }
+    sheet = {
+        "revenue_breakdown": {"premium_income": 0.0, "management_fees": 5.0},
+        "expense_breakdown": {"claims_paid": 0.0},
+        "claims_reserve": 3_400_000.0,
+        "seed_claims_reserve": 3_500_000.0,
+    }
+    return policies, billing, claims, sheet
+
+
+def test_repair_dry_run_does_not_mutate_books():
+    reset_accounting_engine()
+    engine = get_accounting_engine()
+    policies, billing, claims, sheet = _repair_fixture()
+    transactions = {}
+    report = repair_financial_books(
+        policies=policies,
+        claims=claims,
+        billing=billing,
+        transactions=transactions,
+        balance_sheet=sheet,
+        engine=engine,
+        dry_run=True,
+    )
+    assert report["dry_run"] is True
+    assert transactions == {}
+    assert accounting_book_totals(engine)["premium_posted"] == 0.0
+    assert accounting_book_totals(engine)["claims_posted"] == 0.0
+    assert sheet["revenue_breakdown"]["premium_income"] == 0.0
+    assert sheet["seed_claims_reserve"] == 3_500_000.0
+    actions = {a["action"] for a in report["actions"]}
+    assert "append_premium_ledger" in actions
+    assert "append_claim_ledger" in actions
+    assert "post_premium_accounting" in actions
+    assert "post_claim_accounting" in actions
+    assert "derive_balance_sheet_from_ledger" in actions
+
+
+def test_repair_reconstructs_missing_cash_and_aligns_books():
+    reset_accounting_engine()
+    engine = get_accounting_engine()
+    policies, billing, claims, sheet = _repair_fixture(risk_pct=100.0)
+    transactions = {}
+    report = repair_financial_books(
+        policies=policies,
+        claims=claims,
+        billing=billing,
+        transactions=transactions,
+        balance_sheet=sheet,
+        engine=engine,
+        dry_run=False,
+        actor="unit_repair",
+    )
+    premium_txs = [
+        tx for tx in transactions.values()
+        if str(tx.get("type")) == "premium_payment"
+    ]
+    claim_txs = [
+        tx for tx in transactions.values()
+        if str(tx.get("type")) == "claim_payment_received"
+    ]
+    assert len(premium_txs) == 1
+    assert premium_txs[0]["amount"] == 100.0
+    assert premium_txs[0]["metadata"]["bill_id"] == "BILL-R"
+    assert len(claim_txs) == 1
+    assert claim_txs[0]["amount"] == 40.0
+    assert claim_txs[0]["metadata"]["claim_id"] == "CLM-R"
+
+    totals = accounting_book_totals(engine)
+    assert totals["premium_posted"] == 100.0
+    assert totals["claims_posted"] == 40.0
+    assert sheet["revenue_breakdown"]["premium_income"] == 100.0
+    assert sheet["expense_breakdown"]["claims_paid"] == 40.0
+    assert sheet["revenue_breakdown"]["management_fees"] == 5.0
+    assert sheet["seed_claims_reserve"] == 3_500_000.0
+    assert sheet["claims_reserve"] == 3_400_000.0
+    assert policies["POL-R"]["annual_premium"] == 1200.0
+    assert billing["BILL-R"]["amount"] == 100.0
+    assert report["after"]["is_consistent"] is True, report["after"]["discrepancies"]
+    assert report["after"]["discrepancy_count"] == 0
+
+
+def test_repair_is_idempotent_and_never_rewrites_seed_or_billed_premium():
+    reset_accounting_engine()
+    engine = get_accounting_engine()
+    policies, billing, claims, sheet = _repair_fixture()
+    transactions = {}
+    first = repair_financial_books(
+        policies=policies,
+        claims=claims,
+        billing=billing,
+        transactions=transactions,
+        balance_sheet=sheet,
+        engine=engine,
+    )
+    ledger_ids = set(transactions)
+    seed = sheet["seed_claims_reserve"]
+    second = repair_financial_books(
+        policies=policies,
+        claims=claims,
+        billing=billing,
+        transactions=transactions,
+        balance_sheet=sheet,
+        engine=engine,
+    )
+    assert second["action_count"] == 0
+    assert set(transactions) == ledger_ids
+    assert sheet["seed_claims_reserve"] == seed == 3_500_000.0
+    assert policies["POL-R"]["annual_premium"] == 1200.0
+    assert billing["BILL-R"]["amount"] == 100.0
+    assert first["after"]["premiums"]["customer_ledger"]["total"] == 100.0
+
+
+def test_repair_does_not_invent_savings_portfolio_deposits():
+    reset_accounting_engine()
+    engine = get_accounting_engine()
+    policies, billing, claims, sheet = _repair_fixture(risk_pct=80.0)
+    transactions = {}
+    investments = {}
+    report = repair_financial_books(
+        policies=policies,
+        claims=claims,
+        billing=billing,
+        transactions=transactions,
+        balance_sheet=sheet,
+        investment_accounts=investments,
+        savings_pipeline_accounts={},
+        engine=engine,
+    )
+    assert investments == {}
+    savings = report["after"]["savings"]
+    assert savings["kernel_savings_cash"] == 20.0
+    assert savings["savings_landed"] == 0.0
+    checks = {d["check"] for d in report["after"]["discrepancies"]}
+    assert "savings_cash_not_landed_in_portfolios" in checks
+    assert "paid_bills_missing_customer_ledger" not in checks
+    assert "paid_claims_missing_customer_ledger" not in checks
+
+
+def test_seed_claims_reserve_is_pinned_once():
+    sheet = {"claims_reserve": 1.0}
+    first = ensure_seed_claims_reserve(sheet)
+    assert first == 3_500_000.0
+    sheet["claims_reserve"] = 99.0
+    again = ensure_seed_claims_reserve(sheet, founding_capital=1.0)
+    assert again == 3_500_000.0
+    assert sheet["seed_claims_reserve"] == 3_500_000.0
+
+
+def test_apply_ledger_derived_balance_sheet_does_not_touch_seed():
+    sheet = {
+        "revenue_breakdown": {"premium_income": 1.0, "fees": 2.0},
+        "expense_breakdown": {"claims_paid": 9.0},
+        "seed_claims_reserve": 3_500_000.0,
+        "claims_reserve": 3_400_000.0,
+    }
+    derived = apply_ledger_derived_balance_sheet(sheet, 50.0, 12.0)
+    assert derived["premium_income"] == 50.0
+    assert derived["claims_paid"] == 12.0
+    assert sheet["seed_claims_reserve"] == 3_500_000.0
+    assert sheet["claims_reserve"] == 3_400_000.0
+    assert sheet["revenue_breakdown"]["fees"] == 2.0
+
+
+def test_savings_books_flag_invented_investment_deposits():
+    txs = [
+        {
+            "type": "premium_payment",
+            "amount": 100.0,
+            "customer_id": "CUST-S",
+            "metadata": {"policy_id": "POL-S"},
+        }
+    ]
+    policies = {
+        "POL-S": {
+            "id": "POL-S",
+            "customer_id": "CUST-S",
+            "annual_premium": 1000.0,
+            "risk_premium_annual": 800.0,
+            "savings_premium_annual": 200.0,
+            "pricing_source": "pricing_kernel",
+        }
+    }
+    investments = {
+        "CUST-S": {
+            "balance": 500.0,
+            "deposits": [
+                {"type": "premium_allocation", "amount": 80.0},
+            ],
+        }
+    }
+    books = savings_and_investments_books(
+        transactions=txs,
+        policies=policies,
+        investment_accounts=investments,
+        savings_pipeline_accounts=None,
+    )
+    assert books["kernel_savings_cash"] == 20.0
+    assert books["investment_premium_allocations"] == 80.0
+    report = reconcile_financial_books(
+        policies=policies,
+        claims={},
+        billing={
+            "BILL-S": {
+                "id": "BILL-S",
+                "customer_id": "CUST-S",
+                "amount_paid": 100.0,
+            }
+        },
+        transactions=txs,
+        investment_accounts=investments,
+    )
+    checks = {d["check"] for d in report["discrepancies"]}
+    assert "investment_allocations_exceed_savings_premium" in checks
+
+
+def test_post_claim_payment_is_idempotent_on_claim_id():
+    reset_accounting_engine()
+    engine = get_accounting_engine()
+    ok1, _ = engine.post_claim_payment(
+        claim_id="CLM-IDEM",
+        policy_id="POL-IDEM",
+        customer_id="CUST-IDEM",
+        amount=Decimal("15.00"),
+    )
+    ok2, msg = engine.post_claim_payment(
+        claim_id="CLM-IDEM",
+        policy_id="POL-IDEM",
+        customer_id="CUST-IDEM",
+        amount=Decimal("15.00"),
+    )
+    assert ok1 is True
+    assert ok2 is True
+    assert "already recorded" in msg
+    assert accounting_book_totals(engine)["claims_posted"] == 15.0

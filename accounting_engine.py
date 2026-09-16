@@ -721,8 +721,20 @@ By selecting an investment route, you confirm you understand the risks and benef
         Record a claim payment in the accounting ledger.
         Debits the Risk Fund (claim payout reduces risk reserves) and
         credits the customer's account.
+
+        Idempotent on ``claim_id`` (``reference_no`` / ``allocation_id``): a
+        second call for the same claim does not double-book.
         """
         try:
+            wanted = str(claim_id or "")
+            if wanted:
+                for entry in self.ledger_entries:
+                    if getattr(entry, "entry_type", None) != EntryType.CLAIM_PAYMENT:
+                        continue
+                    if str(getattr(entry, "reference_no", "") or "") == wanted:
+                        return True, f"Claim payment {claim_id} already recorded"
+                    if str(getattr(entry, "allocation_id", "") or "") == wanted:
+                        return True, f"Claim payment {claim_id} already recorded"
             self._create_ledger_entry(
                 allocation_id=claim_id,
                 policy_id=policy_id,

@@ -385,11 +385,21 @@
                         <div class="stat-value" id="ctl-seed-reserve">$0</div>
                         <div class="stat-label">Seed capital (not rewritten)</div>
                     </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="ctl-savings-cash">$0</div>
+                        <div class="stat-label">Kernel savings cash</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="ctl-savings-landed">$0</div>
+                        <div class="stat-label">Savings landed (investments + pipeline)</div>
+                    </div>
                 </div>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;">
                     <button class="btn btn-primary" onclick="loadControlTower()">Refresh control</button>
                     <button class="btn btn-success" onclick="showTab('integrity', document.querySelector('[data-tab=integrity]')); loadBooksReconcile();">Reconcile books</button>
                     <button class="btn btn-secondary" onclick="showTab('integrity', document.querySelector('[data-tab=integrity]')); loadIntegrityReport();">Run ISA-style tests</button>
+                    <button class="btn btn-primary" onclick="repairFinancialBooks(true)">Preview repair</button>
+                    <button class="btn btn-success" onclick="repairFinancialBooks(false)">Repair books</button>
                 </div>
             </div>
             <div class="section">
@@ -685,12 +695,14 @@
                         <li>Premiums sourced from the actuarial kernel / store</li>
                         <li>Risk cover uses mortality rates and ADL risk multipliers</li>
                         <li>Savings component follows the pinned kernel split</li>
-                        <li>Reconcile reports differences only; historical rows are not rewritten</li>
+                        <li>Reconcile reports differences; Repair reconstructs missing cash-identity rows from paid bills and paid claims without rewriting billed amounts or seed capital</li>
                     </ul>
                 </div>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
                     <button class="btn btn-primary" onclick="loadIntegrityReport()">Run validation</button>
                     <button class="btn btn-success" onclick="loadBooksReconcile()">Reconcile books</button>
+                    <button class="btn btn-primary" onclick="repairFinancialBooks(true)">Preview repair</button>
+                    <button class="btn btn-success" onclick="repairFinancialBooks(false)">Repair books</button>
                     <button class="btn btn-secondary" onclick="exportIntegrity('csv')">Export CSV</button>
                     <button class="btn btn-secondary" onclick="exportIntegrity('pdf')">Export PDF</button>
                     <button class="btn btn-secondary" onclick="printReport('integrity-results')">Print</button>
@@ -2195,6 +2207,13 @@
                 setText('ctl-book-premium', formatCurrency(bookPrem));
                 setText('ctl-ledger-claims', formatCurrency(ledgerClm));
                 setText('ctl-book-claims', formatCurrency(bookClm));
+                const savings = rec.savings || {};
+                if (savings.kernel_savings_cash != null) {
+                    setText('ctl-savings-cash', formatCurrency(savings.kernel_savings_cash));
+                }
+                if (savings.savings_landed != null) {
+                    setText('ctl-savings-landed', formatCurrency(savings.savings_landed));
+                }
                 if (reserves.economic_claims_reserve != null) {
                     setText('ctl-economic-reserve', formatCurrency(reserves.economic_claims_reserve));
                     setText('sv-economic-tp', formatCurrency(reserves.economic_claims_reserve));
@@ -2224,6 +2243,8 @@
                         <div class="stat-card"><div class="stat-value">$${(prem.accounting_book || 0).toLocaleString()}</div><div class="stat-label">Accounting book premiums</div></div>
                         <div class="stat-card"><div class="stat-value">$${(clm.customer_ledger && clm.customer_ledger.total || 0).toLocaleString()}</div><div class="stat-label">Ledger claims paid</div></div>
                         <div class="stat-card"><div class="stat-value">$${(clm.accounting_book || 0).toLocaleString()}</div><div class="stat-label">Accounting book claims</div></div>
+                        <div class="stat-card"><div class="stat-value">$${((rec.savings && rec.savings.kernel_savings_cash) || 0).toLocaleString()}</div><div class="stat-label">Kernel savings cash</div></div>
+                        <div class="stat-card"><div class="stat-value">$${((rec.savings && rec.savings.savings_landed) || 0).toLocaleString()}</div><div class="stat-label">Savings landed</div></div>
                     </div>
                 `;
                 if ((rec.discrepancies || []).length) {
@@ -2241,6 +2262,56 @@
                     statusEl.textContent = 'Reconcile pipeline error: ' + err.message;
                 }
                 if (resultsDiv && !silent) resultsDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;
+            }
+        }
+
+        async function repairFinancialBooks(dryRun) {
+            const resultsDiv = document.getElementById('integrity-results');
+            if (resultsDiv) {
+                resultsDiv.innerHTML = dryRun
+                    ? '<div class="loading">Previewing reconstruction of missing cash-identity rows...</div>'
+                    : '<div class="loading">Repairing books from paid bills, paid claims, and the customer ledger...</div>';
+            }
+            try {
+                const response = await fetch('/api/finance/repair', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ dry_run: !!dryRun }),
+                });
+                const data = await response.json();
+                if (data.error) {
+                    if (resultsDiv) resultsDiv.innerHTML = `<div class="error">${data.error}</div>`;
+                    return;
+                }
+                const repair = data.repair || {};
+                const after = repair.after || {};
+                const actions = repair.actions || [];
+                let html = `
+                    <div class="integrity-status ${after.is_consistent || (dryRun && !(repair.before || {}).discrepancy_count) ? 'integrity-healthy' : 'integrity-issues'}">
+                        <h3 style="margin:0;">${dryRun ? 'Repair preview' : 'Books repair'} — ${actions.length} action${actions.length === 1 ? '' : 's'}</h3>
+                        <p style="margin:5px 0 0 0;">${repair.note || 'Missing cash-identity rows are reconstructed from paid bills and paid claims. Seed capital and billed premiums are not rewritten.'}</p>
+                    </div>
+                `;
+                if (actions.length) {
+                    html += '<h3>Actions</h3><ul>';
+                    for (const a of actions.slice(0, 50)) {
+                        html += `<li><strong>${a.action}</strong> ${a.bill_id || a.claim_id || ''} ${a.amount != null ? formatCurrency(a.amount) : ''}</li>`;
+                    }
+                    html += '</ul>';
+                } else {
+                    html += '<p>No missing cash-identity rows. Books already match the repair rules.</p>';
+                }
+                if (resultsDiv) {
+                    resultsDiv.dataset.userRan = '1';
+                    resultsDiv.innerHTML = html;
+                }
+                await loadBooksReconcile();
+                await loadBalanceSheet();
+            } catch (err) {
+                if (resultsDiv) resultsDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;
             }
         }
 

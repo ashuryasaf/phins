@@ -39,9 +39,11 @@ def test_accountant_keeps_pipeline_hooks():
         "/api/financial/forecast",
         "/api/financial/data-integrity",
         "/api/finance/reconcile",
+        "/api/finance/repair",
         "/api/admin/balance-sheet",
         "function loadQuickStats",
         "function loadBooksReconcile",
+        "function repairFinancialBooks",
         "function loadIntegrityReport",
         "function loadBalanceSheet",
         "function calculateProjection",
@@ -59,6 +61,8 @@ def test_accountant_keeps_pipeline_hooks():
         'id="integrity-results"',
         'id="ctl-ledger-premium"',
         'id="ctl-economic-reserve"',
+        'id="ctl-savings-cash"',
+        'id="ctl-savings-landed"',
         'id="sv-economic-tp"',
         'id="proj-coverage"',
         'id="forecast-years"',
@@ -101,3 +105,15 @@ def test_accountant_control_tower_pipelines_respond():
         assert resp.status_code == 200, path
         body = resp.json()
         assert "error" not in body or body.get("success") is True, path
+
+    preview = requests.post(
+        f"{BASE_URL}/api/finance/repair",
+        headers=headers,
+        json={"dry_run": True},
+        timeout=20,
+    )
+    assert preview.status_code == 200, preview.text
+    payload = preview.json()
+    assert payload.get("success") is True
+    assert "repair" in payload
+    assert payload["repair"].get("dry_run") is True

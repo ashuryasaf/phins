@@ -4540,14 +4540,17 @@
       }
       
       tbody.innerHTML = claims.slice(0, 5).map(c => {
-        const statusClass = (c.status || '').toLowerCase().includes('approved') ? 'badge-active' : 
+        const statusClass = (c.status || '').toLowerCase().includes('approved') ? 'badge-active' :
+                           (c.status || '').toLowerCase().includes('paid') ? 'badge-active' :
                            (c.status || '').toLowerCase().includes('pending') ? 'badge-pending' : 'badge-orange';
+        const paid = Number(c.ledger_paid_amount || c.paid_amount || 0);
+        const displayAmount = paid > 0 ? paid : Number(c.approved_amount || c.claimed_amount || 0);
         return `
           <tr>
             <td>${c.id}</td>
             <td>${c.policy_id || 'N/A'}</td>
             <td>${c.filed_date ? new Date(c.filed_date).toLocaleDateString() : 'N/A'}</td>
-            <td>$${Number(c.claimed_amount || 0).toLocaleString()}</td>
+            <td>$${displayAmount.toLocaleString()}${paid > 0 ? ' <span class="badge badge-active">paid</span>' : ''}</td>
             <td><span class="badge ${statusClass}">${c.status || 'Pending'}</span></td>
             <td><button class="btn-small" onclick="viewClaim('${c.id}')">Details</button></td>
           </tr>
@@ -4609,10 +4612,10 @@
                 <span style="color: var(--text-secondary);">Claimed Amount</span>
                 <span style="font-weight: 600; color: var(--success);">$${Number(claim.claimed_amount || 0).toLocaleString()}</span>
               </div>
-              ${claim.approved_amount ? `
+              ${claim.ledger_paid_amount || claim.paid_amount ? `
               <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(76,175,80,0.1); border-radius: 10px; border: 1px solid rgba(76,175,80,0.3);">
-                <span style="color: var(--text-secondary);">Approved Amount</span>
-                <span style="font-weight: 600; color: var(--success);">$${Number(claim.approved_amount).toLocaleString()}</span>
+                <span style="color: var(--text-secondary);">Paid (ledger cash)</span>
+                <span style="font-weight: 600; color: var(--success);">$${Number(claim.ledger_paid_amount || claim.paid_amount).toLocaleString()}</span>
               </div>` : ''}
               <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 10px;">
                 <span style="color: var(--text-secondary);">Filed Date</span>
