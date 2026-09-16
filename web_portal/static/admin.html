@@ -3955,13 +3955,38 @@
     
     // Customer data storage
     let allCustomers = [];
-    
+    let _adminCustomersInflight = null;
+
+    // Coalesce bursty admin-dashboard customer fetches. Page load currently
+    // fires this endpoint from several independent widgets within one second.
+    function fetchAdminCustomers() {
+      const now = Date.now();
+      if (_adminCustomersInflight && (now - _adminCustomersInflight.at) < 1500) {
+        return _adminCustomersInflight.promise.then((cached) => ({
+          ok: cached.ok,
+          status: cached.status,
+          json: async () => cached.data,
+        }));
+      }
+      const promise = fetch('/api/admin/customers', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }).then(async (res) => {
+        let data = {};
+        try { data = await res.json(); } catch (e) { data = {}; }
+        return { ok: res.ok, status: res.status, data };
+      });
+      _adminCustomersInflight = { at: now, promise };
+      return promise.then((cached) => ({
+        ok: cached.ok,
+        status: cached.status,
+        json: async () => cached.data,
+      }));
+    }
+
     // Load customer list
     async function loadCustomerList() {
       try {
-        const response = await fetch('/api/admin/customers', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const response = await fetchAdminCustomers();
         
         if (response.ok) {
           const data = await response.json();
@@ -4560,9 +4585,7 @@
         linkingDiv.innerHTML = ' Validating all customers...';
         
         // Step 2: Get all customers
-        const response = await fetch('/api/admin/customers', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const response = await fetchAdminCustomers();
         
         if (!response.ok) {
           document.body.removeChild(linkingDiv);
@@ -4786,9 +4809,7 @@
         }
 
         // Legacy fallback (only reachable if batch endpoint returned 404).
-        const response = await fetch('/api/admin/customers', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const response = await fetchAdminCustomers();
         
         if (!response.ok) {
           throw new Error('Failed to load customers');
@@ -4860,9 +4881,7 @@
       showProgress(true, 'Loading customers...');
       
       try {
-        const response = await fetch('/api/admin/customers', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const response = await fetchAdminCustomers();
         
         if (!response.ok) {
           throw new Error('Failed to load customers');
@@ -4941,9 +4960,7 @@
       
       try {
         // Get policies from admin customers endpoint (which includes policies)
-        const response = await fetch('/api/admin/customers', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const response = await fetchAdminCustomers();
         
         if (!response.ok) {
           throw new Error('Failed to load customer data');
@@ -6603,9 +6620,7 @@
     async function loadPolicies() {
       try {
         // Use admin/customers endpoint which has policies with customer info
-        const response = await fetch('/api/admin/customers', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const response = await fetchAdminCustomers();
         
         if (response.ok) {
           const data = await response.json();
@@ -7522,9 +7537,7 @@
       
       try {
         // Get all customers
-        const response = await fetch('/api/admin/customers', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const response = await fetchAdminCustomers();
         
         if (!response.ok) throw new Error('Failed to load customers');
         const data = await response.json();
@@ -7580,9 +7593,7 @@
       statusEl.innerHTML = '<span style="color: #3b82f6;"> Activating wallets...</span>';
       
       try {
-        const response = await fetch('/api/admin/customers', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const response = await fetchAdminCustomers();
         
         if (!response.ok) throw new Error('Failed to load customers');
         const data = await response.json();
@@ -7651,9 +7662,7 @@
       statusEl.innerHTML = '<span style="color: #3b82f6;"> Exporting...</span>';
       
       try {
-        const response = await fetch('/api/admin/customers', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const response = await fetchAdminCustomers();
         
         if (!response.ok) throw new Error('Failed to load customers');
         const data = await response.json();
@@ -7713,9 +7722,7 @@
       
       try {
         // Use admin/customers to get all policies
-        const response = await fetch('/api/admin/customers', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const response = await fetchAdminCustomers();
         
         if (!response.ok) throw new Error('Failed to load policies');
         const data = await response.json();
@@ -7781,9 +7788,7 @@
       statusEl.innerHTML = '<span style="color: #3b82f6;"> Calculating...</span>';
       
       try {
-        const response = await fetch('/api/admin/customers', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const response = await fetchAdminCustomers();
         
         if (!response.ok) throw new Error('Failed to load policies');
         const data = await response.json();
@@ -7926,9 +7931,7 @@
       statusEl.innerHTML = '<span style="color: #3b82f6;"> Generating report...</span>';
       
       try {
-        const response = await fetch('/api/admin/customers', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const response = await fetchAdminCustomers();
         
         if (!response.ok) throw new Error('Failed to load policies');
         const data = await response.json();
@@ -8050,9 +8053,7 @@
     
     // Update policy badges - uses admin/customers for accurate counts
     function updatePolicyBadges() {
-      fetch('/api/admin/customers', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
+      fetchAdminCustomers()
       .then(res => res.json())
       .then(data => {
         const customers = data.customers || [];
@@ -8289,9 +8290,7 @@
     
     // Update customer badge
     function updateCustomerBadge() {
-      fetch('/api/admin/customers', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
+      fetchAdminCustomers()
       .then(res => res.json())
       .then(data => {
         const customers = data.customers || [];
