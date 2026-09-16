@@ -2055,14 +2055,17 @@ async function exportBillingStats(format) {
     const stats = await response.json();
     lastBillingStats = stats;
     
+    const collected = stats.ledger_premium_collected != null ? stats.ledger_premium_collected : (stats.total_collected || 0);
+    const claimsPaid = stats.ledger_claims_paid != null ? stats.ledger_claims_paid : (stats.claims_paid || 0);
     if (format === 'csv') {
       const data = [
         { Metric: 'Total Revenue', Value: stats.total_revenue || 0 },
         { Metric: 'Monthly Premium Income', Value: stats.monthly_premium_income || 0 },
         { Metric: 'Total Billed', Value: stats.total_billed || 0 },
-        { Metric: 'Total Collected', Value: stats.total_collected || 0 },
+        { Metric: 'Bills Collected', Value: stats.total_collected || 0 },
+        { Metric: 'Ledger Premiums Collected', Value: collected },
         { Metric: 'Outstanding Balance', Value: stats.outstanding_balance || 0 },
-        { Metric: 'Claims Paid', Value: stats.claims_paid || 0 },
+        { Metric: 'Claims Paid (ledger)', Value: claimsPaid },
         { Metric: 'Collection Rate', Value: (stats.collection_rate || 0) + '%' },
         { Metric: 'Total Transactions', Value: stats.total_transactions || 0 },
         { Metric: 'Paid Count', Value: stats.paid_count || 0 },
@@ -2074,7 +2077,7 @@ async function exportBillingStats(format) {
       const content = `
         <div class="summary-box">
           <div class="metric"><span class="metric-value">${formatCurrencyExport(stats.total_revenue)}</span><br><span class="metric-label">Total Revenue</span></div>
-          <div class="metric"><span class="metric-value">${formatCurrencyExport(stats.total_collected)}</span><br><span class="metric-label">Collected</span></div>
+          <div class="metric"><span class="metric-value">${formatCurrencyExport(collected)}</span><br><span class="metric-label">Collected</span></div>
           <div class="metric"><span class="metric-value">${formatCurrencyExport(stats.outstanding_balance)}</span><br><span class="metric-label">Outstanding</span></div>
           <div class="metric"><span class="metric-value">${(stats.collection_rate || 0).toFixed(1)}%</span><br><span class="metric-label">Collection Rate</span></div>
         </div>
@@ -2084,9 +2087,9 @@ async function exportBillingStats(format) {
           <tr><td>Total Revenue (Annual)</td><td>${formatCurrencyExport(stats.total_revenue)}</td></tr>
           <tr><td>Monthly Premium Income</td><td>${formatCurrencyExport(stats.monthly_premium_income)}</td></tr>
           <tr><td>Total Billed</td><td>${formatCurrencyExport(stats.total_billed)}</td></tr>
-          <tr><td>Total Collected</td><td>${formatCurrencyExport(stats.total_collected)}</td></tr>
+          <tr><td>Total Collected (ledger)</td><td>${formatCurrencyExport(collected)}</td></tr>
           <tr><td>Outstanding Balance</td><td>${formatCurrencyExport(stats.outstanding_balance)}</td></tr>
-          <tr><td>Claims Paid</td><td>${formatCurrencyExport(stats.claims_paid)}</td></tr>
+          <tr><td>Claims Paid (ledger)</td><td>${formatCurrencyExport(claimsPaid)}</td></tr>
           <tr><td>Collection Rate</td><td>${(stats.collection_rate || 0).toFixed(1)}%</td></tr>
         </table>
         <h3>Transaction Counts</h3>

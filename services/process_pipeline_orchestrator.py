@@ -144,7 +144,8 @@ class ProcessPipelineOrchestrator:
                  delivery_service=None,
                  billing_service=None,
                  data_integrity_service=None,
-                 savings_pipeline_service=None):
+                 savings_pipeline_service=None,
+                 claim_payout_fn=None):
 
         self.policies = policies or {}
         self.customers = customers or {}
@@ -166,6 +167,7 @@ class ProcessPipelineOrchestrator:
         self.billing_service = billing_service
         self.data_integrity = data_integrity_service
         self.savings_pipeline = savings_pipeline_service
+        self.claim_payout_fn = claim_payout_fn
 
         self.supply_validations: Dict[str, MarketplaceSupplyValidation] = {}
         self.automation_log: List[Dict[str, Any]] = []
@@ -554,6 +556,47 @@ class ProcessPipelineOrchestrator:
 
     def _process_claim_payout(self, claim: Dict, policy: Dict, customer_id: str, amount: float) -> Dict[str, Any]:
         destination = claim.get('payment_destination', 'health_wallet')
+        claim_id = str(claim.get('id') or claim.get('claim_id') or '')
+
+        if self.claim_payout_fn:
+            try:
+                return self.claim_payout_fn(claim_id, customer_id, amount)
+            except Exception as payout_err:
+                return {'success': False, 'error': str(payout_err), 'destination': destination}
+
+        # Always record customer-ledger claim cash when a ledger is attached so
+        # pipeline auto-approve cannot skip the cash identity (early durability gap).
+        if self.transaction_ledger is not None and claim_id:
+            from services.financial_unification_service import CLAIM_CASH_TYPES
+
+            already = False
+            for tx in self.transaction_ledger.values() if hasattr(self.transaction_ledger, 'values') else []:
+                if not isinstance(tx, dict):
+                    continue
+                # Only cash rows count; a filing or audit row tagged with the
+                # claim must not suppress the cash identity.
+                if str(tx.get('type') or tx.get('tx_type') or '').strip().lower() not in CLAIM_CASH_TYPES:
+                    continue
+                meta = tx.get('metadata') if isinstance(tx.get('metadata'), dict) else {}
+                if str(meta.get('claim_id') or tx.get('claim_id') or '') == claim_id:
+                    already = True
+                    break
+            if not already:
+                tx_id = f'TX-REPAIR-CLM-{claim_id}'
+                self.transaction_ledger[tx_id] = {
+                    'id': tx_id,
+                    'customer_id': customer_id,
+                    'type': 'claim_payment_received',
+                    'amount': amount,
+                    'description': f'Claim {claim_id} payment (pipeline)',
+                    'metadata': {
+                        'claim_id': claim_id,
+                        'policy_id': (policy or {}).get('id'),
+                        'source': 'process_pipeline',
+                    },
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                    'status': 'completed',
+                }
 
         if destination == 'health_wallet':
             wallet = self.health_wallets.get(customer_id)

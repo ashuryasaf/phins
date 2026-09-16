@@ -799,6 +799,11 @@ def compute_unified_financial_metrics(
             transactions=TRANSACTION_LEDGER.values(),
             balance_sheet=PHINS_BALANCE_SHEET,
             exclude_customer=exclude_fn,
+            investment_accounts=INVESTMENT_ACCOUNTS,
+            savings_pipeline_accounts=(
+                getattr(savings_pipeline_service, 'accounts', None)
+                if savings_pipeline_enabled and savings_pipeline_service else None
+            ),
         )
     except Exception as _unify_err:
         print(f"[FINANCIAL_UNIFICATION] metrics attach skipped: {_unify_err}")
@@ -858,9 +863,60 @@ def compute_unified_financial_metrics(
         'economic_claims_reserve': (
             (books_reconcile or {}).get('reserves', {}).get('economic_claims_reserve', 0.0)
         ),
-        'seed_claims_reserve': safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0),
+        'seed_claims_reserve': safe_float(
+            PHINS_BALANCE_SHEET.get('seed_claims_reserve', PHINS_BALANCE_SHEET.get('claims_reserve')), 0
+        ),
         'books_reconcile': books_reconcile,
     }
+
+
+def _savings_pipeline_accounts():
+    try:
+        if savings_pipeline_enabled and savings_pipeline_service:
+            return getattr(savings_pipeline_service, 'accounts', None)
+    except Exception:
+        return None
+    return None
+
+
+def run_financial_books_repair(*, dry_run: bool = False, actor: str = 'books_repair') -> Dict[str, Any]:
+    """Reconstruct missing ledger/accounting rows from paid bills and claims.
+
+    Used by ``POST /api/finance/repair``. Historical billed amounts and seed
+    capital are never rewritten.
+    """
+    from services.financial_unification_service import repair_financial_books
+
+    initialize_balance_sheet()
+
+    def _append_ledger(customer_id, tx_type, amount, description, metadata):
+        meta = dict(metadata or {})
+        meta.setdefault('source_system', 'books_repair')
+        meta.setdefault('actor', actor)
+        return record_transaction(
+            customer_id=customer_id,
+            tx_type=tx_type,
+            amount=amount,
+            description=description,
+            metadata=meta,
+        )
+
+    report = repair_financial_books(
+        policies=POLICIES,
+        claims=CLAIMS,
+        billing=BILLING,
+        transactions=TRANSACTION_LEDGER,
+        balance_sheet=PHINS_BALANCE_SHEET,
+        investment_accounts=INVESTMENT_ACCOUNTS,
+        savings_pipeline_accounts=_savings_pipeline_accounts(),
+        exclude_customer=is_suspended_account,
+        append_ledger=_append_ledger,
+        dry_run=dry_run,
+        actor=actor,
+    )
+    if not dry_run:
+        threading.Thread(target=save_ledger_data, daemon=True).start()
+    return report
 
 
 # ==============================================================================
@@ -4350,7 +4406,8 @@ PHINS_BALANCE_SHEET: Dict[str, Any] = {
     'last_updated': None,
     
     # Main account balances
-    'claims_reserve': 3500000.00,      # $3.5M for claims payments
+    'claims_reserve': 3500000.00,      # $3.5M for claims payments (operational remaining)
+    'seed_claims_reserve': 3500000.00, # Founding capital — never rewritten by claims
     'operating_reserve': 0.00,          # General operating funds
     'supplier_reserve': 0.00,           # Funds for supplier payments
     'investment_reserve': 0.00,         # Company investment funds
@@ -4871,6 +4928,11 @@ def analyze_document_content(doc: Dict[str, Any]) -> Dict[str, Any]:
 def initialize_balance_sheet():
     """Initialize the PHINS balance sheet with default values if not already set"""
     global PHINS_BALANCE_SHEET
+    try:
+        from services.financial_unification_service import ensure_seed_claims_reserve
+        ensure_seed_claims_reserve(PHINS_BALANCE_SHEET)
+    except Exception:
+        PHINS_BALANCE_SHEET.setdefault('seed_claims_reserve', 3500000.00)
     if PHINS_BALANCE_SHEET.get('created_at') is None:
         PHINS_BALANCE_SHEET['created_at'] = datetime.now().isoformat()
         PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
@@ -5777,6 +5839,11 @@ def load_ledger_data():
             loaded_bs = data.get('phins_balance_sheet', {})
             if loaded_bs:
                 PHINS_BALANCE_SHEET.update(loaded_bs)
+                try:
+                    from services.financial_unification_service import ensure_seed_claims_reserve
+                    ensure_seed_claims_reserve(PHINS_BALANCE_SHEET)
+                except Exception:
+                    PHINS_BALANCE_SHEET.setdefault('seed_claims_reserve', 3500000.00)
                 print(f"  - PHINS Balance Sheet: Claims Reserve ${PHINS_BALANCE_SHEET.get('claims_reserve', 0):,.2f}")
         
         # Load Claims and Claim Files (v1.4+)
@@ -22539,8 +22606,18 @@ For claims or questions, please contact:
                     claim.get('customer_id') == session_customer_id or
                     (claim.get('policy_id') and POLICIES.get(claim.get('policy_id'), {}).get('customer_id') == session_customer_id)
                 ))):
+                    payload = dict(claim)
+                    try:
+                        from services.financial_unification_service import claim_cash_by_id
+                        cash = claim_cash_by_id(TRANSACTION_LEDGER.values()).get(str(claim_id))
+                        if cash is not None:
+                            payload['ledger_paid_amount'] = float(cash)
+                            if not payload.get('paid_amount'):
+                                payload['paid_amount'] = float(cash)
+                    except Exception:
+                        pass
                     self._set_json_headers()
-                    self.wfile.write(json.dumps(claim).encode('utf-8'))
+                    self.wfile.write(json.dumps(payload).encode('utf-8'))
                 else:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Claim not found'}).encode('utf-8'))
@@ -22620,6 +22697,21 @@ For claims or questions, please contact:
                         policy = POLICIES.get(policy_id, {})
                         enriched['policy_type'] = policy.get('type', policy.get('policy_type', ''))
                         enriched['policy_coverage'] = policy.get('coverage_amount', policy.get('coverage', 0))
+                    cash_map = getattr(enrich_claim, '_ledger_cash', None)
+                    if cash_map is None:
+                        try:
+                            from services.financial_unification_service import claim_cash_by_id
+                            cash_map = {
+                                k: float(v) for k, v in claim_cash_by_id(TRANSACTION_LEDGER.values()).items()
+                            }
+                        except Exception:
+                            cash_map = {}
+                        enrich_claim._ledger_cash = cash_map
+                    claim_id = str(claim.get('id') or '')
+                    if claim_id and claim_id in cash_map:
+                        enriched['ledger_paid_amount'] = cash_map[claim_id]
+                        if not enriched.get('paid_amount'):
+                            enriched['paid_amount'] = cash_map[claim_id]
                     return enriched
                 
                 claims_list = [enrich_claim(c) for c in claims_list]
@@ -24513,10 +24605,13 @@ For claims or questions, please contact:
                 'monthly_premium_income': m['monthly_premium_income'],
                 'total_billed': m['total_billed'],
                 'total_collected': m['total_collected'],
+                'ledger_premium_collected': m.get('ledger_premium_collected', m['total_collected']),
                 'outstanding_balance': m['outstanding_balance'],
                 'outstanding_receivables': m['outstanding_balance'],
-                'claims_paid': m['claims_paid_amount'],
-                'claims_paid_this_month': m['claims_paid_amount'],
+                'claims_paid': m.get('ledger_claims_paid', m['claims_paid_amount']),
+                'claims_paid_records': m['claims_paid_amount'],
+                'ledger_claims_paid': m.get('ledger_claims_paid', m['claims_paid_amount']),
+                'claims_paid_this_month': m.get('ledger_claims_paid', m['claims_paid_amount']),
                 'investment_returns': 0,
                 'total_transactions': m['total_transactions'],
                 'paid_count': m['paid_count'],
@@ -30757,6 +30852,8 @@ For claims or questions, please contact:
                     transactions=TRANSACTION_LEDGER.values(),
                     balance_sheet=PHINS_BALANCE_SHEET,
                     exclude_customer=is_suspended_account,
+                    investment_accounts=INVESTMENT_ACCOUNTS,
+                    savings_pipeline_accounts=_savings_pipeline_accounts(),
                 )
             except Exception as rec_err:
                 self._set_json_headers(500)
@@ -30781,15 +30878,33 @@ For claims or questions, please contact:
             initialize_balance_sheet()
             
             cumulative_premium_data = calculate_cumulative_premium_income(exclude_suspended=True)
-
-            # Inject cumulative premium into balance sheet so revenue_breakdown reflects actuals
-            PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = cumulative_premium_data['total']
-            PHINS_BALANCE_SHEET['total_revenue'] = round(sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values()), 2)
-
-            seed_claims_reserve = PHINS_BALANCE_SHEET['claims_reserve']
+            seed_claims_reserve = PHINS_BALANCE_SHEET.get(
+                'seed_claims_reserve', PHINS_BALANCE_SHEET['claims_reserve']
+            )
             economic_reserve = 0.0
+            ledger_premium = 0.0
+            ledger_claims = 0.0
             try:
-                from services.financial_unification_service import economic_claims_reserve
+                from services.financial_unification_service import (
+                    CLAIM_CASH_TYPES,
+                    PREMIUM_CASH_TYPES,
+                    apply_ledger_derived_balance_sheet,
+                    economic_claims_reserve,
+                    ensure_seed_claims_reserve,
+                    ledger_cash_total,
+                )
+                seed_claims_reserve = ensure_seed_claims_reserve(PHINS_BALANCE_SHEET)
+                ledger_premium = ledger_cash_total(
+                    TRANSACTION_LEDGER.values(), PREMIUM_CASH_TYPES,
+                    exclude_customer=is_suspended_account,
+                )['total']
+                ledger_claims = ledger_cash_total(
+                    TRANSACTION_LEDGER.values(), CLAIM_CASH_TYPES,
+                    exclude_customer=is_suspended_account,
+                )['total']
+                apply_ledger_derived_balance_sheet(
+                    PHINS_BALANCE_SHEET, ledger_premium, ledger_claims
+                )
                 economic_reserve = economic_claims_reserve(
                     transactions=TRANSACTION_LEDGER.values(),
                     policies=POLICIES,
@@ -30797,6 +30912,8 @@ For claims or questions, please contact:
                 )['economic_claims_reserve']
             except Exception as _econ_err:
                 print(f"[FINANCIAL_UNIFICATION] economic reserve attach skipped: {_econ_err}")
+                PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = cumulative_premium_data['total']
+                PHINS_BALANCE_SHEET['total_revenue'] = round(sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values()), 2)
 
             # Calculate totals. claims_reserve is displayed as the economic
             # identity (collected risk cash minus claim cash), so total_balance
@@ -30834,12 +30951,14 @@ For claims or questions, please contact:
                     'total_revenue': PHINS_BALANCE_SHEET['total_revenue'],
                     'revenue_breakdown': PHINS_BALANCE_SHEET['revenue_breakdown'],
                     
-                    # Cumulative premium (actuals from billing + ledger)
+                    # Cumulative premium (bills + unbilled remainder) vs ledger cash identity
                     'cumulative_premium': cumulative_premium_data['total'],
                     'cumulative_premium_breakdown': {
                         'from_bills': cumulative_premium_data['from_bills'],
                         'from_ledger': cumulative_premium_data['ledger_unbilled_total'],
                     },
+                    'ledger_premium_collected': ledger_premium,
+                    'ledger_claims_paid': ledger_claims,
                     
                     # Expenses
                     'total_expenses': PHINS_BALANCE_SHEET['total_expenses'],
@@ -30936,10 +31055,15 @@ For claims or questions, please contact:
                 'success': True,
                 'summary': {
                     'claims_reserve': m.get('economic_claims_reserve', PHINS_BALANCE_SHEET['claims_reserve']),
-                    'seed_claims_reserve': PHINS_BALANCE_SHEET['claims_reserve'],
+                    'seed_claims_reserve': PHINS_BALANCE_SHEET.get(
+                        'seed_claims_reserve', PHINS_BALANCE_SHEET['claims_reserve']
+                    ),
                     'economic_claims_reserve': m.get('economic_claims_reserve', 0.0),
                     'total_claims_paid': m.get('ledger_claims_paid', PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid']),
-                    'total_premium_income': PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'],
+                    'total_premium_income': m.get(
+                        'ledger_premium_collected',
+                        PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'],
+                    ),
                     'net_position': PHINS_BALANCE_SHEET['total_revenue'] - PHINS_BALANCE_SHEET['total_expenses'],
                     'recent_claims_count': len(recent_claims),
                     'last_updated': PHINS_BALANCE_SHEET['last_updated']
@@ -31328,67 +31452,76 @@ For claims or questions, please contact:
             auto_fix = qs.get('auto_fix', ['false'])[0].lower() == 'true'
             
             initialize_balance_sheet()
-            
-            # Calculate expected reserve: initial - all claims paid
-            INITIAL_RESERVE = 3500000.0  # Initial seed capital
-            total_claims_paid = PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid']
-            expected_reserve = INITIAL_RESERVE - total_claims_paid
-            actual_reserve = PHINS_BALANCE_SHEET['claims_reserve']
-            discrepancy = actual_reserve - expected_reserve
-            
-            result = {
-                'success': True,
-                'initial_reserve': INITIAL_RESERVE,
-                'total_claims_paid': total_claims_paid,
-                'expected_reserve': expected_reserve,
-                'actual_reserve': actual_reserve,
-                'discrepancy': discrepancy,
-                'needs_fix': abs(discrepancy) > 0.01
-            }
-            
-            if auto_fix and abs(discrepancy) > 0.01:
-                # Fix the claims_reserve
-                old_reserve = PHINS_BALANCE_SHEET['claims_reserve']
-                PHINS_BALANCE_SHEET['claims_reserve'] = expected_reserve
-                PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
-                
-                # Add audit log entry
-                PHINS_BALANCE_SHEET['audit_log'].append({
-                    'action': 'reserve_integrity_fix',
-                    'actor': session.get('username', 'system') if session else 'system',
-                    'timestamp': datetime.now().isoformat(),
-                    'old_reserve': old_reserve,
-                    'new_reserve': expected_reserve,
-                    'discrepancy_fixed': discrepancy
-                })
-                
-                # Add correction transaction
-                PHINS_BALANCE_SHEET['transactions'].append({
-                    'tx_id': f"BS-ADJ-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
-                    'type': 'adjustment',
-                    'category': 'claims_reserve',
-                    'amount': -discrepancy,
-                    'description': f'Reserve integrity correction for historical claims (discrepancy: ${discrepancy:,.2f})',
-                    'actor': session.get('username', 'system') if session else 'system',
-                    'balance_after': expected_reserve,
-                    'claims_reserve_after': expected_reserve,
-                    'timestamp': datetime.now().isoformat()
-                })
-                
-                save_ledger_data()
-                
-                result['fix_applied'] = True
-                result['new_reserve'] = expected_reserve
-                result['message'] = f'Reserve corrected from ${old_reserve:,.2f} to ${expected_reserve:,.2f}'
-            else:
-                result['fix_applied'] = False
-                if abs(discrepancy) <= 0.01:
-                    result['message'] = 'Reserve is already correct - no fix needed'
+            try:
+                from services.financial_unification_service import (
+                    CLAIM_CASH_TYPES,
+                    PREMIUM_CASH_TYPES,
+                    apply_ledger_derived_balance_sheet,
+                    economic_claims_reserve,
+                    ensure_seed_claims_reserve,
+                    ledger_cash_total,
+                )
+                seed = ensure_seed_claims_reserve(PHINS_BALANCE_SHEET)
+                ledger_claims = ledger_cash_total(
+                    TRANSACTION_LEDGER.values(), CLAIM_CASH_TYPES,
+                    exclude_customer=is_suspended_account,
+                )['total']
+                ledger_premium = ledger_cash_total(
+                    TRANSACTION_LEDGER.values(), PREMIUM_CASH_TYPES,
+                    exclude_customer=is_suspended_account,
+                )['total']
+                economic = economic_claims_reserve(
+                    transactions=TRANSACTION_LEDGER.values(),
+                    policies=POLICIES,
+                    exclude_customer=is_suspended_account,
+                )
+                operational_reserve = PHINS_BALANCE_SHEET['claims_reserve']
+                bs_claims = PHINS_BALANCE_SHEET['expense_breakdown'].get('claims_paid', 0)
+                result = {
+                    'success': True,
+                    'seed_claims_reserve': seed,
+                    'economic_claims_reserve': economic['economic_claims_reserve'],
+                    'operational_claims_reserve': operational_reserve,
+                    'ledger_claims_paid': ledger_claims,
+                    'balance_sheet_claims_paid': bs_claims,
+                    'ledger_premium_collected': ledger_premium,
+                    'needs_fix': abs(float(bs_claims) - float(ledger_claims)) > 0.01,
+                    'seed_rewritten': False,
+                    'note': (
+                        'Seed founding capital is never rewritten. Displayed claims '
+                        'reserve is economic (risk cash minus claim cash). auto_fix '
+                        'derives premium_income and claims_paid from the customer ledger.'
+                    ),
+                }
+                if auto_fix:
+                    derived = apply_ledger_derived_balance_sheet(
+                        PHINS_BALANCE_SHEET, ledger_premium, ledger_claims
+                    )
+                    PHINS_BALANCE_SHEET['audit_log'].append({
+                        'action': 'reserve_integrity_derive_from_ledger',
+                        'actor': session.get('username', 'system') if session else 'system',
+                        'timestamp': datetime.now().isoformat(),
+                        'derived': derived,
+                    })
+                    save_ledger_data()
+                    result['fix_applied'] = True
+                    result['derived'] = derived
+                    result['message'] = (
+                        'Derived General Reserves premium_income and claims_paid from '
+                        'customer-ledger cash. Seed capital was not changed.'
+                    )
                 else:
-                    result['message'] = f'Discrepancy of ${discrepancy:,.2f} found. Add ?auto_fix=true to correct.'
-            
+                    result['fix_applied'] = False
+                    result['message'] = (
+                        'Seed capital is founding capital and is never rewritten. '
+                        'Add ?auto_fix=true to derive premium_income / claims_paid from the ledger.'
+                    )
+            except Exception as fix_err:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(fix_err)}).encode('utf-8'))
+                return
+
             result['timestamp'] = datetime.now().isoformat()
-            
             self._set_json_headers()
             self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             return
@@ -31474,17 +31607,39 @@ For claims or questions, please contact:
             # ========== COMPREHENSIVE RECONCILIATION ==========
             # Calculate expected values from actual transaction data
             
-            # 1. Premium Income - cumulative paid premiums from billed and
-            # unbilled/direct premium flows (with de-duplication safeguards).
+            # 1. Premium Income — customer-ledger cash identity
             premium_income_totals = calculate_cumulative_premium_income(exclude_suspended=True)
-            expected_premium_income = premium_income_totals['total']
-            
-            # 2. Claims Paid - from paid claims
-            expected_claims_paid = sum(
-                float(c.get('paid_amount', 0) or c.get('approved_amount', 0)) 
-                for c in CLAIMS.values()
-                if status_eq(c, 'paid')
-            )
+            try:
+                from services.financial_unification_service import (
+                    CLAIM_CASH_TYPES,
+                    PREMIUM_CASH_TYPES,
+                    apply_ledger_derived_balance_sheet,
+                    ledger_cash_total,
+                )
+                expected_premium_income = ledger_cash_total(
+                    TRANSACTION_LEDGER.values(), PREMIUM_CASH_TYPES,
+                    exclude_customer=is_suspended_account,
+                )['total']
+                expected_claims_paid = ledger_cash_total(
+                    TRANSACTION_LEDGER.values(), CLAIM_CASH_TYPES,
+                    exclude_customer=is_suspended_account,
+                )['total']
+                ledger_premium_income = expected_premium_income
+                ledger_claims_paid = expected_claims_paid
+            except Exception:
+                expected_premium_income = premium_income_totals['total']
+                expected_claims_paid = sum(
+                    float(c.get('paid_amount', 0) or c.get('approved_amount', 0))
+                    for c in CLAIMS.values()
+                    if status_eq(c, 'paid')
+                )
+                ledger_premium_income = premium_income_totals['ledger_unbilled_total']
+                ledger_claims_paid = sum(
+                    tx.get('amount', 0) for tx in TRANSACTION_LEDGER.values()
+                    if get_transaction_type(tx) in [
+                        'claim_payment_received', 'claim_payment', 'claim_paid', 'claims_paid'
+                    ]
+                )
             
             # 3. Medical Equipment/Services (Supplier Payments) - from medical purchases
             total_medical_purchases = sum(
@@ -31527,12 +31682,9 @@ For claims or questions, please contact:
                 float(o.get('price', 0) or o.get('amount', 0)) for o in SUPPLIER_OFFERS.values()
             )
             
-            # 7. Calculate from transaction ledger as secondary source
-            ledger_premium_income = premium_income_totals['ledger_unbilled_total']
-            ledger_claims_paid = sum(
-                tx.get('amount', 0) for tx in TRANSACTION_LEDGER.values()
-                if get_transaction_type(tx) in ['claim_payment', 'claim_paid', 'claims_paid']
-            )
+            # 7. Medical ledger (supplier) as secondary source. Premium/claim
+            # cash identity was already computed from PREMIUM_CASH_TYPES /
+            # CLAIM_CASH_TYPES above — do not overwrite with incomplete aliases.
             ledger_medical_payments = sum(
                 tx.get('amount', 0) for tx in TRANSACTION_LEDGER.values()
                 if get_transaction_type(tx) in ['medical_purchase', 'supplier_payment', 'health_wallet_purchase']
@@ -31551,12 +31703,15 @@ For claims or questions, please contact:
             claims_diff = abs(expected_claims_paid - current_claims_paid)
             supplier_diff = abs(total_medical_purchases - current_supplier_payments)
 
-            # Always reflect the latest cumulative collected premium in the
-            # persisted balance sheet during reconcile, even when there is no
-            # discrepancy, so the admin balance-sheet tab stays in sync after
-            # the reconcile action itself.
-            PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = expected_premium_income
-            PHINS_BALANCE_SHEET['total_revenue'] = round(sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values()), 2)
+            # Always derive General Reserves premium_income / claims_paid from
+            # customer-ledger cash. Seed founding capital is never rewritten.
+            try:
+                apply_ledger_derived_balance_sheet(
+                    PHINS_BALANCE_SHEET, expected_premium_income, expected_claims_paid
+                )
+            except Exception:
+                PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = expected_premium_income
+                PHINS_BALANCE_SHEET['total_revenue'] = round(sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values()), 2)
             PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
             
             if premium_diff > 0.01:
@@ -43506,6 +43661,51 @@ For claims or questions, please contact:
             return
         
         # ========== PHINS BALANCE SHEET MANAGEMENT API (POST) ==========
+
+        if path == '/api/finance/repair':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin or Accountant access required.'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body or '{}') if body else {}
+            except json.JSONDecodeError:
+                data = {}
+            if not isinstance(data, dict):
+                data = {}
+            dry_run = bool(data.get('dry_run', False))
+            actor = str((session or {}).get('username') or 'accountant')
+            try:
+                report = run_financial_books_repair(dry_run=dry_run, actor=actor)
+            except Exception as repair_err:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(repair_err)}).encode('utf-8'))
+                return
+            try:
+                from services.audit_service import AuditService
+                AuditService().log(
+                    actor=actor,
+                    action='finance.books_repair',
+                    entity='financial_books',
+                    entity_id='general_reserves',
+                    details={
+                        'dry_run': dry_run,
+                        'action_count': report.get('action_count'),
+                        'is_consistent': report.get('is_consistent'),
+                    },
+                )
+            except Exception:
+                pass
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'repair': report,
+                'timestamp': datetime.now().isoformat(),
+            }, default=str).encode('utf-8'))
+            return
         
         # Deposit funds to balance sheet reserves
         if path == '/api/admin/balance-sheet/deposit':
@@ -48080,6 +48280,10 @@ For claims or questions, please contact:
                         'successful_payments': successful,
                         'failed_payments': failed,
                         'total_revenue': m['total_revenue'],
+                        'total_collected': m['total_collected'],
+                        'ledger_premium_collected': m.get('ledger_premium_collected', m['total_collected']),
+                        'claims_paid': m.get('ledger_claims_paid', m.get('claims_paid_amount', 0)),
+                        'ledger_claims_paid': m.get('ledger_claims_paid', 0),
                         'pending_alerts': 0
                     }).encode('utf-8'))
                 except Exception as e:

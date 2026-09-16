@@ -9,6 +9,13 @@ Authority (do not invert):
    equal those cash totals. They never invent amounts.
 
 This module is fail-open: posting helpers never raise into payment flows.
+
+Early PHINS durability was inconsistent (in-memory books, JSON snapshots,
+and later a hash-chained ledger). ``repair_financial_books`` reconstructs
+missing cash-identity rows from operational evidence (paid bills, paid
+claims) and backfills the accounting book from that ledger. It never
+rewrites billed ``annual_premium`` / ``Bill.amount`` and never mutates
+founding ``seed_claims_reserve``.
 """
 
 from __future__ import annotations
@@ -46,6 +53,17 @@ CLAIM_CASH_TYPES = frozenset({
 
 CANONICAL_CLAIM_LEDGER_TYPE = "claim_payment_received"
 CANONICAL_PREMIUM_LEDGER_TYPE = "premium_payment"
+
+# Customer-savings cash that landed as an investment/pipeline deposit.
+SAVINGS_ALLOCATION_DEPOSIT_TYPES = frozenset({
+    "premium_allocation",
+    "savings_allocation",
+    "savings_premium",
+    "pipeline_premium",
+})
+
+FOUNDING_CLAIMS_RESERVE = Decimal("3500000.00")
+REPAIR_TX_PREFIX = "TX-REPAIR-"
 
 TOLERANCE = Decimal("0.01")
 
@@ -397,6 +415,7 @@ def accounting_book_totals(
 
         premium_total = Decimal("0.00")
         risk_total = Decimal("0.00")
+        savings_total = Decimal("0.00")
         posted_allocations = 0
         for alloc in (engine.allocations or {}).values():
             if getattr(alloc, "status", None) != AllocationStatus.POSTED:
@@ -405,6 +424,7 @@ def accounting_book_totals(
                 continue
             premium_total += money(alloc.total_premium)
             risk_total += money(getattr(alloc, "risk_premium", 0))
+            savings_total += money(getattr(alloc, "savings_premium", 0))
             posted_allocations += 1
         claims_total = Decimal("0.00")
         entry_count = 0
@@ -417,6 +437,7 @@ def accounting_book_totals(
         return {
             "premium_posted": float(premium_total),
             "risk_posted": float(risk_total),
+            "savings_posted": float(savings_total),
             "claims_posted": float(claims_total),
             "allocation_count": posted_allocations,
             "entry_count": entry_count,
@@ -426,6 +447,7 @@ def accounting_book_totals(
         return {
             "premium_posted": 0.0,
             "risk_posted": 0.0,
+            "savings_posted": 0.0,
             "claims_posted": 0.0,
             "allocation_count": 0,
             "entry_count": 0,
@@ -536,6 +558,337 @@ def economic_claims_reserve(
     }
 
 
+def ensure_seed_claims_reserve(
+    balance_sheet: Optional[Dict[str, Any]],
+    founding_capital: Any = None,
+) -> float:
+    """Pin founding capital once. Never derived from later claim deductions."""
+    sheet = balance_sheet if isinstance(balance_sheet, dict) else {}
+    seed = sheet.get("seed_claims_reserve")
+    if seed is None or seed == "":
+        fallback = founding_capital
+        if fallback is None:
+            fallback = FOUNDING_CLAIMS_RESERVE
+        sheet["seed_claims_reserve"] = money_float(fallback)
+    return money_float(sheet.get("seed_claims_reserve"))
+
+
+def apply_ledger_derived_balance_sheet(
+    balance_sheet: Dict[str, Any],
+    ledger_premium: Any,
+    ledger_claims: Any,
+) -> Dict[str, Any]:
+    """Set derived BS counters from customer-ledger cash.
+
+    Updates ``premium_income`` and ``claims_paid`` (and their totals) so
+    the General Reserves sheet matches cash identity. Does **not** touch
+    ``seed_claims_reserve`` or operational ``claims_reserve``.
+    """
+    if not isinstance(balance_sheet, dict):
+        return {}
+    ensure_seed_claims_reserve(balance_sheet)
+    premium = money(ledger_premium)
+    claims = money(ledger_claims)
+    revenue = balance_sheet.setdefault("revenue_breakdown", {})
+    expense = balance_sheet.setdefault("expense_breakdown", {})
+    if not isinstance(revenue, dict):
+        revenue = {}
+        balance_sheet["revenue_breakdown"] = revenue
+    if not isinstance(expense, dict):
+        expense = {}
+        balance_sheet["expense_breakdown"] = expense
+    revenue["premium_income"] = float(premium)
+    expense["claims_paid"] = float(claims)
+    balance_sheet["total_revenue"] = round(
+        sum(money_float(v) for v in revenue.values()), 2
+    )
+    balance_sheet["total_expenses"] = round(
+        sum(money_float(v) for v in expense.values()), 2
+    )
+    return {
+        "premium_income": float(premium),
+        "claims_paid": float(claims),
+        "total_revenue": balance_sheet["total_revenue"],
+        "total_expenses": balance_sheet["total_expenses"],
+        "seed_claims_reserve": money_float(balance_sheet.get("seed_claims_reserve")),
+    }
+
+
+def _tx_metadata(tx: Dict[str, Any]) -> Dict[str, Any]:
+    meta = tx.get("metadata")
+    return meta if isinstance(meta, dict) else {}
+
+
+def premium_cash_by_bill_id(
+    transactions: Iterable[Dict[str, Any]],
+) -> Dict[str, Decimal]:
+    """Sum customer-ledger premium cash keyed by bill_id (when present)."""
+    totals: Dict[str, Decimal] = {}
+    for tx in transactions:
+        if not isinstance(tx, dict):
+            continue
+        if _tx_type(tx) not in PREMIUM_CASH_TYPES:
+            continue
+        meta = _tx_metadata(tx)
+        bill_id = str(meta.get("bill_id") or tx.get("bill_id") or "").strip()
+        if not bill_id:
+            continue
+        totals[bill_id] = totals.get(bill_id, Decimal("0.00")) + _tx_amount(tx)
+    return totals
+
+
+def claim_cash_by_id(
+    transactions: Iterable[Dict[str, Any]],
+) -> Dict[str, Decimal]:
+    """Sum customer-ledger claim cash keyed by claim_id."""
+    totals: Dict[str, Decimal] = {}
+    for tx in transactions:
+        if not isinstance(tx, dict):
+            continue
+        if _tx_type(tx) not in CLAIM_CASH_TYPES:
+            continue
+        meta = _tx_metadata(tx)
+        claim_id = str(meta.get("claim_id") or tx.get("claim_id") or "").strip()
+        if not claim_id:
+            continue
+        totals[claim_id] = totals.get(claim_id, Decimal("0.00")) + _tx_amount(tx)
+    return totals
+
+
+def accounting_claim_ids(engine: Any = None) -> set:
+    ids = set()
+    try:
+        if engine is None:
+            from accounting_engine import get_accounting_engine, EntryType
+
+            engine = get_accounting_engine()
+        else:
+            from accounting_engine import EntryType
+        for entry in getattr(engine, "ledger_entries", []) or []:
+            if getattr(entry, "entry_type", None) != EntryType.CLAIM_PAYMENT:
+                continue
+            cid = str(
+                getattr(entry, "reference_no", "")
+                or getattr(entry, "allocation_id", "")
+                or ""
+            ).strip()
+            if cid:
+                ids.add(cid)
+    except Exception:
+        return ids
+    return ids
+
+
+def post_claim_to_accounting_book(
+    *,
+    claim_id: str,
+    policy_id: str,
+    customer_id: str,
+    amount: Any,
+    paid_by: str = "books_repair",
+    engine: Any = None,
+) -> Dict[str, Any]:
+    """Idempotently post claim cash onto the shared accounting book."""
+    paid = money(amount)
+    if paid <= 0:
+        return {"posted": False, "reason": "zero_amount"}
+    wanted = str(claim_id or "").strip()
+    if not wanted:
+        return {"posted": False, "reason": "missing_claim_id"}
+    try:
+        if engine is None:
+            from accounting_engine import get_accounting_engine
+
+            engine = get_accounting_engine()
+        if wanted in accounting_claim_ids(engine):
+            return {"posted": False, "reason": "already_posted", "claim_id": wanted}
+        ok, message = engine.post_claim_payment(
+            claim_id=wanted,
+            policy_id=policy_id or "UNKNOWN",
+            customer_id=customer_id or "",
+            amount=paid,
+            paid_by=paid_by,
+        )
+        return {
+            "posted": bool(ok),
+            "claim_id": wanted,
+            "amount": float(paid),
+            "message": message,
+        }
+    except Exception as exc:
+        logger.warning("accounting claim post failed: %s", exc, exc_info=True)
+        return {"posted": False, "reason": "error", "error": str(exc)}
+
+
+def _policy_for_tx(
+    tx: Dict[str, Any],
+    policies: Optional[Dict[str, Any]],
+    billing: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    policies = policies or {}
+    billing = billing or {}
+    meta = _tx_metadata(tx)
+    policy_id = str(
+        meta.get("policy_id") or tx.get("policy_id") or ""
+    ).strip()
+    if policy_id and policy_id in policies:
+        return policies.get(policy_id)
+    bill_id = str(meta.get("bill_id") or tx.get("bill_id") or "").strip()
+    if bill_id:
+        bill = billing.get(bill_id) or billing.get(str(bill_id)) or {}
+        policy_id = str(bill.get("policy_id") or "").strip()
+        if policy_id and policy_id in policies:
+            return policies.get(policy_id)
+    customer_id = str(tx.get("customer_id") or "")
+    if customer_id:
+        # Only an unambiguous owner can lend its kernel split to this cash.
+        # With several policies on the customer, guessing one would apply
+        # another policy's risk/savings pin to this row.
+        owned = [
+            policy
+            for policy in policies.values()
+            if isinstance(policy, dict) and str(policy.get("customer_id") or "") == customer_id
+        ]
+        if len(owned) == 1:
+            return owned[0]
+    return None
+
+
+def kernel_savings_cash_from_ledger(
+    transactions: Iterable[Dict[str, Any]],
+    policies: Optional[Dict[str, Any]] = None,
+    billing: Optional[Dict[str, Any]] = None,
+    *,
+    exclude_customer: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Kernel-split savings portion of customer-ledger premium cash."""
+    risk = Decimal("0.00")
+    savings = Decimal("0.00")
+    count = 0
+    for tx in transactions:
+        if not isinstance(tx, dict):
+            continue
+        if _tx_type(tx) not in PREMIUM_CASH_TYPES:
+            continue
+        cid = str(tx.get("customer_id") or "")
+        if exclude_customer and cid and exclude_customer(cid):
+            continue
+        amount = _tx_amount(tx)
+        if amount <= 0:
+            continue
+        policy = _policy_for_tx(tx, policies, billing)
+        split = resolve_premium_split(amount, policy, fallback_risk_pct=100)
+        risk += money(split["risk_amount"])
+        savings += money(split["savings_amount"])
+        count += 1
+    return {
+        "risk_amount": float(risk),
+        "savings_amount": float(savings),
+        "premium_count": count,
+    }
+
+
+def investment_premium_allocation_total(
+    investment_accounts: Optional[Dict[str, Any]] = None,
+    *,
+    exclude_customer: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Sum deposits tagged as premium/savings allocations (cash in, not AUM)."""
+    total = Decimal("0.00")
+    aum = Decimal("0.00")
+    count = 0
+    for customer_id, account in (investment_accounts or {}).items():
+        if exclude_customer and customer_id and exclude_customer(customer_id):
+            continue
+        if not isinstance(account, dict):
+            continue
+        aum += money(account.get("balance", 0))
+        for dep in account.get("deposits") or []:
+            if not isinstance(dep, dict):
+                continue
+            kind = str(dep.get("type") or "").strip().lower()
+            if kind and kind not in SAVINGS_ALLOCATION_DEPOSIT_TYPES:
+                continue
+            amount = money(dep.get("amount", 0)).copy_abs()
+            if amount <= 0:
+                continue
+            total += amount
+            count += 1
+    return {
+        "premium_allocations": float(total),
+        "aum_balance": float(aum),
+        "allocation_count": count,
+    }
+
+
+def pipeline_savings_cash(
+    savings_pipeline_accounts: Optional[Any] = None,
+    *,
+    exclude_customer: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Cash sitting in the savings pipeline (not market value)."""
+    cash = Decimal("0.00")
+    count = 0
+    accounts = savings_pipeline_accounts
+    if accounts is None:
+        return {"cash_balance": 0.0, "account_count": 0}
+    values = accounts.values() if hasattr(accounts, "values") else accounts
+    for account in values:
+        cid = ""
+        balance = 0
+        if isinstance(account, dict):
+            cid = str(account.get("customer_id") or "")
+            balance = account.get("cash_balance", 0)
+        else:
+            cid = str(getattr(account, "customer_id", "") or "")
+            balance = getattr(account, "cash_balance", 0)
+        if exclude_customer and cid and exclude_customer(cid):
+            continue
+        cash += money(balance)
+        count += 1
+    return {"cash_balance": float(cash), "account_count": count}
+
+
+def savings_and_investments_books(
+    *,
+    transactions: Iterable[Dict[str, Any]],
+    policies: Optional[Dict[str, Any]] = None,
+    billing: Optional[Dict[str, Any]] = None,
+    investment_accounts: Optional[Dict[str, Any]] = None,
+    savings_pipeline_accounts: Optional[Any] = None,
+    engine: Any = None,
+    exclude_customer: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Tie kernel savings cash to the accounting book and portfolio deposits."""
+    ledger_split = kernel_savings_cash_from_ledger(
+        transactions,
+        policies,
+        billing,
+        exclude_customer=exclude_customer,
+    )
+    book = accounting_book_totals(engine, exclude_customer=exclude_customer)
+    investments = investment_premium_allocation_total(
+        investment_accounts, exclude_customer=exclude_customer
+    )
+    pipeline = pipeline_savings_cash(
+        savings_pipeline_accounts, exclude_customer=exclude_customer
+    )
+    landed = money(investments["premium_allocations"]) + money(pipeline["cash_balance"])
+    savings_cash = money(ledger_split["savings_amount"])
+    return {
+        "kernel_savings_cash": ledger_split["savings_amount"],
+        "kernel_risk_cash": ledger_split["risk_amount"],
+        "accounting_savings_posted": book.get("savings_posted", 0.0),
+        "investment_premium_allocations": investments["premium_allocations"],
+        "investment_aum": investments["aum_balance"],
+        "pipeline_cash": pipeline["cash_balance"],
+        "savings_landed": float(landed),
+        "unlanded_savings_cash": float(
+            max(Decimal("0.00"), savings_cash - landed)
+        ),
+    }
+
+
 def _diff(left: Decimal, right: Decimal) -> float:
     return float((left - right).quantize(Decimal("0.01")))
 
@@ -549,10 +902,14 @@ def reconcile_financial_books(
     balance_sheet: Optional[Dict[str, Any]] = None,
     exclude_customer: Optional[Any] = None,
     engine: Any = None,
+    investment_accounts: Optional[Dict[str, Any]] = None,
+    savings_pipeline_accounts: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """Compare kernel-priced identity, customer-ledger cash, bills, BS, and book.
+    """Compare kernel-priced identity, customer-ledger cash, bills, BS, book, savings.
 
-    Reports discrepancies. Does not mutate historical rows.
+    Reports discrepancies. Does not mutate historical rows. Use
+    ``repair_financial_books`` to reconstruct missing cash-identity rows
+    from paid bills/claims and backfill the accounting book.
     """
     ledger_list = list(transactions)
     premium_ledger = ledger_cash_total(
@@ -584,7 +941,7 @@ def reconcile_financial_books(
     for claim in (claims or {}).values():
         if not isinstance(claim, dict):
             continue
-        status = str(claim.get("status") or "").strip().lower()
+        status = str(claim.get("status") or "").strip().lower().replace(" ", "_")
         if status not in ("paid", "closed"):
             continue
         cid = str(claim.get("customer_id") or "")
@@ -675,6 +1032,17 @@ def reconcile_financial_books(
         ledger_claims,
         "Accounting book claim entries must equal customer-ledger claim cash",
     )
+    if (kernel_annual - stored_annual).copy_abs() > TOLERANCE:
+        discrepancies.append({
+            "check": "kernel_vs_stored_annual_premium",
+            "description": (
+                "Kernel-priced annual premium differs from stored annual_premium. "
+                "Historical billed amounts are not rewritten; pin kernel fields."
+            ),
+            "left": float(kernel_annual),
+            "right": float(stored_annual),
+            "difference": _diff(kernel_annual, stored_annual),
+        })
     if bs:
         _check(
             "balance_sheet_vs_ledger_premiums",
@@ -696,6 +1064,77 @@ def reconcile_financial_books(
             "claim_ids": claims_missing_ledger[:50],
             "count": len(claims_missing_ledger),
         })
+
+    bills_missing_ledger = []
+    bill_cash = premium_cash_by_bill_id(ledger_list)
+    for bill in (billing or {}).values():
+        if not isinstance(bill, dict):
+            continue
+        cid = str(bill.get("customer_id") or "")
+        if exclude_customer and cid and exclude_customer(cid):
+            continue
+        paid = money(bill.get("amount_paid", 0))
+        if paid <= 0:
+            continue
+        bill_id = str(bill.get("id") or bill.get("bill_id") or "")
+        if not bill_id:
+            continue
+        if bill_cash.get(bill_id, Decimal("0.00")) + TOLERANCE < paid:
+            bills_missing_ledger.append(bill_id)
+    if bills_missing_ledger:
+        discrepancies.append({
+            "check": "paid_bills_missing_customer_ledger",
+            "description": "Paid bills with less customer-ledger cash than amount_paid",
+            "bill_ids": bills_missing_ledger[:50],
+            "count": len(bills_missing_ledger),
+        })
+
+    savings_books = savings_and_investments_books(
+        transactions=ledger_list,
+        policies=policies,
+        billing=billing,
+        investment_accounts=investment_accounts,
+        savings_pipeline_accounts=savings_pipeline_accounts,
+        engine=engine,
+        exclude_customer=exclude_customer,
+    )
+    savings_cash = money(savings_books["kernel_savings_cash"])
+    savings_landed = money(savings_books["savings_landed"])
+    # Invented savings (portfolio deposits with no matching premium cash).
+    if money(savings_books["investment_premium_allocations"]) - savings_cash > TOLERANCE:
+        discrepancies.append({
+            "check": "investment_allocations_exceed_savings_premium",
+            "description": (
+                "Investment premium-allocation deposits exceed kernel savings "
+                "cash collected on the customer ledger"
+            ),
+            "left": savings_books["investment_premium_allocations"],
+            "right": savings_books["kernel_savings_cash"],
+            "difference": _diff(
+                money(savings_books["investment_premium_allocations"]),
+                savings_cash,
+            ),
+        })
+    # Collected savings premium that never landed in a savings book.
+    # Only flag when there is savings cash and nothing at all on the
+    # investment or pipeline side (historical durability gap).
+    if (
+        savings_cash > TOLERANCE
+        and savings_landed + TOLERANCE < savings_cash
+        and money(savings_books["investment_aum"]) + TOLERANCE < savings_cash
+    ):
+        discrepancies.append({
+            "check": "savings_cash_not_landed_in_portfolios",
+            "description": (
+                "Kernel savings cash collected is not reflected in investment "
+                "premium allocations, pipeline cash, or investment AUM"
+            ),
+            "left": float(savings_cash),
+            "right": float(savings_landed),
+            "difference": _diff(savings_cash, savings_landed),
+        })
+
+    seed = ensure_seed_claims_reserve(bs) if bs else float(bs_reserve)
 
     return {
         "is_consistent": len(discrepancies) == 0,
@@ -722,8 +1161,9 @@ def reconcile_financial_books(
             "balance_sheet": float(bs_claims),
             "missing_ledger_claim_ids": claims_missing_ledger,
         },
+        "savings": savings_books,
         "reserves": {
-            "seed_claims_reserve": float(bs_reserve),
+            "seed_claims_reserve": float(seed),
             "balance_sheet_claims_reserve": float(bs_reserve),
             "economic_claims_reserve": economic["economic_claims_reserve"],
             "risk_cash_collected": economic["risk_cash_collected"],
@@ -737,6 +1177,392 @@ def reconcile_financial_books(
         },
         "discrepancies": discrepancies,
         "discrepancy_count": len(discrepancies),
+        "repair_candidates": {
+            "paid_bills_missing_ledger": bills_missing_ledger,
+            "paid_claims_missing_ledger": claims_missing_ledger,
+        },
+    }
+
+
+def repair_financial_books(
+    *,
+    policies: Dict[str, Any],
+    claims: Dict[str, Any],
+    billing: Dict[str, Any],
+    transactions: Dict[str, Any],
+    balance_sheet: Optional[Dict[str, Any]] = None,
+    investment_accounts: Optional[Dict[str, Any]] = None,
+    savings_pipeline_accounts: Optional[Any] = None,
+    exclude_customer: Optional[Any] = None,
+    engine: Any = None,
+    append_ledger: Optional[Any] = None,
+    dry_run: bool = False,
+    actor: str = "books_repair",
+) -> Dict[str, Any]:
+    """Reconstruct missing cash-identity rows from operational evidence.
+
+    Early PHINS durability could drop a customer-ledger row, skip the
+    accounting book, or leave the General Reserves sheet on a different
+    counter. This repair:
+
+    1. Appends missing ``premium_payment`` rows for paid bills.
+    2. Appends missing ``claim_payment_received`` rows for paid/closed claims.
+    3. Posts missing accounting-book premiums from the ledger.
+    4. Posts missing accounting-book claim entries from the ledger.
+    5. Derives balance-sheet ``premium_income`` / ``claims_paid`` from the ledger.
+
+    Never rewrites ``annual_premium``, ``Bill.amount``, or
+    ``seed_claims_reserve``. Idempotent. ``dry_run=True`` reports actions
+    without mutating.
+    """
+    if engine is None:
+        try:
+            from accounting_engine import get_accounting_engine
+
+            engine = get_accounting_engine()
+        except Exception:
+            engine = None
+
+    ensure_seed_claims_reserve(balance_sheet)
+    before = reconcile_financial_books(
+        policies=policies,
+        claims=claims,
+        billing=billing,
+        transactions=list(transactions.values()) if hasattr(transactions, "values") else list(transactions),
+        balance_sheet=balance_sheet,
+        exclude_customer=exclude_customer,
+        engine=engine,
+        investment_accounts=investment_accounts,
+        savings_pipeline_accounts=savings_pipeline_accounts,
+    )
+
+    actions: List[Dict[str, Any]] = []
+    reconstructed: List[Dict[str, Any]] = []
+    ledger_iterable = (
+        list(transactions.values()) if hasattr(transactions, "values") else list(transactions)
+    )
+
+    def _write_ledger(
+        customer_id: str,
+        tx_type: str,
+        amount: Decimal,
+        description: str,
+        metadata: Dict[str, Any],
+        tx_id: str,
+    ) -> Optional[str]:
+        payload = {
+            "id": tx_id,
+            "customer_id": customer_id,
+            "type": tx_type,
+            "amount": float(amount),
+            "description": description,
+            "metadata": metadata,
+            "timestamp": metadata.get("timestamp") or "",
+            "status": "completed",
+            "repaired": True,
+        }
+        reconstructed.append(payload)
+        if dry_run:
+            return tx_id
+        if append_ledger:
+            written = append_ledger(
+                customer_id=customer_id,
+                tx_type=tx_type,
+                amount=float(amount),
+                description=description,
+                metadata=metadata,
+            )
+            if isinstance(written, dict):
+                return str(written.get("id") or written.get("tx_id") or tx_id)
+            return tx_id
+        if hasattr(transactions, "__setitem__"):
+            transactions[tx_id] = payload
+        return tx_id
+
+    bill_cash = premium_cash_by_bill_id(ledger_iterable)
+    for bill in (billing or {}).values():
+        if not isinstance(bill, dict):
+            continue
+        customer_id = str(bill.get("customer_id") or "")
+        if exclude_customer and customer_id and exclude_customer(customer_id):
+            continue
+        paid = money(bill.get("amount_paid", 0))
+        if paid <= 0:
+            continue
+        bill_id = str(bill.get("id") or bill.get("bill_id") or "").strip()
+        if not bill_id:
+            continue
+        already = bill_cash.get(bill_id, Decimal("0.00"))
+        missing = paid - already
+        if missing <= TOLERANCE:
+            continue
+        tx_id = f"{REPAIR_TX_PREFIX}BILL-{bill_id}"
+        if hasattr(transactions, "get") and transactions.get(tx_id):
+            continue
+        meta = {
+            "bill_id": bill_id,
+            "policy_id": str(bill.get("policy_id") or ""),
+            "repair_source": "paid_bill",
+            "actor": actor,
+        }
+        actions.append({
+            "action": "append_premium_ledger",
+            "bill_id": bill_id,
+            "amount": float(missing),
+            "tx_id": tx_id,
+        })
+        written_id = _write_ledger(
+            customer_id,
+            CANONICAL_PREMIUM_LEDGER_TYPE,
+            missing,
+            f"Reconstructed premium cash for bill {bill_id}",
+            meta,
+            tx_id,
+        )
+        if written_id:
+            bill_cash[bill_id] = already + missing
+
+    # Re-read after bill repairs so claim scan sees new rows. Dry-run
+    # reconstructed rows live only in ``reconstructed``.
+    if dry_run:
+        claim_cash = claim_cash_by_id(list(ledger_iterable) + reconstructed)
+    elif hasattr(transactions, "values"):
+        claim_cash = claim_cash_by_id(list(transactions.values()))
+    else:
+        claim_cash = claim_cash_by_id(list(transactions))
+
+    for claim in (claims or {}).values():
+        if not isinstance(claim, dict):
+            continue
+        status = str(claim.get("status") or "").strip().lower().replace(" ", "_")
+        if status not in ("paid", "closed"):
+            continue
+        customer_id = str(claim.get("customer_id") or "")
+        if exclude_customer and customer_id and exclude_customer(customer_id):
+            continue
+        paid = money(
+            claim.get("paid_amount")
+            or claim.get("approved_amount")
+            or claim.get("amount_approved")
+            or 0
+        )
+        if paid <= 0:
+            continue
+        claim_id = str(claim.get("id") or claim.get("claim_id") or "").strip()
+        if not claim_id:
+            continue
+        already = claim_cash.get(claim_id, Decimal("0.00"))
+        missing = paid - already
+        if missing <= TOLERANCE:
+            continue
+        tx_id = f"{REPAIR_TX_PREFIX}CLM-{claim_id}"
+        if hasattr(transactions, "get") and transactions.get(tx_id):
+            continue
+        meta = {
+            "claim_id": claim_id,
+            "policy_id": str(claim.get("policy_id") or ""),
+            "repair_source": "paid_claim",
+            "actor": actor,
+        }
+        actions.append({
+            "action": "append_claim_ledger",
+            "claim_id": claim_id,
+            "amount": float(missing),
+            "tx_id": tx_id,
+        })
+        _write_ledger(
+            customer_id,
+            CANONICAL_CLAIM_LEDGER_TYPE,
+            missing,
+            f"Reconstructed claim cash for {claim_id}",
+            meta,
+            tx_id,
+        )
+        claim_cash[claim_id] = already + missing
+
+    # Refresh iterable after ledger reconstruction. Dry-run must still
+    # feed reconstructed rows into accounting-post detection.
+    if dry_run:
+        ledger_iterable = (
+            (list(transactions.values()) if hasattr(transactions, "values") else list(transactions))
+            + reconstructed
+        )
+    else:
+        ledger_iterable = (
+            list(transactions.values()) if hasattr(transactions, "values") else list(transactions)
+        )
+
+    for tx in ledger_iterable:
+        if not isinstance(tx, dict):
+            continue
+        if _tx_type(tx) not in PREMIUM_CASH_TYPES:
+            continue
+        cid = str(tx.get("customer_id") or "")
+        if exclude_customer and cid and exclude_customer(cid):
+            continue
+        amount = _tx_amount(tx)
+        if amount <= 0:
+            continue
+        source_tx_id = str(tx.get("id") or tx.get("tx_id") or "").strip()
+        meta = _tx_metadata(tx)
+        bill_id = str(meta.get("bill_id") or tx.get("bill_id") or "").strip()
+        policy = _policy_for_tx(tx, policies, billing)
+        policy_id = str(
+            (policy or {}).get("id")
+            or meta.get("policy_id")
+            or tx.get("policy_id")
+            or ""
+        )
+        split = resolve_premium_split(amount, policy, fallback_risk_pct=100)
+        if dry_run:
+            # Approximate: already-posted is detected by the helper when applied.
+            if engine is not None and _allocation_already_posted(engine, bill_id or f"UNBILLED-{source_tx_id}", source_tx_id):
+                continue
+            actions.append({
+                "action": "post_premium_accounting",
+                "bill_id": bill_id or f"UNBILLED-{source_tx_id}",
+                "amount": float(amount),
+                "source_tx_id": source_tx_id,
+            })
+            continue
+        result = post_premium_to_accounting_book(
+            bill_id=bill_id or f"UNBILLED-{source_tx_id or cid}",
+            policy_id=policy_id,
+            customer_id=cid,
+            amount=amount,
+            risk_percentage=split["risk_percentage"],
+            posted_by=actor,
+            source_tx_id=source_tx_id or None,
+            notes=f"repair kernel_split={split['split_source']}",
+            engine=engine,
+        )
+        if result.get("posted"):
+            actions.append({
+                "action": "post_premium_accounting",
+                "bill_id": result.get("bill_id"),
+                "amount": result.get("amount"),
+                "source_tx_id": source_tx_id,
+            })
+
+    booked_claims = accounting_claim_ids(engine)
+    ledger_claim_cash = claim_cash_by_id(ledger_iterable)
+    for tx in ledger_iterable:
+        if not isinstance(tx, dict):
+            continue
+        if _tx_type(tx) not in CLAIM_CASH_TYPES:
+            continue
+        cid = str(tx.get("customer_id") or "")
+        if exclude_customer and cid and exclude_customer(cid):
+            continue
+        meta = _tx_metadata(tx)
+        claim_id = str(meta.get("claim_id") or tx.get("claim_id") or "").strip()
+        if not claim_id or claim_id in booked_claims:
+            continue
+        # The book carries one entry per claim, so post every ledger slice
+        # for this claim_id, not just the row we are standing on.
+        amount = ledger_claim_cash.get(claim_id) or _tx_amount(tx)
+        if amount <= 0:
+            continue
+        policy_id = str(meta.get("policy_id") or tx.get("policy_id") or "")
+        if not policy_id and claim_id in (claims or {}):
+            policy_id = str((claims.get(claim_id) or {}).get("policy_id") or "")
+        actions.append({
+            "action": "post_claim_accounting",
+            "claim_id": claim_id,
+            "amount": float(amount),
+        })
+        if dry_run:
+            booked_claims.add(claim_id)
+            continue
+        posted = post_claim_to_accounting_book(
+            claim_id=claim_id,
+            policy_id=policy_id,
+            customer_id=cid,
+            amount=amount,
+            paid_by=actor,
+            engine=engine,
+        )
+        if posted.get("posted"):
+            booked_claims.add(claim_id)
+
+    if dry_run:
+        ledger_iterable = (
+            (list(transactions.values()) if hasattr(transactions, "values") else list(transactions))
+            + reconstructed
+        )
+    else:
+        ledger_iterable = (
+            list(transactions.values()) if hasattr(transactions, "values") else list(transactions)
+        )
+    premium_total = money(
+        ledger_cash_total(
+            ledger_iterable, PREMIUM_CASH_TYPES, exclude_customer=exclude_customer
+        )["total"]
+    )
+    claim_total = money(
+        ledger_cash_total(
+            ledger_iterable, CLAIM_CASH_TYPES, exclude_customer=exclude_customer
+        )["total"]
+    )
+    derived = {}
+    if balance_sheet is not None:
+        current_premium = money(
+            ((balance_sheet.get("revenue_breakdown") or {}) if isinstance(
+                balance_sheet.get("revenue_breakdown"), dict
+            ) else {}).get("premium_income", 0)
+        )
+        current_claims = money(
+            ((balance_sheet.get("expense_breakdown") or {}) if isinstance(
+                balance_sheet.get("expense_breakdown"), dict
+            ) else {}).get("claims_paid", 0)
+        )
+        needs_derive = (
+            (current_premium - premium_total).copy_abs() > TOLERANCE
+            or (current_claims - claim_total).copy_abs() > TOLERANCE
+        )
+        if needs_derive:
+            if dry_run:
+                derived = {
+                    "premium_income": float(premium_total),
+                    "claims_paid": float(claim_total),
+                }
+            else:
+                derived = apply_ledger_derived_balance_sheet(
+                    balance_sheet, premium_total, claim_total
+                )
+            actions.append({
+                "action": "derive_balance_sheet_from_ledger",
+                "premium_income": derived.get("premium_income"),
+                "claims_paid": derived.get("claims_paid"),
+            })
+
+    after = before
+    if not dry_run:
+        after = reconcile_financial_books(
+            policies=policies,
+            claims=claims,
+            billing=billing,
+            transactions=ledger_iterable,
+            balance_sheet=balance_sheet,
+            exclude_customer=exclude_customer,
+            engine=engine,
+            investment_accounts=investment_accounts,
+            savings_pipeline_accounts=savings_pipeline_accounts,
+        )
+
+    return {
+        "dry_run": bool(dry_run),
+        "actions": actions,
+        "action_count": len(actions),
+        "before": before,
+        "after": after,
+        "is_consistent": after.get("is_consistent") if not dry_run else before.get("is_consistent") and not actions,
+        "note": (
+            "Repair reconstructs missing cash-identity rows from paid bills and "
+            "paid claims, then posts the accounting book and derives General "
+            "Reserves premium_income / claims_paid from the ledger. Historical "
+            "annual_premium, bill amounts, and seed_claims_reserve are never rewritten."
+        ),
     }
 
 

@@ -1147,10 +1147,21 @@ class FinancialReportingService:
                         premium = coverage * 0.03
                     total_revenue += premium
             
-            # Calculate billing totals
+            # Calculate billing totals. Collected cash identity is the customer
+            # ledger when attached; bill records remain in total_billed / A/R.
             total_billed = sum(safe_num(b.get('amount_due', b.get('amount', 0))) for b in self._billing.values())
             cumulative_data = self.calculate_cumulative_premium()
             total_collected = cumulative_data['total']
+            ledger_premium_collected = None
+            if self._ledger_attached:
+                try:
+                    from services.financial_unification_service import PREMIUM_CASH_TYPES, ledger_cash_total
+                    ledger_premium_collected = ledger_cash_total(
+                        self._transaction_ledger.values(), PREMIUM_CASH_TYPES
+                    )['total']
+                    total_collected = ledger_premium_collected
+                except Exception:
+                    ledger_premium_collected = None
             
             # Outstanding A/R - only for unpaid bills
             outstanding_ar = 0
@@ -1174,6 +1185,8 @@ class FinancialReportingService:
                 'outstanding_ar': outstanding_ar,
                 'claims_paid': claims_paid_amt,
                 'claims_pending': claims_pending_amt,
+                'ledger_premium_collected': ledger_premium_collected if ledger_premium_collected is not None else total_collected,
+                'ledger_claims_paid': claims_paid_amt,
             }
         
         elif dashboard_type == 'underwriter':
@@ -1194,6 +1207,23 @@ class FinancialReportingService:
                 s = (c.get('status') or '').lower()
                 return s in [st.lower() for st in statuses]
             
+            paid_amount = 0.0
+            if self._ledger_attached:
+                try:
+                    from services.financial_unification_service import CLAIM_CASH_TYPES, ledger_cash_total
+                    paid_amount = ledger_cash_total(
+                        self._transaction_ledger.values(), CLAIM_CASH_TYPES
+                    )['total']
+                except Exception:
+                    paid_amount = sum(
+                        c.get('approved_amount', c.get('paid_amount', 0)) for c in self._claims.values()
+                        if claim_status(c, 'paid', 'Paid')
+                    )
+            else:
+                paid_amount = sum(
+                    c.get('approved_amount', c.get('paid_amount', 0)) for c in self._claims.values()
+                    if claim_status(c, 'paid', 'Paid')
+                )
             return {
                 **base_data,
                 'pending_claims': len([c for c in self._claims.values() if claim_status(c, 'pending', 'Pending')]),
@@ -1202,8 +1232,7 @@ class FinancialReportingService:
                 'paid_claims': len([c for c in self._claims.values() if claim_status(c, 'paid', 'Paid')]),
                 'total_pending_amount': sum(c.get('claimed_amount', 0) for c in self._claims.values() 
                                            if claim_status(c, 'pending', 'under_review', 'Pending', 'Under Review')),
-                'total_paid_amount': sum(c.get('approved_amount', c.get('paid_amount', 0)) for c in self._claims.values() 
-                                        if claim_status(c, 'paid', 'Paid')),
+                'total_paid_amount': paid_amount,
             }
         
         elif dashboard_type == 'admin':
