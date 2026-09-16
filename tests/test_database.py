@@ -198,6 +198,43 @@ def test_database_manager():
         assert len(policies) >= 1
 
 
+def test_database_manager_session_persists_claim_status():
+    """The public session alias must drive claim updates (post-#603 log bug)."""
+    from database import init_database
+    from database.manager import DatabaseManager
+
+    init_database()
+
+    with DatabaseManager() as db:
+        assert db.session is db._ensure_session()
+        customer = db.customers.create(
+            id='TEST-CUST-SESS',
+            name='Session Persist',
+            email='session-persist@test.com',
+        )
+        assert customer is not None
+        policy = db.policies.create(
+            id='TEST-POL-SESS',
+            customer_id='TEST-CUST-SESS',
+            type='health',
+            coverage_amount=10000.0,
+            annual_premium=100.0,
+        )
+        assert policy is not None
+        claim = db.claims.create(
+            id='TEST-CLM-SESS',
+            policy_id='TEST-POL-SESS',
+            customer_id='TEST-CUST-SESS',
+            claimed_amount=250.0,
+            status='pending',
+        )
+        assert claim is not None
+        updated = db.claims.update('TEST-CLM-SESS', status='approved', approved_amount=250.0)
+        assert updated is not None
+        assert updated.status == 'approved'
+        assert db.claims.get_by_id('TEST-CLM-SESS').status == 'approved'
+
+
 def test_user_seeding():
     """Test that default users are seeded correctly"""
     from database import init_database
