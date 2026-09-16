@@ -567,9 +567,15 @@ class ProcessPipelineOrchestrator:
         # Always record customer-ledger claim cash when a ledger is attached so
         # pipeline auto-approve cannot skip the cash identity (early durability gap).
         if self.transaction_ledger is not None and claim_id:
+            from services.financial_unification_service import CLAIM_CASH_TYPES
+
             already = False
             for tx in self.transaction_ledger.values() if hasattr(self.transaction_ledger, 'values') else []:
                 if not isinstance(tx, dict):
+                    continue
+                # Only cash rows count; a filing or audit row tagged with the
+                # claim must not suppress the cash identity.
+                if str(tx.get('type') or tx.get('tx_type') or '').strip().lower() not in CLAIM_CASH_TYPES:
                     continue
                 meta = tx.get('metadata') if isinstance(tx.get('metadata'), dict) else {}
                 if str(meta.get('claim_id') or tx.get('claim_id') or '') == claim_id:

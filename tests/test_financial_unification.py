@@ -16,6 +16,7 @@ from services.financial_unification_service import (
     economic_claims_reserve,
     ensure_seed_claims_reserve,
     kernel_components_from_policy,
+    kernel_savings_cash_from_ledger,
     ledger_cash_total,
     pin_kernel_fields_on_policy,
     post_collected_premiums_to_accounting,
@@ -937,6 +938,73 @@ def test_repair_does_not_invent_savings_portfolio_deposits():
     assert "savings_cash_not_landed_in_portfolios" in checks
     assert "paid_bills_missing_customer_ledger" not in checks
     assert "paid_claims_missing_customer_ledger" not in checks
+
+
+def test_repair_books_every_claim_slice_not_just_the_first():
+    reset_accounting_engine()
+    engine = get_accounting_engine()
+    policies, billing, claims, sheet = _repair_fixture()
+    # Early durability left part of the claim cash on the ledger and nothing
+    # on the book; repair appends the remainder as a second row.
+    transactions = {
+        "TX-CLM-PARTIAL": {
+            "id": "TX-CLM-PARTIAL",
+            "customer_id": "CUST-R",
+            "type": "claim_payment_received",
+            "amount": 15.0,
+            "metadata": {"claim_id": "CLM-R", "policy_id": "POL-R"},
+        }
+    }
+    report = repair_financial_books(
+        policies=policies,
+        claims=claims,
+        billing=billing,
+        transactions=transactions,
+        balance_sheet=sheet,
+        engine=engine,
+    )
+    claim_txs = [
+        tx for tx in transactions.values()
+        if str(tx.get("type")) == "claim_payment_received"
+    ]
+    assert len(claim_txs) == 2
+    assert sum(float(tx["amount"]) for tx in claim_txs) == 40.0
+    assert accounting_book_totals(engine)["claims_posted"] == 40.0
+    assert report["after"]["is_consistent"] is True, report["after"]["discrepancies"]
+
+
+def test_kernel_split_never_borrows_another_policy_of_the_same_customer():
+    policies = {
+        "POL-RISK": {
+            "id": "POL-RISK",
+            "customer_id": "CUST-M",
+            "annual_premium": 1000.0,
+            "risk_premium_annual": 1000.0,
+            "savings_premium_annual": 0.0,
+            "pricing_source": "pricing_kernel",
+        },
+        "POL-SAVE": {
+            "id": "POL-SAVE",
+            "customer_id": "CUST-M",
+            "annual_premium": 1000.0,
+            "risk_premium_annual": 200.0,
+            "savings_premium_annual": 800.0,
+            "pricing_source": "pricing_kernel",
+        },
+    }
+    untagged = {"type": "premium_payment", "amount": 100.0, "customer_id": "CUST-M"}
+    ambiguous = kernel_savings_cash_from_ledger([untagged], policies)
+    assert ambiguous["savings_amount"] == 0.0
+    assert ambiguous["risk_amount"] == 100.0
+
+    tagged = dict(untagged, metadata={"policy_id": "POL-SAVE"})
+    own_split = kernel_savings_cash_from_ledger([tagged], policies)
+    assert own_split["savings_amount"] == 80.0
+    assert own_split["risk_amount"] == 20.0
+
+    only_savings_policy = {"POL-SAVE": policies["POL-SAVE"]}
+    sole = kernel_savings_cash_from_ledger([untagged], only_savings_policy)
+    assert sole["savings_amount"] == 80.0
 
 
 def test_seed_claims_reserve_is_pinned_once():

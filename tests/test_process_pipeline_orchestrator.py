@@ -366,6 +366,24 @@ class TestClaimsAutomation:
         ]
         assert len(cash_again) == 1
 
+    def test_non_cash_claim_row_does_not_suppress_cash_write(self, orchestrator):
+        orchestrator.transaction_ledger['TX-FILED'] = {
+            'id': 'TX-FILED',
+            'customer_id': 'CUST-001',
+            'type': 'claim_filed',
+            'amount': 0,
+            'metadata': {'claim_id': 'CLM-001'},
+        }
+        result = orchestrator.automate_claim_processing('CLM-001')
+        assert result['decision'] == 'auto_approve'
+        cash = [
+            tx for tx in orchestrator.transaction_ledger.values()
+            if isinstance(tx, dict) and tx.get('type') == 'claim_payment_received'
+        ]
+        assert len(cash) == 1
+        assert cash[0]['metadata']['claim_id'] == 'CLM-001'
+        assert cash[0]['amount'] == 1500.0
+
     def test_fraud_score_early_claim(self, orchestrator):
         orchestrator.claims['CLM-EARLY'] = {
             'id': 'CLM-EARLY',

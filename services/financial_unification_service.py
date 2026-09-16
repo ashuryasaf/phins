@@ -741,9 +741,16 @@ def _policy_for_tx(
             return policies.get(policy_id)
     customer_id = str(tx.get("customer_id") or "")
     if customer_id:
-        for policy in policies.values():
-            if isinstance(policy, dict) and str(policy.get("customer_id") or "") == customer_id:
-                return policy
+        # Only an unambiguous owner can lend its kernel split to this cash.
+        # With several policies on the customer, guessing one would apply
+        # another policy's risk/savings pin to this row.
+        owned = [
+            policy
+            for policy in policies.values()
+            if isinstance(policy, dict) and str(policy.get("customer_id") or "") == customer_id
+        ]
+        if len(owned) == 1:
+            return owned[0]
     return None
 
 
@@ -1438,6 +1445,7 @@ def repair_financial_books(
             })
 
     booked_claims = accounting_claim_ids(engine)
+    ledger_claim_cash = claim_cash_by_id(ledger_iterable)
     for tx in ledger_iterable:
         if not isinstance(tx, dict):
             continue
@@ -1450,7 +1458,9 @@ def repair_financial_books(
         claim_id = str(meta.get("claim_id") or tx.get("claim_id") or "").strip()
         if not claim_id or claim_id in booked_claims:
             continue
-        amount = _tx_amount(tx)
+        # The book carries one entry per claim, so post every ledger slice
+        # for this claim_id, not just the row we are standing on.
+        amount = ledger_claim_cash.get(claim_id) or _tx_amount(tx)
         if amount <= 0:
             continue
         policy_id = str(meta.get("policy_id") or tx.get("policy_id") or "")
@@ -1462,6 +1472,7 @@ def repair_financial_books(
             "amount": float(amount),
         })
         if dry_run:
+            booked_claims.add(claim_id)
             continue
         posted = post_claim_to_accounting_book(
             claim_id=claim_id,
