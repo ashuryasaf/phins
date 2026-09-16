@@ -105,6 +105,35 @@ def test_freeze_for_json_retries_changed_size_iteration():
     assert frozen["amount"] == 10
 
 
+def test_freeze_for_json_fail_closed_on_persistent_race():
+    class AlwaysRacing(dict):
+        def items(self):
+            raise RuntimeError("dictionary changed size during iteration")
+
+    try:
+        portal._freeze_for_json(AlwaysRacing(nft="must-not-drop"))
+        raise AssertionError("expected freeze to fail closed")
+    except RuntimeError as exc:
+        assert "refusing empty freeze" in str(exc)
+
+
+def test_save_ledger_data_keeps_prior_file_when_freeze_fails(monkeypatch, tmp_path):
+    persistence_file = tmp_path / "ledger.json"
+    persistence_file.write_text('{"saved_at": "prior"}', encoding="utf-8")
+    monkeypatch.setattr(portal, "LEDGER_PERSISTENCE_FILE", str(persistence_file))
+    monkeypatch.setattr(portal, "PERSISTENCE_ENABLED", True)
+    monkeypatch.setattr(portal, "_persistence_dirty", True)
+
+    class AlwaysRacing(dict):
+        def items(self):
+            raise RuntimeError("dictionary changed size during iteration")
+
+    monkeypatch.setattr(portal, "NFT_LEDGER", AlwaysRacing({"T1": {"id": "T1"}}))
+
+    assert portal.save_ledger_data() is False
+    assert persistence_file.read_text(encoding="utf-8") == '{"saved_at": "prior"}'
+
+
 def test_save_ledger_data_survives_dict_mutation(monkeypatch, tmp_path):
     persistence_file = tmp_path / "ledger.json"
     monkeypatch.setattr(portal, "LEDGER_PERSISTENCE_FILE", str(persistence_file))

@@ -5312,32 +5312,42 @@ def _freeze_for_json(value, *, _depth: int = 0):
     ``[PERSISTENCE] Error saving ledger data: dictionary changed size during
     iteration`` while a claim payment mutated NFT/transaction dicts on another
     thread. Snapshotting under the persistence lock (retrying a racing
-    ``items()``) keeps the on-disk ledger a consistent point-in-time copy
-    instead of aborting the write.
+    ``items()``) keeps the on-disk ledger a consistent point-in-time copy.
+    A persistent race fails closed rather than writing empty collections.
     """
     if _depth > 12:
         return value
     if isinstance(value, dict):
         items = None
+        last_err = None
         for _ in range(3):
             try:
                 items = list(value.items())
                 break
-            except RuntimeError:
+            except RuntimeError as exc:
+                last_err = exc
                 continue
         if items is None:
-            return {}
+            # Fail closed: an empty mapping would wipe NFT/transaction
+            # snapshots on disk. save_ledger_data then keeps the previous file.
+            raise RuntimeError(
+                "ledger snapshot raced a live dict; refusing empty freeze"
+            ) from last_err
         return {k: _freeze_for_json(v, _depth=_depth + 1) for k, v in items}
     if isinstance(value, (list, tuple)):
         seq = None
+        last_err = None
         for _ in range(3):
             try:
                 seq = list(value)
                 break
-            except RuntimeError:
+            except RuntimeError as exc:
+                last_err = exc
                 continue
         if seq is None:
-            return []
+            raise RuntimeError(
+                "ledger snapshot raced a live list; refusing empty freeze"
+            ) from last_err
         return [_freeze_for_json(v, _depth=_depth + 1) for v in seq]
     return value
 
@@ -5439,8 +5449,19 @@ def save_ledger_data(_periodic: bool = False):
             
             # Write to temp file first, then rename for atomic operation.
             # Freeze live dicts first so concurrent mutations cannot raise
-            # "dictionary changed size during iteration" mid-dump.
-            snapshot = _freeze_for_json(data)
+            # "dictionary changed size during iteration" mid-dump. Retry the
+            # whole freeze; if it still races, raise so the previous file is
+            # kept instead of writing empty collections.
+            snapshot = None
+            freeze_err = None
+            for _ in range(3):
+                try:
+                    snapshot = _freeze_for_json(data)
+                    break
+                except RuntimeError as exc:
+                    freeze_err = exc
+            if snapshot is None:
+                raise freeze_err or RuntimeError("ledger snapshot failed")
             temp_file = LEDGER_PERSISTENCE_FILE + '.tmp'
             with open(temp_file, 'w') as f:
                 json.dump(snapshot, f, default=str, indent=2)
