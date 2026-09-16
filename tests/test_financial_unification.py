@@ -380,6 +380,7 @@ def test_reconcile_is_consistent_when_ledger_matches_books():
             "revenue_breakdown": {"premium_income": 90.0},
             "expense_breakdown": {"claims_paid": 25.0},
             "claims_reserve": 3475.0,
+            "seed_claims_reserve": 3_500_000.0,
         },
         engine=engine,
     )
@@ -389,7 +390,8 @@ def test_reconcile_is_consistent_when_ledger_matches_books():
     assert report["authority"]["cash_identity"] == "customer_ledger"
     assert report["reserves"]["identity"] == "ledger_risk_cash_minus_claim_cash"
     assert report["reserves"]["economic_claims_reserve"] == 65.0
-    assert report["reserves"]["seed_claims_reserve"] == 3475.0
+    assert report["reserves"]["seed_claims_reserve"] == 3_500_000.0
+    assert report["reserves"]["balance_sheet_claims_reserve"] == 3475.0
 
 
 def test_economic_claims_reserve_is_risk_cash_minus_claim_cash():
