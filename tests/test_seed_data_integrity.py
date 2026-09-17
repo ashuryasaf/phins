@@ -603,3 +603,73 @@ def test_false_demo_ledger_purge_is_durable(db_backed_portal, tmp_path, monkeypa
     with DatabaseManager() as db:
         assert db.platform_ledger.get_by_id("TX-POL-ASAF-LIFE-001") is None
         assert db.platform_ledger.get_by_id("TX-KEEP-REAL") is not None
+
+
+def test_false_demo_purge_matches_cash_of_db_only_claims(
+    db_backed_portal, tmp_path, monkeypatch
+):
+    """Cash keyed only by a claim_id the DB sweep deleted must go too."""
+    from database.manager import DatabaseManager
+    from database.seeds import _purge_false_demo_seed
+    from services.platform_event_ledger_service import PlatformEventLedgerService
+
+    portal, _db_dicts = db_backed_portal
+    monkeypatch.setattr(portal, "USE_DATABASE", True, raising=False)
+    monkeypatch.setattr(portal, "database_enabled", True, raising=False)
+    # Boot hydrates plain dicts, so the SQL claim has no in-memory mirror.
+    monkeypatch.setattr(portal, "CLAIMS", {}, raising=True)
+
+    with DatabaseManager() as db:
+        assert db.claims.create(
+            id="CLM-ASAF-CASH-001",
+            policy_id="POL-ASAF-LIFE-001",
+            customer_id="CUST-ASAF-001",
+            claimed_amount=1200.0,
+            approved_amount=1200.0,
+            status="paid",
+            filed_date=datetime.now(timezone.utc),
+        ) is not None
+
+    memory = portal.TRANSACTION_LEDGER
+    memory.clear()
+    service = PlatformEventLedgerService(
+        transaction_ledger=memory,
+        use_database=True,
+        db_manager_factory=DatabaseManager,
+    )
+    service.append_event(
+        event_type="claim_payment_received",
+        entity_type="claim",
+        entity_id="CLM-ASAF-CASH-001",
+        customer_id="CUST-ASAF-001",
+        actor="system",
+        amount=1200.0,
+        status="completed",
+        source_system="test",
+        payload={"id": "TX-CLAIM-CASH-ONLY", "claim_id": "CLM-ASAF-CASH-001"},
+        entry_id="TX-CLAIM-CASH-ONLY",
+        ledger_type="transaction",
+    )
+
+    monkeypatch.setattr(portal, "platform_event_ledger", service, raising=False)
+    monkeypatch.setattr(
+        portal,
+        "LEDGER_PERSISTENCE_FILE",
+        str(tmp_path / "phins_ledger_data.json"),
+        raising=False,
+    )
+
+    _purge_false_demo_seed(sync_memory=True)
+
+    with DatabaseManager() as db:
+        assert db.claims.get_by_id("CLM-ASAF-CASH-001") is None
+        assert db.platform_ledger.get_by_id("TX-CLAIM-CASH-ONLY") is None
+
+    restart_memory = {}
+    restart_service = PlatformEventLedgerService(
+        transaction_ledger=restart_memory,
+        use_database=True,
+        db_manager_factory=DatabaseManager,
+    )
+    restart_service.hydrate_from_db()
+    assert "TX-CLAIM-CASH-ONLY" not in restart_memory

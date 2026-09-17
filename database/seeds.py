@@ -548,6 +548,14 @@ def _purge_false_demo_seed(
     except Exception:
         pass
 
+    # Durable operational rows + platform_ledger_entries must drop the same
+    # known demo IDs; otherwise the next hydrate_from_db restores them. This
+    # runs before the ledger sweeps so claim IDs that only exist in SQL still
+    # match cash rows keyed by claim_id alone.
+    db_ops = _purge_false_demo_records_from_db(removed_claim_ids)
+    for key in ('policies', 'bills', 'claims', 'uw', 'customers', 'users'):
+        removed[key] += db_ops.get(key, 0)
+
     if TRANSACTION_LEDGER is not None:
         for tx_id in list(TRANSACTION_LEDGER.keys()):
             tx = TRANSACTION_LEDGER.get(tx_id) or {}
@@ -560,11 +568,6 @@ def _purge_false_demo_seed(
         except Exception as exc:
             logger.warning(f"Ledger chain rebuild after false-demo purge skipped: {exc}")
 
-    # Durable operational rows + platform_ledger_entries must drop the same
-    # known demo IDs; otherwise the next hydrate_from_db restores them.
-    db_ops = _purge_false_demo_records_from_db()
-    for key in ('policies', 'bills', 'claims', 'uw', 'customers', 'users'):
-        removed[key] += db_ops.get(key, 0)
     db_deleted = _purge_false_demo_ledger_from_db(removed_claim_ids)
     removed['ledger'] += db_deleted
     if TRANSACTION_LEDGER is not None:
@@ -615,13 +618,15 @@ def _purge_false_demo_seed(
     return removed
 
 
-def _purge_false_demo_records_from_db() -> dict:
+def _purge_false_demo_records_from_db(removed_claim_ids=None) -> dict:
     """Delete known false-demo operational rows even when seed repos were not passed.
 
     Boot calls `_purge_false_demo_seed(sync_memory=True)` without repositories.
     Memory DatabaseDict pops are durable in DB mode, but a hydrated plain dict
     would otherwise restore CUST-TEST-* / POL-TEST-* on the next load.
-    Unknown real customers and policies are never swept.
+    Unknown real customers and policies are never swept. Deleted claim IDs are
+    added to `removed_claim_ids` so the ledger sweeps can match cash rows that
+    carry only a claim id.
     """
     counts = {
         'policies': 0, 'bills': 0, 'claims': 0, 'uw': 0,
@@ -661,6 +666,8 @@ def _purge_false_demo_records_from_db() -> dict:
             for claim_id in _ids(db.claims):
                 if db.claims.delete(claim_id):
                     counts['claims'] += 1
+                    if removed_claim_ids is not None:
+                        removed_claim_ids.add(str(claim_id))
                     logger.info(f"Removed false demo claim {claim_id}")
             for bill_id in _ids(db.billing):
                 if db.billing.delete(bill_id):
