@@ -588,18 +588,12 @@ print(json.dumps({{
     "wallet_transactions": len(server_module.HEALTH_WALLETS["CUST-EFRAT-001"].get("transactions", [])),
     "investment_balance": server_module.INVESTMENT_ACCOUNTS["CUST-EFRAT-001"]["balance"],
     "investment_deposits": len(server_module.INVESTMENT_ACCOUNTS["CUST-EFRAT-001"].get("deposits", [])),
-    "policy_annual_premium": server_module.POLICIES["POL-EFRAT-UNIFIED-001"]["annual_premium"],
-    "policy_monthly_premium": server_module.POLICIES["POL-EFRAT-UNIFIED-001"]["monthly_premium"],
-    "billing_amount": next(
-        bill["amount"]
+    "efrat_policy_present": "POL-EFRAT-UNIFIED-001" in server_module.POLICIES,
+    "efrat_bills": [
+        bill["id"]
         for bill in server_module.BILLING.values()
         if bill.get("policy_id") == "POL-EFRAT-UNIFIED-001"
-    ),
-    "billing_amount_paid": next(
-        bill["amount_paid"]
-        for bill in server_module.BILLING.values()
-        if bill.get("policy_id") == "POL-EFRAT-UNIFIED-001"
-    ),
+    ],
 }}))
 """
 
@@ -629,10 +623,8 @@ print(json.dumps({{
         self.assertEqual(payload['wallet_transactions'], 1)
         self.assertAlmostEqual(payload['investment_balance'], 654.32)
         self.assertEqual(payload['investment_deposits'], 1)
-        self.assertAlmostEqual(payload['policy_annual_premium'], 1552.50)
-        self.assertAlmostEqual(payload['policy_monthly_premium'], 129.38)
-        self.assertAlmostEqual(payload['billing_amount'], 129.38)
-        self.assertAlmostEqual(payload['billing_amount_paid'], 129.38)
+        self.assertFalse(payload['efrat_policy_present'])
+        self.assertEqual(payload['efrat_bills'], [])
 
     def test_bills_vs_billing_autopay_summary_structure(self):
         """Summary must contain all four required top-level sections."""
@@ -812,6 +804,9 @@ print(json.dumps({{
             'bs_total_revenue': self.PHINS_BALANCE_SHEET['total_revenue'],
         }
 
+        from server import SUSPENDED_TEST_ACCOUNTS
+        added_suspended = 'CUST-TEST-100' not in SUSPENDED_TEST_ACCOUNTS
+        SUSPENDED_TEST_ACCOUNTS.add('CUST-TEST-100')
         try:
             self.BILLING.clear()
             self.TRANSACTION_LEDGER.clear()
@@ -866,6 +861,8 @@ print(json.dumps({{
             self.assertTrue(result['cross_check']['is_consistent'])
             self.assertEqual(result['cross_check']['discrepancies'], [])
         finally:
+            if added_suspended:
+                SUSPENDED_TEST_ACCOUNTS.discard('CUST-TEST-100')
             self.BILLING.clear()
             self.BILLING.update(previous_state['billing'])
             self.TRANSACTION_LEDGER.clear()
@@ -1002,9 +999,13 @@ print(json.dumps({{
             'total_pipeline_cash', 'total_wallet_balance',
             'total_investment_value', 'total_coverage_amount', 'total_aum',
             'cumulative_premium',
+            'ledger_premium_collected',
+            'ledger_claims_paid',
+            'economic_claims_reserve',
         ]
         for key in required_keys:
             self.assertIn(key, m, f"Missing unified metrics key: {key}")
+        self.assertIsNone(m.get('books_reconcile'))
 
     def test_unified_metrics_consistency_with_bills(self):
         """Unified metrics billing figures should be consistent with bill data."""
@@ -1173,8 +1174,8 @@ print(json.dumps({{
         bill_id = 'TEST-SUSP-BILL-001'
         cust_id = 'CUST-TEST-100'
         prev_bill = self.BILLING.get(bill_id)
-
-        self.assertIn(cust_id, SUSPENDED_TEST_ACCOUNTS)
+        added_suspended = cust_id not in SUSPENDED_TEST_ACCOUNTS
+        SUSPENDED_TEST_ACCOUNTS.add(cust_id)
 
         try:
             self.BILLING[bill_id] = {
@@ -1190,6 +1191,8 @@ print(json.dumps({{
             self.assertGreater(m_without['total_billed'], m_with['total_billed'],
                                "Suspended bill should be excluded when exclude_suspended=True")
         finally:
+            if added_suspended:
+                SUSPENDED_TEST_ACCOUNTS.discard(cust_id)
             if prev_bill is None:
                 self.BILLING.pop(bill_id, None)
             else:

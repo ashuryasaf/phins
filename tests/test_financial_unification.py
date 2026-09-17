@@ -18,10 +18,12 @@ from services.financial_unification_service import (
     kernel_components_from_policy,
     kernel_savings_cash_from_ledger,
     ledger_cash_total,
+    ledger_derived_balance_sheet_view,
     pin_kernel_fields_on_policy,
     post_collected_premiums_to_accounting,
     post_premium_to_accounting_book,
     reconcile_financial_books,
+    reconstruct_accounting_book_from_ledger,
     repair_financial_books,
     resolve_premium_split,
     savings_and_investments_books,
@@ -1103,3 +1105,89 @@ def test_post_claim_payment_is_idempotent_on_claim_id():
     assert ok2 is True
     assert "already recorded" in msg
     assert accounting_book_totals(engine)["claims_posted"] == 15.0
+
+
+def test_ledger_derived_balance_sheet_view_does_not_mutate_store():
+    stored = {
+        "revenue_breakdown": {"premium_income": 1.0, "fees": 2.0},
+        "expense_breakdown": {"claims_paid": 9.0},
+        "seed_claims_reserve": 3_500_000.0,
+        "claims_reserve": 3_400_000.0,
+        "total_revenue": 3.0,
+        "total_expenses": 9.0,
+    }
+    view = ledger_derived_balance_sheet_view(stored, 80.0, 20.0)
+    assert view["revenue_breakdown"]["premium_income"] == 80.0
+    assert view["expense_breakdown"]["claims_paid"] == 20.0
+    assert stored["revenue_breakdown"]["premium_income"] == 1.0
+    assert stored["expense_breakdown"]["claims_paid"] == 9.0
+    assert stored["total_revenue"] == 3.0
+    assert stored["seed_claims_reserve"] == 3_500_000.0
+
+
+def test_reconstruct_accounting_book_from_ledger_is_idempotent():
+    reset_accounting_engine()
+    txs = {
+        "TX-P1": {
+            "id": "TX-P1",
+            "type": "premium_payment",
+            "amount": 40.0,
+            "customer_id": "C1",
+            "metadata": {"bill_id": "BILL-1", "policy_id": "POL-1"},
+        },
+        "TX-C1": {
+            "id": "TX-C1",
+            "type": "claim_payment_received",
+            "amount": 12.0,
+            "customer_id": "C1",
+            "metadata": {"claim_id": "CLM-1", "policy_id": "POL-1"},
+        },
+    }
+    policies = {
+        "POL-1": {
+            "id": "POL-1",
+            "customer_id": "C1",
+            "annual_premium": 480.0,
+            "risk_premium_annual": 480.0,
+            "savings_premium_annual": 0.0,
+            "pricing_source": "pricing_kernel",
+        }
+    }
+    claims = {
+        "CLM-1": {
+            "id": "CLM-1",
+            "customer_id": "C1",
+            "policy_id": "POL-1",
+            "status": "paid",
+            "approved_amount": 12.0,
+        }
+    }
+    first = reconstruct_accounting_book_from_ledger(
+        policies=policies,
+        claims=claims,
+        billing={},
+        transactions=txs,
+        actor="test",
+    )
+    assert first["posted_count"] == 2
+    totals = accounting_book_totals()
+    assert totals["premium_posted"] == 40.0
+    assert totals["claims_posted"] == 12.0
+    second = reconstruct_accounting_book_from_ledger(
+        policies=policies,
+        claims=claims,
+        billing={},
+        transactions=txs,
+        actor="test",
+    )
+    assert second["posted_count"] == 0
+    assert accounting_book_totals()["premium_posted"] == 40.0
+
+
+def test_kernel_quote_for_seed_rejects_auto():
+    from services.pricing_shadow_service import kernel_quote_for_seed
+    try:
+        kernel_quote_for_seed({"type": "auto", "coverage_amount": 100000, "age": 40})
+        raise AssertionError("auto should not kernel-price")
+    except ValueError as exc:
+        assert "non-kernel" in str(exc)

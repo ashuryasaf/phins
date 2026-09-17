@@ -243,6 +243,24 @@ def should_use_kernel_billing(policy_data: Optional[Dict[str, Any]] = None) -> b
     return True
 
 
+def kernel_quote_for_seed(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Price a PHINS unified seed policy through the actuarial kernel.
+
+    Seed fixtures must be kernel-priced ``phins_unified`` (mapped to
+    ``phins_pure_risk_adjustable`` / hybrid). Auto, property, and other
+    unmapped types are rejected so they cannot enter the books.
+    """
+    body = dict(payload or {})
+    requested = str(body.get("type") or "phins_unified").strip().lower()
+    if requested and requested not in POLICY_TYPE_TO_PRODUCT:
+        raise ValueError(f"non-kernel seed policy type: {requested}")
+    body["type"] = "phins_unified"
+    kernel = price_application_with_kernel(body)
+    if not kernel or float(kernel.get("annual") or 0) <= 0:
+        raise ValueError("kernel could not price seed policy")
+    return kernel
+
+
 def price_application_with_kernel(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Price a new application via the actuarial kernel + persisted pricing params.
 

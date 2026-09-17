@@ -76,6 +76,774 @@ def _get_env_password(env_var: str, username: str) -> str:
         return secrets.token_urlsafe(32)  # Random password that cannot be guessed
 
 
+KERNEL_SEED_POLICY_TYPES = frozenset({'life', 'health', 'phins_unified'})
+# Known false demo policies. Seed must not create them; restart seed
+# removes only these IDs and records keyed to them. Unknown real policies
+# are never swept.
+FALSE_DEMO_POLICY_IDS = (
+    'POL-ASAF-LIFE-001',
+    'POL-ASAF-HEALTH-001',
+    'POL-ASAF-AUTO-001',
+    'POL-EFRAT-UNIFIED-001',
+    'POL-ASI-UNIFIED-001',
+    'POL-SHOSH-UNIFIED-001',
+    'POL-TEST-100',
+    'POL-TEST-101',
+    'POL-TEST-102',
+)
+FALSE_DEMO_POLICY_ID_SET = frozenset(FALSE_DEMO_POLICY_IDS)
+FALSE_TEST_CUSTOMER_IDS = (
+    'CUST-TEST-100',  # Sarah Cohen
+    'CUST-TEST-101',  # David Levy
+    'CUST-TEST-102',  # Rachel Green
+)
+FALSE_TEST_CUSTOMER_ID_SET = frozenset(FALSE_TEST_CUSTOMER_IDS)
+FALSE_TEST_CUSTOMER_EMAILS = (
+    'sarah.cohen@test.com',
+    'david.levy@test.com',
+    'rachel.green@test.com',
+)
+DEMO_NON_KERNEL_POLICY_IDS = ('POL-ASAF-AUTO-001',)
+DEMO_NON_KERNEL_CLAIM_IDS = ('CLM-ASAF-003',)
+DEMO_NON_KERNEL_BILL_IDS = ('BILL-ASAF-AUTO-001',)
+
+
+def _age_from_dob(dob_value, as_of=None) -> int:
+    """Whole years from ISO date-of-birth, matching kernel age extraction."""
+    text = str(dob_value or '').strip()
+    if not text:
+        return 30
+    try:
+        dob = datetime.fromisoformat(text[:10]).date()
+    except (TypeError, ValueError):
+        return 30
+    today = (as_of or datetime.now(timezone.utc)).date()
+    age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    return age if age > 0 else 30
+
+
+def _kernel_quote_seed_policy(**payload) -> dict:
+    """Price a PHINS unified seed policy. Raises if the type is not kernel-mapped."""
+    from services.pricing_shadow_service import kernel_quote_for_seed
+    return kernel_quote_for_seed(payload)
+
+
+def _seed_policy_from_kernel(
+    *,
+    policy_id: str,
+    coverage_amount: float,
+    age: int,
+    gender: str,
+    smoking_status: str,
+    risk_score: str,
+    status: str,
+    adl_level: int = 5,
+    term_years: int = 20,
+) -> dict:
+    kernel = _kernel_quote_seed_policy(
+        type='phins_unified',
+        coverage_amount=coverage_amount,
+        age=age,
+        gender=gender,
+        smoking_status=smoking_status,
+        risk_score=risk_score,
+        adl_level=adl_level,
+        term_years=term_years,
+    )
+    return {
+        'id': policy_id,
+        'type': 'phins_unified',
+        'coverage_amount': float(coverage_amount),
+        'annual_premium': round(float(kernel['annual']), 2),
+        'monthly_premium': round(float(kernel['monthly']), 2),
+        'quarterly_premium': kernel.get('quarterly'),
+        'status': status,
+        'risk_score': risk_score,
+        'kernel': kernel,
+        'age': age,
+        'gender': gender,
+        'smoking_status': smoking_status,
+        'adl_level': adl_level,
+    }
+
+
+def _pin_kernel_on_policy_dict(policy: dict, kernel: dict) -> dict:
+    from services.financial_unification_service import pin_kernel_fields_on_policy
+    policy['type'] = 'phins_unified'
+    policy['product_id'] = kernel.get('product_id') or 'phins_pure_risk_adjustable'
+    policy['pricing_source'] = kernel.get('pricing_source') or 'pricing_kernel'
+    pin_kernel_fields_on_policy(policy, kernel)
+    return policy
+
+
+def _row_policy_id(row) -> str:
+    if isinstance(row, dict):
+        return str(row.get('policy_id') or '')
+    return str(getattr(row, 'policy_id', '') or '')
+
+
+def _row_customer_id(row) -> str:
+    if isinstance(row, dict):
+        return str(row.get('customer_id') or '')
+    return str(getattr(row, 'customer_id', '') or '')
+
+
+def _row_id(row) -> str:
+    if isinstance(row, dict):
+        return str(row.get('id') or '')
+    return str(getattr(row, 'id', '') or '')
+
+
+def _row_matches_false_demo(row) -> bool:
+    """True when a store/repo row is keyed to a known false demo policy or test customer."""
+    if row is None:
+        return False
+    rid = _row_id(row)
+    return (
+        rid in FALSE_DEMO_POLICY_ID_SET
+        or rid in FALSE_TEST_CUSTOMER_ID_SET
+        or _row_policy_id(row) in FALSE_DEMO_POLICY_ID_SET
+        or _row_customer_id(row) in FALSE_TEST_CUSTOMER_ID_SET
+    )
+
+
+def _safe_delete_repo_row(repo, row_id, label: str) -> None:
+    if repo is None or not row_id:
+        return
+    try:
+        if hasattr(repo, 'delete') and repo.delete(row_id):
+            logger.info(f"Removed false demo {label} {row_id}")
+    except Exception as exc:
+        logger.warning(f"Could not remove false demo {label} {row_id}: {exc}")
+
+
+def _safe_pop_store(store, key) -> None:
+    if store is None or key not in store:
+        return
+    try:
+        del store[key]
+    except Exception:
+        try:
+            store.pop(key, None)
+        except Exception:
+            pass
+
+
+FALSE_DEMO_LEDGER_PREFIXES = (
+    'TX-POL-ASAF',
+    'TX-POL-EFRAT',
+    'TX-BILL-ASAF',
+    'TX-BILL-EFRAT',
+    'TX-CLM-ASAF',
+)
+
+
+def _ledger_entry_is_false_demo(tx_id, tx, removed_claim_ids) -> bool:
+    """True when a ledger row is keyed to a known false demo policy/claim/customer."""
+    tx = tx if isinstance(tx, dict) else {}
+    meta = tx.get('metadata') if isinstance(tx.get('metadata'), dict) else {}
+    policy_id = str(tx.get('policy_id') or meta.get('policy_id') or '')
+    claim_id = str(tx.get('claim_id') or meta.get('claim_id') or '')
+    customer_id = str(tx.get('customer_id') or meta.get('customer_id') or '')
+    return (
+        policy_id in FALSE_DEMO_POLICY_ID_SET
+        or customer_id in FALSE_TEST_CUSTOMER_ID_SET
+        or claim_id in removed_claim_ids
+        or str(tx_id).startswith(FALSE_DEMO_LEDGER_PREFIXES)
+    )
+
+
+def _wallet_balance_from_remaining_txs(txs) -> float:
+    """Reconstruct a wallet balance from remaining txs; never return negative."""
+    total = 0.0
+    for tx in txs:
+        if not isinstance(tx, dict):
+            continue
+        try:
+            amount = float(tx.get('amount') or 0)
+        except (TypeError, ValueError):
+            continue
+        tx_type = str(tx.get('type') or '').lower()
+        if amount < 0 or tx_type in (
+            'purchase', 'debit', 'withdrawal', 'spend', 'payment', 'medical_purchase'
+        ):
+            total -= abs(amount)
+        else:
+            total += amount
+    return round(max(0.0, total), 2)
+
+
+def _false_demo_purge_journal_path(kind: str) -> str:
+    try:
+        from web_portal.server import LEDGER_PERSISTENCE_FILE
+        base = os.path.dirname(LEDGER_PERSISTENCE_FILE) or '.'
+    except Exception:
+        base = os.environ.get('TMPDIR') or '/tmp'
+    stamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')
+    return os.path.join(base, f'phins_false_demo_{kind}_{stamp}.json')
+
+
+def _write_false_demo_purge_journal(path: str, payload: dict) -> None:
+    """Fail closed: raise if the forensic journal cannot be written."""
+    directory = os.path.dirname(path) or '.'
+    os.makedirs(directory, exist_ok=True)
+    tmp_path = f'{path}.tmp'
+    with open(tmp_path, 'w', encoding='utf-8') as handle:
+        json.dump(payload, handle, indent=2, default=str)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp_path, path)
+
+
+def _payload_dict(row) -> dict:
+    payload = getattr(row, 'payload', None)
+    if isinstance(payload, dict):
+        return payload
+    if isinstance(payload, str) and payload:
+        try:
+            parsed = json.loads(payload)
+            return parsed if isinstance(parsed, dict) else {}
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+    return {}
+
+
+def _false_demo_ids_from_repo(repo) -> list:
+    """Primary keys on a repo keyed to known false demo policies or test customers."""
+    found = []
+    seen = set()
+    if repo is None:
+        return found
+    for policy_id in FALSE_DEMO_POLICY_IDS:
+        try:
+            rows = repo.filter_by(policy_id=policy_id) or []
+        except Exception:
+            rows = []
+        for row in rows:
+            rid = getattr(row, 'id', None)
+            if rid and str(rid) not in seen:
+                seen.add(str(rid))
+                found.append(str(rid))
+    for customer_id in FALSE_TEST_CUSTOMER_IDS:
+        try:
+            rows = repo.filter_by(customer_id=customer_id) or []
+        except Exception:
+            rows = []
+        for row in rows:
+            rid = getattr(row, 'id', None)
+            if rid and str(rid) not in seen:
+                seen.add(str(rid))
+                found.append(str(rid))
+    return found
+
+
+def _collect_false_demo_claim_ids_from_db() -> list:
+    """List SQL claim IDs before policy deletes cascade them away."""
+    try:
+        from database.manager import DatabaseManager
+    except ImportError:
+        return []
+    try:
+        with DatabaseManager() as db:
+            return _false_demo_ids_from_repo(db.claims)
+    except Exception as exc:
+        logger.warning(f"False-demo claim id collection skipped: {exc}")
+        return []
+
+
+def _purge_false_demo_seed(
+    policy_repo=None,
+    billing_repo=None,
+    claim_repo=None,
+    underwriting_repo=None,
+    customer_repo=None,
+    user_repo=None,
+    sync_memory: bool = True,
+) -> dict:
+    """Remove known false demo policies, the three QA test customers, and related records.
+
+    Scoped to FALSE_DEMO_POLICY_IDS and FALSE_TEST_CUSTOMER_IDS only. Live
+    PHINS customers (Asaf/Efrat/Asi/Shosh), persisted wallets for those
+    accounts, and unknown real rows are left in place. No reversing cash is
+    invented; known demo ledger rows are dropped and the remaining hash
+    chain is rebuilt.
+    """
+    removed = {
+        'policies': 0, 'bills': 0, 'claims': 0, 'uw': 0,
+        'customers': 0, 'users': 0, 'ledger': 0,
+    }
+    POLICIES = BILLING = CLAIMS = UNDERWRITING_APPLICATIONS = None
+    TRANSACTION_LEDGER = HEALTH_WALLETS = NFT_LEDGER = None
+    CUSTOMERS = INVESTMENT_ACCOUNTS = CUSTOMER_ALLOCATIONS = USERS = None
+    if sync_memory:
+        try:
+            from web_portal.server import (
+                BILLING as _B,
+                CLAIMS as _C,
+                CUSTOMER_ALLOCATIONS as _A,
+                CUSTOMERS as _CU,
+                HEALTH_WALLETS as _W,
+                INVESTMENT_ACCOUNTS as _I,
+                NFT_LEDGER as _N,
+                POLICIES as _P,
+                TRANSACTION_LEDGER as _T,
+                UNDERWRITING_APPLICATIONS as _U,
+                USERS as _USERS,
+            )
+            POLICIES, BILLING, CLAIMS = _P, _B, _C
+            UNDERWRITING_APPLICATIONS, TRANSACTION_LEDGER = _U, _T
+            HEALTH_WALLETS, NFT_LEDGER = _W, _N
+            CUSTOMERS, INVESTMENT_ACCOUNTS = _CU, _I
+            CUSTOMER_ALLOCATIONS, USERS = _A, _USERS
+        except ImportError:
+            pass
+
+    removed_claim_ids = set(_collect_false_demo_claim_ids_from_db())
+
+    def _collect_repo_ids(repo):
+        ids = []
+        seen = set()
+        if repo is None:
+            return ids
+
+        def _take(rows):
+            for row in rows or []:
+                rid = getattr(row, 'id', None)
+                if not rid:
+                    continue
+                key = str(rid)
+                if key in seen:
+                    continue
+                seen.add(key)
+                ids.append(key)
+                if repo is claim_repo:
+                    removed_claim_ids.add(key)
+
+        for policy_id in FALSE_DEMO_POLICY_IDS:
+            try:
+                _take(repo.filter_by(policy_id=policy_id) or [])
+            except Exception:
+                pass
+        for customer_id in FALSE_TEST_CUSTOMER_IDS:
+            try:
+                _take(repo.filter_by(customer_id=customer_id) or [])
+            except Exception:
+                pass
+        return ids
+
+    for claim_id in _collect_repo_ids(claim_repo):
+        _safe_delete_repo_row(claim_repo, claim_id, 'claim')
+        removed['claims'] += 1
+    for bill_id in _collect_repo_ids(billing_repo):
+        _safe_delete_repo_row(billing_repo, bill_id, 'bill')
+        removed['bills'] += 1
+    for uw_id in _collect_repo_ids(underwriting_repo):
+        _safe_delete_repo_row(underwriting_repo, uw_id, 'underwriting')
+        removed['uw'] += 1
+
+    policy_ids_to_drop = list(FALSE_DEMO_POLICY_IDS)
+    if policy_repo is not None:
+        for customer_id in FALSE_TEST_CUSTOMER_IDS:
+            try:
+                extra = policy_repo.filter_by(customer_id=customer_id) or []
+            except Exception:
+                extra = []
+            for row in extra:
+                pid = getattr(row, 'id', None)
+                if pid and str(pid) not in policy_ids_to_drop:
+                    policy_ids_to_drop.append(str(pid))
+        for policy_id in policy_ids_to_drop:
+            existing = None
+            try:
+                existing = policy_repo.find_one_by(id=policy_id)
+            except Exception:
+                existing = None
+            if existing:
+                _safe_delete_repo_row(policy_repo, policy_id, 'policy')
+                removed['policies'] += 1
+
+    for customer_id in FALSE_TEST_CUSTOMER_IDS:
+        existed = False
+        if customer_repo is not None:
+            try:
+                existed = customer_repo.find_one_by(id=customer_id) is not None
+            except Exception:
+                existed = False
+        _safe_delete_repo_row(customer_repo, customer_id, 'customer')
+        if existed:
+            removed['customers'] += 1
+    for email in FALSE_TEST_CUSTOMER_EMAILS:
+        existed_user = False
+        if user_repo is not None:
+            try:
+                if hasattr(user_repo, 'get_by_username'):
+                    existed_user = user_repo.get_by_username(email) is not None
+                else:
+                    existed_user = user_repo.find_one_by(username=email) is not None
+            except Exception:
+                existed_user = False
+        _safe_delete_repo_row(user_repo, email, 'user')
+        if existed_user:
+            removed['users'] += 1
+
+    if CLAIMS is not None:
+        for claim_id in list(CLAIMS.keys()):
+            row = CLAIMS.get(claim_id) or {}
+            if _row_matches_false_demo(row):
+                removed_claim_ids.add(str(claim_id))
+                _safe_pop_store(CLAIMS, claim_id)
+                removed['claims'] += 1
+    if BILLING is not None:
+        for bill_id in list(BILLING.keys()):
+            row = BILLING.get(bill_id) or {}
+            if _row_matches_false_demo(row):
+                _safe_pop_store(BILLING, bill_id)
+                removed['bills'] += 1
+    if UNDERWRITING_APPLICATIONS is not None:
+        for uw_id in list(UNDERWRITING_APPLICATIONS.keys()):
+            row = UNDERWRITING_APPLICATIONS.get(uw_id) or {}
+            if _row_matches_false_demo(row):
+                _safe_pop_store(UNDERWRITING_APPLICATIONS, uw_id)
+                removed['uw'] += 1
+    if POLICIES is not None:
+        for policy_id in list(POLICIES.keys()):
+            row = POLICIES.get(policy_id) or {}
+            if (
+                str(policy_id) in FALSE_DEMO_POLICY_ID_SET
+                or _row_matches_false_demo(row)
+            ):
+                _safe_pop_store(POLICIES, policy_id)
+                removed['policies'] += 1
+
+    if HEALTH_WALLETS is not None:
+        for customer_id in FALSE_TEST_CUSTOMER_IDS:
+            _safe_pop_store(HEALTH_WALLETS, customer_id)
+        for wallet in list(HEALTH_WALLETS.values()):
+            if not isinstance(wallet, dict):
+                continue
+            txs = list(wallet.get('transactions') or [])
+            kept = []
+            deducted = 0.0
+            for tx in txs:
+                if not isinstance(tx, dict):
+                    kept.append(tx)
+                    continue
+                tx_id = str(tx.get('id') or '')
+                claim_id = str(tx.get('claim_id') or '')
+                drop = (
+                    claim_id in removed_claim_ids
+                    or tx_id.startswith('CLAIM-PAY-SEED-CLM-ASAF')
+                    or str(tx.get('policy_id') or '') in FALSE_DEMO_POLICY_ID_SET
+                    or str(tx.get('customer_id') or '') in FALSE_TEST_CUSTOMER_ID_SET
+                )
+                if drop:
+                    try:
+                        deducted += float(tx.get('amount') or 0)
+                    except (TypeError, ValueError):
+                        pass
+                    continue
+                kept.append(tx)
+            if deducted:
+                wallet['transactions'] = kept
+                remaining_have_amounts = any(
+                    isinstance(tx, dict) and tx.get('amount') not in (None, '')
+                    for tx in kept
+                )
+                if not kept:
+                    wallet['balance'] = 0.0
+                elif remaining_have_amounts:
+                    wallet['balance'] = _wallet_balance_from_remaining_txs(kept)
+                else:
+                    try:
+                        wallet['balance'] = round(
+                            max(0.0, float(wallet.get('balance') or 0) - deducted),
+                            2,
+                        )
+                    except (TypeError, ValueError):
+                        wallet['balance'] = 0.0
+
+    if INVESTMENT_ACCOUNTS is not None:
+        for customer_id in FALSE_TEST_CUSTOMER_IDS:
+            _safe_pop_store(INVESTMENT_ACCOUNTS, customer_id)
+    if CUSTOMER_ALLOCATIONS is not None:
+        for customer_id in FALSE_TEST_CUSTOMER_IDS:
+            _safe_pop_store(CUSTOMER_ALLOCATIONS, customer_id)
+    if CUSTOMERS is not None:
+        for customer_id in FALSE_TEST_CUSTOMER_IDS:
+            if customer_id in CUSTOMERS:
+                _safe_pop_store(CUSTOMERS, customer_id)
+                removed['customers'] += 1
+    if USERS is not None:
+        for email in FALSE_TEST_CUSTOMER_EMAILS:
+            present = False
+            try:
+                present = email in USERS
+            except Exception:
+                present = False
+            if present:
+                _safe_pop_store(USERS, email)
+                removed['users'] += 1
+
+    try:
+        from web_portal.server import SUSPENDED_TEST_ACCOUNTS as _SUSPENDED
+        for customer_id in FALSE_TEST_CUSTOMER_IDS:
+            _SUSPENDED.discard(customer_id)
+    except Exception:
+        pass
+
+    # Durable operational rows must run before ledger matching so SQL-only
+    # claim IDs (boot with no repos / unhydrated CLAIMS) still drop cash rows.
+    db_ops = _purge_false_demo_records_from_db(removed_claim_ids)
+    removed_claim_ids.update(str(cid) for cid in (db_ops.get('claim_ids') or []))
+    for key in ('policies', 'bills', 'claims', 'uw', 'customers', 'users'):
+        removed[key] += db_ops.get(key, 0)
+
+    if TRANSACTION_LEDGER is not None:
+        for tx_id in list(TRANSACTION_LEDGER.keys()):
+            tx = TRANSACTION_LEDGER.get(tx_id) or {}
+            if _ledger_entry_is_false_demo(tx_id, tx, removed_claim_ids):
+                _safe_pop_store(TRANSACTION_LEDGER, tx_id)
+                removed['ledger'] += 1
+        try:
+            from web_portal.server import platform_event_ledger
+            platform_event_ledger.ensure_hash_chain()
+        except Exception as exc:
+            logger.warning(f"Ledger chain rebuild after false-demo purge skipped: {exc}")
+
+    db_deleted = _purge_false_demo_ledger_from_db(removed_claim_ids)
+    removed['ledger'] += db_deleted
+    if TRANSACTION_LEDGER is not None:
+        try:
+            from web_portal.server import mark_ledger_dirty, platform_event_ledger
+            backup_path = _false_demo_purge_journal_path('chain_repair')
+            persist_summary = platform_event_ledger.persist_chain_to_db(
+                backup_path=backup_path,
+            )
+            if persist_summary.get('applied') and persist_summary.get('verified') is False:
+                logger.error(
+                    "False-demo ledger persist verification failed: %s",
+                    persist_summary,
+                )
+            elif persist_summary.get('reason') and persist_summary.get('reason') not in (
+                'db chain already consistent',
+                'database disabled',
+                'in-memory ledger empty',
+            ):
+                logger.warning(
+                    "False-demo ledger persist skipped: %s",
+                    persist_summary.get('reason'),
+                )
+            try:
+                mark_ledger_dirty()
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.warning(f"Durable ledger persist after false-demo purge skipped: {exc}")
+
+    if NFT_LEDGER is not None:
+        for token_id in list(NFT_LEDGER.keys()):
+            row = NFT_LEDGER.get(token_id) or {}
+            meta = row.get('metadata') if isinstance(row, dict) else {}
+            if not isinstance(meta, dict):
+                meta = {}
+            if (
+                str(meta.get('policy_id') or '') in FALSE_DEMO_POLICY_ID_SET
+                or str(meta.get('claim_id') or '') in removed_claim_ids
+                or str(meta.get('customer_id') or row.get('customer_id') or '')
+                in FALSE_TEST_CUSTOMER_ID_SET
+                or str(row.get('transaction_id') or '').startswith(
+                    ('TX-POL-ASAF', 'TX-POL-EFRAT', 'TX-BILL-ASAF', 'TX-BILL-EFRAT', 'TX-CLM-ASAF')
+                )
+            ):
+                _safe_pop_store(NFT_LEDGER, token_id)
+
+    return removed
+
+
+def _purge_false_demo_records_from_db(removed_claim_ids=None) -> dict:
+    """Delete known false-demo operational rows even when seed repos were not passed.
+
+    Boot calls `_purge_false_demo_seed(sync_memory=True)` without repositories.
+    Memory DatabaseDict pops are durable in DB mode, but a hydrated plain dict
+    would otherwise restore CUST-TEST-* / POL-TEST-* on the next load.
+    Collected claim IDs are returned and added to `removed_claim_ids` so
+    claim-keyed ledger cash can be dropped even when in-memory CLAIMS was
+    empty. Unknown real rows are never swept.
+    """
+    counts = {
+        'policies': 0, 'bills': 0, 'claims': 0, 'uw': 0,
+        'customers': 0, 'users': 0, 'claim_ids': [],
+    }
+    try:
+        from database.manager import DatabaseManager
+    except ImportError:
+        return counts
+    try:
+        with DatabaseManager() as db:
+            claim_ids = _false_demo_ids_from_repo(db.claims)
+            counts['claim_ids'] = list(claim_ids)
+            if removed_claim_ids is not None:
+                removed_claim_ids.update(claim_ids)
+            for claim_id in claim_ids:
+                if db.claims.delete(claim_id):
+                    counts['claims'] += 1
+                    logger.info(f"Removed false demo claim {claim_id}")
+            for bill_id in _false_demo_ids_from_repo(db.billing):
+                if db.billing.delete(bill_id):
+                    counts['bills'] += 1
+                    logger.info(f"Removed false demo bill {bill_id}")
+            for uw_id in _false_demo_ids_from_repo(db.underwriting):
+                if db.underwriting.delete(uw_id):
+                    counts['uw'] += 1
+                    logger.info(f"Removed false demo underwriting {uw_id}")
+
+            policy_ids = list(FALSE_DEMO_POLICY_IDS)
+            for customer_id in FALSE_TEST_CUSTOMER_IDS:
+                try:
+                    extra = db.policies.filter_by(customer_id=customer_id) or []
+                except Exception:
+                    extra = []
+                for row in extra:
+                    pid = getattr(row, 'id', None)
+                    if pid and str(pid) not in policy_ids:
+                        policy_ids.append(str(pid))
+            for policy_id in policy_ids:
+                if db.policies.get_by_id(policy_id) is not None and db.policies.delete(policy_id):
+                    counts['policies'] += 1
+                    logger.info(f"Removed false demo policy {policy_id}")
+            for customer_id in FALSE_TEST_CUSTOMER_IDS:
+                if db.customers.get_by_id(customer_id) is not None and db.customers.delete(customer_id):
+                    counts['customers'] += 1
+                    logger.info(f"Removed false test customer {customer_id}")
+            for email in FALSE_TEST_CUSTOMER_EMAILS:
+                try:
+                    existing = db.users.get_by_username(email)
+                except Exception:
+                    existing = None
+                if existing is not None and db.users.delete(email):
+                    counts['users'] += 1
+                    logger.info(f"Removed false test user {email}")
+    except Exception as exc:
+        logger.warning(f"Durable false-demo operational purge skipped: {exc}")
+        return counts
+    return counts
+
+
+def _purge_false_demo_ledger_from_db(removed_claim_ids) -> int:
+    """Delete known false-demo rows from platform_ledger_entries.
+
+    Writes a forensic journal first and fails closed if that journal cannot
+    be stored. Unknown real ledger rows are never swept.
+    """
+    deleted = 0
+    try:
+        from database.manager import DatabaseManager
+    except ImportError:
+        return 0
+    try:
+        with DatabaseManager() as db:
+            rows = db.platform_ledger.get_all_by_sequence() or []
+            to_delete = []
+            for row in rows:
+                if row is None or not getattr(row, 'id', None):
+                    continue
+                payload = _payload_dict(row)
+                if _ledger_entry_is_false_demo(row.id, payload, removed_claim_ids):
+                    to_delete.append(row)
+            if not to_delete:
+                return 0
+            journal_path = _false_demo_purge_journal_path('ledger_delete')
+            try:
+                _write_false_demo_purge_journal(
+                    journal_path,
+                    {
+                        'schema': 'phins.ledger.false_demo_purge.v1',
+                        'backed_up_at': datetime.now(timezone.utc).isoformat(),
+                        'removed_ids': [row.id for row in to_delete],
+                        'rows': [
+                            row.to_dict() if hasattr(row, 'to_dict') else {'id': row.id}
+                            for row in to_delete
+                        ],
+                    },
+                )
+            except OSError as journal_exc:
+                logger.error(
+                    "False-demo ledger purge journal could not be written (%s); "
+                    "refusing to delete %d platform_ledger rows",
+                    journal_exc,
+                    len(to_delete),
+                )
+                return 0
+            for row in to_delete:
+                if db.platform_ledger.delete(row.id):
+                    deleted += 1
+                    logger.info(f"Removed false demo ledger row {row.id}")
+    except Exception as exc:
+        logger.warning(f"Durable false-demo ledger purge skipped: {exc}")
+        return deleted
+    return deleted
+
+
+def _retire_non_kernel_demo_seed(policy_repo, billing_repo, claim_repo, sync_memory: bool) -> None:
+    """Back-compat wrapper: purge the known false demo policy set."""
+    _purge_false_demo_seed(
+        policy_repo=policy_repo,
+        billing_repo=billing_repo,
+        claim_repo=claim_repo,
+        sync_memory=sync_memory,
+    )
+
+
+def _seed_paid_claim_cash_to_ledger(sample_claims) -> None:
+    """Write canonical claim_payment_received rows for paid seed claims."""
+    try:
+        from web_portal.server import TRANSACTION_LEDGER, platform_event_ledger
+    except ImportError:
+        return
+    for claim_data in sample_claims:
+        if str(claim_data.get('status') or '').lower() != 'paid':
+            continue
+        amount = float(claim_data.get('approved_amount') or 0)
+        if amount <= 0:
+            continue
+        claim_id = claim_data['id']
+        tx_id = f'TX-{claim_id}-PAID'
+        if tx_id in TRANSACTION_LEDGER:
+            continue
+        payload = {
+            'id': tx_id,
+            'customer_id': 'CUST-ASAF-001',
+            'type': 'claim_payment_received',
+            'amount': amount,
+            'description': f"Claim {claim_id} paid - deposited to Health Wallet",
+            'metadata': {
+                'claim_id': claim_id,
+                'policy_id': claim_data.get('policy_id'),
+                'destination': 'health_wallet',
+                'source': 'seed_claim_cash',
+            },
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'status': 'completed',
+        }
+        try:
+            platform_event_ledger.append_event(
+                event_type='claim_payment_received',
+                entity_type='claim',
+                entity_id=claim_id,
+                customer_id='CUST-ASAF-001',
+                actor='system',
+                amount=amount,
+                status='completed',
+                source_system='demo_seed',
+                payload=payload,
+                entry_id=tx_id,
+                ledger_type='transaction',
+                timestamp=payload['timestamp'],
+            )
+        except Exception as exc:
+            logger.warning(f"Could not seed claim cash {tx_id}: {exc}")
+
+
 def seed_default_users(session=None):
     """Create default system users"""
     should_close = False
@@ -341,7 +1109,7 @@ def seed_sample_data(session=None):
         from database.repositories import (
             CustomerRepository, PolicyRepository, 
             UnderwritingRepository, BillingRepository,
-            ClaimRepository
+            ClaimRepository, UserRepository
         )
         from datetime import timedelta
         
@@ -377,7 +1145,7 @@ def seed_sample_data(session=None):
                 email='asaf@assurance.co.il',
                 phone='+972-50-1234567',
                 dob='1985-03-15',
-                age=39,
+                age=_age_from_dob('1985-03-15'),
                 gender='male',
                 address='123 Insurance Blvd',
                 city='Tel Aviv',
@@ -415,417 +1183,31 @@ def seed_sample_data(session=None):
         else:
             logger.info(f"Primary customer {primary_customer.email} already exists, verifying related data...")
 
-        # =================================================================
-        # Idempotent creation of primary customer policies/bills/claims/UW.
-        # This block runs on every call so that re-deployments (where the
-        # primary customer already exists) still ensure all dependent rows
-        # are present in the database. Previously, because these were nested
-        # under `if not primary_customer:`, subsequent deploys tried to
-        # insert claims referencing policies that were never persisted,
-        # causing `claims_policy_id_fkey` foreign-key violations.
-        # =================================================================
-
-        # PREMIUM CALCULATION (aligned with frontend apply.js):
-        # Base rate: $0.25 per $1000 coverage per month
-        # Age factor for age 47: 1.0 + (47-25) * 0.015 = 1.33
-        # Risk factors: low=0.90, medium=1.0
-        # Life $1M low: 1000 * 0.25 * 1.33 * 0.90 = $299.25/mo = $3,591/yr
-        # Health $500K medium: 500 * 0.25 * 1.33 * 1.0 = $166.25/mo = $1,995/yr
-        # Auto $100K low: 100 * 0.15 * 1.33 * 0.90 = $17.96/mo = $215.46/yr
-        policies_data = [
-            {
-                'id': 'POL-ASAF-LIFE-001',
-                'type': 'life',
-                'coverage_amount': 1000000.0,
-                'annual_premium': 3591.0,
-                'monthly_premium': 299.25,
-                'status': 'active',
-                'risk_score': 'low'
-            },
-            {
-                'id': 'POL-ASAF-HEALTH-001',
-                'type': 'health',
-                'coverage_amount': 500000.0,
-                'annual_premium': 1995.0,
-                'monthly_premium': 166.25,
-                'status': 'active',
-                'risk_score': 'medium'
-            },
-            {
-                'id': 'POL-ASAF-AUTO-001',
-                'type': 'auto',
-                'coverage_amount': 100000.0,
-                'annual_premium': 215.46,
-                'monthly_premium': 17.96,
-                'status': 'active',
-                'risk_score': 'low'
-            }
-        ]
-
-        for pol_data in policies_data:
-            existing_policy = policy_repo.find_one_by(id=pol_data['id'])
-            if not existing_policy:
-                try:
-                    policy = policy_repo.create(
-                        id=pol_data['id'],
-                        customer_id=primary_customer.id,
-                        type=pol_data['type'],
-                        coverage_amount=pol_data['coverage_amount'],
-                        annual_premium=pol_data['annual_premium'],
-                        monthly_premium=pol_data['monthly_premium'],
-                        status=pol_data['status'],
-                        risk_score=pol_data['risk_score'],
-                        start_date=now,
-                        end_date=now + timedelta(days=365),
-                        approval_date=now,
-                        # Previously only written via the in-memory mirror's
-                        # DB write-through; persist directly at create time.
-                        billing=json.dumps({
-                            'auto_pay': True,
-                            'frequency': 'monthly',
-                            'next_billing_date': (now + timedelta(days=30)).isoformat(),
-                        })
-                    )
-                    if policy is not None:
-                        logger.info(f"Created policy: {policy.id}")
-                    else:
-                        logger.warning(f"Policy repo returned None for {pol_data['id']}; skipping dependents")
-                        continue
-                except Exception as e:
-                    logger.warning(f"Could not create policy {pol_data['id']}: {e}")
-                    continue
-
-            # Sync policy to memory ONLY for newly-seeded rows. When the policy
-            # already exists in the DB we must NOT rewrite it: doing so would
-            # reset live fields (status, dates, premiums, payment_setup) back
-            # to seed defaults on every container restart and silently destroy
-            # state advanced by real workflows. The in-memory dict is wired to
-            # DB-backed storage in production, so existing rows are already
-            # readable on demand without a re-seed write.
-            if sync_primary_to_memory and not existing_policy:
-                POLICIES[pol_data['id']] = {
-                    'id': pol_data['id'],
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': pol_data['type'],
-                    'coverage_amount': pol_data['coverage_amount'],
-                    'annual_premium': pol_data['annual_premium'],
-                    'monthly_premium': pol_data['monthly_premium'],
-                    'status': pol_data['status'],
-                    'risk_score': pol_data['risk_score'],
-                    'start_date': now.isoformat(),
-                    'end_date': (now + timedelta(days=365)).isoformat(),
-                    'approval_date': now.isoformat(),
-                    'created_date': now.isoformat(),
-                    'updated_date': now.isoformat(),
-                    'payment_setup': {
-                        'auto_pay': True,
-                        'billing_frequency': 'monthly',
-                        'card_type': 'mastercard',
-                        'card_last4': '4242',
-                        'next_billing_date': (now + timedelta(days=30)).isoformat(),
-                    },
-                    'billing': {
-                        'auto_pay': True,
-                        'frequency': 'monthly',
-                        'next_billing_date': (now + timedelta(days=30)).isoformat(),
-                    }
-                }
-
-            # Create bill for active policy (idempotent)
-            if pol_data['status'] == 'active':
-                bill_id = f"BILL-{pol_data['id'].replace('POL-', '')}"
-                existing_bill = billing_repo.find_one_by(id=bill_id)
-                if not existing_bill:
-                    try:
-                        billing_repo.create(
-                            id=bill_id,
-                            policy_id=pol_data['id'],
-                            customer_id=primary_customer.id,
-                            amount=pol_data['monthly_premium'],
-                            amount_paid=0.0,
-                            status='outstanding',
-                            due_date=now + timedelta(days=30)
-                        )
-                        logger.info(f"Created bill: {bill_id}")
-                    except Exception as e:
-                        logger.warning(f"Could not create bill {bill_id}: {e}")
-
-                # Mirror billing to memory ONLY for newly-seeded bills. An
-                # existing bill may have been paid, partially paid, or had its
-                # due_date advanced; rewriting the seed dict would reset
-                # status='outstanding', amount_paid=0, and slide the due_date
-                # forward 30 days every restart, breaking the billing pipeline.
-                if sync_primary_to_memory and not existing_bill:
-                    BILLING[bill_id] = {
-                        'id': bill_id,
-                        'policy_id': pol_data['id'],
-                        'customer_id': 'CUST-ASAF-001',
-                        'amount': pol_data['monthly_premium'],
-                        'amount_paid': 0.0,
-                        'status': 'outstanding',
-                        'due_date': (now + timedelta(days=30)).isoformat(),
-                        'paid_date': None,
-                        'payment_method': None,
-                        'transaction_id': None,
-                        'late_fee': 0.0,
-                        'created_date': now.isoformat(),
-                        'updated_date': now.isoformat()
-                    }
-
-        # Create sample claims for the primary customer (idempotent;
-        # depends on policies persisted above)
+        # False demo policies (Asaf life/health/auto, Efrat/Asi/Shosh unified)
+        # are not seeded. Purge known IDs and every bill/claim/UW keyed to them.
         claim_repo = ClaimRepository(session)
-        sample_claims = [
-            {
-                'id': 'CLM-ASAF-001',
-                'policy_id': 'POL-ASAF-HEALTH-001',
-                'type': 'Medical',
-                'description': 'Emergency room visit for chest pain - cardiac evaluation',
-                'claimed_amount': 15000.00,
-                'approved_amount': 15000.00,
-                'status': 'Paid'
-            },
-            {
-                'id': 'CLM-ASAF-002',
-                'policy_id': 'POL-ASAF-HEALTH-001',
-                'type': 'Prescription',
-                'description': 'Monthly prescription medications - cardiovascular',
-                'claimed_amount': 850.00,
-                'approved_amount': 850.00,
-                'status': 'Paid'
-            },
-            {
-                'id': 'CLM-ASAF-003',
-                'policy_id': 'POL-ASAF-AUTO-001',
-                'type': 'Collision',
-                'description': 'Fender bender accident - rear bumper damage repair',
-                'claimed_amount': 3500.00,
-                'approved_amount': 3200.00,
-                'status': 'Paid'
-            },
-            {
-                'id': 'CLM-ASAF-004',
-                'policy_id': 'POL-ASAF-HEALTH-001',
-                'type': 'Dental',
-                'description': 'Root canal treatment and crown placement',
-                'claimed_amount': 2800.00,
-                'status': 'Pending'
-            },
-            {
-                'id': 'CLM-ASAF-005',
-                'policy_id': 'POL-ASAF-LIFE-001',
-                'type': 'Disability',
-                'description': 'Temporary disability claim - work injury recovery',
-                'claimed_amount': 45000.00,
-                'status': 'Under Review'
-            }
-        ]
-
-        for claim_data in sample_claims:
-            try:
-                filed_date = now - timedelta(days=random.randint(1, 30))
-                existing_claim = claim_repo.find_one_by(id=claim_data['id'])
-                if not existing_claim:
-                    # Guard against FK violation: only insert if the referenced
-                    # policy is present in the DB.
-                    parent_policy = policy_repo.find_one_by(id=claim_data['policy_id'])
-                    if not parent_policy:
-                        logger.warning(
-                            f"Skipping claim {claim_data['id']}: parent policy "
-                            f"{claim_data['policy_id']} not found in database"
-                        )
-                    else:
-                        claim = claim_repo.create(
-                            id=claim_data['id'],
-                            policy_id=claim_data['policy_id'],
-                            customer_id=primary_customer.id,
-                            type=claim_data['type'],
-                            description=claim_data['description'],
-                            claimed_amount=claim_data['claimed_amount'],
-                            approved_amount=claim_data.get('approved_amount'),
-                            status=claim_data['status'],
-                            filed_date=filed_date,
-                            created_date=filed_date
-                        )
-                        if claim is not None:
-                            logger.info(f"Created claim: {claim.id}")
-
-                # Mirror claim to memory ONLY for newly-seeded claims. A claim
-                # whose status advanced (e.g. Pending → Approved → Paid) must
-                # not be reverted to its seed status on every container start;
-                # that would corrupt the claims pipeline and the wallet
-                # reconciliation that runs immediately afterwards.
-                if sync_primary_to_memory and not existing_claim:
-                    CLAIMS[claim_data['id']] = {
-                        'id': claim_data['id'],
-                        'policy_id': claim_data['policy_id'],
-                        'customer_id': 'CUST-ASAF-001',
-                        'type': claim_data['type'],
-                        'description': claim_data['description'],
-                        'claimed_amount': claim_data['claimed_amount'],
-                        'approved_amount': claim_data.get('approved_amount', 0),
-                        'status': claim_data['status'],
-                        'filed_date': filed_date.isoformat(),
-                        'created_date': filed_date.isoformat(),
-                        'updated_date': now.isoformat()
-                    }
-            except Exception as e:
-                logger.warning(f"Could not create claim {claim_data['id']}: {e}")
-
-        # Reconcile paid claims → wallet: any claim with status "Paid" must
-        # have its approved_amount reflected in the customer's health wallet.
-        # Idempotent: skip claims whose payment transaction is already recorded.
-        try:
-            from web_portal.server import HEALTH_WALLETS
-            paid_claims_total = 0.0
-            for claim_data in sample_claims:
-                if claim_data['status'] == 'Paid' and claim_data.get('approved_amount'):
-                    cust_id = 'CUST-ASAF-001'
-                    wallet = HEALTH_WALLETS.get(cust_id)
-                    if not wallet:
-                        continue
-
-                    tx_id = f"CLAIM-PAY-SEED-{claim_data['id']}"
-                    transactions = wallet.setdefault('transactions', [])
-                    if any(tx.get('id') == tx_id for tx in transactions):
-                        continue
-
-                    amt = float(claim_data['approved_amount'])
-                    wallet['balance'] += amt
-                    paid_claims_total += amt
-                    transactions.append({
-                        'id': tx_id,
-                        'type': 'claim_payment',
-                        'amount': amt,
-                        'source': 'PHINS_CLAIMS_RESERVE',
-                        'claim_id': claim_data['id'],
-                        'description': f"Claim {claim_data['id']} payment - {claim_data['description'][:50]}",
-                        'balance_after': wallet['balance'],
-                        'timestamp': datetime.now(timezone.utc).isoformat()
-                    })
-            if paid_claims_total > 0:
-                logger.info(f"Reconciled {paid_claims_total:.2f} in paid claims to CUST-ASAF-001 wallet")
-            else:
-                logger.info("Paid claims already reconciled in CUST-ASAF-001 wallet, skipping")
-        except ImportError:
-            logger.warning("Could not import HEALTH_WALLETS for paid claim reconciliation")
-
-        # Create underwriting application for primary customer (idempotent).
-        # This is the latest application that can be used for risk assessment reports.
-        #
-        # IMPORTANT: previously this used `f"UW-ASAF-{now.strftime('%Y%m%d')}-001"`
-        # which generated a NEW id every calendar day, so each Railway restart
-        # crossing midnight inserted yet another orphaned UW row for asaf and
-        # left every prior day's row in PostgreSQL forever. Use a stable id
-        # and reuse any pre-existing seed UW (date-stamped or otherwise) for
-        # asaf's health policy so prod data accumulated under the old scheme
-        # is preserved without being duplicated.
-        STABLE_UW_ASAF_ID = 'UW-ASAF-HEALTH-001'
-        existing_uw = (
-            underwriting_repo.find_one_by(id=STABLE_UW_ASAF_ID)
-            or underwriting_repo.get_by_policy('POL-ASAF-HEALTH-001')
+        user_repo = UserRepository(session)
+        # Always sync in-memory ledger/wallets too: TRANSACTION_LEDGER is not
+        # a DatabaseDict, so repo-only purge would leave false demo cash rows.
+        _purge_false_demo_seed(
+            policy_repo=policy_repo,
+            billing_repo=billing_repo,
+            claim_repo=claim_repo,
+            underwriting_repo=underwriting_repo,
+            customer_repo=customer_repo,
+            user_repo=user_repo,
+            sync_memory=True,
         )
-        uw_asaf_id = existing_uw.id if existing_uw else STABLE_UW_ASAF_ID
-        # Single source of truth for the seeded application. Used both for
-        # the DB create (fields outside the model are filtered by the
-        # repository) and the in-memory mirror, so we no longer need a
-        # create-then-update double write to enrich the row.
-        # Premium calculation for age 47, moderate risk, $500K health:
-        # (500000/1000) * 0.25 * 1.33 * 1.15 = $191.19/mo = $2294.25/yr
-        uw_asaf_payload = {
-                'id': uw_asaf_id,
-                'policy_id': 'POL-ASAF-HEALTH-001',
-                'customer_id': 'CUST-ASAF-001',
-                'customer_name': 'Asaf Assurance',
-                'customer_email': 'asaf@assurance.co.il',
-                'policy_type': 'health',
-                'coverage_amount': 500000.0,
-                'annual_premium': 2294.25,
-                'monthly_premium': 191.19,
-                'status': 'pending',
-                'risk_score': 'moderate',
-                'risk_assessment': 'moderate',
-                'age': 47,
-                'gender': 'male',
-                'occupation': 'Business Owner',
-                'disability_percentage': 30,
-                'disability_type': 'Mobility Impairment - Lower Limb',
-                'disability_status': 'stable',
-                'bmi': 32,
-                'height_cm': 175,
-                'weight_kg': 98,
-                'smoking_status': 'never',
-                'medical_conditions': [
-                    {
-                        'condition': 'Obesity',
-                        'icd_code': 'E66.9',
-                        'severity': 'moderate',
-                        'status': 'active',
-                        'treatment': 'Dietary management, exercise program',
-                        'risk_impact': 0.07,
-                        'loading_percentage': 15,
-                        'notes': 'BMI 32.0 (Class I Obesity). Weight management program.'
-                    },
-                    {
-                        'condition': 'Mobility Impairment - Lower Limb',
-                        'icd_code': 'M62.50',
-                        'severity': 'moderate',
-                        'status': 'stable',
-                        'treatment': 'Physiotherapy, mobility aids',
-                        'risk_impact': 0.18,
-                        'loading_percentage': 20,
-                        'exclusion_recommended': True,
-                        'notes': '30% disability rating. Stable condition.'
-                    }
-                ],
-                'documents': [
-                    {'type': 'national_id', 'verified': True, 'authenticity_score': 0.95, 'expiry_status': 'valid'},
-                    {'type': 'disability_certificate', 'verified': True, 'authenticity_score': 0.98, 'expiry_status': 'valid', 'flags': 'DISABILITY_DECLARED'},
-                    {'type': 'medical_report', 'verified': True, 'authenticity_score': 0.96, 'expiry_status': 'valid', 'flags': 'MULTIPLE_CONDITIONS'}
-                ],
-                'identity_verified': True,
-                'medical_exam_required': True,
-                'premium_adjustment': 35,
-                'created_date': now.isoformat(),
-                'submitted_date': now.isoformat(),
-                'updated_date': now.isoformat()
-            }
-
-        if not existing_uw:
-            try:
-                # Only insert if parent policy exists to avoid FK violation
-                parent_policy = policy_repo.find_one_by(id='POL-ASAF-HEALTH-001')
-                if parent_policy:
-                    # convert_datetime_strings() serializes the JSON fields
-                    # (medical_conditions, documents) and parses the ISO
-                    # timestamps exactly like the DatabaseDict write-through
-                    # used to do when the mirror enriched this row.
-                    from database.data_access import convert_datetime_strings
-                    uw_app = underwriting_repo.create(
-                        **convert_datetime_strings(uw_asaf_payload)
-                    )
-                    if uw_app is not None:
-                        logger.info(f"Created underwriting application for primary customer: {uw_app.id}")
-                else:
-                    logger.warning(
-                        f"Skipping underwriting {uw_asaf_id}: parent policy "
-                        f"POL-ASAF-HEALTH-001 not found in database"
-                    )
-            except Exception as e:
-                logger.warning(f"Could not create underwriting application for primary customer: {e}")
-
-        # Mirror UW application to memory ONLY for newly-seeded rows. An
-        # existing application may have advanced through the underwriting
-        # pipeline (status, risk_assessment, premium_adjustment, documents);
-        # rewriting the seed dict on every restart would silently roll the
-        # decision back to 'pending'.
-        if sync_primary_to_memory and not existing_uw:
-            UNDERWRITING_APPLICATIONS[uw_asaf_id] = uw_asaf_payload
 
         # =================================================================
         # PHINS CUSTOMER ACCOUNTS - PERMANENT DATA (efrat, asi, shosh)
-        # These customers are primary platform users with full data persistence
+        # These customers are primary platform users with full data persistence.
+        # False demo policies for these accounts are not seeded.
         # =================================================================
+        efrat_age = _age_from_dob('1990-06-15')
+        asi_age = _age_from_dob('1985-03-20')
+        shosh_age = _age_from_dob('1988-09-10')
+
         phins_customers = [
             {
                 'id': 'CUST-EFRAT-001',
@@ -833,31 +1215,12 @@ def seed_sample_data(session=None):
                 'email': 'efrat@phins.ai',
                 'phone': '+972-50-9876543',
                 'dob': '1990-06-15',
-                'age': 35,
+                'age': efrat_age,
                 'gender': 'female',
                 'occupation': 'Product Manager',
                 'password_env': 'PHINS_USER_EFRAT_PASSWORD',
-                # Premium: $500K, age 35, low risk: (500*0.25*1.15*0.90) = $129.38/mo = $1552.50/yr
-                'policy': {
-                    'id': 'POL-EFRAT-UNIFIED-001',
-                    'type': 'phins_unified',
-                    'coverage_amount': 500000.0,
-                    'annual_premium': 1552.50,   # Corrected from 5600
-                    'monthly_premium': 129.38,   # Corrected from 466.67
-                    'status': 'active',
-                    'risk_score': 'low'
-                },
-                'application': {
-                    'id': 'UW-EFRAT-001',
-                    'status': 'approved',
-                    'risk_score': 'low',
-                    'bmi': 22,
-                    'smoking_status': 'never',
-                    'disability_percentage': 0,
-                    'medical_conditions': []
-                },
-                'wallet_balance': 5000.0,
-                'investment_balance': 10000.0
+                'wallet_balance': 0.0,
+                'investment_balance': 0.0
             },
             {
                 'id': 'CUST-ASI-001',
@@ -865,29 +1228,10 @@ def seed_sample_data(session=None):
                 'email': 'asi@phins.ai',
                 'phone': '+972-50-1111111',
                 'dob': '1985-03-20',
-                'age': 40,
+                'age': asi_age,
                 'gender': 'male',
                 'occupation': 'Software Engineer',
                 'password_env': 'PHINS_USER_ASI_PASSWORD',
-                # Premium: $400K, age 40, low risk: (400*0.25*1.225*0.90) = $110.25/mo = $1323.0/yr
-                'policy': {
-                    'id': 'POL-ASI-UNIFIED-001',
-                    'type': 'phins_unified',
-                    'coverage_amount': 400000.0,
-                    'annual_premium': 1323.0,   # Corrected from 4800
-                    'monthly_premium': 110.25,  # Corrected from 400
-                    'status': 'pending_underwriting',
-                    'risk_score': 'low'
-                },
-                'application': {
-                    'id': 'UW-ASI-001',
-                    'status': 'pending',
-                    'risk_score': 'low',
-                    'bmi': 24,
-                    'smoking_status': 'never',
-                    'disability_percentage': 0,
-                    'medical_conditions': []
-                },
                 'wallet_balance': 0.0,
                 'investment_balance': 0.0
             },
@@ -897,29 +1241,10 @@ def seed_sample_data(session=None):
                 'email': 'shosh@phins.ai',
                 'phone': '+972-50-2222222',
                 'dob': '1988-09-10',
-                'age': 37,
+                'age': shosh_age,
                 'gender': 'female',
                 'occupation': 'Marketing Director',
                 'password_env': 'PHINS_USER_SHOSH_PASSWORD',
-                # Premium: $450K, age 37, low risk: (450*0.25*1.18*0.90) = $119.48/mo = $1433.70/yr
-                'policy': {
-                    'id': 'POL-SHOSH-UNIFIED-001',
-                    'type': 'phins_unified',
-                    'coverage_amount': 450000.0,
-                    'annual_premium': 1433.70,  # Corrected from 5200
-                    'monthly_premium': 119.48,  # Corrected from 433.33
-                    'status': 'pending_underwriting',
-                    'risk_score': 'low'
-                },
-                'application': {
-                    'id': 'UW-SHOSH-001',
-                    'status': 'pending',
-                    'risk_score': 'low',
-                    'bmi': 23,
-                    'smoking_status': 'never',
-                    'disability_percentage': 0,
-                    'medical_conditions': []
-                },
                 'wallet_balance': 0.0,
                 'investment_balance': 0.0
             }
@@ -967,176 +1292,196 @@ def seed_sample_data(session=None):
                 )
                 logger.info(f"Created PHINS customer: {phins_cust['email']} → {phins_cust['id']}")
             
-            # Create/verify policy
-            pol_data = phins_cust['policy']
-            existing_policy = policy_repo.find_one_by(id=pol_data['id'])
-            if not existing_policy:
-                policy_kwargs = dict(
-                    id=pol_data['id'],
-                    customer_id=phins_cust['id'],
-                    type=pol_data['type'],
-                    coverage_amount=pol_data['coverage_amount'],
-                    annual_premium=pol_data['annual_premium'],
-                    monthly_premium=pol_data['monthly_premium'],
-                    status=pol_data['status'],
-                    risk_score=pol_data['risk_score'],
-                    start_date=now,
-                    end_date=now + timedelta(days=365)
-                )
-                if pol_data['status'] == 'active':
-                    # Previously only written via the in-memory mirror's DB
-                    # write-through; persist directly at create time.
-                    policy_kwargs['billing'] = json.dumps({
-                        'auto_pay': True,
-                        'frequency': 'monthly',
-                        'next_billing_date': (now + timedelta(days=30)).isoformat(),
-                    })
-                policy_repo.create(**policy_kwargs)
-                logger.info(f"Created policy: {pol_data['id']} for {phins_cust['email']}")
-            
-            # Create/verify underwriting application
-            app_data = phins_cust['application']
-            existing_app = underwriting_repo.find_one_by(id=app_data['id'])
-            if not existing_app:
-                underwriting_repo.create(
-                    id=app_data['id'],
-                    policy_id=pol_data['id'],
-                    customer_id=phins_cust['id'],
-                    customer_name=phins_cust['name'],
-                    customer_email=phins_cust['email'],
-                    policy_type=pol_data['type'],
-                    coverage_amount=pol_data['coverage_amount'],
-                    age=phins_cust['age'],
-                    gender=phins_cust['gender'],
-                    occupation=phins_cust['occupation'],
-                    status=app_data['status'],
-                    risk_assessment=app_data['risk_score'],
-                    risk_score=app_data['risk_score'],
-                    bmi=app_data.get('bmi'),
-                    smoking_status=app_data.get('smoking_status'),
-                    disability_percentage=app_data.get('disability_percentage', 0),
-                    medical_conditions=json.dumps(app_data.get('medical_conditions', [])),
-                    medical_exam_required=False,
-                    submitted_date=now,
-                    created_date=now
-                )
-                logger.info(f"Created underwriting application: {app_data['id']} for {phins_cust['email']}")
-            
-            # Create billing record for active policies (FIX: CUST-EFRAT-001 validation error)
-            if pol_data['status'] == 'active':
-                bill_id = f"BILL-{pol_data['id'].replace('POL-', '')}"
-                existing_bill = billing_repo.find_one_by(id=bill_id)
-                if not existing_bill:
-                    billing_repo.create(
-                        id=bill_id,
-                        policy_id=pol_data['id'],
-                        customer_id=phins_cust['id'],
-                        amount=pol_data['monthly_premium'],
-                        amount_paid=0.0,
-                        status='outstanding',
-                        due_date=now + timedelta(days=30)
-                    )
-                    logger.info(f"Created billing record: {bill_id} for {phins_cust['email']}")
-                
-                # Mirror bill to memory ONLY for newly-seeded bills. See the
-                # primary-customer billing block above for rationale: rewriting
-                # an existing bill resets payment status, amount_paid, and
-                # slides the due_date forward 30 days on every restart.
-                if sync_to_memory and not existing_bill:
-                    BILLING[bill_id] = {
-                        'id': bill_id,
-                        'policy_id': pol_data['id'],
-                        'customer_id': phins_cust['id'],
-                        'amount': pol_data['monthly_premium'],
-                        'amount_paid': 0.0,
-                        'status': 'outstanding',
-                        'due_date': (now + timedelta(days=30)).isoformat(),
-                        'paid_date': None,
-                        'payment_method': None,
-                        'transaction_id': None,
-                        'late_fee': 0.0,
-                        'created_date': now.isoformat(),
-                        'updated_date': now.isoformat()
-                    }
-                    logger.info(f"Synced billing record {bill_id} to memory")
-            
-            # Mirror PHINS customer / policy / UW to memory ONLY for newly-
-            # seeded rows. For existing rows we MUST NOT overwrite the live
-            # state (status transitions, premium adjustments, billing dates,
-            # underwriting decisions) with the seed defaults — that was the
-            # root cause of repeated `Updated Policy/Bill/UnderwritingApplication`
-            # log entries on every Railway restart and silent rollbacks of
-            # workflow progress.
-            if sync_to_memory:
-                if not existing:
-                    CUSTOMERS[phins_cust['id']] = {
-                        'id': phins_cust['id'],
-                        'name': phins_cust['name'],
-                        'email': phins_cust['email'],
-                        'phone': phins_cust['phone'],
-                        'date_of_birth': phins_cust['dob'],
-                        'age': phins_cust['age'],
-                        'gender': phins_cust['gender'],
-                        'occupation': phins_cust['occupation'],
-                        'created_date': now.isoformat(),
-                        'status': 'active'
-                    }
+            # Mirror the customer even when no demo policy is seeded.
+            if sync_to_memory and phins_cust['id'] not in CUSTOMERS:
+                CUSTOMERS[phins_cust['id']] = {
+                    'id': phins_cust['id'],
+                    'name': phins_cust['name'],
+                    'email': phins_cust['email'],
+                    'phone': phins_cust['phone'],
+                    'date_of_birth': phins_cust['dob'],
+                    'age': phins_cust['age'],
+                    'gender': phins_cust['gender'],
+                    'occupation': phins_cust['occupation'],
+                    'created_date': now.isoformat(),
+                    'status': 'active'
+                }
 
+            # Create/verify policy — skipped: these accounts have no demo policy.
+            pol_data = phins_cust.get('policy')
+            existing_policy = None
+            existing_app = None
+            if pol_data:
+                existing_policy = policy_repo.find_one_by(id=pol_data['id'])
+                if existing_policy and str(getattr(existing_policy, 'type', '') or '').lower() in (
+                    'life', 'health'
+                ):
+                    try:
+                        policy_repo.update(pol_data['id'], type='phins_unified')
+                        logger.info(f"Converted seed policy {pol_data['id']} type to phins_unified")
+                    except Exception as e:
+                        logger.warning(f"Could not convert {pol_data['id']} to phins_unified: {e}")
                 if not existing_policy:
-                    policy_mem = {
-                        'id': pol_data['id'],
-                        'customer_id': phins_cust['id'],
-                        'type': pol_data['type'],
-                        'coverage_amount': pol_data['coverage_amount'],
-                        'annual_premium': pol_data['annual_premium'],
-                        'monthly_premium': pol_data['monthly_premium'],
-                        'status': pol_data['status'],
-                        'risk_score': pol_data['risk_score'],
-                        'start_date': now.isoformat(),
-                        'end_date': (now + timedelta(days=365)).isoformat(),
-                        'created_date': now.isoformat()
-                    }
+                    policy_kwargs = dict(
+                        id=pol_data['id'],
+                        customer_id=phins_cust['id'],
+                        type=pol_data['type'],
+                        coverage_amount=pol_data['coverage_amount'],
+                        annual_premium=pol_data['annual_premium'],
+                        monthly_premium=pol_data['monthly_premium'],
+                        status=pol_data['status'],
+                        risk_score=pol_data['risk_score'],
+                        start_date=now,
+                        end_date=now + timedelta(days=365)
+                    )
                     if pol_data['status'] == 'active':
-                        policy_mem['payment_setup'] = {
-                            'auto_pay': True,
-                            'billing_frequency': 'monthly',
-                            'card_type': 'mastercard',
-                            'card_last4': '4242',
-                            'next_billing_date': (now + timedelta(days=30)).isoformat(),
-                        }
-                        policy_mem['billing'] = {
+                        # Previously only written via the in-memory mirror's DB
+                        # write-through; persist directly at create time.
+                        policy_kwargs['billing'] = json.dumps({
                             'auto_pay': True,
                             'frequency': 'monthly',
                             'next_billing_date': (now + timedelta(days=30)).isoformat(),
-                        }
-                    POLICIES[pol_data['id']] = policy_mem
-
+                        })
+                    policy_repo.create(**policy_kwargs)
+                    logger.info(f"Created policy: {pol_data['id']} for {phins_cust['email']}")
+            
+                # Create/verify underwriting application
+                app_data = phins_cust['application']
+                existing_app = underwriting_repo.find_one_by(id=app_data['id'])
                 if not existing_app:
-                    UNDERWRITING_APPLICATIONS[app_data['id']] = {
-                        'id': app_data['id'],
-                        'policy_id': pol_data['id'],
-                        'customer_id': phins_cust['id'],
-                        'customer_name': phins_cust['name'],
-                        'customer_email': phins_cust['email'],
-                        'policy_type': pol_data['type'],
-                        'coverage_amount': pol_data['coverage_amount'],
-                        'annual_premium': pol_data['annual_premium'],
-                        'monthly_premium': pol_data['monthly_premium'],
-                        'age': phins_cust['age'],
-                        'gender': phins_cust['gender'],
-                        'occupation': phins_cust['occupation'],
-                        'risk_score': app_data['risk_score'],
-                        'status': app_data['status'],
-                        'risk_assessment': app_data['risk_score'],
-                        'bmi': app_data.get('bmi'),
-                        'smoking_status': app_data.get('smoking_status'),
-                        'disability_percentage': app_data.get('disability_percentage', 0),
-                        'medical_conditions': app_data.get('medical_conditions', []),
-                        'medical_exam_required': False,
-                        'submitted_date': now.isoformat(),
-                        'created_date': now.isoformat(),
-                        'updated_date': now.isoformat()
-                    }
+                    underwriting_repo.create(
+                        id=app_data['id'],
+                        policy_id=pol_data['id'],
+                        customer_id=phins_cust['id'],
+                        customer_name=phins_cust['name'],
+                        customer_email=phins_cust['email'],
+                        policy_type=pol_data['type'],
+                        coverage_amount=pol_data['coverage_amount'],
+                        age=phins_cust['age'],
+                        gender=phins_cust['gender'],
+                        occupation=phins_cust['occupation'],
+                        status=app_data['status'],
+                        risk_assessment=app_data['risk_score'],
+                        risk_score=app_data['risk_score'],
+                        bmi=app_data.get('bmi'),
+                        smoking_status=app_data.get('smoking_status'),
+                        disability_percentage=app_data.get('disability_percentage', 0),
+                        medical_conditions=json.dumps(app_data.get('medical_conditions', [])),
+                        medical_exam_required=False,
+                        submitted_date=now,
+                        created_date=now
+                    )
+                    logger.info(f"Created underwriting application: {app_data['id']} for {phins_cust['email']}")
+            
+                # Create billing record for active policies (FIX: CUST-EFRAT-001 validation error)
+                if pol_data['status'] == 'active':
+                    bill_id = f"BILL-{pol_data['id'].replace('POL-', '')}"
+                    existing_bill = billing_repo.find_one_by(id=bill_id)
+                    if not existing_bill:
+                        billing_repo.create(
+                            id=bill_id,
+                            policy_id=pol_data['id'],
+                            customer_id=phins_cust['id'],
+                            amount=pol_data['monthly_premium'],
+                            amount_paid=0.0,
+                            status='outstanding',
+                            due_date=now + timedelta(days=30)
+                        )
+                        logger.info(f"Created billing record: {bill_id} for {phins_cust['email']}")
+                
+                    # Mirror bill to memory ONLY for newly-seeded bills. See the
+                    # primary-customer billing block above for rationale: rewriting
+                    # an existing bill resets payment status, amount_paid, and
+                    # slides the due_date forward 30 days on every restart.
+                    if sync_to_memory and not existing_bill:
+                        BILLING[bill_id] = {
+                            'id': bill_id,
+                            'policy_id': pol_data['id'],
+                            'customer_id': phins_cust['id'],
+                            'amount': pol_data['monthly_premium'],
+                            'amount_paid': 0.0,
+                            'status': 'outstanding',
+                            'due_date': (now + timedelta(days=30)).isoformat(),
+                            'paid_date': None,
+                            'payment_method': None,
+                            'transaction_id': None,
+                            'late_fee': 0.0,
+                            'created_date': now.isoformat(),
+                            'updated_date': now.isoformat()
+                        }
+                        logger.info(f"Synced billing record {bill_id} to memory")
+            
+                # Mirror PHINS customer / policy / UW to memory ONLY for newly-
+                # seeded rows. For existing rows we MUST NOT overwrite the live
+                # state (status transitions, premium adjustments, billing dates,
+                # underwriting decisions) with the seed defaults — that was the
+                # root cause of repeated `Updated Policy/Bill/UnderwritingApplication`
+                # log entries on every Railway restart and silent rollbacks of
+                # workflow progress.
+                if sync_to_memory:
+                    if not existing_policy:
+                        policy_mem = {
+                            'id': pol_data['id'],
+                            'customer_id': phins_cust['id'],
+                            'type': pol_data['type'],
+                            'coverage_amount': pol_data['coverage_amount'],
+                            'annual_premium': pol_data['annual_premium'],
+                            'monthly_premium': pol_data['monthly_premium'],
+                            'status': pol_data['status'],
+                            'risk_score': pol_data['risk_score'],
+                            'start_date': now.isoformat(),
+                            'end_date': (now + timedelta(days=365)).isoformat(),
+                            'created_date': now.isoformat()
+                        }
+                        if pol_data['status'] == 'active':
+                            policy_mem['payment_setup'] = {
+                                'auto_pay': True,
+                                'billing_frequency': 'monthly',
+                                'card_type': 'mastercard',
+                                'card_last4': '4242',
+                                'next_billing_date': (now + timedelta(days=30)).isoformat(),
+                            }
+                            policy_mem['billing'] = {
+                                'auto_pay': True,
+                                'frequency': 'monthly',
+                                'next_billing_date': (now + timedelta(days=30)).isoformat(),
+                            }
+                        _pin_kernel_on_policy_dict(policy_mem, pol_data.get('kernel') or {})
+                        POLICIES[pol_data['id']] = policy_mem
+                    elif pol_data['id'] in POLICIES:
+                        row = POLICIES[pol_data['id']]
+                        if str(row.get('type') or '').lower() in ('life', 'health', ''):
+                            row['type'] = 'phins_unified'
+                        if not row.get('product_id'):
+                            row['product_id'] = 'phins_pure_risk_adjustable'
+                        POLICIES[pol_data['id']] = row
+
+                    if not existing_app:
+                        UNDERWRITING_APPLICATIONS[app_data['id']] = {
+                            'id': app_data['id'],
+                            'policy_id': pol_data['id'],
+                            'customer_id': phins_cust['id'],
+                            'customer_name': phins_cust['name'],
+                            'customer_email': phins_cust['email'],
+                            'policy_type': pol_data['type'],
+                            'coverage_amount': pol_data['coverage_amount'],
+                            'annual_premium': pol_data['annual_premium'],
+                            'monthly_premium': pol_data['monthly_premium'],
+                            'age': phins_cust['age'],
+                            'gender': phins_cust['gender'],
+                            'occupation': phins_cust['occupation'],
+                            'risk_score': app_data['risk_score'],
+                            'status': app_data['status'],
+                            'risk_assessment': app_data['risk_score'],
+                            'bmi': app_data.get('bmi'),
+                            'smoking_status': app_data.get('smoking_status'),
+                            'disability_percentage': app_data.get('disability_percentage', 0),
+                            'medical_conditions': app_data.get('medical_conditions', []),
+                            'medical_exam_required': False,
+                            'submitted_date': now.isoformat(),
+                            'created_date': now.isoformat(),
+                            'updated_date': now.isoformat()
+                        }
             
             # Initialize wallets
             if sync_wallets:
@@ -1144,13 +1489,13 @@ def seed_sample_data(session=None):
                     HEALTH_WALLETS[phins_cust['id']] = {
                         'customer_id': phins_cust['id'],
                         'balance': phins_cust['wallet_balance'],
-                        'monthly_deposit': pol_data['monthly_premium'] * 0.2,
+                        'monthly_deposit': 0.0,
                         'transactions': [] if phins_cust['wallet_balance'] == 0 else [{
                             'id': f'INIT-{phins_cust["id"]}',
                             'type': 'deposit',
                             'amount': phins_cust['wallet_balance'],
                             'timestamp': now.isoformat(),
-                            'description': 'Initial policy savings'
+                            'description': 'Initial wallet balance'
                         }],
                         'created_at': now.isoformat()
                     }
@@ -1167,160 +1512,18 @@ def seed_sample_data(session=None):
                     }
             
             logger.info(f"Synced {phins_cust['email']} to in-memory structures")
-        
-        # =================================================================
-        # ADDITIONAL TEST CUSTOMERS WITH PENDING UNDERWRITING
-        # (For testing purposes - can be suspended)
-        # =================================================================
-        additional_customers = [
-            {
-                'id': 'CUST-TEST-100',
-                'name': 'Sarah Cohen',
-                'email': 'sarah.cohen@test.com',
-                'policy_type': 'life',
-                'coverage': 750000
-            },
-            {
-                'id': 'CUST-TEST-101',
-                'name': 'David Levy',
-                'email': 'david.levy@test.com',
-                'policy_type': 'health',
-                'coverage': 300000
-            },
-            {
-                'id': 'CUST-TEST-102',
-                'name': 'Rachel Green',
-                'email': 'rachel.green@test.com',
-                'policy_type': 'property',
-                'coverage': 500000
-            }
-        ]
-        
-        # Import in-memory data structures for sync (skipped for DB-backed
-        # stores — see _is_db_backed_store; the creates below already persist)
-        try:
-            from web_portal.server import CUSTOMERS, POLICIES, UNDERWRITING_APPLICATIONS, BILLING
-            sync_to_memory = not _is_db_backed_store(CUSTOMERS)
-        except ImportError:
-            sync_to_memory = False
-            logger.warning("Could not import in-memory data structures - database-only seeding")
-        
-        for cust_data in additional_customers:
-            existing = customer_repo.find_one_by(email=cust_data['email'])
-            if existing:
-                logger.info(f"Customer {cust_data['email']} already exists, skipping...")
-                continue
-            
-            # Test accounts - use env var or random password
-            test_pwd = _get_env_password('PHINS_TEST_CUSTOMER_PASSWORD', cust_data['email'])
-            pwd = hash_password(test_pwd)
-            customer = customer_repo.create(
-                id=cust_data['id'],
-                name=cust_data['name'],
-                email=cust_data['email'],
-                phone=f"+1-555-{hash(cust_data['email']) % 10000:04d}",
-                password_hash=pwd['hash'],
-                password_salt=pwd['salt'],
-                portal_active=True
-            )
-            logger.info(f"Created customer: {customer.email}")
-            
-            # Create pending policy
-            pol_id = f"POL-{cust_data['id'].replace('CUST-', '')}"
-            uw_id = f"UW-{cust_data['id'].replace('CUST-', '')}"
-            
-            annual_premium = cust_data['coverage'] * 0.012
-            monthly_premium = cust_data['coverage'] * 0.001
-            
-            policy = policy_repo.create(
-                id=pol_id,
-                customer_id=customer.id,
-                type=cust_data['policy_type'],
-                coverage_amount=cust_data['coverage'],
-                annual_premium=annual_premium,
-                monthly_premium=monthly_premium,
-                status='pending_underwriting',
-                risk_score='medium',
-                underwriting_id=uw_id,
-                start_date=now,
-                end_date=now + timedelta(days=365)
-            )
-            logger.info(f"Created pending policy: {policy.id}")
-            
-            # Create underwriting application
-            uw_app = underwriting_repo.create(
-                id=uw_id,
-                policy_id=pol_id,
-                customer_id=customer.id,
-                customer_name=cust_data['name'],
-                customer_email=cust_data['email'],
-                policy_type=cust_data['policy_type'],
-                coverage_amount=float(cust_data['coverage']),
-                status='pending',
-                risk_assessment='medium',
-                risk_score='medium',
-                medical_exam_required=False,
-                submitted_date=now
-            )
-            logger.info(f"Created underwriting application: {uw_app.id}")
-            
-            # === SYNC TO IN-MEMORY DATA STRUCTURES ===
-            if sync_to_memory:
-                # Sync customer
-                CUSTOMERS[cust_data['id']] = {
-                    'id': cust_data['id'],
-                    'name': cust_data['name'],
-                    'email': cust_data['email'],
-                    'phone': f"+1-555-{hash(cust_data['email']) % 10000:04d}",
-                    'created_date': now.isoformat()
-                }
-                
-                # Sync policy
-                POLICIES[pol_id] = {
-                    'id': pol_id,
-                    'customer_id': cust_data['id'],
-                    'type': cust_data['policy_type'],
-                    'coverage_amount': float(cust_data['coverage']),
-                    'annual_premium': float(annual_premium),
-                    'monthly_premium': float(monthly_premium),
-                    'status': 'pending_underwriting',
-                    'underwriting_id': uw_id,
-                    'risk_score': 'medium',
-                    'start_date': now.isoformat(),
-                    'end_date': (now + timedelta(days=365)).isoformat(),
-                    'created_date': now.isoformat(),
-                    'updated_date': now.isoformat()
-                }
-                
-                # Sync underwriting application
-                UNDERWRITING_APPLICATIONS[uw_id] = {
-                    'id': uw_id,
-                    'policy_id': pol_id,
-                    'customer_id': cust_data['id'],
-                    'customer_name': cust_data['name'],
-                    'customer_email': cust_data['email'],
-                    'policy_type': cust_data['policy_type'],
-                    'coverage_amount': float(cust_data['coverage']),
-                    'annual_premium': float(annual_premium),
-                    'monthly_premium': float(monthly_premium),
-                    'age': None,
-                    'risk_score': 'medium',
-                    'status': 'pending',
-                    'risk_assessment': 'medium',
-                    'medical_exam_required': False,
-                    'additional_documents_required': False,
-                    'notes': None,
-                    'questionnaire_responses': {},
-                    'payment_setup': {},
-                    'health_wallet': {},
-                    'submitted_date': now.isoformat(),
-                    'decision_date': None,
-                    'decided_by': None,
-                    'created_date': now.isoformat(),
-                    'updated_date': now.isoformat()
-                }
-                logger.info(f"Synced {cust_data['id']} to in-memory data structures")
-        
+
+        # QA test customers (Sarah/David/Rachel, CUST-TEST-100/101/102) are
+        # not seeded. Purge those known IDs and every related record.
+        _purge_false_demo_seed(
+            policy_repo=policy_repo,
+            billing_repo=billing_repo,
+            claim_repo=claim_repo,
+            underwriting_repo=underwriting_repo,
+            customer_repo=customer_repo,
+            user_repo=user_repo,
+            sync_memory=True,
+        )
         logger.info("Sample data seeded successfully")
         
     except Exception as e:

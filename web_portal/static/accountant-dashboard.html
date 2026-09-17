@@ -3545,13 +3545,19 @@
                         setText('sv-seed-capital', fmt(bs.seed_claims_reserve));
                     }
                     document.getElementById('bs-operating-reserve').textContent = fmt(bs.operating_reserve);
-                    document.getElementById('bs-total-revenue').textContent = fmt(bs.cumulative_premium || bs.total_revenue);
-                    document.getElementById('bs-claims-paid').textContent = fmt(bs.expense_breakdown?.claims_paid || 0);
+                    document.getElementById('bs-total-revenue').textContent = fmt(
+                        bs.ledger_premium_collected != null ? bs.ledger_premium_collected : (bs.cumulative_premium || bs.total_revenue)
+                    );
+                    document.getElementById('bs-claims-paid').textContent = fmt(
+                        bs.ledger_claims_paid != null ? bs.ledger_claims_paid : (bs.expense_breakdown?.claims_paid || 0)
+                    );
                     document.getElementById('bs-net-income').textContent = fmt(bs.net_income);
                     
-                    // Revenue breakdown
+                    // Revenue breakdown — premium identity is customer-ledger cash
                     if (bs.revenue_breakdown) {
-                        document.getElementById('bs-premium-income').textContent = fmt(bs.cumulative_premium || bs.revenue_breakdown?.premium_income || 0);
+                        document.getElementById('bs-premium-income').textContent = fmt(
+                            bs.ledger_premium_collected != null ? bs.ledger_premium_collected : (bs.revenue_breakdown?.premium_income || 0)
+                        );
                         document.getElementById('bs-management-fees').textContent = fmt(bs.revenue_breakdown.management_fees);
                         document.getElementById('bs-underwriting-fees').textContent = fmt(bs.revenue_breakdown.underwriting_fees);
                         document.getElementById('bs-investment-earnings').textContent = fmt(bs.revenue_breakdown.investment_earnings);
