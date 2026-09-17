@@ -25983,201 +25983,20 @@ For claims or questions, please contact:
                 return
             
             now = datetime.now()
-            initialized = []
-            errors = []
-            
-            # PHINS customer application definitions
-            phins_applications = [
-                {
-                    'id': 'UW-EFRAT-001',
-                    'policy_id': 'POL-EFRAT-UNIFIED-001',
-                    'customer_id': 'CUST-EFRAT-001',
-                    'customer_name': 'Efrat PHINS',
-                    'customer_email': 'efrat@phins.ai',
-                    'policy_type': 'phins_unified',
-                    'coverage_amount': 500000.0,
-                    'annual_premium': 1552.50,   # Corrected: $500K, age 35, low
-                    'monthly_premium': 129.38,
-                    'age': 35,
-                    'gender': 'female',
-                    'occupation': 'Product Manager',
-                    'status': 'approved',
-                    'risk_score': 'low',
-                    'risk_assessment': 'low',
-                    'bmi': 22.0,
-                    'height_cm': 165,
-                    'weight_kg': 60,
-                    'smoking_status': 'never',
-                    'alcohol_use': 'occasional',
-                    'disability_percentage': 0,
-                    'medical_conditions': [],
-                    'documents': [
-                        {'type': 'national_id', 'verified': True, 'authenticity_score': 0.97},
-                        {'type': 'proof_of_address', 'verified': True, 'authenticity_score': 0.94}
-                    ],
-                    'identity_verified': True,
-                    'medical_exam_required': False,
-                    'premium_adjustment': 0,
-                    'decision_date': now.isoformat(),
-                    'decided_by': 'system_auto_approve',
-                    'submitted_date': now.isoformat(),
-                    'created_date': now.isoformat(),
-                    'updated_date': now.isoformat()
-                },
-                {
-                    'id': 'UW-ASI-001',
-                    'policy_id': 'POL-ASI-UNIFIED-001',
-                    'customer_id': 'CUST-ASI-001',
-                    'customer_name': 'Asi PHINS',
-                    'customer_email': 'asi@phins.ai',
-                    'policy_type': 'phins_unified',
-                    'coverage_amount': 400000.0,
-                    'annual_premium': 1323.0,    # Corrected: $400K, age 40, low
-                    'monthly_premium': 110.25,
-                    'age': 40,
-                    'gender': 'male',
-                    'occupation': 'Software Engineer',
-                    'status': 'pending',
-                    'risk_score': 'low',
-                    'risk_assessment': 'low',
-                    'bmi': 24.0,
-                    'height_cm': 178,
-                    'weight_kg': 76,
-                    'smoking_status': 'never',
-                    'alcohol_use': 'none',
-                    'disability_percentage': 0,
-                    'medical_conditions': [],
-                    'documents': [
-                        {'type': 'national_id', 'verified': True, 'authenticity_score': 0.96},
-                        {'type': 'proof_of_address', 'verified': True, 'authenticity_score': 0.93}
-                    ],
-                    'identity_verified': True,
-                    'medical_exam_required': False,
-                    'premium_adjustment': 0,
-                    'submitted_date': now.isoformat(),
-                    'created_date': now.isoformat(),
-                    'updated_date': now.isoformat()
-                },
-                {
-                    'id': 'UW-SHOSH-001',
-                    'policy_id': 'POL-SHOSH-UNIFIED-001',
-                    'customer_id': 'CUST-SHOSH-001',
-                    'customer_name': 'Shosh PHINS',
-                    'customer_email': 'shosh@phins.ai',
-                    'policy_type': 'phins_unified',
-                    'coverage_amount': 450000.0,
-                    'annual_premium': 1433.70,   # Corrected: $450K, age 37, low
-                    'monthly_premium': 119.48,
-                    'age': 37,
-                    'gender': 'female',
-                    'occupation': 'Marketing Director',
-                    'status': 'pending',
-                    'risk_score': 'low',
-                    'risk_assessment': 'low',
-                    'bmi': 23.0,
-                    'height_cm': 168,
-                    'weight_kg': 65,
-                    'smoking_status': 'never',
-                    'alcohol_use': 'occasional',
-                    'disability_percentage': 0,
-                    'medical_conditions': [],
-                    'documents': [
-                        {'type': 'national_id', 'verified': True, 'authenticity_score': 0.95},
-                        {'type': 'proof_of_address', 'verified': True, 'authenticity_score': 0.92}
-                    ],
-                    'identity_verified': True,
-                    'medical_exam_required': False,
-                    'premium_adjustment': 0,
-                    'submitted_date': now.isoformat(),
-                    'created_date': now.isoformat(),
-                    'updated_date': now.isoformat()
-                }
-            ]
-            try:
-                from database.seeds import _seed_policy_from_kernel, _age_from_dob
-                _init_quotes = {
-                    'UW-EFRAT-001': _seed_policy_from_kernel(
-                        policy_id='POL-EFRAT-UNIFIED-001', coverage_amount=500000.0,
-                        age=_age_from_dob('1990-06-15'), gender='female',
-                        smoking_status='never', risk_score='low', status='active',
-                    ),
-                    'UW-ASI-001': _seed_policy_from_kernel(
-                        policy_id='POL-ASI-UNIFIED-001', coverage_amount=400000.0,
-                        age=_age_from_dob('1985-03-20'), gender='male',
-                        smoking_status='never', risk_score='low', status='pending_underwriting',
-                    ),
-                    'UW-SHOSH-001': _seed_policy_from_kernel(
-                        policy_id='POL-SHOSH-UNIFIED-001', coverage_amount=450000.0,
-                        age=_age_from_dob('1988-09-10'), gender='female',
-                        smoking_status='never', risk_score='low', status='pending_underwriting',
-                    ),
-                }
-                for _app in phins_applications:
-                    _q = _init_quotes.get(_app['id']) or {}
-                    if float(_q.get('annual_premium') or 0) > 0:
-                        _app['annual_premium'] = _q['annual_premium']
-                        _app['monthly_premium'] = _q['monthly_premium']
-                        _app['age'] = _q.get('age') or _app.get('age')
-            except Exception as _init_kern_err:
-                print(f"[SEED] init-phins-customers kernel overlay skipped: {_init_kern_err}")
-            
-            for app_data in phins_applications:
-                try:
-                    app_id = app_data['id']
-                    # Create or update the application
-                    existing = UNDERWRITING_APPLICATIONS.get(app_id)
-                    if existing:
-                        # Merge - update fields that are currently None or empty
-                        for key, value in app_data.items():
-                            if existing.get(key) is None or existing.get(key) == '' or existing.get(key) == []:
-                                existing[key] = value
-                        UNDERWRITING_APPLICATIONS[app_id] = existing
-                        initialized.append({
-                            'id': app_id,
-                            'action': 'updated',
-                            'email': app_data['customer_email']
-                        })
-                    else:
-                        # Create new — kernel-priced only.
-                        if float(app_data.get('annual_premium') or 0) <= 0:
-                            continue
-                        UNDERWRITING_APPLICATIONS[app_id] = app_data
-                        initialized.append({
-                            'id': app_id,
-                            'action': 'created',
-                            'email': app_data['customer_email']
-                        })
-                    
-                    # Also ensure policy exists
-                    pol_id = app_data['policy_id']
-                    if pol_id not in POLICIES and float(app_data.get('annual_premium') or 0) > 0:
-                        POLICIES[pol_id] = {
-                            'id': pol_id,
-                            'customer_id': app_data['customer_id'],
-                            'type': 'phins_unified',
-                            'coverage_amount': app_data['coverage_amount'],
-                            'annual_premium': app_data['annual_premium'],
-                            'monthly_premium': app_data['monthly_premium'],
-                            'status': 'active' if get_status_lower(app_data) == 'approved' else 'pending_underwriting',
-                            'risk_score': app_data['risk_score'],
-                            'underwriting_id': app_id,
-                            'start_date': now.isoformat(),
-                            'end_date': (now + timedelta(days=365)).isoformat(),
-                            'created_date': now.isoformat()
-                        }
-                except Exception as e:
-                    errors.append({'id': app_data.get('id'), 'error': str(e)})
-            
+            from database.seeds import _purge_false_demo_seed
+            purged = _purge_false_demo_seed(sync_memory=True)
             self._set_json_headers()
             self.wfile.write(json.dumps({
-                'success': len(errors) == 0,
-                'initialized': initialized,
-                'errors': errors,
+                'success': True,
+                'initialized': [],
+                'errors': [],
+                'purged': purged,
                 'summary': {
-                    'applications_processed': len(phins_applications),
-                    'created': len([i for i in initialized if i['action'] == 'created']),
-                    'updated': len([i for i in initialized if i['action'] == 'updated']),
-                    'errors': len(errors)
+                    'applications_processed': 0,
+                    'created': 0,
+                    'updated': 0,
+                    'errors': 0,
+                    'note': 'False demo PHINS policies and related records were removed, not recreated.',
                 }
             }).encode('utf-8'))
             return
@@ -56202,45 +56021,16 @@ def _repair_hydrated_ledger_chain(
 def _seed_startup_demo_fixtures() -> None:
     """Seed demo/QA fixtures for non-production runs.
 
-    Includes the PHINS demo customer accounts (asi/efrat/shosh), demo
-    wallets and underwriting enrichment for the primary demo customer,
-    sample marketplace purchases, sample claims, the demo transaction
-    ledger, and the demo-data integrity checks. Every block is idempotent
-    (existing rows are preserved on restart). Callers must gate this
-    behind demo_data_seeding_enabled() so demo/test fixtures never leak
-    into production data.
+    Includes the PHINS demo customer accounts (asi/efrat/shosh) and wallets
+    for the primary demo customer. Known false demo policies and their
+    bills/claims/UW rows are purged, not created.
     """
-    # Seed customer accounts - asi@phins.ai, efrat@phins.ai, shosh@phins.ai
+    from database.seeds import _purge_false_demo_seed
+    _purge_false_demo_seed(sync_memory=True)
+
     print("👤 Initializing customer accounts...")
 
-    def _demo_kernel_policy(policy_id, coverage, age, gender, risk_score, status):
-        from database.seeds import _seed_policy_from_kernel
-        return _seed_policy_from_kernel(
-            policy_id=policy_id,
-            coverage_amount=coverage,
-            age=age,
-            gender=gender,
-            smoking_status='never',
-            risk_score=risk_score,
-            status=status,
-        )
-
     from database.seeds import _age_from_dob as _demo_age_from_dob
-    try:
-        asi_quote = _demo_kernel_policy('POL-ASI-UNIFIED-001', 400000.0, _demo_age_from_dob('1985-03-20'), 'male', 'low', 'pending_underwriting')
-        shosh_quote = _demo_kernel_policy('POL-SHOSH-UNIFIED-001', 450000.0, _demo_age_from_dob('1988-09-10'), 'female', 'low', 'pending_underwriting')
-        efrat_quote = _demo_kernel_policy('POL-EFRAT-UNIFIED-001', 500000.0, _demo_age_from_dob('1990-06-15'), 'female', 'low', 'active')
-        asaf_life_quote = _demo_kernel_policy('POL-ASAF-LIFE-001', 1000000.0, _demo_age_from_dob('1985-03-15'), 'male', 'low', 'active')
-        asaf_health_quote = _demo_kernel_policy('POL-ASAF-HEALTH-001', 500000.0, _demo_age_from_dob('1985-03-15'), 'male', 'medium', 'active')
-    except Exception as _kern_err:
-        print(f"   ⚠️  Kernel demo quotes unavailable: {_kern_err}")
-        asi_quote = shosh_quote = efrat_quote = asaf_life_quote = asaf_health_quote = None
-    efrat_annual = float((efrat_quote or {}).get('annual_premium') or 0)
-    efrat_monthly = float((efrat_quote or {}).get('monthly_premium') or 0)
-    asaf_life_annual = float((asaf_life_quote or {}).get('annual_premium') or 0)
-    asaf_life_monthly = float((asaf_life_quote or {}).get('monthly_premium') or 0)
-    asaf_health_annual = float((asaf_health_quote or {}).get('annual_premium') or 0)
-    asaf_health_monthly = float((asaf_health_quote or {}).get('monthly_premium') or 0)
     
     # Initialize additional PHINS customers
     additional_customers = [
@@ -56260,7 +56050,7 @@ def _seed_startup_demo_fixtures() -> None:
         }
     ]
     
-    # Define PHINS customers with their policy and application data
+    # Define PHINS customers (accounts only — false demo policies are not seeded)
     phins_customer_data = [
         {
             'id': 'CUST-ASI-001',
@@ -56271,19 +56061,6 @@ def _seed_startup_demo_fixtures() -> None:
             'age': _demo_age_from_dob('1985-03-20'),
             'gender': 'male',
             'occupation': 'Software Engineer',
-            'policy_id': 'POL-ASI-UNIFIED-001',
-            'policy_type': 'phins_unified',
-            'coverage_amount': 400000.0,
-            'annual_premium': (asi_quote or {}).get('annual_premium', 0),
-            'monthly_premium': (asi_quote or {}).get('monthly_premium', 0),
-            'policy_status': 'pending_underwriting',
-            'app_id': 'UW-ASI-001',
-            'app_status': 'pending',
-            'risk_score': 'low',
-            'bmi': 24,
-            'smoking_status': 'never',
-            'disability_percentage': 0,
-            'kernel': (asi_quote or {}).get('kernel'),
         },
         {
             'id': 'CUST-SHOSH-001',
@@ -56294,19 +56071,6 @@ def _seed_startup_demo_fixtures() -> None:
             'age': _demo_age_from_dob('1988-09-10'),
             'gender': 'female',
             'occupation': 'Marketing Director',
-            'policy_id': 'POL-SHOSH-UNIFIED-001',
-            'policy_type': 'phins_unified',
-            'coverage_amount': 450000.0,
-            'annual_premium': (shosh_quote or {}).get('annual_premium', 0),
-            'monthly_premium': (shosh_quote or {}).get('monthly_premium', 0),
-            'policy_status': 'pending_underwriting',
-            'app_id': 'UW-SHOSH-001',
-            'app_status': 'pending',
-            'risk_score': 'low',
-            'bmi': 23,
-            'smoking_status': 'never',
-            'disability_percentage': 0,
-            'kernel': (shosh_quote or {}).get('kernel'),
         }
     ]
     
@@ -56337,76 +56101,14 @@ def _seed_startup_demo_fixtures() -> None:
                 }
                 print(f"   ✓ Created customer {cust_data['name']} ({cust_data['email']}) → {cust_id}")
             
-            # Initialize/update policy
-            pol_id = cust_data['policy_id']
-            if float(cust_data.get('annual_premium') or 0) <= 0:
-                print(f"     ⚠️  Skipping {pol_id}: kernel quote missing")
-            elif pol_id not in POLICIES:
-                POLICIES[pol_id] = {
-                    'id': pol_id,
-                    'customer_id': cust_id,
-                    'type': 'phins_unified',
-                    'coverage_amount': cust_data['coverage_amount'],
-                    'annual_premium': cust_data['annual_premium'],
-                    'monthly_premium': cust_data['monthly_premium'],
-                    'status': cust_data['policy_status'],
-                    'risk_score': cust_data['risk_score'],
-                    'underwriting_id': cust_data['app_id'],
-                    'start_date': now.isoformat(),
-                    'end_date': (now + timedelta(days=365)).isoformat(),
-                    'created_date': now.isoformat()
-                }
-                try:
-                    from database.seeds import _pin_kernel_on_policy_dict
-                    _pin_kernel_on_policy_dict(POLICIES[pol_id], cust_data.get('kernel') or {})
-                except Exception:
-                    POLICIES[pol_id]['product_id'] = 'phins_pure_risk_adjustable'
-                print(f"     → Policy: {pol_id}")
-            else:
-                row = POLICIES.get(pol_id) or {}
-                if str(row.get('type') or '').lower() in ('life', 'health', ''):
-                    row['type'] = 'phins_unified'
-                if not row.get('product_id'):
-                    row['product_id'] = 'phins_pure_risk_adjustable'
-                POLICIES[pol_id] = row
-            
-            # Initialize/update underwriting application
-            app_id = cust_data['app_id']
-            if app_id not in UNDERWRITING_APPLICATIONS:
-                UNDERWRITING_APPLICATIONS[app_id] = {
-                    'id': app_id,
-                    'policy_id': pol_id,
-                    'customer_id': cust_id,
-                    'customer_name': cust_data['name'],
-                    'customer_email': cust_data['email'],
-                    'policy_type': cust_data['policy_type'],
-                    'coverage_amount': cust_data['coverage_amount'],
-                    'annual_premium': cust_data['annual_premium'],
-                    'monthly_premium': cust_data['monthly_premium'],
-                    'age': cust_data['age'],
-                    'gender': cust_data['gender'],
-                    'occupation': cust_data['occupation'],
-                    'status': cust_data['app_status'],
-                    'risk_score': cust_data['risk_score'],
-                    'risk_assessment': cust_data['risk_score'],
-                    'bmi': cust_data['bmi'],
-                    'smoking_status': cust_data['smoking_status'],
-                    'disability_percentage': cust_data['disability_percentage'],
-                    'medical_conditions': [],
-                    'identity_verified': True,
-                    'medical_exam_required': False,
-                    'submitted_date': now.isoformat(),
-                    'created_date': now.isoformat(),
-                    'updated_date': now.isoformat()
-                }
-                print(f"     → Application: {app_id}")
+            # Known false demo policies are not created here.
             
             # Initialize wallets
             if cust_id not in HEALTH_WALLETS:
                 HEALTH_WALLETS[cust_id] = {
                     'customer_id': cust_id,
                     'balance': 0.0,
-                    'monthly_deposit': cust_data['monthly_premium'] * 0.2,
+                    'monthly_deposit': 0.0,
                     'transactions': [],
                     'created_at': now.isoformat()
                 }
@@ -56453,85 +56155,6 @@ def _seed_startup_demo_fixtures() -> None:
                     'created_at': datetime.now().isoformat()
                 }
             
-            # Create an active policy for Efrat
-            efrat_policy_id = 'POL-EFRAT-UNIFIED-001'
-            if efrat_policy_id not in POLICIES:
-                POLICIES[efrat_policy_id] = {
-                'id': efrat_policy_id,
-                'customer_id': 'CUST-EFRAT-001',
-                'type': 'phins_unified',
-                'coverage_amount': 500000.0,
-                'annual_premium': efrat_annual,
-                'monthly_premium': efrat_monthly,
-                'status': 'active',  # Active so claims can be filed
-                'risk_score': 'low',
-                'start_date': datetime.now().isoformat(),
-                'end_date': (datetime.now() + timedelta(days=365)).isoformat(),
-                'approval_date': datetime.now().isoformat(),
-                'created_date': datetime.now().isoformat(),
-                'billing': {
-                    'frequency': 'monthly',
-                    'auto_pay': True,
-                    'payment_method': {
-                        'type': 'card',
-                        'card_last4': '4444',
-                        'card_type': 'mastercard'
-                    },
-                    'next_billing_date': (datetime.now() + timedelta(days=30)).isoformat()
-                },
-                'health_wallet': {
-                    'enabled': True,
-                    'monthly_deposit': 200
-                },
-                'coverages': {
-                    'medical': {'limit': 200000, 'deductible': 500},
-                    'dental': {'limit': 10000, 'deductible': 100},
-                    'vision': {'limit': 5000, 'deductible': 50},
-                    'disability': {'limit': 100000, 'deductible': 0},
-                    'life': {'limit': 500000, 'deductible': 0}
-                }
-                }
-            else:
-                existing_efrat = POLICIES.get(efrat_policy_id) or {}
-                if str(existing_efrat.get('type') or '').lower() in ('life', 'health', ''):
-                    existing_efrat['type'] = 'phins_unified'
-                if not existing_efrat.get('product_id'):
-                    existing_efrat['product_id'] = 'phins_pure_risk_adjustable'
-                POLICIES[efrat_policy_id] = existing_efrat
-            if efrat_policy_id in POLICIES and not POLICIES[efrat_policy_id].get('product_id'):
-                try:
-                    from database.seeds import _pin_kernel_on_policy_dict
-                    _pin_kernel_on_policy_dict(
-                        POLICIES[efrat_policy_id],
-                        (efrat_quote or {}).get('kernel') or {},
-                    )
-                except Exception:
-                    POLICIES[efrat_policy_id]['product_id'] = 'phins_pure_risk_adjustable'
-            
-            # Create billing for Efrat only when none exists.
-            efrat_has_billing = any(
-                b.get('customer_id') == 'CUST-EFRAT-001'
-                for b in BILLING.values()
-            )
-            if not efrat_has_billing:
-                issued_monthly = float(
-                    (POLICIES.get(efrat_policy_id) or {}).get('monthly_premium')
-                    or efrat_monthly
-                    or 0
-                )
-                efrat_bill_id = f"BILL-EFRAT-{datetime.now().strftime('%Y%m%d')}-001"
-                BILLING[efrat_bill_id] = {
-                    'id': efrat_bill_id,
-                    'policy_id': efrat_policy_id,
-                    'customer_id': 'CUST-EFRAT-001',
-                    'customer_name': 'Efrat PHINS',
-                    'amount': issued_monthly,
-                    'amount_paid': issued_monthly,  # First month paid
-                    'status': 'paid',
-                    'due_date': (datetime.now() + timedelta(days=30)).isoformat(),
-                    'created_date': datetime.now().isoformat()
-                }
-            
             if 'CUST-EFRAT-001' not in INVESTMENT_ACCOUNTS:
                 INVESTMENT_ACCOUNTS['CUST-EFRAT-001'] = {
                     'customer_id': 'CUST-EFRAT-001',
@@ -56542,154 +56165,8 @@ def _seed_startup_demo_fixtures() -> None:
                     'deposits': [],
                     'created_at': datetime.now().isoformat()
                 }
-            
-            # Create underwriting application for Efrat (approved - has active policy)
-            efrat_uw_id = 'UW-EFRAT-001'
-            if efrat_uw_id not in UNDERWRITING_APPLICATIONS:
-                UNDERWRITING_APPLICATIONS[efrat_uw_id] = {
-                    'id': efrat_uw_id,
-                    'policy_id': efrat_policy_id,
-                    'customer_id': 'CUST-EFRAT-001',
-                    'customer_name': 'Efrat PHINS',
-                    'customer_email': 'efrat@phins.ai',
-                    'policy_type': 'phins_unified',
-                    'coverage_amount': 500000.0,
-                    'annual_premium': efrat_annual,
-                    'monthly_premium': efrat_monthly,
-                    'age': 35,
-                    'gender': 'female',
-                    'occupation': 'Product Manager',
-                    'status': 'approved',
-                    'risk_score': 'low',
-                    'risk_assessment': 'low',
-                    'bmi': 22,
-                    'smoking_status': 'never',
-                    'disability_percentage': 0,
-                    'medical_conditions': [],
-                    'identity_verified': True,
-                    'medical_exam_required': False,
-                    'decision_date': datetime.now().isoformat(),
-                    'decided_by': 'system_auto_approve',
-                    'submitted_date': datetime.now().isoformat(),
-                    'created_date': datetime.now().isoformat(),
-                    'updated_date': datetime.now().isoformat()
-                }
-            
-            print("✓ Customer efrat@phins.ai (CUST-EFRAT-001) initialized with policy, application, and wallets")
+            print("✓ Customer efrat@phins.ai (CUST-EFRAT-001) initialized")
         else:
-            # Customer exists, but ensure policy and application exist too
-            efrat_policy_id = 'POL-EFRAT-UNIFIED-001'
-            if efrat_policy_id not in POLICIES:
-                POLICIES[efrat_policy_id] = {
-                    'id': efrat_policy_id,
-                    'customer_id': 'CUST-EFRAT-001',
-                    'type': 'phins_unified',
-                    'coverage_amount': 500000.0,
-                    'annual_premium': efrat_annual,
-                    'monthly_premium': efrat_monthly,
-                    'status': 'active',
-                    'risk_score': 'low',
-                    'start_date': datetime.now().isoformat(),
-                    'end_date': (datetime.now() + timedelta(days=365)).isoformat(),
-                    'approval_date': datetime.now().isoformat(),
-                    'created_date': datetime.now().isoformat(),
-                    'billing': {
-                        'frequency': 'monthly',
-                        'auto_pay': True,
-                        'payment_method': {'type': 'card', 'card_last4': '4444', 'card_type': 'mastercard'},
-                        'next_billing_date': (datetime.now() + timedelta(days=30)).isoformat()
-                    },
-                    'health_wallet': {'enabled': True, 'monthly_deposit': 200},
-                    'coverages': {
-                        'medical': {'limit': 200000, 'deductible': 500},
-                        'dental': {'limit': 10000, 'deductible': 100},
-                        'vision': {'limit': 5000, 'deductible': 50},
-                        'disability': {'limit': 100000, 'deductible': 0},
-                        'life': {'limit': 500000, 'deductible': 0}
-                    }
-                }
-                try:
-                    from database.seeds import _pin_kernel_on_policy_dict
-                    _pin_kernel_on_policy_dict(POLICIES[efrat_policy_id], (efrat_quote or {}).get('kernel') or {})
-                except Exception:
-                    POLICIES[efrat_policy_id]['product_id'] = 'phins_pure_risk_adjustable'
-                print("✓ Policy POL-EFRAT-UNIFIED-001 created for efrat@phins.ai")
-            else:
-                # Convert type / pin product_id only. Never rewrite billed premiums.
-                existing_efrat = POLICIES.get(efrat_policy_id) or {}
-                if str(existing_efrat.get('type') or '').lower() in ('life', 'health', ''):
-                    existing_efrat['type'] = 'phins_unified'
-                if not existing_efrat.get('product_id'):
-                    existing_efrat['product_id'] = 'phins_pure_risk_adjustable'
-                POLICIES[efrat_policy_id] = existing_efrat
-            
-            # Ensure underwriting application exists
-            efrat_uw_id = 'UW-EFRAT-001'
-            if efrat_uw_id not in UNDERWRITING_APPLICATIONS:
-                issued_efrat = POLICIES.get('POL-EFRAT-UNIFIED-001') or {}
-                issued_annual = float(issued_efrat.get('annual_premium') or efrat_annual or 0)
-                issued_monthly = float(issued_efrat.get('monthly_premium') or efrat_monthly or 0)
-                UNDERWRITING_APPLICATIONS[efrat_uw_id] = {
-                    'id': efrat_uw_id,
-                    'policy_id': 'POL-EFRAT-UNIFIED-001',
-                    'customer_id': 'CUST-EFRAT-001',
-                    'customer_name': 'Efrat PHINS',
-                    'customer_email': 'efrat@phins.ai',
-                    'policy_type': 'phins_unified',
-                    'coverage_amount': 500000.0,
-                    'annual_premium': issued_annual,
-                    'monthly_premium': issued_monthly,
-                    'age': _demo_age_from_dob('1990-06-15'),
-                    'gender': 'female',
-                    'occupation': 'Product Manager',
-                    'status': 'approved',
-                    'risk_score': 'low',
-                    'risk_assessment': 'low',
-                    'bmi': 22,
-                    'smoking_status': 'never',
-                    'disability_percentage': 0,
-                    'medical_conditions': [],
-                    'identity_verified': True,
-                    'medical_exam_required': False,
-                    'decision_date': datetime.now().isoformat(),
-                    'decided_by': 'system_auto_approve',
-                    'submitted_date': datetime.now().isoformat(),
-                    'created_date': datetime.now().isoformat(),
-                    'updated_date': datetime.now().isoformat()
-                }
-                print("✓ Underwriting application UW-EFRAT-001 created for efrat@phins.ai")
-            
-            # FIX: Ensure billing record exists for active policy (CUST-EFRAT-001 validation fix)
-            # Check if any billing record exists for this customer
-            efrat_has_billing = any(
-                b.get('customer_id') == 'CUST-EFRAT-001' 
-                for b in BILLING.values()
-            )
-            if not efrat_has_billing:
-                issued_monthly = float(
-                    (POLICIES.get('POL-EFRAT-UNIFIED-001') or {}).get('monthly_premium')
-                    or efrat_monthly
-                    or 0
-                )
-                efrat_bill_id = 'BILL-EFRAT-UNIFIED-001'
-                BILLING[efrat_bill_id] = {
-                    'id': efrat_bill_id,
-                    'policy_id': 'POL-EFRAT-UNIFIED-001',
-                    'customer_id': 'CUST-EFRAT-001',
-                    'customer_name': 'Efrat PHINS',
-                    'amount': issued_monthly,
-                    'amount_paid': issued_monthly,
-                    'status': 'paid',
-                    'due_date': (datetime.now() + timedelta(days=30)).isoformat(),
-                    'paid_date': datetime.now().isoformat(),
-                    'payment_method': 'auto_debit',
-                    'transaction_id': 'TXN-EFRAT-AUTO-001',
-                    'late_fee': 0.0,
-                    'created_date': datetime.now().isoformat(),
-                    'updated_date': datetime.now().isoformat()
-                }
-                print("✓ Billing record BILL-EFRAT-UNIFIED-001 created for efrat@phins.ai")
-            
             print("✓ Customer efrat@phins.ai already exists")
     except Exception as e:
         print(f"⚠️  Customer initialization skipped (database issue): {e}")
@@ -56759,133 +56236,9 @@ def _seed_startup_demo_fixtures() -> None:
     except Exception as e:
         print(f"⚠️  Wallet initialization error: {e}")
     
-    # Initialize underwriting application for asaf@assurance.co.il
-    # DATA INTEGRITY: All fields represent actual applicant data from pipeline
-    #
-    # IMPORTANT: previously this also used `f"UW-ASAF-{now.strftime('%Y%m%d')}-001"`
-    # which produced a NEW id every calendar day. Combined with the parallel
-    # seed in database/seeds.py that wrote the same date-stamped id, every
-    # restart crossing midnight inserted yet another orphaned UW row for asaf
-    # in PostgreSQL while leaving every prior day's row in place. Use the
-    # stable id created by seeds.py (or any pre-existing seed UW for asaf's
-    # health policy) so we enrich the same row instead of growing a new one
-    # every day.
-    print("📋 Initializing underwriting applications with verified pipeline data...")
-    try:
-        STABLE_UW_ASAF_ID = 'UW-ASAF-HEALTH-001'
-        uw_asaf_id = STABLE_UW_ASAF_ID
-        if STABLE_UW_ASAF_ID not in UNDERWRITING_APPLICATIONS:
-            for candidate_id, candidate in UNDERWRITING_APPLICATIONS.items():
-                payload = candidate if isinstance(candidate, dict) else {}
-                if (
-                    payload.get('customer_id') == 'CUST-ASAF-001'
-                    and payload.get('policy_id') == 'POL-ASAF-HEALTH-001'
-                ):
-                    uw_asaf_id = candidate_id
-                    break
-        # Always ensure medical data is present (update if exists, create if not)
-        existing_app = UNDERWRITING_APPLICATIONS.get(uw_asaf_id)
-        needs_update = existing_app and not existing_app.get('disability_percentage')
-        
-        if uw_asaf_id not in UNDERWRITING_APPLICATIONS or needs_update:
-            # Medical metadata - verified from applicant submission
-            # If updating, preserve existing timestamps and IDs
-            base_data = existing_app or {}
-            UNDERWRITING_APPLICATIONS[uw_asaf_id] = {
-                **base_data,  # Preserve any existing data
-                'id': uw_asaf_id,
-                'policy_id': 'POL-ASAF-HEALTH-001',
-                'customer_id': 'CUST-ASAF-001',
-                'customer_name': 'Asaf Assurance',
-                'customer_email': 'asaf@assurance.co.il',
-                'policy_type': 'phins_unified',
-                'coverage_amount': 500000.0,
-                'annual_premium': asaf_health_annual,
-                'monthly_premium': asaf_health_monthly,
-                'status': base_data.get('status', 'approved'),
-                'risk_score': base_data.get('risk_score', 'medium'),
-                'risk_assessment': base_data.get('risk_assessment', 'medium'),
-                # Demographic data - from application form / DOB
-                'age': _demo_age_from_dob('1985-03-15'),
-                'gender': 'male',
-                'occupation': 'Business Owner',
-                # Medical assessment data - from medical questionnaire/exam
-                'disability_percentage': 30,
-                'disability_type': 'Mobility Impairment - Lower Limb',
-                'disability_status': 'stable',
-                'disability_treatment': 'Physiotherapy, mobility aids, annual orthopaedic review',
-                'disability_notes': 'Result of injury in 2020. 30% disability rating. Stable condition.',
-                # BMI data - from health questionnaire
-                'bmi': 32,
-                'height_cm': 175,
-                'weight_kg': 98,
-                'bmi_notes': 'BMI 32.0 (Class I Obesity). Patient engaged with weight management program.',
-                # Lifestyle data - from questionnaire
-                'smoking_status': 'never',
-                'alcohol_use': 'moderate',
-                'exercise_frequency': 'weekly',
-                # Medical conditions - from medical report/declaration
-                'medical_conditions': [
-                    {
-                        'condition': 'Obesity',
-                        'icd_code': 'E66.9',
-                        'severity': 'moderate',
-                        'status': 'active',
-                        'treatment': 'Dietary management, exercise program, nutritionist consultations',
-                        'risk_impact': 0.07,
-                        'loading_percentage': 15,
-                        'exclusion_recommended': False,
-                        'notes': 'BMI 32.0 (Class I Obesity). Patient engaged with weight management program. No recent complications.',
-                        'diagnosed_date': '2023-05-15'
-                    },
-                    {
-                        'condition': 'Mobility Impairment - Lower Limb',
-                        'icd_code': 'M62.50',
-                        'severity': 'moderate',
-                        'status': 'stable',
-                        'treatment': 'Physiotherapy, mobility aids, annual orthopaedic review',
-                        'risk_impact': 0.18,
-                        'loading_percentage': 20,
-                        'exclusion_recommended': True,
-                        'notes': 'Result of injury in 2020. 30% disability rating. Stable condition, uses walking stick.',
-                        'diagnosed_date': '2020-08-10'
-                    }
-                ],
-                # Document verification status - from document processing
-                'documents': [
-                    {'type': 'national_id', 'verified': True, 'authenticity_score': 0.95, 'expiry_status': 'valid', 'flags': None},
-                    {'type': 'proof_of_address', 'verified': True, 'authenticity_score': 0.92, 'expiry_status': 'valid', 'flags': None},
-                    {'type': 'disability_certificate', 'verified': True, 'authenticity_score': 0.98, 'expiry_status': 'valid', 'flags': 'DISABILITY_DECLARED'},
-                    {'type': 'medical_report', 'verified': True, 'authenticity_score': 0.96, 'expiry_status': 'valid', 'flags': 'MULTIPLE_CONDITIONS'}
-                ],
-                'identity_verified': True,
-                'medical_exam_required': True,
-                'medical_exam_completed': False,
-                'premium_adjustment': 35,  # 35% loading due to medical conditions
-                # Timestamps
-                'created_date': base_data.get('created_date', now.isoformat()),
-                'submitted_date': base_data.get('submitted_date', now.isoformat()),
-                'updated_date': now.isoformat(),
-                # Data source tracking for audit
-                'data_sources': {
-                    'demographic': 'application_form',
-                    'medical': 'health_questionnaire',
-                    'disability': 'disability_certificate',
-                    'documents': 'document_verification_service'
-                }
-            }
-            action = "Updated" if needs_update else "Created"
-            print(f"   ✓ {action} underwriting application: {uw_asaf_id} for asaf@assurance.co.il")
-            print(f"     Age: {_demo_age_from_dob('1985-03-15')} | Gender: Male | Occupation: Business Owner")
-            print(f"     Disability: 30% (Mobility Impairment) | BMI: 32.0 (Obese Class I)")
-            print(f"     Smoking: Never | Medical Conditions: 2")
-            print(f"     Risk Level: MODERATE | Premium Loading: +35%")
-        else:
-            # Application exists with full medical data
-            print(f"   ℹ️  Underwriting application {uw_asaf_id} already exists with medical data")
-    except Exception as e:
-        print(f"⚠️  Underwriting initialization error: {e}")
-    
+    print("📋 Skipping false demo underwriting rows (Asaf health / Efrat / Asi / Shosh)")
+    _purge_false_demo_seed(sync_memory=True)
+
     # Initialize sample service transactions for marketplace display
     print("📋 Initializing service transactions for marketplace...")
     try:
@@ -56969,272 +56322,15 @@ def _seed_startup_demo_fixtures() -> None:
     except Exception as e:
         print(f"⚠️  Service transaction initialization skipped: {e}")
 
-    # Seed sample claims for Asaf — only insert claims that don't already
-    # exist so that user/admin modifications and persisted state are preserved.
-    print("📋 Initializing sample claims...")
-    try:
-        now = datetime.now()
-        sample_claims = [
-            {
-                'id': 'CLM-ASAF-001',
-                'policy_id': 'POL-ASAF-HEALTH-001',
-                'customer_id': 'CUST-ASAF-001',
-                'type': 'Medical',
-                'description': 'Emergency room visit for chest pain - cardiac evaluation',
-                'claimed_amount': 15000.0,
-                'approved_amount': 15000.0,
-                'status': 'Paid',
-                'filed_date': (now - timedelta(days=30)).isoformat(),
-                'approval_date': (now - timedelta(days=25)).isoformat(),
-                'payment_date': (now - timedelta(days=20)).isoformat(),
-                'nft_token_id': f'NFT-CLM-{(now - timedelta(days=30)).strftime("%Y%m%d")}-001'
-            },
-            {
-                'id': 'CLM-ASAF-002',
-                'policy_id': 'POL-ASAF-HEALTH-001',
-                'customer_id': 'CUST-ASAF-001',
-                'type': 'Prescription',
-                'description': 'Monthly prescription medications - cardiovascular',
-                'claimed_amount': 850.0,
-                'approved_amount': 850.0,
-                'status': 'Paid',
-                'filed_date': (now - timedelta(days=25)).isoformat(),
-                'approval_date': (now - timedelta(days=22)).isoformat(),
-                'payment_date': (now - timedelta(days=18)).isoformat(),
-                'nft_token_id': f'NFT-CLM-{(now - timedelta(days=25)).strftime("%Y%m%d")}-002'
-            },
-            {
-                'id': 'CLM-ASAF-004',
-                'policy_id': 'POL-ASAF-HEALTH-001',
-                'customer_id': 'CUST-ASAF-001',
-                'type': 'Dental',
-                'description': 'Root canal treatment and crown placement',
-                'claimed_amount': 2800.0,
-                'approved_amount': 0.0,
-                'status': 'Pending',
-                'filed_date': (now - timedelta(days=5)).isoformat(),
-                'nft_token_id': f'NFT-CLM-{(now - timedelta(days=5)).strftime("%Y%m%d")}-004'
-            },
-            {
-                'id': 'CLM-ASAF-005',
-                'policy_id': 'POL-ASAF-LIFE-001',
-                'customer_id': 'CUST-ASAF-001',
-                'type': 'Disability',
-                'description': 'Temporary disability claim - work injury recovery',
-                'claimed_amount': 45000.0,
-                'approved_amount': 0.0,
-                'status': 'Under Review',
-                'filed_date': (now - timedelta(days=15)).isoformat(),
-                'nft_token_id': f'NFT-CLM-{(now - timedelta(days=15)).strftime("%Y%m%d")}-005'
-            }
-        ]
-        
-        valid_policy_ids = None
-        if USE_DATABASE and database_enabled:
-            try:
-                from database.manager import DatabaseManager
-                with DatabaseManager() as _db:
-                    valid_policy_ids = {p.id for p in _db.policies.get_all()}
-            except Exception as _pol_err:
-                print(f"   ⚠️  Could not enumerate DB policies for claim seeding: {_pol_err}")
-                valid_policy_ids = None
+    print("📋 Skipping false demo claims for retired seed policies")
+    _purge_false_demo_seed(sync_memory=True)
 
-        skipped = 0
-        created = 0
-        preserved = 0
-        for claim in sample_claims:
-            if claim['id'] in CLAIMS:
-                preserved += 1
-                continue
-            if valid_policy_ids is not None and claim['policy_id'] not in valid_policy_ids:
-                skipped += 1
-                continue
-            try:
-                CLAIMS[claim['id']] = claim
-                created += 1
-            except Exception:
-                skipped += 1
-
-        print(f"✓ Sample claims: {created} created, {preserved} preserved, {skipped} skipped")
-        from database.seeds import DEMO_NON_KERNEL_POLICY_IDS, DEMO_NON_KERNEL_CLAIM_IDS, DEMO_NON_KERNEL_BILL_IDS
-        for pid in DEMO_NON_KERNEL_POLICY_IDS:
-            if pid in POLICIES:
-                POLICIES[pid]['status'] = 'cancelled'
-                POLICIES[pid]['cancelled_reason'] = 'non_kernel_demo_retired'
-                print(f"   ✓ Retired non-kernel demo policy {pid}")
-        for bid in DEMO_NON_KERNEL_BILL_IDS:
-            bill = BILLING.get(bid)
-            if bill and float(bill.get('amount_paid') or 0) <= 0:
-                bill['status'] = 'void'
-        for cid in DEMO_NON_KERNEL_CLAIM_IDS:
-            claim = CLAIMS.get(cid)
-            if claim and str(claim.get('status') or '').lower() not in ('paid', 'closed'):
-                claim['status'] = 'Cancelled'
-    except Exception as e:
-        print(f"⚠️  Claims initialization skipped: {e}")
-    
     # Initialize Transaction Ledger with sample data for BI dashboard
     print("📒 Initializing transaction ledger for BI pipeline...")
     try:
         now = datetime.now()
         
-        # Ledger entries aligned with issued PHINS unified seed policies.
-        # If a policy already exists, use its billed premiums (never rewrite
-        # historical amounts). Auto/property demo rows are not seeded.
-        def _issued_premiums(policy_id, fallback_annual, fallback_monthly):
-            pol = POLICIES.get(policy_id) or {}
-            annual = float(pol.get('annual_premium') or 0) or float(fallback_annual or 0)
-            monthly = float(pol.get('monthly_premium') or 0) or float(fallback_monthly or 0)
-            return annual, monthly
-
-        asaf_health_annual, asaf_health_monthly = _issued_premiums(
-            'POL-ASAF-HEALTH-001', asaf_health_annual, asaf_health_monthly
-        )
-        asaf_life_annual, asaf_life_monthly = _issued_premiums(
-            'POL-ASAF-LIFE-001', asaf_life_annual, asaf_life_monthly
-        )
-        efrat_annual, efrat_monthly = _issued_premiums(
-            'POL-EFRAT-UNIFIED-001', efrat_annual, efrat_monthly
-        )
         sample_ledger = [
-                # Policy Approvals (amounts = annual premium from kernel)
-                {
-                    'id': 'TX-POL-ASAF-001',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'policy_approved',
-                    'amount': asaf_health_annual,
-                    'description': f'PHINS Unified Health Policy Approved - Annual Premium ${asaf_health_annual:,.2f}',
-                    'metadata': {'policy_id': 'POL-ASAF-HEALTH-001', 'coverage': 500000, 'monthly_premium': asaf_health_monthly, 'underwriter': 'system'},
-                    'timestamp': (now - timedelta(days=30)).isoformat(),
-                    'status': 'completed',
-                    'nft_token_id': f'NFT-POL-{(now - timedelta(days=30)).strftime("%Y%m%d")}-001'
-                },
-                {
-                    'id': 'TX-POL-ASAF-003',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'policy_approved',
-                    'amount': asaf_life_annual,
-                    'description': f'PHINS Unified Life Policy Approved - Annual Premium ${asaf_life_annual:,.2f}',
-                    'metadata': {'policy_id': 'POL-ASAF-LIFE-001', 'coverage': 1000000, 'monthly_premium': asaf_life_monthly, 'underwriter': 'system'},
-                    'timestamp': (now - timedelta(days=30)).isoformat(),
-                    'status': 'completed',
-                    'nft_token_id': f'NFT-POL-{(now - timedelta(days=30)).strftime("%Y%m%d")}-004'
-                },
-                {
-                    'id': 'TX-POL-EFRAT-001',
-                    'customer_id': 'CUST-EFRAT-001',
-                    'type': 'policy_approved',
-                    'amount': efrat_annual,
-                    'description': f'PHINS Unified Policy Approved - Annual Premium ${efrat_annual:,.2f}',
-                    'metadata': {'policy_id': 'POL-EFRAT-UNIFIED-001', 'coverage': 500000, 'monthly_premium': efrat_monthly, 'underwriter': 'admin'},
-                    'timestamp': (now - timedelta(days=20)).isoformat(),
-                    'status': 'completed',
-                    'nft_token_id': f'NFT-POL-{(now - timedelta(days=20)).strftime("%Y%m%d")}-003'
-                },
-                
-                # Billing Transactions (amounts = monthly premium from seeds)
-                {
-                    'id': 'TX-BILL-ASAF-001',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'billing_created',
-                    'amount': asaf_health_monthly,
-                    'description': 'Monthly Premium Bill - PHINS Unified Health',
-                    'metadata': {'bill_id': 'BILL-ASAF-HEALTH-001', 'policy_id': 'POL-ASAF-HEALTH-001', 'payment_method': 'credit_card'},
-                    'timestamp': (now - timedelta(days=15)).isoformat(),
-                    'status': 'completed',
-                    'nft_token_id': f'NFT-BILL-{(now - timedelta(days=15)).strftime("%Y%m%d")}-001'
-                },
-                {
-                    'id': 'TX-BILL-ASAF-003',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'billing_created',
-                    'amount': asaf_life_monthly,
-                    'description': 'Monthly Premium Bill - PHINS Unified Life',
-                    'metadata': {'bill_id': 'BILL-ASAF-LIFE-001', 'policy_id': 'POL-ASAF-LIFE-001', 'payment_method': 'credit_card'},
-                    'timestamp': (now - timedelta(days=15)).isoformat(),
-                    'status': 'completed',
-                    'nft_token_id': f'NFT-BILL-{(now - timedelta(days=15)).strftime("%Y%m%d")}-005'
-                },
-                {
-                    'id': 'TX-BILL-EFRAT-001',
-                    'customer_id': 'CUST-EFRAT-001',
-                    'type': 'billing_created',
-                    'amount': efrat_monthly,
-                    'description': 'Monthly Premium Bill - PHINS Unified',
-                    'metadata': {'bill_id': 'BILL-EFRAT-UNIFIED-001', 'policy_id': 'POL-EFRAT-UNIFIED-001', 'payment_method': 'credit_card'},
-                    'timestamp': (now - timedelta(days=10)).isoformat(),
-                    'status': 'completed',
-                    'nft_token_id': f'NFT-BILL-{(now - timedelta(days=10)).strftime("%Y%m%d")}-003'
-                },
-                
-                # Claim Transactions (amounts match seed claims)
-                {
-                    'id': 'TX-CLM-ASAF-001',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'claim_submitted',
-                    'amount': 15000.00,
-                    'description': 'Claim Submitted - Emergency Room Visit',
-                    'metadata': {'claim_id': 'CLM-ASAF-001', 'policy_id': 'POL-ASAF-HEALTH-001', 'claim_type': 'Medical'},
-                    'timestamp': (now - timedelta(days=12)).isoformat(),
-                    'status': 'completed',
-                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=12)).strftime("%Y%m%d")}-001'
-                },
-                {
-                    'id': 'TX-CLM-ASAF-001-PAID',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'claim_payment_received',
-                    'amount': 15000.00,
-                    'description': 'Claim CLM-ASAF-001 paid - deposited to Health Wallet',
-                    'metadata': {'claim_id': 'CLM-ASAF-001', 'policy_id': 'POL-ASAF-HEALTH-001', 'destination': 'health_wallet'},
-                    'timestamp': (now - timedelta(days=10)).isoformat(),
-                    'status': 'completed',
-                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=10)).strftime("%Y%m%d")}-004'
-                },
-                {
-                    'id': 'TX-CLM-ASAF-002',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'claim_submitted',
-                    'amount': 850.00,
-                    'description': 'Claim Submitted - Monthly Prescription Medications',
-                    'metadata': {'claim_id': 'CLM-ASAF-002', 'policy_id': 'POL-ASAF-HEALTH-001', 'claim_type': 'Prescription'},
-                    'timestamp': (now - timedelta(days=11)).isoformat(),
-                    'status': 'completed',
-                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=11)).strftime("%Y%m%d")}-005'
-                },
-                {
-                    'id': 'TX-CLM-ASAF-002-PAID',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'claim_payment_received',
-                    'amount': 850.00,
-                    'description': 'Claim CLM-ASAF-002 paid - deposited to Health Wallet',
-                    'metadata': {'claim_id': 'CLM-ASAF-002', 'policy_id': 'POL-ASAF-HEALTH-001', 'destination': 'health_wallet'},
-                    'timestamp': (now - timedelta(days=9)).isoformat(),
-                    'status': 'completed',
-                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=9)).strftime("%Y%m%d")}-006'
-                },
-                {
-                    'id': 'TX-CLM-ASAF-004',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'claim_submitted',
-                    'amount': 2800.00,
-                    'description': 'Claim Submitted - Dental Treatment (Pending)',
-                    'metadata': {'claim_id': 'CLM-ASAF-004', 'policy_id': 'POL-ASAF-HEALTH-001', 'claim_type': 'Dental'},
-                    'timestamp': (now - timedelta(days=5)).isoformat(),
-                    'status': 'pending',
-                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=5)).strftime("%Y%m%d")}-003'
-                },
-                {
-                    'id': 'TX-CLM-ASAF-005',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'claim_submitted',
-                    'amount': 45000.00,
-                    'description': 'Claim Submitted - Temporary Disability (Under Review)',
-                    'metadata': {'claim_id': 'CLM-ASAF-005', 'policy_id': 'POL-ASAF-LIFE-001', 'claim_type': 'Disability'},
-                    'timestamp': (now - timedelta(days=3)).isoformat(),
-                    'status': 'pending',
-                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=3)).strftime("%Y%m%d")}-008'
-                },
-                
                 # Pipeline Events (system-level, no financial amounts)
                 {
                     'id': 'TX-PIPE-001',
@@ -57314,10 +56410,7 @@ def _seed_startup_demo_fixtures() -> None:
                     'verified': True
                 }
         
-        print(f"✓ Initialized {len(sample_ledger)} ledger entries with NFT verification")
-        print(f"   - Policy Approvals: kernel-priced PHINS unified (Asaf life/health + Efrat)")
-        print(f"   - Billing Records: matching monthly kernel premiums")
-        print(f"   - Claim cash: claim_payment_received for paid kernel-policy claims")
+        print(f"✓ Initialized {len(sample_ledger)} pipeline ledger entries with NFT verification")
         print(f"   - Total ledger entries: {len(TRANSACTION_LEDGER)}")
     except Exception as e:
         print(f"⚠️  Transaction ledger initialization skipped: {e}")
@@ -57396,167 +56489,10 @@ def _seed_startup_demo_fixtures() -> None:
     except Exception as e:
         print(f"   ⚠️  Customer records check error: {e}")
     
-    # Final step 2: Ensure all PHINS customer applications have complete data
-    # This is a fallback to ensure data integrity on every restart
-    print("🔧 Final data integrity check - PHINS customer applications...")
-    try:
-        # Define 'now' for timestamp fields
-        now = datetime.now()
-        phins_apps = [
-            {
-                'id': 'UW-EFRAT-001',
-                'policy_id': 'POL-EFRAT-UNIFIED-001',
-                'customer_id': 'CUST-EFRAT-001',
-                'customer_name': 'Efrat PHINS',
-                'customer_email': 'efrat@phins.ai',
-                'policy_type': 'phins_unified',
-                'coverage_amount': 500000.0,
-                'annual_premium': efrat_annual,
-                'monthly_premium': efrat_monthly,
-                'age': 35,
-                'gender': 'female',
-                'occupation': 'Product Manager',
-                'status': 'approved',
-                'risk_score': 'low',
-                'risk_assessment': 'low',
-                'bmi': 22.0,
-                'height_cm': 165,
-                'weight_kg': 60,
-                'smoking_status': 'never',
-                'alcohol_use': 'occasional',
-                'disability_percentage': 0,
-                'medical_conditions': [],
-                'documents': [
-                    {'type': 'national_id', 'verified': True, 'authenticity_score': 0.97},
-                    {'type': 'proof_of_address', 'verified': True, 'authenticity_score': 0.94}
-                ],
-                'identity_verified': True,
-                'medical_exam_required': False,
-                'premium_adjustment': 0,
-                'decision_date': now.isoformat(),
-                'decided_by': 'system_auto_approve'
-            },
-            {
-                'id': 'UW-ASI-001',
-                'policy_id': 'POL-ASI-UNIFIED-001',
-                'customer_id': 'CUST-ASI-001',
-                'customer_name': 'Asi PHINS',
-                'customer_email': 'asi@phins.ai',
-                'policy_type': 'phins_unified',
-                'coverage_amount': 400000.0,
-                'annual_premium': float((asi_quote or {}).get('annual_premium') or 0),
-                'monthly_premium': float((asi_quote or {}).get('monthly_premium') or 0),
-                'age': _demo_age_from_dob('1985-03-20'),
-                'gender': 'male',
-                'occupation': 'Software Engineer',
-                'status': 'pending',
-                'risk_score': 'low',
-                'risk_assessment': 'low',
-                'bmi': 24.0,
-                'height_cm': 178,
-                'weight_kg': 76,
-                'smoking_status': 'never',
-                'alcohol_use': 'none',
-                'disability_percentage': 0,
-                'medical_conditions': [],
-                'documents': [
-                    {'type': 'national_id', 'verified': True, 'authenticity_score': 0.96},
-                    {'type': 'proof_of_address', 'verified': True, 'authenticity_score': 0.93}
-                ],
-                'identity_verified': True,
-                'medical_exam_required': False,
-                'premium_adjustment': 0
-            },
-            {
-                'id': 'UW-SHOSH-001',
-                'policy_id': 'POL-SHOSH-UNIFIED-001',
-                'customer_id': 'CUST-SHOSH-001',
-                'customer_name': 'Shosh PHINS',
-                'customer_email': 'shosh@phins.ai',
-                'policy_type': 'phins_unified',
-                'coverage_amount': 450000.0,
-                'annual_premium': float((shosh_quote or {}).get('annual_premium') or 0),
-                'monthly_premium': float((shosh_quote or {}).get('monthly_premium') or 0),
-                'age': _demo_age_from_dob('1988-09-10'),
-                'gender': 'female',
-                'occupation': 'Marketing Director',
-                'status': 'pending',
-                'risk_score': 'low',
-                'risk_assessment': 'low',
-                'bmi': 23.0,
-                'height_cm': 168,
-                'weight_kg': 65,
-                'smoking_status': 'never',
-                'alcohol_use': 'occasional',
-                'disability_percentage': 0,
-                'medical_conditions': [],
-                'documents': [
-                    {'type': 'national_id', 'verified': True, 'authenticity_score': 0.95},
-                    {'type': 'proof_of_address', 'verified': True, 'authenticity_score': 0.92}
-                ],
-                'identity_verified': True,
-                'medical_exam_required': False,
-                'premium_adjustment': 0
-            }
-        ]
-        
-        apps_updated = 0
-        apps_created = 0
-        for app_data in phins_apps:
-            app_id = app_data['id']
-            existing = UNDERWRITING_APPLICATIONS.get(app_id)
-            if existing:
-                # Check if any key medical fields are missing
-                needs_update = (
-                    existing.get('age') is None or
-                    existing.get('bmi') is None or
-                    existing.get('gender') is None
-                )
-                if needs_update:
-                    # Merge data, updating None fields
-                    merged = dict(existing)
-                    for key, value in app_data.items():
-                        if merged.get(key) is None or merged.get(key) == '' or merged.get(key) == []:
-                            merged[key] = value
-                    merged['submitted_date'] = merged.get('submitted_date') or now.isoformat()
-                    merged['created_date'] = merged.get('created_date') or now.isoformat()
-                    merged['updated_date'] = now.isoformat()
-                    UNDERWRITING_APPLICATIONS[app_id] = merged
-                    apps_updated += 1
-            else:
-                # Create new — kernel-priced only; never insert a flat-rate demo row.
-                if float(app_data.get('annual_premium') or 0) <= 0:
-                    continue
-                app_data['submitted_date'] = now.isoformat()
-                app_data['created_date'] = now.isoformat()
-                app_data['updated_date'] = now.isoformat()
-                UNDERWRITING_APPLICATIONS[app_id] = app_data
-                apps_created += 1
-                
-                # Also ensure policy exists
-                pol_id = app_data['policy_id']
-                if pol_id not in POLICIES:
-                    POLICIES[pol_id] = {
-                        'id': pol_id,
-                        'customer_id': app_data['customer_id'],
-                        'type': 'phins_unified',
-                        'coverage_amount': app_data['coverage_amount'],
-                        'annual_premium': app_data['annual_premium'],
-                        'monthly_premium': app_data['monthly_premium'],
-                        'status': 'active' if get_status_lower(app_data) == 'approved' else 'pending_underwriting',
-                        'risk_score': app_data['risk_score'],
-                        'underwriting_id': app_id,
-                        'start_date': now.isoformat(),
-                        'end_date': (now + timedelta(days=365)).isoformat(),
-                        'created_date': now.isoformat()
-                    }
-        
-        if apps_updated > 0 or apps_created > 0:
-            print(f"   ✓ Created: {apps_created}, Updated: {apps_updated}")
-        else:
-            print(f"   ✓ All PHINS applications already have complete data")
-    except Exception as e:
-        print(f"   ⚠️  Data integrity check error: {e}")
+    print("🔧 Purging known false demo policies and related records...")
+    purged = _purge_false_demo_seed(sync_memory=True)
+    print(f"   ✓ Removed false demo rows: {purged}")
+
 
 
 def run_server(port: int = PORT) -> None:
@@ -57837,6 +56773,17 @@ def run_server(port: int = PORT) -> None:
                     print(f"   ✓ Loaded {db_claims_loaded} claims from database ({total_db} in DB, all {in_memory_before} already in memory)")
     except Exception as db_err:
         print(f"   ℹ️ Database claims loading: {db_err}")
+
+    # Known false demo policies are always removed (scoped ID list only).
+    # This is a data-integrity repair, not demo seeding, so it still runs
+    # when POPULATE_DEMO_DATA=false / production.
+    try:
+        from database.seeds import _purge_false_demo_seed
+        purged_false = _purge_false_demo_seed(sync_memory=True)
+        if any(purged_false.values()):
+            print(f"   ✓ Removed false demo seed rows: {purged_false}")
+    except Exception as _purge_exc:
+        print(f"   ⚠️  False demo seed purge skipped: {_purge_exc}")
 
     # Demo/test fixtures (PHINS demo customers/policies, sample claims,
     # demo transaction ledger, demo marketplace purchases) are only seeded

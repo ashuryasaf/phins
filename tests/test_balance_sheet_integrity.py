@@ -588,18 +588,12 @@ print(json.dumps({{
     "wallet_transactions": len(server_module.HEALTH_WALLETS["CUST-EFRAT-001"].get("transactions", [])),
     "investment_balance": server_module.INVESTMENT_ACCOUNTS["CUST-EFRAT-001"]["balance"],
     "investment_deposits": len(server_module.INVESTMENT_ACCOUNTS["CUST-EFRAT-001"].get("deposits", [])),
-    "policy_annual_premium": server_module.POLICIES["POL-EFRAT-UNIFIED-001"]["annual_premium"],
-    "policy_monthly_premium": server_module.POLICIES["POL-EFRAT-UNIFIED-001"]["monthly_premium"],
-    "billing_amount": next(
-        bill["amount"]
+    "efrat_policy_present": "POL-EFRAT-UNIFIED-001" in server_module.POLICIES,
+    "efrat_bills": [
+        bill["id"]
         for bill in server_module.BILLING.values()
         if bill.get("policy_id") == "POL-EFRAT-UNIFIED-001"
-    ),
-    "billing_amount_paid": next(
-        bill["amount_paid"]
-        for bill in server_module.BILLING.values()
-        if bill.get("policy_id") == "POL-EFRAT-UNIFIED-001"
-    ),
+    ],
 }}))
 """
 
@@ -629,26 +623,8 @@ print(json.dumps({{
         self.assertEqual(payload['wallet_transactions'], 1)
         self.assertAlmostEqual(payload['investment_balance'], 654.32)
         self.assertEqual(payload['investment_deposits'], 1)
-        from database.seeds import _age_from_dob, _seed_policy_from_kernel
-        efrat_kernel = _seed_policy_from_kernel(
-            policy_id='POL-EFRAT-UNIFIED-001',
-            coverage_amount=500000.0,
-            age=_age_from_dob('1990-06-15'),
-            gender='female',
-            smoking_status='never',
-            risk_score='low',
-            status='active',
-        )
-        self.assertAlmostEqual(
-            payload['policy_annual_premium'], efrat_kernel['annual_premium']
-        )
-        self.assertAlmostEqual(
-            payload['policy_monthly_premium'], efrat_kernel['monthly_premium']
-        )
-        self.assertAlmostEqual(payload['billing_amount'], efrat_kernel['monthly_premium'])
-        self.assertAlmostEqual(
-            payload['billing_amount_paid'], efrat_kernel['monthly_premium']
-        )
+        self.assertFalse(payload['efrat_policy_present'])
+        self.assertEqual(payload['efrat_bills'], [])
 
     def test_bills_vs_billing_autopay_summary_structure(self):
         """Summary must contain all four required top-level sections."""

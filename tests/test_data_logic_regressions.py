@@ -148,11 +148,8 @@ def test_seed_sample_data_wallet_claim_reconciliation_is_idempotent(tmp_path, mo
     from database.seeds import seed_sample_data
     import web_portal.server as portal
 
-    expected_transaction_ids = [
-        "CLAIM-PAY-SEED-CLM-ASAF-001",
-        "CLAIM-PAY-SEED-CLM-ASAF-002",
-    ]
-    expected_total = 15850.0
+    expected_transaction_ids = []
+    expected_total = 0.0
 
     reset_connection()
     init_database(drop_existing=True)
@@ -180,7 +177,7 @@ def test_seed_policies_are_kernel_priced_phins_unified(tmp_path, monkeypatch):
 
     from database import init_database, reset_connection
     from database.seeds import (
-        DEMO_NON_KERNEL_POLICY_IDS,
+        FALSE_DEMO_POLICY_IDS,
         KERNEL_SEED_POLICY_TYPES,
         seed_sample_data,
     )
@@ -197,12 +194,8 @@ def test_seed_policies_are_kernel_priced_phins_unified(tmp_path, monkeypatch):
 
     seed_sample_data()
 
-    for policy_id in DEMO_NON_KERNEL_POLICY_IDS:
-        row = portal.POLICIES.get(policy_id)
-        if row:
-            assert str(row.get("status") or "").lower() in (
-                "cancelled", "canceled", "void", "retired"
-            ), policy_id
+    for policy_id in FALSE_DEMO_POLICY_IDS:
+        assert policy_id not in portal.POLICIES, policy_id
 
     active = [
         p for p in portal.POLICIES.values()
@@ -210,29 +203,29 @@ def test_seed_policies_are_kernel_priced_phins_unified(tmp_path, monkeypatch):
             "cancelled", "canceled", "void", "retired"
         )
     ]
-    assert active, "expected kernel-priced seed policies"
     for policy in active:
         ptype = str(policy.get("type") or "").strip().lower()
         assert ptype in KERNEL_SEED_POLICY_TYPES, policy.get("id")
         assert ptype in POLICY_TYPE_TO_PRODUCT, policy.get("id")
+        assert policy.get("id") not in FALSE_DEMO_POLICY_IDS
 
+    assert "CLM-ASAF-001" not in portal.CLAIMS
+    assert "CLM-ASAF-002" not in portal.CLAIMS
     assert "CLM-ASAF-003" not in portal.CLAIMS
-    asaf_life = portal.POLICIES.get("POL-ASAF-LIFE-001") or {}
-    asaf_health = portal.POLICIES.get("POL-ASAF-HEALTH-001") or {}
-    assert asaf_life.get("type") == "phins_unified"
-    assert asaf_health.get("type") == "phins_unified"
-    assert asaf_life.get("pricing_source") == "pricing_kernel"
-    assert float(asaf_life.get("annual_premium") or 0) > 0
+    assert "CLM-ASAF-004" not in portal.CLAIMS
+    assert "CLM-ASAF-005" not in portal.CLAIMS
     cash_types = {
         str(tx.get("type") or "")
         for tx in portal.TRANSACTION_LEDGER.values()
         if isinstance(tx, dict)
+        and str((tx.get("metadata") or {}).get("policy_id") or tx.get("policy_id") or "")
+        in FALSE_DEMO_POLICY_IDS
     }
-    assert "claim_payment_received" in cash_types
+    assert not cash_types
 
 
-def test_seed_does_not_rewrite_existing_efrat_billed_premium():
-    """Restart seed must keep a persisted Efrat billed premium (v1 1552.50)."""
+def test_seed_removes_false_demo_efrat_policy_and_keeps_wallets():
+    """Restart seed removes the false Efrat policy but keeps persisted wallets."""
     import web_portal.server as portal
 
     portal.CUSTOMERS['CUST-EFRAT-001'] = {
@@ -274,13 +267,11 @@ def test_seed_does_not_rewrite_existing_efrat_billed_premium():
 
     portal._seed_startup_demo_fixtures()
 
-    policy = portal.POLICIES['POL-EFRAT-UNIFIED-001']
-    assert float(policy['annual_premium']) == pytest.approx(1552.50)
-    assert float(policy['monthly_premium']) == pytest.approx(129.38)
-    assert policy.get('type') == 'phins_unified'
-    bill = portal.BILLING['BILL-EFRAT-UNIFIED-001']
-    assert float(bill['amount']) == pytest.approx(129.38)
-    assert float(bill['amount_paid']) == pytest.approx(129.38)
+    policy = portal.POLICIES.get('POL-EFRAT-UNIFIED-001')
+    assert policy is None
+    assert 'BILL-EFRAT-UNIFIED-001' not in portal.BILLING
     wallet = portal.HEALTH_WALLETS['CUST-EFRAT-001']
     assert float(wallet['balance']) == pytest.approx(321.45)
     assert wallet['transactions'] == [{'id': 'TX-LEGACY-WALLET'}]
+    invest = portal.INVESTMENT_ACCOUNTS['CUST-EFRAT-001']
+    assert float(invest['balance']) == pytest.approx(654.32)

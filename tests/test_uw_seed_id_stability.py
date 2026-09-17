@@ -1,26 +1,11 @@
 """
-Regression tests for the asaf seed underwriting application id.
+Regression tests for false Asaf health seed underwriting rows.
 
-The Railway boot log surfaced this entry on May 10 (the day after the May 9
-boot that wrote `UW-ASAF-20260509-001`):
-
-    INFO:database.repositories.base:Created UnderwritingApplication: UW-ASAF-20260510-001
-    INFO:database.seeds:Created underwriting application for primary customer: UW-ASAF-20260510-001
-
-Both `database/seeds.py` and the `web_portal/server.py` startup block built
-the seed UW id as ``f"UW-ASAF-{now.strftime('%Y%m%d')}-001"``. Every Railway
-restart that crossed midnight inserted a fresh row for asaf and left every
-prior day's row orphaned in PostgreSQL, so the table grew by one row per
-calendar day with no garbage collection.
-
-These tests assert that:
-
-1. `seed_sample_data()` creates AT MOST one underwriting row for asaf's
-   health policy, even when invoked many times.
-2. The id used is the stable ``UW-ASAF-HEALTH-001`` rather than a
-   date-stamped one.
-3. When the prod database already contains a legacy date-stamped row, the
-   seeder reuses it instead of inserting another one.
+The Railway boot log used to insert a new ``UW-ASAF-{YYYYMMDD}-001`` row on
+every midnight restart. Those policies are now treated as false demo data:
+`seed_sample_data()` must not create underwriting (or policy) rows for
+``POL-ASAF-HEALTH-001``, and a restart must purge any leftover date-stamped
+row keyed to that policy.
 """
 
 from __future__ import annotations
@@ -82,23 +67,25 @@ def _all_asaf_health_uw_ids():
         return sorted(row.id for row in rows)
 
 
-def test_seed_uses_stable_uw_id_for_asaf_health_policy(db_backed_portal):
+def test_seed_does_not_create_asaf_health_policy_or_uw(db_backed_portal):
+    from database.manager import DatabaseManager
     from database.seeds import seed_sample_data
 
     seed_sample_data()
 
     ids = _all_asaf_health_uw_ids()
-    assert ids == ["UW-ASAF-HEALTH-001"], (
-        "expected exactly one stable seed UW for asaf's health policy, "
+    assert ids == [], (
+        "false demo Asaf health policy must not have any UW rows, "
         f"got {ids!r}"
     )
+    with DatabaseManager() as db:
+        assert db.policies.get_by_id("POL-ASAF-HEALTH-001") is None
+        assert db.policies.get_by_id("POL-ASAF-LIFE-001") is None
 
 
-def test_repeated_seeding_does_not_proliferate_uw_rows(db_backed_portal, monkeypatch):
-    """Five seed runs across DIFFERENT calendar days (simulating five
-    container restarts that crossed midnight) must keep exactly one asaf
-    health-policy underwriting row in the DB. With the previous date-stamped
-    id this would have produced five rows, one per day."""
+def test_repeated_seeding_does_not_proliferate_asaf_health_uw(db_backed_portal, monkeypatch):
+    """Five seed runs across different calendar days must keep zero Asaf
+    health-policy underwriting rows."""
     from datetime import datetime, timedelta, timezone
 
     import database.seeds as seeds_module
@@ -124,47 +111,56 @@ def test_repeated_seeding_does_not_proliferate_uw_rows(db_backed_portal, monkeyp
         seed_sample_data()
 
     ids = _all_asaf_health_uw_ids()
-    assert len(ids) == 1, (
-        f"seed_sample_data() leaked {len(ids)} UW rows for asaf's health "
-        f"policy across simulated cross-day restarts: {ids!r}"
+    assert ids == [], (
+        f"seed_sample_data() leaked {len(ids)} UW rows for the false Asaf "
+        f"health policy across simulated cross-day restarts: {ids!r}"
     )
 
 
-def test_seed_reuses_legacy_date_stamped_uw_row(db_backed_portal):
-    """When prod already has a legacy `UW-ASAF-{date}-001` row from before
-    this fix, the seeder must reuse it rather than inserting another row
-    under the new stable id."""
+def test_seed_purges_legacy_date_stamped_asaf_health_uw(db_backed_portal):
+    """A leftover ``UW-ASAF-{date}-001`` row for the false health policy is
+    removed on restart rather than reused or duplicated."""
     from datetime import datetime, timezone
 
     from database.manager import DatabaseManager
     from database.seeds import seed_sample_data
 
-    seed_sample_data()  # create the prerequisite policy + customer rows
+    seed_sample_data()  # create the prerequisite customer rows
 
     legacy_id = "UW-ASAF-20260315-001"
+    now = datetime(2026, 3, 15, tzinfo=timezone.utc)
     with DatabaseManager() as db:
-        db.underwriting.delete("UW-ASAF-HEALTH-001")
-        db.underwriting.create(
+        created_policy = db.policies.create(
+            id="POL-ASAF-HEALTH-001",
+            customer_id="CUST-ASAF-001",
+            type="health",
+            coverage_amount=500000.0,
+            annual_premium=2679.34,
+            monthly_premium=223.28,
+            status="active",
+            risk_score="low",
+            start_date=now,
+        )
+        assert created_policy is not None
+        created_uw = db.underwriting.create(
             id=legacy_id,
             policy_id="POL-ASAF-HEALTH-001",
             customer_id="CUST-ASAF-001",
             status="approved",
             risk_assessment="low",
             risk_score="low",
-            created_date=datetime(2026, 3, 15, tzinfo=timezone.utc),
+            created_date=now,
         )
+        assert created_uw is not None
 
-    seed_sample_data()  # simulate a restart on a different day
+    seed_sample_data()  # simulate a restart
 
     ids = _all_asaf_health_uw_ids()
-    assert ids == [legacy_id], (
-        "seeder must reuse the pre-existing legacy UW row instead of "
-        f"creating a new one; got {ids!r}"
+    assert ids == [], (
+        "seeder must purge leftover false-demo UW rows; "
+        f"got {ids!r}"
     )
-
     with DatabaseManager() as db:
-        legacy = db.underwriting.get_by_id(legacy_id)
-        assert legacy is not None
-        assert legacy.status == "approved", (
-            "reusing the legacy row must preserve its decision state"
-        )
+        assert db.underwriting.get_by_id(legacy_id) is None
+        assert db.policies.get_by_id("POL-ASAF-HEALTH-001") is None
+        assert db.customers.get_by_id("CUST-ASAF-001") is not None
