@@ -593,7 +593,7 @@ def _purge_false_demo_seed(
 
     # Durable operational rows must run before ledger matching so SQL-only
     # claim IDs (boot with no repos / unhydrated CLAIMS) still drop cash rows.
-    db_ops = _purge_false_demo_records_from_db()
+    db_ops = _purge_false_demo_records_from_db(removed_claim_ids)
     removed_claim_ids.update(str(cid) for cid in (db_ops.get('claim_ids') or []))
     for key in ('policies', 'bills', 'claims', 'uw', 'customers', 'users'):
         removed[key] += db_ops.get(key, 0)
@@ -660,14 +660,15 @@ def _purge_false_demo_seed(
     return removed
 
 
-def _purge_false_demo_records_from_db() -> dict:
+def _purge_false_demo_records_from_db(removed_claim_ids=None) -> dict:
     """Delete known false-demo operational rows even when seed repos were not passed.
 
     Boot calls `_purge_false_demo_seed(sync_memory=True)` without repositories.
     Memory DatabaseDict pops are durable in DB mode, but a hydrated plain dict
     would otherwise restore CUST-TEST-* / POL-TEST-* on the next load.
-    Collected claim IDs are returned so claim-keyed ledger cash can be dropped
-    even when in-memory CLAIMS was empty. Unknown real rows are never swept.
+    Collected claim IDs are returned and added to `removed_claim_ids` so
+    claim-keyed ledger cash can be dropped even when in-memory CLAIMS was
+    empty. Unknown real rows are never swept.
     """
     counts = {
         'policies': 0, 'bills': 0, 'claims': 0, 'uw': 0,
@@ -681,6 +682,8 @@ def _purge_false_demo_records_from_db() -> dict:
         with DatabaseManager() as db:
             claim_ids = _false_demo_ids_from_repo(db.claims)
             counts['claim_ids'] = list(claim_ids)
+            if removed_claim_ids is not None:
+                removed_claim_ids.update(claim_ids)
             for claim_id in claim_ids:
                 if db.claims.delete(claim_id):
                     counts['claims'] += 1
