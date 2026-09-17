@@ -346,3 +346,77 @@ def test_seed_mirrors_phins_customers_without_policies(tmp_path, monkeypatch):
     assert 'POL-EFRAT-UNIFIED-001' not in portal.POLICIES
     assert 'POL-ASI-UNIFIED-001' not in portal.POLICIES
     assert 'POL-SHOSH-UNIFIED-001' not in portal.POLICIES
+    for customer_id in ('CUST-TEST-100', 'CUST-TEST-101', 'CUST-TEST-102'):
+        assert customer_id not in portal.CUSTOMERS
+    for policy_id in ('POL-TEST-100', 'POL-TEST-101', 'POL-TEST-102'):
+        assert policy_id not in portal.POLICIES
+
+
+def test_false_test_customers_and_related_records_are_purged():
+    """Sarah/David/Rachel and their policies/bills/claims/ledger must be removed."""
+    from database.seeds import _purge_false_demo_seed
+    import web_portal.server as portal
+
+    portal.CUSTOMERS['CUST-TEST-100'] = {
+        'id': 'CUST-TEST-100',
+        'name': 'Sarah Cohen',
+        'email': 'sarah.cohen@test.com',
+    }
+    portal.POLICIES['POL-TEST-100'] = {
+        'id': 'POL-TEST-100',
+        'customer_id': 'CUST-TEST-100',
+        'type': 'phins_unified',
+        'status': 'pending_underwriting',
+    }
+    portal.BILLING['BILL-TEST-100'] = {
+        'id': 'BILL-TEST-100',
+        'policy_id': 'POL-TEST-100',
+        'customer_id': 'CUST-TEST-100',
+        'amount': 150.0,
+        'status': 'outstanding',
+    }
+    portal.CLAIMS['CLM-TEST-100'] = {
+        'id': 'CLM-TEST-100',
+        'policy_id': 'POL-TEST-100',
+        'customer_id': 'CUST-TEST-100',
+        'status': 'Submitted',
+    }
+    portal.UNDERWRITING_APPLICATIONS['UW-TEST-100'] = {
+        'id': 'UW-TEST-100',
+        'policy_id': 'POL-TEST-100',
+        'customer_id': 'CUST-TEST-100',
+        'status': 'pending',
+    }
+    portal.HEALTH_WALLETS['CUST-TEST-100'] = {
+        'customer_id': 'CUST-TEST-100',
+        'balance': 40.0,
+        'transactions': [],
+    }
+    portal.INVESTMENT_ACCOUNTS['CUST-TEST-100'] = {
+        'customer_id': 'CUST-TEST-100',
+        'balance': 10.0,
+    }
+    portal.TRANSACTION_LEDGER['TX-TEST-CUST-100'] = {
+        'id': 'TX-TEST-CUST-100',
+        'customer_id': 'CUST-TEST-100',
+        'type': 'premium_payment',
+        'amount': 150.0,
+        'metadata': {'policy_id': 'POL-TEST-100'},
+    }
+    portal.CUSTOMERS['CUST-ASAF-001'] = {
+        'id': 'CUST-ASAF-001',
+        'name': 'Asaf Assurance',
+        'email': 'asaf@assurance.co.il',
+    }
+
+    _purge_false_demo_seed(sync_memory=True)
+
+    assert 'CUST-TEST-100' not in portal.CUSTOMERS
+    assert 'POL-TEST-100' not in portal.POLICIES
+    assert 'BILL-TEST-100' not in portal.BILLING
+    assert 'CLM-TEST-100' not in portal.CLAIMS
+    assert 'UW-TEST-100' not in portal.UNDERWRITING_APPLICATIONS
+    assert 'CUST-TEST-100' not in portal.HEALTH_WALLETS
+    assert 'CUST-TEST-100' not in portal.INVESTMENT_ACCOUNTS
+    assert 'TX-TEST-CUST-100' not in portal.TRANSACTION_LEDGER
+    assert portal.CUSTOMERS.get('CUST-ASAF-001') is not None

@@ -13896,17 +13896,12 @@ else:
     USERS: Dict[str, Dict[str, Any]] = _build_fallback_users()
 
 # ========== SUSPENDED TEST ACCOUNTS ==========
-# QA/underwriting test accounts hidden from admin dashboards, reports, and BI
-# aggregations.  They can still log in; their data simply doesn't pollute
-# production metrics.  Seeded in database/seeds.py alongside pending
-# underwriting applications.
+# Runtime-hidden accounts (actuarial sandbox push-to-pipeline, Clean Demo Data).
+# The former QA seed customers CUST-TEST-100/101/102 are purged, not seeded.
+# Sandbox still adds TESTSIM IDs here so BI/dashboards stay clean.
+# To hide at runtime: POST /api/admin/suspend-account
 # To reactivate at runtime: POST /api/admin/reactivate-account
-# To reactivate permanently: remove the customer_id from this set.
-SUSPENDED_TEST_ACCOUNTS: set = {
-    'CUST-TEST-100',  # Sarah Cohen - QA underwriting test
-    'CUST-TEST-101',  # David Levy  - QA underwriting test
-    'CUST-TEST-102',  # Rachel Green - QA underwriting test
-}
+SUSPENDED_TEST_ACCOUNTS: set = set()
 
 # ========== ACTUARIAL SANDBOX PUSHED CUSTOMERS ==========
 # Customer IDs that were materialized on the admin side from the
@@ -25996,7 +25991,7 @@ For claims or questions, please contact:
                     'created': 0,
                     'updated': 0,
                     'errors': 0,
-                    'note': 'False demo PHINS policies and related records were removed, not recreated.',
+                    'note': 'False demo PHINS policies and QA test customers were removed, not recreated.',
                 }
             }).encode('utf-8'))
             return
@@ -56795,12 +56790,9 @@ def run_server(port: int = PORT) -> None:
     else:
         print("⏭️  Demo data seeding disabled (production environment or POPULATE_DEMO_DATA=false)")
 
-    # Log suspended test accounts (these exist for QA/underwriting tests and
-    # consume negligible resources — 3 DB rows.  They can log in but their data
-    # is excluded from admin dashboards, reports, and BI aggregations.
-    # To reactivate: POST /api/admin/reactivate-account or remove from
-    # SUSPENDED_TEST_ACCOUNTS set above.)
-    print(f"🚫 Suspended test accounts (hidden from platform data, used for QA): {len(SUSPENDED_TEST_ACCOUNTS)}")
+    # Remaining IDs are sandbox-pushed (TESTSIM), not the retired QA seed
+    # customers. Their data stays excluded from admin dashboards / BI.
+    print(f"🚫 Suspended test accounts (hidden from platform data): {len(SUSPENDED_TEST_ACCOUNTS)}")
     for acc in SUSPENDED_TEST_ACCOUNTS:
         print(f"   • {acc}")
     

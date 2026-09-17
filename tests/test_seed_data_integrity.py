@@ -7,10 +7,10 @@ that don't exist yet), but it also mirrors seeded entities into the
 `web_portal.server` in-memory dictionaries (POLICIES, BILLING, CLAIMS,
 UNDERWRITING_APPLICATIONS, CUSTOMERS).
 
-False demo policies (Asaf life/health/auto, Efrat/Asi/Shosh unified) are not
-seeded. Restart seed **removes** those known IDs and every bill/claim/UW keyed
-to them. Remaining kernel test policies (POL-TEST-*) must not be overwritten,
-and unknown real policies are never swept.
+False demo policies (Asaf life/health/auto, Efrat/Asi/Shosh unified, POL-TEST-*)
+and QA test customers (CUST-TEST-100/101/102) are not seeded. Restart seed
+**removes** those known IDs and every bill/claim/UW/ledger row keyed to them.
+Live PHINS customers stay. Unknown real policies are never swept.
 """
 
 from __future__ import annotations
@@ -29,6 +29,14 @@ FALSE_DEMO_POLICY_IDS = (
     "POL-EFRAT-UNIFIED-001",
     "POL-ASI-UNIFIED-001",
     "POL-SHOSH-UNIFIED-001",
+    "POL-TEST-100",
+    "POL-TEST-101",
+    "POL-TEST-102",
+)
+FALSE_TEST_CUSTOMER_IDS = (
+    "CUST-TEST-100",
+    "CUST-TEST-101",
+    "CUST-TEST-102",
 )
 
 
@@ -160,6 +168,76 @@ def _insert_false_demo_rows():
                 assert created is not None, f"failed to insert false demo UW {uw_id}"
 
 
+def _insert_false_test_customers():
+    from database.manager import DatabaseManager
+
+    now = datetime.now(timezone.utc)
+    fixtures = (
+        ("CUST-TEST-100", "Sarah Cohen", "sarah.cohen@test.com", "POL-TEST-100", "UW-TEST-100"),
+        ("CUST-TEST-101", "David Levy", "david.levy@test.com", "POL-TEST-101", "UW-TEST-101"),
+        ("CUST-TEST-102", "Rachel Green", "rachel.green@test.com", "POL-TEST-102", "UW-TEST-102"),
+    )
+    with DatabaseManager() as db:
+        for customer_id, name, email, policy_id, uw_id in fixtures:
+            if db.customers.get_by_id(customer_id) is None:
+                created = db.customers.create(
+                    id=customer_id,
+                    name=name,
+                    email=email,
+                    phone="+1-555-0100",
+                    portal_active=True,
+                )
+                assert created is not None, f"failed to insert false test customer {customer_id}"
+            if db.policies.get_by_id(policy_id) is None:
+                created = db.policies.create(
+                    id=policy_id,
+                    customer_id=customer_id,
+                    type="phins_unified",
+                    coverage_amount=500000.0,
+                    annual_premium=1800.0,
+                    monthly_premium=150.0,
+                    status="pending_underwriting",
+                    risk_score="medium",
+                    start_date=now,
+                )
+                assert created is not None, f"failed to insert false test policy {policy_id}"
+            bill_id = f"BILL-{policy_id}"
+            if db.billing.get_by_id(bill_id) is None:
+                created = db.billing.create(
+                    id=bill_id,
+                    policy_id=policy_id,
+                    customer_id=customer_id,
+                    amount=150.0,
+                    amount_paid=0.0,
+                    status="outstanding",
+                    due_date=now,
+                )
+                assert created is not None, f"failed to insert false test bill {bill_id}"
+            claim_id = f"CLM-{policy_id}"
+            if db.claims.get_by_id(claim_id) is None:
+                created = db.claims.create(
+                    id=claim_id,
+                    policy_id=policy_id,
+                    customer_id=customer_id,
+                    type="Medical",
+                    claimed_amount=500.0,
+                    approved_amount=0.0,
+                    status="Submitted",
+                )
+                assert created is not None, f"failed to insert false test claim {claim_id}"
+            if db.underwriting.get_by_id(uw_id) is None:
+                created = db.underwriting.create(
+                    id=uw_id,
+                    policy_id=policy_id,
+                    customer_id=customer_id,
+                    status="pending",
+                    risk_assessment="medium",
+                    risk_score="medium",
+                    created_date=now,
+                )
+                assert created is not None, f"failed to insert false test UW {uw_id}"
+
+
 def test_reseed_removes_false_demo_policies_and_keeps_customers(db_backed_portal):
     """Known false demo IDs are deleted on re-seed; customers stay."""
     from database.manager import DatabaseManager
@@ -170,11 +248,14 @@ def test_reseed_removes_false_demo_policies_and_keeps_customers(db_backed_portal
 
     def mutate():
         _insert_false_demo_rows()
+        _insert_false_test_customers()
         with DatabaseManager() as db:
             assert db.policies.get_by_id("POL-ASAF-LIFE-001") is not None
             assert db.billing.get_by_id("BILL-ASAF-LIFE-001") is not None
             assert db.claims.get_by_id("CLM-ASAF-004") is not None
             assert db.underwriting.get_by_id("UW-ASAF-HEALTH-001") is not None
+            assert db.customers.get_by_id("CUST-TEST-100") is not None
+            assert db.policies.get_by_id("POL-TEST-100") is not None
 
     _seed_twice_with_mutations(db_dicts, mutate)
 
@@ -184,6 +265,12 @@ def test_reseed_removes_false_demo_policies_and_keeps_customers(db_backed_portal
             assert db.billing.filter_by(policy_id=policy_id) == []
             assert db.claims.filter_by(policy_id=policy_id) == []
             assert db.underwriting.filter_by(policy_id=policy_id) == []
+        for customer_id in FALSE_TEST_CUSTOMER_IDS:
+            assert db.customers.get_by_id(customer_id) is None, customer_id
+            assert db.policies.filter_by(customer_id=customer_id) == []
+            assert db.billing.filter_by(customer_id=customer_id) == []
+            assert db.claims.filter_by(customer_id=customer_id) == []
+            assert db.underwriting.filter_by(customer_id=customer_id) == []
         assert db.customers.get_by_id("CUST-ASAF-001") is not None
         assert db.customers.get_by_id("CUST-EFRAT-001") is not None
         assert db.customers.get_by_id("CUST-ASI-001") is not None
@@ -235,25 +322,39 @@ def test_reseed_does_not_sweep_unknown_real_policies(db_backed_portal):
         assert float(bill.amount_paid or 0) == pytest.approx(75.0)
 
 
-def test_reseed_preserves_paid_bill_on_kernel_test_policy(db_backed_portal):
-    """A paid bill on a remaining kernel test policy must not be reverted."""
+def test_reseed_preserves_paid_bill_on_kept_real_policy(db_backed_portal):
+    """A paid bill on an unknown real policy must not be reverted."""
     from database.manager import DatabaseManager
 
     portal, db_dicts = db_backed_portal
-    bill_id = "BILL-TEST-100-LIVE"
+    keep_id = "POL-KEEP-REAL-001"
+    bill_id = "BILL-KEEP-REAL-LIVE"
 
     def mutate():
         now = datetime.now(timezone.utc)
         with DatabaseManager() as db:
+            if db.policies.get_by_id(keep_id) is None:
+                created_policy = db.policies.create(
+                    id=keep_id,
+                    customer_id="CUST-ASAF-001",
+                    type="phins_unified",
+                    coverage_amount=250000.0,
+                    annual_premium=900.0,
+                    monthly_premium=75.0,
+                    status="active",
+                    risk_score="low",
+                    start_date=now,
+                )
+                assert created_policy is not None
             created = db.billing.create(
                 id=bill_id,
-                policy_id="POL-TEST-100",
-                customer_id="CUST-TEST-100",
+                policy_id=keep_id,
+                customer_id="CUST-ASAF-001",
                 amount=120.0,
                 amount_paid=120.0,
                 status="paid",
                 payment_method="auto_pay_card",
-                transaction_id="TX-TEST-100-LIVE",
+                transaction_id="TX-KEEP-REAL-LIVE",
                 due_date=now,
             )
             assert created is not None
@@ -262,25 +363,40 @@ def test_reseed_preserves_paid_bill_on_kernel_test_policy(db_backed_portal):
 
     with DatabaseManager() as db:
         bill = db.billing.get_by_id(bill_id)
-        assert bill is not None, "live bill on kernel test policy should survive re-seed"
+        assert bill is not None, "live bill on a kept real policy should survive re-seed"
         assert bill.status == "paid"
         assert float(bill.amount_paid or 0) == pytest.approx(120.0)
-        assert bill.transaction_id == "TX-TEST-100-LIVE"
+        assert bill.transaction_id == "TX-KEEP-REAL-LIVE"
 
 
 def test_reseed_preserves_advanced_claim_status(db_backed_portal):
-    """A claim workflow advanced on a remaining kernel test policy must persist."""
+    """A claim workflow advanced on an unknown real policy must persist."""
     from database.manager import DatabaseManager
 
     portal, db_dicts = db_backed_portal
-    claim_id = "CLM-TEST-100-LIVE"
+    keep_id = "POL-KEEP-REAL-001"
+    claim_id = "CLM-KEEP-REAL-LIVE"
 
     def mutate():
+        now = datetime.now(timezone.utc)
         with DatabaseManager() as db:
+            if db.policies.get_by_id(keep_id) is None:
+                created_policy = db.policies.create(
+                    id=keep_id,
+                    customer_id="CUST-ASAF-001",
+                    type="phins_unified",
+                    coverage_amount=250000.0,
+                    annual_premium=900.0,
+                    monthly_premium=75.0,
+                    status="active",
+                    risk_score="low",
+                    start_date=now,
+                )
+                assert created_policy is not None
             created = db.claims.create(
                 id=claim_id,
-                policy_id="POL-TEST-100",
-                customer_id="CUST-TEST-100",
+                policy_id=keep_id,
+                customer_id="CUST-ASAF-001",
                 type="Medical",
                 claimed_amount=2800.0,
                 approved_amount=2800.0,
@@ -298,19 +414,46 @@ def test_reseed_preserves_advanced_claim_status(db_backed_portal):
 
 
 def test_reseed_preserves_underwriting_decision(db_backed_portal):
-    """An underwriting decision on a remaining kernel test policy must persist."""
+    """An underwriting decision on an unknown real policy must persist."""
     from database.manager import DatabaseManager
 
     portal, db_dicts = db_backed_portal
-    uw_id = "UW-TEST-100"
+    keep_id = "POL-KEEP-REAL-001"
+    uw_id = "UW-KEEP-REAL-001"
 
     def mutate():
+        now = datetime.now(timezone.utc)
         with DatabaseManager() as db:
-            db.underwriting.update(
-                uw_id,
-                status="approved",
-                risk_assessment="low",
-            )
+            if db.policies.get_by_id(keep_id) is None:
+                created_policy = db.policies.create(
+                    id=keep_id,
+                    customer_id="CUST-ASAF-001",
+                    type="phins_unified",
+                    coverage_amount=250000.0,
+                    annual_premium=900.0,
+                    monthly_premium=75.0,
+                    status="active",
+                    risk_score="low",
+                    start_date=now,
+                )
+                assert created_policy is not None
+            if db.underwriting.get_by_id(uw_id) is None:
+                created = db.underwriting.create(
+                    id=uw_id,
+                    policy_id=keep_id,
+                    customer_id="CUST-ASAF-001",
+                    status="approved",
+                    risk_assessment="low",
+                    risk_score="low",
+                    created_date=now,
+                )
+                assert created is not None
+            else:
+                db.underwriting.update(
+                    uw_id,
+                    status="approved",
+                    risk_assessment="low",
+                )
 
     _seed_twice_with_mutations(db_dicts, mutate)
 
@@ -324,21 +467,36 @@ def test_reseed_preserves_underwriting_decision(db_backed_portal):
 
 
 def test_reseed_does_not_slide_bill_due_date(db_backed_portal):
-    """A live bill due_date on a kernel test policy must not be re-anchored."""
+    """A live bill due_date on an unknown real policy must not be re-anchored."""
     from datetime import timedelta
 
     from database.manager import DatabaseManager
 
     portal, db_dicts = db_backed_portal
-    bill_id = "BILL-TEST-100-DUE"
+    keep_id = "POL-KEEP-REAL-001"
+    bill_id = "BILL-KEEP-REAL-DUE"
     fixed_due = datetime(2026, 1, 15, tzinfo=timezone.utc)
 
     def mutate():
+        now = datetime.now(timezone.utc)
         with DatabaseManager() as db:
+            if db.policies.get_by_id(keep_id) is None:
+                created_policy = db.policies.create(
+                    id=keep_id,
+                    customer_id="CUST-ASAF-001",
+                    type="phins_unified",
+                    coverage_amount=250000.0,
+                    annual_premium=900.0,
+                    monthly_premium=75.0,
+                    status="active",
+                    risk_score="low",
+                    start_date=now,
+                )
+                assert created_policy is not None
             created = db.billing.create(
                 id=bill_id,
-                policy_id="POL-TEST-100",
-                customer_id="CUST-TEST-100",
+                policy_id=keep_id,
+                customer_id="CUST-ASAF-001",
                 amount=99.0,
                 amount_paid=0.0,
                 status="outstanding",

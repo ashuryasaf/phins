@@ -804,6 +804,9 @@ print(json.dumps({{
             'bs_total_revenue': self.PHINS_BALANCE_SHEET['total_revenue'],
         }
 
+        from server import SUSPENDED_TEST_ACCOUNTS
+        added_suspended = 'CUST-TEST-100' not in SUSPENDED_TEST_ACCOUNTS
+        SUSPENDED_TEST_ACCOUNTS.add('CUST-TEST-100')
         try:
             self.BILLING.clear()
             self.TRANSACTION_LEDGER.clear()
@@ -858,6 +861,8 @@ print(json.dumps({{
             self.assertTrue(result['cross_check']['is_consistent'])
             self.assertEqual(result['cross_check']['discrepancies'], [])
         finally:
+            if added_suspended:
+                SUSPENDED_TEST_ACCOUNTS.discard('CUST-TEST-100')
             self.BILLING.clear()
             self.BILLING.update(previous_state['billing'])
             self.TRANSACTION_LEDGER.clear()
@@ -1169,8 +1174,8 @@ print(json.dumps({{
         bill_id = 'TEST-SUSP-BILL-001'
         cust_id = 'CUST-TEST-100'
         prev_bill = self.BILLING.get(bill_id)
-
-        self.assertIn(cust_id, SUSPENDED_TEST_ACCOUNTS)
+        added_suspended = cust_id not in SUSPENDED_TEST_ACCOUNTS
+        SUSPENDED_TEST_ACCOUNTS.add(cust_id)
 
         try:
             self.BILLING[bill_id] = {
@@ -1186,6 +1191,8 @@ print(json.dumps({{
             self.assertGreater(m_without['total_billed'], m_with['total_billed'],
                                "Suspended bill should be excluded when exclude_suspended=True")
         finally:
+            if added_suspended:
+                SUSPENDED_TEST_ACCOUNTS.discard(cust_id)
             if prev_bill is None:
                 self.BILLING.pop(bill_id, None)
             else:

@@ -87,8 +87,22 @@ FALSE_DEMO_POLICY_IDS = (
     'POL-EFRAT-UNIFIED-001',
     'POL-ASI-UNIFIED-001',
     'POL-SHOSH-UNIFIED-001',
+    'POL-TEST-100',
+    'POL-TEST-101',
+    'POL-TEST-102',
 )
 FALSE_DEMO_POLICY_ID_SET = frozenset(FALSE_DEMO_POLICY_IDS)
+FALSE_TEST_CUSTOMER_IDS = (
+    'CUST-TEST-100',  # Sarah Cohen
+    'CUST-TEST-101',  # David Levy
+    'CUST-TEST-102',  # Rachel Green
+)
+FALSE_TEST_CUSTOMER_ID_SET = frozenset(FALSE_TEST_CUSTOMER_IDS)
+FALSE_TEST_CUSTOMER_EMAILS = (
+    'sarah.cohen@test.com',
+    'david.levy@test.com',
+    'rachel.green@test.com',
+)
 DEMO_NON_KERNEL_POLICY_IDS = ('POL-ASAF-AUTO-001',)
 DEMO_NON_KERNEL_CLAIM_IDS = ('CLM-ASAF-003',)
 DEMO_NON_KERNEL_BILL_IDS = ('BILL-ASAF-AUTO-001',)
@@ -168,6 +182,31 @@ def _row_policy_id(row) -> str:
     return str(getattr(row, 'policy_id', '') or '')
 
 
+def _row_customer_id(row) -> str:
+    if isinstance(row, dict):
+        return str(row.get('customer_id') or '')
+    return str(getattr(row, 'customer_id', '') or '')
+
+
+def _row_id(row) -> str:
+    if isinstance(row, dict):
+        return str(row.get('id') or '')
+    return str(getattr(row, 'id', '') or '')
+
+
+def _row_matches_false_demo(row) -> bool:
+    """True when a store/repo row is keyed to a known false demo policy or test customer."""
+    if row is None:
+        return False
+    rid = _row_id(row)
+    return (
+        rid in FALSE_DEMO_POLICY_ID_SET
+        or rid in FALSE_TEST_CUSTOMER_ID_SET
+        or _row_policy_id(row) in FALSE_DEMO_POLICY_ID_SET
+        or _row_customer_id(row) in FALSE_TEST_CUSTOMER_ID_SET
+    )
+
+
 def _safe_delete_repo_row(repo, row_id, label: str) -> None:
     if repo is None or not row_id:
         return
@@ -201,13 +240,15 @@ FALSE_DEMO_LEDGER_PREFIXES = (
 
 
 def _ledger_entry_is_false_demo(tx_id, tx, removed_claim_ids) -> bool:
-    """True when a ledger row is keyed to a known false demo policy/claim."""
+    """True when a ledger row is keyed to a known false demo policy/claim/customer."""
     tx = tx if isinstance(tx, dict) else {}
     meta = tx.get('metadata') if isinstance(tx.get('metadata'), dict) else {}
     policy_id = str(tx.get('policy_id') or meta.get('policy_id') or '')
     claim_id = str(tx.get('claim_id') or meta.get('claim_id') or '')
+    customer_id = str(tx.get('customer_id') or meta.get('customer_id') or '')
     return (
         policy_id in FALSE_DEMO_POLICY_ID_SET
+        or customer_id in FALSE_TEST_CUSTOMER_ID_SET
         or claim_id in removed_claim_ids
         or str(tx_id).startswith(FALSE_DEMO_LEDGER_PREFIXES)
     )
@@ -273,32 +314,45 @@ def _purge_false_demo_seed(
     billing_repo=None,
     claim_repo=None,
     underwriting_repo=None,
+    customer_repo=None,
+    user_repo=None,
     sync_memory: bool = True,
 ) -> dict:
-    """Remove known false demo policies and every record keyed to them.
+    """Remove known false demo policies, the three QA test customers, and related records.
 
-    Scoped to FALSE_DEMO_POLICY_IDS only. Customers, persisted wallets, and
-    unrelated production rows are left in place. No reversing cash is
-    invented; known demo ledger rows for those policies are dropped and the
-    remaining hash chain is rebuilt.
+    Scoped to FALSE_DEMO_POLICY_IDS and FALSE_TEST_CUSTOMER_IDS only. Live
+    PHINS customers (Asaf/Efrat/Asi/Shosh), persisted wallets for those
+    accounts, and unknown real rows are left in place. No reversing cash is
+    invented; known demo ledger rows are dropped and the remaining hash
+    chain is rebuilt.
     """
-    removed = {'policies': 0, 'bills': 0, 'claims': 0, 'uw': 0, 'ledger': 0}
+    removed = {
+        'policies': 0, 'bills': 0, 'claims': 0, 'uw': 0,
+        'customers': 0, 'users': 0, 'ledger': 0,
+    }
     POLICIES = BILLING = CLAIMS = UNDERWRITING_APPLICATIONS = None
     TRANSACTION_LEDGER = HEALTH_WALLETS = NFT_LEDGER = None
+    CUSTOMERS = INVESTMENT_ACCOUNTS = CUSTOMER_ALLOCATIONS = USERS = None
     if sync_memory:
         try:
             from web_portal.server import (
                 BILLING as _B,
                 CLAIMS as _C,
+                CUSTOMER_ALLOCATIONS as _A,
+                CUSTOMERS as _CU,
                 HEALTH_WALLETS as _W,
+                INVESTMENT_ACCOUNTS as _I,
                 NFT_LEDGER as _N,
                 POLICIES as _P,
                 TRANSACTION_LEDGER as _T,
                 UNDERWRITING_APPLICATIONS as _U,
+                USERS as _USERS,
             )
             POLICIES, BILLING, CLAIMS = _P, _B, _C
             UNDERWRITING_APPLICATIONS, TRANSACTION_LEDGER = _U, _T
             HEALTH_WALLETS, NFT_LEDGER = _W, _N
+            CUSTOMERS, INVESTMENT_ACCOUNTS = _CU, _I
+            CUSTOMER_ALLOCATIONS, USERS = _A, _USERS
         except ImportError:
             pass
 
@@ -306,19 +360,33 @@ def _purge_false_demo_seed(
 
     def _collect_repo_ids(repo):
         ids = []
+        seen = set()
         if repo is None:
             return ids
+
+        def _take(rows):
+            for row in rows or []:
+                rid = getattr(row, 'id', None)
+                if not rid:
+                    continue
+                key = str(rid)
+                if key in seen:
+                    continue
+                seen.add(key)
+                ids.append(key)
+                if repo is claim_repo:
+                    removed_claim_ids.add(key)
+
         for policy_id in FALSE_DEMO_POLICY_IDS:
             try:
-                rows = repo.filter_by(policy_id=policy_id) or []
+                _take(repo.filter_by(policy_id=policy_id) or [])
             except Exception:
-                rows = []
-            for row in rows:
-                rid = getattr(row, 'id', None)
-                if rid:
-                    ids.append(str(rid))
-                    if repo is claim_repo:
-                        removed_claim_ids.add(str(rid))
+                pass
+        for customer_id in FALSE_TEST_CUSTOMER_IDS:
+            try:
+                _take(repo.filter_by(customer_id=customer_id) or [])
+            except Exception:
+                pass
         return ids
 
     for claim_id in _collect_repo_ids(claim_repo):
@@ -330,8 +398,19 @@ def _purge_false_demo_seed(
     for uw_id in _collect_repo_ids(underwriting_repo):
         _safe_delete_repo_row(underwriting_repo, uw_id, 'underwriting')
         removed['uw'] += 1
-    for policy_id in FALSE_DEMO_POLICY_IDS:
-        if policy_repo is not None:
+
+    policy_ids_to_drop = list(FALSE_DEMO_POLICY_IDS)
+    if policy_repo is not None:
+        for customer_id in FALSE_TEST_CUSTOMER_IDS:
+            try:
+                extra = policy_repo.filter_by(customer_id=customer_id) or []
+            except Exception:
+                extra = []
+            for row in extra:
+                pid = getattr(row, 'id', None)
+                if pid and str(pid) not in policy_ids_to_drop:
+                    policy_ids_to_drop.append(str(pid))
+        for policy_id in policy_ids_to_drop:
             existing = None
             try:
                 existing = policy_repo.find_one_by(id=policy_id)
@@ -341,32 +420,57 @@ def _purge_false_demo_seed(
                 _safe_delete_repo_row(policy_repo, policy_id, 'policy')
                 removed['policies'] += 1
 
+    for customer_id in FALSE_TEST_CUSTOMER_IDS:
+        _safe_delete_repo_row(customer_repo, customer_id, 'customer')
+        if customer_repo is not None:
+            try:
+                still = customer_repo.find_one_by(id=customer_id)
+            except Exception:
+                still = None
+            if still is None:
+                removed['customers'] += 1
+    for email in FALSE_TEST_CUSTOMER_EMAILS:
+        _safe_delete_repo_row(user_repo, email, 'user')
+        if user_repo is not None:
+            try:
+                still = user_repo.get_by_username(email) if hasattr(user_repo, 'get_by_username') else user_repo.find_one_by(username=email)
+            except Exception:
+                still = True
+            if not still:
+                removed['users'] += 1
+
     if CLAIMS is not None:
         for claim_id in list(CLAIMS.keys()):
             row = CLAIMS.get(claim_id) or {}
-            if _row_policy_id(row) in FALSE_DEMO_POLICY_ID_SET:
+            if _row_matches_false_demo(row):
                 removed_claim_ids.add(str(claim_id))
                 _safe_pop_store(CLAIMS, claim_id)
                 removed['claims'] += 1
     if BILLING is not None:
         for bill_id in list(BILLING.keys()):
             row = BILLING.get(bill_id) or {}
-            if _row_policy_id(row) in FALSE_DEMO_POLICY_ID_SET:
+            if _row_matches_false_demo(row):
                 _safe_pop_store(BILLING, bill_id)
                 removed['bills'] += 1
     if UNDERWRITING_APPLICATIONS is not None:
         for uw_id in list(UNDERWRITING_APPLICATIONS.keys()):
             row = UNDERWRITING_APPLICATIONS.get(uw_id) or {}
-            if _row_policy_id(row) in FALSE_DEMO_POLICY_ID_SET:
+            if _row_matches_false_demo(row):
                 _safe_pop_store(UNDERWRITING_APPLICATIONS, uw_id)
                 removed['uw'] += 1
     if POLICIES is not None:
-        for policy_id in FALSE_DEMO_POLICY_IDS:
-            if policy_id in POLICIES:
+        for policy_id in list(POLICIES.keys()):
+            row = POLICIES.get(policy_id) or {}
+            if (
+                str(policy_id) in FALSE_DEMO_POLICY_ID_SET
+                or _row_matches_false_demo(row)
+            ):
                 _safe_pop_store(POLICIES, policy_id)
                 removed['policies'] += 1
 
     if HEALTH_WALLETS is not None:
+        for customer_id in FALSE_TEST_CUSTOMER_IDS:
+            _safe_pop_store(HEALTH_WALLETS, customer_id)
         for wallet in list(HEALTH_WALLETS.values()):
             if not isinstance(wallet, dict):
                 continue
@@ -383,6 +487,7 @@ def _purge_false_demo_seed(
                     claim_id in removed_claim_ids
                     or tx_id.startswith('CLAIM-PAY-SEED-CLM-ASAF')
                     or str(tx.get('policy_id') or '') in FALSE_DEMO_POLICY_ID_SET
+                    or str(tx.get('customer_id') or '') in FALSE_TEST_CUSTOMER_ID_SET
                 )
                 if drop:
                     try:
@@ -410,6 +515,29 @@ def _purge_false_demo_seed(
                     except (TypeError, ValueError):
                         wallet['balance'] = 0.0
 
+    if INVESTMENT_ACCOUNTS is not None:
+        for customer_id in FALSE_TEST_CUSTOMER_IDS:
+            _safe_pop_store(INVESTMENT_ACCOUNTS, customer_id)
+    if CUSTOMER_ALLOCATIONS is not None:
+        for customer_id in FALSE_TEST_CUSTOMER_IDS:
+            _safe_pop_store(CUSTOMER_ALLOCATIONS, customer_id)
+    if CUSTOMERS is not None:
+        for customer_id in FALSE_TEST_CUSTOMER_IDS:
+            if customer_id in CUSTOMERS:
+                _safe_pop_store(CUSTOMERS, customer_id)
+                removed['customers'] += 1
+    if USERS is not None:
+        for email in FALSE_TEST_CUSTOMER_EMAILS:
+            _safe_pop_store(USERS, email)
+            removed['users'] += 1
+
+    try:
+        from web_portal.server import SUSPENDED_TEST_ACCOUNTS as _SUSPENDED
+        for customer_id in FALSE_TEST_CUSTOMER_IDS:
+            _SUSPENDED.discard(customer_id)
+    except Exception:
+        pass
+
     if TRANSACTION_LEDGER is not None:
         for tx_id in list(TRANSACTION_LEDGER.keys()):
             tx = TRANSACTION_LEDGER.get(tx_id) or {}
@@ -422,8 +550,11 @@ def _purge_false_demo_seed(
         except Exception as exc:
             logger.warning(f"Ledger chain rebuild after false-demo purge skipped: {exc}")
 
-    # Durable platform_ledger_entries must drop the same known demo IDs;
-    # otherwise the next hydrate_from_db restores them and the chains diverge.
+    # Durable operational rows + platform_ledger_entries must drop the same
+    # known demo IDs; otherwise the next hydrate_from_db restores them.
+    db_ops = _purge_false_demo_records_from_db()
+    for key in ('policies', 'bills', 'claims', 'uw', 'customers', 'users'):
+        removed[key] += db_ops.get(key, 0)
     db_deleted = _purge_false_demo_ledger_from_db(removed_claim_ids)
     removed['ledger'] += db_deleted
     if TRANSACTION_LEDGER is not None:
@@ -463,6 +594,8 @@ def _purge_false_demo_seed(
             if (
                 str(meta.get('policy_id') or '') in FALSE_DEMO_POLICY_ID_SET
                 or str(meta.get('claim_id') or '') in removed_claim_ids
+                or str(meta.get('customer_id') or row.get('customer_id') or '')
+                in FALSE_TEST_CUSTOMER_ID_SET
                 or str(row.get('transaction_id') or '').startswith(
                     ('TX-POL-ASAF', 'TX-POL-EFRAT', 'TX-BILL-ASAF', 'TX-BILL-EFRAT', 'TX-CLM-ASAF')
                 )
@@ -470,6 +603,94 @@ def _purge_false_demo_seed(
                 _safe_pop_store(NFT_LEDGER, token_id)
 
     return removed
+
+
+def _purge_false_demo_records_from_db() -> dict:
+    """Delete known false-demo operational rows even when seed repos were not passed.
+
+    Boot calls `_purge_false_demo_seed(sync_memory=True)` without repositories.
+    Memory DatabaseDict pops are durable in DB mode, but a hydrated plain dict
+    would otherwise restore CUST-TEST-* / POL-TEST-* on the next load.
+    Unknown real customers and policies are never swept.
+    """
+    counts = {
+        'policies': 0, 'bills': 0, 'claims': 0, 'uw': 0,
+        'customers': 0, 'users': 0,
+    }
+    try:
+        from database.manager import DatabaseManager
+    except ImportError:
+        return counts
+    try:
+        with DatabaseManager() as db:
+            def _ids(repo):
+                found = []
+                seen = set()
+                for policy_id in FALSE_DEMO_POLICY_IDS:
+                    try:
+                        rows = repo.filter_by(policy_id=policy_id) or []
+                    except Exception:
+                        rows = []
+                    for row in rows:
+                        rid = getattr(row, 'id', None)
+                        if rid and str(rid) not in seen:
+                            seen.add(str(rid))
+                            found.append(str(rid))
+                for customer_id in FALSE_TEST_CUSTOMER_IDS:
+                    try:
+                        rows = repo.filter_by(customer_id=customer_id) or []
+                    except Exception:
+                        rows = []
+                    for row in rows:
+                        rid = getattr(row, 'id', None)
+                        if rid and str(rid) not in seen:
+                            seen.add(str(rid))
+                            found.append(str(rid))
+                return found
+
+            for claim_id in _ids(db.claims):
+                if db.claims.delete(claim_id):
+                    counts['claims'] += 1
+                    logger.info(f"Removed false demo claim {claim_id}")
+            for bill_id in _ids(db.billing):
+                if db.billing.delete(bill_id):
+                    counts['bills'] += 1
+                    logger.info(f"Removed false demo bill {bill_id}")
+            for uw_id in _ids(db.underwriting):
+                if db.underwriting.delete(uw_id):
+                    counts['uw'] += 1
+                    logger.info(f"Removed false demo underwriting {uw_id}")
+
+            policy_ids = list(FALSE_DEMO_POLICY_IDS)
+            for customer_id in FALSE_TEST_CUSTOMER_IDS:
+                try:
+                    extra = db.policies.filter_by(customer_id=customer_id) or []
+                except Exception:
+                    extra = []
+                for row in extra:
+                    pid = getattr(row, 'id', None)
+                    if pid and str(pid) not in policy_ids:
+                        policy_ids.append(str(pid))
+            for policy_id in policy_ids:
+                if db.policies.get_by_id(policy_id) is not None and db.policies.delete(policy_id):
+                    counts['policies'] += 1
+                    logger.info(f"Removed false demo policy {policy_id}")
+            for customer_id in FALSE_TEST_CUSTOMER_IDS:
+                if db.customers.get_by_id(customer_id) is not None and db.customers.delete(customer_id):
+                    counts['customers'] += 1
+                    logger.info(f"Removed false test customer {customer_id}")
+            for email in FALSE_TEST_CUSTOMER_EMAILS:
+                try:
+                    existing = db.users.get_by_username(email)
+                except Exception:
+                    existing = None
+                if existing is not None and db.users.delete(email):
+                    counts['users'] += 1
+                    logger.info(f"Removed false test user {email}")
+    except Exception as exc:
+        logger.warning(f"Durable false-demo operational purge skipped: {exc}")
+        return counts
+    return counts
 
 
 def _purge_false_demo_ledger_from_db(removed_claim_ids) -> int:
@@ -852,7 +1073,7 @@ def seed_sample_data(session=None):
         from database.repositories import (
             CustomerRepository, PolicyRepository, 
             UnderwritingRepository, BillingRepository,
-            ClaimRepository
+            ClaimRepository, UserRepository
         )
         from datetime import timedelta
         
@@ -929,6 +1150,7 @@ def seed_sample_data(session=None):
         # False demo policies (Asaf life/health/auto, Efrat/Asi/Shosh unified)
         # are not seeded. Purge known IDs and every bill/claim/UW keyed to them.
         claim_repo = ClaimRepository(session)
+        user_repo = UserRepository(session)
         # Always sync in-memory ledger/wallets too: TRANSACTION_LEDGER is not
         # a DatabaseDict, so repo-only purge would leave false demo cash rows.
         _purge_false_demo_seed(
@@ -936,6 +1158,8 @@ def seed_sample_data(session=None):
             billing_repo=billing_repo,
             claim_repo=claim_repo,
             underwriting_repo=underwriting_repo,
+            customer_repo=customer_repo,
+            user_repo=user_repo,
             sync_memory=True,
         )
 
@@ -1252,187 +1476,16 @@ def seed_sample_data(session=None):
                     }
             
             logger.info(f"Synced {phins_cust['email']} to in-memory structures")
-        
-        # =================================================================
-        # ADDITIONAL TEST CUSTOMERS WITH PENDING UNDERWRITING
-        # (For testing purposes - can be suspended)
-        # =================================================================
-        additional_customers = [
-            {
-                'id': 'CUST-TEST-100',
-                'name': 'Sarah Cohen',
-                'email': 'sarah.cohen@test.com',
-                'policy_type': 'phins_unified',
-                'coverage': 750000,
-                'age': 30,
-                'gender': 'female',
-                'risk_score': 'medium',
-            },
-            {
-                'id': 'CUST-TEST-101',
-                'name': 'David Levy',
-                'email': 'david.levy@test.com',
-                'policy_type': 'phins_unified',
-                'coverage': 300000,
-                'age': 30,
-                'gender': 'male',
-                'risk_score': 'medium',
-            },
-            {
-                'id': 'CUST-TEST-102',
-                'name': 'Rachel Green',
-                'email': 'rachel.green@test.com',
-                'policy_type': 'phins_unified',
-                'coverage': 500000,
-                'age': 30,
-                'gender': 'female',
-                'risk_score': 'medium',
-            }
-        ]
-        
-        # Import in-memory data structures for sync (skipped for DB-backed
-        # stores — see _is_db_backed_store; the creates below already persist)
-        try:
-            from web_portal.server import CUSTOMERS, POLICIES, UNDERWRITING_APPLICATIONS, BILLING
-            sync_to_memory = not _is_db_backed_store(CUSTOMERS)
-        except ImportError:
-            sync_to_memory = False
-            logger.warning("Could not import in-memory data structures - database-only seeding")
-        
-        for cust_data in additional_customers:
-            existing = customer_repo.find_one_by(email=cust_data['email'])
-            if existing:
-                logger.info(f"Customer {cust_data['email']} already exists, skipping...")
-                continue
-            
-            # Test accounts - use env var or random password
-            test_pwd = _get_env_password('PHINS_TEST_CUSTOMER_PASSWORD', cust_data['email'])
-            pwd = hash_password(test_pwd)
-            customer = customer_repo.create(
-                id=cust_data['id'],
-                name=cust_data['name'],
-                email=cust_data['email'],
-                phone=f"+1-555-{hash(cust_data['email']) % 10000:04d}",
-                password_hash=pwd['hash'],
-                password_salt=pwd['salt'],
-                portal_active=True
-            )
-            logger.info(f"Created customer: {customer.email}")
-            
-            # Create pending kernel-priced PHINS unified policy
-            pol_id = f"POL-{cust_data['id'].replace('CUST-', '')}"
-            uw_id = f"UW-{cust_data['id'].replace('CUST-', '')}"
-            try:
-                quoted = _seed_policy_from_kernel(
-                    policy_id=pol_id,
-                    coverage_amount=cust_data['coverage'],
-                    age=int(cust_data.get('age') or 30),
-                    gender=cust_data.get('gender') or 'female',
-                    smoking_status='never',
-                    risk_score=cust_data.get('risk_score') or 'medium',
-                    status='pending_underwriting',
-                )
-            except Exception as kern_err:
-                logger.warning(f"Skipping non-kernel test policy for {cust_data['email']}: {kern_err}")
-                continue
-            annual_premium = quoted['annual_premium']
-            monthly_premium = quoted['monthly_premium']
-            
-            policy = policy_repo.create(
-                id=pol_id,
-                customer_id=customer.id,
-                type='phins_unified',
-                coverage_amount=cust_data['coverage'],
-                annual_premium=annual_premium,
-                monthly_premium=monthly_premium,
-                status='pending_underwriting',
-                risk_score='medium',
-                underwriting_id=uw_id,
-                start_date=now,
-                end_date=now + timedelta(days=365)
-            )
-            logger.info(f"Created pending policy: {policy.id}")
-            
-            # Create underwriting application
-            uw_app = underwriting_repo.create(
-                id=uw_id,
-                policy_id=pol_id,
-                customer_id=customer.id,
-                customer_name=cust_data['name'],
-                customer_email=cust_data['email'],
-                policy_type='phins_unified',
-                coverage_amount=float(cust_data['coverage']),
-                status='pending',
-                risk_assessment='medium',
-                risk_score='medium',
-                medical_exam_required=False,
-                submitted_date=now
-            )
-            logger.info(f"Created underwriting application: {uw_app.id}")
-            
-            # === SYNC TO IN-MEMORY DATA STRUCTURES ===
-            if sync_to_memory:
-                # Sync customer
-                CUSTOMERS[cust_data['id']] = {
-                    'id': cust_data['id'],
-                    'name': cust_data['name'],
-                    'email': cust_data['email'],
-                    'phone': f"+1-555-{hash(cust_data['email']) % 10000:04d}",
-                    'created_date': now.isoformat()
-                }
-                
-                # Sync policy
-                POLICIES[pol_id] = {
-                    'id': pol_id,
-                    'customer_id': cust_data['id'],
-                    'type': 'phins_unified',
-                    'coverage_amount': float(cust_data['coverage']),
-                    'annual_premium': float(annual_premium),
-                    'monthly_premium': float(monthly_premium),
-                    'status': 'pending_underwriting',
-                    'underwriting_id': uw_id,
-                    'risk_score': 'medium',
-                    'start_date': now.isoformat(),
-                    'end_date': (now + timedelta(days=365)).isoformat(),
-                    'created_date': now.isoformat(),
-                    'updated_date': now.isoformat()
-                }
-                _pin_kernel_on_policy_dict(POLICIES[pol_id], quoted.get('kernel') or {})
-                
-                # Sync underwriting application
-                UNDERWRITING_APPLICATIONS[uw_id] = {
-                    'id': uw_id,
-                    'policy_id': pol_id,
-                    'customer_id': cust_data['id'],
-                    'customer_name': cust_data['name'],
-                    'customer_email': cust_data['email'],
-                    'policy_type': cust_data['policy_type'],
-                    'coverage_amount': float(cust_data['coverage']),
-                    'annual_premium': float(annual_premium),
-                    'monthly_premium': float(monthly_premium),
-                    'age': None,
-                    'risk_score': 'medium',
-                    'status': 'pending',
-                    'risk_assessment': 'medium',
-                    'medical_exam_required': False,
-                    'additional_documents_required': False,
-                    'notes': None,
-                    'questionnaire_responses': {},
-                    'payment_setup': {},
-                    'health_wallet': {},
-                    'submitted_date': now.isoformat(),
-                    'decision_date': None,
-                    'decided_by': None,
-                    'created_date': now.isoformat(),
-                    'updated_date': now.isoformat()
-                }
-                logger.info(f"Synced {cust_data['id']} to in-memory data structures")
-        
+
+        # QA test customers (Sarah/David/Rachel, CUST-TEST-100/101/102) are
+        # not seeded. Purge those known IDs and every related record.
         _purge_false_demo_seed(
             policy_repo=policy_repo,
             billing_repo=billing_repo,
             claim_repo=claim_repo,
             underwriting_repo=underwriting_repo,
+            customer_repo=customer_repo,
+            user_repo=user_repo,
             sync_memory=True,
         )
         logger.info("Sample data seeded successfully")
