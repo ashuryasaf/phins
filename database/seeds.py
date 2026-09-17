@@ -191,6 +191,83 @@ def _safe_pop_store(store, key) -> None:
             pass
 
 
+FALSE_DEMO_LEDGER_PREFIXES = (
+    'TX-POL-ASAF',
+    'TX-POL-EFRAT',
+    'TX-BILL-ASAF',
+    'TX-BILL-EFRAT',
+    'TX-CLM-ASAF',
+)
+
+
+def _ledger_entry_is_false_demo(tx_id, tx, removed_claim_ids) -> bool:
+    """True when a ledger row is keyed to a known false demo policy/claim."""
+    tx = tx if isinstance(tx, dict) else {}
+    meta = tx.get('metadata') if isinstance(tx.get('metadata'), dict) else {}
+    policy_id = str(tx.get('policy_id') or meta.get('policy_id') or '')
+    claim_id = str(tx.get('claim_id') or meta.get('claim_id') or '')
+    return (
+        policy_id in FALSE_DEMO_POLICY_ID_SET
+        or claim_id in removed_claim_ids
+        or str(tx_id).startswith(FALSE_DEMO_LEDGER_PREFIXES)
+    )
+
+
+def _wallet_balance_from_remaining_txs(txs) -> float:
+    """Reconstruct a wallet balance from remaining txs; never return negative."""
+    total = 0.0
+    for tx in txs:
+        if not isinstance(tx, dict):
+            continue
+        try:
+            amount = float(tx.get('amount') or 0)
+        except (TypeError, ValueError):
+            continue
+        tx_type = str(tx.get('type') or '').lower()
+        if amount < 0 or tx_type in (
+            'purchase', 'debit', 'withdrawal', 'spend', 'payment', 'medical_purchase'
+        ):
+            total -= abs(amount)
+        else:
+            total += amount
+    return round(max(0.0, total), 2)
+
+
+def _false_demo_purge_journal_path(kind: str) -> str:
+    try:
+        from web_portal.server import LEDGER_PERSISTENCE_FILE
+        base = os.path.dirname(LEDGER_PERSISTENCE_FILE) or '.'
+    except Exception:
+        base = os.environ.get('TMPDIR') or '/tmp'
+    stamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')
+    return os.path.join(base, f'phins_false_demo_{kind}_{stamp}.json')
+
+
+def _write_false_demo_purge_journal(path: str, payload: dict) -> None:
+    """Fail closed: raise if the forensic journal cannot be written."""
+    directory = os.path.dirname(path) or '.'
+    os.makedirs(directory, exist_ok=True)
+    tmp_path = f'{path}.tmp'
+    with open(tmp_path, 'w', encoding='utf-8') as handle:
+        json.dump(payload, handle, indent=2, default=str)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp_path, path)
+
+
+def _payload_dict(row) -> dict:
+    payload = getattr(row, 'payload', None)
+    if isinstance(payload, dict):
+        return payload
+    if isinstance(payload, str) and payload:
+        try:
+            parsed = json.loads(payload)
+            return parsed if isinstance(parsed, dict) else {}
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+    return {}
+
+
 def _purge_false_demo_seed(
     policy_repo=None,
     billing_repo=None,
@@ -308,33 +385,35 @@ def _purge_false_demo_seed(
                     or str(tx.get('policy_id') or '') in FALSE_DEMO_POLICY_ID_SET
                 )
                 if drop:
-                    deducted += float(tx.get('amount') or 0)
+                    try:
+                        deducted += float(tx.get('amount') or 0)
+                    except (TypeError, ValueError):
+                        pass
                     continue
                 kept.append(tx)
             if deducted:
                 wallet['transactions'] = kept
-                try:
-                    wallet['balance'] = round(float(wallet.get('balance') or 0) - deducted, 2)
-                except (TypeError, ValueError):
-                    pass
+                remaining_have_amounts = any(
+                    isinstance(tx, dict) and tx.get('amount') not in (None, '')
+                    for tx in kept
+                )
+                if not kept:
+                    wallet['balance'] = 0.0
+                elif remaining_have_amounts:
+                    wallet['balance'] = _wallet_balance_from_remaining_txs(kept)
+                else:
+                    try:
+                        wallet['balance'] = round(
+                            max(0.0, float(wallet.get('balance') or 0) - deducted),
+                            2,
+                        )
+                    except (TypeError, ValueError):
+                        wallet['balance'] = 0.0
 
     if TRANSACTION_LEDGER is not None:
         for tx_id in list(TRANSACTION_LEDGER.keys()):
             tx = TRANSACTION_LEDGER.get(tx_id) or {}
-            meta = tx.get('metadata') if isinstance(tx, dict) else {}
-            if not isinstance(meta, dict):
-                meta = {}
-            policy_id = str(
-                (tx.get('policy_id') if isinstance(tx, dict) else None)
-                or meta.get('policy_id')
-                or ''
-            )
-            claim_id = str(meta.get('claim_id') or (tx.get('claim_id') if isinstance(tx, dict) else '') or '')
-            if (
-                policy_id in FALSE_DEMO_POLICY_ID_SET
-                or claim_id in removed_claim_ids
-                or str(tx_id).startswith(('TX-POL-ASAF', 'TX-POL-EFRAT', 'TX-BILL-ASAF', 'TX-BILL-EFRAT', 'TX-CLM-ASAF'))
-            ):
+            if _ledger_entry_is_false_demo(tx_id, tx, removed_claim_ids):
                 _safe_pop_store(TRANSACTION_LEDGER, tx_id)
                 removed['ledger'] += 1
         try:
@@ -342,6 +421,38 @@ def _purge_false_demo_seed(
             platform_event_ledger.ensure_hash_chain()
         except Exception as exc:
             logger.warning(f"Ledger chain rebuild after false-demo purge skipped: {exc}")
+
+    # Durable platform_ledger_entries must drop the same known demo IDs;
+    # otherwise the next hydrate_from_db restores them and the chains diverge.
+    db_deleted = _purge_false_demo_ledger_from_db(removed_claim_ids)
+    removed['ledger'] += db_deleted
+    if TRANSACTION_LEDGER is not None:
+        try:
+            from web_portal.server import mark_ledger_dirty, platform_event_ledger
+            backup_path = _false_demo_purge_journal_path('chain_repair')
+            persist_summary = platform_event_ledger.persist_chain_to_db(
+                backup_path=backup_path,
+            )
+            if persist_summary.get('applied') and persist_summary.get('verified') is False:
+                logger.error(
+                    "False-demo ledger persist verification failed: %s",
+                    persist_summary,
+                )
+            elif persist_summary.get('reason') and persist_summary.get('reason') not in (
+                'db chain already consistent',
+                'database disabled',
+                'in-memory ledger empty',
+            ):
+                logger.warning(
+                    "False-demo ledger persist skipped: %s",
+                    persist_summary.get('reason'),
+                )
+            try:
+                mark_ledger_dirty()
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.warning(f"Durable ledger persist after false-demo purge skipped: {exc}")
 
     if NFT_LEDGER is not None:
         for token_id in list(NFT_LEDGER.keys()):
@@ -359,6 +470,61 @@ def _purge_false_demo_seed(
                 _safe_pop_store(NFT_LEDGER, token_id)
 
     return removed
+
+
+def _purge_false_demo_ledger_from_db(removed_claim_ids) -> int:
+    """Delete known false-demo rows from platform_ledger_entries.
+
+    Writes a forensic journal first and fails closed if that journal cannot
+    be stored. Unknown real ledger rows are never swept.
+    """
+    deleted = 0
+    try:
+        from database.manager import DatabaseManager
+    except ImportError:
+        return 0
+    try:
+        with DatabaseManager() as db:
+            rows = db.platform_ledger.get_all_by_sequence() or []
+            to_delete = []
+            for row in rows:
+                if row is None or not getattr(row, 'id', None):
+                    continue
+                payload = _payload_dict(row)
+                if _ledger_entry_is_false_demo(row.id, payload, removed_claim_ids):
+                    to_delete.append(row)
+            if not to_delete:
+                return 0
+            journal_path = _false_demo_purge_journal_path('ledger_delete')
+            try:
+                _write_false_demo_purge_journal(
+                    journal_path,
+                    {
+                        'schema': 'phins.ledger.false_demo_purge.v1',
+                        'backed_up_at': datetime.now(timezone.utc).isoformat(),
+                        'removed_ids': [row.id for row in to_delete],
+                        'rows': [
+                            row.to_dict() if hasattr(row, 'to_dict') else {'id': row.id}
+                            for row in to_delete
+                        ],
+                    },
+                )
+            except OSError as journal_exc:
+                logger.error(
+                    "False-demo ledger purge journal could not be written (%s); "
+                    "refusing to delete %d platform_ledger rows",
+                    journal_exc,
+                    len(to_delete),
+                )
+                return 0
+            for row in to_delete:
+                if db.platform_ledger.delete(row.id):
+                    deleted += 1
+                    logger.info(f"Removed false demo ledger row {row.id}")
+    except Exception as exc:
+        logger.warning(f"Durable false-demo ledger purge skipped: {exc}")
+        return deleted
+    return deleted
 
 
 def _retire_non_kernel_demo_seed(policy_repo, billing_repo, claim_repo, sync_memory: bool) -> None:
@@ -866,6 +1032,21 @@ def seed_sample_data(session=None):
                 )
                 logger.info(f"Created PHINS customer: {phins_cust['email']} → {phins_cust['id']}")
             
+            # Mirror the customer even when no demo policy is seeded.
+            if sync_to_memory and phins_cust['id'] not in CUSTOMERS:
+                CUSTOMERS[phins_cust['id']] = {
+                    'id': phins_cust['id'],
+                    'name': phins_cust['name'],
+                    'email': phins_cust['email'],
+                    'phone': phins_cust['phone'],
+                    'date_of_birth': phins_cust['dob'],
+                    'age': phins_cust['age'],
+                    'gender': phins_cust['gender'],
+                    'occupation': phins_cust['occupation'],
+                    'created_date': now.isoformat(),
+                    'status': 'active'
+                }
+
             # Create/verify policy — skipped: these accounts have no demo policy.
             pol_data = phins_cust.get('policy')
             existing_policy = None
@@ -978,20 +1159,6 @@ def seed_sample_data(session=None):
                 # log entries on every Railway restart and silent rollbacks of
                 # workflow progress.
                 if sync_to_memory:
-                    if not existing:
-                        CUSTOMERS[phins_cust['id']] = {
-                            'id': phins_cust['id'],
-                            'name': phins_cust['name'],
-                            'email': phins_cust['email'],
-                            'phone': phins_cust['phone'],
-                            'date_of_birth': phins_cust['dob'],
-                            'age': phins_cust['age'],
-                            'gender': phins_cust['gender'],
-                            'occupation': phins_cust['occupation'],
-                            'created_date': now.isoformat(),
-                            'status': 'active'
-                        }
-
                     if not existing_policy:
                         policy_mem = {
                             'id': pol_data['id'],

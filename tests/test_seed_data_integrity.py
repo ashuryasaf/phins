@@ -360,3 +360,88 @@ def test_reseed_does_not_slide_bill_due_date(db_backed_portal):
             f"re-seed slid due_date from {fixed_due.isoformat()} to "
             f"{bill.due_date!r}; billing pipeline cannot age"
         )
+
+
+def test_false_demo_ledger_purge_is_durable(db_backed_portal, tmp_path, monkeypatch):
+    """Popped demo ledger rows must not come back on hydrate_from_db."""
+    from database.manager import DatabaseManager
+    from database.seeds import _purge_false_demo_seed
+    from services.platform_event_ledger_service import (
+        PlatformEventLedgerService,
+        reconcile_ledger_entries,
+    )
+
+    portal, db_dicts = db_backed_portal
+    monkeypatch.setattr(portal, "USE_DATABASE", True, raising=False)
+    monkeypatch.setattr(portal, "database_enabled", True, raising=False)
+
+    memory = portal.TRANSACTION_LEDGER
+    memory.clear()
+    service = PlatformEventLedgerService(
+        transaction_ledger=memory,
+        use_database=True,
+        db_manager_factory=DatabaseManager,
+    )
+    service.append_event(
+        event_type="premium_payment",
+        entity_type="transaction",
+        entity_id="TX-POL-ASAF-LIFE-001",
+        customer_id="CUST-ASAF-001",
+        actor="system",
+        amount=401.90,
+        status="completed",
+        source_system="test",
+        payload={
+            "id": "TX-POL-ASAF-LIFE-001",
+            "policy_id": "POL-ASAF-LIFE-001",
+            "metadata": {"policy_id": "POL-ASAF-LIFE-001"},
+        },
+        entry_id="TX-POL-ASAF-LIFE-001",
+        ledger_type="transaction",
+    )
+    service.append_event(
+        event_type="premium_payment",
+        entity_type="transaction",
+        entity_id="TX-KEEP-REAL",
+        customer_id="CUST-ASAF-001",
+        actor="system",
+        amount=75.0,
+        status="completed",
+        source_system="test",
+        payload={"id": "TX-KEEP-REAL", "policy_id": "POL-KEEP-REAL-001"},
+        entry_id="TX-KEEP-REAL",
+        ledger_type="transaction",
+    )
+
+    with DatabaseManager() as db:
+        assert db.platform_ledger.get_by_id("TX-POL-ASAF-LIFE-001") is not None
+        assert db.platform_ledger.get_by_id("TX-KEEP-REAL") is not None
+
+    monkeypatch.setattr(portal, "platform_event_ledger", service, raising=False)
+    monkeypatch.setattr(
+        portal,
+        "LEDGER_PERSISTENCE_FILE",
+        str(tmp_path / "phins_ledger_data.json"),
+        raising=False,
+    )
+
+    _purge_false_demo_seed(sync_memory=True)
+
+    assert "TX-POL-ASAF-LIFE-001" not in portal.TRANSACTION_LEDGER
+    assert "TX-KEEP-REAL" in portal.TRANSACTION_LEDGER
+
+    restart_memory = {}
+    restart_service = PlatformEventLedgerService(
+        transaction_ledger=restart_memory,
+        use_database=True,
+        db_manager_factory=DatabaseManager,
+    )
+    hydrated = restart_service.hydrate_from_db()
+    assert "TX-POL-ASAF-LIFE-001" not in restart_memory
+    assert "TX-KEEP-REAL" in restart_memory
+    assert hydrated >= 1
+    summary = reconcile_ledger_entries(restart_memory.values())
+    assert summary["chain_valid"]
+    with DatabaseManager() as db:
+        assert db.platform_ledger.get_by_id("TX-POL-ASAF-LIFE-001") is None
+        assert db.platform_ledger.get_by_id("TX-KEEP-REAL") is not None

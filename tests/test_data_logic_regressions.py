@@ -275,3 +275,74 @@ def test_seed_removes_false_demo_efrat_policy_and_keeps_wallets():
     assert wallet['transactions'] == [{'id': 'TX-LEGACY-WALLET'}]
     invest = portal.INVESTMENT_ACCOUNTS['CUST-EFRAT-001']
     assert float(invest['balance']) == pytest.approx(654.32)
+
+
+def test_false_demo_wallet_purge_does_not_go_negative():
+    """Spent false claim cash must not drive the kept wallet negative."""
+    from database.seeds import _purge_false_demo_seed
+    import web_portal.server as portal
+
+    portal.CLAIMS['CLM-ASAF-001'] = {
+        'id': 'CLM-ASAF-001',
+        'policy_id': 'POL-ASAF-LIFE-001',
+        'customer_id': 'CUST-ASAF-001',
+        'status': 'Paid',
+        'claimed_amount': 5000.0,
+        'approved_amount': 5000.0,
+    }
+    portal.HEALTH_WALLETS['CUST-ASAF-001'] = {
+        'customer_id': 'CUST-ASAF-001',
+        'balance': 0.0,
+        'transactions': [
+            {
+                'id': 'CLAIM-PAY-SEED-CLM-ASAF-001',
+                'type': 'deposit',
+                'amount': 5000.0,
+                'claim_id': 'CLM-ASAF-001',
+            },
+            {
+                'id': 'TX-WALLET-SPEND-REAL',
+                'type': 'purchase',
+                'amount': 5000.0,
+            },
+        ],
+    }
+
+    _purge_false_demo_seed(sync_memory=True)
+
+    wallet = portal.HEALTH_WALLETS['CUST-ASAF-001']
+    assert float(wallet['balance']) >= 0
+    assert float(wallet['balance']) == pytest.approx(0.0)
+    assert [tx['id'] for tx in wallet['transactions']] == ['TX-WALLET-SPEND-REAL']
+    assert 'CLM-ASAF-001' not in portal.CLAIMS
+
+
+def test_seed_mirrors_phins_customers_without_policies(tmp_path, monkeypatch):
+    """Efrat/Asi/Shosh accounts must land in CUSTOMERS even with no policy."""
+    monkeypatch.setenv("USE_SQLITE", "1")
+    monkeypatch.setenv("SQLITE_PATH", str(tmp_path / "seed_phins_customers.db"))
+    monkeypatch.setenv("USE_DATABASE", "false")
+
+    from database import init_database, reset_connection
+    from database.seeds import seed_sample_data
+    import web_portal.server as portal
+
+    reset_connection()
+    init_database(drop_existing=True)
+    portal.CUSTOMERS.clear()
+    portal.POLICIES.clear()
+
+    seed_sample_data()
+
+    for customer_id, email in (
+        ('CUST-EFRAT-001', 'efrat@phins.ai'),
+        ('CUST-ASI-001', 'asi@phins.ai'),
+        ('CUST-SHOSH-001', 'shosh@phins.ai'),
+    ):
+        row = portal.CUSTOMERS.get(customer_id)
+        assert row is not None, customer_id
+        assert row.get('email') == email
+
+    assert 'POL-EFRAT-UNIFIED-001' not in portal.POLICIES
+    assert 'POL-ASI-UNIFIED-001' not in portal.POLICIES
+    assert 'POL-SHOSH-UNIFIED-001' not in portal.POLICIES
