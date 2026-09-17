@@ -211,8 +211,7 @@ def _safe_delete_repo_row(repo, row_id, label: str) -> None:
     if repo is None or not row_id:
         return
     try:
-        if hasattr(repo, 'delete'):
-            repo.delete(row_id)
+        if hasattr(repo, 'delete') and repo.delete(row_id):
             logger.info(f"Removed false demo {label} {row_id}")
     except Exception as exc:
         logger.warning(f"Could not remove false demo {label} {row_id}: {exc}")
@@ -421,23 +420,28 @@ def _purge_false_demo_seed(
                 removed['policies'] += 1
 
     for customer_id in FALSE_TEST_CUSTOMER_IDS:
-        _safe_delete_repo_row(customer_repo, customer_id, 'customer')
+        existed = False
         if customer_repo is not None:
             try:
-                still = customer_repo.find_one_by(id=customer_id)
+                existed = customer_repo.find_one_by(id=customer_id) is not None
             except Exception:
-                still = None
-            if still is None:
-                removed['customers'] += 1
+                existed = False
+        _safe_delete_repo_row(customer_repo, customer_id, 'customer')
+        if existed:
+            removed['customers'] += 1
     for email in FALSE_TEST_CUSTOMER_EMAILS:
-        _safe_delete_repo_row(user_repo, email, 'user')
+        existed_user = False
         if user_repo is not None:
             try:
-                still = user_repo.get_by_username(email) if hasattr(user_repo, 'get_by_username') else user_repo.find_one_by(username=email)
+                if hasattr(user_repo, 'get_by_username'):
+                    existed_user = user_repo.get_by_username(email) is not None
+                else:
+                    existed_user = user_repo.find_one_by(username=email) is not None
             except Exception:
-                still = True
-            if not still:
-                removed['users'] += 1
+                existed_user = False
+        _safe_delete_repo_row(user_repo, email, 'user')
+        if existed_user:
+            removed['users'] += 1
 
     if CLAIMS is not None:
         for claim_id in list(CLAIMS.keys()):
@@ -528,8 +532,14 @@ def _purge_false_demo_seed(
                 removed['customers'] += 1
     if USERS is not None:
         for email in FALSE_TEST_CUSTOMER_EMAILS:
-            _safe_pop_store(USERS, email)
-            removed['users'] += 1
+            present = False
+            try:
+                present = email in USERS
+            except Exception:
+                present = False
+            if present:
+                _safe_pop_store(USERS, email)
+                removed['users'] += 1
 
     try:
         from web_portal.server import SUSPENDED_TEST_ACCOUNTS as _SUSPENDED
