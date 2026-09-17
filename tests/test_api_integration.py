@@ -1819,7 +1819,8 @@ def test_admin_balance_sheet_reflects_collected_premium_breakdown():
     assert bs_status == 200
     balance_sheet = json.loads(bs_body)["balance_sheet"]
     assert balance_sheet["cumulative_premium"] >= 250.0
-    assert balance_sheet["revenue_breakdown"]["premium_income"] == balance_sheet["cumulative_premium"]
+    assert balance_sheet["revenue_breakdown"]["premium_income"] == balance_sheet["ledger_premium_collected"]
+    assert balance_sheet["ledger_premium_collected"] >= 250.0
     assert "cumulative_premium_breakdown" in balance_sheet
     assert balance_sheet["cumulative_premium_breakdown"]["from_bills"] >= 250.0
     assert "from_ledger" in balance_sheet["cumulative_premium_breakdown"]

@@ -629,10 +629,26 @@ print(json.dumps({{
         self.assertEqual(payload['wallet_transactions'], 1)
         self.assertAlmostEqual(payload['investment_balance'], 654.32)
         self.assertEqual(payload['investment_deposits'], 1)
-        self.assertAlmostEqual(payload['policy_annual_premium'], 1552.50)
-        self.assertAlmostEqual(payload['policy_monthly_premium'], 129.38)
-        self.assertAlmostEqual(payload['billing_amount'], 129.38)
-        self.assertAlmostEqual(payload['billing_amount_paid'], 129.38)
+        from database.seeds import _age_from_dob, _seed_policy_from_kernel
+        efrat_kernel = _seed_policy_from_kernel(
+            policy_id='POL-EFRAT-UNIFIED-001',
+            coverage_amount=500000.0,
+            age=_age_from_dob('1990-06-15'),
+            gender='female',
+            smoking_status='never',
+            risk_score='low',
+            status='active',
+        )
+        self.assertAlmostEqual(
+            payload['policy_annual_premium'], efrat_kernel['annual_premium']
+        )
+        self.assertAlmostEqual(
+            payload['policy_monthly_premium'], efrat_kernel['monthly_premium']
+        )
+        self.assertAlmostEqual(payload['billing_amount'], efrat_kernel['monthly_premium'])
+        self.assertAlmostEqual(
+            payload['billing_amount_paid'], efrat_kernel['monthly_premium']
+        )
 
     def test_bills_vs_billing_autopay_summary_structure(self):
         """Summary must contain all four required top-level sections."""
@@ -1002,9 +1018,13 @@ print(json.dumps({{
             'total_pipeline_cash', 'total_wallet_balance',
             'total_investment_value', 'total_coverage_amount', 'total_aum',
             'cumulative_premium',
+            'ledger_premium_collected',
+            'ledger_claims_paid',
+            'economic_claims_reserve',
         ]
         for key in required_keys:
             self.assertIn(key, m, f"Missing unified metrics key: {key}")
+        self.assertIsNone(m.get('books_reconcile'))
 
     def test_unified_metrics_consistency_with_bills(self):
         """Unified metrics billing figures should be consistent with bill data."""

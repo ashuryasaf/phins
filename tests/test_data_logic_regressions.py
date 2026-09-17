@@ -151,9 +151,8 @@ def test_seed_sample_data_wallet_claim_reconciliation_is_idempotent(tmp_path, mo
     expected_transaction_ids = [
         "CLAIM-PAY-SEED-CLM-ASAF-001",
         "CLAIM-PAY-SEED-CLM-ASAF-002",
-        "CLAIM-PAY-SEED-CLM-ASAF-003",
     ]
-    expected_total = 19050.0
+    expected_total = 15850.0
 
     reset_connection()
     init_database(drop_existing=True)
@@ -172,3 +171,116 @@ def test_seed_sample_data_wallet_claim_reconciliation_is_idempotent(tmp_path, mo
     claim_transaction_ids = [tx["id"] for tx in wallet["transactions"]]
     assert wallet["balance"] == pytest.approx(expected_total)
     assert claim_transaction_ids == expected_transaction_ids
+
+
+def test_seed_policies_are_kernel_priced_phins_unified(tmp_path, monkeypatch):
+    monkeypatch.setenv("USE_SQLITE", "1")
+    monkeypatch.setenv("SQLITE_PATH", str(tmp_path / "seed_kernel_only.db"))
+    monkeypatch.setenv("USE_DATABASE", "true")
+
+    from database import init_database, reset_connection
+    from database.seeds import (
+        DEMO_NON_KERNEL_POLICY_IDS,
+        KERNEL_SEED_POLICY_TYPES,
+        seed_sample_data,
+    )
+    from services.pricing_shadow_service import POLICY_TYPE_TO_PRODUCT
+    import web_portal.server as portal
+
+    reset_connection()
+    init_database(drop_existing=True)
+    portal.POLICIES.clear()
+    portal.CLAIMS.clear()
+    portal.BILLING.clear()
+    portal.HEALTH_WALLETS.clear()
+    portal.TRANSACTION_LEDGER.clear()
+
+    seed_sample_data()
+
+    for policy_id in DEMO_NON_KERNEL_POLICY_IDS:
+        row = portal.POLICIES.get(policy_id)
+        if row:
+            assert str(row.get("status") or "").lower() in (
+                "cancelled", "canceled", "void", "retired"
+            ), policy_id
+
+    active = [
+        p for p in portal.POLICIES.values()
+        if isinstance(p, dict) and str(p.get("status") or "").lower() not in (
+            "cancelled", "canceled", "void", "retired"
+        )
+    ]
+    assert active, "expected kernel-priced seed policies"
+    for policy in active:
+        ptype = str(policy.get("type") or "").strip().lower()
+        assert ptype in KERNEL_SEED_POLICY_TYPES, policy.get("id")
+        assert ptype in POLICY_TYPE_TO_PRODUCT, policy.get("id")
+
+    assert "CLM-ASAF-003" not in portal.CLAIMS
+    asaf_life = portal.POLICIES.get("POL-ASAF-LIFE-001") or {}
+    asaf_health = portal.POLICIES.get("POL-ASAF-HEALTH-001") or {}
+    assert asaf_life.get("type") == "phins_unified"
+    assert asaf_health.get("type") == "phins_unified"
+    assert asaf_life.get("pricing_source") == "pricing_kernel"
+    assert float(asaf_life.get("annual_premium") or 0) > 0
+    cash_types = {
+        str(tx.get("type") or "")
+        for tx in portal.TRANSACTION_LEDGER.values()
+        if isinstance(tx, dict)
+    }
+    assert "claim_payment_received" in cash_types
+
+
+def test_seed_does_not_rewrite_existing_efrat_billed_premium():
+    """Restart seed must keep a persisted Efrat billed premium (v1 1552.50)."""
+    import web_portal.server as portal
+
+    portal.CUSTOMERS['CUST-EFRAT-001'] = {
+        'id': 'CUST-EFRAT-001',
+        'name': 'Efrat PHINS',
+        'email': 'efrat@phins.ai',
+        'status': 'active',
+        'date_of_birth': '1990-06-15',
+    }
+    portal.POLICIES['POL-EFRAT-UNIFIED-001'] = {
+        'id': 'POL-EFRAT-UNIFIED-001',
+        'customer_id': 'CUST-EFRAT-001',
+        'type': 'life',
+        'coverage_amount': 500000.0,
+        'annual_premium': 1552.50,
+        'monthly_premium': 129.38,
+        'status': 'active',
+        'risk_score': 'low',
+    }
+    portal.BILLING['BILL-EFRAT-UNIFIED-001'] = {
+        'id': 'BILL-EFRAT-UNIFIED-001',
+        'policy_id': 'POL-EFRAT-UNIFIED-001',
+        'customer_id': 'CUST-EFRAT-001',
+        'amount': 129.38,
+        'amount_paid': 129.38,
+        'status': 'paid',
+    }
+    portal.HEALTH_WALLETS['CUST-EFRAT-001'] = {
+        'customer_id': 'CUST-EFRAT-001',
+        'balance': 321.45,
+        'monthly_deposit': 25.0,
+        'transactions': [{'id': 'TX-LEGACY-WALLET'}],
+    }
+    portal.INVESTMENT_ACCOUNTS['CUST-EFRAT-001'] = {
+        'customer_id': 'CUST-EFRAT-001',
+        'balance': 654.32,
+        'deposits': [{'id': 'DEP-LEGACY-INVESTMENT'}],
+    }
+
+    portal._seed_startup_demo_fixtures()
+
+    policy = portal.POLICIES['POL-EFRAT-UNIFIED-001']
+    assert float(policy['annual_premium']) == pytest.approx(1552.50)
+    assert float(policy['monthly_premium']) == pytest.approx(129.38)
+    assert policy.get('type') == 'phins_unified'
+    bill = portal.BILLING['BILL-EFRAT-UNIFIED-001']
+    assert float(bill['amount']) == pytest.approx(129.38)
+    assert float(bill['amount_paid']) == pytest.approx(129.38)
+    wallet = portal.HEALTH_WALLETS['CUST-EFRAT-001']
+    assert float(wallet['balance']) == pytest.approx(321.45)
+    assert wallet['transactions'] == [{'id': 'TX-LEGACY-WALLET'}]

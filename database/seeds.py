@@ -76,6 +76,203 @@ def _get_env_password(env_var: str, username: str) -> str:
         return secrets.token_urlsafe(32)  # Random password that cannot be guessed
 
 
+KERNEL_SEED_POLICY_TYPES = frozenset({'life', 'health', 'phins_unified'})
+DEMO_NON_KERNEL_POLICY_IDS = ('POL-ASAF-AUTO-001',)
+DEMO_NON_KERNEL_CLAIM_IDS = ('CLM-ASAF-003',)
+DEMO_NON_KERNEL_BILL_IDS = ('BILL-ASAF-AUTO-001',)
+
+
+def _age_from_dob(dob_value, as_of=None) -> int:
+    """Whole years from ISO date-of-birth, matching kernel age extraction."""
+    text = str(dob_value or '').strip()
+    if not text:
+        return 30
+    try:
+        dob = datetime.fromisoformat(text[:10]).date()
+    except (TypeError, ValueError):
+        return 30
+    today = (as_of or datetime.now(timezone.utc)).date()
+    age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    return age if age > 0 else 30
+
+
+def _kernel_quote_seed_policy(**payload) -> dict:
+    """Price a PHINS unified seed policy. Raises if the type is not kernel-mapped."""
+    from services.pricing_shadow_service import kernel_quote_for_seed
+    return kernel_quote_for_seed(payload)
+
+
+def _seed_policy_from_kernel(
+    *,
+    policy_id: str,
+    coverage_amount: float,
+    age: int,
+    gender: str,
+    smoking_status: str,
+    risk_score: str,
+    status: str,
+    adl_level: int = 5,
+    term_years: int = 20,
+) -> dict:
+    kernel = _kernel_quote_seed_policy(
+        type='phins_unified',
+        coverage_amount=coverage_amount,
+        age=age,
+        gender=gender,
+        smoking_status=smoking_status,
+        risk_score=risk_score,
+        adl_level=adl_level,
+        term_years=term_years,
+    )
+    return {
+        'id': policy_id,
+        'type': 'phins_unified',
+        'coverage_amount': float(coverage_amount),
+        'annual_premium': round(float(kernel['annual']), 2),
+        'monthly_premium': round(float(kernel['monthly']), 2),
+        'quarterly_premium': kernel.get('quarterly'),
+        'status': status,
+        'risk_score': risk_score,
+        'kernel': kernel,
+        'age': age,
+        'gender': gender,
+        'smoking_status': smoking_status,
+        'adl_level': adl_level,
+    }
+
+
+def _pin_kernel_on_policy_dict(policy: dict, kernel: dict) -> dict:
+    from services.financial_unification_service import pin_kernel_fields_on_policy
+    policy['type'] = 'phins_unified'
+    policy['product_id'] = kernel.get('product_id') or 'phins_pure_risk_adjustable'
+    policy['pricing_source'] = kernel.get('pricing_source') or 'pricing_kernel'
+    pin_kernel_fields_on_policy(policy, kernel)
+    return policy
+
+
+def _retire_non_kernel_demo_seed(policy_repo, billing_repo, claim_repo, sync_memory: bool) -> None:
+    """Cancel known demo auto/property seed IDs. Never sweeps unknown real policies.
+
+    Paid claim cash already on the customer ledger is left in place so
+    historical cash identity is not reversed.
+    """
+    POLICIES = BILLING = CLAIMS = None
+    if sync_memory:
+        try:
+            from web_portal.server import POLICIES as _P, BILLING as _B, CLAIMS as _C
+            POLICIES, BILLING, CLAIMS = _P, _B, _C
+        except ImportError:
+            POLICIES = BILLING = CLAIMS = None
+
+    for policy_id in DEMO_NON_KERNEL_POLICY_IDS:
+        existing = policy_repo.find_one_by(id=policy_id)
+        if existing and str(getattr(existing, 'status', '') or '').lower() not in (
+            'cancelled', 'canceled', 'void', 'retired'
+        ):
+            try:
+                policy_repo.update(policy_id, status='cancelled')
+                logger.info(f"Retired non-kernel demo policy {policy_id}")
+            except Exception as exc:
+                logger.warning(f"Could not retire demo policy {policy_id}: {exc}")
+        if POLICIES is not None and policy_id in POLICIES:
+            row = POLICIES.get(policy_id) or {}
+            row['status'] = 'cancelled'
+            row['cancelled_reason'] = 'non_kernel_demo_retired'
+            POLICIES[policy_id] = row
+
+    for bill_id in DEMO_NON_KERNEL_BILL_IDS:
+        existing_bill = billing_repo.find_one_by(id=bill_id)
+        if existing_bill:
+            paid = float(getattr(existing_bill, 'amount_paid', 0) or 0)
+            status = str(getattr(existing_bill, 'status', '') or '').lower()
+            if paid <= 0.0 and status not in ('void', 'cancelled', 'canceled'):
+                try:
+                    billing_repo.update(bill_id, status='void')
+                    logger.info(f"Voided unpaid non-kernel demo bill {bill_id}")
+                except Exception as exc:
+                    logger.warning(f"Could not void demo bill {bill_id}: {exc}")
+        if BILLING is not None and bill_id in BILLING:
+            bill = BILLING.get(bill_id) or {}
+            if float(bill.get('amount_paid') or 0) <= 0:
+                bill['status'] = 'void'
+                BILLING[bill_id] = bill
+
+    for claim_id in DEMO_NON_KERNEL_CLAIM_IDS:
+        # Do not reverse a paid claim (cash already moved). Skip creating
+        # these on fresh seeds; leave existing paid rows as historical cash.
+        existing_claim = claim_repo.find_one_by(id=claim_id)
+        if existing_claim:
+            status = str(getattr(existing_claim, 'status', '') or '').lower()
+            paid = float(
+                getattr(existing_claim, 'paid_amount', 0)
+                or getattr(existing_claim, 'approved_amount', 0)
+                or 0
+            )
+            if status not in ('paid', 'closed') and paid <= 0:
+                try:
+                    claim_repo.update(claim_id, status='Cancelled')
+                    logger.info(f"Cancelled unpaid non-kernel demo claim {claim_id}")
+                except Exception as exc:
+                    logger.warning(f"Could not cancel demo claim {claim_id}: {exc}")
+        if CLAIMS is not None and claim_id in CLAIMS:
+            claim = CLAIMS.get(claim_id) or {}
+            status = str(claim.get('status') or '').lower()
+            paid = float(claim.get('paid_amount') or claim.get('approved_amount') or 0)
+            if status not in ('paid', 'closed') and paid <= 0:
+                claim['status'] = 'Cancelled'
+                CLAIMS[claim_id] = claim
+
+
+def _seed_paid_claim_cash_to_ledger(sample_claims) -> None:
+    """Write canonical claim_payment_received rows for paid seed claims."""
+    try:
+        from web_portal.server import TRANSACTION_LEDGER, platform_event_ledger
+    except ImportError:
+        return
+    for claim_data in sample_claims:
+        if str(claim_data.get('status') or '').lower() != 'paid':
+            continue
+        amount = float(claim_data.get('approved_amount') or 0)
+        if amount <= 0:
+            continue
+        claim_id = claim_data['id']
+        tx_id = f'TX-{claim_id}-PAID'
+        if tx_id in TRANSACTION_LEDGER:
+            continue
+        payload = {
+            'id': tx_id,
+            'customer_id': 'CUST-ASAF-001',
+            'type': 'claim_payment_received',
+            'amount': amount,
+            'description': f"Claim {claim_id} paid - deposited to Health Wallet",
+            'metadata': {
+                'claim_id': claim_id,
+                'policy_id': claim_data.get('policy_id'),
+                'destination': 'health_wallet',
+                'source': 'seed_claim_cash',
+            },
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'status': 'completed',
+        }
+        try:
+            platform_event_ledger.append_event(
+                event_type='claim_payment_received',
+                entity_type='claim',
+                entity_id=claim_id,
+                customer_id='CUST-ASAF-001',
+                actor='system',
+                amount=amount,
+                status='completed',
+                source_system='demo_seed',
+                payload=payload,
+                entry_id=tx_id,
+                ledger_type='transaction',
+                timestamp=payload['timestamp'],
+            )
+        except Exception as exc:
+            logger.warning(f"Could not seed claim cash {tx_id}: {exc}")
+
+
 def seed_default_users(session=None):
     """Create default system users"""
     should_close = False
@@ -377,7 +574,7 @@ def seed_sample_data(session=None):
                 email='asaf@assurance.co.il',
                 phone='+972-50-1234567',
                 dob='1985-03-15',
-                age=39,
+                age=_age_from_dob('1985-03-15'),
                 gender='male',
                 address='123 Insurance Blvd',
                 city='Tel Aviv',
@@ -425,51 +622,63 @@ def seed_sample_data(session=None):
         # causing `claims_policy_id_fkey` foreign-key violations.
         # =================================================================
 
-        # PREMIUM CALCULATION (aligned with frontend apply.js):
-        # Base rate: $0.25 per $1000 coverage per month
-        # Age factor for age 47: 1.0 + (47-25) * 0.015 = 1.33
-        # Risk factors: low=0.90, medium=1.0
-        # Life $1M low: 1000 * 0.25 * 1.33 * 0.90 = $299.25/mo = $3,591/yr
-        # Health $500K medium: 500 * 0.25 * 1.33 * 1.0 = $166.25/mo = $1,995/yr
-        # Auto $100K low: 100 * 0.15 * 1.33 * 0.90 = $17.96/mo = $215.46/yr
-        policies_data = [
-            {
-                'id': 'POL-ASAF-LIFE-001',
-                'type': 'life',
-                'coverage_amount': 1000000.0,
-                'annual_premium': 3591.0,
-                'monthly_premium': 299.25,
-                'status': 'active',
-                'risk_score': 'low'
-            },
-            {
-                'id': 'POL-ASAF-HEALTH-001',
-                'type': 'health',
-                'coverage_amount': 500000.0,
-                'annual_premium': 1995.0,
-                'monthly_premium': 166.25,
-                'status': 'active',
-                'risk_score': 'medium'
-            },
-            {
-                'id': 'POL-ASAF-AUTO-001',
-                'type': 'auto',
-                'coverage_amount': 100000.0,
-                'annual_premium': 215.46,
-                'monthly_premium': 17.96,
-                'status': 'active',
-                'risk_score': 'low'
-            }
-        ]
+        # PREMIUM CALCULATION: actuarial kernel for PHINS unified only.
+        # Auto / property / business are not kernel products and are not seeded.
+        asaf_age = _age_from_dob(getattr(primary_customer, 'dob', None) or '1985-03-15')
+        try:
+            asaf_life = _seed_policy_from_kernel(
+                policy_id='POL-ASAF-LIFE-001',
+                coverage_amount=1000000.0,
+                age=asaf_age,
+                gender='male',
+                smoking_status='never',
+                risk_score='low',
+                status='active',
+            )
+            asaf_health = _seed_policy_from_kernel(
+                policy_id='POL-ASAF-HEALTH-001',
+                coverage_amount=500000.0,
+                age=asaf_age,
+                gender='male',
+                smoking_status='never',
+                risk_score='medium',
+                status='active',
+            )
+        except Exception as kern_err:
+            logger.warning(f"Kernel seed pricing failed, skipping Asaf policies: {kern_err}")
+            asaf_life = asaf_health = None
+
+        policies_data = [p for p in (asaf_life, asaf_health) if p]
 
         for pol_data in policies_data:
+            kernel = pol_data.get('kernel') or {}
+            billing_blob = {
+                'auto_pay': True,
+                'frequency': 'monthly',
+                'next_billing_date': (now + timedelta(days=30)).isoformat(),
+                'product_id': kernel.get('product_id') or 'phins_pure_risk_adjustable',
+                'pricing_source': kernel.get('pricing_source') or 'pricing_kernel',
+                'integrity_hash': kernel.get('integrity_hash'),
+                'risk_premium_annual': kernel.get('risk_premium_annual'),
+                'savings_premium_annual': kernel.get('savings_premium_annual'),
+            }
             existing_policy = policy_repo.find_one_by(id=pol_data['id'])
+            if existing_policy and str(getattr(existing_policy, 'type', '') or '').lower() in (
+                'life', 'health'
+            ):
+                # Convert legacy demo life/health labels to PHINS unified without
+                # rewriting billed premiums on an already-issued row.
+                try:
+                    policy_repo.update(pol_data['id'], type='phins_unified')
+                    logger.info(f"Converted seed policy {pol_data['id']} type to phins_unified")
+                except Exception as e:
+                    logger.warning(f"Could not convert {pol_data['id']} to phins_unified: {e}")
             if not existing_policy:
                 try:
                     policy = policy_repo.create(
                         id=pol_data['id'],
                         customer_id=primary_customer.id,
-                        type=pol_data['type'],
+                        type='phins_unified',
                         coverage_amount=pol_data['coverage_amount'],
                         annual_premium=pol_data['annual_premium'],
                         monthly_premium=pol_data['monthly_premium'],
@@ -478,16 +687,13 @@ def seed_sample_data(session=None):
                         start_date=now,
                         end_date=now + timedelta(days=365),
                         approval_date=now,
-                        # Previously only written via the in-memory mirror's
-                        # DB write-through; persist directly at create time.
-                        billing=json.dumps({
-                            'auto_pay': True,
-                            'frequency': 'monthly',
-                            'next_billing_date': (now + timedelta(days=30)).isoformat(),
-                        })
+                        billing=json.dumps(billing_blob),
                     )
                     if policy is not None:
-                        logger.info(f"Created policy: {policy.id}")
+                        logger.info(
+                            f"Created kernel-priced policy {policy.id} "
+                            f"${pol_data['annual_premium']:.2f}/yr"
+                        )
                     else:
                         logger.warning(f"Policy repo returned None for {pol_data['id']}; skipping dependents")
                         continue
@@ -496,17 +702,12 @@ def seed_sample_data(session=None):
                     continue
 
             # Sync policy to memory ONLY for newly-seeded rows. When the policy
-            # already exists in the DB we must NOT rewrite it: doing so would
-            # reset live fields (status, dates, premiums, payment_setup) back
-            # to seed defaults on every container restart and silently destroy
-            # state advanced by real workflows. The in-memory dict is wired to
-            # DB-backed storage in production, so existing rows are already
-            # readable on demand without a re-seed write.
+            # already exists in the DB we must NOT rewrite billed premiums.
             if sync_primary_to_memory and not existing_policy:
-                POLICIES[pol_data['id']] = {
+                seeded = {
                     'id': pol_data['id'],
                     'customer_id': 'CUST-ASAF-001',
-                    'type': pol_data['type'],
+                    'type': 'phins_unified',
                     'coverage_amount': pol_data['coverage_amount'],
                     'annual_premium': pol_data['annual_premium'],
                     'monthly_premium': pol_data['monthly_premium'],
@@ -524,12 +725,20 @@ def seed_sample_data(session=None):
                         'card_last4': '4242',
                         'next_billing_date': (now + timedelta(days=30)).isoformat(),
                     },
-                    'billing': {
-                        'auto_pay': True,
-                        'frequency': 'monthly',
-                        'next_billing_date': (now + timedelta(days=30)).isoformat(),
-                    }
+                    'billing': billing_blob,
+                    'age': pol_data.get('age'),
+                    'gender': pol_data.get('gender'),
+                    'smoking_status': pol_data.get('smoking_status'),
+                    'adl_level': pol_data.get('adl_level', 5),
                 }
+                _pin_kernel_on_policy_dict(seeded, kernel)
+                POLICIES[pol_data['id']] = seeded
+            elif sync_primary_to_memory and existing_policy and pol_data['id'] in POLICIES:
+                row = POLICIES[pol_data['id']]
+                if str(row.get('type') or '').lower() in ('life', 'health', ''):
+                    row['type'] = 'phins_unified'
+                if not row.get('product_id'):
+                    row['product_id'] = 'phins_pure_risk_adjustable'
 
             # Create bill for active policy (idempotent)
             if pol_data['status'] == 'active':
@@ -573,8 +782,10 @@ def seed_sample_data(session=None):
                     }
 
         # Create sample claims for the primary customer (idempotent;
-        # depends on policies persisted above)
+        # depends on policies persisted above). Auto collision is not a
+        # kernel product and is no longer seeded.
         claim_repo = ClaimRepository(session)
+        _retire_non_kernel_demo_seed(policy_repo, billing_repo, claim_repo, sync_primary_to_memory)
         sample_claims = [
             {
                 'id': 'CLM-ASAF-001',
@@ -592,15 +803,6 @@ def seed_sample_data(session=None):
                 'description': 'Monthly prescription medications - cardiovascular',
                 'claimed_amount': 850.00,
                 'approved_amount': 850.00,
-                'status': 'Paid'
-            },
-            {
-                'id': 'CLM-ASAF-003',
-                'policy_id': 'POL-ASAF-AUTO-001',
-                'type': 'Collision',
-                'description': 'Fender bender accident - rear bumper damage repair',
-                'claimed_amount': 3500.00,
-                'approved_amount': 3200.00,
                 'status': 'Paid'
             },
             {
@@ -710,6 +912,8 @@ def seed_sample_data(session=None):
         except ImportError:
             logger.warning("Could not import HEALTH_WALLETS for paid claim reconciliation")
 
+        _seed_paid_claim_cash_to_ledger(sample_claims)
+
         # Create underwriting application for primary customer (idempotent).
         # This is the latest application that can be used for risk assessment reports.
         #
@@ -730,22 +934,22 @@ def seed_sample_data(session=None):
         # the DB create (fields outside the model are filtered by the
         # repository) and the in-memory mirror, so we no longer need a
         # create-then-update double write to enrich the row.
-        # Premium calculation for age 47, moderate risk, $500K health:
-        # (500000/1000) * 0.25 * 1.33 * 1.15 = $191.19/mo = $2294.25/yr
+        # Align the seed UW with the issued kernel-priced PHINS unified policy.
+        health_quote = asaf_health or {}
         uw_asaf_payload = {
                 'id': uw_asaf_id,
                 'policy_id': 'POL-ASAF-HEALTH-001',
                 'customer_id': 'CUST-ASAF-001',
                 'customer_name': 'Asaf Assurance',
                 'customer_email': 'asaf@assurance.co.il',
-                'policy_type': 'health',
+                'policy_type': 'phins_unified',
                 'coverage_amount': 500000.0,
-                'annual_premium': 2294.25,
-                'monthly_premium': 191.19,
-                'status': 'pending',
-                'risk_score': 'moderate',
-                'risk_assessment': 'moderate',
-                'age': 47,
+                'annual_premium': health_quote.get('annual_premium', 0),
+                'monthly_premium': health_quote.get('monthly_premium', 0),
+                'status': 'approved',
+                'risk_score': 'medium',
+                'risk_assessment': 'medium',
+                'age': asaf_age,
                 'gender': 'male',
                 'occupation': 'Business Owner',
                 'disability_percentage': 30,
@@ -824,8 +1028,33 @@ def seed_sample_data(session=None):
 
         # =================================================================
         # PHINS CUSTOMER ACCOUNTS - PERMANENT DATA (efrat, asi, shosh)
-        # These customers are primary platform users with full data persistence
+        # These customers are primary platform users with full data persistence.
+        # Premiums are kernel-priced PHINS unified (not the legacy $0.25/1000 table).
         # =================================================================
+        try:
+            efrat_age = _age_from_dob('1990-06-15')
+            asi_age = _age_from_dob('1985-03-20')
+            shosh_age = _age_from_dob('1988-09-10')
+            efrat_pol = _seed_policy_from_kernel(
+                policy_id='POL-EFRAT-UNIFIED-001', coverage_amount=500000.0,
+                age=efrat_age, gender='female', smoking_status='never',
+                risk_score='low', status='active',
+            )
+            asi_pol = _seed_policy_from_kernel(
+                policy_id='POL-ASI-UNIFIED-001', coverage_amount=400000.0,
+                age=asi_age, gender='male', smoking_status='never',
+                risk_score='low', status='pending_underwriting',
+            )
+            shosh_pol = _seed_policy_from_kernel(
+                policy_id='POL-SHOSH-UNIFIED-001', coverage_amount=450000.0,
+                age=shosh_age, gender='female', smoking_status='never',
+                risk_score='low', status='pending_underwriting',
+            )
+        except Exception as kern_err:
+            logger.warning(f"Kernel seed pricing failed for PHINS customers: {kern_err}")
+            efrat_pol = asi_pol = shosh_pol = None
+            efrat_age, asi_age, shosh_age = 35, 40, 37
+
         phins_customers = [
             {
                 'id': 'CUST-EFRAT-001',
@@ -833,20 +1062,11 @@ def seed_sample_data(session=None):
                 'email': 'efrat@phins.ai',
                 'phone': '+972-50-9876543',
                 'dob': '1990-06-15',
-                'age': 35,
+                'age': efrat_age,
                 'gender': 'female',
                 'occupation': 'Product Manager',
                 'password_env': 'PHINS_USER_EFRAT_PASSWORD',
-                # Premium: $500K, age 35, low risk: (500*0.25*1.15*0.90) = $129.38/mo = $1552.50/yr
-                'policy': {
-                    'id': 'POL-EFRAT-UNIFIED-001',
-                    'type': 'phins_unified',
-                    'coverage_amount': 500000.0,
-                    'annual_premium': 1552.50,   # Corrected from 5600
-                    'monthly_premium': 129.38,   # Corrected from 466.67
-                    'status': 'active',
-                    'risk_score': 'low'
-                },
+                'policy': efrat_pol,
                 'application': {
                     'id': 'UW-EFRAT-001',
                     'status': 'approved',
@@ -865,20 +1085,11 @@ def seed_sample_data(session=None):
                 'email': 'asi@phins.ai',
                 'phone': '+972-50-1111111',
                 'dob': '1985-03-20',
-                'age': 40,
+                'age': asi_age,
                 'gender': 'male',
                 'occupation': 'Software Engineer',
                 'password_env': 'PHINS_USER_ASI_PASSWORD',
-                # Premium: $400K, age 40, low risk: (400*0.25*1.225*0.90) = $110.25/mo = $1323.0/yr
-                'policy': {
-                    'id': 'POL-ASI-UNIFIED-001',
-                    'type': 'phins_unified',
-                    'coverage_amount': 400000.0,
-                    'annual_premium': 1323.0,   # Corrected from 4800
-                    'monthly_premium': 110.25,  # Corrected from 400
-                    'status': 'pending_underwriting',
-                    'risk_score': 'low'
-                },
+                'policy': asi_pol,
                 'application': {
                     'id': 'UW-ASI-001',
                     'status': 'pending',
@@ -897,20 +1108,11 @@ def seed_sample_data(session=None):
                 'email': 'shosh@phins.ai',
                 'phone': '+972-50-2222222',
                 'dob': '1988-09-10',
-                'age': 37,
+                'age': shosh_age,
                 'gender': 'female',
                 'occupation': 'Marketing Director',
                 'password_env': 'PHINS_USER_SHOSH_PASSWORD',
-                # Premium: $450K, age 37, low risk: (450*0.25*1.18*0.90) = $119.48/mo = $1433.70/yr
-                'policy': {
-                    'id': 'POL-SHOSH-UNIFIED-001',
-                    'type': 'phins_unified',
-                    'coverage_amount': 450000.0,
-                    'annual_premium': 1433.70,  # Corrected from 5200
-                    'monthly_premium': 119.48,  # Corrected from 433.33
-                    'status': 'pending_underwriting',
-                    'risk_score': 'low'
-                },
+                'policy': shosh_pol,
                 'application': {
                     'id': 'UW-SHOSH-001',
                     'status': 'pending',
@@ -924,6 +1126,7 @@ def seed_sample_data(session=None):
                 'investment_balance': 0.0
             }
         ]
+        phins_customers = [c for c in phins_customers if c.get('policy')]
         
         # Import additional in-memory structures
         try:
@@ -970,6 +1173,14 @@ def seed_sample_data(session=None):
             # Create/verify policy
             pol_data = phins_cust['policy']
             existing_policy = policy_repo.find_one_by(id=pol_data['id'])
+            if existing_policy and str(getattr(existing_policy, 'type', '') or '').lower() in (
+                'life', 'health'
+            ):
+                try:
+                    policy_repo.update(pol_data['id'], type='phins_unified')
+                    logger.info(f"Converted seed policy {pol_data['id']} type to phins_unified")
+                except Exception as e:
+                    logger.warning(f"Could not convert {pol_data['id']} to phins_unified: {e}")
             if not existing_policy:
                 policy_kwargs = dict(
                     id=pol_data['id'],
@@ -1109,7 +1320,15 @@ def seed_sample_data(session=None):
                             'frequency': 'monthly',
                             'next_billing_date': (now + timedelta(days=30)).isoformat(),
                         }
+                    _pin_kernel_on_policy_dict(policy_mem, pol_data.get('kernel') or {})
                     POLICIES[pol_data['id']] = policy_mem
+                elif pol_data['id'] in POLICIES:
+                    row = POLICIES[pol_data['id']]
+                    if str(row.get('type') or '').lower() in ('life', 'health', ''):
+                        row['type'] = 'phins_unified'
+                    if not row.get('product_id'):
+                        row['product_id'] = 'phins_pure_risk_adjustable'
+                    POLICIES[pol_data['id']] = row
 
                 if not existing_app:
                     UNDERWRITING_APPLICATIONS[app_data['id']] = {
@@ -1177,22 +1396,31 @@ def seed_sample_data(session=None):
                 'id': 'CUST-TEST-100',
                 'name': 'Sarah Cohen',
                 'email': 'sarah.cohen@test.com',
-                'policy_type': 'life',
-                'coverage': 750000
+                'policy_type': 'phins_unified',
+                'coverage': 750000,
+                'age': 30,
+                'gender': 'female',
+                'risk_score': 'medium',
             },
             {
                 'id': 'CUST-TEST-101',
                 'name': 'David Levy',
                 'email': 'david.levy@test.com',
-                'policy_type': 'health',
-                'coverage': 300000
+                'policy_type': 'phins_unified',
+                'coverage': 300000,
+                'age': 30,
+                'gender': 'male',
+                'risk_score': 'medium',
             },
             {
                 'id': 'CUST-TEST-102',
                 'name': 'Rachel Green',
                 'email': 'rachel.green@test.com',
-                'policy_type': 'property',
-                'coverage': 500000
+                'policy_type': 'phins_unified',
+                'coverage': 500000,
+                'age': 30,
+                'gender': 'female',
+                'risk_score': 'medium',
             }
         ]
         
@@ -1225,17 +1453,29 @@ def seed_sample_data(session=None):
             )
             logger.info(f"Created customer: {customer.email}")
             
-            # Create pending policy
+            # Create pending kernel-priced PHINS unified policy
             pol_id = f"POL-{cust_data['id'].replace('CUST-', '')}"
             uw_id = f"UW-{cust_data['id'].replace('CUST-', '')}"
-            
-            annual_premium = cust_data['coverage'] * 0.012
-            monthly_premium = cust_data['coverage'] * 0.001
+            try:
+                quoted = _seed_policy_from_kernel(
+                    policy_id=pol_id,
+                    coverage_amount=cust_data['coverage'],
+                    age=int(cust_data.get('age') or 30),
+                    gender=cust_data.get('gender') or 'female',
+                    smoking_status='never',
+                    risk_score=cust_data.get('risk_score') or 'medium',
+                    status='pending_underwriting',
+                )
+            except Exception as kern_err:
+                logger.warning(f"Skipping non-kernel test policy for {cust_data['email']}: {kern_err}")
+                continue
+            annual_premium = quoted['annual_premium']
+            monthly_premium = quoted['monthly_premium']
             
             policy = policy_repo.create(
                 id=pol_id,
                 customer_id=customer.id,
-                type=cust_data['policy_type'],
+                type='phins_unified',
                 coverage_amount=cust_data['coverage'],
                 annual_premium=annual_premium,
                 monthly_premium=monthly_premium,
@@ -1254,7 +1494,7 @@ def seed_sample_data(session=None):
                 customer_id=customer.id,
                 customer_name=cust_data['name'],
                 customer_email=cust_data['email'],
-                policy_type=cust_data['policy_type'],
+                policy_type='phins_unified',
                 coverage_amount=float(cust_data['coverage']),
                 status='pending',
                 risk_assessment='medium',
@@ -1279,7 +1519,7 @@ def seed_sample_data(session=None):
                 POLICIES[pol_id] = {
                     'id': pol_id,
                     'customer_id': cust_data['id'],
-                    'type': cust_data['policy_type'],
+                    'type': 'phins_unified',
                     'coverage_amount': float(cust_data['coverage']),
                     'annual_premium': float(annual_premium),
                     'monthly_premium': float(monthly_premium),
@@ -1291,6 +1531,7 @@ def seed_sample_data(session=None):
                     'created_date': now.isoformat(),
                     'updated_date': now.isoformat()
                 }
+                _pin_kernel_on_policy_dict(POLICIES[pol_id], quoted.get('kernel') or {})
                 
                 # Sync underwriting application
                 UNDERWRITING_APPLICATIONS[uw_id] = {

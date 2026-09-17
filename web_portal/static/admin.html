@@ -5836,12 +5836,18 @@
             bs.economic_claims_reserve != null ? bs.economic_claims_reserve : bs.claims_reserve
           );
           document.getElementById('bs-operating-reserve').textContent = fmt(bs.operating_reserve);
-          document.getElementById('bs-total-revenue').textContent = fmt(bs.cumulative_premium || bs.total_revenue);
-          document.getElementById('bs-claims-paid').textContent = fmt(bs.expense_breakdown?.claims_paid || 0);
+          document.getElementById('bs-total-revenue').textContent = fmt(
+            bs.ledger_premium_collected != null ? bs.ledger_premium_collected : (bs.cumulative_premium || bs.total_revenue)
+          );
+          document.getElementById('bs-claims-paid').textContent = fmt(
+            bs.ledger_claims_paid != null ? bs.ledger_claims_paid : (bs.expense_breakdown?.claims_paid || 0)
+          );
           
-          // Revenue breakdown
+          // Revenue breakdown — premium identity is customer-ledger cash
           if (bs.revenue_breakdown) {
-            document.getElementById('bs-premium-income').textContent = fmt(bs.cumulative_premium || bs.revenue_breakdown?.premium_income || 0);
+            document.getElementById('bs-premium-income').textContent = fmt(
+              bs.ledger_premium_collected != null ? bs.ledger_premium_collected : (bs.revenue_breakdown?.premium_income || 0)
+            );
             document.getElementById('bs-premium-income-bills').textContent = fmt(bs.cumulative_premium_breakdown?.from_bills || 0);
             document.getElementById('bs-premium-income-ledger').textContent = fmt(bs.cumulative_premium_breakdown?.from_ledger || 0);
             document.getElementById('bs-management-fees').textContent = fmt(bs.revenue_breakdown.management_fees);

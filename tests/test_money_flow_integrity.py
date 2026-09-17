@@ -401,7 +401,6 @@ class TestSeedDataIntegrity:
         policies_data = [
             {'id': 'POL-ASAF-LIFE-001', 'monthly_premium': 299.25},
             {'id': 'POL-ASAF-HEALTH-001', 'monthly_premium': 166.25},
-            {'id': 'POL-ASAF-AUTO-001', 'monthly_premium': 17.96},
         ]
 
         for pol in policies_data:

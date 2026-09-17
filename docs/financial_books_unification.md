@@ -44,10 +44,12 @@ Cash posting and reconciliation require every collected premium and every paid c
 - `services/financial_unification_service.py` — split resolver, idempotent accounting posts, book totals, savings books, derived balance sheet, reconcile report, `repair_financial_books`.
 - `process_customer_premium_payment` now posts each paid bill (and unbilled remainder) to the shared `AccountingEngine`.
 - Policy create persists kernel decomposition (`risk_premium_annual`, `savings_premium_annual`, loadings, sums).
-- `compute_unified_financial_metrics` exposes `ledger_premium_collected`, `ledger_claims_paid`, `accounting_*`, and `books_reconcile`.
+- `compute_unified_financial_metrics` exposes `ledger_premium_collected`, `ledger_claims_paid`, `accounting_*`. Hot-path GETs (`/api/bi/dashboard`, `/api/billing/stats`) only sum ledger cash types; full `reconcile_financial_books` stays on `GET /api/finance/reconcile`.
 - `GET /api/finance/reconcile` (admin / accountant / underwriter / actuary).
 - `POST /api/finance/repair` (admin / accountant) — `{"dry_run": true}` previews; apply reconstructs missing cash-identity rows, posts the accounting book, and derives General Reserves counters from the ledger. Audited as `finance.books_repair`.
-- `GET /api/admin/balance-sheet` derives `premium_income` / `claims_paid` from the customer ledger. Response `claims_reserve` is economic; `seed_claims_reserve` is separate.
+- `GET /api/admin/balance-sheet` derives `premium_income` / `claims_paid` from the customer ledger **in the response only**. It does not mutate stored `PHINS_BALANCE_SHEET`. Response `claims_reserve` is economic; `seed_claims_reserve` is separate. Admin and accountant UIs bind `ledger_premium_collected` / `ledger_claims_paid`.
+- Boot reconstructs the in-memory accounting book from durable ledger cash (`hydrate_accounting_book_from_ledger`) once, not as a GET side effect.
+- Demo seed contains only kernel-priced `phins_unified` policies. `POL-ASAF-AUTO-001` / auto collision claims are not seeded; known demo auto IDs are retired without reversing historical paid cash.
 - `/api/admin/balance-sheet/fix-reserve?auto_fix=true` derives the same counters; it no longer rewrites seed capital.
 - Billing stats (`/api/billing/stats`, `billing.html`) prefer `ledger_premium_collected` / `ledger_claims_paid`.
 - Claims APIs enrich `ledger_paid_amount`; `dashboard.html#claims` displays ledger cash when present.

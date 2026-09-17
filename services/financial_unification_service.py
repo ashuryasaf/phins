@@ -573,6 +573,26 @@ def ensure_seed_claims_reserve(
     return money_float(sheet.get("seed_claims_reserve"))
 
 
+def ledger_derived_balance_sheet_view(
+    balance_sheet: Optional[Dict[str, Any]],
+    ledger_premium: Any,
+    ledger_claims: Any,
+) -> Dict[str, Any]:
+    """Return a GET-safe copy of the General Reserves sheet derived from ledger cash.
+
+    Does not mutate the stored ``PHINS_BALANCE_SHEET``. Seed capital is
+    copied, never rewritten.
+    """
+    source = balance_sheet if isinstance(balance_sheet, dict) else {}
+    view = dict(source)
+    revenue = source.get("revenue_breakdown")
+    expense = source.get("expense_breakdown")
+    view["revenue_breakdown"] = dict(revenue) if isinstance(revenue, dict) else {}
+    view["expense_breakdown"] = dict(expense) if isinstance(expense, dict) else {}
+    apply_ledger_derived_balance_sheet(view, ledger_premium, ledger_claims)
+    return view
+
+
 def apply_ledger_derived_balance_sheet(
     balance_sheet: Dict[str, Any],
     ledger_premium: Any,
@@ -1184,6 +1204,140 @@ def reconcile_financial_books(
     }
 
 
+def reconstruct_accounting_book_from_ledger(
+    *,
+    policies: Dict[str, Any],
+    claims: Dict[str, Any],
+    billing: Dict[str, Any],
+    transactions: Any,
+    exclude_customer: Optional[Any] = None,
+    engine: Any = None,
+    dry_run: bool = False,
+    actor: str = "boot_reconstruct",
+) -> Dict[str, Any]:
+    """Post missing accounting-book entries from existing customer-ledger cash.
+
+    Used on boot so the in-memory accounting engine matches the durable
+    ledger without waiting for a GET. Does not append ledger rows, does
+    not rewrite billed premiums, and does not mutate the stored balance
+    sheet. Idempotent.
+    """
+    if engine is None:
+        try:
+            from accounting_engine import get_accounting_engine
+
+            engine = get_accounting_engine()
+        except Exception:
+            engine = None
+
+    ledger_iterable = (
+        list(transactions.values()) if hasattr(transactions, "values") else list(transactions)
+    )
+    actions: List[Dict[str, Any]] = []
+    posted_count = 0
+
+    for tx in ledger_iterable:
+        if not isinstance(tx, dict):
+            continue
+        if _tx_type(tx) not in PREMIUM_CASH_TYPES:
+            continue
+        cid = str(tx.get("customer_id") or "")
+        if exclude_customer and cid and exclude_customer(cid):
+            continue
+        amount = _tx_amount(tx)
+        if amount <= 0:
+            continue
+        source_tx_id = str(tx.get("id") or tx.get("tx_id") or "").strip()
+        meta = _tx_metadata(tx)
+        bill_id = str(meta.get("bill_id") or tx.get("bill_id") or "").strip()
+        policy = _policy_for_tx(tx, policies, billing)
+        policy_id = str(
+            (policy or {}).get("id")
+            or meta.get("policy_id")
+            or tx.get("policy_id")
+            or ""
+        )
+        split = resolve_premium_split(amount, policy, fallback_risk_pct=100)
+        if dry_run:
+            if engine is not None and _allocation_already_posted(
+                engine, bill_id or f"UNBILLED-{source_tx_id}", source_tx_id
+            ):
+                continue
+            actions.append({
+                "action": "post_premium_accounting",
+                "bill_id": bill_id or f"UNBILLED-{source_tx_id}",
+                "amount": float(amount),
+                "source_tx_id": source_tx_id,
+            })
+            continue
+        result = post_premium_to_accounting_book(
+            bill_id=bill_id or f"UNBILLED-{source_tx_id or cid}",
+            policy_id=policy_id,
+            customer_id=cid,
+            amount=amount,
+            risk_percentage=split["risk_percentage"],
+            posted_by=actor,
+            source_tx_id=source_tx_id or None,
+            notes=f"reconstruct kernel_split={split['split_source']}",
+            engine=engine,
+        )
+        if result.get("posted"):
+            posted_count += 1
+            actions.append({
+                "action": "post_premium_accounting",
+                "bill_id": result.get("bill_id"),
+                "amount": result.get("amount"),
+                "source_tx_id": source_tx_id,
+            })
+
+    booked_claims = accounting_claim_ids(engine)
+    ledger_claim_cash = claim_cash_by_id(ledger_iterable)
+    for tx in ledger_iterable:
+        if not isinstance(tx, dict):
+            continue
+        if _tx_type(tx) not in CLAIM_CASH_TYPES:
+            continue
+        cid = str(tx.get("customer_id") or "")
+        if exclude_customer and cid and exclude_customer(cid):
+            continue
+        meta = _tx_metadata(tx)
+        claim_id = str(meta.get("claim_id") or tx.get("claim_id") or "").strip()
+        if not claim_id or claim_id in booked_claims:
+            continue
+        amount = ledger_claim_cash.get(claim_id) or _tx_amount(tx)
+        if amount <= 0:
+            continue
+        policy_id = str(meta.get("policy_id") or tx.get("policy_id") or "")
+        if not policy_id and claim_id in (claims or {}):
+            policy_id = str((claims.get(claim_id) or {}).get("policy_id") or "")
+        actions.append({
+            "action": "post_claim_accounting",
+            "claim_id": claim_id,
+            "amount": float(amount),
+        })
+        if dry_run:
+            booked_claims.add(claim_id)
+            continue
+        posted = post_claim_to_accounting_book(
+            claim_id=claim_id,
+            policy_id=policy_id,
+            customer_id=cid,
+            amount=amount,
+            paid_by=actor,
+            engine=engine,
+        )
+        if posted.get("posted"):
+            posted_count += 1
+            booked_claims.add(claim_id)
+
+    return {
+        "posted_count": posted_count,
+        "action_count": len(actions),
+        "actions": actions,
+        "dry_run": bool(dry_run),
+    }
+
+
 def repair_financial_books(
     *,
     policies: Dict[str, Any],
@@ -1392,98 +1546,17 @@ def repair_financial_books(
             list(transactions.values()) if hasattr(transactions, "values") else list(transactions)
         )
 
-    for tx in ledger_iterable:
-        if not isinstance(tx, dict):
-            continue
-        if _tx_type(tx) not in PREMIUM_CASH_TYPES:
-            continue
-        cid = str(tx.get("customer_id") or "")
-        if exclude_customer and cid and exclude_customer(cid):
-            continue
-        amount = _tx_amount(tx)
-        if amount <= 0:
-            continue
-        source_tx_id = str(tx.get("id") or tx.get("tx_id") or "").strip()
-        meta = _tx_metadata(tx)
-        bill_id = str(meta.get("bill_id") or tx.get("bill_id") or "").strip()
-        policy = _policy_for_tx(tx, policies, billing)
-        policy_id = str(
-            (policy or {}).get("id")
-            or meta.get("policy_id")
-            or tx.get("policy_id")
-            or ""
-        )
-        split = resolve_premium_split(amount, policy, fallback_risk_pct=100)
-        if dry_run:
-            # Approximate: already-posted is detected by the helper when applied.
-            if engine is not None and _allocation_already_posted(engine, bill_id or f"UNBILLED-{source_tx_id}", source_tx_id):
-                continue
-            actions.append({
-                "action": "post_premium_accounting",
-                "bill_id": bill_id or f"UNBILLED-{source_tx_id}",
-                "amount": float(amount),
-                "source_tx_id": source_tx_id,
-            })
-            continue
-        result = post_premium_to_accounting_book(
-            bill_id=bill_id or f"UNBILLED-{source_tx_id or cid}",
-            policy_id=policy_id,
-            customer_id=cid,
-            amount=amount,
-            risk_percentage=split["risk_percentage"],
-            posted_by=actor,
-            source_tx_id=source_tx_id or None,
-            notes=f"repair kernel_split={split['split_source']}",
-            engine=engine,
-        )
-        if result.get("posted"):
-            actions.append({
-                "action": "post_premium_accounting",
-                "bill_id": result.get("bill_id"),
-                "amount": result.get("amount"),
-                "source_tx_id": source_tx_id,
-            })
-
-    booked_claims = accounting_claim_ids(engine)
-    ledger_claim_cash = claim_cash_by_id(ledger_iterable)
-    for tx in ledger_iterable:
-        if not isinstance(tx, dict):
-            continue
-        if _tx_type(tx) not in CLAIM_CASH_TYPES:
-            continue
-        cid = str(tx.get("customer_id") or "")
-        if exclude_customer and cid and exclude_customer(cid):
-            continue
-        meta = _tx_metadata(tx)
-        claim_id = str(meta.get("claim_id") or tx.get("claim_id") or "").strip()
-        if not claim_id or claim_id in booked_claims:
-            continue
-        # The book carries one entry per claim, so post every ledger slice
-        # for this claim_id, not just the row we are standing on.
-        amount = ledger_claim_cash.get(claim_id) or _tx_amount(tx)
-        if amount <= 0:
-            continue
-        policy_id = str(meta.get("policy_id") or tx.get("policy_id") or "")
-        if not policy_id and claim_id in (claims or {}):
-            policy_id = str((claims.get(claim_id) or {}).get("policy_id") or "")
-        actions.append({
-            "action": "post_claim_accounting",
-            "claim_id": claim_id,
-            "amount": float(amount),
-        })
-        if dry_run:
-            booked_claims.add(claim_id)
-            continue
-        posted = post_claim_to_accounting_book(
-            claim_id=claim_id,
-            policy_id=policy_id,
-            customer_id=cid,
-            amount=amount,
-            paid_by=actor,
-            engine=engine,
-        )
-        if posted.get("posted"):
-            booked_claims.add(claim_id)
+    book_posts = reconstruct_accounting_book_from_ledger(
+        policies=policies,
+        claims=claims,
+        billing=billing,
+        transactions=ledger_iterable,
+        exclude_customer=exclude_customer,
+        engine=engine,
+        dry_run=dry_run,
+        actor=actor,
+    )
+    actions.extend(book_posts.get("actions") or [])
 
     if dry_run:
         ledger_iterable = (
