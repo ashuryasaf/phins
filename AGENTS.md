@@ -8,17 +8,18 @@ override this document.
 
 PHINS is a Python platform built around:
 
-- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~50k lines)
-- optional extension routing in `web_portal/api_extensions.py` (~3450 lines)
+- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~57k lines)
+- optional extension routing in `web_portal/api_extensions.py` (~3950 lines)
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`, `api_agent_ecosystem.py`,
-  `api_assessment_center.py`)
+  `api_assessment_center.py`, `api_chat_application.py`,
+  `api_customer_identity.py`)
 - service-layer logic in `services/` (113 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (233 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (234 files) and root-level `test_*.py` (11 files)
 - one generalized job queue (`services/agent_job_queue.py`, table
  `document_processing_jobs`, rows keyed by `subject_type`/`subject_id` and
  `submitted_by`; retries, dead-letter, idempotency keys, handler registry —
@@ -154,6 +155,20 @@ PHINS is a Python platform built around:
  `delivery_bidding_sla_tick` self-rescheduling queue row (`ensure_sla_clock`)
  and lazily on read/bid. `/api/delivery/*` is wired through
  `web_portal/api_delivery_bidding.py` with customer/supplier/admin scoping
+- the chat-style New Policy Application ("Phin" flow): the conversational
+ state machine is `services/chat_application_service.py` (Hebrew prompts in
+ `services/chat_application_i18n.py`; resume codes stay ASCII) and
+ `/api/chat-application/*` is wired through
+ `web_portal/api_chat_application.py`. It never re-implements
+ issuance — `finalize` submits through the existing
+ `POST /api/policies/create` backbone over an internal loopback request, so
+ policy, underwriting, billing, wallet and pipeline behavior stay identical
+ to the classic form. Every turn and journey stage is a hash-chained ledger
+ write, OTP goes through `services/otp_security_service.py`, and an
+ actuarially blocked submit opens an `UNDERWRITING_APPLICATIONS` row
+ (`source=chat_adl_referral`) instead of creating a policy. Staff-only
+ `admin/funnel` and `<id>/journey` expose the invited → … → paid pipeline to
+ the BI center
 
 Runtime defaults are important:
 
@@ -180,6 +195,8 @@ Preferred file-by-task:
 | Customer messaging / consent / escalation | `services/customer_agent/`, `web_portal/server.py` (`/api/admin/customers/{id}/contact`, `.../consent`, `.../interactions`) |
 | Agent ecosystem API | `web_portal/api_agent_ecosystem.py`, `services/agent_ecosystem_service.py` |
 | Assessment center API | `web_portal/api_assessment_center.py`, `services/assessment_center_service.py` |
+| Chat-application ("Phin") API | `web_portal/api_chat_application.py`, `services/chat_application_service.py`, `services/chat_application_i18n.py` |
+| Customer identity API (personal ID + nationality) | `web_portal/api_customer_identity.py`, `services/customer_identity_service.py`, `services/countries.py` |
 | Business rule/workflow | `services/`, then the route or engine that calls it |
 | Database/schema/repository | `database/models.py`, `database/manager.py`, `database/repositories/`, `database/config.py` |
 | Billing/accounting behavior | `billing_engine.py`, `accounting_engine.py`, related tests |
@@ -217,6 +234,8 @@ Preferred file-by-task:
 |  |- api_delivery_bidding.py
 |  |- api_agent_ecosystem.py
 |  |- api_assessment_center.py
+|  |- api_chat_application.py           # conversational "Phin" application funnel
+|  |- api_customer_identity.py          # personal ID + nationality capture/correction
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
 |                                        # (includes `static/locales/he.json` Hebrew i18n)
@@ -224,7 +243,7 @@ Preferred file-by-task:
 |- prompts/                             # versioned LLM prompt templates (sha256 provenance)
 |  `- assessment/                       # narrative v1 (free text) + v2 (structured); onboarding/service/termination v1
 |- schemas/                             # JSON schemas for structured LLM output
-|- services/                            # 111 service modules
+|- services/                            # 113 service modules
 |  |- agent_eval.py                     # A6 replay / propose_thresholds / golden sets
 |  |- automation/                       # B2 pure rules: quoting, underwriting_gate, fraud, claims_gate, billing_schedule
 |  |- underwriting_bot/                 # B1 package: report (model+engine), features (analyzers), service
@@ -274,7 +293,7 @@ Preferred file-by-task:
 |- scripts/                             # operational utilities
 |  |- run_agent_eval.py                 # golden sets + decision replay CLI
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/worker/db-init)
-|- tests/                               # 225 test files
+|- tests/                               # 234 test_*.py files
 |  `- golden/<agent>/*.json             # frozen agent outputs ({name, input, expected})
 |- docs/
 |  |- platform_data_architecture.md
@@ -371,7 +390,8 @@ When changing or adding an API endpoint:
 2. Check whether the endpoint belongs in `server.py`,
    `web_portal/api_extensions.py`, `web_portal/api_bi_analytics.py`,
    `web_portal/api_delivery_bidding.py`, `web_portal/api_agent_ecosystem.py`,
-   or `web_portal/api_assessment_center.py`.
+   `web_portal/api_assessment_center.py`, `web_portal/api_chat_application.py`,
+   or `web_portal/api_customer_identity.py`.
 3. Verify the extension is actually wired; `server.py` imports extension
    dispatchers conditionally and can run without them.
 4. Reuse service-layer logic from `services/` instead of embedding new business
@@ -635,7 +655,7 @@ Important test harness facts:
 - Golden fixtures only freeze the keys listed under `expected`; adding output
   keys never breaks one, changing a frozen value does — update the fixture
   in the same PR as the behaviour change and say why
-- 233 test files under `tests/`, 11 root-level `test_*.py` files
+- 234 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
