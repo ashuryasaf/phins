@@ -603,3 +603,118 @@ def test_false_demo_ledger_purge_is_durable(db_backed_portal, tmp_path, monkeypa
     with DatabaseManager() as db:
         assert db.platform_ledger.get_by_id("TX-POL-ASAF-LIFE-001") is None
         assert db.platform_ledger.get_by_id("TX-KEEP-REAL") is not None
+
+
+def test_false_demo_db_claim_ids_purge_claim_only_ledger(db_backed_portal, tmp_path, monkeypatch):
+    """SQL-only false-demo claim IDs must still drop claim-keyed ledger cash."""
+    from database.manager import DatabaseManager
+    from database.seeds import _purge_false_demo_seed
+    from services.platform_event_ledger_service import (
+        PlatformEventLedgerService,
+        reconcile_ledger_entries,
+    )
+
+    portal, db_dicts = db_backed_portal
+    monkeypatch.setattr(portal, "USE_DATABASE", True, raising=False)
+    monkeypatch.setattr(portal, "database_enabled", True, raising=False)
+    monkeypatch.setattr(portal, "CLAIMS", {}, raising=True)
+
+    now = datetime.now(timezone.utc)
+    claim_id = "CLM-ASAF-DB-ONLY"
+    with DatabaseManager() as db:
+        if db.customers.get_by_id("CUST-ASAF-001") is None:
+            assert db.customers.create(
+                id="CUST-ASAF-001",
+                name="Asaf Assurance",
+                email="asaf@assurance.co.il",
+            ) is not None
+        if db.policies.get_by_id("POL-ASAF-LIFE-001") is None:
+            assert db.policies.create(
+                id="POL-ASAF-LIFE-001",
+                customer_id="CUST-ASAF-001",
+                type="phins_unified",
+                coverage_amount=500000.0,
+                annual_premium=1800.0,
+                monthly_premium=150.0,
+                status="active",
+                risk_score="low",
+                start_date=now,
+            ) is not None
+        assert db.claims.create(
+            id=claim_id,
+            policy_id="POL-ASAF-LIFE-001",
+            customer_id="CUST-ASAF-001",
+            type="Medical",
+            claimed_amount=2800.0,
+            approved_amount=2800.0,
+            status="Paid",
+        ) is not None
+
+    memory = portal.TRANSACTION_LEDGER
+    memory.clear()
+    service = PlatformEventLedgerService(
+        transaction_ledger=memory,
+        use_database=True,
+        db_manager_factory=DatabaseManager,
+    )
+    service.append_event(
+        event_type="claim_payment_received",
+        entity_type="claim",
+        entity_id=claim_id,
+        customer_id="CUST-ASAF-001",
+        actor="system",
+        amount=2800.0,
+        status="completed",
+        source_system="test",
+        payload={
+            "id": "TX-CLM-DB-ONLY",
+            "customer_id": "CUST-ASAF-001",
+            "claim_id": claim_id,
+            "metadata": {"claim_id": claim_id},
+        },
+        entry_id="TX-CLM-DB-ONLY",
+        ledger_type="transaction",
+    )
+    service.append_event(
+        event_type="premium_payment",
+        entity_type="transaction",
+        entity_id="TX-KEEP-REAL",
+        customer_id="CUST-ASAF-001",
+        actor="system",
+        amount=75.0,
+        status="completed",
+        source_system="test",
+        payload={"id": "TX-KEEP-REAL", "policy_id": "POL-KEEP-REAL-001"},
+        entry_id="TX-KEEP-REAL",
+        ledger_type="transaction",
+    )
+
+    monkeypatch.setattr(portal, "platform_event_ledger", service, raising=False)
+    monkeypatch.setattr(
+        portal,
+        "LEDGER_PERSISTENCE_FILE",
+        str(tmp_path / "phins_ledger_data.json"),
+        raising=False,
+    )
+
+    _purge_false_demo_seed(sync_memory=True)
+
+    assert claim_id not in portal.CLAIMS
+    assert "TX-CLM-DB-ONLY" not in portal.TRANSACTION_LEDGER
+    assert "TX-KEEP-REAL" in portal.TRANSACTION_LEDGER
+
+    restart_memory = {}
+    restart_service = PlatformEventLedgerService(
+        transaction_ledger=restart_memory,
+        use_database=True,
+        db_manager_factory=DatabaseManager,
+    )
+    restart_service.hydrate_from_db()
+    assert "TX-CLM-DB-ONLY" not in restart_memory
+    assert "TX-KEEP-REAL" in restart_memory
+    summary = reconcile_ledger_entries(restart_memory.values())
+    assert summary["chain_valid"]
+    with DatabaseManager() as db:
+        assert db.claims.get_by_id(claim_id) is None
+        assert db.platform_ledger.get_by_id("TX-CLM-DB-ONLY") is None
+        assert db.platform_ledger.get_by_id("TX-KEEP-REAL") is not None

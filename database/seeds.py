@@ -308,6 +308,49 @@ def _payload_dict(row) -> dict:
     return {}
 
 
+def _false_demo_ids_from_repo(repo) -> list:
+    """Primary keys on a repo keyed to known false demo policies or test customers."""
+    found = []
+    seen = set()
+    if repo is None:
+        return found
+    for policy_id in FALSE_DEMO_POLICY_IDS:
+        try:
+            rows = repo.filter_by(policy_id=policy_id) or []
+        except Exception:
+            rows = []
+        for row in rows:
+            rid = getattr(row, 'id', None)
+            if rid and str(rid) not in seen:
+                seen.add(str(rid))
+                found.append(str(rid))
+    for customer_id in FALSE_TEST_CUSTOMER_IDS:
+        try:
+            rows = repo.filter_by(customer_id=customer_id) or []
+        except Exception:
+            rows = []
+        for row in rows:
+            rid = getattr(row, 'id', None)
+            if rid and str(rid) not in seen:
+                seen.add(str(rid))
+                found.append(str(rid))
+    return found
+
+
+def _collect_false_demo_claim_ids_from_db() -> list:
+    """List SQL claim IDs before policy deletes cascade them away."""
+    try:
+        from database.manager import DatabaseManager
+    except ImportError:
+        return []
+    try:
+        with DatabaseManager() as db:
+            return _false_demo_ids_from_repo(db.claims)
+    except Exception as exc:
+        logger.warning(f"False-demo claim id collection skipped: {exc}")
+        return []
+
+
 def _purge_false_demo_seed(
     policy_repo=None,
     billing_repo=None,
@@ -355,7 +398,7 @@ def _purge_false_demo_seed(
         except ImportError:
             pass
 
-    removed_claim_ids = set()
+    removed_claim_ids = set(_collect_false_demo_claim_ids_from_db())
 
     def _collect_repo_ids(repo):
         ids = []
@@ -548,6 +591,13 @@ def _purge_false_demo_seed(
     except Exception:
         pass
 
+    # Durable operational rows must run before ledger matching so SQL-only
+    # claim IDs (boot with no repos / unhydrated CLAIMS) still drop cash rows.
+    db_ops = _purge_false_demo_records_from_db()
+    removed_claim_ids.update(str(cid) for cid in (db_ops.get('claim_ids') or []))
+    for key in ('policies', 'bills', 'claims', 'uw', 'customers', 'users'):
+        removed[key] += db_ops.get(key, 0)
+
     if TRANSACTION_LEDGER is not None:
         for tx_id in list(TRANSACTION_LEDGER.keys()):
             tx = TRANSACTION_LEDGER.get(tx_id) or {}
@@ -560,11 +610,6 @@ def _purge_false_demo_seed(
         except Exception as exc:
             logger.warning(f"Ledger chain rebuild after false-demo purge skipped: {exc}")
 
-    # Durable operational rows + platform_ledger_entries must drop the same
-    # known demo IDs; otherwise the next hydrate_from_db restores them.
-    db_ops = _purge_false_demo_records_from_db()
-    for key in ('policies', 'bills', 'claims', 'uw', 'customers', 'users'):
-        removed[key] += db_ops.get(key, 0)
     db_deleted = _purge_false_demo_ledger_from_db(removed_claim_ids)
     removed['ledger'] += db_deleted
     if TRANSACTION_LEDGER is not None:
@@ -621,11 +666,12 @@ def _purge_false_demo_records_from_db() -> dict:
     Boot calls `_purge_false_demo_seed(sync_memory=True)` without repositories.
     Memory DatabaseDict pops are durable in DB mode, but a hydrated plain dict
     would otherwise restore CUST-TEST-* / POL-TEST-* on the next load.
-    Unknown real customers and policies are never swept.
+    Collected claim IDs are returned so claim-keyed ledger cash can be dropped
+    even when in-memory CLAIMS was empty. Unknown real rows are never swept.
     """
     counts = {
         'policies': 0, 'bills': 0, 'claims': 0, 'uw': 0,
-        'customers': 0, 'users': 0,
+        'customers': 0, 'users': 0, 'claim_ids': [],
     }
     try:
         from database.manager import DatabaseManager
@@ -633,40 +679,17 @@ def _purge_false_demo_records_from_db() -> dict:
         return counts
     try:
         with DatabaseManager() as db:
-            def _ids(repo):
-                found = []
-                seen = set()
-                for policy_id in FALSE_DEMO_POLICY_IDS:
-                    try:
-                        rows = repo.filter_by(policy_id=policy_id) or []
-                    except Exception:
-                        rows = []
-                    for row in rows:
-                        rid = getattr(row, 'id', None)
-                        if rid and str(rid) not in seen:
-                            seen.add(str(rid))
-                            found.append(str(rid))
-                for customer_id in FALSE_TEST_CUSTOMER_IDS:
-                    try:
-                        rows = repo.filter_by(customer_id=customer_id) or []
-                    except Exception:
-                        rows = []
-                    for row in rows:
-                        rid = getattr(row, 'id', None)
-                        if rid and str(rid) not in seen:
-                            seen.add(str(rid))
-                            found.append(str(rid))
-                return found
-
-            for claim_id in _ids(db.claims):
+            claim_ids = _false_demo_ids_from_repo(db.claims)
+            counts['claim_ids'] = list(claim_ids)
+            for claim_id in claim_ids:
                 if db.claims.delete(claim_id):
                     counts['claims'] += 1
                     logger.info(f"Removed false demo claim {claim_id}")
-            for bill_id in _ids(db.billing):
+            for bill_id in _false_demo_ids_from_repo(db.billing):
                 if db.billing.delete(bill_id):
                     counts['bills'] += 1
                     logger.info(f"Removed false demo bill {bill_id}")
-            for uw_id in _ids(db.underwriting):
+            for uw_id in _false_demo_ids_from_repo(db.underwriting):
                 if db.underwriting.delete(uw_id):
                     counts['uw'] += 1
                     logger.info(f"Removed false demo underwriting {uw_id}")
