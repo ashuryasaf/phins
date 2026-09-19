@@ -20,12 +20,15 @@ def _html() -> str:
 CUSTOMER_TABS = (
     "customer-info-panel",
     "health-wallet",
+    "medical-marketplace",
+    "health-wallet-ai-search",
     "activity-log",
     "purchase-history",
     "nft-ledger",
     "policies",
     "claims",
     "billing-settings",
+    "billing",
     "investment-portfolio",
     "referrals",
 )
@@ -64,6 +67,8 @@ def test_dashboard_uses_kernel_allocation_defaults_not_legacy_25_75():
     assert "50% → Investments" in html
     assert "50% → Coverage" in html
     assert "function allocationForPolicy(" in html
+    assert "function resolveCustomerHashTarget(" in html
+    assert "retiredDefault" in html
     assert "function syncCustomerBookDisplays()" in html
     # Retired hardcoded premium-split copy must not remain as a live default.
     assert "Your premium savings (25%)" not in html

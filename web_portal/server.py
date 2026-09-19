@@ -45375,12 +45375,17 @@ For claims or questions, please contact:
                 # Generate policy ID
                 policy_id = generate_policy_id()
                 
-                # Calculate premium
+                # Calculate premium (kernel when the type is mapped)
                 premium_data = calculate_premium({
                     'type': policy_type,
                     'coverage_amount': coverage_amount,
                     'age': data.get('age', 35),
-                    'risk_score': data.get('risk_score', 'medium')
+                    'risk_score': data.get('risk_score', 'medium'),
+                    'gender': data.get('gender'),
+                    'smoking_status': data.get('smoking_status'),
+                    'ethnicity': data.get('ethnicity'),
+                    'term_years': data.get('term_years') or data.get('coverage_years') or 20,
+                    'adl_level': data.get('adl_level') or 5,
                 })
                 
                 # Keep monthly/annual as one identity: a caller-supplied monthly
@@ -45408,11 +45413,33 @@ For claims or questions, please contact:
                     'beneficiary_name': data.get('beneficiary', ''),
                     'notes': data.get('notes', ''),
                     'investment_value': 0,
-                    'risk_allocation': 75,
-                    'savings_allocation': 25,
+                    'risk_allocation': DEFAULT_CUSTOMER_ALLOCATION['risk_pct'],
+                    'savings_allocation': DEFAULT_CUSTOMER_ALLOCATION['savings_pct'],
+                    'pricing_source': premium_data.get('pricing_source', 'flat_formula'),
+                    'integrity_hash': premium_data.get('integrity_hash'),
+                    'product_id': premium_data.get('product_id'),
+                    'tables_version': premium_data.get('tables_version'),
+                    'config_version': premium_data.get('config_version'),
+                    'risk_premium_annual': premium_data.get('risk_premium_annual'),
+                    'savings_premium_annual': premium_data.get('savings_premium_annual'),
+                    'mortality_premium_annual': premium_data.get('mortality_premium_annual'),
+                    'disability_premium_annual': premium_data.get('disability_premium_annual'),
+                    'savings_rate_used': premium_data.get('savings_rate_used'),
                     'created_at': datetime.now().isoformat(),
                     'created_date': datetime.now().isoformat()
                 }
+                try:
+                    from services.financial_unification_service import pin_kernel_fields_on_policy
+                    pin_kernel_fields_on_policy(policy, premium_data)
+                except Exception:
+                    pass
+                if premium_data.get('risk_premium_annual') or premium_data.get('savings_premium_annual'):
+                    kernel_annual = safe_float(premium_data.get('annual'), 0.0)
+                    risk_ann = safe_float(premium_data.get('risk_premium_annual'), 0.0)
+                    if kernel_annual > 0 and risk_ann > 0:
+                        risk_pct = round(risk_ann / kernel_annual * 100.0, 2)
+                        policy['risk_allocation'] = risk_pct
+                        policy['savings_allocation'] = round(100.0 - risk_pct, 2)
                 
                 # Save policy
                 POLICIES[policy_id] = policy

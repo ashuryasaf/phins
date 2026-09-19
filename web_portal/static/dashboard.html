@@ -1788,9 +1788,11 @@
       </div>
     </div>
 
-    <!-- Original Simple Billing Section (kept for reference but hidden) -->
-    <section id="billing" class="section-content" style="display: none;">
-      <h2>My Billing & Payments</h2>
+    <!-- Legacy #billing hash aliases into My Billing & Settings; keep chrome so +/- still works. -->
+    <section id="billing" class="section-content customer-tab" data-collapsible="true" data-collapsed="true" data-tone="light" style="display: none;">
+      <div class="section-header">
+        <h2><span class="tab-brand-mark"><img src="/phins-logo.svg" alt=""></span>My Billing & Payments</h2>
+      </div>
       <div class="billing-grid">
         <div class="card">
           <h3>Current Balance</h3>
@@ -2005,10 +2007,11 @@
       }
       const stampedRisk = Number(policy && (policy.risk_allocation || policy.risk_pct));
       const stampedSav = Number(policy && (policy.savings_allocation || policy.savings_pct));
-      if (Number.isFinite(stampedRisk) && stampedRisk > 0) {
+      const retiredDefault = stampedRisk === 75 && (stampedSav === 25 || !Number.isFinite(stampedSav) || stampedSav === 0);
+      if (!retiredDefault && Number.isFinite(stampedRisk) && stampedRisk > 0 && stampedRisk <= 100) {
         return { savings_pct: 100 - stampedRisk, risk_pct: stampedRisk, source: 'policy' };
       }
-      if (Number.isFinite(stampedSav) && stampedSav > 0) {
+      if (!retiredDefault && Number.isFinite(stampedSav) && stampedSav > 0 && stampedSav <= 100) {
         return { savings_pct: stampedSav, risk_pct: 100 - stampedSav, source: 'policy' };
       }
       return {
@@ -2130,7 +2133,7 @@
       try {
         if (window.location.hash) {
           const id = window.location.hash.replace(/^#/, '');
-          const target = document.getElementById(id);
+          const target = resolveCustomerHashTarget(id);
           if (target && target.getAttribute('data-collapsible') === 'true') {
             setSectionCollapsed(target, false);
             target.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2138,11 +2141,18 @@
         }
       } catch (_) { /* non-fatal */ }
     }
+    function resolveCustomerHashTarget(id) {
+      if (!id) return null;
+      if (id === 'billing') {
+        return document.getElementById('billing-settings') || document.getElementById('billing');
+      }
+      return document.getElementById(id);
+    }
     window.addEventListener('hashchange', () => {
       try {
         const id = window.location.hash.replace(/^#/, '');
         if (!id) return;
-        const target = document.getElementById(id);
+        const target = resolveCustomerHashTarget(id);
         if (target && target.getAttribute('data-collapsible') === 'true') {
           setSectionCollapsed(target, false);
           target.scrollIntoView({ behavior: 'smooth', block: 'start' });
