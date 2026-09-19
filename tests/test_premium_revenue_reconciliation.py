@@ -319,6 +319,10 @@ def test_policy_create_keeps_monthly_and_annual_premium_as_one_identity():
         # And the reconciliation itself accepts the pair (no mismatch flagged).
         r = reconcile_premium_run_rate([pol], known_customer_ids={cust_id})
         assert r["integrity"]["monthly_annual_mismatch"] == []
+        # Retired 75/25 dashboard split must not be stamped on create.
+        assert pol.get("risk_allocation") != 75
+        assert pol.get("savings_allocation") != 25
+        assert abs(float(pol.get("risk_allocation") or 0) + float(pol.get("savings_allocation") or 0) - 100.0) < 0.02
     finally:
         for pid in created:
             portal.POLICIES.pop(pid, None)

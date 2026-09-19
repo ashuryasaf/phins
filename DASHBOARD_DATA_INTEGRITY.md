@@ -139,7 +139,7 @@ def is_suspended_account(customer_id: str) -> bool:
 ### Premium Calculations
 - `total_annual_premium` = SUM(annual_premium) for active policies
 - `monthly_premium` = annual_premium / 12
-- Standard allocation: 75% risk, 25% savings
+- Standard allocation: kernel-aligned 50% risk / 50% savings (`get_customer_allocation` / pricing kernel). The retired dashboard default of 75% risk / 25% savings must not be used as a fallback.
 
 ### Billing Validation
 - `total_billed` = SUM(amount) for all bills

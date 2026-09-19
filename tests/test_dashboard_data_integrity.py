@@ -109,7 +109,7 @@ class DataIntegrityValidator:
         Rules:
         - Total annual premium = SUM(annual_premium) for ACTIVE policies
         - Monthly premium = annual_premium / 12
-        - Premium allocation: 75% risk, 25% savings (default)
+        - Premium allocation: 50% risk, 50% savings (kernel default)
         """
         errors = []
         warnings = []
@@ -151,8 +151,8 @@ class DataIntegrityValidator:
             total_monthly_premium += (monthly if monthly > 0 else expected_monthly)
         
         # Standard allocation calculations
-        risk_pct = 0.75
-        savings_pct = 0.25
+        risk_pct = 0.50
+        savings_pct = 0.50
         
         return {
             'valid': len(errors) == 0,
@@ -521,10 +521,9 @@ class TestPremiumValidation:
         result = validator.validate_premium_calculations(sample_policies)
         
         assert result['valid'] is True
-        # 75% of 1800 = 1350 risk
-        assert result['risk_allocation'] == 1350.0
-        # 25% of 1800 = 450 savings
-        assert result['savings_allocation'] == 450.0
+        # Kernel default 50% of 1800 = 900 risk / 900 savings
+        assert result['risk_allocation'] == 900.0
+        assert result['savings_allocation'] == 900.0
 
 
 class TestBillingValidation:

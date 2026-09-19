@@ -7,7 +7,7 @@ When a bill is paid, the premium is automatically split into:
 - Risk Premium: Goes to company risk reserves (covers claims)
 - Savings Premium: Goes to customer's savings (wallet/investment)
 
-Default split is 75% risk / 25% savings (configurable per policy).
+Default split is 50% risk / 50% savings (kernel-aligned; configurable per policy).
 """
 
 from datetime import datetime, timedelta
@@ -44,9 +44,9 @@ class BillingService:
         self._policies = policies or {}
         self._allocation_tracker = premium_allocation_tracker
         
-        # Default allocation percentages
-        self.default_risk_pct = 75.0
-        self.default_savings_pct = 25.0
+        # Default allocation percentages — kernel-aligned (retired 75/25)
+        self.default_risk_pct = 50.0
+        self.default_savings_pct = 50.0
 
     def create_bill(self, 
                     policy_id: str, 
@@ -64,8 +64,8 @@ class BillingService:
             amount_due: Total amount due
             due_days: Days until due
             customer_id: Customer ID (will be looked up from policy if not provided)
-            risk_pct: Risk allocation percentage (default 75%)
-            savings_pct: Savings allocation percentage (default 25%)
+            risk_pct: Risk allocation percentage (default 50%)
+            savings_pct: Savings allocation percentage (default 50%)
             description: Bill description
         
         Returns:
