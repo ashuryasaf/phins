@@ -69,6 +69,8 @@ def test_dashboard_uses_kernel_allocation_defaults_not_legacy_25_75():
     assert "function allocationForPolicy(" in html
     assert "function resolveCustomerHashTarget(" in html
     assert "retiredDefault" in html
+    assert "function bookAuthHeaders(" in html
+    assert "bookAuthHeaders()" in html
     assert "function syncCustomerBookDisplays()" in html
     # Retired hardcoded premium-split copy must not remain as a live default.
     assert "Your premium savings (25%)" not in html

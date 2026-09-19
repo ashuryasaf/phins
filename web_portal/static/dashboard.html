@@ -1980,6 +1980,11 @@
       monthlyPremium: 0
     };
 
+    function bookAuthHeaders(extra) {
+      const headers = extra ? Object.assign({}, extra) : {};
+      if (authToken) headers.Authorization = `Bearer ${authToken}`;
+      return headers;
+    }
     function policyStatusKey(policy) {
       return String((policy && policy.status) || '').toLowerCase().replace(/\s+/g, '_');
     }
@@ -4732,13 +4737,13 @@
         if (!cid) return;
         
         // Use unified investment API (single source of truth)
-        const response = await fetch(`/api/investment/unified?customer_id=${cid}`);
+        const response = await fetch(`/api/investment/unified?customer_id=${cid}`, { headers: bookAuthHeaders() });
         const data = await response.json();
         
         if (data.error) {
           console.log('Investment data not available:', data.error);
           // Fallback to unified balance
-          const balanceResponse = await fetch(`/api/balance/unified?customer_id=${cid}`);
+          const balanceResponse = await fetch(`/api/balance/unified?customer_id=${cid}`, { headers: bookAuthHeaders() });
           const balanceData = await balanceResponse.json();
           const invBalance = balanceData.balances?.investment_account?.total_balance || 0;
           updateInvestmentDisplay(invBalance);
@@ -7498,8 +7503,9 @@
       if (!cid) return;
       
       try {
-        const res = await fetch(`/api/statement?customer_id=${cid}`);
-        const data = await res.json();
+        const res = await fetch(`/api/statement?customer_id=${cid}`, { headers: bookAuthHeaders() });
+        const raw = await res.text();
+        const data = raw ? JSON.parse(raw) : {};
         
         const summaryEl = document.getElementById('summary');
         if (summaryEl) summaryEl.innerHTML = `
@@ -7570,7 +7576,7 @@
     async function loadActivityLog() {
       const cid = customerId || sessionStorage.getItem('customer_id') || '';
       try {
-        const response = await fetch(`/api/customer/activity-log?customer_id=${cid}&limit=100`);
+        const response = await fetch(`/api/customer/activity-log?customer_id=${cid}&limit=100`, { headers: bookAuthHeaders() });
         const data = await response.json();
         
         if (data.success && data.activities) {
@@ -7691,7 +7697,7 @@
     async function loadPurchaseHistory() {
       const cid = customerId || sessionStorage.getItem('customer_id') || '';
       try {
-        const response = await fetch(`/api/health-wallet/purchases?customer_id=${cid}`);
+        const response = await fetch(`/api/health-wallet/purchases?customer_id=${cid}`, { headers: bookAuthHeaders() });
         const data = await response.json();
         
         if (data.success && data.purchases) {
@@ -7900,7 +7906,7 @@
       
       try {
         // Check NFT ledger
-        const nftResponse = await fetch(`/api/nft-ledger?customer_id=${cid}`);
+        const nftResponse = await fetch(`/api/nft-ledger?customer_id=${cid}`, { headers: bookAuthHeaders() });
         const nftData = await nftResponse.json();
         
         // Check transaction ledger
@@ -8106,7 +8112,7 @@
     async function loadNFTLedger() {
       const cid = customerId || sessionStorage.getItem('customer_id') || '';
       try {
-        const response = await fetch(`/api/nft-ledger?customer_id=${cid}`);
+        const response = await fetch(`/api/nft-ledger?customer_id=${cid}`, { headers: bookAuthHeaders() });
         const data = await response.json();
         
         if (data.success) {
@@ -8236,7 +8242,7 @@
       const cid = customerId || sessionStorage.getItem('customer_id') || '';
       
       try {
-        const response = await fetch(`/api/nft-ledger?customer_id=${cid}`);
+        const response = await fetch(`/api/nft-ledger?customer_id=${cid}`, { headers: bookAuthHeaders() });
         const data = await response.json();
         
         if (data.success && data.ledger) {

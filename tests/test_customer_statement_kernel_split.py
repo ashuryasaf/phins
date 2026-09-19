@@ -51,6 +51,33 @@ def test_get_mock_statement_uses_allocation_not_legacy_75_25():
         portal.POLICIES.pop(policy_id, None)
 
 
+def test_empty_engine_statement_falls_back_to_kernel_book():
+    cid = "CUST-STMT-ENGINE-EMPTY"
+    policy_id = "POL-STMT-ENGINE-EMPTY"
+    portal.CUSTOMER_ALLOCATIONS.pop(cid, None)
+    portal.POLICIES[policy_id] = {
+        "id": policy_id,
+        "customer_id": cid,
+        "status": "active",
+        "type": "phins_unified",
+        "monthly_premium": 150.0,
+        "annual_premium": 1800.0,
+        "risk_premium_annual": 1200.0,
+        "savings_premium_annual": 600.0,
+        "pricing_source": "pricing_kernel",
+    }
+    try:
+        assert portal.try_get_statement_from_engine(cid) is None
+        stmt = portal.try_get_statement_from_engine(cid) or portal.get_mock_statement(cid)
+        assert stmt["policies_count"] == 1
+        assert stmt["total_premium"] == 150.0
+        assert abs(stmt["risk_total"] - 100.0) <= 0.02
+        assert abs(stmt["savings_total"] - 50.0) <= 0.02
+        assert stmt["allocations"][0]["split_source"].startswith("kernel")
+    finally:
+        portal.POLICIES.pop(policy_id, None)
+
+
 def test_get_mock_statement_prefers_kernel_pin_over_allocation():
     cid = "CUST-STMT-KERNEL-001"
     policy_id = "POL-STMT-KERNEL-001"

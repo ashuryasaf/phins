@@ -14949,6 +14949,14 @@ def get_bi_data_accounting() -> Dict[str, Any]:
     }
 
 def try_get_statement_from_engine(customer_id: str) -> Any:
+    """Return a JSON-safe engine statement only when cash allocations exist.
+
+    An empty accounting-engine statement used to be truthy (a dataclass /
+    ``__dict__`` blob) and then fail ``json.dumps`` after headers were sent,
+    so ``GET /api/statement`` answered 200 with an empty body. That hid the
+    kernel-priced policy book. Fall through to ``get_mock_statement`` when
+    the engine has no posted allocations.
+    """
     try:
         from accounting_engine import get_accounting_engine
         from datetime import date as _date
@@ -14956,11 +14964,18 @@ def try_get_statement_from_engine(customer_id: str) -> Any:
         engine = get_accounting_engine()
         if hasattr(engine, "get_customer_statement"):
             stmt = engine.get_customer_statement(customer_id, _date.min, _date.max)
+            allocations = getattr(stmt, "allocations", None)
+            if allocations is None and isinstance(stmt, dict):
+                allocations = stmt.get("allocations")
+            if not allocations:
+                return None
             try:
-                result: Any = json.loads(json.dumps(stmt, default=lambda o: o.__dict__))
-                return result
+                result: Any = json.loads(json.dumps(stmt, default=str))
             except Exception:
-                return stmt
+                return None
+            if not isinstance(result, dict) or not result.get("allocations"):
+                return None
+            return result
     except Exception:
         pass
     return None
@@ -25566,7 +25581,7 @@ For claims or questions, please contact:
                 
             data = try_get_statement_from_engine(customer_id) or get_mock_statement(customer_id)
             self._set_json_headers()
-            self.wfile.write(json.dumps(data).encode('utf-8'))
+            self.wfile.write(json.dumps(data, default=str).encode('utf-8'))
             return
         
         # ========== CUSTOMER DATA & PIPELINE VALIDATION API ==========
@@ -26993,9 +27008,10 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                 return
             
-            data = {"allocations": (try_get_statement_from_engine(customer_id) or get_mock_statement(customer_id))["allocations"]}
+            book = try_get_statement_from_engine(customer_id) or get_mock_statement(customer_id)
+            data = {"allocations": (book or {}).get("allocations") or []}
             self._set_json_headers()
-            self.wfile.write(json.dumps(data).encode('utf-8'))
+            self.wfile.write(json.dumps(data, default=str).encode('utf-8'))
             return
 
         # Validation endpoints (connectors)
