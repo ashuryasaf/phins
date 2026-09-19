@@ -584,6 +584,41 @@ class ParserMixin:
 
         return normalized
 
+    _ACCOUNT_AMOUNT_FIELDS = (
+        'total_balance', 'savings_balance', 'severance_balance', 'balance',
+        'management_fee', 'management_fee_savings', 'management_fee_deposits',
+        'death_coverage', 'disability_coverage', 'coverage_amount',
+    )
+
+    def _merge_affiliated_accounts(self, accounts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Collapse Swiftness affiliated views of the same policy (XML + concentrated CSV)."""
+        merged_rows: List[Dict[str, Any]] = []
+        index: Dict[Tuple[str, str], int] = {}
+        for account in accounts:
+            if not isinstance(account, dict):
+                continue
+            policy = str(account.get('policy_number') or '').strip()
+            provider = str(account.get('provider') or '').strip()
+            key = (policy, provider)
+            if policy and key in index:
+                existing = merged_rows[index[key]]
+                for field, value in account.items():
+                    if field in self._ACCOUNT_AMOUNT_FIELDS:
+                        existing[field] = max(
+                            self._to_float_amount(existing.get(field)),
+                            self._to_float_amount(value),
+                        )
+                    elif value not in (None, '') and (
+                        not existing.get(field)
+                        or (field in {'product_type', 'product_type_name'} and str(existing.get(field)).isdigit())
+                    ):
+                        existing[field] = value
+                continue
+            merged_rows.append(dict(account))
+            if policy:
+                index[key] = len(merged_rows) - 1
+        return merged_rows
+
     def _merge_pension_data_records(
         self,
         current: Optional[Dict[str, Any]],
@@ -646,10 +681,7 @@ class ParserMixin:
 
         merged_accounts = list(merged.get('accounts', []) or [])
         incoming_accounts = list(incoming_copy.get('accounts', []) or [])
-        merged['accounts'] = _dedupe_by_key(
-            merged_accounts + incoming_accounts,
-            ['policy_number', 'provider', 'product_type', 'start_date']
-        )
+        merged['accounts'] = self._merge_affiliated_accounts(merged_accounts + incoming_accounts)
 
         merged_contributions = list(merged.get('contributions', []) or [])
         incoming_contributions = list(incoming_copy.get('contributions', []) or [])

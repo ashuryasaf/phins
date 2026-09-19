@@ -621,8 +621,8 @@ Factors Affecting Score:
             for account in accounts[:500]:
                 account_id = str(account.get('id_number') or shared_client_id or account.get('policy_number') or '').strip()
                 savings_value = (
-                    self._to_float_amount(account.get('savings_balance'))
-                    or self._to_float_amount(account.get('total_balance'))
+                    self._to_float_amount(account.get('total_balance'))
+                    or self._to_float_amount(account.get('savings_balance'))
                 )
                 severance_value = self._to_float_amount(account.get('severance_balance'))
                 cover_value = (

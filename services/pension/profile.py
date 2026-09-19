@@ -84,9 +84,31 @@ class ClientProfile:
             if client.get('email'):
                 self.email = client['email']
         
-        # Merge accounts
+        # Merge accounts — same policy + provider from affiliated XML/CSV is one holding
         for acct in data.get('accounts', []):
-            self.accounts.append(acct)
+            policy = str(acct.get('policy_number') or '').strip()
+            provider = str(acct.get('provider') or '').strip()
+            existing = next(
+                (row for row in self.accounts
+                 if policy and str(row.get('policy_number') or '').strip() == policy
+                 and str(row.get('provider') or '').strip() == provider),
+                None,
+            )
+            if existing:
+                for field, value in acct.items():
+                    if field in {
+                        'total_balance', 'savings_balance', 'severance_balance',
+                        'death_coverage', 'disability_coverage', 'coverage_amount',
+                    }:
+                        try:
+                            existing[field] = max(float(existing.get(field) or 0), float(value or 0))
+                        except (TypeError, ValueError):
+                            if value and not existing.get(field):
+                                existing[field] = value
+                    elif value and not existing.get(field):
+                        existing[field] = value
+            else:
+                self.accounts.append(acct)
             if acct.get('provider'):
                 self.providers.add(acct['provider'])
             if acct.get('employer_name'):

@@ -175,8 +175,10 @@ class TestSwiftnessAffiliatedShowcase(unittest.TestCase):
         self.assertEqual(parse_result['status'], 'completed')
         pension = parse_result['parsed_data']['pension_data']
         self.assertEqual(pension['client']['id_number'], '123456782')
-        self.assertGreaterEqual(pension['totals']['total_balance'], 88000.50)
-        self.assertGreaterEqual(pension['totals']['total_severance'], 12000)
+        self.assertEqual(pension['totals']['total_balance'], 88000.50)
+        self.assertEqual(pension['totals']['account_count'], 1)
+        # Holdings פיצויים 12,000 plus the affiliated pitzuim row 4,500.
+        self.assertEqual(pension['totals']['total_severance'], 16500.0)
         integrity = parse_result['parsed_data']['integrity']
         self.assertGreaterEqual(integrity['affiliated_files_processed'], 2)
 
