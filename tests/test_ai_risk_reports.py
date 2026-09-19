@@ -394,7 +394,10 @@ POL-002,150000,620"""
         titles = [section.title for section in report.sections]
 
         self.assertTrue(any('סטטוס פוליסות' in title for title in titles))
-        self.assertTrue(any('מפת שיוכים' in title for title in titles))
+        self.assertTrue(any('סיכום כספי' in title for title in titles))
+        # Schema-catalog affiliation map and Data Profile are not the assessment.
+        self.assertFalse(any('מפת שיוכים' in title for title in titles))
+        self.assertFalse(any('פרופיל נתונים' in title for title in titles))
 
         table_sections = [section for section in report.sections if section.data_table]
         self.assertGreater(len(table_sections), 0)

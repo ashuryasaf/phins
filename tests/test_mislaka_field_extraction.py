@@ -269,14 +269,18 @@ class TestSwiftnessAffiliatedShowcase(unittest.TestCase):
         self.assertNotIn('פרופיל נתונים', export_titles)
         self.assertNotIn('Data Profile', export_titles)
 
+        from pypdf import PdfReader
         from services.risk_reports.pdf_export import build_report_pdf_bytes
         pdf_bytes = build_report_pdf_bytes(export_payload)
         self.assertTrue(pdf_bytes.startswith(b'%PDF'))
-        self.assertIn(b'123456782', pdf_bytes)
-        self.assertTrue(b'88000.50' in pdf_bytes or b'88,000.50' in pdf_bytes)
-        self.assertTrue(b'16,500.00' in pdf_bytes or b'16500' in pdf_bytes)
-        self.assertNotIn(b'Data Profile', pdf_bytes)
-        self.assertNotIn(b'numeric_columns', pdf_bytes)
+        pdf_text = '\n'.join(
+            (page.extract_text() or '') for page in PdfReader(io.BytesIO(pdf_bytes)).pages
+        )
+        self.assertIn('123456782', pdf_text)
+        self.assertTrue('88000.50' in pdf_text or '88,000.50' in pdf_text)
+        self.assertTrue('16,500.00' in pdf_text or '16500' in pdf_text)
+        self.assertNotIn('Data Profile', pdf_text)
+        self.assertNotIn('numeric_columns', pdf_text)
 
 
 class TestMislakaAssessmentPdfHelpers(unittest.TestCase):
