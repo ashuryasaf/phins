@@ -6381,8 +6381,28 @@ def get_real_time_status() -> Dict[str, Any]:
 # ========== END REAL-TIME CONNECTIONS CONFIG ==========
 
 
+# Canonical customer premium split — matches the actuarial kernel default
+# (savings_rate=0.5 under RISK_PREMIUM_MARKUP / get_customer_allocation).
+# The old dashboard assumption of 25% savings / 75% risk is retired.
+DEFAULT_CUSTOMER_ALLOCATION: Dict[str, float] = {
+    # Premium split
+    'savings_pct': 50.0,      # % of premium to savings (kernel default)
+    'risk_pct': 50.0,         # % of premium to risk coverage (kernel default)
+
+    # Savings distribution (must sum to 100%)
+    'wallet_pct': 30.0,       # % of savings to Health Wallet
+    'investment_pct': 65.0,   # % of savings to Investment Portfolio
+    'algo_pct': 5.0,          # % of savings to Algo Trading
+
+    # Investment sub-allocation (must sum to 100%)
+    'index_pct': 60.0,        # % of investment to index funds
+    'bonds_pct': 30.0,        # % of investment to bonds
+    'crypto_pct': 10.0,       # % of investment to crypto
+}
+
+
 def get_customer_allocation(customer_id: str) -> Dict[str, float]:
-    """Get customer's allocation preferences or return defaults
+    """Get customer's allocation preferences or return kernel-aligned defaults
     
     Allocation Model:
     1. Premium Split: savings_pct % goes to savings, rest to risk coverage
@@ -6392,21 +6412,7 @@ def get_customer_allocation(customer_id: str) -> Dict[str, float]:
        - algo_pct: % of savings to Algo Trading
     3. Investment Sub-allocation: index_pct + bonds_pct + crypto_pct = 100%
     """
-    default_allocation = {
-        # Premium split
-        'savings_pct': 50.0,      # % of premium to savings (default 50%)
-        'risk_pct': 50.0,         # % of premium to risk coverage (default 50%)
-        
-        # Savings distribution (must sum to 100%)
-        'wallet_pct': 30.0,       # % of savings to Health Wallet
-        'investment_pct': 65.0,   # % of savings to Investment Portfolio
-        'algo_pct': 5.0,          # % of savings to Algo Trading
-        
-        # Investment sub-allocation (must sum to 100%)
-        'index_pct': 60.0,        # % of investment to index funds
-        'bonds_pct': 30.0,        # % of investment to bonds
-        'crypto_pct': 10.0,       # % of investment to crypto
-    }
+    default_allocation = dict(DEFAULT_CUSTOMER_ALLOCATION)
     
     if customer_id in CUSTOMER_ALLOCATIONS:
         return {**default_allocation, **CUSTOMER_ALLOCATIONS[customer_id]}
@@ -14587,42 +14593,75 @@ def run_pipeline_for_customer(customer_id: str, auto_advance: bool = True) -> Di
 
 
 def get_mock_statement(customer_id: str) -> Dict[str, Any]:
-    """Generate premium statement from actual policy data"""
-    # Get customer's active policies (case-insensitive)
-    customer_policies = [p for p in POLICIES.values() 
+    """Generate premium statement from actual policy data.
+
+    Prefers the actuarial kernel pin on each policy (risk_premium_annual /
+    savings_premium_annual). Falls back to get_customer_allocation() — the
+    kernel-aligned 50/50 default — never the retired 75/25 dashboard split.
+    """
+    from services.financial_unification_service import resolve_premium_split
+
+    customer_policies = [p for p in POLICIES.values()
                         if p.get('customer_id') == customer_id and status_eq(p, 'active')]
-    
-    # Calculate total monthly premium
-    total_premium = sum(p.get('monthly_premium', 0) for p in customer_policies)
-    
-    # Standard allocation: 75% risk, 25% savings
-    risk_pct = 0.75
-    savings_pct = 0.25
-    
-    risk_total = total_premium * risk_pct
-    savings_total = total_premium * savings_pct
-    
-    # Create allocation entries for each policy
+
+    allocation = get_customer_allocation(customer_id)
+    fallback_risk_pct = allocation.get('risk_pct', DEFAULT_CUSTOMER_ALLOCATION['risk_pct'])
+
+    total_premium = 0.0
+    risk_total = 0.0
+    savings_total = 0.0
     allocations = []
+
     for i, policy in enumerate(customer_policies, 1):
-        monthly = policy.get('monthly_premium', 0)
-        policy_type = policy.get('type', 'unknown').title()
+        monthly = safe_float(policy.get('monthly_premium'), 0.0)
+        if monthly <= 0:
+            monthly = safe_float(policy.get('annual_premium'), 0.0) / 12.0
+        split = resolve_premium_split(
+            monthly,
+            policy=policy,
+            fallback_risk_pct=fallback_risk_pct,
+        )
+        total_premium += monthly
+        risk_total += split['risk_amount']
+        savings_total += split['savings_amount']
+        policy_type = (policy.get('type') or policy.get('policy_type') or 'unknown')
         allocations.append({
             "allocation_id": f"ALLOC-{policy.get('id', f'{i:06d}')}",
             "policy_id": policy.get('id'),
-            "policy_type": policy_type,
-            "amount": monthly,
-            "risk_amount": round(monthly * risk_pct, 2),
-            "savings_amount": round(monthly * savings_pct, 2)
+            "policy_type": str(policy_type).title(),
+            "amount": round(monthly, 2),
+            "risk_amount": split['risk_amount'],
+            "savings_amount": split['savings_amount'],
+            "risk_pct": split['risk_percentage'],
+            "savings_pct": split['savings_percentage'],
+            "split_source": split.get('split_source'),
+            "integrity_hash": split.get('integrity_hash'),
         })
-    
+
+    if total_premium > 0:
+        blended_risk_pct = round(risk_total / total_premium * 100, 2)
+        blended_savings_pct = round(100.0 - blended_risk_pct, 2)
+    else:
+        blended_risk_pct = fallback_risk_pct
+        blended_savings_pct = allocation.get('savings_pct', DEFAULT_CUSTOMER_ALLOCATION['savings_pct'])
+
     return {
         "customer_id": customer_id,
         "total_premium": round(total_premium, 2),
         "risk_total": round(risk_total, 2),
         "savings_total": round(savings_total, 2),
-        "risk_pct": risk_pct * 100,
-        "savings_pct": savings_pct * 100,
+        "risk_pct": blended_risk_pct,
+        "savings_pct": blended_savings_pct,
+        "allocation": {
+            "savings_pct": allocation.get('savings_pct'),
+            "risk_pct": allocation.get('risk_pct'),
+            "wallet_pct": allocation.get('wallet_pct'),
+            "investment_pct": allocation.get('investment_pct'),
+            "algo_pct": allocation.get('algo_pct'),
+            "index_pct": allocation.get('index_pct'),
+            "bonds_pct": allocation.get('bonds_pct'),
+            "crypto_pct": allocation.get('crypto_pct'),
+        },
         "allocations": allocations,
         "policies_count": len(customer_policies)
     }
@@ -43332,17 +43371,10 @@ For claims or questions, please contact:
                             UNDERWRITING_FILES.pop(fid, None)
                         result['removed']['underwriting_files'] = len(uw_files_to_remove)
                     
-                    # 9. Reset customer allocation preferences to defaults
+                    # 9. Reset customer allocation preferences to kernel defaults
                     if customer_id in CUSTOMER_ALLOCATIONS:
                         CUSTOMER_ALLOCATIONS[customer_id] = {
-                            'savings_pct': 25.0,      # Default: 25% savings
-                            'risk_pct': 75.0,         # Default: 75% risk coverage
-                            'wallet_pct': 40.0,       # 40% of savings to Health Wallet
-                            'investment_pct': 50.0,   # 50% of savings to Investment
-                            'algo_pct': 10.0,         # 10% of savings to Algo Trading
-                            'index_pct': 60.0,        # 60% of investment to Index Funds
-                            'bonds_pct': 30.0,        # 30% of investment to Bonds
-                            'crypto_pct': 10.0,       # 10% of investment to Crypto
+                            **DEFAULT_CUSTOMER_ALLOCATION,
                             'updated_at': datetime.now().isoformat(),
                             'customer_id': customer_id
                         }
@@ -48842,8 +48874,8 @@ For claims or questions, please contact:
                             # Route savings portion through pipeline if configured
                             if savings_pipeline_enabled and savings_pipeline_service:
                                 try:
-                                    customer_alloc = CUSTOMER_ALLOCATIONS.get(customer_id, {})
-                                    savings_pct = customer_alloc.get('savings_pct', 75)
+                                    customer_alloc = get_customer_allocation(customer_id)
+                                    savings_pct = customer_alloc.get('savings_pct', DEFAULT_CUSTOMER_ALLOCATION['savings_pct'])
                                     savings_amount = amount * (savings_pct / 100)
                                     
                                     if savings_amount > 0:
@@ -53383,8 +53415,8 @@ For claims or questions, please contact:
                 if savings_pipeline_enabled and savings_pipeline_service and policy_id:
                     try:
                         # Get customer's allocation preferences
-                        customer_alloc = CUSTOMER_ALLOCATIONS.get(customer_id, {})
-                        savings_pct = customer_alloc.get('savings_pct', 75)
+                        customer_alloc = get_customer_allocation(customer_id)
+                        savings_pct = customer_alloc.get('savings_pct', DEFAULT_CUSTOMER_ALLOCATION['savings_pct'])
                         savings_amount = amount * (savings_pct / 100)
                         
                         if savings_amount > 0:
@@ -54661,11 +54693,11 @@ For claims or questions, please contact:
                 # If allocation data provided, update preferences
                 if any(k in data for k in ['savings_pct', 'risk_pct', 'index_pct', 'bonds_pct', 'crypto_pct']):
                     allocation_data = {
-                        'savings_pct': float(data.get('savings_pct', 25.0)),
-                        'risk_pct': float(data.get('risk_pct', 75.0)),
-                        'index_pct': float(data.get('index_pct', 60.0)),
-                        'bonds_pct': float(data.get('bonds_pct', 30.0)),
-                        'crypto_pct': float(data.get('crypto_pct', 10.0)),
+                        'savings_pct': float(data.get('savings_pct', DEFAULT_CUSTOMER_ALLOCATION['savings_pct'])),
+                        'risk_pct': float(data.get('risk_pct', DEFAULT_CUSTOMER_ALLOCATION['risk_pct'])),
+                        'index_pct': float(data.get('index_pct', DEFAULT_CUSTOMER_ALLOCATION['index_pct'])),
+                        'bonds_pct': float(data.get('bonds_pct', DEFAULT_CUSTOMER_ALLOCATION['bonds_pct'])),
+                        'crypto_pct': float(data.get('crypto_pct', DEFAULT_CUSTOMER_ALLOCATION['crypto_pct'])),
                     }
                     
                     try:
@@ -56214,18 +56246,11 @@ def _seed_startup_demo_fixtures() -> None:
         
         if 'CUST-ASAF-001' not in CUSTOMER_ALLOCATIONS:
             CUSTOMER_ALLOCATIONS['CUST-ASAF-001'] = {
-                'savings_pct': 75.0,
-                'risk_pct': 25.0,
-                'wallet_pct': 30.0,
-                'investment_pct': 65.0,
-                'algo_pct': 5.0,
-                'index_pct': 60.0,
-                'bonds_pct': 30.0,
-                'crypto_pct': 10.0,
+                **DEFAULT_CUSTOMER_ALLOCATION,
                 'updated_at': now.isoformat(),
                 'customer_id': 'CUST-ASAF-001'
             }
-            print(f"   ✓ Allocation preferences: 75% savings / 25% risk")
+            print(f"   ✓ Allocation preferences: {DEFAULT_CUSTOMER_ALLOCATION['savings_pct']:.0f}% savings / {DEFAULT_CUSTOMER_ALLOCATION['risk_pct']:.0f}% risk")
         
         print("✓ Customer wallets and investments initialized")
     except Exception as e:
