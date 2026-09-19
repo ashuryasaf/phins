@@ -486,6 +486,8 @@ class TestOwnershipIsolationAndAffiliatedSummary(unittest.TestCase):
         serialized = json.dumps(export_payload)
         self.assertNotIn('http://', serialized)
         self.assertNotIn('https://', serialized)
+        self.assertFalse(export_payload.get('is_pension_data'))
+        self.assertTrue(any(s.title == 'Data Profile' for s in report.sections))
 
     def test_affiliated_summary_normalizes_customer_identity_fields(self):
         csv_content = b"""customer_id,birth_date,savings_balance,cover_amount,policy_number

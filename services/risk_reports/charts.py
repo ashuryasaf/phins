@@ -17,7 +17,8 @@ class ChartsMixin:
     def _build_savings_cover_id_charts(
         self,
         summary: Optional[Dict[str, Any]],
-        lang_code: str
+        lang_code: str,
+        include_id_coverage: bool = True,
     ) -> List[ChartConfig]:
         """Generate supplementary charts focused on savings, cover and ID availability."""
         if not summary:
@@ -45,7 +46,7 @@ class ChartsMixin:
                 }
             ))
 
-        if records_analyzed > 0:
+        if include_id_coverage and records_analyzed > 0:
             missing_ids = max(records_analyzed - id_rows, 0)
             charts.append(ChartConfig(
                 type=ChartType.DOUGHNUT,
@@ -83,7 +84,11 @@ class ChartsMixin:
         # Check if we have pension data for specialized charts
         if pension_data:
             charts.extend(self._generate_pension_charts(pension_data, analysis.language))
-            charts.extend(self._build_savings_cover_id_charts(savings_cover_id_summary, analysis.language))
+            # Savings vs cover is assessment data; skip the ID-coverage doughnut
+            # (that is a statistical completeness view, not the assessment).
+            charts.extend(self._build_savings_cover_id_charts(
+                savings_cover_id_summary, analysis.language, include_id_coverage=False
+            ))
             return charts
         
         # Risk Score Gauge (for non-pension data)

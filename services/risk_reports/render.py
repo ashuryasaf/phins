@@ -55,7 +55,11 @@ class RenderMixin:
         # 3.5 Savings/Cover/ID affiliation section (table-oriented summary)
         if savings_cover_id_summary is None:
             savings_cover_id_summary = self._extract_savings_cover_id_summary(doc_data, pension_data)
-        affiliated_summary_section = self._build_savings_cover_id_section(savings_cover_id_summary, is_hebrew)
+        affiliated_summary_section = self._build_savings_cover_id_section(
+            savings_cover_id_summary,
+            is_hebrew,
+            assessment_only=bool(pension_data or pension_report),
+        )
         if affiliated_summary_section:
             sections.append(affiliated_summary_section)
         
@@ -69,14 +73,21 @@ class RenderMixin:
                 order=3
             ))
         
-        # 4. Data Profile Overview
-        total_records = analysis.key_metrics.get('total_records', 0)
-        numeric_cols = analysis.key_metrics.get('numeric_columns', 0)
-        cat_cols = analysis.key_metrics.get('categorical_columns', 0)
+        is_pension_assessment = bool(pension_data or pension_report)
         completeness = analysis.key_metrics.get('data_completeness', 100)
-        
-        if is_hebrew:
-            profile_content = f"""📊 פרופיל הנתונים:
+
+        # Statistical filler (Data Profile, correlations, patterns, generic
+        # key-metrics) is not the Mislaka assessment itself. Skip it so the
+        # report — and the downloadable PDF — stay on identity, accounts,
+        # סה״כ צבירה and פיצויים.
+        if not is_pension_assessment:
+            # 4. Data Profile Overview
+            total_records = analysis.key_metrics.get('total_records', 0)
+            numeric_cols = analysis.key_metrics.get('numeric_columns', 0)
+            cat_cols = analysis.key_metrics.get('categorical_columns', 0)
+
+            if is_hebrew:
+                profile_content = f"""📊 פרופיל הנתונים:
 
 • סה"כ רשומות: {total_records}
 • שדות מספריים: {numeric_cols}
@@ -85,8 +96,8 @@ class RenderMixin:
 • סוג נתונים: {analysis.data_classification.value}
 • שפה: {analysis.language_name}
 • רמת ביטחון: {analysis.confidence:.0%}"""
-        else:
-            profile_content = f"""📊 Data Profile:
+            else:
+                profile_content = f"""📊 Data Profile:
 
 • Total Records: {total_records}
 • Numeric Fields: {numeric_cols}
@@ -95,17 +106,17 @@ class RenderMixin:
 • Data Type: {analysis.data_classification.value}
 • Language: {analysis.language_name}
 • Confidence Level: {analysis.confidence:.0%}"""
-        
-        sections.append(ReportSection(
-            title='פרופיל נתונים' if is_hebrew else 'Data Profile',
-            content=profile_content,
-            order=2
-        ))
-        
+
+            sections.append(ReportSection(
+                title='פרופיל נתונים' if is_hebrew else 'Data Profile',
+                content=profile_content,
+                order=2
+            ))
+
         # 3. Statistical Analysis (BI Metrics)
         # SKIP for pension data - the pension report already shows meaningful data clearly
         # Statistical analysis of IDs/policy numbers is meaningless
-        if not pension_report:  # Only show statistical analysis for non-pension data
+        if not is_pension_assessment:  # Only show statistical analysis for non-pension data
             stat_factors = [f for f in analysis.extracted_factors if f.category == 'statistical']
             if stat_factors:
                 if is_hebrew:
@@ -137,9 +148,9 @@ class RenderMixin:
                     order=3
                 ))
         
-        # 4. Correlation Insights
+        # 4. Correlation Insights — skip for Mislaka (not assessment data)
         top_corr = analysis.key_metrics.get('top_correlation')
-        if top_corr:
+        if top_corr and not is_pension_assessment:
             if is_hebrew:
                 corr_content = f"""🔗 מתאמים שזוהו:
 
@@ -161,8 +172,8 @@ class RenderMixin:
                 order=4
             ))
         
-        # 5. Patterns & Trends
-        if analysis.patterns_found:
+        # 5. Patterns & Trends — skip for Mislaka (not assessment data)
+        if analysis.patterns_found and not is_pension_assessment:
             if is_hebrew:
                 patterns_lines = ['🔍 דפוסים ומגמות שזוהו:\n']
                 for i, p in enumerate(analysis.patterns_found, 1):
@@ -207,6 +218,11 @@ class RenderMixin:
                 order=6
             ))
         
+        # 7. Risk Assessment / Key Metrics — statistical scores, not the
+        # Mislaka assessment. Keep anomalies (identity / integrity).
+        if is_pension_assessment:
+            return sections
+
         # 7. Risk Assessment
         risk_score = analysis.risk_score
         if risk_score < 30:
@@ -770,7 +786,8 @@ Factors Affecting Score:
     def _build_savings_cover_id_section(
         self,
         summary: Optional[Dict[str, Any]],
-        is_hebrew: bool
+        is_hebrew: bool,
+        assessment_only: bool = False,
     ) -> Optional[ReportSection]:
         """Build a compact affiliated section for savings/cover/ID analysis."""
         if not summary:
@@ -784,20 +801,33 @@ Factors Affecting Score:
             return None
 
         if is_hebrew:
-            content = (
-                "סיכום מסונף לחיסכון וביטוח (על בסיס שיוכי מסלקה):\n\n"
-                f"• מזהה לקוח: {summary.get('customer_id', 'לא זמין')}\n"
-                f"• תאריך לידה: {summary.get('birth_date', 'לא זמין')}"
-                + (f" (מקור: {summary.get('birth_date_raw')})" if summary.get('birth_date_raw') else "")
-                + "\n"
-                f"• רשומות שנותחו: {records_analyzed}\n"
-                f"• סך חיסכון: ₪{total_savings:,.2f}\n"
-                f"• סה״כ פיצויים: ₪{float(summary.get('total_severance', 0) or 0):,.2f}\n"
-                f"• סך כיסוי: ₪{total_cover:,.2f}\n"
-                f"• מזהים ייחודיים: {unique_id_count}\n"
-                f"• יחס כיסוי/חיסכון: {summary.get('coverage_to_savings_ratio', 'N/A')}\n"
-                f"• תקינות מזהה: {'✓ תקין' if summary.get('customer_id_valid') else '⚠ דורש בדיקה'}"
-            )
+            if assessment_only:
+                content = (
+                    "סיכום הערכת מסלקה (נתוני הלקוח מהקבצים המסונפים):\n\n"
+                    f"• תעודת זהות: {summary.get('customer_id', 'לא זמין')}\n"
+                    f"• תאריך לידה: {summary.get('birth_date', 'לא זמין')}"
+                    + (f" (מקור: {summary.get('birth_date_raw')})" if summary.get('birth_date_raw') else "")
+                    + "\n"
+                    f"• סה״כ צבירה: ₪{total_savings:,.2f}\n"
+                    f"• סה״כ פיצויים: ₪{float(summary.get('total_severance', 0) or 0):,.2f}\n"
+                    f"• סך כיסוי: ₪{total_cover:,.2f}\n"
+                    f"• תקינות מזהה: {'✓ תקין' if summary.get('customer_id_valid') else '⚠ דורש בדיקה'}"
+                )
+            else:
+                content = (
+                    "סיכום מסונף לחיסכון וביטוח (על בסיס שיוכי מסלקה):\n\n"
+                    f"• מזהה לקוח: {summary.get('customer_id', 'לא זמין')}\n"
+                    f"• תאריך לידה: {summary.get('birth_date', 'לא זמין')}"
+                    + (f" (מקור: {summary.get('birth_date_raw')})" if summary.get('birth_date_raw') else "")
+                    + "\n"
+                    f"• רשומות שנותחו: {records_analyzed}\n"
+                    f"• סך חיסכון: ₪{total_savings:,.2f}\n"
+                    f"• סה״כ פיצויים: ₪{float(summary.get('total_severance', 0) or 0):,.2f}\n"
+                    f"• סך כיסוי: ₪{total_cover:,.2f}\n"
+                    f"• מזהים ייחודיים: {unique_id_count}\n"
+                    f"• יחס כיסוי/חיסכון: {summary.get('coverage_to_savings_ratio', 'N/A')}\n"
+                    f"• תקינות מזהה: {'✓ תקין' if summary.get('customer_id_valid') else '⚠ דורש בדיקה'}"
+                )
             title = 'סיכום מסונף - חיסכון, כיסוי וזיהוי'
             columns = ['מזהה לקוח', 'תאריך לידה', 'מזהה (מוסתר)', 'חיסכון', 'כיסוי', 'אסמכתא']
             data_rows = [{
@@ -809,20 +839,33 @@ Factors Affecting Score:
                 'אסמכתא': row.get('reference', ''),
             } for row in summary.get('sample_rows', [])[:60]]
         else:
-            content = (
-                "Affiliated savings and insurance snapshot (Mislaka-aligned):\n\n"
-                f"• Customer ID: {summary.get('customer_id', 'N/A')}\n"
-                f"• Birth Date: {summary.get('birth_date', 'N/A')}"
-                + (f" (source: {summary.get('birth_date_raw')})" if summary.get('birth_date_raw') else "")
-                + "\n"
-                f"• Records analyzed: {records_analyzed}\n"
-                f"• Total savings: ₪{total_savings:,.2f}\n"
-                f"• Total severance: ₪{float(summary.get('total_severance', 0) or 0):,.2f}\n"
-                f"• Total cover: ₪{total_cover:,.2f}\n"
-                f"• Unique IDs: {unique_id_count}\n"
-                f"• Cover/Savings ratio: {summary.get('coverage_to_savings_ratio', 'N/A')}\n"
-                f"• ID validation: {'Valid' if summary.get('customer_id_valid') else 'Needs review'}"
-            )
+            if assessment_only:
+                content = (
+                    "Mislaka assessment snapshot (from affiliated source files):\n\n"
+                    f"• National ID: {summary.get('customer_id', 'N/A')}\n"
+                    f"• Birth Date: {summary.get('birth_date', 'N/A')}"
+                    + (f" (source: {summary.get('birth_date_raw')})" if summary.get('birth_date_raw') else "")
+                    + "\n"
+                    f"• Total accumulation: ₪{total_savings:,.2f}\n"
+                    f"• Total severance: ₪{float(summary.get('total_severance', 0) or 0):,.2f}\n"
+                    f"• Total cover: ₪{total_cover:,.2f}\n"
+                    f"• ID validation: {'Valid' if summary.get('customer_id_valid') else 'Needs review'}"
+                )
+            else:
+                content = (
+                    "Affiliated savings and insurance snapshot (Mislaka-aligned):\n\n"
+                    f"• Customer ID: {summary.get('customer_id', 'N/A')}\n"
+                    f"• Birth Date: {summary.get('birth_date', 'N/A')}"
+                    + (f" (source: {summary.get('birth_date_raw')})" if summary.get('birth_date_raw') else "")
+                    + "\n"
+                    f"• Records analyzed: {records_analyzed}\n"
+                    f"• Total savings: ₪{total_savings:,.2f}\n"
+                    f"• Total severance: ₪{float(summary.get('total_severance', 0) or 0):,.2f}\n"
+                    f"• Total cover: ₪{total_cover:,.2f}\n"
+                    f"• Unique IDs: {unique_id_count}\n"
+                    f"• Cover/Savings ratio: {summary.get('coverage_to_savings_ratio', 'N/A')}\n"
+                    f"• ID validation: {'Valid' if summary.get('customer_id_valid') else 'Needs review'}"
+                )
             title = 'Affiliated Summary - Savings, Cover & ID'
             columns = ['Customer ID', 'Birth Date', 'Masked ID', 'Savings', 'Cover', 'Reference']
             data_rows = [{

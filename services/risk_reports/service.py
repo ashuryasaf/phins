@@ -677,16 +677,39 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
         doc = self.documents.get(analysis.document_id, {}) if analysis.document_id else {}
         doc_data = doc.get('parsed_data', {}) if isinstance(doc, dict) else {}
         pension_data = doc_data.get('pension_data') if isinstance(doc_data, dict) else None
+        if not pension_data and isinstance(report.metadata, dict):
+            pension_data = report.metadata.get('pension_data')
+        is_pension_data = bool(
+            pension_data
+            or (isinstance(report.metadata, dict) and report.metadata.get('is_pension_data'))
+        )
         summary = self._extract_savings_cover_id_summary(doc_data, pension_data)
 
-        table_sections: List[Dict[str, Any]] = []
-        for section in report.sections:
-            if not section.data_table:
-                continue
+        from services.risk_reports.pdf_export import is_non_assessment_section_title
 
+        table_sections: List[Dict[str, Any]] = []
+        assessment_sections: List[Dict[str, Any]] = []
+        for section in report.sections:
             section_title = section.title or ''
             title_lower = section_title.lower()
             if 'swiftness' in title_lower or 'resource' in title_lower:
+                continue
+            if is_pension_data and is_non_assessment_section_title(section_title):
+                continue
+
+            data_table = section.data_table if isinstance(section.data_table, dict) else {}
+            columns = data_table.get('columns', []) if data_table else []
+            rows = data_table.get('rows', []) if data_table else []
+            if not isinstance(rows, list):
+                rows = []
+            assessment_sections.append({
+                'title': section_title,
+                'content': section.content or '',
+                'columns': [str(c) for c in columns] if isinstance(columns, list) else [],
+                'rows': [row for row in rows[:80] if isinstance(row, dict)],
+            })
+
+            if not section.data_table:
                 continue
 
             data_table = section.data_table if isinstance(section.data_table, dict) else {}
@@ -753,6 +776,55 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
             'expected_impact': rec.expected_impact,
         } for rec in report.recommendations]
 
+        pension_assessment: Optional[Dict[str, Any]] = None
+        if is_pension_data:
+            client = {}
+            totals = {}
+            accounts: List[Dict[str, Any]] = []
+            if isinstance(pension_data, dict):
+                client = pension_data.get('client') or {}
+                if isinstance(client, list):
+                    client = client[0] if client else {}
+                if not isinstance(client, dict):
+                    client = {}
+                totals = pension_data.get('totals') or pension_data.get('summary') or {}
+                if not isinstance(totals, dict):
+                    totals = {}
+                for acct in (pension_data.get('accounts') or [])[:80]:
+                    if not isinstance(acct, dict):
+                        continue
+                    # Copy the stored amounts — never re-sum or invent values.
+                    accounts.append({
+                        'policy_number': acct.get('policy_number', ''),
+                        'provider': acct.get('provider', ''),
+                        'product_type': acct.get('product_type', ''),
+                        'product_type_name': acct.get('product_type_name', acct.get('product_name', '')),
+                        'status': acct.get('status', ''),
+                        'total_balance': acct.get('total_balance', acct.get('savings_balance', 0)),
+                        'savings_balance': acct.get('savings_balance', 0),
+                        'severance_balance': acct.get('severance_balance', 0),
+                        'employer_name': acct.get('employer_name', ''),
+                    })
+            if not client.get('id_number') and summary.get('customer_id'):
+                client = dict(client)
+                client['id_number'] = summary.get('customer_id')
+            if not client.get('birth_date') and summary.get('birth_date'):
+                client = dict(client)
+                client['birth_date'] = summary.get('birth_date')
+            pension_assessment = {
+                'client': client,
+                'totals': {
+                    'total_balance': totals.get('total_balance', summary.get('total_savings', 0)),
+                    'total_savings': totals.get('total_savings', totals.get('total_savings_balance', 0)),
+                    'total_severance': totals.get(
+                        'total_severance',
+                        totals.get('total_severance_balance', summary.get('total_severance', 0)),
+                    ),
+                    'account_count': totals.get('account_count', len(accounts)),
+                },
+                'accounts': accounts,
+            }
+
         return {
             'report_id': report.id,
             'title': report.title,
@@ -761,10 +833,13 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
             'report_type': report.report_type,
             'risk_score': report.metadata.get('risk_score'),
             'confidence': report.metadata.get('confidence'),
+            'is_pension_data': is_pension_data,
+            'pension_assessment': pension_assessment,
+            'assessment_sections': assessment_sections,
             'savings_cover_id_summary': summary,
             'table_sections': table_sections,
-            'chart_summaries': chart_summaries,
-            'recommendations': recommendations,
+            'chart_summaries': [] if is_pension_data else chart_summaries,
+            'recommendations': [] if is_pension_data else recommendations,
         }
     
     def to_dict(self, obj) -> Dict:
