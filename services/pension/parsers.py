@@ -65,6 +65,9 @@ class MislakaParserMixin:
         'SACH-YITRA', 'SachYitra', 'SCHUM', 'Saldo', 'SALDO',
     )
     YITRA_TYPE_TAGS = ('KOD-SUG-HAFRASHA', 'KodSugHafrasha', 'SUG-YITRA', 'SUG-HAFRASHA')
+    TOTAL_BALANCE_VARIANTS = tuple(
+        variants for _tag, field, variants in CompiledFields.ACCOUNT if field == 'total_balance'
+    )
     CLIENT_ID_RAW_TAGS = (
         'MISPAR-ZIHUI-LAKOACH', 'MisparZihuiLakoach', 'MISPARZEHUT',
         'MisparZehut', 'MISPAR-ZEHUT', 'MISPAR-ZIHUY', 'ZEHUT', 'TEUDAT-ZEHUT',
@@ -838,6 +841,7 @@ class MislakaParserMixin:
             account['status'] = 'פעיל'
             account['status_en'] = 'Active'
 
+        self._drop_component_total(elem, account)
         self._harvest_component_balances(elem, account)
         return account
 
@@ -967,6 +971,46 @@ class MislakaParserMixin:
             if value:
                 return value
         return None
+
+    def _account_level_index(self, elem) -> Dict[str, Optional[str]]:
+        """``tag → text of the first descendant with that tag``, skipping Yitra
+        component subtrees so a component's amount is never read as the
+        account's own figure."""
+        index: Dict[str, Optional[str]] = {}
+        stack = list(reversed(list(elem)))
+        while stack:
+            node = stack.pop()
+            local = self._local_tag(node.tag)
+            if local in self.YITRA_BLOCK_TAGS:
+                continue
+            if local not in index:
+                index[local] = node.text
+            stack.extend(reversed(list(node)))
+        return index
+
+    def _drop_component_total(self, elem, account: Dict[str, Any]) -> None:
+        """Holdings aliases such as ``SACH-YITRA`` also name the amount inside a
+        ``Yitra`` component, and ``_find_text`` takes the first matching
+        descendant. Re-read the total outside the components so one component
+        cannot stand in for the account's own holdings; without an
+        account-level total the harvest below sums the components instead."""
+        if 'total_balance' not in account:
+            return
+        if self._first_named(elem, *self.YITRA_BLOCK_TAGS) is None:
+            return
+
+        index = self._account_level_index(elem)
+        total = None
+        for variants in self.TOTAL_BALANCE_VARIANTS:
+            for variant in variants:
+                text = index.get(variant)
+                if text and text.strip():
+                    total = text.strip()
+                    break
+        if total is None:
+            account.pop('total_balance')
+        else:
+            account['total_balance'] = self._parse_number(total)
 
     def _harvest_component_balances(self, elem, account: Dict[str, Any]) -> None:
         """Read official Yitra / PerutYitra children (KOD-SUG-HAFRASHA 1/2/3)."""

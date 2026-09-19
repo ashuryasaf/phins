@@ -98,6 +98,43 @@ SEVERANCE_XML = """<?xml version="1.0" encoding="UTF-8"?>
 """.encode('utf-8')
 
 
+COMPONENT_AMOUNT_HOLDINGS = """<?xml version="1.0" encoding="UTF-8"?>
+<Mimshak xmlns="http://www.swiftness.co.il/mivneachid/holdings">
+  <YeshutLakoach>
+    <MISPAR-ZIHUI-LAKOACH>123456782</MISPAR-ZIHUI-LAKOACH>
+  </YeshutLakoach>
+  <YeshutYatzran>
+    <SHEM-YATZRAN>מגדל</SHEM-YATZRAN>
+    <Mutzar>
+      <HeshbonOPolisa>
+        <MISPAR-POLISA-O-HESHBON>POL-WITH-TOTAL</MISPAR-POLISA-O-HESHBON>
+        <TOTAL-CHISACHON-MTZBR>100000</TOTAL-CHISACHON-MTZBR>
+        <Yitra>
+          <KOD-SUG-HAFRASHA>1</KOD-SUG-HAFRASHA>
+          <SACH-YITRA>70000</SACH-YITRA>
+        </Yitra>
+        <Yitra>
+          <KOD-SUG-HAFRASHA>3</KOD-SUG-HAFRASHA>
+          <SACH-YITRA>30000</SACH-YITRA>
+        </Yitra>
+      </HeshbonOPolisa>
+      <HeshbonOPolisa>
+        <MISPAR-POLISA-O-HESHBON>POL-COMPONENTS-ONLY</MISPAR-POLISA-O-HESHBON>
+        <Yitra>
+          <KOD-SUG-HAFRASHA>1</KOD-SUG-HAFRASHA>
+          <ERECH-PIDYON>40000</ERECH-PIDYON>
+        </Yitra>
+        <Yitra>
+          <KOD-SUG-HAFRASHA>3</KOD-SUG-HAFRASHA>
+          <ERECH-PIDYON>10000</ERECH-PIDYON>
+        </Yitra>
+      </HeshbonOPolisa>
+    </Mutzar>
+  </YeshutYatzran>
+</Mimshak>
+""".encode('utf-8')
+
+
 CONCENTRATED_CSV = (
     'שם מלא,ת.ז.,סה״כ צבירה,פיצויים,יצרן,מספר פוליסה,סוג מוצר\n'
     'ישראל ישראלי,123456782,"88,000.50",12000,מגדל,POL-HOLD-1,קרן פנסיה מקיפה\n'
@@ -128,6 +165,13 @@ class TestOfficialMislakaXmlExtraction(unittest.TestCase):
         self.assertEqual(account['total_balance'], 88000.50)
         self.assertEqual(account['severance_balance'], 12000)
         self.assertEqual(account['provider'], 'מגדל')
+
+    def test_yitra_component_amounts_do_not_replace_account_total(self):
+        data = self.agent._parse_mislaka_xml(COMPONENT_AMOUNT_HOLDINGS)
+        by_policy = {a['policy_number']: a for a in data['accounts']}
+        self.assertEqual(by_policy['POL-WITH-TOTAL']['total_balance'], 100000)
+        self.assertEqual(by_policy['POL-COMPONENTS-ONLY']['total_balance'], 50000)
+        self.assertEqual(by_policy['POL-COMPONENTS-ONLY']['severance_balance'], 10000)
 
     def test_namespaced_severance_interface(self):
         data = self.agent._parse_mislaka_xml(SEVERANCE_XML)
