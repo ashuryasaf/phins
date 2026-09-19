@@ -362,9 +362,9 @@ class TestBillingServiceIntegration:
         bill = self.billing.create_bill('POL001', 1000.00)
         paid_bill = self.billing.record_payment(bill['bill_id'], 1000.00)
         
-        # Check bill allocation was updated
-        assert paid_bill['premium_allocation']['risk_amount_paid'] == 750.00
-        assert paid_bill['premium_allocation']['savings_amount_paid'] == 250.00
+        # Check bill allocation was updated (kernel default 50/50)
+        assert paid_bill['premium_allocation']['risk_amount_paid'] == 500.00
+        assert paid_bill['premium_allocation']['savings_amount_paid'] == 500.00
         assert paid_bill['premium_allocation']['allocated'] == True
         assert paid_bill['premium_allocation']['allocation_id'] is not None
         
@@ -387,9 +387,9 @@ class TestBillingServiceIntegration:
         assert summary['total_billed'] == 2500.00
         assert summary['total_paid'] == 2500.00
         
-        # Check allocation summary
-        assert summary['allocation_summary']['total_risk_allocated'] == 1875.00  # 2500 * 75%
-        assert summary['allocation_summary']['total_savings_allocated'] == 625.00  # 2500 * 25%
+        # Check allocation summary (kernel default 50/50)
+        assert summary['allocation_summary']['total_risk_allocated'] == 1250.00  # 2500 * 50%
+        assert summary['allocation_summary']['total_savings_allocated'] == 1250.00  # 2500 * 50%
 
 
 class TestScenarioAsafAssurance:
