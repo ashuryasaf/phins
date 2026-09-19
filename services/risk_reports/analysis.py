@@ -118,10 +118,21 @@ class HebrewDocumentExtractor:
             r'policy[\s#:]*([0-9\-/]+)',
         ],
         'id_number': [
-            r'ת\.?ז\.?[\s:]*([0-9]{9})',
-            r'תעודת זהות[\s:]*([0-9]{9})',
-            r'מספר זהות[\s:]*([0-9]{9})',
-            r'ת"ז[\s:]*([0-9]{9})',
+            r'ת\.?\s*ז\.?[\s:]*([0-9]{8,9})',
+            r'תעודת זהות[\s:]*([0-9]{8,9})',
+            r'מספר זהות[\s:]*([0-9]{8,9})',
+            r'מספר\s*ת\.?\s*ז\.?[\s:]*([0-9]{8,9})',
+            r'ת["״]ז[\s.:]*([0-9]{8,9})',
+        ],
+        'total_accumulation': [
+            r'סה["״]כ\s*צבירה[\s:]*[₪$]?\s*([0-9,.]+)',
+            r'סך\s*(?:הכל\s*)?צבירה[\s:]*[₪$]?\s*([0-9,.]+)',
+            r'צבירה כוללת[\s:]*[₪$]?\s*([0-9,.]+)',
+        ],
+        'severance': [
+            r'יתרת\s*פיצויים[\s:]*[₪$]?\s*([0-9,.]+)',
+            r'סה["״]כ\s*פיצויים[\s:]*[₪$]?\s*([0-9,.]+)',
+            r'פיצויים[\s:]*[₪$]?\s*([0-9,.]+)',
         ],
         'start_date': [
             r'תאריך תחילה[\s:]*([0-9]{1,2}[/\-\.][0-9]{1,2}[/\-\.][0-9]{2,4})',
@@ -190,7 +201,7 @@ class HebrewDocumentExtractor:
                 if match:
                     value = match.group(1).strip()
                     # Clean up numeric values
-                    if field_name in ['premium', 'cover_amount']:
+                    if field_name in ['premium', 'cover_amount', 'total_accumulation', 'severance']:
                         value = value.replace(',', '')
                         try:
                             value = float(value)
