@@ -6,7 +6,8 @@ tables at the bottom are precompiled once at import so the XML parser never
 recomputes hyphen-stripped or CamelCase spellings per element.
 """
 
-from typing import Dict, Tuple
+import re
+from typing import Dict, Optional, Tuple
 
 
 class MislakaSchemaMapping:
@@ -139,8 +140,15 @@ class MislakaSchemaMapping:
         'MisparZihuiLakoach': 'id_number',
         'MISPARZEHUT': 'id_number',
         'MisparZehut': 'id_number',
+        'MISPAR-ZEHUT': 'id_number',
+        'MisparZehutLakoach': 'id_number',
+        'MISPAR-ZIHUY': 'id_number',
+        'MisparZihuy': 'id_number',
         'MISPAR-ZIHUY-MITPATZEACH': 'id_number',
         'MisparZihuiMitpatcheach': 'id_number',
+        'ZEHUT': 'id_number',
+        'TEUDAT-ZEHUT': 'id_number',
+        'TeudatZehut': 'id_number',
         'SUG-ZIHUI-LAKOACH': 'id_type',
         'SugZihuiLakoach': 'id_type',
         'SugZihuiMitpatcheach': 'id_type',
@@ -217,19 +225,46 @@ class MislakaSchemaMapping:
         'TAARICH-TCHILAT-BITUACH': 'start_date',
         'TaarichTchilatBituach': 'start_date',
         
-        # Balances
+        # Balances — official Mivne Achid / Swiftness holdings aliases
         'SALDO': 'total_balance',
         'Saldo': 'total_balance',
         'YITRA-KOLELET': 'total_balance',
         'YitraKolelet': 'total_balance',
-        'YITROT': 'total_balance',
-        'Yitrot': 'total_balance',
         'SCHUM-HATZBARA': 'total_balance',
         'SchumHatzbara': 'total_balance',
+        'SCHUM-TZVIRA': 'total_balance',
+        'SchumTzvira': 'total_balance',
+        'SCHUM-TZVIRA-NOCHECHIT': 'total_balance',
+        'SchumTzviraNochechit': 'total_balance',
+        'TOTAL-CHISACHON': 'total_balance',
+        'TotalChisachon': 'total_balance',
+        'TOTAL-CHISACHON-MTZBR': 'total_balance',
+        'TotalChisachonMtzbr': 'total_balance',
+        'TZVIRAT-KSAFIM': 'total_balance',
+        'TzviratKsafim': 'total_balance',
+        'ERECH-PIDYON': 'total_balance',
+        'ErechPidyon': 'total_balance',
+        'ERECH-PIDYON-NOCHECHI': 'total_balance',
+        'ErechPidyonNochechi': 'total_balance',
+        'SACH-YITRA': 'total_balance',
+        'SachYitra': 'total_balance',
+        'SACH-YITRA-NOCHECHIT': 'total_balance',
+        'YITRA-TZVURA': 'total_balance',
+        'YitraTzvura': 'total_balance',
+        'TOTAL-SAVING': 'total_balance',
+        'TotalSaving': 'total_balance',
         'YITRA-CHISACHON': 'savings_balance',
         'YitraChisachon': 'savings_balance',
+        'YITRAT-TAGMULIM': 'savings_balance',
+        'YitratTagmulim': 'savings_balance',
+        'TOTAL-CHISACHON-TAGMULIM': 'savings_balance',
+        'TotalChisachonTagmulim': 'savings_balance',
         'YITRA-PITZUIM': 'severance_balance',
         'YitraPitzuim': 'severance_balance',
+        'YITRAT-PITZUIM': 'severance_balance',
+        'YitratPitzuim': 'severance_balance',
+        'TOTAL-CHISACHON-PITZUIM': 'severance_balance',
+        'TotalChisachonPitzuim': 'severance_balance',
         'KFIFA-PITZUIM': 'severance_balance',
         'KfifaPitzuim': 'severance_balance',
         'PITZUEY-MAASIK': 'employer_severance',
@@ -320,6 +355,10 @@ class MislakaSchemaMapping:
         'KsfPitzuimTzvur': 'total_severance',
         'SACH-PITZUIM': 'total_severance',
         'SachPitzuim': 'total_severance',
+        'YITRAT-PITZUIM': 'total_severance',
+        'YitratPitzuim': 'total_severance',
+        'TOTAL-PITZUIM': 'total_severance',
+        'ERECH-PIDYON-PITZUIM': 'total_severance',
         'ERECH-PIDYON-PITZUIM-MAASEK-NOCHECHI': 'total_severance',
         'PITZUIM-LMSHICHA': 'available_severance',
         'PitzuimLmshicha': 'available_severance',
@@ -414,4 +453,158 @@ class CompiledFields:
     TRUTHY = frozenset({'1', 'כן', 'true', 'True', 'Y', 'yes'})
 
 
-__all__ = ['MislakaSchemaMapping', 'CompiledFields', 'tag_variants']
+# ---------------------------------------------------------------------------
+# Hebrew / Swiftness tabular headers (Excel, CSV, ZIP affiliated reports)
+# ---------------------------------------------------------------------------
+
+# Official Swiftness "דוח מידע מרוכז" and Mislaka Excel/CSV column labels.
+# Keys are stored after ``normalize_hebrew_header`` so gershayim / punctuation
+# variants collapse onto one lookup.
+HEBREW_COLUMN_FIELDS: Dict[str, str] = {
+    'שם': 'full_name',
+    'שם מלא': 'full_name',
+    'שם החוסך': 'full_name',
+    'שם הלקוח': 'full_name',
+    'שם המבוטח': 'full_name',
+    'שם פרטי': 'first_name',
+    'שם משפחה': 'last_name',
+    'תעודת זהות': 'id_number',
+    'ת.ז': 'id_number',
+    'ת"ז': 'id_number',
+    'מספר זהות': 'id_number',
+    'מספר ת.ז': 'id_number',
+    'מספר תעודת זהות': 'id_number',
+    'מזהה לקוח': 'id_number',
+    'id_number': 'id_number',
+    'customer_id': 'id_number',
+    'national_id': 'id_number',
+    'תאריך לידה': 'birth_date',
+    'טלפון': 'phone',
+    'נייד': 'mobile',
+    'דוא"ל': 'email',
+    'אימייל': 'email',
+    'כתובת': 'address',
+    'יצרן': 'provider',
+    'שם יצרן': 'provider',
+    'חברה': 'provider',
+    'שם חברה': 'provider',
+    'גוף מוסדי': 'provider',
+    'שם הגוף המוסדי': 'provider',
+    'מוצר': 'product_name',
+    'שם מוצר': 'product_name',
+    'שם המוצר': 'product_name',
+    'סוג מוצר': 'product_type',
+    'סוג קופה': 'product_type',
+    'סוג תוכנית': 'product_type',
+    'מספר פוליסה': 'policy_number',
+    'מס פוליסה': 'policy_number',
+    "מס' פוליסה": 'policy_number',
+    'מספר חשבון': 'policy_number',
+    'מס חשבון': 'policy_number',
+    'מספר פוליסה/חשבון': 'policy_number',
+    'יתרה': 'total_balance',
+    'יתרה כוללת': 'total_balance',
+    'סך צבירה': 'total_balance',
+    'צבירה': 'total_balance',
+    'סה"כ צבירה': 'total_balance',
+    'סך הכל צבירה': 'total_balance',
+    'סכום צבירה': 'total_balance',
+    'צבירה כוללת': 'total_balance',
+    'ערך פדיון': 'total_balance',
+    'ערך פדיון נוכחי': 'total_balance',
+    'יתרת תגמולים': 'savings_balance',
+    'תגמולים': 'savings_balance',
+    'חיסכון': 'savings_balance',
+    'יתרת פיצויים': 'severance_balance',
+    'פיצויים': 'severance_balance',
+    'סכום פיצויים': 'severance_balance',
+    'סה"כ פיצויים': 'severance_balance',
+    'פיצויי פיטורין': 'severance_balance',
+    'יתרת פיצויים מעסיק': 'severance_balance',
+    'דמי ניהול': 'management_fee',
+    'דמי ניהול מצבירה': 'management_fee_savings',
+    'ד"נ מצבירה': 'management_fee_savings',
+    'דמי ניהול מהפקדות': 'management_fee_deposits',
+    'ד"נ מהפקדות': 'management_fee_deposits',
+    'עמלה': 'management_fee',
+    'סטטוס': 'status',
+    'מצב': 'status',
+    'סטטוס פוליסה': 'status',
+    'מצב חשבון': 'status',
+    'סעיף 14': 'section14',
+    'סעיף14': 'section14',
+    'מעסיק': 'employer_name',
+    'שם מעסיק': 'employer_name',
+    'ביטוח חיים': 'death_coverage',
+    'כיסוי מוות': 'death_coverage',
+    'אובדן כושר': 'disability_coverage',
+    'כיסוי נכות': 'disability_coverage',
+    'תאריך תחילה': 'start_date',
+    'תחילת ביטוח': 'start_date',
+    'תאריך הצטרפות': 'start_date',
+}
+
+_HEBREW_PUNCT_TRANSLATION = str.maketrans({
+    '\u05f4': '"',   # ״ gereshayim
+    '\u201c': '"',
+    '\u201d': '"',
+    '\u05f3': "'",   # ׳ geresh
+    '\u2018': "'",
+    '\u2019': "'",
+})
+
+_HEADER_SPACE_RE = re.compile(r'\s+')
+
+
+def normalize_hebrew_header(name: str) -> str:
+    """Collapse Swiftness/Mislaka header punctuation so ``סה״כ צבירה`` matches ``סה"כ צבירה``."""
+    text = str(name or '').strip().translate(_HEBREW_PUNCT_TRANSLATION)
+    text = _HEADER_SPACE_RE.sub(' ', text)
+    if text.endswith('.'):
+        text = text[:-1].rstrip()
+    if text in {'ת.ז.', 'ת"ז.'}:
+        text = text[:-1]
+    return text
+
+
+def map_hebrew_column(column_name: str) -> Optional[str]:
+    """Map a Hebrew/English tabular header onto the pension field name."""
+    raw = str(column_name or '').strip()
+    if not raw:
+        return None
+    normalized = normalize_hebrew_header(raw)
+    if normalized in HEBREW_COLUMN_FIELDS:
+        return HEBREW_COLUMN_FIELDS[normalized]
+    if raw in HEBREW_COLUMN_FIELDS:
+        return HEBREW_COLUMN_FIELDS[raw]
+
+    matches = []
+    for hebrew_name, field_name in HEBREW_COLUMN_FIELDS.items():
+        if hebrew_name in normalized or hebrew_name in raw:
+            matches.append((len(hebrew_name), field_name))
+    if matches:
+        matches.sort(key=lambda item: item[0], reverse=True)
+        return matches[0][1]
+    return None
+
+
+PENSION_TABULAR_INDICATORS = (
+    'יצרן', 'פוליסה', 'צבירה', 'יתרה', 'תגמולים', 'פיצויים',
+    'קופה', 'פנסיה', 'ביטוח', 'גמל', 'חיסכון', 'קרן', 'ת.ז', 'תעודת',
+)
+
+
+def looks_like_pension_table(columns) -> bool:
+    """True when headers look like a Swiftness/Mislaka holdings export."""
+    for col in columns or []:
+        normalized = normalize_hebrew_header(str(col)).lower()
+        if any(indicator in normalized or indicator in str(col) for indicator in PENSION_TABULAR_INDICATORS):
+            return True
+    return False
+
+
+__all__ = [
+    'MislakaSchemaMapping', 'CompiledFields', 'tag_variants',
+    'HEBREW_COLUMN_FIELDS', 'normalize_hebrew_header', 'map_hebrew_column',
+    'looks_like_pension_table', 'PENSION_TABULAR_INDICATORS',
+]

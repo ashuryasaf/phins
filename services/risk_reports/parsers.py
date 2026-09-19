@@ -67,7 +67,13 @@ class ParserMixin:
             return parsed, 'binary'
         if file_type_lower == 'csv':
             encoding = self._detect_encoding(file_content)
-            return self._parse_csv(file_content.decode(encoding, errors='replace')), encoding
+            parsed = self._parse_csv(file_content.decode(encoding, errors='replace'))
+            pension_data = self._detect_mislaka_excel_data(
+                parsed.get('columns', []), parsed.get('rows', []), filename
+            )
+            if pension_data:
+                parsed['pension_data'] = pension_data
+            return parsed, encoding
 
         # Unknown type: binary -> try Excel, else metadata only; text -> CSV.
         if self._is_binary_content(file_content):
@@ -297,86 +303,27 @@ class ParserMixin:
         Detect and extract Mislaka pension data from Excel columns/rows.
         Maps Hebrew column names to pension data structure.
         """
-        # Hebrew column name mappings for Mislaka data
-        column_mappings = {
-            # Client fields
-            'שם': 'client_name',
-            'שם מלא': 'client_name', 
-            'שם פרטי': 'first_name',
-            'שם משפחה': 'last_name',
-            'תעודת זהות': 'id_number',
-            'ת.ז': 'id_number',
-            'ת"ז': 'id_number',
-            'מספר זהות': 'id_number',
-            'תאריך לידה': 'birth_date',
-            
-            # Provider/Product fields
-            'יצרן': 'provider',
-            'שם יצרן': 'provider',
-            'חברה': 'provider',
-            'שם חברה': 'provider',
-            'מוצר': 'product_name',
-            'שם מוצר': 'product_name',
-            'סוג מוצר': 'product_type',
-            'סוג קופה': 'product_type',
-            
-            # Policy fields
-            'מספר פוליסה': 'policy_number',
-            'מס פוליסה': 'policy_number',
-            'מספר חשבון': 'policy_number',
-            'מס חשבון': 'policy_number',
-            
-            # Balance fields
-            'יתרה': 'balance',
-            'יתרה כוללת': 'total_balance',
-            'סך צבירה': 'total_balance',
-            'צבירה': 'total_balance',
-            'סה"כ צבירה': 'total_balance',
-            'יתרת תגמולים': 'savings_balance',
-            'תגמולים': 'savings_balance',
-            'יתרת פיצויים': 'severance_balance',
-            'פיצויים': 'severance_balance',
-            
-            # Fee fields
-            'דמי ניהול': 'management_fee',
-            'דמי ניהול מצבירה': 'management_fee_savings',
-            'דמי ניהול מהפקדות': 'management_fee_deposits',
-            'עמלה': 'management_fee',
-            
-            # Status fields
-            'סטטוס': 'status',
-            'מצב': 'status',
-            'סטטוס פוליסה': 'status',
-            
-            # Section 14
-            'סעיף 14': 'section14',
-            'סעיף14': 'section14',
-            
-            # Employer
-            'מעסיק': 'employer_name',
-            'שם מעסיק': 'employer_name',
-        }
-        
-        # Check if this looks like pension data
-        pension_indicators = ['יצרן', 'פוליסה', 'צבירה', 'יתרה', 'תגמולים', 'פיצויים', 'קופה', 'פנסיה', 'ביטוח', 'גמל']
-        columns_lower = [str(c).lower() for c in columns]
-        
-        is_pension_data = any(
-            any(indicator in col for indicator in pension_indicators) 
-            for col in columns_lower
-        )
-        
-        if not is_pension_data:
-            return None
-        
-        # Map columns to standardized names
+        try:
+            from services.pension.schema import looks_like_pension_table, map_hebrew_column
+        except Exception:
+            looks_like_pension_table = None
+            map_hebrew_column = None
+
+        if looks_like_pension_table is not None:
+            if not looks_like_pension_table(columns):
+                return None
+        else:
+            pension_indicators = ['יצרן', 'פוליסה', 'צבירה', 'יתרה', 'תגמולים', 'פיצויים', 'קופה', 'פנסיה', 'ביטוח', 'גמל']
+            if not any(any(indicator in str(col) for indicator in pension_indicators) for col in columns):
+                return None
+
         mapped_columns = {}
         for col in columns:
-            col_str = str(col).strip()
-            for hebrew_name, english_name in column_mappings.items():
-                if hebrew_name in col_str or col_str == hebrew_name:
-                    mapped_columns[col] = english_name
-                    break
+            mapped = map_hebrew_column(col) if map_hebrew_column else None
+            if mapped:
+                if mapped == 'full_name':
+                    mapped = 'client_name'
+                mapped_columns[col] = mapped
         
         # Extract client and account data
         client_info = {}
@@ -404,6 +351,8 @@ class ParserMixin:
                         else:
                             account[mapped_name] = str(value).strip()
             
+            if account.get('balance') and not account.get('total_balance'):
+                account['total_balance'] = account.get('balance')
             if account.get('provider') or account.get('policy_number') or account.get('total_balance'):
                 accounts.append(account)
         
@@ -477,6 +426,17 @@ class ParserMixin:
                     encoding = self._detect_encoding(file_content)
                     text_content = file_content.decode(encoding, errors='replace')
                     parsed = self._parse_csv(text_content)
+                    if parsed and not parsed.get('pension_data'):
+                        parsed['pension_data'] = self._detect_mislaka_excel_data(
+                            parsed.get('columns', []), parsed.get('rows', []), name
+                        )
+                    if parsed and parsed.get('pension_data'):
+                        combined_data['integrity']['affiliated_files_processed'] += 1
+                        combined_data['integrity']['pension_sources'].append(name)
+                        combined_data['pension_data'] = self._merge_pension_data_records(
+                            combined_data.get('pension_data'),
+                            parsed.get('pension_data')
+                        )
                 elif ext == 'xml':
                     # Check if it's a pension/insurance XML file
                     parsed = self._parse_pension_xml(file_content, name)
@@ -624,6 +584,41 @@ class ParserMixin:
 
         return normalized
 
+    _ACCOUNT_AMOUNT_FIELDS = (
+        'total_balance', 'savings_balance', 'severance_balance', 'balance',
+        'management_fee', 'management_fee_savings', 'management_fee_deposits',
+        'death_coverage', 'disability_coverage', 'coverage_amount',
+    )
+
+    def _merge_affiliated_accounts(self, accounts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Collapse Swiftness affiliated views of the same policy (XML + concentrated CSV)."""
+        merged_rows: List[Dict[str, Any]] = []
+        index: Dict[Tuple[str, str], int] = {}
+        for account in accounts:
+            if not isinstance(account, dict):
+                continue
+            policy = str(account.get('policy_number') or '').strip()
+            provider = str(account.get('provider') or '').strip()
+            key = (policy, provider)
+            if policy and key in index:
+                existing = merged_rows[index[key]]
+                for field, value in account.items():
+                    if field in self._ACCOUNT_AMOUNT_FIELDS:
+                        existing[field] = max(
+                            self._to_float_amount(existing.get(field)),
+                            self._to_float_amount(value),
+                        )
+                    elif value not in (None, '') and (
+                        not existing.get(field)
+                        or (field in {'product_type', 'product_type_name'} and str(existing.get(field)).isdigit())
+                    ):
+                        existing[field] = value
+                continue
+            merged_rows.append(dict(account))
+            if policy:
+                index[key] = len(merged_rows) - 1
+        return merged_rows
+
     def _merge_pension_data_records(
         self,
         current: Optional[Dict[str, Any]],
@@ -686,10 +681,7 @@ class ParserMixin:
 
         merged_accounts = list(merged.get('accounts', []) or [])
         incoming_accounts = list(incoming_copy.get('accounts', []) or [])
-        merged['accounts'] = _dedupe_by_key(
-            merged_accounts + incoming_accounts,
-            ['policy_number', 'provider', 'product_type', 'start_date']
-        )
+        merged['accounts'] = self._merge_affiliated_accounts(merged_accounts + incoming_accounts)
 
         merged_contributions = list(merged.get('contributions', []) or [])
         incoming_contributions = list(incoming_copy.get('contributions', []) or [])
@@ -818,9 +810,9 @@ class ParserMixin:
                 client = clients[0] if isinstance(clients, list) else clients
                 meta_rows.append({
                     'מספר פוליסה': 'לקוח',
-                    'יצרן': client.get('name', ''),
-                    'סוג מוצר': '',
-                    'שם מוצר': '',
+                    'יצרן': client.get('full_name') or client.get('name', ''),
+                    'סוג מוצר': client.get('id_number', ''),
+                    'שם מוצר': 'תעודת זהות',
                     'סטטוס': '',
                     'יתרה': '',
                     'פיצויים': '',

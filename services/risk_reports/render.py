@@ -581,11 +581,14 @@ Factors Affecting Score:
 
         id_tokens = [
             'id', 'identity', 'id_number', 'customer_id', 'policyholder_id',
-            'ת.ז', 'ת"ז', 'תז', 'תעודת זהות', 'מספר זהות'
+            'ת.ז', 'ת"ז', 'ת״ז', 'תז', 'תעודת זהות', 'מספר זהות', 'מספר ת.ז'
         ]
         savings_tokens = [
             'saving', 'savings', 'balance', 'accumulated', 'total_balance',
-            'יתרה', 'צבירה', 'חיסכון', 'תגמולים'
+            'יתרה', 'צבירה', 'חיסכון', 'תגמולים', 'סה"כ', 'סה״כ'
+        ]
+        severance_tokens = [
+            'severance', 'pitzuim', 'פיצויים', 'יתרת פיצויים'
         ]
         cover_tokens = [
             'cover', 'coverage', 'insured_amount', 'sum_insured',
@@ -595,9 +598,11 @@ Factors Affecting Score:
         id_columns = [c for c in columns if self._column_matches(str(c), id_tokens)]
         savings_columns = [c for c in columns if self._column_matches(str(c), savings_tokens)]
         cover_columns = [c for c in columns if self._column_matches(str(c), cover_tokens)]
+        severance_columns = [c for c in columns if self._column_matches(str(c), severance_tokens)]
 
         total_savings = 0.0
         total_cover = 0.0
+        total_severance = 0.0
         records_with_savings = 0
         records_with_cover = 0
         id_values: List[str] = []
@@ -616,9 +621,10 @@ Factors Affecting Score:
             for account in accounts[:500]:
                 account_id = str(account.get('id_number') or shared_client_id or account.get('policy_number') or '').strip()
                 savings_value = (
-                    self._to_float_amount(account.get('savings_balance'))
-                    or self._to_float_amount(account.get('total_balance'))
+                    self._to_float_amount(account.get('total_balance'))
+                    or self._to_float_amount(account.get('savings_balance'))
                 )
+                severance_value = self._to_float_amount(account.get('severance_balance'))
                 cover_value = (
                     self._to_float_amount(account.get('death_coverage'))
                     + self._to_float_amount(account.get('disability_coverage'))
@@ -629,6 +635,8 @@ Factors Affecting Score:
                 if savings_value > 0:
                     total_savings += savings_value
                     records_with_savings += 1
+                if severance_value > 0:
+                    total_severance += severance_value
                 if cover_value > 0:
                     total_cover += cover_value
                     records_with_cover += 1
@@ -654,6 +662,7 @@ Factors Affecting Score:
 
                 savings_value = sum(self._to_float_amount(row.get(col)) for col in savings_columns)
                 cover_value = sum(self._to_float_amount(row.get(col)) for col in cover_columns)
+                total_severance += sum(self._to_float_amount(row.get(col)) for col in severance_columns)
 
                 if id_value:
                     id_values.append(id_value)
@@ -722,6 +731,13 @@ Factors Affecting Score:
                     if customer_birth_date:
                         break
 
+        if isinstance(pension_data, dict):
+            totals = pension_data.get('totals') or {}
+            if not total_savings and totals.get('total_balance'):
+                total_savings = self._to_float_amount(totals.get('total_balance'))
+            if not total_severance and totals.get('total_severance'):
+                total_severance = self._to_float_amount(totals.get('total_severance'))
+
         if customer_birth_date_raw and not customer_birth_date:
             integrity_issues.append('Birth date could not be normalized to DD/MM/YYYY')
 
@@ -737,6 +753,7 @@ Factors Affecting Score:
             'unique_id_count': len(unique_ids),
             'id_row_coverage': id_rows_count,
             'total_savings': round(total_savings, 2),
+            'total_severance': round(total_severance, 2),
             'average_savings': round(total_savings / records_with_savings, 2) if records_with_savings else 0.0,
             'total_cover': round(total_cover, 2),
             'average_cover': round(total_cover / records_with_cover, 2) if records_with_cover else 0.0,
@@ -775,6 +792,7 @@ Factors Affecting Score:
                 + "\n"
                 f"• רשומות שנותחו: {records_analyzed}\n"
                 f"• סך חיסכון: ₪{total_savings:,.2f}\n"
+                f"• סה״כ פיצויים: ₪{float(summary.get('total_severance', 0) or 0):,.2f}\n"
                 f"• סך כיסוי: ₪{total_cover:,.2f}\n"
                 f"• מזהים ייחודיים: {unique_id_count}\n"
                 f"• יחס כיסוי/חיסכון: {summary.get('coverage_to_savings_ratio', 'N/A')}\n"
@@ -799,6 +817,7 @@ Factors Affecting Score:
                 + "\n"
                 f"• Records analyzed: {records_analyzed}\n"
                 f"• Total savings: ₪{total_savings:,.2f}\n"
+                f"• Total severance: ₪{float(summary.get('total_severance', 0) or 0):,.2f}\n"
                 f"• Total cover: ₪{total_cover:,.2f}\n"
                 f"• Unique IDs: {unique_id_count}\n"
                 f"• Cover/Savings ratio: {summary.get('coverage_to_savings_ratio', 'N/A')}\n"

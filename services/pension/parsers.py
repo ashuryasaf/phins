@@ -22,7 +22,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from defusedxml import ElementTree as defused_etree
 
-from services.pension.schema import CompiledFields, MislakaSchemaMapping, tag_variants
+from services.pension.schema import (
+    CompiledFields,
+    MislakaSchemaMapping,
+    looks_like_pension_table,
+    map_hebrew_column,
+    tag_variants,
+)
 
 logger = logging.getLogger('services.pension_data_agent')
 
@@ -48,8 +54,51 @@ class MislakaParserMixin:
     CONTRIBUTION_TAGS = ('NetuneiHafrasha', 'PirteiHafrasha', 'Hafrasha', 'ReshimatHafrashot', 'Peula', 'Event', 'Transaction')
     SEVERANCE_TAGS = ('NetuneiPitzuim', 'PirteiPitzuim', 'Pitzuim', 'SeveranceDetails')
     EMPLOYER_TAG = 'YeshutMaasik'
+    YITRA_BLOCK_TAGS = (
+        'Yitra', 'PerutYitra', 'PerutYitraLeFiSugHafrasha',
+        'YitraLefiSugHafrasha', 'YitraLeFiSugHafrasha',
+    )
+    YITRA_AMOUNT_TAGS = (
+        'SCHUM-TZVIRA', 'SchumTzvira', 'SCHUM-TZVIRA-NOCHECHIT',
+        'TOTAL-CHISACHON', 'TotalChisachon', 'TOTAL-CHISACHON-MTZBR',
+        'ERECH-PIDYON', 'ErechPidyon', 'ERECH-PIDYON-NOCHECHI',
+        'SACH-YITRA', 'SachYitra', 'SCHUM', 'Saldo', 'SALDO',
+    )
+    YITRA_TYPE_TAGS = ('KOD-SUG-HAFRASHA', 'KodSugHafrasha', 'SUG-YITRA', 'SUG-HAFRASHA')
+    TOTAL_BALANCE_VARIANTS = tuple(
+        variants for _tag, field, variants in CompiledFields.ACCOUNT if field == 'total_balance'
+    )
+    CLIENT_ID_RAW_TAGS = (
+        'MISPAR-ZIHUI-LAKOACH', 'MisparZihuiLakoach', 'MISPARZEHUT',
+        'MisparZehut', 'MISPAR-ZEHUT', 'MISPAR-ZIHUY', 'ZEHUT', 'TEUDAT-ZEHUT',
+    )
 
     _parse_local = threading.local()
+
+    @staticmethod
+    def _local_tag(tag: Optional[str]) -> str:
+        """Strip Clark-notation namespaces used by official Swiftness/Mislaka XML."""
+        if not tag:
+            return ''
+        if tag[0] == '{' and '}' in tag:
+            return tag.rsplit('}', 1)[-1]
+        return tag
+
+    def _descendants_named(self, elem, *names, include_self: bool = False):
+        """Yield descendants whose local tag is in ``names`` (namespace-safe)."""
+        wanted = set(names)
+        skip_self = not include_self
+        for node in elem.iter():
+            if skip_self:
+                skip_self = False
+                continue
+            if self._local_tag(node.tag) in wanted:
+                yield node
+
+    def _first_named(self, elem, *names, include_self: bool = False):
+        for node in self._descendants_named(elem, *names, include_self=include_self):
+            return node
+        return None
 
     @classmethod
     def stream_min_bytes(cls) -> int:
@@ -121,6 +170,7 @@ class MislakaParserMixin:
 
         # Extract all raw text elements for additional analysis
         data['raw_elements'] = self._extract_all_elements(root)
+        self._recover_client_identity(data)
 
         return data
 
@@ -178,18 +228,17 @@ class MislakaParserMixin:
                     if root is None:
                         root = elem
                     stack.append(elem)
-                    if elem.tag == self.PROVIDER_TAG:
+                    if self._local_tag(elem.tag) == self.PROVIDER_TAG:
                         provider_depth += 1
                     continue
 
                 # -- end event -------------------------------------------------
                 position += 1
                 stack.pop()
-                tag = elem.tag
+                tag = self._local_tag(elem.tag)
                 text = elem.text
                 if text and text.strip():
-                    local = tag.split('}')[-1] if '}' in tag else tag
-                    acc.raw.setdefault(local, []).append(text.strip())
+                    acc.raw.setdefault(tag, []).append(text.strip())
 
                 if tag in acc.CANDIDATE_TAGS:
                     ctx.positions[id(elem)] = position
@@ -212,7 +261,7 @@ class MislakaParserMixin:
         positions = ctx.positions
 
         def descendants(tag):
-            return [e for e in block.iter(tag) if e is not block]
+            return list(self._descendants_named(block, tag))
 
         def pos_of(elem):
             return positions.get(id(elem), float('inf'))
@@ -305,6 +354,7 @@ class MislakaParserMixin:
                 employers.append({'id': emp_id, 'name': emp_name})
         data['employers'] = employers
         data['raw_elements'] = acc.raw
+        self._recover_client_identity(data)
         return data
 
     # ------------------------------------------------------------------------
@@ -350,8 +400,9 @@ class MislakaParserMixin:
                 if first:
                     first = False
                     continue
-                if d.tag not in index:
-                    index[d.tag] = d.text
+                local = self._local_tag(d.tag)
+                if local not in index:
+                    index[local] = d.text
             ctx.index[id(elem)] = index
         return index
 
@@ -534,129 +585,15 @@ class MislakaParserMixin:
         Returns:
             Dictionary in standard Mislaka pension data format
         """
-        # Hebrew column name mappings
-        column_mappings = {
-            # Client fields
-            'שם': 'full_name',
-            'שם מלא': 'full_name', 
-            'שם פרטי': 'first_name',
-            'שם משפחה': 'last_name',
-            'תעודת זהות': 'id_number',
-            'ת.ז': 'id_number',
-            'ת"ז': 'id_number',
-            'מספר זהות': 'id_number',
-            'מספר ת.ז': 'id_number',
-            'תאריך לידה': 'birth_date',
-            'טלפון': 'phone',
-            'נייד': 'mobile',
-            'דוא"ל': 'email',
-            'אימייל': 'email',
-            'כתובת': 'address',
-            
-            # Provider/Product fields
-            'יצרן': 'provider',
-            'שם יצרן': 'provider',
-            'חברה': 'provider',
-            'שם חברה': 'provider',
-            'גוף מוסדי': 'provider',
-            'מוצר': 'product_name',
-            'שם מוצר': 'product_name',
-            'סוג מוצר': 'product_type',
-            'סוג קופה': 'product_type',
-            'סוג תוכנית': 'product_type',
-            
-            # Policy fields
-            'מספר פוליסה': 'policy_number',
-            'מס פוליסה': 'policy_number',
-            "מס' פוליסה": 'policy_number',
-            'מספר חשבון': 'policy_number',
-            'מס חשבון': 'policy_number',
-            
-            # Balance fields
-            'יתרה': 'total_balance',
-            'יתרה כוללת': 'total_balance',
-            'סך צבירה': 'total_balance',
-            'צבירה': 'total_balance',
-            'סה"כ צבירה': 'total_balance',
-            'סכום צבירה': 'total_balance',
-            'יתרת תגמולים': 'savings_balance',
-            'תגמולים': 'savings_balance',
-            'חיסכון': 'savings_balance',
-            'יתרת פיצויים': 'severance_balance',
-            'פיצויים': 'severance_balance',
-            'סכום פיצויים': 'severance_balance',
-            
-            # Fee fields
-            'דמי ניהול': 'management_fee',
-            'דמי ניהול מצבירה': 'management_fee_savings',
-            'ד"נ מצבירה': 'management_fee_savings',
-            'דמי ניהול מהפקדות': 'management_fee_deposits',
-            'ד"נ מהפקדות': 'management_fee_deposits',
-            'עמלה': 'management_fee',
-            
-            # Status fields
-            'סטטוס': 'status',
-            'מצב': 'status',
-            'סטטוס פוליסה': 'status',
-            'מצב חשבון': 'status',
-            
-            # Section 14
-            'סעיף 14': 'section14',
-            'סעיף14': 'section14',
-            
-            # Employer
-            'מעסיק': 'employer_name',
-            'שם מעסיק': 'employer_name',
-            
-            # Insurance coverage
-            'ביטוח חיים': 'death_coverage',
-            'כיסוי מוות': 'death_coverage',
-            'אובדן כושר': 'disability_coverage',
-            'כיסוי נכות': 'disability_coverage',
-            
-            # Dates
-            'תאריך תחילה': 'start_date',
-            'תחילת ביטוח': 'start_date',
-            'תאריך הצטרפות': 'start_date',
-        }
-        
-        # Check if this looks like pension data
-        pension_indicators = ['יצרן', 'פוליסה', 'צבירה', 'יתרה', 'תגמולים', 'פיצויים', 
-                              'קופה', 'פנסיה', 'ביטוח', 'גמל', 'חיסכון', 'קרן']
-        columns_lower = [str(c).lower() for c in columns]
-        
-        is_pension_data = any(
-            any(indicator in col for indicator in pension_indicators) 
-            for col in columns_lower
-        )
-        
-        if not is_pension_data:
+        if not looks_like_pension_table(columns):
             logger.info(f"File {filename} does not appear to contain pension data")
             return None
         
-        # Map columns to standardized names
-        # Prioritize exact matches over substring matches to avoid confusion
-        # (e.g., "צבירה" should not match "דמי ניהול מצבירה")
         mapped_columns = {}
         for col in columns:
-            col_str = str(col).strip()
-            
-            # First try exact match
-            if col_str in column_mappings:
-                mapped_columns[col] = column_mappings[col_str]
-                continue
-            
-            # Then try substring match, but prefer longer matches first
-            # Sort potential matches by length (longest first)
-            matches = []
-            for hebrew_name, english_name in column_mappings.items():
-                if hebrew_name in col_str:
-                    matches.append((len(hebrew_name), hebrew_name, english_name))
-            
-            if matches:
-                # Sort by length descending, take the longest match
-                matches.sort(key=lambda x: x[0], reverse=True)
-                mapped_columns[col] = matches[0][2]
+            mapped = map_hebrew_column(col)
+            if mapped:
+                mapped_columns[col] = mapped
         
         # Extract client and account data
         client_info = {}
@@ -749,10 +686,7 @@ class MislakaParserMixin:
 
     def _parse_header(self, root) -> Dict[str, Any]:
         """Parse header (KoteretKovetz) from XML."""
-        # Find header element
-        header_elem = root.find('.//KoteretKovetz')
-        if header_elem is None:
-            header_elem = root.find('.//Header')
+        header_elem = self._first_named(root, *self.HEADER_TAGS)
         if header_elem is None:
             header_elem = root
         return self._header_from_elem(header_elem)
@@ -790,12 +724,7 @@ class MislakaParserMixin:
 
     def _parse_client(self, root) -> Dict[str, Any]:
         """Parse client (YeshutLakoach) from XML."""
-        client_elem = None
-        for tag in self.CLIENT_TAGS:
-            client_elem = root.find(f'.//{tag}')
-            if client_elem is not None:
-                break
-
+        client_elem = self._first_named(root, *self.CLIENT_TAGS)
         if client_elem is None:
             return {}
         return self._client_from_elem(client_elem)
@@ -826,13 +755,11 @@ class MislakaParserMixin:
         providers: List[Dict] = []
         accounts: List[Dict] = []
 
-        # Find all providers
-        for provider_elem in root.findall(f'.//{self.PROVIDER_TAG}'):
+        for provider_elem in self._descendants_named(root, self.PROVIDER_TAG):
             self._parse_provider_elem(provider_elem, providers, accounts)
 
-        # Also find standalone accounts
         for tag in self.STANDALONE_ACCOUNT_TAGS:
-            for account_elem in root.findall(f'.//{tag}'):
+            for account_elem in self._descendants_named(root, tag):
                 policy_num = self._find_text(account_elem, 'MISPAR-POLISA-O-HESHBON')
                 if policy_num and not any(a.get('policy_number') == policy_num for a in accounts):
                     account = self._parse_account(account_elem, {}, {})
@@ -856,8 +783,7 @@ class MislakaParserMixin:
         if provider:
             providers.append(provider)
 
-        # Find products under this provider
-        for product_elem in provider_elem.findall(f'.//{self.PRODUCT_TAG}'):
+        for product_elem in self._descendants_named(provider_elem, self.PRODUCT_TAG):
             product_info = {}
 
             for xml_tag, field_name, variants in CompiledFields.PRODUCT:
@@ -865,9 +791,8 @@ class MislakaParserMixin:
                 if value:
                     product_info[field_name] = value
 
-            # Find accounts under this product
             for tag in self.ACCOUNT_TAGS:
-                for account_elem in product_elem.findall(f'.//{tag}'):
+                for account_elem in self._descendants_named(product_elem, tag):
                     account = self._parse_account(account_elem, provider, product_info)
                     if account:
                         accounts.append(account)
@@ -916,13 +841,15 @@ class MislakaParserMixin:
             account['status'] = 'פעיל'
             account['status_en'] = 'Active'
 
+        self._drop_component_total(elem, account)
+        self._harvest_component_balances(elem, account)
         return account
 
     def _parse_contributions(self, root) -> List[Dict[str, Any]]:
         """Parse contributions (NetuneiHafrasha / PirteiHafrasha)."""
         contributions = []
         for tag in self.CONTRIBUTION_TAGS:
-            for elem in root.findall(f'.//{tag}'):
+            for elem in self._descendants_named(root, tag):
                 contrib = self._contribution_from_elem(elem)
                 self._forget_index(elem)
                 if contrib:
@@ -944,7 +871,7 @@ class MislakaParserMixin:
         """Parse severance data (NetuneiPitzuim)."""
         severance_list = []
         for tag in self.SEVERANCE_TAGS:
-            for elem in root.findall(f'.//{tag}'):
+            for elem in self._descendants_named(root, tag):
                 sev = self._severance_from_elem(elem)
                 self._forget_index(elem)
                 if sev:
@@ -978,8 +905,7 @@ class MislakaParserMixin:
                 seen.add(emp_name)
                 employers.append({'id': emp_id, 'name': emp_name})
 
-        # Find standalone employer elements
-        for elem in root.findall(f'.//{self.EMPLOYER_TAG}'):
+        for elem in self._descendants_named(root, self.EMPLOYER_TAG):
             emp_name = self._find_text(elem, 'SHEM-MAASIK') or self._find_text(elem, 'ShemMaasik')
             emp_id = self._find_text(elem, 'KOD-MAASIK') or self._find_text(elem, 'KodMaasik')
             if emp_name and emp_name not in seen:
@@ -1029,22 +955,131 @@ class MislakaParserMixin:
             return None
 
         for variant in variants:
-            found = elem.find(f'.//{variant}')
+            found = self._first_named(elem, variant)
             if found is not None and found.text:
                 return found.text.strip()
         return None
 
+    def _direct_text(self, elem, *tags) -> Optional[str]:
+        """Prefer a direct child's text so nested Yitra blocks are not double-counted."""
+        wanted = set(tags)
+        for child in list(elem):
+            if self._local_tag(child.tag) in wanted and child.text and child.text.strip():
+                return child.text.strip()
+        for tag in tags:
+            value = self._find_text(elem, tag)
+            if value:
+                return value
+        return None
+
+    def _account_level_index(self, elem) -> Dict[str, Optional[str]]:
+        """``tag → text of the first descendant with that tag``, skipping Yitra
+        component subtrees so a component's amount is never read as the
+        account's own figure."""
+        index: Dict[str, Optional[str]] = {}
+        stack = list(reversed(list(elem)))
+        while stack:
+            node = stack.pop()
+            local = self._local_tag(node.tag)
+            if local in self.YITRA_BLOCK_TAGS:
+                continue
+            if local not in index:
+                index[local] = node.text
+            stack.extend(reversed(list(node)))
+        return index
+
+    def _drop_component_total(self, elem, account: Dict[str, Any]) -> None:
+        """Holdings aliases such as ``SACH-YITRA`` also name the amount inside a
+        ``Yitra`` component, and ``_find_text`` takes the first matching
+        descendant. Re-read the total outside the components so one component
+        cannot stand in for the account's own holdings; without an
+        account-level total the harvest below sums the components instead."""
+        if 'total_balance' not in account:
+            return
+        if self._first_named(elem, *self.YITRA_BLOCK_TAGS) is None:
+            return
+
+        index = self._account_level_index(elem)
+        total = None
+        for variants in self.TOTAL_BALANCE_VARIANTS:
+            for variant in variants:
+                text = index.get(variant)
+                if text and text.strip():
+                    total = text.strip()
+                    break
+        if total is None:
+            account.pop('total_balance')
+        else:
+            account['total_balance'] = self._parse_number(total)
+
+    def _harvest_component_balances(self, elem, account: Dict[str, Any]) -> None:
+        """Read official Yitra / PerutYitra children (KOD-SUG-HAFRASHA 1/2/3)."""
+        savings = 0.0
+        severance = 0.0
+        found = False
+        for yitra in self._descendants_named(elem, *self.YITRA_BLOCK_TAGS):
+            if any(self._descendants_named(yitra, *self.YITRA_BLOCK_TAGS)):
+                continue
+            amount_text = self._direct_text(yitra, *self.YITRA_AMOUNT_TAGS)
+            if not amount_text:
+                continue
+            amount = self._parse_number(amount_text)
+            found = True
+            code = (self._direct_text(yitra, *self.YITRA_TYPE_TAGS) or '').strip().lower()
+            if code in {'3', '03', 'פיצויים', 'pitzuim', 'severance'}:
+                severance += amount
+            else:
+                savings += amount
+        if not found:
+            return
+        if not account.get('savings_balance'):
+            account['savings_balance'] = savings
+        if not account.get('severance_balance'):
+            account['severance_balance'] = severance
+        if not account.get('total_balance'):
+            account['total_balance'] = savings + severance
+
+    def _recover_client_identity(self, data: Dict[str, Any]) -> None:
+        """Fill client.id_number from nested / raw affiliated tags when the header block omitted it."""
+        client = data.get('client')
+        if isinstance(client, list):
+            client = client[0] if client else {}
+        if not isinstance(client, dict):
+            client = {}
+        if not client.get('id_number'):
+            raw = data.get('raw_elements') or {}
+            for tag in self.CLIENT_ID_RAW_TAGS:
+                values = raw.get(tag) or []
+                if values:
+                    client['id_number'] = str(values[0]).strip()
+                    break
+        if not client.get('full_name') and (client.get('first_name') or client.get('last_name')):
+            client['full_name'] = ' '.join(
+                p for p in (client.get('first_name', ''), client.get('last_name', '')) if p
+            )
+        data['client'] = client
+
     def _parse_number(self, value: str) -> float:
-        """Parse numeric string to float."""
+        """Parse numeric string to float, including Israeli ``1,000.50`` / ``1000,50`` forms."""
         if not value:
             return 0.0
         try:
-            # Remove formatting
-            cleaned = str(value).replace(',', '').replace(' ', '')
+            cleaned = str(value).strip().replace(' ', '').replace("'", '')
             cleaned = cleaned.replace('₪', '').replace('$', '').replace('€', '')
-            cleaned = cleaned.replace("'", '')  # Hebrew thousands separator
+            cleaned = cleaned.replace('ש"ח', '').replace('ש״ח', '')
+            if ',' in cleaned and '.' in cleaned:
+                if cleaned.rfind(',') > cleaned.rfind('.'):
+                    cleaned = cleaned.replace('.', '').replace(',', '.')
+                else:
+                    cleaned = cleaned.replace(',', '')
+            elif ',' in cleaned and '.' not in cleaned:
+                parts = cleaned.split(',')
+                if len(parts) == 2 and 1 <= len(parts[1]) <= 2:
+                    cleaned = parts[0] + '.' + parts[1]
+                else:
+                    cleaned = cleaned.replace(',', '')
             return float(cleaned)
-        except:
+        except Exception:
             return 0.0
 
 

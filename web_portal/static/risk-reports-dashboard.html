@@ -2938,17 +2938,28 @@
     // Show actual raw data from Mislaka files, not statistical analysis
     // ==========================================================================
     
-    function renderPensionStats(pensionData) {
+    function resolvePensionClient(pensionData, affiliated = {}) {
+      const rawClient = pensionData.client;
+      const client = Array.isArray(rawClient) ? (rawClient[0] || {}) : (rawClient || {});
+      return {
+        ...client,
+        full_name: client.full_name || client.client_name || '',
+        id_number: client.id_number || affiliated.customer_id || '',
+        birth_date: client.birth_date || affiliated.birth_date || '',
+      };
+    }
+
+    function renderPensionStats(pensionData, affiliated = {}) {
       // Extract real data from pension files
-      const client = pensionData.client || {};
+      const client = resolvePensionClient(pensionData, affiliated);
       const accounts = pensionData.accounts || [];
       const totals = pensionData.totals || {};
       
-      const clientName = client.full_name || client.client_name || 'לא זמין';
+      const clientName = client.full_name || 'לא זמין';
       const idNumber = client.id_number || 'לא זמין';
       const birthDate = normalizeBirthDateDisplay(client.birth_date) || 'לא זמין';
-      const totalBalance = totals.total_balance || accounts.reduce((sum, a) => sum + (parseFloat(a.total_balance) || 0), 0);
-      const totalSeverance = totals.total_severance || accounts.reduce((sum, a) => sum + (parseFloat(a.severance_balance) || 0), 0);
+      const totalBalance = totals.total_balance || affiliated.total_savings || accounts.reduce((sum, a) => sum + (parseFloat(a.total_balance) || 0), 0);
+      const totalSeverance = totals.total_severance || affiliated.total_severance || accounts.reduce((sum, a) => sum + (parseFloat(a.severance_balance) || 0), 0);
       const accountCount = accounts.length;
       const providers = [...new Set(accounts.map(a => a.provider).filter(p => p))];
       
@@ -2960,7 +2971,7 @@
         <div class="stat-card fade-in" style="grid-column: span 2; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
           <h5 style="color: white;">פרטי לקוח</h5>
           <div class="value" style="font-size: 1.5rem; color: white;">${clientName}</div>
-          <small style="color: rgba(255,255,255,0.9);">ת.ז: ${idNumber}</small>
+          <small style="color: rgba(255,255,255,0.9);">תעודת זהות / ת.ז: ${idNumber}</small>
           <small style="color: rgba(255,255,255,0.9);">תאריך לידה: ${birthDate}</small>
         </div>
         <div class="stat-card fade-in" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white;">
@@ -3005,10 +3016,10 @@
       `;
     }
     
-    function renderPensionInsights(pensionData) {
+    function renderPensionInsights(pensionData, affiliated = {}) {
       const container = document.getElementById('insightsGrid');
       const accounts = pensionData.accounts || [];
-      const client = pensionData.client || {};
+      const client = resolvePensionClient(pensionData, affiliated);
       const birthDate = normalizeBirthDateDisplay(client.birth_date);
       
       let html = '';
@@ -3019,7 +3030,7 @@
           <h5>פרטי המבוטח</h5>
           <div class="insight-detail" style="direction: rtl; text-align: right;">
             <div class="stat-detail"><span class="label">שם מלא</span><span class="val">${client.full_name || client.client_name || 'לא זמין'}</span></div>
-            <div class="stat-detail"><span class="label">ת.ז</span><span class="val">${client.id_number || 'לא זמין'}</span></div>
+            <div class="stat-detail"><span class="label">תעודת זהות / ת.ז</span><span class="val">${client.id_number || 'לא זמין'}</span></div>
             ${birthDate ? `<div class="stat-detail"><span class="label">תאריך לידה</span><span class="val">${birthDate}</span></div>` : ''}
             ${client.phone ? `<div class="stat-detail"><span class="label">טלפון</span><span class="val">${client.phone}</span></div>` : ''}
           </div>
@@ -3061,12 +3072,14 @@
       
       // Summary totals card
       const totals = pensionData.totals || {};
+      const summaryBalance = totals.total_balance || affiliated.total_savings || 0;
+      const summarySeverance = totals.total_severance || affiliated.total_severance || 0;
       html += `
         <div class="insight-card fade-in" style="background: linear-gradient(135deg, #11998e15 0%, #38ef7d15 100%); border: 2px solid #11998e;">
           <h5 style="color: #065f46;">סיכום כולל</h5>
           <div class="insight-detail" style="direction: rtl; text-align: right;">
-            <div class="stat-detail"><span class="label">סה״כ צבירה</span><span class="val" style="font-size: 1.2rem; color: #059669; font-weight: bold;">₪${(totals.total_balance || 0).toLocaleString('he-IL')}</span></div>
-            <div class="stat-detail"><span class="label">סה״כ פיצויים</span><span class="val">₪${(totals.total_severance || 0).toLocaleString('he-IL')}</span></div>
+            <div class="stat-detail"><span class="label">סה״כ צבירה</span><span class="val" style="font-size: 1.2rem; color: #059669; font-weight: bold;">₪${Number(summaryBalance).toLocaleString('he-IL')}</span></div>
+            <div class="stat-detail"><span class="label">סה״כ פיצויים</span><span class="val">₪${Number(summarySeverance).toLocaleString('he-IL')}</span></div>
             <div class="stat-detail"><span class="label">מספר פוליסות</span><span class="val">${totals.account_count || accounts.length}</span></div>
             <div class="stat-detail"><span class="label">מספר יצרנים</span><span class="val">${totals.provider_count || totals.providers?.length || '-'}</span></div>
           </div>
@@ -3554,6 +3567,7 @@
                            report.metadata?.pension_data ||
                            report.language === 'hebrew';
       const pensionData = report.metadata?.pension_data;
+      const affiliatedSummary = report.metadata?.savings_cover_id_summary || {};
       const reportLanguage = report.language === 'hebrew' ? 'hebrew' : 'english';
       
       // Update the insights panel header based on data type
@@ -3567,8 +3581,8 @@
             <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">נתונים אמיתיים מקובץ המסלקה: ת.ז, מספרי פוליסה, יתרות, כיסויים</p>
           `;
         }
-        renderPensionStats(pensionData);
-        renderPensionInsights(pensionData);
+        renderPensionStats(pensionData, affiliatedSummary);
+        renderPensionInsights(pensionData, affiliatedSummary);
       } else {
         // REGULAR MODE: Show standard analysis
         if (insightsHeader) {
