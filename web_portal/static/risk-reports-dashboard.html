@@ -2096,7 +2096,7 @@
         <div class="report-header">
           <h2 id="reportTitle">Analysis Report</h2>
           <div class="report-actions">
-            <button class="btn btn-white" onclick="exportReport('pdf')">Export PDF</button>
+            <button class="btn btn-white" id="exportPdfBtn" onclick="exportReport('pdf')">Export PDF</button>
             <button class="btn btn-white" onclick="exportReport('excel')">Export Excel</button>
           </div>
         </div>
@@ -3607,10 +3607,26 @@
       
       // Report Title
       document.getElementById('reportTitle').textContent = `${report.title || 'Analysis Report'}`;
+
+      const exportPdfBtn = document.getElementById('exportPdfBtn');
+      if (exportPdfBtn) {
+        exportPdfBtn.textContent = isPensionData ? 'הורד PDF הערכת מסלקה' : 'Export PDF';
+      }
       
       // Report Sections - with enhanced Mislaka/pension-specific rendering
       const reportBody = document.getElementById('reportBody');
-      reportBody.innerHTML = (report.sections || []).map(section => {
+      const statisticalTitles = [
+        'פרופיל נתונים', 'data profile', 'ניתוח סטטיסטי', 'statistical analysis',
+        'ניתוח מתאמים', 'correlation analysis', 'דפוסים ומגמות', 'patterns',
+        'הערכת סיכון', 'risk assessment', 'מדדים מרכזיים', 'key metrics',
+        'מפת שיוכים', 'affiliation mapping'
+      ];
+      const visibleSections = (report.sections || []).filter(section => {
+        if (!isPensionData) return true;
+        const title = String(section.title || '').toLowerCase();
+        return !statisticalTitles.some(token => title.includes(token));
+      });
+      reportBody.innerHTML = visibleSections.map(section => {
         const title = section.title || '';
         const isMislakaSection = title.includes('מסלקה') || 
                                  title.toLowerCase().includes('mislaka');
@@ -4424,100 +4440,64 @@
       }
     }
     
-    // Export report to PDF (excludes minimized/closed sections)
+    // Download the generated assessment via the server (reportlab).
+    // jsPDF cannot keep Hebrew identity / accumulation glyphs intact.
     async function exportReport(format) {
-      if (format !== 'pdf') {
-        alert(`Export to ${format.toUpperCase()} - Coming soon!\n\nThis will generate a downloadable ${format.toUpperCase()} file with the complete report.`);
+      if (!currentReport || !currentReport.id) {
+        alert('Generate a report first before exporting.');
         return;
       }
-      
-      // Load jsPDF library dynamically if not already loaded
-      if (typeof window.jspdf === 'undefined') {
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-        script.onload = () => generatePDF();
-        document.head.appendChild(script);
-      } else {
-        generatePDF();
+
+      const normalized = String(format || '').toLowerCase();
+      const exportFormat = normalized === 'excel' ? 'excel' : 'pdf';
+      const token = localStorage.getItem('phins_token') || '';
+
+      try {
+        const response = await fetch(
+          `/api/reports/download-summary?report_id=${encodeURIComponent(currentReport.id)}&format=${encodeURIComponent(exportFormat)}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          }
+        );
+
+        if (!response.ok) {
+          let message = `Export failed (${response.status})`;
+          try {
+            const errorPayload = await response.json();
+            if (errorPayload?.error) {
+              message = errorPayload.error;
+            }
+          } catch (_ignore) {}
+          throw new Error(message);
+        }
+
+        const blob = await response.blob();
+        const contentDisposition = response.headers.get('Content-Disposition') || '';
+        const filenameMatch = contentDisposition.match(/filename="([^"]+)"/i);
+        const fallbackExt = exportFormat === 'pdf' ? 'pdf' : 'csv';
+        const fallbackName = `phins_mislaka_assessment.${fallbackExt}`;
+        const filename = filenameMatch ? filenameMatch[1] : fallbackName;
+
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+
+        const successMsg = document.createElement('div');
+        successMsg.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #10b981; color: white; padding: 1rem 1.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 10001; font-weight: 600;';
+        successMsg.textContent = exportFormat === 'pdf' ? 'PDF Downloaded Successfully' : 'Export Downloaded Successfully';
+        document.body.appendChild(successMsg);
+        setTimeout(() => successMsg.remove(), 3000);
+      } catch (error) {
+        console.error('Export error:', error);
+        alert(`Unable to export report: ${error.message}`);
       }
-    }
-    
-    function generatePDF() {
-      const { jsPDF } = window.jspdf;
-      const doc = new jsPDF();
-      
-      let yPosition = 20;
-      const lineHeight = 7;
-      const pageHeight = doc.internal.pageSize.height;
-      const margin = 20;
-      const maxWidth = doc.internal.pageSize.width - 2 * margin;
-      
-      // Helper function to add page if needed
-      function checkAddPage() {
-        if (yPosition > pageHeight - 30) {
-          doc.addPage();
-          yPosition = 20;
-        }
-      }
-      
-      // Add title
-      doc.setFontSize(18);
-      doc.setFont(undefined, 'bold');
-      const title = document.getElementById('reportTitle').textContent || 'Risk Analysis Report';
-      doc.text(title, margin, yPosition);
-      yPosition += lineHeight * 2;
-      
-      // Add timestamp
-      doc.setFontSize(10);
-      doc.setFont(undefined, 'normal');
-      doc.setTextColor(100);
-      doc.text(`Generated: ${new Date().toLocaleString()}`, margin, yPosition);
-      yPosition += lineHeight * 2;
-      doc.setTextColor(0);
-      
-      // Process each report section (skip collapsed ones)
-      const sections = document.querySelectorAll('.report-section');
-      sections.forEach((section, index) => {
-        // Skip collapsed sections
-        if (section.classList.contains('collapsed')) {
-          return;
-        }
-        
-        checkAddPage();
-        
-        // Section heading
-        const heading = section.querySelector('h3');
-        if (heading) {
-          doc.setFontSize(14);
-          doc.setFont(undefined, 'bold');
-          const headingText = heading.textContent.trim();
-          doc.text(headingText, margin, yPosition);
-          yPosition += lineHeight * 1.5;
-        }
-        
-        // Section content
-        const content = section.querySelector('.content');
-        if (content) {
-          doc.setFontSize(10);
-          doc.setFont(undefined, 'normal');
-          
-          // Get text content (simplified - removes HTML)
-          const textContent = content.innerText || content.textContent || '';
-          const lines = doc.splitTextToSize(textContent.substring(0, 2000), maxWidth); // Limit length
-          
-          lines.forEach(line => {
-            checkAddPage();
-            doc.text(line, margin, yPosition);
-            yPosition += lineHeight;
-          });
-        }
-        
-        yPosition += lineHeight;
-      });
-      
-      // Save the PDF
-      const filename = `phins_risk_report_${new Date().getTime()}.pdf`;
-      doc.save(filename);
     }
     
     // =========================================================================

@@ -235,6 +235,65 @@ class TestSwiftnessAffiliatedShowcase(unittest.TestCase):
         body = ' '.join(section.content or '' for section in report.sections)
         self.assertIn('123456782', body)
         self.assertTrue('צבירה' in body or 'פיצויים' in body)
+        titles = ' | '.join(section.title or '' for section in report.sections)
+        for banned in (
+            'פרופיל נתונים',
+            'Data Profile',
+            'ניתוח סטטיסטי',
+            'Statistical Analysis',
+            'ניתוח מתאמים',
+            'Correlation Analysis',
+            'דפוסים ומגמות',
+            'Patterns & Trends',
+            'הערכת סיכון',
+            'Risk Assessment',
+            'מדדים מרכזיים',
+            'Key Metrics',
+            'מפת שיוכים',
+            'Affiliation Mapping',
+        ):
+            self.assertNotIn(banned, titles)
+
+        export_payload = self.service.build_report_download_summary(
+            report_id=report.id,
+            user_id='CUST-OWNER-001',
+            user_role='customer',
+        )
+        self.assertTrue(export_payload.get('is_pension_data'))
+        assessment = export_payload.get('pension_assessment') or {}
+        self.assertEqual(assessment.get('client', {}).get('id_number'), '123456782')
+        self.assertEqual(assessment.get('totals', {}).get('total_balance'), 88000.50)
+        self.assertEqual(assessment.get('totals', {}).get('total_severance'), 16500.0)
+        self.assertEqual(assessment.get('totals', {}).get('account_count'), 1)
+        export_titles = [section.get('title') for section in export_payload.get('assessment_sections') or []]
+        self.assertNotIn('פרופיל נתונים', export_titles)
+        self.assertNotIn('Data Profile', export_titles)
+
+        from pypdf import PdfReader
+        from services.risk_reports.pdf_export import build_report_pdf_bytes
+        pdf_bytes = build_report_pdf_bytes(export_payload)
+        self.assertTrue(pdf_bytes.startswith(b'%PDF'))
+        pdf_text = '\n'.join(
+            (page.extract_text() or '') for page in PdfReader(io.BytesIO(pdf_bytes)).pages
+        )
+        self.assertIn('123456782', pdf_text)
+        self.assertTrue('88000.50' in pdf_text or '88,000.50' in pdf_text)
+        self.assertTrue('16,500.00' in pdf_text or '16500' in pdf_text)
+        self.assertNotIn('Data Profile', pdf_text)
+        self.assertNotIn('numeric_columns', pdf_text)
+
+
+class TestMislakaAssessmentPdfHelpers(unittest.TestCase):
+    def test_statistical_titles_are_classified(self):
+        from services.risk_reports.pdf_export import (
+            is_non_assessment_section_title,
+            is_statistical_section_title,
+        )
+        self.assertTrue(is_statistical_section_title('פרופיל נתונים'))
+        self.assertTrue(is_statistical_section_title('📊 Data Profile'))
+        self.assertTrue(is_non_assessment_section_title('Affiliation Mapping Snapshot'))
+        self.assertFalse(is_statistical_section_title('דו״ח ניתוח פנסיה וביטוח'))
+        self.assertFalse(is_non_assessment_section_title('סה״כ צבירה ופיצויים'))
 
 
 class TestFacadeStillResolves(unittest.TestCase):

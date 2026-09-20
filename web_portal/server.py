@@ -16332,6 +16332,46 @@ class PortalHandler(BaseHTTPRequestHandler):
         writer.writerow(['Title', summary.get('title', '')])
         writer.writerow(['Language', summary.get('language', '')])
         writer.writerow(['Report Type', summary.get('report_type', '')])
+        writer.writerow([])
+
+        pension = summary.get('pension_assessment') or {}
+        if summary.get('is_pension_data') or pension:
+            client = pension.get('client') or {}
+            totals = pension.get('totals') or {}
+            writer.writerow(['Mislaka Assessment'])
+            writer.writerow(['National ID', client.get('id_number', '')])
+            writer.writerow(['Full Name', client.get('full_name', client.get('client_name', ''))])
+            writer.writerow(['Birth Date', client.get('birth_date', '')])
+            writer.writerow(['Total Accumulation', totals.get('total_balance', '')])
+            writer.writerow(['Total Savings', totals.get('total_savings', '')])
+            writer.writerow(['Total Severance', totals.get('total_severance', '')])
+            writer.writerow(['Policy Count', totals.get('account_count', '')])
+            writer.writerow([])
+            accounts = pension.get('accounts') or []
+            if accounts:
+                writer.writerow(['Accounts'])
+                writer.writerow(['Policy', 'Provider', 'Product', 'Balance', 'Severance'])
+                for acct in accounts[:80]:
+                    writer.writerow([
+                        acct.get('policy_number', ''),
+                        acct.get('provider', ''),
+                        acct.get('product_type_name', acct.get('product_type', '')),
+                        acct.get('total_balance', ''),
+                        acct.get('severance_balance', ''),
+                    ])
+                writer.writerow([])
+            for section in summary.get('table_sections', [])[:8]:
+                section_title = section.get('title', 'Section')
+                columns = section.get('columns', []) or []
+                rows = section.get('rows', []) or []
+                writer.writerow([section_title])
+                if columns:
+                    writer.writerow(columns)
+                for row in rows[:120]:
+                    writer.writerow([row.get(col, '') for col in columns] if isinstance(row, dict) else [row])
+                writer.writerow([])
+            return out.getvalue().encode('utf-8')
+
         writer.writerow(['Risk Score', summary.get('risk_score', '')])
         writer.writerow(['Confidence', summary.get('confidence', '')])
         writer.writerow([])
@@ -16399,128 +16439,9 @@ class PortalHandler(BaseHTTPRequestHandler):
 
     def _build_report_summary_pdf_bytes(self, summary: Dict[str, Any]) -> bytes:
         """Build PDF bytes for downloadable report summary."""
-        try:
-            from reportlab.lib import colors
-            from reportlab.lib.pagesizes import A4
-            from reportlab.lib.styles import getSampleStyleSheet
-            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-        except Exception:
-            # Fallback to plain text payload if PDF libs are unavailable.
-            fallback_text = json.dumps(summary, ensure_ascii=False, indent=2)
-            return fallback_text.encode('utf-8')
+        from services.risk_reports.pdf_export import build_report_pdf_bytes
+        return build_report_pdf_bytes(summary)
 
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
-        styles = getSampleStyleSheet()
-        story = []
-
-        def _as_str(val: Any) -> str:
-            if val is None:
-                return ''
-            if isinstance(val, float):
-                return f"{val:,.2f}"
-            return str(val)
-
-        story.append(Paragraph('PHINS Savings & Insurance Report Summary', styles['Title']))
-        story.append(Spacer(1, 10))
-
-        info_rows = [
-            ['Report ID', _as_str(summary.get('report_id'))],
-            ['Title', _as_str(summary.get('title'))],
-            ['Language', _as_str(summary.get('language'))],
-            ['Report Type', _as_str(summary.get('report_type'))],
-            ['Risk Score', _as_str(summary.get('risk_score'))],
-            ['Confidence', _as_str(summary.get('confidence'))],
-            ['Generated At', _as_str(summary.get('generated_at'))],
-        ]
-        info_table = Table(info_rows, colWidths=[130, 360])
-        info_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ]))
-        story.append(info_table)
-        story.append(Spacer(1, 12))
-
-        sci = summary.get('savings_cover_id_summary', {}) or {}
-        story.append(Paragraph('Savings / Cover / ID Summary', styles['Heading2']))
-        sci_rows = [
-            ['Records Analyzed', _as_str(sci.get('records_analyzed', 0))],
-            ['Unique IDs', _as_str(sci.get('unique_id_count', 0))],
-            ['Total Savings', _as_str(sci.get('total_savings', 0))],
-            ['Average Savings', _as_str(sci.get('average_savings', 0))],
-            ['Total Cover', _as_str(sci.get('total_cover', 0))],
-            ['Average Cover', _as_str(sci.get('average_cover', 0))],
-            ['Cover/Savings Ratio', _as_str(sci.get('coverage_to_savings_ratio', 'N/A'))],
-        ]
-        sci_table = Table(sci_rows, colWidths=[170, 320])
-        sci_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#E8F5E9')),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ]))
-        story.append(sci_table)
-        story.append(Spacer(1, 12))
-
-        sample_rows = sci.get('sample_rows', []) or []
-        if sample_rows:
-            story.append(Paragraph('Sample Savings/Cover Rows', styles['Heading3']))
-            sample_columns = ['id', 'savings', 'cover', 'reference']
-            table_data = [sample_columns]
-            for row in sample_rows[:20]:
-                table_data.append([_as_str(row.get(col, '')) for col in sample_columns])
-            sample_table = Table(table_data, repeatRows=1, colWidths=[120, 110, 110, 150])
-            sample_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E3F2FD')),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ]))
-            story.append(sample_table)
-            story.append(Spacer(1, 12))
-
-        chart_summaries = summary.get('chart_summaries', []) or []
-        if chart_summaries:
-            story.append(Paragraph('Chart Summaries', styles['Heading3']))
-            chart_table_rows = [['Chart', 'Type', 'Top Series Points']]
-            for chart in chart_summaries[:8]:
-                points = chart.get('series', [])[:4]
-                point_text = ', '.join(f"{_as_str(p.get('label'))}: {_as_str(p.get('value'))}" for p in points)
-                chart_table_rows.append([
-                    _as_str(chart.get('title')),
-                    _as_str(chart.get('type')),
-                    point_text
-                ])
-            chart_table = Table(chart_table_rows, repeatRows=1, colWidths=[150, 80, 260])
-            chart_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#FFF3E0')),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ]))
-            story.append(chart_table)
-            story.append(Spacer(1, 12))
-
-        recs = summary.get('recommendations', []) or []
-        if recs:
-            story.append(Paragraph('Recommendations', styles['Heading3']))
-            for rec in recs[:12]:
-                title = f"[{_as_str(rec.get('priority', 'medium')).upper()}] {_as_str(rec.get('title', 'Recommendation'))}"
-                desc = _as_str(rec.get('description', ''))
-                impact = _as_str(rec.get('expected_impact', ''))
-                story.append(Paragraph(title, styles['BodyText']))
-                if desc:
-                    story.append(Paragraph(desc, styles['BodyText']))
-                if impact:
-                    story.append(Paragraph(f"Expected Impact: {impact}", styles['BodyText']))
-                story.append(Spacer(1, 6))
-
-        doc.build(story)
-        return buffer.getvalue()
-    
     def _generate_text_policy_document(self, policy: Dict, customer: Dict, underwriting: Dict, bills: list, claims: list) -> None:
         """Fallback text document generation when PDF library not available"""
         questionnaire = underwriting.get('questionnaire_responses', {})

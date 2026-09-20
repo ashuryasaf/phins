@@ -394,7 +394,10 @@ POL-002,150000,620"""
         titles = [section.title for section in report.sections]
 
         self.assertTrue(any('סטטוס פוליסות' in title for title in titles))
-        self.assertTrue(any('מפת שיוכים' in title for title in titles))
+        self.assertTrue(any('סיכום כספי' in title for title in titles))
+        # Schema-catalog affiliation map and Data Profile are not the assessment.
+        self.assertFalse(any('מפת שיוכים' in title for title in titles))
+        self.assertFalse(any('פרופיל נתונים' in title for title in titles))
 
         table_sections = [section for section in report.sections if section.data_table]
         self.assertGreater(len(table_sections), 0)
@@ -486,6 +489,8 @@ class TestOwnershipIsolationAndAffiliatedSummary(unittest.TestCase):
         serialized = json.dumps(export_payload)
         self.assertNotIn('http://', serialized)
         self.assertNotIn('https://', serialized)
+        self.assertFalse(export_payload.get('is_pension_data'))
+        self.assertTrue(any(s.title == 'Data Profile' for s in report.sections))
 
     def test_affiliated_summary_normalizes_customer_identity_fields(self):
         csv_content = b"""customer_id,birth_date,savings_balance,cover_amount,policy_number
