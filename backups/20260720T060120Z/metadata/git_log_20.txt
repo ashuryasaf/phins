@@ -1,0 +1,20 @@
+64b666b Merge pull request #448 from ashuryasaf/cursor/il-product-redesign-65plus
+8cbe5d6 Redesign filed product (Draft 3.0): lifelong disability cover with 1:1 ratio from age 65, post-claim continuation at 0.75L, and NIS 1,000,000 / 250,000 issue caps
+629a3f2 Merge pull request #447 from ashuryasaf/cursor/il-regulatory-application-memo
+639e384 Remove duplicate _source_has_hebrew definition
+4cc9bff Remove duplicate _source_has_hebrew definition
+62b47e7 Remove duplicate _source_has_hebrew definition
+b7f8ce0 Skip Hebrew-embedding LTR PDFs when python-bidi is missing
+d572fd4 Brand investor PDFs as first-level documents: PHINS shield letterhead, running headers, gold/navy rules, footer emblem, title dedupe
+c6c5bfe Skip Hebrew-embedding LTR PDFs when python-bidi is missing
+a36e6eb Skip Hebrew-embedding LTR PDFs when python-bidi is missing
+3800915 Fix embedded Hebrew to fail closed without python-bidi
+e51cab8 Skip RTL regen when python-bidi is missing (extends the no-font guard)
+2914144 Fix Hebrew PDF rendering: bidi-reorder each line to true right-to-left (reportlab RTL wordWrap is a no-op without rlbidi)
+11dd9fd Skip RTL PDF regen when no Hebrew font is available
+7a8960b Add Israel regulatory application memorandum (EN + Hebrew) with downloadable PDFs on the pitch dashboard
+33c83bb Merge pull request #439 from ashuryasaf/cursor/il-pitch-partner-meetings-13-jul-3701
+f027eb5 Clear stale sim state when premium/take/churn drivers change
+34e9c35 Set Meeting B (insurer CEO, 13 July) time to 14:15
+74cc592 Pass adjustable premium/take rate into valuation-sim so pre-money reconciles with the live income model
+7c29517 Fix partner-meetings simulation provenance sync and error-as-success handling
