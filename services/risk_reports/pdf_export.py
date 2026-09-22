@@ -1499,7 +1499,7 @@ def _style_kv_table(table, rtl: bool = False):
 
     label_col = 1 if rtl else 0
     table.hAlign = 'RIGHT' if rtl else 'LEFT'
-    table.setStyle(TableStyle([)
+    table.setStyle(TableStyle([
         ('BACKGROUND', (label_col, 0), (label_col, -1), colors.HexColor(PHINS_NAVY)),
         ('TEXTCOLOR', (label_col, 0), (label_col, -1), colors.HexColor(PHINS_GOLD_STRONG)),
         ('BACKGROUND', (1 - label_col, 0), (1 - label_col, -1), colors.HexColor(PHINS_ICE)),
