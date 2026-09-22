@@ -15,9 +15,12 @@ from services.risk_reports.pdf_export import (
     bidi_text,
     build_report_csv_bytes,
     build_report_pdf_bytes,
+    classify_cover_type,
+    collect_uploaded_risk_covers,
     consultant_intro_copy,
     customer_assessment_narrative,
     customer_report_title,
+    customer_signature_identity,
     is_non_assessment_section_title,
     is_staff_chart_title,
     prepare_customer_download_charts,
@@ -166,6 +169,43 @@ class TestCustomerDownloadHelpers(unittest.TestCase):
         self.assertIn('123456782', by_color.get(ink, []))
         self.assertNotIn('National ID', by_color.get(ink, []))
 
+    def test_uploaded_covers_are_collected_without_inventing_rows(self):
+        covers = collect_uploaded_risk_covers([{
+            'policy_number': 'POL-1',
+            'provider': 'מגדל',
+            'death_coverage': 400000,
+            'death_premium': 85,
+            'disability_coverage': 12000,
+            'disability_premium': 40,
+            'waiver_coverage': 0,
+            'risk_covers': [
+                {'code': '5', 'name': 'שארים', 'amount': 8000, 'cost': 22},
+                {'code': '6', 'name': 'סיעוד', 'amount': 5500, 'cost': 30},
+            ],
+        }])
+        keys = {cover['type_key'] for cover in covers}
+        self.assertIn('life', keys)
+        self.assertIn('disability_work', keys)
+        self.assertIn('survivors', keys)
+        self.assertIn('ltc', keys)
+        self.assertNotIn('waiver', keys)
+        self.assertEqual(collect_uploaded_risk_covers([{'policy_number': 'POL-2'}]), [])
+
+    def test_cover_type_labels_match_consultant_vocabulary(self):
+        self.assertEqual(classify_cover_type('1', ''), ('life', 'ביטוח חיים', 'Life Insurance'))
+        self.assertEqual(classify_cover_type('', 'אבדן כושר עבודה')[0], 'disability_work')
+        self.assertEqual(classify_cover_type('', 'שחרור')[0], 'waiver')
+        self.assertEqual(classify_cover_type('', 'סיעוד')[0], 'ltc')
+
+    def test_signature_identity_uses_uploaded_name_and_id(self):
+        name, ident = customer_signature_identity({
+            'pension_assessment': {
+                'client': {'full_name': 'ישראל ישראלי', 'id_number': '123456782'},
+            }
+        })
+        self.assertEqual(name, 'ישראל ישראלי')
+        self.assertEqual(ident, '123456782')
+
     def test_consultant_intro_is_customer_facing(self):
         hebrew = consultant_intro_copy(True)
         english = consultant_intro_copy(False)
@@ -244,6 +284,9 @@ class TestCustomerDownloadFromAnalyse(unittest.TestCase):
         self.assertNotIn('Data Analysis Report', pdf_text)
         self.assertNotIn('PHINS Savings & Insurance Report Summary', pdf_text)
         self.assertIn('Assessment', pdf_text)
+        self.assertIn('Agent recommendations', pdf_text)
+        self.assertIn('Customer', pdf_text)
+        self.assertIn('Advisor', pdf_text)
         self.assertIn(BRAND_NAME, pdf_text)
         self.assertTrue(BRAND_TAGLINE in pdf_text or 'PHINS' in pdf_text)
         self.assertNotIn('ID Field Coverage', pdf_text)
@@ -292,6 +335,77 @@ class TestCustomerDownloadFromAnalyse(unittest.TestCase):
         self.assertTrue(
             'ההערכה שלך' in pdf_text or 'הלש ךתרעהה' in pdf_text
         )
+        self.assertTrue('המלצות היועץ' in pdf_text or bidi_text('המלצות היועץ', rtl=True) in pdf_text)
+        self.assertTrue('חתימות' in pdf_text or bidi_text('חתימות', rtl=True) in pdf_text)
+
+
+class TestCoverAndSignatureDownload(unittest.TestCase):
+    def test_pdf_lists_uploaded_covers_costs_and_signature_identity(self):
+        summary = {
+            'title': 'ההערכה שלך',
+            'language': 'hebrew',
+            'generated_at': '2026-09-22T12:00:00',
+            'is_pension_data': True,
+            'pension_assessment': {
+                'client': {'full_name': 'ישראל ישראלי', 'id_number': '123456782'},
+                'totals': {
+                    'total_balance': 50000,
+                    'total_savings': 50000,
+                    'total_severance': 0,
+                    'account_count': 1,
+                },
+                'accounts': [{
+                    'policy_number': 'POL-COVER-1',
+                    'provider': 'מגדל',
+                    'product_type_name': 'קרן פנסיה מקיפה',
+                    'total_balance': 50000,
+                    'death_coverage': 400000,
+                    'death_premium': 85,
+                    'disability_coverage': 12000,
+                    'disability_premium': 40,
+                    'risk_covers': [
+                        {'code': '4', 'name': 'שחרור', 'amount': 1, 'cost': 15},
+                        {'code': '5', 'name': 'שארים', 'amount': 8000, 'cost': 22},
+                        {'code': '6', 'name': 'סיעוד', 'amount': 5500, 'cost': 30},
+                    ],
+                }],
+            },
+            'risk_covers': collect_uploaded_risk_covers([{
+                'policy_number': 'POL-COVER-1',
+                'provider': 'מגדל',
+                'death_coverage': 400000,
+                'death_premium': 85,
+                'disability_coverage': 12000,
+                'disability_premium': 40,
+                'risk_covers': [
+                    {'code': '4', 'name': 'שחרור', 'amount': 1, 'cost': 15},
+                    {'code': '5', 'name': 'שארים', 'amount': 8000, 'cost': 22},
+                    {'code': '6', 'name': 'סיעוד', 'amount': 5500, 'cost': 30},
+                ],
+            }]),
+            'recommendations': [
+                {'title': 'סקירת כיסויים ביטוחיים', 'description': 'מומלץ לבדוק התאמת הכיסויים לצרכים'},
+            ],
+        }
+        pdf_bytes = build_report_pdf_bytes(summary)
+        self.assertTrue(pdf_bytes.startswith(b'%PDF'))
+        from pypdf import PdfReader
+        pdf_text = '\n'.join(
+            (page.extract_text() or '') for page in PdfReader(io.BytesIO(pdf_bytes)).pages
+        )
+        for token in ('ביטוח חיים', 'אבדן כושר עבודה', 'שחרור', 'שארים', 'סיעוד', '400,000', '123456782'):
+            self.assertTrue(
+                token in pdf_text or bidi_text(token, rtl=True) in pdf_text,
+                msg=f'missing {token}',
+            )
+        self.assertTrue('המלצות היועץ' in pdf_text or bidi_text('המלצות היועץ', rtl=True) in pdf_text)
+        self.assertTrue('ישראל ישראלי' in pdf_text or bidi_text('ישראל ישראלי', rtl=True) in pdf_text)
+        self.assertIn('________________', pdf_text)
+
+        csv_text = build_report_csv_bytes(summary).decode('utf-8')
+        self.assertIn('הכיסויים והעלויות שלך', csv_text)
+        self.assertIn('400000', csv_text)
+        self.assertIn('סיעוד', csv_text)
 
 
 if __name__ == '__main__':
