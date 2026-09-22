@@ -194,13 +194,13 @@ def _zipcrypto_archive(members, password: str, encoding: str = 'utf-8') -> bytes
     return body + directory + eocd
 
 
-def _aes_archive(members, password: str) -> bytes:
+def _aes_archive(members, password: str, encoding: str = 'utf-8') -> bytes:
     pyzipper = pytest.importorskip('pyzipper')
     buf = io.BytesIO()
     with pyzipper.AESZipFile(
         buf, 'w', compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES,
     ) as zf:
-        zf.setpassword(password.encode('utf-8'))
+        zf.setpassword(password.encode(encoding))
         for name, payload in members:
             zf.writestr(name, _as_member_bytes(payload))
     return buf.getvalue()
@@ -617,6 +617,24 @@ class TestZipPassword:
         self._assert_same_assessment(plain, opened)
         with pytest.raises(ValueError, match='password-protected'):
             service.parse_content('aes.zip', locked, 'zip')
+
+    def test_decrypt_error_falls_through_to_the_next_password_encoding(self, service, monkeypatch):
+        pyzipper = pytest.importorskip('pyzipper')
+        password = 'סוד'
+        locked = _aes_archive(self.MEMBERS, password, encoding='cp1255')
+        real_read = pyzipper.AESZipFile.read
+
+        def read(archive, name, pwd=None):
+            if pwd == password.encode('utf-8'):
+                raise pyzipper.BadZipFile('Bad HMAC check for file %r' % name)
+            return real_read(archive, name, pwd=pwd)
+
+        monkeypatch.setattr(pyzipper.AESZipFile, 'read', read)
+        plain, _ = service.parse_content('plain.zip', _zip_members(self.MEMBERS), 'zip')
+        opened, _ = service.parse_content(
+            'aes.zip', locked, 'zip', file_password=password,
+        )
+        self._assert_same_assessment(plain, opened)
 
     def test_dashboard_asks_for_the_password_before_analyze(self):
         html = open(

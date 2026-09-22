@@ -17,6 +17,7 @@ import io
 import json
 import re
 import zipfile
+import zlib
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -119,12 +120,16 @@ def _read_encrypted_zip_members(
             'This ZIP is password-protected, and the server cannot open encrypted archives.'
         ) from exc
 
+    # pyzipper vendors its own zipfile, so its BadZipFile (bad HMAC or CRC once
+    # the cheap password check passes by chance) is not the stdlib class, and a
+    # ZipCrypto DEFLATE member can surface the same failure as a zlib error.
+    wrong_password = (RuntimeError, zipfile.BadZipFile, pyzipper.BadZipFile, zlib.error)
     last_error: Optional[BaseException] = None
     for pwd in passwords:
         try:
             with pyzipper.AESZipFile(io.BytesIO(content)) as archive:
                 return [(name, archive.read(name, pwd=pwd)) for name in names]
-        except (RuntimeError, zipfile.BadZipFile) as exc:
+        except wrong_password as exc:
             last_error = exc
             continue
     raise ValueError(ZIP_PASSWORD_REJECTED) from last_error
