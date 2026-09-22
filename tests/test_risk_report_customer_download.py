@@ -18,6 +18,8 @@ from services.risk_reports.pdf_export import (
     classify_cover_type,
     collect_uploaded_risk_covers,
     consultant_intro_copy,
+    kv_text_adjusted_widths,
+    text_adjusted_col_widths,
     customer_assessment_narrative,
     customer_report_title,
     customer_signature_identity,
@@ -182,20 +184,57 @@ class TestCustomerDownloadHelpers(unittest.TestCase):
                 {'code': '5', 'name': 'שארים', 'amount': 8000, 'cost': 22},
                 {'code': '6', 'name': 'סיעוד', 'amount': 5500, 'cost': 30},
             ],
+            'severance_balance': 18000,
         }])
         keys = {cover['type_key'] for cover in covers}
         self.assertIn('life', keys)
         self.assertIn('disability_work', keys)
         self.assertIn('survivors', keys)
         self.assertIn('ltc', keys)
+        self.assertIn('severance', keys)
         self.assertNotIn('waiver', keys)
         self.assertEqual(collect_uploaded_risk_covers([{'policy_number': 'POL-2'}]), [])
+        pitzuim_only = collect_uploaded_risk_covers(
+            [],
+            severance_records=[{'employer_name': 'מעסיק א', 'total_severance': 4500}],
+        )
+        self.assertEqual(len(pitzuim_only), 1)
+        self.assertEqual(pitzuim_only[0]['type_key'], 'severance')
+        self.assertEqual(pitzuim_only[0]['amount'], 4500)
+        self.assertEqual(
+            collect_uploaded_risk_covers([], severance_records=[{'employer_name': 'מעסיק ב'}]),
+            [],
+        )
 
     def test_cover_type_labels_match_consultant_vocabulary(self):
         self.assertEqual(classify_cover_type('1', ''), ('life', 'ביטוח חיים', 'Life Insurance'))
         self.assertEqual(classify_cover_type('', 'אבדן כושר עבודה')[0], 'disability_work')
         self.assertEqual(classify_cover_type('', 'שחרור')[0], 'waiver')
         self.assertEqual(classify_cover_type('', 'סיעוד')[0], 'ltc')
+        self.assertEqual(classify_cover_type('', 'פיצויים'), ('severance', 'פיצויים', 'Severance'))
+
+    def test_table_columns_follow_text_width(self):
+        widths = text_adjusted_col_widths(
+            [['Cover', 'אבדן כושר עבודה'], ['12', '1'], ['P', 'POL']],
+            usable_width=490,
+            font='Helvetica',
+            size=8,
+        )
+        self.assertEqual(len(widths), 3)
+        self.assertAlmostEqual(sum(widths), 490, places=4)
+        self.assertGreater(widths[0], widths[1])
+        self.assertGreater(widths[0], widths[2])
+        kv = kv_text_adjusted_widths(
+            ['סה״כ פיצויים', 'שם'],
+            ['₪18,000.00', 'ישראל'],
+            usable_width=490,
+            font='Helvetica',
+            size=9,
+            rtl=True,
+        )
+        self.assertEqual(len(kv), 2)
+        self.assertAlmostEqual(sum(kv), 490, places=4)
+        self.assertLess(kv[1], kv[0])
 
     def test_signature_identity_uses_uploaded_name_and_id(self):
         name, ident = customer_signature_identity({
@@ -351,7 +390,7 @@ class TestCoverAndSignatureDownload(unittest.TestCase):
                 'totals': {
                     'total_balance': 50000,
                     'total_savings': 50000,
-                    'total_severance': 0,
+                    'total_severance': 18000,
                     'account_count': 1,
                 },
                 'accounts': [{
@@ -359,6 +398,7 @@ class TestCoverAndSignatureDownload(unittest.TestCase):
                     'provider': 'מגדל',
                     'product_type_name': 'קרן פנסיה מקיפה',
                     'total_balance': 50000,
+                    'severance_balance': 18000,
                     'death_coverage': 400000,
                     'death_premium': 85,
                     'disability_coverage': 12000,
@@ -373,6 +413,7 @@ class TestCoverAndSignatureDownload(unittest.TestCase):
             'risk_covers': collect_uploaded_risk_covers([{
                 'policy_number': 'POL-COVER-1',
                 'provider': 'מגדל',
+                'severance_balance': 18000,
                 'death_coverage': 400000,
                 'death_premium': 85,
                 'disability_coverage': 12000,
@@ -393,7 +434,7 @@ class TestCoverAndSignatureDownload(unittest.TestCase):
         pdf_text = '\n'.join(
             (page.extract_text() or '') for page in PdfReader(io.BytesIO(pdf_bytes)).pages
         )
-        for token in ('ביטוח חיים', 'אבדן כושר עבודה', 'שחרור', 'שארים', 'סיעוד', '400,000', '123456782'):
+        for token in ('ביטוח חיים', 'אבדן כושר עבודה', 'שחרור', 'שארים', 'סיעוד', 'פיצויים', '400,000', '18,000', '123456782'):
             self.assertTrue(
                 token in pdf_text or bidi_text(token, rtl=True) in pdf_text,
                 msg=f'missing {token}',
@@ -407,6 +448,8 @@ class TestCoverAndSignatureDownload(unittest.TestCase):
         self.assertIn('הכיסויים והעלויות שלך', csv_text)
         self.assertIn('400000', csv_text)
         self.assertIn('סיעוד', csv_text)
+        self.assertIn('פיצויים', csv_text)
+        self.assertIn('18000', csv_text)
 
 
 if __name__ == '__main__':

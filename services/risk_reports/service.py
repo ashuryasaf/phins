@@ -821,6 +821,22 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
                         if acct.get(key) not in (None, '', [], {}):
                             copied[key] = acct.get(key)
                     accounts.append(copied)
+            severance_records: List[Dict[str, Any]] = []
+            if isinstance(pension_data, dict):
+                for item in (pension_data.get('severance') or [])[:40]:
+                    if not isinstance(item, dict):
+                        continue
+                    # Copy stored פיצויים figures only — never invent a balance.
+                    copied_severance = {}
+                    for key in (
+                        'policy_number', 'provider', 'employer_name',
+                        'total_severance', 'severance_balance',
+                        'available_severance', 'severance_premium', 'cost',
+                    ):
+                        if item.get(key) not in (None, '', [], {}):
+                            copied_severance[key] = item.get(key)
+                    if copied_severance:
+                        severance_records.append(copied_severance)
             if not client.get('id_number') and summary.get('customer_id'):
                 client = dict(client)
                 client['id_number'] = summary.get('customer_id')
@@ -839,6 +855,7 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
                     'account_count': totals.get('account_count', len(accounts)),
                 },
                 'accounts': accounts,
+                'severance': severance_records,
             }
 
         # Customer download: omit staff completeness / integrity notes.
@@ -870,7 +887,10 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
             if not is_non_assessment_section_title(section.get('title', ''))
         ]
         cover_accounts = (pension_assessment or {}).get('accounts') or []
-        payload['risk_covers'] = collect_uploaded_risk_covers(cover_accounts)
+        payload['risk_covers'] = collect_uploaded_risk_covers(
+            cover_accounts,
+            severance_records=(pension_assessment or {}).get('severance'),
+        )
         existing_chart_titles = {
             str(chart.get('title') or '') for chart in (payload.get('chart_summaries') or [])
         }

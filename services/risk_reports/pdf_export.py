@@ -433,6 +433,7 @@ _COVER_FIELD_SPECS = (
     ('waiver', 'waiver_coverage', 'waiver_premium', 'שחרור', 'Premium Waiver'),
     ('survivors', 'survivors_coverage', 'survivors_premium', 'שארים', 'Survivors'),
     ('ltc', 'ltc_coverage', 'ltc_premium', 'סיעוד', 'Long-Term Care'),
+    ('severance', 'severance_balance', 'severance_premium', 'פיצויים', 'Severance'),
 )
 
 _COVER_CODE_LABELS = {
@@ -452,6 +453,7 @@ ACCOUNT_COVER_COPY_KEYS = (
     'waiver_coverage', 'waiver_premium',
     'survivors_coverage', 'survivors_premium',
     'ltc_coverage', 'ltc_premium',
+    'severance_premium',
     'coverage_amount',
     'risk_covers',
 )
@@ -474,6 +476,8 @@ def classify_cover_type(code: Any, name: Any) -> Tuple[str, str, str]:
         return mapped
     blob = label
     lowered = label.lower()
+    if 'פיצויים' in blob or 'pitzuim' in lowered or 'severance' in lowered:
+        return 'severance', 'פיצויים', 'Severance'
     if 'סיעוד' in blob or 'long-term' in lowered or 'long term' in lowered or 'ltc' in lowered:
         return 'ltc', 'סיעוד', 'Long-Term Care'
     if 'שארים' in blob or 'survivor' in lowered:
@@ -491,7 +495,19 @@ def classify_cover_type(code: Any, name: Any) -> Tuple[str, str, str]:
     return 'other', label or code_text or 'כיסוי', label or code_text or 'Cover'
 
 
-def collect_uploaded_risk_covers(accounts: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+def _severance_uploaded_amount(record: Dict[str, Any]) -> float:
+    """First uploaded פיצויים figure on a severance record — never inferred."""
+    for key in ('total_severance', 'severance_balance', 'available_severance', 'amount'):
+        amount = _as_cover_number(record.get(key))
+        if amount > 0:
+            return amount
+    return 0.0
+
+
+def collect_uploaded_risk_covers(
+    accounts: Optional[List[Dict[str, Any]]],
+    severance_records: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
     """Build cover rows only from values present on the uploaded accounts."""
     collected: List[Dict[str, Any]] = []
     seen: set = set()
@@ -552,6 +568,19 @@ def collect_uploaded_risk_covers(accounts: Optional[List[Dict[str, Any]]]) -> Li
                 'policy_number': policy,
                 'provider': provider,
             })
+
+    for record in severance_records or []:
+        if not isinstance(record, dict):
+            continue
+        add_row({
+            'type_key': 'severance',
+            'title_he': 'פיצויים',
+            'title_en': 'Severance',
+            'amount': _severance_uploaded_amount(record),
+            'cost': record.get('severance_premium') or record.get('cost'),
+            'policy_number': record.get('policy_number') or '',
+            'provider': record.get('provider') or record.get('employer_name') or '',
+        })
     return collected
 
 
@@ -677,11 +706,79 @@ def _register_fonts() -> Tuple[str, str]:
     return 'Helvetica', 'Helvetica-Bold'
 
 
+def _measure_text_width(text: str, font: str, size: float) -> float:
+    """Width of one cell's text in the PDF font — used to size columns."""
+    try:
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+    except Exception:
+        return max(8.0, float(len(str(text or ''))) * max(size, 1.0) * 0.5)
+    return float(stringWidth(str(text or ''), font, size))
+
+
+def text_adjusted_col_widths(
+    columns: List[List[str]],
+    *,
+    usable_width: float,
+    font: str,
+    size: float,
+    padding: float = 14.0,
+    min_width: float = 36.0,
+) -> List[float]:
+    """Column widths from the longest cell in each column, then fit the text column.
+
+    Each column is at least as wide as its text (plus padding). Extra room in
+    the page text column is shared by text weight so long Hebrew labels keep
+    their share instead of being clipped by equal-width slots.
+    """
+    if not columns:
+        return []
+    page_width = max(1.0, float(usable_width or 0) or 1.0)
+    natural: List[float] = []
+    for col in columns:
+        widest = 0.0
+        for cell in col:
+            widest = max(widest, _measure_text_width(cell, font, size))
+        natural.append(max(min_width, widest + padding))
+    total = sum(natural)
+    if total <= 0:
+        return [page_width / len(columns)] * len(columns)
+    if total > page_width:
+        scale = page_width / total
+        return [width * scale for width in natural]
+    extra = page_width - total
+    return [width + extra * (width / total) for width in natural]
+
+
+def kv_text_adjusted_widths(
+    label_texts: List[str],
+    value_texts: List[str],
+    *,
+    usable_width: float,
+    font: str,
+    size: float,
+    rtl: bool,
+) -> List[float]:
+    """Label column follows its text; the value column takes the remaining text width."""
+    page_width = max(1.0, float(usable_width or 0) or 1.0)
+    padding = 16.0
+    min_width = 40.0
+    label_width = max(
+        min_width,
+        max((_measure_text_width(text, font, size) for text in label_texts), default=0.0) + padding,
+    )
+    label_width = min(label_width, page_width * 0.42)
+    value_width = max(min_width, page_width - label_width)
+    if label_width + value_width > page_width:
+        value_width = max(min_width, page_width - label_width)
+    return [value_width, label_width] if rtl else [label_width, value_width]
+
+
 def _style_table(table, header_color: str = PHINS_NAVY, rtl: bool = False):
     from reportlab.lib import colors
     from reportlab.platypus import TableStyle
 
     align = 'RIGHT' if rtl else 'LEFT'
+    table.hAlign = 'RIGHT' if rtl else 'LEFT'
     table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(header_color)),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor(PHINS_GOLD_STRONG)),
@@ -691,10 +788,10 @@ def _style_table(table, header_color: str = PHINS_NAVY, rtl: bool = False):
         ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#d7e2f5')),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('ALIGN', (0, 0), (-1, -1), align),
-        ('LEFTPADDING', (0, 0), (-1, -1), 5),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
-        ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ('FONTSIZE', (0, 0), (-1, -1), 8),
     ]))
     return table
@@ -768,19 +865,94 @@ def _navy_cell_style(cell_style):
     )
 
 
-def _kv_display(rows: List[List[str]], cell_style, label_style, rtl: bool) -> List[List[Any]]:
+def _kv_display(
+    rows: List[List[str]],
+    cell_style,
+    label_style,
+    rtl: bool,
+    col_widths: Optional[List[float]] = None,
+) -> List[List[Any]]:
     """Render key/value rows, keeping the label column readable on navy."""
     label_col = 1 if rtl else 0
+    widths = list(col_widths or [])
     return [
         [
             _safe_paragraph(
                 cell, label_style if index == label_col else cell_style,
-                rtl=rtl, max_width=160,
+                rtl=rtl, max_width=widths[index] if index < len(widths) else 160,
             )
             for index, cell in enumerate(row)
         ]
         for row in rows
     ]
+
+
+def _build_kv_table(
+    pairs: List[List[str]],
+    cell_style,
+    label_style,
+    *,
+    rtl: bool,
+    usable_width: float,
+    font: str,
+    size: float = 9,
+):
+    from reportlab.platypus import Table
+
+    raw = _kv_rows(pairs, rtl)
+    if rtl:
+        value_texts = [row[0] for row in raw]
+        label_texts = [row[1] for row in raw]
+    else:
+        label_texts = [row[0] for row in raw]
+        value_texts = [row[1] for row in raw]
+    widths = kv_text_adjusted_widths(
+        label_texts, value_texts,
+        usable_width=usable_width, font=font, size=size, rtl=rtl,
+    )
+    display = _kv_display(raw, cell_style, label_style, rtl, widths)
+    table = Table(display, colWidths=widths)
+    _style_kv_table(table, rtl=rtl)
+    return table
+
+
+def _build_text_table(
+    headers: List[str],
+    rows: List[List[str]],
+    *,
+    cell_style,
+    header_style,
+    rtl: bool,
+    usable_width: float,
+    font: str,
+    size: float = 8,
+):
+    from reportlab.platypus import Table
+
+    display_headers = list(reversed(headers)) if rtl else list(headers)
+    display_rows = [list(reversed(row)) if rtl else list(row) for row in rows]
+    column_count = len(display_headers)
+    columns: List[List[str]] = []
+    for index in range(column_count):
+        column = [display_headers[index]]
+        for row in display_rows:
+            column.append(row[index] if index < len(row) else '')
+        columns.append(column)
+    widths = text_adjusted_col_widths(
+        columns, usable_width=usable_width, font=font, size=size,
+    )
+    table_data: List[List[Any]] = [[
+        _safe_paragraph(header, header_style, rtl=rtl, max_width=width)
+        for header, width in zip(display_headers, widths)
+    ]]
+    for row in display_rows:
+        table_data.append([
+            _safe_paragraph(cell, cell_style, rtl=rtl, max_width=width)
+            for cell, width in zip(row, widths)
+        ])
+    table = Table(table_data, colWidths=widths, repeatRows=1)
+    _style_table(table, rtl=rtl)
+    return table
 
 
 def _logo_png_path() -> Optional[str]:
@@ -1152,7 +1324,7 @@ def _append_risk_covers(
     is_hebrew: bool,
     usable_width: float,
 ) -> None:
-    from reportlab.platypus import Spacer, Table
+    from reportlab.platypus import Spacer
 
     covers = summary.get('risk_covers') or []
     if not covers:
@@ -1167,21 +1339,14 @@ def _append_risk_covers(
     )
     story.append(_safe_paragraph(note, cell_style, rtl=is_hebrew, max_width=usable_width))
     story.append(Spacer(1, 4))
-    header = [
+    headers = [
         'סוג כיסוי' if is_hebrew else 'Cover',
         'סכום' if is_hebrew else 'Amount',
         'עלות' if is_hebrew else 'Cost',
         'פוליסה' if is_hebrew else 'Policy',
         'יצרן' if is_hebrew else 'Provider',
     ]
-    col_widths = [130, 90, 80, 100, 90]
-    if is_hebrew:
-        header = list(reversed(header))
-        col_widths = list(reversed(col_widths))
-    table_data: List[List[Any]] = [[
-        _safe_paragraph(h, header_style, rtl=is_hebrew, max_width=w)
-        for h, w in zip(header, col_widths)
-    ]]
+    rows: List[List[str]] = []
     total_amount = 0.0
     total_cost = 0.0
     for cover in covers[:40]:
@@ -1190,36 +1355,27 @@ def _append_risk_covers(
         total_amount += amount
         total_cost += cost
         title = cover.get('title_he') if is_hebrew else cover.get('title_en')
-        row = [
+        rows.append([
             _as_str(title or cover.get('title_he') or cover.get('title_en')),
             _as_money(amount) if amount else '—',
             _as_money(cost) if cost else '—',
             _as_str(cover.get('policy_number')),
             _as_str(cover.get('provider')),
-        ]
-        if is_hebrew:
-            row = list(reversed(row))
-        table_data.append([
-            _safe_paragraph(cell, cell_style, rtl=is_hebrew, max_width=w)
-            for cell, w in zip(row, col_widths)
         ])
     if len(covers) > 1:
-        totals = [
+        rows.append([
             'סה״כ' if is_hebrew else 'Total',
             _as_money(total_amount) if total_amount else '—',
             _as_money(total_cost) if total_cost else '—',
             '',
             '',
-        ]
-        if is_hebrew:
-            totals = list(reversed(totals))
-        table_data.append([
-            _safe_paragraph(cell, cell_style, rtl=is_hebrew, max_width=w)
-            for cell, w in zip(totals, col_widths)
         ])
-    table = Table(table_data, colWidths=col_widths, repeatRows=1)
-    _style_table(table, rtl=is_hebrew)
-    story.append(table)
+    story.append(_build_text_table(
+        headers, rows,
+        cell_style=cell_style, header_style=header_style,
+        rtl=is_hebrew, usable_width=usable_width,
+        font=getattr(cell_style, 'fontName', 'Helvetica'),
+    ))
     story.append(Spacer(1, 10))
 
 
@@ -1342,7 +1498,8 @@ def _style_kv_table(table, rtl: bool = False):
     from reportlab.platypus import TableStyle
 
     label_col = 1 if rtl else 0
-    table.setStyle(TableStyle([
+    table.hAlign = 'RIGHT' if rtl else 'LEFT'
+    table.setStyle(TableStyle([)
         ('BACKGROUND', (label_col, 0), (label_col, -1), colors.HexColor(PHINS_NAVY)),
         ('TEXTCOLOR', (label_col, 0), (label_col, -1), colors.HexColor(PHINS_GOLD_STRONG)),
         ('BACKGROUND', (1 - label_col, 0), (1 - label_col, -1), colors.HexColor(PHINS_ICE)),
@@ -1422,15 +1579,17 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
 
     identity_heading = 'הפרטים שלך' if is_hebrew else 'Your Details'
     story.append(_safe_paragraph(identity_heading, heading_style, rtl=is_hebrew, max_width=usable_width))
-    identity_rows = _kv_rows([
-        ['תעודת זהות' if is_hebrew else 'National ID', _as_str(customer_id)],
-        ['שם מלא' if is_hebrew else 'Full Name', _as_str(customer_name)],
-        ['תאריך לידה' if is_hebrew else 'Birth Date', _as_str(birth_date)],
-        ['נוצר' if is_hebrew else 'Prepared On', _as_when(summary.get('generated_at'))],
-    ], is_hebrew)
-    identity_display = _kv_display(identity_rows, cell_style, navy_cell_style, is_hebrew)
-    identity_table = Table(identity_display, colWidths=[150, 340] if not is_hebrew else [340, 150])
-    _style_kv_table(identity_table, rtl=is_hebrew)
+    identity_table = _build_kv_table(
+        [
+            ['תעודת זהות' if is_hebrew else 'National ID', _as_str(customer_id)],
+            ['שם מלא' if is_hebrew else 'Full Name', _as_str(customer_name)],
+            ['תאריך לידה' if is_hebrew else 'Birth Date', _as_str(birth_date)],
+            ['נוצר' if is_hebrew else 'Prepared On', _as_when(summary.get('generated_at'))],
+        ],
+        cell_style, navy_cell_style,
+        rtl=is_hebrew, usable_width=usable_width,
+        font=getattr(cell_style, 'fontName', 'Helvetica'),
+    )
     story.append(identity_table)
     story.append(Spacer(1, 10))
 
@@ -1441,15 +1600,17 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
     total_savings = totals.get('total_savings', totals.get('total_savings_balance', 0))
     total_severance = totals.get('total_severance', totals.get('total_severance_balance', sci.get('total_severance', 0)))
     account_count = totals.get('account_count', len(accounts))
-    totals_rows = _kv_rows([
-        ['סה״כ צבירה' if is_hebrew else 'Total Accumulation', _as_money(total_balance)],
-        ['סה״כ חסכונות' if is_hebrew else 'Total Savings', _as_money(total_savings)],
-        ['סה״כ פיצויים' if is_hebrew else 'Total Severance', _as_money(total_severance)],
-        ['מספר פוליסות' if is_hebrew else 'Number of Policies', _as_str(account_count)],
-    ], is_hebrew)
-    totals_display = _kv_display(totals_rows, cell_style, navy_cell_style, is_hebrew)
-    totals_table = Table(totals_display, colWidths=[150, 340] if not is_hebrew else [340, 150])
-    _style_kv_table(totals_table, rtl=is_hebrew)
+    totals_table = _build_kv_table(
+        [
+            ['סה״כ צבירה' if is_hebrew else 'Total Accumulation', _as_money(total_balance)],
+            ['סה״כ חסכונות' if is_hebrew else 'Total Savings', _as_money(total_savings)],
+            ['סה״כ פיצויים' if is_hebrew else 'Total Severance', _as_money(total_severance)],
+            ['מספר פוליסות' if is_hebrew else 'Number of Policies', _as_str(account_count)],
+        ],
+        cell_style, navy_cell_style,
+        rtl=is_hebrew, usable_width=usable_width,
+        font=getattr(cell_style, 'fontName', 'Helvetica'),
+    )
     story.append(totals_table)
     story.append(Spacer(1, 10))
     _append_customer_charts(story, summary, heading_style, is_hebrew, usable_width, base_font)
@@ -1457,38 +1618,29 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
     if accounts:
         accounts_heading = 'החשבונות והפוליסות שלך' if is_hebrew else 'Your Accounts & Policies'
         story.append(_safe_paragraph(accounts_heading, heading_style, rtl=is_hebrew, max_width=usable_width))
-        header = [
+        headers = [
             'פוליסה' if is_hebrew else 'Policy',
             'יצרן' if is_hebrew else 'Provider',
             'מוצר' if is_hebrew else 'Product',
             'צבירה' if is_hebrew else 'Balance',
             'פיצויים' if is_hebrew else 'Severance',
         ]
-        col_widths = [90, 110, 110, 90, 90]
-        if is_hebrew:
-            header = list(reversed(header))
-            col_widths = list(reversed(col_widths))
-        table_data: List[List[Any]] = [[
-            _safe_paragraph(h, navy_cell_style, rtl=is_hebrew, max_width=w)
-            for h, w in zip(header, col_widths)
-        ]]
-        for acct in accounts[:80]:
-            row = [
+        account_rows = [
+            [
                 _as_str(acct.get('policy_number')),
                 _as_str(acct.get('provider')),
                 _as_str(acct.get('product_type_name') or acct.get('product_type')),
                 _as_money(acct.get('total_balance', acct.get('savings_balance', 0))),
                 _as_money(acct.get('severance_balance', 0)),
             ]
-            if is_hebrew:
-                row = list(reversed(row))
-            table_data.append([
-                _safe_paragraph(cell, cell_style, rtl=is_hebrew, max_width=w)
-                for cell, w in zip(row, col_widths)
-            ])
-        accounts_table = Table(table_data, colWidths=col_widths, repeatRows=1)
-        _style_table(accounts_table, rtl=is_hebrew)
-        story.append(accounts_table)
+            for acct in accounts[:80]
+        ]
+        story.append(_build_text_table(
+            headers, account_rows,
+            cell_style=cell_style, header_style=navy_cell_style,
+            rtl=is_hebrew, usable_width=usable_width,
+            font=getattr(cell_style, 'fontName', 'Helvetica'),
+        ))
         story.append(Spacer(1, 10))
 
     _append_risk_covers(story, summary, heading_style, cell_style, is_hebrew, usable_width)
@@ -1510,7 +1662,7 @@ def _append_assessment_sections(
     is_hebrew: bool,
     usable_width: float,
 ) -> None:
-    from reportlab.platypus import Spacer, Table
+    from reportlab.platypus import Spacer
 
     header_style = _navy_cell_style(cell_style)
     for section in prepare_customer_download_sections(summary.get('assessment_sections') or []):
@@ -1526,27 +1678,20 @@ def _append_assessment_sections(
             story.append(Spacer(1, 4))
         columns = list(section.get('columns') or [])
         if rows and columns:
-            display_columns = list(reversed(columns)) if is_hebrew else columns
-            width = usable_width / max(len(display_columns), 1)
-            header_cells = [
-                _safe_paragraph(_as_str(col), header_style, rtl=is_hebrew, max_width=width)
-                for col in display_columns
-            ]
-            table_rows: List[List[Any]] = [header_cells]
-            for row in rows[:60]:
-                values = [
+            table_rows = [
+                [
                     _as_str(row.get(col, '') if isinstance(row, dict) else row)
                     for col in columns
                 ]
-                if is_hebrew:
-                    values = list(reversed(values))
-                table_rows.append([
-                    _safe_paragraph(val, cell_style, rtl=is_hebrew, max_width=width)
-                    for val in values
-                ])
-            data_table = Table(table_rows, colWidths=[width] * len(display_columns), repeatRows=1)
-            _style_table(data_table, PHINS_NAVY, rtl=is_hebrew)
-            story.append(data_table)
+                for row in rows[:60]
+            ]
+            story.append(_build_text_table(
+                [_as_str(col) for col in columns],
+                table_rows,
+                cell_style=cell_style, header_style=header_style,
+                rtl=is_hebrew, usable_width=usable_width,
+                font=getattr(cell_style, 'fontName', 'Helvetica'),
+            ))
             story.append(Spacer(1, 8))
 
 
@@ -1609,17 +1754,19 @@ def _build_generic_summary_pdf(summary: Dict[str, Any]) -> bytes:
     if has_customer_totals:
         overview_heading = 'הסיכום שלך' if is_hebrew else 'Your Summary'
         story.append(_safe_paragraph(overview_heading, heading_style, rtl=is_hebrew, max_width=usable_width))
-        overview_rows = _kv_rows([
-            ['תעודת זהות' if is_hebrew else 'National ID', _as_str(sci.get('customer_id', ''))],
-            ['תאריך לידה' if is_hebrew else 'Birth Date', _as_str(sci.get('birth_date', ''))],
-            ['סה״כ חיסכון' if is_hebrew else 'Total Savings', _as_money(sci.get('total_savings', 0))],
-            ['סה״כ פיצויים' if is_hebrew else 'Total Severance', _as_money(sci.get('total_severance', 0))],
-            ['סה״כ כיסוי' if is_hebrew else 'Total Cover', _as_money(sci.get('total_cover', 0))],
-            ['נוצר' if is_hebrew else 'Prepared On', _as_when(summary.get('generated_at'))],
-        ], is_hebrew)
-        overview_display = _kv_display(overview_rows, cell_style, navy_cell_style, is_hebrew)
-        overview_table = Table(overview_display, colWidths=[150, 340] if not is_hebrew else [340, 150])
-        _style_kv_table(overview_table, rtl=is_hebrew)
+        overview_table = _build_kv_table(
+            [
+                ['תעודת זהות' if is_hebrew else 'National ID', _as_str(sci.get('customer_id', ''))],
+                ['תאריך לידה' if is_hebrew else 'Birth Date', _as_str(sci.get('birth_date', ''))],
+                ['סה״כ חיסכון' if is_hebrew else 'Total Savings', _as_money(sci.get('total_savings', 0))],
+                ['סה״כ פיצויים' if is_hebrew else 'Total Severance', _as_money(sci.get('total_severance', 0))],
+                ['סה״כ כיסוי' if is_hebrew else 'Total Cover', _as_money(sci.get('total_cover', 0))],
+                ['נוצר' if is_hebrew else 'Prepared On', _as_when(summary.get('generated_at'))],
+            ],
+            cell_style, navy_cell_style,
+            rtl=is_hebrew, usable_width=usable_width,
+            font=getattr(cell_style, 'fontName', 'Helvetica'),
+        )
         story.append(overview_table)
         story.append(Spacer(1, 12))
 
