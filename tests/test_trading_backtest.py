@@ -408,6 +408,84 @@ def test_forward_order_waits_for_the_next_real_print():
     assert "latest Alpaca print" in result["forward_test"]["note"]
 
 
+def test_missing_tape_walks_small_trades_along_the_bar_and_charts_gains():
+    from services.trading_backtest import _build_candles, _small_trades_from_bars
+
+    one_day = [{
+        "date": "2024-06-03",
+        "open": 100, "high": 110, "low": 90, "close": 105, "volume": 1_000,
+    }]
+    dense = _small_trades_from_bars(one_day, trading_days=1, max_per_day=30_000)[0]
+    assert len(dense) == 30_000
+    assert dense[0]["close"] == pytest.approx(100)
+    assert dense[-1]["close"] == pytest.approx(105)
+    assert all(90 - 1e-6 <= row["close"] <= 110 + 1e-6 for row in dense)
+    assert dense[0]["session_date"] == "2024-06-03"
+    assert dense[0]["date"] < dense[-1]["date"]
+
+    daily = []
+    for i in range(40):
+        px = 80 + i * 0.5
+        daily.append({
+            "date": (date(2024, 1, 2) + timedelta(days=i)).isoformat(),
+            "open": px, "high": px + 2, "low": px - 1, "close": px + 0.4, "volume": 100,
+        })
+    candles = _build_candles(daily)
+    assert list(candles) == ["day", "week", "month", "quarter", "year"]
+    assert len(candles["day"]) == 40
+    assert len(candles["week"]) > 1
+    assert len(candles["month"]) >= 2
+    assert len(candles["quarter"]) >= 1
+    assert len(candles["year"]) == 1
+
+    class BarsOnly:
+        is_connected = True
+        _last_data_error = None
+
+        def submit_order(self, *args, **kwargs):
+            raise AssertionError("backtest must not submit orders")
+
+        def get_historical_trades(self, symbol, **kwargs):
+            return {"prints": [], "tape_trades_per_day": {}, "truncated_days": [], "sessions": []}
+
+        def get_historical_bars(self, symbol, timeframe="1Day", **kwargs):
+            if str(timeframe).lower() in ("1min", "1minute"):
+                return []
+            return daily
+
+        def _bars_from_alpha_vantage(self, *args, **kwargs):
+            raise AssertionError("small-trade path must not use Alpha Vantage")
+
+    result = run_backtest_request(
+        {
+            "source": "algo",
+            "strategy": "momentum",
+            "symbols": ["SPY"],
+            "days": 1,
+            "max_trades_per_day": 48,
+            "warmup_bars": 10,
+        },
+        default_source="algo",
+        platform=BarsOnly(),
+    )
+    assert "error" not in result, result.get("error")
+    assert result["orders_submitted"] == 0
+    assert result["mock_data"] is False
+    assert result["small_trades"] is True
+    assert result["data_source"] == "alpaca_bar_path"
+    assert result["tape_trades_per_day"]
+    assert sum(result["tape_trades_per_day"].values()) == 48
+    assert result["candles"]["day"]
+    assert result["candles"]["week"]
+    assert result["candles"]["month"]
+    assert result["candles"]["quarter"]
+    assert result["candles"]["year"]
+    assert result["accumulated_gains"]
+    assert "gain" in result["accumulated_gains"][-1]
+    assert "No prices were invented" not in result.get("small_trade_note", "")
+    assert "small steps" in result["small_trade_note"]
+
+
 def test_duplicate_print_timestamps_are_all_replayed():
     rows = _tape_prints(6)
     for row in rows:

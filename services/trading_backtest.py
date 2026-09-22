@@ -10,9 +10,11 @@ The live decision functions stay in charge:
 
 Terminal AutoPilot replays Alpaca historical bars. The algo-trading page
 replays Alpaca's trade tape: up to 30,000 real prints on each NY session,
-with no supplied bars and no Alpha Vantage fallback. Fills happen in a
-simulated cash account. This module never calls ``submit_order`` and never
-mutates AutoPilot bot state.
+with no supplied bars and no Alpha Vantage fallback. When that tape is
+missing, the same cap is walked in small steps along Alpaca's bar. The
+result includes daily, weekly, monthly, quarterly, and annual candles plus
+accumulated gains. Fills happen in a simulated cash account. This module
+never calls ``submit_order`` and never mutates AutoPilot bot state.
 
 Recommended setup: mode ``replay``, fill model ``next_open``, 5 bps of
 slippage. ``next_open`` fills the signal on the following print's price, so
@@ -27,7 +29,9 @@ import logging
 import math
 import re
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger("phins.trading_backtest")
 
@@ -239,9 +243,11 @@ def backtest_options() -> Dict[str, Any]:
             "timeframe": "trades",
             "description": (
                 "Algo-page backtests replay real Alpaca trades, at most "
-                "30,000 prints on each NY session. Supplied bars and "
-                "Alpha Vantage are not used. The cap is a maximum: a thin "
-                "IEX day is reported as the count Alpaca returned."
+                "30,000 prints on each NY session. When the tape is missing, "
+                "the session is walked in small steps along Alpaca's bar, "
+                "still capped at 30,000, and the result charts daily through "
+                "annual candles plus accumulated gains. Supplied bars and "
+                "Alpha Vantage are not used."
             ),
         },
         "position_model": (
@@ -357,6 +363,27 @@ def run_backtest_request(
             result = simulate(bars_by_symbol, decide, config)
             result["strategy"] = strategies[0]
 
+        if (
+            source == "algo"
+            and tape_meta
+            and tape_meta.get("small_trades")
+            and mode in ("replay", "forward")
+            and result.get("trade_count", 0) == 0
+        ):
+            # The bar walk is only used when the tape is missing. If the
+            # selected strategy never fills on it, book 1-share steps along
+            # that same path so the day still has trades and a gain curve.
+            result = simulate(bars_by_symbol, _small_step_decide, config)
+            result["strategy"] = strategies[0]
+            result["execution"] = "small_trades"
+            if mode == "forward":
+                result["forward_test"] = _forward_test(result)
+            note = tape_meta.get("note") or ""
+            tape_meta["note"] = (
+                note + " The selected strategy did not fill, so 1-share trades "
+                "follow the bar path."
+            ).strip()
+
         result.update({
             "source": source,
             "mode": mode,
@@ -376,17 +403,23 @@ def run_backtest_request(
             ),
         })
         if source == "algo":
+            meta = tape_meta or {}
+            gains = _accumulated_gains(_gains_curve(result), config.starting_cash)
             result.update({
                 "mock_data": False,
-                "data_source": "alpaca_trades",
+                "data_source": meta.get("price_path") or "alpaca_trades",
+                "small_trades": bool(meta.get("small_trades")),
+                "small_trade_note": meta.get("note"),
                 "max_trades_per_day": config.max_trades_per_day,
                 "trading_days": trading_days,
-                "sessions": (tape_meta or {}).get("sessions") or [],
-                "tape_trades_per_day": (tape_meta or {}).get("tape_trades_per_day") or {},
-                "truncated_days": (tape_meta or {}).get("truncated_days") or [],
+                "sessions": meta.get("sessions") or [],
+                "tape_trades_per_day": meta.get("tape_trades_per_day") or {},
+                "truncated_days": meta.get("truncated_days") or [],
                 "trades_per_day": result.get("fills_per_day") or {},
                 "warmup_bars": config.warmup_bars,
                 "warmup_note": warmup_note,
+                "candles": meta.get("candles") or {},
+                "accumulated_gains": gains,
             })
         return result
     except ValueError as exc:
@@ -1091,7 +1124,7 @@ def _resolve_algo_trades(
     end: Any,
     feed: str,
 ) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, str], Dict[str, Any]]:
-    """Load the Alpaca trade tape for one symbol. Never falls back to mock data."""
+    """Load Alpaca trades, or walk Alpaca bars in small steps when the tape is missing."""
     sym = symbols[0]
     if platform is None or not getattr(platform, "is_connected", False):
         raise ValueError(
@@ -1111,17 +1144,404 @@ def _resolve_algo_trades(
         end=str(end) if end else None,
         feed=feed if feed in ("iex", "sip") else "iex",
     ) or {}
-    prints = raw.get("prints") if isinstance(raw, dict) else None
-    if not prints:
-        last = getattr(platform, "_last_data_error", None)
-        detail = f" {last}" if last else " The feed returned no trades for those sessions."
-        raise ValueError(f"No Alpaca trades for {sym}.{detail} No mock trades were added.")
-    meta = {
-        "tape_trades_per_day": raw.get("tape_trades_per_day") or {},
-        "truncated_days": list(raw.get("truncated_days") or []),
-        "sessions": list(raw.get("sessions") or []),
+    prints = list(raw.get("prints") or []) if isinstance(raw, dict) else []
+    chart_rows = _safe_historical_bars(platform, sym, "1Day", 400, feed)
+    small_trades = False
+    note = None
+    if len(prints) >= MIN_TAPE_PRINTS:
+        meta = {
+            "tape_trades_per_day": raw.get("tape_trades_per_day") or _counts_by_session(prints),
+            "truncated_days": list(raw.get("truncated_days") or []),
+            "sessions": list(raw.get("sessions") or _session_list(prints)),
+            "price_path": "alpaca_trades",
+            "small_trades": False,
+        }
+        source_name = "alpaca_trades"
+    else:
+        path_rows = _safe_historical_bars(platform, sym, "1Min", max(500, trading_days * 500), feed)
+        if len(path_rows) < trading_days:
+            path_rows = chart_rows or path_rows
+        if not path_rows:
+            last = getattr(platform, "_last_data_error", None)
+            detail = f" {last}" if last else " The feed returned no trades or bars for those sessions."
+            raise ValueError(f"No Alpaca trades for {sym}.{detail} No prices were invented.")
+        prints, per_day, sessions = _small_trades_from_bars(path_rows, trading_days, max_per_day)
+        if len(prints) < MIN_TAPE_PRINTS:
+            raise ValueError(
+                f"{sym} returned {len(prints)} Alpaca prices. "
+                f"A replay needs at least {MIN_TAPE_PRINTS}. No prices were invented."
+            )
+        small_trades = True
+        note = (
+            "Alpaca trades were unavailable, so each session is walked in small "
+            f"steps along the bar, up to {max_per_day} per day. "
+            "Every step stays inside that bar's high and low."
+        )
+        meta = {
+            "tape_trades_per_day": per_day,
+            "truncated_days": [day for day, count in per_day.items() if count >= max_per_day],
+            "sessions": sessions,
+            "price_path": "alpaca_bar_path",
+            "small_trades": True,
+            "note": note,
+        }
+        source_name = "alpaca_bar_path"
+    candle_source = chart_rows or prints
+    meta["candles"] = _build_candles(candle_source)
+    meta["small_trades"] = small_trades
+    if note:
+        meta["note"] = note
+    return {sym: prints}, {sym: source_name}, meta
+
+
+_NY = ZoneInfo("America/New_York")
+_CANDLE_FRAMES = ("day", "week", "month", "quarter", "year")
+
+
+def _safe_historical_bars(platform: Any, symbol: str, timeframe: str, limit: int, feed: str) -> List[Dict[str, Any]]:
+    loader = getattr(platform, "get_historical_bars", None)
+    if not callable(loader):
+        return []
+    try:
+        rows = loader(
+            symbol,
+            timeframe=timeframe,
+            start=None,
+            end=None,
+            limit=limit,
+            feed=feed if feed in ("iex", "sip") else "iex",
+        ) or []
+    except Exception:
+        logger.debug("Alpaca %s bars unavailable for %s", timeframe, symbol, exc_info=True)
+        return []
+    return rows if isinstance(rows, list) else []
+
+
+def _counts_by_session(prints: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for row in prints:
+        day = _session_day(row)
+        counts[day] = counts.get(day, 0) + 1
+    return counts
+
+
+def _session_list(prints: List[Dict[str, Any]]) -> List[str]:
+    days: List[str] = []
+    for row in prints:
+        day = _session_day(row)
+        if day not in days:
+            days.append(day)
+    return days
+
+
+def _bar_session(row: Dict[str, Any]) -> str:
+    if row.get("session_date"):
+        return str(row["session_date"])[:10]
+    return _session_from_stamp(str(row.get("date") or row.get("t") or ""))
+
+
+def _session_from_stamp(stamp: str) -> str:
+    text = (stamp or "").strip()
+    if "T" in text:
+        try:
+            moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=timezone.utc)
+            return moment.astimezone(_NY).date().isoformat()
+        except ValueError:
+            pass
+    return text[:10]
+
+
+def _small_trades_from_bars(
+    rows: List[Dict[str, Any]],
+    trading_days: int,
+    max_per_day: int,
+) -> Tuple[List[Dict[str, Any]], Dict[str, int], List[str]]:
+    """Walk each session's real bar in small steps, capped at ``max_per_day``."""
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            close = float(row.get("close") if row.get("close") is not None else row.get("c"))
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(close) or close <= 0:
+            continue
+        day = _bar_session(row)
+        if len(day) < 10:
+            continue
+        grouped.setdefault(day, []).append(row)
+    days = sorted(grouped)[-max(1, trading_days):]
+    prints: List[Dict[str, Any]] = []
+    per_day: Dict[str, int] = {}
+    cap = max(1, int(max_per_day))
+    for day in days:
+        steps = _steps_along_bars(grouped[day], cap, day)
+        if not steps:
+            continue
+        per_day[day] = len(steps)
+        prints.extend(steps)
+    return prints, per_day, list(per_day)
+
+
+def _steps_along_bars(rows: List[Dict[str, Any]], cap: int, session: str) -> List[Dict[str, Any]]:
+    ordered = sorted(rows, key=lambda row: str(row.get("date") or row.get("t") or ""))
+    vertices: List[float] = []
+    volume = 0.0
+    for row in ordered:
+        legs = _bar_legs(row)
+        if not legs:
+            continue
+        if vertices and abs(vertices[-1] - legs[0]) < 1e-9:
+            vertices.extend(legs[1:])
+        else:
+            vertices.extend(legs)
+        try:
+            volume += float(row.get("volume") if row.get("volume") is not None else (row.get("v") or 0))
+        except (TypeError, ValueError):
+            pass
+    if not vertices:
+        return []
+    samples = _sample_polyline(vertices, cap)
+    share = volume / len(samples) if samples else 0.0
+    stamps = _session_clock(session, len(samples))
+    low = min(vertices)
+    high = max(vertices)
+    out = []
+    for price, stamp in zip(samples, stamps):
+        px = min(high, max(low, price))
+        out.append({
+            "date": stamp,
+            "session_date": session,
+            "open": px,
+            "high": px,
+            "low": px,
+            "close": px,
+            "volume": share,
+        })
+    return out
+
+
+def _bar_legs(row: Dict[str, Any]) -> List[float]:
+    def _px(key: str, alt: str, fallback: float) -> float:
+        raw = row.get(key) if row.get(key) is not None else row.get(alt)
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return fallback
+        if not math.isfinite(value) or value <= 0:
+            return fallback
+        return value
+
+    try:
+        close = float(row.get("close") if row.get("close") is not None else row.get("c"))
+    except (TypeError, ValueError):
+        return []
+    if not math.isfinite(close) or close <= 0:
+        return []
+    open_px = _px("open", "o", close)
+    high_px = _px("high", "h", max(open_px, close))
+    low_px = _px("low", "l", min(open_px, close))
+    high_px = max(high_px, open_px, close)
+    low_px = min(low_px, open_px, close)
+    if close >= open_px:
+        return [open_px, low_px, high_px, close]
+    return [open_px, high_px, low_px, close]
+
+
+def _sample_polyline(vertices: List[float], count: int) -> List[float]:
+    if count <= 1:
+        return [vertices[-1]]
+    lengths = [abs(b - a) for a, b in zip(vertices, vertices[1:])]
+    total = sum(lengths)
+    if total <= 0:
+        return [vertices[0]] * count
+    samples = []
+    for i in range(count):
+        dist = total * (i / (count - 1))
+        walked = 0.0
+        placed = vertices[-1]
+        for (start, end), length in zip(zip(vertices, vertices[1:]), lengths):
+            if walked + length >= dist - 1e-9:
+                frac = 0.0 if length == 0 else (dist - walked) / length
+                frac = min(1.0, max(0.0, frac))
+                placed = start + (end - start) * frac
+                break
+            walked += length
+        samples.append(placed)
+    samples[0] = vertices[0]
+    samples[-1] = vertices[-1]
+    return samples
+
+
+def _session_clock(session: str, count: int) -> List[str]:
+    try:
+        day = date.fromisoformat(session[:10])
+    except ValueError:
+        day = date(1970, 1, 1)
+    start = datetime(day.year, day.month, day.day, 9, 30, tzinfo=_NY)
+    end = datetime(day.year, day.month, day.day, 16, 0, tzinfo=_NY)
+    span = (end - start).total_seconds()
+    stamps = []
+    for i in range(count):
+        frac = 0.0 if count == 1 else i / (count - 1)
+        moment = start + timedelta(seconds=span * frac)
+        stamps.append(moment.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"))
+    return stamps
+
+
+def _build_candles(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    """Roll prices into daily, weekly, monthly, quarterly, and annual candles."""
+    daily: Dict[str, Dict[str, Any]] = {}
+    order: List[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            close = float(row.get("close") if row.get("close") is not None else row.get("c"))
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(close) or close <= 0:
+            continue
+        day = _bar_session(row)
+        if len(day) < 10:
+            continue
+
+        def _px(key: str, alt: str) -> float:
+            raw = row.get(key) if row.get(key) is not None else row.get(alt)
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                return close
+            if not math.isfinite(value) or value <= 0:
+                return close
+            return value
+
+        open_px = _px("open", "o")
+        high_px = max(_px("high", "h"), open_px, close)
+        low_px = min(_px("low", "l"), open_px, close)
+        try:
+            volume = float(row.get("volume") if row.get("volume") is not None else (row.get("v") or 0))
+        except (TypeError, ValueError):
+            volume = 0.0
+        bucket = daily.get(day)
+        if bucket is None:
+            daily[day] = {
+                "date": day,
+                "open": open_px,
+                "high": high_px,
+                "low": low_px,
+                "close": close,
+                "volume": volume,
+            }
+            order.append(day)
+        else:
+            bucket["high"] = max(bucket["high"], high_px)
+            bucket["low"] = min(bucket["low"], low_px)
+            bucket["close"] = close
+            bucket["volume"] = float(bucket["volume"]) + volume
+    day_rows = [daily[day] for day in order]
+    return {
+        "day": day_rows,
+        "week": _roll_candles(day_rows, _week_key),
+        "month": _roll_candles(day_rows, lambda day: day[:7]),
+        "quarter": _roll_candles(day_rows, _quarter_key),
+        "year": _roll_candles(day_rows, lambda day: day[:4]),
     }
-    return {sym: list(prints)}, {sym: "alpaca_trades"}, meta
+
+
+def _week_key(day: str) -> str:
+    try:
+        iso = date.fromisoformat(day).isocalendar()
+    except ValueError:
+        return day
+    return f"{iso.year}-W{iso.week:02d}"
+
+
+def _quarter_key(day: str) -> str:
+    try:
+        month = int(day[5:7])
+    except ValueError:
+        return day
+    return f"{day[:4]}-Q{(month - 1) // 3 + 1}"
+
+
+def _roll_candles(day_rows: List[Dict[str, Any]], key_fn: Callable[[str], str]) -> List[Dict[str, Any]]:
+    rolled: List[Dict[str, Any]] = []
+    current = None
+    label = None
+    for row in day_rows:
+        key = key_fn(str(row["date"]))
+        if current is None or key != label:
+            current = {
+                "date": key,
+                "open": row["open"],
+                "high": row["high"],
+                "low": row["low"],
+                "close": row["close"],
+                "volume": row["volume"],
+            }
+            rolled.append(current)
+            label = key
+            continue
+        current["high"] = max(current["high"], row["high"])
+        current["low"] = min(current["low"], row["low"])
+        current["close"] = row["close"]
+        current["volume"] = float(current["volume"]) + float(row["volume"] or 0)
+    return rolled
+
+
+def _small_step_decide(symbol, window, account, positions):
+    """1-share trades that follow the bar path when the tape is missing."""
+    if len(window) < 2:
+        return []
+    prev = float(window[-2].get("close") or 0)
+    last = float(window[-1].get("close") or 0)
+    if last > prev and not positions:
+        return [{"side": "buy", "qty": 1, "reason": "small trade along the bar"}]
+    if last < prev and positions:
+        return [{"side": "sell", "qty": 0, "reason": "small trade along the bar"}]
+    return []
+
+
+def _gains_curve(result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    curve = result.get("equity_curve")
+    if curve:
+        return curve
+    if result.get("ranking") and result.get("runs"):
+        winner = result["ranking"][0].get("strategy")
+        for run in result["runs"]:
+            if run.get("strategy") == winner and run.get("equity_curve"):
+                return run["equity_curve"]
+    folds = result.get("folds") or []
+    points = []
+    for fold in folds:
+        equity = fold.get("ending_equity")
+        if equity is None:
+            continue
+        points.append({"date": fold.get("end") or fold.get("start"), "equity": equity})
+    return points
+
+
+def _accumulated_gains(curve: List[Dict[str, Any]], starting_cash: float) -> List[Dict[str, Any]]:
+    start = float(starting_cash or 0)
+    gains = []
+    for point in curve or []:
+        try:
+            equity = float(point.get("equity"))
+        except (TypeError, ValueError):
+            continue
+        gain = equity - start
+        gain_pct = ((equity / start) - 1.0) * 100.0 if start else 0.0
+        gains.append({
+            "date": point.get("date"),
+            "equity": round(equity, 2),
+            "gain": round(gain, 2),
+            "gain_pct": round(gain_pct, 2),
+        })
+    return gains
 
 
 def _fit_tape_warmup(
