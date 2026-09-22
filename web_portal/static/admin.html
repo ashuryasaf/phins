@@ -213,6 +213,18 @@
         align-items: stretch;
         min-width: 0;
       }
+      .phins-nav [data-assessments-nav]:not([data-assessments-ready]) {
+        justify-content: center;
+        padding: 14px 16px;
+        min-height: 44px;
+        border-radius: 12px;
+        background: rgba(16, 31, 63, 0.96);
+        border: 1px solid rgba(127, 178, 255, 0.16);
+        color: #eaf1ff;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        box-sizing: border-box;
+      }
       .phins-nav .assessments-nav-toggle {
         width: 100%;
         min-height: 44px;
@@ -890,12 +902,13 @@
         <a href="/admin-agents.html">Agents</a>
         <a href="/admin-foundations.html">Community</a>
         <a href="/admin-media.html">Media</a>
-        <span data-assessments-nav data-assessments-role="admin"></span>
+        <span data-assessments-nav data-assessments-role="admin">Assessments</span>
         <a href="/cyber-security.html">Cyber Security</a>
         <a href="/pitch-dashboard.html" target="_blank">IL Pitch</a>
       </nav>
     </div>
   </header>
+  <script src="/assessments-nav.js"></script>
 
   <!-- Admin Console Panel -->
   <div id="admin-console-panel" style="display:none; position:fixed; bottom:0; left:0; right:0; z-index:9999; background:#1a1f36; border-top:2px solid #4facfe; box-shadow:0 -4px 20px rgba(0,0,0,0.4); font-family:monospace; font-size:13px;">

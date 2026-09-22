@@ -53,6 +53,7 @@ def test_assessments_nav_mobile_drawer_keeps_chooser_in_flow():
     assert "100svh" in css
     assert "env(safe-area-inset-bottom, 0px)" in css
     assert "white-space: normal !important;" in css
+    assert "[data-assessments-nav]:not([data-assessments-ready])" in css
     assert "align-items: stretch !important;" in css
     assert "min-height: 44px" in css
     # Portrait + landscape (short viewport) both covered.
@@ -88,6 +89,7 @@ def test_admin_and_customer_mount_assessments_chooser():
     admin = requests.get(f"{BASE_URL}/admin.html").text
     assert 'data-assessments-nav' in admin
     assert 'data-assessments-role="admin"' in admin
+    assert 'data-assessments-nav data-assessments-role="admin">Assessments</span>' in admin
     assert 'assessments-nav.js' in admin
     assert 'phins-theme.css' in admin
     # No longer a single hard-wired Assessments <a> only destination

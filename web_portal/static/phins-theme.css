@@ -160,6 +160,20 @@
     position: relative;
     min-width: 0;
   }
+  /* Visible before assessments-nav.js mounts so the drawer never
+     drops a hole between Media and Cyber Security. */
+  #mobile-nav [data-assessments-nav]:not([data-assessments-ready]) {
+    justify-content: center;
+    padding: 14px 16px;
+    min-height: 44px;
+    border-radius: 12px;
+    background: rgba(16, 31, 63, 0.96);
+    border: 1px solid var(--phins-line);
+    color: var(--phins-ink);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    box-sizing: border-box;
+  }
   #mobile-nav .assessments-nav-toggle {
     width: 100%;
     justify-content: center;
