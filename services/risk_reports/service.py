@@ -690,6 +690,7 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
             customer_report_title,
             is_non_assessment_section_title,
             prepare_customer_download_charts,
+            prepare_customer_download_recommendations,
             prepare_customer_download_sections,
             strip_completeness_copy,
         )
@@ -862,6 +863,9 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
         ]
         payload['chart_summaries'] = prepare_customer_download_charts(
             payload.get('chart_summaries')
+        )
+        payload['recommendations'] = prepare_customer_download_recommendations(
+            payload.get('recommendations')
         )
         return payload
     

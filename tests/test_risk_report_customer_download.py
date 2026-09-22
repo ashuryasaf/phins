@@ -18,6 +18,7 @@ from services.risk_reports.pdf_export import (
     is_non_assessment_section_title,
     is_staff_chart_title,
     prepare_customer_download_charts,
+    prepare_customer_download_recommendations,
     prepare_customer_download_sections,
     strip_completeness_copy,
 )
@@ -106,6 +107,14 @@ class TestCustomerDownloadHelpers(unittest.TestCase):
             {'title': 'Risk Score', 'type': 'gauge', 'series': [{'label': 'value', 'value': 40}]},
         ])
         self.assertEqual([chart['title'] for chart in prepared], ['Savings vs Cover'])
+
+    def test_staff_data_quality_recommendations_are_excluded(self):
+        prepared = prepare_customer_download_recommendations([
+            {'title': 'Review cover gap', 'description': 'Walk through the cover gap with your advisor.'},
+            {'title': 'Data quality', 'description': '11 columns have >30% missing values'},
+            {'title': 'Investigate data collection process for missing values', 'description': ''},
+        ])
+        self.assertEqual([rec['title'] for rec in prepared], ['Review cover gap'])
 
     def test_consultant_intro_is_customer_facing(self):
         hebrew = consultant_intro_copy(True)

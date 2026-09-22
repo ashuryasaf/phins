@@ -63,6 +63,9 @@ _COMPLETENESS_MARKERS = (
     'כללי שלמות נתונים',
     'תקינות מזהה',
     'id validation',
+    'missing values',
+    'data collection process',
+    'ערכים חסרים',
 )
 
 # Staff-facing analysis titles rewritten for the customer download.
@@ -356,6 +359,36 @@ def is_staff_chart_title(title: str) -> bool:
     return 'כיסוי שדות זיהוי' in str(title or '') or 'id field coverage' in normalized
 
 
+_STAFF_RECOMMENDATION_MARKERS = (
+    'missing values',
+    'data collection process',
+    'columns have',
+    'data completeness',
+    'שלמות נתונים',
+    'ערכים חסרים',
+)
+
+
+def prepare_customer_download_recommendations(
+    recs: Optional[List[Dict[str, Any]]],
+) -> List[Dict[str, Any]]:
+    """Keep advisor talking points; drop file-quality / completeness notes."""
+    prepared: List[Dict[str, Any]] = []
+    for rec in recs or []:
+        if not isinstance(rec, dict):
+            continue
+        title = str(rec.get('title') or '')
+        raw_desc = str(rec.get('description') or '')
+        blob = f'{title} {raw_desc}'.lower()
+        if any(marker in blob for marker in _STAFF_RECOMMENDATION_MARKERS):
+            continue
+        desc = strip_completeness_copy(raw_desc)
+        if not title.strip() and not desc.strip():
+            continue
+        prepared.append({**rec, 'title': title, 'description': desc})
+    return prepared
+
+
 def prepare_customer_download_charts(charts: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     """Keep the Analyse dashboard charts that help a consultant brief the customer."""
     prepared: List[Dict[str, Any]] = []
@@ -409,6 +442,19 @@ def _as_str(val: Any) -> str:
             return f"{int(val)}"
         return f"{val:,.2f}"
     return str(val)
+
+
+def _as_when(val: Any) -> str:
+    """Compact prepared-on stamp a consultant can read at a glance."""
+    text = str(val or '').strip()
+    if not text:
+        return ''
+    try:
+        from datetime import datetime
+        parsed = datetime.fromisoformat(text.replace('Z', '+00:00'))
+        return parsed.strftime('%d %b %Y  %H:%M')
+    except Exception:
+        return text.replace('T', ' ')[:16]
 
 
 def _as_money(val: Any) -> str:
@@ -588,16 +634,22 @@ def _draw_brand_header(canvas, doc, *, rtl: bool, title: str, font: str, bold: s
     width, height = A4
     band = 54
     canvas.saveState()
+    # shade() fills the current clip — keep the navy gradient on the letterhead
+    # band so the assessment page stays white and easy to read.
+    clip = canvas.beginPath()
+    clip.rect(0, height - band, width, band)
+    canvas.clipPath(clip, stroke=0, fill=0)
     try:
         canvas.linearGradient(
-            0, height - band, width, height,
+            0, height - band, 0, height,
             [colors.HexColor(PHINS_NAVY_DEEP), colors.HexColor(PHINS_NAVY_MID)],
             extend=False,
         )
-        canvas.rect(0, height - band, width, band, fill=1, stroke=0)
     except Exception:
         canvas.setFillColor(colors.HexColor(PHINS_NAVY))
         canvas.rect(0, height - band, width, band, fill=1, stroke=0)
+    canvas.restoreState()
+    canvas.saveState()
     canvas.setFillColor(colors.HexColor(PHINS_GOLD))
     canvas.rect(0, height - band - 3, width, 3, fill=1, stroke=0)
 
@@ -617,7 +669,7 @@ def _draw_brand_header(canvas, doc, *, rtl: bool, title: str, font: str, bold: s
         canvas.setFont(bold, 16)
         canvas.drawRightString(text_x, emblem_y + 14, BRAND_NAME)
         canvas.setFillColor(colors.HexColor(PHINS_GOLD_STRONG))
-        canvas.setFont(font, 6.6)
+        canvas.setFont(font, 7.2)
         tag = bidi_text(BRAND_TAGLINE_HE, rtl=True)
         canvas.drawRightString(text_x, emblem_y + 3, tag)
     else:
@@ -631,7 +683,7 @@ def _draw_brand_header(canvas, doc, *, rtl: bool, title: str, font: str, bold: s
         canvas.setFont(bold, 16)
         canvas.drawString(text_x, emblem_y + 14, BRAND_NAME)
         canvas.setFillColor(colors.HexColor(PHINS_GOLD_STRONG))
-        canvas.setFont(font, 6.6)
+        canvas.setFont(font, 7.2)
         canvas.drawString(text_x, emblem_y + 3, BRAND_TAGLINE)
     canvas.restoreState()
 
@@ -970,7 +1022,7 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
         ['תעודת זהות' if is_hebrew else 'National ID', _as_str(customer_id)],
         ['שם מלא' if is_hebrew else 'Full Name', _as_str(customer_name)],
         ['תאריך לידה' if is_hebrew else 'Birth Date', _as_str(birth_date)],
-        ['נוצר' if is_hebrew else 'Prepared On', _as_str(summary.get('generated_at'))],
+        ['נוצר' if is_hebrew else 'Prepared On', _as_when(summary.get('generated_at'))],
     ], is_hebrew)
     identity_display = [
         [_safe_paragraph(cell, cell_style, rtl=is_hebrew, max_width=160) for cell in row]
@@ -1043,7 +1095,7 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
 
     _append_assessment_sections(story, summary, heading_style, body_style, cell_style, is_hebrew, usable_width)
 
-    recs = summary.get('recommendations') or []
+    recs = prepare_customer_download_recommendations(summary.get('recommendations') or [])
     if recs:
         rec_heading = 'נקודות לשיחה עם היועץ' if is_hebrew else 'Talking points for your advisor'
         story.append(_safe_paragraph(rec_heading, heading_style, rtl=is_hebrew, max_width=usable_width))
@@ -1173,7 +1225,7 @@ def _build_generic_summary_pdf(summary: Dict[str, Any]) -> bytes:
             ['סה״כ חיסכון' if is_hebrew else 'Total Savings', _as_money(sci.get('total_savings', 0))],
             ['סה״כ פיצויים' if is_hebrew else 'Total Severance', _as_money(sci.get('total_severance', 0))],
             ['סה״כ כיסוי' if is_hebrew else 'Total Cover', _as_money(sci.get('total_cover', 0))],
-            ['נוצר' if is_hebrew else 'Prepared On', _as_str(summary.get('generated_at'))],
+            ['נוצר' if is_hebrew else 'Prepared On', _as_when(summary.get('generated_at'))],
         ], is_hebrew)
         overview_display = [
             [_safe_paragraph(cell, cell_style, rtl=is_hebrew, max_width=160) for cell in row]
@@ -1187,7 +1239,7 @@ def _build_generic_summary_pdf(summary: Dict[str, Any]) -> bytes:
     _append_customer_charts(story, summary, heading_style, is_hebrew, usable_width, base_font)
     _append_assessment_sections(story, summary, heading_style, body_style, cell_style, is_hebrew, usable_width)
 
-    recs = summary.get('recommendations', []) or []
+    recs = prepare_customer_download_recommendations(summary.get('recommendations', []) or [])
     if recs:
         rec_heading = 'נקודות לשיחה עם היועץ' if is_hebrew else 'Talking points for your advisor'
         story.append(_safe_paragraph(rec_heading, heading_style, rtl=is_hebrew, max_width=usable_width))
@@ -1283,7 +1335,7 @@ def build_report_csv_bytes(summary: Dict[str, Any]) -> bytes:
                 writer.writerow([row.get(col, '') for col in columns] if isinstance(row, dict) else [row])
             writer.writerow([])
         _write_chart_csv_rows(writer, summary, is_hebrew)
-        recs = summary.get('recommendations') or []
+        recs = prepare_customer_download_recommendations(summary.get('recommendations') or [])
         if recs:
             writer.writerow(['נקודות לשיחה עם היועץ' if is_hebrew else 'Talking points for your advisor'])
             for rec in recs[:12]:
@@ -1317,7 +1369,7 @@ def build_report_csv_bytes(summary: Dict[str, Any]) -> bytes:
 
     _write_chart_csv_rows(writer, summary, is_hebrew)
 
-    recs = summary.get('recommendations', []) or []
+    recs = prepare_customer_download_recommendations(summary.get('recommendations', []) or [])
     if recs:
         writer.writerow(['נקודות לשיחה עם היועץ' if is_hebrew else 'Talking points for your advisor'])
         writer.writerow(
