@@ -63,7 +63,9 @@ def test_catalog_recommends_replay_without_broker_orders():
     assert catalog["recommended"]["fill_model"] == "next_open"
     assert catalog["data"]["orders_submitted"] is False
     names = {row["name"] for row in catalog["modes"]}
-    assert names == {"replay", "walk_forward", "compare"}
+    assert names == {"replay", "walk_forward", "compare", "forward"}
+    forward = next(row for row in catalog["modes"] if row["name"] == "forward")
+    assert forward["description"]
     autopilot = {row["name"] for row in catalog["strategies"]["autopilot"]}
     assert "momentum" in autopilot and "quantum_scalp" in autopilot
     algo = {row["name"] for row in catalog["strategies"]["algo"]}
@@ -350,6 +352,60 @@ def test_fill_cap_blocks_new_orders_and_still_stops_out():
     reasons = [t["reason"] for t in report["trades"]]
     assert reasons == ["enter", "stop_loss"]
     assert report["open_positions"] == {}
+
+
+def test_forward_order_waits_for_the_next_real_print():
+    rows = _tape_prints(6)
+
+    def decide(symbol, window, account, positions):
+        if len(window) == 6 and not positions:
+            return [{"side": "buy", "qty": 2, "reason": "at the present"}]
+        return []
+
+    report = simulate(
+        {"SPY": rows},
+        decide,
+        BacktestConfig(warmup_bars=2, lookback_bars=20, slippage_bps=0, starting_cash=10_000),
+    )
+    assert report["trade_count"] == 0
+    assert report["unfilled_signals"] == 1
+    order = report["forward_orders"][0]
+    assert order["side"] == "buy"
+    assert order["qty"] == 2
+    assert order["status"] == "awaiting_next_print"
+    assert order["signal_date"] == rows[-1]["date"]
+    assert report["as_of"] == rows[-1]["date"]
+
+    blocked = run_backtest_request(
+        {
+            "source": "autopilot",
+            "mode": "forward",
+            "strategy": "momentum",
+            "fill_model": "same_close",
+            "bars": {"SPY": _flat_bars(40)},
+            "warmup_bars": 20,
+        },
+    )
+    assert "next real print" in blocked["error"]
+
+    trap = _broker_trap()
+    result = run_backtest_request(
+        {
+            "source": "autopilot",
+            "mode": "forward",
+            "strategy": "momentum",
+            "fill_model": "next_open",
+            "bars": {"SPY": _flat_bars(40)},
+            "warmup_bars": 20,
+            "lookback_bars": 30,
+        },
+        platform=trap,
+    )
+    assert "error" not in result, result.get("error")
+    assert result["mode"] == "forward"
+    assert result["orders_submitted"] == 0
+    assert result["forward_test"]["future_prices_used"] is False
+    assert "latest Alpaca print" in result["forward_test"]["note"]
 
 
 def test_duplicate_print_timestamps_are_all_replayed():

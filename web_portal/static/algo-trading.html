@@ -903,7 +903,8 @@
                     <div style="font-weight:700;">Historical backtest</div>
                     <div style="color: var(--text-secondary); font-size: 0.85rem; max-width: 640px;">
                         Replays up to 30,000 real Alpaca trades on each trading day and fills at the next print.
-                        Walk-forward checks stability. Compare ranks strategies on the same tape and the same costs.
+                        Walk-forward checks stability. Compare ranks strategies on the same tape.
+                        Forward stops at the latest print and keeps the next order until a real print arrives.
                         Mock data is not used. No orders are sent.
                     </div>
                 </div>
@@ -931,6 +932,7 @@
                             <option value="replay">Replay (recommended)</option>
                             <option value="walk_forward">Walk-forward</option>
                             <option value="compare">Compare</option>
+                            <option value="forward">Forward (next print)</option>
                         </select>
                     </label>
                     <label style="font-size:0.75rem; color:var(--text-secondary);">Fill
@@ -1725,6 +1727,24 @@
                 escapeHtml(extra) + ' Mock data is not used.</div>';
         }
 
+        function btForwardLine(d) {
+            const forward = d && d.forward_test;
+            if (!forward) return '';
+            const orders = forward.awaiting_next_print || [];
+            const when = 'Forward test as of ' + (forward.as_of || 'the latest print') + '. ';
+            if (!orders.length) {
+                return '<div style="margin-top:0.35rem;">' + escapeHtml(when) +
+                    'No order is waiting. Future prices were not used.</div>';
+            }
+            const bits = orders.map(function (order) {
+                return (order.side || '') + ' ' + (order.qty || 0) + ' ' + (order.symbol || '') +
+                    ' signaled ' + (order.signal_date || '');
+            });
+            return '<div style="margin-top:0.35rem;">' + escapeHtml(when) +
+                'Waiting for the next Alpaca print: ' + escapeHtml(bits.join('; ')) +
+                '. Future prices were not used.</div>';
+        }
+
         function renderAlgoBacktest(d) {
             if (!d || d.error) {
                 return '<div style="color:var(--danger, #c44);">' + escapeHtml(d && d.error ? d.error : 'Backtest failed') + '</div>';
@@ -1759,7 +1779,8 @@
                 '<span>Trades <b>' + btMetric(d.trade_count) + '</b></span>' +
                 '<span>Buy &amp; hold <b>' + btMetric(m.benchmark_return_pct, '%') + '</b></span>' +
                 '<span>Ending <b>$' + btMetric(d.ending_equity) + '</b></span>' +
-                '</div><div style="margin-top:0.35rem;">' + escapeHtml(d.disclaimer || '') + '</div>' + btTapeLine(d);
+                '</div><div style="margin-top:0.35rem;">' + escapeHtml(d.disclaimer || '') + '</div>' +
+                btForwardLine(d) + btTapeLine(d);
         }
 
         async function runAlgoBacktest() {
@@ -1776,7 +1797,12 @@
             if (mode === 'compare') {
                 body.strategies = ['momentum', 'mean_reversion', 'rsi_strategy', 'macd_crossover', 'trend_following', 'ai_adaptive'];
             }
-            result.textContent = 'Replaying Alpaca trades. No orders are sent...';
+            if (mode === 'forward') {
+                body.fill_model = 'next_open';
+            }
+            result.textContent = mode === 'forward'
+                ? 'Replaying through the latest Alpaca print. The next order waits for a real print...'
+                : 'Replaying Alpaca trades. No orders are sent...';
             try {
                 const response = await authFetch('/api/algo/backtest', {
                     method: 'POST',

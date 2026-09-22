@@ -165,6 +165,16 @@ def backtest_options() -> Dict[str, Any]:
                     "sizing, then rank them by Sharpe ratio."
                 ),
             },
+            {
+                "name": "forward",
+                "label": "Forward from the latest print",
+                "recommended": False,
+                "description": (
+                    "Replay the real tape through the latest print, then "
+                    "hold the strategy's next order until a later print "
+                    "arrives. Future prices are not invented."
+                ),
+            },
         ],
         "fill_models": [
             {
@@ -255,11 +265,15 @@ def run_backtest_request(
         if source not in ("autopilot", "algo"):
             raise ValueError("source must be 'autopilot' or 'algo'")
         mode = str(payload.get("mode") or "replay").strip().lower()
-        if mode not in ("replay", "walk_forward", "compare"):
-            raise ValueError("mode must be 'replay', 'walk_forward', or 'compare'")
+        if mode not in ("replay", "walk_forward", "compare", "forward"):
+            raise ValueError("mode must be 'replay', 'walk_forward', 'compare', or 'forward'")
         fill_model = str(payload.get("fill_model") or "next_open").strip().lower()
         if fill_model not in ("next_open", "same_close"):
             raise ValueError("fill_model must be 'next_open' or 'same_close'")
+        if mode == "forward" and fill_model != "next_open":
+            raise ValueError(
+                "A forward test fills on the next real print. Use fill_model 'next_open'."
+            )
 
         config = BacktestConfig(
             starting_cash=_clamp_float(payload.get("starting_cash"), DEFAULT_CASH, 1_000.0, 100_000_000.0),
@@ -333,6 +347,11 @@ def run_backtest_request(
             decide = _make_decide(source, strategies[0], config)
             result = _walk_forward(bars_by_symbol, decide, config)
             result["strategy"] = strategies[0]
+        elif mode == "forward":
+            decide = _make_decide(source, strategies[0], config)
+            result = simulate(bars_by_symbol, decide, config)
+            result["strategy"] = strategies[0]
+            result["forward_test"] = _forward_test(result)
         else:
             decide = _make_decide(source, strategies[0], config)
             result = simulate(bars_by_symbol, decide, config)
@@ -497,8 +516,26 @@ def simulate(
         })
         exposure_flags.append(1 if any(p.qty > 0 for p in positions.values()) else 0)
 
-    # A signal on the final bar has no following open. Drop it and say so.
-    unfilled = len(pending)
+    # A signal on the final print has no following price. Keep it as the
+    # order that waits for the next real print. Do not invent that price.
+    as_of = None
+    if clock:
+        last_rows = by_date.get(clock[-1]) or {}
+        if last_rows:
+            as_of = str(next(iter(last_rows.values())).get("date") or "")
+    forward_orders = [
+        {
+            "symbol": sym,
+            "side": order.get("side"),
+            "qty": order.get("qty"),
+            "signal_price": order.get("signal_price"),
+            "signal_date": order.get("signal_date"),
+            "reason": order.get("reason") or "",
+            "status": "awaiting_next_print",
+        }
+        for sym, order in pending.items()
+    ]
+    unfilled = len(forward_orders)
     ending = _mark(cash, positions, last_close)
     metrics = _metrics(equity_curve, trades, cfg.starting_cash, exposure_flags)
     metrics["benchmark_return_pct"] = _benchmark(series, cfg.warmup_bars)
@@ -519,6 +556,8 @@ def simulate(
         "ending_equity": round(ending, 2),
         "cash": round(cash, 2),
         "unfilled_signals": unfilled,
+        "as_of": as_of,
+        "forward_orders": forward_orders,
         "bars": len(clock),
         "fills_per_day": dict(fills_by_day),
         "max_trades_per_day": cfg.max_trades_per_day,
@@ -528,6 +567,20 @@ def simulate(
 # ---------------------------------------------------------------------------
 # Modes
 # ---------------------------------------------------------------------------
+
+def _forward_test(result: Dict[str, Any]) -> Dict[str, Any]:
+    """The present→next-print step. The next price is not simulated."""
+    return {
+        "future_prices_used": False,
+        "as_of": result.get("as_of"),
+        "awaiting_next_print": result.get("forward_orders") or [],
+        "note": (
+            "Replay stops at the latest Alpaca print. "
+            "An order listed here waits for the next real print. "
+            "That print has not happened, so it is not filled."
+        ),
+    }
+
 
 def _compare(
     bars_by_symbol: Dict[str, List[Dict[str, Any]]],
