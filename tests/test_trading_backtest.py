@@ -371,6 +371,54 @@ def test_duplicate_print_timestamps_are_all_replayed():
     assert seen == [3, 4, 5, 6]
 
 
+def test_tape_metrics_annualize_by_session_not_by_print():
+    rows = _tape_prints(120)
+    for i, row in enumerate(rows):
+        px = 100.0 + i * 0.01
+        row.update({"open": px, "high": px, "low": px, "close": px})
+
+    def decide(symbol, window, account, positions):
+        if len(window) == 6 and not positions:
+            return [{"side": "buy", "qty": 100, "reason": "enter"}]
+        return []
+
+    report = simulate(
+        {"SPY": rows},
+        decide,
+        BacktestConfig(warmup_bars=4, lookback_bars=20, slippage_bps=0, starting_cash=100_000),
+    )
+    metrics = report["metrics"]
+    total = metrics["ending_equity"] / metrics["starting_equity"] - 1.0
+    assert total > 0
+    # A session of prints annualizes as one trading day, not as 120 of them.
+    assert metrics["cagr_pct"] == pytest.approx(((1.0 + total) ** 252 - 1.0) * 100.0, rel=0.05)
+    assert metrics["sharpe_ratio"] is not None
+
+
+def test_daily_bars_keep_the_252_annualization():
+    rows = _flat_bars(40, price=100)
+    for i, row in enumerate(rows):
+        px = 100.0 + i * 0.5
+        row.update({"open": px, "high": px + 1, "low": px - 1, "close": px})
+
+    def decide(symbol, window, account, positions):
+        if len(window) == 6 and not positions:
+            return [{"side": "buy", "qty": 100, "reason": "enter"}]
+        return []
+
+    report = simulate(
+        {"SPY": rows},
+        decide,
+        BacktestConfig(warmup_bars=4, lookback_bars=20, slippage_bps=0, starting_cash=100_000),
+    )
+    metrics = report["metrics"]
+    total = metrics["ending_equity"] / metrics["starting_equity"] - 1.0
+    periods = report["bars"] - 1
+    assert metrics["cagr_pct"] == pytest.approx(
+        ((1.0 + total) ** (252.0 / periods) - 1.0) * 100.0, rel=0.02,
+    )
+
+
 def test_algo_request_rejects_bars_and_replays_the_tape():
     captured = {}
 

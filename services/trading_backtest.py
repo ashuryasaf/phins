@@ -1298,14 +1298,14 @@ def _metrics(
     for prev, nxt in zip(equities, equities[1:]):
         if prev > 0:
             rets.append(nxt / prev - 1.0)
-    sharpe = _ratio(rets, downside=False)
-    sortino = _ratio(rets, downside=True)
+    per_year = _periods_per_year(curve)
+    sharpe = _ratio(rets, downside=False, periods_per_year=per_year)
+    sortino = _ratio(rets, downside=True, periods_per_year=per_year)
     max_dd = _max_drawdown(equities)
     periods = max(len(rets), 1)
-    # Daily-bar assumption. Intraday callers still get a comparable figure.
     cagr = None
     if starting_cash > 0 and ending > 0 and periods >= 1:
-        cagr = (ending / starting_cash) ** (252.0 / periods) - 1.0
+        cagr = (ending / starting_cash) ** (per_year / periods) - 1.0
     calmar = None
     if cagr is not None and max_dd > 1e-9:
         calmar = cagr / max_dd
@@ -1334,7 +1334,22 @@ def _metrics(
     }
 
 
-def _ratio(rets: List[float], downside: bool) -> Optional[float]:
+def _periods_per_year(curve: List[Dict[str, Any]]) -> float:
+    """
+    Annualization factor for whatever the curve is sampled at.
+
+    Daily bars leave one point per session, so the factor stays 252. A trade
+    tape leaves thousands of points on the same session; scaling by the points
+    per session keeps CAGR, Sharpe, and Sortino on an annual footing instead of
+    reading every print as a trading day.
+    """
+    sessions = {str(point.get("date"))[:10] for point in curve if point.get("date")}
+    if not sessions or len(curve) <= len(sessions):
+        return 252.0
+    return 252.0 * (len(curve) / len(sessions))
+
+
+def _ratio(rets: List[float], downside: bool, periods_per_year: float = 252.0) -> Optional[float]:
     if len(rets) < 5:
         return None
     mean = sum(rets) / len(rets)
@@ -1347,7 +1362,7 @@ def _ratio(rets: List[float], downside: bool) -> Optional[float]:
         var = sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)
     if var <= 0:
         return None
-    return (mean / math.sqrt(var)) * math.sqrt(252.0)
+    return (mean / math.sqrt(var)) * math.sqrt(periods_per_year)
 
 
 def _max_drawdown(equities: List[float]) -> float:
