@@ -12,6 +12,31 @@ from services.risk_reports.models import (
 )
 
 
+def _cell_has_value(value: Any) -> bool:
+    if value is None or value is False:
+        return False
+    if isinstance(value, (int, float)):
+        return float(value) != 0.0
+    text = str(value).strip()
+    return text not in {'', '0', '0.0', '0.00'}
+
+
+def _rows_without_empty_columns(
+    rows: List[Dict[str, Any]],
+    always: Optional[set] = None,
+) -> List[Dict[str, Any]]:
+    """Drop spreadsheet columns that have no uploaded value on any row."""
+    if not rows:
+        return rows
+    keep_always = always or set()
+    keys = list(rows[0].keys())
+    active = [
+        key for key in keys
+        if key in keep_always or any(_cell_has_value(row.get(key)) for row in rows)
+    ]
+    return [{key: row.get(key, '') for key in active} for row in rows]
+
+
 class RenderMixin:
     """Section and recommendation builders."""
 
@@ -359,18 +384,32 @@ Factors Affecting Score:
             ))
 
         if accounts:
+            from services.pension.schema import account_accumulation, tagmulim_amount
             status_rows = []
             for acct in accounts[:80]:
                 status_rows.append({
                     'מספר פוליסה' if is_hebrew else 'Policy Number': acct.get('policy_number', ''),
                     'יצרן' if is_hebrew else 'Provider': acct.get('provider', ''),
                     'סוג מוצר' if is_hebrew else 'Product Type': acct.get('product_type_name', acct.get('product_type', '')),
+                    'שם מוצר' if is_hebrew else 'Product Name': acct.get('product_name', ''),
                     'סטטוס' if is_hebrew else 'Status': acct.get('status', acct.get('status_en', '')),
-                    'יתרה כוללת' if is_hebrew else 'Total Balance': acct.get('total_balance', 0),
+                    'מסלול השקעה' if is_hebrew else 'Investment Track': acct.get('investment_track', ''),
+                    'סה״כ חיסכון' if is_hebrew else 'Accumulation': account_accumulation(acct),
+                    'תגמולים' if is_hebrew else 'Tagmulim': tagmulim_amount(acct),
                     'פיצויים' if is_hebrew else 'Severance': acct.get('severance_balance', 0),
+                    'יתרה' if is_hebrew else 'Balance': acct.get('balance', 0),
                     'מעסיק' if is_hebrew else 'Employer': acct.get('employer_name', ''),
-                    'סעיף 14' if is_hebrew else 'Section 14': ('כן' if acct.get('section14') else 'לא') if is_hebrew else ('Yes' if acct.get('section14') else 'No'),
+                    'סעיף 14' if is_hebrew else 'Section 14': (
+                        (('כן' if acct.get('section14') else 'לא') if is_hebrew else ('Yes' if acct.get('section14') else 'No'))
+                        if 'section14' in acct else ''
+                    ),
                 })
+            status_rows = _rows_without_empty_columns(
+                status_rows,
+                always={
+                    'מספר פוליסה', 'Policy Number', 'יצרן', 'Provider',
+                },
+            )
 
             sections.append(ReportSection(
                 title='סטטוס פוליסות (טבלת שיוכים)' if is_hebrew else 'Policy Status (Affiliation Table)',
@@ -386,24 +425,45 @@ Factors Affecting Score:
             for acct in accounts[:80]:
                 plan_rows.append({
                     'מספר פוליסה' if is_hebrew else 'Policy Number': acct.get('policy_number', ''),
-                    'תאריך תחילה' if is_hebrew else 'Start Date': acct.get('start_date', ''),
-                    'דמי ניהול מצבירה %' if is_hebrew else 'Mgmt Fee Savings %': acct.get('management_fee_savings', 0),
-                    'דמי ניהול מהפקדה %' if is_hebrew else 'Mgmt Fee Deposits %': acct.get('management_fee_deposits', 0),
-                    'כיסוי חיים' if is_hebrew else 'Life Coverage': acct.get('death_coverage', 0),
-                    'כיסוי אכ"ע' if is_hebrew else 'Disability Coverage': acct.get('disability_coverage', 0),
-                    'תגמולים' if is_hebrew else 'Savings': acct.get('savings_balance', 0),
-                    'פיצויים' if is_hebrew else 'Severance': acct.get('severance_balance', 0),
+                    'תאריך הצטרפות' if is_hebrew else 'Join Date': acct.get('start_date', ''),
+                    'תאריך נזילות' if is_hebrew else 'Liquidity Date': acct.get('liquidity_date', ''),
+                    'תאריך סטטוס' if is_hebrew else 'Status Date': acct.get('status_date', ''),
+                    'דמי ניהול מצבירה' if is_hebrew else 'Fee on Savings': acct.get('management_fee_savings', 0),
+                    'דמי ניהול מהפקדה' if is_hebrew else 'Fee on Deposits': acct.get('management_fee_deposits', 0),
+                    'הפקדה אחרונה' if is_hebrew else 'Last Deposit': acct.get('last_deposit', 0),
+                    'תאריך הפקדה אחרונה' if is_hebrew else 'Last Deposit Date': acct.get('last_deposit_date', ''),
+                    'סוג הפרשה' if is_hebrew else 'Contribution Type': acct.get('contribution_type', ''),
+                    'סה״כ פרמיה חודשית' if is_hebrew else 'Monthly Premium': acct.get('monthly_premium', 0),
+                    'אחוז במסלול' if is_hebrew else 'Track Percent': acct.get('track_percent', 0),
+                    'תשואה' if is_hebrew else 'Yield': acct.get('yield_rate', 0),
+                    'ביטוח חיים' if is_hebrew else 'Life Cover': acct.get('death_coverage', 0),
+                    'פרמיה ביטוח חיים' if is_hebrew else 'Life Premium': acct.get('death_premium', 0),
+                    'אבדן כושר עבודה' if is_hebrew else 'Work Disability': acct.get('disability_coverage', 0) or acct.get('work_disability_coverage', 0),
+                    'פרמיה אבדן כושר' if is_hebrew else 'Work Disability Premium': acct.get('disability_premium', 0) or acct.get('work_disability_premium', 0),
+                    'שחרור' if is_hebrew else 'Waiver': acct.get('waiver_coverage', 0),
+                    'פרמיה שחרור' if is_hebrew else 'Waiver Premium': acct.get('waiver_premium', 0),
+                    'נכות' if is_hebrew else 'Invalidity': acct.get('invalidity_coverage', 0),
+                    'פרמיה נכות' if is_hebrew else 'Invalidity Premium': acct.get('invalidity_premium', 0),
+                    'שארים' if is_hebrew else 'Survivors': acct.get('survivors_coverage', 0),
+                    'פרמיה שארים' if is_hebrew else 'Survivors Premium': acct.get('survivors_premium', 0),
+                    'סיעוד' if is_hebrew else 'Long-Term Care': acct.get('ltc_coverage', 0),
+                    'פרמיה סיעוד' if is_hebrew else 'LTC Premium': acct.get('ltc_premium', 0),
                 })
-
-            sections.append(ReportSection(
-                title='רשימת תוכניות (פירוט טבלאי)' if is_hebrew else 'Plan Details (Tabular)',
-                content='פירוט תוכניות לפי מודל הדוח המסונף.' if is_hebrew else 'Detailed plan view aligned with the affiliated report model.',
-                data_table={
-                    'columns': list(plan_rows[0].keys()) if plan_rows else [],
-                    'rows': plan_rows
-                },
-                order=4
-            ))
+            plan_rows = _rows_without_empty_columns(
+                plan_rows,
+                always={'מספר פוליסה', 'Policy Number'},
+            )
+            plan_identity = {'מספר פוליסה', 'Policy Number'}
+            if plan_rows and any(key not in plan_identity for key in plan_rows[0]):
+                sections.append(ReportSection(
+                    title='רשימת תוכניות (פירוט טבלאי)' if is_hebrew else 'Plan Details (Tabular)',
+                    content='פירוט תוכניות לפי מודל הדוח המסונף.' if is_hebrew else 'Detailed plan view aligned with the affiliated report model.',
+                    data_table={
+                        'columns': list(plan_rows[0].keys()),
+                        'rows': plan_rows
+                    },
+                    order=4
+                ))
 
         if contributions:
             contribution_rows = []
@@ -461,19 +521,54 @@ Factors Affecting Score:
                 ))
 
         if totals:
+            metric = 'שדה' if is_hebrew else 'Metric'
+            value_key = 'ערך' if is_hebrew else 'Value'
+            accumulation = self._to_float_amount(totals.get('total_balance'))
+            tagmulim = self._to_float_amount(totals.get('total_tagmulim'))
+            savings_component = self._to_float_amount(
+                totals.get('total_savings', totals.get('total_savings_balance', 0))
+            )
+            yitra = self._to_float_amount(totals.get('total_yitra'))
+            severance = self._to_float_amount(
+                totals.get('total_severance', totals.get('total_severance_balance', 0))
+            )
             totals_rows = [{
-                'שדה' if is_hebrew else 'Metric': 'סה״כ צבירה' if is_hebrew else 'Total Balance',
-                'ערך' if is_hebrew else 'Value': totals.get('total_balance', 0)
-            }, {
-                'שדה' if is_hebrew else 'Metric': 'סה״כ חסכונות' if is_hebrew else 'Total Savings',
-                'ערך' if is_hebrew else 'Value': totals.get('total_savings', totals.get('total_savings_balance', 0))
-            }, {
-                'שדה' if is_hebrew else 'Metric': 'סה״כ פיצויים' if is_hebrew else 'Total Severance',
-                'ערך' if is_hebrew else 'Value': totals.get('total_severance', totals.get('total_severance_balance', 0))
-            }, {
-                'שדה' if is_hebrew else 'Metric': 'מספר פוליסות' if is_hebrew else 'Policy Count',
-                'ערך' if is_hebrew else 'Value': totals.get('account_count', len(accounts))
+                metric: 'סה״כ צבירה' if is_hebrew else 'Total Accumulation',
+                value_key: accumulation,
             }]
+            if tagmulim > 0:
+                totals_rows.append({
+                    metric: 'סה״כ תגמולים' if is_hebrew else 'Total Tagmulim',
+                    value_key: tagmulim,
+                })
+            elif savings_component > 0 and abs(savings_component - accumulation) > 0.01:
+                totals_rows.append({
+                    metric: 'סה״כ חיסכון' if is_hebrew else 'Total Savings',
+                    value_key: savings_component,
+                })
+            if severance > 0:
+                totals_rows.append({
+                    metric: 'סה״כ פיצויים' if is_hebrew else 'Total Severance',
+                    value_key: severance,
+                })
+            if yitra > 0 and abs(yitra - accumulation) > 0.01:
+                totals_rows.append({
+                    metric: 'סה״כ יתרה' if is_hebrew else 'Total Balance',
+                    value_key: yitra,
+                })
+            by_provider = totals.get('by_provider') or {}
+            if isinstance(by_provider, dict):
+                for provider_name, provider_amount in by_provider.items():
+                    if self._to_float_amount(provider_amount) <= 0:
+                        continue
+                    totals_rows.append({
+                        metric: f"צבירה — {provider_name}" if is_hebrew else f"Accumulation — {provider_name}",
+                        value_key: provider_amount,
+                    })
+            totals_rows.append({
+                metric: 'מספר פוליסות' if is_hebrew else 'Policy Count',
+                value_key: totals.get('account_count', len(accounts)),
+            })
 
             sections.append(ReportSection(
                 title='סיכום כספי (מודל דוח)' if is_hebrew else 'Financial Summary (Model-Aligned)',
@@ -626,7 +721,13 @@ Factors Affecting Score:
 
         # Prefer pension structured data when available (Mislaka-aligned source).
         if isinstance(pension_data, dict) and pension_data.get('accounts'):
-            accounts = pension_data.get('accounts', []) or []
+            from services.pension.schema import (
+                COVER_FACE_FIELDS,
+                account_accumulation,
+                cover_face_total,
+                deduped_sum,
+            )
+            accounts = (pension_data.get('accounts', []) or [])[:500]
             client_data = pension_data.get('client', {})
             if isinstance(client_data, list):
                 client_data = client_data[0] if client_data else {}
@@ -634,68 +735,123 @@ Factors Affecting Score:
             if isinstance(client_data, dict):
                 shared_client_id = str(client_data.get('id_number', '') or '').strip()
 
-            for account in accounts[:500]:
-                account_id = str(account.get('id_number') or shared_client_id or account.get('policy_number') or '').strip()
-                savings_value = (
-                    self._to_float_amount(account.get('total_balance'))
-                    or self._to_float_amount(account.get('savings_balance'))
-                )
-                severance_value = self._to_float_amount(account.get('severance_balance'))
-                cover_value = (
-                    self._to_float_amount(account.get('death_coverage'))
-                    + self._to_float_amount(account.get('disability_coverage'))
-                )
-
+            total_savings = deduped_sum(accounts, account_accumulation)
+            total_severance = deduped_sum(accounts, lambda account: account.get('severance_balance'))
+            total_cover = cover_face_total(accounts)
+            seen_savings_policies = set()
+            seen_cover_policies = set()
+            for account in accounts:
+                account_id = str(account.get('id_number') or shared_client_id or '').strip()
+                savings_value = account_accumulation(account)
+                cover_value = sum(self._to_float_amount(account.get(field)) for field in COVER_FACE_FIELDS)
+                policy = str(account.get('policy_number') or '').strip()
                 if account_id:
                     id_values.append(account_id)
-                if savings_value > 0:
-                    total_savings += savings_value
+                if savings_value > 0 and policy not in seen_savings_policies:
+                    seen_savings_policies.add(policy or f'row-{records_with_savings}')
                     records_with_savings += 1
-                if severance_value > 0:
-                    total_severance += severance_value
-                if cover_value > 0:
-                    total_cover += cover_value
+                if cover_value > 0 and policy not in seen_cover_policies:
+                    seen_cover_policies.add(policy or f'cover-{records_with_cover}')
                     records_with_cover += 1
-
                 if account_id or savings_value > 0 or cover_value > 0:
                     sample_rows.append({
                         'id': self._mask_identifier(account_id) if account_id else '',
                         'savings': round(savings_value, 2),
                         'cover': round(cover_value, 2),
-                        'reference': str(account.get('policy_number', '') or '')
+                        'reference': policy,
                     })
         else:
-            for row in rows[:500]:
-                if not isinstance(row, dict):
-                    continue
+            from services.pension.schema import (
+                COVER_FACE_FIELDS,
+                account_accumulation,
+                cover_face_total,
+                deduped_sum,
+                map_hebrew_column,
+            )
+            column_fields = {
+                col: map_hebrew_column(str(col))
+                for col in columns
+            }
+            column_fields = {col: field for col, field in column_fields.items() if field}
+            holdings_fields = set(column_fields.values()) & (
+                {'total_balance', 'savings_balance', 'balance', 'tagmulim_balance', 'severance_balance'}
+                | set(COVER_FACE_FIELDS)
+            )
+            if holdings_fields:
+                pseudo_accounts = []
+                for row in rows[:500]:
+                    if not isinstance(row, dict):
+                        continue
+                    account = {
+                        field: row.get(col)
+                        for col, field in column_fields.items()
+                        if row.get(col) not in (None, '')
+                    }
+                    pseudo_accounts.append(account)
+                    account_id = str(account.get('id_number') or account.get('policy_number') or '').strip()
+                    savings_value = account_accumulation(account)
+                    cover_value = sum(self._to_float_amount(account.get(field)) for field in COVER_FACE_FIELDS)
+                    if account_id:
+                        id_values.append(account_id)
+                    if account_id or savings_value > 0 or cover_value > 0:
+                        sample_rows.append({
+                            'id': self._mask_identifier(account_id) if account_id else '',
+                            'savings': round(savings_value, 2),
+                            'cover': round(cover_value, 2),
+                            'reference': str(account.get('policy_number') or ''),
+                        })
+                total_savings = deduped_sum(pseudo_accounts, account_accumulation)
+                total_severance = deduped_sum(pseudo_accounts, lambda account: account.get('severance_balance'))
+                total_cover = cover_face_total(pseudo_accounts)
+                records_with_savings = len({
+                    str(account.get('policy_number') or index)
+                    for index, account in enumerate(pseudo_accounts)
+                    if account_accumulation(account) > 0
+                })
+                records_with_cover = len({
+                    str(account.get('policy_number') or index)
+                    for index, account in enumerate(pseudo_accounts)
+                    if any(self._to_float_amount(account.get(field)) > 0 for field in COVER_FACE_FIELDS)
+                })
+            else:
+                # Token match is for English snapshots. Skip columns that are
+                # premiums or a bare "total" so cover cost is not savings.
+                excluded = ('premium', 'פרמיה', 'fee', 'דמי ניהול')
+                savings_columns = [
+                    col for col in savings_columns
+                    if not any(token in str(col).lower() for token in excluded)
+                ]
+                for row in rows[:500]:
+                    if not isinstance(row, dict):
+                        continue
 
-                id_value = ''
-                for col in id_columns:
-                    candidate = str(row.get(col, '') or '').strip()
-                    if candidate:
-                        id_value = candidate
-                        break
+                    id_value = ''
+                    for col in id_columns:
+                        candidate = str(row.get(col, '') or '').strip()
+                        if candidate:
+                            id_value = candidate
+                            break
 
-                savings_value = sum(self._to_float_amount(row.get(col)) for col in savings_columns)
-                cover_value = sum(self._to_float_amount(row.get(col)) for col in cover_columns)
-                total_severance += sum(self._to_float_amount(row.get(col)) for col in severance_columns)
+                    savings_value = sum(self._to_float_amount(row.get(col)) for col in savings_columns)
+                    cover_value = sum(self._to_float_amount(row.get(col)) for col in cover_columns)
+                    total_severance += sum(self._to_float_amount(row.get(col)) for col in severance_columns)
 
-                if id_value:
-                    id_values.append(id_value)
-                if savings_value > 0:
-                    total_savings += savings_value
-                    records_with_savings += 1
-                if cover_value > 0:
-                    total_cover += cover_value
-                    records_with_cover += 1
+                    if id_value:
+                        id_values.append(id_value)
+                    if savings_value > 0:
+                        total_savings += savings_value
+                        records_with_savings += 1
+                    if cover_value > 0:
+                        total_cover += cover_value
+                        records_with_cover += 1
 
-                if id_value or savings_value > 0 or cover_value > 0:
-                    sample_rows.append({
-                        'id': self._mask_identifier(id_value) if id_value else '',
-                        'savings': round(savings_value, 2),
-                        'cover': round(cover_value, 2),
-                        'reference': ''
-                    })
+                    if id_value or savings_value > 0 or cover_value > 0:
+                        sample_rows.append({
+                            'id': self._mask_identifier(id_value) if id_value else '',
+                            'savings': round(savings_value, 2),
+                            'cover': round(cover_value, 2),
+                            'reference': ''
+                        })
 
         unique_ids = sorted({v for v in id_values if v})
         customer_id = ''
@@ -1126,11 +1282,20 @@ Factors Affecting Score:
                     content_lines.append(f"• ציון סעיף 14: {health_score.get('section14', 0)}/100")
                     content_lines.append("")
                 
-                # Financial summary section
+                # Financial summary. צבירה is not יתרה and not תגמולים.
                 content_lines.append("💰 סיכום כספי מפורט:")
                 content_lines.append("=" * 40)
-                content_lines.append(f"• סה״כ יתרה בחשבונות: {totals.get('total_balance_formatted', '₪0')}")
-                content_lines.append(f"• סה״כ חסכונות: {totals.get('total_savings_formatted', '₪0')}")
+                content_lines.append(f"• סה״כ צבירה: {totals.get('total_balance_formatted', '₪0')}")
+                tagmulim_total = self._to_float_amount(totals.get('total_tagmulim'))
+                savings_total = self._to_float_amount(totals.get('total_savings', totals.get('total_savings_balance')))
+                accumulation_total = self._to_float_amount(totals.get('total_balance'))
+                yitra_total = self._to_float_amount(totals.get('total_yitra'))
+                if tagmulim_total > 0:
+                    content_lines.append(f"• סה״כ תגמולים: ₪{tagmulim_total:,.2f}")
+                elif savings_total > 0 and abs(savings_total - accumulation_total) > 0.01:
+                    content_lines.append(f"• סה״כ חיסכון: {totals.get('total_savings_formatted', '₪0')}")
+                if yitra_total > 0 and abs(yitra_total - accumulation_total) > 0.01:
+                    content_lines.append(f"• סה״כ יתרה: ₪{yitra_total:,.2f}")
                 content_lines.append(f"• סה״כ פיצויים צבורים: {totals.get('total_severance_formatted', '₪0')}")
                 content_lines.append(f"• מספר חשבונות/פוליסות: {totals.get('account_count', 0)}")
                 content_lines.append(f"• מספר יצרנים/חברות: {totals.get('provider_count', 0)}")
@@ -1141,16 +1306,17 @@ Factors Affecting Score:
                     content_lines.append(f"• יצרנים: {', '.join(providers)}")
                 content_lines.append("")
                 
-                # Section 14 status
-                content_lines.append("📌 סעיף 14 (פיצויים):")
-                if totals.get('section14_coverage'):
-                    content_lines.append("• סטטוס: ✅ מכוסה")
-                    content_lines.append("• ✅ הלקוח מכוסה תחת סעיף 14 - פיצויים מובטחים")
-                    content_lines.append(f"• מספר חשבונות עם סעיף 14: {totals.get('section14_accounts', 0)}")
-                else:
-                    content_lines.append("• סטטוס: ⚠️ לא מכוסה")
-                    content_lines.append("• ⚠️ אין כיסוי סעיף 14 - יש לבדוק עם המעסיק")
-                content_lines.append("")
+                # Section 14 only when the upload actually carried the flag.
+                if any(isinstance(acct, dict) and 'section14' in acct for acct in accounts):
+                    content_lines.append("📌 סעיף 14 (פיצויים):")
+                    if totals.get('section14_coverage'):
+                        content_lines.append("• סטטוס: ✅ מכוסה")
+                        content_lines.append("• ✅ הלקוח מכוסה תחת סעיף 14 - פיצויים מובטחים")
+                        content_lines.append(f"• מספר חשבונות עם סעיף 14: {totals.get('section14_accounts', 0)}")
+                    else:
+                        content_lines.append("• סטטוס: ⚠️ לא מכוסה")
+                        content_lines.append("• ⚠️ אין כיסוי סעיף 14 - יש לבדוק עם המעסיק")
+                    content_lines.append("")
                 
                 # Contribution summary
                 contrib_totals = totals.get('contributions', {})
@@ -1184,10 +1350,16 @@ Factors Affecting Score:
                 if accounts:
                     content_lines.append("📁 פירוט חשבונות:")
                     content_lines.append("-" * 40)
-                    total_balance = totals.get('total_balance', 1)
+                    from services.pension.schema import account_accumulation, tagmulim_amount
+                    total_balance = self._to_float_amount(totals.get('total_balance')) or 1
+                    policy_counts: Dict[str, int] = {}
+                    for acct in accounts:
+                        policy_key = str(acct.get('policy_number') or '')
+                        policy_counts[policy_key] = policy_counts.get(policy_key, 0) + 1
                     for i, acct in enumerate(accounts[:10], 1):
-                        balance = acct.get('total_balance', acct.get('balance', 0))
+                        balance = account_accumulation(acct)
                         pct = (balance / total_balance * 100) if total_balance > 0 else 0
+                        repeated_track = policy_counts.get(str(acct.get('policy_number') or ''), 0) > 1
                         content_lines.append(f"\n🔹 חשבון {i}:")
                         content_lines.append(f"   • מספר פוליסה: {acct.get('policy_number', 'לא ידוע')}")
                         if acct.get('provider'):
@@ -1196,10 +1368,18 @@ Factors Affecting Score:
                             content_lines.append(f"   • סוג מוצר: {acct.get('product_type_name', acct.get('product_name', acct.get('product_type', 'לא ידוע')))}")
                         if acct.get('status'):
                             content_lines.append(f"   • סטטוס: {acct.get('status')}")
-                        content_lines.append(f"   • יתרה: ₪{balance:,.2f} ({pct:.1f}% מהכולל)")
-                        if acct.get('savings_balance', 0) > 0:
-                            content_lines.append(f"   • חיסכון: ₪{acct.get('savings_balance', 0):,.2f}")
-                        if acct.get('severance_balance', 0) > 0:
+                        if acct.get('investment_track'):
+                            content_lines.append(f"   • מסלול השקעה: {acct.get('investment_track')}")
+                        if balance > 0:
+                            share = '' if repeated_track else f" ({pct:.1f}% מהכולל)"
+                            content_lines.append(f"   • סה״כ חיסכון: ₪{balance:,.2f}{share}")
+                        tagmulim_value = tagmulim_amount(acct)
+                        if tagmulim_value > 0 and abs(tagmulim_value - balance) > 0.01:
+                            content_lines.append(f"   • תגמולים: ₪{tagmulim_value:,.2f}")
+                        ledger = self._to_float_amount(acct.get('balance'))
+                        if ledger > 0 and abs(ledger - balance) > 0.01:
+                            content_lines.append(f"   • יתרה: ₪{ledger:,.2f}")
+                        if self._to_float_amount(acct.get('severance_balance')) > 0:
                             content_lines.append(f"   • פיצויים: ₪{acct.get('severance_balance', 0):,.2f}")
                         if acct.get('section14'):
                             content_lines.append(f"   • סעיף 14: ✅ מכוסה")

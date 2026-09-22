@@ -458,6 +458,15 @@ ACCOUNT_COVER_COPY_KEYS = (
     'risk_covers',
 )
 
+# Holdings columns kept distinct from צבירה. Copied only when uploaded.
+ACCOUNT_DETAIL_COPY_KEYS = (
+    'product_name', 'balance', 'tagmulim_balance',
+    'start_date', 'liquidity_date', 'status_date',
+    'management_fee', 'management_fee_savings', 'management_fee_deposits',
+    'last_deposit', 'last_deposit_date', 'contribution_type',
+    'monthly_premium', 'investment_track', 'track_percent', 'yield_rate',
+)
+
 
 def _as_cover_number(value: Any) -> float:
     try:
@@ -674,6 +683,116 @@ def _as_money(val: Any) -> str:
     except (TypeError, ValueError):
         return str(val)
     return f"₪{number:,.2f}"
+
+
+def _uploaded(value: Any) -> bool:
+    if value is None or value is False:
+        return False
+    if isinstance(value, (int, float)):
+        return float(value) != 0.0
+    text = str(value).strip()
+    return text not in {'', '0', '0.0', '0.00'}
+
+
+def _active_holdings_table(specs, records):
+    """Keep a column only when some row actually uploaded a value.
+
+    ``specs`` entries are ``(header, getter, kind)`` with kind ``id``,
+    ``text`` or ``money``.
+    """
+    active = []
+    for header, getter, kind in specs:
+        if kind == 'id' or any(_uploaded(getter(record)) for record in records):
+            active.append((header, getter, kind))
+    if not active:
+        return [], []
+    headers = [header for header, _getter, _kind in active]
+    rows = []
+    for record in records:
+        row = []
+        for _header, getter, kind in active:
+            value = getter(record)
+            if kind == 'money':
+                row.append(_as_money(value) if _uploaded(value) else '')
+            elif kind == 'percent':
+                try:
+                    row.append(f"{float(value):.2f}%" if _uploaded(value) else '')
+                except (TypeError, ValueError):
+                    row.append(_as_str(value) if _uploaded(value) else '')
+            else:
+                row.append(_as_str(value) if _uploaded(value) or kind == 'id' else '')
+        rows.append(row)
+    return headers, rows
+
+
+def _holdings_money_specs(is_hebrew: bool):
+    from services.pension.schema import account_accumulation, tagmulim_amount
+    return [
+        ('פוליסה' if is_hebrew else 'Policy', lambda account: account.get('policy_number'), 'id'),
+        ('יצרן' if is_hebrew else 'Provider', lambda account: account.get('provider'), 'id'),
+        ('סה״כ חיסכון' if is_hebrew else 'Accumulation', account_accumulation, 'money'),
+        ('תגמולים' if is_hebrew else 'Tagmulim', tagmulim_amount, 'money'),
+        ('פיצויים' if is_hebrew else 'Severance', lambda account: account.get('severance_balance'), 'money'),
+        ('יתרה' if is_hebrew else 'Balance', lambda account: account.get('balance'), 'money'),
+    ]
+
+
+def _holdings_detail_specs(is_hebrew: bool):
+    """Two narrower tables so dates, fees and track percents stay readable."""
+    policy = ('פוליסה' if is_hebrew else 'Policy', lambda account: account.get('policy_number'), 'id')
+    dates = [
+        policy,
+        ('סוג מוצר' if is_hebrew else 'Product Type', lambda account: account.get('product_type_name') or account.get('product_type'), 'text'),
+        ('שם מוצר' if is_hebrew else 'Product Name', lambda account: account.get('product_name'), 'text'),
+        ('סטטוס' if is_hebrew else 'Status', lambda account: account.get('status'), 'text'),
+        ('מסלול' if is_hebrew else 'Track', lambda account: account.get('investment_track'), 'text'),
+        ('תאריך הצטרפות' if is_hebrew else 'Join Date', lambda account: account.get('start_date'), 'text'),
+        ('תאריך נזילות' if is_hebrew else 'Liquidity Date', lambda account: account.get('liquidity_date'), 'text'),
+        ('תאריך סטטוס' if is_hebrew else 'Status Date', lambda account: account.get('status_date'), 'text'),
+    ]
+    fees = [
+        policy,
+        ('דמי ניהול מצבירה' if is_hebrew else 'Fee on Savings', lambda account: account.get('management_fee_savings'), 'percent'),
+        ('דמי ניהול מהפקדה' if is_hebrew else 'Fee on Deposits', lambda account: account.get('management_fee_deposits'), 'percent'),
+        ('הפקדה אחרונה' if is_hebrew else 'Last Deposit', lambda account: account.get('last_deposit'), 'money'),
+        ('תאריך הפקדה אחרונה' if is_hebrew else 'Last Deposit Date', lambda account: account.get('last_deposit_date'), 'text'),
+        ('מעסיק' if is_hebrew else 'Employer', lambda account: account.get('employer_name'), 'text'),
+        ('סוג הפרשה' if is_hebrew else 'Contribution Type', lambda account: account.get('contribution_type'), 'text'),
+        ('סה״כ פרמיה חודשית' if is_hebrew else 'Monthly Premium', lambda account: account.get('monthly_premium'), 'money'),
+        ('אחוז במסלול' if is_hebrew else 'Track Percent', lambda account: account.get('track_percent'), 'percent'),
+        ('תשואה' if is_hebrew else 'Yield', lambda account: account.get('yield_rate'), 'percent'),
+    ]
+    return dates, fees
+
+
+def _accumulation_total_pairs(totals: Dict[str, Any], is_hebrew: bool) -> List[List[Any]]:
+    """Headline צבירה, then תגמולים / פיצויים / יתרה only when uploaded separately."""
+    def money(key, default=0):
+        try:
+            return float(totals.get(key, default) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    accumulation = money('total_balance')
+    tagmulim = money('total_tagmulim')
+    savings = money('total_savings')
+    severance = money('total_severance')
+    yitra = money('total_yitra')
+    pairs = []
+    if accumulation or savings:
+        pairs.append(['סה״כ צבירה' if is_hebrew else 'Total Accumulation', _as_money(accumulation or savings)])
+    if tagmulim > 0:
+        pairs.append(['סה״כ תגמולים' if is_hebrew else 'Total Tagmulim', _as_money(tagmulim)])
+    elif savings > 0 and abs(savings - accumulation) > 0.01:
+        pairs.append(['סה״כ חיסכון' if is_hebrew else 'Total Savings', _as_money(savings)])
+    if severance > 0:
+        pairs.append(['סה״כ פיצויים' if is_hebrew else 'Total Severance', _as_money(severance)])
+    if yitra > 0 and abs(yitra - (accumulation or savings)) > 0.01:
+        pairs.append(['סה״כ יתרה' if is_hebrew else 'Ledger Balance', _as_money(yitra)])
+    count = totals.get('account_count')
+    if count not in (None, ''):
+        pairs.append(['מספר פוליסות' if is_hebrew else 'Number of Policies', _as_str(count)])
+    return pairs
 
 
 def _register_fonts() -> Tuple[str, str]:
@@ -1579,13 +1698,15 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
 
     identity_heading = 'הפרטים שלך' if is_hebrew else 'Your Details'
     story.append(_safe_paragraph(identity_heading, heading_style, rtl=is_hebrew, max_width=usable_width))
+    identity_pairs = [
+        ['תעודת זהות' if is_hebrew else 'National ID', _as_str(customer_id)],
+        ['שם מלא' if is_hebrew else 'Full Name', _as_str(customer_name)],
+        ['תאריך לידה' if is_hebrew else 'Birth Date', _as_str(birth_date)],
+        ['נוצר' if is_hebrew else 'Prepared On', _as_when(summary.get('generated_at'))],
+    ]
+    identity_pairs = [pair for pair in identity_pairs if _uploaded(pair[1])]
     identity_table = _build_kv_table(
-        [
-            ['תעודת זהות' if is_hebrew else 'National ID', _as_str(customer_id)],
-            ['שם מלא' if is_hebrew else 'Full Name', _as_str(customer_name)],
-            ['תאריך לידה' if is_hebrew else 'Birth Date', _as_str(birth_date)],
-            ['נוצר' if is_hebrew else 'Prepared On', _as_when(summary.get('generated_at'))],
-        ],
+        identity_pairs,
         cell_style, navy_cell_style,
         rtl=is_hebrew, usable_width=usable_width,
         font=getattr(cell_style, 'fontName', 'Helvetica'),
@@ -1596,52 +1717,71 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
     totals_heading = 'החיסכון והפיצויים שלך' if is_hebrew else 'Your Savings & Severance'
     story.append(_safe_paragraph(totals_heading, heading_style, rtl=is_hebrew, max_width=usable_width))
     # Copy totals from the assessment — do not re-sum accounts here.
-    total_balance = totals.get('total_balance', sci.get('total_savings', 0))
-    total_savings = totals.get('total_savings', totals.get('total_savings_balance', 0))
-    total_severance = totals.get('total_severance', totals.get('total_severance_balance', sci.get('total_severance', 0)))
-    account_count = totals.get('account_count', len(accounts))
+    display_totals = dict(totals)
+    if not display_totals.get('total_balance'):
+        display_totals['total_balance'] = sci.get('total_savings', 0)
+    if not display_totals.get('total_severance'):
+        display_totals['total_severance'] = sci.get('total_severance', 0)
+    if not display_totals.get('account_count'):
+        display_totals['account_count'] = len(accounts)
     totals_table = _build_kv_table(
-        [
-            ['סה״כ צבירה' if is_hebrew else 'Total Accumulation', _as_money(total_balance)],
-            ['סה״כ חסכונות' if is_hebrew else 'Total Savings', _as_money(total_savings)],
-            ['סה״כ פיצויים' if is_hebrew else 'Total Severance', _as_money(total_severance)],
-            ['מספר פוליסות' if is_hebrew else 'Number of Policies', _as_str(account_count)],
-        ],
+        _accumulation_total_pairs(display_totals, is_hebrew),
         cell_style, navy_cell_style,
         rtl=is_hebrew, usable_width=usable_width,
         font=getattr(cell_style, 'fontName', 'Helvetica'),
     )
     story.append(totals_table)
-    story.append(Spacer(1, 10))
-    _append_customer_charts(story, summary, heading_style, is_hebrew, usable_width, base_font)
-
-    if accounts:
-        accounts_heading = 'החשבונות והפוליסות שלך' if is_hebrew else 'Your Accounts & Policies'
-        story.append(_safe_paragraph(accounts_heading, heading_style, rtl=is_hebrew, max_width=usable_width))
-        headers = [
-            'פוליסה' if is_hebrew else 'Policy',
-            'יצרן' if is_hebrew else 'Provider',
-            'מוצר' if is_hebrew else 'Product',
-            'צבירה' if is_hebrew else 'Balance',
-            'פיצויים' if is_hebrew else 'Severance',
-        ]
-        account_rows = [
-            [
-                _as_str(acct.get('policy_number')),
-                _as_str(acct.get('provider')),
-                _as_str(acct.get('product_type_name') or acct.get('product_type')),
-                _as_money(acct.get('total_balance', acct.get('savings_balance', 0))),
-                _as_money(acct.get('severance_balance', 0)),
-            ]
-            for acct in accounts[:80]
+    by_provider = display_totals.get('by_provider') or {}
+    if isinstance(by_provider, dict) and any(_uploaded(amount) for amount in by_provider.values()):
+        provider_heading = 'צבירות לפי יצרן' if is_hebrew else 'Accumulation by Provider'
+        story.append(Spacer(1, 8))
+        story.append(_safe_paragraph(provider_heading, heading_style, rtl=is_hebrew, max_width=usable_width))
+        provider_headers = ['יצרן' if is_hebrew else 'Provider', 'סה״כ חיסכון' if is_hebrew else 'Accumulation']
+        provider_rows = [
+            [_as_str(name), _as_money(amount)]
+            for name, amount in by_provider.items()
+            if _uploaded(amount)
         ]
         story.append(_build_text_table(
-            headers, account_rows,
+            provider_headers, provider_rows,
             cell_style=cell_style, header_style=navy_cell_style,
             rtl=is_hebrew, usable_width=usable_width,
             font=getattr(cell_style, 'fontName', 'Helvetica'),
         ))
-        story.append(Spacer(1, 10))
+    story.append(Spacer(1, 10))
+    _append_customer_charts(story, summary, heading_style, is_hebrew, usable_width, base_font)
+
+    if accounts:
+        shown = accounts[:80]
+        money_headers, money_rows = _active_holdings_table(_holdings_money_specs(is_hebrew), shown)
+        if money_headers:
+            accounts_heading = 'החשבונות והפוליסות שלך' if is_hebrew else 'Your Accounts & Policies'
+            story.append(_safe_paragraph(accounts_heading, heading_style, rtl=is_hebrew, max_width=usable_width))
+            story.append(_build_text_table(
+                money_headers, money_rows,
+                cell_style=cell_style, header_style=navy_cell_style,
+                rtl=is_hebrew, usable_width=usable_width,
+                font=getattr(cell_style, 'fontName', 'Helvetica'),
+            ))
+            story.append(Spacer(1, 8))
+        detail_groups = _holdings_detail_specs(is_hebrew)
+        detail_titles = (
+            ['הפוליסה והמסלול' if is_hebrew else 'Policy and Track',
+             'הפקדות ודמי ניהול' if is_hebrew else 'Deposits and Fees']
+        )
+        for detail_heading, detail_specs in zip(detail_titles, detail_groups):
+            detail_headers, detail_rows = _active_holdings_table(detail_specs, shown)
+            detail_has_value = any(any(cell for cell in row[1:]) for row in detail_rows)
+            if not detail_headers or not detail_has_value:
+                continue
+            story.append(_safe_paragraph(detail_heading, heading_style, rtl=is_hebrew, max_width=usable_width))
+            story.append(_build_text_table(
+                detail_headers, detail_rows,
+                cell_style=cell_style, header_style=navy_cell_style,
+                rtl=is_hebrew, usable_width=usable_width,
+                font=getattr(cell_style, 'fontName', 'Helvetica'),
+            ))
+            story.append(Spacer(1, 8))
 
     _append_risk_covers(story, summary, heading_style, cell_style, is_hebrew, usable_width)
     _append_assessment_sections(story, summary, heading_style, body_style, cell_style, is_hebrew, usable_width)
@@ -1846,28 +1986,39 @@ def build_report_csv_bytes(summary: Dict[str, Any]) -> bytes:
         writer.writerow(['תעודת זהות' if is_hebrew else 'National ID', client.get('id_number', '')])
         writer.writerow(['שם מלא' if is_hebrew else 'Full Name', client.get('full_name', client.get('client_name', ''))])
         writer.writerow(['תאריך לידה' if is_hebrew else 'Birth Date', client.get('birth_date', '')])
-        writer.writerow(['סה״כ צבירה' if is_hebrew else 'Total Accumulation', totals.get('total_balance', '')])
-        writer.writerow(['סה״כ חסכונות' if is_hebrew else 'Total Savings', totals.get('total_savings', '')])
-        writer.writerow(['סה״כ פיצויים' if is_hebrew else 'Total Severance', totals.get('total_severance', '')])
-        writer.writerow(['מספר פוליסות' if is_hebrew else 'Number of Policies', totals.get('account_count', '')])
+        for label, value in _accumulation_total_pairs(totals, is_hebrew):
+            writer.writerow([label, value])
+        by_provider = totals.get('by_provider') or {}
+        if isinstance(by_provider, dict) and any(_uploaded(amount) for amount in by_provider.values()):
+            writer.writerow([])
+            writer.writerow(['צבירות לפי יצרן' if is_hebrew else 'Accumulation by Provider'])
+            writer.writerow(['יצרן' if is_hebrew else 'Provider', 'סה״כ חיסכון' if is_hebrew else 'Accumulation'])
+            for name, amount in by_provider.items():
+                if _uploaded(amount):
+                    writer.writerow([name, amount])
         writer.writerow([])
         accounts = pension.get('accounts') or []
         if accounts:
-            writer.writerow(['החשבונות והפוליסות שלך' if is_hebrew else 'Your Accounts & Policies'])
-            writer.writerow(
-                ['פוליסה', 'יצרן', 'מוצר', 'צבירה', 'פיצויים']
-                if is_hebrew else
-                ['Policy', 'Provider', 'Product', 'Balance', 'Severance']
-            )
-            for acct in accounts[:80]:
-                writer.writerow([
-                    acct.get('policy_number', ''),
-                    acct.get('provider', ''),
-                    acct.get('product_type_name', acct.get('product_type', '')),
-                    acct.get('total_balance', ''),
-                    acct.get('severance_balance', ''),
-                ])
-            writer.writerow([])
+            shown = accounts[:80]
+            money_headers, money_rows = _active_holdings_table(_holdings_money_specs(is_hebrew), shown)
+            if money_headers:
+                writer.writerow(['החשבונות והפוליסות שלך' if is_hebrew else 'Your Accounts & Policies'])
+                writer.writerow(money_headers)
+                for row in money_rows:
+                    writer.writerow(row)
+                writer.writerow([])
+            for detail_heading, detail_specs in zip(
+                ['הפוליסה והמסלול' if is_hebrew else 'Policy and Track',
+                 'הפקדות ודמי ניהול' if is_hebrew else 'Deposits and Fees'],
+                _holdings_detail_specs(is_hebrew),
+            ):
+                detail_headers, detail_rows = _active_holdings_table(detail_specs, shown)
+                if detail_headers and any(any(cell for cell in row[1:]) for row in detail_rows):
+                    writer.writerow([detail_heading])
+                    writer.writerow(detail_headers)
+                    for row in detail_rows:
+                        writer.writerow(row)
+                    writer.writerow([])
         for section in prepare_customer_download_sections(summary.get('assessment_sections') or []):
             writer.writerow([section.get('title', '')])
             content = strip_completeness_copy(section.get('content') or '')

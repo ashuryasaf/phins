@@ -156,13 +156,24 @@ class ChartsMixin:
         totals = pension_data.get('totals', {})
         accounts = pension_data.get('accounts', [])
         
-        # 1. Cumulative Savings by Provider (Bar Chart)
-        provider_totals = {}
-        for acct in accounts:
-            provider = acct.get('provider', 'לא ידוע' if is_hebrew else 'Unknown')
-            balance = acct.get('total_balance', 0) or acct.get('savings_balance', 0) or 0
-            if provider and balance > 0:
-                provider_totals[provider] = provider_totals.get(provider, 0) + balance
+        from services.pension.schema import (
+            accumulation_by,
+            accumulation_by_provider,
+            deduped_sum,
+            tagmulim_amount,
+        )
+
+        # 1. Cumulative savings by provider. Repeated track rows of one
+        # policy contribute their סה"כ חיסכון once.
+        provider_totals = accumulation_by_provider(accounts)
+        if not provider_totals:
+            stored = (totals or {}).get('by_provider') or {}
+            if isinstance(stored, dict):
+                provider_totals = {
+                    str(name): float(amount or 0)
+                    for name, amount in stored.items()
+                    if float(amount or 0) > 0
+                }
         
         if provider_totals:
             charts.append(ChartConfig(
@@ -180,14 +191,12 @@ class ChartsMixin:
                 }
             ))
         
-        # 2. Savings vs Severance Breakdown (Doughnut Chart)
-        total_savings = totals.get('total_savings_balance', 0)
-        total_severance = totals.get('total_severance_balance', 0)
-        
+        # 2. Tagmulim vs severance. סה"כ חיסכון is not drawn as תגמולים.
+        total_savings = deduped_sum(accounts, tagmulim_amount)
+        total_severance = deduped_sum(accounts, lambda account: account.get('severance_balance'))
         if not total_savings and not total_severance:
-            # Calculate from accounts
-            total_savings = sum(a.get('savings_balance', 0) or 0 for a in accounts)
-            total_severance = sum(a.get('severance_balance', 0) or 0 for a in accounts)
+            total_savings = float(totals.get('total_tagmulim') or totals.get('total_savings_balance') or 0)
+            total_severance = float(totals.get('total_severance') or totals.get('total_severance_balance') or 0)
         
         if total_savings > 0 or total_severance > 0:
             labels = ['תגמולים', 'פיצויים'] if is_hebrew else ['Savings', 'Severance']
@@ -217,7 +226,10 @@ class ChartsMixin:
             ('survivors_coverage', 'survivors_premium', 'שארים', 'Survivors'),
             ('ltc_coverage', 'ltc_premium', 'סיעוד', 'Long-Term Care'),
         )
+        seen_cover_amounts = set()
+        seen_cover_costs = set()
         for acct in accounts:
+            policy = str(acct.get('policy_number') or '')
             nested = [item for item in (acct.get('risk_covers') or []) if isinstance(item, dict)]
             if nested:
                 for item in nested:
@@ -225,18 +237,26 @@ class ChartsMixin:
                     amount = float(item.get('amount') or 0)
                     cost = float(item.get('cost') or 0)
                     label = title_he if is_hebrew else title_en
-                    if amount > 0:
+                    amount_key = (policy, label, round(amount, 2))
+                    cost_key = (policy, label, round(cost, 2))
+                    if amount > 0 and amount_key not in seen_cover_amounts:
+                        seen_cover_amounts.add(amount_key)
                         coverage_totals[label] = coverage_totals.get(label, 0) + amount
-                    if cost > 0:
+                    if cost > 0 and cost_key not in seen_cover_costs:
+                        seen_cover_costs.add(cost_key)
                         cost_totals[label] = cost_totals.get(label, 0) + cost
                 continue
             for amount_field, cost_field, he_label, en_label in cover_fields:
                 amount = float(acct.get(amount_field) or 0)
                 cost = float(acct.get(cost_field) or 0)
                 label = he_label if is_hebrew else en_label
-                if amount > 0:
+                amount_key = (policy, amount_field, round(amount, 2))
+                cost_key = (policy, cost_field, round(cost, 2))
+                if amount > 0 and amount_key not in seen_cover_amounts:
+                    seen_cover_amounts.add(amount_key)
                     coverage_totals[label] = coverage_totals.get(label, 0) + amount
-                if cost > 0:
+                if cost > 0 and cost_key not in seen_cover_costs:
+                    seen_cover_costs.add(cost_key)
                     cost_totals[label] = cost_totals.get(label, 0) + cost
         
         if coverage_totals:
@@ -269,14 +289,13 @@ class ChartsMixin:
             ))
         
         # 4. Product Type Distribution (Pie Chart)
-        product_balances = {}
-        for acct in accounts:
-            product_type = acct.get('product_type_name', '') or acct.get('product_type', '')
-            if not product_type:
-                product_type = 'לא מוגדר' if is_hebrew else 'Undefined'
-            balance = acct.get('total_balance', 0) or acct.get('savings_balance', 0) or 0
-            if balance > 0:
-                product_balances[product_type] = product_balances.get(product_type, 0) + balance
+        def _product_label(account):
+            return (
+                account.get('product_type_name')
+                or account.get('product_type')
+                or ('לא מוגדר' if is_hebrew else 'Undefined')
+            )
+        product_balances = accumulation_by(accounts, _product_label)
         
         if product_balances and len(product_balances) > 1:
             charts.append(ChartConfig(
