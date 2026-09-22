@@ -26,7 +26,7 @@ class RenderMixin:
         
         # 1. Executive Summary
         sections.append(ReportSection(
-            title='תקציר מנהלים' if is_hebrew else 'Executive Summary',
+            title='סיכום ההערכה' if is_hebrew else 'Assessment Summary',
             content=analysis.summary,
             order=1
         ))
@@ -36,7 +36,7 @@ class RenderMixin:
             pension_section = self._generate_pension_section(pension_data, pension_report, is_hebrew)
             if pension_section:
                 sections.append(ReportSection(
-                    title='דו״ח ניתוח פנסיה וביטוח' if is_hebrew else 'Pension & Insurance Analysis Report',
+                    title='הערכת הפנסיה והביטוח שלך' if is_hebrew else 'Your Pension & Insurance Assessment',
                     content=pension_section,
                     order=2
                 ))

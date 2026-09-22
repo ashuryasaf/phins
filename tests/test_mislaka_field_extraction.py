@@ -281,19 +281,41 @@ class TestSwiftnessAffiliatedShowcase(unittest.TestCase):
         self.assertTrue('16,500.00' in pdf_text or '16500' in pdf_text)
         self.assertNotIn('Data Profile', pdf_text)
         self.assertNotIn('numeric_columns', pdf_text)
+        self.assertNotIn('שלמות נתונים', pdf_text)
+        self.assertNotIn('Data Integrity', pdf_text)
+        self.assertNotIn('Data Completeness', pdf_text)
+        self.assertNotIn('דו״ח ניתוח נתונים', pdf_text)
+        self.assertNotIn('Data Analysis Report', pdf_text)
+        self.assertNotIn('ID Validation', pdf_text)
+        self.assertNotIn('תקינות מזהה', pdf_text)
+        self.assertNotIn('integrity_issues', export_payload.get('savings_cover_id_summary') or {})
+        self.assertEqual(export_payload.get('title'), 'ההערכה שלך')
+        self.assertTrue(
+            'ההערכה שלך' in pdf_text
+            or 'הלש ךתרעהה' in pdf_text
+            or 'Your Assessment' in pdf_text
+        )
 
 
 class TestMislakaAssessmentPdfHelpers(unittest.TestCase):
     def test_statistical_titles_are_classified(self):
         from services.risk_reports.pdf_export import (
+            is_completeness_section_title,
             is_non_assessment_section_title,
             is_statistical_section_title,
         )
         self.assertTrue(is_statistical_section_title('פרופיל נתונים'))
         self.assertTrue(is_statistical_section_title('📊 Data Profile'))
+        self.assertTrue(is_statistical_section_title('דו״ח ניתוח נתונים'))
+        self.assertTrue(is_statistical_section_title('Data Analysis Report'))
+        self.assertTrue(is_statistical_section_title('תוכן הנתונים שהועלו'))
+        self.assertTrue(is_completeness_section_title('שלמות נתונים'))
+        self.assertTrue(is_completeness_section_title('Data Integrity'))
+        self.assertTrue(is_non_assessment_section_title('שלמות נתונים'))
         self.assertTrue(is_non_assessment_section_title('Affiliation Mapping Snapshot'))
         self.assertFalse(is_statistical_section_title('דו״ח ניתוח פנסיה וביטוח'))
         self.assertFalse(is_non_assessment_section_title('סה״כ צבירה ופיצויים'))
+        self.assertFalse(is_non_assessment_section_title('הערכת הפנסיה והביטוח שלך'))
 
 
 class TestFacadeStillResolves(unittest.TestCase):

@@ -355,21 +355,22 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
         # Generate recommendations
         recommendations = self._generate_recommendations(analysis, lang)
         
-        # Determine report title
+        # Customer-facing title. Staff analysis labels ("דו״ח ניתוח נתונים")
+        # stay out of the generated report and the download.
         titles = {
             'hebrew': {
-                'insurance': 'דו״ח ניתוח ביטוח',
-                'investment': 'דו״ח ניתוח השקעות',
-                'risk': 'דו״ח הערכת סיכונים',
-                'savings': 'דו״ח ניתוח חיסכון',
-                'default': 'דו״ח ניתוח נתונים'
+                'insurance': 'הערכת הביטוח שלך',
+                'investment': 'הערכת ההשקעות שלך',
+                'risk': 'הערכת הסיכונים שלך',
+                'savings': 'הערכת החיסכון שלך',
+                'default': 'ההערכה שלך'
             },
             'english': {
-                'insurance': 'Insurance Analysis Report',
-                'investment': 'Investment Analysis Report',
-                'risk': 'Risk Assessment Report',
-                'savings': 'Savings Analysis Report',
-                'default': 'Data Analysis Report'
+                'insurance': 'Your Insurance Assessment',
+                'investment': 'Your Investment Assessment',
+                'risk': 'Your Risk Assessment',
+                'savings': 'Your Savings Assessment',
+                'default': 'Your Assessment'
             }
         }
         
@@ -685,7 +686,12 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
         )
         summary = self._extract_savings_cover_id_summary(doc_data, pension_data)
 
-        from services.risk_reports.pdf_export import is_non_assessment_section_title
+        from services.risk_reports.pdf_export import (
+            customer_report_title,
+            is_non_assessment_section_title,
+            prepare_customer_download_sections,
+            strip_completeness_copy,
+        )
 
         table_sections: List[Dict[str, Any]] = []
         assessment_sections: List[Dict[str, Any]] = []
@@ -694,7 +700,7 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
             title_lower = section_title.lower()
             if 'swiftness' in title_lower or 'resource' in title_lower:
                 continue
-            if is_pension_data and is_non_assessment_section_title(section_title):
+            if is_non_assessment_section_title(section_title):
                 continue
 
             data_table = section.data_table if isinstance(section.data_table, dict) else {}
@@ -704,7 +710,7 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
                 rows = []
             assessment_sections.append({
                 'title': section_title,
-                'content': section.content or '',
+                'content': strip_completeness_copy(section.content or ''),
                 'columns': [str(c) for c in columns] if isinstance(columns, list) else [],
                 'rows': [row for row in rows[:80] if isinstance(row, dict)],
             })
@@ -825,7 +831,11 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
                 'accounts': accounts,
             }
 
-        return {
+        # Customer download: omit staff completeness / integrity notes.
+        download_summary = dict(summary or {})
+        download_summary.pop('integrity_issues', None)
+
+        payload = {
             'report_id': report.id,
             'title': report.title,
             'language': report.language,
@@ -836,11 +846,20 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
             'is_pension_data': is_pension_data,
             'pension_assessment': pension_assessment,
             'assessment_sections': assessment_sections,
-            'savings_cover_id_summary': summary,
+            'savings_cover_id_summary': download_summary,
             'table_sections': table_sections,
             'chart_summaries': [] if is_pension_data else chart_summaries,
             'recommendations': [] if is_pension_data else recommendations,
         }
+        payload['title'] = customer_report_title(payload)
+        payload['assessment_sections'] = prepare_customer_download_sections(
+            payload.get('assessment_sections')
+        )
+        payload['table_sections'] = [
+            section for section in payload.get('table_sections') or []
+            if not is_non_assessment_section_title(section.get('title', ''))
+        ]
+        return payload
     
     def to_dict(self, obj) -> Dict:
         """Convert dataclass objects to dictionaries for JSON serialization"""
