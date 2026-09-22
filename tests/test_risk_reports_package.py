@@ -14,9 +14,11 @@ Covers:
 import io
 import json
 import os
+import struct
 import sys
 import time
 import zipfile
+import zlib
 
 import pytest
 
@@ -30,7 +32,9 @@ from services.risk_reports import models as models_mod  # noqa: E402
 from services.risk_reports import parsers as parsers_mod  # noqa: E402
 from services.risk_reports import render as render_mod  # noqa: E402
 from services.risk_reports import service as service_mod  # noqa: E402
-from services.risk_reports.parsers import ParserMixin  # noqa: E402
+from services.risk_reports.parsers import (  # noqa: E402
+    ParserMixin, ZIP_PASSWORD_REJECTED, ZIP_PASSWORD_REQUIRED,
+)
 from tests.test_pension_agent import FIXTURES  # noqa: E402
 
 
@@ -104,6 +108,101 @@ def _zip_of(*members):
     with zipfile.ZipFile(buf, 'w') as z:
         for i, m in enumerate(members):
             z.writestr(f'm{i}.xml', m)
+    return buf.getvalue()
+
+
+def _as_member_bytes(payload):
+    if isinstance(payload, str):
+        return payload.encode('utf-8')
+    return payload
+
+
+def _zip_members(members):
+    """Unencrypted archive. ``members`` is ``(name, bytes)``."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+        for name, payload in members:
+            zf.writestr(name, _as_member_bytes(payload))
+    return buf.getvalue()
+
+
+def _zipcrypto_encrypt(data: bytes, password: bytes) -> bytes:
+    """Traditional ZIP encryption the stdlib reader accepts."""
+    table = []
+    for crc in range(256):
+        for _ in range(8):
+            crc = (crc >> 1) ^ 0xEDB88320 if crc & 1 else crc >> 1
+        table.append(crc)
+
+    def crc32_byte(ch, crc):
+        return (crc >> 8) ^ table[(crc ^ ch) & 0xFF]
+
+    keys = [305419896, 591751049, 878082192]
+
+    def update(c):
+        keys[0] = crc32_byte(c, keys[0])
+        keys[1] = (keys[1] + (keys[0] & 0xFF)) & 0xFFFFFFFF
+        keys[1] = (keys[1] * 134775813 + 1) & 0xFFFFFFFF
+        keys[2] = crc32_byte(keys[1] >> 24, keys[2])
+
+    for byte in password:
+        update(byte)
+
+    check = (zlib.crc32(data) >> 24) & 0xFF
+    plain = os.urandom(11) + bytes([check]) + data
+    out = bytearray()
+    for byte in plain:
+        k = keys[2] | 2
+        cipher = byte ^ (((k * (k ^ 1)) >> 8) & 0xFF)
+        update(byte)
+        out.append(cipher)
+    return bytes(out)
+
+
+def _zipcrypto_archive(members, password: str, encoding: str = 'utf-8') -> bytes:
+    """Build a ZipCrypto archive. ``password`` is encoded with ``encoding``."""
+    pwd = password.encode(encoding)
+    parts = []
+    central = []
+    offset = 0
+    for name, payload in members:
+        data = _as_member_bytes(payload)
+        name_b = name.encode('utf-8')
+        crc = zlib.crc32(data) & 0xFFFFFFFF
+        cipher = _zipcrypto_encrypt(data, pwd)
+        flag = 0x1 | 0x800
+        local = struct.pack(
+            '<IHHHHHIIIHH',
+            0x04034b50, 20, flag, 0, 0, 0, crc,
+            len(cipher), len(data), len(name_b), 0,
+        ) + name_b + cipher
+        parts.append(local)
+        central.append(struct.pack(
+            '<IHHHHHHIIIHHHHHII',
+            0x02014b50, 20, 20, flag, 0, 0, 0, crc,
+            len(cipher), len(data), len(name_b),
+            0, 0, 0, 0, 0, offset,
+        ) + name_b)
+        offset += len(local)
+    body = b''.join(parts)
+    directory = b''.join(central)
+    eocd = struct.pack(
+        '<IHHHHIIH',
+        0x06054b50, 0, 0, len(members), len(members),
+        len(directory), len(body), 0,
+    )
+    return body + directory + eocd
+
+
+def _aes_archive(members, password: str) -> bytes:
+    pyzipper = pytest.importorskip('pyzipper')
+    buf = io.BytesIO()
+    with pyzipper.AESZipFile(
+        buf, 'w', compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES,
+    ) as zf:
+        zf.setpassword(password.encode('utf-8'))
+        for name, payload in members:
+            zf.writestr(name, _as_member_bytes(payload))
     return buf.getvalue()
 
 
@@ -433,4 +532,101 @@ def test_json_persistence_round_trip_with_pdf_text(tmp_path, monkeypatch):
         assert svc.to_dict(fresh.reports[report.id].charts) == svc.to_dict(report.charts)
     finally:
         facade._ai_reports_service = None
+
+
+# --------------------------------------------------------------------------
+# password-protected ZIP intake
+# --------------------------------------------------------------------------
+class TestZipPassword:
+    MEMBERS = (
+        ('holdings.xml', FIXTURES['simple']),
+        ('policies.csv', ENG_CSV),
+    )
+
+    def _assert_same_assessment(self, plain, opened):
+        assert opened['rows'] == plain['rows']
+        assert opened['columns'] == plain['columns']
+        assert opened.get('pension_data') == plain.get('pension_data')
+        assert opened['integrity']['zip_file_count'] == plain['integrity']['zip_file_count']
+        assert opened['files'] == plain['files']
+
+    def test_unencrypted_zip_ignores_a_supplied_password(self, service):
+        plain_bytes = _zip_members(self.MEMBERS)
+        plain, _ = service.parse_content('plain.zip', plain_bytes, 'zip')
+        with_password, _ = service.parse_content(
+            'plain.zip', plain_bytes, 'zip', file_password='not-used',
+        )
+        self._assert_same_assessment(plain, with_password)
+
+    def test_zipcrypto_password_opens_the_same_data(self, service):
+        plain_bytes = _zip_members(self.MEMBERS)
+        locked = _zipcrypto_archive(self.MEMBERS, 'secret-pass')
+        plain, _ = service.parse_content('plain.zip', plain_bytes, 'zip')
+        opened, _ = service.parse_content(
+            'locked.zip', locked, 'zip', file_password='secret-pass',
+        )
+        self._assert_same_assessment(plain, opened)
+        stored = service.parse_file(
+            'locked.zip', locked, 'zip',
+            owner_id='CUST-1', owner_role='customer', file_password='secret-pass',
+        )
+        assert stored['status'] == 'completed', stored.get('error')
+        blob = json.dumps(stored, ensure_ascii=False)
+        assert 'secret-pass' not in blob
+        assert 'file_password' not in stored
+        analysis = service.analyze(stored['document_id'])
+        assert analysis.id
+
+    def test_missing_or_wrong_password_stores_nothing(self, service):
+        locked = _zipcrypto_archive(self.MEMBERS, 'secret-pass')
+        before = set(service.documents)
+        with pytest.raises(ValueError, match='password-protected'):
+            service.parse_content('locked.zip', locked, 'zip')
+        missing = service.parse_file(
+            'locked.zip', locked, 'zip', owner_id='CUST-1', owner_role='customer',
+        )
+        assert missing['status'] == 'failed'
+        assert missing['error'] == ZIP_PASSWORD_REQUIRED
+        assert missing['document_id'] not in service.documents
+        wrong = service.parse_file(
+            'locked.zip', locked, 'zip',
+            owner_id='CUST-1', owner_role='customer', file_password='nope',
+        )
+        assert wrong['status'] == 'failed'
+        assert wrong['error'] == ZIP_PASSWORD_REJECTED
+        assert 'nope' not in wrong['error']
+        assert 'secret-pass' not in wrong['error']
+        assert wrong['document_id'] not in service.documents
+        assert set(service.documents) == before
+
+    def test_windows_hebrew_password_encoding(self, service):
+        password = 'סוד'
+        locked = _zipcrypto_archive(self.MEMBERS, password, encoding='cp1255')
+        plain, _ = service.parse_content('plain.zip', _zip_members(self.MEMBERS), 'zip')
+        opened, _ = service.parse_content(
+            'locked.zip', locked, 'zip', file_password=password,
+        )
+        self._assert_same_assessment(plain, opened)
+
+    def test_aes_password_opens_the_same_data(self, service):
+        locked = _aes_archive(self.MEMBERS, 'aes-secret')
+        plain, _ = service.parse_content('plain.zip', _zip_members(self.MEMBERS), 'zip')
+        opened, _ = service.parse_content(
+            'aes.zip', locked, 'zip', file_password='aes-secret',
+        )
+        self._assert_same_assessment(plain, opened)
+        with pytest.raises(ValueError, match='password-protected'):
+            service.parse_content('aes.zip', locked, 'zip')
+
+    def test_dashboard_asks_for_the_password_before_analyze(self):
+        html = open(
+            os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                         'web_portal', 'static', 'risk-reports-dashboard.html'),
+            encoding='utf-8',
+        ).read()
+        password_at = html.find('id="filePassword"')
+        analyze_at = html.find('id="analyzeBtn"')
+        assert 0 < password_at < analyze_at
+        assert 'file_password' in html
+        assert 'If the ZIP has one' in html
 

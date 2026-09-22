@@ -52,7 +52,8 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
         return bool(getattr(self.documents, 'durable', False))
 
     def parse_file(self, filename: str, file_content: bytes, file_type: str, 
-                   owner_id: str = None, owner_role: str = None) -> Dict[str, Any]:
+                   owner_id: str = None, owner_role: str = None,
+                   file_password: str = None) -> Dict[str, Any]:
         """
         Parse uploaded file and extract structured data.
         Supports CSV, XLS (as CSV), and ZIP containing CSV files.
@@ -63,6 +64,8 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
             file_type: Type of file (csv, xls, xlsx, zip)
             owner_id: ID of the user who uploaded the file (for data isolation)
             owner_role: Role of the user (admin, customer, etc.)
+            file_password: Optional ZIP password. Used only to decrypt and
+                never stored on the document, the audit row, or the response.
         """
         doc_id = f"DOC-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
         
@@ -80,7 +83,9 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
         }
         
         try:
-            parsed, encoding = self.parse_content(filename, file_content, file_type)
+            parsed, encoding = self.parse_content(
+                filename, file_content, file_type, file_password=file_password,
+            )
 
             result['encoding'] = encoding
             result['parsed_data'] = parsed

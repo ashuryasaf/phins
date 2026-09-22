@@ -38,20 +38,115 @@ def _document_service():
     return get_document_service()
 
 
+# Shown when a ZIP cannot be decrypted. The password itself is never
+# included in these messages, logs, or the stored document.
+ZIP_PASSWORD_REQUIRED = (
+    'This ZIP is password-protected. Add the file password, then run Analyze & Generate again.'
+)
+ZIP_PASSWORD_REJECTED = (
+    'The file password did not open this ZIP. Check the password and try again.'
+)
+
+
+def _zip_password_candidates(file_password: Optional[str]) -> List[bytes]:
+    """Byte forms of a user-supplied ZIP password. Blank means none.
+
+    UTF-8 is tried first. Windows-1255 is a second candidate for Hebrew
+    passwords created on Windows, and only if the UTF-8 bytes differ.
+    """
+    if not isinstance(file_password, str) or file_password.strip() == '':
+        return []
+    candidates: List[bytes] = []
+    for encoding in ('utf-8', 'cp1255'):
+        try:
+            raw = file_password.encode(encoding)
+        except UnicodeEncodeError:
+            continue
+        if raw not in candidates:
+            candidates.append(raw)
+    return candidates
+
+
+def _zip_entry_skipped(name: str) -> bool:
+    return name.endswith('/') or name.startswith('__') or name.startswith('.')
+
+
+def _zip_members(content: bytes, file_password: Optional[str] = None) -> List[Tuple[str, bytes]]:
+    """Return ``(name, bytes)`` for each readable ZIP member.
+
+    Unencrypted archives use the stdlib reader and ignore any password.
+    Encrypted archives fail closed: no password or a password that does
+    not decrypt every member raises, and nothing partial is returned.
+    """
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(content), 'r')
+    except zipfile.BadZipFile:
+        raise
+
+    names: List[str] = []
+    encrypted = False
+    try:
+        for info in archive.infolist():
+            name = info.filename
+            if _zip_entry_skipped(name):
+                continue
+            names.append(name)
+            if info.flag_bits & 0x1 or info.compress_type == 99:
+                encrypted = True
+        if not encrypted:
+            members: List[Tuple[str, bytes]] = []
+            for name in names:
+                with archive.open(name) as handle:
+                    members.append((name, handle.read()))
+            return members
+    finally:
+        archive.close()
+
+    passwords = _zip_password_candidates(file_password)
+    if not passwords:
+        raise ValueError(ZIP_PASSWORD_REQUIRED)
+    return _read_encrypted_zip_members(content, names, passwords)
+
+
+def _read_encrypted_zip_members(
+    content: bytes, names: List[str], passwords: List[bytes],
+) -> List[Tuple[str, bytes]]:
+    """Decrypt every listed member. A wrong password yields no rows."""
+    try:
+        import pyzipper
+    except ImportError as exc:
+        raise ValueError(
+            'This ZIP is password-protected, and the server cannot open encrypted archives.'
+        ) from exc
+
+    last_error: Optional[BaseException] = None
+    for pwd in passwords:
+        try:
+            with pyzipper.AESZipFile(io.BytesIO(content)) as archive:
+                return [(name, archive.read(name, pwd=pwd)) for name in names]
+        except (RuntimeError, zipfile.BadZipFile) as exc:
+            last_error = exc
+            continue
+    raise ValueError(ZIP_PASSWORD_REJECTED) from last_error
+
+
 class ParserMixin:
     """Format parsers; each returns ``{'columns', 'rows', ...}``."""
 
     def parse_content(self, filename: str, file_content: bytes,
-                      file_type: str) -> Tuple[Dict[str, Any], str]:
+                      file_type: str,
+                      file_password: Optional[str] = None) -> Tuple[Dict[str, Any], str]:
         """Dispatch on ``file_type`` and return ``(parsed, encoding)``.
 
         Pure: nothing is stored, audited or saved here; ``parse_file`` wraps
         this with the document record. Raises on malformed input.
+        ``file_password`` is used only to decrypt a protected ZIP and is
+        never written into the returned document.
         """
         file_type_lower = (file_type or '').lower()
 
         if file_type_lower == 'zip':
-            return self._parse_zip(file_content), 'utf-8'
+            return self._parse_zip(file_content, file_password=file_password), 'utf-8'
         if file_type_lower in IMAGE_TYPES:
             return self._parse_image(file_content, filename, file_type_lower), 'binary'
         if file_type_lower == 'pdf':
@@ -391,8 +486,12 @@ class ParserMixin:
             }
         }
     
-    def _parse_zip(self, content: bytes) -> Dict[str, Any]:
-        """Parse ZIP file containing CSV, XML (pension), image, and PDF files"""
+    def _parse_zip(self, content: bytes, file_password: Optional[str] = None) -> Dict[str, Any]:
+        """Parse ZIP file containing CSV, XML (pension), image, and PDF files.
+
+        A password is applied only when the archive is encrypted. The
+        password itself is not stored on the parsed document.
+        """
         combined_data = {
             'columns': [],
             'rows': [],
@@ -405,20 +504,13 @@ class ParserMixin:
                 'issues': [],
             }
         }
-        
-        with zipfile.ZipFile(io.BytesIO(content), 'r') as zf:
-            for name in zf.namelist():
-                # Skip directories and hidden files
-                if name.endswith('/') or name.startswith('__') or name.startswith('.'):
-                    continue
+
+        for name, file_content in _zip_members(content, file_password):
                 combined_data['integrity']['zip_file_count'] += 1
-                
+
                 name_lower = name.lower()
                 ext = name_lower.split('.')[-1] if '.' in name_lower else ''
-                
-                with zf.open(name) as f:
-                    file_content = f.read()
-                
+
                 parsed = None
                 file_type = ext
                 
