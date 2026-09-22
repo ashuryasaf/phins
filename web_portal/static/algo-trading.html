@@ -902,8 +902,10 @@
                 <div>
                     <div style="font-weight:700;">Historical backtest</div>
                     <div style="color: var(--text-secondary); font-size: 0.85rem; max-width: 640px;">
-                        Recommended: replay the same strategy rules on Alpaca daily bars and fill at the next open.
-                        Walk-forward checks stability. Compare ranks strategies on identical costs. No orders are sent.
+                        Replays up to 30,000 real Alpaca trades on each trading day and fills at the next print.
+                        If the tape is missing, the day is walked in small steps along Alpaca's bar, still up to 30,000.
+                        Results show daily, weekly, monthly, quarterly, and annual candles plus accumulated gains.
+                        No orders are sent.
                     </div>
                 </div>
                 <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:flex-end;">
@@ -930,6 +932,7 @@
                             <option value="replay">Replay (recommended)</option>
                             <option value="walk_forward">Walk-forward</option>
                             <option value="compare">Compare</option>
+                            <option value="forward">Forward (next print)</option>
                         </select>
                     </label>
                     <label style="font-size:0.75rem; color:var(--text-secondary);">Fill
@@ -938,13 +941,13 @@
                             <option value="same_close">Same close</option>
                         </select>
                     </label>
-                    <label style="font-size:0.75rem; color:var(--text-secondary);">Days
-                        <input id="btDays" class="form-input" type="number" value="252" min="30" max="2000" style="width:90px;">
+                    <label style="font-size:0.75rem; color:var(--text-secondary);">Trading days
+                        <input id="btDays" class="form-input" type="number" value="1" min="1" max="20" style="width:90px;">
                     </label>
                     <button type="button" id="btRunBtn" class="btn btn-primary" onclick="runAlgoBacktest()">Run backtest</button>
                 </div>
             </div>
-            <div id="btResult" style="margin-top:0.75rem; font-size:0.9rem; color:var(--text-secondary);">Uses Alpaca market data when the broker is connected. Results stay on this page.</div>
+            <div id="btResult" style="margin-top:0.75rem; font-size:0.9rem; color:var(--text-secondary);">Runs on Alpaca's trade tape when the broker is connected. Up to 30,000 small trades per session. Candles and accumulated gains appear here.</div>
         </section>
         
         <!-- Advanced Metrics Row -->
@@ -1704,6 +1707,173 @@
             return escapeHtml(value) + (suffix || '');
         }
 
+        function btTapeLine(d) {
+            if (!d || d.max_trades_per_day == null) return '';
+            const days = d.tape_trades_per_day || {};
+            const parts = Object.keys(days).map(function (day) {
+                return day + ': ' + days[day] + ' tape prints';
+            });
+            let extra = '';
+            if (d.truncated_days && d.truncated_days.length) {
+                extra = ' Capped at ' + d.max_trades_per_day + ' on ' + d.truncated_days.join(', ') + '.';
+            }
+            const fills = d.trades_per_day || {};
+            const fillParts = Object.keys(fills).map(function (day) {
+                return day + ': ' + fills[day] + ' strategy fills';
+            });
+            const how = d.small_trades
+                ? 'Small trades walked along Alpaca bars. '
+                : 'Alpaca trade tape. ';
+            return '<div style="margin-top:0.35rem;">' + how + 'Up to ' + escapeHtml(d.max_trades_per_day) +
+                ' trades per session. ' + escapeHtml(parts.join('; ')) +
+                (fillParts.length ? ' ' + escapeHtml(fillParts.join('; ')) + '.' : '') +
+                escapeHtml(extra) + ' ' + escapeHtml(d.small_trade_note || '') + '</div>';
+        }
+
+        function btChartBlock(d) {
+            if (!d || d.error) return '';
+            const frames = [
+                ['day', 'Daily'],
+                ['week', 'Weekly'],
+                ['month', 'Monthly'],
+                ['quarter', 'Quarterly'],
+                ['year', 'Annual'],
+            ];
+            const cards = frames.map(function (frame) {
+                return '<div><div style="font-size:0.75rem; margin-bottom:0.2rem;">' + frame[1] + '</div>' +
+                    '<canvas id="btCandle-' + frame[0] + '" width="280" height="140" ' +
+                    'style="width:100%; height:140px; background:#0c1424; border-radius:8px;"></canvas></div>';
+            }).join('');
+            return '<div id="btCharts" style="margin-top:0.75rem;">' +
+                '<div style="font-weight:600; margin-bottom:0.25rem;">Accumulated gains</div>' +
+                '<canvas id="btGains" width="880" height="160" style="width:100%; height:160px; background:#0c1424; border-radius:8px;"></canvas>' +
+                '<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:8px; margin-top:8px;">' +
+                cards + '</div></div>';
+        }
+
+        function drawBacktestCharts(data) {
+            if (!data || data.error || !document.getElementById('btCharts')) return;
+            drawGains(document.getElementById('btGains'), data.accumulated_gains || []);
+            const candles = data.candles || {};
+            ['day', 'week', 'month', 'quarter', 'year'].forEach(function (frame) {
+                drawCandles(document.getElementById('btCandle-' + frame), candles[frame] || []);
+            });
+        }
+
+        function drawCandles(canvas, rows) {
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+            ctx.fillStyle = '#0c1424';
+            ctx.fillRect(0, 0, w, h);
+            if (!rows.length) {
+                ctx.fillStyle = '#8ea0b8';
+                ctx.font = '12px sans-serif';
+                ctx.fillText('No candles', 12, h / 2);
+                return;
+            }
+            let low = Infinity;
+            let high = -Infinity;
+            rows.forEach(function (row) {
+                low = Math.min(low, Number(row.low));
+                high = Math.max(high, Number(row.high));
+            });
+            if (!isFinite(low) || !isFinite(high) || high <= low) {
+                high = low + 1;
+            }
+            const pad = 12;
+            const slot = (w - pad * 2) / rows.length;
+            const body = Math.max(1, Math.min(10, slot * 0.62));
+            function y(price) {
+                return pad + (high - price) / (high - low) * (h - pad * 2);
+            }
+            rows.forEach(function (row, i) {
+                const open = Number(row.open);
+                const close = Number(row.close);
+                const up = close >= open;
+                const color = up ? '#3ddc97' : '#e15b64';
+                const x = pad + i * slot + slot / 2;
+                ctx.strokeStyle = color;
+                ctx.beginPath();
+                ctx.moveTo(x, y(Number(row.high)));
+                ctx.lineTo(x, y(Number(row.low)));
+                ctx.stroke();
+                const top = y(Math.max(open, close));
+                const bot = y(Math.min(open, close));
+                ctx.fillStyle = color;
+                ctx.fillRect(x - body / 2, top, body, Math.max(1, bot - top));
+            });
+        }
+
+        function drawGains(canvas, rows) {
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+            ctx.fillStyle = '#0c1424';
+            ctx.fillRect(0, 0, w, h);
+            if (!rows.length) {
+                ctx.fillStyle = '#8ea0b8';
+                ctx.font = '12px sans-serif';
+                ctx.fillText('No accumulated gains', 12, h / 2);
+                return;
+            }
+            const values = rows.map(function (row) { return Number(row.gain); });
+            let low = Math.min.apply(null, values.concat([0]));
+            let high = Math.max.apply(null, values.concat([0]));
+            if (high <= low) high = low + 1;
+            const pad = 16;
+            function x(i) {
+                if (rows.length === 1) return w / 2;
+                return pad + i / (rows.length - 1) * (w - pad * 2);
+            }
+            function y(value) {
+                return pad + (high - value) / (high - low) * (h - pad * 2);
+            }
+            ctx.strokeStyle = 'rgba(227,191,111,0.35)';
+            ctx.beginPath();
+            ctx.moveTo(pad, y(0));
+            ctx.lineTo(w - pad, y(0));
+            ctx.stroke();
+            const last = values[values.length - 1];
+            ctx.strokeStyle = last >= 0 ? '#e3bf6f' : '#e15b64';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            values.forEach(function (value, i) {
+                const px = x(i);
+                const py = y(value);
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            });
+            ctx.stroke();
+            ctx.lineWidth = 1;
+            ctx.fillStyle = '#d7e2f0';
+            ctx.font = '12px sans-serif';
+            const label = (last >= 0 ? '+' : '') + last.toFixed(2);
+            ctx.fillText('Gain ' + label, pad, 14);
+        }
+
+        function btForwardLine(d) {
+            const forward = d && d.forward_test;
+            if (!forward) return '';
+            const orders = forward.awaiting_next_print || [];
+            const when = 'Forward test as of ' + (forward.as_of || 'the latest print') + '. ';
+            if (!orders.length) {
+                return '<div style="margin-top:0.35rem;">' + escapeHtml(when) +
+                    'No order is waiting. Future prices were not used.</div>';
+            }
+            const bits = orders.map(function (order) {
+                return (order.side || '') + ' ' + (order.qty || 0) + ' ' + (order.symbol || '') +
+                    ' signaled ' + (order.signal_date || '');
+            });
+            return '<div style="margin-top:0.35rem;">' + escapeHtml(when) +
+                'Waiting for the next Alpaca print: ' + escapeHtml(bits.join('; ')) +
+                '. Future prices were not used.</div>';
+        }
+
         function renderAlgoBacktest(d) {
             if (!d || d.error) {
                 return '<div style="color:var(--danger, #c44);">' + escapeHtml(d && d.error ? d.error : 'Backtest failed') + '</div>';
@@ -1715,7 +1885,8 @@
                     '</td><td>' + btMetric(row.max_drawdown_pct, '%') + '</td><td>' + btMetric(row.trade_count) + '</td></tr>'
                 ).join('');
                 return '<table class="data-table"><thead><tr><th>#</th><th>Strategy</th><th>Return</th><th>Sharpe</th><th>Max DD</th><th>Trades</th></tr></thead><tbody>' +
-                    rows + '</tbody></table><div style="margin-top:0.4rem;">No orders were submitted.</div>';
+                    rows + '</tbody></table><div style="margin-top:0.4rem;">No orders were submitted.</div>' +
+                    btTapeLine(d) + btChartBlock(d);
             }
             if (Array.isArray(d.folds)) {
                 const rows = d.folds.map(fold => {
@@ -1726,7 +1897,7 @@
                 }).join('');
                 return '<div>Stitched return ' + escapeHtml(d.stitched_return_pct) + '%</div>' +
                     '<table class="data-table"><thead><tr><th>Fold</th><th>Window</th><th>Return</th><th>Sharpe</th><th>Trades</th></tr></thead><tbody>' +
-                    rows + '</tbody></table>';
+                    rows + '</tbody></table>' + btTapeLine(d) + btChartBlock(d);
             }
             const m = d.metrics || {};
             return '<div style="display:flex; gap:1rem; flex-wrap:wrap;">' +
@@ -1738,7 +1909,8 @@
                 '<span>Trades <b>' + btMetric(d.trade_count) + '</b></span>' +
                 '<span>Buy &amp; hold <b>' + btMetric(m.benchmark_return_pct, '%') + '</b></span>' +
                 '<span>Ending <b>$' + btMetric(d.ending_equity) + '</b></span>' +
-                '</div><div style="margin-top:0.35rem;">' + escapeHtml(d.disclaimer || '') + '</div>';
+                '</div><div style="margin-top:0.35rem;">' + escapeHtml(d.disclaimer || '') + '</div>' +
+                btForwardLine(d) + btTapeLine(d) + btChartBlock(d);
         }
 
         async function runAlgoBacktest() {
@@ -1750,13 +1922,17 @@
                 strategy: document.getElementById('btStrategy').value,
                 symbols: [document.getElementById('btSymbol').value.trim().toUpperCase()],
                 fill_model: document.getElementById('btFill').value,
-                days: parseInt(document.getElementById('btDays').value, 10) || 252,
-                timeframe: '1Day',
+                days: parseInt(document.getElementById('btDays').value, 10) || 1,
             };
             if (mode === 'compare') {
                 body.strategies = ['momentum', 'mean_reversion', 'rsi_strategy', 'macd_crossover', 'trend_following', 'ai_adaptive'];
             }
-            result.textContent = 'Replaying on historical bars. No orders are sent...';
+            if (mode === 'forward') {
+                body.fill_model = 'next_open';
+            }
+            result.textContent = mode === 'forward'
+                ? 'Replaying through the latest Alpaca print. The next order waits for a real print...'
+                : 'Replaying Alpaca trades. No orders are sent...';
             try {
                 const response = await authFetch('/api/algo/backtest', {
                     method: 'POST',
@@ -1764,6 +1940,7 @@
                 });
                 const data = await response.json();
                 result.innerHTML = renderAlgoBacktest(data);
+                drawBacktestCharts(data);
             } catch (err) {
                 result.textContent = err.message || 'Backtest failed';
             }

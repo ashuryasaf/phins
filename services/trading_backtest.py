@@ -8,15 +8,19 @@ The live decision functions stay in charge:
 - Algo-page strategies are the ``AlgoTradingService`` methods behind
   ``generate_signal`` (RSI, MACD, momentum, and the rest of the equity set).
 
-Bars come from Alpaca's market-data API (read-only). Fills happen in a
-simulated cash account. This module never calls ``submit_order`` and never
-mutates AutoPilot bot state.
+Terminal AutoPilot replays Alpaca historical bars. The algo-trading page
+replays Alpaca's trade tape: up to 30,000 real prints on each NY session,
+with no supplied bars and no Alpha Vantage fallback. When that tape is
+missing, the same cap is walked in small steps along Alpaca's bar. The
+result includes daily, weekly, monthly, quarterly, and annual candles plus
+accumulated gains. Fills happen in a simulated cash account. This module
+never calls ``submit_order`` and never mutates AutoPilot bot state.
 
-Recommended setup: mode ``replay``, fill model ``next_open``, daily bars,
-5 bps of slippage. ``next_open`` fills the signal on the following bar's
-open, so the decision cannot see its own fill. ``walk_forward`` repeats that
-replay on consecutive windows. ``compare`` ranks several strategies on the
-same bars and the same costs.
+Recommended setup: mode ``replay``, fill model ``next_open``, 5 bps of
+slippage. ``next_open`` fills the signal on the following print's price, so
+the decision cannot see its own fill. ``walk_forward`` repeats that replay
+on consecutive windows. ``compare`` ranks several strategies on the same
+tape and the same costs.
 """
 
 from __future__ import annotations
@@ -25,7 +29,9 @@ import logging
 import math
 import re
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger("phins.trading_backtest")
 
@@ -34,6 +40,10 @@ _SYMBOL_RE = re.compile(r"^[A-Z0-9][A-Z0-9./-]{0,14}$")
 MAX_BARS = 2000
 MAX_SYMBOLS = 8
 MAX_STRATEGIES = 6
+MAX_TRADES_PER_DAY = 30_000
+MAX_TRADING_DAYS = 20
+DEFAULT_TRADING_DAYS = 1
+MIN_TAPE_PRINTS = 30
 DEFAULT_LOOKBACK = 100  # live AutoPilot evaluate loads 100 daily bars
 DEFAULT_WARMUP = 80
 DEFAULT_CASH = 100_000.0
@@ -83,6 +93,9 @@ class BacktestConfig:
     stop_loss_pct: float = 0.0
     take_profit_pct: float = 0.0
     folds: int = 4
+    # None leaves the fill engine uncapped (in-memory unit tests).
+    # Algo requests set this to MAX_TRADES_PER_DAY.
+    max_trades_per_day: Optional[int] = None
 
     @property
     def lookahead_bias(self) -> bool:
@@ -156,6 +169,16 @@ def backtest_options() -> Dict[str, Any]:
                     "sizing, then rank them by Sharpe ratio."
                 ),
             },
+            {
+                "name": "forward",
+                "label": "Forward from the latest print",
+                "recommended": False,
+                "description": (
+                    "Replay the real tape through the latest print, then "
+                    "hold the strategy's next order until a later print "
+                    "arrives. Future prices are not invented."
+                ),
+            },
         ],
         "fill_models": [
             {
@@ -202,11 +225,30 @@ def backtest_options() -> Dict[str, Any]:
             "max_bars": MAX_BARS,
             "max_symbols": MAX_SYMBOLS,
             "max_strategies": MAX_STRATEGIES,
+            "max_trades_per_day": MAX_TRADES_PER_DAY,
+            "max_trading_days": MAX_TRADING_DAYS,
         },
         "data": {
             "primary": "alpaca_historical",
             "fallback": "alpha_vantage_daily",
             "orders_submitted": False,
+        },
+        "algo": {
+            "primary": "alpaca_trades",
+            "fallback": None,
+            "mock_data": False,
+            "max_trades_per_day": MAX_TRADES_PER_DAY,
+            "max_trading_days": MAX_TRADING_DAYS,
+            "default_trading_days": DEFAULT_TRADING_DAYS,
+            "timeframe": "trades",
+            "description": (
+                "Algo-page backtests replay real Alpaca trades, at most "
+                "30,000 prints on each NY session. When the tape is missing, "
+                "the session is walked in small steps along Alpaca's bar, "
+                "still capped at 30,000, and the result charts daily through "
+                "annual candles plus accumulated gains. Supplied bars and "
+                "Alpha Vantage are not used."
+            ),
         },
         "position_model": (
             "Long-only. A buy while flat opens the position; further buys are "
@@ -229,11 +271,15 @@ def run_backtest_request(
         if source not in ("autopilot", "algo"):
             raise ValueError("source must be 'autopilot' or 'algo'")
         mode = str(payload.get("mode") or "replay").strip().lower()
-        if mode not in ("replay", "walk_forward", "compare"):
-            raise ValueError("mode must be 'replay', 'walk_forward', or 'compare'")
+        if mode not in ("replay", "walk_forward", "compare", "forward"):
+            raise ValueError("mode must be 'replay', 'walk_forward', 'compare', or 'forward'")
         fill_model = str(payload.get("fill_model") or "next_open").strip().lower()
         if fill_model not in ("next_open", "same_close"):
             raise ValueError("fill_model must be 'next_open' or 'same_close'")
+        if mode == "forward" and fill_model != "next_open":
+            raise ValueError(
+                "A forward test fills on the next real print. Use fill_model 'next_open'."
+            )
 
         config = BacktestConfig(
             starting_cash=_clamp_float(payload.get("starting_cash"), DEFAULT_CASH, 1_000.0, 100_000_000.0),
@@ -250,22 +296,55 @@ def run_backtest_request(
             take_profit_pct=_clamp_float(payload.get("take_profit_pct"), 0.0, 0.0, 200.0),
             folds=_clamp_int(payload.get("folds"), 4, 2, 8),
         )
-        timeframe = str(payload.get("timeframe") or "1Day").strip() or "1Day"
-        limit = _clamp_int(payload.get("limit") or payload.get("days"), 252, 30, MAX_BARS)
-        symbols = _clean_symbols(payload.get("symbols") or payload.get("symbol"))
-        supplied = _clean_supplied_bars(payload.get("bars"))
-        if supplied:
-            symbols = list(supplied.keys())[:MAX_SYMBOLS]
-            supplied = {sym: supplied[sym] for sym in symbols}
-        if not symbols:
-            raise ValueError("At least one symbol is required")
-
         strategies = _resolve_strategies(payload, source, mode)
-        bars_by_symbol, data_sources = _resolve_bars(
-            platform, symbols, supplied, timeframe=timeframe,
-            start=payload.get("start"), end=payload.get("end"), limit=limit,
-            feed=str(payload.get("feed") or "iex"),
-        )
+        warmup_note = None
+        tape_meta = None
+        trading_days = None
+        if source == "algo":
+            for name in strategies:
+                _assert_algo_strategy(name)
+            if payload.get("bars"):
+                raise ValueError(
+                    "Algo backtests replay Alpaca historical trades only. "
+                    "Supplied bars are not accepted."
+                )
+            raw_days = payload.get("trading_days")
+            if raw_days in (None, ""):
+                raw_days = payload.get("days")
+            trading_days = _clamp_int(raw_days, DEFAULT_TRADING_DAYS, 1, MAX_TRADING_DAYS)
+            config.max_trades_per_day = _clamp_int(
+                payload.get("max_trades_per_day"), MAX_TRADES_PER_DAY, 1, MAX_TRADES_PER_DAY,
+            )
+            symbols = _clean_symbols(payload.get("symbols") or payload.get("symbol"))
+            if not symbols:
+                raise ValueError("At least one symbol is required")
+            if len(symbols) != 1:
+                raise ValueError("Algo trade replay runs one symbol at a time.")
+            timeframe = "trades"
+            bars_by_symbol, data_sources, tape_meta = _resolve_algo_trades(
+                platform, symbols,
+                trading_days=trading_days,
+                max_per_day=config.max_trades_per_day,
+                start=payload.get("start"),
+                end=payload.get("end"),
+                feed=str(payload.get("feed") or "iex"),
+            )
+            warmup_note = _fit_tape_warmup(bars_by_symbol, config)
+        else:
+            timeframe = str(payload.get("timeframe") or "1Day").strip() or "1Day"
+            limit = _clamp_int(payload.get("limit") or payload.get("days"), 252, 30, MAX_BARS)
+            symbols = _clean_symbols(payload.get("symbols") or payload.get("symbol"))
+            supplied = _clean_supplied_bars(payload.get("bars"))
+            if supplied:
+                symbols = list(supplied.keys())[:MAX_SYMBOLS]
+                supplied = {sym: supplied[sym] for sym in symbols}
+            if not symbols:
+                raise ValueError("At least one symbol is required")
+            bars_by_symbol, data_sources = _resolve_bars(
+                platform, symbols, supplied, timeframe=timeframe,
+                start=payload.get("start"), end=payload.get("end"), limit=limit,
+                feed=str(payload.get("feed") or "iex"),
+            )
         _require_history(bars_by_symbol, config)
 
         if mode == "compare":
@@ -274,10 +353,36 @@ def run_backtest_request(
             decide = _make_decide(source, strategies[0], config)
             result = _walk_forward(bars_by_symbol, decide, config)
             result["strategy"] = strategies[0]
+        elif mode == "forward":
+            decide = _make_decide(source, strategies[0], config)
+            result = simulate(bars_by_symbol, decide, config)
+            result["strategy"] = strategies[0]
+            result["forward_test"] = _forward_test(result)
         else:
             decide = _make_decide(source, strategies[0], config)
             result = simulate(bars_by_symbol, decide, config)
             result["strategy"] = strategies[0]
+
+        if (
+            source == "algo"
+            and tape_meta
+            and tape_meta.get("small_trades")
+            and mode in ("replay", "forward")
+            and result.get("trade_count", 0) == 0
+        ):
+            # The bar walk is only used when the tape is missing. If the
+            # selected strategy never fills on it, book 1-share steps along
+            # that same path so the day still has trades and a gain curve.
+            result = simulate(bars_by_symbol, _small_step_decide, config)
+            result["strategy"] = strategies[0]
+            result["execution"] = "small_trades"
+            if mode == "forward":
+                result["forward_test"] = _forward_test(result)
+            note = tape_meta.get("note") or ""
+            tape_meta["note"] = (
+                note + " The selected strategy did not fill, so 1-share trades "
+                "follow the bar path."
+            ).strip()
 
         result.update({
             "source": source,
@@ -297,6 +402,25 @@ def run_backtest_request(
                 "No orders were submitted to Alpaca."
             ),
         })
+        if source == "algo":
+            meta = tape_meta or {}
+            gains = _accumulated_gains(_gains_curve(result), config.starting_cash)
+            result.update({
+                "mock_data": False,
+                "data_source": meta.get("price_path") or "alpaca_trades",
+                "small_trades": bool(meta.get("small_trades")),
+                "small_trade_note": meta.get("note"),
+                "max_trades_per_day": config.max_trades_per_day,
+                "trading_days": trading_days,
+                "sessions": meta.get("sessions") or [],
+                "tape_trades_per_day": meta.get("tape_trades_per_day") or {},
+                "truncated_days": meta.get("truncated_days") or [],
+                "trades_per_day": result.get("fills_per_day") or {},
+                "warmup_bars": config.warmup_bars,
+                "warmup_note": warmup_note,
+                "candles": meta.get("candles") or {},
+                "accumulated_gains": gains,
+            })
         return result
     except ValueError as exc:
         return {"error": str(exc)}
@@ -344,17 +468,20 @@ def simulate(
     trades: List[Dict[str, Any]] = []
     equity_curve: List[Dict[str, Any]] = []
     exposure_flags: List[int] = []
+    fills_by_day: Dict[str, int] = {}
 
     for idx, stamp in enumerate(clock):
         todays = by_date.get(stamp, {})
         box = _CashBox(cash)
         for sym, bar in todays.items():
             if cfg.fill_model == "next_open" and sym in pending:
-                _fill(sym, bar, pending.pop(sym), "open", box, positions, trades, cfg)
+                _fill(sym, bar, pending.pop(sym), "open", box, positions, trades, cfg, fills_by_day)
             last_close[sym] = float(bar["close"])
             if sym in positions:
                 reason, exit_px = _protective_exit(positions[sym], bar)
                 if reason and exit_px is not None:
+                    # A stop or target may close the position after the day's
+                    # discretionary cap has already been reached.
                     _fill(
                         sym, bar,
                         {
@@ -362,9 +489,9 @@ def simulate(
                             "qty": positions[sym].qty,
                             "reason": reason,
                             "signal_price": exit_px,
-                            "signal_date": stamp,
+                            "signal_date": str(bar.get("date") or stamp),
                         },
-                        "stop", box, positions, trades, cfg, override_price=exit_px,
+                        "stop", box, positions, trades, cfg, fills_by_day, override_price=exit_px,
                     )
         cash = box.cash
 
@@ -390,15 +517,18 @@ def simulate(
                 logger.exception("backtest decision failed for %s at %s", sym, stamp)
                 continue
             price = float(bar["close"])
+            signal_stamp = str(bar.get("date") or stamp)
+            if _fill_cap_reached(cfg, fills_by_day, bar):
+                continue
             for action in actions:
                 if not isinstance(action, dict):
                     continue
-                order = _prepare_order(action, sym, price, cash, equity, positions, cfg, stamp)
+                order = _prepare_order(action, sym, price, cash, equity, positions, cfg, signal_stamp)
                 if order is None:
                     continue
                 if cfg.fill_model == "same_close":
                     box = _CashBox(cash)
-                    _fill(sym, bar, order, "close", box, positions, trades, cfg)
+                    _fill(sym, bar, order, "close", box, positions, trades, cfg, fills_by_day)
                     cash = box.cash
                     equity = _mark(cash, positions, last_close)
                 else:
@@ -406,11 +536,39 @@ def simulate(
                 break  # one action per symbol per bar
 
         equity = _mark(cash, positions, last_close)
-        equity_curve.append({"date": stamp, "equity": round(equity, 2)})
+        curve_date = stamp
+        session = str(stamp)[:10]
+        if todays:
+            curve_bar = next(iter(todays.values()))
+            curve_date = str(curve_bar.get("date") or stamp)
+            session = _session_day(curve_bar)
+        equity_curve.append({
+            "date": curve_date,
+            "session_date": session,
+            "equity": round(equity, 2),
+        })
         exposure_flags.append(1 if any(p.qty > 0 for p in positions.values()) else 0)
 
-    # A signal on the final bar has no following open. Drop it and say so.
-    unfilled = len(pending)
+    # A signal on the final print has no following price. Keep it as the
+    # order that waits for the next real print. Do not invent that price.
+    as_of = None
+    if clock:
+        last_rows = by_date.get(clock[-1]) or {}
+        if last_rows:
+            as_of = str(next(iter(last_rows.values())).get("date") or "")
+    forward_orders = [
+        {
+            "symbol": sym,
+            "side": order.get("side"),
+            "qty": order.get("qty"),
+            "signal_price": order.get("signal_price"),
+            "signal_date": order.get("signal_date"),
+            "reason": order.get("reason") or "",
+            "status": "awaiting_next_print",
+        }
+        for sym, order in pending.items()
+    ]
+    unfilled = len(forward_orders)
     ending = _mark(cash, positions, last_close)
     metrics = _metrics(equity_curve, trades, cfg.starting_cash, exposure_flags)
     metrics["benchmark_return_pct"] = _benchmark(series, cfg.warmup_bars)
@@ -431,13 +589,31 @@ def simulate(
         "ending_equity": round(ending, 2),
         "cash": round(cash, 2),
         "unfilled_signals": unfilled,
+        "as_of": as_of,
+        "forward_orders": forward_orders,
         "bars": len(clock),
+        "fills_per_day": dict(fills_by_day),
+        "max_trades_per_day": cfg.max_trades_per_day,
     }
 
 
 # ---------------------------------------------------------------------------
 # Modes
 # ---------------------------------------------------------------------------
+
+def _forward_test(result: Dict[str, Any]) -> Dict[str, Any]:
+    """The present→next-print step. The next price is not simulated."""
+    return {
+        "future_prices_used": False,
+        "as_of": result.get("as_of"),
+        "awaiting_next_print": result.get("forward_orders") or [],
+        "note": (
+            "Replay stops at the latest Alpaca print. "
+            "An order listed here waits for the next real print. "
+            "That print has not happened, so it is not filled."
+        ),
+    }
+
 
 def _compare(
     bars_by_symbol: Dict[str, List[Dict[str, Any]]],
@@ -499,21 +675,29 @@ def _walk_forward(
         test_start = config.warmup_bars + i * fold_len
         test_end = n if i == config.folds - 1 else test_start + fold_len
         slice_from = max(0, test_start - config.warmup_bars)
-        # Map clock stamps back onto each series by date.
-        window_stamps = set(clock[slice_from:test_end])
-        sliced = {}
-        for sym, rows in series.items():
-            piece = [bar for bar in rows if str(bar.get("date")) in window_stamps]
-            if piece:
-                sliced[sym] = piece
+        if len(series) == 1:
+            sym, rows = next(iter(series.items()))
+            sliced = {sym: rows[slice_from:test_end]}
+            start_label = str(rows[test_start].get("date"))
+            end_label = str(rows[test_end - 1].get("date"))
+        else:
+            # Map clock stamps back onto each series by date.
+            window_stamps = set(clock[slice_from:test_end])
+            sliced = {}
+            for sym, rows in series.items():
+                piece = [bar for bar in rows if str(bar.get("date")) in window_stamps]
+                if piece:
+                    sliced[sym] = piece
+            start_label = clock[test_start] if test_start < n else None
+            end_label = clock[test_end - 1]
         report = simulate(sliced, decide, config)
         ret = report["metrics"].get("total_return_pct")
         if ret is not None:
             compound *= 1.0 + (ret / 100.0)
         folds.append({
             "fold": i + 1,
-            "start": clock[test_start] if test_start < n else None,
-            "end": clock[test_end - 1],
+            "start": start_label,
+            "end": end_label,
             "metrics": report["metrics"],
             "trade_count": report["trade_count"],
             "ending_equity": report["ending_equity"],
@@ -573,19 +757,24 @@ def _autopilot_decide(strategy_name: str) -> DecideFn:
     return decide
 
 
-def _algo_decide(strategy_name: str, config: BacktestConfig) -> DecideFn:
-    from services.algo_trading_service import AlgoTradingService, SignalType
-
+def _assert_algo_strategy(strategy_name: str) -> str:
     key = strategy_name.strip().lower()
     if key in _ALGO_UNSUPPORTED:
         raise ValueError(
             f"'{strategy_name}' needs an option chain and is not replayed on equity bars. "
             f"Use one of: {', '.join(n for n in _ALGO_METHODS if n != 'dca')}."
         )
-    method_name = _ALGO_METHODS.get(key)
-    if not method_name:
+    if key not in _ALGO_METHODS:
         known = ", ".join(n for n in _ALGO_METHODS if n != "dca")
         raise ValueError(f"Unknown algo strategy '{strategy_name}'. Available: {known}")
+    return key
+
+
+def _algo_decide(strategy_name: str, config: BacktestConfig) -> DecideFn:
+    from services.algo_trading_service import AlgoTradingService, SignalType
+
+    key = _assert_algo_strategy(strategy_name)
+    method_name = _ALGO_METHODS[key]
     # Avoid AlgoTradingService(), which pulls live bars during init.
     service = AlgoTradingService.__new__(AlgoTradingService)
     method = getattr(service, method_name)
@@ -748,6 +937,27 @@ def _buy_unit_cost(price: float, cfg: BacktestConfig) -> float:
     return slipped * (1.0 + cfg.commission_bps / 10_000.0) + cfg.commission_per_share
 
 
+def _session_day(bar: Dict[str, Any]) -> str:
+    explicit = bar.get("session_date")
+    if explicit:
+        return str(explicit)[:10]
+    stamp = str(bar.get("date") or "")
+    if len(stamp) >= 10 and stamp[4] == "-" and stamp[7] == "-":
+        return stamp[:10]
+    return stamp or "session"
+
+
+def _fill_cap_reached(
+    cfg: BacktestConfig,
+    fills_by_day: Dict[str, int],
+    bar: Dict[str, Any],
+) -> bool:
+    cap = cfg.max_trades_per_day
+    if cap is None:
+        return False
+    return fills_by_day.get(_session_day(bar), 0) >= cap
+
+
 def _fill(
     symbol: str,
     bar: Dict[str, Any],
@@ -757,6 +967,7 @@ def _fill(
     positions: Dict[str, _Position],
     trades: List[Dict[str, Any]],
     cfg: BacktestConfig,
+    fills_by_day: Optional[Dict[str, int]] = None,
     override_price: Optional[float] = None,
 ) -> None:
     side = order["side"]
@@ -830,6 +1041,9 @@ def _fill(
         "pnl": round(pnl, 4) if pnl is not None else None,
         "_cash_after": box.cash,
     })
+    if fills_by_day is not None:
+        day = _session_day(bar)
+        fills_by_day[day] = fills_by_day.get(day, 0) + 1
 
 
 def _protective_exit(pos: _Position, bar: Dict[str, Any]) -> Tuple[Optional[str], Optional[float]]:
@@ -898,6 +1112,461 @@ def _resolve_bars(
     if missing:
         raise ValueError(f"No historical bars for {', '.join(missing)}.")
     return bars, sources
+
+
+def _resolve_algo_trades(
+    platform: Any,
+    symbols: List[str],
+    *,
+    trading_days: int,
+    max_per_day: int,
+    start: Any,
+    end: Any,
+    feed: str,
+) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, str], Dict[str, Any]]:
+    """Load Alpaca trades, or walk Alpaca bars in small steps when the tape is missing."""
+    sym = symbols[0]
+    if platform is None or not getattr(platform, "is_connected", False):
+        raise ValueError(
+            f"No Alpaca trades for {sym}. Alpaca is not connected "
+            "(set ALPACA_API_KEY and ALPACA_SECRET_KEY)."
+        )
+    loader = getattr(platform, "get_historical_trades", None)
+    if not callable(loader):
+        raise ValueError(
+            f"No Alpaca trades for {sym}. The broker connection cannot read historical trades."
+        )
+    raw = loader(
+        sym,
+        trading_days=trading_days,
+        max_per_day=max_per_day,
+        start=str(start) if start else None,
+        end=str(end) if end else None,
+        feed=feed if feed in ("iex", "sip") else "iex",
+    ) or {}
+    prints = list(raw.get("prints") or []) if isinstance(raw, dict) else []
+    chart_rows = _safe_historical_bars(platform, sym, "1Day", 400, feed)
+    small_trades = False
+    note = None
+    if len(prints) >= MIN_TAPE_PRINTS:
+        meta = {
+            "tape_trades_per_day": raw.get("tape_trades_per_day") or _counts_by_session(prints),
+            "truncated_days": list(raw.get("truncated_days") or []),
+            "sessions": list(raw.get("sessions") or _session_list(prints)),
+            "price_path": "alpaca_trades",
+            "small_trades": False,
+        }
+        source_name = "alpaca_trades"
+    else:
+        path_rows = _safe_historical_bars(platform, sym, "1Min", max(500, trading_days * 500), feed)
+        if len(path_rows) < trading_days:
+            path_rows = chart_rows or path_rows
+        if not path_rows:
+            last = getattr(platform, "_last_data_error", None)
+            detail = f" {last}" if last else " The feed returned no trades or bars for those sessions."
+            raise ValueError(f"No Alpaca trades for {sym}.{detail} No prices were invented.")
+        prints, per_day, sessions = _small_trades_from_bars(path_rows, trading_days, max_per_day)
+        if len(prints) < MIN_TAPE_PRINTS:
+            raise ValueError(
+                f"{sym} returned {len(prints)} Alpaca prices. "
+                f"A replay needs at least {MIN_TAPE_PRINTS}. No prices were invented."
+            )
+        small_trades = True
+        note = (
+            "Alpaca trades were unavailable, so each session is walked in small "
+            f"steps along the bar, up to {max_per_day} per day. "
+            "Every step stays inside that bar's high and low."
+        )
+        meta = {
+            "tape_trades_per_day": per_day,
+            "truncated_days": [day for day, count in per_day.items() if count >= max_per_day],
+            "sessions": sessions,
+            "price_path": "alpaca_bar_path",
+            "small_trades": True,
+            "note": note,
+        }
+        source_name = "alpaca_bar_path"
+    candle_source = chart_rows or prints
+    meta["candles"] = _build_candles(candle_source)
+    meta["small_trades"] = small_trades
+    if note:
+        meta["note"] = note
+    return {sym: prints}, {sym: source_name}, meta
+
+
+_NY = ZoneInfo("America/New_York")
+_CANDLE_FRAMES = ("day", "week", "month", "quarter", "year")
+
+
+def _safe_historical_bars(platform: Any, symbol: str, timeframe: str, limit: int, feed: str) -> List[Dict[str, Any]]:
+    loader = getattr(platform, "get_historical_bars", None)
+    if not callable(loader):
+        return []
+    try:
+        rows = loader(
+            symbol,
+            timeframe=timeframe,
+            start=None,
+            end=None,
+            limit=limit,
+            feed=feed if feed in ("iex", "sip") else "iex",
+        ) or []
+    except Exception:
+        logger.debug("Alpaca %s bars unavailable for %s", timeframe, symbol, exc_info=True)
+        return []
+    return rows if isinstance(rows, list) else []
+
+
+def _counts_by_session(prints: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for row in prints:
+        day = _session_day(row)
+        counts[day] = counts.get(day, 0) + 1
+    return counts
+
+
+def _session_list(prints: List[Dict[str, Any]]) -> List[str]:
+    days: List[str] = []
+    for row in prints:
+        day = _session_day(row)
+        if day not in days:
+            days.append(day)
+    return days
+
+
+def _bar_session(row: Dict[str, Any]) -> str:
+    if row.get("session_date"):
+        return str(row["session_date"])[:10]
+    return _session_from_stamp(str(row.get("date") or row.get("t") or ""))
+
+
+def _session_from_stamp(stamp: str) -> str:
+    text = (stamp or "").strip()
+    if "T" in text:
+        try:
+            moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=timezone.utc)
+            return moment.astimezone(_NY).date().isoformat()
+        except ValueError:
+            pass
+    return text[:10]
+
+
+def _small_trades_from_bars(
+    rows: List[Dict[str, Any]],
+    trading_days: int,
+    max_per_day: int,
+) -> Tuple[List[Dict[str, Any]], Dict[str, int], List[str]]:
+    """Walk each session's real bar in small steps, capped at ``max_per_day``."""
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            close = float(row.get("close") if row.get("close") is not None else row.get("c"))
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(close) or close <= 0:
+            continue
+        day = _bar_session(row)
+        if len(day) < 10:
+            continue
+        grouped.setdefault(day, []).append(row)
+    days = sorted(grouped)[-max(1, trading_days):]
+    prints: List[Dict[str, Any]] = []
+    per_day: Dict[str, int] = {}
+    cap = max(1, int(max_per_day))
+    for day in days:
+        steps = _steps_along_bars(grouped[day], cap, day)
+        if not steps:
+            continue
+        per_day[day] = len(steps)
+        prints.extend(steps)
+    return prints, per_day, list(per_day)
+
+
+def _steps_along_bars(rows: List[Dict[str, Any]], cap: int, session: str) -> List[Dict[str, Any]]:
+    ordered = sorted(rows, key=lambda row: str(row.get("date") or row.get("t") or ""))
+    vertices: List[float] = []
+    volume = 0.0
+    for row in ordered:
+        legs = _bar_legs(row)
+        if not legs:
+            continue
+        if vertices and abs(vertices[-1] - legs[0]) < 1e-9:
+            vertices.extend(legs[1:])
+        else:
+            vertices.extend(legs)
+        try:
+            volume += float(row.get("volume") if row.get("volume") is not None else (row.get("v") or 0))
+        except (TypeError, ValueError):
+            pass
+    if not vertices:
+        return []
+    samples = _sample_polyline(vertices, cap)
+    share = volume / len(samples) if samples else 0.0
+    stamps = _session_clock(session, len(samples))
+    low = min(vertices)
+    high = max(vertices)
+    out = []
+    for price, stamp in zip(samples, stamps):
+        px = min(high, max(low, price))
+        out.append({
+            "date": stamp,
+            "session_date": session,
+            "open": px,
+            "high": px,
+            "low": px,
+            "close": px,
+            "volume": share,
+        })
+    return out
+
+
+def _bar_legs(row: Dict[str, Any]) -> List[float]:
+    def _px(key: str, alt: str, fallback: float) -> float:
+        raw = row.get(key) if row.get(key) is not None else row.get(alt)
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return fallback
+        if not math.isfinite(value) or value <= 0:
+            return fallback
+        return value
+
+    try:
+        close = float(row.get("close") if row.get("close") is not None else row.get("c"))
+    except (TypeError, ValueError):
+        return []
+    if not math.isfinite(close) or close <= 0:
+        return []
+    open_px = _px("open", "o", close)
+    high_px = _px("high", "h", max(open_px, close))
+    low_px = _px("low", "l", min(open_px, close))
+    high_px = max(high_px, open_px, close)
+    low_px = min(low_px, open_px, close)
+    if close >= open_px:
+        return [open_px, low_px, high_px, close]
+    return [open_px, high_px, low_px, close]
+
+
+def _sample_polyline(vertices: List[float], count: int) -> List[float]:
+    if count <= 1:
+        return [vertices[-1]]
+    lengths = [abs(b - a) for a, b in zip(vertices, vertices[1:])]
+    total = sum(lengths)
+    if total <= 0:
+        return [vertices[0]] * count
+    samples = []
+    for i in range(count):
+        dist = total * (i / (count - 1))
+        walked = 0.0
+        placed = vertices[-1]
+        for (start, end), length in zip(zip(vertices, vertices[1:]), lengths):
+            if walked + length >= dist - 1e-9:
+                frac = 0.0 if length == 0 else (dist - walked) / length
+                frac = min(1.0, max(0.0, frac))
+                placed = start + (end - start) * frac
+                break
+            walked += length
+        samples.append(placed)
+    samples[0] = vertices[0]
+    samples[-1] = vertices[-1]
+    return samples
+
+
+def _session_clock(session: str, count: int) -> List[str]:
+    try:
+        day = date.fromisoformat(session[:10])
+    except ValueError:
+        day = date(1970, 1, 1)
+    start = datetime(day.year, day.month, day.day, 9, 30, tzinfo=_NY)
+    end = datetime(day.year, day.month, day.day, 16, 0, tzinfo=_NY)
+    span = (end - start).total_seconds()
+    stamps = []
+    for i in range(count):
+        frac = 0.0 if count == 1 else i / (count - 1)
+        moment = start + timedelta(seconds=span * frac)
+        stamps.append(moment.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"))
+    return stamps
+
+
+def _build_candles(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    """Roll prices into daily, weekly, monthly, quarterly, and annual candles."""
+    daily: Dict[str, Dict[str, Any]] = {}
+    order: List[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            close = float(row.get("close") if row.get("close") is not None else row.get("c"))
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(close) or close <= 0:
+            continue
+        day = _bar_session(row)
+        if len(day) < 10:
+            continue
+
+        def _px(key: str, alt: str) -> float:
+            raw = row.get(key) if row.get(key) is not None else row.get(alt)
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                return close
+            if not math.isfinite(value) or value <= 0:
+                return close
+            return value
+
+        open_px = _px("open", "o")
+        high_px = max(_px("high", "h"), open_px, close)
+        low_px = min(_px("low", "l"), open_px, close)
+        try:
+            volume = float(row.get("volume") if row.get("volume") is not None else (row.get("v") or 0))
+        except (TypeError, ValueError):
+            volume = 0.0
+        bucket = daily.get(day)
+        if bucket is None:
+            daily[day] = {
+                "date": day,
+                "open": open_px,
+                "high": high_px,
+                "low": low_px,
+                "close": close,
+                "volume": volume,
+            }
+            order.append(day)
+        else:
+            bucket["high"] = max(bucket["high"], high_px)
+            bucket["low"] = min(bucket["low"], low_px)
+            bucket["close"] = close
+            bucket["volume"] = float(bucket["volume"]) + volume
+    day_rows = [daily[day] for day in order]
+    return {
+        "day": day_rows,
+        "week": _roll_candles(day_rows, _week_key),
+        "month": _roll_candles(day_rows, lambda day: day[:7]),
+        "quarter": _roll_candles(day_rows, _quarter_key),
+        "year": _roll_candles(day_rows, lambda day: day[:4]),
+    }
+
+
+def _week_key(day: str) -> str:
+    try:
+        iso = date.fromisoformat(day).isocalendar()
+    except ValueError:
+        return day
+    return f"{iso.year}-W{iso.week:02d}"
+
+
+def _quarter_key(day: str) -> str:
+    try:
+        month = int(day[5:7])
+    except ValueError:
+        return day
+    return f"{day[:4]}-Q{(month - 1) // 3 + 1}"
+
+
+def _roll_candles(day_rows: List[Dict[str, Any]], key_fn: Callable[[str], str]) -> List[Dict[str, Any]]:
+    rolled: List[Dict[str, Any]] = []
+    current = None
+    label = None
+    for row in day_rows:
+        key = key_fn(str(row["date"]))
+        if current is None or key != label:
+            current = {
+                "date": key,
+                "open": row["open"],
+                "high": row["high"],
+                "low": row["low"],
+                "close": row["close"],
+                "volume": row["volume"],
+            }
+            rolled.append(current)
+            label = key
+            continue
+        current["high"] = max(current["high"], row["high"])
+        current["low"] = min(current["low"], row["low"])
+        current["close"] = row["close"]
+        current["volume"] = float(current["volume"]) + float(row["volume"] or 0)
+    return rolled
+
+
+def _small_step_decide(symbol, window, account, positions):
+    """1-share trades that follow the bar path when the tape is missing."""
+    if len(window) < 2:
+        return []
+    prev = float(window[-2].get("close") or 0)
+    last = float(window[-1].get("close") or 0)
+    if last > prev and not positions:
+        return [{"side": "buy", "qty": 1, "reason": "small trade along the bar"}]
+    if last < prev and positions:
+        return [{"side": "sell", "qty": 0, "reason": "small trade along the bar"}]
+    return []
+
+
+def _gains_curve(result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    curve = result.get("equity_curve")
+    if curve:
+        return curve
+    if result.get("ranking") and result.get("runs"):
+        winner = result["ranking"][0].get("strategy")
+        for run in result["runs"]:
+            if run.get("strategy") == winner and run.get("equity_curve"):
+                return run["equity_curve"]
+    folds = result.get("folds") or []
+    points = []
+    for fold in folds:
+        equity = fold.get("ending_equity")
+        if equity is None:
+            continue
+        points.append({"date": fold.get("end") or fold.get("start"), "equity": equity})
+    return points
+
+
+def _accumulated_gains(curve: List[Dict[str, Any]], starting_cash: float) -> List[Dict[str, Any]]:
+    start = float(starting_cash or 0)
+    gains = []
+    for point in curve or []:
+        try:
+            equity = float(point.get("equity"))
+        except (TypeError, ValueError):
+            continue
+        gain = equity - start
+        gain_pct = ((equity / start) - 1.0) * 100.0 if start else 0.0
+        gains.append({
+            "date": point.get("date"),
+            "equity": round(equity, 2),
+            "gain": round(gain, 2),
+            "gain_pct": round(gain_pct, 2),
+        })
+    return gains
+
+
+def _fit_tape_warmup(
+    bars_by_symbol: Dict[str, List[Dict[str, Any]]],
+    config: BacktestConfig,
+) -> Optional[str]:
+    """Lower warmup when a real tape is shorter than the daily-bar default."""
+    sym = min(bars_by_symbol, key=lambda name: len(bars_by_symbol[name]))
+    shortest = len(bars_by_symbol[sym])
+    if shortest > config.warmup_bars:
+        return None
+    if shortest < MIN_TAPE_PRINTS:
+        raise ValueError(
+            f"{sym} returned {shortest} Alpaca trades. "
+            f"A replay needs at least {MIN_TAPE_PRINTS} prints. "
+            "No mock trades were added."
+        )
+    lowered = max(10, shortest // 3)
+    if lowered >= shortest:
+        lowered = shortest - 1
+    config.warmup_bars = lowered
+    return (
+        f"Warmup lowered to {lowered} because {sym} has {shortest} real trades "
+        "in the requested sessions."
+    )
 
 
 def _load_symbol_bars(
@@ -1045,7 +1714,7 @@ def _normalize_bar(row: Dict[str, Any], fallback_index: int) -> Optional[Dict[st
         return value
 
     date = row.get("date") or row.get("t") or f"bar-{fallback_index:05d}"
-    return {
+    bar = {
         "date": str(date),
         "open": _px("open", "o"),
         "high": _px("high", "h"),
@@ -1053,16 +1722,21 @@ def _normalize_bar(row: Dict[str, Any], fallback_index: int) -> Optional[Dict[st
         "close": close,
         "volume": row.get("volume") if row.get("volume") is not None else (row.get("v") or 0),
     }
+    if row.get("session_date"):
+        bar["session_date"] = str(row["session_date"])[:10]
+    return bar
 
 
 def _align(
     series: Dict[str, List[Dict[str, Any]]],
 ) -> Tuple[List[str], Dict[str, Dict[str, Dict[str, Any]]]]:
-    """Inner-join symbols on bar date. A single symbol keeps its own clock."""
+    """Inner-join symbols on bar date. A single symbol keeps every print."""
     if len(series) == 1:
+        # Trade prints can share a timestamp. Key the clock by position so
+        # a second print at the same instant is not dropped.
         sym, rows = next(iter(series.items()))
-        clock = [str(bar["date"]) for bar in rows]
-        by_date = {str(bar["date"]): {sym: bar} for bar in rows}
+        clock = [f"{i:08d}" for i in range(len(rows))]
+        by_date = {clock[i]: {sym: rows[i]} for i in range(len(rows))}
         return clock, by_date
     sets = []
     maps = {}
@@ -1104,14 +1778,14 @@ def _metrics(
     for prev, nxt in zip(equities, equities[1:]):
         if prev > 0:
             rets.append(nxt / prev - 1.0)
-    sharpe = _ratio(rets, downside=False)
-    sortino = _ratio(rets, downside=True)
+    per_year = _periods_per_year(curve)
+    sharpe = _ratio(rets, downside=False, periods_per_year=per_year)
+    sortino = _ratio(rets, downside=True, periods_per_year=per_year)
     max_dd = _max_drawdown(equities)
     periods = max(len(rets), 1)
-    # Daily-bar assumption. Intraday callers still get a comparable figure.
     cagr = None
     if starting_cash > 0 and ending > 0 and periods >= 1:
-        cagr = (ending / starting_cash) ** (252.0 / periods) - 1.0
+        cagr = (ending / starting_cash) ** (per_year / periods) - 1.0
     calmar = None
     if cagr is not None and max_dd > 1e-9:
         calmar = cagr / max_dd
@@ -1140,7 +1814,22 @@ def _metrics(
     }
 
 
-def _ratio(rets: List[float], downside: bool) -> Optional[float]:
+def _periods_per_year(curve: List[Dict[str, Any]]) -> float:
+    """
+    Annualization factor for whatever the curve is sampled at.
+
+    Daily bars leave one point per session, so the factor stays 252. A trade
+    tape leaves thousands of points on the same session; scaling by the points
+    per session keeps CAGR, Sharpe, and Sortino on an annual footing instead of
+    reading every print as a trading day.
+    """
+    sessions = {_session_day(point) for point in curve if point.get("date")}
+    if not sessions or len(curve) <= len(sessions):
+        return 252.0
+    return 252.0 * (len(curve) / len(sessions))
+
+
+def _ratio(rets: List[float], downside: bool, periods_per_year: float = 252.0) -> Optional[float]:
     if len(rets) < 5:
         return None
     mean = sum(rets) / len(rets)
@@ -1153,7 +1842,7 @@ def _ratio(rets: List[float], downside: bool) -> Optional[float]:
         var = sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)
     if var <= 0:
         return None
-    return (mean / math.sqrt(var)) * math.sqrt(252.0)
+    return (mean / math.sqrt(var)) * math.sqrt(periods_per_year)
 
 
 def _max_drawdown(equities: List[float]) -> float:
