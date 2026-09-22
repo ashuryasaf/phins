@@ -195,6 +195,27 @@ class TestHebrewHeaderNormalization(unittest.TestCase):
         self.assertEqual(map_hebrew_column('שארים'), 'survivors_coverage')
         self.assertEqual(map_hebrew_column('סיעוד'), 'ltc_coverage')
         self.assertEqual(map_hebrew_column('עלות ביטוח חיים'), 'death_premium')
+        self.assertEqual(map_hebrew_column('סה״כ חיסכון'), 'savings_balance')
+        self.assertEqual(map_hebrew_column('יתרה'), 'balance')
+        self.assertEqual(map_hebrew_column('יתרה כוללת'), 'total_balance')
+        self.assertEqual(map_hebrew_column('תגמולים'), 'tagmulim_balance')
+        self.assertEqual(map_hebrew_column('פרמיה ביטוח חיים'), 'death_premium')
+        self.assertEqual(map_hebrew_column('פרמיה אבדן כושר'), 'disability_premium')
+        self.assertEqual(map_hebrew_column('פרמיה שחרור'), 'waiver_premium')
+        self.assertEqual(map_hebrew_column('פרמיה נכות'), 'invalidity_premium')
+        self.assertEqual(map_hebrew_column('פרמיה שארים'), 'survivors_premium')
+        self.assertEqual(map_hebrew_column('פרמיה סיעוד'), 'ltc_premium')
+        self.assertEqual(map_hebrew_column('סה״כ פרמיה חודשית'), 'monthly_premium')
+        self.assertEqual(map_hebrew_column('תאריך סטטוס'), 'status_date')
+        self.assertEqual(map_hebrew_column('דמי ניהול מצבירה'), 'management_fee_savings')
+        self.assertEqual(map_hebrew_column('דמי ניהול מהפקדה'), 'management_fee_deposits')
+        self.assertEqual(map_hebrew_column('מסלול השקעה'), 'investment_track')
+        self.assertEqual(map_hebrew_column('אחוז במסלול'), 'track_percent')
+        self.assertEqual(map_hebrew_column('תשואה'), 'yield_rate')
+        self.assertEqual(map_hebrew_column('תאריך נזילות'), 'liquidity_date')
+        self.assertEqual(map_hebrew_column('הפקדה אחרונה'), 'last_deposit')
+        self.assertEqual(map_hebrew_column('תאריך הפקדה אחרונה'), 'last_deposit_date')
+        self.assertEqual(map_hebrew_column('סוג הפרשה'), 'contribution_type')
 
 
 class TestOfficialMislakaXmlExtraction(unittest.TestCase):
@@ -399,6 +420,115 @@ class TestMislakaAssessmentPdfHelpers(unittest.TestCase):
         self.assertFalse(is_statistical_section_title('דו״ח ניתוח פנסיה וביטוח'))
         self.assertFalse(is_non_assessment_section_title('סה״כ צבירה ופיצויים'))
         self.assertFalse(is_non_assessment_section_title('הערכת הפנסיה והביטוח שלך'))
+
+
+HOLDINGS_SPREADSHEET = (
+    'מספר פוליסה,סוג מוצר,שם מוצר,יצרן,סטטוס,תאריך הצטרפות,תאריך נזילות,'
+    'סה״כ חיסכון,תגמולים,פיצויים,יתרה,דמי ניהול מצבירה,דמי ניהול מהפקדה,'
+    'הפקדה אחרונה,תאריך הפקדה אחרונה,מעסיק,סוג הפרשה,תאריך סטטוס,'
+    'ביטוח חיים,פרמיה ביטוח חיים,אבדן כושר עבודה,פרמיה אבדן כושר,'
+    'שחרור,פרמיה שחרור,נכות,פרמיה נכות,שארים,פרמיה שארים,סיעוד,פרמיה סיעוד,'
+    'סה״כ פרמיה חודשית,מסלול השקעה,אחוז במסלול,תשואה\n'
+    'POL-H,פוליסת חיסכון,מסלול כללי,הכשרה ביטוח,פעיל,01/01/2015,01/01/2030,'
+    '420808.64,180000,90000,900000,0.6,1.5,2500,01/08/2026,מעסיק א,תגמולים,01/09/2026,'
+    '500000,120,200000,40,10000,15,100000,25,80000,22,50000,30,252,מסלול מניות,60,7.2\n'
+    'POL-H,פוליסת חיסכון,מסלול כללי,הכשרה ביטוח,פעיל,01/01/2015,01/01/2030,'
+    '420808.64,180000,90000,900000,0.6,1.5,2500,01/08/2026,מעסיק א,תגמולים,01/09/2026,'
+    '500000,120,200000,40,10000,15,100000,25,80000,22,50000,30,252,מסלול אגח,40,4.1\n'
+    'POL-B,ביטוח סיכונים - חד פעמי,קופת גמל,מנורה,פעיל,01/06/2018,01/06/2028,'
+    '10000,4000,2000,15000,0.3,1.0,500,01/08/2026,מעסיק ב,פיצויים,01/09/2026,'
+    '0,0,0,0,0,0,0,0,0,0,0,0,0,מסלול כללי,100,3.0\n'
+).encode('utf-8')
+
+
+SLICE_SPREADSHEET = (
+    'מספר פוליסה,יצרן,סה״כ חיסכון,מסלול השקעה\n'
+    'POL-C,הכשרה ביטוח,200000.00,מסלול מניות\n'
+    'POL-C,הכשרה ביטוח,220808.64,מסלול אגח\n'
+).encode('utf-8')
+
+
+class TestHoldingsSpreadsheetAccumulation(unittest.TestCase):
+    """סה״כ חיסכון is צבירות. Track repeats count once. Covers stay separate."""
+
+    def setUp(self):
+        self.service = init_ai_reports_service()
+
+    def test_repeated_track_savings_are_not_added_to_covers_or_balance(self):
+        parsed, _ = self.service.parse_content('holdings.csv', HOLDINGS_SPREADSHEET, 'csv')
+        pension = parsed.get('pension_data') or {}
+        totals = pension.get('totals') or {}
+        accounts = pension.get('accounts') or []
+        self.assertEqual(len(accounts), 3)
+        by_policy = {}
+        for account in accounts:
+            by_policy.setdefault(account['policy_number'], []).append(account)
+        hachshara = by_policy['POL-H'][0]
+        self.assertEqual(hachshara['provider'], 'הכשרה ביטוח')
+        self.assertEqual(hachshara['savings_balance'], 420808.64)
+        self.assertEqual(hachshara['tagmulim_balance'], 180000)
+        self.assertEqual(hachshara['severance_balance'], 90000)
+        self.assertEqual(hachshara['balance'], 900000)
+        self.assertNotIn('total_balance', hachshara)
+        self.assertEqual(hachshara['death_coverage'], 500000)
+        self.assertEqual(hachshara['death_premium'], 120)
+        self.assertEqual(hachshara['disability_premium'], 40)
+        self.assertEqual(hachshara['monthly_premium'], 252)
+        self.assertEqual(hachshara['status'], 'פעיל')
+        self.assertEqual(hachshara['status_date'], '01/09/2026')
+        self.assertEqual(hachshara['management_fee_savings'], 0.6)
+        self.assertEqual(hachshara['management_fee_deposits'], 1.5)
+        self.assertEqual(hachshara['liquidity_date'], '01/01/2030')
+        self.assertEqual(hachshara['last_deposit'], 2500)
+        self.assertEqual(hachshara['contribution_type'], 'תגמולים')
+        self.assertEqual(hachshara['investment_track'], 'מסלול מניות')
+        self.assertEqual(by_policy['POL-H'][1]['investment_track'], 'מסלול אגח')
+
+        self.assertEqual(totals['total_balance'], 430808.64)
+        self.assertEqual(totals['by_provider']['הכשרה ביטוח'], 420808.64)
+        self.assertEqual(totals['by_provider']['מנורה'], 10000)
+        self.assertEqual(totals['total_tagmulim'], 184000)
+        self.assertEqual(totals['total_severance'], 92000)
+        self.assertEqual(totals['total_yitra'], 915000)
+        self.assertEqual(totals['account_count'], 2)
+        self.assertLess(totals['total_balance'], totals['total_yitra'])
+
+        analysis = self.service.analyze(
+            self.service.parse_file(
+                'holdings.csv', HOLDINGS_SPREADSHEET, 'csv',
+                owner_id='CUST-OWNER-001', owner_role='customer',
+            )['document_id']
+        )
+        report = self.service.generate_report(analysis.id, language='hebrew')
+        summary = report.metadata.get('savings_cover_id_summary') or {}
+        self.assertEqual(summary.get('total_savings'), 430808.64)
+        self.assertEqual(summary.get('total_cover'), 940000)
+        export_payload = self.service.build_report_download_summary(
+            report_id=report.id, user_id='CUST-OWNER-001', user_role='customer',
+        )
+        assessment = export_payload.get('pension_assessment') or {}
+        self.assertEqual(assessment['totals']['total_balance'], 430808.64)
+        self.assertEqual(assessment['totals']['by_provider']['הכשרה ביטוח'], 420808.64)
+        copied = assessment['accounts'][0]
+        self.assertEqual(copied.get('death_premium'), 120)
+        self.assertEqual(copied.get('death_coverage'), 500000)
+        self.assertNotEqual(copied.get('total_balance'), 900000)
+        covers = export_payload.get('risk_covers') or []
+        life = next(item for item in covers if item.get('type_key') == 'life')
+        self.assertEqual(life['amount'], 500000)
+        self.assertEqual(life['cost'], 120)
+        titles = [section.get('title') for section in export_payload.get('assessment_sections') or []]
+        self.assertTrue(any('פוליסות' in str(title) for title in titles))
+        from services.risk_reports.pdf_export import build_report_pdf_bytes
+        pdf_bytes = build_report_pdf_bytes(export_payload)
+        self.assertTrue(pdf_bytes.startswith(b'%PDF'))
+
+    def test_distinct_track_slices_still_sum(self):
+        parsed, _ = self.service.parse_content('slices.csv', SLICE_SPREADSHEET, 'csv')
+        totals = (parsed.get('pension_data') or {}).get('totals') or {}
+        self.assertEqual(totals['total_balance'], 420808.64)
+        self.assertEqual(totals['by_provider']['הכשרה ביטוח'], 420808.64)
+        self.assertEqual(totals['account_count'], 1)
 
 
 class TestFacadeStillResolves(unittest.TestCase):

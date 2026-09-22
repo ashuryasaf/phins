@@ -7,7 +7,7 @@ recomputes hyphen-stripped or CamelCase spellings per element.
 """
 
 import re
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 
 class MislakaSchemaMapping:
@@ -537,7 +537,10 @@ HEBREW_COLUMN_FIELDS: Dict[str, str] = {
     'מספר חשבון': 'policy_number',
     'מס חשבון': 'policy_number',
     'מספר פוליסה/חשבון': 'policy_number',
-    'יתרה': 'total_balance',
+    # Bare יתרה is the ledger balance column. It is not סה״כ צבירה and must
+    # not be added to סה"כ חיסכון. Official accumulation headers stay on
+    # total_balance (XML TOTAL-CHISACHON and ``סה״כ צבירה``).
+    'יתרה': 'balance',
     'יתרה כוללת': 'total_balance',
     'סך צבירה': 'total_balance',
     'צבירה': 'total_balance',
@@ -547,9 +550,12 @@ HEBREW_COLUMN_FIELDS: Dict[str, str] = {
     'צבירה כוללת': 'total_balance',
     'ערך פדיון': 'total_balance',
     'ערך פדיון נוכחי': 'total_balance',
-    'יתרת תגמולים': 'savings_balance',
-    'תגמולים': 'savings_balance',
+    'סה"כ חיסכון': 'savings_balance',
+    'סך חיסכון': 'savings_balance',
+    'סך הכל חיסכון': 'savings_balance',
     'חיסכון': 'savings_balance',
+    'יתרת תגמולים': 'tagmulim_balance',
+    'תגמולים': 'tagmulim_balance',
     'יתרת פיצויים': 'severance_balance',
     'פיצויים': 'severance_balance',
     'סכום פיצויים': 'severance_balance',
@@ -560,7 +566,9 @@ HEBREW_COLUMN_FIELDS: Dict[str, str] = {
     'דמי ניהול מצבירה': 'management_fee_savings',
     'ד"נ מצבירה': 'management_fee_savings',
     'דמי ניהול מהפקדות': 'management_fee_deposits',
+    'דמי ניהול מהפקדה': 'management_fee_deposits',
     'ד"נ מהפקדות': 'management_fee_deposits',
+    'ד"נ מהפקדה': 'management_fee_deposits',
     'עמלה': 'management_fee',
     'סטטוס': 'status',
     'מצב': 'status',
@@ -572,6 +580,8 @@ HEBREW_COLUMN_FIELDS: Dict[str, str] = {
     'שם מעסיק': 'employer_name',
     'ביטוח חיים': 'death_coverage',
     'כיסוי מוות': 'death_coverage',
+    'פרמיה ביטוח חיים': 'death_premium',
+    'פרמיית ביטוח חיים': 'death_premium',
     'עלות ביטוח חיים': 'death_premium',
     'פרמיית חיים': 'death_premium',
     'פרמיה חיים': 'death_premium',
@@ -579,24 +589,43 @@ HEBREW_COLUMN_FIELDS: Dict[str, str] = {
     'אבדן כושר עבודה': 'disability_coverage',
     'אובדן כושר עבודה': 'disability_coverage',
     'כיסוי אכ"ע': 'disability_coverage',
+    'פרמיה אבדן כושר עבודה': 'disability_premium',
+    'פרמיה אובדן כושר עבודה': 'disability_premium',
+    'פרמיה אבדן כושר': 'disability_premium',
+    'פרמיה אובדן כושר': 'disability_premium',
     'עלות אכ"ע': 'disability_premium',
     'עלות אובדן כושר': 'disability_premium',
     'פרמיית אכ"ע': 'disability_premium',
     'כיסוי נכות': 'invalidity_coverage',
     'נכות': 'invalidity_coverage',
+    'פרמיה נכות': 'invalidity_premium',
     'עלות נכות': 'invalidity_premium',
     'שחרור': 'waiver_coverage',
     'שחרור מפרמיה': 'waiver_coverage',
+    'פרמיה שחרור': 'waiver_premium',
     'עלות שחרור': 'waiver_premium',
     'שארים': 'survivors_coverage',
     'כיסוי שארים': 'survivors_coverage',
+    'פרמיה שארים': 'survivors_premium',
     'עלות שארים': 'survivors_premium',
     'סיעוד': 'ltc_coverage',
     'ביטוח סיעודי': 'ltc_coverage',
+    'פרמיה סיעוד': 'ltc_premium',
     'עלות סיעוד': 'ltc_premium',
+    'סה"כ פרמיה חודשית': 'monthly_premium',
+    'סך פרמיה חודשית': 'monthly_premium',
+    'פרמיה חודשית': 'monthly_premium',
     'תאריך תחילה': 'start_date',
     'תחילת ביטוח': 'start_date',
     'תאריך הצטרפות': 'start_date',
+    'תאריך נזילות': 'liquidity_date',
+    'הפקדה אחרונה': 'last_deposit',
+    'תאריך הפקדה אחרונה': 'last_deposit_date',
+    'סוג הפרשה': 'contribution_type',
+    'תאריך סטטוס': 'status_date',
+    'מסלול השקעה': 'investment_track',
+    'אחוז במסלול': 'track_percent',
+    'תשואה': 'yield_rate',
 }
 
 _HEBREW_PUNCT_TRANSLATION = str.maketrans({
@@ -643,6 +672,170 @@ def map_hebrew_column(column_name: str) -> Optional[str]:
     return None
 
 
+# Money columns on a holdings spreadsheet. Cover face amounts and premiums
+# are parsed as numbers but are never part of צבירה.
+SPREADSHEET_MONEY_FIELDS = frozenset({
+    'total_balance', 'savings_balance', 'balance', 'tagmulim_balance',
+    'severance_balance',
+    'management_fee', 'management_fee_savings', 'management_fee_deposits',
+    'death_coverage', 'death_premium',
+    'disability_coverage', 'disability_premium',
+    'work_disability_coverage', 'work_disability_premium',
+    'invalidity_coverage', 'invalidity_premium',
+    'waiver_coverage', 'waiver_premium',
+    'survivors_coverage', 'survivors_premium',
+    'ltc_coverage', 'ltc_premium',
+    'coverage_amount', 'monthly_premium', 'last_deposit',
+    'track_percent', 'yield_rate',
+})
+
+COVER_FACE_FIELDS = (
+    'death_coverage', 'disability_coverage', 'work_disability_coverage',
+    'invalidity_coverage', 'waiver_coverage', 'survivors_coverage', 'ltc_coverage',
+)
+
+_MONEY_STRIP_RE = re.compile(r'[^0-9.\-]')
+
+
+def parse_money(value: Any) -> float:
+    """Parse a holdings amount. Empty and non-numeric text become 0."""
+    if value is None or isinstance(value, bool):
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return 0.0
+    cleaned = (
+        text.replace(',', '')
+        .replace('₪', '')
+        .replace('%', '')
+        .replace('ש"ח', '')
+        .replace('ש״ח', '')
+        .replace('$', '')
+        .replace('€', '')
+    )
+    cleaned = _MONEY_STRIP_RE.sub('', cleaned)
+    if cleaned in {'', '-', '.', '-.'}:
+        return 0.0
+    try:
+        return float(cleaned)
+    except ValueError:
+        return 0.0
+
+
+def account_accumulation(account: Dict[str, Any]) -> float:
+    """צבירה for one holdings row.
+
+    An explicit official total (XML ``TOTAL-CHISACHON`` or a ``סה״כ צבירה``
+    column) wins. Otherwise the spreadsheet ``סה"כ חיסכון`` column
+    (``savings_balance``) is the accumulation. Bare ``יתרה`` is only a
+    fallback. Cover amounts, premiums, תגמולים and פיצויים are never added.
+    """
+    if not isinstance(account, dict):
+        return 0.0
+    total = parse_money(account.get('total_balance'))
+    if total > 0:
+        return total
+    savings = parse_money(account.get('savings_balance'))
+    if savings > 0:
+        return savings
+    return parse_money(account.get('balance'))
+
+
+def tagmulim_amount(account: Dict[str, Any]) -> float:
+    """תגמולים only. A ``סה"כ חיסכון`` figure is not relabelled as tagmulim."""
+    if not isinstance(account, dict):
+        return 0.0
+    explicit = parse_money(account.get('tagmulim_balance'))
+    if explicit > 0:
+        return explicit
+    total = parse_money(account.get('total_balance'))
+    savings = parse_money(account.get('savings_balance'))
+    # XML stores the tagmulim component on savings_balance beside the official total.
+    if total > 0 and 0 < savings <= total + 0.01:
+        return savings
+    return 0.0
+
+
+def deduped_sum(accounts, value_fn) -> float:
+    """Same policy: identical rounded amounts count once; distinct slices sum.
+
+    Investment-track rows often repeat the policy-level ``סה"כ חיסכון``.
+    Counting that repeated figure once keeps צבירות from doubling. Different
+    amounts on the same policy are track slices and are added.
+    """
+    grouped: Dict[str, Dict[float, float]] = {}
+    loose = 0.0
+    for account in accounts or []:
+        if not isinstance(account, dict):
+            continue
+        amount = parse_money(value_fn(account))
+        if amount <= 0:
+            continue
+        policy = str(account.get('policy_number') or '').strip()
+        rounded = round(amount, 2)
+        if not policy:
+            loose += rounded
+            continue
+        grouped.setdefault(policy, {})[rounded] = rounded
+    total = loose + sum(sum(bucket.values()) for bucket in grouped.values())
+    return round(total, 2)
+
+
+def accumulation_by(accounts, key_fn) -> Dict[str, float]:
+    """Deduped צבירה grouped by ``key_fn(account)`` (provider, product, …)."""
+    grouped: Dict[Tuple[str, str], Dict[float, float]] = {}
+    loose: Dict[str, float] = {}
+    for account in accounts or []:
+        if not isinstance(account, dict):
+            continue
+        amount = account_accumulation(account)
+        if amount <= 0:
+            continue
+        label = str(key_fn(account) or '').strip() or 'לא ידוע'
+        policy = str(account.get('policy_number') or '').strip()
+        rounded = round(amount, 2)
+        if policy:
+            grouped.setdefault((label, policy), {})[rounded] = rounded
+        else:
+            loose[label] = loose.get(label, 0.0) + rounded
+    totals: Dict[str, float] = {}
+    for (label, _policy), bucket in grouped.items():
+        totals[label] = totals.get(label, 0.0) + sum(bucket.values())
+    for label, amount in loose.items():
+        totals[label] = totals.get(label, 0.0) + amount
+    return {label: round(amount, 2) for label, amount in totals.items()}
+
+
+def accumulation_by_provider(accounts) -> Dict[str, float]:
+    return accumulation_by(accounts, lambda account: account.get('provider'))
+
+
+def cover_face_total(accounts) -> float:
+    """Sum uploaded cover face amounts. Premiums are not included."""
+    total = 0.0
+    for field in COVER_FACE_FIELDS:
+        total += deduped_sum(accounts, lambda account, field=field: account.get(field))
+    return round(total, 2)
+
+
+def unique_policy_count(accounts) -> int:
+    """Count policies, not repeated investment-track rows of the same policy."""
+    seen = set()
+    count = 0
+    for account in accounts or []:
+        if not isinstance(account, dict):
+            continue
+        policy = str(account.get('policy_number') or '').strip()
+        if policy:
+            if policy in seen:
+                continue
+            seen.add(policy)
+        count += 1
+    return count
+
+
 PENSION_TABULAR_INDICATORS = (
     'יצרן', 'פוליסה', 'צבירה', 'יתרה', 'תגמולים', 'פיצויים',
     'קופה', 'פנסיה', 'ביטוח', 'גמל', 'חיסכון', 'קרן', 'ת.ז', 'תעודת',
@@ -662,4 +855,8 @@ __all__ = [
     'MislakaSchemaMapping', 'CompiledFields', 'tag_variants',
     'HEBREW_COLUMN_FIELDS', 'normalize_hebrew_header', 'map_hebrew_column',
     'looks_like_pension_table', 'PENSION_TABULAR_INDICATORS',
+    'SPREADSHEET_MONEY_FIELDS', 'COVER_FACE_FIELDS', 'parse_money',
+    'account_accumulation', 'tagmulim_amount', 'deduped_sum',
+    'accumulation_by', 'accumulation_by_provider', 'cover_face_total',
+    'unique_policy_count',
 ]

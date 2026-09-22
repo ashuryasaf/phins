@@ -23,10 +23,12 @@ from typing import Any, Dict, List, Optional, Tuple
 from defusedxml import ElementTree as defused_etree
 
 from services.pension.schema import (
+    SPREADSHEET_MONEY_FIELDS,
     CompiledFields,
     MislakaSchemaMapping,
     looks_like_pension_table,
     map_hebrew_column,
+    parse_money,
     tag_variants,
 )
 
@@ -615,20 +617,8 @@ class MislakaParserMixin:
                     value_str = str(value).strip()
                     
                     # Convert value based on field type
-                    if mapped_name in ['total_balance', 'savings_balance', 'severance_balance', 
-                                      'management_fee', 'management_fee_savings', 'management_fee_deposits',
-                                      'death_coverage', 'disability_coverage', 'death_premium',
-                                      'disability_premium', 'work_disability_coverage',
-                                      'work_disability_premium', 'invalidity_coverage',
-                                      'invalidity_premium', 'waiver_coverage', 'waiver_premium',
-                                      'survivors_coverage', 'survivors_premium', 'ltc_coverage',
-                                      'ltc_premium']:
-                        try:
-                            # Clean numeric value
-                            clean_val = value_str.replace(',', '').replace('₪', '').replace('ש"ח', '').strip()
-                            account[mapped_name] = float(clean_val)
-                        except:
-                            account[mapped_name] = 0
+                    if mapped_name in SPREADSHEET_MONEY_FIELDS:
+                        account[mapped_name] = parse_money(value_str)
                     elif mapped_name == 'section14':
                         account[mapped_name] = value_str.lower() in ['כן', 'yes', '1', 'true', 'v', '✓', 'y']
                     elif mapped_name in ['full_name', 'first_name', 'last_name', 'id_number', 
@@ -644,7 +634,11 @@ class MislakaParserMixin:
                         account[mapped_name] = value_str
             
             # Only add if we have some account data
-            if account.get('provider') or account.get('policy_number') or account.get('total_balance'):
+            if (
+                account.get('provider') or account.get('policy_number')
+                or account.get('total_balance') or account.get('savings_balance')
+                or account.get('balance')
+            ):
                 accounts.append(account)
         
         # Build full name if we have parts

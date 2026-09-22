@@ -693,6 +693,7 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
 
         from services.risk_reports.pdf_export import (
             ACCOUNT_COVER_COPY_KEYS,
+            ACCOUNT_DETAIL_COPY_KEYS,
             collect_uploaded_risk_covers,
             cover_chart_summaries,
             customer_report_title,
@@ -815,14 +816,15 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
                         'policy_number': acct.get('policy_number', ''),
                         'provider': acct.get('provider', ''),
                         'product_type': acct.get('product_type', ''),
-                        'product_type_name': acct.get('product_type_name', acct.get('product_name', '')),
+                        'product_type_name': acct.get('product_type_name', ''),
+                        'product_name': acct.get('product_name', ''),
                         'status': acct.get('status', ''),
-                        'total_balance': acct.get('total_balance', acct.get('savings_balance', 0)),
-                        'savings_balance': acct.get('savings_balance', 0),
-                        'severance_balance': acct.get('severance_balance', 0),
+                        'total_balance': acct.get('total_balance', 0) or 0,
+                        'savings_balance': acct.get('savings_balance', 0) or 0,
+                        'severance_balance': acct.get('severance_balance', 0) or 0,
                         'employer_name': acct.get('employer_name', ''),
                     }
-                    for key in ACCOUNT_COVER_COPY_KEYS:
+                    for key in ACCOUNT_DETAIL_COPY_KEYS + ACCOUNT_COVER_COPY_KEYS:
                         if acct.get(key) not in (None, '', [], {}):
                             copied[key] = acct.get(key)
                     accounts.append(copied)
@@ -853,10 +855,13 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
                 'totals': {
                     'total_balance': totals.get('total_balance', summary.get('total_savings', 0)),
                     'total_savings': totals.get('total_savings', totals.get('total_savings_balance', 0)),
+                    'total_tagmulim': totals.get('total_tagmulim', 0),
+                    'total_yitra': totals.get('total_yitra', 0),
                     'total_severance': totals.get(
                         'total_severance',
                         totals.get('total_severance_balance', summary.get('total_severance', 0)),
                     ),
+                    'by_provider': totals.get('by_provider') or {},
                     'account_count': totals.get('account_count', len(accounts)),
                 },
                 'accounts': accounts,

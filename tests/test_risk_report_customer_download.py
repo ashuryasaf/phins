@@ -452,5 +452,96 @@ class TestCoverAndSignatureDownload(unittest.TestCase):
         self.assertIn('18000', csv_text)
 
 
+class TestHebrewChartLabels(unittest.TestCase):
+    """Category names stay whole phrases. Do not slice a visual Hebrew string."""
+
+    def test_provider_and_product_labels_keep_every_letter(self):
+        from reportlab.graphics.charts.barcharts import VerticalBarChart
+        from reportlab.graphics.charts.piecharts import Pie
+        from reportlab.graphics.shapes import String
+        from reportlab.pdfgen import canvas
+        from reportlab.graphics import renderPDF
+        from pypdf import PdfReader
+        from services.risk_reports.pdf_export import (
+            _chart_drawing,
+            _register_fonts,
+            bidi_text,
+            chart_category_label,
+        )
+
+        font, _bold = _register_fonts()
+        provider = 'הכשרה ביטוח'
+        product = 'ביטוח סיכונים - חד פעמי'
+        provider_label = chart_category_label(
+            provider, rtl=True, font_name=font, font_size=8, max_width=90,
+        )
+        self.assertEqual(provider_label, bidi_text(provider, rtl=True))
+        self.assertNotIn('\n', provider_label)
+
+        wrapped = chart_category_label(
+            product, rtl=True, font_name=font, font_size=8, max_width=70,
+        )
+        self.assertIn('\n', wrapped)
+        self.assertNotEqual(wrapped.replace('\n', ' '), bidi_text(product, rtl=True)[:22])
+
+        def letters(value: str) -> list:
+            return sorted(ch for ch in value if '\u0590' <= ch <= '\u05ff')
+
+        self.assertEqual(letters(wrapped), letters(product))
+        self.assertEqual(letters(provider_label), letters(provider))
+
+        bar = _chart_drawing({
+            'type': 'bar',
+            'series': [
+                {'label': provider, 'value': 420809},
+                {'label': 'מנורה', 'value': 10000},
+            ],
+        }, 260, 188, True, font)
+        axis = next(node for node in bar.contents if isinstance(node, VerticalBarChart))
+        self.assertEqual(axis.categoryAxis.labels.angle, 0)
+        self.assertIsNone(axis.categoryAxis.labels.maxWidth)
+        self.assertEqual(axis.categoryAxis.categoryNames[0], bidi_text(provider, rtl=True))
+        self.assertEqual(axis.categoryAxis.categoryNames[1], bidi_text('מנורה', rtl=True))
+
+        pie_drawing = _chart_drawing({
+            'type': 'pie',
+            'series': [
+                {'label': product, 'value': 420809},
+                {'label': 'פוליסת חיסכון', 'value': 10000},
+            ],
+        }, 280, 188, True, font)
+        pie = next(node for node in pie_drawing.contents if isinstance(node, Pie))
+        self.assertTrue(all(label == '' for label in pie.labels))
+
+        def walk_strings(node):
+            found = []
+            if isinstance(node, String):
+                found.append(node.text)
+            for child in getattr(node, 'contents', []) or []:
+                found.extend(walk_strings(child))
+            return found
+
+        legend = ''.join(walk_strings(pie_drawing))
+        self.assertIn(bidi_text(product, rtl=True), legend)
+        self.assertIn(bidi_text('פוליסת חיסכון', rtl=True), legend)
+        self.assertNotIn(bidi_text(product, rtl=True)[:22], legend.replace(bidi_text(product, rtl=True), ''))
+
+        buffer_path = io.BytesIO()
+        pdf = canvas.Canvas(buffer_path, pagesize=(320, 220))
+        renderPDF.draw(bar, pdf, 20, 20)
+        pdf.showPage()
+        renderPDF.draw(pie_drawing, pdf, 16, 16)
+        pdf.save()
+        buffer_path.seek(0)
+        extracted = '\n'.join(
+            (page.extract_text() or '') for page in PdfReader(buffer_path).pages
+        )
+        cleaned = re.sub(r'[\u200e\u200f\u202a-\u202e\u2066-\u2069]', '', extracted)
+        self.assertIn(provider, cleaned)
+        self.assertIn('מנורה', cleaned)
+        self.assertIn(product, cleaned)
+        self.assertIn('פוליסת חיסכון', cleaned)
+
+
 if __name__ == '__main__':
     unittest.main()

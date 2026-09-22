@@ -404,10 +404,27 @@ class ParserMixin:
         Maps Hebrew column names to pension data structure.
         """
         try:
-            from services.pension.schema import looks_like_pension_table, map_hebrew_column
+            from services.pension.schema import (
+                SPREADSHEET_MONEY_FIELDS,
+                account_accumulation,
+                accumulation_by_provider,
+                deduped_sum,
+                looks_like_pension_table,
+                map_hebrew_column,
+                parse_money,
+                tagmulim_amount,
+                unique_policy_count,
+            )
         except Exception:
+            SPREADSHEET_MONEY_FIELDS = frozenset()
             looks_like_pension_table = None
             map_hebrew_column = None
+            parse_money = None
+            account_accumulation = None
+            deduped_sum = None
+            tagmulim_amount = None
+            accumulation_by_provider = None
+            unique_policy_count = None
 
         if looks_like_pension_table is not None:
             if not looks_like_pension_table(columns):
@@ -438,12 +455,8 @@ class ParserMixin:
                     
                     # Convert value
                     if value is not None and value != '':
-                        if mapped_name in ['total_balance', 'savings_balance', 'severance_balance', 
-                                          'management_fee', 'management_fee_savings', 'management_fee_deposits']:
-                            try:
-                                account[mapped_name] = float(str(value).replace(',', '').replace('₪', '').strip())
-                            except:
-                                account[mapped_name] = 0
+                        if parse_money and mapped_name in SPREADSHEET_MONEY_FIELDS:
+                            account[mapped_name] = parse_money(value)
                         elif mapped_name == 'section14':
                             account[mapped_name] = str(value).lower() in ['כן', 'yes', '1', 'true', 'v', '✓']
                         elif mapped_name in ['client_name', 'first_name', 'last_name', 'id_number', 'birth_date']:
@@ -451,9 +464,13 @@ class ParserMixin:
                         else:
                             account[mapped_name] = str(value).strip()
             
-            if account.get('balance') and not account.get('total_balance'):
-                account['total_balance'] = account.get('balance')
-            if account.get('provider') or account.get('policy_number') or account.get('total_balance'):
+            # יתרה stays on ``balance``. It is not copied onto total_balance,
+            # so a ledger balance cannot stand in for סה"כ חיסכון.
+            if (
+                account.get('provider') or account.get('policy_number')
+                or account.get('total_balance') or account.get('savings_balance')
+                or account.get('balance')
+            ):
                 accounts.append(account)
         
         # Build full name if we have parts
@@ -469,19 +486,39 @@ class ParserMixin:
         if not accounts and not client_info:
             return None
         
-        # Calculate totals
-        total_balance = sum(a.get('total_balance', 0) for a in accounts)
-        total_severance = sum(a.get('severance_balance', 0) for a in accounts)
-        
+        # צבירה is deduped סה"כ חיסכון (or an explicit סה״כ צבירה / XML total).
+        # תגמולים, פיצויים, יתרה and cover premiums are stored beside it.
+        if deduped_sum and account_accumulation:
+            total_balance = deduped_sum(accounts, account_accumulation)
+            total_savings = deduped_sum(accounts, lambda account: account.get('savings_balance'))
+            total_tagmulim = deduped_sum(accounts, tagmulim_amount)
+            total_severance = deduped_sum(accounts, lambda account: account.get('severance_balance'))
+            total_yitra = deduped_sum(accounts, lambda account: account.get('balance'))
+            by_provider = accumulation_by_provider(accounts)
+            account_count = unique_policy_count(accounts)
+        else:
+            total_balance = sum(a.get('total_balance', 0) or 0 for a in accounts)
+            total_savings = sum(a.get('savings_balance', 0) or 0 for a in accounts)
+            total_tagmulim = 0
+            total_severance = sum(a.get('severance_balance', 0) or 0 for a in accounts)
+            total_yitra = 0
+            by_provider = {}
+            account_count = len(accounts)
+
         return {
             'client': client_info,
             'accounts': accounts,
             'totals': {
-                'total_balance': total_balance,
-                'total_balance_formatted': f"₪{total_balance:,.0f}",
-                'total_severance': total_severance,
-                'total_severance_formatted': f"₪{total_severance:,.0f}",
-                'account_count': len(accounts),
+                'total_balance': round(total_balance, 2),
+                'total_balance_formatted': f"₪{total_balance:,.2f}",
+                'total_savings': round(total_savings, 2),
+                'total_savings_formatted': f"₪{total_savings:,.2f}",
+                'total_tagmulim': round(total_tagmulim, 2),
+                'total_yitra': round(total_yitra, 2),
+                'total_severance': round(total_severance, 2),
+                'total_severance_formatted': f"₪{total_severance:,.2f}",
+                'by_provider': by_provider,
+                'account_count': account_count,
                 'provider_count': len(set(a.get('provider', '') for a in accounts if a.get('provider'))),
                 'providers': list(set(a.get('provider', '') for a in accounts if a.get('provider'))),
             },
@@ -683,8 +720,14 @@ class ParserMixin:
 
     _ACCOUNT_AMOUNT_FIELDS = (
         'total_balance', 'savings_balance', 'severance_balance', 'balance',
+        'tagmulim_balance',
         'management_fee', 'management_fee_savings', 'management_fee_deposits',
         'death_coverage', 'disability_coverage', 'coverage_amount',
+        'death_premium', 'disability_premium', 'work_disability_coverage',
+        'work_disability_premium', 'invalidity_coverage', 'invalidity_premium',
+        'waiver_coverage', 'waiver_premium', 'survivors_coverage',
+        'survivors_premium', 'ltc_coverage', 'ltc_premium',
+        'monthly_premium', 'last_deposit', 'track_percent', 'yield_rate',
     )
 
     def _merge_affiliated_accounts(self, accounts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -696,7 +739,10 @@ class ParserMixin:
                 continue
             policy = str(account.get('policy_number') or '').strip()
             provider = str(account.get('provider') or '').strip()
-            key = (policy, provider)
+            track = str(account.get('investment_track') or '').strip()
+            # Distinct investment tracks stay as their own rows. XML and a
+            # concentrated CSV of the same policy (no track) still collapse.
+            key = (policy, provider, track)
             if policy and key in index:
                 existing = merged_rows[index[key]]
                 for field, value in account.items():
@@ -824,11 +870,22 @@ class ParserMixin:
                 header[key] = value
         merged['header'] = header
 
-        # Recompute key totals after merge.
-        total_balance = sum(self._to_float_amount(a.get('total_balance')) for a in merged.get('accounts', []))
-        total_savings = sum(self._to_float_amount(a.get('savings_balance')) for a in merged.get('accounts', []))
+        # Recompute key totals after merge. Repeated track amounts on one
+        # policy count once; cover premiums are not part of צבירה.
+        from services.pension.schema import (
+            account_accumulation,
+            accumulation_by_provider,
+            deduped_sum,
+            tagmulim_amount,
+            unique_policy_count,
+        )
+        merged_accounts = merged.get('accounts', [])
+        total_balance = deduped_sum(merged_accounts, account_accumulation)
+        total_savings = deduped_sum(merged_accounts, lambda account: account.get('savings_balance'))
+        total_tagmulim = deduped_sum(merged_accounts, tagmulim_amount)
+        total_yitra = deduped_sum(merged_accounts, lambda account: account.get('balance'))
         total_severance = (
-            sum(self._to_float_amount(a.get('severance_balance')) for a in merged.get('accounts', [])) +
+            deduped_sum(merged_accounts, lambda account: account.get('severance_balance')) +
             sum(self._to_float_amount(s.get('total_severance')) for s in merged.get('severance', []))
         )
         provider_names = sorted({
@@ -842,20 +899,23 @@ class ParserMixin:
             'total_balance_formatted': f"₪{total_balance:,.2f}",
             'total_savings': round(total_savings, 2),
             'total_savings_formatted': f"₪{total_savings:,.2f}",
+            'total_tagmulim': round(total_tagmulim, 2),
+            'total_yitra': round(total_yitra, 2),
             'total_severance': round(total_severance, 2),
             'total_severance_formatted': f"₪{total_severance:,.2f}",
+            'by_provider': accumulation_by_provider(merged_accounts),
             'total_coverage': round(
                 sum(
                     self._to_float_amount(a.get('coverage_amount'))
                     or self._to_float_amount(a.get('death_coverage')) + self._to_float_amount(a.get('disability_coverage'))
-                    for a in merged.get('accounts', [])
+                    for a in merged_accounts
                 ),
                 2
             ),
-            'account_count': len(merged.get('accounts', [])),
+            'account_count': unique_policy_count(merged_accounts),
             'provider_count': len(provider_names),
             'providers': provider_names,
-            'section14_coverage': any(bool(a.get('section14')) for a in merged.get('accounts', [])),
+            'section14_coverage': any(bool(a.get('section14')) for a in merged_accounts),
         })
         merged['totals'] = totals
 

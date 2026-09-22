@@ -8,6 +8,14 @@ agent's method names — and every caller — are unchanged.
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
+from services.pension.schema import (
+    account_accumulation,
+    accumulation_by_provider,
+    deduped_sum,
+    tagmulim_amount,
+    unique_policy_count,
+)
+
 
 class PensionReportMixin:
     """Derived metrics + report text. Pure functions of the parsed ``data``
@@ -25,13 +33,18 @@ class PensionReportMixin:
         
         totals = data['totals']
         
-        # Calculate totals
-        totals['total_balance'] = sum(float(a.get('total_balance', 0) or 0) for a in accounts)
-        totals['total_savings'] = sum(float(a.get('savings_balance', 0) or 0) for a in accounts)
-        totals['total_severance'] = sum(float(a.get('severance_balance', 0) or 0) for a in accounts)
+        # צבירה is the official total when present, otherwise סה"כ חיסכון.
+        # Repeated track rows of one policy count once. תגמולים, פיצויים and
+        # יתרה stay their own totals and are not added into צבירה.
+        totals['total_balance'] = deduped_sum(accounts, account_accumulation)
+        totals['total_savings'] = deduped_sum(accounts, lambda account: account.get('savings_balance'))
+        totals['total_tagmulim'] = deduped_sum(accounts, tagmulim_amount)
+        totals['total_yitra'] = deduped_sum(accounts, lambda account: account.get('balance'))
+        totals['total_severance'] = deduped_sum(accounts, lambda account: account.get('severance_balance'))
         totals['total_severance'] += sum(float(s.get('total_severance', 0) or 0) for s in severance)
         totals['total_coverage'] = sum(float(a.get('coverage_amount', 0) or 0) for a in accounts)
-        totals['account_count'] = len(accounts)
+        totals['by_provider'] = accumulation_by_provider(accounts)
+        totals['account_count'] = unique_policy_count(accounts)
         totals['provider_count'] = len(set(a.get('provider', '') for a in accounts if a.get('provider')))
         totals['providers'] = list(set(a.get('provider', '') for a in accounts if a.get('provider')))
         
