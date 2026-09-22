@@ -485,9 +485,16 @@ def simulate(
 
         equity = _mark(cash, positions, last_close)
         curve_date = stamp
+        session = str(stamp)[:10]
         if todays:
-            curve_date = str(next(iter(todays.values())).get("date") or stamp)
-        equity_curve.append({"date": curve_date, "equity": round(equity, 2)})
+            curve_bar = next(iter(todays.values()))
+            curve_date = str(curve_bar.get("date") or stamp)
+            session = _session_day(curve_bar)
+        equity_curve.append({
+            "date": curve_date,
+            "session_date": session,
+            "equity": round(equity, 2),
+        })
         exposure_flags.append(1 if any(p.qty > 0 for p in positions.values()) else 0)
 
     # A signal on the final bar has no following open. Drop it and say so.
@@ -1343,7 +1350,7 @@ def _periods_per_year(curve: List[Dict[str, Any]]) -> float:
     per session keeps CAGR, Sharpe, and Sortino on an annual footing instead of
     reading every print as a trading day.
     """
-    sessions = {str(point.get("date"))[:10] for point in curve if point.get("date")}
+    sessions = {_session_day(point) for point in curve if point.get("date")}
     if not sessions or len(curve) <= len(sessions):
         return 252.0
     return 252.0 * (len(curve) / len(sessions))

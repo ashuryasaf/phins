@@ -395,6 +395,33 @@ def test_tape_metrics_annualize_by_session_not_by_print():
     assert metrics["sharpe_ratio"] is not None
 
 
+def test_session_crossing_utc_midnight_stays_one_session():
+    rows = _tape_prints(120)
+    for i, row in enumerate(rows):
+        px = 100.0 + i * 0.01
+        hour = "2024-01-02T23" if i < 60 else "2024-01-03T00"
+        row.update({
+            "date": f"{hour}:{i % 60:02d}:00Z",
+            "open": px, "high": px, "low": px, "close": px,
+        })
+
+    def decide(symbol, window, account, positions):
+        if len(window) == 6 and not positions:
+            return [{"side": "buy", "qty": 100, "reason": "enter"}]
+        return []
+
+    report = simulate(
+        {"SPY": rows},
+        decide,
+        BacktestConfig(warmup_bars=4, lookback_bars=20, slippage_bps=0, starting_cash=100_000),
+    )
+    metrics = report["metrics"]
+    total = metrics["ending_equity"] / metrics["starting_equity"] - 1.0
+    assert total > 0
+    # One New York session split over two UTC dates still annualizes as one day.
+    assert metrics["cagr_pct"] == pytest.approx(((1.0 + total) ** 252 - 1.0) * 100.0, rel=0.05)
+
+
 def test_daily_bars_keep_the_252_annualization():
     rows = _flat_bars(40, price=100)
     for i, row in enumerate(rows):
