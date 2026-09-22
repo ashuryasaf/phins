@@ -689,6 +689,7 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
         from services.risk_reports.pdf_export import (
             customer_report_title,
             is_non_assessment_section_title,
+            prepare_customer_download_charts,
             prepare_customer_download_sections,
             strip_completeness_copy,
         )
@@ -848,8 +849,8 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
             'assessment_sections': assessment_sections,
             'savings_cover_id_summary': download_summary,
             'table_sections': table_sections,
-            'chart_summaries': [] if is_pension_data else chart_summaries,
-            'recommendations': [] if is_pension_data else recommendations,
+            'chart_summaries': chart_summaries,
+            'recommendations': recommendations,
         }
         payload['title'] = customer_report_title(payload)
         payload['assessment_sections'] = prepare_customer_download_sections(
@@ -859,6 +860,9 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
             section for section in payload.get('table_sections') or []
             if not is_non_assessment_section_title(section.get('title', ''))
         ]
+        payload['chart_summaries'] = prepare_customer_download_charts(
+            payload.get('chart_summaries')
+        )
         return payload
     
     def to_dict(self, obj) -> Dict:

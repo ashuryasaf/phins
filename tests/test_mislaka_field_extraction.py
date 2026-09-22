@@ -295,6 +295,26 @@ class TestSwiftnessAffiliatedShowcase(unittest.TestCase):
             or 'הלש ךתרעהה' in pdf_text
             or 'Your Assessment' in pdf_text
         )
+        self.assertIn('PHINS', pdf_text)
+        chart_titles = [chart.get('title') for chart in export_payload.get('chart_summaries') or []]
+        self.assertTrue(chart_titles)
+        self.assertTrue(
+            any('צבירה לפי יצרן' in str(title) or 'Savings by Provider' in str(title) or 'תגמולים' in str(title)
+                or 'חיסכון מול כיסוי' in str(title)
+                for title in chart_titles)
+        )
+        self.assertNotIn('כיסוי שדות זיהוי', chart_titles)
+        from services.risk_reports.pdf_export import bidi_text
+        chart_tokens = (
+            'צבירה לפי יצרן',
+            'Savings by Provider',
+            'תגמולים מול פיצויים',
+            'חיסכון מול כיסוי',
+        )
+        self.assertTrue(
+            any(token in pdf_text for token in chart_tokens)
+            or any(bidi_text(token, rtl=True) in pdf_text for token in chart_tokens)
+        )
 
 
 class TestMislakaAssessmentPdfHelpers(unittest.TestCase):

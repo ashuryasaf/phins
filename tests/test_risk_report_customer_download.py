@@ -7,12 +7,17 @@ import unittest
 
 from services.ai_risk_reports_service import init_ai_reports_service
 from services.risk_reports.pdf_export import (
+    BRAND_NAME,
+    BRAND_TAGLINE,
     bidi_text,
     build_report_csv_bytes,
     build_report_pdf_bytes,
+    consultant_intro_copy,
     customer_assessment_narrative,
     customer_report_title,
     is_non_assessment_section_title,
+    is_staff_chart_title,
+    prepare_customer_download_charts,
     prepare_customer_download_sections,
     strip_completeness_copy,
 )
@@ -86,6 +91,30 @@ class TestCustomerDownloadHelpers(unittest.TestCase):
             'ההערכה שלך',
         )
 
+    def test_staff_completeness_charts_are_excluded(self):
+        self.assertTrue(is_staff_chart_title('ID Field Coverage'))
+        self.assertTrue(is_staff_chart_title('כיסוי שדות זיהוי'))
+        self.assertFalse(is_staff_chart_title('Savings vs Cover'))
+        self.assertFalse(is_staff_chart_title('צבירה לפי יצרן'))
+        prepared = prepare_customer_download_charts([
+            {'title': 'Savings vs Cover', 'type': 'bar', 'series': [
+                {'label': 'Savings', 'value': 10000}, {'label': 'Cover', 'value': 55000},
+            ]},
+            {'title': 'ID Field Coverage', 'type': 'doughnut', 'series': [
+                {'label': 'With ID', 'value': 2}, {'label': 'Without ID', 'value': 0},
+            ]},
+            {'title': 'Risk Score', 'type': 'gauge', 'series': [{'label': 'value', 'value': 40}]},
+        ])
+        self.assertEqual([chart['title'] for chart in prepared], ['Savings vs Cover'])
+
+    def test_consultant_intro_is_customer_facing(self):
+        hebrew = consultant_intro_copy(True)
+        english = consultant_intro_copy(False)
+        self.assertIn('יועץ', hebrew)
+        self.assertNotIn('שלמות', hebrew)
+        self.assertIn('advisor', english.lower())
+        self.assertIn('Analyse', english)
+
     def test_hebrew_bidi_reorders_mixed_text(self):
         try:
             from bidi.algorithm import get_display
@@ -156,6 +185,14 @@ class TestCustomerDownloadFromAnalyse(unittest.TestCase):
         self.assertNotIn('Data Analysis Report', pdf_text)
         self.assertNotIn('PHINS Savings & Insurance Report Summary', pdf_text)
         self.assertIn('Assessment', pdf_text)
+        self.assertIn(BRAND_NAME, pdf_text)
+        self.assertTrue(BRAND_TAGLINE in pdf_text or 'PHINS' in pdf_text)
+        self.assertNotIn('ID Field Coverage', pdf_text)
+        charts = export_payload.get('chart_summaries') or []
+        self.assertTrue(charts)
+        chart_titles = [chart.get('title') for chart in charts]
+        self.assertTrue(any('Savings vs Cover' in str(title) for title in chart_titles))
+        self.assertNotIn('ID Field Coverage', chart_titles)
 
         csv_bytes = build_report_csv_bytes(export_payload)
         csv_text = csv_bytes.decode('utf-8')
