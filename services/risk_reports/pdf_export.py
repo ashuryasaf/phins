@@ -79,7 +79,9 @@ _GENERIC_ANALYSIS_TITLES = frozenset({
 
 _CUSTOMER_SECTION_TITLES = {
     'תקציר מנהלים': 'סיכום ההערכה',
+    'סיכום ההערכה': 'סיכום ההערכה',
     'executive summary': 'Assessment Summary',
+    'assessment summary': 'Assessment Summary',
     'דוח ניתוח פנסיה וביטוח': 'הערכת הפנסיה והביטוח שלך',
     'pension & insurance analysis report': 'Your Pension & Insurance Assessment',
     'פרטי פוליסת ביטוח': 'פרטי הפוליסה שלך',
@@ -89,7 +91,33 @@ _CUSTOMER_SECTION_TITLES = {
     'anomalies and warnings': 'Points to Review',
     'סיכום מסונף - חיסכון, כיסוי וזיהוי': 'סיכום החיסכון והכיסוי שלך',
     'affiliated summary - savings, cover & id': 'Your Savings & Cover Summary',
+    'פרופיל לקוח (שיוך)': 'הפרטים שלך',
+    'סטטוס פוליסות (טבלת שיוכים)': 'הפוליסות שלך',
+    'רשימת תוכניות (פירוט טבלאי)': 'התוכניות שלך',
+    'סיכום כספי (מודל דוח)': 'הסיכום הכספי שלך',
 }
+
+_STAFF_COLUMN_TITLES = frozenset({
+    'אימות מזהה',
+    'id validation',
+    'פורמט גולמי',
+    'raw format',
+    'מזהה (מוסתר)',
+    'masked id',
+})
+
+_STATISTICAL_NARRATIVE_MARKERS = (
+    'ניתוח AI מקיף',
+    'comprehensive ai analysis',
+    'סטטיסטיקה:',
+    'statistics:',
+    'רשומות נותחו',
+    'records analyzed',
+    'שדות זוהו',
+    'fields identified',
+    'גורמים מרכזיים חולצו',
+    'key factors extracted',
+)
 
 _QUOTE_CHARS = (
     '\u05f4',  # Hebrew gershayim ״
@@ -155,9 +183,9 @@ def is_rtl_language(language: Any) -> bool:
 
 
 def bidi_text(text: str, rtl: bool = False) -> str:
-    """Reorder logical text to visual order when the page is RTL."""
+    """Reorder logical Hebrew to visual order. Leave numbers and Latin as-is."""
     value = str(text or '')
-    if not value or not rtl:
+    if not value or not rtl or not has_hebrew(value):
         return value
     if _bidi_get_display is None:
         return value
@@ -174,6 +202,35 @@ def strip_completeness_copy(text: str) -> str:
         kept.append(line)
     cleaned = '\n'.join(kept)
     return re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+
+
+def customer_assessment_narrative(text: str) -> str:
+    """Keep the Analyse result; drop the statistical data-analysis dump."""
+    cleaned = strip_completeness_copy(text)
+    if not cleaned:
+        return ''
+    lowered = cleaned.lower()
+    if not any(marker in cleaned or marker in lowered for marker in _STATISTICAL_NARRATIVE_MARKERS):
+        return cleaned
+    kept: List[str] = []
+    for line in cleaned.splitlines():
+        line_lower = line.lower()
+        if any(marker in line or marker in line_lower for marker in _STATISTICAL_NARRATIVE_MARKERS):
+            continue
+        kept.append(line)
+    rewritten = strip_completeness_copy('\n'.join(kept))
+    lines = [line for line in rewritten.splitlines()]
+    while lines:
+        tail = lines[-1].strip().lower()
+        if not tail or 'תובנות' in lines[-1] or 'key insights' in tail:
+            lines.pop()
+            continue
+        break
+    return '\n'.join(lines).strip()
+
+
+def _is_staff_column(name: str) -> bool:
+    return _normalize_section_title(name) in _STAFF_COLUMN_TITLES
 
 
 def customer_section_title(title: str) -> str:
@@ -225,9 +282,23 @@ def prepare_customer_download_sections(sections: Optional[List[Dict[str, Any]]])
         title = section.get('title') or ''
         if is_non_assessment_section_title(title):
             continue
-        content = strip_completeness_copy(section.get('content') or '')
-        rows = section.get('rows') or []
-        columns = section.get('columns') or []
+        content = customer_assessment_narrative(section.get('content') or '')
+        rows = [row for row in (section.get('rows') or []) if isinstance(row, dict)]
+        columns = [
+            str(col) for col in (section.get('columns') or [])
+            if not _is_staff_column(str(col))
+        ]
+        if rows and columns:
+            rows = [
+                {col: row.get(col, '') for col in columns}
+                for row in rows
+            ]
+        elif rows:
+            columns = [
+                key for key in rows[0].keys()
+                if not _is_staff_column(str(key))
+            ]
+            rows = [{col: row.get(col, '') for col in columns} for row in rows]
         if not content and not rows:
             continue
         prepared.append({

@@ -10,6 +10,7 @@ from services.risk_reports.pdf_export import (
     bidi_text,
     build_report_csv_bytes,
     build_report_pdf_bytes,
+    customer_assessment_narrative,
     customer_report_title,
     is_non_assessment_section_title,
     prepare_customer_download_sections,
@@ -51,6 +52,21 @@ class TestCustomerDownloadHelpers(unittest.TestCase):
         titles = [section['title'] for section in prepared]
         self.assertEqual(titles, ['סיכום ההערכה'])
         self.assertEqual(prepared[0]['content'], 'ההערכה שלך לאחר הניתוח')
+
+    def test_statistical_analyse_dump_is_stripped_from_narrative(self):
+        raw = (
+            "ניתוח AI מקיף של נתוני ביטוח:\n\n"
+            "📊 סטטיסטיקה:\n"
+            "• 10 רשומות נותחו\n"
+            "• 13 שדות זוהו\n"
+            "🎯 הערכת סיכון: 65/100 (גבוה)\n"
+            "• שלמות נתונים: 82%\n"
+        )
+        cleaned = customer_assessment_narrative(raw)
+        self.assertNotIn('רשומות נותחו', cleaned)
+        self.assertNotIn('סטטיסטיקה', cleaned)
+        self.assertNotIn('שלמות נתונים', cleaned)
+        self.assertIn('הערכת סיכון', cleaned)
 
     def test_customer_title_replaces_data_analysis_report(self):
         self.assertEqual(
@@ -126,6 +142,8 @@ class TestCustomerDownloadFromAnalyse(unittest.TestCase):
         )
         self.assertNotIn('שלמות נתונים', blob)
         self.assertNotIn('Data completeness', blob)
+        self.assertNotIn('records analyzed', blob.lower())
+        self.assertNotIn('Data Analysis Report', blob)
 
         from pypdf import PdfReader
         pdf_bytes = build_report_pdf_bytes(export_payload)
