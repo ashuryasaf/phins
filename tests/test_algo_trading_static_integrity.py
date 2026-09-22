@@ -190,6 +190,7 @@ def test_algo_trading_preserves_live_apis():
         "/api/algo/profits/summary",
         "/api/algo/run-profit-cycle",
         "/api/algo/activate-profits",
+        "/api/algo/backtest",
     ):
         assert endpoint in html, f"missing API {endpoint}"
 

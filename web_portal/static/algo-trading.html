@@ -896,6 +896,56 @@
                 <div class="stat-change" id="botsChange">0 signals today</div>
             </div>
         </div>
+
+        <section id="backtestSection" style="margin-top: 1rem; background: var(--bg-card, rgba(255,255,255,0.03)); border: 1px solid var(--phins-line, rgba(227,191,111,0.28)); border-radius: 12px; padding: 1rem;">
+            <div style="display:flex; justify-content:space-between; gap:1rem; flex-wrap:wrap; align-items:flex-end;">
+                <div>
+                    <div style="font-weight:700;">Historical backtest</div>
+                    <div style="color: var(--text-secondary); font-size: 0.85rem; max-width: 640px;">
+                        Recommended: replay the same strategy rules on Alpaca daily bars and fill at the next open.
+                        Walk-forward checks stability. Compare ranks strategies on identical costs. No orders are sent.
+                    </div>
+                </div>
+                <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:flex-end;">
+                    <label style="font-size:0.75rem; color:var(--text-secondary);">Strategy
+                        <select id="btStrategy" class="form-select">
+                            <option value="momentum">Momentum</option>
+                            <option value="mean_reversion">Mean reversion</option>
+                            <option value="trend_following">Trend following</option>
+                            <option value="rsi_strategy">RSI</option>
+                            <option value="macd_crossover">MACD crossover</option>
+                            <option value="breakout">Breakout</option>
+                            <option value="swing_trading">Swing</option>
+                            <option value="ai_adaptive">AI adaptive</option>
+                            <option value="dollar_cost_averaging">Dollar cost averaging</option>
+                            <option value="grid_trading">Grid</option>
+                            <option value="scalping">Scalping</option>
+                        </select>
+                    </label>
+                    <label style="font-size:0.75rem; color:var(--text-secondary);">Symbol
+                        <input id="btSymbol" class="form-input" value="SPY" style="width:90px; text-transform:uppercase;">
+                    </label>
+                    <label style="font-size:0.75rem; color:var(--text-secondary);">Mode
+                        <select id="btMode" class="form-select">
+                            <option value="replay">Replay (recommended)</option>
+                            <option value="walk_forward">Walk-forward</option>
+                            <option value="compare">Compare</option>
+                        </select>
+                    </label>
+                    <label style="font-size:0.75rem; color:var(--text-secondary);">Fill
+                        <select id="btFill" class="form-select">
+                            <option value="next_open">Next open</option>
+                            <option value="same_close">Same close</option>
+                        </select>
+                    </label>
+                    <label style="font-size:0.75rem; color:var(--text-secondary);">Days
+                        <input id="btDays" class="form-input" type="number" value="252" min="30" max="2000" style="width:90px;">
+                    </label>
+                    <button type="button" id="btRunBtn" class="btn btn-primary" onclick="runAlgoBacktest()">Run backtest</button>
+                </div>
+            </div>
+            <div id="btResult" style="margin-top:0.75rem; font-size:0.9rem; color:var(--text-secondary);">Uses Alpaca market data when the broker is connected. Results stay on this page.</div>
+        </section>
         
         <!-- Advanced Metrics Row -->
         <div class="stats-grid" style="margin-top: 1rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
@@ -1644,6 +1694,81 @@
             return headers;
         }
         
+        function escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function btMetric(value, suffix) {
+            if (value == null || value === '') return '—';
+            return escapeHtml(value) + (suffix || '');
+        }
+
+        function renderAlgoBacktest(d) {
+            if (!d || d.error) {
+                return '<div style="color:var(--danger, #c44);">' + escapeHtml(d && d.error ? d.error : 'Backtest failed') + '</div>';
+            }
+            if (Array.isArray(d.ranking)) {
+                const rows = d.ranking.map(row =>
+                    '<tr><td>' + escapeHtml(row.rank) + '</td><td>' + escapeHtml(row.strategy) +
+                    '</td><td>' + btMetric(row.total_return_pct, '%') + '</td><td>' + btMetric(row.sharpe_ratio) +
+                    '</td><td>' + btMetric(row.max_drawdown_pct, '%') + '</td><td>' + btMetric(row.trade_count) + '</td></tr>'
+                ).join('');
+                return '<table class="data-table"><thead><tr><th>#</th><th>Strategy</th><th>Return</th><th>Sharpe</th><th>Max DD</th><th>Trades</th></tr></thead><tbody>' +
+                    rows + '</tbody></table><div style="margin-top:0.4rem;">No orders were submitted.</div>';
+            }
+            if (Array.isArray(d.folds)) {
+                const rows = d.folds.map(fold => {
+                    const m = fold.metrics || {};
+                    return '<tr><td>' + escapeHtml(fold.fold) + '</td><td>' + escapeHtml(fold.start) + ' → ' + escapeHtml(fold.end) +
+                        '</td><td>' + btMetric(m.total_return_pct, '%') + '</td><td>' + btMetric(m.sharpe_ratio) +
+                        '</td><td>' + btMetric(fold.trade_count) + '</td></tr>';
+                }).join('');
+                return '<div>Stitched return ' + escapeHtml(d.stitched_return_pct) + '%</div>' +
+                    '<table class="data-table"><thead><tr><th>Fold</th><th>Window</th><th>Return</th><th>Sharpe</th><th>Trades</th></tr></thead><tbody>' +
+                    rows + '</tbody></table>';
+            }
+            const m = d.metrics || {};
+            return '<div style="display:flex; gap:1rem; flex-wrap:wrap;">' +
+                '<span>Return <b>' + btMetric(m.total_return_pct, '%') + '</b></span>' +
+                '<span>Sharpe <b>' + btMetric(m.sharpe_ratio) + '</b></span>' +
+                '<span>Sortino <b>' + btMetric(m.sortino_ratio) + '</b></span>' +
+                '<span>Max DD <b>' + btMetric(m.max_drawdown_pct, '%') + '</b></span>' +
+                '<span>Win rate <b>' + btMetric(m.win_rate_pct, '%') + '</b></span>' +
+                '<span>Trades <b>' + btMetric(d.trade_count) + '</b></span>' +
+                '<span>Buy &amp; hold <b>' + btMetric(m.benchmark_return_pct, '%') + '</b></span>' +
+                '<span>Ending <b>$' + btMetric(d.ending_equity) + '</b></span>' +
+                '</div><div style="margin-top:0.35rem;">' + escapeHtml(d.disclaimer || '') + '</div>';
+        }
+
+        async function runAlgoBacktest() {
+            const result = document.getElementById('btResult');
+            const mode = document.getElementById('btMode').value;
+            const body = {
+                source: 'algo',
+                mode: mode,
+                strategy: document.getElementById('btStrategy').value,
+                symbols: [document.getElementById('btSymbol').value.trim().toUpperCase()],
+                fill_model: document.getElementById('btFill').value,
+                days: parseInt(document.getElementById('btDays').value, 10) || 252,
+                timeframe: '1Day',
+            };
+            if (mode === 'compare') {
+                body.strategies = ['momentum', 'mean_reversion', 'rsi_strategy', 'macd_crossover', 'trend_following', 'ai_adaptive'];
+            }
+            result.textContent = 'Replaying on historical bars. No orders are sent...';
+            try {
+                const response = await authFetch('/api/algo/backtest', {
+                    method: 'POST',
+                    body: JSON.stringify(body),
+                });
+                const data = await response.json();
+                result.innerHTML = renderAlgoBacktest(data);
+            } catch (err) {
+                result.textContent = err.message || 'Backtest failed';
+            }
+        }
+
         // Helper for authenticated fetch
         async function authFetch(url, options = {}) {
             const headers = { ...getAuthHeaders(), ...(options.headers || {}) };

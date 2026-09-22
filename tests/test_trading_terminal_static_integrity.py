@@ -57,6 +57,17 @@ def test_autopilot_halt_reason_and_actor_are_escaped():
     assert "apEscape(b.strategy_version" in content
 
 
+def test_autopilot_backtest_is_a_read_only_replay():
+    content = TRADING_TERMINAL_PATH.read_text(encoding="utf-8")
+
+    assert 'id="apBtMode"' in content
+    assert 'value="replay"' in content and "Replay (recommended)" in content
+    assert 'value="next_open"' in content
+    assert "runAutoPilotBacktest" in content
+    assert "/api/terminal/backtest" in content
+    assert "No orders are sent." in content
+
+
 def test_autopilot_table_shows_mode_and_execute_is_gated_by_halt():
     content = TRADING_TERMINAL_PATH.read_text(encoding="utf-8")
 
