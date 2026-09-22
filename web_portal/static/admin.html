@@ -161,6 +161,7 @@
     /* Mobile Responsive - Portrait and Landscape */
     @media screen and (max-width: 1024px) {
       .mobile-menu-btn { display: block; }
+      .phins-header { overflow: visible; }
       .phins-nav {
         display: none;
         position: fixed;
@@ -171,7 +172,8 @@
           radial-gradient(720px 220px at 88% -36%, rgba(21, 68, 155, 0.48), transparent 70%),
           #060d1f;
         flex-direction: column;
-        padding: 10px 12px 28px;
+        align-items: stretch;
+        padding: 10px 12px calc(28px + env(safe-area-inset-bottom, 0px));
         gap: 6px;
         box-shadow: 0 18px 40px rgba(2, 8, 23, 0.55);
         z-index: 999;
@@ -179,7 +181,10 @@
         height: auto;
         max-height: calc(100vh - 60px);
         max-height: calc(100dvh - 60px);
+        max-height: calc(100svh - 60px - env(safe-area-inset-bottom, 0px));
+        overflow-x: hidden;
         overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
         justify-content: flex-start;
         border-top: 1px solid rgba(127, 178, 255, 0.16);
@@ -196,6 +201,34 @@
         color: #eaf1ff;
         font-weight: 600;
         letter-spacing: 0.04em;
+        white-space: normal;
+        min-height: 44px;
+        box-sizing: border-box;
+      }
+      .phins-nav [data-assessments-nav],
+      .phins-nav .assessments-nav {
+        display: flex;
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        min-width: 0;
+      }
+      .phins-nav .assessments-nav-toggle {
+        width: 100%;
+        min-height: 44px;
+        touch-action: manipulation;
+      }
+      .phins-nav .assessments-nav-menu {
+        position: static;
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        right: auto;
+        left: auto;
+      }
+      .phins-nav .assessments-nav-item {
+        white-space: normal;
+        text-align: start;
       }
       .phins-nav a:hover {
         background: rgba(127, 178, 255, 0.16);
@@ -245,6 +278,36 @@
         -webkit-text-fill-color: #eaf1ff;
         color: #eaf1ff;
         text-shadow: 0 0 18px rgba(127, 178, 255, 0.28);
+      }
+    }
+    @media screen and (max-width: 1024px) and (max-height: 500px) and (orientation: landscape) {
+      .phins-nav.open {
+        flex-flow: row wrap;
+        align-items: stretch;
+        padding: 6px 10px calc(12px + env(safe-area-inset-bottom, 0px));
+        gap: 4px;
+        top: 48px;
+        max-height: calc(100svh - 48px - env(safe-area-inset-bottom, 0px));
+      }
+      .phins-nav.open > a {
+        flex: 1 1 calc(50% - 4px);
+        width: auto;
+        max-width: calc(50% - 4px);
+        padding: 8px 10px;
+        font-size: 0.92rem;
+        min-height: 40px;
+      }
+      .phins-nav.open [data-assessments-nav],
+      .phins-nav.open .assessments-nav {
+        flex: 1 1 calc(50% - 4px);
+        width: auto;
+        max-width: calc(50% - 4px);
+      }
+      .phins-nav.open .assessments-nav.open,
+      .phins-nav.open [data-assessments-nav]:has(.assessments-nav.open) {
+        flex: 1 1 100%;
+        width: 100%;
+        max-width: 100%;
       }
     }
     

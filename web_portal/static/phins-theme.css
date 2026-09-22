@@ -78,6 +78,14 @@
    are opaque navy tiles; the gold active state is a vertical wash so
    a full-width mobile chip does not read as a left-to-right stripe. */
 @media screen and (max-width: 1024px) {
+  /* backdrop-filter on the header creates a containing block; keep
+     overflow visible so the open drawer and Assessments chooser are
+     not clipped on iOS/Android (portrait or landscape). */
+  .phins-header,
+  .admin-header {
+    overflow: visible !important;
+  }
+
   #mobile-nav.phins-nav,
   .phins-nav#mobile-nav {
     background:
@@ -85,7 +93,7 @@
       #060d1f !important;
     border-top: 1px solid var(--phins-line) !important;
     box-shadow: 0 18px 40px rgba(2, 8, 23, 0.55) !important;
-    padding: 10px 12px 28px !important;
+    padding: 10px 12px calc(28px + env(safe-area-inset-bottom, 0px)) !important;
     gap: 6px !important;
     top: 60px !important;
     /* Header chrome uses backdrop-filter, which makes the header the
@@ -97,8 +105,12 @@
     height: auto !important;
     max-height: calc(100vh - 60px) !important;
     max-height: calc(100dvh - 60px) !important;
+    max-height: calc(100svh - 60px - env(safe-area-inset-bottom, 0px)) !important;
+    overflow-x: hidden !important;
     overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
+    align-items: stretch !important;
   }
 
   #mobile-nav.phins-nav a,
@@ -113,6 +125,9 @@
     background-clip: padding-box !important;
     -webkit-background-clip: padding-box !important;
     border-radius: 12px !important;
+    white-space: normal !important;
+    min-height: 44px;
+    box-sizing: border-box;
   }
 
   #mobile-nav.phins-nav a:hover,
@@ -136,34 +151,59 @@
 
   #mobile-nav .assessments-nav,
   #mobile-nav [data-assessments-nav] {
-    display: flex;
-    width: 100%;
+    display: flex !important;
+    width: 100% !important;
+    max-width: 100%;
+    flex: 1 1 100%;
     flex-direction: column;
     align-items: stretch;
+    position: relative;
+    min-width: 0;
   }
   #mobile-nav .assessments-nav-toggle {
     width: 100%;
     justify-content: center;
     padding: 14px 16px !important;
+    min-height: 44px;
     border-radius: 12px !important;
     background: rgba(16, 31, 63, 0.96) !important;
     border: 1px solid var(--phins-line) !important;
     color: var(--phins-ink) !important;
     font-weight: 600 !important;
     letter-spacing: 0.04em !important;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
   #mobile-nav .assessments-nav-toggle.active,
   #mobile-nav .assessments-nav.open .assessments-nav-toggle {
     background: var(--phins-gold) !important;
     color: #071022 !important;
   }
+  /* Keep the chooser in-flow inside the scrollable drawer. An absolute
+     panel is clipped by overflow-y:auto and sits under iOS/Android
+     browser chrome — the reported "Assessments does not appear". */
   #mobile-nav .assessments-nav-menu {
-    position: static;
-    width: 100%;
-    min-width: 0;
+    position: static !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    max-height: none !important;
     margin-top: 8px;
-    right: auto;
-    left: auto;
+    right: auto !important;
+    left: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    box-sizing: border-box;
+  }
+  #mobile-nav .assessments-nav-item {
+    white-space: normal !important;
+    text-align: start !important;
+    min-height: 44px;
+    -webkit-text-fill-color: var(--phins-ink) !important;
+  }
+  #mobile-nav .assessments-nav-item-label,
+  #mobile-nav .assessments-nav-item-hint {
+    white-space: normal !important;
   }
 
   /* Clipped gradient fills dither as diagonal "///" hatch on small
@@ -185,6 +225,50 @@
     border: 1px solid var(--phins-line) !important;
     color: #ffffff !important;
     border-radius: 10px !important;
+  }
+}
+
+/* Short landscape (iOS/Android phones rotated): two-column chips so
+   Assessments stays on-screen, then expand to full width when open. */
+@media screen and (max-width: 1024px) and (max-height: 500px) and (orientation: landscape) {
+  #mobile-nav.phins-nav.open,
+  .phins-nav#mobile-nav.open {
+    flex-flow: row wrap !important;
+    align-items: stretch !important;
+    padding: 6px 10px calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+    gap: 4px !important;
+    top: 48px !important;
+    max-height: calc(100vh - 48px) !important;
+    max-height: calc(100dvh - 48px) !important;
+    max-height: calc(100svh - 48px - env(safe-area-inset-bottom, 0px)) !important;
+  }
+  #mobile-nav.phins-nav a,
+  .phins-nav#mobile-nav a,
+  #mobile-nav .assessments-nav-toggle {
+    padding: 8px 10px !important;
+    font-size: 0.92rem !important;
+    min-height: 40px;
+  }
+  #mobile-nav.phins-nav > a,
+  #mobile-nav > a {
+    flex: 1 1 calc(50% - 4px);
+    width: auto !important;
+    max-width: calc(50% - 4px);
+  }
+  #mobile-nav .assessments-nav,
+  #mobile-nav [data-assessments-nav] {
+    flex: 1 1 calc(50% - 4px);
+    width: auto !important;
+    max-width: calc(50% - 4px);
+  }
+  #mobile-nav .assessments-nav.open,
+  #mobile-nav [data-assessments-nav]:has(.assessments-nav.open) {
+    flex: 1 1 100%;
+    width: 100% !important;
+    max-width: 100%;
+  }
+  #mobile-nav .assessments-nav-item-hint {
+    font-size: 0.66rem;
   }
 }
 
@@ -538,6 +622,11 @@
   top: calc(100% + 8px);
   left: 0;
   min-width: 280px;
+  max-width: min(360px, calc(100vw - 16px));
+  max-height: min(70vh, 420px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   z-index: 1200;
   padding: 8px;
   border-radius: 14px;
@@ -548,6 +637,15 @@
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
   box-shadow: 0 16px 40px rgba(2, 8, 23, 0.5);
+  box-sizing: border-box;
+}
+.assessments-nav--drop-up .assessments-nav-menu {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+.assessments-nav--align-end .assessments-nav-menu {
+  left: auto;
+  right: 0;
 }
 .assessments-nav-item {
   display: block;
@@ -584,6 +682,7 @@
   .assessments-nav-menu {
     left: auto;
     right: 0;
-    min-width: 260px;
+    min-width: min(260px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
   }
 }
