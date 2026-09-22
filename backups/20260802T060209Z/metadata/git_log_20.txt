@@ -1,0 +1,20 @@
+ff06cc5 Merge pull request #481 from ashuryasaf/cursor/fix-risk-assessment-report-errors-5759
+bb5970f Return JSON 500 from risk-assessment report on unexpected crashes
+8958e98 Fix underwriting report lookup: chronological created_date sort and falsy smoking coercion
+1ed418c Fix risk assessment report crashes causing 'Error Loading Report' in viewer
+a971fa3 Merge pull request #479 from ashuryasaf/cursor/restore-mislaka-in-workbench-a8d6
+aed0b48 Fix Mislaka link to resolve active customer instead of ID fallback
+01b2323 Remove decorative emojis from Assessments board pages.
+8ec462a Restore choosable Assessments routes with PR #433 navy/gold chrome.
+00c2a3b Merge pull request #478 from ashuryasaf/cursor/remove-admin-ai-assistant-title-10f7
+7b52ca5 Restore Mislaka assessment into the unified Assessments workbench.
+fa83417 Align admin AI mic tests with title removal and voice wiring
+44bc17b Remove PHINS admin AI Assistant title; keep Admin AI Mic
+e409c2b Merge pull request #477 from ashuryasaf/cursor/assessment-unify-clearance-a8d6
+b59fb51 Fix string-stored verification flags coercing to true
+49026dc Merge pull request #476 from ashuryasaf/cursor/system-backup-configuration-c25e
+c132d2d Fix jurisdiction templates to fully substitute regulator names.
+9a27b5d Add regression tests for unified Assessments nav and jurisdiction templates.
+37d5b4b Unify Assessments nav and replace 52 jurisdiction pitch/NDA duplicates.
+ebf86fe Fix P0 runtime bugs and replace underwriting simulation with content analysis.
+6fe3d58 Join Assessment Center risk scoring with real platform data.
