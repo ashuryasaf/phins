@@ -69,6 +69,13 @@ def test_catalog_recommends_replay_without_broker_orders():
     algo = {row["name"] for row in catalog["strategies"]["algo"]}
     assert "rsi_strategy" in algo and "dollar_cost_averaging" in algo
     assert "options_wheel" in catalog["unsupported_on_equity_bars"]
+    algo_tape = catalog["algo"]
+    assert algo_tape["primary"] == "alpaca_trades"
+    assert algo_tape["fallback"] is None
+    assert algo_tape["mock_data"] is False
+    assert algo_tape["max_trades_per_day"] == 30_000
+    assert algo_tape["default_trading_days"] == 1
+    assert algo_tape["max_trading_days"] == 20
 
 
 def test_next_open_fills_on_the_following_bar():
@@ -225,15 +232,15 @@ def test_compare_and_walk_forward_shapes():
         })
     compare = run_backtest_request(
         {
-            "source": "algo",
+            "source": "autopilot",
             "mode": "compare",
-            "strategies": ["rsi_strategy", "mean_reversion", "momentum"],
+            "strategies": ["momentum", "mean_reversion", "breakout"],
             "bars": {"SPY": rows},
             "warmup_bars": 30,
             "lookback_bars": 40,
             "slippage_bps": 5,
         },
-        default_source="algo",
+        default_source="autopilot",
     )
     assert "error" not in compare
     assert [row["rank"] for row in compare["ranking"]] == [1, 2, 3]
@@ -296,6 +303,212 @@ def test_historical_bars_follow_the_page_token_and_never_trade():
     assert not hasattr(svc, "submit_order") or True
 
 
+def _tape_prints(n, session="2024-01-02", price=100.0):
+    rows = []
+    for i in range(n):
+        px = price + (i % 7) * 0.1
+        rows.append({
+            "date": f"{session}T{14 + (i // 3600):02d}:{(i // 60) % 60:02d}:{i % 60:02d}Z",
+            "session_date": session,
+            "open": px,
+            "high": px,
+            "low": px,
+            "close": px,
+            "volume": 10 + i,
+        })
+    return rows
+
+
+def test_fill_cap_blocks_new_orders_and_still_stops_out():
+    rows = _tape_prints(8, price=100)
+    rows.append({
+        "date": "2024-01-02T15:00:00Z",
+        "session_date": "2024-01-02",
+        "open": 80,
+        "high": 80,
+        "low": 80,
+        "close": 80,
+        "volume": 50,
+    })
+
+    def decide(symbol, window, account, positions):
+        if len(window) == 3 and not positions:
+            return [{"side": "buy", "qty": 1, "reason": "enter", "stop_loss": 90}]
+        if positions:
+            return [{"side": "sell", "qty": 0, "reason": "discretionary"}]
+        return []
+
+    report = simulate(
+        {"SPY": rows},
+        decide,
+        BacktestConfig(
+            warmup_bars=2, lookback_bars=20, slippage_bps=0,
+            starting_cash=10_000, max_trades_per_day=1,
+        ),
+    )
+    assert report["fills_per_day"]["2024-01-02"] == 2
+    reasons = [t["reason"] for t in report["trades"]]
+    assert reasons == ["enter", "stop_loss"]
+    assert report["open_positions"] == {}
+
+
+def test_duplicate_print_timestamps_are_all_replayed():
+    rows = _tape_prints(6)
+    for row in rows:
+        row["date"] = "2024-01-02T14:30:00Z"
+    seen = []
+
+    def decide(symbol, window, account, positions):
+        seen.append(len(window))
+        return []
+
+    report = simulate(
+        {"SPY": rows},
+        decide,
+        BacktestConfig(warmup_bars=2, lookback_bars=20, slippage_bps=0),
+    )
+    assert report["bars"] == 6
+    assert seen == [3, 4, 5, 6]
+
+
+def test_algo_request_rejects_bars_and_replays_the_tape():
+    captured = {}
+
+    class Tape:
+        is_connected = True
+        _last_data_error = None
+
+        def submit_order(self, *args, **kwargs):
+            raise AssertionError("backtest must not submit orders")
+
+        def get_historical_bars(self, *args, **kwargs):
+            raise AssertionError("algo backtest must not load bars")
+
+        def _bars_from_alpha_vantage(self, *args, **kwargs):
+            raise AssertionError("algo backtest must not use Alpha Vantage")
+
+        def get_historical_trades(self, symbol, **kwargs):
+            captured["symbol"] = symbol
+            captured["kwargs"] = kwargs
+            prints = _tape_prints(40)
+            return {
+                "prints": prints,
+                "tape_trades_per_day": {"2024-01-02": len(prints)},
+                "truncated_days": [],
+                "sessions": ["2024-01-02"],
+            }
+
+    rejected = run_backtest_request(
+        {
+            "source": "algo",
+            "strategy": "momentum",
+            "symbols": ["SPY"],
+            "days": 1,
+            "bars": {"SPY": _flat_bars(40)},
+        },
+        default_source="algo",
+        platform=Tape(),
+    )
+    assert "error" in rejected
+    assert "Supplied bars" in rejected["error"]
+    assert "kwargs" not in captured
+
+    result = run_backtest_request(
+        {
+            "source": "algo",
+            "strategy": "momentum",
+            "symbols": ["SPY"],
+            "days": 252,
+            "warmup_bars": 80,
+        },
+        default_source="algo",
+        platform=Tape(),
+    )
+    assert "error" not in result, result.get("error")
+    assert result["orders_submitted"] == 0
+    assert result["mock_data"] is False
+    assert result["data_source"] == "alpaca_trades"
+    assert result["timeframe"] == "trades"
+    assert result["data_sources"]["SPY"] == "alpaca_trades"
+    assert result["max_trades_per_day"] == 30_000
+    assert result["trading_days"] == 20
+    assert captured["kwargs"]["trading_days"] == 20
+    assert captured["kwargs"]["max_per_day"] == 30_000
+    assert result["tape_trades_per_day"] == {"2024-01-02": 40}
+    assert result["truncated_days"] == []
+    assert result["warmup_bars"] < 80
+    assert result["warmup_note"]
+
+
+def test_historical_trades_stop_at_the_daily_cap():
+    svc = TradingPlatformService.__new__(TradingPlatformService)
+    svc._connected = True
+    calls = []
+
+    def _trade(i, price):
+        return {"t": f"2024-01-02T15:{i % 60:02d}:{i % 60:02d}Z", "p": price, "s": 1}
+
+    pages = {
+        "2024-01-01": {"trades": [], "next_page_token": None},
+        "2024-01-02": [
+            {"trades": [_trade(i, 10 + i) for i in range(3)], "next_page_token": "page-2"},
+            {"trades": [_trade(i, 20 + i) for i in range(10)], "next_page_token": "page-3"},
+        ],
+    }
+    consumed = {"2024-01-02": 0}
+
+    def _data_request(path, params=None):
+        params = dict(params or {})
+        calls.append((path, params))
+        start = params.get("start") or ""
+        # 2024-01-01 00:00 ET is 05:00Z; 2024-01-02 00:00 ET is 05:00Z.
+        if start.startswith("2024-01-01"):
+            return pages["2024-01-01"]
+        idx = consumed["2024-01-02"]
+        consumed["2024-01-02"] += 1
+        return pages["2024-01-02"][idx]
+
+    svc._data_request = _data_request
+    result = svc.get_historical_trades(
+        "AAPL", trading_days=1, max_per_day=5, end="2024-01-02",
+    )
+    assert result["sessions"] == ["2024-01-02"]
+    assert result["tape_trades_per_day"] == {"2024-01-02": 5}
+    assert result["truncated_days"] == ["2024-01-02"]
+    assert [row["close"] for row in result["prints"]] == [10, 11, 12, 20, 21]
+    assert all(row["session_date"] == "2024-01-02" for row in result["prints"])
+    assert all(row["open"] == row["high"] == row["low"] == row["close"] for row in result["prints"])
+    assert calls[0][0] == "/v2/stocks/AAPL/trades"
+    assert calls[0][1]["feed"] == "iex"
+    assert calls[0][1]["sort"] == "asc"
+    assert calls[0][1]["start"] == "2024-01-02T05:00:00Z"
+    assert calls[0][1]["end"] == "2024-01-03T05:00:00Z"
+    assert calls[1][1]["page_token"] == "page-2"
+    assert len(calls) == 2
+    assert not any(path.endswith("/orders") for path, _ in calls)
+
+
+def test_crypto_trades_read_the_pair_map():
+    svc = TradingPlatformService.__new__(TradingPlatformService)
+    svc._connected = True
+    calls = []
+
+    def _data_request(path, params=None):
+        calls.append((path, dict(params or {})))
+        return {
+            "trades": {"BTC/USD": [{"t": "2024-01-02T15:00:00Z", "p": 42000, "s": 0.01}]},
+            "next_page_token": None,
+        }
+
+    svc._data_request = _data_request
+    result = svc.get_historical_trades("BTC", trading_days=1, max_per_day=10, end="2024-01-02")
+    assert calls[0][0] == "/v1beta3/crypto/us/trades"
+    assert calls[0][1]["symbols"] == "BTC/USD"
+    assert result["prints"][0]["close"] == 42000
+    assert result["tape_trades_per_day"]["2024-01-02"] == 1
+    assert result["truncated_days"] == []
+
+
 def test_crypto_pair_normalization():
     from services.trading_platform_service import _crypto_pair
     assert _crypto_pair("BTC") == "BTC/USD"
@@ -323,21 +536,33 @@ def _http(method, path, body=None, key=None):
 
 
 @pytest.mark.skipif(not portal.algo_trading_enabled, reason="algo trading not wired")
-def test_algo_backtest_http_accepts_supplied_bars():
+def test_algo_backtest_http_rejects_supplied_bars():
     status, payload = _http("POST", "/api/algo/backtest", {
         "source": "algo",
         "strategy": "rsi_strategy",
-        "warmup_bars": 20,
-        "lookback_bars": 30,
+        "symbols": ["SPY"],
+        "days": 1,
         "bars": {"SPY": _flat_bars(40, price=40)},
     })
-    assert status == 200
-    assert payload["orders_submitted"] == 0
-    assert payload["source"] == "algo"
-    assert payload["strategy"] == "rsi_strategy"
+    assert status == 400
+    assert "Supplied bars" in payload["error"]
+    assert "orders_submitted" not in payload
+
+    status, payload = _http("POST", "/api/algo/backtest", {
+        "source": "algo",
+        "strategy": "momentum",
+        "symbols": ["SPY"],
+        "days": 1,
+    })
+    assert status == 400
+    assert "Alpaca" in payload["error"]
+    assert "orders_submitted" not in payload
+
     options_status, options = _http("GET", "/api/algo/backtest/options")
     assert options_status == 200
     assert options["recommended"]["fill_model"] == "next_open"
+    assert options["algo"]["max_trades_per_day"] == 30000
+    assert options["algo"]["mock_data"] is False
 
 
 @pytest.mark.skipif(not portal.trading_platform_enabled, reason="trading platform not wired")

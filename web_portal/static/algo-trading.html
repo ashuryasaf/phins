@@ -902,8 +902,9 @@
                 <div>
                     <div style="font-weight:700;">Historical backtest</div>
                     <div style="color: var(--text-secondary); font-size: 0.85rem; max-width: 640px;">
-                        Recommended: replay the same strategy rules on Alpaca daily bars and fill at the next open.
-                        Walk-forward checks stability. Compare ranks strategies on identical costs. No orders are sent.
+                        Replays up to 30,000 real Alpaca trades on each trading day and fills at the next print.
+                        Walk-forward checks stability. Compare ranks strategies on the same tape and the same costs.
+                        Mock data is not used. No orders are sent.
                     </div>
                 </div>
                 <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:flex-end;">
@@ -938,13 +939,13 @@
                             <option value="same_close">Same close</option>
                         </select>
                     </label>
-                    <label style="font-size:0.75rem; color:var(--text-secondary);">Days
-                        <input id="btDays" class="form-input" type="number" value="252" min="30" max="2000" style="width:90px;">
+                    <label style="font-size:0.75rem; color:var(--text-secondary);">Trading days
+                        <input id="btDays" class="form-input" type="number" value="1" min="1" max="20" style="width:90px;">
                     </label>
                     <button type="button" id="btRunBtn" class="btn btn-primary" onclick="runAlgoBacktest()">Run backtest</button>
                 </div>
             </div>
-            <div id="btResult" style="margin-top:0.75rem; font-size:0.9rem; color:var(--text-secondary);">Uses Alpaca market data when the broker is connected. Results stay on this page.</div>
+            <div id="btResult" style="margin-top:0.75rem; font-size:0.9rem; color:var(--text-secondary);">Runs on Alpaca's trade tape when the broker is connected. Up to 30,000 trades per session, one trading day by default.</div>
         </section>
         
         <!-- Advanced Metrics Row -->
@@ -1704,6 +1705,26 @@
             return escapeHtml(value) + (suffix || '');
         }
 
+        function btTapeLine(d) {
+            if (!d || d.max_trades_per_day == null) return '';
+            const days = d.tape_trades_per_day || {};
+            const parts = Object.keys(days).map(function (day) {
+                return day + ': ' + days[day] + ' tape prints';
+            });
+            let extra = '';
+            if (d.truncated_days && d.truncated_days.length) {
+                extra = ' Capped at ' + d.max_trades_per_day + ' on ' + d.truncated_days.join(', ') + '.';
+            }
+            const fills = d.trades_per_day || {};
+            const fillParts = Object.keys(fills).map(function (day) {
+                return day + ': ' + fills[day] + ' strategy fills';
+            });
+            return '<div style="margin-top:0.35rem;">Up to ' + escapeHtml(d.max_trades_per_day) +
+                ' real Alpaca trades per session. ' + escapeHtml(parts.join('; ')) +
+                (fillParts.length ? ' ' + escapeHtml(fillParts.join('; ')) + '.' : '') +
+                escapeHtml(extra) + ' Mock data is not used.</div>';
+        }
+
         function renderAlgoBacktest(d) {
             if (!d || d.error) {
                 return '<div style="color:var(--danger, #c44);">' + escapeHtml(d && d.error ? d.error : 'Backtest failed') + '</div>';
@@ -1715,7 +1736,7 @@
                     '</td><td>' + btMetric(row.max_drawdown_pct, '%') + '</td><td>' + btMetric(row.trade_count) + '</td></tr>'
                 ).join('');
                 return '<table class="data-table"><thead><tr><th>#</th><th>Strategy</th><th>Return</th><th>Sharpe</th><th>Max DD</th><th>Trades</th></tr></thead><tbody>' +
-                    rows + '</tbody></table><div style="margin-top:0.4rem;">No orders were submitted.</div>';
+                    rows + '</tbody></table><div style="margin-top:0.4rem;">No orders were submitted.</div>' + btTapeLine(d);
             }
             if (Array.isArray(d.folds)) {
                 const rows = d.folds.map(fold => {
@@ -1726,7 +1747,7 @@
                 }).join('');
                 return '<div>Stitched return ' + escapeHtml(d.stitched_return_pct) + '%</div>' +
                     '<table class="data-table"><thead><tr><th>Fold</th><th>Window</th><th>Return</th><th>Sharpe</th><th>Trades</th></tr></thead><tbody>' +
-                    rows + '</tbody></table>';
+                    rows + '</tbody></table>' + btTapeLine(d);
             }
             const m = d.metrics || {};
             return '<div style="display:flex; gap:1rem; flex-wrap:wrap;">' +
@@ -1738,7 +1759,7 @@
                 '<span>Trades <b>' + btMetric(d.trade_count) + '</b></span>' +
                 '<span>Buy &amp; hold <b>' + btMetric(m.benchmark_return_pct, '%') + '</b></span>' +
                 '<span>Ending <b>$' + btMetric(d.ending_equity) + '</b></span>' +
-                '</div><div style="margin-top:0.35rem;">' + escapeHtml(d.disclaimer || '') + '</div>';
+                '</div><div style="margin-top:0.35rem;">' + escapeHtml(d.disclaimer || '') + '</div>' + btTapeLine(d);
         }
 
         async function runAlgoBacktest() {
@@ -1750,13 +1771,12 @@
                 strategy: document.getElementById('btStrategy').value,
                 symbols: [document.getElementById('btSymbol').value.trim().toUpperCase()],
                 fill_model: document.getElementById('btFill').value,
-                days: parseInt(document.getElementById('btDays').value, 10) || 252,
-                timeframe: '1Day',
+                days: parseInt(document.getElementById('btDays').value, 10) || 1,
             };
             if (mode === 'compare') {
                 body.strategies = ['momentum', 'mean_reversion', 'rsi_strategy', 'macd_crossover', 'trend_following', 'ai_adaptive'];
             }
-            result.textContent = 'Replaying on historical bars. No orders are sent...';
+            result.textContent = 'Replaying Alpaca trades. No orders are sent...';
             try {
                 const response = await authFetch('/api/algo/backtest', {
                     method: 'POST',

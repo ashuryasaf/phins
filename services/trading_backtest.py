@@ -8,15 +8,17 @@ The live decision functions stay in charge:
 - Algo-page strategies are the ``AlgoTradingService`` methods behind
   ``generate_signal`` (RSI, MACD, momentum, and the rest of the equity set).
 
-Bars come from Alpaca's market-data API (read-only). Fills happen in a
+Terminal AutoPilot replays Alpaca historical bars. The algo-trading page
+replays Alpaca's trade tape: up to 30,000 real prints on each NY session,
+with no supplied bars and no Alpha Vantage fallback. Fills happen in a
 simulated cash account. This module never calls ``submit_order`` and never
 mutates AutoPilot bot state.
 
-Recommended setup: mode ``replay``, fill model ``next_open``, daily bars,
-5 bps of slippage. ``next_open`` fills the signal on the following bar's
-open, so the decision cannot see its own fill. ``walk_forward`` repeats that
-replay on consecutive windows. ``compare`` ranks several strategies on the
-same bars and the same costs.
+Recommended setup: mode ``replay``, fill model ``next_open``, 5 bps of
+slippage. ``next_open`` fills the signal on the following print's price, so
+the decision cannot see its own fill. ``walk_forward`` repeats that replay
+on consecutive windows. ``compare`` ranks several strategies on the same
+tape and the same costs.
 """
 
 from __future__ import annotations
@@ -34,6 +36,10 @@ _SYMBOL_RE = re.compile(r"^[A-Z0-9][A-Z0-9./-]{0,14}$")
 MAX_BARS = 2000
 MAX_SYMBOLS = 8
 MAX_STRATEGIES = 6
+MAX_TRADES_PER_DAY = 30_000
+MAX_TRADING_DAYS = 20
+DEFAULT_TRADING_DAYS = 1
+MIN_TAPE_PRINTS = 30
 DEFAULT_LOOKBACK = 100  # live AutoPilot evaluate loads 100 daily bars
 DEFAULT_WARMUP = 80
 DEFAULT_CASH = 100_000.0
@@ -83,6 +89,9 @@ class BacktestConfig:
     stop_loss_pct: float = 0.0
     take_profit_pct: float = 0.0
     folds: int = 4
+    # None leaves the fill engine uncapped (in-memory unit tests).
+    # Algo requests set this to MAX_TRADES_PER_DAY.
+    max_trades_per_day: Optional[int] = None
 
     @property
     def lookahead_bias(self) -> bool:
@@ -202,11 +211,28 @@ def backtest_options() -> Dict[str, Any]:
             "max_bars": MAX_BARS,
             "max_symbols": MAX_SYMBOLS,
             "max_strategies": MAX_STRATEGIES,
+            "max_trades_per_day": MAX_TRADES_PER_DAY,
+            "max_trading_days": MAX_TRADING_DAYS,
         },
         "data": {
             "primary": "alpaca_historical",
             "fallback": "alpha_vantage_daily",
             "orders_submitted": False,
+        },
+        "algo": {
+            "primary": "alpaca_trades",
+            "fallback": None,
+            "mock_data": False,
+            "max_trades_per_day": MAX_TRADES_PER_DAY,
+            "max_trading_days": MAX_TRADING_DAYS,
+            "default_trading_days": DEFAULT_TRADING_DAYS,
+            "timeframe": "trades",
+            "description": (
+                "Algo-page backtests replay real Alpaca trades, at most "
+                "30,000 prints on each NY session. Supplied bars and "
+                "Alpha Vantage are not used. The cap is a maximum: a thin "
+                "IEX day is reported as the count Alpaca returned."
+            ),
         },
         "position_model": (
             "Long-only. A buy while flat opens the position; further buys are "
@@ -250,22 +276,55 @@ def run_backtest_request(
             take_profit_pct=_clamp_float(payload.get("take_profit_pct"), 0.0, 0.0, 200.0),
             folds=_clamp_int(payload.get("folds"), 4, 2, 8),
         )
-        timeframe = str(payload.get("timeframe") or "1Day").strip() or "1Day"
-        limit = _clamp_int(payload.get("limit") or payload.get("days"), 252, 30, MAX_BARS)
-        symbols = _clean_symbols(payload.get("symbols") or payload.get("symbol"))
-        supplied = _clean_supplied_bars(payload.get("bars"))
-        if supplied:
-            symbols = list(supplied.keys())[:MAX_SYMBOLS]
-            supplied = {sym: supplied[sym] for sym in symbols}
-        if not symbols:
-            raise ValueError("At least one symbol is required")
-
         strategies = _resolve_strategies(payload, source, mode)
-        bars_by_symbol, data_sources = _resolve_bars(
-            platform, symbols, supplied, timeframe=timeframe,
-            start=payload.get("start"), end=payload.get("end"), limit=limit,
-            feed=str(payload.get("feed") or "iex"),
-        )
+        warmup_note = None
+        tape_meta = None
+        trading_days = None
+        if source == "algo":
+            for name in strategies:
+                _assert_algo_strategy(name)
+            if payload.get("bars"):
+                raise ValueError(
+                    "Algo backtests replay Alpaca historical trades only. "
+                    "Supplied bars are not accepted."
+                )
+            raw_days = payload.get("trading_days")
+            if raw_days in (None, ""):
+                raw_days = payload.get("days")
+            trading_days = _clamp_int(raw_days, DEFAULT_TRADING_DAYS, 1, MAX_TRADING_DAYS)
+            config.max_trades_per_day = _clamp_int(
+                payload.get("max_trades_per_day"), MAX_TRADES_PER_DAY, 1, MAX_TRADES_PER_DAY,
+            )
+            symbols = _clean_symbols(payload.get("symbols") or payload.get("symbol"))
+            if not symbols:
+                raise ValueError("At least one symbol is required")
+            if len(symbols) != 1:
+                raise ValueError("Algo trade replay runs one symbol at a time.")
+            timeframe = "trades"
+            bars_by_symbol, data_sources, tape_meta = _resolve_algo_trades(
+                platform, symbols,
+                trading_days=trading_days,
+                max_per_day=config.max_trades_per_day,
+                start=payload.get("start"),
+                end=payload.get("end"),
+                feed=str(payload.get("feed") or "iex"),
+            )
+            warmup_note = _fit_tape_warmup(bars_by_symbol, config)
+        else:
+            timeframe = str(payload.get("timeframe") or "1Day").strip() or "1Day"
+            limit = _clamp_int(payload.get("limit") or payload.get("days"), 252, 30, MAX_BARS)
+            symbols = _clean_symbols(payload.get("symbols") or payload.get("symbol"))
+            supplied = _clean_supplied_bars(payload.get("bars"))
+            if supplied:
+                symbols = list(supplied.keys())[:MAX_SYMBOLS]
+                supplied = {sym: supplied[sym] for sym in symbols}
+            if not symbols:
+                raise ValueError("At least one symbol is required")
+            bars_by_symbol, data_sources = _resolve_bars(
+                platform, symbols, supplied, timeframe=timeframe,
+                start=payload.get("start"), end=payload.get("end"), limit=limit,
+                feed=str(payload.get("feed") or "iex"),
+            )
         _require_history(bars_by_symbol, config)
 
         if mode == "compare":
@@ -297,6 +356,19 @@ def run_backtest_request(
                 "No orders were submitted to Alpaca."
             ),
         })
+        if source == "algo":
+            result.update({
+                "mock_data": False,
+                "data_source": "alpaca_trades",
+                "max_trades_per_day": config.max_trades_per_day,
+                "trading_days": trading_days,
+                "sessions": (tape_meta or {}).get("sessions") or [],
+                "tape_trades_per_day": (tape_meta or {}).get("tape_trades_per_day") or {},
+                "truncated_days": (tape_meta or {}).get("truncated_days") or [],
+                "trades_per_day": result.get("fills_per_day") or {},
+                "warmup_bars": config.warmup_bars,
+                "warmup_note": warmup_note,
+            })
         return result
     except ValueError as exc:
         return {"error": str(exc)}
@@ -344,17 +416,20 @@ def simulate(
     trades: List[Dict[str, Any]] = []
     equity_curve: List[Dict[str, Any]] = []
     exposure_flags: List[int] = []
+    fills_by_day: Dict[str, int] = {}
 
     for idx, stamp in enumerate(clock):
         todays = by_date.get(stamp, {})
         box = _CashBox(cash)
         for sym, bar in todays.items():
             if cfg.fill_model == "next_open" and sym in pending:
-                _fill(sym, bar, pending.pop(sym), "open", box, positions, trades, cfg)
+                _fill(sym, bar, pending.pop(sym), "open", box, positions, trades, cfg, fills_by_day)
             last_close[sym] = float(bar["close"])
             if sym in positions:
                 reason, exit_px = _protective_exit(positions[sym], bar)
                 if reason and exit_px is not None:
+                    # A stop or target may close the position after the day's
+                    # discretionary cap has already been reached.
                     _fill(
                         sym, bar,
                         {
@@ -362,9 +437,9 @@ def simulate(
                             "qty": positions[sym].qty,
                             "reason": reason,
                             "signal_price": exit_px,
-                            "signal_date": stamp,
+                            "signal_date": str(bar.get("date") or stamp),
                         },
-                        "stop", box, positions, trades, cfg, override_price=exit_px,
+                        "stop", box, positions, trades, cfg, fills_by_day, override_price=exit_px,
                     )
         cash = box.cash
 
@@ -390,15 +465,18 @@ def simulate(
                 logger.exception("backtest decision failed for %s at %s", sym, stamp)
                 continue
             price = float(bar["close"])
+            signal_stamp = str(bar.get("date") or stamp)
+            if _fill_cap_reached(cfg, fills_by_day, bar):
+                continue
             for action in actions:
                 if not isinstance(action, dict):
                     continue
-                order = _prepare_order(action, sym, price, cash, equity, positions, cfg, stamp)
+                order = _prepare_order(action, sym, price, cash, equity, positions, cfg, signal_stamp)
                 if order is None:
                     continue
                 if cfg.fill_model == "same_close":
                     box = _CashBox(cash)
-                    _fill(sym, bar, order, "close", box, positions, trades, cfg)
+                    _fill(sym, bar, order, "close", box, positions, trades, cfg, fills_by_day)
                     cash = box.cash
                     equity = _mark(cash, positions, last_close)
                 else:
@@ -406,7 +484,10 @@ def simulate(
                 break  # one action per symbol per bar
 
         equity = _mark(cash, positions, last_close)
-        equity_curve.append({"date": stamp, "equity": round(equity, 2)})
+        curve_date = stamp
+        if todays:
+            curve_date = str(next(iter(todays.values())).get("date") or stamp)
+        equity_curve.append({"date": curve_date, "equity": round(equity, 2)})
         exposure_flags.append(1 if any(p.qty > 0 for p in positions.values()) else 0)
 
     # A signal on the final bar has no following open. Drop it and say so.
@@ -432,6 +513,8 @@ def simulate(
         "cash": round(cash, 2),
         "unfilled_signals": unfilled,
         "bars": len(clock),
+        "fills_per_day": dict(fills_by_day),
+        "max_trades_per_day": cfg.max_trades_per_day,
     }
 
 
@@ -499,21 +582,29 @@ def _walk_forward(
         test_start = config.warmup_bars + i * fold_len
         test_end = n if i == config.folds - 1 else test_start + fold_len
         slice_from = max(0, test_start - config.warmup_bars)
-        # Map clock stamps back onto each series by date.
-        window_stamps = set(clock[slice_from:test_end])
-        sliced = {}
-        for sym, rows in series.items():
-            piece = [bar for bar in rows if str(bar.get("date")) in window_stamps]
-            if piece:
-                sliced[sym] = piece
+        if len(series) == 1:
+            sym, rows = next(iter(series.items()))
+            sliced = {sym: rows[slice_from:test_end]}
+            start_label = str(rows[test_start].get("date"))
+            end_label = str(rows[test_end - 1].get("date"))
+        else:
+            # Map clock stamps back onto each series by date.
+            window_stamps = set(clock[slice_from:test_end])
+            sliced = {}
+            for sym, rows in series.items():
+                piece = [bar for bar in rows if str(bar.get("date")) in window_stamps]
+                if piece:
+                    sliced[sym] = piece
+            start_label = clock[test_start] if test_start < n else None
+            end_label = clock[test_end - 1]
         report = simulate(sliced, decide, config)
         ret = report["metrics"].get("total_return_pct")
         if ret is not None:
             compound *= 1.0 + (ret / 100.0)
         folds.append({
             "fold": i + 1,
-            "start": clock[test_start] if test_start < n else None,
-            "end": clock[test_end - 1],
+            "start": start_label,
+            "end": end_label,
             "metrics": report["metrics"],
             "trade_count": report["trade_count"],
             "ending_equity": report["ending_equity"],
@@ -573,19 +664,24 @@ def _autopilot_decide(strategy_name: str) -> DecideFn:
     return decide
 
 
-def _algo_decide(strategy_name: str, config: BacktestConfig) -> DecideFn:
-    from services.algo_trading_service import AlgoTradingService, SignalType
-
+def _assert_algo_strategy(strategy_name: str) -> str:
     key = strategy_name.strip().lower()
     if key in _ALGO_UNSUPPORTED:
         raise ValueError(
             f"'{strategy_name}' needs an option chain and is not replayed on equity bars. "
             f"Use one of: {', '.join(n for n in _ALGO_METHODS if n != 'dca')}."
         )
-    method_name = _ALGO_METHODS.get(key)
-    if not method_name:
+    if key not in _ALGO_METHODS:
         known = ", ".join(n for n in _ALGO_METHODS if n != "dca")
         raise ValueError(f"Unknown algo strategy '{strategy_name}'. Available: {known}")
+    return key
+
+
+def _algo_decide(strategy_name: str, config: BacktestConfig) -> DecideFn:
+    from services.algo_trading_service import AlgoTradingService, SignalType
+
+    key = _assert_algo_strategy(strategy_name)
+    method_name = _ALGO_METHODS[key]
     # Avoid AlgoTradingService(), which pulls live bars during init.
     service = AlgoTradingService.__new__(AlgoTradingService)
     method = getattr(service, method_name)
@@ -748,6 +844,27 @@ def _buy_unit_cost(price: float, cfg: BacktestConfig) -> float:
     return slipped * (1.0 + cfg.commission_bps / 10_000.0) + cfg.commission_per_share
 
 
+def _session_day(bar: Dict[str, Any]) -> str:
+    explicit = bar.get("session_date")
+    if explicit:
+        return str(explicit)[:10]
+    stamp = str(bar.get("date") or "")
+    if len(stamp) >= 10 and stamp[4] == "-" and stamp[7] == "-":
+        return stamp[:10]
+    return stamp or "session"
+
+
+def _fill_cap_reached(
+    cfg: BacktestConfig,
+    fills_by_day: Dict[str, int],
+    bar: Dict[str, Any],
+) -> bool:
+    cap = cfg.max_trades_per_day
+    if cap is None:
+        return False
+    return fills_by_day.get(_session_day(bar), 0) >= cap
+
+
 def _fill(
     symbol: str,
     bar: Dict[str, Any],
@@ -757,6 +874,7 @@ def _fill(
     positions: Dict[str, _Position],
     trades: List[Dict[str, Any]],
     cfg: BacktestConfig,
+    fills_by_day: Optional[Dict[str, int]] = None,
     override_price: Optional[float] = None,
 ) -> None:
     side = order["side"]
@@ -830,6 +948,9 @@ def _fill(
         "pnl": round(pnl, 4) if pnl is not None else None,
         "_cash_after": box.cash,
     })
+    if fills_by_day is not None:
+        day = _session_day(bar)
+        fills_by_day[day] = fills_by_day.get(day, 0) + 1
 
 
 def _protective_exit(pos: _Position, bar: Dict[str, Any]) -> Tuple[Optional[str], Optional[float]]:
@@ -898,6 +1019,74 @@ def _resolve_bars(
     if missing:
         raise ValueError(f"No historical bars for {', '.join(missing)}.")
     return bars, sources
+
+
+def _resolve_algo_trades(
+    platform: Any,
+    symbols: List[str],
+    *,
+    trading_days: int,
+    max_per_day: int,
+    start: Any,
+    end: Any,
+    feed: str,
+) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, str], Dict[str, Any]]:
+    """Load the Alpaca trade tape for one symbol. Never falls back to mock data."""
+    sym = symbols[0]
+    if platform is None or not getattr(platform, "is_connected", False):
+        raise ValueError(
+            f"No Alpaca trades for {sym}. Alpaca is not connected "
+            "(set ALPACA_API_KEY and ALPACA_SECRET_KEY)."
+        )
+    loader = getattr(platform, "get_historical_trades", None)
+    if not callable(loader):
+        raise ValueError(
+            f"No Alpaca trades for {sym}. The broker connection cannot read historical trades."
+        )
+    raw = loader(
+        sym,
+        trading_days=trading_days,
+        max_per_day=max_per_day,
+        start=str(start) if start else None,
+        end=str(end) if end else None,
+        feed=feed if feed in ("iex", "sip") else "iex",
+    ) or {}
+    prints = raw.get("prints") if isinstance(raw, dict) else None
+    if not prints:
+        last = getattr(platform, "_last_data_error", None)
+        detail = f" {last}" if last else " The feed returned no trades for those sessions."
+        raise ValueError(f"No Alpaca trades for {sym}.{detail} No mock trades were added.")
+    meta = {
+        "tape_trades_per_day": raw.get("tape_trades_per_day") or {},
+        "truncated_days": list(raw.get("truncated_days") or []),
+        "sessions": list(raw.get("sessions") or []),
+    }
+    return {sym: list(prints)}, {sym: "alpaca_trades"}, meta
+
+
+def _fit_tape_warmup(
+    bars_by_symbol: Dict[str, List[Dict[str, Any]]],
+    config: BacktestConfig,
+) -> Optional[str]:
+    """Lower warmup when a real tape is shorter than the daily-bar default."""
+    sym = min(bars_by_symbol, key=lambda name: len(bars_by_symbol[name]))
+    shortest = len(bars_by_symbol[sym])
+    if shortest > config.warmup_bars:
+        return None
+    if shortest < MIN_TAPE_PRINTS:
+        raise ValueError(
+            f"{sym} returned {shortest} Alpaca trades. "
+            f"A replay needs at least {MIN_TAPE_PRINTS} prints. "
+            "No mock trades were added."
+        )
+    lowered = max(10, shortest // 3)
+    if lowered >= shortest:
+        lowered = shortest - 1
+    config.warmup_bars = lowered
+    return (
+        f"Warmup lowered to {lowered} because {sym} has {shortest} real trades "
+        "in the requested sessions."
+    )
 
 
 def _load_symbol_bars(
@@ -1045,7 +1234,7 @@ def _normalize_bar(row: Dict[str, Any], fallback_index: int) -> Optional[Dict[st
         return value
 
     date = row.get("date") or row.get("t") or f"bar-{fallback_index:05d}"
-    return {
+    bar = {
         "date": str(date),
         "open": _px("open", "o"),
         "high": _px("high", "h"),
@@ -1053,16 +1242,21 @@ def _normalize_bar(row: Dict[str, Any], fallback_index: int) -> Optional[Dict[st
         "close": close,
         "volume": row.get("volume") if row.get("volume") is not None else (row.get("v") or 0),
     }
+    if row.get("session_date"):
+        bar["session_date"] = str(row["session_date"])[:10]
+    return bar
 
 
 def _align(
     series: Dict[str, List[Dict[str, Any]]],
 ) -> Tuple[List[str], Dict[str, Dict[str, Dict[str, Any]]]]:
-    """Inner-join symbols on bar date. A single symbol keeps its own clock."""
+    """Inner-join symbols on bar date. A single symbol keeps every print."""
     if len(series) == 1:
+        # Trade prints can share a timestamp. Key the clock by position so
+        # a second print at the same instant is not dropped.
         sym, rows = next(iter(series.items()))
-        clock = [str(bar["date"]) for bar in rows]
-        by_date = {str(bar["date"]): {sym: bar} for bar in rows}
+        clock = [f"{i:08d}" for i in range(len(rows))]
+        by_date = {clock[i]: {sym: rows[i]} for i in range(len(rows))}
         return clock, by_date
     sets = []
     maps = {}

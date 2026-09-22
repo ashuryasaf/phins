@@ -25,7 +25,8 @@ import time
 import threading
 import json
 import math
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
@@ -866,6 +867,144 @@ class TradingPlatformService:
             params["page_token"] = token
         collected.sort(key=lambda row: str(row.get("date") or ""))
         return collected[:limit]
+
+    def get_historical_trades(
+        self,
+        symbol: str,
+        trading_days: int = 1,
+        max_per_day: int = 30_000,
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+        feed: str = "iex",
+    ) -> Dict[str, Any]:
+        """
+        Page Alpaca trades one NY session at a time.
+
+        Each session stops at ``max_per_day`` (default 30,000), which is the
+        first prints of that day. Later pages are not requested. Read-only:
+        this uses the data API and cannot submit orders. A session with no
+        prints (a holiday, or a feed gap) is skipped. The counts are whatever
+        Alpaca returned; missing prints are not invented.
+        """
+        empty: Dict[str, Any] = {
+            "prints": [],
+            "tape_trades_per_day": {},
+            "truncated_days": [],
+            "sessions": [],
+        }
+        if not self.is_connected:
+            return empty
+        sym = (symbol or "").strip().upper()
+        if not sym:
+            return empty
+        try:
+            days_n = max(1, min(int(trading_days or 1), 20))
+        except (TypeError, ValueError):
+            days_n = 1
+        try:
+            cap = max(1, min(int(max_per_day or 30_000), 30_000))
+        except (TypeError, ValueError):
+            cap = 30_000
+        end_day = _parse_session_day(end) or datetime.now(_NY).date()
+        start_day = _parse_session_day(start)
+        crypto = _is_crypto_symbol(sym)
+        feed_name = feed if feed in ("iex", "sip") else "iex"
+        # Walk back far enough to skip weekends and empty holiday sessions.
+        max_scan = max(14, days_n * 4 + 14)
+        found: List[Tuple[date, List[Dict[str, Any]], bool]] = []
+        cursor = end_day
+        scanned = 0
+        while len(found) < days_n and scanned < max_scan:
+            if start_day is not None and cursor < start_day:
+                break
+            if cursor.weekday() < 5:
+                start_iso, end_iso = _ny_session_bounds(cursor)
+                prints, truncated = self._page_session_trades(
+                    sym, start_iso, end_iso, cap, feed_name, crypto, cursor.isoformat(),
+                )
+                if prints:
+                    found.append((cursor, prints, truncated))
+            cursor -= timedelta(days=1)
+            scanned += 1
+        found.reverse()
+        prints_out: List[Dict[str, Any]] = []
+        per_day: Dict[str, int] = {}
+        truncated_days: List[str] = []
+        sessions: List[str] = []
+        for day, rows, truncated in found:
+            key = day.isoformat()
+            sessions.append(key)
+            per_day[key] = len(rows)
+            if truncated:
+                truncated_days.append(key)
+            prints_out.extend(rows)
+        return {
+            "prints": prints_out,
+            "tape_trades_per_day": per_day,
+            "truncated_days": truncated_days,
+            "sessions": sessions,
+        }
+
+    def _page_session_trades(
+        self,
+        symbol: str,
+        start_iso: str,
+        end_iso: str,
+        max_per_day: int,
+        feed: str,
+        crypto: bool,
+        session_date: str,
+    ) -> Tuple[List[Dict[str, Any]], bool]:
+        """Page one session and stop once ``max_per_day`` prints are in hand."""
+        collected: List[Dict[str, Any]] = []
+        truncated = False
+        pair = _crypto_pair(symbol) if crypto else symbol
+        if crypto:
+            path = "/v1beta3/crypto/us/trades"
+            params: Dict[str, Any] = {
+                "symbols": pair,
+                "start": start_iso,
+                "end": end_iso,
+                "limit": str(min(_TRADE_PAGE_LIMIT, max_per_day)),
+                "sort": "asc",
+            }
+        else:
+            path = f"/v2/stocks/{symbol}/trades"
+            params = {
+                "start": start_iso,
+                "end": end_iso,
+                "limit": str(min(_TRADE_PAGE_LIMIT, max_per_day)),
+                "feed": feed,
+                "sort": "asc",
+            }
+        # 30,000 prints / 10,000 per page is three requests. One extra guards
+        # a short last page. The loop returns as soon as the cap is hit.
+        for _ in range(5):
+            raw = self._data_request(path, params)
+            if not raw:
+                break
+            batch = _trade_rows(raw, crypto, pair)
+            if not batch:
+                break
+            stopped_early = False
+            for trade in batch:
+                if len(collected) >= max_per_day:
+                    stopped_early = True
+                    break
+                norm = _normalize_alpaca_trade(trade, session_date)
+                if norm:
+                    collected.append(norm)
+            if stopped_early or len(collected) >= max_per_day:
+                token = raw.get("next_page_token")
+                truncated = bool(stopped_early or token)
+                break
+            token = raw.get("next_page_token")
+            if not token:
+                break
+            params = dict(params)
+            params["page_token"] = token
+            params["limit"] = str(min(_TRADE_PAGE_LIMIT, max_per_day - len(collected)))
+        return collected, truncated
 
     def get_latest_trade(self, symbol: str) -> Optional[Dict[str, Any]]:
         raw = self._data_request(f"/v2/stocks/{symbol.upper()}/trades/latest", {"feed": "iex"})
@@ -2360,6 +2499,74 @@ def _rfc3339(value: str) -> str:
     elif text.endswith("+00:00"):
         text = text.replace("+00:00", "Z")
     return text
+
+
+_NY = ZoneInfo("America/New_York")
+_TRADE_PAGE_LIMIT = 10_000
+
+
+def _parse_session_day(value: Optional[str]) -> Optional[date]:
+    text = (value or "").strip()
+    if not text:
+        return None
+    day = text[:10]
+    try:
+        return date.fromisoformat(day)
+    except ValueError:
+        return None
+
+
+def _ny_session_bounds(day: date) -> Tuple[str, str]:
+    """UTC RFC3339 bounds for one America/New_York calendar day."""
+    start = datetime(day.year, day.month, day.day, tzinfo=_NY)
+    end = start + timedelta(days=1)
+
+    def _fmt(moment: datetime) -> str:
+        return moment.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+    return _fmt(start), _fmt(end)
+
+
+def _trade_rows(raw: Dict[str, Any], crypto: bool, pair: str) -> List[Dict[str, Any]]:
+    trades = raw.get("trades") if isinstance(raw, dict) else None
+    if crypto:
+        if isinstance(trades, dict):
+            rows = trades.get(pair)
+            if isinstance(rows, list):
+                return rows
+            collected: List[Dict[str, Any]] = []
+            for value in trades.values():
+                if isinstance(value, list):
+                    collected.extend(value)
+            return collected
+        return []
+    if isinstance(trades, list):
+        return trades
+    return []
+
+
+def _normalize_alpaca_trade(trade: Dict[str, Any], session_date: str) -> Optional[Dict[str, Any]]:
+    """One print, replayed as a bar whose open/high/low/close are the print price."""
+    if not isinstance(trade, dict):
+        return None
+    price = _sf(trade.get("p") if "p" in trade else trade.get("price"))
+    if price is None or price <= 0:
+        return None
+    size = trade.get("s") if "s" in trade else trade.get("size")
+    try:
+        volume = float(size) if size is not None else 0.0
+    except (TypeError, ValueError):
+        volume = 0.0
+    stamp = trade.get("t") or trade.get("timestamp") or session_date
+    return {
+        "date": stamp,
+        "open": price,
+        "high": price,
+        "low": price,
+        "close": price,
+        "volume": volume,
+        "session_date": session_date,
+    }
 
 
 def _normalize_alpaca_bar(b: Dict[str, Any]) -> Optional[Dict[str, Any]]:
