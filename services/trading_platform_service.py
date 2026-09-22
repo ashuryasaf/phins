@@ -745,6 +745,128 @@ class TradingPlatformService:
         self._set_cache(cache_key, bars)
         return bars
 
+    def get_historical_bars(
+        self,
+        symbol: str,
+        timeframe: str = "1Day",
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+        limit: int = 500,
+        feed: str = "iex",
+        adjustment: str = "all",
+    ) -> List[Dict[str, Any]]:
+        """
+        Page Alpaca market-data bars for a backtest window.
+
+        Read-only. Uses the data API (not the trading API), so it cannot
+        submit orders. ``adjustment=all`` applies split and dividend
+        adjustments. The default feed is IEX, which paper keys can read.
+        """
+        if not self.is_connected:
+            return []
+        sym = (symbol or "").strip().upper()
+        if not sym:
+            return []
+        try:
+            limit_n = max(1, min(int(limit or 500), 10000))
+        except (TypeError, ValueError):
+            limit_n = 500
+        if _is_crypto_symbol(sym):
+            return self._page_crypto_bars(sym, timeframe, start, end, limit_n)
+        return self._page_stock_bars(sym, timeframe, start, end, limit_n, feed, adjustment)
+
+    def _page_stock_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: Optional[str],
+        end: Optional[str],
+        limit: int,
+        feed: str,
+        adjustment: str,
+    ) -> List[Dict[str, Any]]:
+        feed_name = feed if feed in ("iex", "sip") else "iex"
+        adj = adjustment if adjustment in ("raw", "split", "dividend", "all") else "all"
+        params: Dict[str, Any] = {
+            "timeframe": _alpaca_timeframe(timeframe),
+            "limit": str(min(10000, limit)),
+            "feed": feed_name,
+            "adjustment": adj,
+            "sort": "asc",
+            "start": _rfc3339(start) if start else _bars_start_iso(timeframe, limit),
+        }
+        if end:
+            params["end"] = _rfc3339(end)
+        path = f"/v2/stocks/{symbol}/bars"
+        collected: List[Dict[str, Any]] = []
+        for _ in range(20):
+            raw = self._data_request(path, params)
+            if not raw:
+                break
+            batch = raw.get("bars")
+            if not isinstance(batch, list):
+                break
+            for b in batch:
+                norm = _normalize_alpaca_bar(b)
+                if norm:
+                    collected.append(norm)
+                if len(collected) >= limit:
+                    return collected
+            token = raw.get("next_page_token")
+            if not token:
+                break
+            params["page_token"] = token
+        return collected
+
+    def _page_crypto_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: Optional[str],
+        end: Optional[str],
+        limit: int,
+    ) -> List[Dict[str, Any]]:
+        pair = _crypto_pair(symbol)
+        params: Dict[str, Any] = {
+            "symbols": pair,
+            "timeframe": _alpaca_timeframe(timeframe),
+            "limit": str(min(10000, limit)),
+            "sort": "asc",
+        }
+        if start:
+            params["start"] = _rfc3339(start)
+        else:
+            params["start"] = _bars_start_iso(timeframe, limit)
+        if end:
+            params["end"] = _rfc3339(end)
+        collected: List[Dict[str, Any]] = []
+        for _ in range(20):
+            raw = self._data_request("/v1beta3/crypto/us/bars", params)
+            if not raw:
+                break
+            bars_map = raw.get("bars") if isinstance(raw, dict) else None
+            batch: List[Dict[str, Any]] = []
+            if isinstance(bars_map, dict):
+                for rows in bars_map.values():
+                    if isinstance(rows, list):
+                        batch.extend(rows)
+            elif isinstance(bars_map, list):
+                batch = bars_map
+            if not batch:
+                break
+            for b in batch:
+                norm = _normalize_alpaca_bar(b)
+                if norm:
+                    collected.append(norm)
+                if len(collected) >= limit:
+                    return collected
+            token = raw.get("next_page_token")
+            if not token:
+                break
+            params["page_token"] = token
+        collected.sort(key=lambda row: str(row.get("date") or ""))
+        return collected[:limit]
+
     def get_latest_trade(self, symbol: str) -> Optional[Dict[str, Any]]:
         raw = self._data_request(f"/v2/stocks/{symbol.upper()}/trades/latest", {"feed": "iex"})
         if not raw or "trade" not in raw:
@@ -2199,6 +2321,64 @@ def _alpaca_timeframe(timeframe: str) -> str:
     if not timeframe:
         return "1Day"
     return timeframe.strip()
+
+
+_CRYPTO_BASES = {
+    "BTC", "ETH", "SOL", "DOGE", "AVAX", "BNB", "LTC", "LINK", "BCH", "DOT",
+}
+
+
+def _crypto_pair(symbol: str) -> str:
+    sym = (symbol or "").strip().upper()
+    if "/" in sym:
+        return sym
+    if sym.endswith("USD") and sym[:-3] in _CRYPTO_BASES:
+        return f"{sym[:-3]}/USD"
+    if sym in _CRYPTO_BASES:
+        return f"{sym}/USD"
+    return sym
+
+
+def _is_crypto_symbol(symbol: str) -> bool:
+    sym = (symbol or "").strip().upper()
+    if "/" in sym:
+        return True
+    if sym in _CRYPTO_BASES:
+        return True
+    if sym.endswith("USD") and sym[:-3] in _CRYPTO_BASES:
+        return True
+    return False
+
+
+def _rfc3339(value: str) -> str:
+    """Accept ``YYYY-MM-DD`` or a full timestamp and return an RFC3339 UTC string."""
+    text = (value or "").strip()
+    if not text:
+        return text
+    if "T" not in text:
+        text = f"{text}T00:00:00Z"
+    elif text.endswith("+00:00"):
+        text = text.replace("+00:00", "Z")
+    return text
+
+
+def _normalize_alpaca_bar(b: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    close = _sf(b.get("c") if "c" in b else b.get("close"))
+    if close is None or close <= 0:
+        return None
+    open_px = _sf(b.get("o") if "o" in b else b.get("open"))
+    high_px = _sf(b.get("h") if "h" in b else b.get("high"))
+    low_px = _sf(b.get("l") if "l" in b else b.get("low"))
+    return {
+        "date": b.get("t") or b.get("date"),
+        "open": close if open_px is None else open_px,
+        "high": close if high_px is None else high_px,
+        "low": close if low_px is None else low_px,
+        "close": close,
+        "volume": b.get("v") if "v" in b else (b.get("volume") or 0),
+        "vwap": _sf(b.get("vw") if "vw" in b else b.get("vwap")),
+        "trade_count": b.get("n") if "n" in b else b.get("trade_count"),
+    }
 
 
 def _bars_start_iso(timeframe: str, limit: int) -> str:

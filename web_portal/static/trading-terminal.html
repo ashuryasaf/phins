@@ -296,7 +296,28 @@
                 <button id="apHaltBtn" onclick="toggleTradingHalt()" style="background:var(--red);color:#fff;border:none;padding:8px 18px;font-weight:700;font-size:18px;cursor:pointer;font-family:inherit;border-radius:3px;margin-left:auto;">HALT ALL</button>
             </div>
             <div id="apHaltBanner" style="display:none;background:rgba(255,68,68,0.15);border:1px solid var(--red);color:var(--red);padding:6px 10px;margin-bottom:8px;font-weight:700;font-size:16px;border-radius:3px;"></div>
-            <div id="autopilotPanel" style="overflow-y:auto;max-height:220px;">Create an auto-pilot bot to start AI-driven trading...</div>
+            <div id="autopilotPanel" style="overflow-y:auto;max-height:160px;">Create an auto-pilot bot to start AI-driven trading...</div>
+            <div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end;flex-wrap:wrap;">
+                <div><label style="color:var(--muted);font-size:14px;display:block;">Backtest</label>
+                    <select id="apBtMode" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;font-size:16px;font-family:inherit;border-radius:3px;">
+                        <option value="replay">Replay (recommended)</option>
+                        <option value="walk_forward">Walk-forward</option>
+                        <option value="compare">Compare strategies</option>
+                    </select>
+                </div>
+                <div><label style="color:var(--muted);font-size:14px;display:block;">Fill</label>
+                    <select id="apBtFill" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;font-size:16px;font-family:inherit;border-radius:3px;">
+                        <option value="next_open">Next open (no lookahead)</option>
+                        <option value="same_close">Same close (optimistic)</option>
+                    </select>
+                </div>
+                <div><label style="color:var(--muted);font-size:14px;display:block;">Days</label>
+                    <input type="number" id="apBtDays" value="252" min="30" max="2000" style="background:var(--bg);border:1px solid var(--border);color:var(--gold);padding:6px 10px;font-size:16px;width:90px;font-family:inherit;border-radius:3px;">
+                </div>
+                <button onclick="runAutoPilotBacktest()" style="background:var(--cyan);color:#000;border:none;padding:8px 18px;font-weight:700;font-size:16px;cursor:pointer;font-family:inherit;border-radius:3px;">BACKTEST</button>
+                <span style="color:var(--muted);font-size:13px;padding-bottom:6px;">Alpaca history only. No orders are sent.</span>
+            </div>
+            <div id="apBacktestResult" style="overflow-y:auto;max-height:120px;margin-top:6px;font-size:14px;color:var(--muted);">Replay uses the same strategy evaluate() as these bots, filled at the next bar open.</div>
         </div>
         <div id="tab-scanner" class="tab-content">
             <div id="scannerPanel" style="overflow-y:auto;max-height:250px;">Loading AI scanner...</div>
@@ -1984,6 +2005,76 @@ async function loadBots() {
         html += '</tbody></table>';
         $('autopilotPanel').innerHTML = html;
     } catch(e) { $('autopilotPanel').innerHTML = `<div style="color:var(--red)">${e.message}</div>`; }
+}
+
+function renderBacktest(d) {
+    if (!d || d.error) {
+        return '<div style="color:var(--red)">' + apEscape(d && d.error ? d.error : 'Backtest failed') + '</div>';
+    }
+    const bias = d.lookahead_bias ? ' · lookahead bias' : '';
+    let html = '<div style="color:var(--muted);margin-bottom:4px;">' +
+        apEscape(d.mode) + ' · ' + apEscape(d.fill_model) + bias +
+        ' · orders submitted: 0</div>';
+    if (Array.isArray(d.ranking)) {
+        html += '<table class="scanner-table"><thead><tr><th>#</th><th>Strategy</th><th>Return</th><th>Sharpe</th><th>Max DD</th><th>Trades</th></tr></thead><tbody>';
+        d.ranking.forEach(row => {
+            html += '<tr><td>' + apEscape(row.rank) + '</td><td style="color:var(--gold)">' + apEscape(row.strategy) +
+                '</td><td>' + apEscape(row.total_return_pct) + '%</td><td>' + apEscape(row.sharpe_ratio) +
+                '</td><td>' + apEscape(row.max_drawdown_pct) + '%</td><td>' + apEscape(row.trade_count) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        return html;
+    }
+    if (Array.isArray(d.folds)) {
+        html += '<div>Stitched return ' + apEscape(d.stitched_return_pct) + '%</div>';
+        html += '<table class="scanner-table"><thead><tr><th>Fold</th><th>Window</th><th>Return</th><th>Sharpe</th><th>Trades</th></tr></thead><tbody>';
+        d.folds.forEach(fold => {
+            const m = fold.metrics || {};
+            html += '<tr><td>' + apEscape(fold.fold) + '</td><td>' + apEscape(fold.start) + ' → ' + apEscape(fold.end) +
+                '</td><td>' + apEscape(m.total_return_pct) + '%</td><td>' + apEscape(m.sharpe_ratio) +
+                '</td><td>' + apEscape(fold.trade_count) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        return html;
+    }
+    const m = d.metrics || {};
+    html += '<div style="display:flex;gap:14px;flex-wrap:wrap;color:var(--text);">';
+    html += '<span>Return <b>' + apEscape(m.total_return_pct) + '%</b></span>';
+    html += '<span>Sharpe <b>' + apEscape(m.sharpe_ratio) + '</b></span>';
+    html += '<span>Max DD <b>' + apEscape(m.max_drawdown_pct) + '%</b></span>';
+    html += '<span>Win rate <b>' + apEscape(m.win_rate_pct) + '%</b></span>';
+    html += '<span>Trades <b>' + apEscape(d.trade_count) + '</b></span>';
+    html += '<span>Buy &amp; hold <b>' + apEscape(m.benchmark_return_pct) + '%</b></span>';
+    html += '<span>End <b>$' + apEscape(d.ending_equity) + '</b></span>';
+    html += '</div>';
+    return html;
+}
+
+async function runAutoPilotBacktest() {
+    const symbols = $('apSymbols').value.split(',').map(s => s.trim().toUpperCase()).filter(s => s);
+    if (!symbols.length) { showToast('Enter at least one symbol', 'error'); return; }
+    const mode = $('apBtMode').value;
+    const body = {
+        source: 'autopilot',
+        mode: mode,
+        strategy: $('apStrategy').value,
+        symbols: symbols,
+        fill_model: $('apBtFill').value,
+        days: parseInt($('apBtDays').value, 10) || 252,
+        timeframe: '1Day',
+    };
+    if (mode === 'compare') {
+        body.strategies = ['momentum', 'mean_reversion', 'breakout', 'macro_sentiment', 'crypto_momentum', 'quantum_scalp'];
+    }
+    $('apBacktestResult').innerHTML = '<div style="color:var(--muted)">Replaying on Alpaca history. No orders are sent...</div>';
+    try {
+        const d = await apiPost('/api/terminal/backtest', body);
+        $('apBacktestResult').innerHTML = renderBacktest(d);
+        if (d && d.error) showToast(d.error, 'error');
+        else showToast('Backtest finished. No orders submitted.', 'success');
+    } catch (e) {
+        $('apBacktestResult').innerHTML = '<div style="color:var(--red)">' + apEscape(e.message) + '</div>';
+    }
 }
 
 async function evaluateBot(botId) {

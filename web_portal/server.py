@@ -27387,6 +27387,17 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(overview).encode('utf-8'))
             return
         
+        # Historical replay options for algo-page strategies (no broker orders).
+        if path == '/api/algo/backtest/options':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            from services.trading_backtest import backtest_options
+            self._set_json_headers()
+            self.wfile.write(json.dumps(backtest_options(), default=str).encode('utf-8'))
+            return
+
         # Generate a signal for a specific symbol and strategy
         if path == '/api/algo/generate-signal':
             if not algo_trading_enabled:
@@ -28625,6 +28636,21 @@ For claims or questions, please contact:
             return
 
         # ========== AUTO-PILOT & SCREENER API (GET) ==========
+
+        if path == '/api/terminal/backtest/options':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            from services.trading_backtest import backtest_options
+            self._set_json_headers()
+            self.wfile.write(json.dumps(backtest_options(), default=str).encode('utf-8'))
+            return
 
         if path == '/api/terminal/autopilot/halt':
             # Safety-control status: effective halt (env or runtime), promoted
@@ -36497,6 +36523,30 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
                     return
             self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/terminal/backtest':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Terminal-Key', '')
+            try:
+                body_data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                body_data = {}
+            if not ai_key:
+                ai_key = body_data.get('api_key', '')
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            from services.trading_backtest import run_backtest_request
+            result = run_backtest_request(
+                body_data, default_source='autopilot', platform=_trading_platform,
+            )
+            self._set_json_headers(400 if result.get('error') else 200)
             self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             return
 
@@ -51192,6 +51242,25 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
+        # Historical replay of an algo-page strategy. Reads Alpaca bars only.
+        if path == '/api/algo/backtest':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            from services.trading_backtest import run_backtest_request
+            platform = _trading_platform if trading_platform_enabled else None
+            result = run_backtest_request(data, default_source='algo', platform=platform)
+            self._set_json_headers(400 if result.get('error') else 200)
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+
         # Simulate bot trades for testing/demo
         if path == '/api/algo/bots/simulate':
             if not algo_trading_enabled:
