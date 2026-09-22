@@ -400,7 +400,8 @@ class TestCoverAndSignatureDownload(unittest.TestCase):
             )
         self.assertTrue('המלצות היועץ' in pdf_text or bidi_text('המלצות היועץ', rtl=True) in pdf_text)
         self.assertTrue('ישראל ישראלי' in pdf_text or bidi_text('ישראל ישראלי', rtl=True) in pdf_text)
-        self.assertIn('________________', pdf_text)
+        self.assertTrue('חתימה' in pdf_text or bidi_text('חתימה', rtl=True) in pdf_text)
+        self.assertTrue('מספר רישיון' in pdf_text or bidi_text('מספר רישיון', rtl=True) in pdf_text)
 
         csv_text = build_report_csv_bytes(summary).decode('utf-8')
         self.assertIn('הכיסויים והעלויות שלך', csv_text)
