@@ -1,0 +1,20 @@
+e19d890 Merge pull request #423 from ashuryasaf/cursor/add-unicorn-executive-summary-d65c
+9dd4103 Add polished 2-3 page Series A executive summary derived from unicorn deck
+32926b5 Merge pull request #420 from ashuryasaf/cursor/phins-voiceover-assets-d553
+1b85240 Fix copyVo showing success on clipboard failure
+90a07e2 Add 30s + 9:16 vertical VO tabs and register files in Media Library
+a864544 Fix copyVo showing success on clipboard failure
+b93f97b Add Voice-Over Script Library to media dashboard
+7d50971 Add bilingual Phins voice-over package (EN/HE) as DOCX + PDF
+4589924 Merge pull request #412 from ashuryasaf/cursor/secrets-fail-closed-default-58fc
+1f16cb6 fix(security): avoid fail-closed on Railway preview environments
+efe7879 fix(security): auto-provision SESSION_SECRET_KEY when missing (unblocks deploy)
+5be0549 feat(security): fail closed on secret-policy violations in production (D)
+f47bf52 Merge pull request #411 from ashuryasaf/cursor/harness-nft-ledger-isolation-58fc
+2859654 test(security): add nft-ledger to tenant isolation harness
+3b2be4f Merge pull request #410 from ashuryasaf/cursor/role-detection-regression-guard-58fc
+b062d97 test(security): guard against USERS-only role-detection regressions
+12ef3f1 Merge pull request #409 from ashuryasaf/cursor/role-fallback-isolation-sweep-58fc
+545935d fix(security): use session-role fallback across customer-scoped handlers
+cce2961 Merge pull request #408 from ashuryasaf/cursor/test-server-port-release-58fc
+155c79f test: release embedded server sockets to fix port-collision flakiness
