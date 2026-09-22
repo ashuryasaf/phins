@@ -851,6 +851,17 @@ class MislakaParserMixin:
         'SCHUM-KISUY', 'SACH-KISUY', 'SCHUM-BITUACH', 'SACH-BITUACH',
         'KITZBA-CHODSHIT', 'SchumKisuy', 'SachKisuy',
     )
+    # SchumeiBituahYesodi lump-sum death benefit. Prefer this over a generic
+    # SCHUM-KISUY when both sit on the same cover block.
+    DEATH_LUMP_SUM_AMOUNT_TAGS = (
+        'SCHUM-BITUH-LEMAVET', 'SchumBituhLemavet',
+        'SCHUM-BITUACH-LEMAVET', 'SchumBituachLemavet',
+        'SCHUM-BITUH-LEMIKRE-MAVET',
+    )
+    PAYMENT_FORM_TAGS = (
+        'OFEN-TASHLUM-SCHUM-BITUAH', 'OfenTashlumSchumBituah',
+        'SUG-TASHLUM-SCHUM-BITUAH', 'OFEN-TASHLUM',
+    )
     COVER_COST_TAGS = (
         'DMEY-BITUACH', 'ALUT-KISUY', 'PREMIA', 'PREMIA-CHODSHIT',
         'DMEY-BITUACH-CHODSHIIM', 'DmeyBituach', 'AlutKisuy', 'Premia',
@@ -876,11 +887,20 @@ class MislakaParserMixin:
             account['risk_covers'] = covers
 
     def _cover_from_elem(self, elem) -> Optional[Dict[str, Any]]:
+        from services.pension.schema import DEATH_LUMP_SUM_LABEL
+
         amount_text = None
-        for tag in self.COVER_AMOUNT_TAGS:
+        lump_sum_tag = False
+        for tag in self.DEATH_LUMP_SUM_AMOUNT_TAGS:
             amount_text = self._direct_text(elem, tag) or self._find_text(elem, tag)
             if amount_text:
+                lump_sum_tag = True
                 break
+        if not amount_text:
+            for tag in self.COVER_AMOUNT_TAGS:
+                amount_text = self._direct_text(elem, tag) or self._find_text(elem, tag)
+                if amount_text:
+                    break
         cost_text = None
         for tag in self.COVER_COST_TAGS:
             cost_text = self._direct_text(elem, tag) or self._find_text(elem, tag)
@@ -900,6 +920,19 @@ class MislakaParserMixin:
             name = self._direct_text(elem, tag) or self._find_text(elem, tag) or ''
             if name:
                 break
+        payment_form = ''
+        for tag in self.PAYMENT_FORM_TAGS:
+            payment_form = self._direct_text(elem, tag) or self._find_text(elem, tag) or ''
+            if payment_form:
+                break
+        form = str(payment_form or '').strip()
+        annuity = form in {'2', 'קצבה'} or 'קצבה' in form
+        lump_payment = form in {'1', 'חד פעמי'} or 'חד פעמי' in form
+        death_named = 'מוות' in name or 'חיים' in name
+        if lump_sum_tag and not annuity:
+            name = name if 'למקרה מוות' in name and 'חד פעמי' in name else DEATH_LUMP_SUM_LABEL
+        elif lump_payment and not annuity and death_named:
+            name = DEATH_LUMP_SUM_LABEL
         return {
             'code': str(code or ''),
             'name': str(name or ''),
