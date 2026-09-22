@@ -314,6 +314,12 @@
                 <div><label style="color:var(--muted);font-size:14px;display:block;">Days</label>
                     <input type="number" id="apBtDays" value="252" min="30" max="2000" style="background:var(--bg);border:1px solid var(--border);color:var(--gold);padding:6px 10px;font-size:16px;width:90px;font-family:inherit;border-radius:3px;">
                 </div>
+                <div><label style="color:var(--muted);font-size:14px;display:block;">Principal</label>
+                    <input type="number" id="apBtPrincipal" value="100000" min="1000" max="100000000" step="1000" title="Starting capital. Daily risk is this amount times the percent." style="background:var(--bg);border:1px solid var(--border);color:var(--gold);padding:6px 10px;font-size:16px;width:120px;font-family:inherit;border-radius:3px;">
+                </div>
+                <div><label style="color:var(--muted);font-size:14px;display:block;">Daily risk %</label>
+                    <input type="number" id="apBtDailyRisk" value="2" min="0" max="25" step="0.1" title="Stop new buys after the session loses this percent of principal. 0 disables the cap. Sells still fill." style="background:var(--bg);border:1px solid var(--border);color:var(--gold);padding:6px 10px;font-size:16px;width:80px;font-family:inherit;border-radius:3px;">
+                </div>
                 <button onclick="runAutoPilotBacktest()" style="background:var(--cyan);color:#000;border:none;padding:8px 18px;font-weight:700;font-size:16px;cursor:pointer;font-family:inherit;border-radius:3px;">BACKTEST</button>
                 <span style="color:var(--muted);font-size:13px;padding-bottom:6px;">Alpaca history only. No orders are sent.</span>
             </div>
@@ -2007,6 +2013,11 @@ async function loadBots() {
     } catch(e) { $('autopilotPanel').innerHTML = `<div style="color:var(--red)">${e.message}</div>`; }
 }
 
+function apFieldNumber(id, fallback) {
+    const raw = parseFloat($(id).value);
+    return Number.isFinite(raw) ? raw : fallback;
+}
+
 function btMetric(value, suffix) {
     if (value == null || value === '') return '—';
     return apEscape(value) + (suffix || '');
@@ -2017,9 +2028,17 @@ function renderBacktest(d) {
         return '<div style="color:var(--red)">' + apEscape(d && d.error ? d.error : 'Backtest failed') + '</div>';
     }
     const bias = d.lookahead_bias ? ' · lookahead bias' : '';
+    const halted = Array.isArray(d.daily_risk_halted_days) ? d.daily_risk_halted_days : [];
+    let risk = '';
+    if (d.principal != null) {
+        risk = 'Principal $' + btMetric(d.principal) + '. Daily risk ' +
+            btMetric(d.daily_risk_pct, '%') + ' of principal.';
+        if (halted.length) risk += ' New buys stopped on ' + apEscape(halted.join(', ')) + '.';
+    }
     let html = '<div style="color:var(--muted);margin-bottom:4px;">' +
         apEscape(d.mode) + ' · ' + apEscape(d.fill_model) + bias +
         ' · orders submitted: 0</div>';
+    if (risk) html += '<div style="color:var(--text);margin-bottom:4px;">' + risk + '</div>';
     if (Array.isArray(d.ranking)) {
         html += '<table class="scanner-table"><thead><tr><th>#</th><th>Strategy</th><th>Return</th><th>Sharpe</th><th>Max DD</th><th>Trades</th></tr></thead><tbody>';
         d.ranking.forEach(row => {
@@ -2067,6 +2086,8 @@ async function runAutoPilotBacktest() {
         fill_model: $('apBtFill').value,
         days: parseInt($('apBtDays').value, 10) || 252,
         timeframe: '1Day',
+        principal: apFieldNumber('apBtPrincipal', 100000),
+        daily_risk_pct: apFieldNumber('apBtDailyRisk', 2),
     };
     if (mode === 'compare') {
         body.strategies = ['momentum', 'mean_reversion', 'breakout', 'macro_sentiment', 'crypto_momentum', 'quantum_scalp'];

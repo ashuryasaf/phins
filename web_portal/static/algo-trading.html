@@ -905,6 +905,7 @@
                         Replays up to 30,000 real Alpaca trades on each trading day and fills at the next print.
                         If the tape is missing, the day is walked in small steps along Alpaca's bar, still up to 30,000.
                         Results show daily, weekly, monthly, quarterly, and annual candles plus accumulated gains.
+                        New buys stop once the session loses the daily risk percent of the principal.
                         No orders are sent.
                     </div>
                 </div>
@@ -943,6 +944,12 @@
                     </label>
                     <label style="font-size:0.75rem; color:var(--text-secondary);">Trading days
                         <input id="btDays" class="form-input" type="number" value="1" min="1" max="20" style="width:90px;">
+                    </label>
+                    <label style="font-size:0.75rem; color:var(--text-secondary);">Principal
+                        <input id="btPrincipal" class="form-input" type="number" value="100000" min="1000" max="100000000" step="1000" style="width:120px;" title="Starting capital. Daily risk is this amount times the percent.">
+                    </label>
+                    <label style="font-size:0.75rem; color:var(--text-secondary);">Daily risk %
+                        <input id="btDailyRisk" class="form-input" type="number" value="2" min="0" max="25" step="0.1" style="width:80px;" title="Stop new buys after the session loses this percent of principal. 0 disables the cap. Sells still fill.">
                     </label>
                     <button type="button" id="btRunBtn" class="btn btn-primary" onclick="runAlgoBacktest()">Run backtest</button>
                 </div>
@@ -1702,6 +1709,11 @@
                 .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
+        function btFieldNumber(id, fallback) {
+            const raw = parseFloat(document.getElementById(id).value);
+            return Number.isFinite(raw) ? raw : fallback;
+        }
+
         function btMetric(value, suffix) {
             if (value == null || value === '') return '—';
             return escapeHtml(value) + (suffix || '');
@@ -1728,6 +1740,17 @@
                 ' trades per session. ' + escapeHtml(parts.join('; ')) +
                 (fillParts.length ? ' ' + escapeHtml(fillParts.join('; ')) + '.' : '') +
                 escapeHtml(extra) + ' ' + escapeHtml(d.small_trade_note || '') + '</div>';
+        }
+
+        function btRiskLine(d) {
+            if (!d || d.principal == null) return '';
+            const halted = Array.isArray(d.daily_risk_halted_days) ? d.daily_risk_halted_days : [];
+            let text = 'Principal $' + btMetric(d.principal) + '. Daily risk ' +
+                btMetric(d.daily_risk_pct, '%') + ' of principal.';
+            if (halted.length) {
+                text += ' New buys stopped on ' + escapeHtml(halted.join(', ')) + '.';
+            }
+            return '<div style="margin-top:0.35rem;">' + text + '</div>';
         }
 
         function btChartBlock(d) {
@@ -1886,7 +1909,7 @@
                 ).join('');
                 return '<table class="data-table"><thead><tr><th>#</th><th>Strategy</th><th>Return</th><th>Sharpe</th><th>Max DD</th><th>Trades</th></tr></thead><tbody>' +
                     rows + '</tbody></table><div style="margin-top:0.4rem;">No orders were submitted.</div>' +
-                    btTapeLine(d) + btChartBlock(d);
+                    btRiskLine(d) + btTapeLine(d) + btChartBlock(d);
             }
             if (Array.isArray(d.folds)) {
                 const rows = d.folds.map(fold => {
@@ -1897,7 +1920,7 @@
                 }).join('');
                 return '<div>Stitched return ' + escapeHtml(d.stitched_return_pct) + '%</div>' +
                     '<table class="data-table"><thead><tr><th>Fold</th><th>Window</th><th>Return</th><th>Sharpe</th><th>Trades</th></tr></thead><tbody>' +
-                    rows + '</tbody></table>' + btTapeLine(d) + btChartBlock(d);
+                    rows + '</tbody></table>' + btRiskLine(d) + btTapeLine(d) + btChartBlock(d);
             }
             const m = d.metrics || {};
             return '<div style="display:flex; gap:1rem; flex-wrap:wrap;">' +
@@ -1910,7 +1933,7 @@
                 '<span>Buy &amp; hold <b>' + btMetric(m.benchmark_return_pct, '%') + '</b></span>' +
                 '<span>Ending <b>$' + btMetric(d.ending_equity) + '</b></span>' +
                 '</div><div style="margin-top:0.35rem;">' + escapeHtml(d.disclaimer || '') + '</div>' +
-                btForwardLine(d) + btTapeLine(d) + btChartBlock(d);
+                btRiskLine(d) + btForwardLine(d) + btTapeLine(d) + btChartBlock(d);
         }
 
         async function runAlgoBacktest() {
@@ -1923,6 +1946,8 @@
                 symbols: [document.getElementById('btSymbol').value.trim().toUpperCase()],
                 fill_model: document.getElementById('btFill').value,
                 days: parseInt(document.getElementById('btDays').value, 10) || 1,
+                principal: btFieldNumber('btPrincipal', 100000),
+                daily_risk_pct: btFieldNumber('btDailyRisk', 2),
             };
             if (mode === 'compare') {
                 body.strategies = ['momentum', 'mean_reversion', 'rsi_strategy', 'macd_crossover', 'trend_following', 'ai_adaptive'];

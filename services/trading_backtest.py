@@ -96,6 +96,9 @@ class BacktestConfig:
     # None leaves the fill engine uncapped (in-memory unit tests).
     # Algo requests set this to MAX_TRADES_PER_DAY.
     max_trades_per_day: Optional[int] = None
+    # 0 disables the session loss cap. API requests default this to 2,
+    # matching a live AutoPilot bot's max_daily_loss.
+    daily_risk_pct: float = 0.0
 
     @property
     def lookahead_bias(self) -> bool:
@@ -212,6 +215,8 @@ def backtest_options() -> Dict[str, Any]:
         "unsupported_on_equity_bars": list(_ALGO_UNSUPPORTED),
         "defaults": {
             "starting_cash": DEFAULT_CASH,
+            "principal": DEFAULT_CASH,
+            "daily_risk_pct": 2.0,
             "slippage_bps": DEFAULT_SLIPPAGE_BPS,
             "commission_per_share": 0.0,
             "risk_per_trade": 0.02,
@@ -281,8 +286,12 @@ def run_backtest_request(
                 "A forward test fills on the next real print. Use fill_model 'next_open'."
             )
 
+        raw_principal = payload.get("principal")
+        if raw_principal in (None, ""):
+            raw_principal = payload.get("starting_cash")
         config = BacktestConfig(
-            starting_cash=_clamp_float(payload.get("starting_cash"), DEFAULT_CASH, 1_000.0, 100_000_000.0),
+            starting_cash=_clamp_float(raw_principal, DEFAULT_CASH, 1_000.0, 100_000_000.0),
+            daily_risk_pct=_clamp_float(payload.get("daily_risk_pct"), 2.0, 0.0, 25.0),
             slippage_bps=_clamp_float(payload.get("slippage_bps"), DEFAULT_SLIPPAGE_BPS, 0.0, 200.0),
             commission_per_share=_clamp_float(payload.get("commission_per_share"), 0.0, 0.0, 5.0),
             commission_bps=_clamp_float(payload.get("commission_bps"), 0.0, 0.0, 100.0),
@@ -396,6 +405,9 @@ def run_backtest_request(
             "fill_model": config.fill_model,
             "lookahead_bias": config.lookahead_bias,
             "slippage_bps": config.slippage_bps,
+            "principal": config.starting_cash,
+            "daily_risk_pct": config.daily_risk_pct,
+            "daily_risk_halted_days": list(result.get("daily_risk_halted_days") or []),
             "disclaimer": (
                 "Simulated replay of the live decision rules. "
                 "Past results are not a prediction of live trading. "
@@ -469,9 +481,12 @@ def simulate(
     equity_curve: List[Dict[str, Any]] = []
     exposure_flags: List[int] = []
     fills_by_day: Dict[str, int] = {}
+    session_open_equity: Dict[str, float] = {}
+    risk_halted: List[str] = []
 
     for idx, stamp in enumerate(clock):
         todays = by_date.get(stamp, {})
+        prior_close = dict(last_close)
         box = _CashBox(cash)
         for sym, bar in todays.items():
             if cfg.fill_model == "next_open" and sym in pending:
@@ -496,6 +511,17 @@ def simulate(
         cash = box.cash
 
         equity = _mark(cash, positions, last_close)
+        if todays:
+            session_day = _session_day(next(iter(todays.values())))
+            if session_day not in session_open_equity:
+                # Mark the open of the session at the previous close so a
+                # one-bar day (terminal) and a gap both count as loss.
+                session_open_equity[session_day] = _session_open_equity(
+                    cash, positions, prior_close, todays,
+                )
+            if _daily_risk_hit(cfg, session_open_equity[session_day], equity):
+                if session_day not in risk_halted:
+                    risk_halted.append(session_day)
         for sym, bar in todays.items():
             if idx < cfg.warmup_bars:
                 continue
@@ -520,6 +546,11 @@ def simulate(
             signal_stamp = str(bar.get("date") or stamp)
             if _fill_cap_reached(cfg, fills_by_day, bar):
                 continue
+            if _session_day(bar) in risk_halted:
+                actions = [
+                    action for action in actions
+                    if isinstance(action, dict) and str(action.get("side") or "").lower() != "buy"
+                ]
             for action in actions:
                 if not isinstance(action, dict):
                     continue
@@ -594,6 +625,9 @@ def simulate(
         "bars": len(clock),
         "fills_per_day": dict(fills_by_day),
         "max_trades_per_day": cfg.max_trades_per_day,
+        "principal": cfg.starting_cash,
+        "daily_risk_pct": cfg.daily_risk_pct,
+        "daily_risk_halted_days": list(risk_halted),
     }
 
 
@@ -945,6 +979,33 @@ def _session_day(bar: Dict[str, Any]) -> str:
     if len(stamp) >= 10 and stamp[4] == "-" and stamp[7] == "-":
         return stamp[:10]
     return stamp or "session"
+
+
+def _session_open_equity(
+    cash: float,
+    positions: Dict[str, _Position],
+    prior_close: Dict[str, float],
+    todays: Dict[str, Dict[str, Any]],
+) -> float:
+    """Equity at the start of the session, before this bar's close.
+
+    Held names use the previous print. A name with no prior print uses this
+    bar's open, so the first price in the run is not treated as a loss.
+    """
+    marks = dict(prior_close)
+    for sym, bar in todays.items():
+        if sym not in marks:
+            marks[sym] = float(bar.get("open") or bar.get("close") or 0)
+    return _mark(cash, positions, marks)
+
+
+def _daily_risk_hit(cfg: BacktestConfig, session_open: float, equity: float) -> bool:
+    """True once this session's loss reaches daily_risk_pct of the principal."""
+    if cfg.daily_risk_pct <= 0 or cfg.starting_cash <= 0:
+        return False
+    loss = session_open - equity
+    cap = cfg.starting_cash * cfg.daily_risk_pct / 100.0
+    return loss >= cap - 1e-6
 
 
 def _fill_cap_reached(
