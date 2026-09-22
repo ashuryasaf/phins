@@ -269,13 +269,13 @@
     width: auto !important;
     max-width: calc(50% - 4px);
   }
-  #mobile-nav .assessments-nav,
+  /* Only the host is a drawer flex item — the inner wrap keeps filling it,
+     otherwise the closed toggle shrinks to half of a half-column. */
   #mobile-nav [data-assessments-nav] {
     flex: 1 1 calc(50% - 4px);
     width: auto !important;
     max-width: calc(50% - 4px);
   }
-  #mobile-nav .assessments-nav.open,
   #mobile-nav [data-assessments-nav]:has(.assessments-nav.open) {
     flex: 1 1 100%;
     width: 100% !important;

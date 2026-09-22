@@ -65,7 +65,9 @@
   }
 
   function inDrawer(wrap) {
-    var nav = wrap && wrap.closest ? wrap.closest('#mobile-nav, .phins-nav') : null;
+    // Only #mobile-nav forces the menu in-flow; a horizontal .phins-nav bar
+    // keeps an absolute panel that still has to flip to stay on screen.
+    var nav = wrap && wrap.closest ? wrap.closest('#mobile-nav') : null;
     if (!nav) return false;
     try {
       if (window.matchMedia && window.matchMedia('(max-width: 1024px)').matches) return true;
