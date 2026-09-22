@@ -1,0 +1,7 @@
+timestamp_utc=20260728T060449Z
+uname=Linux cursor 6.12.94+ #1 SMP PREEMPT_DYNAMIC Wed Jul 22 16:29:09 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+python3=Python 3.12.3
+java=openjdk version "21.0.10" 2026-01-20
+plantuml=
+pg_dump=
+sqlite3=3.45.1 2024-01-30 16:01:20 e876e51a0ed5c5b3126f52e532044363a014bc594cfefa87ffb5b82257ccalt1 (64-bit)
