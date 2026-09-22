@@ -305,6 +305,9 @@ def test_admin_mobile_nav_uses_navy_glass_not_blue_stripe_gradient():
     assert "bottom: auto;" in block
     assert "bottom: 0;" not in block
     assert "overflow-y: auto;" in block
+    assert "align-items: stretch;" in block
+    assert ".phins-nav .assessments-nav-menu" in block
+    assert "white-space: normal" in block
     assert "linear-gradient(180deg, #ffffff 0%, #b7d3ff 100%)" in content
     assert ".phins-logo-text { display: none; }" not in content
     # Mobile wordmark drops clipped-gradient dither ("///" hatch) for ice ink.

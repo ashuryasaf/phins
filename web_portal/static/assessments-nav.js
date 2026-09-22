@@ -64,6 +64,17 @@
     return CUSTOMER_ROUTES;
   }
 
+  function inDrawer(wrap) {
+    // Only #mobile-nav forces the menu in-flow; a horizontal .phins-nav bar
+    // keeps an absolute panel that still has to flip to stay on screen.
+    var nav = wrap && wrap.closest ? wrap.closest('#mobile-nav') : null;
+    if (!nav) return false;
+    try {
+      if (window.matchMedia && window.matchMedia('(max-width: 1024px)').matches) return true;
+    } catch (e) { /* matchMedia is best-effort */ }
+    return !!(nav.classList && nav.classList.contains('open'));
+  }
+
   function buildMenu(routes) {
     var wrap = document.createElement('div');
     wrap.className = 'assessments-nav';
@@ -87,29 +98,82 @@
     return wrap;
   }
 
+  function placeMenu(wrap, btn, menu) {
+    wrap.classList.remove('assessments-nav--drop-up');
+    wrap.classList.remove('assessments-nav--align-end');
+    if (inDrawer(wrap) || menu.hidden) return;
+    var btnRect = btn.getBoundingClientRect();
+    var menuH = menu.offsetHeight || 280;
+    var menuW = menu.offsetWidth || 280;
+    var spaceBelow = (window.innerHeight || 0) - btnRect.bottom;
+    var spaceAbove = btnRect.top;
+    if (spaceBelow < menuH + 12 && spaceAbove > spaceBelow) {
+      wrap.classList.add('assessments-nav--drop-up');
+    }
+    if (btnRect.left + menuW > (window.innerWidth || 0) - 8) {
+      wrap.classList.add('assessments-nav--align-end');
+    }
+  }
+
+  function revealChooser(wrap, menu) {
+    try {
+      if (menu && typeof menu.scrollIntoView === 'function') {
+        menu.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      } else if (wrap && typeof wrap.scrollIntoView === 'function') {
+        wrap.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
+    } catch (e) { /* scrollIntoView is best-effort chrome */ }
+  }
+
   function wire(wrap) {
     var btn = wrap.querySelector('.assessments-nav-toggle');
     var menu = wrap.querySelector('.assessments-nav-menu');
+    var ignoreDocClickUntil = 0;
     function close() {
       menu.hidden = true;
       btn.setAttribute('aria-expanded', 'false');
       wrap.classList.remove('open');
+      wrap.classList.remove('assessments-nav--drop-up');
+      wrap.classList.remove('assessments-nav--align-end');
     }
     function open() {
       menu.hidden = false;
       btn.setAttribute('aria-expanded', 'true');
       wrap.classList.add('open');
+      placeMenu(wrap, btn, menu);
+      // iOS/Android: wait a frame so the in-flow submenu has height, then
+      // scroll it into the drawer (portrait and landscape).
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(function () {
+          placeMenu(wrap, btn, menu);
+          revealChooser(wrap, menu);
+        });
+      } else {
+        revealChooser(wrap, menu);
+      }
     }
     btn.addEventListener('click', function (e) {
       e.preventDefault();
       e.stopPropagation();
+      // Same-tap document click on iOS/WebKit would immediately re-close.
+      ignoreDocClickUntil = Date.now() + 400;
       if (menu.hidden) open(); else close();
     });
     document.addEventListener('click', function (e) {
+      if (Date.now() < ignoreDocClickUntil) return;
       if (!wrap.contains(e.target)) close();
     });
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') close();
+    });
+    window.addEventListener('orientationchange', function () {
+      if (menu.hidden) return;
+      placeMenu(wrap, btn, menu);
+      revealChooser(wrap, menu);
+    });
+    window.addEventListener('resize', function () {
+      if (menu.hidden) return;
+      placeMenu(wrap, btn, menu);
     });
   }
 
