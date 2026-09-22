@@ -1699,6 +1699,11 @@
                 .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
+        function btMetric(value, suffix) {
+            if (value == null || value === '') return '—';
+            return escapeHtml(value) + (suffix || '');
+        }
+
         function renderAlgoBacktest(d) {
             if (!d || d.error) {
                 return '<div style="color:var(--danger, #c44);">' + escapeHtml(d && d.error ? d.error : 'Backtest failed') + '</div>';
@@ -1706,8 +1711,8 @@
             if (Array.isArray(d.ranking)) {
                 const rows = d.ranking.map(row =>
                     '<tr><td>' + escapeHtml(row.rank) + '</td><td>' + escapeHtml(row.strategy) +
-                    '</td><td>' + escapeHtml(row.total_return_pct) + '%</td><td>' + escapeHtml(row.sharpe_ratio) +
-                    '</td><td>' + escapeHtml(row.max_drawdown_pct) + '%</td><td>' + escapeHtml(row.trade_count) + '</td></tr>'
+                    '</td><td>' + btMetric(row.total_return_pct, '%') + '</td><td>' + btMetric(row.sharpe_ratio) +
+                    '</td><td>' + btMetric(row.max_drawdown_pct, '%') + '</td><td>' + btMetric(row.trade_count) + '</td></tr>'
                 ).join('');
                 return '<table class="data-table"><thead><tr><th>#</th><th>Strategy</th><th>Return</th><th>Sharpe</th><th>Max DD</th><th>Trades</th></tr></thead><tbody>' +
                     rows + '</tbody></table><div style="margin-top:0.4rem;">No orders were submitted.</div>';
@@ -1716,8 +1721,8 @@
                 const rows = d.folds.map(fold => {
                     const m = fold.metrics || {};
                     return '<tr><td>' + escapeHtml(fold.fold) + '</td><td>' + escapeHtml(fold.start) + ' → ' + escapeHtml(fold.end) +
-                        '</td><td>' + escapeHtml(m.total_return_pct) + '%</td><td>' + escapeHtml(m.sharpe_ratio) +
-                        '</td><td>' + escapeHtml(fold.trade_count) + '</td></tr>';
+                        '</td><td>' + btMetric(m.total_return_pct, '%') + '</td><td>' + btMetric(m.sharpe_ratio) +
+                        '</td><td>' + btMetric(fold.trade_count) + '</td></tr>';
                 }).join('');
                 return '<div>Stitched return ' + escapeHtml(d.stitched_return_pct) + '%</div>' +
                     '<table class="data-table"><thead><tr><th>Fold</th><th>Window</th><th>Return</th><th>Sharpe</th><th>Trades</th></tr></thead><tbody>' +
@@ -1725,14 +1730,14 @@
             }
             const m = d.metrics || {};
             return '<div style="display:flex; gap:1rem; flex-wrap:wrap;">' +
-                '<span>Return <b>' + escapeHtml(m.total_return_pct) + '%</b></span>' +
-                '<span>Sharpe <b>' + escapeHtml(m.sharpe_ratio) + '</b></span>' +
-                '<span>Sortino <b>' + escapeHtml(m.sortino_ratio) + '</b></span>' +
-                '<span>Max DD <b>' + escapeHtml(m.max_drawdown_pct) + '%</b></span>' +
-                '<span>Win rate <b>' + escapeHtml(m.win_rate_pct) + '%</b></span>' +
-                '<span>Trades <b>' + escapeHtml(d.trade_count) + '</b></span>' +
-                '<span>Buy &amp; hold <b>' + escapeHtml(m.benchmark_return_pct) + '%</b></span>' +
-                '<span>Ending <b>$' + escapeHtml(d.ending_equity) + '</b></span>' +
+                '<span>Return <b>' + btMetric(m.total_return_pct, '%') + '</b></span>' +
+                '<span>Sharpe <b>' + btMetric(m.sharpe_ratio) + '</b></span>' +
+                '<span>Sortino <b>' + btMetric(m.sortino_ratio) + '</b></span>' +
+                '<span>Max DD <b>' + btMetric(m.max_drawdown_pct, '%') + '</b></span>' +
+                '<span>Win rate <b>' + btMetric(m.win_rate_pct, '%') + '</b></span>' +
+                '<span>Trades <b>' + btMetric(d.trade_count) + '</b></span>' +
+                '<span>Buy &amp; hold <b>' + btMetric(m.benchmark_return_pct, '%') + '</b></span>' +
+                '<span>Ending <b>$' + btMetric(d.ending_equity) + '</b></span>' +
                 '</div><div style="margin-top:0.35rem;">' + escapeHtml(d.disclaimer || '') + '</div>';
         }
 

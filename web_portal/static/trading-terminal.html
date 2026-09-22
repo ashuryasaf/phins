@@ -2007,6 +2007,11 @@ async function loadBots() {
     } catch(e) { $('autopilotPanel').innerHTML = `<div style="color:var(--red)">${e.message}</div>`; }
 }
 
+function btMetric(value, suffix) {
+    if (value == null || value === '') return '—';
+    return apEscape(value) + (suffix || '');
+}
+
 function renderBacktest(d) {
     if (!d || d.error) {
         return '<div style="color:var(--red)">' + apEscape(d && d.error ? d.error : 'Backtest failed') + '</div>';
@@ -2019,8 +2024,8 @@ function renderBacktest(d) {
         html += '<table class="scanner-table"><thead><tr><th>#</th><th>Strategy</th><th>Return</th><th>Sharpe</th><th>Max DD</th><th>Trades</th></tr></thead><tbody>';
         d.ranking.forEach(row => {
             html += '<tr><td>' + apEscape(row.rank) + '</td><td style="color:var(--gold)">' + apEscape(row.strategy) +
-                '</td><td>' + apEscape(row.total_return_pct) + '%</td><td>' + apEscape(row.sharpe_ratio) +
-                '</td><td>' + apEscape(row.max_drawdown_pct) + '%</td><td>' + apEscape(row.trade_count) + '</td></tr>';
+                '</td><td>' + btMetric(row.total_return_pct, '%') + '</td><td>' + btMetric(row.sharpe_ratio) +
+                '</td><td>' + btMetric(row.max_drawdown_pct, '%') + '</td><td>' + btMetric(row.trade_count) + '</td></tr>';
         });
         html += '</tbody></table>';
         return html;
@@ -2031,21 +2036,21 @@ function renderBacktest(d) {
         d.folds.forEach(fold => {
             const m = fold.metrics || {};
             html += '<tr><td>' + apEscape(fold.fold) + '</td><td>' + apEscape(fold.start) + ' → ' + apEscape(fold.end) +
-                '</td><td>' + apEscape(m.total_return_pct) + '%</td><td>' + apEscape(m.sharpe_ratio) +
-                '</td><td>' + apEscape(fold.trade_count) + '</td></tr>';
+                '</td><td>' + btMetric(m.total_return_pct, '%') + '</td><td>' + btMetric(m.sharpe_ratio) +
+                '</td><td>' + btMetric(fold.trade_count) + '</td></tr>';
         });
         html += '</tbody></table>';
         return html;
     }
     const m = d.metrics || {};
     html += '<div style="display:flex;gap:14px;flex-wrap:wrap;color:var(--text);">';
-    html += '<span>Return <b>' + apEscape(m.total_return_pct) + '%</b></span>';
-    html += '<span>Sharpe <b>' + apEscape(m.sharpe_ratio) + '</b></span>';
-    html += '<span>Max DD <b>' + apEscape(m.max_drawdown_pct) + '%</b></span>';
-    html += '<span>Win rate <b>' + apEscape(m.win_rate_pct) + '%</b></span>';
-    html += '<span>Trades <b>' + apEscape(d.trade_count) + '</b></span>';
-    html += '<span>Buy &amp; hold <b>' + apEscape(m.benchmark_return_pct) + '%</b></span>';
-    html += '<span>End <b>$' + apEscape(d.ending_equity) + '</b></span>';
+    html += '<span>Return <b>' + btMetric(m.total_return_pct, '%') + '</b></span>';
+    html += '<span>Sharpe <b>' + btMetric(m.sharpe_ratio) + '</b></span>';
+    html += '<span>Max DD <b>' + btMetric(m.max_drawdown_pct, '%') + '</b></span>';
+    html += '<span>Win rate <b>' + btMetric(m.win_rate_pct, '%') + '</b></span>';
+    html += '<span>Trades <b>' + btMetric(d.trade_count) + '</b></span>';
+    html += '<span>Buy &amp; hold <b>' + btMetric(m.benchmark_return_pct, '%') + '</b></span>';
+    html += '<span>End <b>$' + btMetric(d.ending_equity) + '</b></span>';
     html += '</div>';
     return html;
 }
