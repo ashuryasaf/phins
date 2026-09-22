@@ -1677,13 +1677,45 @@ class TradingPlatformService:
     # LEDGER INTEGRATION — record all trades to PHINS transaction ledger
     # ==================================================================
 
+    _FILL_POLL_INTERVAL = 0.5
+    _FILL_POLL_MAX_WAIT = 5.0
+
+    def _poll_fill_price(self, order_id: str) -> Optional[str]:
+        """Poll the broker for a filled average price on the given order.
+
+        Returns the filled_avg_price string when available, or ``None``
+        if the order has not filled within the polling window.
+        """
+        if not order_id or not self.is_connected:
+            return None
+        elapsed = 0.0
+        while elapsed < self._FILL_POLL_MAX_WAIT:
+            time.sleep(self._FILL_POLL_INTERVAL)
+            elapsed += self._FILL_POLL_INTERVAL
+            raw = self._trade_request("GET", f"/orders/{order_id}")
+            if not raw or "error" in raw:
+                return None
+            status = (raw.get("status") or "").lower()
+            price = raw.get("filled_avg_price")
+            if price and _sf(price):
+                return str(price)
+            if status in ("canceled", "cancelled", "expired", "rejected"):
+                return None
+        return None
+
     def _record_trade_to_ledger(
         self,
         order_result: Dict,
         customer_id: str = "TERMINAL",
         position_snapshot: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Record a completed trade to TRANSACTION_LEDGER + NFT ledger."""
+        """Record a completed trade to TRANSACTION_LEDGER + NFT ledger.
+
+        If the order has no filled_avg_price yet (common for newly accepted
+        orders), poll the broker briefly to obtain the real fill price.
+        Trades that never fill are silently skipped to avoid recording
+        incorrect zero-price entries.
+        """
         if not order_result or "error" in order_result:
             return
         try:
@@ -1691,7 +1723,14 @@ class TradingPlatformService:
             symbol = order_result.get("symbol", "")
             side = order_result.get("side", "")
             qty = order_result.get("qty") or order_result.get("filled_qty") or "0"
-            price = order_result.get("filled_avg_price") or "0"
+            price = order_result.get("filled_avg_price")
+
+            if not price or not _sf(price):
+                price = self._poll_fill_price(order_result.get("order_id"))
+
+            if not price or not _sf(price):
+                return
+
             qty_float = _sf(qty) or 0
             price_float = _sf(price) or 0
             amount = qty_float * price_float if qty_float and price_float else 0
