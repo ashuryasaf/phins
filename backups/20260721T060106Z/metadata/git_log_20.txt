@@ -1,0 +1,20 @@
+6a90b02 Merge pull request #452 from ashuryasaf/cursor/agents-markdown-file-0061
+c14d986 Merge pull request #450 from ashuryasaf/cursor/system-backup-configuration-c0f9
+e7bba6e Align investor-facing SOC 2 claims with in-progress attestation status
+9b24197 Report honest SOC 2 status in legal stats API and derive aggregate flags
+b80ad12 Refresh AGENTS.md: sync test count and add marketplace_models to tree
+5c64bf2 chore(backup): add platform snapshot 20260719T060214Z
+64b666b Merge pull request #448 from ashuryasaf/cursor/il-product-redesign-65plus
+8cbe5d6 Redesign filed product (Draft 3.0): lifelong disability cover with 1:1 ratio from age 65, post-claim continuation at 0.75L, and NIS 1,000,000 / 250,000 issue caps
+629a3f2 Merge pull request #447 from ashuryasaf/cursor/il-regulatory-application-memo
+639e384 Remove duplicate _source_has_hebrew definition
+4cc9bff Remove duplicate _source_has_hebrew definition
+62b47e7 Remove duplicate _source_has_hebrew definition
+b7f8ce0 Skip Hebrew-embedding LTR PDFs when python-bidi is missing
+d572fd4 Brand investor PDFs as first-level documents: PHINS shield letterhead, running headers, gold/navy rules, footer emblem, title dedupe
+c6c5bfe Skip Hebrew-embedding LTR PDFs when python-bidi is missing
+a36e6eb Skip Hebrew-embedding LTR PDFs when python-bidi is missing
+3800915 Fix embedded Hebrew to fail closed without python-bidi
+e51cab8 Skip RTL regen when python-bidi is missing (extends the no-font guard)
+2914144 Fix Hebrew PDF rendering: bidi-reorder each line to true right-to-left (reportlab RTL wordWrap is a no-op without rlbidi)
+11dd9fd Skip RTL PDF regen when no Hebrew font is available
