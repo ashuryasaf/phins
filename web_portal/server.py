@@ -35532,6 +35532,18 @@ For claims or questions, please contact:
                 filename = data.get('filename', 'upload.csv')
                 file_type = data.get('file_type', 'csv')
                 content_b64 = data.get('content', '')
+                file_password = data.get('file_password')
+                if file_password is not None and not isinstance(file_password, str):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'file_password must be a string'}).encode('utf-8'))
+                    return
+                if isinstance(file_password, str) and len(file_password) > 256:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'file_password is too long'}).encode('utf-8'))
+                    return
+                # Password is only needed for an encrypted ZIP. Never log it.
+                if (file_type or '').lower() != 'zip' or not (file_password or '').strip():
+                    file_password = None
                 
                 if not content_b64:
                     self._set_json_headers(400)
@@ -35561,7 +35573,10 @@ For claims or questions, please contact:
                     return
                 
                 # Parse the file with owner tracking
-                result = service.parse_file(filename, file_content, file_type, owner_id, owner_role)
+                result = service.parse_file(
+                    filename, file_content, file_type, owner_id, owner_role,
+                    file_password=file_password,
+                )
                 
                 if result.get('error'):
                     self._set_json_headers(400)

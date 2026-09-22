@@ -462,6 +462,20 @@
       outline: none;
       border-color: var(--primary);
     }
+
+    .option-group input[type="password"] {
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: 2px solid #e2e8f0;
+      font-size: 1rem;
+      min-width: 220px;
+      background: white;
+    }
+
+    .option-group input[type="password"]:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
     
     /* Buttons */
     .btn {
@@ -1898,6 +1912,11 @@
         flex-direction: column;
         align-items: stretch;
       }
+
+      .option-group input[type="password"] {
+        width: 100%;
+        min-width: 0;
+      }
       
       .stats-grid {
         grid-template-columns: repeat(2, 1fr);
@@ -2009,6 +2028,11 @@
           </select>
         </div>
         
+        <div class="option-group">
+          <label for="filePassword">File password</label>
+          <input type="password" id="filePassword" autocomplete="off" spellcheck="false" maxlength="256" placeholder="If the ZIP has one">
+        </div>
+
         <button class="btn btn-primary" id="analyzeBtn" disabled>
           Analyze & Generate
         </button>
@@ -2164,6 +2188,7 @@
     const resultsSection = document.getElementById('resultsSection');
     const outputLanguage = document.getElementById('outputLanguage');
     const analysisTypeSelect = document.getElementById('analysisType');
+    const filePasswordInput = document.getElementById('filePassword');
     
     // Load report history on page load
     document.addEventListener('DOMContentLoaded', () => {
@@ -2798,24 +2823,33 @@
           const content = await readFileAsBase64(file);
           const fileType = file.name.split('.').pop().toLowerCase();
           
-          // Upload and parse
+          // Upload and parse. The ZIP password is sent only for this request
+          // and is not kept on the file list or the generated report.
+          const uploadBody = {
+            filename: file.name,
+            file_type: fileType,
+            content: content
+          };
+          const filePassword = (filePasswordInput && filePasswordInput.value || '').trim();
+          if (fileType === 'zip' && filePassword) {
+            uploadBody.file_password = filePassword;
+          }
           const parseResponse = await fetch('/api/reports/upload', {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
             },
-            body: JSON.stringify({
-              filename: file.name,
-              file_type: fileType,
-              content: content
-            })
+            body: JSON.stringify(uploadBody)
           });
           
           const parseResult = await parseResponse.json();
           
           if (!parseResponse.ok || parseResult.error || !parseResult.document_id) {
             const parseError = parseResult.error || `Upload parse failed (${parseResponse.status})`;
+            if (/password/i.test(parseError)) {
+              throw new Error(parseError);
+            }
             console.warn(`Skipping ${file.name}: ${parseError}`);
             continue;
           }
@@ -2900,6 +2934,8 @@
           document.body.removeAttribute('dir');
         }
         
+        if (filePasswordInput) filePasswordInput.value = '';
+
         // Scroll to results
         resultsSection.scrollIntoView({ behavior: 'smooth' });
         
@@ -2910,6 +2946,9 @@
         console.error('Analysis error:', error);
         processingMessage.textContent = `Error: ${error.message}`;
         progressFill.style.background = 'var(--danger)';
+        if (filePasswordInput && /password/i.test(error.message || '')) {
+          filePasswordInput.focus();
+        }
         
         setTimeout(() => {
           processingStatus.classList.remove('active');

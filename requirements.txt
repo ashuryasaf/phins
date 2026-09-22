@@ -43,6 +43,7 @@ alembic>=1.12.0
 # ---------------------------------------------------------------------------
 cryptography>=45.0.0
 defusedxml>=0.7.1
+pyzipper>=0.3.6  # password-protected ZIP (ZipCrypto and WinZip AES) for risk-report uploads
 
 # ---------------------------------------------------------------------------
 # Date math (billing projections)
