@@ -78,6 +78,8 @@ def test_catalog_recommends_replay_without_broker_orders():
     assert algo_tape["max_trades_per_day"] == 30_000
     assert algo_tape["default_trading_days"] == 1
     assert algo_tape["max_trading_days"] == 20
+    assert catalog["defaults"]["principal"] == 100_000
+    assert catalog["defaults"]["daily_risk_pct"] == 2.0
 
 
 def test_next_open_fills_on_the_following_bar():
@@ -169,6 +171,95 @@ def test_stop_fills_before_target_when_both_trade():
     assert sells[0]["fill_price"] == pytest.approx(90)
     assert sells[0]["date"] == _day(12)
     assert report["open_positions"] == {}
+
+
+def test_daily_risk_stops_new_buys_and_still_allows_the_sell():
+    bars = _flat_bars(8, price=100)
+    bars[6] = {
+        "date": _day(6),
+        "open": 100,
+        "high": 100,
+        "low": 80,
+        "close": 80,
+        "volume": 1_000,
+    }
+
+    def decide_capped(symbol, window, account, positions):
+        if len(window) == 5 and not positions:
+            return [{"side": "buy", "qty": 100, "reason": "enter"}]
+        if len(window) >= 7 and positions:
+            return [
+                {"side": "sell", "qty": 0, "reason": "risk_exit"},
+                {"side": "buy", "qty": 10, "reason": "late", "allow_add": True},
+            ]
+        return []
+
+    capped = simulate(
+        {"SPY": bars},
+        decide_capped,
+        BacktestConfig(
+            warmup_bars=2, lookback_bars=30, slippage_bps=0,
+            starting_cash=100_000, daily_risk_pct=2.0, max_position_size=1.0,
+        ),
+    )
+    reasons = [t["reason"] for t in capped["trades"]]
+    assert "enter" in reasons
+    assert "risk_exit" in reasons
+    assert "late" not in reasons
+    assert _day(6) in capped["daily_risk_halted_days"]
+    assert capped["principal"] == 100_000
+    assert capped["daily_risk_pct"] == 2.0
+
+    def decide_open(symbol, window, account, positions):
+        if len(window) == 5 and not positions:
+            return [{"side": "buy", "qty": 100, "reason": "enter"}]
+        if len(window) >= 7 and positions:
+            return [{"side": "buy", "qty": 10, "reason": "late", "allow_add": True}]
+        return []
+
+    opened = simulate(
+        {"SPY": bars},
+        decide_open,
+        BacktestConfig(
+            warmup_bars=2, lookback_bars=30, slippage_bps=0,
+            starting_cash=100_000, daily_risk_pct=0, max_position_size=1.0,
+        ),
+    )
+    assert "late" in [t["reason"] for t in opened["trades"]]
+    assert opened["daily_risk_halted_days"] == []
+
+
+def test_request_maps_principal_and_daily_risk():
+    result = run_backtest_request(
+        {
+            "source": "autopilot",
+            "strategy": "momentum",
+            "symbols": ["AAPL"],
+            "bars": {"AAPL": _flat_bars(40, price=50)},
+            "warmup_bars": 20,
+            "lookback_bars": 30,
+            "principal": 25_000,
+            "daily_risk_pct": 0,
+        },
+        platform=_broker_trap(),
+    )
+    assert result["principal"] == 25_000
+    assert result["daily_risk_pct"] == 0
+    assert result["daily_risk_halted_days"] == []
+    assert result["orders_submitted"] == 0
+
+    omitted = run_backtest_request(
+        {
+            "source": "autopilot",
+            "strategy": "momentum",
+            "bars": {"AAPL": _flat_bars(40, price=50)},
+            "warmup_bars": 20,
+            "lookback_bars": 30,
+        },
+        platform=_broker_trap(),
+    )
+    assert omitted["principal"] == 100_000
+    assert omitted["daily_risk_pct"] == 2.0
 
 
 def test_position_does_not_pyramid_unless_the_strategy_adds():

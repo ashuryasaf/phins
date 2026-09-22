@@ -150,6 +150,8 @@ def test_algo_trading_preserves_data_binding_ids():
         "fundAvailableAmount",
         "fundActionBtn",
         "toastContainer",
+        "btPrincipal",
+        "btDailyRisk",
     ):
         assert f'id="{element_id}"' in html, f"missing #{element_id}"
 
