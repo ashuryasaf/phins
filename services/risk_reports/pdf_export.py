@@ -1260,20 +1260,113 @@ def _consultant_intro_box(is_hebrew: bool, body_style, usable_width: float):
     return box
 
 
-def _chart_drawing(chart: Dict[str, Any], width: float, height: float, rtl: bool, font_name: str):
-    from reportlab.graphics.charts.barcharts import VerticalBarChart
-    from reportlab.graphics.charts.piecharts import Pie
-    from reportlab.graphics.shapes import Drawing
-    from reportlab.lib import colors
+def chart_category_label(
+    text: str,
+    *,
+    rtl: bool,
+    font_name: str,
+    font_size: float,
+    max_width: float,
+) -> str:
+    """Wrap a chart name in logical order, then bidi each finished line.
 
-    series = chart.get('series') or []
-    labels = [bidi_text(_as_str(point.get('label')), rtl)[:22] for point in series]
+    ReportLab splits whatever string it is given. Slicing or wrapping after
+    ``bidi_text`` cuts a visual Hebrew line into fragments that no longer
+    read as the original phrase ("הכשרה ביטוח", "ביטוח סיכונים - חד פעמי").
+    """
+    raw = _as_str(text).strip()
+    if not raw:
+        return ''
+    width = max(24.0, float(max_width or 0) or 120.0)
+    lines = None
+    # Product types read better as two clauses ("ביטוח סיכונים" / "חד פעמי")
+    # than as a line that stops in the middle of the second clause.
+    if ' - ' in raw and _measure_text_width(raw, font_name, font_size) > width:
+        left, right = raw.split(' - ', 1)
+        if (
+            _measure_text_width(left, font_name, font_size) <= width
+            and _measure_text_width(right, font_name, font_size) <= width
+        ):
+            lines = [left, right]
+    if lines is None:
+        lines = _rtl_break_lines(raw, font_name, font_size, width)
+    if rtl and has_hebrew(raw):
+        lines = [bidi_text(line, rtl=True) for line in lines]
+    return '\n'.join(lines)
+
+
+def _chart_series_values(series: List[Dict[str, Any]]) -> List[float]:
     values: List[float] = []
     for point in series:
         try:
             values.append(float(point.get('value') or 0))
         except (TypeError, ValueError):
             values.append(0.0)
+    return values
+
+
+def _chart_legend(series, palette, font_name, width, height, rtl, text_width):
+    """Color key with the full category name, beside the pie."""
+    from reportlab.graphics.shapes import Group, Rect, String
+    from reportlab.lib import colors
+
+    font_size = 8.0
+    ink = colors.HexColor(PHINS_INK)
+    prepared = None
+    while font_size >= 6:
+        leading = font_size * 1.25
+        rows = []
+        total = 0.0
+        for index, point in enumerate(series):
+            lines = [
+                line for line in chart_category_label(
+                    point.get('label'), rtl=rtl, font_name=font_name,
+                    font_size=font_size, max_width=text_width,
+                ).split('\n') if line
+            ] or ['']
+            rows.append((index, lines))
+            total += len(lines) * leading + 3
+        if total <= height - 6 or font_size <= 6:
+            prepared = (font_size, leading, rows, total)
+            break
+        font_size -= 0.5
+    font_size, leading, rows, total = prepared
+    legend = Group()
+    y = height - max(4.0, (height - total) / 2) - font_size
+    swatch = 7
+    if rtl:
+        swatch_x = width - 4 - swatch
+        text_x = swatch_x - 4
+        anchor = 'end'
+    else:
+        swatch_x = width - text_width - swatch - 8
+        text_x = swatch_x + swatch + 4
+        anchor = 'start'
+    for index, lines in rows:
+        legend.add(Rect(
+            swatch_x, y - 1, swatch, swatch,
+            fillColor=palette[index % len(palette)],
+            strokeColor=None,
+        ))
+        for line in lines:
+            legend.add(String(
+                text_x, y, line,
+                fontName=font_name, fontSize=font_size,
+                textAnchor=anchor, fillColor=ink,
+            ))
+            y -= leading
+        y -= 3
+    return legend
+
+
+def _chart_drawing(chart: Dict[str, Any], width: float, height: float, rtl: bool, font_name: str):
+    from reportlab.graphics.charts.barcharts import VerticalBarChart
+    from reportlab.graphics.charts.piecharts import Pie
+    from reportlab.graphics.shapes import Drawing
+    from reportlab.lib import colors
+
+    series = [point for point in (chart.get('series') or []) if isinstance(point, dict)]
+    values = _chart_series_values(series)
     if not values:
         return None
     drawing = Drawing(width, height)
@@ -1281,36 +1374,58 @@ def _chart_drawing(chart: Dict[str, Any], width: float, height: float, rtl: bool
     palette = [colors.HexColor(code) for code in _BRAND_CHART_COLORS]
     if chart_type in {'pie', 'doughnut'}:
         pie = Pie()
-        pie.x = width * 0.08
-        pie.y = 10
-        size = min(width, height) * 0.62
+        size = min(height - 16, width * 0.42)
+        size = max(48.0, size)
+        pie.x = 4
+        pie.y = max(6, (height - size) / 2)
         pie.width = size
         pie.height = size
         pie.data = values
-        pie.labels = labels
-        pie.simpleLabels = 0
+        # Names live in the legend. Wedge labels overlap and were sliced
+        # after bidi, so a long product type lost its first letter.
+        pie.labels = [''] * len(values)
+        pie.simpleLabels = 1
         pie.slices.strokeWidth = 0.6
         pie.slices.strokeColor = colors.white
-        pie.slices.fontName = font_name
-        pie.slices.fontSize = 7
         if chart_type == 'doughnut':
             pie.innerRadiusFraction = 0.48
         for index, _value in enumerate(values):
             pie.slices[index].fillColor = palette[index % len(palette)]
+        text_width = max(48.0, width - size - 28)
         drawing.add(pie)
+        drawing.add(_chart_legend(
+            series, palette, font_name, width, height, rtl, text_width,
+        ))
         return drawing
 
+    count = max(1, len(series))
+    font_size = 8 if count <= 4 else 7
+    slot = max(28.0, (width - 52) / count - 4)
+    labels = [
+        chart_category_label(
+            point.get('label'), rtl=rtl, font_name=font_name,
+            font_size=font_size, max_width=slot,
+        )
+        for point in series
+    ]
+    line_count = max((text.count('\n') + 1 for text in labels), default=1)
+    leading = font_size * 1.2
+    label_band = line_count * leading + 8
     bar = VerticalBarChart()
-    bar.x = 36
-    bar.y = 18
-    bar.height = height - 28
-    bar.width = width - 48
+    bar.x = 42
+    bar.y = label_band
+    bar.height = max(36, height - label_band - 8)
+    bar.width = max(40, width - 54)
     bar.data = [values]
     bar.categoryAxis.categoryNames = labels
+    # maxWidth stays unset: simpleSplit must not re-break the visual lines.
     bar.categoryAxis.labels.fontName = font_name
-    bar.categoryAxis.labels.fontSize = 7
-    bar.categoryAxis.labels.angle = 20
-    bar.categoryAxis.labels.boxAnchor = 'ne'
+    bar.categoryAxis.labels.fontSize = font_size
+    bar.categoryAxis.labels.leading = leading
+    bar.categoryAxis.labels.angle = 0
+    bar.categoryAxis.labels.boxAnchor = 'n'
+    bar.categoryAxis.labels.textAnchor = 'middle'
+    bar.categoryAxis.labels.dy = -2
     bar.valueAxis.valueMin = 0
     bar.valueAxis.labels.fontName = font_name
     bar.valueAxis.labels.fontSize = 7
@@ -1407,7 +1522,7 @@ def _append_customer_charts(
     row: List[Any] = []
     for chart in charts[:6]:
         card = _chart_card(
-            chart, cell_width, 150, is_hebrew, heading_style, caption_style, font_name,
+            chart, cell_width, 188, is_hebrew, heading_style, caption_style, font_name,
         )
         if card is None:
             continue
