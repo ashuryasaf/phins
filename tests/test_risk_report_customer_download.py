@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import io
+import re
 import unittest
 
 from services.ai_risk_reports_service import init_ai_reports_service
 from services.risk_reports.pdf_export import (
     BRAND_NAME,
     BRAND_TAGLINE,
+    PHINS_GOLD_STRONG,
+    PHINS_INK,
     bidi_text,
     build_report_csv_bytes,
     build_report_pdf_bytes,
@@ -22,6 +25,27 @@ from services.risk_reports.pdf_export import (
     prepare_customer_download_sections,
     strip_completeness_copy,
 )
+
+
+def _pdf_fill_color(hex_color: str) -> tuple:
+    digits = hex_color.lstrip('#')
+    return tuple(round(int(digits[i:i + 2], 16) / 255, 6) for i in (0, 2, 4))
+
+
+def _pdf_text_by_fill_color(pdf_bytes: bytes) -> dict:
+    """Group the strings drawn in a PDF by the fill colour in force."""
+    from pypdf import PdfReader
+
+    grouped: dict = {}
+    for page in PdfReader(io.BytesIO(pdf_bytes)).pages:
+        stream = page.get_contents().get_data().decode('latin-1')
+        color = None
+        for match in re.finditer(r'([\d.]+) ([\d.]+) ([\d.]+) rg|\((.*?)\) Tj', stream):
+            if match.group(4) is None:
+                color = tuple(round(float(match.group(i)), 6) for i in (1, 2, 3))
+            else:
+                grouped.setdefault(color, []).append(match.group(4))
+    return grouped
 
 
 class TestCustomerDownloadHelpers(unittest.TestCase):
@@ -113,8 +137,34 @@ class TestCustomerDownloadHelpers(unittest.TestCase):
             {'title': 'Review cover gap', 'description': 'Walk through the cover gap with your advisor.'},
             {'title': 'Data quality', 'description': '11 columns have >30% missing values'},
             {'title': 'Investigate data collection process for missing values', 'description': ''},
+            # Wording the analyser actually emits for the data-quality note.
+            {'title': 'Complete Missing Data',
+             'description': 'Fields with missing data detected affecting analysis quality'},
+            {'title': 'השלמת נתונים חסרים',
+             'description': 'זוהו שדות עם נתונים חסרים המשפיעים על איכות הניתוח'},
         ])
         self.assertEqual([rec['title'] for rec in prepared], ['Review cover gap'])
+
+    def test_navy_label_and_header_cells_are_gold(self):
+        payload = {
+            'language': 'english',
+            'generated_at': '2026-09-22T10:00:00',
+            'savings_cover_id_summary': {'customer_id': '123456782', 'total_savings': 10000},
+            'assessment_sections': [{
+                'title': 'Your Policy Details',
+                'columns': ['PolicyNo'],
+                'rows': [{'PolicyNo': 'POL-2001'}],
+            }],
+        }
+        by_color = _pdf_text_by_fill_color(build_report_pdf_bytes(payload))
+        gold = _pdf_fill_color(PHINS_GOLD_STRONG)
+        ink = _pdf_fill_color(PHINS_INK)
+        # Labels and data headers sit on the navy fill, values on the ice fill.
+        self.assertIn('National ID', by_color.get(gold, []))
+        self.assertIn('Total Savings', by_color.get(gold, []))
+        self.assertIn('PolicyNo', by_color.get(gold, []))
+        self.assertIn('123456782', by_color.get(ink, []))
+        self.assertNotIn('National ID', by_color.get(ink, []))
 
     def test_consultant_intro_is_customer_facing(self):
         hebrew = consultant_intro_copy(True)

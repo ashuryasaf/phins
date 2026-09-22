@@ -361,11 +361,13 @@ def is_staff_chart_title(title: str) -> bool:
 
 _STAFF_RECOMMENDATION_MARKERS = (
     'missing values',
+    'missing data',
     'data collection process',
     'columns have',
     'data completeness',
     'שלמות נתונים',
     'ערכים חסרים',
+    'נתונים חסרים',
 )
 
 
@@ -571,6 +573,36 @@ def _kv_rows(rows: List[List[str]], rtl: bool) -> List[List[str]]:
     if not rtl:
         return rows
     return [list(reversed(row)) for row in rows]
+
+
+def _navy_cell_style(cell_style):
+    """Gold-on-navy clone of a cell style for labels and table headers.
+
+    A table's TEXTCOLOR never reaches Paragraph flowables, so a cell that
+    sits on the navy fill has to carry the complementary colour itself.
+    """
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+
+    return ParagraphStyle(
+        f'{getattr(cell_style, "name", "Cell")}OnNavy', parent=cell_style,
+        textColor=colors.HexColor(PHINS_GOLD_STRONG),
+    )
+
+
+def _kv_display(rows: List[List[str]], cell_style, label_style, rtl: bool) -> List[List[Any]]:
+    """Render key/value rows, keeping the label column readable on navy."""
+    label_col = 1 if rtl else 0
+    return [
+        [
+            _safe_paragraph(
+                cell, label_style if index == label_col else cell_style,
+                rtl=rtl, max_width=160,
+            )
+            for index, cell in enumerate(row)
+        ]
+        for row in rows
+    ]
 
 
 def _logo_png_path() -> Optional[str]:
@@ -1004,6 +1036,7 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
         fontName=base_font, fontSize=8, leading=10,
         alignment=align, textColor=rl_colors.HexColor(PHINS_INK),
     )
+    navy_cell_style = _navy_cell_style(cell_style)
 
     story: List[Any] = []
     title = customer_report_title(summary)
@@ -1024,10 +1057,7 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
         ['תאריך לידה' if is_hebrew else 'Birth Date', _as_str(birth_date)],
         ['נוצר' if is_hebrew else 'Prepared On', _as_when(summary.get('generated_at'))],
     ], is_hebrew)
-    identity_display = [
-        [_safe_paragraph(cell, cell_style, rtl=is_hebrew, max_width=160) for cell in row]
-        for row in identity_rows
-    ]
+    identity_display = _kv_display(identity_rows, cell_style, navy_cell_style, is_hebrew)
     identity_table = Table(identity_display, colWidths=[150, 340] if not is_hebrew else [340, 150])
     _style_kv_table(identity_table, rtl=is_hebrew)
     story.append(identity_table)
@@ -1046,10 +1076,7 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
         ['סה״כ פיצויים' if is_hebrew else 'Total Severance', _as_money(total_severance)],
         ['מספר פוליסות' if is_hebrew else 'Number of Policies', _as_str(account_count)],
     ], is_hebrew)
-    totals_display = [
-        [_safe_paragraph(cell, cell_style, rtl=is_hebrew, max_width=160) for cell in row]
-        for row in totals_rows
-    ]
+    totals_display = _kv_display(totals_rows, cell_style, navy_cell_style, is_hebrew)
     totals_table = Table(totals_display, colWidths=[150, 340] if not is_hebrew else [340, 150])
     _style_kv_table(totals_table, rtl=is_hebrew)
     story.append(totals_table)
@@ -1071,7 +1098,7 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
             header = list(reversed(header))
             col_widths = list(reversed(col_widths))
         table_data: List[List[Any]] = [[
-            _safe_paragraph(h, cell_style, rtl=is_hebrew, max_width=w)
+            _safe_paragraph(h, navy_cell_style, rtl=is_hebrew, max_width=w)
             for h, w in zip(header, col_widths)
         ]]
         for acct in accounts[:80]:
@@ -1124,6 +1151,7 @@ def _append_assessment_sections(
 ) -> None:
     from reportlab.platypus import Spacer, Table
 
+    header_style = _navy_cell_style(cell_style)
     for section in prepare_customer_download_sections(summary.get('assessment_sections') or []):
         title_text = section.get('title') or ''
         content = (section.get('content') or '').strip()
@@ -1140,7 +1168,7 @@ def _append_assessment_sections(
             display_columns = list(reversed(columns)) if is_hebrew else columns
             width = usable_width / max(len(display_columns), 1)
             header_cells = [
-                _safe_paragraph(_as_str(col), cell_style, rtl=is_hebrew, max_width=width)
+                _safe_paragraph(_as_str(col), header_style, rtl=is_hebrew, max_width=width)
                 for col in display_columns
             ]
             table_rows: List[List[Any]] = [header_cells]
@@ -1203,6 +1231,7 @@ def _build_generic_summary_pdf(summary: Dict[str, Any]) -> bytes:
         fontName=base_font, fontSize=8, leading=10, alignment=align,
         textColor=rl_colors.HexColor(PHINS_INK),
     )
+    navy_cell_style = _navy_cell_style(cell_style)
 
     story: List[Any] = []
     title = customer_report_title(summary)
@@ -1227,10 +1256,7 @@ def _build_generic_summary_pdf(summary: Dict[str, Any]) -> bytes:
             ['סה״כ כיסוי' if is_hebrew else 'Total Cover', _as_money(sci.get('total_cover', 0))],
             ['נוצר' if is_hebrew else 'Prepared On', _as_when(summary.get('generated_at'))],
         ], is_hebrew)
-        overview_display = [
-            [_safe_paragraph(cell, cell_style, rtl=is_hebrew, max_width=160) for cell in row]
-            for row in overview_rows
-        ]
+        overview_display = _kv_display(overview_rows, cell_style, navy_cell_style, is_hebrew)
         overview_table = Table(overview_display, colWidths=[150, 340] if not is_hebrew else [340, 150])
         _style_kv_table(overview_table, rtl=is_hebrew)
         story.append(overview_table)
