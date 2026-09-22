@@ -1,0 +1,20 @@
+401cb6e Merge pull request #455 from ashuryasaf/cursor/startup-fast-paths-ee1e
+53ad6f3 Don't persist schema marker when upgrade_schema fails
+6c9e8f5 Fix ledger hydration fetch-failure fallback and schema fingerprint gaps
+53437ee Merge pull request #454 from ashuryasaf/cursor/reduce-startup-seed-noise-ee1e
+167591d Add startup fast paths: schema fingerprint marker, batched seed checks, ledger hydration delta
+004c050 Gate startup demo/test fixture seeding and close DB connections on shutdown
+1f04d02 Skip redundant in-memory mirror writes when stores are DB-backed
+3623c6e Downgrade row-level repository create/update logs to DEBUG
+6a90b02 Merge pull request #452 from ashuryasaf/cursor/agents-markdown-file-0061
+c14d986 Merge pull request #450 from ashuryasaf/cursor/system-backup-configuration-c0f9
+e7bba6e Align investor-facing SOC 2 claims with in-progress attestation status
+9b24197 Report honest SOC 2 status in legal stats API and derive aggregate flags
+b80ad12 Refresh AGENTS.md: sync test count and add marketplace_models to tree
+5c64bf2 chore(backup): add platform snapshot 20260719T060214Z
+64b666b Merge pull request #448 from ashuryasaf/cursor/il-product-redesign-65plus
+8cbe5d6 Redesign filed product (Draft 3.0): lifelong disability cover with 1:1 ratio from age 65, post-claim continuation at 0.75L, and NIS 1,000,000 / 250,000 issue caps
+629a3f2 Merge pull request #447 from ashuryasaf/cursor/il-regulatory-application-memo
+639e384 Remove duplicate _source_has_hebrew definition
+4cc9bff Remove duplicate _source_has_hebrew definition
+62b47e7 Remove duplicate _source_has_hebrew definition
