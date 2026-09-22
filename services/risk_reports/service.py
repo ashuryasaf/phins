@@ -687,8 +687,12 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
         summary = self._extract_savings_cover_id_summary(doc_data, pension_data)
 
         from services.risk_reports.pdf_export import (
+            ACCOUNT_COVER_COPY_KEYS,
+            collect_uploaded_risk_covers,
+            cover_chart_summaries,
             customer_report_title,
             is_non_assessment_section_title,
+            is_rtl_language,
             prepare_customer_download_charts,
             prepare_customer_download_recommendations,
             prepare_customer_download_sections,
@@ -802,7 +806,7 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
                     if not isinstance(acct, dict):
                         continue
                     # Copy the stored amounts — never re-sum or invent values.
-                    accounts.append({
+                    copied = {
                         'policy_number': acct.get('policy_number', ''),
                         'provider': acct.get('provider', ''),
                         'product_type': acct.get('product_type', ''),
@@ -812,7 +816,27 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
                         'savings_balance': acct.get('savings_balance', 0),
                         'severance_balance': acct.get('severance_balance', 0),
                         'employer_name': acct.get('employer_name', ''),
-                    })
+                    }
+                    for key in ACCOUNT_COVER_COPY_KEYS:
+                        if acct.get(key) not in (None, '', [], {}):
+                            copied[key] = acct.get(key)
+                    accounts.append(copied)
+            severance_records: List[Dict[str, Any]] = []
+            if isinstance(pension_data, dict):
+                for item in (pension_data.get('severance') or [])[:40]:
+                    if not isinstance(item, dict):
+                        continue
+                    # Copy stored פיצויים figures only — never invent a balance.
+                    copied_severance = {}
+                    for key in (
+                        'policy_number', 'provider', 'employer_name',
+                        'total_severance', 'severance_balance',
+                        'available_severance', 'severance_premium', 'cost',
+                    ):
+                        if item.get(key) not in (None, '', [], {}):
+                            copied_severance[key] = item.get(key)
+                    if copied_severance:
+                        severance_records.append(copied_severance)
             if not client.get('id_number') and summary.get('customer_id'):
                 client = dict(client)
                 client['id_number'] = summary.get('customer_id')
@@ -831,6 +855,7 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
                     'account_count': totals.get('account_count', len(accounts)),
                 },
                 'accounts': accounts,
+                'severance': severance_records,
             }
 
         # Customer download: omit staff completeness / integrity notes.
@@ -861,6 +886,21 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
             section for section in payload.get('table_sections') or []
             if not is_non_assessment_section_title(section.get('title', ''))
         ]
+        cover_accounts = (pension_assessment or {}).get('accounts') or []
+        payload['risk_covers'] = collect_uploaded_risk_covers(
+            cover_accounts,
+            severance_records=(pension_assessment or {}).get('severance'),
+        )
+        existing_chart_titles = {
+            str(chart.get('title') or '') for chart in (payload.get('chart_summaries') or [])
+        }
+        extra_charts = cover_chart_summaries(
+            payload['risk_covers'],
+            is_rtl_language(payload.get('language')),
+        )
+        for chart in extra_charts:
+            if chart['title'] not in existing_chart_titles:
+                payload.setdefault('chart_summaries', []).append(chart)
         payload['chart_summaries'] = prepare_customer_download_charts(
             payload.get('chart_summaries')
         )

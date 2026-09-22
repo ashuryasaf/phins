@@ -9,6 +9,7 @@ report rather than lazily on view.
 
 from typing import Any, Dict, List, Optional
 from services.risk_reports.models import AnalysisResult, ChartConfig, ChartType
+from services.risk_reports.pdf_export import classify_cover_type
 
 
 class ChartsMixin:
@@ -206,16 +207,37 @@ class ChartsMixin:
         
         # 3. Insurance Coverage Breakdown (Pie Chart)
         coverage_totals = {}
+        cost_totals = {}
+        cover_fields = (
+            ('death_coverage', 'death_premium', 'ביטוח חיים', 'Life Insurance'),
+            ('disability_coverage', 'disability_premium', 'אבדן כושר עבודה', 'Loss of Work Capacity'),
+            ('work_disability_coverage', 'work_disability_premium', 'אבדן כושר עבודה', 'Loss of Work Capacity'),
+            ('invalidity_coverage', 'invalidity_premium', 'נכות', 'Disability'),
+            ('waiver_coverage', 'waiver_premium', 'שחרור', 'Premium Waiver'),
+            ('survivors_coverage', 'survivors_premium', 'שארים', 'Survivors'),
+            ('ltc_coverage', 'ltc_premium', 'סיעוד', 'Long-Term Care'),
+        )
         for acct in accounts:
-            death_coverage = acct.get('death_coverage', 0) or 0
-            disability_coverage = acct.get('disability_coverage', 0) or 0
-            
-            if death_coverage > 0:
-                label = 'ביטוח חיים' if is_hebrew else 'Life Insurance'
-                coverage_totals[label] = coverage_totals.get(label, 0) + death_coverage
-            if disability_coverage > 0:
-                label = 'אובדן כושר' if is_hebrew else 'Disability'
-                coverage_totals[label] = coverage_totals.get(label, 0) + disability_coverage
+            nested = [item for item in (acct.get('risk_covers') or []) if isinstance(item, dict)]
+            if nested:
+                for item in nested:
+                    _key, title_he, title_en = classify_cover_type(item.get('code'), item.get('name'))
+                    amount = float(item.get('amount') or 0)
+                    cost = float(item.get('cost') or 0)
+                    label = title_he if is_hebrew else title_en
+                    if amount > 0:
+                        coverage_totals[label] = coverage_totals.get(label, 0) + amount
+                    if cost > 0:
+                        cost_totals[label] = cost_totals.get(label, 0) + cost
+                continue
+            for amount_field, cost_field, he_label, en_label in cover_fields:
+                amount = float(acct.get(amount_field) or 0)
+                cost = float(acct.get(cost_field) or 0)
+                label = he_label if is_hebrew else en_label
+                if amount > 0:
+                    coverage_totals[label] = coverage_totals.get(label, 0) + amount
+                if cost > 0:
+                    cost_totals[label] = cost_totals.get(label, 0) + cost
         
         if coverage_totals:
             charts.append(ChartConfig(
@@ -227,6 +249,20 @@ class ChartsMixin:
                 },
                 options={
                     'colors': ['#E91E63', '#3F51B5'],
+                    'currency': True,
+                    'currency_symbol': '₪'
+                }
+            ))
+        if cost_totals:
+            charts.append(ChartConfig(
+                type=ChartType.BAR,
+                title='עלות הכיסויים' if is_hebrew else 'Cover Costs',
+                data={
+                    'labels': list(cost_totals.keys()),
+                    'values': list(cost_totals.values())
+                },
+                options={
+                    'colors': ['#c9a04e', '#0e2f63'],
                     'currency': True,
                     'currency_symbol': '₪'
                 }

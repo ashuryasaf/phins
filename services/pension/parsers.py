@@ -617,7 +617,12 @@ class MislakaParserMixin:
                     # Convert value based on field type
                     if mapped_name in ['total_balance', 'savings_balance', 'severance_balance', 
                                       'management_fee', 'management_fee_savings', 'management_fee_deposits',
-                                      'death_coverage', 'disability_coverage']:
+                                      'death_coverage', 'disability_coverage', 'death_premium',
+                                      'disability_premium', 'work_disability_coverage',
+                                      'work_disability_premium', 'invalidity_coverage',
+                                      'invalidity_premium', 'waiver_coverage', 'waiver_premium',
+                                      'survivors_coverage', 'survivors_premium', 'ltc_coverage',
+                                      'ltc_premium']:
                         try:
                             # Clean numeric value
                             clean_val = value_str.replace(',', '').replace('₪', '').replace('ש"ח', '').strip()
@@ -843,7 +848,70 @@ class MislakaParserMixin:
 
         self._drop_component_total(elem, account)
         self._harvest_component_balances(elem, account)
+        self._harvest_risk_covers(elem, account)
         return account
+
+    COVER_BLOCK_TAGS = ('Kisuy', 'PirteiKisuy', 'Coverage', 'KisuyBituach')
+    COVER_WRAPPER_TAGS = ('Kisuyim', 'NetuneiKisuy', 'ReshimatKisuyim')
+    COVER_AMOUNT_TAGS = (
+        'SCHUM-KISUY', 'SACH-KISUY', 'SCHUM-BITUACH', 'SACH-BITUACH',
+        'KITZBA-CHODSHIT', 'SchumKisuy', 'SachKisuy',
+    )
+    COVER_COST_TAGS = (
+        'DMEY-BITUACH', 'ALUT-KISUY', 'PREMIA', 'PREMIA-CHODSHIT',
+        'DMEY-BITUACH-CHODSHIIM', 'DmeyBituach', 'AlutKisuy', 'Premia',
+    )
+    COVER_TYPE_CODE_TAGS = ('KOD-SUG-KISUY', 'KodSugKisuy', 'SUG-KISUY')
+    COVER_TYPE_NAME_TAGS = ('SHEM-KISUY', 'ShemKisuy', 'SUG-KISUY', 'TEUR-KISUY')
+
+    def _harvest_risk_covers(self, elem, account: Dict[str, Any]) -> None:
+        """Collect uploaded insurance riders (life, AKW, waiver, survivors, LTC)."""
+        covers: List[Dict[str, Any]] = []
+        seen: set = set()
+        for tag in self.COVER_BLOCK_TAGS:
+            for block in self._descendants_named(elem, tag):
+                if id(block) in seen:
+                    continue
+                seen.add(id(block))
+                if any(self._local_tag(child.tag) in self.COVER_BLOCK_TAGS for child in list(block)):
+                    continue
+                cover = self._cover_from_elem(block)
+                if cover:
+                    covers.append(cover)
+        if covers:
+            account['risk_covers'] = covers
+
+    def _cover_from_elem(self, elem) -> Optional[Dict[str, Any]]:
+        amount_text = None
+        for tag in self.COVER_AMOUNT_TAGS:
+            amount_text = self._direct_text(elem, tag) or self._find_text(elem, tag)
+            if amount_text:
+                break
+        cost_text = None
+        for tag in self.COVER_COST_TAGS:
+            cost_text = self._direct_text(elem, tag) or self._find_text(elem, tag)
+            if cost_text:
+                break
+        amount = self._parse_number(amount_text) if amount_text else None
+        cost = self._parse_number(cost_text) if cost_text else None
+        if not amount and not cost:
+            return None
+        code = ''
+        for tag in self.COVER_TYPE_CODE_TAGS:
+            code = self._direct_text(elem, tag) or self._find_text(elem, tag) or ''
+            if code:
+                break
+        name = ''
+        for tag in self.COVER_TYPE_NAME_TAGS:
+            name = self._direct_text(elem, tag) or self._find_text(elem, tag) or ''
+            if name:
+                break
+        return {
+            'code': str(code or ''),
+            'name': str(name or ''),
+            'amount': amount or 0,
+            'cost': cost or 0,
+        }
 
     def _parse_contributions(self, root) -> List[Dict[str, Any]]:
         """Parse contributions (NetuneiHafrasha / PirteiHafrasha)."""

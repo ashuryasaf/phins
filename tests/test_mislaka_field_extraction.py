@@ -135,6 +135,46 @@ COMPONENT_AMOUNT_HOLDINGS = """<?xml version="1.0" encoding="UTF-8"?>
 """.encode('utf-8')
 
 
+COVER_HOLDINGS = """<?xml version="1.0" encoding="UTF-8"?>
+<Mimshak xmlns="http://www.swiftness.co.il/mivneachid/holdings">
+  <YeshutYatzran>
+    <SHEM-YATZRAN>מגדל</SHEM-YATZRAN>
+    <Mutzar>
+      <SUG-MUTZAR>1</SUG-MUTZAR>
+      <HeshbonOPolisa>
+        <MISPAR-POLISA-O-HESHBON>POL-COVER-1</MISPAR-POLISA-O-HESHBON>
+        <TOTAL-CHISACHON-MTZBR>50000</TOTAL-CHISACHON-MTZBR>
+        <KISUY-MAVET>400000</KISUY-MAVET>
+        <DMEY-BITUACH-MAVET>85</DMEY-BITUACH-MAVET>
+        <KISUY-OVDAN-KOSHER>12000</KISUY-OVDAN-KOSHER>
+        <DMEY-BITUACH-AKW>40</DMEY-BITUACH-AKW>
+        <Kisuyim>
+          <Kisuy>
+            <KOD-SUG-KISUY>4</KOD-SUG-KISUY>
+            <SHEM-KISUY>שחרור</SHEM-KISUY>
+            <SCHUM-KISUY>1</SCHUM-KISUY>
+            <DMEY-BITUACH>15</DMEY-BITUACH>
+          </Kisuy>
+          <Kisuy>
+            <KOD-SUG-KISUY>5</KOD-SUG-KISUY>
+            <SHEM-KISUY>שארים</SHEM-KISUY>
+            <SCHUM-KISUY>8000</SCHUM-KISUY>
+            <DMEY-BITUACH>22</DMEY-BITUACH>
+          </Kisuy>
+          <Kisuy>
+            <KOD-SUG-KISUY>6</KOD-SUG-KISUY>
+            <SHEM-KISUY>סיעוד</SHEM-KISUY>
+            <SCHUM-KISUY>5500</SCHUM-KISUY>
+            <DMEY-BITUACH>30</DMEY-BITUACH>
+          </Kisuy>
+        </Kisuyim>
+      </HeshbonOPolisa>
+    </Mutzar>
+  </YeshutYatzran>
+</Mimshak>
+""".encode('utf-8')
+
+
 CONCENTRATED_CSV = (
     'שם מלא,ת.ז.,סה״כ צבירה,פיצויים,יצרן,מספר פוליסה,סוג מוצר\n'
     'ישראל ישראלי,123456782,"88,000.50",12000,מגדל,POL-HOLD-1,קרן פנסיה מקיפה\n'
@@ -149,6 +189,12 @@ class TestHebrewHeaderNormalization(unittest.TestCase):
         self.assertEqual(map_hebrew_column('תעודת זהות'), 'id_number')
         self.assertEqual(map_hebrew_column('ת.ז'), 'id_number')
         self.assertEqual(map_hebrew_column('פיצויים'), 'severance_balance')
+        self.assertEqual(map_hebrew_column('ביטוח חיים'), 'death_coverage')
+        self.assertEqual(map_hebrew_column('אבדן כושר עבודה'), 'disability_coverage')
+        self.assertEqual(map_hebrew_column('שחרור'), 'waiver_coverage')
+        self.assertEqual(map_hebrew_column('שארים'), 'survivors_coverage')
+        self.assertEqual(map_hebrew_column('סיעוד'), 'ltc_coverage')
+        self.assertEqual(map_hebrew_column('עלות ביטוח חיים'), 'death_premium')
 
 
 class TestOfficialMislakaXmlExtraction(unittest.TestCase):
@@ -165,6 +211,23 @@ class TestOfficialMislakaXmlExtraction(unittest.TestCase):
         self.assertEqual(account['total_balance'], 88000.50)
         self.assertEqual(account['severance_balance'], 12000)
         self.assertEqual(account['provider'], 'מגדל')
+
+    def test_uploaded_risk_covers_and_costs_are_parsed(self):
+        data = self.agent._parse_mislaka_xml(COVER_HOLDINGS)
+        account = data['accounts'][0]
+        self.assertEqual(account['death_coverage'], 400000)
+        self.assertEqual(account['death_premium'], 85)
+        self.assertEqual(account['work_disability_coverage'], 12000)
+        self.assertEqual(account['work_disability_premium'], 40)
+        covers = account.get('risk_covers') or []
+        names = {str(item.get('name')) for item in covers}
+        self.assertIn('שחרור', names)
+        self.assertIn('שארים', names)
+        self.assertIn('סיעוד', names)
+        by_name = {item['name']: item for item in covers}
+        self.assertEqual(by_name['שחרור']['cost'], 15)
+        self.assertEqual(by_name['שארים']['amount'], 8000)
+        self.assertEqual(by_name['סיעוד']['cost'], 30)
 
     def test_yitra_component_amounts_do_not_replace_account_total(self):
         data = self.agent._parse_mislaka_xml(COMPONENT_AMOUNT_HOLDINGS)
