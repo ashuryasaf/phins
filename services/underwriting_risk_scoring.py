@@ -27,7 +27,9 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("phins.underwriting_risk_scoring")
 
-ENGINE_VERSION = "uw-rules-2.0.0"
+# 2.1.0 resolves ADL from functional evidence (fully independent → 1).
+# A missing answer is not clinical ADL 5. See services.adl_mapping.
+ENGINE_VERSION = "uw-rules-2.1.0"
 
 
 # ── defensive coercion helpers (same semantics as web_portal/server.py) ──────
@@ -122,19 +124,10 @@ def _normalize_smoking_status(raw: Any) -> Optional[str]:
     return smoke_val
 
 
-def _adl_level_from_sources(app: Dict[str, Any], questionnaire: Dict[str, Any]) -> Optional[int]:
-    """Resolve ADL severity from denormalized columns or chat answers."""
-    adl = _optional_int(app.get("adl_level"))
-    if adl is not None:
-        return max(1, min(10, adl))
-    adl = _optional_int(questionnaire.get("adl_level"))
-    if adl is not None:
-        return max(1, min(10, adl))
-    daily = str(questionnaire.get("daily_function") or "").strip().lower()
-    mapping = {"full": 5, "minor": 6, "moderate": 7, "significant": 8}
-    if daily in mapping:
-        return mapping[daily]
-    return None
+def _adl_level_from_sources(app: Dict[str, Any], questionnaire: Dict[str, Any]):
+    """Resolve ADL from the shared evidence map, not a silent baseline of 5."""
+    from services.adl_mapping import resolve_application_adl
+    return resolve_application_adl(app, questionnaire)
 
 
 def _conditions_from_chat_questionnaire(questionnaire: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -291,7 +284,8 @@ def extract_risk_inputs(app: Dict[str, Any], customer: Optional[Dict[str, Any]] 
         app.get("occupation") or questionnaire.get("occupation")
         or customer.get("occupation")
     )
-    adl_level = _adl_level_from_sources(app, questionnaire)
+    adl_resolution = _adl_level_from_sources(app, questionnaire)
+    adl_level = adl_resolution.clinical_level
 
     # Medical conditions: structured array first, then chat questionnaire rebuild.
     app_conditions = _coerce_json_container(app.get("medical_conditions"), [])
@@ -411,6 +405,9 @@ def extract_risk_inputs(app: Dict[str, Any], customer: Optional[Dict[str, Any]] 
         "gender": gender,
         "occupation": occupation,
         "adl_level": adl_level,
+        "adl_level_source": adl_resolution.source,
+        "adl_legacy_corrected": adl_resolution.legacy_corrected,
+        "adl_pricing_level": adl_resolution.pricing_level,
         "medical_conditions": medical_conditions,
         "questionnaire": questionnaire,
         "stored_assessment": stored_assessment or None,

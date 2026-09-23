@@ -296,7 +296,10 @@ def test_chat_quote_records_actuarial_versions_and_savings():
         assert quote["config_version"]
         assert quote["savings_formula"] == "risk_premium_markup"
         assert quote["savings_rate_used"] == pytest.approx(0.5)
-        assert quote["adl_level"] == 5
+        # "Fully independent" is published ADL 1, not the medium baseline.
+        assert quote["adl_level"] == 1
+        assert quote["adl_level_source"] == "daily_function"
+        assert quote["adl_clinical_level"] == 1
     else:  # flat fallback still records the inputs it used
         assert quote["savings_rate_used"] == pytest.approx(0.5)
 

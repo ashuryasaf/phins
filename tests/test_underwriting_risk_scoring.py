@@ -29,6 +29,8 @@ class TestExtraction:
         assert inputs["bmi"] is None
         assert inputs["smoking_status"] is None
         assert inputs["medical_conditions"] == []
+        assert inputs["adl_level"] is None
+        assert inputs["adl_level_source"] == "unspecified_baseline"
 
     def test_questionnaire_fallbacks(self):
         app = {"questionnaire": {"age": "42", "smoke": "yes",
@@ -66,6 +68,39 @@ class TestExtraction:
         names = " ".join(c["condition"] for c in inputs["medical_conditions"]).lower()
         assert "diabetes" in names
         assert "adl" in names
+
+    def test_fully_independent_stamp_is_not_clinical_adl_five(self):
+        """The August 2026 writer stored "full" as ADL 5. That is not a finding."""
+        app = {
+            "adl_level": 5,
+            "questionnaire_responses": {"daily_function": "full", "tobacco": "no"},
+        }
+        inputs = extract_risk_inputs(app, {})
+        assert inputs["adl_level"] == 1
+        assert inputs["adl_level_source"] == "daily_function"
+        assert inputs["adl_legacy_corrected"] is True
+        assert not any(
+            "ADL functional" in c["condition"] for c in inputs["medical_conditions"]
+        )
+
+    def test_clean_health_score_is_adl_one_and_five_is_not_an_adl(self):
+        clean = extract_risk_inputs({"health_score": 9}, {})
+        assert clean["adl_level"] == 1
+        assert clean["adl_level_source"] == "health_score"
+        midpoint = extract_risk_inputs({"health_score": 5}, {})
+        assert midpoint["adl_level"] is None
+        assert midpoint["adl_level_source"] == "unspecified_baseline"
+
+    def test_historical_significant_referral_keeps_stored_adl_eight(self):
+        inputs = extract_risk_inputs(
+            {
+                "adl_level": 8,
+                "questionnaire_responses": {"daily_function": "significant"},
+            },
+            {},
+        )
+        assert inputs["adl_level"] == 8
+        assert inputs["adl_legacy_corrected"] is False
 
     def test_chat_referral_report_does_not_collapse_to_base_score(self):
         """Empty-file 10%/very_low must never replace a stored high chat assessment."""
@@ -319,3 +354,57 @@ class TestReportParity:
         assert report["medical_assessment"]["adl_level"] == 8
         assert report["medical_assessment"]["smoking_status"] == "current"
         assert len(report["medical_assessment"]["conditions"]) >= 1
+
+    def test_clean_full_function_report_does_not_say_adl_five(self):
+        import web_portal.server as portal
+
+        headers = self._admin_headers()
+        app_id = "UW-CLEAN-ADL-001"
+        cust_id = "CUST-CLEAN-ADL-001"
+        pol_id = "POL-CLEAN-ADL-001"
+        portal.CUSTOMERS[cust_id] = {"id": cust_id, "name": "Clean Applicant"}
+        portal.POLICIES[pol_id] = {
+            "id": pol_id,
+            "customer_id": cust_id,
+            "type": "phins_unified",
+            "coverage_amount": 500000,
+            "status": "pending_underwriting",
+            "adl_level": 5,
+            "monthly_premium": 120,
+            "annual_premium": 1440,
+            "pricing_source": "pricing_kernel",
+            "risk_premium_annual": 1440,
+        }
+        portal.UNDERWRITING_APPLICATIONS[app_id] = {
+            "id": app_id,
+            "customer_id": cust_id,
+            "policy_id": pol_id,
+            "status": "pending",
+            "age": 36,
+            "smoking_status": "never",
+            "adl_level": 5,
+            "questionnaire_responses": {
+                "daily_function": "full",
+                "tobacco": "no",
+                "medical_conditions": "no",
+            },
+        }
+        before = dict(portal.POLICIES[pol_id])
+        resp = requests.get(
+            f"{BASE_URL}/api/risk-assessment/report",
+            params={"application_id": app_id},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        report = resp.json()
+        rationale = report["recommendation"]["rationale"]
+        assert report["applicant"]["adl_level"] == 1
+        assert report["applicant"]["adl_level_source"] == "daily_function"
+        assert report["medical_assessment"]["adl_level"] == 1
+        assert "ADL functional level 1" in rationale
+        assert "ADL functional level 5" not in rationale
+        assert "premium is not recalculated" in rationale
+        assert portal.POLICIES[pol_id]["monthly_premium"] == before["monthly_premium"]
+        assert portal.POLICIES[pol_id]["annual_premium"] == before["annual_premium"]
+        assert portal.POLICIES[pol_id]["adl_level"] == 5
+        assert report["medical_assessment"]["conditions"] == []

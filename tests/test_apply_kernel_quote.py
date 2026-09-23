@@ -136,7 +136,12 @@ def test_balanced_savings_addon_is_half_of_risk_and_matches_create():
     assert policy.get("product_id") == "phins_hybrid_savings"
 
 
-def test_classic_quote_without_adl_uses_assessment_default():
+def test_classic_quote_without_adl_prices_baseline_without_a_clinical_finding():
+    """An omitted ADL is the published pricing baseline, not a medical ADL 5.
+
+    A clean health score (1–10, higher is healthier) resolves to ADL 1 and
+    prices below that baseline. An explicit ADL 5 remains a stated level.
+    """
     omitted = dict(CLASSIC_PAYLOAD)
     omitted.pop("adl_level", None)
     status, body = _post("/api/policies/quote", omitted)
@@ -145,8 +150,18 @@ def test_classic_quote_without_adl_uses_assessment_default():
     assessed = calculate_premium(CLASSIC_PAYLOAD)
     assert body["pricing_source"] == "pricing_kernel"
     assert defaulted["adl_level"] == 5
+    assert defaulted["adl_level_source"] == "unspecified_baseline"
+    assert defaulted["adl_clinical_level"] is None
     assert defaulted["monthly"] == pytest.approx(assessed["monthly"])
     assert body["monthly"] == pytest.approx(assessed["monthly"])
+    assert body["adl_level_source"] == "unspecified_baseline"
+
+    clean = dict(omitted, health_score=9)
+    clean_quote = calculate_premium(clean)
+    assert clean_quote["adl_level"] == 1
+    assert clean_quote["adl_clinical_level"] == 1
+    assert clean_quote["adl_level_source"] == "health_score"
+    assert clean_quote["monthly"] < defaulted["monthly"]
 
 
 def test_quote_uses_adl_one_and_returns_live_store_multipliers():
