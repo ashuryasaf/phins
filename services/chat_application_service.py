@@ -1481,16 +1481,6 @@ class ChatPolicyApplicationService:
                 kind="quote", meta={"quote": quote}))
         return msgs
 
-    # Functional independence answer -> actuarial ADL severity level.
-    # 5 is the standard/neutral level in the actuary's ADL multiplier tables;
-    # higher levels carry the published loadings and exclusion rules.
-    _ADL_BY_DAILY_FUNCTION = {
-        "full": 5,
-        "minor": 6,
-        "moderate": 7,
-        "significant": 8,
-    }
-
     # Savings add-on choice -> markup on the risk premium, matching the
     # actuary dashboard's ``risk_premium_markup`` savings formula.
     _SAVINGS_RATE_BY_CHOICE = {
@@ -1500,9 +1490,16 @@ class ChatPolicyApplicationService:
         "growth": 1.00,
     }
 
-    def _adl_level_for(self, session: Dict[str, Any]) -> int:
-        answer = str(session["answers"].get("daily_function") or "full").lower()
-        return int(self._ADL_BY_DAILY_FUNCTION.get(answer, 5))
+    def _adl_resolution(self, session: Dict[str, Any]):
+        """Published ADL scale from the functional answer. Missing stays unknown.
+
+        A missing ``daily_function`` is not treated as fully independent and
+        is not stamped as clinical ADL 5. See ``services.adl_mapping``.
+        """
+        from services.adl_mapping import resolve_adl_evidence
+        return resolve_adl_evidence(
+            daily_function=(session.get("answers") or {}).get("daily_function"),
+        )
 
     def _savings_rate_for(self, session: Dict[str, Any]) -> float:
         answer = str(session["answers"].get("savings_addon") or "none").lower()
@@ -1558,7 +1555,10 @@ class ChatPolicyApplicationService:
         scores["bmi"] = bmi
         scores["age"] = age
         scores["conditions_considered"] = [c["condition"] for c in conditions]
-        scores["adl_level"] = self._adl_level_for(session)
+        adl = self._adl_resolution(session)
+        scores["adl_level"] = adl.clinical_level
+        scores["adl_level_source"] = adl.source
+        scores["adl_pricing_level"] = adl.pricing_level
         session["assessment"] = scores
         return scores
 
@@ -1602,6 +1602,7 @@ class ChatPolicyApplicationService:
                 "elevated": 1.35, "high": 1.45, "very_high": 1.6,
             }.get(self._payload_risk_score(assessment), 1.0)
             savings_rate = self._savings_rate_for(session)
+            adl = self._adl_resolution(session)
             monthly = round(
                 (coverage / 1000) * 0.25
                 * (1.0 + max(0, age - 25) * 0.015)
@@ -1615,7 +1616,9 @@ class ChatPolicyApplicationService:
                 "annual": round(monthly * 12 * 0.90, 2),
                 "pricing_source": "flat_fallback",
                 "savings_rate_used": savings_rate,
-                "adl_level": self._adl_level_for(session),
+                "adl_level": adl.pricing_level,
+                "adl_level_source": adl.source,
+                "adl_clinical_level": adl.clinical_level,
             }
         quote["quoted_at"] = _utc_now_iso()
         quote["coverage_amount"] = answers.get("coverage_amount")
@@ -2105,7 +2108,7 @@ class ChatPolicyApplicationService:
         smoking_status = {"yes": "smoker", "former": "former"}.get(tobacco, "nonsmoker")
         family = answers.get("family_history") or []
         card = answers.get("payment_card") or {}
-        adl_level = self._adl_level_for(session)
+        adl = self._adl_resolution(session)
         savings_rate = self._savings_rate_for(session)
         quote = session.get("quote") or {}
 
@@ -2131,10 +2134,11 @@ class ChatPolicyApplicationService:
             "gender": answers.get("gender") or "",
             "smoking_status": smoking_status,
             "risk_score": self._payload_risk_score(assessment),
-            # Actuarial pricing inputs: ADL severity drives the disability
-            # multipliers / benefit table, savings_rate is the risk-premium
-            # markup the actuary's savings formula expects.
-            "adl_level": adl_level,
+            # Actuarial pricing inputs. Clinical ADL is omitted when the
+            # applicant has not described function, so the kernel can price
+            # the published baseline without storing it as a finding.
+            # savings_rate is the risk-premium markup the actuary expects.
+            "adl_level_source": adl.source,
             "savings_rate": savings_rate,
             "savings_formula": "risk_premium_markup",
             "medical_exam_required": (
@@ -2163,8 +2167,9 @@ class ChatPolicyApplicationService:
                         answers.get("country") or "",
                     ) if part
                 ),
-                "daily_function": answers.get("daily_function") or "full",
-                "adl_level": adl_level,
+                "daily_function": answers.get("daily_function") or "",
+                "adl_level": adl.clinical_level,
+                "adl_level_source": adl.source,
                 "prior_disclosure": answers.get("prior_disclosure") or "",
                 "disclosure_mode": answers.get("disclosure_mode") or "open_disclosure",
                 "signature_name": answers.get("signature_name") or "",
@@ -2274,6 +2279,8 @@ class ChatPolicyApplicationService:
                 files.append(entry)
             payload["files"] = files
             payload["files_count"] = len(files)
+        if adl.clinical_level is not None:
+            payload["adl_level"] = adl.clinical_level
         return payload
 
     def prepare_finalize(self, application_id: str) -> Dict[str, Any]:
@@ -2602,7 +2609,8 @@ class ChatPolicyApplicationService:
                     "eligible": quote.get("eligible"),
                     "adl_declined": quote.get("adl_declined"),
                     "decline_reason": quote.get("decline_reason"),
-                    "adl_level": quote.get("adl_level"),
+                    "adl_level": quote.get("adl_clinical_level", quote.get("adl_level")),
+                    "adl_level_source": quote.get("adl_level_source"),
                     "adl_loading": quote.get("adl_loading"),
                     "disability_excluded": quote.get("disability_excluded"),
                     "adl_coverage_cap": quote.get("adl_coverage_cap"),
@@ -2692,8 +2700,10 @@ class ChatPolicyApplicationService:
                 "contact_email": contact.get("email"),
                 "contact_phone": contact.get("phone"),
                 "contact_name": contact.get("name"),
-                "adl_level": quote.get("adl_level") or (s.get("assessment") or {}).get(
-                    "adl_level"
+                "adl_level": (s.get("assessment") or {}).get("adl_level"),
+                "adl_level_source": (
+                    (s.get("assessment") or {}).get("adl_level_source")
+                    or quote.get("adl_level_source")
                 ),
                 "decline_reason": quote.get("decline_reason"),
             }

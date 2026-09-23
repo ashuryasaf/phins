@@ -6654,21 +6654,16 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
     # Ensure customer_age is always an integer
     customer_age = int(customer_age) if customer_age else 40
     
-    # Map risk_score to ADL level for actuarial calculations
-    # This ensures consistency with Long-Term Projection Calculator
-    RISK_TO_ADL_MAP = {
-        'low': 3,        # Low risk -> ADL 3 (independent with minimal assistance)
-        'medium': 5,     # Medium risk -> ADL 5 (baseline)
-        'high': 7,       # High risk -> ADL 7 (significant assistance)
-        'very_high': 9,  # Very high risk -> ADL 9 (total dependence)
-    }
-    
+    # Issued premium is unchanged below. The row's ADL is the level stored
+    # on the policy. A risk band such as "medium" is not an ADL finding and
+    # must not be displayed as baseline ADL 5.
     # Get total monthly premium from ALL active policies
     total_monthly_premium = 0
     total_annual_premium = 0
     total_risk_premium = 0
     total_savings_premium = 0
     active_policies = []
+    from services.adl_mapping import clamp_adl
     from services.financial_unification_service import kernel_components_from_policy
     
     for policy in POLICIES.values():
@@ -6677,9 +6672,8 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
             annual_premium = float(policy.get('annual_premium', monthly_premium * 12))
             policy_type = policy.get('type', 'life')
             
-            # Get policy's risk score and convert to ADL level
             risk_score = policy.get('risk_score', 'medium')
-            adl_level = RISK_TO_ADL_MAP.get(risk_score, 5)
+            adl_level = clamp_adl(policy.get('adl_level'))
 
             # Issued premium is the identity. Prefer the kernel pin on the
             # policy (or its snapshot). Never re-price through the quote
@@ -14724,6 +14718,8 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
                     'savings_rate_used': kernel.get('savings_rate_used'),
                     'savings_formula': kernel.get('savings_formula'),
                     'adl_level': kernel.get('adl_level'),
+                    'adl_clinical_level': kernel.get('adl_clinical_level'),
+                    'adl_level_source': kernel.get('adl_level_source'),
                     'adl_loading': kernel.get('adl_loading'),
                     'underwriting_loading': kernel.get('underwriting_loading'),
                     'adl_mortality_multiplier': kernel.get('adl_mortality_multiplier'),
@@ -22782,8 +22778,8 @@ For claims or questions, please contact:
                 occupation = _risk_inputs.get("occupation")
                 medical_conditions = _risk_inputs.get("medical_conditions") or []
                 adl_level = _risk_inputs.get("adl_level")
-                if adl_level is None:
-                    adl_level = target_app.get("adl_level")
+                adl_source = _risk_inputs.get("adl_level_source")
+                adl_legacy_corrected = bool(_risk_inputs.get("adl_legacy_corrected"))
 
                 age_risk = _assessment.get("age_risk") or 0
                 medical_risk = _assessment.get("medical_risk") or 0
@@ -22833,8 +22829,24 @@ For claims or questions, please contact:
                 rationale_parts = []
                 if applicant_age is not None:
                     rationale_parts.append(f"Applicant age of {applicant_age} years")
-                if adl_level is not None:
-                    rationale_parts.append(f"ADL functional level {adl_level}")
+                if adl_level is not None and adl_source != "unspecified_baseline":
+                    source_label = str(adl_source or "stated").replace("_", " ")
+                    rationale_parts.append(
+                        f"ADL functional level {adl_level} ({source_label})"
+                    )
+                if adl_legacy_corrected:
+                    stamped = target_app.get("adl_level")
+                    if stamped is None and target_policy:
+                        stamped = target_policy.get("adl_level")
+                    try:
+                        stamped_n = int(stamped) if stamped is not None else None
+                    except (TypeError, ValueError):
+                        stamped_n = None
+                    if stamped_n is not None and stamped_n != adl_level:
+                        rationale_parts.append(
+                            f"Issued record still carries ADL {stamped_n} from the "
+                            "previous fully-independent default; that premium is not recalculated"
+                        )
                 if disability_pct:
                     rationale_parts.append(f"{disability_pct}% disability rating")
                 if bmi and bmi >= 30:
@@ -23002,6 +23014,7 @@ For claims or questions, please contact:
                         'phone': target_customer.get('phone') or target_app.get('customer_phone'),
                         'customer_id': customer_id,
                         'adl_level': adl_level,
+                        'adl_level_source': adl_source,
                     },
                     'policy_type': product_id,
                     'product_id': product_id,
@@ -23030,6 +23043,7 @@ For claims or questions, please contact:
                         'disability_percentage': disability_pct or 0,
                         'disability_type': target_app.get('disability_type') if disability_pct else None,
                         'adl_level': adl_level,
+                        'adl_level_source': adl_source,
                         'disability_excluded': disability_excluded,
                         'bmi_category': bmi_category_str,
                         'bmi': bmi,
@@ -44805,14 +44819,25 @@ For claims or questions, please contact:
                     from services.pricing_shadow_service import extract_application_pricing_inputs
                     _app_inputs = extract_application_pricing_inputs(data)
                 except Exception:
+                    from services.adl_mapping import resolve_from_payload
+                    _adl = resolve_from_payload(data)
                     _app_inputs = {
                         'age': data.get('age') or data.get('customer_age') or 35,
                         'term_years': data.get('term_years') or data.get('coverage_years') or 20,
-                        'adl_level': data.get('adl_level') or 5,
+                        'adl_level': _adl.pricing_level,
+                        'adl_clinical_level': _adl.clinical_level,
+                        'adl_level_source': _adl.source,
                         'gender': data.get('gender'),
                         'smoking_status': data.get('smoking_status'),
                         'ethnicity': data.get('ethnicity'),
                     }
+
+                UNDERWRITING_APPLICATIONS[uw_id]['adl_level'] = _app_inputs.get(
+                    'adl_clinical_level'
+                )
+                UNDERWRITING_APPLICATIONS[uw_id]['adl_level_source'] = _app_inputs.get(
+                    'adl_level_source'
+                )
 
                 # Calculate premium from the actuarial kernel (fail-open flat).
                 # Chat finalize stamps quote_provenance with the kernel amount
@@ -44843,7 +44868,10 @@ For claims or questions, please contact:
                     'issuance_date': submitted_at,  # Issuance date = application date
                     'age': _app_inputs.get('age'),
                     'term_years': _app_inputs.get('term_years'),
-                    'adl_level': _app_inputs.get('adl_level'),
+                    # Clinical finding only. The priced baseline lives in the
+                    # kernel pin when function was never assessed.
+                    'adl_level': _app_inputs.get('adl_clinical_level'),
+                    'adl_level_source': _app_inputs.get('adl_level_source'),
                     'gender': _app_inputs.get('gender'),
                     'smoking_status': _app_inputs.get('smoking_status'),
                     'ethnicity': _app_inputs.get('ethnicity'),
@@ -45275,7 +45303,10 @@ For claims or questions, please contact:
                     'smoking_status': data.get('smoking_status'),
                     'ethnicity': data.get('ethnicity'),
                     'term_years': data.get('term_years') or data.get('coverage_years') or 20,
-                    'adl_level': data.get('adl_level') or 5,
+                    'adl_level': data.get('adl_level'),
+                    'adl_level_source': data.get('adl_level_source'),
+                    'health_score': data.get('health_score'),
+                    'questionnaire': data.get('questionnaire') or {},
                 })
                 
                 # Keep monthly/annual as one identity: a caller-supplied monthly
@@ -45580,7 +45611,9 @@ For claims or questions, please contact:
                             'coverage_amount': app.get('coverage_amount') or 500000,
                             'age': app.get('age') or 35,
                             'term_years': app.get('coverage_years') or 20,
-                            'adl_level': app.get('adl_level') or 5,
+                            'adl_level': app.get('adl_level'),
+                            'adl_level_source': app.get('adl_level_source'),
+                            'health_score': app.get('health_score'),
                             'gender': app.get('gender'),
                             'smoking_status': app.get('smoking_status'),
                             'risk_score': app.get('risk_score') or 'medium',

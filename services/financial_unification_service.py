@@ -1884,11 +1884,24 @@ def pin_kernel_fields_on_policy(policy: Dict[str, Any], premium_data: Dict[str, 
         "savings_rate_used",
         "savings_formula",
         "adl_level",
+        "adl_level_source",
         "adl_loading",
         "underwriting_loading",
         "life_sum_used",
         "disability_sum_used",
     ):
+        if key == "adl_level" and "adl_clinical_level" in premium_data:
+            # The kernel's adl_level is the multiplier it priced. When the
+            # applicant was never functionally assessed that number is the
+            # published baseline, not a clinical finding — leave the column
+            # empty and keep the priced level beside it.
+            if policy.get("adl_level") in (None, ""):
+                clinical = premium_data.get("adl_clinical_level")
+                if clinical is not None:
+                    policy["adl_level"] = clinical
+            if premium_data.get("adl_level") is not None:
+                policy.setdefault("adl_pricing_level", premium_data.get("adl_level"))
+            continue
         if premium_data.get(key) is not None and policy.get(key) in (None, ""):
             policy[key] = premium_data[key]
     return policy

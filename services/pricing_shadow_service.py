@@ -144,17 +144,18 @@ def extract_application_pricing_inputs(payload: Dict[str, Any]) -> Dict[str, Any
         coverage.get("term_years"),
         default=20,
     )
-    adl = _coalesce_int(
-        payload.get("adl_level"),
-        payload.get("adl"),
-        health.get("adl_level"),
-        questionnaire.get("adl_level"),
-        default=5,
-    )
+    from services.adl_mapping import resolve_from_payload
+    adl = resolve_from_payload(payload)
     return {
         "age": age,
         "term_years": term,
-        "adl_level": adl,
+        # pricing_level is what the kernel multiplies. clinical_level is None
+        # when no functional evidence exists, so callers must not store the
+        # baseline as a medical finding.
+        "adl_level": adl.pricing_level,
+        "adl_clinical_level": adl.clinical_level,
+        "adl_level_source": adl.source,
+        "adl_legacy_corrected": adl.legacy_corrected,
         "gender": gender,
         "smoking_status": _map_tobacco_to_smoking(smoking),
         "ethnicity": ethnicity,
@@ -177,7 +178,10 @@ def resolve_adl_underwriting(adl_level: int, uw_config: Any) -> Dict[str, Any]:
     the actuary's numbers here, so pricing follows whatever the actuary
     dashboard has published.
     """
-    adl = max(1, min(10, int(adl_level or 5)))
+    if adl_level is None:
+        adl = 5
+    else:
+        adl = max(1, min(10, int(adl_level)))
     decline_threshold = int(getattr(uw_config, "decline_threshold", 9) or 9)
     exclusion_threshold = int(
         getattr(uw_config, "disability_exclusion_threshold", 8) or 8
@@ -394,6 +398,9 @@ def price_application_with_kernel(payload: Dict[str, Any]) -> Optional[Dict[str,
             "mortality_premium_annual": components.mortality_premium_annual,
             "disability_premium_annual": components.disability_premium_annual,
             "adl_level": components.adl_level,
+            "adl_clinical_level": inputs.get("adl_clinical_level"),
+            "adl_level_source": inputs.get("adl_level_source"),
+            "adl_legacy_corrected": bool(inputs.get("adl_legacy_corrected")),
             "adl_loading": adl_rules["adl_loading"],
             "health_loading": health_loading,
             "underwriting_loading": underwriting_loading,

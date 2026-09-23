@@ -852,6 +852,22 @@ def test_actuary_dashboard_portfolio_snapshot_tab():
     assert "Expected Disability" in content
 
 
+def test_portfolio_simulator_contract_starts_minimized():
+    """Contract Being Priced uses the same closed <details> as the disclaimer."""
+    from pathlib import Path
+    html_path = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "actuary-dashboard.html"
+    content = html_path.read_text(encoding="utf-8")
+    assert 'id="section-simulator"' in content
+    assert 'id="contract-spec-details"' in content
+    assert 'class="card-title contract-spec-summary"' in content
+    assert 'id="contract-spec-body"' in content
+    assert '<details id="contract-spec-details" open' not in content
+    assert "Customer Rights, Liabilities and Policy Disclaimer" in content
+    # The +/- control is the closed/open marker, minimized by default.
+    assert 'content: "+"' in content
+    assert 'content: "−"' in content
+
+
 def test_actuary_dashboard_overview_has_no_hardcoded_stats():
     """Overview stat tiles must start as neutral placeholders (filled from
     /api/actuarial/tables + /api/actuarial/config), never fake numbers."""

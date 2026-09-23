@@ -271,6 +271,34 @@
       font-family: 'Space Grotesk', 'Inter', sans-serif;
       color: #12203f;
     }
+
+    /* Portfolio Simulator: Contract Being Priced collapses like the
+       Customer Rights <details> block, and starts minimized. */
+    #contract-spec-card > details > summary.contract-spec-summary {
+      cursor: pointer;
+      list-style: none;
+      margin-bottom: 0;
+      user-select: none;
+    }
+    #contract-spec-card > details > summary.contract-spec-summary::-webkit-details-marker {
+      display: none;
+    }
+    #contract-spec-card > details > summary.contract-spec-summary::marker {
+      content: "";
+    }
+    #contract-spec-card > details > summary.contract-spec-summary::after {
+      content: "+";
+      margin-left: auto;
+      font-size: 1.15rem;
+      font-weight: 600;
+      line-height: 1;
+    }
+    #contract-spec-card > details[open] > summary.contract-spec-summary {
+      margin-bottom: 16px;
+    }
+    #contract-spec-card > details[open] > summary.contract-spec-summary::after {
+      content: "−";
+    }
     
     /* Stats Grid — deep-navy spectrum tiles (platform design language) */
     .stats-grid {
@@ -2126,10 +2154,12 @@
           <h2 class="section-title">Portfolio Simulator</h2>
 
           <div class="card" id="contract-spec-card">
-            <div class="card-title">Contract Being Priced</div>
-            <div id="contract-spec-body">
-              <p style="color:var(--text-light);">Loading contract specification…</p>
-            </div>
+            <details id="contract-spec-details">
+              <summary class="card-title contract-spec-summary">Contract Being Priced</summary>
+              <div id="contract-spec-body">
+                <p style="color:var(--text-light);">Loading contract specification…</p>
+              </div>
+            </details>
           </div>
           
           <div class="card">
