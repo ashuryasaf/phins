@@ -812,9 +812,77 @@ for (const needed of [
   'Expected disability paid (annual, on booked premium)',
   'Monthly customer growth',
   'Expected customers, final month',
+  'Expected savings add-on collected over horizon',
+  'Expected operating premium collected over horizon',
+  'Expected management fee income over horizon',
 ]) {
   if (!labels.includes(needed)) process.exit(23);
 }
+// Savings add-on is not operating cash. The management fee is a
+// percentage of savings AUM, so a book twice as large earns twice the fee.
+const priced = snap.buildForecast({
+  startCustomers: 100,
+  growthPct: 0,
+  premiumPerCustomer: 100,
+  lossRatioPct: 50,
+  horizon: 1,
+  collectionRate: 1,
+  savingsShare: 0.25,
+  managementFeePctOfAum: 0.12,
+  savingsYieldPct: 0,
+});
+const row = priced.rows[0];
+if (Math.abs(priced.managementFeePctOfAum - 0.10) > 1e-12) process.exit(24);
+if (Math.abs(row.savingsCollected - 2500) > 1e-6) process.exit(25);
+if (Math.abs(row.operatingCollected - 7500) > 1e-6) process.exit(26);
+if (Math.abs(row.savingsCollected + row.operatingCollected - row.collectedPremium) > 1e-6) process.exit(27);
+const expectedFee = 2500 * (0.10 / 12);
+if (Math.abs(row.managementFee - expectedFee) > 1e-6) process.exit(28);
+const expectedNet = 7500 - 5000 + expectedFee;
+if (Math.abs(row.netCashFlow - expectedNet) > 1e-6) process.exit(29);
+if (Math.abs(row.netCashFlow - (row.collectedPremium - row.claimsPaid)) < 1) process.exit(30);
+const doubled = snap.buildForecast({
+  startCustomers: 200,
+  growthPct: 0,
+  premiumPerCustomer: 100,
+  lossRatioPct: 50,
+  horizon: 1,
+  collectionRate: 1,
+  savingsShare: 0.25,
+  managementFeePctOfAum: 0.10,
+  savingsYieldPct: 0,
+});
+if (Math.abs(doubled.rows[0].managementFee - row.managementFee * 2) > 1e-6) process.exit(31);
+if (Math.abs(doubled.rows[0].netCashFlow - row.netCashFlow * 2) > 1e-6) process.exit(32);
+const pricedView = snap.portfolioSnapshot({
+  annualPremiumBooked: 120000,
+  premiumBilled: 10000,
+  premiumCollected: 10000,
+  lossRatioPct: 50,
+  mortalityShare: 0.6,
+  disabilityShare: 0.4,
+  collectionRate: 1,
+  growthPct: 0,
+  startCustomers: 100,
+  premiumPerCustomer: 100,
+  monthsElapsed: 0,
+  savingsShare: 0.25,
+  managementFeePctOfAum: 0.10,
+  rows: priced.rows,
+});
+if (!pricedView.checks.ok) process.exit(33);
+if (!pricedView.checks.savingsIdentity || !pricedView.checks.netIdentity) process.exit(34);
+if (Math.abs(pricedView.horizonNet - expectedNet) > 1e-6) process.exit(35);
+const realizedFee = snap.managementFeeOnContributions(2500, 1, {
+  managementFeePctOfAum: 0.10,
+  savingsYieldPct: 0,
+});
+if (Math.abs(realizedFee.fee - expectedFee) > 1e-6) process.exit(36);
+const realizedDouble = snap.managementFeeOnContributions(5000, 1, {
+  managementFeePctOfAum: 0.10,
+  savingsYieldPct: 0,
+});
+if (Math.abs(realizedDouble.fee - expectedFee * 2) > 1e-6) process.exit(37);
 process.exit(0);
 """
     proc = subprocess.run(
@@ -850,6 +918,10 @@ def test_actuary_dashboard_portfolio_snapshot_tab():
     assert "Premium Billed" in content
     assert "Expected Death" in content
     assert "Expected Disability" in content
+    assert "savingsShare: savingsShare" in content
+    assert "managementFeePctOfAum: aum.managementFeePctOfAum" in content
+    assert "sandboxSavingsShare" in content
+    assert "managementFeeOnContributions" in content
 
 
 def test_actuary_dashboard_overview_has_no_hardcoded_stats():

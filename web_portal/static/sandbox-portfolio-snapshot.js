@@ -17,6 +17,12 @@
  * is the simulator identity (expected claims / annual premium), not a
  * ratio on cash collected. Cash collected is premium billed times the
  * assumed collection rate.
+ *
+ * The savings add-on is a share of that collected premium and is a
+ * liability, not operating cash. Net cash flow is the operating premium
+ * (collected minus the savings add-on) minus expected claims, plus the
+ * management fee. The fee is a percentage of the savings AUM, so it
+ * scales with the book instead of a flat amount.
  */
 (function (root, factory) {
   const api = factory();
@@ -77,6 +83,60 @@
     return { death: death, disability: disability };
   }
 
+  function clampShare(value) {
+    return Math.min(1, Math.max(0, num(value, 0)));
+  }
+
+  function clampFeeRate(value) {
+    return Math.min(0.10, Math.max(0, num(value, 0)));
+  }
+
+  function clampYield(value) {
+    return Math.min(0.5, Math.max(-0.5, num(value, 0)));
+  }
+
+  /**
+   * One month of the segregated savings fund. Contribution lands first,
+   * yield accrues on that base, then the management fee is the annual
+   * rate / 12 of the gross AUM. The fee is zero when the rate is zero
+   * or the fund is empty, and it doubles when the fund doubles.
+   */
+  function stepSavingsFund(openingAum, contribution, monthlyYield, monthlyFee) {
+    const base = Math.max(0, num(openingAum, 0)) + Math.max(0, num(contribution, 0));
+    const yieldAmt = base * monthlyYield;
+    const grossAum = base + yieldAmt;
+    const managementFee = grossAum * monthlyFee;
+    return {
+      yield: yieldAmt,
+      grossAum: grossAum,
+      managementFee: managementFee,
+      closingAum: grossAum - managementFee,
+    };
+  }
+
+  /**
+   * Relative management fee on `totalSavings` spread evenly over `periods`
+   * monthly contributions. Used for realized sandbox cash, where the
+   * bills are a lump rather than the forecast's month-by-month rows.
+   */
+  function managementFeeOnContributions(totalSavings, periods, opts) {
+    const o = opts || {};
+    const n = Math.max(0, Math.round(num(periods, 0)));
+    const total = Math.max(0, num(totalSavings, 0));
+    if (!(n > 0) || !(total > 0)) return { fee: 0, closingAum: 0 };
+    const monthlyFee = clampFeeRate(o.managementFeePctOfAum) / 12;
+    const monthlyYield = clampYield(o.savingsYieldPct) / 12;
+    const monthly = total / n;
+    let aum = 0;
+    let fee = 0;
+    for (let i = 0; i < n; i++) {
+      const step = stepSavingsFund(aum, monthly, monthlyYield, monthlyFee);
+      fee += step.managementFee;
+      aum = step.closingAum;
+    }
+    return { fee: fee, closingAum: aum };
+  }
+
   /**
    * 1..horizon monthly expectancy. Customers compound at growthPct.
    * Claims follow premium billed × loss ratio, then the claim mix.
@@ -96,6 +156,13 @@
       ? COLLECTION_RATE
       : Math.min(1, Math.max(0, num(o.collectionRate, COLLECTION_RATE)));
     const mix = claimMix(o.mortalityShare, o.disabilityShare);
+    const savingsShare = clampShare(o.savingsShare);
+    const feeAnnual = o.managementFeePctOfAum == null
+      ? 0
+      : clampFeeRate(o.managementFeePctOfAum);
+    const yieldAnnual = o.savingsYieldPct == null ? 0 : clampYield(o.savingsYieldPct);
+    const monthlyFee = feeAnnual / 12;
+    const monthlyYield = yieldAnnual / 12;
 
     const rows = [];
     let accumBilled = 0;
@@ -103,17 +170,31 @@
     let accumClaims = 0;
     let accumDeath = 0;
     let accumDisability = 0;
+    let accumSavings = 0;
+    let accumOperating = 0;
+    let accumFee = 0;
+    let accumNet = 0;
+    let aum = Math.max(0, num(o.openingSavingsAum, 0));
     for (let m = 1; m <= horizon; m++) {
       const customers = Math.round(startCustomers * Math.pow(1 + g, m - 1));
       const premiumBilled = customers * ppc;
       const premiumCollected = premiumBilled * collectionRate;
       const claims = premiumBilled * lr;
       const parts = splitClaims(claims, mix);
+      const savingsCollected = premiumCollected * savingsShare;
+      const operatingCollected = premiumCollected - savingsCollected;
+      const fund = stepSavingsFund(aum, savingsCollected, monthlyYield, monthlyFee);
+      aum = fund.closingAum;
+      const netCashFlow = operatingCollected - claims + fund.managementFee;
       accumBilled += premiumBilled;
       accumCollected += premiumCollected;
       accumClaims += claims;
       accumDeath += parts.death;
       accumDisability += parts.disability;
+      accumSavings += savingsCollected;
+      accumOperating += operatingCollected;
+      accumFee += fund.managementFee;
+      accumNet += netCashFlow;
       rows.push({
         month: m,
         customers: customers,
@@ -121,12 +202,20 @@
         // Collected cash. Older readers used this key for the monthly
         // premium run-rate; it is now billed × the collection rate.
         collectedPremium: premiumCollected,
+        savingsCollected: savingsCollected,
+        operatingCollected: operatingCollected,
+        managementFee: fund.managementFee,
+        savingsAum: aum,
         claimsPaid: claims,
         deathPaid: parts.death,
         disabilityPaid: parts.disability,
-        netCashFlow: premiumCollected - claims,
+        netCashFlow: netCashFlow,
         accumBilled: accumBilled,
         accumPremium: accumCollected,
+        accumSavings: accumSavings,
+        accumOperating: accumOperating,
+        accumFee: accumFee,
+        accumNet: accumNet,
         accumClaims: accumClaims,
         accumDeath: accumDeath,
         accumDisability: accumDisability,
@@ -146,6 +235,9 @@
       premiumPerCustomer: ppc,
       openingMonthlyBilled: openingMonthlyBilled,
       annualisedOpeningBilled: openingMonthlyBilled * 12,
+      savingsShare: savingsShare,
+      managementFeePctOfAum: feeAnnual,
+      savingsYieldPct: yieldAnnual,
     };
   }
 
@@ -156,11 +248,19 @@
       horizonClaims: 0,
       horizonDeath: 0,
       horizonDisability: 0,
+      horizonSavings: 0,
+      horizonOperating: 0,
+      horizonFee: 0,
+      horizonNet: 0,
       toDateBilled: 0,
       toDateCollected: 0,
       toDateClaims: 0,
       toDateDeath: 0,
       toDateDisability: 0,
+      toDateSavings: 0,
+      toDateOperating: 0,
+      toDateFee: 0,
+      toDateNet: 0,
     };
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
@@ -169,17 +269,29 @@
       const claims = num(r.claimsPaid, 0);
       const death = num(r.deathPaid, 0);
       const disability = num(r.disabilityPaid, claims - death);
+      const savings = num(r.savingsCollected, 0);
+      const operating = num(r.operatingCollected, collected - savings);
+      const fee = num(r.managementFee, 0);
+      const net = num(r.netCashFlow, operating - claims + fee);
       out.horizonBilled += billed;
       out.horizonCollected += collected;
       out.horizonClaims += claims;
       out.horizonDeath += death;
       out.horizonDisability += disability;
+      out.horizonSavings += savings;
+      out.horizonOperating += operating;
+      out.horizonFee += fee;
+      out.horizonNet += net;
       if ((num(r.month, i + 1)) <= elapsed) {
         out.toDateBilled += billed;
         out.toDateCollected += collected;
         out.toDateClaims += claims;
         out.toDateDeath += death;
         out.toDateDisability += disability;
+        out.toDateSavings += savings;
+        out.toDateOperating += operating;
+        out.toDateFee += fee;
+        out.toDateNet += net;
       }
     }
     return out;
@@ -257,6 +369,14 @@
       rolled.horizonCollected,
       rolled.horizonBilled * collectionRate
     );
+    const savingsIdentity = rows.length === 0 || near(
+      rolled.horizonSavings + rolled.horizonOperating,
+      rolled.horizonCollected
+    );
+    const netIdentity = rows.length === 0 || near(
+      rolled.horizonNet,
+      rolled.horizonOperating - rolled.horizonClaims + rolled.horizonFee
+    );
     const growthIdentity = rows.length === 0 || formulaEnd === endCustomers;
     const year1Identity = !hasYear1 || near(
       year1Parts.death + year1Parts.disability,
@@ -303,19 +423,28 @@
       horizonClaims: rolled.horizonClaims,
       horizonDeath: rolled.horizonDeath,
       horizonDisability: rolled.horizonDisability,
-      horizonNet: rolled.horizonCollected - rolled.horizonClaims,
+      horizonSavings: rolled.horizonSavings,
+      horizonOperating: rolled.horizonOperating,
+      horizonManagementFee: rolled.horizonFee,
+      savingsShare: clampShare(src.savingsShare),
+      managementFeePctOfAum: src.managementFeePctOfAum == null
+        ? 0
+        : clampFeeRate(src.managementFeePctOfAum),
+      horizonNet: rolled.horizonNet,
       materialized: src.materialized == null ? null : num(src.materialized, 0),
       accepted: src.accepted == null ? null : num(src.accepted, 0),
       checks: {
         claimsIdentity: claimsIdentity,
         horizonIdentity: horizonIdentity,
         collectedIdentity: collectedIdentity,
+        savingsIdentity: savingsIdentity,
+        netIdentity: netIdentity,
         growthIdentity: growthIdentity,
         year1Identity: year1Identity,
       },
     };
     snap.checks.ok = claimsIdentity && horizonIdentity && collectedIdentity
-      && growthIdentity && year1Identity;
+      && savingsIdentity && netIdentity && growthIdentity && year1Identity;
     return snap;
   }
 
@@ -359,9 +488,13 @@
       { section: 'Lifecycle growth', label: 'Lifecycle months elapsed', value: snap.monthsElapsed, kind: 'count' },
       { section: 'Lifecycle growth', label: 'Expected premium billed over horizon', value: snap.horizonBilled, kind: 'money' },
       { section: 'Lifecycle growth', label: 'Expected premium collected over horizon', value: snap.horizonCollected, kind: 'money' },
+      { section: 'Lifecycle growth', label: 'Expected savings add-on collected over horizon', value: snap.horizonSavings, kind: 'money' },
+      { section: 'Lifecycle growth', label: 'Expected operating premium collected over horizon', value: snap.horizonOperating, kind: 'money' },
+      { section: 'Lifecycle growth', label: 'Expected management fee income over horizon', value: snap.horizonManagementFee, kind: 'money' },
+      { section: 'Lifecycle growth', label: 'Management fee rate (of savings AUM)', value: snap.managementFeePctOfAum, kind: 'rate' },
       { section: 'Lifecycle growth', label: 'Expected death paid over horizon', value: snap.horizonDeath, kind: 'money' },
       { section: 'Lifecycle growth', label: 'Expected disability paid over horizon', value: snap.horizonDisability, kind: 'money' },
-      { section: 'Lifecycle growth', label: 'Expected net cash flow over horizon', value: snap.horizonNet, kind: 'money' }
+      { section: 'Lifecycle growth', label: 'Expected net cash flow over horizon (operating premium − claims + management fee)', value: snap.horizonNet, kind: 'money' }
     );
     return lines;
   }
@@ -370,6 +503,7 @@
     COLLECTION_RATE: COLLECTION_RATE,
     claimMix: claimMix,
     buildForecast: buildForecast,
+    managementFeeOnContributions: managementFeeOnContributions,
     portfolioSnapshot: portfolioSnapshot,
     snapshotLines: snapshotLines,
   };

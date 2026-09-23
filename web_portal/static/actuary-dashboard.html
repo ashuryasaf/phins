@@ -3340,7 +3340,7 @@
 
             <div id="sandbox-tab-projection" class="sandbox-tab-panel">
               <p style="color:var(--text-light);font-size:0.88rem;margin-bottom:10px;">
-                Adjustable <strong>5-year (60-month) cash-flow forecast</strong>, seeded from the simulation and the active sandbox book. Customers compound at the monthly growth rate. Each month's <strong>premium billed</strong> is the in-force book × monthly premium; <strong>premium collected</strong> is that bill × the 95% collection rate. Expected claims are premium billed × the loss ratio (the same claims / booked-premium identity the simulator uses), split into <strong>expected death</strong> and <strong>expected disability</strong>. Tune the controls to re-run the forecast; realized actuals accumulate live as the random lifecycle runs. The savings add-on portion of collected premium is a liability owed back to policyholders and is reported in the PDF AI Assessment.
+                Adjustable <strong>5-year (60-month) cash-flow forecast</strong>, seeded from the simulation and the active sandbox book. Customers compound at the monthly growth rate. Each month's <strong>premium billed</strong> is the in-force book × monthly premium; <strong>premium collected</strong> is that bill × the 95% collection rate. Expected claims are premium billed × the loss ratio (the same claims / booked-premium identity the simulator uses), split into <strong>expected death</strong> and <strong>expected disability</strong>. <strong>Net cash flow</strong> keeps the savings add-on out of operating cash and adds the management fee, which is a percentage of the savings AUM (the same rate as Reserves → Management Fee % of AUM) so revenue and profit scale with the book. Tune the controls to re-run the forecast; realized actuals accumulate live as the random lifecycle runs.
               </p>
 
               <!-- Adjustable forecast controls -->
@@ -8063,6 +8063,11 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       proj.active = startCustomers > 0;
       const lr = lossRatioPct / 100;
       const Snap = window.PhinsSandboxSnapshot;
+      const aum = sandboxAumSettings();
+      const savingsShare = sandboxSavingsShare();
+      proj.savingsShare = savingsShare;
+      proj.managementFeePctOfAum = aum.managementFeePctOfAum;
+      proj.savingsYieldPct = aum.savingsYieldPct;
       const built = Snap.buildForecast({
         startCustomers: startCustomers,
         growthPct: growthPct,
@@ -8072,6 +8077,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         mortalityShare: (sb.contract || {}).mortality_share,
         disabilityShare: (sb.contract || {}).disability_claim_share,
         collectionRate: Snap.COLLECTION_RATE,
+        savingsShare: savingsShare,
+        managementFeePctOfAum: aum.managementFeePctOfAum,
+        savingsYieldPct: aum.savingsYieldPct,
       });
       proj.claimMix = built.mix;
       proj.baseline = {
@@ -8126,7 +8134,44 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       proj.realizedClaimsPaid = sb.claims
         .filter(c => c.status === 'paid')
         .reduce((s, c) => s + (Number(c.paid_amount || c.approved_amount || c.amount) || 0), 0);
-      proj.realizedNetCashFlow = proj.realizedCollected - proj.realizedClaimsPaid;
+      const aum = sandboxAumSettings();
+      proj.managementFeePctOfAum = aum.managementFeePctOfAum;
+      proj.savingsYieldPct = aum.savingsYieldPct;
+      const periods = collected.savings > 0 ? Math.max(1, (proj.monthsElapsed || 0) + 1) : 0;
+      const Snap = window.PhinsSandboxSnapshot;
+      const fee = Snap
+        ? Snap.managementFeeOnContributions(collected.savings, periods, aum).fee
+        : 0;
+      proj.realizedManagementFee = fee;
+      proj.realizedOperatingCollected = collected.risk;
+      // Operating cash is collected premium minus the savings add-on.
+      // The management fee is a percentage of that savings AUM.
+      proj.realizedNetCashFlow = collected.risk - proj.realizedClaimsPaid + fee;
+    }
+
+    function sandboxAumSettings() {
+      const feeRaw = parseFloat((document.getElementById('reserve-mgmt-fee') || {}).value);
+      const yldRaw = parseFloat((document.getElementById('reserve-savings-yield') || {}).value);
+      const feePct = Number.isFinite(feeRaw) ? feeRaw : 1;
+      const yldPct = Number.isFinite(yldRaw) ? yldRaw : 4.5;
+      return {
+        managementFeePctOfAum: Math.min(10, Math.max(0, feePct)) / 100,
+        savingsYieldPct: Math.min(50, Math.max(-50, yldPct)) / 100,
+      };
+    }
+
+    function sandboxSavingsShare() {
+      let annual = 0;
+      let savings = 0;
+      const customers = (window.actuarySandbox && window.actuarySandbox.customers) || [];
+      for (const c of customers) {
+        if (c.uw_status !== 'approved') continue;
+        if (c.policy_status === 'terminated' || c.policy_status === 'cancelled') continue;
+        annual += Number(c.annual_premium) || 0;
+        savings += Number(c.savings_premium) || 0;
+      }
+      if (!(annual > 0)) return 0;
+      return Math.min(1, Math.max(0, savings / annual));
     }
 
     function sandboxAdvanceProjection() {
@@ -8271,18 +8316,22 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const currentRow = proj.rows[Math.min(proj.rows.length - 1, Math.max(0, proj.monthsElapsed - 1))] || {};
       const monthlyPremium = Number(currentRow.premiumBilled != null ? currentRow.premiumBilled : (currentRow.collectedPremium != null ? currentRow.collectedPremium : (base.monthlyPremium || 0)));
       const monthlyClaims = Number(currentRow.claimsPaid != null ? currentRow.claimsPaid : (base.monthlyClaims || 0));
-      // Net follows the row's own collected-minus-claims basis so the pill
-      // agrees with the highlighted table row and the horizon total.
-      const monthlyCollected = Number(currentRow.collectedPremium != null ? currentRow.collectedPremium : monthlyPremium);
+      // Net is operating premium minus claims plus the relative management
+      // fee, the same figure as the row and the horizon total.
+      const monthlyNet = Number(currentRow.netCashFlow != null
+        ? currentRow.netCashFlow
+        : ((currentRow.collectedPremium != null ? currentRow.collectedPremium : monthlyPremium) - monthlyClaims));
       setText('sandbox-proj-months-elapsed', `${proj.monthsElapsed} / ${proj.months}`);
       setText('sandbox-proj-monthly-premium', sandboxFmtMoney(monthlyPremium));
       setText('sandbox-proj-monthly-claims', sandboxFmtMoney(monthlyClaims));
-      setText('sandbox-proj-monthly-net', sandboxFmtMoney(monthlyCollected - monthlyClaims));
+      setText('sandbox-proj-monthly-net', sandboxFmtMoney(monthlyNet));
       setText('sandbox-proj-realized-collected', sandboxFmtMoney(proj.realizedCollected));
       setText('sandbox-proj-realized-claims', sandboxFmtMoney(proj.realizedClaimsPaid));
       setText('sandbox-proj-realized-net', sandboxFmtMoney(proj.realizedNetCashFlow));
       setText('sandbox-proj-end-customers', sandboxFmtCount(last.customers || 0));
-      setText('sandbox-proj-total-net', sandboxFmtMoney(Number(last.accumPremium || 0) - Number(last.accumClaims || 0)));
+      setText('sandbox-proj-total-net', sandboxFmtMoney(Number(
+        last.accumNet != null ? last.accumNet : ((last.accumPremium || 0) - (last.accumClaims || 0))
+      )));
       if (body) {
         body.innerHTML = proj.rows.map(r => {
           const elapsed = r.month <= proj.monthsElapsed;
@@ -8553,6 +8602,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         mortalityShare: contract.mortality_share,
         disabilityShare: contract.disability_claim_share,
         collectionRate: Snap.COLLECTION_RATE,
+        savingsShare: proj.savingsShare != null ? proj.savingsShare : sandboxSavingsShare(),
+        managementFeePctOfAum: proj.managementFeePctOfAum != null ? proj.managementFeePctOfAum : sandboxAumSettings().managementFeePctOfAum,
         growthPct: proj.growthPct != null ? proj.growthPct : (base.growthPct != null ? base.growthPct : 10),
         startCustomers: base.startCustomers != null ? base.startCustomers : (proj.startCustomers || 0),
         premiumPerCustomer: base.premiumPerCustomer || 0,
@@ -8606,7 +8657,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (integrity) {
         const ok = snap && snap.checks && snap.checks.ok;
         integrity.textContent = ok
-          ? 'Integrity: expected death + expected disability = expected claims; forecast collected = premium billed × collection rate; final-month customers match the monthly growth formula.'
+          ? 'Integrity: expected death + expected disability = expected claims; forecast collected = premium billed × collection rate; savings add-on + operating premium = collected; net cash flow = operating premium − claims + management fee; final-month customers match the monthly growth formula.'
           : 'Integrity check failed — death, disability, billed premium, and customer growth are not reconciling. Recompute the forecast before relying on this snapshot.';
       }
     }
@@ -8666,6 +8717,12 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // policyholders and the risk premium available to meet claims.
       const collectedSplit = sandboxCollectedPremium();
       const collected = collectedSplit.total;
+      const aumSettings = sandboxAumSettings();
+      const feePeriods = collectedSplit.savings > 0 ? Math.max(1, (proj.monthsElapsed || 0) + 1) : 0;
+      const managementFee = window.PhinsSandboxSnapshot
+        ? window.PhinsSandboxSnapshot.managementFeeOnContributions(collectedSplit.savings, feePeriods, aumSettings).fee
+        : 0;
+      const operationalNet = collectedSplit.risk - claimsPaidTotal + managementFee;
 
       const lossRatio = totalAnnualRiskPremium > 0 ? (claimsPaidTotal / totalAnnualRiskPremium) : 0;
       const snapshot = sandboxAssembleSnapshot({
@@ -8691,6 +8748,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           totalBills: bills.length, billsOutstanding, billsPaid, billsOverdue, billsVoided,
           premiumBilled: collectedSplit.billed, collectionRate: collectedSplit.rate,
           collected, savingsCollected: collectedSplit.savings, riskCollected: collectedSplit.risk,
+          managementFee, managementFeePctOfAum: aumSettings.managementFeePctOfAum,
+          operationalNet,
           outstandingAmt, lossRatio,
         },
         byType, byStatus, byCause,
@@ -8740,9 +8799,11 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           ['Collection Rate', (s.collectionRate * 100).toFixed(0) + '%'],
           ['Premiums Collected', s.collected],
           ['Savings Add-on Collected (held for customers)', s.savingsCollected],
-          ['Risk Premium Collected (meets claims)', s.riskCollected],
+          ['Operating Premium Collected (risk + expense + profit)', s.riskCollected],
+          ['Management Fee Income (percent of savings AUM)', s.managementFee],
+          ['Management Fee Rate of AUM', ((s.managementFeePctOfAum || 0) * 100).toFixed(2) + '%'],
           ['Annual Risk Premium Booked', s.totalAnnualRiskPremium],
-          ['Realized Underwriting Net (risk premium - claims)', s.riskCollected - s.claimsPaidTotal],
+          ['Operational Net (operating premium - claims + management fee)', s.operationalNet],
           ['Outstanding Bills', s.outstandingAmt],
           ['Loss Ratio (claims / risk premium)', (s.lossRatio * 100).toFixed(2) + '%'],
         ]));
@@ -8774,8 +8835,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
         // 5-year forecast rows.
         sections.push(csvSection('5-Year Forecast (expected)',
-          ['Month', 'Active Customers', 'Premium Billed', 'Premium Collected', 'Expected Death', 'Expected Disability', 'Net Cash Flow', 'Accum Premium Billed', 'Accum Premium Collected', 'Accum Expected Death', 'Accum Expected Disability'],
-          (ix.proj.rows || []).map(r => [r.month, r.customers, Math.round(r.premiumBilled != null ? r.premiumBilled : r.collectedPremium), Math.round(r.collectedPremium), Math.round(r.deathPaid || 0), Math.round(r.disabilityPaid || 0), Math.round(r.netCashFlow), Math.round(r.accumBilled != null ? r.accumBilled : 0), Math.round(r.accumPremium), Math.round(r.accumDeath || 0), Math.round(r.accumDisability || 0)])));
+          ['Month', 'Active Customers', 'Premium Billed', 'Premium Collected', 'Savings Add-on', 'Operating Premium', 'Management Fee', 'Expected Death', 'Expected Disability', 'Net Cash Flow', 'Accum Premium Billed', 'Accum Premium Collected', 'Accum Expected Death', 'Accum Expected Disability'],
+          (ix.proj.rows || []).map(r => [r.month, r.customers, Math.round(r.premiumBilled != null ? r.premiumBilled : r.collectedPremium), Math.round(r.collectedPremium), Math.round(r.savingsCollected || 0), Math.round(r.operatingCollected || 0), Math.round(r.managementFee || 0), Math.round(r.deathPaid || 0), Math.round(r.disabilityPaid || 0), Math.round(r.netCashFlow), Math.round(r.accumBilled != null ? r.accumBilled : 0), Math.round(r.accumPremium), Math.round(r.accumDeath || 0), Math.round(r.accumDisability || 0)])));
 
         // Detailed records.
         sections.push(csvSection('Underwriting — Accounts',
@@ -8846,9 +8907,11 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           ['Collection Rate', (s.collectionRate * 100).toFixed(0) + '%'],
           ['Premiums Collected', s.collected],
           ['Savings Add-on Collected (held for customers)', s.savingsCollected],
-          ['Risk Premium Collected (meets claims)', s.riskCollected],
+          ['Operating Premium Collected (risk + expense + profit)', s.riskCollected],
+          ['Management Fee Income (percent of savings AUM)', s.managementFee],
+          ['Management Fee Rate of AUM', ((s.managementFeePctOfAum || 0) * 100).toFixed(2) + '%'],
           ['Annual Risk Premium Booked', s.totalAnnualRiskPremium],
-          ['Realized Underwriting Net (risk premium - claims)', s.riskCollected - s.claimsPaidTotal],
+          ['Operational Net (operating premium - claims + management fee)', s.operationalNet],
           ['Outstanding Bills', s.outstandingAmt],
           ['Loss Ratio % (claims / risk premium)', Number((s.lossRatio * 100).toFixed(2))],
         ]));
@@ -8870,8 +8933,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         sheets.push(xlsSheet('Lifecycle Accumulated', ['Month', 'Accum Premium', 'Accum Claims Paid', 'Death Paid', 'Disability Paid', 'Claims Paid (count)'],
           series.map(r => [r.month, Math.round(r.accumCollected), Math.round(r.accumClaimsPaid), Math.round(r.mortalityPaid), Math.round(r.disabilityPaid), r.claimsPaidCount])));
 
-        sheets.push(xlsSheet('Forecast', ['Month', 'Active Customers', 'Premium Billed', 'Premium Collected', 'Expected Death', 'Expected Disability', 'Net Cash Flow', 'Accum Billed', 'Accum Collected', 'Accum Death', 'Accum Disability'],
-          (ix.proj.rows || []).map(r => [r.month, r.customers, Math.round(r.premiumBilled != null ? r.premiumBilled : r.collectedPremium), Math.round(r.collectedPremium), Math.round(r.deathPaid || 0), Math.round(r.disabilityPaid || 0), Math.round(r.netCashFlow), Math.round(r.accumBilled != null ? r.accumBilled : 0), Math.round(r.accumPremium), Math.round(r.accumDeath || 0), Math.round(r.accumDisability || 0)])));
+        sheets.push(xlsSheet('Forecast', ['Month', 'Active Customers', 'Premium Billed', 'Premium Collected', 'Savings Add-on', 'Operating Premium', 'Management Fee', 'Expected Death', 'Expected Disability', 'Net Cash Flow', 'Accum Billed', 'Accum Collected', 'Accum Death', 'Accum Disability'],
+          (ix.proj.rows || []).map(r => [r.month, r.customers, Math.round(r.premiumBilled != null ? r.premiumBilled : r.collectedPremium), Math.round(r.collectedPremium), Math.round(r.savingsCollected || 0), Math.round(r.operatingCollected || 0), Math.round(r.managementFee || 0), Math.round(r.deathPaid || 0), Math.round(r.disabilityPaid || 0), Math.round(r.netCashFlow), Math.round(r.accumBilled != null ? r.accumBilled : 0), Math.round(r.accumPremium), Math.round(r.accumDeath || 0), Math.round(r.accumDisability || 0)])));
 
         sheets.push(xlsSheet('Underwriting', ['Customer ID', 'Age', 'Gender', 'Health (ADL)', 'Coverage', 'Annual Premium', 'Monthly Premium', 'Risk Score', 'UW Status', 'Policy Status'],
           ix.customers.slice(0, SANDBOX_XLS_SHEET_CAP).map(c => [c.id, Number(c.age) || 0, c.gender, Number(c.health_score) || 0, Number(c.coverage_amount) || 0, Number(c.annual_premium) || 0, Number(c.monthly_premium) || 0, Number(c.risk_score) || 0, c.uw_status, c.policy_status]), ix.customers.length));
@@ -8916,14 +8979,15 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
       if (months > 0) {
         const savingsPctOfCollected = s.collected > 0 ? (s.savingsCollected / s.collected * 100) : 0;
-        const underwritingNet = s.riskCollected - s.claimsPaidTotal;
-        out.push(`Over ${months} elapsed lifecycle month${months === 1 ? '' : 's'}, ${sandboxFmtMoney(s.premiumBilled)} of premium was billed and auto-paid by policyholders at a ${(s.collectionRate * 100).toFixed(0)}% collection rate (policies unpaid past the 30-day grace are cancelled); premiums collected reached ${sandboxFmtMoney(s.collected)}. Of this, ${sandboxFmtMoney(s.savingsCollected)} (${savingsPctOfCollected.toFixed(0)}%) is the elected savings add-on accumulated for policyholders — a liability owed back to customers, not available to meet claims — leaving ${sandboxFmtMoney(s.riskCollected)} of risk premium. Against ${sandboxFmtMoney(s.claimsPaidTotal)} of claims paid, the realized underwriting net is ${sandboxFmtMoney(underwritingNet)}.`);
+        const underwritingNet = s.operationalNet;
+        const feePct = ((s.managementFeePctOfAum || 0) * 100).toFixed(2);
+        out.push(`Over ${months} elapsed lifecycle month${months === 1 ? '' : 's'}, ${sandboxFmtMoney(s.premiumBilled)} of premium was billed and auto-paid by policyholders at a ${(s.collectionRate * 100).toFixed(0)}% collection rate (policies unpaid past the 30-day grace are cancelled); premiums collected reached ${sandboxFmtMoney(s.collected)}. Of this, ${sandboxFmtMoney(s.savingsCollected)} (${savingsPctOfCollected.toFixed(0)}%) is the elected savings add-on accumulated for policyholders — a liability owed back to customers, not available to meet claims — leaving ${sandboxFmtMoney(s.riskCollected)} of operating premium. The management fee, ${feePct}% of savings AUM, adds ${sandboxFmtMoney(s.managementFee)} of operational revenue. Against ${sandboxFmtMoney(s.claimsPaidTotal)} of claims paid, the operational net is ${sandboxFmtMoney(underwritingNet)}.`);
       }
       const sn = ix.snapshot;
       if (sn) {
         out.push(`Annual premium booked on the in-force book is ${sandboxFmtMoney(sn.annualPremiumBooked)}. Premium billed to date (invoice face) is ${sandboxFmtMoney(sn.premiumBilled)}, which is a different measure from premium booked. On that booked premium, expected annual claims are ${sandboxFmtMoney(sn.expectedClaimsAnnual)}: ${sandboxFmtMoney(sn.expectedDeathAnnual)} expected death and ${sandboxFmtMoney(sn.expectedDisabilityAnnual)} expected disability.`);
         if (sn.rowsReady) {
-          out.push(`The ${(sn.horizon || 60)}-month lifecycle expectancy compounds customer growth at ${Number(sn.growthPct || 0).toFixed(2)}% per month, from ${sandboxFmtCount(sn.startCustomers)} opening active customers to ${sandboxFmtCount(sn.endCustomers)} in the final month. Over that horizon the book is expected to bill ${sandboxFmtMoney(sn.horizonBilled)}, collect ${sandboxFmtMoney(sn.horizonCollected)}, and pay ${sandboxFmtMoney(sn.horizonDeath)} of expected death and ${sandboxFmtMoney(sn.horizonDisability)} of expected disability.`);
+          out.push(`The ${(sn.horizon || 60)}-month lifecycle expectancy compounds customer growth at ${Number(sn.growthPct || 0).toFixed(2)}% per month, from ${sandboxFmtCount(sn.startCustomers)} opening active customers to ${sandboxFmtCount(sn.endCustomers)} in the final month. Over that horizon the book is expected to bill ${sandboxFmtMoney(sn.horizonBilled)} and collect ${sandboxFmtMoney(sn.horizonCollected)}, of which ${sandboxFmtMoney(sn.horizonSavings)} is the savings add-on and ${sandboxFmtMoney(sn.horizonOperating)} is operating premium. Management-fee income on the savings AUM is ${sandboxFmtMoney(sn.horizonManagementFee)}. Expected death is ${sandboxFmtMoney(sn.horizonDeath)} and expected disability is ${sandboxFmtMoney(sn.horizonDisability)}. Expected net cash flow, operating premium minus claims plus the management fee, is ${sandboxFmtMoney(sn.horizonNet)}.`);
         }
       }
       out.push('This assessment is generated client-side from the in-memory actuarial sandbox and is illustrative only — it is not a statement of booked results.');
