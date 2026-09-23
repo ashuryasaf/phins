@@ -72,12 +72,12 @@ def test_catalog_recommends_replay_without_broker_orders():
     assert "rsi_strategy" in algo and "dollar_cost_averaging" in algo
     assert "options_wheel" in catalog["unsupported_on_equity_bars"]
     algo_tape = catalog["algo"]
-    assert algo_tape["primary"] == "alpaca_trades"
+    assert algo_tape["primary"] == "alpaca_daily_bars"
     assert algo_tape["fallback"] is None
     assert algo_tape["mock_data"] is False
     assert algo_tape["max_trades_per_day"] == 30_000
-    assert algo_tape["default_trading_days"] == 1
-    assert algo_tape["max_trading_days"] == 20
+    assert algo_tape["default_trading_days"] == 252
+    assert algo_tape["max_trading_days"] == 400
     assert catalog["defaults"]["principal"] == 100_000
     assert catalog["defaults"]["daily_risk_pct"] == 2.0
 
@@ -499,35 +499,56 @@ def test_forward_order_waits_for_the_next_real_print():
     assert "latest Alpaca print" in result["forward_test"]["note"]
 
 
-def test_missing_tape_walks_small_trades_along_the_bar_and_charts_gains():
-    from services.trading_backtest import _build_candles, _small_trades_from_bars
-
-    one_day = [{
-        "date": "2024-06-03",
-        "open": 100, "high": 110, "low": 90, "close": 105, "volume": 1_000,
-    }]
-    dense = _small_trades_from_bars(one_day, trading_days=1, max_per_day=30_000)[0]
-    assert len(dense) == 30_000
-    assert dense[0]["close"] == pytest.approx(100)
-    assert dense[-1]["close"] == pytest.approx(105)
-    assert all(90 - 1e-6 <= row["close"] <= 110 + 1e-6 for row in dense)
-    assert dense[0]["session_date"] == "2024-06-03"
-    assert dense[0]["date"] < dense[-1]["date"]
-
-    daily = []
-    for i in range(40):
-        px = 80 + i * 0.5
-        daily.append({
-            "date": (date(2024, 1, 2) + timedelta(days=i)).isoformat(),
-            "open": px, "high": px + 2, "low": px - 1, "close": px + 0.4, "volume": 100,
+def _trading_days(n, start=date(2023, 1, 2), drift=0.0008, noise=0.006):
+    """Deterministic daily OHLC. Drift and a sine are the only movements."""
+    import math
+    rows = []
+    px = 100.0
+    for i in range(n):
+        shock = noise * math.sin(i / 3.0) + (noise * 0.6) * math.sin(i / 11.0)
+        close = px * (1.0 + drift + shock)
+        open_px = px
+        high = max(open_px, close) * 1.002
+        low = min(open_px, close) * 0.998
+        rows.append({
+            "date": (start + timedelta(days=i)).isoformat(),
+            "open": round(open_px, 4),
+            "high": round(high, 4),
+            "low": round(low, 4),
+            "close": round(close, 4),
+            "volume": 1_000 + i,
         })
+        px = close
+    return rows
+
+
+def test_chart_windows_put_more_candles_on_the_annual_range():
+    from services.trading_backtest import _build_candles
+
+    daily = _trading_days(300, drift=0.0004, noise=0.002)
     candles = _build_candles(daily)
     assert list(candles) == ["day", "week", "month", "quarter", "year"]
-    assert len(candles["day"]) == 40
-    assert len(candles["week"]) > 1
-    assert len(candles["month"]) >= 2
-    assert len(candles["quarter"]) >= 1
-    assert len(candles["year"]) == 1
+    counts = [len(candles[name]) for name in ("day", "week", "month", "quarter", "year")]
+    assert counts == [1, 5, 21, 63, 252]
+    assert counts[0] < counts[-1]
+    last = daily[-1]
+    annual_last = candles["year"][-1]
+    assert annual_last["date"] == last["date"]
+    assert annual_last["open"] == last["open"]
+    assert annual_last["high"] == last["high"]
+    assert annual_last["low"] == last["low"]
+    assert annual_last["close"] == last["close"]
+    for frame in candles.values():
+        for row in frame:
+            assert row["low"] <= min(row["open"], row["close"]) <= max(row["open"], row["close"]) <= row["high"]
+    # A short history is not padded with invented sessions.
+    short = _build_candles(daily[:10])
+    assert len(short["day"]) == 1
+    assert len(short["year"]) == 10
+
+
+def test_algo_replay_uses_real_daily_bars_and_not_a_synthetic_tape():
+    daily = _trading_days(360)
 
     class BarsOnly:
         is_connected = True
@@ -537,7 +558,7 @@ def test_missing_tape_walks_small_trades_along_the_bar_and_charts_gains():
             raise AssertionError("backtest must not submit orders")
 
         def get_historical_trades(self, symbol, **kwargs):
-            return {"prints": [], "tape_trades_per_day": {}, "truncated_days": [], "sessions": []}
+            raise AssertionError("daily strategy replay must not page the trade tape")
 
         def get_historical_bars(self, symbol, timeframe="1Day", **kwargs):
             if str(timeframe).lower() in ("1min", "1minute"):
@@ -545,16 +566,16 @@ def test_missing_tape_walks_small_trades_along_the_bar_and_charts_gains():
             return daily
 
         def _bars_from_alpha_vantage(self, *args, **kwargs):
-            raise AssertionError("small-trade path must not use Alpha Vantage")
+            raise AssertionError("algo backtest must not use Alpha Vantage")
 
     result = run_backtest_request(
         {
             "source": "algo",
             "strategy": "momentum",
             "symbols": ["SPY"],
-            "days": 1,
-            "max_trades_per_day": 48,
-            "warmup_bars": 10,
+            "days": 252,
+            "warmup_bars": 80,
+            "daily_risk_pct": 2,
         },
         default_source="algo",
         platform=BarsOnly(),
@@ -562,19 +583,14 @@ def test_missing_tape_walks_small_trades_along_the_bar_and_charts_gains():
     assert "error" not in result, result.get("error")
     assert result["orders_submitted"] == 0
     assert result["mock_data"] is False
-    assert result["small_trades"] is True
-    assert result["data_source"] == "alpaca_bar_path"
-    assert result["tape_trades_per_day"]
-    assert sum(result["tape_trades_per_day"].values()) == 48
-    assert result["candles"]["day"]
-    assert result["candles"]["week"]
-    assert result["candles"]["month"]
-    assert result["candles"]["quarter"]
-    assert result["candles"]["year"]
+    assert result["small_trades"] is False
+    assert result["data_source"] == "alpaca_daily_bars"
+    assert result["timeframe"] == "1Day"
+    assert result["trading_days"] == 252
+    assert [len(result["candles"][name]) for name in ("day", "week", "month", "quarter", "year")] == [1, 5, 21, 63, 252]
+    assert result["metrics"]["total_return_pct"] > 0
     assert result["accumulated_gains"]
     assert "gain" in result["accumulated_gains"][-1]
-    assert "No prices were invented" not in result.get("small_trade_note", "")
-    assert "small steps" in result["small_trade_note"]
 
 
 def test_duplicate_print_timestamps_are_all_replayed():
@@ -671,8 +687,8 @@ def test_daily_bars_keep_the_252_annualization():
     )
 
 
-def test_algo_request_rejects_bars_and_replays_the_tape():
-    captured = {}
+def test_algo_request_rejects_bars_and_replays_daily_history():
+    daily = _trading_days(360)
 
     class Tape:
         is_connected = True
@@ -681,22 +697,14 @@ def test_algo_request_rejects_bars_and_replays_the_tape():
         def submit_order(self, *args, **kwargs):
             raise AssertionError("backtest must not submit orders")
 
-        def get_historical_bars(self, *args, **kwargs):
-            raise AssertionError("algo backtest must not load bars")
+        def get_historical_bars(self, symbol, timeframe="1Day", **kwargs):
+            return daily
 
         def _bars_from_alpha_vantage(self, *args, **kwargs):
             raise AssertionError("algo backtest must not use Alpha Vantage")
 
         def get_historical_trades(self, symbol, **kwargs):
-            captured["symbol"] = symbol
-            captured["kwargs"] = kwargs
-            prints = _tape_prints(40)
-            return {
-                "prints": prints,
-                "tape_trades_per_day": {"2024-01-02": len(prints)},
-                "truncated_days": [],
-                "sessions": ["2024-01-02"],
-            }
+            raise AssertionError("daily replay must not page trades")
 
     rejected = run_backtest_request(
         {
@@ -711,12 +719,11 @@ def test_algo_request_rejects_bars_and_replays_the_tape():
     )
     assert "error" in rejected
     assert "Supplied bars" in rejected["error"]
-    assert "kwargs" not in captured
 
     result = run_backtest_request(
         {
             "source": "algo",
-            "strategy": "momentum",
+            "strategy": "trend_following",
             "symbols": ["SPY"],
             "days": 252,
             "warmup_bars": 80,
@@ -727,17 +734,88 @@ def test_algo_request_rejects_bars_and_replays_the_tape():
     assert "error" not in result, result.get("error")
     assert result["orders_submitted"] == 0
     assert result["mock_data"] is False
-    assert result["data_source"] == "alpaca_trades"
-    assert result["timeframe"] == "trades"
-    assert result["data_sources"]["SPY"] == "alpaca_trades"
-    assert result["max_trades_per_day"] == 30_000
-    assert result["trading_days"] == 20
-    assert captured["kwargs"]["trading_days"] == 20
-    assert captured["kwargs"]["max_per_day"] == 30_000
-    assert result["tape_trades_per_day"] == {"2024-01-02": 40}
-    assert result["truncated_days"] == []
-    assert result["warmup_bars"] < 80
-    assert result["warmup_note"]
+    assert result["data_source"] == "alpaca_daily_bars"
+    assert result["timeframe"] == "1Day"
+    assert result["data_sources"]["SPY"] == "alpaca_daily_bars"
+    assert result["trading_days"] == 252
+    assert result["metrics"]["total_return_pct"] > 0
+
+
+STRATEGIES = [
+    "momentum",
+    "mean_reversion",
+    "trend_following",
+    "rsi_strategy",
+    "macd_crossover",
+    "breakout",
+    "swing_trading",
+    "ai_adaptive",
+    "dollar_cost_averaging",
+    "grid_trading",
+    "scalping",
+]
+
+
+def test_equity_strategies_gain_on_an_uptrend_and_do_not_invent_prices():
+    daily = _trading_days(360, drift=0.0009, noise=0.007)
+    down = _trading_days(360, drift=-0.0007, noise=0.004)
+
+    class Feed:
+        def __init__(self, rows):
+            self.rows = rows
+            self.is_connected = True
+            self._last_data_error = None
+
+        def submit_order(self, *args, **kwargs):
+            raise AssertionError("backtest must not submit orders")
+
+        def get_historical_bars(self, symbol, timeframe="1Day", **kwargs):
+            if str(timeframe).lower() in ("1min", "1minute"):
+                return []
+            return self.rows
+
+        def get_historical_trades(self, *args, **kwargs):
+            raise AssertionError("strategy research must not synthesize a trade tape")
+
+    gains = {}
+    for name in STRATEGIES:
+        result = run_backtest_request(
+            {
+                "source": "algo",
+                "strategy": name,
+                "symbols": ["SPY"],
+                "days": 252,
+                "warmup_bars": 80,
+                "daily_risk_pct": 2,
+                "slippage_bps": 5,
+            },
+            default_source="algo",
+            platform=Feed(daily),
+        )
+        assert "error" not in result, (name, result.get("error"))
+        assert result["mock_data"] is False
+        assert result["orders_submitted"] == 0
+        ret = result["metrics"]["total_return_pct"]
+        gains[name] = ret
+        assert ret is not None and ret > 0, (name, ret, result["trade_count"])
+
+    # A downtrend must not be reported as a gain. Trend following stays
+    # mostly in cash, so it loses less than buying and holding the decline.
+    fallen = run_backtest_request(
+        {
+            "source": "algo",
+            "strategy": "trend_following",
+            "symbols": ["SPY"],
+            "days": 252,
+            "warmup_bars": 80,
+            "daily_risk_pct": 2,
+        },
+        default_source="algo",
+        platform=Feed(down),
+    )
+    assert fallen["metrics"]["total_return_pct"] > fallen["metrics"]["benchmark_return_pct"]
+    assert fallen["metrics"]["benchmark_return_pct"] < 0
+    assert gains["trend_following"] > 5
 
 
 def test_historical_trades_stop_at_the_daily_cap():
