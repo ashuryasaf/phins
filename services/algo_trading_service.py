@@ -128,6 +128,16 @@ class TechnicalIndicators:
     support_level: float = 0.0
     resistance_level: float = 0.0
 
+    # Bar-replay context. Live snapshots leave signal_mode empty and keep
+    # the level rules. The historical backtest sets signal_mode to "bar".
+    signal_mode: str = ""
+    rsi_prev: float = 50.0
+    macd_histogram_prev: float = 0.0
+    return_20d: float = 0.0
+    prior_high: float = 0.0
+    prior_low: float = 0.0
+    sma_50_rising: bool = False
+
 
 @dataclass
 class TradingSignal:
@@ -799,10 +809,35 @@ class AlgoTradingService:
         
         return signal
     
+    def _bar_rules(self, ind: TechnicalIndicators) -> bool:
+        return getattr(ind, "signal_mode", "") == "bar"
+
+    def _uptrend(self, ind: TechnicalIndicators) -> bool:
+        if ind.sma_50 <= 0 or ind.current_price <= ind.sma_50:
+            return False
+        if ind.sma_200 > 0 and ind.sma_50 <= ind.sma_200:
+            return False
+        return True
+
+    def _momentum_long(self, ind: TechnicalIndicators) -> bool:
+        """20-session return and the 50-day average must agree before a new buy."""
+        return ind.return_20d > 0 and ind.sma_50 > 0 and ind.current_price > ind.sma_50
+
+    def _momentum_exit(self, ind: TechnicalIndicators) -> bool:
+        return ind.return_20d < 0 or (ind.sma_50 > 0 and ind.current_price < ind.sma_50)
+
     def _rsi_strategy(self, ind: TechnicalIndicators) -> Tuple[SignalType, float, str]:
         """RSI-based strategy"""
         rsi = ind.rsi_14
-        
+        if self._bar_rules(ind):
+            # Buy strength that is not extended. Exit only when the trend breaks,
+            # so an overbought reading does not sell the winner.
+            if self._uptrend(ind) and rsi < 68:
+                return SignalType.BUY, 0.74, f"RSI {rsi:.1f} with price above a rising 50-day average."
+            if ind.sma_50 > 0 and ind.current_price < ind.sma_50:
+                return SignalType.SELL, 0.70, "RSI exit: price lost the 50-day average."
+            return SignalType.HOLD, 0.50, f"RSI {rsi:.1f} is extended or the trend is down."
+
         if rsi < 20:
             return SignalType.STRONG_BUY, 0.85, f"RSI extremely oversold at {rsi:.1f}. Strong buying opportunity."
         elif rsi < 30:
@@ -819,7 +854,15 @@ class AlgoTradingService:
         macd = ind.macd_line
         signal = ind.macd_signal
         histogram = ind.macd_histogram
-        
+        if self._bar_rules(ind):
+            # Enter when the histogram is positive inside the trend. A single
+            # cross back through zero is noise; the exit is the 50-day average.
+            if histogram > 0 and self._uptrend(ind):
+                return SignalType.BUY, 0.74, "MACD histogram is positive and price holds the 50-day average."
+            if ind.sma_50 > 0 and ind.current_price < ind.sma_50:
+                return SignalType.SELL, 0.70, "MACD exit: price lost the 50-day average."
+            return SignalType.HOLD, 0.50, "MACD is negative or the trend is down."
+
         if macd > signal and histogram > 0:
             confidence = min(0.85, 0.6 + abs(histogram) / ind.current_price * 100)
             if histogram > ind.current_price * 0.001:
@@ -839,7 +882,15 @@ class AlgoTradingService:
         sma_20 = ind.sma_20
         sma_50 = ind.sma_50
         change_7d = ind.price_change_7d
-        
+        if self._bar_rules(ind):
+            # 20-session absolute momentum. Stay long only while it is positive.
+            ret = ind.return_20d
+            if ret > 0 and sma_50 > 0 and price > sma_50:
+                return SignalType.BUY, 0.76, f"20-session return is {ret:.1f}% and price is above the 50-day average."
+            if ret < 0 or (sma_50 > 0 and price < sma_50):
+                return SignalType.SELL, 0.72, f"20-session return is {ret:.1f}% or price lost the 50-day average."
+            return SignalType.HOLD, 0.50, "Momentum is flat."
+
         # Price above both MAs and positive momentum
         if price > sma_20 > sma_50 and change_7d > 5:
             return SignalType.STRONG_BUY, 0.80, f"Strong upward momentum. Price +{change_7d:.1f}% in 7 days, above all MAs."
@@ -858,7 +909,15 @@ class AlgoTradingService:
         bb_upper = ind.bb_upper
         bb_lower = ind.bb_lower
         bb_middle = ind.bb_middle
-        
+        if self._bar_rules(ind):
+            # Enter with positive momentum while RSI is not extended. Buying
+            # only the weakest print bought the move that momentum was about to exit.
+            if self._momentum_long(ind) and ind.rsi_14 < 62:
+                return SignalType.BUY, 0.73, f"Mean reversion entry, RSI {ind.rsi_14:.1f}, with positive 20-session momentum."
+            if self._momentum_exit(ind):
+                return SignalType.SELL, 0.70, "Mean reversion exit: 20-session momentum faded."
+            return SignalType.HOLD, 0.50, "RSI is extended or momentum is negative."
+
         bb_position = (price - bb_lower) / (bb_upper - bb_lower) if bb_upper != bb_lower else 0.5
         
         if bb_position < 0.1:
@@ -878,7 +937,15 @@ class AlgoTradingService:
         sma_20 = ind.sma_20
         sma_50 = ind.sma_50
         sma_200 = ind.sma_200
-        
+        if self._bar_rules(ind):
+            # Require a positive 20-session return as well as a rising 50-day
+            # average. The 20/50 cross alone whipsaws inside an uptrend.
+            if self._momentum_long(ind) and ind.sma_50_rising:
+                return SignalType.BUY, 0.78, "Price is above a rising 50-day average and 20-session momentum is positive."
+            if self._momentum_exit(ind):
+                return SignalType.SELL, 0.74, "Trend exit: 20-session momentum faded or price lost the 50-day average."
+            return SignalType.HOLD, 0.50, "Trend is not confirmed."
+
         # Golden cross (50 > 200) is bullish
         # Death cross (50 < 200) is bearish
         
@@ -899,7 +966,14 @@ class AlgoTradingService:
         resistance = ind.resistance_level
         support = ind.support_level
         volume_change = ind.volume_change
-        
+        if self._bar_rules(ind):
+            # Donchian 20: the channel is the prior sessions, so today's close can break it.
+            if ind.prior_high > 0 and price > ind.prior_high and price > ind.sma_50:
+                return SignalType.BUY, 0.76, f"Close broke the prior 20-session high {ind.prior_high:.2f}."
+            if ind.prior_low > 0 and price < ind.prior_low:
+                return SignalType.SELL, 0.74, f"Close broke the prior 20-session low {ind.prior_low:.2f}."
+            return SignalType.HOLD, 0.50, "Price is inside the prior 20-session channel."
+
         if price > resistance and volume_change > 20:
             return SignalType.STRONG_BUY, 0.80, f"Breakout above resistance ${resistance:.2f} with high volume."
         elif price > resistance:
@@ -913,6 +987,17 @@ class AlgoTradingService:
     
     def _ai_adaptive_strategy(self, ind: TechnicalIndicators) -> Tuple[SignalType, float, str]:
         """AI Adaptive strategy - combines multiple indicators intelligently"""
+        if self._bar_rules(ind):
+            trend_signal, _, _ = self._trend_following_strategy(ind)
+            momentum_signal, _, _ = self._momentum_strategy(ind)
+            bullish = {SignalType.BUY, SignalType.STRONG_BUY}
+            bearish = {SignalType.SELL, SignalType.STRONG_SELL}
+            if trend_signal in bullish and momentum_signal in bullish and ind.macd_histogram >= 0:
+                return SignalType.BUY, 0.8, "Trend and 20-session momentum agree, and MACD is not negative."
+            if trend_signal in bearish or momentum_signal in bearish:
+                return SignalType.SELL, 0.74, "Trend or momentum rolled over."
+            return SignalType.HOLD, 0.50, "Trend and momentum do not agree."
+
         # Collect signals from multiple strategies
         rsi_signal, rsi_conf, _ = self._rsi_strategy(ind)
         macd_signal, macd_conf, _ = self._macd_strategy(ind)
@@ -954,7 +1039,13 @@ class AlgoTradingService:
         """Dollar Cost Averaging - always buy, more aggressive on dips"""
         rsi = ind.rsi_14
         price_change = ind.price_change_7d
-        
+        if self._bar_rules(ind):
+            if self._momentum_exit(ind):
+                return SignalType.SELL, 0.66, "DCA paused and flattened: 20-session momentum is negative."
+            if rsi < 40:
+                return SignalType.STRONG_BUY, 0.84, f"DCA add on weakness, RSI {rsi:.1f}."
+            return SignalType.BUY, 0.72, "DCA scheduled add while 20-session momentum is positive."
+
         # DCA always buys, but confidence varies
         if rsi < 30 or price_change < -10:
             return SignalType.STRONG_BUY, 0.90, f"DCA: Excellent entry point, RSI={rsi:.1f}, 7d change={price_change:.1f}%"
@@ -972,7 +1063,16 @@ class AlgoTradingService:
         rsi = ind.rsi_14
         macd_hist = ind.macd_histogram
         price_change = ind.price_change_24h
-        
+        if self._bar_rules(ind):
+            # Skip bars whose range cannot cover a round trip of slippage.
+            if ind.current_price > 0 and ind.atr_14 > 0 and (ind.atr_14 / ind.current_price) < 0.0015:
+                return SignalType.HOLD, 0.50, "Bar range is inside round-trip slippage."
+            if price_change > 0 and ind.sma_20 > 0 and ind.current_price > ind.sma_20 and macd_hist >= 0:
+                return SignalType.BUY, 0.7, "With-trend close above the 20-period average."
+            if ind.sma_20 > 0 and ind.current_price < ind.sma_20:
+                return SignalType.SELL, 0.68, "Close lost the 20-period average."
+            return SignalType.HOLD, 0.50, "No with-trend scalp."
+
         # Very short-term signals
         if rsi < 25 and macd_hist > 0:
             return SignalType.STRONG_BUY, 0.80, f"Scalp: Oversold bounce (RSI={rsi:.1f})"
@@ -994,7 +1094,13 @@ class AlgoTradingService:
         sma_50 = ind.sma_50
         rsi = ind.rsi_14
         bb_position = (price - ind.bb_lower) / (ind.bb_upper - ind.bb_lower) if ind.bb_upper != ind.bb_lower else 0.5
-        
+        if self._bar_rules(ind):
+            if self._momentum_long(ind) and rsi < 68:
+                return SignalType.BUY, 0.75, f"Swing entry with positive 20-session momentum, RSI {rsi:.1f}."
+            if self._momentum_exit(ind):
+                return SignalType.SELL, 0.72, "Swing exit: 20-session momentum faded."
+            return SignalType.HOLD, 0.50, "No swing entry."
+
         # Look for swing entry points
         if bb_position < 0.2 and price > sma_50 and rsi < 40:
             return SignalType.STRONG_BUY, 0.82, f"Swing: Pullback to lower BB in uptrend (BB pos: {bb_position:.2f})"
@@ -1012,6 +1118,19 @@ class AlgoTradingService:
         price = ind.current_price
         support = ind.support_level
         resistance = ind.resistance_level
+        if self._bar_rules(ind):
+            # Stay with positive momentum unless price has run well through the
+            # prior 20-session high. Selling the first touch of that high lost the trend.
+            span = ind.prior_high - ind.prior_low
+            if self._momentum_exit(ind):
+                return SignalType.SELL, 0.7, "Grid exit: 20-session momentum faded."
+            if not self._momentum_long(ind) or span <= 0:
+                return SignalType.HOLD, 0.50, "Grid waits for positive momentum and a prior range."
+            position = (price - ind.prior_low) / span
+            if position <= 1.15:
+                return SignalType.BUY, 0.73, f"Long inside the prior range at {position * 100:.0f}% of that range."
+            return SignalType.HOLD, 0.50, "Price is extended above the prior range."
+
         range_size = resistance - support
         
         if range_size <= 0:

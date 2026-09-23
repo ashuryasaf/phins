@@ -902,9 +902,8 @@
                 <div>
                     <div style="font-weight:700;">Historical backtest</div>
                     <div style="color: var(--text-secondary); font-size: 0.85rem; max-width: 640px;">
-                        Replays up to 30,000 real Alpaca trades on each trading day and fills at the next print.
-                        If the tape is missing, the day is walked in small steps along Alpaca's bar, still up to 30,000.
-                        Results show daily, weekly, monthly, quarterly, and annual candles plus accumulated gains.
+                        Replays real Alpaca daily bars, one decision per session, filled at the next open.
+                        The annual chart is a year of those daily candles. The daily chart is the latest session.
                         New buys stop once the session loses the daily risk percent of the principal.
                         No orders are sent.
                     </div>
@@ -943,7 +942,7 @@
                         </select>
                     </label>
                     <label style="font-size:0.75rem; color:var(--text-secondary);">Trading days
-                        <input id="btDays" class="form-input" type="number" value="1" min="1" max="20" style="width:90px;">
+                        <input id="btDays" class="form-input" type="number" value="252" min="1" max="400" style="width:90px;">
                     </label>
                     <label style="font-size:0.75rem; color:var(--text-secondary);">Principal
                         <input id="btPrincipal" class="form-input" type="number" value="100000" min="1000" max="100000000" step="1000" style="width:120px;" title="Starting capital. Daily risk is this amount times the percent.">
@@ -954,7 +953,7 @@
                     <button type="button" id="btRunBtn" class="btn btn-primary" onclick="runAlgoBacktest()">Run backtest</button>
                 </div>
             </div>
-            <div id="btResult" style="margin-top:0.75rem; font-size:0.9rem; color:var(--text-secondary);">Runs on Alpaca's trade tape when the broker is connected. Up to 30,000 small trades per session. Candles and accumulated gains appear here.</div>
+            <div id="btResult" style="margin-top:0.75rem; font-size:0.9rem; color:var(--text-secondary);">Runs on Alpaca daily bars when the broker is connected. Annual shows up to 252 daily candles. The latest session is the daily chart.</div>
         </section>
         
         <!-- Advanced Metrics Row -->
@@ -1721,6 +1720,9 @@
 
         function btTapeLine(d) {
             if (!d || d.max_trades_per_day == null) return '';
+            if (d.data_source === 'alpaca_daily_bars' || d.data_source === 'alpaca_5min') {
+                return '<div style="margin-top:0.35rem;">' + escapeHtml(d.small_trade_note || d.data_source) + '</div>';
+            }
             const days = d.tape_trades_per_day || {};
             const parts = Object.keys(days).map(function (day) {
                 return day + ': ' + days[day] + ' tape prints';
@@ -1762,8 +1764,12 @@
                 ['quarter', 'Quarterly'],
                 ['year', 'Annual'],
             ];
+            const candles = (d && d.candles) || {};
             const cards = frames.map(function (frame) {
-                return '<div><div style="font-size:0.75rem; margin-bottom:0.2rem;">' + frame[1] + '</div>' +
+                const count = (candles[frame[0]] || []).length;
+                const noun = frame[0] === 'day' ? 'session' : 'daily candles';
+                return '<div><div style="font-size:0.75rem; margin-bottom:0.2rem;">' + frame[1] +
+                    ' · ' + count + ' ' + noun + '</div>' +
                     '<canvas id="btCandle-' + frame[0] + '" width="280" height="140" ' +
                     'style="width:100%; height:140px; background:#0c1424; border-radius:8px;"></canvas></div>';
             }).join('');
@@ -1945,7 +1951,7 @@
                 strategy: document.getElementById('btStrategy').value,
                 symbols: [document.getElementById('btSymbol').value.trim().toUpperCase()],
                 fill_model: document.getElementById('btFill').value,
-                days: parseInt(document.getElementById('btDays').value, 10) || 1,
+                days: parseInt(document.getElementById('btDays').value, 10) || 252,
                 principal: btFieldNumber('btPrincipal', 100000),
                 daily_risk_pct: btFieldNumber('btDailyRisk', 2),
             };
