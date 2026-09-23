@@ -8271,10 +8271,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const currentRow = proj.rows[Math.min(proj.rows.length - 1, Math.max(0, proj.monthsElapsed - 1))] || {};
       const monthlyPremium = Number(currentRow.premiumBilled != null ? currentRow.premiumBilled : (currentRow.collectedPremium != null ? currentRow.collectedPremium : (base.monthlyPremium || 0)));
       const monthlyClaims = Number(currentRow.claimsPaid != null ? currentRow.claimsPaid : (base.monthlyClaims || 0));
+      // Net follows the row's own collected-minus-claims basis so the pill
+      // agrees with the highlighted table row and the horizon total.
+      const monthlyCollected = Number(currentRow.collectedPremium != null ? currentRow.collectedPremium : monthlyPremium);
       setText('sandbox-proj-months-elapsed', `${proj.monthsElapsed} / ${proj.months}`);
       setText('sandbox-proj-monthly-premium', sandboxFmtMoney(monthlyPremium));
       setText('sandbox-proj-monthly-claims', sandboxFmtMoney(monthlyClaims));
-      setText('sandbox-proj-monthly-net', sandboxFmtMoney(monthlyPremium - monthlyClaims));
+      setText('sandbox-proj-monthly-net', sandboxFmtMoney(monthlyCollected - monthlyClaims));
       setText('sandbox-proj-realized-collected', sandboxFmtMoney(proj.realizedCollected));
       setText('sandbox-proj-realized-claims', sandboxFmtMoney(proj.realizedClaimsPaid));
       setText('sandbox-proj-realized-net', sandboxFmtMoney(proj.realizedNetCashFlow));
