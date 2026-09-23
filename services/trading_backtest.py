@@ -1303,7 +1303,10 @@ def _resolve_algo_history(
             "(set ALPACA_API_KEY and ALPACA_SECRET_KEY)."
         )
     feed_name = feed if feed in ("iex", "sip") else "iex"
-    daily = _safe_historical_bars(platform, sym, "1Day", MAX_TRADING_DAYS, feed_name)
+    # The scored window and the indicator warmup both come out of this fetch,
+    # and the candle charts still want a year of sessions behind them.
+    daily_limit = min(max(MAX_TRADING_DAYS, trading_days + warmup_bars), MAX_BARS)
+    daily = _safe_historical_bars(platform, sym, "1Day", daily_limit, feed_name)
     intraday = len(strategies) == 1 and strategies[0] in _INTRADAY_STRATEGIES
     note = (
         "Decisions use completed Alpaca bars. One signal per bar, filled at the next open. "
@@ -1312,12 +1315,17 @@ def _resolve_algo_history(
     rows = daily
     source_name = "alpaca_daily_bars"
     timeframe = "1Day"
+    # Daily bars are one per session, so the window is a bar count.
+    play = rows[-(trading_days + warmup_bars):]
     if intraday:
-        minutes = _safe_historical_bars(platform, sym, "1Min", 2000, feed_name)
+        minutes = _safe_historical_bars(platform, sym, "1Min", MAX_BARS, feed_name)
         five = _resample_minutes(minutes, 5) if minutes else []
-        needed = warmup_bars + min(trading_days, 5)
-        if len(five) >= max(needed, 40):
+        # trading_days counts sessions, not 5-minute bars, so the intraday tape
+        # is sliced by session and is only used when it covers the request.
+        intraday_play = _session_window(five, trading_days, warmup_bars)
+        if intraday_play:
             rows = five
+            play = intraday_play
             source_name = "alpaca_5min"
             timeframe = "5Min"
             note = (
@@ -1334,7 +1342,6 @@ def _resolve_algo_history(
         detail = f" {last}" if last else " The feed returned no bars."
         raise ValueError(f"No Alpaca bars for {sym}.{detail} No prices were invented.")
     history = _daily_ohlc(daily or rows)
-    play = rows[-(trading_days + warmup_bars):]
     if len(play) < 20:
         raise ValueError(
             f"{sym} returned {len(play)} Alpaca bars. "
@@ -1384,6 +1391,29 @@ def _session_list(prints: List[Dict[str, Any]]) -> List[str]:
         if day not in days:
             days.append(day)
     return days
+
+
+def _session_window(
+    rows: List[Dict[str, Any]],
+    sessions: int,
+    warmup_bars: int,
+) -> List[Dict[str, Any]]:
+    """The last ``sessions`` sessions of intraday bars plus the warmup before them.
+
+    Empty when the tape does not reach that many sessions or cannot cover the
+    warmup, so the caller falls back to daily bars instead of scoring a shorter
+    window than the request asked for.
+    """
+    if sessions <= 0:
+        return []
+    days = _session_list(rows)
+    if len(days) < sessions:
+        return []
+    first = days[-sessions]
+    start = next((i for i, row in enumerate(rows) if _session_day(row) == first), None)
+    if start is None or start < warmup_bars:
+        return []
+    return rows[start - warmup_bars:]
 
 
 def _bar_session(row: Dict[str, Any]) -> str:

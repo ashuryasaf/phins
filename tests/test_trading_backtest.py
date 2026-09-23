@@ -741,6 +741,119 @@ def test_algo_request_rejects_bars_and_replays_daily_history():
     assert result["metrics"]["total_return_pct"] > 0
 
 
+def _minute_prints(sessions, minutes_per_session=150, start=date(2024, 1, 2)):
+    """1-minute prints from 09:30 ET, so a 5-minute resample is exact."""
+    from datetime import datetime, timezone
+
+    rows = []
+    px = 100.0
+    for day in range(sessions):
+        session = start + timedelta(days=day)
+        open_utc = datetime(
+            session.year, session.month, session.day, 14, 30, tzinfo=timezone.utc,
+        )
+        for i in range(minutes_per_session):
+            px *= 1.0005
+            rows.append({
+                "date": (open_utc + timedelta(minutes=i)).isoformat().replace("+00:00", "Z"),
+                "open": round(px, 4),
+                "high": round(px * 1.001, 4),
+                "low": round(px * 0.999, 4),
+                "close": round(px, 4),
+                "volume": 500,
+            })
+    return rows
+
+
+class _BarFeed:
+    """Alpaca-shaped bar loader that honours the requested limit."""
+
+    def __init__(self, daily, minutes=None):
+        self.daily = daily
+        self.minutes = minutes or []
+        self.is_connected = True
+        self._last_data_error = None
+        self.limits = {}
+
+    def submit_order(self, *args, **kwargs):
+        raise AssertionError("backtest must not submit orders")
+
+    def get_historical_bars(self, symbol, timeframe="1Day", limit=100, **kwargs):
+        frame = str(timeframe).lower()
+        self.limits[frame] = int(limit or 0)
+        rows = self.minutes if frame in ("1min", "1minute") else self.daily
+        return rows[-int(limit):] if limit else rows
+
+    def get_historical_trades(self, *args, **kwargs):
+        raise AssertionError("bar replay must not page the trade tape")
+
+    def _bars_from_alpha_vantage(self, *args, **kwargs):
+        raise AssertionError("algo backtest must not use Alpha Vantage")
+
+
+def test_intraday_replay_scores_the_requested_sessions_not_that_many_bars():
+    feed = _BarFeed(_trading_days(360), minutes=_minute_prints(6, minutes_per_session=150))
+    result = run_backtest_request(
+        {
+            "source": "algo",
+            "strategy": "scalping",
+            "symbols": ["SPY"],
+            "days": 2,
+            "warmup_bars": 10,
+        },
+        default_source="algo",
+        platform=feed,
+    )
+    assert "error" not in result, result.get("error")
+    assert result["data_source"] == "alpaca_5min"
+    assert result["timeframe"] == "5Min"
+    assert result["trading_days"] == 2
+    # Two sessions of 5-minute bars plus the warmup, not 2 + 10 bars.
+    assert result["bars"] == 10 + 2 * 30
+    assert result["sessions"][-2:] == ["2024-01-06", "2024-01-07"]
+
+
+def test_intraday_request_longer_than_the_minute_tape_replays_daily_bars():
+    feed = _BarFeed(_trading_days(360), minutes=_minute_prints(2, minutes_per_session=150))
+    result = run_backtest_request(
+        {
+            "source": "algo",
+            "strategy": "scalping",
+            "symbols": ["SPY"],
+            "days": 252,
+            "warmup_bars": 80,
+        },
+        default_source="algo",
+        platform=feed,
+    )
+    assert "error" not in result, result.get("error")
+    assert result["data_source"] == "alpaca_daily_bars"
+    assert result["timeframe"] == "1Day"
+    assert result["trading_days"] == 252
+    assert result["bars"] == 252 + 80
+    assert "too short" in result["small_trade_note"]
+
+
+def test_long_daily_request_fetches_the_warmup_on_top_of_the_window():
+    feed = _BarFeed(_trading_days(800, drift=0.0004, noise=0.002))
+    result = run_backtest_request(
+        {
+            "source": "algo",
+            "strategy": "momentum",
+            "symbols": ["SPY"],
+            "days": 400,
+            "warmup_bars": 80,
+        },
+        default_source="algo",
+        platform=feed,
+    )
+    assert "error" not in result, result.get("error")
+    assert result["trading_days"] == 400
+    assert feed.limits["1day"] == 480
+    # All 400 requested sessions are scored, with the warmup ahead of them.
+    assert result["bars"] == 480
+
+
 STRATEGIES = [
     "momentum",
     "mean_reversion",
