@@ -906,7 +906,8 @@
                         Focus the book on one symbol, on gold (GLD), or on a hedged mix of that symbol with GLD and TLT.
                         A flat sleeve lends its weight to the sleeves the strategy wants to hold.
                         The annual chart is a year of the focus symbol's daily candles. The daily chart is the latest session.
-                        New buys stop once the session loses the daily risk percent of the principal.
+                        A buy waits until the 20-session and quarterly moves clear their own noise.
+                        Daily risk then sizes that buy, and sells the book if the session low reaches the budget.
                         No orders are sent.
                     </div>
                 </div>
@@ -957,7 +958,7 @@
                         <input id="btPrincipal" class="form-input" type="number" value="100000" min="1000" max="100000000" step="1000" style="width:120px;" title="Starting capital. Daily risk is this amount times the percent.">
                     </label>
                     <label style="font-size:0.75rem; color:var(--text-secondary);">Daily risk %
-                        <input id="btDailyRisk" class="form-input" type="number" value="2" min="0" max="25" step="0.1" style="width:80px;" title="Stop new buys after the session loses this percent of principal. 0 disables the cap. Sells still fill.">
+                        <input id="btDailyRisk" class="form-input" type="number" value="2" min="0" max="25" step="0.1" style="width:80px;" title="Sizes each buy so a move of at least 5% of price, or the stop if it is wider, loses this percent of principal. A strategy that already asks for less is scaled from the 2% baseline. The book is sold if today's low reaches that loss. 0 turns the limit off.">
                     </label>
                     <button type="button" id="btRunBtn" class="btn btn-primary" onclick="runAlgoBacktest()">Run backtest</button>
                 </div>
@@ -1758,7 +1759,7 @@
             if (!d || d.principal == null) return '';
             const halted = Array.isArray(d.daily_risk_halted_days) ? d.daily_risk_halted_days : [];
             let text = 'Principal $' + btMetric(d.principal) + '. Daily risk ' +
-                btMetric(d.daily_risk_pct, '%') + ' of principal.';
+                btMetric(d.daily_risk_pct, '%') + ' of principal, used to size the buy and to flatten the book if the session low reaches it.';
             if (halted.length) {
                 text += ' New buys stopped on ' + escapeHtml(halted.join(', ')) + '.';
             }
@@ -1785,7 +1786,7 @@
                 if (!symbol.value || symbol.value.toUpperCase() === 'GLD') {
                     symbol.value = btSymbolMemory && btSymbolMemory !== 'GLD' ? btSymbolMemory : 'SPY';
                 }
-                if (hint) hint.textContent = 'Hedged mix: this symbol 55%, GLD 25%, TLT 20%. A sleeve that is flat lends its weight to the sleeves the strategy wants to hold. Candles stay this symbol. The gain line is the whole book.';
+                if (hint) hint.textContent = 'Hedged mix: this symbol 55%, GLD 25%, TLT 20%. A flat sleeve lends its weight to the sleeves the strategy wants to hold, and a wilder sleeve takes less capital. Candles stay this symbol. The gain line is the whole book.';
             } else {
                 symbol.readOnly = false;
                 if (symbol.value.toUpperCase() === 'GLD' && btSymbolMemory && btSymbolMemory !== 'GLD') {

@@ -134,6 +134,10 @@ class TechnicalIndicators:
     rsi_prev: float = 50.0
     macd_histogram_prev: float = 0.0
     return_20d: float = 0.0
+    return_63d: float = 0.0
+    has_return_63: bool = False
+    # Standard deviation of the last 20 daily returns, as a fraction of price.
+    sigma_daily: float = 0.0
     prior_high: float = 0.0
     prior_low: float = 0.0
     sma_50_rising: bool = False
@@ -812,19 +816,50 @@ class AlgoTradingService:
     def _bar_rules(self, ind: TechnicalIndicators) -> bool:
         return getattr(ind, "signal_mode", "") == "bar"
 
+    def _noise_band(self, ind: TechnicalIndicators, sessions: int, multiple: float, floor: float) -> float:
+        """Return, in percent, that a move must clear before it is a trend.
+
+        ``multiple`` is a fraction of the move's own volatility. A gold tape
+        with a wide daily range needs a larger move than a quiet equity tape.
+        """
+        sigma = float(getattr(ind, "sigma_daily", 0.0) or 0.0)
+        if sigma <= 0 or sessions <= 0:
+            return floor
+        return max(floor, multiple * sigma * math.sqrt(sessions) * 100.0)
+
+    def _quarter_ready(self, ind: TechnicalIndicators) -> bool:
+        if not ind.has_return_63:
+            return True
+        return ind.return_63d > self._noise_band(ind, 63, 0.25, 0.8)
+
+    def _swing_ready(self, ind: TechnicalIndicators) -> bool:
+        return ind.return_20d > self._noise_band(ind, 20, 0.30, 0.5)
+
     def _uptrend(self, ind: TechnicalIndicators) -> bool:
         if ind.sma_50 <= 0 or ind.current_price <= ind.sma_50:
             return False
         if ind.sma_200 > 0 and ind.sma_50 <= ind.sma_200:
             return False
-        return True
+        return self._swing_ready(ind) and self._quarter_ready(ind)
 
     def _momentum_long(self, ind: TechnicalIndicators) -> bool:
-        """20-session return and the 50-day average must agree before a new buy."""
-        return ind.return_20d > 0 and ind.sma_50 > 0 and ind.current_price > ind.sma_50
+        """Enter only when the swing and the quarter both clear their own noise.
+
+        A return that is barely positive is the round trip that pays slippage
+        and then reverses. Gold spends long stretches in that band.
+        """
+        if ind.sma_50 <= 0 or ind.current_price <= ind.sma_50:
+            return False
+        if not self._swing_ready(ind) or not self._quarter_ready(ind):
+            return False
+        return True
 
     def _momentum_exit(self, ind: TechnicalIndicators) -> bool:
-        return ind.return_20d < 0 or (ind.sma_50 > 0 and ind.current_price < ind.sma_50)
+        if ind.sma_50 > 0 and ind.current_price < ind.sma_50:
+            return True
+        # A small dip through zero is noise. Exit once the swing is a real loss.
+        band = self._noise_band(ind, 20, 0.15, 0.35)
+        return ind.return_20d < -band
 
     def _rsi_strategy(self, ind: TechnicalIndicators) -> Tuple[SignalType, float, str]:
         """RSI-based strategy"""
@@ -833,9 +868,9 @@ class AlgoTradingService:
             # Buy strength that is not extended. Exit only when the trend breaks,
             # so an overbought reading does not sell the winner.
             if self._uptrend(ind) and rsi < 68:
-                return SignalType.BUY, 0.74, f"RSI {rsi:.1f} with price above a rising 50-day average."
-            if ind.sma_50 > 0 and ind.current_price < ind.sma_50:
-                return SignalType.SELL, 0.70, "RSI exit: price lost the 50-day average."
+                return SignalType.BUY, 0.74, f"RSI {rsi:.1f} with the swing and quarter above their noise bands."
+            if self._momentum_exit(ind):
+                return SignalType.SELL, 0.70, "RSI exit: the swing broke or price lost the 50-day average."
             return SignalType.HOLD, 0.50, f"RSI {rsi:.1f} is extended or the trend is down."
 
         if rsi < 20:
@@ -858,9 +893,9 @@ class AlgoTradingService:
             # Enter when the histogram is positive inside the trend. A single
             # cross back through zero is noise; the exit is the 50-day average.
             if histogram > 0 and self._uptrend(ind):
-                return SignalType.BUY, 0.74, "MACD histogram is positive and price holds the 50-day average."
-            if ind.sma_50 > 0 and ind.current_price < ind.sma_50:
-                return SignalType.SELL, 0.70, "MACD exit: price lost the 50-day average."
+                return SignalType.BUY, 0.74, "MACD histogram is positive and the swing and quarter clear their noise bands."
+            if self._momentum_exit(ind):
+                return SignalType.SELL, 0.70, "MACD exit: the swing broke or price lost the 50-day average."
             return SignalType.HOLD, 0.50, "MACD is negative or the trend is down."
 
         if macd > signal and histogram > 0:
@@ -883,12 +918,11 @@ class AlgoTradingService:
         sma_50 = ind.sma_50
         change_7d = ind.price_change_7d
         if self._bar_rules(ind):
-            # 20-session absolute momentum. Stay long only while it is positive.
             ret = ind.return_20d
-            if ret > 0 and sma_50 > 0 and price > sma_50:
-                return SignalType.BUY, 0.76, f"20-session return is {ret:.1f}% and price is above the 50-day average."
-            if ret < 0 or (sma_50 > 0 and price < sma_50):
-                return SignalType.SELL, 0.72, f"20-session return is {ret:.1f}% or price lost the 50-day average."
+            if self._momentum_long(ind):
+                return SignalType.BUY, 0.76, f"20-session return is {ret:.1f}% and it clears the quarterly noise band."
+            if self._momentum_exit(ind):
+                return SignalType.SELL, 0.72, f"20-session return is {ret:.1f}% through its noise band, or price lost the 50-day average."
             return SignalType.HOLD, 0.50, "Momentum is flat."
 
         # Price above both MAs and positive momentum
@@ -938,10 +972,11 @@ class AlgoTradingService:
         sma_50 = ind.sma_50
         sma_200 = ind.sma_200
         if self._bar_rules(ind):
-            # Require a positive 20-session return as well as a rising 50-day
-            # average. The 20/50 cross alone whipsaws inside an uptrend.
-            if self._momentum_long(ind) and ind.sma_50_rising:
-                return SignalType.BUY, 0.78, "Price is above a rising 50-day average and 20-session momentum is positive."
+            # The same noise-cleared trend as momentum. Requiring the 50-day
+            # average to be rising on top of that skipped the trend and bought
+            # the pullback that followed.
+            if self._momentum_long(ind):
+                return SignalType.BUY, 0.78, "Price is above the 50-day average and the swing and quarter clear their own noise."
             if self._momentum_exit(ind):
                 return SignalType.SELL, 0.74, "Trend exit: 20-session momentum faded or price lost the 50-day average."
             return SignalType.HOLD, 0.50, "Trend is not confirmed."
@@ -968,10 +1003,10 @@ class AlgoTradingService:
         volume_change = ind.volume_change
         if self._bar_rules(ind):
             # Donchian 20: the channel is the prior sessions, so today's close can break it.
-            if ind.prior_high > 0 and price > ind.prior_high and price > ind.sma_50:
+            if ind.prior_high > 0 and price > ind.prior_high and self._momentum_long(ind):
                 return SignalType.BUY, 0.76, f"Close broke the prior 20-session high {ind.prior_high:.2f}."
-            if ind.prior_low > 0 and price < ind.prior_low:
-                return SignalType.SELL, 0.74, f"Close broke the prior 20-session low {ind.prior_low:.2f}."
+            if self._momentum_exit(ind) or (ind.prior_low > 0 and price < ind.prior_low):
+                return SignalType.SELL, 0.74, "Breakout failed: the swing broke or price lost the prior 20-session low."
             return SignalType.HOLD, 0.50, "Price is inside the prior 20-session channel."
 
         if price > resistance and volume_change > 20:
@@ -1041,10 +1076,12 @@ class AlgoTradingService:
         price_change = ind.price_change_7d
         if self._bar_rules(ind):
             if self._momentum_exit(ind):
-                return SignalType.SELL, 0.66, "DCA paused and flattened: 20-session momentum is negative."
+                return SignalType.SELL, 0.66, "DCA paused and flattened: the swing broke or price lost the 50-day average."
+            if not self._momentum_long(ind):
+                return SignalType.HOLD, 0.50, "DCA waits for a swing and a quarter that clear their own noise."
             if rsi < 40:
                 return SignalType.STRONG_BUY, 0.84, f"DCA add on weakness, RSI {rsi:.1f}."
-            return SignalType.BUY, 0.72, "DCA scheduled add while 20-session momentum is positive."
+            return SignalType.BUY, 0.72, "DCA scheduled add while the trend clears its own noise."
 
         # DCA always buys, but confidence varies
         if rsi < 30 or price_change < -10:
@@ -1067,7 +1104,7 @@ class AlgoTradingService:
             # Skip bars whose range cannot cover a round trip of slippage.
             if ind.current_price > 0 and ind.atr_14 > 0 and (ind.atr_14 / ind.current_price) < 0.0015:
                 return SignalType.HOLD, 0.50, "Bar range is inside round-trip slippage."
-            if price_change > 0 and ind.sma_20 > 0 and ind.current_price > ind.sma_20 and macd_hist >= 0:
+            if price_change > 0 and ind.sma_20 > 0 and ind.current_price > ind.sma_20 and macd_hist >= 0 and self._momentum_long(ind):
                 return SignalType.BUY, 0.7, "With-trend close above the 20-period average."
             if ind.sma_20 > 0 and ind.current_price < ind.sma_20:
                 return SignalType.SELL, 0.68, "Close lost the 20-period average."

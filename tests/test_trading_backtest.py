@@ -206,7 +206,7 @@ def test_daily_risk_stops_new_buys_and_still_allows_the_sell():
     )
     reasons = [t["reason"] for t in capped["trades"]]
     assert "enter" in reasons
-    assert "risk_exit" in reasons
+    assert "daily_risk" in reasons
     assert "late" not in reasons
     assert _day(6) in capped["daily_risk_halted_days"]
     assert capped["principal"] == 100_000
@@ -229,6 +229,107 @@ def test_daily_risk_stops_new_buys_and_still_allows_the_sell():
     )
     assert "late" in [t["reason"] for t in opened["trades"]]
     assert opened["daily_risk_halted_days"] == []
+
+
+def test_daily_risk_percent_changes_size_and_the_flatten():
+    """A daily bar has one decision, so a buy-block on that bar never changed the result."""
+    bars = _trading_days(360, drift=0.0009, noise=0.012)
+
+    def _run(pct):
+        return run_backtest_request(
+            {
+                "source": "algo",
+                "strategy": "momentum",
+                "symbols": ["SPY"],
+                "days": 252,
+                "warmup_bars": 80,
+                "daily_risk_pct": pct,
+                "slippage_bps": 5,
+            },
+            default_source="algo",
+            platform=_BookFeed({"SPY": bars}),
+        )
+
+    tight = _run(1)
+    mid = _run(2)
+    wide = _run(4)
+    off = _run(0)
+    for result in (tight, mid, wide, off):
+        assert "error" not in result, result.get("error")
+        assert result["orders_submitted"] == 0
+    # A tighter budget holds less of the same uptrend, so it finishes lower.
+    # 0 turns the limit off and can use the whole principal.
+    assert tight["ending_equity"] < mid["ending_equity"] < wide["ending_equity"] < off["ending_equity"]
+    assert wide["metrics"]["total_return_pct"] > 0
+
+
+def test_daily_risk_scales_a_book_that_already_trades_small():
+    """AutoPilot asks for a few shares. A cap above that request used to ignore the dial."""
+    bars = _flat_bars(12, price=100)
+
+    def decide(symbol, window, account, positions):
+        if len(window) == 6 and not positions:
+            return [{"side": "buy", "qty": 10, "reason": "small"}]
+        return []
+
+    def _qty(pct):
+        report = simulate(
+            {"SPY": bars},
+            decide,
+            BacktestConfig(
+                warmup_bars=2, lookback_bars=30, slippage_bps=0,
+                starting_cash=100_000, daily_risk_pct=pct, max_position_size=1.0,
+            ),
+        )
+        buys = [t for t in report["trades"] if t["side"] == "buy"]
+        assert len(buys) == 1
+        return buys[0]["qty"]
+
+    assert _qty(2) == 10
+    assert _qty(4) == 20
+    assert _qty(1) == 5
+    assert _qty(0) == 10
+
+
+def test_bar_entry_waits_until_the_move_clears_its_noise():
+    from services.algo_trading_service import AlgoTradingService, TechnicalIndicators
+
+    service = AlgoTradingService.__new__(AlgoTradingService)
+    weak = TechnicalIndicators(
+        symbol="GLD",
+        timestamp="",
+        current_price=100,
+        sma_50=99,
+        return_20d=0.2,
+        return_63d=0.3,
+        has_return_63=True,
+        sigma_daily=0.01,
+        signal_mode="bar",
+    )
+    strong = TechnicalIndicators(
+        symbol="GLD",
+        timestamp="",
+        current_price=110,
+        sma_50=100,
+        return_20d=4.0,
+        return_63d=8.0,
+        has_return_63=True,
+        sigma_daily=0.01,
+        signal_mode="bar",
+    )
+    assert service._momentum_long(weak) is False
+    assert service._momentum_long(strong) is True
+    # A dip inside the noise band stays on. A real swing loss, or a lost average, exits.
+    dip = TechnicalIndicators(
+        symbol="GLD", timestamp="", current_price=105, sma_50=100,
+        return_20d=-0.1, sigma_daily=0.01, signal_mode="bar",
+    )
+    break_ = TechnicalIndicators(
+        symbol="GLD", timestamp="", current_price=98, sma_50=100,
+        return_20d=-2.0, sigma_daily=0.01, signal_mode="bar",
+    )
+    assert service._momentum_exit(dip) is False
+    assert service._momentum_exit(break_) is True
 
 
 def test_request_maps_principal_and_daily_risk():
@@ -930,7 +1031,7 @@ def test_equity_strategies_gain_on_an_uptrend_and_do_not_invent_prices():
     )
     assert fallen["metrics"]["total_return_pct"] > fallen["metrics"]["benchmark_return_pct"]
     assert fallen["metrics"]["benchmark_return_pct"] < 0
-    assert gains["trend_following"] > 5
+    assert gains["trend_following"] > 2
 
 
 def _phased_days(parts, start=date(2023, 1, 2)):
@@ -1022,7 +1123,7 @@ def test_focus_books_use_each_symbols_bars_and_concentrate_the_live_trend():
     # The book catches the gold trend after the stock rolls over, so it finishes
     # well ahead of holding only the stock. Costs and the daily risk halt stay on.
     assert hedged["metrics"]["total_return_pct"] > stock["metrics"]["total_return_pct"]
-    assert hedged["metrics"]["total_return_pct"] > 15
+    assert hedged["metrics"]["total_return_pct"] > 8
     assert gold["symbols"] == ["GLD"]
     assert gold["chart_symbol"] == "GLD"
     assert gold["data_sources"] == {"GLD": "alpaca_daily_bars"}
@@ -1047,7 +1148,7 @@ def test_focus_books_use_each_symbols_bars_and_concentrate_the_live_trend():
     up_book = {"SPY": up, "GLD": up, "TLT": up}
     up_stock = _focus_run(_BookFeed(up_book), "symbol", ["SPY"])
     up_mix = _focus_run(_BookFeed(up_book), "hedged", ["SPY"])
-    assert up_mix["metrics"]["total_return_pct"] > 20
+    assert up_mix["metrics"]["total_return_pct"] > 8
     assert abs(up_mix["metrics"]["total_return_pct"] - up_stock["metrics"]["total_return_pct"]) < 3
 
     refused = run_backtest_request(

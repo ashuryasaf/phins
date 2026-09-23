@@ -289,7 +289,8 @@ def backtest_options() -> Dict[str, Any]:
                     "description": (
                         "55% the chosen symbol, 25% GLD, 20% TLT. A sleeve "
                         "the strategy does not want to hold lends its weight "
-                        "to the sleeves that are long."
+                        "to the sleeves that are long. Live size is that "
+                        "weight divided by the sleeve's own volatility."
                     ),
                 },
             ],
@@ -531,7 +532,34 @@ def simulate(
         for sym, bar in todays.items():
             if cfg.fill_model == "next_open" and sym in pending:
                 _fill(sym, bar, pending.pop(sym), "open", box, positions, trades, cfg, fills_by_day)
+        # The daily budget is a price the book can trade through today. Flatten
+        # there, then let a wider protective stop run only if this did not.
+        breach = _daily_breach_prices(cfg, box.cash, positions, prior_close, todays)
+        if breach:
+            session_day = _session_day(next(iter(todays.values())))
+            if session_day not in risk_halted:
+                risk_halted.append(session_day)
+        for sym, bar in todays.items():
             last_close[sym] = float(bar["close"])
+            if sym in positions and sym in breach:
+                saved_stop = positions[sym].stop
+                daily_stop = breach[sym]
+                if saved_stop is None or daily_stop > saved_stop:
+                    positions[sym].stop = daily_stop
+                reason, exit_px = _protective_exit(positions[sym], bar)
+                positions[sym].stop = saved_stop
+                if reason and exit_px is not None:
+                    _fill(
+                        sym, bar,
+                        {
+                            "side": "sell",
+                            "qty": positions[sym].qty,
+                            "reason": "daily_risk",
+                            "signal_price": exit_px,
+                            "signal_date": str(bar.get("date") or stamp),
+                        },
+                        "stop", box, positions, trades, cfg, fills_by_day, override_price=exit_px,
+                    )
             if sym in positions:
                 reason, exit_px = _protective_exit(positions[sym], bar)
                 if reason and exit_px is not None:
@@ -872,7 +900,8 @@ def _resolve_focus(raw: Any, symbols: List[str], *, single_symbol: bool) -> Dict
             "note": (
                 f"Hedged mix: {equity} 55%, GLD 25%, TLT 20%. "
                 "A sleeve the strategy does not want to hold lends its weight "
-                "to the sleeves that are long. Candles are "
+                "to the sleeves that are long, and each live sleeve is sized "
+                "by the inverse of its own volatility. Candles are "
                 f"{equity} daily bars. The gain line is the combined book."
             ),
         }
@@ -933,10 +962,23 @@ def _sleeve_decide(
             want_cache[stamp][symbol] = _wants_long(actions)
         if not _wants_long(actions):
             return [action for action in actions if str(action.get("side") or "").lower() != "buy"]
-        active = sum(weights[sym] for sym, flag in want_cache[stamp].items() if flag)
-        if active <= 0:
+        # Risk parity among the sleeves that want to be long. A wilder leg,
+        # such as gold on a wide day, takes less of the book than its target
+        # weight so it does not dominate the day's loss.
+        risk_weights: Dict[str, float] = {}
+        for sym, flag in want_cache[stamp].items():
+            if not flag:
+                continue
+            if sym == symbol:
+                vol = _bar_vol_frac(window)
+            else:
+                sym_window = _bars_ending(joined.get(sym) or [], stamp, config.lookback_bars)
+                vol = _bar_vol_frac(sym_window) if len(sym_window) >= 2 else 0.01
+            risk_weights[sym] = weights[sym] / vol
+        active = sum(risk_weights.values())
+        if active <= 0 or symbol not in risk_weights:
             return []
-        fraction = weights[symbol] / active
+        fraction = risk_weights[symbol] / active
         sized = []
         for action in actions:
             if str(action.get("side") or "").lower() != "buy":
@@ -1175,6 +1217,36 @@ def _macd_snapshot(prices: List[float]) -> Tuple[float, float, float, float]:
     return aligned[-1], signal[-1], hist, hist_prev
 
 
+def _daily_sigma(prices: List[float]) -> float:
+    """Sample standard deviation of the last 20 simple daily returns."""
+    window = prices[-21:]
+    if len(window) < 11:
+        return 0.0
+    rets = []
+    for prev, price in zip(window, window[1:]):
+        if prev > 0 and price > 0:
+            rets.append((price / prev) - 1.0)
+    if len(rets) < 10:
+        return 0.0
+    mean = sum(rets) / len(rets)
+    var = sum((ret - mean) ** 2 for ret in rets) / (len(rets) - 1)
+    if var <= 0:
+        return 0.0
+    return math.sqrt(var)
+
+
+def _bar_vol_frac(window: List[Dict[str, Any]]) -> float:
+    """ATR as a fraction of price. The floor keeps a flat bar from taking the book."""
+    atr = _bar_atr(window[-60:], 14)
+    try:
+        price = float(window[-1].get("close") or 0)
+    except (TypeError, ValueError):
+        price = 0.0
+    if price <= 0 or atr <= 0:
+        return 0.01
+    return max(atr / price, 0.004)
+
+
 def _bar_atr(bars: List[Dict[str, Any]], period: int = 14) -> float:
     prev_close = None
     true_ranges = []
@@ -1240,6 +1312,9 @@ def _indicators_from_bars(service: Any, symbol: str, bars: List[Dict[str, Any]])
     vol_prev = volumes[-2] if len(volumes) >= 2 else 0
     lookback = prices[-21] if len(prices) >= 21 else (prices[0] if prices else current)
     return_20 = ((current / lookback) - 1) * 100 if lookback > 0 else 0.0
+    quarter = prices[-64] if len(prices) >= 64 else 0.0
+    return_63 = ((current / quarter) - 1) * 100 if quarter > 0 else 0.0
+    sigma = _daily_sigma(prices)
     return TechnicalIndicators(
         symbol=symbol,
         timestamp=str(bars[-1].get("date") or ""),
@@ -1267,6 +1342,9 @@ def _indicators_from_bars(service: Any, symbol: str, bars: List[Dict[str, Any]])
         resistance_level=max(prior_prices) if prior_prices else current * 1.05,
         signal_mode="bar",
         return_20d=return_20,
+        return_63d=return_63,
+        has_return_63=quarter > 0,
+        sigma_daily=sigma,
         prior_high=prior_high,
         prior_low=prior_low,
         sma_50_rising=len(prices) >= 60 and sma_50 > (sum(prices[-60:-10]) / 50),
@@ -1312,13 +1390,14 @@ def _prepare_order(
             return None
         if qty <= 0:
             return None
+        requested = qty
         cap = equity * _position_cap(action, cfg)
         held_value = held_qty * price
-        room = max(0.0, cap - held_value)
+        room_dollars = max(0.0, cap - held_value)
         per = _buy_unit_cost(price, cfg)
         affordable = int(cash / per) if per > 0 else 0
-        capped = int(room / per) if per > 0 else 0
-        qty = min(qty, affordable, capped)
+        capped = int(room_dollars / per) if per > 0 else 0
+        qty = _risk_sized_qty(action, price, requested, min(affordable, capped), cfg)
         if qty <= 0:
             return None
     else:
@@ -1373,6 +1452,101 @@ def _session_open_equity(
         if sym not in marks:
             marks[sym] = float(bar.get("open") or bar.get("close") or 0)
     return _mark(cash, positions, marks)
+
+
+def _risk_sized_qty(
+    action: Dict[str, Any],
+    price: float,
+    requested: int,
+    room: int,
+    cfg: BacktestConfig,
+) -> int:
+    """Size the buy to the daily risk budget.
+
+    The risk unit is the stop distance, and at least 5% of price, so a quiet
+    bar cannot turn a 1% budget into a full position. A strategy that already
+    asks for fewer shares than that budget is scaled from the 2% baseline, so
+    1% and 4% still change a small AutoPilot book. ``daily_risk_pct`` 0 leaves
+    the requested quantity alone. ``room`` is the cash and position-cap limit.
+    """
+    if requested <= 0 or price <= 0 or room <= 0:
+        return 0
+    if cfg.daily_risk_pct <= 0:
+        return min(requested, room)
+    stop = _as_float(action.get("stop_loss"))
+    if stop is None or stop <= 0 or stop >= price:
+        distance = price * 0.05
+    else:
+        distance = price - stop
+    distance = max(distance, price * 0.05)
+    if distance <= 0:
+        return min(requested, room)
+    budget = cfg.starting_cash * cfg.daily_risk_pct / 100.0
+    raw_cap = action.get("position_cap")
+    if raw_cap is not None and cfg.max_position_size > 0:
+        try:
+            share = float(raw_cap) / cfg.max_position_size
+        except (TypeError, ValueError):
+            share = 1.0
+        if math.isfinite(share):
+            budget *= min(1.0, max(share, 0.0))
+    risk_qty = int(budget / distance)
+    # 2% keeps a small strategy at the size it asked for. Other percents scale
+    # that request. A strategy that asked for the whole book is still capped
+    # by the risk unit.
+    scaled = int(requested * (cfg.daily_risk_pct / 2.0))
+    return max(min(scaled, risk_qty, room), 0)
+
+
+def _daily_breach_prices(
+    cfg: BacktestConfig,
+    cash: float,
+    positions: Dict[str, _Position],
+    prior_close: Dict[str, float],
+    todays: Dict[str, Dict[str, Any]],
+) -> Dict[str, float]:
+    """Price of each open long where today's loss reaches the daily budget.
+
+    The path is the bar's open, then its low. A gap through the budget exits
+    at the open. Prices come from that bar only.
+    """
+    if cfg.daily_risk_pct <= 0 or cfg.starting_cash <= 0 or not positions:
+        return {}
+    cap = cfg.starting_cash * cfg.daily_risk_pct / 100.0
+    opening = _session_open_equity(cash, positions, prior_close, todays)
+    open_marks = dict(prior_close)
+    low_marks = dict(prior_close)
+    held: List[str] = []
+    for sym, pos in positions.items():
+        if pos.qty <= 0 or sym not in todays:
+            continue
+        bar = todays[sym]
+        try:
+            op = float(bar.get("open") if bar.get("open") is not None else bar.get("close"))
+            lo = float(bar.get("low") if bar.get("low") is not None else op)
+        except (TypeError, ValueError):
+            continue
+        if op <= 0 or lo <= 0:
+            continue
+        open_marks[sym] = op
+        low_marks[sym] = min(lo, op)
+        held.append(sym)
+    if not held:
+        return {}
+    loss_open = opening - _mark(cash, positions, open_marks)
+    loss_low = opening - _mark(cash, positions, low_marks)
+    if loss_low < cap - 1e-6:
+        return {}
+    if loss_open >= cap - 1e-6:
+        return {sym: open_marks[sym] for sym in held}
+    span = loss_low - loss_open
+    if span <= 1e-9:
+        return {sym: open_marks[sym] for sym in held}
+    t = min(1.0, max(0.0, (cap - max(loss_open, 0.0)) / span))
+    return {
+        sym: open_marks[sym] + t * (low_marks[sym] - open_marks[sym])
+        for sym in held
+    }
 
 
 def _daily_risk_hit(cfg: BacktestConfig, session_open: float, equity: float) -> bool:
