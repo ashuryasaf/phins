@@ -709,6 +709,149 @@ def test_admin_dashboard_presents_test_data_panel():
     assert "FULLY DELETE actuarial sandbox (TESTSIM) customers" in content
 
 
+def test_sandbox_portfolio_snapshot_identities():
+    """Expected death + disability, billed vs collected, and monthly growth
+    are one formula. The insight tab and the exports both call it."""
+    import subprocess
+    script = r"""
+const snap = require('./web_portal/static/sandbox-portfolio-snapshot.js');
+const mix = snap.claimMix(60.01, 39.98);
+if (Math.abs(mix.mortality + mix.disability - 1) > 1e-12) process.exit(2);
+const built = snap.buildForecast({
+  startCustomers: 100,
+  growthPct: 10,
+  premiumPerCustomer: 100,
+  lossRatioPct: 50,
+  horizon: 3,
+  mortalityShare: 0.6,
+  disabilityShare: 0.4,
+  collectionRate: snap.COLLECTION_RATE,
+});
+const m1 = built.rows[0];
+if (m1.customers !== 100) process.exit(3);
+if (m1.premiumBilled !== 10000) process.exit(4);
+if (Math.abs(m1.collectedPremium - 9500) > 1e-9) process.exit(5);
+if (Math.abs(m1.deathPaid - 3000) > 1e-9) process.exit(6);
+if (Math.abs(m1.disabilityPaid - 2000) > 1e-9) process.exit(7);
+if (Math.abs(m1.deathPaid + m1.disabilityPaid - m1.claimsPaid) > 1e-9) process.exit(8);
+if (built.rows[1].customers !== 110) process.exit(9);
+if (built.rows[2].customers !== 121) process.exit(10);
+const view = snap.portfolioSnapshot({
+  annualPremiumBooked: 120000,
+  premiumBilled: 10000,
+  premiumCollected: 9500,
+  realizedDeathPaid: 0,
+  realizedDisabilityPaid: 0,
+  lossRatioPct: 50,
+  lossRatioYear1Pct: 20,
+  mortalityShare: 0.6,
+  disabilityShare: 0.4,
+  collectionRate: snap.COLLECTION_RATE,
+  growthPct: 10,
+  startCustomers: 100,
+  premiumPerCustomer: 100,
+  monthsElapsed: 0,
+  rows: built.rows,
+});
+if (!view.checks.ok) process.exit(11);
+if (Math.abs(view.expectedDeathAnnual - 36000) > 1e-6) process.exit(12);
+if (Math.abs(view.expectedDisabilityAnnual - 24000) > 1e-6) process.exit(13);
+if (Math.abs(view.expectedDeathAnnual + view.expectedDisabilityAnnual - view.expectedClaimsAnnual) > 1e-6) process.exit(14);
+if (Math.abs(view.expectedDeathYear1 - 14400) > 1e-6) process.exit(15);
+if (Math.abs(view.expectedBilledToDate - 10000) > 1e-6) process.exit(16);
+if (Math.abs(view.premiumBilledVariance) > 1e-6) process.exit(17);
+if (view.endCustomers !== 121) process.exit(18);
+const elapsed = snap.portfolioSnapshot(Object.assign({}, {
+  annualPremiumBooked: 120000,
+  premiumBilled: 19500,
+  premiumCollected: 18525,
+  realizedDeathPaid: 1000,
+  realizedDisabilityPaid: 500,
+  lossRatioPct: 50,
+  mortalityShare: 60,
+  disabilityShare: 40,
+  growthPct: 10,
+  startCustomers: 100,
+  premiumPerCustomer: 100,
+  monthsElapsed: 1,
+  rows: built.rows,
+}));
+if (Math.abs(elapsed.expectedBilledToDate - 20000) > 1e-6) process.exit(19);
+if (Math.abs(elapsed.expectedDeathToDate - 3000) > 1e-6) process.exit(20);
+if (Math.abs(elapsed.deathVariance - (1000 - 3000)) > 1e-6) process.exit(21);
+const big = snap.buildForecast({
+  startCustomers: 100000,
+  growthPct: 10,
+  premiumPerCustomer: 250,
+  lossRatioPct: 40,
+  horizon: 60,
+  mortalityShare: 55,
+  disabilityShare: 45,
+});
+const bigView = snap.portfolioSnapshot({
+  annualPremiumBooked: 100000 * 250 * 12,
+  premiumBilled: 0,
+  premiumCollected: 0,
+  realizedDeathPaid: 0,
+  realizedDisabilityPaid: 0,
+  lossRatioPct: 40,
+  mortalityShare: 55,
+  disabilityShare: 45,
+  growthPct: 10,
+  startCustomers: 100000,
+  premiumPerCustomer: 250,
+  monthsElapsed: 0,
+  rows: big.rows,
+});
+if (!bigView.checks.ok) process.exit(22);
+const labels = snap.snapshotLines(view).map(l => l.label);
+for (const needed of [
+  'Annual premium booked (gross)',
+  'Premium billed to date (invoices issued)',
+  'Expected death paid (annual, on booked premium)',
+  'Expected disability paid (annual, on booked premium)',
+  'Monthly customer growth',
+  'Expected customers, final month',
+]) {
+  if (!labels.includes(needed)) process.exit(23);
+}
+process.exit(0);
+"""
+    proc = subprocess.run(
+        ["node", "-e", script],
+        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr or proc.stdout or proc.returncode
+
+
+def test_actuary_dashboard_portfolio_snapshot_tab():
+    """The sandbox insight tabs show booked vs billed, expected death and
+    disability, and the monthly customer-growth expectancy from one module."""
+    from pathlib import Path
+    html_path = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "actuary-dashboard.html"
+    content = html_path.read_text(encoding="utf-8")
+    js_path = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "sandbox-portfolio-snapshot.js"
+    assert js_path.is_file()
+    assert 'src="/sandbox-portfolio-snapshot.js"' in content
+    assert 'data-sandbox-tab="snapshot"' in content
+    assert "Portfolio Snapshot" in content
+    assert 'id="sandbox-snapshot-body"' in content
+    assert 'id="sandbox-stat-premium-billed"' in content
+    assert 'id="sandbox-stat-expected-death"' in content
+    assert 'id="sandbox-stat-expected-disability"' in content
+    assert "sandboxAssembleSnapshot" in content
+    assert "sandboxBillInForceMonth" in content
+    assert "PhinsSandboxSnapshot" in content
+    assert "Expected death paid (annual, on booked premium)" in content or "snapshotLines" in content
+    # Systematic monthly billing replaced the random extra-bill weight.
+    assert "new_bill: 0" in content
+    assert "Premium Billed" in content
+    assert "Expected Death" in content
+    assert "Expected Disability" in content
+
+
 def test_actuary_dashboard_overview_has_no_hardcoded_stats():
     """Overview stat tiles must start as neutral placeholders (filled from
     /api/actuarial/tables + /api/actuarial/config), never fake numbers."""

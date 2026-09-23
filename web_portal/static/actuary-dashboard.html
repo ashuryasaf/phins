@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <!-- Build stamp: bumped whenever a substantive pricing change ships so
        cached browsers can tell users they are running an old UI. -->
-  <meta name="phins-actuary-dashboard-build" content="2026-08-18.annual-report-unified-brand-v2">
+  <meta name="phins-actuary-dashboard-build" content="2026-09-23.sandbox-portfolio-snapshot">
   <!-- Chart.js for the Annuity Reserves forecast bar/line charts. Loaded
        from the same CDN as risk-reports-dashboard.html for consistency. -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -3154,6 +3154,18 @@
               <div class="stat-label">Annual Premium Booked</div>
               <div class="stat-value" id="sandbox-stat-premium">$0</div>
             </div>
+            <div class="stat-card sandbox-stat-card">
+              <div class="stat-label">Premium Billed</div>
+              <div class="stat-value" id="sandbox-stat-premium-billed">$0</div>
+            </div>
+            <div class="stat-card sandbox-stat-card warning">
+              <div class="stat-label">Expected Death Paid</div>
+              <div class="stat-value" id="sandbox-stat-expected-death">$0</div>
+            </div>
+            <div class="stat-card sandbox-stat-card warning">
+              <div class="stat-label">Expected Disability Paid</div>
+              <div class="stat-value" id="sandbox-stat-expected-disability">$0</div>
+            </div>
             <div class="stat-card sandbox-stat-card danger">
               <div class="stat-label">Open Claims</div>
               <div class="stat-value" id="sandbox-stat-claims-open">0</div>
@@ -3176,7 +3188,8 @@
           <div class="card">
             <div class="card-title">Sandbox Insight Tabs</div>
             <div class="sandbox-tabs">
-              <button class="sandbox-tab active" data-sandbox-tab="underwriting" onclick="showSandboxTab('underwriting')">Underwriting</button>
+              <button class="sandbox-tab active" data-sandbox-tab="snapshot" onclick="showSandboxTab('snapshot')">Portfolio Snapshot</button>
+              <button class="sandbox-tab" data-sandbox-tab="underwriting" onclick="showSandboxTab('underwriting')">Underwriting</button>
               <button class="sandbox-tab" data-sandbox-tab="claims" onclick="showSandboxTab('claims')">Claims</button>
               <button class="sandbox-tab" data-sandbox-tab="billing" onclick="showSandboxTab('billing')">Billing</button>
               <button class="sandbox-tab" data-sandbox-tab="projection" onclick="showSandboxTab('projection')">Monthly Projection</button>
@@ -3193,7 +3206,33 @@
               <span id="sandbox-export-msg" class="sandbox-action-msg"></span>
             </div>
 
-            <div id="sandbox-tab-underwriting" class="sandbox-tab-panel active">
+            <div id="sandbox-tab-snapshot" class="sandbox-tab-panel active">
+              <p style="color:var(--text-light);font-size:0.88rem;margin-bottom:10px;">
+                <strong>Premium booked</strong> is the annual written premium of in-force policies.
+                <strong>Premium billed</strong> is the face of invoices issued (the opening bill, then each lifecycle month).
+                <strong>Expected death</strong> and <strong>expected disability</strong> are that booked premium times the simulation loss ratio, split by the simulation's claim mix, so the two parts add up to expected claims.
+                The lifecycle expectancy compounds active customers at the monthly growth rate:
+                customers in month <em>m</em> = opening book × (1 + growth)<sup>m−1</sup>.
+                Forecast claims follow premium billed, not cash collected. Collected cash is premium billed × the 95% collection rate.
+              </p>
+              <div id="sandbox-snapshot-note" class="micro-copy" style="margin-bottom:8px;"></div>
+              <div style="max-height:480px;overflow-y:auto;">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Metric</th>
+                      <th>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sandbox-snapshot-body">
+                    <tr><td colspan="2" class="muted-text" style="text-align:center;color:var(--text-light);">Generate sandbox accounts to build the portfolio snapshot.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <p id="sandbox-snapshot-integrity" class="micro-copy" style="margin-top:8px;"></p>
+            </div>
+
+            <div id="sandbox-tab-underwriting" class="sandbox-tab-panel">
               <div class="form-row" style="margin-bottom:12px;">
                 <div class="form-group">
                   <div class="metric-pill">Approved: <span id="sandbox-uw-approved">0</span></div>
@@ -3301,7 +3340,7 @@
 
             <div id="sandbox-tab-projection" class="sandbox-tab-panel">
               <p style="color:var(--text-light);font-size:0.88rem;margin-bottom:10px;">
-                Adjustable <strong>5-year (60-month) cash-flow forecast</strong>, seeded from the simulation and the active sandbox book. Customers compound at the monthly growth rate; monthly premiums and claims scale with the book. Tune the controls to re-run the forecast and redraw the charts; realized actuals (premiums collected, claims paid) accumulate live as the random lifecycle runs. Premiums collected reflect an assumed ~95% collection rate of premium billed, and the savings add-on portion is reported separately in the PDF AI Assessment as a liability owed back to policyholders.
+                Adjustable <strong>5-year (60-month) cash-flow forecast</strong>, seeded from the simulation and the active sandbox book. Customers compound at the monthly growth rate. Each month's <strong>premium billed</strong> is the in-force book × monthly premium; <strong>premium collected</strong> is that bill × the 95% collection rate. Expected claims are premium billed × the loss ratio (the same claims / booked-premium identity the simulator uses), split into <strong>expected death</strong> and <strong>expected disability</strong>. Tune the controls to re-run the forecast; realized actuals accumulate live as the random lifecycle runs. The savings add-on portion of collected premium is a liability owed back to policyholders and is reported in the PDF AI Assessment.
               </p>
 
               <!-- Adjustable forecast controls -->
@@ -3329,7 +3368,7 @@
 
               <!-- Adjustable charts (Chart.js) on top of the projection -->
               <div class="card" style="margin-bottom:14px;">
-                <div class="card-title">5-Year Cash-Flow Forecast (monthly premiums, claims &amp; net)</div>
+                <div class="card-title">5-Year Cash-Flow Forecast (premium billed, collected, expected death &amp; disability)</div>
                 <div style="position:relative;height:260px;">
                   <canvas id="sandbox-proj-chart-cashflow"></canvas>
                 </div>
@@ -3354,10 +3393,10 @@
                   <div class="metric-pill">Months Elapsed: <span id="sandbox-proj-months-elapsed">0</span></div>
                 </div>
                 <div class="form-group">
-                  <div class="metric-pill">Projected Premium / mo: <span id="sandbox-proj-monthly-premium">$0</span></div>
+                  <div class="metric-pill">Premium billed / mo: <span id="sandbox-proj-monthly-premium">$0</span></div>
                 </div>
                 <div class="form-group">
-                  <div class="metric-pill">Projected Claims / mo: <span id="sandbox-proj-monthly-claims">$0</span></div>
+                  <div class="metric-pill">Expected claims / mo: <span id="sandbox-proj-monthly-claims">$0</span></div>
                 </div>
                 <div class="form-group">
                   <div class="metric-pill">Projected Net / mo: <span id="sandbox-proj-monthly-net">$0</span></div>
@@ -3386,11 +3425,11 @@
                     <tr>
                       <th>Month</th>
                       <th>Active Customers</th>
-                      <th>Collected Premium</th>
-                      <th>Claims Paid</th>
+                      <th>Premium Billed</th>
+                      <th>Collected</th>
+                      <th>Expected Death</th>
+                      <th>Expected Disability</th>
                       <th>Net Cash Flow</th>
-                      <th>Accumulated Premiums</th>
-                      <th>Accumulated Claims</th>
                     </tr>
                   </thead>
                   <tbody id="sandbox-projection-body">
@@ -3725,6 +3764,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     </div>
   </div>
   
+  <script src="/sandbox-portfolio-snapshot.js"></script>
   <script>
     // Global state
     let token = localStorage.getItem('phins_token');
@@ -7305,7 +7345,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         savings_rate: savingsRate,
         savings_formula: String(kernel.savings_formula || params.savings_formula || 'risk_premium_markup'),
         mortality_share: mortalityShare,
+        disability_claim_share: rm.disability_pct_of_claims != null ? Number(rm.disability_pct_of_claims) / 100 : null,
         loss_ratio: lossRatioPct,
+        loss_ratio_year1: rm.loss_ratio_year1 != null ? Number(rm.loss_ratio_year1) : null,
         avg_term_years: Number(rm.avg_term_years || 0),
         disability_band_age: disabilityBandAge,
         disability_max_age: disabilityMaxAge,
@@ -7319,6 +7361,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         total_coverage: portfolio.total_coverage || 0,
         total_annual_premium: portfolio.total_annual_premium || 0,
         loss_ratio: lossRatioPct,
+        loss_ratio_year1: rm.loss_ratio_year1 != null ? Number(rm.loss_ratio_year1) : null,
+        annual_expected_claims: Number(rm.annual_expected_claims || 0),
         savings_rate: savingsRate,
         disability_share_of_life: disabilityShare,
       };
@@ -7456,6 +7500,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // the actuary can explore the projection before starting the cycle.
       seedSandboxProjection();
       renderSandbox();
+      showSandboxTab('snapshot');
       // Keep the annual report binding panel in sync with the freshly
       // generated sandbox so it reflects the latest pipeline state.
       refreshAnnualReportSources();
@@ -7490,17 +7535,24 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           uwDeclined += 1;
         }
       }
-      let openClaims = 0, claimsPaid = 0;
+      let openClaims = 0, claimsPaid = 0, deathPaid = 0, disabilityPaid = 0;
       let claimsPending = 0, claimsApproved = 0, claimsPaidCount = 0;
       for (const c of claims) {
         if (c.status === 'pending') { claimsPending += 1; openClaims += 1; }
         else if (c.status === 'approved') { claimsApproved += 1; openClaims += 1; }
-        else if (c.status === 'paid') { claimsPaidCount += 1; claimsPaid += (c.paid_amount || c.approved_amount || c.amount || 0); }
+        else if (c.status === 'paid') {
+          claimsPaidCount += 1;
+          const paidAmt = (c.paid_amount || c.approved_amount || c.amount || 0);
+          claimsPaid += paidAmt;
+          if (c.type === 'mortality') deathPaid += paidAmt;
+          else disabilityPaid += paidAmt;
+        }
       }
-      let outstanding = 0, collected = 0;
+      let outstanding = 0, collected = 0, premiumBilled = 0;
       let billsOutstanding = 0, billsPaid = 0, billsOverdue = 0;
       for (const b of bills) {
         collected += b.amount_paid || 0;
+        if (b.status !== 'voided') premiumBilled += Number(b.amount) || 0;
         if (b.status === 'outstanding') { billsOutstanding += 1; outstanding += Math.max(0, (b.amount || 0) - (b.amount_paid || 0)); }
         else if (b.status === 'overdue') { billsOverdue += 1; outstanding += Math.max(0, (b.amount || 0) - (b.amount_paid || 0)); }
         else if (b.status === 'paid') { billsPaid += 1; }
@@ -7512,7 +7564,18 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       setText('sandbox-stat-policies', sandboxFmtCount(activePolicies));
       setText('sandbox-stat-coverage', sandboxFmtMoney(totalCoverage));
       setText('sandbox-stat-premium', sandboxFmtMoney(totalAnnualPremium));
+      const snap = sandboxAssembleSnapshot({
+        annualPremiumBooked: totalAnnualPremium,
+        premiumBilled: premiumBilled,
+        premiumCollected: collected,
+        realizedDeathPaid: deathPaid,
+        realizedDisabilityPaid: disabilityPaid,
+      });
+      setText('sandbox-stat-premium-billed', sandboxFmtMoney(premiumBilled));
+      setText('sandbox-stat-expected-death', sandboxFmtMoney(snap ? snap.expectedDeathAnnual : 0));
+      setText('sandbox-stat-expected-disability', sandboxFmtMoney(snap ? snap.expectedDisabilityAnnual : 0));
       setText('sandbox-stat-claims-open', sandboxFmtCount(openClaims));
+      renderSandboxSnapshot(snap, customers.length);
       setText('sandbox-stat-claims-paid', sandboxFmtMoney(claimsPaid));
       setText('sandbox-stat-bills-outstanding', sandboxFmtMoney(outstanding));
       setText('sandbox-stat-loss-ratio', sandboxFmtPct(lossRatio));
@@ -7619,12 +7682,15 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const customers = sb.customers;
       if (!customers.length) return;
 
+      // Premium billing is systematic (one invoice per in-force policy per
+      // elapsed month). A random extra bill would double-count premium
+      // billed against the forecast.
       const action = sandboxWeighted({
         new_customer: 8,
-        new_claim: 12,
-        approve_claim: 8,
-        pay_claim: 6,
-        new_bill: 20,
+        new_claim: 14,
+        approve_claim: 10,
+        pay_claim: 8,
+        new_bill: 0,
         pay_bill: 0,
         bill_overdue: 6,
         approve_uw: 10,
@@ -7702,6 +7768,23 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           reliable_payer: Math.random() < SANDBOX_COLLECTION_RATE,
           created_at: ts,
         });
+        if (uw_status === 'approved') {
+          const monthIndex = (sb.projection && sb.projection.monthsElapsed) || 0;
+          const autopaid = customers[customers.length - 1].reliable_payer !== false;
+          const monthly = customers[customers.length - 1].monthly_premium;
+          sb.bills.push({
+            id: `BILL-TESTSIM-${String(idx).padStart(6, '0')}-M${monthIndex}`,
+            customer_id: id,
+            policy_id: `POL-TESTSIM-${String(idx).padStart(6, '0')}`,
+            amount: monthly,
+            amount_paid: autopaid ? monthly : 0,
+            status: autopaid ? 'paid' : 'outstanding',
+            issued_month: monthIndex,
+            due_date: new Date(Date.now() + 30 * 86400000).toISOString(),
+            paid_at: autopaid ? ts : null,
+            created_at: ts,
+          });
+        }
         sandboxLogEvent('uw', `New sandbox customer ${id} onboarded — risk ${risk}, ADL ${health}, status ${uw_status}.`, 'info');
         return;
       }
@@ -7827,25 +7910,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         return;
       }
 
-      if (action === 'new_bill'
-          && cust.uw_status === 'approved'
-          && cust.policy_status !== 'terminated'
-          && cust.policy_status !== 'cancelled') {
-        const seq = cust.id.split('-').pop();
-        const id = `BILL-TESTSIM-${Date.now()}-${sandboxRandInt(1000, 9999)}`;
-        const autopaid = cust.reliable_payer !== false;
-        sb.bills.push({
-          id, customer_id: cust.id, policy_id: `POL-TESTSIM-${seq}`,
-          amount: cust.monthly_premium, amount_paid: autopaid ? cust.monthly_premium : 0,
-          status: autopaid ? 'paid' : 'outstanding',
-          issued_month: (sb.projection && sb.projection.monthsElapsed) || 0,
-          due_date: new Date(Date.now() + 30 * 86400000).toISOString(),
-          paid_at: autopaid ? ts : null,
-          created_at: ts,
-        });
-        sandboxLogEvent('billing', autopaid
-          ? `Monthly bill ${id} issued to ${cust.id} and auto-paid (${sandboxFmtMoney(cust.monthly_premium)}).`
-          : `Monthly bill ${id} issued to ${cust.id} for ${sandboxFmtMoney(cust.monthly_premium)}; awaiting payment.`, 'info');
+      if (action === 'new_bill') {
+        // Retained so a saved weight cannot issue a second invoice for a
+        // month the systematic biller already covered.
         return;
       }
 
@@ -7994,34 +8061,28 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // just like seeding does, but only once a real book exists — otherwise
       // the table/pills bail while the charts could draw an empty forecast.
       proj.active = startCustomers > 0;
-      const g = growthPct / 100;
       const lr = lossRatioPct / 100;
+      const Snap = window.PhinsSandboxSnapshot;
+      const built = Snap.buildForecast({
+        startCustomers: startCustomers,
+        growthPct: growthPct,
+        premiumPerCustomer: ppc,
+        lossRatioPct: lossRatioPct,
+        horizon: horizon,
+        mortalityShare: (sb.contract || {}).mortality_share,
+        disabilityShare: (sb.contract || {}).disability_claim_share,
+        collectionRate: Snap.COLLECTION_RATE,
+      });
+      proj.claimMix = built.mix;
       proj.baseline = {
         startCustomers: startCustomers,
         premiumPerCustomer: ppc,
-        monthlyPremium: startCustomers * ppc,
-        monthlyClaims: startCustomers * ppc * lr,
+        monthlyPremium: built.openingMonthlyBilled,
+        monthlyClaims: built.openingMonthlyBilled * lr,
         lossRatio: lr,
         growthPct: growthPct,
       };
-      proj.rows = [];
-      let accumPremium = 0, accumClaims = 0;
-      for (let m = 1; m <= horizon; m++) {
-        const customers = Math.round(startCustomers * Math.pow(1 + g, m - 1));
-        const collected = customers * ppc;
-        const claims = collected * lr;
-        accumPremium += collected;
-        accumClaims += claims;
-        proj.rows.push({
-          month: m,
-          customers: customers,
-          collectedPremium: collected,
-          claimsPaid: claims,
-          netCashFlow: collected - claims,
-          accumPremium: accumPremium,
-          accumClaims: accumClaims,
-        });
-      }
+      proj.rows = built.rows;
       // Reflect resolved defaults back into any blank control so the actuary
       // sees the values actually driving the forecast.
       const fill = (id, v) => { const el = document.getElementById(id); if (el && el.value === '') el.value = v; };
@@ -8053,9 +8114,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const sb = window.actuarySandbox;
       const proj = sb.projection;
       if (!proj) return;
-      // Premiums collected use the assumed ~95% collection rate applied to the
-      // premium billed on in-force bills, rather than only the randomly-paid
-      // subset. The savings add-on portion is tracked separately as it is owed
+      // Premiums collected are the actual amount_paid on non-voided bills.
+      // The forecast's assumed collection rate is separate and is not
+      // applied here, so realized cash stays reconcilable to the billing tab.
+      // The savings add-on portion is tracked separately as it is owed
       // back to policyholders.
       const collected = sandboxCollectedPremium();
       proj.realizedCollected = collected.total;
@@ -8078,9 +8140,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // accumulation so the AI assessment can show "months of random
       // lifecycle accumulated claims" and the death/disability split.
       if (proj.monthsElapsed > prevElapsed) {
-        // Cancel policies left unpaid past the 30-day grace, then refresh the
-        // realized totals so this month's snapshot reflects the voided bills.
-        if (sandboxCancelLapsedPolicies(proj.monthsElapsed) > 0) sandboxRefreshRealized();
+        // One invoice per in-force policy for each new month, then cancel
+        // anyone still unpaid from an earlier month. Realized premium billed
+        // then lines up with the forecast's monthly billing expectancy,
+        // apart from lapses, joiners, and the collection rate.
+        sandboxBillInForceMonth(proj.monthsElapsed);
+        sandboxCancelLapsedPolicies(proj.monthsElapsed);
+        sandboxRefreshRealized();
         const paidClaims = window.actuarySandbox.claims.filter(c => c.status === 'paid');
         let mortalityPaid = 0, disabilityPaid = 0;
         for (const c of paidClaims) {
@@ -8141,22 +8207,30 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         return;
       }
       const labels = proj.rows.map(r => 'M' + r.month);
+      const billed = proj.rows.map(r => Math.round(r.premiumBilled != null ? r.premiumBilled : r.collectedPremium));
       const collected = proj.rows.map(r => Math.round(r.collectedPremium));
-      const claims = proj.rows.map(r => Math.round(r.claimsPaid));
+      const death = proj.rows.map(r => Math.round(r.deathPaid || 0));
+      const disability = proj.rows.map(r => Math.round(r.disabilityPaid || 0));
       const net = proj.rows.map(r => Math.round(r.netCashFlow));
-      const accP = proj.rows.map(r => Math.round(r.accumPremium));
-      const accC = proj.rows.map(r => Math.round(r.accumClaims));
+      const accBilled = proj.rows.map(r => Math.round(r.accumBilled != null ? r.accumBilled : r.accumPremium));
+      const accCollected = proj.rows.map(r => Math.round(r.accumPremium));
+      const accDeath = proj.rows.map(r => Math.round(r.accumDeath || 0));
+      const accDisability = proj.rows.map(r => Math.round(r.accumDisability || 0));
       const custs = proj.rows.map(r => r.customers || 0);
 
       sandboxMakeChart('sandbox-proj-chart-cashflow', 'line', labels, [
-        { label: 'Collected Premium', data: collected, borderColor: '#3182ce', backgroundColor: 'rgba(49,130,206,0.10)', tension: 0.25, pointRadius: 0, borderWidth: 2 },
-        { label: 'Claims Paid', data: claims, borderColor: '#e53e3e', backgroundColor: 'rgba(229,62,62,0.10)', tension: 0.25, pointRadius: 0, borderWidth: 2 },
+        { label: 'Premium Billed', data: billed, borderColor: '#3182ce', backgroundColor: 'rgba(49,130,206,0.10)', tension: 0.25, pointRadius: 0, borderWidth: 2 },
+        { label: 'Premium Collected', data: collected, borderColor: '#2b6cb0', backgroundColor: 'rgba(43,108,176,0.08)', tension: 0.25, pointRadius: 0, borderWidth: 2, borderDash: [4, 3] },
+        { label: 'Expected Death', data: death, borderColor: '#e53e3e', backgroundColor: 'rgba(229,62,62,0.10)', tension: 0.25, pointRadius: 0, borderWidth: 2 },
+        { label: 'Expected Disability', data: disability, borderColor: '#dd6b20', backgroundColor: 'rgba(221,107,32,0.10)', tension: 0.25, pointRadius: 0, borderWidth: 2 },
         { label: 'Net Cash Flow', data: net, borderColor: '#38a169', backgroundColor: 'rgba(56,161,105,0.10)', tension: 0.25, pointRadius: 0, borderWidth: 2 },
       ]);
 
       sandboxMakeChart('sandbox-proj-chart-accum', 'line', labels, [
-        { label: 'Accumulated Premiums', data: accP, borderColor: '#3182ce', backgroundColor: 'rgba(49,130,206,0.18)', fill: true, tension: 0.25, pointRadius: 0, borderWidth: 2 },
-        { label: 'Accumulated Claims', data: accC, borderColor: '#dd6b20', backgroundColor: 'rgba(221,107,32,0.18)', fill: true, tension: 0.25, pointRadius: 0, borderWidth: 2 },
+        { label: 'Accumulated Premium Billed', data: accBilled, borderColor: '#3182ce', backgroundColor: 'rgba(49,130,206,0.12)', fill: false, tension: 0.25, pointRadius: 0, borderWidth: 2 },
+        { label: 'Accumulated Premium Collected', data: accCollected, borderColor: '#2b6cb0', backgroundColor: 'rgba(43,108,176,0.18)', fill: true, tension: 0.25, pointRadius: 0, borderWidth: 2 },
+        { label: 'Accumulated Expected Death', data: accDeath, borderColor: '#e53e3e', backgroundColor: 'rgba(229,62,62,0.12)', fill: false, tension: 0.25, pointRadius: 0, borderWidth: 2 },
+        { label: 'Accumulated Expected Disability', data: accDisability, borderColor: '#dd6b20', backgroundColor: 'rgba(221,107,32,0.12)', fill: false, tension: 0.25, pointRadius: 0, borderWidth: 2 },
       ]);
 
       sandboxMakeChart('sandbox-proj-chart-capacity', 'line', labels, [
@@ -8195,12 +8269,15 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // so they scale with compounding customer growth instead of staying
       // frozen at the opening (month-one) book size.
       const currentRow = proj.rows[Math.min(proj.rows.length - 1, Math.max(0, proj.monthsElapsed - 1))] || {};
-      const monthlyPremium = Number(currentRow.collectedPremium != null ? currentRow.collectedPremium : (base.monthlyPremium || 0));
+      const monthlyPremium = Number(currentRow.premiumBilled != null ? currentRow.premiumBilled : (currentRow.collectedPremium != null ? currentRow.collectedPremium : (base.monthlyPremium || 0)));
       const monthlyClaims = Number(currentRow.claimsPaid != null ? currentRow.claimsPaid : (base.monthlyClaims || 0));
+      // Net follows the row's own collected-minus-claims basis so the pill
+      // agrees with the highlighted table row and the horizon total.
+      const monthlyCollected = Number(currentRow.collectedPremium != null ? currentRow.collectedPremium : monthlyPremium);
       setText('sandbox-proj-months-elapsed', `${proj.monthsElapsed} / ${proj.months}`);
       setText('sandbox-proj-monthly-premium', sandboxFmtMoney(monthlyPremium));
       setText('sandbox-proj-monthly-claims', sandboxFmtMoney(monthlyClaims));
-      setText('sandbox-proj-monthly-net', sandboxFmtMoney(monthlyPremium - monthlyClaims));
+      setText('sandbox-proj-monthly-net', sandboxFmtMoney(monthlyCollected - monthlyClaims));
       setText('sandbox-proj-realized-collected', sandboxFmtMoney(proj.realizedCollected));
       setText('sandbox-proj-realized-claims', sandboxFmtMoney(proj.realizedClaimsPaid));
       setText('sandbox-proj-realized-net', sandboxFmtMoney(proj.realizedNetCashFlow));
@@ -8212,15 +8289,16 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           const rowStyle = elapsed ? ' style="background:var(--bg);"' : '';
           const marker = elapsed ? ' ' : '';
           const netClass = r.netCashFlow >= 0 ? 'sandbox-status approved' : 'sandbox-status declined';
+          const billed = r.premiumBilled != null ? r.premiumBilled : r.collectedPremium;
           return `
             <tr${rowStyle}>
               <td>Month ${r.month}${marker}</td>
               <td>${sandboxFmtCount(r.customers || 0)}</td>
+              <td>${sandboxFmtMoney(billed)}</td>
               <td>${sandboxFmtMoney(r.collectedPremium)}</td>
-              <td>${sandboxFmtMoney(r.claimsPaid)}</td>
+              <td>${sandboxFmtMoney(r.deathPaid || 0)}</td>
+              <td>${sandboxFmtMoney(r.disabilityPaid || 0)}</td>
               <td><span class="${netClass}">${sandboxFmtMoney(r.netCashFlow)}</span></td>
-              <td>${sandboxFmtMoney(r.accumPremium)}</td>
-              <td>${sandboxFmtMoney(r.accumClaims)}</td>
             </tr>`;
         }).join('');
       }
@@ -8380,6 +8458,46 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       return { billed: billed, rate: rate, total: collected, savings: collectedSavings, risk: Math.max(0, collected - collectedSavings) };
     }
 
+    // Issue exactly one monthly invoice per in-force policy for `monthIndex`.
+    // Reliable payers are collected immediately; the rest stay outstanding
+    // until the grace cancellation on a later month. Skips a policy that
+    // already has a live bill for that month (the generate-time invoice is
+    // month 0; a joiner is billed in sandboxTickLifecycle).
+    function sandboxBillInForceMonth(monthIndex) {
+      const sb = window.actuarySandbox;
+      const ts = sandboxNow().toISOString();
+      const already = new Set();
+      for (const b of sb.bills) {
+        if (b.status !== 'voided' && Number(b.issued_month) === monthIndex) already.add(b.customer_id);
+      }
+      let issued = 0;
+      for (const cust of sb.customers) {
+        if (cust.uw_status !== 'approved') continue;
+        if (cust.policy_status === 'terminated' || cust.policy_status === 'cancelled') continue;
+        if (already.has(cust.id)) continue;
+        const seq = cust.id.split('-').pop();
+        const autopaid = cust.reliable_payer !== false;
+        const amount = Number(cust.monthly_premium) || 0;
+        sb.bills.push({
+          id: `BILL-TESTSIM-${seq}-M${monthIndex}`,
+          customer_id: cust.id,
+          policy_id: `POL-TESTSIM-${seq}`,
+          amount: amount,
+          amount_paid: autopaid ? amount : 0,
+          status: autopaid ? 'paid' : 'outstanding',
+          issued_month: monthIndex,
+          due_date: new Date(Date.now() + 30 * 86400000).toISOString(),
+          paid_at: autopaid ? ts : null,
+          created_at: ts,
+        });
+        issued += 1;
+      }
+      if (issued) {
+        sandboxLogEvent('billing', `Month ${monthIndex}: billed ${sandboxFmtCount(issued)} in-force policies (auto-pay at the ${(SANDBOX_COLLECTION_RATE * 100).toFixed(0)}% collection rate).`, 'info');
+      }
+      return issued;
+    }
+
     // Cancel policies whose premium went unpaid past the 30-day grace (a bill
     // left outstanding/overdue for at least one elapsed month), voiding their
     // remaining bills. Returns the number of policies cancelled this pass.
@@ -8409,6 +8527,88 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         sandboxLogEvent('billing', `Policy ${owner.id} cancelled for non-payment after the 30-day grace; outstanding bills voided.`, 'breaking');
       });
       return cancelledCount;
+    }
+
+    // Portfolio snapshot from tallies already computed by the caller, plus
+    // the live forecast rows. Exports and the insight tab both call this
+    // so the death / disability split, premium billed, and growth
+    // expectancy cannot diverge.
+    function sandboxAssembleSnapshot(tallies) {
+      const Snap = window.PhinsSandboxSnapshot;
+      if (!Snap) return null;
+      const sb = window.actuarySandbox;
+      const proj = sb.projection || {};
+      const base = proj.baseline || {};
+      const contract = sb.contract || {};
+      const summary = sb.simulationSummary || {};
+      const lossFromBaseline = base.lossRatio != null ? base.lossRatio * 100 : null;
+      return Snap.portfolioSnapshot({
+        annualPremiumBooked: tallies.annualPremiumBooked,
+        premiumBilled: tallies.premiumBilled,
+        premiumCollected: tallies.premiumCollected,
+        realizedDeathPaid: tallies.realizedDeathPaid,
+        realizedDisabilityPaid: tallies.realizedDisabilityPaid,
+        lossRatioPct: lossFromBaseline != null ? lossFromBaseline : Number(contract.loss_ratio || summary.loss_ratio || 0),
+        lossRatioYear1Pct: contract.loss_ratio_year1 != null ? contract.loss_ratio_year1 : (summary.loss_ratio_year1 != null ? summary.loss_ratio_year1 : null),
+        mortalityShare: contract.mortality_share,
+        disabilityShare: contract.disability_claim_share,
+        collectionRate: Snap.COLLECTION_RATE,
+        growthPct: proj.growthPct != null ? proj.growthPct : (base.growthPct != null ? base.growthPct : 10),
+        startCustomers: base.startCustomers != null ? base.startCustomers : (proj.startCustomers || 0),
+        premiumPerCustomer: base.premiumPerCustomer || 0,
+        monthsElapsed: proj.monthsElapsed || 0,
+        rows: proj.rows || [],
+        materialized: summary.materialized,
+        accepted: summary.accepted,
+      });
+    }
+
+    function sandboxFormatSnapshotValue(line) {
+      if (!line) return '';
+      if (line.kind === 'money') return sandboxFmtMoney(line.value);
+      if (line.kind === 'rate') return (Number(line.value || 0) * 100).toFixed(1) + '%';
+      if (line.kind === 'points') return Number(line.value || 0).toFixed(2) + '%';
+      if (line.kind === 'count') return sandboxFmtCount(line.value);
+      return String(line.value == null ? '' : line.value);
+    }
+
+    function renderSandboxSnapshot(snap, customerCount) {
+      const body = document.getElementById('sandbox-snapshot-body');
+      const note = document.getElementById('sandbox-snapshot-note');
+      const integrity = document.getElementById('sandbox-snapshot-integrity');
+      if (!body) return;
+      if (!customerCount) {
+        body.innerHTML = '<tr><td colspan="2" class="muted-text" style="text-align:center;color:var(--text-light);">Generate sandbox accounts to build the portfolio snapshot.</td></tr>';
+        if (note) note.textContent = '';
+        if (integrity) integrity.textContent = '';
+        return;
+      }
+      const Snap = window.PhinsSandboxSnapshot;
+      const lines = Snap ? Snap.snapshotLines(snap) : [];
+      if (!lines.length) {
+        body.innerHTML = '<tr><td colspan="2" class="muted-text" style="text-align:center;color:var(--text-light);">Portfolio snapshot is unavailable.</td></tr>';
+        return;
+      }
+      let lastSection = '';
+      body.innerHTML = lines.map(line => {
+        const header = line.section !== lastSection
+          ? `<tr><td colspan="2" style="background:var(--bg);font-weight:600;">${esc(line.section)}</td></tr>`
+          : '';
+        lastSection = line.section;
+        return header + `<tr><td>${esc(line.label)}</td><td style="text-align:right;font-weight:600;">${esc(sandboxFormatSnapshotValue(line))}</td></tr>`;
+      }).join('');
+      if (note) {
+        const capped = snap && snap.accepted && snap.materialized && snap.materialized < snap.accepted;
+        note.textContent = capped
+          ? `Expectations use the materialized in-force premium (${sandboxFmtCount(snap.materialized)} of ${sandboxFmtCount(snap.accepted)} accepted lives), with the simulation loss ratio and death/disability mix. They are not the full simulation's dollar totals.`
+          : 'Expectations use this sandbox book\'s in-force premium, the simulation loss ratio, and the simulation death/disability mix.';
+      }
+      if (integrity) {
+        const ok = snap && snap.checks && snap.checks.ok;
+        integrity.textContent = ok
+          ? 'Integrity: expected death + expected disability = expected claims; forecast collected = premium billed × collection rate; final-month customers match the monthly growth formula.'
+          : 'Integrity check failed — death, disability, billed premium, and customer growth are not reconciling. Recompute the forecast before relying on this snapshot.';
+      }
     }
 
     // One single-pass roll-up of the in-memory book that every export shares,
@@ -8468,11 +8668,19 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const collected = collectedSplit.total;
 
       const lossRatio = totalAnnualRiskPremium > 0 ? (claimsPaidTotal / totalAnnualRiskPremium) : 0;
+      const snapshot = sandboxAssembleSnapshot({
+        annualPremiumBooked: totalAnnualPremium,
+        premiumBilled: collectedSplit.billed,
+        premiumCollected: collected,
+        realizedDeathPaid: byType.mortality.paid,
+        realizedDisabilityPaid: byType.disability.paid,
+      });
       return {
         customers, claims, bills, proj,
         contract: sb.contract || {},
         simulationSummary: sb.simulationSummary || {},
         simulationId: sb.simulationId || 'SANDBOX-LOCAL',
+        snapshot,
         stats: {
           totalCustomers: customers.length, activePolicies, terminated, cancelled,
           uwApproved, uwPending, uwDeclined,
@@ -8539,6 +8747,14 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           ['Loss Ratio (claims / risk premium)', (s.lossRatio * 100).toFixed(2) + '%'],
         ]));
 
+        const snapLines = (window.PhinsSandboxSnapshot && ix.snapshot)
+          ? window.PhinsSandboxSnapshot.snapshotLines(ix.snapshot)
+          : [];
+        if (snapLines.length) {
+          sections.push(csvSection('Portfolio Snapshot', ['Section', 'Metric', 'Value'],
+            snapLines.map(line => [line.section, line.label, sandboxFormatSnapshotValue(line)])));
+        }
+
         sections.push(csvSection('Claim Distribution by Type', ['Type', 'Count', 'Claimed Amount', 'Paid Amount'], [
           ['Death (mortality)', ix.byType.mortality.count, ix.byType.mortality.claimed, ix.byType.mortality.paid],
           ['Permanent disability (3+ ADL)', ix.byType.disability.count, ix.byType.disability.claimed, ix.byType.disability.paid],
@@ -8557,9 +8773,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           series.map(r => [r.month, Math.round(r.accumCollected), Math.round(r.accumClaimsPaid), Math.round(r.mortalityPaid), Math.round(r.disabilityPaid), r.claimsPaidCount])));
 
         // 5-year forecast rows.
-        sections.push(csvSection('5-Year Forecast (modeled)',
-          ['Month', 'Active Customers', 'Collected Premium', 'Claims Paid', 'Net Cash Flow', 'Accum Premiums', 'Accum Claims'],
-          (ix.proj.rows || []).map(r => [r.month, r.customers, Math.round(r.collectedPremium), Math.round(r.claimsPaid), Math.round(r.netCashFlow), Math.round(r.accumPremium), Math.round(r.accumClaims)])));
+        sections.push(csvSection('5-Year Forecast (expected)',
+          ['Month', 'Active Customers', 'Premium Billed', 'Premium Collected', 'Expected Death', 'Expected Disability', 'Net Cash Flow', 'Accum Premium Billed', 'Accum Premium Collected', 'Accum Expected Death', 'Accum Expected Disability'],
+          (ix.proj.rows || []).map(r => [r.month, r.customers, Math.round(r.premiumBilled != null ? r.premiumBilled : r.collectedPremium), Math.round(r.collectedPremium), Math.round(r.deathPaid || 0), Math.round(r.disabilityPaid || 0), Math.round(r.netCashFlow), Math.round(r.accumBilled != null ? r.accumBilled : 0), Math.round(r.accumPremium), Math.round(r.accumDeath || 0), Math.round(r.accumDisability || 0)])));
 
         // Detailed records.
         sections.push(csvSection('Underwriting — Accounts',
@@ -8637,6 +8853,14 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           ['Loss Ratio % (claims / risk premium)', Number((s.lossRatio * 100).toFixed(2))],
         ]));
 
+        const snapLines = (window.PhinsSandboxSnapshot && ix.snapshot)
+          ? window.PhinsSandboxSnapshot.snapshotLines(ix.snapshot)
+          : [];
+        if (snapLines.length) {
+          sheets.push(xlsSheet('Portfolio Snapshot', ['Section', 'Metric', 'Value'],
+            snapLines.map(line => [line.section, line.label, sandboxFormatSnapshotValue(line)])));
+        }
+
         sheets.push(xlsSheet('Claim Distribution', ['Type', 'Count', 'Claimed Amount', 'Paid Amount'], [
           ['Death (mortality)', ix.byType.mortality.count, ix.byType.mortality.claimed, ix.byType.mortality.paid],
           ['Permanent disability (3+ ADL)', ix.byType.disability.count, ix.byType.disability.claimed, ix.byType.disability.paid],
@@ -8646,8 +8870,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         sheets.push(xlsSheet('Lifecycle Accumulated', ['Month', 'Accum Premium', 'Accum Claims Paid', 'Death Paid', 'Disability Paid', 'Claims Paid (count)'],
           series.map(r => [r.month, Math.round(r.accumCollected), Math.round(r.accumClaimsPaid), Math.round(r.mortalityPaid), Math.round(r.disabilityPaid), r.claimsPaidCount])));
 
-        sheets.push(xlsSheet('Forecast', ['Month', 'Active Customers', 'Collected Premium', 'Claims Paid', 'Net Cash Flow', 'Accum Premiums', 'Accum Claims'],
-          (ix.proj.rows || []).map(r => [r.month, r.customers, Math.round(r.collectedPremium), Math.round(r.claimsPaid), Math.round(r.netCashFlow), Math.round(r.accumPremium), Math.round(r.accumClaims)])));
+        sheets.push(xlsSheet('Forecast', ['Month', 'Active Customers', 'Premium Billed', 'Premium Collected', 'Expected Death', 'Expected Disability', 'Net Cash Flow', 'Accum Billed', 'Accum Collected', 'Accum Death', 'Accum Disability'],
+          (ix.proj.rows || []).map(r => [r.month, r.customers, Math.round(r.premiumBilled != null ? r.premiumBilled : r.collectedPremium), Math.round(r.collectedPremium), Math.round(r.deathPaid || 0), Math.round(r.disabilityPaid || 0), Math.round(r.netCashFlow), Math.round(r.accumBilled != null ? r.accumBilled : 0), Math.round(r.accumPremium), Math.round(r.accumDeath || 0), Math.round(r.accumDisability || 0)])));
 
         sheets.push(xlsSheet('Underwriting', ['Customer ID', 'Age', 'Gender', 'Health (ADL)', 'Coverage', 'Annual Premium', 'Monthly Premium', 'Risk Score', 'UW Status', 'Policy Status'],
           ix.customers.slice(0, SANDBOX_XLS_SHEET_CAP).map(c => [c.id, Number(c.age) || 0, c.gender, Number(c.health_score) || 0, Number(c.coverage_amount) || 0, Number(c.annual_premium) || 0, Number(c.monthly_premium) || 0, Number(c.risk_score) || 0, c.uw_status, c.policy_status]), ix.customers.length));
@@ -8695,9 +8919,12 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         const underwritingNet = s.riskCollected - s.claimsPaidTotal;
         out.push(`Over ${months} elapsed lifecycle month${months === 1 ? '' : 's'}, ${sandboxFmtMoney(s.premiumBilled)} of premium was billed and auto-paid by policyholders at a ${(s.collectionRate * 100).toFixed(0)}% collection rate (policies unpaid past the 30-day grace are cancelled); premiums collected reached ${sandboxFmtMoney(s.collected)}. Of this, ${sandboxFmtMoney(s.savingsCollected)} (${savingsPctOfCollected.toFixed(0)}%) is the elected savings add-on accumulated for policyholders — a liability owed back to customers, not available to meet claims — leaving ${sandboxFmtMoney(s.riskCollected)} of risk premium. Against ${sandboxFmtMoney(s.claimsPaidTotal)} of claims paid, the realized underwriting net is ${sandboxFmtMoney(underwritingNet)}.`);
       }
-      const last = (ix.proj.rows || [])[(ix.proj.rows || []).length - 1];
-      if (last) {
-        out.push(`The ${(ix.proj.months || 60)}-month forecast (compounding customer growth at ${ix.proj.growthPct || 10}% / month) projects ${sandboxFmtCount(last.customers)} active customers by the final month and a cumulative net cash flow of ${sandboxFmtMoney((last.accumPremium || 0) - (last.accumClaims || 0))}.`);
+      const sn = ix.snapshot;
+      if (sn) {
+        out.push(`Annual premium booked on the in-force book is ${sandboxFmtMoney(sn.annualPremiumBooked)}. Premium billed to date (invoice face) is ${sandboxFmtMoney(sn.premiumBilled)}, which is a different measure from premium booked. On that booked premium, expected annual claims are ${sandboxFmtMoney(sn.expectedClaimsAnnual)}: ${sandboxFmtMoney(sn.expectedDeathAnnual)} expected death and ${sandboxFmtMoney(sn.expectedDisabilityAnnual)} expected disability.`);
+        if (sn.rowsReady) {
+          out.push(`The ${(sn.horizon || 60)}-month lifecycle expectancy compounds customer growth at ${Number(sn.growthPct || 0).toFixed(2)}% per month, from ${sandboxFmtCount(sn.startCustomers)} opening active customers to ${sandboxFmtCount(sn.endCustomers)} in the final month. Over that horizon the book is expected to bill ${sandboxFmtMoney(sn.horizonBilled)}, collect ${sandboxFmtMoney(sn.horizonCollected)}, and pay ${sandboxFmtMoney(sn.horizonDeath)} of expected death and ${sandboxFmtMoney(sn.horizonDisability)} of expected disability.`);
+        }
       }
       out.push('This assessment is generated client-side from the in-memory actuarial sandbox and is illustrative only — it is not a statement of booked results.');
       return out;
@@ -8796,28 +9023,30 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           styles: { lineColor: [225, 230, 236], lineWidth: 0.5, overflow: 'linebreak' },
         }, extra || {});
 
-        // Portfolio snapshot
+        // Portfolio snapshot — same lines as the insight tab, CSV, and Excel.
         sectionHeading('Portfolio Snapshot');
-        const netRowIndex = 14;
-        doc.autoTable(baseTableOpts(['Metric', 'Value'], [
+        const snapLines = (window.PhinsSandboxSnapshot && ix.snapshot)
+          ? window.PhinsSandboxSnapshot.snapshotLines(ix.snapshot)
+          : [];
+        const snapBody = snapLines.map(line => [line.label, sandboxFormatSnapshotValue(line)]);
+        const bookBody = [
           ['Sandbox customers', sandboxFmtCount(s.totalCustomers)],
           ['Active policies', sandboxFmtCount(s.activePolicies)],
           ['Terminated (paid death)', sandboxFmtCount(s.terminated)],
           ['Cancelled (non-payment)', sandboxFmtCount(s.cancelled)],
           ['Average age / risk score', `${s.avgAge} / ${s.avgRisk}`],
           ['Total coverage in force', sandboxFmtMoney(s.totalCoverage)],
-          ['Annual premium booked (gross)', sandboxFmtMoney(s.totalAnnualPremium)],
           ['Annual risk premium booked', sandboxFmtMoney(s.totalAnnualRiskPremium)],
-          ['Premium billed', sandboxFmtMoney(s.premiumBilled)],
-          ['Collection rate', (s.collectionRate * 100).toFixed(0) + '%'],
-          ['Premiums collected', sandboxFmtMoney(s.collected)],
-          ['     savings add-on (held for customers)', sandboxFmtMoney(s.savingsCollected)],
-          ['     risk premium (meets claims)', sandboxFmtMoney(s.riskCollected)],
+          ['Savings add-on collected (held for customers)', sandboxFmtMoney(s.savingsCollected)],
+          ['Risk premium collected (meets claims)', sandboxFmtMoney(s.riskCollected)],
           ['Claims paid (realized)', `${sandboxFmtMoney(s.claimsPaidTotal)} (${sandboxFmtCount(s.claimsPaidCount)})`],
           ['Realized underwriting net (risk premium - claims)', sandboxFmtMoney(netVal)],
           ['Open claims', sandboxFmtCount(s.openClaims)],
-          ['Loss ratio (claims / risk premium)', (s.lossRatio * 100).toFixed(1) + '%'],
-        ], {
+          ['Loss ratio (realized claims / risk premium booked)', (s.lossRatio * 100).toFixed(1) + '%'],
+        ];
+        const pdfSnapRows = snapBody.concat(bookBody);
+        const netRowIndex = pdfSnapRows.findIndex(row => row[0] === 'Realized underwriting net (risk premium - claims)');
+        doc.autoTable(baseTableOpts(['Metric', 'Value'], pdfSnapRows, {
           columnStyles: { 0: { cellWidth: (pageW - margin * 2) * 0.64 }, 1: { halign: 'right', fontStyle: 'bold' } },
           didParseCell: (data) => {
             if (data.section === 'body' && data.row.index === netRowIndex) {
