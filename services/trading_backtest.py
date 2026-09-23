@@ -14,7 +14,10 @@ equity rules run on the horizon they were written for. Supplied bars and
 Alpha Vantage are not used, and missing prices are never invented. A
 scalping or grid run uses real 5-minute bars when Alpaca has them. The
 charts are windows of those daily candles: one session, one week, one
-month, one quarter, and one year. Fills happen in a simulated cash account.
+month, one quarter, and one year. A focus picks the book: one symbol, gold
+(GLD), or a hedged mix of that symbol with GLD and TLT. A flat sleeve lends
+its weight to the sleeves the strategy wants to hold. Fills happen in a
+simulated cash account.
 This module never calls ``submit_order`` and never mutates AutoPilot bot state.
 
 Recommended setup: mode ``replay``, fill model ``next_open``, 5 bps of
@@ -48,6 +51,13 @@ MIN_TAPE_PRINTS = 30
 # Chart windows are counts of real daily candles, shortest range first.
 CHART_WINDOWS = (("day", 1), ("week", 5), ("month", 21), ("quarter", 63), ("year", 252))
 _INTRADAY_STRATEGIES = frozenset({"scalping", "grid_trading"})
+# GLD is the liquid gold ETF. TLT is the long-bond hedge. Weights sum to 1.
+GOLD_SYMBOL = "GLD"
+BOND_HEDGE_SYMBOL = "TLT"
+HEDGE_CORE_WEIGHT = 0.55
+HEDGE_GOLD_WEIGHT = 0.25
+HEDGE_BOND_WEIGHT = 0.20
+_FOCUS_NAMES = frozenset({"symbol", "gold", "hedged"})
 DEFAULT_LOOKBACK = 100  # live AutoPilot evaluate loads 100 daily bars
 DEFAULT_WARMUP = 80
 DEFAULT_CASH = 100_000.0
@@ -103,6 +113,8 @@ class BacktestConfig:
     # 0 disables the session loss cap. API requests default this to 2,
     # matching a live AutoPilot bot's max_daily_loss.
     daily_risk_pct: float = 0.0
+    # Set for a hedged book. None keeps the single-symbol position cap.
+    sleeve_weights: Optional[Dict[str, float]] = None
 
     @property
     def lookahead_bias(self) -> bool:
@@ -255,9 +267,32 @@ def backtest_options() -> Dict[str, Any]:
                 "decision per session, with the prior year available as "
                 "indicator history. Charts show that same daily OHLC over "
                 "one session, one week, one month, one quarter, and one year, "
-                "so the annual window has the most candles. Supplied bars "
-                "and Alpha Vantage are not used, and no prices are invented."
+                "so the annual window has the most candles. Focus the book "
+                "on one symbol, on gold (GLD), or on a hedged mix of the "
+                "symbol with GLD and TLT. Supplied bars and Alpha Vantage "
+                "are not used, and no prices are invented."
             ),
+            "focuses": [
+                {
+                    "name": "symbol",
+                    "label": "Specific symbol",
+                    "description": "The whole principal follows one symbol.",
+                },
+                {
+                    "name": "gold",
+                    "label": "Gold (GLD)",
+                    "description": "Replay GLD, the liquid gold ETF, on its own daily bars.",
+                },
+                {
+                    "name": "hedged",
+                    "label": "Hedged mix",
+                    "description": (
+                        "55% the chosen symbol, 25% GLD, 20% TLT. A sleeve "
+                        "the strategy does not want to hold lends its weight "
+                        "to the sleeves that are long."
+                    ),
+                },
+            ],
         },
         "position_model": (
             "Long-only. A buy while flat opens the position; further buys are "
@@ -333,10 +368,11 @@ def run_backtest_request(
                 # gain is the strategy's gain. Still long-only, still with slippage.
                 config.max_position_size = 1.0
             symbols = _clean_symbols(payload.get("symbols") or payload.get("symbol"))
-            if not symbols:
-                raise ValueError("At least one symbol is required")
-            if len(symbols) != 1:
-                raise ValueError("Algo replay runs one symbol at a time.")
+            focus = _resolve_focus(payload.get("focus"), symbols, single_symbol=True)
+            symbols = focus["symbols"]
+            config.sleeve_weights = focus["weights"]
+            if focus["weights"] and payload.get("max_open_positions") in (None, ""):
+                config.max_open_positions = max(config.max_open_positions, len(symbols))
             bars_by_symbol, data_sources, tape_meta = _resolve_algo_history(
                 platform, symbols, strategies,
                 trading_days=trading_days,
@@ -350,8 +386,22 @@ def run_backtest_request(
             limit = _clamp_int(payload.get("limit") or payload.get("days"), 252, 30, MAX_BARS)
             symbols = _clean_symbols(payload.get("symbols") or payload.get("symbol"))
             supplied = _clean_supplied_bars(payload.get("bars"))
-            if supplied:
+            if supplied and _focus_name(payload.get("focus")) == "symbol":
                 symbols = list(supplied.keys())[:MAX_SYMBOLS]
+                supplied = {sym: supplied[sym] for sym in symbols}
+            focus = _resolve_focus(payload.get("focus"), symbols, single_symbol=False)
+            symbols = focus["symbols"]
+            config.sleeve_weights = focus["weights"]
+            if focus["weights"] and payload.get("max_open_positions") in (None, ""):
+                config.max_open_positions = max(config.max_open_positions, len(symbols))
+            if supplied:
+                missing = [sym for sym in symbols if not supplied.get(sym)]
+                if missing:
+                    raise ValueError(
+                        "Supplied bars are missing "
+                        + ", ".join(missing)
+                        + ". No prices were invented."
+                    )
                 supplied = {sym: supplied[sym] for sym in symbols}
             if not symbols:
                 raise ValueError("At least one symbol is required")
@@ -365,22 +415,26 @@ def run_backtest_request(
         if mode == "compare":
             result = _compare(bars_by_symbol, source, strategies, config)
         elif mode == "walk_forward":
-            decide = _make_decide(source, strategies[0], config)
+            decide = _bind_decide(source, strategies[0], config, bars_by_symbol)
             result = _walk_forward(bars_by_symbol, decide, config)
             result["strategy"] = strategies[0]
         elif mode == "forward":
-            decide = _make_decide(source, strategies[0], config)
+            decide = _bind_decide(source, strategies[0], config, bars_by_symbol)
             result = simulate(bars_by_symbol, decide, config)
             result["strategy"] = strategies[0]
             result["forward_test"] = _forward_test(result)
         else:
-            decide = _make_decide(source, strategies[0], config)
+            decide = _bind_decide(source, strategies[0], config, bars_by_symbol)
             result = simulate(bars_by_symbol, decide, config)
             result["strategy"] = strategies[0]
 
         result.update({
             "source": source,
             "mode": mode,
+            "focus": focus["name"],
+            "focus_note": focus["note"],
+            "chart_symbol": focus["chart_symbol"],
+            "legs": _leg_rows(result, focus["weights"]),
             "symbols": symbols,
             "timeframe": timeframe,
             "data_sources": data_sources,
@@ -402,11 +456,12 @@ def run_backtest_request(
         if source == "algo":
             meta = tape_meta or {}
             gains = _accumulated_gains(_gains_curve(result), config.starting_cash)
+            note = " ".join(part for part in (meta.get("note"), focus["note"]) if part)
             result.update({
                 "mock_data": False,
                 "data_source": meta.get("price_path") or "alpaca_daily_bars",
                 "small_trades": False,
-                "small_trade_note": meta.get("note"),
+                "small_trade_note": note,
                 "max_trades_per_day": config.max_trades_per_day,
                 "trading_days": trading_days,
                 "sessions": meta.get("sessions") or [],
@@ -587,7 +642,10 @@ def simulate(
     unfilled = len(forward_orders)
     ending = _mark(cash, positions, last_close)
     metrics = _metrics(equity_curve, trades, cfg.starting_cash, exposure_flags)
-    metrics["benchmark_return_pct"] = _benchmark(series, cfg.warmup_bars)
+    if cfg.sleeve_weights:
+        metrics["benchmark_return_pct"] = _weighted_benchmark(aligned, cfg.warmup_bars, cfg.sleeve_weights)
+    else:
+        metrics["benchmark_return_pct"] = _benchmark(series, cfg.warmup_bars)
     open_positions = {
         sym: {"qty": pos.qty, "avg_price": round(pos.avg_price, 4)}
         for sym, pos in positions.items() if pos.qty > 0
@@ -642,7 +700,7 @@ def _compare(
 ) -> Dict[str, Any]:
     runs = []
     for name in strategies:
-        decide = _make_decide(source, name, config)
+        decide = _bind_decide(source, name, config, bars_by_symbol)
         report = simulate(bars_by_symbol, decide, config)
         report["strategy"] = name
         runs.append(_summary(report))
@@ -754,6 +812,213 @@ def _make_decide(source: str, strategy: str, config: BacktestConfig) -> DecideFn
     if source == "autopilot":
         return _autopilot_decide(strategy)
     return _algo_decide(strategy, config)
+
+
+def _bind_decide(
+    source: str,
+    strategy: str,
+    config: BacktestConfig,
+    bars_by_symbol: Dict[str, List[Dict[str, Any]]],
+) -> DecideFn:
+    decide = _make_decide(source, strategy, config)
+    if config.sleeve_weights:
+        return _sleeve_decide(decide, config, bars_by_symbol)
+    return decide
+
+
+def _focus_name(raw: Any) -> str:
+    text = str(raw or "symbol").strip().lower()
+    aliases = {
+        "stock": "symbol",
+        "market": "symbol",
+        "specific": "symbol",
+        "equity": "symbol",
+        "gld": "gold",
+    }
+    return aliases.get(text, text)
+
+
+def _resolve_focus(raw: Any, symbols: List[str], *, single_symbol: bool) -> Dict[str, Any]:
+    """Turn a focus choice into the symbols whose Alpaca bars will be loaded."""
+    focus = _focus_name(raw)
+    if focus not in _FOCUS_NAMES:
+        raise ValueError("focus must be 'symbol', 'gold', or 'hedged'")
+    if focus == "gold":
+        return {
+            "name": "gold",
+            "symbols": [GOLD_SYMBOL],
+            "weights": None,
+            "chart_symbol": GOLD_SYMBOL,
+            "note": (
+                "Focused on gold through GLD, the liquid gold ETF. "
+                "Every bar is GLD's own daily price."
+            ),
+        }
+    if focus == "hedged":
+        equity = next(
+            (sym for sym in symbols if sym not in (GOLD_SYMBOL, BOND_HEDGE_SYMBOL)),
+            "SPY",
+        )
+        weights = {
+            equity: HEDGE_CORE_WEIGHT,
+            GOLD_SYMBOL: HEDGE_GOLD_WEIGHT,
+            BOND_HEDGE_SYMBOL: HEDGE_BOND_WEIGHT,
+        }
+        return {
+            "name": "hedged",
+            "symbols": [equity, GOLD_SYMBOL, BOND_HEDGE_SYMBOL],
+            "weights": weights,
+            "chart_symbol": equity,
+            "note": (
+                f"Hedged mix: {equity} 55%, GLD 25%, TLT 20%. "
+                "A sleeve the strategy does not want to hold lends its weight "
+                "to the sleeves that are long. Candles are "
+                f"{equity} daily bars. The gain line is the combined book."
+            ),
+        }
+    if not symbols:
+        raise ValueError("At least one symbol is required")
+    if single_symbol and len(symbols) != 1:
+        raise ValueError("Algo replay runs one symbol at a time.")
+    if len(symbols) == 1:
+        note = f"Focused on {symbols[0]}."
+    else:
+        note = "Focused on " + ", ".join(symbols) + "."
+    return {
+        "name": "symbol",
+        "symbols": list(symbols),
+        "weights": None,
+        "chart_symbol": symbols[0],
+        "note": note,
+    }
+
+
+def _sleeve_decide(
+    inner: DecideFn,
+    config: BacktestConfig,
+    bars_by_symbol: Dict[str, List[Dict[str, Any]]],
+) -> DecideFn:
+    """Size each leg to its weight, and give a flat leg's weight to live legs.
+
+    Signals use only bars through the decision date. The fill is still the
+    next open, applied by the simulator.
+    """
+    weights = dict(config.sleeve_weights or {})
+    joined = _joined_series(bars_by_symbol)
+    want_cache: Dict[str, Dict[str, bool]] = {}
+
+    def decide(symbol, window, account, positions):
+        actions = [
+            dict(action)
+            for action in (inner(symbol, window, account, positions) or [])
+            if isinstance(action, dict)
+        ]
+        if not weights or symbol not in weights:
+            return actions
+        stamp = str(window[-1].get("date") or "") if window else ""
+        if stamp not in want_cache:
+            wants: Dict[str, bool] = {}
+            for sym in weights:
+                if sym == symbol:
+                    wants[sym] = _wants_long(actions)
+                    continue
+                sym_window = _bars_ending(joined.get(sym) or [], stamp, config.lookback_bars)
+                if len(sym_window) < 2:
+                    wants[sym] = False
+                    continue
+                sibling = inner(sym, sym_window, account, positions) or []
+                wants[sym] = _wants_long(sibling)
+            want_cache[stamp] = wants
+        else:
+            want_cache[stamp][symbol] = _wants_long(actions)
+        if not _wants_long(actions):
+            return [action for action in actions if str(action.get("side") or "").lower() != "buy"]
+        active = sum(weights[sym] for sym, flag in want_cache[stamp].items() if flag)
+        if active <= 0:
+            return []
+        fraction = weights[symbol] / active
+        sized = []
+        for action in actions:
+            if str(action.get("side") or "").lower() != "buy":
+                sized.append(action)
+                continue
+            qty = int(int(action.get("qty") or 0) * fraction)
+            if qty <= 0:
+                continue
+            action["qty"] = qty
+            action["position_cap"] = fraction * config.max_position_size
+            sized.append(action)
+        return sized
+
+    return decide
+
+
+def _wants_long(actions: List[Dict[str, Any]]) -> bool:
+    return any(
+        isinstance(action, dict) and str(action.get("side") or "").lower() == "buy"
+        for action in actions
+    )
+
+
+def _joined_series(bars_by_symbol: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
+    """Bars that share a date, in date order. Matches the simulator's join."""
+    series = {
+        sym: _normalize_series(rows)
+        for sym, rows in bars_by_symbol.items()
+        if rows
+    }
+    if len(series) <= 1:
+        return series
+    maps = {sym: {str(bar["date"]): bar for bar in rows} for sym, rows in series.items()}
+    common = set.intersection(*(set(mapping) for mapping in maps.values())) if maps else set()
+    clock = sorted(common)
+    return {sym: [maps[sym][stamp] for stamp in clock] for sym in series}
+
+
+def _bars_ending(rows: List[Dict[str, Any]], stamp: str, lookback: int) -> List[Dict[str, Any]]:
+    end = None
+    for index, bar in enumerate(rows):
+        if str(bar.get("date") or "") == stamp:
+            end = index
+            break
+    if end is None:
+        return []
+    start = max(0, end + 1 - max(int(lookback), 1))
+    return rows[start:end + 1]
+
+
+def _leg_rows(result: Dict[str, Any], weights: Optional[Dict[str, float]]) -> List[Dict[str, Any]]:
+    if not weights:
+        return []
+    trades = result.get("trades") or []
+    rows = []
+    for sym, weight in weights.items():
+        closed = [
+            trade for trade in trades
+            if trade.get("symbol") == sym and trade.get("side") == "sell" and trade.get("pnl") is not None
+        ]
+        pnl = round(sum(float(trade["pnl"]) for trade in closed), 2) if closed else 0.0
+        rows.append({
+            "symbol": sym,
+            "weight": weight,
+            "target_weight_pct": round(weight * 100.0, 2),
+            "closed_trades": len(closed),
+            "realized_pnl": pnl,
+        })
+    return rows
+
+
+def _position_cap(action: Dict[str, Any], cfg: BacktestConfig) -> float:
+    raw = action.get("position_cap")
+    if raw is None:
+        return cfg.max_position_size
+    try:
+        cap = float(raw)
+    except (TypeError, ValueError):
+        return cfg.max_position_size
+    if not math.isfinite(cap) or cap < 0:
+        return cfg.max_position_size
+    return min(cap, cfg.max_position_size)
 
 
 def _autopilot_decide(strategy_name: str) -> DecideFn:
@@ -1047,7 +1312,7 @@ def _prepare_order(
             return None
         if qty <= 0:
             return None
-        cap = equity * cfg.max_position_size
+        cap = equity * _position_cap(action, cfg)
         held_value = held_qty * price
         room = max(0.0, cap - held_value)
         per = _buy_unit_cost(price, cfg)
@@ -1295,62 +1560,84 @@ def _resolve_algo_history(
     warmup_bars: int,
     feed: str,
 ) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, str], Dict[str, Any]]:
-    """Load real Alpaca OHLC for one symbol. Never synthesizes prices."""
-    sym = symbols[0]
+    """Load real Alpaca OHLC for each symbol in the book. Never synthesizes prices."""
+    if not symbols:
+        raise ValueError("At least one symbol is required")
+    label = ", ".join(symbols)
     if platform is None or not getattr(platform, "is_connected", False):
         raise ValueError(
-            f"No Alpaca bars for {sym}. Alpaca is not connected "
+            f"No Alpaca bars for {label}. Alpaca is not connected "
             "(set ALPACA_API_KEY and ALPACA_SECRET_KEY)."
         )
     feed_name = feed if feed in ("iex", "sip") else "iex"
-    daily = _safe_historical_bars(platform, sym, "1Day", MAX_TRADING_DAYS, feed_name)
-    intraday = len(strategies) == 1 and strategies[0] in _INTRADAY_STRATEGIES
+    chart_symbol = symbols[0]
+    intraday = (
+        len(symbols) == 1
+        and len(strategies) == 1
+        and strategies[0] in _INTRADAY_STRATEGIES
+    )
     note = (
         "Decisions use completed Alpaca bars. One signal per bar, filled at the next open. "
         "The annual chart is a year of those daily candles; the daily chart is the latest session."
     )
-    rows = daily
-    source_name = "alpaca_daily_bars"
-    timeframe = "1Day"
-    if intraday:
-        minutes = _safe_historical_bars(platform, sym, "1Min", 2000, feed_name)
-        five = _resample_minutes(minutes, 5) if minutes else []
-        needed = warmup_bars + min(trading_days, 5)
-        if len(five) >= max(needed, 40):
-            rows = five
-            source_name = "alpaca_5min"
-            timeframe = "5Min"
-            note = (
-                "Scalping and grid replay real 5-minute Alpaca bars resampled from 1-minute bars. "
-                "No prices were interpolated."
-            )
-        elif daily:
-            note = (
-                "Intraday Alpaca bars were too short for this strategy, so the replay used "
-                "real daily bars. No prices were invented."
-            )
-    if not rows:
-        last = getattr(platform, "_last_data_error", None)
-        detail = f" {last}" if last else " The feed returned no bars."
-        raise ValueError(f"No Alpaca bars for {sym}.{detail} No prices were invented.")
-    history = _daily_ohlc(daily or rows)
-    play = rows[-(trading_days + warmup_bars):]
-    if len(play) < 20:
-        raise ValueError(
-            f"{sym} returned {len(play)} Alpaca bars. "
-            "A strategy replay needs at least 20. No prices were invented."
+    if len(symbols) > 1 and len(strategies) == 1 and strategies[0] in _INTRADAY_STRATEGIES:
+        note = (
+            "The hedged book replays real daily bars. "
+            "Intraday bars are used only for a single-symbol scalping or grid run. "
+            "No prices were invented."
         )
+    plays: Dict[str, List[Dict[str, Any]]] = {}
+    sources: Dict[str, str] = {}
+    chart_history: List[Dict[str, Any]] = []
+    timeframe = "1Day"
+    source_name = "alpaca_daily_bars"
+    for sym in symbols:
+        daily = _safe_historical_bars(platform, sym, "1Day", MAX_TRADING_DAYS, feed_name)
+        rows = daily
+        sym_source = "alpaca_daily_bars"
+        if intraday and sym == chart_symbol:
+            minutes = _safe_historical_bars(platform, sym, "1Min", 2000, feed_name)
+            five = _resample_minutes(minutes, 5) if minutes else []
+            needed = warmup_bars + min(trading_days, 5)
+            if len(five) >= max(needed, 40):
+                rows = five
+                sym_source = "alpaca_5min"
+                source_name = "alpaca_5min"
+                timeframe = "5Min"
+                note = (
+                    "Scalping and grid replay real 5-minute Alpaca bars resampled from 1-minute bars. "
+                    "No prices were interpolated."
+                )
+            elif daily:
+                note = (
+                    "Intraday Alpaca bars were too short for this strategy, so the replay used "
+                    "real daily bars. No prices were invented."
+                )
+        if not rows:
+            last = getattr(platform, "_last_data_error", None)
+            detail = f" {last}" if last else " The feed returned no bars."
+            raise ValueError(f"No Alpaca bars for {sym}.{detail} No prices were invented.")
+        if sym == chart_symbol:
+            chart_history = _daily_ohlc(daily or rows)
+        play = rows[-(trading_days + warmup_bars):]
+        if len(play) < 20:
+            raise ValueError(
+                f"{sym} returned {len(play)} Alpaca bars. "
+                "A strategy replay needs at least 20. No prices were invented."
+            )
+        plays[sym] = play
+        sources[sym] = sym_source
     meta = {
         "tape_trades_per_day": {},
         "truncated_days": [],
-        "sessions": _session_list(play),
+        "sessions": _session_list(plays[chart_symbol]),
         "price_path": source_name,
         "small_trades": False,
         "timeframe": timeframe,
         "note": note,
-        "candles": _build_candles(history or play),
+        "candles": _build_candles(chart_history or plays[chart_symbol]),
     }
-    return {sym: play}, {sym: source_name}, meta
+    return plays, sources, meta
 
 
 _NY = ZoneInfo("America/New_York")
@@ -1875,6 +2162,28 @@ def _max_drawdown(equities: List[float]) -> float:
         if peak > 0:
             worst = max(worst, (peak - equity) / peak)
     return worst
+
+
+def _weighted_benchmark(
+    aligned: Dict[str, List[Dict[str, Any]]],
+    warmup: int,
+    weights: Dict[str, float],
+) -> Optional[float]:
+    """Buy-and-hold of the sleeve weights from the first scored bar."""
+    acc = 0.0
+    used = 0.0
+    for sym, rows in aligned.items():
+        weight = float(weights.get(sym) or 0.0)
+        if weight <= 0 or len(rows) <= warmup:
+            continue
+        start = float(rows[warmup]["close"])
+        end = float(rows[-1]["close"])
+        if start > 0:
+            acc += weight * (end / start - 1.0)
+            used += weight
+    if used <= 0:
+        return None
+    return round(100.0 * acc / used, 2)
 
 
 def _benchmark(series: Dict[str, List[Dict[str, Any]]], warmup: int) -> Optional[float]:

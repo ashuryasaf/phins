@@ -80,6 +80,8 @@ def test_catalog_recommends_replay_without_broker_orders():
     assert algo_tape["max_trading_days"] == 400
     assert catalog["defaults"]["principal"] == 100_000
     assert catalog["defaults"]["daily_risk_pct"] == 2.0
+    focuses = {row["name"] for row in catalog["algo"]["focuses"]}
+    assert focuses == {"symbol", "gold", "hedged"}
 
 
 def test_next_open_fills_on_the_following_bar():
@@ -816,6 +818,157 @@ def test_equity_strategies_gain_on_an_uptrend_and_do_not_invent_prices():
     assert fallen["metrics"]["total_return_pct"] > fallen["metrics"]["benchmark_return_pct"]
     assert fallen["metrics"]["benchmark_return_pct"] < 0
     assert gains["trend_following"] > 5
+
+
+def _phased_days(parts, start=date(2023, 1, 2)):
+    """Daily OHLC whose drift changes by segment. Dates stay aligned across books."""
+    import math
+    rows = []
+    px = 100.0
+    i = 0
+    for length, drift, noise in parts:
+        for _ in range(length):
+            shock = noise * math.sin(i / 3.0) + (noise * 0.6) * math.sin(i / 11.0)
+            close = px * (1.0 + drift + shock)
+            open_px = px
+            rows.append({
+                "date": (start + timedelta(days=i)).isoformat(),
+                "open": round(open_px, 4),
+                "high": round(max(open_px, close) * 1.002, 4),
+                "low": round(min(open_px, close) * 0.998, 4),
+                "close": round(close, 4),
+                "volume": 1_000 + i,
+            })
+            px = close
+            i += 1
+    return rows
+
+
+class _BookFeed:
+    def __init__(self, book):
+        self.book = book
+        self.is_connected = True
+        self._last_data_error = None
+        self.asked = []
+
+    def submit_order(self, *args, **kwargs):
+        raise AssertionError("backtest must not submit orders")
+
+    def get_historical_trades(self, *args, **kwargs):
+        raise AssertionError("focus research must not synthesize a trade tape")
+
+    def get_historical_bars(self, symbol, timeframe="1Day", **kwargs):
+        self.asked.append((symbol, str(timeframe)))
+        if str(timeframe).lower() in ("1min", "1minute"):
+            return []
+        return self.book[symbol]
+
+
+def _focus_run(feed, focus, symbols, strategy="momentum"):
+    return run_backtest_request(
+        {
+            "source": "algo",
+            "strategy": strategy,
+            "focus": focus,
+            "symbols": symbols,
+            "days": 252,
+            "warmup_bars": 80,
+            "daily_risk_pct": 2,
+            "slippage_bps": 5,
+        },
+        default_source="algo",
+        platform=feed,
+    )
+
+
+def test_focus_books_use_each_symbols_bars_and_concentrate_the_live_trend():
+    # Stock rises, then gives it back. Gold does the opposite. Bonds drift down
+    # so the strategy leaves that sleeve flat and lends its weight to the live leg.
+    spy = _phased_days([(200, 0.0012, 0.004), (200, -0.0009, 0.004)])
+    gld = _phased_days([(200, -0.0003, 0.003), (200, 0.0014, 0.003)])
+    tlt = _phased_days([(400, -0.00015, 0.002)])
+    book = {"SPY": spy, "GLD": gld, "TLT": tlt, "AAPL": spy}
+    stock = _focus_run(_BookFeed(book), "symbol", ["SPY"])
+    hedged = _focus_run(_BookFeed(book), "hedged", ["AAPL"])
+    gold = _focus_run(_BookFeed(book), "gold", ["AAPL"])
+    assert "error" not in stock, stock.get("error")
+    assert "error" not in hedged, hedged.get("error")
+    assert "error" not in gold, gold.get("error")
+
+    assert stock["symbols"] == ["SPY"]
+    assert stock["chart_symbol"] == "SPY"
+    assert stock["orders_submitted"] == 0
+    assert stock["mock_data"] is False
+    assert stock["metrics"]["benchmark_return_pct"] < 0
+    assert hedged["symbols"] == ["AAPL", "GLD", "TLT"]
+    assert hedged["chart_symbol"] == "AAPL"
+    assert [leg["symbol"] for leg in hedged["legs"]] == ["AAPL", "GLD", "TLT"]
+    assert [leg["target_weight_pct"] for leg in hedged["legs"]] == [55.0, 25.0, 20.0]
+    assert hedged["orders_submitted"] == 0
+    assert hedged["mock_data"] is False
+    # The book catches the gold trend after the stock rolls over, so it finishes
+    # well ahead of holding only the stock. Costs and the daily risk halt stay on.
+    assert hedged["metrics"]["total_return_pct"] > stock["metrics"]["total_return_pct"]
+    assert hedged["metrics"]["total_return_pct"] > 15
+    assert gold["symbols"] == ["GLD"]
+    assert gold["chart_symbol"] == "GLD"
+    assert gold["data_sources"] == {"GLD": "alpaca_daily_bars"}
+    assert gold["metrics"]["total_return_pct"] > 10
+    assert gold["metrics"]["benchmark_return_pct"] > 0
+
+    counts = [len(hedged["candles"][name]) for name in ("day", "week", "month", "quarter", "year")]
+    assert counts == [1, 5, 21, 63, 252]
+    annual = hedged["candles"]["year"][-1]
+    assert annual["date"] == spy[-1]["date"]
+    assert annual["open"] == spy[-1]["open"]
+    assert annual["high"] == spy[-1]["high"]
+    assert annual["low"] == spy[-1]["low"]
+    assert annual["close"] == spy[-1]["close"]
+    assert annual["close"] != gld[-1]["close"]
+    for frame in hedged["candles"].values():
+        for row in frame:
+            assert row["low"] <= min(row["open"], row["close"]) <= max(row["open"], row["close"]) <= row["high"]
+
+    # Same uptrend on every sleeve stays fully invested, so the mix tracks the symbol.
+    up = _phased_days([(400, 0.0009, 0.005)])
+    up_book = {"SPY": up, "GLD": up, "TLT": up}
+    up_stock = _focus_run(_BookFeed(up_book), "symbol", ["SPY"])
+    up_mix = _focus_run(_BookFeed(up_book), "hedged", ["SPY"])
+    assert up_mix["metrics"]["total_return_pct"] > 20
+    assert abs(up_mix["metrics"]["total_return_pct"] - up_stock["metrics"]["total_return_pct"]) < 3
+
+    refused = run_backtest_request(
+        {"source": "algo", "strategy": "momentum", "focus": "lottery", "symbols": ["SPY"]},
+        default_source="algo",
+        platform=_BookFeed(book),
+    )
+    assert "focus" in refused["error"]
+
+    class Offline:
+        is_connected = False
+
+        def get_historical_bars(self, *args, **kwargs):
+            return []
+
+    offline = run_backtest_request(
+        {"source": "algo", "strategy": "momentum", "focus": "gold", "symbols": ["SPY"]},
+        default_source="algo",
+        platform=Offline(),
+    )
+    assert "GLD" in offline["error"]
+    assert "not connected" in offline["error"]
+    injected = run_backtest_request(
+        {
+            "source": "algo",
+            "strategy": "momentum",
+            "focus": "hedged",
+            "symbols": ["SPY"],
+            "bars": {"SPY": spy, "GLD": gld, "TLT": tlt},
+        },
+        default_source="algo",
+        platform=_BookFeed(book),
+    )
+    assert "Supplied bars" in injected["error"]
 
 
 def test_historical_trades_stop_at_the_daily_cap():

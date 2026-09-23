@@ -63,6 +63,8 @@ def test_autopilot_backtest_is_a_read_only_replay():
     assert 'id="apBtMode"' in content
     assert 'id="apBtPrincipal"' in content
     assert 'id="apBtDailyRisk"' in content
+    assert 'id="apBtFocus"' in content
+    assert 'value="hedged"' in content
     assert "daily_risk_pct" in content
     assert 'value="replay"' in content and "Replay (recommended)" in content
     assert 'value="next_open"' in content
