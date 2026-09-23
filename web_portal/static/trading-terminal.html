@@ -325,7 +325,7 @@
                     <input type="number" id="apBtPrincipal" value="100000" min="1000" max="100000000" step="1000" title="Starting capital. Daily risk is this amount times the percent." style="background:var(--bg);border:1px solid var(--border);color:var(--gold);padding:6px 10px;font-size:16px;width:120px;font-family:inherit;border-radius:3px;">
                 </div>
                 <div><label style="color:var(--muted);font-size:14px;display:block;">Daily risk %</label>
-                    <input type="number" id="apBtDailyRisk" value="2" min="0" max="25" step="0.1" title="Stop new buys after the session loses this percent of principal. 0 disables the cap. Sells still fill." style="background:var(--bg);border:1px solid var(--border);color:var(--gold);padding:6px 10px;font-size:16px;width:80px;font-family:inherit;border-radius:3px;">
+                    <input type="number" id="apBtDailyRisk" value="2" min="0" max="25" step="0.1" title="Sizes each buy so a move of at least 5% of price, or the stop if it is wider, loses this percent of principal. A strategy that already asks for less is scaled from the 2% baseline. The book is sold if today's low reaches that loss. 0 turns the limit off." style="background:var(--bg);border:1px solid var(--border);color:var(--gold);padding:6px 10px;font-size:16px;width:80px;font-family:inherit;border-radius:3px;">
                 </div>
                 <button onclick="runAutoPilotBacktest()" style="background:var(--cyan);color:#000;border:none;padding:8px 18px;font-weight:700;font-size:16px;cursor:pointer;font-family:inherit;border-radius:3px;">BACKTEST</button>
                 <span style="color:var(--muted);font-size:13px;padding-bottom:6px;">Alpaca history only. No orders are sent.</span>
@@ -2039,7 +2039,7 @@ function renderBacktest(d) {
     let risk = '';
     if (d.principal != null) {
         risk = 'Principal $' + btMetric(d.principal) + '. Daily risk ' +
-            btMetric(d.daily_risk_pct, '%') + ' of principal.';
+            btMetric(d.daily_risk_pct, '%') + ' of principal, used to size the buy and to flatten if the session low reaches it.';
         if (halted.length) risk += ' New buys stopped on ' + apEscape(halted.join(', ')) + '.';
     }
     let html = '<div style="color:var(--muted);margin-bottom:4px;">' +
