@@ -1570,11 +1570,12 @@ def _resolve_algo_history(
             "(set ALPACA_API_KEY and ALPACA_SECRET_KEY)."
         )
     feed_name = feed if feed in ("iex", "sip") else "iex"
-    # The scored window and the indicator warmup both come out of this fetch,
-    # and the candle charts still want a year of sessions behind them.
-    daily_limit = min(max(MAX_TRADING_DAYS, trading_days + warmup_bars), MAX_BARS)
-    daily = _safe_historical_bars(platform, sym, "1Day", daily_limit, feed_name)
-    intraday = len(strategies) == 1 and strategies[0] in _INTRADAY_STRATEGIES
+    chart_symbol = symbols[0]
+    intraday = (
+        len(symbols) == 1
+        and len(strategies) == 1
+        and strategies[0] in _INTRADAY_STRATEGIES
+    )
     note = (
         "Decisions use completed Alpaca bars. One signal per bar, filled at the next open. "
         "The annual chart is a year of those daily candles; the daily chart is the latest session."
@@ -1589,38 +1590,50 @@ def _resolve_algo_history(
     sources: Dict[str, str] = {}
     chart_history: List[Dict[str, Any]] = []
     timeframe = "1Day"
-    # Daily bars are one per session, so the window is a bar count.
-    play = rows[-(trading_days + warmup_bars):]
-    if intraday:
-        minutes = _safe_historical_bars(platform, sym, "1Min", MAX_BARS, feed_name)
-        five = _resample_minutes(minutes, 5) if minutes else []
-        # trading_days counts sessions, not 5-minute bars, so the intraday tape
-        # is sliced by session and is only used when it covers the request.
-        intraday_play = _session_window(five, trading_days, warmup_bars)
-        if intraday_play:
-            rows = five
-            play = intraday_play
-            source_name = "alpaca_5min"
-            timeframe = "5Min"
-            note = (
-                "Scalping and grid replay real 5-minute Alpaca bars resampled from 1-minute bars. "
-                "No prices were interpolated."
+    source_name = "alpaca_daily_bars"
+    # The scored window and the indicator warmup both come out of this fetch,
+    # and the candle charts still want a year of sessions behind them.
+    daily_limit = min(max(MAX_TRADING_DAYS, trading_days + warmup_bars), MAX_BARS)
+    for sym in symbols:
+        daily = _safe_historical_bars(platform, sym, "1Day", daily_limit, feed_name)
+        rows = daily
+        sym_source = "alpaca_daily_bars"
+        # Daily bars are one per session, so the window is a bar count.
+        play = rows[-(trading_days + warmup_bars):]
+        if intraday and sym == chart_symbol:
+            minutes = _safe_historical_bars(platform, sym, "1Min", MAX_BARS, feed_name)
+            five = _resample_minutes(minutes, 5) if minutes else []
+            # trading_days counts sessions, not 5-minute bars, so the intraday tape
+            # is sliced by session and is only used when it covers the request.
+            intraday_play = _session_window(five, trading_days, warmup_bars)
+            if intraday_play:
+                rows = five
+                play = intraday_play
+                sym_source = "alpaca_5min"
+                source_name = "alpaca_5min"
+                timeframe = "5Min"
+                note = (
+                    "Scalping and grid replay real 5-minute Alpaca bars resampled from 1-minute bars. "
+                    "No prices were interpolated."
+                )
+            elif daily:
+                note = (
+                    "Intraday Alpaca bars were too short for this strategy, so the replay used "
+                    "real daily bars. No prices were invented."
+                )
+        if not rows:
+            last = getattr(platform, "_last_data_error", None)
+            detail = f" {last}" if last else " The feed returned no bars."
+            raise ValueError(f"No Alpaca bars for {sym}.{detail} No prices were invented.")
+        if sym == chart_symbol:
+            chart_history = _daily_ohlc(daily or rows)
+        if len(play) < 20:
+            raise ValueError(
+                f"{sym} returned {len(play)} Alpaca bars. "
+                "A strategy replay needs at least 20. No prices were invented."
             )
-        elif daily:
-            note = (
-                "Intraday Alpaca bars were too short for this strategy, so the replay used "
-                "real daily bars. No prices were invented."
-            )
-    if not rows:
-        last = getattr(platform, "_last_data_error", None)
-        detail = f" {last}" if last else " The feed returned no bars."
-        raise ValueError(f"No Alpaca bars for {sym}.{detail} No prices were invented.")
-    history = _daily_ohlc(daily or rows)
-    if len(play) < 20:
-        raise ValueError(
-            f"{sym} returned {len(play)} Alpaca bars. "
-            "A strategy replay needs at least 20. No prices were invented."
-        )
+        plays[sym] = play
+        sources[sym] = sym_source
     meta = {
         "tape_trades_per_day": {},
         "truncated_days": [],
