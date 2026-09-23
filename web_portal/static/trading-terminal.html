@@ -311,6 +311,13 @@
                         <option value="same_close">Same close (optimistic)</option>
                     </select>
                 </div>
+                <div><label style="color:var(--muted);font-size:14px;display:block;">Focus</label>
+                    <select id="apBtFocus" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;font-size:16px;font-family:inherit;border-radius:3px;">
+                        <option value="symbol">Symbols as typed</option>
+                        <option value="gold">Gold (GLD)</option>
+                        <option value="hedged">Hedged mix</option>
+                    </select>
+                </div>
                 <div><label style="color:var(--muted);font-size:14px;display:block;">Days</label>
                     <input type="number" id="apBtDays" value="252" min="30" max="2000" style="background:var(--bg);border:1px solid var(--border);color:var(--gold);padding:6px 10px;font-size:16px;width:90px;font-family:inherit;border-radius:3px;">
                 </div>
@@ -2038,7 +2045,8 @@ function renderBacktest(d) {
     let html = '<div style="color:var(--muted);margin-bottom:4px;">' +
         apEscape(d.mode) + ' · ' + apEscape(d.fill_model) + bias +
         ' · orders submitted: 0</div>';
-    if (risk) html += '<div style="color:var(--text);margin-bottom:4px;">' + risk + '</div>';
+        if (risk) html += '<div style="color:var(--text);margin-bottom:4px;">' + risk + '</div>';
+        if (d.focus_note) html += '<div style="color:var(--text);margin-bottom:4px;">' + apEscape(d.focus_note) + '</div>';
     if (Array.isArray(d.ranking)) {
         html += '<table class="scanner-table"><thead><tr><th>#</th><th>Strategy</th><th>Return</th><th>Sharpe</th><th>Max DD</th><th>Trades</th></tr></thead><tbody>';
         d.ranking.forEach(row => {
@@ -2082,6 +2090,7 @@ async function runAutoPilotBacktest() {
         source: 'autopilot',
         mode: mode,
         strategy: $('apStrategy').value,
+        focus: $('apBtFocus') ? $('apBtFocus').value : 'symbol',
         symbols: symbols,
         fill_model: $('apBtFill').value,
         days: parseInt($('apBtDays').value, 10) || 252,
