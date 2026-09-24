@@ -5645,9 +5645,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           <td>${fmtCurrency(row.ibnr_provision)}</td>
           <td>${fmtCurrency(row.ifrs17?.bel_balance || 0)}</td>
           <td>${fmtCurrency(row.ifrs17?.risk_adjustment || 0)}</td>
-          <td>${fmtCurrency(row.ifrs17?.csm_release || 0)}</td>
+          <td>${fmtCurrency(row.ifrs17?.csm_net_change || 0)}</td>
           <td>${fmtCurrency(row.ifrs17?.csm_balance || 0)}</td>
-          <td>${fmtCurrency(row.savings_fund?.contribution || 0)}</td>
+          <td>${fmtCurrency(row.savings_fund?.net_change || 0)}</td>
           <td>${fmtCurrency(row.savings_fund?.closing_balance || 0)}</td>
         </tr>
       `).join('');
@@ -5683,6 +5683,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         </div>
 
         <h4 style="margin-top:16px;">Annual Reserve &amp; IFRS 17 Waterfall</h4>
+        <p style="color:var(--text-light);">
+          Op Profit = Tax + After-tax. After-tax = Dividends + retained. Reserve Δ = retained × contribution %; the rest is undistributed earnings.
+          BEL<sub>y</sub> = BEL<sub>y−1</sub> × (1+i) − Claims. RA = RA % × BEL. CSM Δ is the net movement (accretion − release), so CSM<sub>y</sub> = CSM<sub>y−1</sub> + CSM Δ.
+          Savings Δ is the net fund movement (contribution + yield − fee), so Savings Closing = prior closing + Savings Δ.
+          Discount i = ${((projection.discount_rate || 0) * 100).toFixed(2)}%. Coverage = ${projection.coverage_years || projection.avg_term_years || ''} years.
+          Opening CSM ${fmtCurrency(projection.opening_balances?.csm || 0)}; loss component at initial recognition ${fmtCurrency(projection.opening_balances?.loss_component || 0)} (IFRS 17.47 when premiums do not cover the fulfilment cash flows).
+        </p>
         <table class="data-table">
           <thead>
             <tr>
@@ -5721,7 +5728,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             <h4 style="margin-top:16px;">IFRS 17 CSM Reconciliation</h4>
             <p style="color:var(--text-light);">
               Release pattern: <strong>${rec.pattern}</strong> · Opening CSM: <strong>${fmtCurrency(rec.opening_csm)}</strong> · Projection: <strong>${rec.projection_years}</strong> yrs.
-              Each year the closing balance equals the prior balance minus the year's release, and equivalently the opening minus the cumulative release. The sum of releases plus the closing balance reconciles back to the opening CSM.
+              Each year the closing balance equals the prior balance plus accretion at the locked-in rate, minus the coverage release (IFRS 17.44). Opening + Σ accretion − Σ release equals the closing CSM.
             </p>
             <table class="data-table">
               <thead>
