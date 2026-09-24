@@ -3849,22 +3849,20 @@ class ReserveCalculator:
         projection_years = config.projection_years
         avg_term = max(1.0, avg_term or projection_years)
 
+        # Locked-in rate for CSM accretion and BEL unwind (IFRS 17.44 / B72).
+        # The projection has one rate: the pricing-kernel discount rate.
+        # Current and locked-in are the same, so there is no OCI split.
+        discount_rate = float(
+            (simulation.get('pricing_kernel') or {}).get('discount_rate')
+            or getattr(self.tables.config, 'discount_rate', 0.035)
+            or 0.035
+        )
+        discount_rate = max(-0.5, min(0.5, discount_rate))
+        # Coverage ends at the average policy term, even when the
+        # forecast window is longer or shorter.
+        coverage_years = max(1, int(round(avg_term)))
+
         opening_reserve = config.initial_reserve
-        opening_bel = total_pv_claims  # IFRS 17 Best Estimate Liability seeded with PV claims
-        opening_ra = opening_bel * config.risk_adjustment_pct
-        # IFRS 17 CSM at initial recognition is the unearned profit baked
-        # into the contract: PV of future net profit, less the risk
-        # adjustment that has not yet been earned. The simulator's
-        # ``net_profit`` is the annual flow of profit after claims, so
-        # multiplying by the average term and netting off the opening
-        # risk adjustment gives a deterministic seed that grows with the
-        # profitability of the priced portfolio. The previous seed
-        # (``total_risk_premium × avg_term − BEL − RA``) collapsed to ≤ 0
-        # by construction because the simulator prices ``risk_premium =
-        # PV_claims / term`` and never recognised loading or profit
-        # margin in the CSM, leaving the dashboard's IFRS17 CSM column
-        # stuck at zero with nothing to reconcile.
-        opening_csm = max(0.0, sim_net_profit * avg_term - opening_ra)
         opening_savings = float(config.initial_savings_fund_balance or 0.0)
 
         yearly: List[Dict[str, Any]] = []
@@ -3876,20 +3874,54 @@ class ReserveCalculator:
         cumulative_savings_yield = 0.0
         cumulative_management_fee_income = 0.0
 
-        # Precompute cumulative in-force factors as product of survival rates
+        # In-force survival through the longer of the forecast and the
+        # coverage term, so a 5-year window on a 10-year book still
+        # discounts the unexpired tail.
+        horizon = max(projection_years, coverage_years)
         in_force_factors = [1.0]
-        for y in range(1, projection_years + 1):
+        for y in range(1, horizon + 1):
             lr = self.tables.get_lapse_rate(y)
             in_force_factors.append(in_force_factors[-1] * max(0.0, 1.0 - lr))
 
+        annuity = 0.0
+        for t in range(1, coverage_years + 1):
+            annuity += in_force_factors[t - 1] / ((1.0 + discount_rate) ** t)
+        annuity = annuity or 1.0
+        # Nominal claims whose discounted, lapse-weighted PV equals the
+        # kernel's PV of claims. Annualising as PV/term does not unwind
+        # a present value.
+        nominal_claims_level = total_pv_claims / annuity
+        # Savings premium is the investment component (IFRS 17.B31). It
+        # is measured in the savings fund, not in fulfilment cash flows.
+        insurance_premium_annual = max(0.0, annual_premium - savings_premium)
+        pv_insurance_premiums = insurance_premium_annual * annuity
+        opening_bel = total_pv_claims
+        opening_ra = opening_bel * config.risk_adjustment_pct
+        # IFRS 17.38 initial recognition: CSM = max(0, −fulfilment cash flows).
+        fulfilment_net = pv_insurance_premiums - opening_bel - opening_ra
+        opening_csm = max(0.0, fulfilment_net)
+        loss_component_initial = max(0.0, -fulfilment_net)
+
         cumulative_csm_release = 0.0
-        total_coverage_units = sum(in_force_factors[y - 1] for y in range(1, projection_years + 1)) or 1.0
+        cumulative_csm_accretion = 0.0
+        total_coverage_units = sum(
+            in_force_factors[t - 1] for t in range(1, coverage_years + 1)
+        ) or 1.0
+        bel_running = opening_bel
+        csm_running = opening_csm
 
         for year_index in range(1, projection_years + 1):
-            lapse_rate = self.tables.get_lapse_rate(year_index)
-            in_force_factor = in_force_factors[year_index - 1]
+            # Contracts mature at the coverage term. Later forecast years
+            # have no insurance cash flows left to project.
+            if year_index <= coverage_years:
+                lapse_rate = self.tables.get_lapse_rate(year_index)
+                in_force_factor = in_force_factors[year_index - 1]
+                in_force_claims = nominal_claims_level * in_force_factor
+            else:
+                lapse_rate = 0.0
+                in_force_factor = 0.0
+                in_force_claims = 0.0
             in_force_premium = annual_premium * in_force_factor
-            in_force_claims = annual_expected_claims * in_force_factor
 
             # Profit waterfall:
             operating_profit = sim_net_profit * in_force_factor
@@ -3918,24 +3950,53 @@ class ReserveCalculator:
             ibnr = ibnr_provision(in_force_claims, config.ibnr_pct,
                                   expected_claims_source='in_force_expected_claims')['ibnr']
 
-            # IFRS 17 release: CSM amortized over remaining coverage units;
-            # BEL and RA wind down proportionally to in-force decay.
-            if config.csm_release_pattern == 'coverage_units':
-                csm_release = (opening_csm * in_force_factor) / total_coverage_units
-            else:
-                csm_release = opening_csm / projection_years if projection_years else 0.0
-            csm_release = min(opening_csm - cumulative_csm_release, csm_release)
-
-            bel_balance = opening_bel * max(0.0, 1.0 - (year_index / avg_term))
+            # IFRS 17 GMM roll-forward (paras 40–44, B96–B119).
+            # BEL_close = BEL_open × (1+i) − expected claims.
+            # RA is the percentage-of-BEL practical expedient (B91), so it
+            # moves with the BEL: RA_close = RA_open × (1+i) − RA release.
+            # CSM accretes at the locked-in rate, then releases by coverage
+            # units still to be provided (straight line = one unit per
+            # remaining coverage year).
+            bel_opening_year = bel_running
+            bel_interest = bel_opening_year * discount_rate
+            bel_balance = bel_opening_year + bel_interest - in_force_claims
+            if abs(bel_balance) < 0.01:
+                bel_balance = 0.0
+            ra_opening_year = bel_opening_year * config.risk_adjustment_pct
             ra_balance = bel_balance * config.risk_adjustment_pct
-            csm_opening_year = max(0.0, opening_csm - cumulative_csm_release)
+            ra_interest = ra_opening_year * discount_rate
+            ra_release = ra_opening_year + ra_interest - ra_balance
+
+            csm_opening_year = csm_running
+            if year_index <= coverage_years and csm_opening_year > 1e-9:
+                csm_accretion = csm_opening_year * discount_rate
+                csm_after_accretion = csm_opening_year + csm_accretion
+                if config.csm_release_pattern == 'coverage_units':
+                    remaining_units = sum(
+                        in_force_factors[t - 1]
+                        for t in range(year_index, coverage_years + 1)
+                    )
+                    current_units = in_force_factors[year_index - 1]
+                    csm_share_basis = (
+                        current_units / remaining_units if remaining_units > 1e-12 else 1.0
+                    )
+                else:
+                    years_left = max(1, coverage_years - year_index + 1)
+                    csm_share_basis = 1.0 / years_left
+                csm_release = min(csm_after_accretion, csm_after_accretion * csm_share_basis)
+                csm_balance = max(0.0, csm_after_accretion - csm_release)
+            else:
+                csm_accretion = 0.0
+                csm_release = 0.0
+                csm_share_basis = 0.0
+                csm_balance = 0.0 if year_index > coverage_years else csm_opening_year
+            csm_net_change = csm_balance - csm_opening_year
             cumulative_csm_release += csm_release
-            csm_balance = max(0.0, opening_csm - cumulative_csm_release)
-            # Coverage-units share for this year — informational, also used in
-            # the per-year identity check ``coverage_units_share_check``.
-            csm_share_basis = (
-                (in_force_factor / total_coverage_units) if total_coverage_units > 0 else 0.0
-            )
+            cumulative_csm_accretion += csm_accretion
+            bel_running = bel_balance
+            csm_running = csm_balance
+            # LRC (BEL + RA + CSM) plus LIC (IBNR). IBNR is incurred-but-not
+            # paid and is not inside the remaining-coverage BEL.
             ifrs17_total_liability = bel_balance + ra_balance + csm_balance + ibnr
 
             closing_reserve = opening_reserve + reserve_contribution
@@ -3967,9 +4028,16 @@ class ReserveCalculator:
                 'closing_reserve': round(closing_reserve, 2),
                 'ibnr_provision': round(ibnr, 2),
                 'ifrs17': {
+                    'bel_opening': round(bel_opening_year, 2),
+                    'bel_interest': round(bel_interest, 2),
                     'bel_balance': round(bel_balance, 2),
+                    'risk_adjustment_opening': round(ra_opening_year, 2),
+                    'risk_adjustment_interest': round(ra_interest, 2),
+                    'risk_adjustment_release': round(ra_release, 2),
                     'risk_adjustment': round(ra_balance, 2),
                     'csm_release': round(csm_release, 2),
+                    'csm_accretion': round(csm_accretion, 2),
+                    'csm_net_change': round(csm_net_change, 2),
                     'csm_balance': round(csm_balance, 2),
                     'csm_opening_year': round(csm_opening_year, 2),
                     'csm_cumulative_release': round(cumulative_csm_release, 2),
@@ -3985,8 +4053,10 @@ class ReserveCalculator:
                     'yield': round(savings_yield_amount, 2),
                     'gross_closing_aum_before_fee': round(gross_closing_aum, 2),
                     'management_fee_income': round(management_fee_income, 2),
+                    'net_change': round(closing_savings - opening_savings_before, 2),
                     'closing_balance': round(closing_savings, 2),
                 },
+                'undistributed_earnings': round(retained - reserve_contribution, 2),
             })
 
             opening_reserve = closing_reserve
@@ -4044,10 +4114,12 @@ class ReserveCalculator:
         # and external auditors can verify every IFRS17 CSM Δ + IFRS17 CSM
         # figure reconciles back to the opening CSM.
         sum_of_releases = sum(row['ifrs17']['csm_release'] for row in yearly)
+        sum_of_accretion = sum(row['ifrs17']['csm_accretion'] for row in yearly)
         closing_csm = yearly[-1]['ifrs17']['csm_balance'] if yearly else round(opening_csm, 2)
         csm_yearly: List[Dict[str, Any]] = []
         prev_balance = round(opening_csm, 2)
         cumulative_release_running = 0.0
+        cumulative_accretion_running = 0.0
         all_continuity_pass = True
         all_cumulative_form_pass = True
         all_release_non_negative = True
@@ -4056,25 +4128,27 @@ class ReserveCalculator:
         for row in yearly:
             ifrs = row['ifrs17']
             release = float(ifrs['csm_release'])
+            accretion = float(ifrs['csm_accretion'])
             balance = float(ifrs['csm_balance'])
             cumulative_release_running += release
-            # Identity 1: balance_y = balance_{y-1} − release_y
-            expected_from_prev = max(0.0, prev_balance - release)
+            cumulative_accretion_running += accretion
+            # IFRS 17.44: close = open × (1+i) − release
+            # which is open + accretion − release.
+            expected_from_prev = max(0.0, prev_balance + accretion - release)
             continuity_check = abs(expected_from_prev - balance) < 1.0
-            # Identity 2: balance_y = opening_csm − Σ release_{1..y}
-            expected_cumulative = max(0.0, opening_csm - cumulative_release_running)
+            expected_cumulative = max(
+                0.0, opening_csm + cumulative_accretion_running - cumulative_release_running
+            )
             cumulative_check = abs(expected_cumulative - balance) < 1.0
-            # Identity 3 (coverage_units pattern only): release_y / opening_csm
-            # equals the in-force factor share of total coverage units.
             cu_check = True
-            cu_expected_release = release  # informational default
+            cu_expected_release = release
             if (
                 config.csm_release_pattern == 'coverage_units'
-                and opening_csm > 1e-6
-                and balance > 1e-6  # not at the clamp boundary
+                and (prev_balance + accretion) > 1e-6
+                and balance > 1e-6
             ):
                 expected_share = float(ifrs.get('csm_share_of_coverage_units', 0.0))
-                cu_expected_release = opening_csm * expected_share
+                cu_expected_release = (prev_balance + accretion) * expected_share
                 cu_check = abs(release - cu_expected_release) < 1.0
             if not continuity_check:
                 all_continuity_pass = False
@@ -4090,8 +4164,11 @@ class ReserveCalculator:
                 'year': row['year'],
                 'in_force_factor': row['in_force_factor'],
                 'opening_balance': round(prev_balance, 2),
+                'accretion': round(accretion, 2),
                 'release': round(release, 2),
+                'net_change': round(balance - prev_balance, 2),
                 'cumulative_release': round(cumulative_release_running, 2),
+                'cumulative_accretion': round(cumulative_accretion_running, 2),
                 'closing_balance': round(balance, 2),
                 'coverage_units_share': round(
                     float(ifrs.get('csm_share_of_coverage_units', 0.0)), 6
@@ -4109,26 +4186,36 @@ class ReserveCalculator:
         # if the projection horizon fully amortises the CSM. When it is
         # shorter than the average term, releases sum to less than the
         # opening — capture both views explicitly.
-        unreleased_portion = max(0.0, opening_csm - sum_of_releases)
-        sum_releases_check = abs(opening_csm - sum_of_releases - closing_csm) < 1.0
+        unreleased_portion = max(0.0, opening_csm + sum_of_accretion - sum_of_releases)
+        sum_releases_check = abs(
+            opening_csm + sum_of_accretion - sum_of_releases - closing_csm
+        ) < 1.0
 
-        # Straight-line specific: each year release should equal opening / N
+        # Straight line: release = carrying amount after accretion ÷ years
+        # of coverage still remaining (not ÷ the forecast window).
         straight_line_uniform_check = True
-        if config.csm_release_pattern == 'straight_line' and projection_years > 0 and opening_csm > 0:
-            expected_release = opening_csm / projection_years
-            straight_line_uniform_check = all(
-                abs(r['release'] - expected_release) < 1.0
-                or r['closing_balance'] < 1.0  # clamp boundary
-                for r in csm_yearly
-            )
+        if config.csm_release_pattern == 'straight_line' and opening_csm > 0:
+            for r in csm_yearly:
+                year_n = int(r['year'])
+                if year_n > coverage_years:
+                    straight_line_uniform_check = straight_line_uniform_check and abs(r['release']) < 1.0
+                    continue
+                years_left = max(1, coverage_years - year_n + 1)
+                expected_release = (r['opening_balance'] + r['accretion']) / years_left
+                if abs(r['release'] - expected_release) >= 1.0 and r['closing_balance'] >= 1.0:
+                    straight_line_uniform_check = False
 
         csm_reconciliation = {
             'pattern': config.csm_release_pattern,
             'opening_csm': round(opening_csm, 2),
+            'loss_component_at_initial_recognition': round(loss_component_initial, 2),
+            'discount_rate': round(discount_rate, 6),
+            'coverage_years': coverage_years,
             'projection_years': projection_years,
             'yearly': csm_yearly,
             'totals': {
                 'sum_of_releases': round(sum_of_releases, 2),
+                'sum_of_accretion': round(sum_of_accretion, 2),
                 'unreleased_portion': round(unreleased_portion, 2),
                 'closing_csm': round(closing_csm, 2),
                 'average_annual_release': round(
@@ -4152,25 +4239,34 @@ class ReserveCalculator:
             },
             'identities': {
                 'per_year': {
-                    'formula': 'csm_balance_y = csm_balance_{y-1} − csm_release_y',
-                    'alt_formula': 'csm_balance_y = opening_csm − Σ_{i=1..y} csm_release_i',
+                    'formula': 'csm_balance_y = csm_balance_{y-1} × (1+i) − csm_release_y',
+                    'alt_formula': 'csm_balance_y = opening_csm + Σ accretion − Σ release',
                 },
                 'sum_of_releases': {
-                    'formula': 'Σ csm_release_y + closing_csm = opening_csm',
-                    'computed': round(sum_of_releases + closing_csm, 2),
-                    'expected': round(opening_csm, 2),
-                    'delta': round((sum_of_releases + closing_csm) - opening_csm, 2),
+                    'formula': 'opening_csm + Σ accretion − Σ release = closing_csm',
+                    'computed': round(opening_csm + sum_of_accretion - sum_of_releases, 2),
+                    'expected': round(closing_csm, 2),
+                    'delta': round(
+                        (opening_csm + sum_of_accretion - sum_of_releases) - closing_csm, 2
+                    ),
                 },
                 'straight_line_pattern': {
-                    'formula': 'release_y = opening_csm / projection_years',
+                    'formula': 'release_y = (csm_open_y × (1+i)) / years_of_coverage_remaining',
                     'expected_release': round(
-                        opening_csm / projection_years if projection_years > 0 else 0.0, 2
+                        (opening_csm * (1.0 + discount_rate)) / coverage_years, 2
                     ),
                     'applies': config.csm_release_pattern == 'straight_line',
                 },
                 'coverage_units_pattern': {
-                    'formula': 'release_y = opening_csm × in_force_factor_y / Σ in_force_factor',
+                    'formula': 'release_y = (csm_open_y × (1+i)) × in_force_y / Σ_{t≥y} in_force_t',
                     'applies': config.csm_release_pattern == 'coverage_units',
+                },
+                'bel': {
+                    'formula': 'bel_y = bel_{y-1} × (1+i) − expected_claims_y',
+                },
+                'risk_adjustment': {
+                    'method': 'percentage_of_bel',
+                    'formula': 'ra_y = risk_adjustment_pct × bel_y',
                 },
             },
         }
@@ -4179,6 +4275,8 @@ class ReserveCalculator:
             'simulation_id': simulation.get('simulation_id'),
             'projection_years': projection_years,
             'avg_term_years': round(avg_term, 2),
+            'coverage_years': coverage_years,
+            'discount_rate': round(discount_rate, 6),
             'config': asdict(config),
             'ibnr_basis': {
                 'basis': IBNR_BASIS_SHARE_OF_EXPECTED_CLAIMS,
@@ -4193,6 +4291,8 @@ class ReserveCalculator:
                 'bel': round(opening_bel, 2),
                 'risk_adjustment': round(opening_ra, 2),
                 'csm': round(opening_csm, 2),
+                'loss_component': round(loss_component_initial, 2),
+                'pv_insurance_premiums': round(pv_insurance_premiums, 2),
                 'savings_fund': round(config.initial_savings_fund_balance, 2),
             },
             'savings_allocation': savings_allocation,
@@ -4245,11 +4345,70 @@ class ReserveCalculator:
                 'csm_per_year_continuity_holds': csm_reconciliation['data_integrity']['per_year_continuity_pass'],
                 'csm_sum_reconciles_to_opening': csm_reconciliation['data_integrity']['sum_of_releases_plus_closing_equals_opening'],
                 'csm_release_non_negative': csm_reconciliation['data_integrity']['release_non_negative'],
+                # BEL_y = BEL_{y-1} × (1+i) − claims_y
+                'bel_rollforward_holds': all(
+                    abs(
+                        row['ifrs17']['bel_balance']
+                        - (
+                            row['ifrs17']['bel_opening']
+                            + row['ifrs17']['bel_interest']
+                            - row['in_force_expected_claims']
+                        )
+                    ) < 1.0
+                    for row in yearly
+                ),
+                # IFRS 17.B91 percentage-of-BEL risk adjustment.
+                'ra_equals_pct_of_bel': all(
+                    abs(
+                        row['ifrs17']['risk_adjustment']
+                        - row['ifrs17']['bel_balance'] * config.risk_adjustment_pct
+                    ) < 1.0
+                    for row in yearly
+                ),
+                # Reserve Δ = (after-tax − dividends) × contribution %.
+                # The complement is undistributed earnings, not a missing reserve.
+                'reserve_delta_equals_retained_share': all(
+                    abs(
+                        row['reserve_contribution']
+                        - row['retained_earnings'] * config.reserve_contribution_pct
+                    ) < 1.0
+                    for row in yearly
+                ),
+                'undistributed_earnings_explain_reserve_gap': all(
+                    abs(
+                        (row['after_tax_profit'] - row['dividends'] - row['reserve_contribution'])
+                        - row['undistributed_earnings']
+                    ) < 1.0
+                    for row in yearly
+                ),
+                # Savings Δ on the waterfall is the net fund movement.
+                'savings_net_change_rolls_forward': all(
+                    abs(
+                        row['savings_fund']['closing_balance']
+                        - (
+                            row['savings_fund']['opening_balance']
+                            + row['savings_fund']['net_change']
+                        )
+                    ) < 1.0
+                    for row in yearly
+                ),
+                'ibnr_equals_pct_of_claims': all(
+                    abs(
+                        row['ibnr_provision']
+                        - row['in_force_expected_claims'] * config.ibnr_pct
+                    ) < 1.0
+                    for row in yearly
+                ),
             },
             'ifrs17_methodology': {
                 'measurement_model': 'general_measurement_model',
-                'risk_adjustment_method': 'cost_of_capital_proxy_via_pct_of_bel',
+                'discount_rate': round(discount_rate, 6),
+                'coverage_years': coverage_years,
+                'risk_adjustment_method': 'percentage_of_bel',
                 'csm_release_pattern': config.csm_release_pattern,
+                'investment_component': 'savings_premium_measured_in_savings_fund',
+                'csm_initial_recognition': 'max(0, pv_insurance_premiums - pv_claims - ra)',
+                'bel_rollforward': 'bel_close = bel_open * (1+i) - expected_claims',
             },
             'ibnr_methodology': {
                 'method': 'incurred_claims_pct',

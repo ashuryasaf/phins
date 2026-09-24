@@ -145,6 +145,35 @@ def test_reserve_calculator_waterfall_consistency():
     assert projection['data_integrity']['profit_waterfall_consistent']
     assert projection['data_integrity']['csm_non_negative']
     assert projection['data_integrity']['savings_balance_non_negative']
+    for flag in (
+        'bel_rollforward_holds',
+        'ra_equals_pct_of_bel',
+        'reserve_delta_equals_retained_share',
+        'undistributed_earnings_explain_reserve_gap',
+        'savings_net_change_rolls_forward',
+        'ibnr_equals_pct_of_claims',
+        'csm_per_year_continuity_holds',
+        'csm_sum_reconciles_to_opening',
+    ):
+        assert projection['data_integrity'][flag] is True, flag
+
+    # Closing reserve is the running sum of Reserve Δ, and the CSM column
+    # moves by the net change (accretion − release), not by a linear runoff.
+    running_reserve = cfg.initial_reserve
+    running_csm = projection['opening_balances']['csm']
+    running_savings = cfg.initial_savings_fund_balance
+    for row in yearly:
+        running_reserve = round(running_reserve + row['reserve_contribution'], 2)
+        assert abs(running_reserve - row['closing_reserve']) < 1.0
+        running_csm = round(running_csm + row['ifrs17']['csm_net_change'], 2)
+        assert abs(running_csm - row['ifrs17']['csm_balance']) < 1.0
+        running_savings = round(running_savings + row['savings_fund']['net_change'], 2)
+        assert abs(running_savings - row['savings_fund']['closing_balance']) < 1.0
+        assert abs(
+            row['ifrs17']['bel_opening'] * (1.0 + projection['discount_rate'])
+            - row['in_force_expected_claims']
+            - row['ifrs17']['bel_balance']
+        ) < 1.0
 
 
 def test_reserve_calculator_zero_savings_disables_growth():

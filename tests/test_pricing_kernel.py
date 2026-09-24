@@ -461,11 +461,20 @@ def test_ifrs17_csm_reconciliation_adds_up_under_both_release_patterns():
         })
         proj = get_reserve_calculator().project(sim, cfg)
         rec = proj['csm_reconciliation']
-        # Sanity: the seeded CSM must be > 0 for a profitable simulation
-        assert rec['opening_csm'] > 0
-        # Identity: Σ release + closing = opening (to within rounding)
-        recon_total = rec['totals']['sum_of_releases'] + rec['totals']['closing_csm']
-        assert abs(recon_total - rec['opening_csm']) < 1.0, (pattern, rec)
+        # A profitable pricing margin can still be onerous under IFRS 17.38
+        # when the level premium is PV(claims)/term rather than an annuity.
+        # Then CSM is zero and the shortfall sits in the loss component.
+        assert (
+            rec['opening_csm'] > 0
+            or rec['loss_component_at_initial_recognition'] > 0
+        )
+        # IFRS 17.44: opening + accretion − releases = closing
+        recon_total = (
+            rec['opening_csm']
+            + rec['totals']['sum_of_accretion']
+            - rec['totals']['sum_of_releases']
+        )
+        assert abs(recon_total - rec['totals']['closing_csm']) < 1.0, (pattern, rec)
         # Every per-year identity must pass
         for r in rec['yearly']:
             checks = r['identity_checks']
@@ -483,7 +492,7 @@ def test_ifrs17_csm_reconciliation_adds_up_under_both_release_patterns():
 
 
 def test_csm_straight_line_release_is_uniform():
-    """Under straight-line, each annual release equals opening / N."""
+    """Straight-line releases the accreted CSM over coverage years still left."""
     from services.actuarial_service import (
         _coerce_reserve_config, get_reserve_calculator,
     )
@@ -500,8 +509,11 @@ def test_csm_straight_line_release_is_uniform():
     })
     proj = get_reserve_calculator().project(sim, cfg)
     rec = proj['csm_reconciliation']
-    expected = rec['opening_csm'] / 6
+    coverage_years = rec['coverage_years']
+    rate = rec['discount_rate']
     for row in rec['yearly']:
+        years_left = max(1, coverage_years - row['year'] + 1)
+        expected = (row['opening_balance'] * (1.0 + rate)) / years_left
         assert abs(row['release'] - expected) < 1.0, row
     assert rec['data_integrity']['straight_line_release_uniform']
 
