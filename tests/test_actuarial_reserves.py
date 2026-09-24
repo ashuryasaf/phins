@@ -152,6 +152,8 @@ def test_reserve_calculator_waterfall_consistency():
         'undistributed_earnings_explain_reserve_gap',
         'savings_net_change_rolls_forward',
         'ibnr_equals_pct_of_claims',
+        'operating_profit_bridge_holds',
+        'loss_component_rolls_forward',
         'csm_per_year_continuity_holds',
         'csm_sum_reconciles_to_opening',
     ):
