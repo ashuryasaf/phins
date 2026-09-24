@@ -1807,6 +1807,254 @@ class AutomationMetrics:
 # PORTFOLIO SIMULATION ENGINE
 # =============================================================================
 
+# Age bands used by the portfolio simulator. Labels match
+# PortfolioSimulator._get_age_bracket so the acceptance matrix reconciles
+# with demographics.age_distribution.
+AGE_ADL_BANDS: Tuple[Tuple[str, int, int], ...] = (
+    ('0-9', 0, 9),
+    ('10-19', 10, 19),
+    ('20-29', 20, 29),
+    ('30-39', 30, 39),
+    ('40-49', 40, 49),
+    ('50-59', 50, 59),
+    ('60+', 60, 200),
+)
+_AGE_BAND_BOUNDS = {label: (lo, hi) for label, lo, hi in AGE_ADL_BANDS}
+
+
+def _std_normal_cdf(z: float) -> float:
+    return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
+
+
+def _normal_bin_count(age: int, mean: float, std: float, n: int) -> float:
+    """Expected count in the one-year bin centered on ``age``.
+
+    Uses the continuity-corrected bin [age-0.5, age+0.5) so the curve is
+    the normal description of the integer histogram, not a point density.
+    """
+    if n <= 0 or std <= 0:
+        return 0.0
+    lo = (age - 0.5 - mean) / std
+    hi = (age + 0.5 - mean) / std
+    return n * (_std_normal_cdf(hi) - _std_normal_cdf(lo))
+
+
+def finalize_age_adl_matrix(
+    cells: Dict[Tuple[str, int], Dict[str, int]],
+    age_hist: Dict[int, Dict[str, int]],
+    *,
+    requested_customers: int,
+    accepted_customers: int,
+    declined_count: int,
+    decline_threshold: int,
+    age_distribution_accepted: Dict[str, int],
+    adl_distribution_accepted: Dict[Any, int],
+    age_distribution: str,
+    age_mean: float,
+    age_std: float,
+    age_min: int,
+    age_max: int,
+) -> Dict[str, Any]:
+    """Turn per-applicant tallies into the age × ADL acceptance matrix.
+
+    Every published total is a sum of the same cells the table shows.
+    ``integrity.all_checks_pass`` is false if any of those sums disagree
+    with the portfolio summary, the decline counter, or the accepted-only
+    demographic tables.
+    """
+    adl_levels = list(range(1, 11))
+    by_band: List[Dict[str, Any]] = []
+    rejected_rows: List[Dict[str, Any]] = []
+    sum_applied = sum_accepted = sum_rejected = 0
+    accepted_by_band: Dict[str, int] = {}
+    accepted_by_adl: Dict[int, int] = {level: 0 for level in adl_levels}
+    cell_identity_ok = True
+
+    for label, lo, hi in AGE_ADL_BANDS:
+        by_adl: Dict[str, Dict[str, int]] = {}
+        band_applied = band_accepted = band_rejected = 0
+        for level in adl_levels:
+            raw = cells.get((label, level)) or {'applied': 0, 'accepted': 0, 'rejected': 0}
+            applied = int(raw.get('applied', 0))
+            accepted = int(raw.get('accepted', 0))
+            rejected = int(raw.get('rejected', 0))
+            if applied != accepted + rejected:
+                cell_identity_ok = False
+            by_adl[str(level)] = {
+                'applied': applied,
+                'accepted': accepted,
+                'rejected': rejected,
+            }
+            band_applied += applied
+            band_accepted += accepted
+            band_rejected += rejected
+            accepted_by_adl[level] += accepted
+            if rejected > 0:
+                rejected_rows.append({
+                    'age_band': label,
+                    'age_min': lo,
+                    'age_max': hi,
+                    'adl': level,
+                    'applied': applied,
+                    'accepted': accepted,
+                    'rejected': rejected,
+                    'reason': (
+                        f'ADL {level} meets or exceeds decline threshold {int(decline_threshold)}'
+                        if level >= int(decline_threshold)
+                        else f'ADL {level} declined'
+                    ),
+                })
+        if band_applied <= 0:
+            continue
+        sum_applied += band_applied
+        sum_accepted += band_accepted
+        sum_rejected += band_rejected
+        accepted_by_band[label] = band_accepted
+        by_band.append({
+            'age_band': label,
+            'age_min': lo,
+            'age_max': hi,
+            'label': f'Ages {label}',
+            'applied': band_applied,
+            'accepted': band_accepted,
+            'rejected': band_rejected,
+            'by_adl': by_adl,
+        })
+
+    rejected_rows.sort(key=lambda row: (row['age_min'], row['adl']))
+
+    histogram: List[Dict[str, int]] = []
+    hist_applied = hist_accepted = hist_rejected = 0
+    hist_identity_ok = True
+    weighted_age = 0.0
+    for age in sorted(age_hist):
+        raw = age_hist[age]
+        applied = int(raw.get('applied', 0))
+        accepted = int(raw.get('accepted', 0))
+        rejected = int(raw.get('rejected', 0))
+        if applied != accepted + rejected:
+            hist_identity_ok = False
+        hist_applied += applied
+        hist_accepted += accepted
+        hist_rejected += rejected
+        weighted_age += age * applied
+        histogram.append({
+            'age': int(age),
+            'applied': applied,
+            'accepted': accepted,
+            'rejected': rejected,
+        })
+
+    n = hist_applied
+    if n > 0:
+        sample_mean = weighted_age / n
+        var_num = sum(row['applied'] * (row['age'] - sample_mean) ** 2 for row in histogram)
+        sample_std = math.sqrt(var_num / (n - 1)) if n > 1 else 0.0
+        pop_std = math.sqrt(var_num / n) if n > 0 else 0.0
+        sample_min = histogram[0]['age']
+        sample_max = histogram[-1]['age']
+    else:
+        sample_mean = 0.0
+        sample_std = 0.0
+        pop_std = 0.0
+        sample_min = None
+        sample_max = None
+
+    curve_std = sample_std if sample_std > 0 else pop_std
+    normal_curve: List[Dict[str, Any]] = []
+    curve_mass = 0.0
+    if n > 0 and curve_std > 0:
+        for row in histogram:
+            expected = _normal_bin_count(row['age'], sample_mean, curve_std, n)
+            curve_mass += expected
+            normal_curve.append({
+                'age': row['age'],
+                'expected_count': round(expected, 4),
+            })
+
+    demo_age = {str(k): int(v) for k, v in (age_distribution_accepted or {}).items()}
+    demo_adl = {}
+    for key, value in (adl_distribution_accepted or {}).items():
+        try:
+            demo_adl[int(key)] = int(value)
+        except (TypeError, ValueError):
+            continue
+    age_demo_ok = all(
+        int(demo_age.get(label, 0)) == int(accepted_by_band.get(label, 0))
+        for label in set(demo_age) | set(accepted_by_band)
+    )
+    adl_demo_ok = all(
+        int(demo_adl.get(level, 0)) == int(accepted_by_adl.get(level, 0))
+        for level in set(demo_adl) | set(accepted_by_adl)
+    )
+
+    checks = {
+        'applied_equals_requested': sum_applied == int(requested_customers),
+        'accepted_plus_rejected_equals_applied': (
+            cell_identity_ok and sum_applied == sum_accepted + sum_rejected
+        ),
+        'accepted_matches_portfolio': sum_accepted == int(accepted_customers),
+        'rejected_matches_declined': sum_rejected == int(declined_count),
+        'histogram_matches_matrix': (
+            hist_identity_ok
+            and hist_applied == sum_applied
+            and hist_accepted == sum_accepted
+            and hist_rejected == sum_rejected
+        ),
+        'accepted_matches_age_distribution': age_demo_ok,
+        'accepted_matches_adl_distribution': adl_demo_ok,
+        'rejected_rows_sum_to_declined': sum(row['rejected'] for row in rejected_rows) == sum_rejected,
+    }
+    active_adls = [
+        level for level in adl_levels
+        if any(int(band['by_adl'][str(level)]['applied']) > 0 for band in by_band)
+    ]
+
+    return {
+        'decline_threshold': int(decline_threshold),
+        'adl_levels': active_adls,
+        'bands': by_band,
+        'rejected': rejected_rows,
+        'totals': {
+            'applied': sum_applied,
+            'accepted': sum_accepted,
+            'rejected': sum_rejected,
+        },
+        'distribution': {
+            'generating_model': str(age_distribution or 'normal'),
+            'parameters': {
+                'age_mean': float(age_mean),
+                'age_std': float(age_std),
+                'age_min': int(age_min),
+                'age_max': int(age_max),
+            },
+            'sample': {
+                'n': n,
+                'mean': round(sample_mean, 6),
+                'std': round(sample_std, 6),
+                'population_std': round(pop_std, 6),
+                'min': sample_min,
+                'max': sample_max,
+            },
+            'curve_basis': 'normal_fitted_to_sample_mean_and_sample_std',
+            'curve_note': (
+                'Each draw is taken from the selected age distribution and then '
+                'clamped to [age_min, age_max]. The bell is a normal curve fitted '
+                'to the ages actually produced in this run (sample mean and sample '
+                'standard deviation), scaled so each point is the expected count '
+                'in that one-year bin. It describes this run; it is not a second book of lives.'
+            ),
+            'histogram': histogram,
+            'normal_curve': normal_curve,
+            'curve_mass_on_plotted_ages': round(curve_mass, 4),
+        },
+        'integrity': {
+            'checks': checks,
+            'all_checks_pass': all(checks.values()),
+        },
+    }
+
+
 class PortfolioSimulator:
     """
     Generates simulated portfolios with realistic demographics.
@@ -1930,6 +2178,10 @@ class PortfolioSimulator:
             'coverage_total': 0,
             'reasons': {}
         }
+        # Age × ADL ledger for every applicant (accepted and declined).
+        # Demographics below stay accepted-only so existing consumers do not change.
+        age_adl_cells: Dict[Tuple[str, int], Dict[str, int]] = {}
+        age_hist: Dict[int, Dict[str, int]] = {}
         
         # Financial totals
         totals = {
@@ -1945,7 +2197,20 @@ class PortfolioSimulator:
         # Generate each customer
         for i in range(params.customer_count):
             customer = self._generate_customer(params)
-            
+            band = self._get_age_bracket(customer['age'])
+            adl_level = int(customer['adl'])
+            age_years = int(customer['age'])
+            cell = age_adl_cells.get((band, adl_level))
+            if cell is None:
+                cell = {'applied': 0, 'accepted': 0, 'rejected': 0}
+                age_adl_cells[(band, adl_level)] = cell
+            hist = age_hist.get(age_years)
+            if hist is None:
+                hist = {'applied': 0, 'accepted': 0, 'rejected': 0}
+                age_hist[age_years] = hist
+            cell['applied'] += 1
+            hist['applied'] += 1
+
             # Check underwriting
             uw_result = self._check_underwriting(customer)
             
@@ -1954,7 +2219,11 @@ class PortfolioSimulator:
                 declined['coverage_total'] += customer['coverage']
                 reason = uw_result['reason']
                 declined['reasons'][reason] = declined['reasons'].get(reason, 0) + 1
+                cell['rejected'] += 1
+                hist['rejected'] += 1
                 continue
+            cell['accepted'] += 1
+            hist['accepted'] += 1
             
             # Calculate premium using central tables
             premium = self._calculate_premium(customer, uw_result, params)
@@ -2114,7 +2383,22 @@ class PortfolioSimulator:
         
         # Build result
         duration = (datetime.now() - start_time).total_seconds()
-        
+        age_adl_matrix = finalize_age_adl_matrix(
+            age_adl_cells,
+            age_hist,
+            requested_customers=params.customer_count,
+            accepted_customers=accepted_count,
+            declined_count=declined['count'],
+            decline_threshold=int(self.tables.config.decline_threshold),
+            age_distribution_accepted=demographics['age_distribution'],
+            adl_distribution_accepted=demographics['adl_distribution'],
+            age_distribution=params.age_distribution,
+            age_mean=float(params.age_mean),
+            age_std=float(params.age_std),
+            age_min=int(params.age_min),
+            age_max=int(params.age_max),
+        )
+
         result = {
             'simulation_id': f"SIM-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
             'run_at': datetime.now().isoformat(),
@@ -2138,6 +2422,7 @@ class PortfolioSimulator:
             
             'demographics': demographics,
             'declined': declined,
+            'age_adl_matrix': age_adl_matrix,
             'risk_metrics': risk_metrics,
             'profitability': profitability,
             'automation': automation,
