@@ -113,6 +113,10 @@ DOCUMENTS = [
      'investor-docs/grove-vc-meeting-19aug-brief.pdf',
      'PHINS — Grove VC Investor Evening Brief (19 August 2026) · '
      'Public Presentation of PHINS hosted by Mr. Lotan Levkovitch'),
+    ('investor-docs/grove-vc-meeting-24sep-brief.md',
+     'investor-docs/grove-vc-meeting-24sep-brief.pdf',
+     'PHINS — Grove VC Follow-up Brief (24 September 2026) · '
+     '30-minute Zoom 1:1 with Mr. Lotan Levkovitch'),
     ('investor-docs/aspire-invest-meeting-sep2026-brief.md',
      'investor-docs/aspire-invest-meeting-sep2026-brief.pdf',
      'PHINS — Aspire-Invest Meeting Outline (September 2026) · '
