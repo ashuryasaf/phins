@@ -185,7 +185,7 @@ def test_dashboard_offers_bilingual_aspire_pdfs():
 
 def test_diary_seeds_aspire_invest_meeting():
     pd = _read(STATIC / "pitch-dashboard.html")
-    assert "phins.il.meeting.diary.v7" in pd
+    assert "phins.il.meeting.diary.v8" in pd
     assert "Aspire-Invest — Chief Distribution" in pd
     assert "2026-09" in pd
     assert "250,000 issued" in pd
