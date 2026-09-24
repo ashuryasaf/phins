@@ -3857,11 +3857,10 @@ class ReserveCalculator:
         # Locked-in rate for CSM accretion and BEL unwind (IFRS 17.44 / B72).
         # The projection has one rate: the pricing-kernel discount rate.
         # Current and locked-in are the same, so there is no OCI split.
-        discount_rate = float(
-            (simulation.get('pricing_kernel') or {}).get('discount_rate')
-            or getattr(self.tables.config, 'discount_rate', 0.035)
-            or 0.035
-        )
+        configured_rate = (simulation.get('pricing_kernel') or {}).get('discount_rate')
+        if configured_rate is None:
+            configured_rate = getattr(self.tables.config, 'discount_rate', None)
+        discount_rate = 0.035 if configured_rate is None else float(configured_rate)
         discount_rate = max(-0.5, min(0.5, discount_rate))
         # Coverage ends at the average policy term, even when the
         # forecast window is longer or shorter.
