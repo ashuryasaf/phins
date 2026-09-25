@@ -563,9 +563,9 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]],
     svc = _service()
     if path == "/api/claims-chat/start":
         channel = str(body.get("channel") or "web_chat")[:40]
-        if not session:
-            if channel != "external":
-                return 401, {"error": "Sign in to file a claim."}
+        # Public page /file-a-claim.html posts channel=external and must not
+        # attach a signed-in customer, even if a portal token is also sent.
+        if channel == "external":
             if not _rate_limit(client_ip):
                 return 429, {"error": "Too many new claim files from this address. Please try again later."}
             result = svc.start_session(
@@ -573,6 +573,8 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]],
             _pop_events(result)
             result.pop("ok", None)
             return 201, result
+        if not session:
+            return 401, {"error": "Sign in to file a claim."}
         if not _rate_limit(client_ip):
             return 429, {"error": "Too many new claim files from this address. Please try again later."}
         role = _role(session)

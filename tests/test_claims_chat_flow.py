@@ -343,12 +343,14 @@ def test_amount_above_coverage_and_identity_mismatch_do_not_file():
 
 
 def test_external_link_starts_without_a_customer_session():
-    _seed("CUST-CHAT-CLAIM-EXT", "outside.claim@example.com")
+    portal, customer_id, _, email = _seed(
+        "CUST-CHAT-CLAIM-EXT", "outside.claim@example.com")
     status, blocked = _post("/api/claims-chat/start", {"channel": "web_chat"})
     assert status == 401, blocked
     status, started = _post("/api/claims-chat/start", {"channel": "external"})
     assert status == 201, started
     assert started["step"]["id"] == "claimant"
+    assert started["from_account"] is False
     app_id = started["application_id"]
     resume = started["resume_code"]
     missing = _answer(app_id, "nobody@example.com", resume, None, expect=400)
@@ -356,6 +358,27 @@ def test_external_link_starts_without_a_customer_session():
     found = _answer(app_id, "outside.claim@example.com", resume, None)
     assert found["step"]["id"] == "profile"
     assert found["step"]["input"]["prefill"]["email"] == "outside.claim@example.com"
+
+    # A portal token must not turn the public page into the signed-in flow.
+    token = _customer_token(customer_id, email)
+    status, guest = _post("/api/claims-chat/start", {"channel": "external"}, token)
+    assert status == 201, guest
+    assert guest["step"]["id"] == "claimant"
+    assert guest["from_account"] is False
+    status, internal = _post("/api/claims-chat/start", {"channel": "web_chat"}, token)
+    assert status == 201, internal
+    assert internal["from_account"] is True
+    assert internal["step"]["id"] == "profile"
+
+    import urllib.request
+    page_url = _base() + "/file-a-claim.html"
+    with urllib.request.urlopen(page_url, timeout=30) as resp:
+        html = resp.read().decode("utf-8")
+        assert resp.status == 200
+    assert 'data-claim-entry="public"' in html
+    assert "Start my claim" in html
+    assert "Sign in to file a claim" not in html
+    assert portal.CUSTOMERS[customer_id]["email"] == email
 
 
 def test_resume_code_required_for_stranger():

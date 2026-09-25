@@ -10,7 +10,7 @@
     const state = {
         appId: null, resumeCode: null, email: null, step: null,
         otp: null, otpChannel: null, busy: false, submitted: false,
-        external: false,
+        external: /\/file-a-claim\.html$/i.test(location.pathname),
     };
 
     const $ = (id) => document.getElementById(id);
@@ -581,7 +581,19 @@
         });
         if (status !== 201) {
             $('start-btn').disabled = false;
-            alert(data.error || 'Could not start the claim.');
+            const message = data.error || 'Could not start the claim.';
+            if (state.external) {
+                $('welcome-screen').hidden = false;
+                $('chat-screen').hidden = true;
+                const note = $('auth-note');
+                if (note) {
+                    note.textContent = message === 'Sign in to file a claim.'
+                        ? 'This public claim file could not start. Refresh the page and try again.'
+                        : message;
+                }
+                return;
+            }
+            alert(message);
             return;
         }
         state.appId = data.application_id;
@@ -636,10 +648,12 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         const params = new URLSearchParams(window.location.search);
-        state.external = params.get('external') === '1';
+        state.external = state.external || params.get('external') === '1'
+            || (document.body && document.body.dataset.claimEntry === 'public');
         const note = $('auth-note');
         if (state.external) {
             note.textContent = 'No account sign-in. Give the email or policy number on the PHINS policy and confirm a code sent to that address.';
+            $('start-btn').textContent = 'Start my claim';
         } else if (!token()) {
             note.textContent = 'Sign in with your PHINS account so I can use the details we already have.';
             $('start-btn').textContent = 'Sign in to file a claim';
@@ -661,6 +675,6 @@
         bindFileInput('doc-file-input');
         bindFileInput('audio-file-input', 'voice');
         bindFileInput('video-file-input', 'video');
-        if ((params.get('start') === '1' && token()) || (state.external && params.get('start') === '1')) startClaim();
+        if (state.external || (params.get('start') === '1' && token())) startClaim();
     });
 })();

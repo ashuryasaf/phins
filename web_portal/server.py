@@ -32649,7 +32649,7 @@ For claims or questions, please contact:
         # crawler hits (seen repeatedly as 404 in production after PR #603).
         # Redirect to GET so a JS-disabled resume submit is not a dead end
         # and does not look like a missing application API.
-        if path in ('/apply-chat.html', '/apply.html', '/claims-chat.html'):
+        if path in ('/apply-chat.html', '/apply.html', '/claims-chat.html', '/file-a-claim.html'):
             if content_length > 0:
                 try:
                     remaining = content_length
