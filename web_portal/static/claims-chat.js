@@ -10,6 +10,7 @@
     const state = {
         appId: null, resumeCode: null, email: null, step: null,
         otp: null, otpChannel: null, busy: false, submitted: false,
+        external: /\/file-a-claim\.html$/i.test(location.pathname),
     };
 
     const $ = (id) => document.getElementById(id);
@@ -37,7 +38,7 @@
 
     async function api(method, path, body) {
         const headers = { 'Content-Type': 'application/json' };
-        if (token()) headers.Authorization = 'Bearer ' + token();
+        if (!state.external && token()) headers.Authorization = 'Bearer ' + token();
         const resp = await fetch(API + path, {
             method,
             headers,
@@ -570,15 +571,29 @@
     }
 
     async function startClaim() {
-        if (!token()) {
+        if (!state.external && !token()) {
             window.location.href = '/login.html';
             return;
         }
         $('start-btn').disabled = true;
-        const { status, data } = await api('POST', '/start', { channel: 'web_chat' });
+        const { status, data } = await api('POST', '/start', {
+            channel: state.external ? 'external' : 'web_chat',
+        });
         if (status !== 201) {
             $('start-btn').disabled = false;
-            alert(data.error || 'Could not start the claim.');
+            const message = data.error || 'Could not start the claim.';
+            if (state.external) {
+                $('welcome-screen').hidden = false;
+                $('chat-screen').hidden = true;
+                const note = $('auth-note');
+                if (note) {
+                    note.textContent = message === 'Sign in to file a claim.'
+                        ? 'This public claim file could not start. Refresh the page and try again.'
+                        : message;
+                }
+                return;
+            }
+            alert(message);
             return;
         }
         state.appId = data.application_id;
@@ -632,8 +647,14 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+        const params = new URLSearchParams(window.location.search);
+        state.external = state.external || params.get('external') === '1'
+            || (document.body && document.body.dataset.claimEntry === 'public');
         const note = $('auth-note');
-        if (!token()) {
+        if (state.external) {
+            note.textContent = 'No account sign-in. Give the email or policy number on the PHINS policy and confirm a code sent to that address.';
+            $('start-btn').textContent = 'Start my claim';
+        } else if (!token()) {
             note.textContent = 'Sign in with your PHINS account so I can use the details we already have.';
             $('start-btn').textContent = 'Sign in to file a claim';
         } else {
@@ -654,7 +675,6 @@
         bindFileInput('doc-file-input');
         bindFileInput('audio-file-input', 'voice');
         bindFileInput('video-file-input', 'video');
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('start') === '1' && token()) startClaim();
+        if (state.external || (params.get('start') === '1' && token())) startClaim();
     });
 })();
