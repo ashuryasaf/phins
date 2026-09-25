@@ -1,0 +1,138 @@
+/* Shared letterhead for generated PHINS documents (claim notice, processing
+   record, probability report, risk reports). Self-contained: no external
+   assets except the inlined emblem. */
+:root {
+  --phins-navy: #0e2f63;
+  --phins-navy-deep: #060d1f;
+  --phins-navy-mid: #123f82;
+  --phins-gold: #c9a04e;
+  --phins-gold-strong: #f7e2a0;
+  --phins-ink: #12284c;
+  --phins-muted: #5b6b82;
+  --phins-ice: #f3f7fd;
+  --phins-line: #d5deea;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: #e8eef6;
+  color: var(--phins-ink);
+  font-family: Inter, "Segoe UI", sans-serif;
+  line-height: 1.5;
+}
+.phins-doc {
+  max-width: 920px;
+  margin: 24px auto;
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(6, 13, 31, 0.12);
+}
+.phins-doc-banner {
+  background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
+  color: #fff;
+  padding: 22px 28px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+.phins-doc-brand { display: flex; gap: 12px; align-items: center; }
+.phins-doc-logo { width: 52px; height: 52px; flex: 0 0 52px; }
+.phins-doc-logo svg { width: 52px; height: 52px; display: block; }
+.phins-doc-wordmark {
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-size: 20px;
+}
+.phins-doc-tagline { font-size: 11px; letter-spacing: 0.03em; opacity: 0.84; }
+.phins-doc-kicker {
+  text-align: right;
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  font-weight: 600;
+  font-size: 15px;
+}
+.phins-doc-kicker span {
+  display: block;
+  margin-top: 2px;
+  font-weight: 400;
+  font-size: 12px;
+  opacity: 0.82;
+  font-family: Inter, "Segoe UI", sans-serif;
+}
+.phins-doc-gold {
+  height: 4px;
+  background: linear-gradient(90deg, #b8893b 0%, #f7e2a0 42%, #e3bf6f 100%);
+}
+.phins-doc-body { padding: 24px 28px 8px; }
+.phins-doc h1, .phins-doc h2, .phins-doc h3 {
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  color: var(--phins-navy);
+  margin: 0 0 8px;
+}
+.phins-doc h1 { font-size: 22px; }
+.phins-doc h2 { font-size: 16px; margin-top: 8px; }
+.phins-doc .gold { color: var(--phins-gold); }
+.phins-doc .sub { color: var(--phins-muted); margin: 0 0 16px; font-size: 13px; }
+.phins-doc table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; }
+.phins-doc th, .phins-doc td {
+  border: 1px solid var(--phins-line);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+  font-size: 14px;
+}
+.phins-doc th {
+  background: var(--phins-ice);
+  color: var(--phins-navy);
+  font-weight: 600;
+}
+.phins-doc td code, .phins-doc code {
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--phins-navy-mid);
+}
+.phins-doc .seal, .phins-doc-foot {
+  font-size: 12px;
+  color: var(--phins-muted);
+}
+.phins-doc-foot {
+  padding: 14px 28px 20px;
+  border-top: 1px solid var(--phins-line);
+}
+.phins-doc .metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 0 0 18px;
+}
+.phins-doc .metric {
+  background: var(--phins-ice);
+  border: 1px solid var(--phins-line);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.phins-doc .metric strong {
+  display: block;
+  font-family: "Space Grotesk", Inter, sans-serif;
+  font-size: 1.45rem;
+  color: var(--phins-navy);
+}
+.phins-doc .metric.ok strong { color: #0f6b45; }
+.phins-doc .metric.warn strong { color: #8a5a12; }
+.phins-doc .metric.alert strong { color: #9b2c2c; }
+.phins-doc .metric span { color: var(--phins-muted); font-size: 12px; }
+.phins-doc .bar { height: 8px; background: #e5e7eb; border-radius: 4px; margin-top: 8px; }
+.phins-doc .bar-fill { height: 100%; border-radius: 4px; background: var(--phins-navy-mid); }
+.phins-doc .note {
+  background: var(--phins-ice);
+  border-left: 4px solid var(--phins-gold);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 0 0 16px;
+}
+@media print {
+  body { background: #fff; }
+  .phins-doc { box-shadow: none; margin: 0; max-width: none; border-radius: 0; }
+}

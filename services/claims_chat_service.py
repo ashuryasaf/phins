@@ -33,6 +33,11 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger("phins.claims_chat")
 
 try:
+    from services.phins_document import render_phins_document
+except ImportError:  # pragma: no cover
+    from phins_document import render_phins_document  # type: ignore
+
+try:
     from services.chat_application_service import (
         _mask_email,
         _mask_phone,
@@ -478,25 +483,8 @@ def render_fnol_html(facts: Dict[str, Any], checksum: str) -> str:
         for item in (facts.get("media") or [])
     ) or "<tr><td colspan='4'>No evidence files</td></tr>"
     last4 = esc(facts.get("national_id_last4") or "")
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>PHINS Notice of Loss {esc(facts.get('policy_id'))}</title>
-<style>
-  body {{ font-family: Georgia, 'Times New Roman', serif; color: #142033; margin: 32px; }}
-  h1 {{ font-family: 'Segoe UI', sans-serif; color: #0d2a5c; font-size: 22px; margin-bottom: 0; }}
-  .gold {{ color: #8a6a2f; }}
-  .sub {{ color: #52627a; margin-top: 4px; }}
-  table {{ width: 100%; border-collapse: collapse; margin: 16px 0; }}
-  th, td {{ border: 1px solid #d5deea; padding: 8px 10px; text-align: left; vertical-align: top; font-size: 14px; }}
-  th {{ width: 220px; background: #f4f7fb; font-family: 'Segoe UI', sans-serif; }}
-  code {{ font-size: 12px; word-break: break-all; }}
-  .seal {{ margin-top: 18px; font-size: 12px; color: #52627a; }}
-</style>
-</head>
-<body>
-  <h1>PHINS <span class="gold">First Notice of Loss</span></h1>
+    body = f"""
+  <h1>First <span class="gold">Notice of Loss</span></h1>
   <p class="sub">Claims agent intake · {esc(QUESTIONNAIRE_VERSION)} · status pending review</p>
   <table>
     <tr><th>Customer</th><td>{esc(facts.get('customer_id'))} · {esc(facts.get('contact_name'))}</td></tr>
@@ -521,9 +509,14 @@ def render_fnol_html(facts: Dict[str, Any], checksum: str) -> str:
   </table>
   <p class="seal">Payload SHA-256 <code>{esc(checksum)}</code>. This notice is the intake record.
   The claims bot assessment and the notification id are recorded after filing and do not rewrite this document.</p>
-</body>
-</html>
 """
+    return render_phins_document(
+        title=f"PHINS Notice of Loss {facts.get('policy_id') or ''}",
+        eyebrow="First Notice of Loss",
+        subtitle=str(facts.get("policy_id") or ""),
+        body_html=body,
+        footer="PHINS claim file · confidential · identity stored as nationality, last four, and hash",
+    )
 
 
 def render_processing_html(facts: Dict[str, Any], checksum: str, processing: Dict[str, Any]) -> str:
@@ -531,19 +524,9 @@ def render_processing_html(facts: Dict[str, Any], checksum: str, processing: Dic
         return html.escape(str(value if value is not None else ""), quote=True)
 
     pipeline = processing.get("pipeline") or {}
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Claim processing {esc(processing.get('claim_id'))}</title>
-<style>
-  body {{ font-family: 'Segoe UI', sans-serif; color: #142033; margin: 32px; }}
-  h1 {{ color: #0d2a5c; font-size: 20px; }}
-  table {{ width: 100%; border-collapse: collapse; }}
-  th, td {{ border: 1px solid #d5deea; padding: 8px 10px; text-align: left; }}
-  th {{ width: 240px; background: #f4f7fb; }}
-  code {{ font-size: 12px; word-break: break-all; }}
-</style></head>
-<body>
+    body = f"""
   <h1>Claim processing record</h1>
+  <p class="sub">Advisory claims-bot assessment. The filed amount is unchanged.</p>
   <table>
     <tr><th>Claim</th><td>{esc(processing.get('claim_id'))}</td></tr>
     <tr><th>Customer</th><td>{esc(facts.get('customer_id'))}</td></tr>
@@ -558,10 +541,15 @@ def render_processing_html(facts: Dict[str, Any], checksum: str, processing: Dic
     <tr><th>FNOL checksum</th><td><code>{esc(checksum)}</code></td></tr>
     <tr><th>Identity</th><td>{esc(facts.get('nationality'))} ····{esc(facts.get('national_id_last4'))}</td></tr>
   </table>
-  <p>Advisory only. The claims bot does not approve, deny, or alter the filed amount.</p>
-</body>
-</html>
+  <p class="seal">Advisory only. The claims bot does not approve, deny, or alter the filed amount.</p>
 """
+    return render_phins_document(
+        title=f"PHINS claim processing {processing.get('claim_id') or ''}",
+        eyebrow="Processing record",
+        subtitle=str(processing.get("claim_id") or ""),
+        body_html=body,
+        footer="PHINS claims pipeline · notification and claims-bot recommendation",
+    )
 
 
 class ClaimsChatService:

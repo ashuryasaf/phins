@@ -516,6 +516,7 @@
             + '<iframe class="claim-doc-frame" id="proc-frame" sandbox="" title="Claim processing record"></iframe>'
             + '<div class="claim-doc-actions">'
             + '<button class="btn-gold" id="download-fnol" type="button">Download notice</button>'
+            + '<button class="btn-ghost" id="download-proc" type="button">Download processing record</button>'
             + '<a class="btn-ghost" href="/claims-adjuster-dashboard.html">Back to claims</a>'
             + '</div>'
         );
@@ -523,15 +524,22 @@
         const proc = $('proc-frame');
         if (fnol) fnol.srcdoc = data.document_html || '';
         if (proc) proc.srcdoc = data.processing_html || '';
-        const btn = $('download-fnol');
-        if (btn) btn.addEventListener('click', () => {
-            const blob = new Blob([data.document_html || ''], { type: 'text/html' });
+        const saveHtml = (filename, html) => {
+            const blob = new Blob([html || ''], { type: 'text/html' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = (claim.id || 'claim') + '-notice-of-loss.html';
+            a.download = filename;
             a.click();
             URL.revokeObjectURL(url);
+        };
+        const btn = $('download-fnol');
+        if (btn) btn.addEventListener('click', () => {
+            saveHtml((claim.id || 'claim') + '-notice-of-loss.html', data.document_html);
+        });
+        const procBtn = $('download-proc');
+        if (procBtn) procBtn.addEventListener('click', () => {
+            saveHtml((claim.id || 'claim') + '-processing-record.html', data.processing_html);
         });
     }
 
