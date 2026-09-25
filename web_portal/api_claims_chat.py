@@ -145,13 +145,13 @@ def _otp_delivery_ready(channel: str) -> bool:
 def _handle_otp_request(application_id: str, client_ip: str, user_agent: str,
                         body: Optional[Dict[str, Any]]) -> Tuple[int, Dict[str, Any]]:
     svc = _service()
-    email = svc.contact_email(application_id)
+    email = svc.verification_email(application_id)
     if not email:
         return 409, {"error": "I need your email before I can send a verification code."}
     requested = str((body or {}).get("delivery_channel") or "email").strip().lower()
     if requested not in _OTP_CHANNELS:
         return 400, {"error": "Choose Email, SMS, or WhatsApp.", "error_code": "UNSUPPORTED_CHANNEL"}
-    phone = svc.contact_phone(application_id) if requested in ("sms", "whatsapp") else None
+    phone = svc.verification_phone(application_id) if requested in ("sms", "whatsapp") else None
     if requested in ("sms", "whatsapp") and not phone:
         return 409, {"error": "I need your phone before I can send a text or WhatsApp code.",
                      "error_code": "MISSING_PHONE"}
@@ -231,11 +231,11 @@ def _handle_otp_verify(application_id: str, body: Dict[str, Any], client_ip: str
     purpose = OTPPurpose.PHONE_VERIFICATION if channel in ("sms", "whatsapp") else OTPPurpose.EMAIL_VERIFICATION
     consume = otp_service.consume_verification(
         verification_id,
-        expected_email=svc.contact_email(application_id),
+        expected_email=svc.verification_email(application_id),
         expected_purpose=purpose,
         ip_address=client_ip,
         expected_user_type="claimant",
-        expected_phone=svc.contact_phone(application_id) if channel in ("sms", "whatsapp") else None,
+        expected_phone=svc.verification_phone(application_id) if channel in ("sms", "whatsapp") else None,
     )
     if not consume.success:
         return 400, {"error": consume.message or "Verification could not be consumed",

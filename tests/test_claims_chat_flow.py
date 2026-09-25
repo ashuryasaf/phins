@@ -359,6 +359,29 @@ def test_external_link_starts_without_a_customer_session():
     assert found["step"]["id"] == "profile"
     assert found["step"]["input"]["prefill"]["email"] == "outside.claim@example.com"
 
+    # An edited contact must not redirect the code away from the account.
+    profile = _answer(
+        app_id,
+        {"name": "Dana Levi", "email": "pickup@evil.example", "phone": "+1-555-0177"},
+        resume, None,
+    )
+    assert profile["otp_required"] is True
+    assert "evil.example" not in profile["masked_email"]
+    status, otp = _post(
+        f"/api/claims-chat/{app_id}/otp/request",
+        {"resume_code": resume, "delivery_channel": "email"},
+    )
+    assert status == 200, otp
+    assert "evil.example" not in otp["masked_email"]
+    assert otp["masked_email"].endswith("@example.com")
+    status, verified = _post(
+        f"/api/claims-chat/{app_id}/otp/verify",
+        {"verification_id": otp["verification_id"], "otp_code": otp["demo_otp_code"],
+         "resume_code": resume},
+    )
+    assert status == 200, verified
+    assert verified["step"]["id"] == "policy_id"
+
     # A portal token must not turn the public page into the signed-in flow.
     token = _customer_token(customer_id, email)
     status, guest = _post("/api/claims-chat/start", {"channel": "external"}, token)
@@ -379,6 +402,21 @@ def test_external_link_starts_without_a_customer_session():
     assert "Start my claim" in html
     assert "Sign in to file a claim" not in html
     assert portal.CUSTOMERS[customer_id]["email"] == email
+
+
+def test_public_claim_page_keeps_the_resume_form_reachable():
+    from pathlib import Path
+    static = Path(__file__).resolve().parents[1] / "web_portal" / "static"
+    page = (static / "file-a-claim.html").read_text(encoding="utf-8")
+    script = (static / "claims-chat.js").read_text(encoding="utf-8")
+    assert 'id="resume-form"' in page
+    assert 'id="welcome-screen"' in page
+    # A bare visit has to land on the welcome card, the only place a paused
+    # public claim can be resumed. Only ?start=1 opens a new file at once.
+    assert (
+        "if (params.get('start') === '1' && (state.external || token())) startClaim();"
+        in script
+    )
 
 
 def test_resume_code_required_for_stranger():
