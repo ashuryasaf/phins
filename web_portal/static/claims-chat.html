@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#060d1f">
+    <title>File a Claim with Phin - PHINS Claims Chat</title>
+    <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="apply-chat.css">
+    <style>
+        .claim-doc-frame { width: 100%; height: 640px; border: 1px solid rgba(201,162,75,0.45); border-radius: 12px; background: #fff; }
+        .claim-doc-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+        .profile-grid { display: grid; gap: 10px; }
+        .integrity-line { font-size: 12px; color: #c9d4e8; margin-top: 8px; }
+    </style>
+</head>
+<body class="chat-apply-page">
+    <div class="chat-backdrop" aria-hidden="true"></div>
+    <header class="chat-header">
+        <a href="/claims-adjuster-dashboard.html" class="chat-brand">
+            <img src="/phins-logo.svg" alt="PHINS emblem">
+            <span>PHINS</span>
+        </a>
+        <div class="chat-progress-wrap" id="progress-wrap" hidden>
+            <div class="chat-progress-track"><div class="chat-progress-fill" id="progress-fill"></div></div>
+            <span class="chat-progress-label" id="progress-label">0%</span>
+        </div>
+        <div class="chat-header-actions">
+            <button type="button" class="resume-pill" id="resume-pill" hidden>
+                <span class="resume-pill-label">Resume code</span>
+                <span class="resume-pill-code" id="resume-pill-code" translate="no"></span>
+            </button>
+            <button type="button" class="btn-ghost" id="pause-btn" hidden>Save &amp; finish later</button>
+            <a href="/dashboard.html" class="btn-ghost btn-ghost-quiet">My account</a>
+        </div>
+    </header>
+    <main class="chat-shell">
+        <section class="chat-welcome" id="welcome-screen">
+            <div class="welcome-card">
+                <div class="welcome-avatar">
+                    <img src="/phins-logo.svg" alt="Phin, your PHINS claims agent">
+                    <span class="welcome-avatar-dot" aria-hidden="true"></span>
+                </div>
+                <h1>File a claim with <span class="gold">Phin</span></h1>
+                <p class="welcome-sub">Your PHINS claims agent. Same guided chat as an application —
+                   account details confirmed, OTP-verified, evidence uploaded, signed, then filed
+                   on the claims pipeline.</p>
+                <div class="welcome-points">
+                    <div class="welcome-point"><strong>Account</strong><span>details to confirm</span></div>
+                    <div class="welcome-point"><strong>OTP</strong><span>secured identity</span></div>
+                    <div class="welcome-point"><strong>Evidence</strong><span>voice, video, files</span></div>
+                    <div class="welcome-point"><strong>Signed</strong><span>notice of loss</span></div>
+                </div>
+                <p class="welcome-sub" id="auth-note"></p>
+                <button type="button" class="btn-gold btn-lg" id="start-btn">File my claim</button>
+                <button type="button" class="link-btn" id="show-resume-btn">I have a resume code</button>
+                <form class="resume-form" id="resume-form" hidden>
+                    <input type="text" id="resume-code-input" placeholder="PHINS-CLAIM-XXXXXXXX" autocomplete="off" spellcheck="false">
+                    <input type="email" id="resume-email-input" placeholder="Email on the claim" autocomplete="email">
+                    <button type="submit" class="btn-gold">Continue claim</button>
+                    <div class="resume-error" id="resume-error" hidden></div>
+                </form>
+            </div>
+        </section>
+        <section class="chat-screen" id="chat-screen" hidden>
+            <div class="chat-scroll" id="chat-scroll" aria-live="polite"></div>
+            <div class="chat-dock" id="chat-dock"></div>
+        </section>
+    </main>
+    <div class="video-modal" id="video-modal" hidden>
+        <div class="video-modal-card">
+            <h3>Record a video of the loss</h3>
+            <video id="video-preview" autoplay muted playsinline></video>
+            <div class="video-modal-actions">
+                <button type="button" class="btn-gold" id="video-record-btn">Start recording</button>
+                <button type="button" class="btn-ghost" id="video-cancel-btn">Cancel</button>
+            </div>
+            <div class="video-modal-hint" id="video-modal-hint">Up to 30 seconds. Or upload a video file instead.</div>
+        </div>
+    </div>
+    <input type="file" id="doc-file-input" hidden multiple accept="image/*,application/pdf,.doc,.docx,.txt">
+    <input type="file" id="audio-file-input" hidden accept="audio/*">
+    <input type="file" id="video-file-input" hidden accept="video/*">
+    <script src="apply-suggest.js"></script>
+    <script src="claims-chat.js"></script>
+</body>
+</html>

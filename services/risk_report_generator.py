@@ -261,6 +261,13 @@ class RiskReportGenerator:
     """
     Generates comprehensive risk assessment reports.
     """
+
+    def _letterhead_logo(self) -> str:
+        try:
+            from services.phins_document import logo_svg
+        except ImportError:
+            from phins_document import logo_svg  # type: ignore
+        return logo_svg()
     
     # BMI categories
     BMI_CATEGORIES = {
@@ -823,17 +830,19 @@ class RiskReportGenerator:
     <title>Risk Assessment Report - {esc(report.application_id)}</title>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; background: #f5f5f5; }}
+        body {{ font-family: Inter, 'Segoe UI', sans-serif; line-height: 1.6; color: #12284c; background: #e8eef6; }}
         .container {{ max-width: 1000px; margin: 0 auto; padding: 20px; }}
         .report {{ background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); overflow: hidden; }}
-        .header {{ background: linear-gradient(135deg, #1a237e 0%, #0d47a1 100%); color: white; padding: 30px; }}
+        .header {{ background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%); color: white; padding: 22px 28px; display: flex; gap: 14px; align-items: center; }}
+        .header svg {{ width: 52px; height: 52px; flex: 0 0 52px; }}
+        .header h1 {{ font-family: 'Space Grotesk', Inter, sans-serif; letter-spacing: 0.04em; }}
         .header h1 {{ font-size: 24px; margin-bottom: 10px; }}
         .header .subtitle {{ opacity: 0.9; font-size: 14px; }}
         .header .report-id {{ font-family: monospace; background: rgba(255,255,255,0.1); padding: 5px 10px; border-radius: 4px; display: inline-block; margin-top: 10px; }}
         .section {{ padding: 25px 30px; border-bottom: 1px solid #eee; }}
         .section:last-child {{ border-bottom: none; }}
-        .section-title {{ font-size: 18px; font-weight: 600; color: #1a237e; margin-bottom: 20px; display: flex; align-items: center; }}
-        .section-title::before {{ content: ''; width: 4px; height: 24px; background: #1a237e; margin-right: 10px; border-radius: 2px; }}
+        .section-title {{ font-size: 18px; font-weight: 600; color: #0e2f63; margin-bottom: 20px; display: flex; align-items: center; font-family: 'Space Grotesk', Inter, sans-serif; }}
+        .section-title::before {{ content: ''; width: 4px; height: 24px; background: linear-gradient(180deg, #f7e2a0, #c9a04e); margin-right: 10px; border-radius: 2px; }}
         .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }}
         .card {{ background: #f8f9fa; border-radius: 8px; padding: 15px; }}
         .card-label {{ font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }}
@@ -864,7 +873,7 @@ class RiskReportGenerator:
         .exclusion-item {{ padding: 8px 0; border-bottom: 1px solid rgba(0,0,0,0.1); }}
         .exclusion-item:last-child {{ border-bottom: none; }}
         .monitoring-list {{ background: #d1ecf1; border-radius: 8px; padding: 15px; }}
-        .premium-box {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; text-align: center; }}
+        .premium-box {{ background: linear-gradient(135deg, #0e2f63 0%, #123f82 100%); color: white; padding: 20px; border-radius: 8px; text-align: center; }}
         .premium-value {{ font-size: 32px; font-weight: 700; }}
         .document-status {{ display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }}
         .document-verified {{ background: #d4edda; color: #155724; }}
@@ -885,10 +894,14 @@ class RiskReportGenerator:
         <div class="report">
             <!-- Header -->
             <div class="header">
-                <h1>🔒 UNDERWRITING RISK ASSESSMENT REPORT</h1>
-                <div class="subtitle">AI-Powered Comprehensive Risk Analysis</div>
+                {self._letterhead_logo()}
+                <div>
+                <h1>Underwriting risk assessment</h1>
+                <div class="subtitle">PHINS · Personal Health Insurance &amp; Savings</div>
                 <div class="report-id">Report ID: {esc(report.report_id)}</div>
+                </div>
             </div>
+            <div style="height:4px;background:linear-gradient(90deg,#b8893b,#f7e2a0,#e3bf6f);"></div>
             
             <!-- Application Info -->
             <div class="section">

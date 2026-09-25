@@ -46,7 +46,7 @@ _LOCK = threading.RLock()
 
 IDENTITY_SOURCES = (
     "registration", "login_prompt", "application", "chat", "quote",
-    "assessment", "pension", "admin", "import",
+    "assessment", "pension", "admin", "import", "claims",
 )
 
 # Fields the service owns on a customer record (in-memory dict and DB row).

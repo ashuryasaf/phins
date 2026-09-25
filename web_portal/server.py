@@ -1660,6 +1660,29 @@ except ImportError:
         api_chat_app_post = None
         print("Warning: Chat Application API not available.")
 
+# Claims chat (Phin as claims agent) — same contract as the policy chat,
+# filed through POST /api/claims/create.
+try:
+    from web_portal.api_claims_chat import (
+        dispatch_get as api_claims_chat_get,
+        dispatch_post as api_claims_chat_post,
+    )
+    claims_chat_enabled = True
+    print("✓ Claims Chat API loaded")
+except ImportError:
+    try:
+        from api_claims_chat import (
+            dispatch_get as api_claims_chat_get,
+            dispatch_post as api_claims_chat_post,
+        )
+        claims_chat_enabled = True
+        print("✓ Claims Chat API loaded")
+    except ImportError:
+        claims_chat_enabled = False
+        api_claims_chat_get = None
+        api_claims_chat_post = None
+        print("Warning: Claims Chat API not available.")
+
 # Database support - ENABLED BY DEFAULT for data persistence
 # Set USE_DATABASE=false to use volatile in-memory storage (not recommended)
 USE_DATABASE = os.environ.get('USE_DATABASE', 'true').lower() not in ('false', '0', 'no')
@@ -17321,6 +17344,20 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
                 return
 
+        if claims_chat_enabled and api_claims_chat_get and path.startswith('/api/claims-chat'):
+            try:
+                claims_chat_result = api_claims_chat_get(path, session, qs)
+                if claims_chat_result is not None:
+                    status_code, response_data = claims_chat_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+            except Exception as e:
+                print(f"Claims Chat error (GET {path}): {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
+
         # ========== AI + BI MARKETING SALES AGENT (Admin/Media) ==========
         if path == '/api/admin/marketing-sales-agent':
             if not require_role(session, ['admin', 'media']):
@@ -32612,7 +32649,7 @@ For claims or questions, please contact:
         # crawler hits (seen repeatedly as 404 in production after PR #603).
         # Redirect to GET so a JS-disabled resume submit is not a dead end
         # and does not look like a missing application API.
-        if path in ('/apply-chat.html', '/apply.html'):
+        if path in ('/apply-chat.html', '/apply.html', '/claims-chat.html'):
             if content_length > 0:
                 try:
                     remaining = content_length
@@ -32972,6 +33009,37 @@ For claims or questions, please contact:
                 return
             except Exception as e:
                 print(f"Chat Application error (POST {path}): {e}")
+                import traceback
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
+
+        if claims_chat_enabled and api_claims_chat_post and path.startswith('/api/claims-chat'):
+            try:
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                session = validate_session(token) if token else None
+                user_agent = self.headers.get('User-Agent', '')
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length).decode('utf-8') if length else '{}'
+                try:
+                    body_data = json.loads(body)
+                except json.JSONDecodeError:
+                    body_data = {}
+                claims_chat_result = api_claims_chat_post(
+                    path, session, body_data, client_ip, user_agent,
+                    handler=self, auth_token=token)
+                if claims_chat_result is not None:
+                    status_code, response_data = claims_chat_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
+                return
+            except Exception as e:
+                print(f"Claims Chat error (POST {path}): {e}")
                 import traceback
                 traceback.print_exc()
                 self._set_json_headers(500)
