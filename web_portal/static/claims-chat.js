@@ -675,6 +675,6 @@
         bindFileInput('doc-file-input');
         bindFileInput('audio-file-input', 'voice');
         bindFileInput('video-file-input', 'video');
-        if (state.external || (params.get('start') === '1' && token())) startClaim();
+        if (params.get('start') === '1' && (state.external || token())) startClaim();
     });
 })();

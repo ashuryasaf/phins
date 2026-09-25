@@ -10,6 +10,9 @@ existing claims pipeline.
 Integrity rules:
 - A logged-in customer's id is bound to the session. Edits change contact
   fields only.
+- A public (no session) claimant may still confirm contact fields, but the
+  verification code only goes to the contact already on the bound account, so
+  an edited profile cannot redirect the OTP away from the policy holder.
 - The national ID is reconciled through `customer_identity_service` and then
   dropped. Transcripts, the claim row, and the FNOL document keep nationality,
   last4, and the keyed hash.
@@ -701,6 +704,7 @@ class ClaimsChatService:
             "phone": profile.get("phone") or "",
         }
         session["account_email"] = profile.get("email") or ""
+        session["account_phone"] = profile.get("phone") or ""
         session["policies"] = policies
 
     def start_session(self, *, role: str, username: str, customer_id: Optional[str],
@@ -710,6 +714,7 @@ class ClaimsChatService:
         with self._lock:
             app_id, resume_code = self._generate_ids()
             staff = role != "customer"
+            guest = role == "external"
             session: Dict[str, Any] = {
                 "id": app_id,
                 "resume_code": resume_code,
@@ -719,9 +724,11 @@ class ClaimsChatService:
                 "channel": channel,
                 "started_by": f"{role}:{username}",
                 "needs_claimant_lookup": staff,
+                "guest": guest,
                 "customer_id": None,
                 "prefill": {},
                 "account_email": None,
+                "account_phone": None,
                 "policies": [],
                 "selected_policy": None,
                 "contact": {"name": None, "email": None, "phone": None},
@@ -874,8 +881,9 @@ class ClaimsChatService:
             response: Dict[str, Any] = {"ok": True}
             nxt = self._next_step(session)
             if nxt is None and not self._identity_verified(session) and step["id"] == "profile":
-                masked_email = _mask_email(session["contact"]["email"])
-                masked_phone = _mask_phone(session["contact"].get("phone"))
+                target = self._verification_contact(session)
+                masked_email = _mask_email(target.get("email") or "")
+                masked_phone = _mask_phone(target.get("phone"))
                 messages.append(self._transcript_add(
                     session, "bot",
                     "Confirmed. To protect this claim I'll send a 6-digit code to "
@@ -907,17 +915,31 @@ class ClaimsChatService:
             })
             return response
 
-    def contact_email(self, application_id: str) -> Optional[str]:
-        session = self._get(application_id)
-        if not session:
-            return None
-        return (session.get("contact") or {}).get("email")
+    def _verification_contact(self, session: Dict[str, Any]) -> Dict[str, Any]:
+        """Where a verification code may be sent.
 
-    def contact_phone(self, application_id: str) -> Optional[str]:
+        A public claimant proved nothing by looking up an account, so the code
+        goes to the contact on that account, not to an edited profile. An
+        account without that contact simply cannot be verified this way.
+        """
+        if session.get("guest"):
+            return {
+                "email": session.get("account_email") or "",
+                "phone": session.get("account_phone") or "",
+            }
+        return session.get("contact") or {}
+
+    def verification_email(self, application_id: str) -> Optional[str]:
         session = self._get(application_id)
         if not session:
             return None
-        return (session.get("contact") or {}).get("phone")
+        return self._verification_contact(session).get("email")
+
+    def verification_phone(self, application_id: str) -> Optional[str]:
+        session = self._get(application_id)
+        if not session:
+            return None
+        return self._verification_contact(session).get("phone")
 
     def note_otp_requested(self, application_id: str, verification_id: str,
                            channel: str) -> Dict[str, Any]:
