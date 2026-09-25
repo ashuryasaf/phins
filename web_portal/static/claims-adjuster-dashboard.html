@@ -158,9 +158,11 @@
             margin: 0;
         }
         .dashboard-container { max-width: 1400px; margin: 0 auto; padding: 16px; }
-        .page-title { background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color: white; padding: 16px 20px; border-radius: 10px; margin-bottom: 16px; box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3); }
+        .page-title { background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color: white; padding: 16px 20px; border-radius: 10px; margin-bottom: 16px; box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3); display: flex; justify-content: space-between; align-items: center; gap: 16px; }
         .page-title h1 { margin: 0; font-size: 1.3rem; }
         .page-title p { margin: 4px 0 0 0; opacity: 0.9; font-size: 0.85rem; }
+        .btn-file-claim { background: linear-gradient(135deg, #f6e27a 0%, #c9a24b 100%); color: #0d2a5c; text-decoration: none; font-weight: 700; padding: 12px 18px; border-radius: 10px; white-space: nowrap; }
+        .btn-file-claim:hover { filter: brightness(1.05); }
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
         .stat-card { 
             background: white; 
@@ -606,8 +608,11 @@
     </script>
     <div class="dashboard-container">
         <div class="page-title">
-            <h1>Claims Adjuster Dashboard</h1>
-            <p>Process and manage insurance claims</p>
+            <div>
+                <h1>Claims Adjuster Dashboard</h1>
+                <p>Process and manage insurance claims</p>
+            </div>
+            <a class="btn-file-claim" href="/claims-chat.html?start=1">File New Claim</a>
         </div>
         
         <div class="stats-grid">
