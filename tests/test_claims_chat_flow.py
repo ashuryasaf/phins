@@ -342,6 +342,22 @@ def test_amount_above_coverage_and_identity_mismatch_do_not_file():
     assert set(portal.CLAIMS) == before
 
 
+def test_external_link_starts_without_a_customer_session():
+    _seed("CUST-CHAT-CLAIM-EXT", "outside.claim@example.com")
+    status, blocked = _post("/api/claims-chat/start", {"channel": "web_chat"})
+    assert status == 401, blocked
+    status, started = _post("/api/claims-chat/start", {"channel": "external"})
+    assert status == 201, started
+    assert started["step"]["id"] == "claimant"
+    app_id = started["application_id"]
+    resume = started["resume_code"]
+    missing = _answer(app_id, "nobody@example.com", resume, None, expect=400)
+    assert "couldn't find" in missing["error"].lower()
+    found = _answer(app_id, "outside.claim@example.com", resume, None)
+    assert found["step"]["id"] == "profile"
+    assert found["step"]["input"]["prefill"]["email"] == "outside.claim@example.com"
+
+
 def test_resume_code_required_for_stranger():
     _seed("CUST-CHAT-CLAIM-4", "stranger.claim@example.com")
     token = _staff_token()
