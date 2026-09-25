@@ -17,7 +17,7 @@ FROM python:3.12-slim AS builder
 
 WORKDIR /build
 
-# We compile a few sdists (psycopg2-binary, cryptography, Pillow, etc.). Most
+# We compile a few sdists (psycopg, psycopg2-binary, cryptography, Pillow, etc.). Most
 # arrive as manylinux wheels, but having gcc available avoids slow surprises.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \

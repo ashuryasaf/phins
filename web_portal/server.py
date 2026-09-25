@@ -1749,10 +1749,18 @@ if USE_DATABASE:
                             print("  → See: RAILWAY_POSTGRES_FIX.md for detailed steps")
                         else:
                             print("  ✓ DATABASE_URL is set")
-                            print("  ✗ But connection failed - possible causes:")
-                            print("    - PostgreSQL service failed to deploy (check Railway dashboard)")
-                            print("    - Stale credentials (recreate PostgreSQL service)")
-                            print("    - Network/firewall issues")
+                            # check_database_connection() swallows the driver
+                            # import error, so probe the module directly.
+                            import importlib.util
+                            if db_url.startswith(('postgres://', 'postgresql://')) and importlib.util.find_spec('psycopg') is None:
+                                print("  ✗ The image is missing the psycopg driver for postgresql://")
+                                print("  → Redeploy the web service with psycopg[binary] installed")
+                                print("  → Leave the existing Postgres service in place")
+                            else:
+                                print("  ✗ But connection failed - possible causes:")
+                                print("    - PostgreSQL service failed to deploy (check Railway dashboard)")
+                                print("    - Stale credentials (recreate PostgreSQL service)")
+                                print("    - Network/firewall issues")
                         print("=" * 60)
                         USE_DATABASE = False
             except Exception as e:
@@ -1774,6 +1782,10 @@ if USE_DATABASE:
                     elif 'authentication' in error_str or 'password' in error_str:
                         print("  → Authentication failed - credentials may be stale")
                         print("  → Delete and recreate DATABASE_URL reference in Railway")
+                    elif 'no module named' in error_str and 'psycopg' in error_str:
+                        print("  → The image is missing the psycopg driver for postgresql://")
+                        print("  → Redeploy the web service with psycopg[binary] installed")
+                        print("  → Leave the existing Postgres service in place")
                     elif 'does not exist' in error_str:
                         print("  → Database does not exist yet")
                         print("  → Tables will be auto-created on next successful connection")
@@ -20223,6 +20235,11 @@ For claims or questions, please contact:
                     elif 'password' in error_str.lower() or 'authentication' in error_str.lower():
                         result['recommendations'].append('Authentication failed - DATABASE_URL credentials may be incorrect')
                         result['recommendations'].append('FIX: Recreate Postgres service to get fresh credentials')
+                    elif 'no module named' in error_str.lower() and 'psycopg' in error_str.lower():
+                        result['recommendations'].append(
+                            'The web image is missing the psycopg driver SQLAlchemy 2.1 uses for postgresql:// URLs. '
+                            'Redeploy after requirements.txt includes psycopg[binary]. Keep the existing Postgres service.'
+                        )
                     elif 'does not exist' in error_str.lower():
                         result['recommendations'].append('Database does not exist - may need to recreate Postgres service')
                     elif 'registry' in error_str.lower() or 'image' in error_str.lower():
