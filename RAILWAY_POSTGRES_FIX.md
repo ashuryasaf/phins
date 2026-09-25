@@ -1,5 +1,9 @@
 # Railway PostgreSQL Fix Guide
 
+## If `/api/diagnostics/db-test` says `No module named 'psycopg'`
+
+Postgres-AyKP is already linked. SQLAlchemy 2.1 opens `postgresql://` with the `psycopg` v3 driver, and the image only had `psycopg2`. The portal then serves the in-memory demo set. Redeploy the web service from a commit that lists `psycopg[binary]` in `requirements.txt`. Leave the Postgres service in place. Deleting it drops the stored customers.
+
 ## Quick Fix for "Postgres-AyKP Failed" Error
 
 **Error:** `Postgres-AyKP / 93384fb8 Failed`  

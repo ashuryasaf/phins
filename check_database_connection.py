@@ -138,7 +138,7 @@ def check_connection():
         
     except ImportError:
         print("   ⚠️  SQLAlchemy not installed")
-        print("   Run: pip3 install sqlalchemy psycopg2-binary")
+        print("   Run: pip3 install 'sqlalchemy>=2.0' 'psycopg[binary]>=3.2' psycopg2-binary")
         return False
         
     except OperationalError as e:

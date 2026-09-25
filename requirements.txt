@@ -33,8 +33,13 @@ xlrd>=2.0.1  # for older .xls files
 
 # ---------------------------------------------------------------------------
 # Database (SQLAlchemy + Postgres + migrations)
+# SQLAlchemy 2.1 (2026-09-24) loads the psycopg v3 driver for a plain
+# postgresql:// URL, which is the scheme Railway injects. psycopg2-binary
+# does not provide that module, so a fresh image falls back to in-memory
+# storage while Postgres-AyKP stays untouched. Keep both drivers.
 # ---------------------------------------------------------------------------
 sqlalchemy>=2.0.0
+psycopg[binary]>=3.2.0
 psycopg2-binary>=2.9.0
 alembic>=1.12.0
 
