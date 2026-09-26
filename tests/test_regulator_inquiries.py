@@ -317,11 +317,17 @@ def test_ordinary_punctuation_in_a_message_is_not_read_as_an_attack():
     )
     status, payload = portal.open_regulator_inquiry(
         {"username": "regulator", "role": "regulator"},
-        {"subject": "claims", "message": prose},
+        {
+            "subject": "claims",
+            "message": prose,
+            "name": CONTACT_NAME,
+            "email": CONTACT_EMAIL,
+        },
         "203.0.113.9",
     )
     assert status == 201, payload
     assert payload["inquiry"]["messages"][0]["body"] == prose
+    assert payload["inquiry"]["email"] == CONTACT_EMAIL
     assert not portal.is_ip_blocked("203.0.113.9")[0]
 
 
@@ -340,11 +346,20 @@ def test_a_credential_rename_keeps_the_open_inquiry_on_the_same_account():
     try:
         status, opened = portal.open_regulator_inquiry(
             {"username": old_name, "role": "regulator"},
-            {"subject": "pricing", "message": "Question asked before the rename"},
+            {
+                "subject": "pricing",
+                "message": "Question asked before the rename",
+                "name": CONTACT_NAME,
+                "email": CONTACT_EMAIL,
+            },
             "127.0.0.1",
         )
         assert status == 201, opened
         inquiry_id = opened["inquiry"]["id"]
+        business_id = opened["inquiry"]["business_inquiry_id"]
+        assert opened["inquiry"]["full_name"] == CONTACT_NAME
+        assert opened["inquiry"]["email"] == CONTACT_EMAIL
+        assert portal.BUSINESS_INQUIRIES[business_id]["email"] == CONTACT_EMAIL
 
         status, rotated = portal.update_regulator_credentials(
             {"username": old_name, "role": "regulator"},
@@ -360,15 +375,29 @@ def test_a_credential_rename_keeps_the_open_inquiry_on_the_same_account():
         listed_status, listed = portal.list_regulator_inquiries(renamed)
         assert listed_status == 200
         assert [item["id"] for item in listed["items"]] == [inquiry_id]
+        carried = listed["items"][0]
+        assert carried["opened_by"] == new_name
+        assert carried["full_name"] == CONTACT_NAME
+        assert carried["email"] == CONTACT_EMAIL
+        assert carried["organization"] == ORGANIZATION
+        assert carried["audience"] == AUDIENCE
+        assert carried["business_inquiry_id"] == business_id
+        assert portal.BUSINESS_INQUIRIES[business_id]["email"] == CONTACT_EMAIL
 
         status, again = portal.open_regulator_inquiry(
             renamed,
-            {"subject": "pricing", "message": "Question asked after the rename"},
+            {
+                "subject": "pricing",
+                "message": "Question asked after the rename",
+                "name": CONTACT_NAME,
+                "email": CONTACT_EMAIL,
+            },
             "127.0.0.1",
         )
         assert status == 200, again
         assert again["action"] == "appended"
         assert again["inquiry"]["id"] == inquiry_id
+        assert again["inquiry"]["business_inquiry_id"] == business_id
     finally:
         for name in (old_name, new_name):
             portal._FALLBACK_USERS.pop(name, None)

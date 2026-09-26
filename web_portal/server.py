@@ -12151,8 +12151,9 @@ REGULATOR_WRITE_ALLOW = frozenset({
     '/api/regulator/credentials',
     '/api/regulator/inquiries',
 })
-# Regulator inquiries are their own store. They never share BUSINESS_INQUIRIES
-# or the business_inquiries table. DB mode keeps each row in agent_artifacts.
+# The conversation thread is its own store. Each open or append also files a
+# linked Business Relations row so the admin queue and its notifications see
+# the contact. DB mode keeps the thread in agent_artifacts.
 REGULATOR_INQUIRIES: Dict[str, Dict[str, Any]] = {}
 _REGULATOR_INQUIRY_LAST_HYDRATE = 0.0
 _REGULATOR_INQUIRY_AGENT = 'regulator_inquiry'
