@@ -431,6 +431,7 @@ document.addEventListener('DOMContentLoaded', function () {
       case 'claims':
       case 'claims_adjuster': return '/claims-adjuster-dashboard.html';
       case 'accountant': return '/accountant-dashboard.html';
+      case 'regulator': return '/regulator-dashboard.html';
       case 'customer':
       default: return '/dashboard.html';
     }

@@ -899,6 +899,13 @@ def seed_default_users(session=None):
                 'email': 'accountant@phins.ai'
             },
             {
+                'username': 'regulator',
+                'password_env': 'PHINS_REGULATOR_PASSWORD',
+                'role': 'regulator',
+                'name': 'Regulation Viewer',
+                'email': 'regulator@phins.ai'
+            },
+            {
                 'username': 'agent',
                 'password_env': 'PHINS_AGENT_PASSWORD',
                 'role': 'agent',

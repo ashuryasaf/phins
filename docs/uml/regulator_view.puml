@@ -1,0 +1,153 @@
+' ============================================================================
+' PHINS — Read-only regulation viewer
+' Render: plantuml -tsvg docs/uml/regulator_view.puml -o rendered
+'
+' Pages:
+'   1. System context
+'   2. Offer structure (what the dashboard is allowed to show)
+'   3. Sequence — login and sealed outline
+'   4. Components
+' ============================================================================
+
+@startuml regulator_view_context
+title PHINS Regulation View — System Context
+
+left to right direction
+skinparam actorStyle awesome
+
+actor "Regulation viewer" as Regulator
+
+rectangle "PHINS Platform" {
+  component "Regulation dashboard\n/regulator-dashboard.html" as Dash
+  component "GET /api/regulator/outline" as API
+  component "Regulator outline service" as Svc
+  database "Pricing kernel\nActuarialTablesStore" as Kernel
+  database "Policy, claims,\nhealth, investment books" as Books
+  database "Agent commissions" as Agents
+}
+
+Regulator --> Dash : username regulator\nrole regulator
+Dash --> API : bearer, GET only
+API --> Svc : aggregate + redact + hash
+Svc --> Kernel : current version,\nbasic premiums
+Svc --> Books : totals only
+Svc --> Agents : counts and commission totals
+
+note bottom of Svc
+  Read-only. Customer ids, names, contact
+  details, medical notes, and credentials
+  are never copied into the outline.
+  Totals must match the executive books
+  or the response is refused.
+end note
+@enduml
+
+@startuml regulator_view_offer
+title Regulation view — offer structure
+
+rectangle "Read-only outline" {
+  component "Pricing kernel" as P
+  component "Underwriting" as U
+  component "Claims" as C
+  component "Investments" as I
+  component "Health" as H
+  component "Agent BI" as A
+  component "Integrity seal" as S
+}
+
+P --> S
+U --> S
+C --> S
+I --> S
+H --> S
+A --> S
+
+note right of P
+  current tables version
+  config version
+  version catalog + integrity hash
+  published basic premiums
+  (standard nonsmoker tariff)
+end note
+note right of U
+  decision counts
+  risk bands
+  rules in force (loadings)
+  no applicant identity
+end note
+note right of C
+  count, claimed, disbursed,
+  pending liability, loss ratio
+end note
+note right of I
+  account balance by route
+  policy investment value
+  assets under management
+end note
+note right of H
+  health policy count
+  health premium
+  wallet balance
+end note
+note right of A
+  agent headcount
+  commission totals
+  no names or contacts
+end note
+note bottom of S
+  outline_sha256
+  source counts
+  reconciled flag
+end note
+@enduml
+
+@startuml regulator_view_sequence
+title Regulation view — sealed read
+
+actor "Regulation viewer" as R
+participant "Dashboard" as D
+participant "Portal" as P
+participant "Outline service" as S
+participant "Kernel + books" as B
+
+R -> P : POST /api/login
+P --> R : role=regulator, token
+R -> D : open /regulator-dashboard.html
+D -> P : GET /api/regulator/outline
+P -> P : role gate (regulator only)
+P -> B : read current version and books
+B --> P : records
+P -> S : build outline
+S -> S : aggregate totals
+S -> S : drop identifiers
+S -> S : reconcile to canonical metrics
+S -> S : sha256
+S --> P : sealed outline
+P --> D : 200 outline
+D --> R : six sections + hash
+
+R -> P : POST any other API
+P --> R : 403 read-only
+@enduml
+
+@startuml regulator_view_components
+title Regulation view — components
+
+package "web_portal" {
+  [login.js] --> [regulator-dashboard.html]
+  [server.py] --> [regulator outline route]
+}
+
+package "services" {
+  [regulator_outline.py] --> [pricing_kernel.py]
+  [regulator_outline.py] --> [actuarial_service.py]
+}
+
+package "access" {
+  [role regulator] --> [GET outline]
+  [role regulator] --> [POST logout]
+  [role regulator] ..> [other APIs] : denied
+}
+
+[regulator outline route] --> [regulator_outline.py]
+@enduml

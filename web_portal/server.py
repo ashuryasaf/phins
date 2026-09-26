@@ -11560,6 +11560,7 @@ LEGACY_DEMO_PASSWORDS: Dict[str, str] = {
     'accountant': os.environ.get('PHINS_DEMO_ACCOUNTANT_PASSWORD', 'acct123'),
     'actuary': os.environ.get('PHINS_DEMO_ACTUARY_PASSWORD', 'actuary123'),
     'agent': os.environ.get('PHINS_DEMO_AGENT_PASSWORD', 'agent123'),
+    'regulator': os.environ.get('PHINS_DEMO_REGULATOR_PASSWORD', 'regulator123'),
 }
 
 # IMPORTANT:
@@ -12108,6 +12109,281 @@ def record_failed_login(client_ip: str, server_port: int | None = None):
 
         if (not PHINS_TEST_MODE) and FAILED_LOGINS[key]['count'] >= MAX_LOGIN_ATTEMPTS:
             FAILED_LOGINS[key]['lockout_until'] = datetime.now().timestamp() + LOCKOUT_DURATION
+
+REGULATOR_ROLE = 'regulator'
+REGULATOR_API_ALLOW = frozenset({
+    '/api/regulator/outline',
+    '/api/session/validate',
+})
+REGULATOR_WRITE_ALLOW = frozenset({
+    '/api/logout',
+    '/api/regulator/credentials',
+})
+# Usernames whose demo password was replaced by the regulator. The legacy
+# demo secret must not keep opening the account after that change, so in
+# database mode the set is mirrored into a durable artifact: a restart or a
+# second replica rebuilds this process-local set empty.
+_REGULATOR_LEGACY_RETIRED: set[str] = set()
+_REGULATOR_RETIRED_ARTIFACT = 'REGULATOR-CREDENTIALS-RETIRED'
+_REGULATOR_RETIRED_AGENT = 'regulator_credentials'
+_REGULATOR_USERNAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._@+-]{2,63}$')
+
+
+def _regulator_legacy_retired() -> set[str]:
+    """Usernames whose demo secret was retired, including the durable record."""
+    retired = set(_REGULATOR_LEGACY_RETIRED)
+    if USE_DATABASE and database_enabled:
+        try:
+            from database.manager import DatabaseManager
+            with DatabaseManager() as db:
+                payload = db.agent_artifacts.get_payload(_REGULATOR_RETIRED_ARTIFACT) or {}
+            retired.update(str(name) for name in payload.get('usernames') or [])
+        except Exception as exc:
+            print(f"[REGULATOR] retired credential read warning: {type(exc).__name__}")
+    return retired
+
+
+def _retire_regulator_legacy(usernames: set[str]) -> bool:
+    """Record that these usernames' demo secret no longer opens the account.
+
+    Returns False when the record could not be made durable, so the caller can
+    refuse the rotation instead of promising a retirement that a restart undoes.
+    """
+    names = {str(name) for name in usernames if name}
+    if USE_DATABASE and database_enabled:
+        try:
+            from database.manager import DatabaseManager
+            with DatabaseManager() as db:
+                payload = db.agent_artifacts.get_payload(_REGULATOR_RETIRED_ARTIFACT) or {}
+                stored = {str(name) for name in payload.get('usernames') or []}
+                db.agent_artifacts.upsert(
+                    _REGULATOR_RETIRED_ARTIFACT,
+                    agent_id=_REGULATOR_RETIRED_AGENT,
+                    kind='retired_credentials',
+                    payload={'usernames': sorted(stored | names)},
+                )
+        except Exception as exc:
+            print(f"[REGULATOR] retired credential write failed: {type(exc).__name__}")
+            return False
+    _REGULATOR_LEGACY_RETIRED.update(names)
+    return True
+
+
+def _session_from_authorization(handler) -> dict[str, str] | None:
+    """Best-effort session from the bearer header. Never raises."""
+    try:
+        auth_header = handler.headers.get('Authorization', '') or ''
+    except Exception:
+        return None
+    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+    if not token:
+        return None
+    try:
+        return validate_session(token)
+    except Exception:
+        return None
+
+
+def _legacy_password_ok(username: str, password: str) -> bool:
+    """True when the test-mode demo password is still valid for this user."""
+    if not username:
+        return False
+    expected = LEGACY_DEMO_PASSWORDS.get(username)
+    if not expected or not ALLOW_LEGACY_DEMO_PASSWORDS:
+        return False
+    if username in _regulator_legacy_retired():
+        return False
+    try:
+        return secrets.compare_digest(str(password), str(expected))
+    except Exception:
+        return False
+
+
+def _regulator_password_matches(username: str, password: str, record: Dict[str, Any]) -> bool:
+    if _legacy_password_ok(username, password):
+        return True
+    stored_hash = (record or {}).get('hash') or ''
+    stored_salt = (record or {}).get('salt') or ''
+    if not stored_hash or not stored_salt:
+        return False
+    try:
+        return verify_password(password, stored_hash, stored_salt)
+    except Exception:
+        return False
+
+
+def update_regulator_credentials(session: Dict[str, Any] | None, body: Dict[str, Any]) -> tuple[int, Dict[str, Any]]:
+    """Change the signed-in regulator's username and password.
+
+    The role stays ``regulator``. No other account can be renamed or
+    overwritten, and the previous demo password stops working.
+    """
+    if not session:
+        return 401, {'error': 'Authentication required'}
+    if get_effective_role(session) != REGULATOR_ROLE:
+        return 403, {'error': 'Regulation viewer access required'}
+    current_username = str((session or {}).get('username') or '').strip()
+    record = USERS.get(current_username) if current_username else None
+    if not isinstance(record, dict):
+        record = _FALLBACK_USERS.get(current_username)
+    if not isinstance(record, dict) or (record.get('role') or '').lower() != REGULATOR_ROLE:
+        return 403, {'error': 'Regulation viewer access required'}
+
+    current_password = str(body.get('current_password') or '')
+    new_password = str(body.get('new_password') or '')
+    requested_name = str(body.get('new_username') or '').strip()
+    new_username = requested_name or current_username
+    if not _regulator_password_matches(current_username, current_password, record):
+        return 401, {'error': 'Current password is incorrect'}
+    if len(new_password) < 8 or len(new_password) > 128:
+        return 400, {'error': 'New password must be 8 to 128 characters'}
+    if not _REGULATOR_USERNAME_RE.match(new_username):
+        return 400, {'error': 'Username must be 3 to 64 letters, digits, or . _ @ + -'}
+    if new_username != current_username and (new_username in USERS or new_username in _FALLBACK_USERS):
+        return 409, {'error': 'That username is already in use'}
+
+    # Retire the demo secret durably *before* the swap: a rotation that cannot
+    # record the retirement would come back with the old password on restart.
+    if not _retire_regulator_legacy({current_username, new_username}):
+        return 503, {'error': 'Credential change could not be recorded'}
+
+    updated = dict(record)
+    hashed = hash_password(new_password)
+    updated['hash'] = hashed['hash']
+    updated['salt'] = hashed['salt']
+    updated['role'] = REGULATOR_ROLE
+    updated.pop('customer_id', None)
+
+    _FALLBACK_USERS[new_username] = updated
+    try:
+        USERS[new_username] = updated
+    except Exception as exc:
+        print(f"[REGULATOR] credential store warning: {type(exc).__name__}")
+    if new_username != current_username:
+        # The replaced login is kept as an unusable record instead of being
+        # deleted: a deleted row is recreated by the startup seed pass and, until
+        # then, served from _FALLBACK_USERS with the configured demo secret.
+        retired = dict(updated)
+        retired.update(hash_password(secrets.token_urlsafe(32)))
+        _FALLBACK_USERS[current_username] = retired
+        try:
+            USERS[current_username] = retired
+        except Exception as exc:
+            print(f"[REGULATOR] previous username retire warning: {type(exc).__name__}")
+
+    _revoke_user_sessions(current_username)
+    if new_username != current_username:
+        _revoke_user_sessions(new_username)
+
+    expires = datetime.now() + timedelta(seconds=SESSION_TIMEOUT)
+    token, token_jti = _mint_auth_token(new_username, REGULATOR_ROLE, None, expires)
+    session_payload = {
+        'username': new_username,
+        'expires': expires.isoformat(),
+        'customer_id': None,
+        'role': REGULATOR_ROLE,
+        'ip_address': (session or {}).get('ip_address'),
+        'jti': token_jti,
+    }
+    with STATE_LOCK:
+        SESSIONS[token] = session_payload
+    try:
+        _persist_session_to_db(token, session_payload)
+    except Exception:
+        pass
+    return 200, {
+        'success': True,
+        'username': new_username,
+        'role': REGULATOR_ROLE,
+        'token': token,
+        'expires': expires.isoformat(),
+    }
+
+
+def reject_regulator_mutation(handler, path: str) -> bool:
+    """Block every write from the regulation viewer except logout and own credentials.
+
+    Returns True when the response has already been sent.
+    """
+    if get_effective_role(_session_from_authorization(handler)) != REGULATOR_ROLE:
+        return False
+    if path in REGULATOR_WRITE_ALLOW:
+        return False
+    handler._set_json_headers(403)
+    handler.wfile.write(json.dumps({
+        'error': 'Regulation viewer is read-only',
+    }).encode('utf-8'))
+    return True
+
+
+def build_live_regulator_outline() -> Dict[str, Any]:
+    """Redacted executive outline from the same books the admin metrics use.
+
+    Suspended sandbox accounts are excluded before aggregation. Overlapping
+    totals are reconciled to ``compute_unified_financial_metrics`` and the
+    payload is refused if they diverge or if any identifier survives.
+    """
+    from services.regulator_outline import build_regulator_outline
+
+    def _visible(mapping, id_field: str = 'customer_id'):
+        rows = []
+        items = mapping.items() if hasattr(mapping, 'items') else enumerate(mapping)
+        for key, row in items:
+            if not isinstance(row, dict):
+                continue
+            customer_id = str(row.get(id_field) or key or '')
+            if is_suspended_account(customer_id):
+                continue
+            rows.append(row)
+        return rows
+
+    metrics = compute_unified_financial_metrics(exclude_suspended=True)
+    agents: list = []
+    commissions: list = []
+    try:
+        from services import agent_ecosystem_service as agent_svc
+        agents = list(agent_svc.list_agents() or [])
+        commissions = list(agent_svc.COMMISSIONS.values())
+    except Exception as exc:
+        print(f"[REGULATOR] agent book unavailable: {exc}")
+        agents = []
+        commissions = []
+
+    try:
+        from services.actuarial_service import get_actuarial_store
+        store = get_actuarial_store()
+    except Exception as exc:
+        print(f"[REGULATOR] pricing kernel unavailable: {exc}")
+        raise
+
+    return build_regulator_outline(
+        actuarial_store=store,
+        policies=_visible(POLICIES),
+        claims=_visible(CLAIMS),
+        underwriting=_visible(UNDERWRITING_APPLICATIONS),
+        health_wallets=_visible(HEALTH_WALLETS),
+        investment_accounts=_visible(INVESTMENT_ACCOUNTS),
+        agents=agents,
+        commissions=commissions,
+        algo_balance=safe_float(metrics.get('total_algo_balance'), 0.0),
+        pipeline_cash=safe_float(metrics.get('total_pipeline_cash'), 0.0),
+        canonical={
+            'claims_disbursed_amount': metrics.get('claims_disbursed_amount'),
+            'claims_paid_amount': metrics.get('claims_paid_amount'),
+            'pending_claims_liability': metrics.get('pending_claims_liability'),
+            'total_claims': metrics.get('total_claims'),
+            'total_policies': metrics.get('total_policies'),
+            'active_policies': metrics.get('active_policies'),
+            'total_revenue': metrics.get('total_revenue'),
+            'total_coverage_amount': metrics.get('total_coverage_amount'),
+            'total_investment_value': metrics.get('total_investment_value'),
+            'total_applications': metrics.get('total_applications'),
+            'pending_applications': metrics.get('pending_applications'),
+            'approved_applications': metrics.get('approved_applications'),
+            'rejected_applications': metrics.get('rejected_applications'),
+        },
+    )
+
 
 def require_role(session: dict[str, str] | None, allowed_roles: list[str]) -> bool:
     """Check if user has required role"""
@@ -13801,6 +14077,7 @@ def validate_amount(amount: Any) -> bool:
 #   PHINS_CLAIMS_PASSWORD - Claims adjuster password
 #   PHINS_ACCOUNTANT_PASSWORD - Accountant password
 #   PHINS_ACTUARY_PASSWORD - Actuary password
+#   PHINS_REGULATOR_PASSWORD - Read-only regulation viewer password
 #   PHINS_SUPPLIER_PASSWORD - Supplier password
 #   PHINS_MEDIA_PASSWORD - Media admin password
 #   PHINS_USER_{EMAIL}_PASSWORD - For specific user accounts (replace @ with _AT_ and . with _DOT_)
@@ -13835,6 +14112,7 @@ def _build_fallback_users() -> Dict[str, Dict[str, Any]]:
         'claims_adjuster': {**_get_secure_password('PHINS_CLAIMS_PASSWORD', 'claims_adjuster'), 'role': 'claims', 'name': 'Jane Claims'},
         'accountant': {**_get_secure_password('PHINS_ACCOUNTANT_PASSWORD', 'accountant'), 'role': 'accountant', 'name': 'Bob Accountant'},
         'actuary': {**_get_secure_password('PHINS_ACTUARY_PASSWORD', 'actuary'), 'role': 'actuary', 'name': 'Actuary User'},
+        'regulator': {**_get_secure_password('PHINS_REGULATOR_PASSWORD', 'regulator'), 'role': 'regulator', 'name': 'Regulation Viewer'},
         'supplier': {**_get_secure_password('PHINS_SUPPLIER_PASSWORD', 'supplier'), 'role': 'supplier', 'name': 'Supplier User'},
         'media_ad': {**_get_secure_password('PHINS_MEDIA_PASSWORD', 'media_ad'), 'role': 'media', 'name': 'Media Admin'},
         # Agent ecosystem ("AgentOS") demo login. Profile auto-provisions on first
@@ -16908,6 +17186,24 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
                     return
 
+        # Session validation
+        auth_header = self.headers.get('Authorization', '')
+        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+        session = validate_session(token) if token else None
+        is_authenticated = session is not None
+
+        # Regulation viewer: one read-only outline. Every other API, including
+        # executive BI, customer records and the staff document registries
+        # handled below, stays closed. The gate runs before the first /api/
+        # route so no handler can answer ahead of it.
+        if get_effective_role(session) == REGULATOR_ROLE and path.startswith('/api/'):
+            if path not in REGULATOR_API_ALLOW:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Regulation viewer is limited to the read-only outline',
+                }).encode('utf-8'))
+                return
+
         # Confidential share-link management (staff). Listed before the gate so
         # the JSON API itself is never treated as a confidential HTML document.
         if path == '/api/confidential/shares':
@@ -17007,11 +17303,25 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             return
 
-        # Session validation
-        auth_header = self.headers.get('Authorization', '')
-        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
-        session = validate_session(token) if token else None
-        is_authenticated = session is not None
+        if path == '/api/regulator/outline':
+            if get_effective_role(session) != REGULATOR_ROLE:
+                self._set_json_headers(401 if not session else 403)
+                self.wfile.write(json.dumps({
+                    'error': 'Authentication required' if not session else 'Regulation viewer access required',
+                }).encode('utf-8'))
+                return
+            try:
+                payload = build_live_regulator_outline()
+            except Exception as outline_exc:
+                print(f"[REGULATOR] outline refused: {type(outline_exc).__name__}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({
+                    'error': 'Regulator outline integrity check failed',
+                }).encode('utf-8'))
+                return
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
         
         # Session validation endpoint (GET) - validates token and returns user info
         if path == '/api/session/validate':
@@ -19175,7 +19485,7 @@ For claims or questions, please contact:
                     checks_passed += 1
                 
                 # Check 6: Users have valid roles
-                invalid_roles = [u for u in USERS.values() if not u.get('role') or u['role'] not in ['admin', 'underwriter', 'claims', 'claims_adjuster', 'accountant', 'actuary', 'supplier', 'customer']]
+                invalid_roles = [u for u in USERS.values() if not u.get('role') or u['role'] not in ['admin', 'underwriter', 'claims', 'claims_adjuster', 'accountant', 'actuary', 'supplier', 'customer', 'regulator']]
                 if invalid_roles:
                     warnings.append({'category': 'users', 'severity': 'warning', 'message': f'{len(invalid_roles)} users with invalid or missing roles'})
                 else:
@@ -32785,6 +33095,27 @@ For claims or questions, please contact:
         path = parsed.path
         qs_post = urlparse.parse_qs(parsed.query)
 
+        if reject_regulator_mutation(self, path):
+            return
+
+        if path == '/api/regulator/credentials':
+            cred_session = _session_from_authorization(self)
+            try:
+                raw_body = self.rfile.read(content_length).decode('utf-8') if content_length else ''
+                cred_body = json.loads(raw_body) if raw_body else {}
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            if not isinstance(cred_body, dict):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request body'}).encode('utf-8'))
+                return
+            status_code, payload = update_regulator_credentials(cred_session, cred_body)
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload).encode('utf-8'))
+            return
+
         # Chat apply is a static page. POSTs here are form-fallback or
         # crawler hits (seen repeatedly as 404 in production after PR #603).
         # Redirect to GET so a JS-disabled resume submit is not a dead end
@@ -37050,7 +37381,7 @@ For claims or questions, please contact:
                     staff_user = USERS.get(username)
                     if staff_user:
                         # Check legacy passwords first (simple string match)
-                        legacy_ok = ALLOW_LEGACY_DEMO_PASSWORDS and username in LEGACY_DEMO_PASSWORDS and password == LEGACY_DEMO_PASSWORDS[username]
+                        legacy_ok = _legacy_password_ok(username, password)
                         
                         # Get hash and salt safely
                         stored_hash = staff_user.get('hash', '')
@@ -37133,7 +37464,7 @@ For claims or questions, please contact:
                 if not user and username in _FALLBACK_USERS:
                     try:
                         fallback = _FALLBACK_USERS[username]
-                        legacy_ok = ALLOW_LEGACY_DEMO_PASSWORDS and username in LEGACY_DEMO_PASSWORDS and password == LEGACY_DEMO_PASSWORDS[username]
+                        legacy_ok = _legacy_password_ok(username, password)
                         password_ok = verify_password(password, fallback.get('hash', ''), fallback.get('salt', ''))
                         
                         if password_ok or legacy_ok:
@@ -38430,7 +38761,7 @@ For claims or questions, please contact:
                     return
                 
                 # Verify current password
-                legacy_ok = ALLOW_LEGACY_DEMO_PASSWORDS and username in LEGACY_DEMO_PASSWORDS and current_password == LEGACY_DEMO_PASSWORDS[username]
+                legacy_ok = _legacy_password_ok(username, current_password)
                 if not (verify_password(current_password, user['hash'], user['salt']) or legacy_ok):
                     self._set_json_headers(401)
                     self.wfile.write(json.dumps({'error': 'Current password is incorrect'}).encode('utf-8'))
@@ -55971,6 +56302,9 @@ For claims or questions, please contact:
         """Handle PUT requests for updates"""
         parsed = urlparse.urlparse(self.path)
         path = parsed.path
+
+        if reject_regulator_mutation(self, path):
+            return
         
         # Get client IP
         client_ip = self.client_address[0]
@@ -56076,6 +56410,9 @@ For claims or questions, please contact:
         """Handle DELETE requests"""
         parsed = urlparse.urlparse(self.path)
         path = parsed.path
+
+        if reject_regulator_mutation(self, path):
+            return
 
         # ── Security guards (aligned with do_GET / do_POST) ──
         client_ip = self.client_address[0]

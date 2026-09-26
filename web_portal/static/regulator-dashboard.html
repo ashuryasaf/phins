@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <title>PHINS Regulation View</title>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+    :root {
+      --primary: #1a365d;
+      --secondary: #2b6cb0;
+      --accent: #4299e1;
+      --success: #38a169;
+      --warning: #d69e2e;
+      --danger: #e53e3e;
+      --bg: #f7fafc;
+      --card-bg: #ffffff;
+      --text: #2d3748;
+      --text-light: #4a5568;
+      --border: #e2e8f0;
+      --phins-navy: #060d1f;
+      --phins-gold: #e3bf6f;
+      --phins-gold-strong: #f7e2a0;
+      --phins-cyan: #4fd8ff;
+      --phins-line: rgba(127, 178, 255, 0.16);
+      --chart-h: 260px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background:
+        radial-gradient(900px 420px at 100% -10%, rgba(79, 216, 255, 0.18), transparent 55%),
+        radial-gradient(700px 380px at -10% 20%, rgba(227, 191, 111, 0.16), transparent 50%),
+        linear-gradient(180deg, #f5f9fc 0%, #e3f2fd 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .header {
+      background:
+        radial-gradient(700px 180px at 85% -60%, rgba(21, 68, 155, 0.5), transparent 70%),
+        rgba(6, 13, 31, 0.96);
+      border-bottom: 1px solid var(--phins-line);
+      color: white;
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 1000;
+      min-height: 60px;
+      box-shadow: 0 8px 30px rgba(2, 8, 23, 0.35);
+      gap: 12px;
+    }
+    .brand {
+      display: flex; align-items: center; gap: 10px;
+      font-family: 'Space Grotesk', Inter, sans-serif;
+      font-weight: 600; letter-spacing: 0.08em; font-size: 1.05rem;
+      background: linear-gradient(180deg, #ffffff 0%, #b7d3ff 100%);
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .brand img { width: 30px; height: 30px; }
+    .badge {
+      border: 1px solid rgba(227, 191, 111, 0.65);
+      color: var(--phins-gold);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-size: 0.66rem;
+      letter-spacing: 0.1em;
+      font-weight: 600;
+    }
+    .user-info { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; flex-wrap: wrap; }
+    .user-info button, .toolbar button, .cred-form button {
+      background: transparent; color: white; border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 8px; padding: 6px 12px; cursor: pointer; font: inherit;
+    }
+    .toolbar button, .cred-form button {
+      color: var(--primary);
+      border-color: rgba(14, 47, 99, 0.25);
+      background: linear-gradient(180deg, #ffffff 0%, #eef5ff 100%);
+    }
+    .toolbar button.primary, .cred-form button {
+      color: #06101f;
+      border: none;
+      background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%);
+      font-weight: 600;
+    }
+    main { padding: 88px 24px 56px; max-width: 1240px; margin: 0 auto; }
+    .hero {
+      position: relative; overflow: hidden; border-radius: 16px;
+      padding: 22px 24px 26px; margin-bottom: 16px; color: #eaf1ff;
+      background:
+        radial-gradient(620px 220px at 88% -40%, rgba(21, 68, 155, 0.55), transparent 70%),
+        radial-gradient(420px 180px at 8% 120%, rgba(79, 216, 255, 0.18), transparent 65%),
+        linear-gradient(135deg, #060d1f 0%, #0e2f63 48%, #123f82 78%, #0a1f4a 100%);
+      box-shadow: 0 10px 26px rgba(2, 8, 23, 0.28);
+    }
+    .hero::after {
+      content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
+      background: linear-gradient(90deg, #b8893b, #f7e2a0, #e3bf6f, #4fd8ff);
+    }
+    .hero-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .hero img { width: 46px; height: 46px; }
+    .wordmark {
+      font-family: 'Space Grotesk', Inter, sans-serif; font-size: 1.45rem; font-weight: 700;
+      letter-spacing: 0.16em;
+      background: linear-gradient(180deg, #ffffff 10%, #f7e2a0 100%);
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .hero h1 { font-family: 'Space Grotesk', Inter, sans-serif; font-size: 1.15rem; font-weight: 600; }
+    .hero p { color: #c5d4ef; font-size: 0.92rem; line-height: 1.5; margin-top: 8px; max-width: 78ch; }
+    .hero .pill {
+      margin-left: auto; background: rgba(79, 216, 255, 0.14); color: #7fe3ff;
+      border: 1px solid rgba(79, 216, 255, 0.35); border-radius: 999px; padding: 4px 12px; font-size: 0.75rem;
+    }
+    nav.outline { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+    nav.outline a {
+      text-decoration: none; color: #eaf1ff;
+      background: linear-gradient(135deg, #0e2f63 0%, #1a365d 55%, #2b6cb0 100%);
+      border-radius: 999px; padding: 7px 14px; font-size: 0.82rem; font-weight: 600;
+    }
+    .studio, .card {
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px;
+      box-shadow: 0 10px 28px rgba(14, 47, 99, 0.06); margin-bottom: 16px;
+    }
+    .studio h2, .card h2 {
+      font-family: 'Space Grotesk', Inter, sans-serif;
+      font-size: 1rem; letter-spacing: 0.04em; color: var(--primary); margin-bottom: 8px;
+    }
+    .studio-grid, .split { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 16px; align-items: start; }
+    .checks { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+    .checks label, .field label { font-size: 0.84rem; color: var(--text); display: inline-flex; gap: 6px; align-items: center; }
+    .controls { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: end; margin-top: 12px; }
+    .field { display: flex; flex-direction: column; gap: 4px; min-width: 160px; }
+    .field input, .field select {
+      border: 1px solid #cbd5e0; border-radius: 8px; padding: 8px 10px; font: inherit; background: white;
+    }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .metric-card {
+      border-radius: 16px; padding: 16px 16px 14px; color: #f7fafc; position: relative; overflow: hidden;
+      background:
+        radial-gradient(120px 80px at 100% 0%, rgba(247, 226, 160, 0.35), transparent 70%),
+        linear-gradient(145deg, #060d1f 0%, #0e2f63 58%, #1a4f9c 100%);
+      box-shadow: 0 10px 24px rgba(6, 13, 31, 0.18);
+    }
+    .metric-card:nth-child(2n) {
+      background:
+        radial-gradient(120px 80px at 0% 100%, rgba(79, 216, 255, 0.28), transparent 70%),
+        linear-gradient(145deg, #123f82 0%, #1a365d 50%, #0a1f4a 100%);
+    }
+    .metric-card:nth-child(3n) {
+      background:
+        radial-gradient(140px 80px at 100% 100%, rgba(227, 191, 111, 0.4), transparent 70%),
+        linear-gradient(145deg, #0e2f63 0%, #2458a6 100%);
+    }
+    .metric-card h2 { color: #f7e2a0; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px; }
+    .metric { font-family: 'Space Grotesk', Inter, sans-serif; font-size: 1.55rem; }
+    .sub { color: var(--text-light); font-size: 0.84rem; margin: 4px 0 10px; line-height: 1.4; }
+    .metric-card .sub { color: #d6e4ff; }
+    .chart-box { position: relative; height: var(--chart-h); margin: 8px 0 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--border); }
+    th {
+      color: #0e2f63; font-weight: 700; font-size: 0.74rem; letter-spacing: 0.04em; text-transform: uppercase;
+      background: linear-gradient(90deg, rgba(227, 191, 111, 0.28), rgba(79, 216, 255, 0.12));
+    }
+    tbody tr:nth-child(even) td { background: rgba(227, 242, 253, 0.45); }
+    .hash { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; word-break: break-all; color: var(--primary); }
+    .error { color: var(--danger); }
+    .ok { color: var(--success); font-weight: 700; }
+    .note { font-size: 0.8rem; color: var(--text-light); }
+    .cred-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; align-items: end; }
+    #cred-status { margin-top: 8px; }
+    @media (max-width: 860px) {
+      .studio-grid, .split { grid-template-columns: 1fr; }
+      .hero .pill { margin-left: 0; }
+    }
+    @media print {
+      .header, .no-print { display: none !important; }
+      body { background: white; }
+      main { padding: 0; max-width: none; }
+      .card, .metric-card, .hero { break-inside: avoid; box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="brand"><img src="/phins-logo.svg" alt="PHINS"> PHINS</div>
+    <span class="badge">READ ONLY · REGULATION VIEW</span>
+    <div class="user-info">
+      <span id="viewer-name">regulator</span>
+      <button type="button" id="logout-btn">Sign out</button>
+    </div>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="hero-row">
+        <img src="/phins-logo.svg" alt="">
+        <div>
+          <div class="wordmark">PHINS</div>
+          <h1>Regulation outline</h1>
+        </div>
+        <span class="pill" id="version-pill">Kernel</span>
+      </div>
+      <p>Published kernel version and basic premiums, with book totals for underwriting, claims, investments, health, and agents. Choose which charts and tables stay on screen and which go into a download. Customer identifiers stay out of this view. The integrity seal covers the full book.</p>
+    </section>
+
+    <section class="studio no-print" id="studio">
+      <h2>Report studio</h2>
+      <p class="sub">Show, chart, and download the sections you choose. Preferences stay in this browser. The numbers stay the sealed outline.</p>
+      <div class="checks" id="section-toggles"></div>
+      <div class="controls">
+        <label class="field">Chart
+          <select id="chart-type">
+            <option value="bar">Bar</option>
+            <option value="line">Line</option>
+            <option value="doughnut">Doughnut</option>
+          </select>
+        </label>
+        <label class="field">Graphic height
+          <input id="chart-height" type="range" min="180" max="420" value="260">
+        </label>
+        <label class="field">Include in download
+          <select id="download-scope">
+            <option value="visible">Sections on screen</option>
+            <option value="all">Every section</option>
+          </select>
+        </label>
+      </div>
+      <div class="toolbar">
+        <button type="button" class="primary" id="download-report">Download report</button>
+        <button type="button" id="download-csv">Download tables (CSV)</button>
+        <button type="button" id="download-json">Download outline (JSON)</button>
+        <button type="button" id="print-report">Print</button>
+      </div>
+    </section>
+
+    <nav class="outline no-print" id="jump-nav"></nav>
+    <div id="status" class="sub">Loading outline…</div>
+    <div id="content" hidden>
+      <div class="grid" id="summary"></div>
+      <section class="card" id="pricing"></section>
+      <section class="card" id="underwriting"></section>
+      <section class="card" id="claims"></section>
+      <section class="card" id="investments"></section>
+      <section class="card" id="health"></section>
+      <section class="card" id="agents"></section>
+      <section class="card" id="integrity"></section>
+      <section class="card no-print" id="credentials">
+        <h2>Regulator credentials</h2>
+        <p class="sub">Change the username and password for this regulation account. The role stays read-only. The current password is required, and the previous demo password stops working after a change.</p>
+        <form class="cred-form" id="cred-form">
+          <label class="field">Username
+            <input id="new-username" name="new_username" autocomplete="username" value="regulator" required>
+          </label>
+          <label class="field">Current password
+            <input id="current-password" name="current_password" type="password" autocomplete="current-password" required>
+          </label>
+          <label class="field">New password
+            <input id="new-password" name="new_password" type="password" autocomplete="new-password" minlength="8" required>
+          </label>
+          <label class="field">Confirm password
+            <input id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" required>
+          </label>
+          <button type="submit">Save credentials</button>
+        </form>
+        <div id="cred-status" class="note"></div>
+      </section>
+    </div>
+  </main>
+  <script>
+    var SECTIONS = [
+      { id: 'pricing', label: 'Pricing kernel' },
+      { id: 'underwriting', label: 'Underwriting' },
+      { id: 'claims', label: 'Claims' },
+      { id: 'investments', label: 'Investments' },
+      { id: 'health', label: 'Health' },
+      { id: 'agents', label: 'Agent BI' },
+      { id: 'integrity', label: 'Integrity' }
+    ];
+    var PALETTE = ['#0e2f63', '#2b6cb0', '#e3bf6f', '#4fd8ff', '#38a169', '#d69e2e', '#805ad5', '#e53e3e'];
+    var charts = {};
+    var outline = null;
+    var STUDIO_KEY = 'phins_regulator_studio';
+
+    function token() {
+      return sessionStorage.getItem('phins_token') || localStorage.getItem('phins_token') || '';
+    }
+    function money(value) {
+      var n = Number(value || 0);
+      return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function esc(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function loadStudio() {
+      try { return JSON.parse(localStorage.getItem(STUDIO_KEY) || '{}') || {}; }
+      catch (e) { return {}; }
+    }
+    function saveStudio(extra) {
+      var state = loadStudio();
+      var visible = {};
+      document.querySelectorAll('[data-section-toggle]').forEach(function (box) {
+        visible[box.getAttribute('data-section-toggle')] = box.checked;
+      });
+      state.visible = visible;
+      state.chartType = document.getElementById('chart-type').value;
+      state.chartHeight = Number(document.getElementById('chart-height').value);
+      state.downloadScope = document.getElementById('download-scope').value;
+      Object.keys(extra || {}).forEach(function (key) { state[key] = extra[key]; });
+      localStorage.setItem(STUDIO_KEY, JSON.stringify(state));
+      return state;
+    }
+    function pairs(obj, moneyValues) {
+      var rows = '';
+      Object.keys(obj || {}).forEach(function (key) {
+        var value = moneyValues ? money(obj[key]) : obj[key];
+        rows += '<tr><td>' + esc(key) + '</td><td>' + esc(value) + '</td></tr>';
+      });
+      return rows || '<tr><td colspan="2">No records</td></tr>';
+    }
+    function chartType() {
+      var value = document.getElementById('chart-type').value;
+      return value === 'line' || value === 'doughnut' ? value : 'bar';
+    }
+    function drawChart(id, labels, values, label) {
+      var canvas = document.getElementById(id);
+      if (!canvas || !window.Chart) return;
+      if (charts[id]) { charts[id].destroy(); charts[id] = null; }
+      var kind = chartType();
+      if (kind === 'line' && labels.length < 2) kind = 'bar';
+      charts[id] = new Chart(canvas, {
+        type: kind,
+        data: {
+          labels: labels,
+          datasets: [{
+            label: label,
+            data: values,
+            backgroundColor: labels.map(function (_, i) { return PALETTE[i % PALETTE.length]; }),
+            borderColor: '#0e2f63',
+            borderWidth: kind === 'line' ? 2 : 0,
+            tension: 0.25
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: kind === 'doughnut' } },
+          scales: kind === 'doughnut' ? {} : { y: { beginAtZero: true } }
+        }
+      });
+    }
+    function objectEntries(obj) {
+      return Object.keys(obj || {}).map(function (key) { return [key, Number(obj[key] || 0)]; });
+    }
+    function clearCharts() {
+      Object.keys(charts).forEach(function (id) {
+        try { if (charts[id]) charts[id].destroy(); } catch (e) { /* canvas already gone */ }
+        charts[id] = null;
+      });
+    }
+    function render(data) {
+      clearCharts();
+      outline = data;
+      var pricing = data.pricing || {};
+      var premiums = (pricing.basic_premiums || {}).rows || [];
+      var claims = data.claims || {};
+      var uw = data.underwriting || {};
+      var inv = data.investments || {};
+      var health = data.health || {};
+      var agents = data.agents || {};
+      var integrity = data.integrity || {};
+      var policies = data.policies || {};
+      document.getElementById('version-pill').textContent = (pricing.current_version || 'Kernel') + ' · ' + (pricing.config_version || '');
+      document.getElementById('summary').innerHTML = [
+        ['Kernel version', pricing.current_version || '—', pricing.config_version || ''],
+        ['Active premium', money(policies.annual_premium_active), 'annual, in force'],
+        ['Claims disbursed', money(claims.disbursed_amount), (claims.total || 0) + ' claims'],
+        ['Investments', money(inv.account_balance), (inv.account_count || 0) + ' accounts'],
+        ['Health wallets', money(health.wallet_balance), (health.health_policies || 0) + ' health policies'],
+        ['Agents', String(agents.agent_count || 0), money(agents.commission_amount) + ' commission']
+      ].map(function (item) {
+        return '<article class="metric-card"><h2>' + esc(item[0]) + '</h2><div class="metric">' + esc(item[1]) + '</div><div class="sub">' + esc(item[2]) + '</div></article>';
+      }).join('');
+
+      var premiumRows = premiums.map(function (row) {
+        return '<tr><td>' + esc(row.age) + '</td><td>' + money(row.annual_premium) + '</td><td>' + money(row.monthly_premium) + '</td><td>' + money(row.risk_premium_annual) + '</td><td>' + esc(row.tables_version) + '</td></tr>';
+      }).join('') || '<tr><td colspan="5">No records</td></tr>';
+      var versions = (pricing.versions || []).map(function (row) {
+        return '<tr><td>' + esc(row.version) + '</td><td>' + (row.is_current ? 'current' : esc(row.status || '')) + '</td><td class="hash">' + esc(row.integrity_hash) + '</td></tr>';
+      }).join('') || '<tr><td colspan="3">No records</td></tr>';
+      var bands = ((pricing.rate_bands || {}).mortality_rates || []).map(function (row) {
+        return '<tr><td>' + esc(row.age_min) + '–' + esc(row.age_max) + '</td><td>' + esc(row.rate_per_1000) + '</td></tr>';
+      }).join('') || '<tr><td colspan="2">No records</td></tr>';
+      document.getElementById('pricing').innerHTML =
+        '<h2>Pricing kernel</h2>' +
+        '<p class="sub">Published standard nonsmoker tariff on ' + esc((pricing.basic_premiums || {}).product_id) +
+        ', coverage ' + money((pricing.basic_premiums || {}).coverage) + ', term ' + esc((pricing.basic_premiums || {}).term_years) +
+        ' years, ADL ' + esc((pricing.basic_premiums || {}).adl_level) + '. Not a customer quote.</p>' +
+        '<div class="split"><div><div class="chart-box"><canvas id="chart-pricing"></canvas></div></div>' +
+        '<div><table><thead><tr><th>Age</th><th>Annual</th><th>Monthly</th><th>Risk premium</th><th>Version</th></tr></thead><tbody>' +
+        premiumRows + '</tbody></table></div></div>' +
+        '<h2>Basic mortality rates</h2><table><thead><tr><th>Age band</th><th>Rate per 1,000</th></tr></thead><tbody>' + bands + '</tbody></table>' +
+        '<h2>Version catalog</h2><table><thead><tr><th>Version</th><th>Status</th><th>Integrity</th></tr></thead><tbody>' + versions + '</tbody></table>';
+
+      document.getElementById('underwriting').innerHTML =
+        '<h2>Underwriting decisions</h2><p class="sub">Counts only. No applicant identity or medical detail.</p>' +
+        '<div class="split"><div><div class="chart-box"><canvas id="chart-underwriting"></canvas></div></div>' +
+        '<div><table><thead><tr><th>Decision</th><th>Count</th></tr></thead><tbody>' + pairs(uw.by_status) + '</tbody></table>' +
+        '<h2>Risk bands</h2><table><thead><tr><th>Band</th><th>Count</th></tr></thead><tbody>' + pairs(uw.risk_bands) + '</tbody></table></div></div>';
+
+      document.getElementById('claims').innerHTML =
+        '<h2>Claims in total</h2><p class="sub">Loss ratio on disbursed paid claims / active premium: ' + esc(data.claims_loss_ratio) + '</p>' +
+        '<div class="split"><div><div class="chart-box"><canvas id="chart-claims"></canvas></div></div><div>' +
+        '<table><thead><tr><th>Measure</th><th>Value</th></tr></thead><tbody>' +
+        '<tr><td>Count</td><td>' + esc(claims.total) + '</td></tr>' +
+        '<tr><td>Claimed</td><td>' + money(claims.claimed_amount) + '</td></tr>' +
+        '<tr><td>Disbursed</td><td>' + money(claims.disbursed_amount) + '</td></tr>' +
+        '<tr><td>Paid or closed</td><td>' + money(claims.paid_amount) + '</td></tr>' +
+        '<tr><td>Pending liability</td><td>' + money(claims.pending_liability) + '</td></tr>' +
+        '</tbody></table><h2>By status</h2><table><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>' +
+        pairs(claims.by_status) + '</tbody></table></div></div>';
+
+      document.getElementById('investments').innerHTML =
+        '<h2>Investments in total</h2><div class="split"><div><div class="chart-box"><canvas id="chart-investments"></canvas></div></div><div>' +
+        '<table><thead><tr><th>Measure</th><th>Value</th></tr></thead><tbody>' +
+        '<tr><td>Accounts</td><td>' + esc(inv.account_count) + '</td></tr>' +
+        '<tr><td>Account balance</td><td>' + money(inv.account_balance) + '</td></tr>' +
+        '<tr><td>Policy investment value</td><td>' + money(inv.policy_investment_value) + '</td></tr>' +
+        '<tr><td>Algo balance</td><td>' + money(inv.algo_balance) + '</td></tr>' +
+        '<tr><td>Pipeline cash</td><td>' + money(inv.pipeline_cash) + '</td></tr>' +
+        '<tr><td>Assets under management</td><td>' + money(inv.assets_under_management) + '</td></tr>' +
+        '</tbody></table><h2>By route</h2><table><thead><tr><th>Route</th><th>Balance</th></tr></thead><tbody>' +
+        pairs(inv.by_route, true) + '</tbody></table></div></div>';
+
+      document.getElementById('health').innerHTML =
+        '<h2>Health</h2><div class="split"><div><div class="chart-box"><canvas id="chart-health"></canvas></div></div><div>' +
+        '<table><thead><tr><th>Measure</th><th>Value</th></tr></thead><tbody>' +
+        '<tr><td>Health policies</td><td>' + esc(health.health_policies) + '</td></tr>' +
+        '<tr><td>Health annual premium</td><td>' + money(health.health_annual_premium) + '</td></tr>' +
+        '<tr><td>Life policies</td><td>' + esc(health.life_policies) + '</td></tr>' +
+        '<tr><td>Wallets</td><td>' + esc(health.wallet_count) + '</td></tr>' +
+        '<tr><td>Active wallets</td><td>' + esc(health.active_wallets) + '</td></tr>' +
+        '<tr><td>Wallet balance</td><td>' + money(health.wallet_balance) + '</td></tr>' +
+        '</tbody></table></div></div>';
+
+      document.getElementById('agents').innerHTML =
+        '<h2>Agent BI</h2><p class="sub">Headcount, status, and commission totals. Names and contact details stay off this view.</p>' +
+        '<div class="split"><div><div class="chart-box"><canvas id="chart-agents"></canvas></div></div><div>' +
+        '<table><thead><tr><th>Measure</th><th>Value</th></tr></thead><tbody>' +
+        '<tr><td>Agents</td><td>' + esc(agents.agent_count) + '</td></tr>' +
+        '<tr><td>Active</td><td>' + esc(agents.active_agents) + '</td></tr>' +
+        '<tr><td>Average commission rate</td><td>' + esc(agents.average_commission_rate) + '</td></tr>' +
+        '<tr><td>Commission count</td><td>' + esc(agents.commission_count) + '</td></tr>' +
+        '<tr><td>Commission amount</td><td>' + money(agents.commission_amount) + '</td></tr>' +
+        '</tbody></table><h2>Agents by status</h2><table><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>' +
+        pairs(agents.agents_by_status) + '</tbody></table></div></div>';
+
+      document.getElementById('integrity').innerHTML =
+        '<h2>Integrity</h2><p class="' + (integrity.reconciled ? 'ok' : 'sub') + '">' +
+        (integrity.reconciled ? 'Reconciled to the executive books.' : 'Sealed without a canonical cross-check.') +
+        '</p><p class="sub">Tables ' + esc(integrity.tables_version) + ' · config ' + esc(integrity.config_version) + '</p>' +
+        '<p class="hash">' + esc(integrity.outline_sha256) + '</p>' +
+        '<table><thead><tr><th>Source</th><th>Count</th></tr></thead><tbody>' + pairs(integrity.source_counts) + '</tbody></table>';
+
+      drawChart('chart-pricing', premiums.map(function (row) { return String(row.age); }), premiums.map(function (row) { return Number(row.annual_premium || 0); }), 'Annual premium');
+      var uwEntries = objectEntries(uw.by_status);
+      drawChart('chart-underwriting', uwEntries.map(function (row) { return row[0]; }), uwEntries.map(function (row) { return row[1]; }), 'Decisions');
+      var claimEntries = objectEntries(claims.by_status);
+      drawChart('chart-claims', claimEntries.map(function (row) { return row[0]; }), claimEntries.map(function (row) { return row[1]; }), 'Claims');
+      var routeEntries = objectEntries(inv.by_route);
+      if (!routeEntries.length) routeEntries = [['balance', Number(inv.account_balance || 0)]];
+      drawChart('chart-investments', routeEntries.map(function (row) { return row[0]; }), routeEntries.map(function (row) { return row[1]; }), 'Balance');
+      var typeEntries = objectEntries(policies.by_type);
+      if (!typeEntries.length) typeEntries = [['health', Number(health.health_policies || 0)], ['life', Number(health.life_policies || 0)]];
+      drawChart('chart-health', typeEntries.map(function (row) { return row[0]; }), typeEntries.map(function (row) { return row[1]; }), 'Policies');
+      var agentEntries = objectEntries(agents.agents_by_status);
+      if (!agentEntries.length) agentEntries = [['agents', Number(agents.agent_count || 0)]];
+      drawChart('chart-agents', agentEntries.map(function (row) { return row[0]; }), agentEntries.map(function (row) { return row[1]; }), 'Agents');
+      applyVisibility();
+      document.getElementById('content').hidden = false;
+    }
+
+    function selectedIds() {
+      var scope = document.getElementById('download-scope').value;
+      return SECTIONS.filter(function (section) {
+        if (scope === 'all') return true;
+        var box = document.querySelector('[data-section-toggle="' + section.id + '"]');
+        return !box || box.checked;
+      }).map(function (section) { return section.id; });
+    }
+    function applyVisibility() {
+      document.querySelectorAll('[data-section-toggle]').forEach(function (box) {
+        var node = document.getElementById(box.getAttribute('data-section-toggle'));
+        if (node) node.hidden = !box.checked;
+      });
+      document.documentElement.style.setProperty('--chart-h', document.getElementById('chart-height').value + 'px');
+      Object.keys(charts).forEach(function (id) { if (charts[id]) charts[id].resize(); });
+    }
+    function tableToCsv(table) {
+      return Array.prototype.map.call(table.querySelectorAll('tr'), function (row) {
+        return Array.prototype.map.call(row.children, function (cell) {
+          var text = (cell.innerText || '').replace(/"/g, '""');
+          return '"' + text + '"';
+        }).join(',');
+      }).join('\n');
+    }
+    function downloadBlob(filename, mime, text) {
+      var blob = new Blob([text], { type: mime });
+      var link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(function () { URL.revokeObjectURL(link.href); }, 1000);
+    }
+    function selectedReport() {
+      var ids = selectedIds();
+      var copy = { view: outline.view, access: outline.access, generated_at: outline.generated_at, integrity: outline.integrity };
+      ids.forEach(function (id) {
+        if (id === 'pricing') copy.pricing = outline.pricing;
+        else if (id === 'integrity') return;
+        else copy[id] = outline[id];
+      });
+      if (ids.indexOf('claims') >= 0) copy.claims_loss_ratio = outline.claims_loss_ratio;
+      if (ids.indexOf('health') >= 0 || ids.indexOf('investments') >= 0) copy.policies = outline.policies;
+      copy.included_sections = ids;
+      return copy;
+    }
+    function downloadJson() {
+      if (!outline) return;
+      downloadBlob('phins-regulator-outline.json', 'application/json', JSON.stringify(selectedReport(), null, 2));
+    }
+    function downloadCsv() {
+      if (!outline) return;
+      var chunks = [];
+      selectedIds().forEach(function (id) {
+        var node = document.getElementById(id);
+        if (!node) return;
+        chunks.push(id);
+        node.querySelectorAll('table').forEach(function (table) { chunks.push(tableToCsv(table)); });
+      });
+      downloadBlob('phins-regulator-tables.csv', 'text/csv', chunks.join('\n'));
+    }
+    function downloadReport() {
+      if (!outline) return;
+      var ids = selectedIds();
+      var images = '';
+      ['chart-pricing', 'chart-underwriting', 'chart-claims', 'chart-investments', 'chart-health', 'chart-agents'].forEach(function (id) {
+        var canvas = document.getElementById(id);
+        var section = canvas && canvas.closest('section');
+        if (!canvas || !section || ids.indexOf(section.id) < 0 || section.hidden) return;
+        images += '<figure><figcaption>' + esc(section.id) + '</figcaption><img alt="" src="' + canvas.toDataURL('image/png') + '"></figure>';
+      });
+      var tables = ids.map(function (id) {
+        var node = document.getElementById(id);
+        if (!node) return '';
+        return '<section><h2>' + esc(id) + '</h2>' + node.innerHTML.replace(/<canvas[\s\S]*?<\/canvas>/g, '') + '</section>';
+      }).join('');
+      var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>PHINS regulation report</title>' +
+        '<style>body{font-family:Inter,sans-serif;color:#1a365d;padding:24px}h1{letter-spacing:.12em}table{border-collapse:collapse;width:100%;margin:8px 0 18px}th,td{border-bottom:1px solid #e2e8f0;padding:6px;text-align:left}th{background:linear-gradient(90deg,#f7e2a0,#e3f2fd)}img{max-width:640px} .hash{word-break:break-all;font-family:monospace}</style></head><body>' +
+        '<h1>PHINS</h1><p>Regulation report · ' + esc(outline.generated_at) + '</p>' +
+        '<p class="hash">' + esc((outline.integrity || {}).outline_sha256) + '</p>' + images + tables + '</body></html>';
+      downloadBlob('phins-regulator-report.html', 'text/html', html);
+    }
+
+    function setupStudio() {
+      var saved = loadStudio();
+      document.getElementById('section-toggles').innerHTML = SECTIONS.map(function (section) {
+        var on = !saved.visible || saved.visible[section.id] !== false;
+        return '<label><input type="checkbox" data-section-toggle="' + section.id + '"' + (on ? ' checked' : '') + '> ' + esc(section.label) + '</label>';
+      }).join('');
+      document.getElementById('jump-nav').innerHTML = SECTIONS.map(function (section) {
+        return '<a href="#' + section.id + '">' + esc(section.label) + '</a>';
+      }).join('');
+      if (saved.chartType) document.getElementById('chart-type').value = saved.chartType;
+      if (saved.chartHeight) document.getElementById('chart-height').value = saved.chartHeight;
+      if (saved.downloadScope) document.getElementById('download-scope').value = saved.downloadScope;
+      document.getElementById('section-toggles').addEventListener('change', function () { saveStudio(); applyVisibility(); });
+      document.getElementById('chart-type').addEventListener('change', function () { saveStudio(); if (outline) render(outline); });
+      document.getElementById('chart-height').addEventListener('input', function () { saveStudio(); applyVisibility(); });
+      document.getElementById('download-scope').addEventListener('change', function () { saveStudio(); });
+      document.getElementById('download-report').addEventListener('click', downloadReport);
+      document.getElementById('download-csv').addEventListener('click', downloadCsv);
+      document.getElementById('download-json').addEventListener('click', downloadJson);
+      document.getElementById('print-report').addEventListener('click', function () { window.print(); });
+    }
+
+    document.getElementById('logout-btn').addEventListener('click', function () {
+      var bearer = token();
+      fetch('/api/logout', { method: 'POST', headers: bearer ? { Authorization: 'Bearer ' + bearer } : {} })
+        .finally(function () {
+          sessionStorage.removeItem('phins_token');
+          sessionStorage.removeItem('username');
+          localStorage.removeItem('phins_token');
+          window.location.href = '/login.html';
+        });
+    });
+
+    document.getElementById('cred-form').addEventListener('submit', function (event) {
+      event.preventDefault();
+      var status = document.getElementById('cred-status');
+      var next = document.getElementById('new-password').value;
+      if (next !== document.getElementById('confirm-password').value) {
+        status.innerHTML = '<span class="error">The new password and confirmation do not match.</span>';
+        return;
+      }
+      status.textContent = 'Saving credentials…';
+      fetch('/api/regulator/credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token() },
+        body: JSON.stringify({
+          current_password: document.getElementById('current-password').value,
+          new_password: next,
+          new_username: document.getElementById('new-username').value.trim()
+        })
+      }).then(function (response) {
+        return response.json().then(function (body) { return { ok: response.ok, body: body }; });
+      }).then(function (result) {
+        if (!result.ok) throw new Error(result.body.error || 'Credentials were not changed');
+        if (result.body.token) {
+          sessionStorage.setItem('phins_token', result.body.token);
+          localStorage.setItem('phins_token', result.body.token);
+        }
+        sessionStorage.setItem('username', result.body.username || '');
+        document.getElementById('viewer-name').textContent = result.body.username || 'regulator';
+        document.getElementById('new-username').value = result.body.username || '';
+        document.getElementById('current-password').value = '';
+        document.getElementById('new-password').value = '';
+        document.getElementById('confirm-password').value = '';
+        status.innerHTML = '<span class="ok">Credentials updated. Sign in next time with the new username and password.</span>';
+      }).catch(function (err) {
+        status.innerHTML = '<span class="error">' + esc(err.message || 'Credentials were not changed') + '</span>';
+      });
+    });
+
+    setupStudio();
+    (function load() {
+      var bearer = token();
+      var storedName = sessionStorage.getItem('username');
+      if (storedName) {
+        document.getElementById('viewer-name').textContent = storedName;
+        document.getElementById('new-username').value = storedName;
+      }
+      if (!bearer) {
+        window.location.href = '/login.html';
+        return;
+      }
+      fetch('/api/regulator/outline', { headers: { Authorization: 'Bearer ' + bearer } })
+        .then(function (response) {
+          if (response.status === 401 || response.status === 403) {
+            window.location.href = '/login.html';
+            return null;
+          }
+          return response.json().then(function (body) {
+            if (!response.ok) throw new Error(body.error || 'Outline unavailable');
+            return body;
+          });
+        })
+        .then(function (body) {
+          if (!body) return;
+          document.getElementById('status').textContent = 'Generated ' + (body.generated_at || '');
+          render(body);
+        })
+        .catch(function (err) {
+          document.getElementById('status').innerHTML = '<span class="error">' + esc(err.message || 'Outline unavailable') + '</span>';
+        });
+    })();
+  </script>
+</body>
+</html>
