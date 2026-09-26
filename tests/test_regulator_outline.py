@@ -472,3 +472,25 @@ def test_regulator_demo_password_works_until_an_operator_password_is_set(monkeyp
     finally:
         portal.USERS["regulator"] = original
         portal._REGULATOR_LEGACY_RETIRED.discard("regulator")
+
+
+def test_regulator_credential_change_accepts_the_operator_password(monkeypatch):
+    """The configured password retires both secrets from the regulation view."""
+    import web_portal.server as portal
+
+    operator_password = "operator-regulator-password"
+    monkeypatch.setenv("PHINS_REGULATOR_PASSWORD", operator_password)
+    monkeypatch.setattr(portal, "ALLOW_LEGACY_DEMO_PASSWORDS", False)
+    was_retired = "regulator" in portal._REGULATOR_LEGACY_RETIRED
+    portal._REGULATOR_LEGACY_RETIRED.discard("regulator")
+    try:
+        stale = portal.hash_password("unusable-random-secret")
+        record = {"hash": stale["hash"], "salt": stale["salt"], "role": "regulator"}
+
+        assert portal._regulator_password_matches("regulator", operator_password, record)
+        assert not portal._regulator_password_matches("regulator", "regulator123", record)
+    finally:
+        if was_retired:
+            portal._REGULATOR_LEGACY_RETIRED.add("regulator")
+        else:
+            portal._REGULATOR_LEGACY_RETIRED.discard("regulator")

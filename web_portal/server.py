@@ -12257,11 +12257,27 @@ def _adopt_configured_regulator_password(password: str) -> bool:
         print(f"[REGULATOR] password adopt warning: {type(exc).__name__}")
         _FALLBACK_USERS[REGULATOR_ROLE] = updated
         return False
+    # USERS swallows database errors after updating this process only, so the
+    # adoption is durable only once the stored row reads back. The caller
+    # retires both secrets on success, and another replica must not honour that
+    # retirement while it still resolves the old hash.
+    if USE_DATABASE and database_enabled:
+        try:
+            from database.manager import DatabaseManager
+            with DatabaseManager() as db:
+                stored = db.users.get_by_username(REGULATOR_ROLE)
+            if not stored or getattr(stored, 'password_hash', '') != hashed['hash']:
+                return False
+        except Exception as exc:
+            print(f"[REGULATOR] password adopt verify warning: {type(exc).__name__}")
+            return False
     return True
 
 
 def _regulator_password_matches(username: str, password: str, record: Dict[str, Any]) -> bool:
     if _legacy_password_ok(username, password):
+        return True
+    if _env_regulator_password_ok(username, password):
         return True
     stored_hash = (record or {}).get('hash') or ''
     stored_salt = (record or {}).get('salt') or ''
