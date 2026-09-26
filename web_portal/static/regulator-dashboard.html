@@ -140,6 +140,7 @@
       border: 1px solid #cbd5e0; border-radius: 8px; padding: 8px 10px; font: inherit; background: white;
     }
     .field textarea { min-height: 96px; resize: vertical; }
+    .field input[readonly] { background: #f4f7fb; color: #1a365d; }
     .inquiry-thread { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
     .inquiry-thread h3 { font-size: 0.92rem; color: var(--primary); margin: 0 0 6px; }
     .inquiry-thread p { margin: 0 0 10px; white-space: pre-wrap; }
@@ -257,8 +258,20 @@
       <section class="card" id="integrity"></section>
       <section class="card no-print" id="inquiry">
         <h2>Ask for inquiry</h2>
-        <p class="sub">Open a conversation on one outlined subject. This path belongs to the regulation account. The public solutions conversation is a separate process and uses a different record.</p>
+        <p class="sub">File a conversation on one outlined subject in Business Relations. Full name and email are required. Organization and role are set for this regulation account. An acknowledgement is sent to that email.</p>
         <form class="cred-form" id="inquiry-form">
+          <label class="field">Full name *
+            <input id="inquiry-name" name="name" maxlength="100" autocomplete="name" required>
+          </label>
+          <label class="field">Email *
+            <input id="inquiry-email" name="email" type="email" maxlength="254" autocomplete="email" required>
+          </label>
+          <label class="field">Organization
+            <input id="inquiry-organization" name="organization" value="capital markets authority" readonly>
+          </label>
+          <label class="field">I am a
+            <input id="inquiry-audience" name="audience" value="regulations contact" readonly>
+          </label>
           <label class="field">Subject
             <select id="inquiry-subject" name="subject" required></select>
           </label>
@@ -643,7 +656,9 @@
         var turns = (item.messages || []).map(function (msg) {
           return '<p><strong>' + esc(msg.by) + '</strong> <span class="note">' + esc(msg.at) + '</span><br>' + esc(msg.body) + '</p>';
         }).join('');
-        return '<article class="inquiry-thread"><h3>' + esc(item.subject_label) + ' · ' + esc(item.id) + '</h3>' + turns + '</article>';
+        return '<article class="inquiry-thread"><h3>' + esc(item.subject_label) + ' · ' + esc(item.id) + '</h3>' +
+          '<p class="note">' + esc(item.full_name) + ' · ' + esc(item.email) + '<br>' +
+          esc(item.organization) + ' · ' + esc(item.audience) + '</p>' + turns + '</article>';
       }).join('');
     }
 
@@ -666,11 +681,14 @@
       event.preventDefault();
       var status = document.getElementById('inquiry-status');
       var message = document.getElementById('inquiry-message').value;
+      var contactEmail = document.getElementById('inquiry-email').value.trim();
       status.textContent = 'Opening inquiry…';
       fetch('/api/regulator/inquiries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token() },
         body: JSON.stringify({
+          name: document.getElementById('inquiry-name').value.trim(),
+          email: contactEmail,
           subject: document.getElementById('inquiry-subject').value,
           message: message
         })
@@ -680,8 +698,12 @@
         if (!result.ok) throw new Error(result.body.error || 'Inquiry was not opened');
         document.getElementById('inquiry-message').value = '';
         var action = result.body.action;
-        var note = 'Inquiry opened. The solutions notification path was used for this regulator conversation.';
-        if (action === 'appended') note = 'Message added to the open inquiry for that subject.';
+        var ack = ((result.body.notification || {}).acknowledgement) || {};
+        var note = 'Inquiry filed in Business Relations.';
+        if (ack.sent) note = 'Inquiry filed in Business Relations. An acknowledgement was sent to ' + (ack.recipient || contactEmail) + '.';
+        if (action === 'appended') note = ack.sent
+          ? 'Message added and an acknowledgement was sent to ' + (ack.recipient || contactEmail) + '.'
+          : 'Message added to the open inquiry for that subject.';
         if (action === 'duplicate') note = 'That message is already the latest turn on this subject.';
         status.innerHTML = '<span class="ok">' + esc(note) + '</span>';
         return loadInquiries(token());
