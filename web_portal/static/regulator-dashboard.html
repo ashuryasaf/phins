@@ -668,9 +668,12 @@
       }
       fetch('/api/regulator/outline', { headers: { Authorization: 'Bearer ' + bearer } })
         .then(function (response) {
-          if (response.status === 401 || response.status === 403) {
+          if (response.status === 401) {
             window.location.href = '/login.html';
             return null;
+          }
+          if (response.status === 403) {
+            throw new Error('This session cannot open the regulation outline.');
           }
           return response.json().then(function (body) {
             if (!response.ok) throw new Error(body.error || 'Outline unavailable');

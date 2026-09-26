@@ -481,6 +481,23 @@ def captcha_proof_ok(token: str) -> bool:
     return bool(payload and payload.get("ok") == 1)
 
 
+def captcha_answer_ok(token: str, response: str) -> bool:
+    """True when the typed answer matches a signed challenge.
+
+    The check is stateless, so the login request can carry the question and
+    the answer together. A replica that did not create the question can still
+    accept it, and a correct password is not rejected for lack of an
+    in-memory verified flag.
+    """
+    if not token or response is None or response == "":
+        return False
+    signed = _open_ticket(_CHALLENGE_PREFIX, token)
+    if not signed:
+        return False
+    digests = signed.get("ah") if isinstance(signed.get("ah"), list) else []
+    return _response_matches(digests, str(response))
+
+
 # ============================================================================
 # OTP SECURITY SERVICE
 # ============================================================================
@@ -640,6 +657,10 @@ class OTPSecurityService:
                 "n": signed.get("n") or "",
                 "ok": 1,
             })
+            with self._lock:
+                stored = self._challenges.get(challenge_id)
+                if stored is not None:
+                    stored.verified = True
             self._log_audit(
                 action="captcha_verified",
                 ip_address=ip_address,
