@@ -553,8 +553,9 @@ Environment variables commonly used:
   `PHINS_TRADING_GLOBAL_DAILY_LOSS_PCT` (default `0.05` of portfolio),
   `PHINS_TRADING_GLOBAL_DAILY_LOSS_ABS` (currency amount, `0` = off);
   runtime halt/resume/promote via `/api/terminal/autopilot/{halt,resume,promote}`
-- **Regulation viewer:** `PHINS_REGULATOR_PASSWORD` (username `regulator`,
-  role `regulator`). `GET /api/regulator/outline` is the only data surface
+- **Regulation viewer:** username `regulator`, role `regulator`. Demo
+  password `regulator123` works until `PHINS_REGULATOR_PASSWORD` is set or
+  the password is changed in the regulation view. `GET /api/regulator/outline` is the only data surface
   for that role; admin and actuary may read the same sealed outline from
   their dashboard headers. The regulator role cannot call other APIs or
   write, except its own credential change. Outline totals reconcile to

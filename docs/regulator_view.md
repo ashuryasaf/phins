@@ -12,9 +12,12 @@ same book the executive metrics are computed from, without customer secrets.
 | Password | `PHINS_REGULATOR_PASSWORD` |
 | Dashboard | `/regulator-dashboard.html` |
 
-In test mode the legacy demo password is `regulator123` until the account
-changes it. Production leaves the password unset until
-`PHINS_REGULATOR_PASSWORD` is configured, which disables login.
+The sign-in password is `regulator123` until an operator password is
+configured. Set `PHINS_REGULATOR_PASSWORD` (8 characters or more) and sign
+in once with it. That replaces a database hash left over from a boot where
+the variable was missing, and it retires `regulator123`. Changing the
+password in the regulation view retires both the demo password and the
+environment password.
 
 The dashboard uses the PHINS navy, gold, and cyan gradients. Its report
 studio shows or hides each section, switches charts between bar, line, and
