@@ -185,6 +185,10 @@ def draw_report_bar(
             canvas.setFillColor(_hex(PHINS_CYAN))
             canvas.setFont(font, 7)
             canvas.drawString(inset, emblem_y + 4, badge_text)
+        else:
+            canvas.setFillColor(_hex(PHINS_INK))
+            canvas.setFont(font, 7.5)
+            canvas.drawRightString(text_x - 52, emblem_y + 3, title_text[:110])
     else:
         _draw_logo(canvas, inset, emblem_y, emblem)
         text_x = inset + emblem + 10

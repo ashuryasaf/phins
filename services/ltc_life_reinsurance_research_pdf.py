@@ -443,6 +443,10 @@ PCT_KEYS = {
     'p_death_within_5y_given_3adl',
 }
 INT_KEYS = {'year', 'age_min', 'age_max', 'band_lives', 'adl', 'lives', 'adl_threshold'}
+# Keys that carry a plain factor in one table while being money elsewhere:
+# ``joint_credit`` is a dollar credit in the exposure table but the 0–1
+# coverage-type factor in the pricing overlay.
+FACTOR_KEYS_BY_TABLE: Dict[str, set] = {'pricing_overlay': {'joint_credit'}}
 
 
 def _money(value: Any) -> str:
@@ -537,13 +541,17 @@ def _age_band(row: Dict[str, Any]) -> str:
 
 
 def _localize_row(row: Dict[str, Any], columns: Sequence[str], lang: str,
-                  copy: Dict[str, Any]) -> List[str]:
+                  copy: Dict[str, Any], table_name: str = '') -> List[str]:
+    factor_keys = FACTOR_KEYS_BY_TABLE.get(table_name, frozenset())
     cells: List[str] = []
     for key in columns:
         if key == 'age_band':
             cells.append(_age_band(row))
             continue
         raw = row.get(key)
+        if key in factor_keys:
+            cells.append(_num(raw, 2))
+            continue
         if key == 'era_note':
             raw = row.get('era') or raw
         if key == 'forecast_note':
@@ -728,7 +736,7 @@ def build_research_pdf(pack: Dict[str, Any], lang: str = 'en') -> Tuple[str, byt
                 story.append(Spacer(1, 4))
         story.append(_data_table(
             columns, rows, copy, lang, font, navy, gold, light,
-            cell, cell_hdr, rtl, usable,
+            cell, cell_hdr, rtl, usable, table_name,
         ))
 
     story.append(PageBreak())
@@ -786,19 +794,22 @@ def _kv_table(rows: List[List[str]], copy: Dict[str, Any], font: str, font_bold:
     from reportlab.platypus import Table, TableStyle
     from reportlab.lib import colors
 
+    col0 = width * 0.42
+    col1 = width * 0.58
+    # Wrap logical text to the column before bidi reordering.
+    label_width = max(1.0, col0 - 8)
+    value_width = max(1.0, col1 - 8)
     header = _maybe_reverse([
-        _paragraph(copy['metric'], cell_hdr, rtl),
-        _paragraph(copy['value'], cell_hdr, rtl),
+        _paragraph(copy['metric'], cell_hdr, rtl, label_width),
+        _paragraph(copy['value'], cell_hdr, rtl, value_width),
     ], rtl)
     data = [header]
     for label, value in rows:
         pair = [
-            _paragraph(str(label), cell, rtl),
-            _paragraph(str(value), cell, rtl),
+            _paragraph(str(label), cell, rtl, label_width),
+            _paragraph(str(value), cell, rtl, value_width),
         ]
         data.append(_maybe_reverse(pair, rtl))
-    col0 = width * 0.42
-    col1 = width * 0.58
     widths = _maybe_reverse([col0, col1], rtl)
     table = Table(data, colWidths=widths, hAlign='RIGHT' if rtl else 'LEFT', repeatRows=1)
     table.setStyle(TableStyle([
@@ -821,18 +832,10 @@ def _kv_table(rows: List[List[str]], copy: Dict[str, Any], font: str, font_bold:
 
 def _data_table(columns: Sequence[str], rows: Iterable[Dict[str, Any]],
                 copy: Dict[str, Any], lang: str, font: str, navy, gold, light,
-                cell, cell_hdr, rtl: bool, usable: float):
+                cell, cell_hdr, rtl: bool, usable: float, table_name: str = ''):
     from reportlab.platypus import Table, TableStyle
     from reportlab.lib import colors
 
-    headers = [_paragraph(copy['headers'].get(col, col), cell_hdr, rtl) for col in columns]
-    data = [_maybe_reverse(headers, rtl)]
-    for row in rows:
-        cells = [
-            _paragraph(value, cell, rtl)
-            for value in _localize_row(row, columns, lang, copy)
-        ]
-        data.append(_maybe_reverse(cells, rtl))
     n = max(1, len(columns))
     # Give note / implication columns more room.
     weights = []
@@ -845,6 +848,20 @@ def _data_table(columns: Sequence[str], rows: Iterable[Dict[str, Any]],
             weights.append(1.0)
     total = sum(weights)
     widths = [usable * (w / total) for w in weights]
+    # Wrap logical text to the column before bidi reordering.
+    text_widths = [max(1.0, w - 4) for w in widths]
+
+    headers = [
+        _paragraph(copy['headers'].get(col, col), cell_hdr, rtl, text_widths[idx])
+        for idx, col in enumerate(columns)
+    ]
+    data = [_maybe_reverse(headers, rtl)]
+    for row in rows:
+        cells = [
+            _paragraph(value, cell, rtl, text_widths[idx])
+            for idx, value in enumerate(_localize_row(row, columns, lang, copy, table_name))
+        ]
+        data.append(_maybe_reverse(cells, rtl))
     widths = _maybe_reverse(widths, rtl)
     table = Table(data, colWidths=widths, hAlign='RIGHT' if rtl else 'LEFT', repeatRows=1)
     table.setStyle(TableStyle([
