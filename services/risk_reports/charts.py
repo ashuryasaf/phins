@@ -218,6 +218,7 @@ class ChartsMixin:
         coverage_totals = {}
         cost_totals = {}
         cover_fields = (
+            ('death_lump_sum', '', 'סכום ביטוח למקרה מוות – חד פעמי', 'Lump-sum death benefit'),
             ('death_coverage', 'death_premium', 'ביטוח חיים', 'Life Insurance'),
             ('disability_coverage', 'disability_premium', 'אבדן כושר עבודה', 'Loss of Work Capacity'),
             ('work_disability_coverage', 'work_disability_premium', 'אבדן כושר עבודה', 'Loss of Work Capacity'),

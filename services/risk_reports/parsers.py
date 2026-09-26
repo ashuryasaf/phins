@@ -722,7 +722,7 @@ class ParserMixin:
         'total_balance', 'savings_balance', 'severance_balance', 'balance',
         'tagmulim_balance',
         'management_fee', 'management_fee_savings', 'management_fee_deposits',
-        'death_coverage', 'disability_coverage', 'coverage_amount',
+        'death_coverage', 'death_lump_sum', 'disability_coverage', 'coverage_amount',
         'death_premium', 'disability_premium', 'work_disability_coverage',
         'work_disability_premium', 'invalidity_coverage', 'invalidity_premium',
         'waiver_coverage', 'waiver_premium', 'survivors_coverage',
