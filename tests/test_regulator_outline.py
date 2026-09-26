@@ -231,6 +231,9 @@ def test_regulator_login_lands_on_the_outline():
     assert page.status_code == 200
     assert "READ ONLY" in page.text
     assert "/api/regulator/outline" in page.text
+    assert "Download report" in page.text
+    assert "chart-type" in page.text
+    assert "/api/regulator/credentials" in page.text
 
     login = _login("regulator", "regulator123")
     assert login.status_code == 200, login.text
@@ -265,3 +268,76 @@ def test_regulator_login_lands_on_the_outline():
     admin_headers = {"Authorization": f"Bearer {admin.json()['token']}"}
     blocked = requests.get(f"{BASE_URL}/api/regulator/outline", headers=admin_headers, timeout=30)
     assert blocked.status_code == 403
+    stolen = requests.post(
+        f"{BASE_URL}/api/regulator/credentials",
+        headers=admin_headers,
+        json={"current_password": "admin123", "new_password": "admin-pass-1", "new_username": "regulator"},
+        timeout=30,
+    )
+    assert stolen.status_code == 403
+
+
+def test_regulator_can_rotate_credentials_and_restore_them():
+    login = _login("regulator", "regulator123")
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['token']}"}
+    replacement = "regulator-pass-1"
+    try:
+        weak = requests.post(
+            f"{BASE_URL}/api/regulator/credentials",
+            headers=headers,
+            json={"current_password": "regulator123", "new_password": "short", "new_username": "regulator"},
+            timeout=30,
+        )
+        assert weak.status_code == 400
+
+        taken = requests.post(
+            f"{BASE_URL}/api/regulator/credentials",
+            headers=headers,
+            json={"current_password": "regulator123", "new_password": replacement, "new_username": "admin"},
+            timeout=30,
+        )
+        assert taken.status_code == 409
+
+        changed = requests.post(
+            f"{BASE_URL}/api/regulator/credentials",
+            headers=headers,
+            json={"current_password": "regulator123", "new_password": replacement, "new_username": "regulator"},
+            timeout=30,
+        )
+        assert changed.status_code == 200, changed.text
+        body = changed.json()
+        assert body["username"] == "regulator"
+        assert body["role"] == "regulator"
+        assert body["token"]
+        assert "password" not in body
+
+        stale = _login("regulator", "regulator123")
+        assert stale.status_code == 401
+
+        fresh = _login("regulator", replacement)
+        assert fresh.status_code == 200, fresh.text
+        outline = requests.get(
+            f"{BASE_URL}/api/regulator/outline",
+            headers={"Authorization": f"Bearer {fresh.json()['token']}"},
+            timeout=60,
+        )
+        assert outline.status_code == 200, outline.text
+        denied = requests.post(
+            f"{BASE_URL}/api/customers",
+            headers={"Authorization": f"Bearer {fresh.json()['token']}"},
+            json={"name": "nope"},
+            timeout=30,
+        )
+        assert denied.status_code == 403
+    finally:
+        current = _login("regulator", replacement)
+        if current.status_code != 200:
+            current = _login("regulator", "regulator123")
+        if current.status_code == 200:
+            requests.post(
+                f"{BASE_URL}/api/regulator/credentials",
+                headers={"Authorization": f"Bearer {current.json()['token']}"},
+                json={"current_password": replacement, "new_password": "regulator123", "new_username": "regulator"},
+                timeout=30,
+            )

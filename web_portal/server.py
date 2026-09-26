@@ -12117,7 +12117,12 @@ REGULATOR_API_ALLOW = frozenset({
 })
 REGULATOR_WRITE_ALLOW = frozenset({
     '/api/logout',
+    '/api/regulator/credentials',
 })
+# Usernames whose demo password was replaced by the regulator. The legacy
+# demo secret must not keep opening the account after that change.
+_REGULATOR_LEGACY_RETIRED: set[str] = set()
+_REGULATOR_USERNAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._@+-]{2,63}$')
 
 
 def _session_from_authorization(handler) -> dict[str, str] | None:
@@ -12135,8 +12140,122 @@ def _session_from_authorization(handler) -> dict[str, str] | None:
         return None
 
 
+def _legacy_password_ok(username: str, password: str) -> bool:
+    """True when the test-mode demo password is still valid for this user."""
+    if not username or username in _REGULATOR_LEGACY_RETIRED:
+        return False
+    expected = LEGACY_DEMO_PASSWORDS.get(username)
+    if not expected or not ALLOW_LEGACY_DEMO_PASSWORDS:
+        return False
+    try:
+        return secrets.compare_digest(str(password), str(expected))
+    except Exception:
+        return False
+
+
+def _regulator_password_matches(username: str, password: str, record: Dict[str, Any]) -> bool:
+    if _legacy_password_ok(username, password):
+        return True
+    stored_hash = (record or {}).get('hash') or ''
+    stored_salt = (record or {}).get('salt') or ''
+    if not stored_hash or not stored_salt:
+        return False
+    try:
+        return verify_password(password, stored_hash, stored_salt)
+    except Exception:
+        return False
+
+
+def update_regulator_credentials(session: Dict[str, Any] | None, body: Dict[str, Any]) -> tuple[int, Dict[str, Any]]:
+    """Change the signed-in regulator's username and password.
+
+    The role stays ``regulator``. No other account can be renamed or
+    overwritten, and the previous demo password stops working.
+    """
+    if not session:
+        return 401, {'error': 'Authentication required'}
+    if get_effective_role(session) != REGULATOR_ROLE:
+        return 403, {'error': 'Regulation viewer access required'}
+    current_username = str((session or {}).get('username') or '').strip()
+    record = USERS.get(current_username) if current_username else None
+    if not isinstance(record, dict):
+        record = _FALLBACK_USERS.get(current_username)
+    if not isinstance(record, dict) or (record.get('role') or '').lower() != REGULATOR_ROLE:
+        return 403, {'error': 'Regulation viewer access required'}
+
+    current_password = str(body.get('current_password') or '')
+    new_password = str(body.get('new_password') or '')
+    requested_name = str(body.get('new_username') or '').strip()
+    new_username = requested_name or current_username
+    if not _regulator_password_matches(current_username, current_password, record):
+        return 401, {'error': 'Current password is incorrect'}
+    if len(new_password) < 8 or len(new_password) > 128:
+        return 400, {'error': 'New password must be 8 to 128 characters'}
+    if not _REGULATOR_USERNAME_RE.match(new_username):
+        return 400, {'error': 'Username must be 3 to 64 letters, digits, or . _ @ + -'}
+    if new_username != current_username and (new_username in USERS or new_username in _FALLBACK_USERS):
+        return 409, {'error': 'That username is already in use'}
+
+    updated = dict(record)
+    hashed = hash_password(new_password)
+    updated['hash'] = hashed['hash']
+    updated['salt'] = hashed['salt']
+    updated['role'] = REGULATOR_ROLE
+    updated.pop('customer_id', None)
+
+    _FALLBACK_USERS[new_username] = updated
+    try:
+        USERS[new_username] = updated
+    except Exception as exc:
+        print(f"[REGULATOR] credential store warning: {type(exc).__name__}")
+    if new_username != current_username:
+        _FALLBACK_USERS.pop(current_username, None)
+        try:
+            if hasattr(USERS, '__delitem__'):
+                del USERS[current_username]
+        except Exception:
+            pass
+        if USE_DATABASE and database_enabled:
+            try:
+                from database.manager import DatabaseManager
+                with DatabaseManager() as db:
+                    db.users.delete(current_username)
+            except Exception as exc:
+                print(f"[REGULATOR] previous username retire warning: {type(exc).__name__}")
+
+    _REGULATOR_LEGACY_RETIRED.add(current_username)
+    _REGULATOR_LEGACY_RETIRED.add(new_username)
+    _revoke_user_sessions(current_username)
+    if new_username != current_username:
+        _revoke_user_sessions(new_username)
+
+    expires = datetime.now() + timedelta(seconds=SESSION_TIMEOUT)
+    token, token_jti = _mint_auth_token(new_username, REGULATOR_ROLE, None, expires)
+    session_payload = {
+        'username': new_username,
+        'expires': expires.isoformat(),
+        'customer_id': None,
+        'role': REGULATOR_ROLE,
+        'ip_address': (session or {}).get('ip_address'),
+        'jti': token_jti,
+    }
+    with STATE_LOCK:
+        SESSIONS[token] = session_payload
+    try:
+        _persist_session_to_db(token, session_payload)
+    except Exception:
+        pass
+    return 200, {
+        'success': True,
+        'username': new_username,
+        'role': REGULATOR_ROLE,
+        'token': token,
+        'expires': expires.isoformat(),
+    }
+
+
 def reject_regulator_mutation(handler, path: str) -> bool:
-    """Block every write from the regulation viewer except logout.
+    """Block every write from the regulation viewer except logout and own credentials.
 
     Returns True when the response has already been sent.
     """
@@ -32931,6 +33050,24 @@ For claims or questions, please contact:
         if reject_regulator_mutation(self, path):
             return
 
+        if path == '/api/regulator/credentials':
+            cred_session = _session_from_authorization(self)
+            try:
+                raw_body = self.rfile.read(content_length).decode('utf-8') if content_length else ''
+                cred_body = json.loads(raw_body) if raw_body else {}
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            if not isinstance(cred_body, dict):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request body'}).encode('utf-8'))
+                return
+            status_code, payload = update_regulator_credentials(cred_session, cred_body)
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload).encode('utf-8'))
+            return
+
         # Chat apply is a static page. POSTs here are form-fallback or
         # crawler hits (seen repeatedly as 404 in production after PR #603).
         # Redirect to GET so a JS-disabled resume submit is not a dead end
@@ -37196,7 +37333,7 @@ For claims or questions, please contact:
                     staff_user = USERS.get(username)
                     if staff_user:
                         # Check legacy passwords first (simple string match)
-                        legacy_ok = ALLOW_LEGACY_DEMO_PASSWORDS and username in LEGACY_DEMO_PASSWORDS and password == LEGACY_DEMO_PASSWORDS[username]
+                        legacy_ok = _legacy_password_ok(username, password)
                         
                         # Get hash and salt safely
                         stored_hash = staff_user.get('hash', '')
@@ -37279,7 +37416,7 @@ For claims or questions, please contact:
                 if not user and username in _FALLBACK_USERS:
                     try:
                         fallback = _FALLBACK_USERS[username]
-                        legacy_ok = ALLOW_LEGACY_DEMO_PASSWORDS and username in LEGACY_DEMO_PASSWORDS and password == LEGACY_DEMO_PASSWORDS[username]
+                        legacy_ok = _legacy_password_ok(username, password)
                         password_ok = verify_password(password, fallback.get('hash', ''), fallback.get('salt', ''))
                         
                         if password_ok or legacy_ok:
@@ -38576,7 +38713,7 @@ For claims or questions, please contact:
                     return
                 
                 # Verify current password
-                legacy_ok = ALLOW_LEGACY_DEMO_PASSWORDS and username in LEGACY_DEMO_PASSWORDS and current_password == LEGACY_DEMO_PASSWORDS[username]
+                legacy_ok = _legacy_password_ok(username, current_password)
                 if not (verify_password(current_password, user['hash'], user['salt']) or legacy_ok):
                     self._set_json_headers(401)
                     self.wfile.write(json.dumps({'error': 'Current password is incorrect'}).encode('utf-8'))
