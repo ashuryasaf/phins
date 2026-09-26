@@ -487,6 +487,69 @@ def test_login_consumes_verified_captcha_token(monkeypatch):
             srv.stop()
 
 
+def test_captcha_proof_survives_another_replica_and_a_wrong_password(monkeypatch):
+    """A solved check stays valid for a later login, including on a replica
+    that never stored the challenge."""
+    from services.otp_security_service import get_otp_security_service
+
+    srv = ServerThread()
+    port = srv.port
+    srv.start()
+    time.sleep(0.2)
+    base = f"http://127.0.0.1:{port}"
+
+    monkeypatch.setattr(portal, "PHINS_TEST_MODE", False)
+    with portal.STATE_LOCK:
+        portal.FAILED_LOGINS.clear()
+
+    service = get_otp_security_service()
+    created = service.create_captcha_challenge("login")
+    assert created.success and created.challenge
+    challenge_id = created.challenge.challenge_id
+    answer = created.challenge.expected_answer
+    service._challenges.clear()
+
+    verified = service.verify_captcha(challenge_id, answer)
+    assert verified.success, verified.message
+    proof = (verified.data or {}).get("captcha_proof")
+    assert proof
+
+    try:
+        try:
+            _post(base + "/api/login", {
+                "username": "admin",
+                "password": "not-the-password",
+                "captcha_token": proof,
+            })
+            assert False, "Expected the password to be rejected"
+        except HTTPError as e:
+            assert e.code == 401
+            assert json.loads(e.read().decode("utf-8"))["error"] == "Invalid credentials"
+
+        try:
+            _post(base + "/api/login", {
+                "username": "admin",
+                "password": "still-wrong",
+                "captcha_token": proof,
+            })
+            assert False, "Expected the same proof to be accepted again"
+        except HTTPError as e:
+            assert e.code == 401
+            assert json.loads(e.read().decode("utf-8"))["error"] == "Invalid credentials"
+
+        body, status = _post(base + "/api/login", {
+            "username": "admin",
+            "password": "admin123",
+            "captcha_token": proof,
+        })
+        assert status == 200
+        assert json.loads(body)["role"] == "admin"
+    finally:
+        with portal.STATE_LOCK:
+            portal.FAILED_LOGINS.clear()
+        srv.stop()
+
+
 def test_register_endpoint():
     """Test POST /api/register (with invitation code)"""
     srv = ServerThread()

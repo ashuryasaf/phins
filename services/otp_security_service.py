@@ -19,6 +19,7 @@ import re
 import hmac
 import secrets
 import hashlib
+import base64
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -404,6 +405,82 @@ class SimpleCaptchaGenerator:
         return False
 
 
+# Signed captcha tickets. The challenge and the proof both carry an HMAC, so
+# a replica that did not create the question can still check the answer and
+# a later login can accept the proof without sharing process memory.
+_CHALLENGE_PREFIX = "cchal1."
+_PROOF_PREFIX = "cproof1."
+
+
+def _captcha_key() -> bytes:
+    """Shared HMAC key. Empty when this process cannot mint a portable ticket."""
+    key = (os.environ.get("SESSION_SECRET_KEY") or "").encode("utf-8")
+    if len(key) >= 16:
+        return key
+    if os.environ.get("PHINS_TEST_MODE", "").lower() in {"1", "true", "yes", "y"}:
+        return b"phins-test-captcha-key-32bytes!!"
+    return b""
+
+
+def _b64(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
+
+
+def _b64d(data: str) -> bytes:
+    pad = "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode(data + pad)
+
+
+def _sign_ticket(prefix: str, payload: Dict[str, Any]) -> str:
+    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    body = _b64(raw)
+    sig = hmac.new(_captcha_key(), (prefix + body).encode("ascii"), hashlib.sha256).digest()
+    return prefix + body + "." + _b64(sig)
+
+
+def _open_ticket(prefix: str, token: str) -> Optional[Dict[str, Any]]:
+    if not token or not token.startswith(prefix) or not _captcha_key():
+        return None
+    try:
+        body, sig = token[len(prefix):].rsplit(".", 1)
+        expected = _b64(hmac.new(
+            _captcha_key(), (prefix + body).encode("ascii"), hashlib.sha256
+        ).digest())
+        if not hmac.compare_digest(expected, sig):
+            return None
+        payload = json.loads(_b64d(body))
+    except Exception:
+        return None
+    exp = payload.get("exp")
+    if not isinstance(exp, int) or exp < int(datetime.now(timezone.utc).timestamp()):
+        return None
+    return payload
+
+
+def _answer_digests(expected: str) -> List[str]:
+    candidates = [expected]
+    expected_clean = expected.lower().strip()
+    for _question, answers in SimpleCaptchaGenerator.TEXT_QUESTIONS:
+        if expected_clean == str(answers[0]).lower():
+            candidates = list(answers)
+            break
+    return [
+        hashlib.sha256(str(item).lower().strip().encode("utf-8")).hexdigest()
+        for item in candidates
+    ]
+
+
+def _response_matches(digests: List[str], response: str) -> bool:
+    got = hashlib.sha256(str(response).lower().strip().encode("utf-8")).hexdigest()
+    return any(hmac.compare_digest(got, item) for item in digests if isinstance(item, str))
+
+
+def captcha_proof_ok(token: str) -> bool:
+    """True when a signed login proof is intact and unexpired."""
+    payload = _open_ticket(_PROOF_PREFIX, token or "")
+    return bool(payload and payload.get("ok") == 1)
+
+
 # ============================================================================
 # OTP SECURITY SERVICE
 # ============================================================================
@@ -457,37 +534,58 @@ class OTPSecurityService:
                 message="Too many failed attempts. Please try again later."
             )
         
-        challenge_id = generate_id("CAPTCHA")
         challenge_type = OTPSecurityConfig.CAPTCHA_TYPE
-        
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        question = None
+        answer = None
+
         if challenge_type == 'simple':
             question, answer = SimpleCaptchaGenerator.generate()
+            challenge_id = generate_id("CAPTCHA")
+            if _captcha_key():
+                challenge_id = _sign_ticket(_CHALLENGE_PREFIX, {
+                    "exp": int(expires_at.timestamp()),
+                    "n": secrets.token_hex(8),
+                    "ah": _answer_digests(answer),
+                })
             challenge = CaptchaChallenge(
                 challenge_id=challenge_id,
                 challenge_type='simple',
                 challenge_question=question,
-                expected_answer=answer
+                expected_answer=answer,
+                expires_at=expires_at,
             )
         elif challenge_type == 'hcaptcha':
+            challenge_id = generate_id("CAPTCHA")
             challenge = CaptchaChallenge(
                 challenge_id=challenge_id,
                 challenge_type='hcaptcha',
-                site_key=OTPSecurityConfig.HCAPTCHA_SITE_KEY
+                site_key=OTPSecurityConfig.HCAPTCHA_SITE_KEY,
+                expires_at=expires_at,
             )
         elif challenge_type == 'recaptcha':
+            challenge_id = generate_id("CAPTCHA")
             challenge = CaptchaChallenge(
                 challenge_id=challenge_id,
                 challenge_type='recaptcha',
-                site_key=OTPSecurityConfig.RECAPTCHA_SITE_KEY
+                site_key=OTPSecurityConfig.RECAPTCHA_SITE_KEY,
+                expires_at=expires_at,
             )
         else:
-            # Default to simple
             question, answer = SimpleCaptchaGenerator.generate()
+            challenge_id = generate_id("CAPTCHA")
+            if _captcha_key():
+                challenge_id = _sign_ticket(_CHALLENGE_PREFIX, {
+                    "exp": int(expires_at.timestamp()),
+                    "n": secrets.token_hex(8),
+                    "ah": _answer_digests(answer),
+                })
             challenge = CaptchaChallenge(
                 challenge_id=challenge_id,
                 challenge_type='simple',
                 challenge_question=question,
-                expected_answer=answer
+                expected_answer=answer,
+                expires_at=expires_at,
             )
         
         with self._lock:
@@ -514,6 +612,46 @@ class OTPSecurityService:
         ip_address: Optional[str] = None
     ) -> SecurityResult:
         """Verify a CAPTCHA response"""
+        if str(challenge_id or "").startswith(_CHALLENGE_PREFIX):
+            signed = _open_ticket(_CHALLENGE_PREFIX, challenge_id)
+            if not signed:
+                return SecurityResult(
+                    success=False,
+                    error_code="CHALLENGE_EXPIRED",
+                    message="CAPTCHA challenge has expired"
+                )
+            digests = signed.get("ah") if isinstance(signed.get("ah"), list) else []
+            if not _response_matches(digests, response):
+                if ip_address:
+                    self._record_captcha_failure(ip_address)
+                self._log_audit(
+                    action="captcha_failed",
+                    ip_address=ip_address,
+                    details={"challenge_id": "signed"},
+                    success=False
+                )
+                return SecurityResult(
+                    success=False,
+                    error_code="CAPTCHA_FAILED",
+                    message="CAPTCHA verification failed. Please try again."
+                )
+            proof = _sign_ticket(_PROOF_PREFIX, {
+                "exp": signed["exp"],
+                "n": signed.get("n") or "",
+                "ok": 1,
+            })
+            self._log_audit(
+                action="captcha_verified",
+                ip_address=ip_address,
+                details={"challenge_id": "signed"},
+                success=True
+            )
+            return SecurityResult(
+                success=True,
+                message="CAPTCHA verified successfully",
+                data={"captcha_proof": proof},
+            )
+
         with self._lock:
             challenge = self._challenges.get(challenge_id)
         
@@ -559,9 +697,17 @@ class OTPSecurityService:
                 details={"challenge_id": challenge_id},
                 success=True
             )
+            proof = None
+            if _captcha_key():
+                proof = _sign_ticket(_PROOF_PREFIX, {
+                    "exp": int(challenge.expires_at.timestamp()),
+                    "n": challenge.challenge_id[:40],
+                    "ok": 1,
+                })
             return SecurityResult(
                 success=True,
-                message="CAPTCHA verified successfully"
+                message="CAPTCHA verified successfully",
+                data={"captcha_proof": proof} if proof else None,
             )
         else:
             # Record failure for rate limiting
