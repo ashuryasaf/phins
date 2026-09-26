@@ -159,7 +159,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (remaining <= 0) {
         clearInterval(captchaExpiryTimer);
         captchaExpiryTimer = null;
-        if (!captchaVerifiedToken) loadCaptcha();
+        loadCaptcha();
       }
     }, 10000);
   }
@@ -196,11 +196,13 @@ document.addEventListener('DOMContentLoaded', function () {
           startCaptchaExpiryTimer(data.challenge.expires_at);
         }
       } else {
-        showLocalCaptcha('Verification service is temporarily unavailable');
+        captchaQuestion.classList.remove('loading');
+        captchaQuestion.textContent = 'Verification could not be loaded. Use the refresh control and try again.';
       }
     } catch (e) {
-      console.log('CAPTCHA load failed, using local fallback:', e);
-      showLocalCaptcha('Verification service could not be reached');
+      console.log('CAPTCHA load failed:', e);
+      captchaQuestion.classList.remove('loading');
+      captchaQuestion.textContent = 'Verification could not be loaded. Use the refresh control and try again.';
     }
   }
 
@@ -443,7 +445,7 @@ document.addEventListener('DOMContentLoaded', function () {
     msg.style.color = '#28a745';
     submitBtn.disabled = true;
 
-    const targetUrl = getDashboardUrl(data.role || '');
+    const targetUrl = getDashboardUrl(String(data.role || '').toLowerCase());
 
     try {
       safeStorageSet(localStorage, 'phins_token', data.token);
@@ -529,55 +531,19 @@ document.addEventListener('DOMContentLoaded', function () {
     submitBtn.disabled = true;
     
     try {
-      var verifiedCaptchaToken = captchaVerifiedToken;
-
-      if (!verifiedCaptchaToken) {
-        if (captchaIdValue && captchaValue) {
-          var captchaResponse = await fetchWithRetry('/api/security/captcha/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              challenge_id: captchaIdValue,
-              response: captchaValue
-            })
-          }, 15000, 1);
-          var captchaResult = await captchaResponse.json();
-          
-          if (!captchaResult.success) {
-            msg.textContent = captchaResult.message || 'Verification failed. Please try again.';
-            msg.style.color = '#dc3545';
-            submitBtn.disabled = false;
-            loadCaptcha();
-            captchaAnswer.value = '';
-            return;
-          }
-          verifiedCaptchaToken = (captchaResult.data && captchaResult.data.captcha_proof) || captchaIdValue;
-          captchaVerifiedToken = verifiedCaptchaToken;
-        } else if (localCaptchaAnswer) {
-          if (captchaValue.toLowerCase().trim() !== localCaptchaAnswer.toLowerCase().trim()) {
-            msg.textContent = 'Verification failed. Please try again.';
-            msg.style.color = '#dc3545';
-            submitBtn.disabled = false;
-            loadCaptcha();
-            captchaAnswer.value = '';
-            return;
-          }
-          verifiedCaptchaToken = LOCAL_CAPTCHA_FLAG;
-        }
-      }
-      
+      // The login request carries the signed question and the typed answer.
+      // A separate verify call is not required, so a correct password is not
+      // rejected just because another server handled the first request, and
+      // a failure does not replace the question.
       var loginData = {
         username: username,
         password: password,
         device_fingerprint: getDeviceFingerprint(),
-        user_agent: navigator.userAgent
+        user_agent: navigator.userAgent,
+        captcha_token: captchaIdValue,
+        captcha_challenge: captchaIdValue,
+        captcha_response: captchaValue
       };
-
-      if (verifiedCaptchaToken && verifiedCaptchaToken !== LOCAL_CAPTCHA_FLAG) {
-        loginData.captcha_token = verifiedCaptchaToken;
-      } else if (verifiedCaptchaToken === '__local__') {
-        loginData.captcha_fallback = true;
-      }
       
       var response = await fetchWithTimeout('/api/login', {
         method: 'POST',
@@ -600,13 +566,12 @@ document.addEventListener('DOMContentLoaded', function () {
         msg.textContent = 'Login failed: ' + (data.error || 'Invalid credentials');
         msg.style.color = '#dc3545';
         submitBtn.disabled = false;
-        // A wrong password must not replace a solved check. A new question
-        // is issued only when the proof itself was rejected.
-        var captchaRejected = /CAPTCHA/i.test(String(data.error || ''));
-        if (captchaRejected || !captchaVerifiedToken) {
-          captchaVerifiedToken = null;
+        var errText = String(data.error || '');
+        if (/expired/i.test(errText)) {
           loadCaptcha();
+        } else if (/not accepted/i.test(errText)) {
           captchaAnswer.value = '';
+          captchaAnswer.focus();
         }
       }
       
@@ -621,7 +586,6 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       msg.style.color = '#dc3545';
       submitBtn.disabled = false;
-      if (!captchaVerifiedToken) loadCaptcha();
     }
   });
 });

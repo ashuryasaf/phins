@@ -438,7 +438,8 @@ def _sign_ticket(prefix: str, payload: Dict[str, Any]) -> str:
     return prefix + body + "." + _b64(sig)
 
 
-def _open_ticket(prefix: str, token: str) -> Optional[Dict[str, Any]]:
+def _signed_payload(prefix: str, token: str) -> Optional[Dict[str, Any]]:
+    """Return a ticket payload when the signature matches, including expired ones."""
     if not token or not token.startswith(prefix) or not _captcha_key():
         return None
     try:
@@ -451,8 +452,19 @@ def _open_ticket(prefix: str, token: str) -> Optional[Dict[str, Any]]:
         payload = json.loads(_b64d(body))
     except Exception:
         return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _payload_current(payload: Dict[str, Any]) -> bool:
     exp = payload.get("exp")
-    if not isinstance(exp, int) or exp < int(datetime.now(timezone.utc).timestamp()):
+    return isinstance(exp, int) and exp >= int(datetime.now(timezone.utc).timestamp())
+
+
+def _open_ticket(prefix: str, token: str) -> Optional[Dict[str, Any]]:
+    payload = _signed_payload(prefix, token)
+    if not payload or not _payload_current(payload):
         return None
     return payload
 
@@ -479,6 +491,29 @@ def captcha_proof_ok(token: str) -> bool:
     """True when a signed login proof is intact and unexpired."""
     payload = _open_ticket(_PROOF_PREFIX, token or "")
     return bool(payload and payload.get("ok") == 1)
+
+
+def captcha_challenge_active(token: str) -> bool:
+    """True when a signed challenge is intact and still inside its window."""
+    payload = _signed_payload(_CHALLENGE_PREFIX, token or "")
+    return bool(payload and _payload_current(payload))
+
+
+def captcha_answer_ok(token: str, response: str) -> bool:
+    """True when the typed answer matches a signed challenge.
+
+    The check is stateless, so the login request can carry the question and
+    the answer together. A replica that did not create the question can still
+    accept it, and a correct password is not rejected for lack of an
+    in-memory verified flag.
+    """
+    if not token or response is None or response == "":
+        return False
+    signed = _open_ticket(_CHALLENGE_PREFIX, token)
+    if not signed:
+        return False
+    digests = signed.get("ah") if isinstance(signed.get("ah"), list) else []
+    return _response_matches(digests, str(response))
 
 
 # ============================================================================
@@ -640,6 +675,10 @@ class OTPSecurityService:
                 "n": signed.get("n") or "",
                 "ok": 1,
             })
+            with self._lock:
+                stored = self._challenges.get(challenge_id)
+                if stored is not None:
+                    stored.verified = True
             self._log_audit(
                 action="captcha_verified",
                 ip_address=ip_address,
