@@ -186,6 +186,7 @@ def pytest_runtest_setup(item):  # type: ignore[no-redef]
         "BLOCKED_IPS",
         "SUSPICIOUS_PATTERNS",
         "BUSINESS_INQUIRIES",
+        "REGULATOR_INQUIRIES",
     ]:
         try:
             obj = getattr(portal, attr, None)
@@ -197,6 +198,7 @@ def pytest_runtest_setup(item):  # type: ignore[no-redef]
     # Reset business-inquiry hydrate TTL so each test starts with a cold cache.
     try:
         portal._BUSINESS_INQUIRY_LAST_HYDRATE = 0.0
+        portal._REGULATOR_INQUIRY_LAST_HYDRATE = 0.0
     except Exception:
         pass
 

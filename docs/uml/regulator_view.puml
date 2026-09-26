@@ -21,7 +21,10 @@ actor "Admin / actuary" as Staff
 rectangle "PHINS Platform" {
   component "Regulation dashboard\n/regulator-dashboard.html" as Dash
   component "GET /api/regulator/outline" as API
+  component "Regulator inquiries\nGET/POST /api/regulator/inquiries" as Inq
+  component "Solutions notifications" as Mail
   component "Regulator outline service" as Svc
+  database "agent_artifacts\nregulator_inquiry" as Art
   database "Pricing kernel\nActuarialTablesStore" as Kernel
   database "Policy, claims,\nhealth, investment books" as Books
   database "Agent commissions" as Agents
@@ -30,6 +33,16 @@ rectangle "PHINS Platform" {
 Regulator --> Dash : username regulator\nrole regulator
 Staff --> Dash : read the same outline
 Dash --> API : bearer, GET only
+Regulator --> Inq : ask for inquiry\noutlined subjects only
+Inq --> Art : durable write first
+Inq --> Mail : after the write commits
+note right of Inq
+  Separate from public
+  solutions contact
+  (business_inquiries).
+  Outline figures and
+  customer ids stay out.
+end note
 API --> Svc : aggregate + redact + hash
 Svc --> Kernel : current version,\nbasic premiums
 Svc --> Books : totals only
@@ -138,11 +151,13 @@ title Regulation view — components
 package "web_portal" {
   [login.js] --> [regulator-dashboard.html]
   [server.py] --> [regulator outline route]
+  [server.py] --> [regulator inquiry route]
 }
 
 package "services" {
   [regulator_outline.py] --> [pricing_kernel.py]
   [regulator_outline.py] --> [actuarial_service.py]
+  [regulator_inquiries.py]
 }
 
 package "access" {
@@ -151,8 +166,12 @@ package "access" {
   [role actuary] --> [GET outline]
   [role regulator] --> [POST logout]
   [role regulator] --> [POST own credentials]
+  [role regulator] --> [GET/POST inquiries]
+  [role admin] ..> [inquiries] : denied
+  [role actuary] ..> [inquiries] : denied
   [role regulator] ..> [other APIs] : denied
 }
 
 [regulator outline route] --> [regulator_outline.py]
+[regulator inquiry route] --> [regulator_inquiries.py]
 @enduml
