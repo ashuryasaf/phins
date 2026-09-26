@@ -625,6 +625,48 @@ def test_login_checks_the_signed_answer_without_a_prior_verify(monkeypatch):
         srv.stop()
 
 
+def test_expired_signed_challenge_asks_for_a_new_question(monkeypatch):
+    """An expired question is not described as still valid, and it cannot log anyone in."""
+    from services import otp_security_service as captcha
+
+    srv = ServerThread()
+    port = srv.port
+    srv.start()
+    time.sleep(0.2)
+    base = f"http://127.0.0.1:{port}"
+
+    monkeypatch.setattr(portal, "PHINS_TEST_MODE", False)
+    with portal.STATE_LOCK:
+        portal.FAILED_LOGINS.clear()
+
+    expired = captcha._sign_ticket(captcha._CHALLENGE_PREFIX, {
+        "exp": int(time.time()) - 30,
+        "n": "expired",
+        "ah": captcha._answer_digests("4"),
+    })
+    assert captcha.captcha_challenge_active(expired) is False
+
+    try:
+        try:
+            _post(base + "/api/login", {
+                "username": "admin",
+                "password": "admin123",
+                "captcha_token": expired,
+                "captcha_challenge": expired,
+                "captcha_response": "4",
+            })
+            assert False, "An expired question must not log anyone in"
+        except HTTPError as e:
+            assert e.code == 400
+            message = json.loads(e.read().decode("utf-8"))["error"]
+            assert "expired" in message
+            assert "still valid" not in message
+    finally:
+        with portal.STATE_LOCK:
+            portal.FAILED_LOGINS.clear()
+        srv.stop()
+
+
 def test_register_endpoint():
     """Test POST /api/register (with invitation code)"""
     srv = ServerThread()

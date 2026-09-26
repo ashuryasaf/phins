@@ -37335,6 +37335,7 @@ For claims or questions, please contact:
                     try:
                         from services.otp_security_service import (
                             captcha_answer_ok,
+                            captcha_challenge_active,
                             captcha_proof_ok,
                             get_otp_security_service,
                         )
@@ -37361,9 +37362,15 @@ For claims or questions, please contact:
                         captcha_ok = True
                 if not captcha_ok and not PHINS_TEST_MODE:
                     if captcha_response and str(captcha_challenge).startswith('cchal1.'):
+                        if captcha_challenge_active(captcha_challenge):
+                            self._set_json_headers(400)
+                            self.wfile.write(json.dumps({
+                                'error': 'Verification answer was not accepted. The same question is still valid.',
+                            }).encode('utf-8'))
+                            return
                         self._set_json_headers(400)
                         self.wfile.write(json.dumps({
-                            'error': 'Verification answer was not accepted. The same question is still valid.',
+                            'error': 'Verification expired. Please answer the new question.',
                         }).encode('utf-8'))
                         return
                     record_failed_login(client_ip, server_port)

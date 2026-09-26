@@ -159,6 +159,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (remaining <= 0) {
         clearInterval(captchaExpiryTimer);
         captchaExpiryTimer = null;
+        loadCaptcha();
       }
     }, 10000);
   }
@@ -565,7 +566,10 @@ document.addEventListener('DOMContentLoaded', function () {
         msg.textContent = 'Login failed: ' + (data.error || 'Invalid credentials');
         msg.style.color = '#dc3545';
         submitBtn.disabled = false;
-        if (/not accepted|expired/i.test(String(data.error || ''))) {
+        var errText = String(data.error || '');
+        if (/expired/i.test(errText)) {
+          loadCaptcha();
+        } else if (/not accepted/i.test(errText)) {
           captchaAnswer.value = '';
           captchaAnswer.focus();
         }
