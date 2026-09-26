@@ -20,6 +20,8 @@ import pytest
 from services.actuarial_service import get_actuarial_store
 from services.ltc_life_reinsurance_research import (
     STUDY_ID,
+    STUDY_TITLE,
+    STUDY_TITLE_HE,
     build_ltc_life_research,
     clear_staged_research_overlay,
     get_staged_research_overlay,
@@ -28,6 +30,7 @@ from services.ltc_life_reinsurance_research import (
     research_table_csv,
     stage_research_overlay,
 )
+from services.ltc_life_reinsurance_research_pdf import bidi_text, build_research_pdf
 
 
 def _base_url() -> str:
@@ -205,6 +208,11 @@ def test_dashboard_wires_research_and_audit_bar():
     assert 'cross_risk_adl_mortality' in html
     assert 'id="ltc-history-chart"' in html
     assert 'id="ltc-forecast-chart"' in html
+    assert "PhinsLtcLifeResearch.downloadPdf('en')" in html
+    assert "PhinsLtcLifeResearch.downloadPdf('he')" in html
+    assert 'Download PDF — עברית' in html
+    assert 'downloadPdf' in js
+    assert 'format: \'pdf\'' in js or 'format: "pdf"' in js
 
 
 def test_research_endpoint_requires_actuary_role():
@@ -262,6 +270,90 @@ def test_research_download_csv(admin_token):
     rows = list(reader)
     assert rows
     assert 'life_technical_rate_per_1000' in (reader.fieldnames or [])
+
+
+def _pdf_text(pdf_bytes: bytes) -> str:
+    from pypdf import PdfReader
+    return '\n'.join(
+        (page.extract_text() or '') for page in PdfReader(io.BytesIO(pdf_bytes)).pages
+    )
+
+
+def _has_phrase(text: str, phrase: str, rtl: bool = False) -> bool:
+    if phrase in text:
+        return True
+    if rtl:
+        visual = bidi_text(phrase, rtl=True)
+        return visual in text or visual.replace(' ', '') in text.replace(' ', '')
+    return False
+
+
+def test_research_pdf_english_is_full_study():
+    pack = build_ltc_life_research({})
+    filename, pdf_bytes = build_research_pdf(pack, lang='en')
+    assert filename.endswith('-en.pdf')
+    assert pdf_bytes.startswith(b'%PDF')
+    text = _pdf_text(pdf_bytes)
+    assert STUDY_TITLE in text or 'Reinsurance Appetite' in text
+    assert 'Study narrative' in text
+    assert 'Methodology and scope' in text
+    assert 'Key results on this slider set' in text
+    assert 'Ages vs covers' in text
+    assert 'Cross-risk' in text
+    assert 'Affiliated sources' in text
+    assert 'Integrity' in text
+    assert 'hybrid' in text.lower() or 'Hybrid' in text
+
+
+def test_research_pdf_hebrew_is_full_translation():
+    pack = build_ltc_life_research({})
+    assert pack['title_he'] == STUDY_TITLE_HE
+    assert pack['narrative_he']
+    filename, pdf_bytes = build_research_pdf(pack, lang='he')
+    assert filename.endswith('-he.pdf')
+    assert pdf_bytes.startswith(b'%PDF')
+    text = _pdf_text(pdf_bytes)
+    phrases = (
+        STUDY_TITLE_HE,
+        'נרטיב המחקר',
+        'מתודולוגיה והיקף',
+        'תיאבון ביטוח משנה',
+        'פעולות יומיום',
+        'מקורות מסונפים',
+        'שלמות הנתונים',
+        'סיכון צולב',
+        'שכבת תמחור',
+    )
+    missing = [phrase for phrase in phrases if not _has_phrase(text, phrase, rtl=True)]
+    assert not missing, f'Hebrew PDF missing {missing}. Extracted excerpt: {text[:800]}'
+    # English study title must not be the Hebrew document title.
+    assert STUDY_TITLE not in text
+
+
+def test_research_download_pdf_english_and_hebrew(admin_token):
+    en_body, status, headers = _get(
+        _base_url() + '/api/actuarial/ltc-life-research/download?format=pdf&lang=en',
+        admin_token,
+    )
+    assert status == 200, en_body
+    assert 'application/pdf' in headers.get('Content-Type', '')
+    assert en_body.startswith(b'%PDF')
+    assert 'en' in headers.get('Content-Language', 'en')
+    en_text = _pdf_text(en_body)
+    assert 'Methodology and scope' in en_text
+
+    he_body, status, headers = _get(
+        _base_url()
+        + '/api/actuarial/ltc-life-research/download?format=pdf&lang=he&coverage_type=standalone_ltc',
+        admin_token,
+    )
+    assert status == 200, he_body
+    assert 'application/pdf' in headers.get('Content-Type', '')
+    assert he_body.startswith(b'%PDF')
+    assert headers.get('Content-Language') == 'he'
+    he_text = _pdf_text(he_body)
+    assert _has_phrase(he_text, 'סיעוד עצמאי', rtl=True) or _has_phrase(he_text, 'פעולות יומיום', rtl=True)
+    assert STUDY_TITLE not in he_text
 
 
 def test_research_stage_endpoint(admin_token):

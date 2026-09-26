@@ -19931,10 +19931,20 @@ For claims or questions, please contact:
                 knobs = {key: (values[0] if values else None) for key, values in qs.items()}
                 table_name = str(knobs.pop('table', None) or knobs.pop('table_name', None) or 'pricing_overlay').strip()
                 fmt = str(knobs.pop('format', None) or 'csv').strip().lower()
-                if fmt not in ('csv', 'json'):
+                lang = str(knobs.pop('lang', None) or knobs.pop('language', None) or 'en').strip().lower()
+                knobs.pop('download', None)
+                if lang in ('hebrew', 'iw', 'he-il'):
+                    lang = 'he'
+                if lang not in ('en', 'he'):
+                    lang = 'en'
+                if fmt not in ('csv', 'json', 'pdf'):
                     fmt = 'csv'
                 pack = build_ltc_life_research(knobs)
-                if fmt == 'json':
+                if fmt == 'pdf':
+                    from services.ltc_life_reinsurance_research_pdf import build_research_pdf
+                    filename, body_bytes = build_research_pdf(pack, lang=lang)
+                    content_type = 'application/pdf'
+                elif fmt == 'json':
                     filename, body_bytes = research_table_json(pack, table_name)
                     content_type = 'application/json; charset=utf-8'
                 else:
@@ -19945,6 +19955,9 @@ For claims or questions, please contact:
                 self.send_header('Content-Type', content_type)
                 self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
                 self.send_header('X-Phins-Table-Integrity', integrity_hash)
+                if fmt == 'pdf':
+                    self.send_header('Content-Language', 'he' if lang == 'he' else 'en')
+                    self.send_header('Content-Length', str(len(body_bytes)))
                 self.send_header('X-Content-Type-Options', 'nosniff')
                 self.send_header('Cache-Control', 'no-store')
                 self.end_headers()

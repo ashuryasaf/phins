@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <!-- Build stamp: bumped whenever a substantive pricing change ships so
        cached browsers can tell users they are running an old UI. -->
-  <meta name="phins-actuary-dashboard-build" content="2026-09-26.ltc-life-research">
+  <meta name="phins-actuary-dashboard-build" content="2026-09-26.ltc-life-research-pdf">
   <!-- Chart.js for the Annuity Reserves forecast bar/line charts. Loaded
        from the same CDN as risk-reports-dashboard.html for consistency. -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -2936,6 +2936,20 @@
             <div class="card-title">Study narrative</div>
             <div id="ltc-narrative">
               <p style="color:var(--text-light);">Recalculate to load the research narrative.</p>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Download the full study</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              Download the complete research document (narrative, methodology, KPIs, every table, sources, and integrity hashes) as a PDF.
+              The Hebrew file is a full translation of that document — titles, labels, table headers, and source notes — not an English PDF with a Hebrew cover.
+            </p>
+            <div class="form-row">
+              <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-success" onclick="PhinsLtcLifeResearch.downloadPdf('en')">Download PDF</button>
+                <button class="btn btn-primary" onclick="PhinsLtcLifeResearch.downloadPdf('he')">Download PDF — עברית</button>
+              </div>
             </div>
           </div>
 

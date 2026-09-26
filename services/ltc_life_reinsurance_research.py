@@ -850,6 +850,182 @@ def _narrative(params: ResearchParams, historical: List[Dict[str, Any]],
     ]
 
 
+STUDY_TITLE_HE = (
+    'פרמיות סיכון חיים ונכות סיעודית (3+ פעולות יומיום) — תיאבון ביטוח משנה 1975–2025'
+)
+ADL_NAMES_HE = (
+    'רחצה',
+    'לבישה',
+    'שימוש בשירותים',
+    'מעברים',
+    'שליטה על סוגרים',
+    'אכילה',
+)
+
+
+def _narrative_he(params: ResearchParams, historical: List[Dict[str, Any]],
+                  exposure_totals: Dict[str, float]) -> List[str]:
+    """Full Hebrew narrative of the same slider set as ``_narrative``."""
+    cover = _COVERAGE_TYPE_FACTORS[params.coverage_type]
+    region = _REGION_FACTORS[params.region]
+    first = historical[0] if historical else {}
+    last = historical[-1] if historical else {}
+    cover_he = COVER_LABELS_HE.get(params.coverage_type, cover['label'])
+    region_he = REGION_LABELS_HE.get(params.region, region['label'])
+    hedge_he = HEDGE_LABELS_HE.get(cover['hedge'], cover['hedge'])
+    adl_list = ', '.join(ADL_NAMES_HE)
+    return [
+        (
+            f'{STUDY_TITLE_HE}. התביעה מופעלת ב־{params.adl_threshold}+ מתוך {adl_list} '
+            f'(הגדרת נכות צמיתה של PHINS; מחמירה מסיעוד אמריקאי טיפוסי של 2 מתוך 6).'
+        ),
+        (
+            f'אזור {region_he}; סוג כיסוי {cover_he}; '
+            f'{params.lives:,} חיים; סכום חיים ${params.life_cover:,.0f}; '
+            f'סיעוד שנתי ${params.ltc_annual_cover:,.0f}; שיעור גידור {params.hedge_share_pct:.1f}%.'
+        ),
+        (
+            f'מ־{params.year_from} עד {params.year_to} מדד פרמיית החיים נע '
+            f'{first.get("life_premium_index", "—")} → {last.get("life_premium_index", "—")} '
+            f'(1990 = 100) בעוד מדד הסיעוד ב־3+ פעולות יומיום נע '
+            f'{first.get("ltc3_premium_index", "—")} → {last.get("ltc3_premium_index", "—")}. '
+            f'תיאבון ביטוח המשנה לסיעוד עצמאי קרס אחרי 2003; תיאבון למוצרים משולבים ולהקדמת תגמולי מוות נבנה מחדש אחרי 2012.'
+        ),
+        (
+            'סיכון צולב: הפעלת 3+ פעולות יומיום מקצרת את תוחלת החיים הנותרת לכ־2–9 שנים לפי גיל. '
+            'לכן מבטחי משנה מעניקים זיכוי למבנים משולבים ולהקדמת תגמולי מוות '
+            '(תגמול החיים משולם מראש) ומעמיסים על סיעוד עצמאי בפיצוי בשל משך התביעה.'
+        ),
+        (
+            f'ערכת המחוונים הנוכחית מצפה לחשיפה מועברת נטו '
+            f'${exposure_totals.get("net_ceded_exposure", 0):,.0f} '
+            f'(חיים ${exposure_totals.get("ceded_life_exposure", 0):,.0f} + '
+            f'סיעוד ${exposure_totals.get("ceded_ltc_exposure", 0):,.0f} − '
+            f'זיכוי משותף ${exposure_totals.get("joint_credit", 0):,.0f}); '
+            f'זנב 99% ${exposure_totals.get("tail_99_exposure", 0):,.0f}.'
+        ),
+        (
+            f'תחזית עד {params.forecast_end}: תמהיל הכיסוי ממשיך לנוע אל {cover_he} '
+            f'ואל הקדמת תגמולי מוות; הגידור המומלץ כיום הוא {hedge_he}, '
+            f'ואחר כך הפסד עודף למשך תביעה והחלפות אריכות ימים / עלות טיפול.'
+        ),
+    ]
+
+
+COVER_LABELS_HE = {
+    'hybrid_life_ltc': 'חיים + סיעוד משולב (מאגר משותף)',
+    'standalone_ltc': 'סיעוד עצמאי בפיצוי (3+ פעולות יומיום)',
+    'adb_rider': 'נספח הקדמת תגמולי מוות',
+    'indemnity': 'סיעוד בפיצוי כספי (תקרה יומית / חודשית)',
+    'reimbursement': 'סיעוד בהחזר הוצאות (כנגד קבלות)',
+}
+REGION_LABELS_HE = {
+    'us': 'ארצות הברית',
+    'oecd': 'ממוצע OECD',
+    'il': 'ישראל',
+}
+HEDGE_LABELS_HE = {
+    'quota_share_combo': 'שיתוף פרמיה משולב',
+    'facultative_xl': 'הפסד עודף פקולטטיבי',
+    'yrt_plus_adb': 'YRT + הקדמת תגמולי מוות',
+    'quota_share_plus_xl': 'שיתוף פרמיה + הפסד עודף',
+    'quota_share': 'שיתוף פרמיה',
+    'quota_share_combo_plus_duration_xl': 'שיתוף פרמיה משולב + הפסד עודף למשך תביעה',
+    'parametric_adb_plus_qs': 'הקדמת תגמולים פרמטרית + שיתוף פרמיה',
+    'longevity_swap_plus_combo_qs': 'החלפת אריכות ימים + שיתוף פרמיה משולב',
+}
+ERA_LABELS_HE = {
+    'experimental_qs': 'שיתוף פרמיה ניסיוני',
+    'aggressive_qs': 'שיתוף פרמיה אגרסיבי',
+    'peak_then_shock': 'שיא ואז זעזוע',
+    'retrenchment': 'נסיגה',
+    'hybrid_rebuild': 'שיקום מוצרים משולבים',
+    'combo_preferred': 'העדפת מוצרים משולבים',
+}
+ERA_NOTES_HE = {
+    'experimental_qs': 'שיתוף פרמיה פקולטטיבי על סיעוד פרט חדש; YRT זול על חיים.',
+    'aggressive_qs': 'שיתוף פרמיה גבוה על סיעוד עצמאי בפיצוי; YRT חיים הפך לסחורה.',
+    'peak_then_shock': 'שיא העברת הסיעוד ואז זעזועי תחלואה וביטולים ראשונים.',
+    'retrenchment': 'קיבולת סיעוד עצמאי נמשכה; קפטיבים לחיים (XXX/AXXX) מחליפים רטרו מסורתי.',
+    'hybrid_rebuild': 'מוצרים משולבים והקדמת תגמולי מוות מחליפים פיצוי עצמאי אצל מבטח המשנה.',
+    'combo_preferred': 'קפיצת שיעורי חיים בקורונה; שיתוף פרמיה משולב והפסד עודף למשך תביעה הוא המבנה המוצע.',
+}
+FORECAST_NOTES_HE = {
+    'quota_share_combo_plus_duration_xl': (
+        'מבטחי משנה קושרים שיתוף פרמיה משולב על חיים+3+ פעולות יומיום '
+        'וקונים הפסד עודף על משך התביעה.'
+    ),
+    'parametric_adb_plus_qs': (
+        'הקדמת תגמולי מוות הופכת לגידור ברירת המחדל ל־3+ פעולות יומיום; '
+        'פקולטטיבי עצמאי נשאר שולי.'
+    ),
+    'longevity_swap_plus_combo_qs': (
+        'זנב המשך מאוחסן בהחלפות אריכות ימים / עלות טיפול מעל שיתוף פרמיה משולב.'
+    ),
+}
+HEDGE_IMPLICATIONS_HE = {
+    'combo': 'הקדמת תגמולים / מאגר משותף מזכים את תגמול החיים כנגד תביעת הסיעוד',
+    'standalone': 'ספרים עצמאיים משלמים את שני הסיכונים — מבטחי משנה מעמיסים משך ומתאם',
+}
+PRICING_NOTE_HE = (
+    'שכבת הנכות היא היארעות 3+ פעולות יומיום (לא כל־סיבתית). '
+    'יש לקדם רק כאשר הספר החי מתומחר על אותו סף הפעלה. '
+    'הורידו CSV והשתמשו בטבלאות שהועלו כדי לנסות קודם על קוהורט.'
+)
+RESEARCH_SOURCES_HE = {
+    'soa_ltc_experience_2000_2011': {
+        'source': 'מחקר ניסיון סיעודי של SOA לשנים 2000–2011 / דוחות בין־חברתיים',
+        'headline_metric': 'היארעות תביעה ב־2+ פעולות יומיום גבוהה פי כמה מ־3+; תמותת תובעים גבוהה פי 4–10 משיעורי האוכלוסייה.',
+        'relevance': 'כיול עיקרי לעקומת גיל ולסיכון הצולב (3+ פעולות יומיום → תוחלת חיים נותרת).',
+    },
+    'soa_limra_group_ltd_2015_2022': {
+        'source': 'מחקר היארעות נכות ארוכת טווח קבוצתית SOA/LIMRA 2015–2022',
+        'headline_metric': '294 מיליון שנות־חיים בחשיפה וכ־1.2 מיליון תביעות אצל 19 מבטחים (97% מהשוק).',
+        'relevance': 'אמינות להיארעות נכות צמיתה המשמשת במבחני קיצון של ביטוח המשנה ב־PHINS.',
+    },
+    'aaa_soa_idi_2013': {
+        'source': 'האקדמיה האמריקאית לאקטוארים / צוות טבלאות נכות פרט של SOA',
+        'headline_metric': 'טבלת הערכה IDI 2013: תקני היארעות, סיום תביעה ושולי הערכה.',
+        'relevance': 'תמחור ביטוח משנה מבוסס־עתודה ושולי משך ל־3+ פעולות יומיום.',
+    },
+    'naic_ltc_2017_2024': {
+        'source': 'דוחות ביטוח סיעודי של NAIC ותיקי העלאות תעריף',
+        'headline_metric': 'העלאות תעריף ענפיות של 50–400% אחרי 2003 לאחר שכשלו הנחות ביטול ותחלואה.',
+        'relevance': 'מסביר את קריסת תיאבון ביטוח המשנה לסיעוד עצמאי בשנים 2003–2012.',
+    },
+    'swissre_sigma_life_health': {
+        'source': 'סדרת Swiss Re sigma לביטוח משנה חיים ובריאות',
+        'headline_metric': 'YRT חיים הפך לסחורה בשנות ה־90; קיבולת פקולטטיבית לסיעוד הצטמצמה אחרי 2003; מוצרים משולבים חזרו אחרי 2012.',
+        'relevance': 'מדדי תיאבון העברה וקיבולת חיים מול סיעוד לאורך 50 שנה.',
+    },
+    'munichre_ltc_hybrid': {
+        'source': 'תדריכי Munich Re לסיעוד / הטבה מקושרת והקדמת תגמולי מוות',
+        'headline_metric': 'מבטחי משנה מעדיפים מאגר משותף חיים+סיעוד ונספחי הקדמת תגמולים על פני סיעוד עצמאי בפיצוי.',
+        'relevance': 'תחזית סוגי כיסוי והמלצות מבנה גידור.',
+    },
+    'soa_mortality_improvement_mp': {
+        'source': 'סולם שיפור תמותה MP של SOA וטבלאות חיים נלוות (שושלת GAM/CSO)',
+        'headline_metric': 'שיעורי חיים בארה״ב ירדו כ־1% בשנה במשך עשורים ואז השתטחו; הקורונה הפכה זמנית את השיפור.',
+        'relevance': 'מדד פרמיית סיכון חיים ומחוון שיפור תמותה.',
+    },
+    'ihme_gbd_hale': {
+        'source': 'נטל התחלואה העולמי של IHME / תוחלת חיים בריאה',
+        'headline_metric': 'תוחלת חיים בריאה הגיעה ל־62.2 שנים בעוד DALY עלה מ־2.63 מיליארד (2010) ל־2.88 מיליארד (2021).',
+        'relevance': 'מסגרת נטל נכות לגידור חיים־בריאות ולקיצון עתודות.',
+    },
+    'limra_hybrid_ltc_sales': {
+        'source': 'סקרים של LIMRA למכירות חיים / חיים+סיעוד משולב בארה״ב',
+        'headline_metric': 'חיים+סיעוד משולב שולט כיום בפרמיה החדשה דמוית־הסיעוד; סיעוד פרט עצמאי הוא שוק שיורי.',
+        'relevance': 'תחזית תמהיל כיסוי קדימה בסרגל מחקר וביקורת.',
+    },
+    'phins_adl_contract': {
+        'source': 'חוזה אקטוארי של PHINS (נכות צמיתה ב־3+ פעולות יומיום + חיים)',
+        'headline_metric': 'הסיכונים המכוסים הם מוות ונכות מוחלטת צמיתה ב־3+ פעולות יומיום; חלק הנכות מהחיים הוא יחס חוזה מתכוונן.',
+        'relevance': 'נועל את המחקר לאותו סף הפעלה וליחס חיים:נכות שגרעין התמחור משתמש בהם.',
+    },
+}
+
+
 def build_ltc_life_research(
     raw: Optional[Dict[str, Any]] = None,
     tables_store: Any = None,
@@ -918,13 +1094,19 @@ def build_ltc_life_research(
         'success': True,
         'study_id': STUDY_ID,
         'title': STUDY_TITLE,
+        'title_he': STUDY_TITLE_HE,
         'generated_at': datetime.now(timezone.utc).isoformat(),
         'params': params_dict,
         'region_label': region['label'],
+        'region_label_he': REGION_LABELS_HE.get(params.region, region['label']),
         'coverage_label': cover['label'],
+        'coverage_label_he': COVER_LABELS_HE.get(params.coverage_type, cover['label']),
         'recommended_hedge': cover['hedge'],
+        'recommended_hedge_he': HEDGE_LABELS_HE.get(cover['hedge'], cover['hedge']),
         'adl_names': list(ADL_NAMES),
+        'adl_names_he': list(ADL_NAMES_HE),
         'narrative': _narrative(params, historical, exposure_totals),
+        'narrative_he': _narrative_he(params, historical, exposure_totals),
         'sources': [dict(item) for item in RESEARCH_SOURCES],
         'eras': [
             {'start': s, 'end': e, 'structure': st, 'note': n}
@@ -977,6 +1159,7 @@ def build_ltc_life_research(
                 'Promote only when the live book is priced on the same trigger. '
                 'Download CSV and use Uploaded Tables to stage a cohort first.'
             ),
+            'note_he': PRICING_NOTE_HE,
         },
         'integrity': integrity,
     }

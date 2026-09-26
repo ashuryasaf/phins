@@ -428,6 +428,38 @@
     }
   }
 
+  async function downloadPdf(lang) {
+    const language = lang === 'he' ? 'he' : 'en';
+    try {
+      const res = await fetch(
+        `/api/actuarial/ltc-life-research/download?${queryString({ format: 'pdf', lang: language })}`,
+        { headers: authHeaders() },
+      );
+      if (!res.ok) {
+        let message = `HTTP ${res.status}`;
+        try {
+          const body = await res.json();
+          message = body.error || message;
+        } catch (err) { /* ignore */ }
+        throw new Error(message);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `phins-ltc-life-research-${language}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setStatus(language === 'he'
+        ? 'Downloaded the full study PDF in Hebrew.'
+        : 'Downloaded the full study PDF.');
+    } catch (err) {
+      setStatus(`PDF download failed: ${err.message}`, true);
+    }
+  }
+
   async function stage() {
     try {
       const res = await fetch('/api/actuarial/ltc-life-research/stage', {
@@ -477,6 +509,7 @@
     load,
     reset,
     download,
+    downloadPdf,
     stage,
     promote,
     collectParams,
