@@ -222,6 +222,77 @@ def test_a_failed_durable_write_does_not_publish_the_inquiry(monkeypatch):
     assert portal.BUSINESS_INQUIRIES == {}
 
 
+def test_ordinary_punctuation_in_a_message_is_not_read_as_an_attack():
+    import web_portal.server as portal
+
+    prose = (
+        "Two questions; first, how is the claims count sealed | second, "
+        "which subject covers reserve movements -- and where is it shown?"
+    )
+    status, payload = portal.open_regulator_inquiry(
+        {"username": "regulator", "role": "regulator"},
+        {"subject": "claims", "message": prose},
+        "203.0.113.9",
+    )
+    assert status == 201, payload
+    assert payload["inquiry"]["messages"][0]["body"] == prose
+    assert not portal.is_ip_blocked("203.0.113.9")[0]
+
+
+def test_a_credential_rename_keeps_the_open_inquiry_on_the_same_account():
+    import web_portal.server as portal
+
+    old_name = "regulator.inquiry-probe"
+    new_name = "regulator.inquiry-probe2"
+    record = {
+        **portal.hash_password("inquiry-pass-1"),
+        "role": "regulator",
+        "name": "Inquiry Probe",
+    }
+    portal.USERS[old_name] = record
+    portal._FALLBACK_USERS[old_name] = record
+    try:
+        status, opened = portal.open_regulator_inquiry(
+            {"username": old_name, "role": "regulator"},
+            {"subject": "pricing", "message": "Question asked before the rename"},
+            "127.0.0.1",
+        )
+        assert status == 201, opened
+        inquiry_id = opened["inquiry"]["id"]
+
+        status, rotated = portal.update_regulator_credentials(
+            {"username": old_name, "role": "regulator"},
+            {
+                "current_password": "inquiry-pass-1",
+                "new_password": "inquiry-pass-2",
+                "new_username": new_name,
+            },
+        )
+        assert status == 200, rotated
+
+        renamed = {"username": new_name, "role": "regulator"}
+        listed_status, listed = portal.list_regulator_inquiries(renamed)
+        assert listed_status == 200
+        assert [item["id"] for item in listed["items"]] == [inquiry_id]
+
+        status, again = portal.open_regulator_inquiry(
+            renamed,
+            {"subject": "pricing", "message": "Question asked after the rename"},
+            "127.0.0.1",
+        )
+        assert status == 200, again
+        assert again["action"] == "appended"
+        assert again["inquiry"]["id"] == inquiry_id
+    finally:
+        for name in (old_name, new_name):
+            portal._FALLBACK_USERS.pop(name, None)
+            try:
+                del portal.USERS[name]
+            except Exception:
+                pass
+            portal._REGULATOR_LEGACY_RETIRED.discard(name)
+
+
 def test_database_mode_uses_agent_artifacts_and_reloads_them(monkeypatch):
     import database.manager as manager
     import web_portal.server as portal

@@ -44,6 +44,10 @@ subject catalog. `POST /api/regulator/inquiries` with `{ "subject", "message" }`
 opens one inquiry per account and subject. A later message appends. The same
 text as the latest turn is a duplicate and adds nothing. `opened_by` is the
 signed-in username. The body cannot set a customer, a name, or an email.
+Inquiry text is stored as written; the injection detectors that scan query
+strings are not applied to it, so ordinary punctuation is not an attack.
+A credential rename carries this account's inquiries to the new username, and
+a rename whose rewrite cannot be recorded is refused with 503.
 
 Records live in `REGULATOR_INQUIRIES`. In database mode each inquiry is an
 `agent_artifacts` row (`agent_id` `regulator_inquiry`, `kind` `inquiry`) with

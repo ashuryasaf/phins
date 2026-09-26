@@ -12335,6 +12335,11 @@ def update_regulator_credentials(session: Dict[str, Any] | None, body: Dict[str,
     # record the retirement would come back with the old password on restart.
     if not _retire_regulator_legacy({current_username, new_username}):
         return 503, {'error': 'Credential change could not be recorded'}
+    # Inquiries are owned by username, so they move with the rename before the
+    # swap: a rewrite that cannot land refuses the rotation instead of hiding
+    # the account's open inquiries behind the retired name.
+    if not _move_regulator_inquiries(current_username, new_username):
+        return 503, {'error': 'Credential change could not be recorded'}
 
     updated = dict(record)
     hashed = hash_password(new_password)
@@ -12460,6 +12465,34 @@ def _persist_regulator_inquiry(inquiry_id: str, data: Dict[str, Any]) -> bool:
     except Exception as exc:
         print(f"[REGULATOR] inquiry persist failed for {inquiry_id}: {type(exc).__name__}")
         return False
+
+
+def _move_regulator_inquiries(old_username: str, new_username: str) -> bool:
+    """Carry this account's inquiries over to its new username.
+
+    Ownership is the username, so a rename that left the records behind would
+    hide the account's history and open a second inquiry on a subject that is
+    still open under the retired name. Message authorship is left as written.
+    """
+    from services.regulator_inquiries import clone_record
+
+    if not old_username or not new_username or old_username == new_username:
+        return True
+    with STATE_LOCK:
+        _hydrate_regulator_inquiries(force=True)
+        moved = []
+        for inquiry_id, record in REGULATOR_INQUIRIES.items():
+            if not isinstance(record, dict) or record.get('opened_by') != old_username:
+                continue
+            updated = clone_record(record)
+            updated['id'] = inquiry_id
+            updated['opened_by'] = new_username
+            moved.append((inquiry_id, updated))
+        for inquiry_id, updated in moved:
+            if not _persist_regulator_inquiry(inquiry_id, updated):
+                return False
+            REGULATOR_INQUIRIES[inquiry_id] = updated
+    return True
 
 
 def generate_regulator_inquiry_id() -> str:
@@ -12638,12 +12671,10 @@ def open_regulator_inquiry(
     message_raw = body.get('message')
     if not isinstance(subject_raw, str) or not isinstance(message_raw, str):
         return 400, {'error': 'Subject and message are required'}
-    for field, value in (('subject', subject_raw), ('message', message_raw)):
-        is_valid, error = validate_input_security(
-            value, client_ip or '0.0.0.0', f'regulator_inquiry_{field}',
-        )
-        if not is_valid:
-            return 400, {'error': error or 'Invalid input detected'}
+    # The injection detectors are deliberately not run on this conversation:
+    # they read ordinary prose (';', '|', '--') as an attack and block the
+    # caller IP. The subject is matched against the outlined catalog, the
+    # message is stripped of controls and capped, and every render escapes it.
 
     try:
         with STATE_LOCK:
