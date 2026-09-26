@@ -40,27 +40,30 @@ the dashboard card **Ask for inquiry**. The subjects are the seven sections
 above. Admin and actuary do not see the card and cannot call the inquiry API.
 
 `GET /api/regulator/inquiries` returns that account's inquiries and the
-subject catalog. `POST /api/regulator/inquiries` with `{ "subject", "message" }`
-opens one inquiry per account and subject. A later message appends. The same
+subject catalog. `POST /api/regulator/inquiries` with
+`{ "name", "email", "subject", "message" }` opens one inquiry per account and
+subject. Full name and email are required. Organization is always
+`capital markets authority` and audience is always `regulations contact`;
+the request cannot replace either one. A later message appends. The same
 text as the latest turn is a duplicate and adds nothing. `opened_by` is the
-signed-in username. The body cannot set a customer, a name, or an email.
+signed-in username. The body cannot set a customer id.
 Inquiry text is stored as written; the injection detectors that scan query
 strings are not applied to it, so ordinary punctuation is not an attack.
 A credential rename carries this account's inquiries to the new username, and
 a rename whose rewrite cannot be recorded is refused with 503.
 
-Records live in `REGULATOR_INQUIRIES`. In database mode each inquiry is an
+The thread lives in `REGULATOR_INQUIRIES`. In database mode each inquiry is an
 `agent_artifacts` row (`agent_id` `regulator_inquiry`, `kind` `inquiry`) with
-a checksum checked on load. The cache updates only after that write commits.
-A failed write leaves the previous record in place and returns 503.
+a checksum checked on load. The same write files a Business Relations row
+(`BRI-…`, interest `regulator:<subject>`) so the admin queue shows the
+contact. Both writes succeed before either cache updates. A failed write
+leaves the previous records in place and returns 503.
 
-Staff email uses the solutions inquiry recipient list and sender
-(`PHINS_BUSINESS_INQUIRY_NOTIFY_EMAILS`, then admin mailboxes, then
-`EMAIL_REPLY_TO`). The message category is `regulator_inquiry`, the rate-limit
-bucket is separate, and no visitor confirmation is sent. Public submissions
-stay on `POST /api/business/inquiries` and in `business_inquiries`. The
-dashboard links to `/solutions.html#contact` so the two conversations stay
-visible as different processes.
+Staff email and the acknowledgement to the contact email use the Business
+Relations notification path (`PHINS_BUSINESS_INQUIRY_NOTIFY_EMAILS`, then
+admin mailboxes, then `EMAIL_REPLY_TO`). The public solutions form cannot
+submit audience `regulations contact`. The dashboard links to
+`/solutions.html#contact` for that separate public conversation.
 
 Inquiry text is not copied into the sealed outline.
 

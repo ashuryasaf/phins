@@ -559,10 +559,14 @@ Environment variables commonly used:
   is the sealed book; admin and actuary may read it from their dashboard
   headers. The regulator role cannot call other APIs or write, except its
   own credential change and `GET`/`POST /api/regulator/inquiries` (one open
-  inquiry per outlined subject, stored in `agent_artifacts` as
-  `regulator_inquiry` / `inquiry`, never in `business_inquiries`). Staff
-  mail reuses the solutions inquiry sender and recipient list with category
-  `regulator_inquiry`. Outline totals reconcile to
+  inquiry per outlined subject). The thread is stored in `agent_artifacts`
+  as `regulator_inquiry` / `inquiry`, and the same write files a Business
+  Relations row (`audience` `regulations contact`, organization
+  `capital markets authority`, interest `regulator:<subject>`). Full name
+  and email are required; those two stamps cannot be overridden. Staff mail
+  and the acknowledgement to the contact email use the Business Relations
+  notification path. The public form cannot submit that audience. Outline
+  totals reconcile to
   `compute_unified_financial_metrics` and are refused if an identifier
   survives redaction (`services/regulator_outline.py`,
   `services/regulator_inquiries.py`, `docs/regulator_view.md`).
