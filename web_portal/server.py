@@ -12331,14 +12331,15 @@ def update_regulator_credentials(session: Dict[str, Any] | None, body: Dict[str,
     if new_username != current_username and (new_username in USERS or new_username in _FALLBACK_USERS):
         return 409, {'error': 'That username is already in use'}
 
+    # Inquiries are owned by username, so they move with the rename before the
+    # swap: a rewrite that cannot land refuses the rotation instead of hiding
+    # the account's open inquiries behind the retired name. It runs ahead of the
+    # retirement so a refused rotation still opens with the current secret.
+    if not _move_regulator_inquiries(current_username, new_username):
+        return 503, {'error': 'Credential change could not be recorded'}
     # Retire the demo secret durably *before* the swap: a rotation that cannot
     # record the retirement would come back with the old password on restart.
     if not _retire_regulator_legacy({current_username, new_username}):
-        return 503, {'error': 'Credential change could not be recorded'}
-    # Inquiries are owned by username, so they move with the rename before the
-    # swap: a rewrite that cannot land refuses the rotation instead of hiding
-    # the account's open inquiries behind the retired name.
-    if not _move_regulator_inquiries(current_username, new_username):
         return 503, {'error': 'Credential change could not be recorded'}
 
     updated = dict(record)
