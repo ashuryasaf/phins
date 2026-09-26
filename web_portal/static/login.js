@@ -159,7 +159,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (remaining <= 0) {
         clearInterval(captchaExpiryTimer);
         captchaExpiryTimer = null;
-        loadCaptcha();
+        if (!captchaVerifiedToken) loadCaptcha();
       }
     }, 10000);
   }
@@ -551,8 +551,8 @@ document.addEventListener('DOMContentLoaded', function () {
             captchaAnswer.value = '';
             return;
           }
-          verifiedCaptchaToken = captchaIdValue;
-          captchaVerifiedToken = captchaIdValue;
+          verifiedCaptchaToken = (captchaResult.data && captchaResult.data.captcha_proof) || captchaIdValue;
+          captchaVerifiedToken = verifiedCaptchaToken;
         } else if (localCaptchaAnswer) {
           if (captchaValue.toLowerCase().trim() !== localCaptchaAnswer.toLowerCase().trim()) {
             msg.textContent = 'Verification failed. Please try again.';
@@ -600,9 +600,14 @@ document.addEventListener('DOMContentLoaded', function () {
         msg.textContent = 'Login failed: ' + (data.error || 'Invalid credentials');
         msg.style.color = '#dc3545';
         submitBtn.disabled = false;
-        captchaVerifiedToken = null;
-        loadCaptcha();
-        captchaAnswer.value = '';
+        // A wrong password must not replace a solved check. A new question
+        // is issued only when the proof itself was rejected.
+        var captchaRejected = /CAPTCHA/i.test(String(data.error || ''));
+        if (captchaRejected || !captchaVerifiedToken) {
+          captchaVerifiedToken = null;
+          loadCaptcha();
+          captchaAnswer.value = '';
+        }
       }
       
     } catch (err) {
@@ -616,8 +621,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       msg.style.color = '#dc3545';
       submitBtn.disabled = false;
-      captchaVerifiedToken = null;
-      loadCaptcha();
+      if (!captchaVerifiedToken) loadCaptcha();
     }
   });
 });

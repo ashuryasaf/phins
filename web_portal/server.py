@@ -12111,6 +12111,9 @@ def record_failed_login(client_ip: str, server_port: int | None = None):
             FAILED_LOGINS[key]['lockout_until'] = datetime.now().timestamp() + LOCKOUT_DURATION
 
 REGULATOR_ROLE = 'regulator'
+# Same sealed outline. Admin and actuary may read it; only the regulator
+# account can change its own credentials.
+REGULATOR_OUTLINE_ROLES = frozenset({'regulator', 'admin', 'actuary'})
 REGULATOR_API_ALLOW = frozenset({
     '/api/regulator/outline',
     '/api/session/validate',
@@ -17304,7 +17307,7 @@ For claims or questions, please contact:
             return
 
         if path == '/api/regulator/outline':
-            if get_effective_role(session) != REGULATOR_ROLE:
+            if get_effective_role(session) not in REGULATOR_OUTLINE_ROLES:
                 self._set_json_headers(401 if not session else 403)
                 self.wfile.write(json.dumps({
                     'error': 'Authentication required' if not session else 'Regulation viewer access required',
@@ -37325,14 +37328,17 @@ For claims or questions, please contact:
                 captcha_ok = PHINS_TEST_MODE or is_otp_verified_pass
                 if captcha_token and not captcha_ok:
                     try:
-                        from services.otp_security_service import get_otp_security_service
-                        captcha_svc = get_otp_security_service()
-                        with captcha_svc._lock:
-                            challenge = captcha_svc._challenges.get(captcha_token)
-                            challenge_expired = bool(
-                                challenge and datetime.now().timestamp() > challenge.expires_at.timestamp()
-                            )
-                            captcha_ok = bool(challenge and challenge.verified and not challenge_expired)
+                        from services.otp_security_service import captcha_proof_ok, get_otp_security_service
+                        if captcha_proof_ok(captcha_token):
+                            captcha_ok = True
+                        else:
+                            captcha_svc = get_otp_security_service()
+                            with captcha_svc._lock:
+                                challenge = captcha_svc._challenges.get(captcha_token)
+                                challenge_expired = bool(
+                                    challenge and datetime.now().timestamp() > challenge.expires_at.timestamp()
+                                )
+                                captcha_ok = bool(challenge and challenge.verified and not challenge_expired)
                     except Exception as captcha_err:
                         print(f"[AUTH] CAPTCHA token check warning: {captcha_err}")
                         self._set_json_headers(503)

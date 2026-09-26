@@ -46,9 +46,11 @@ Suspended sandbox accounts are excluded before the totals are built. Overlapping
 
 ## Access
 
-- `GET /api/regulator/outline` requires role `regulator`.
-- Every other API returns 403 for that role.
-- `POST`, `PUT`, and `DELETE` return 403 except `POST /api/logout` and `POST /api/regulator/credentials`.
+- `GET /api/regulator/outline` accepts roles `regulator`, `admin`, and `actuary`. All three read the same sealed document.
+- The admin header and the actuary header link to `/regulator-dashboard.html`. The credential form on that page is shown only for the `regulator` role.
+- Every other API returns 403 for the `regulator` role.
+- `POST`, `PUT`, and `DELETE` return 403 for that role except `POST /api/logout` and `POST /api/regulator/credentials`.
+- Admin and actuary cannot change the regulator password.
 - The role is not a staff role for `/internal/` or `/legal/` documents.
 
 UML: `docs/uml/regulator_view.puml`.

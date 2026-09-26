@@ -641,9 +641,22 @@
       });
     });
 
+    function viewerRole() {
+      var role = sessionStorage.getItem('user_role') || '';
+      if (!role) {
+        try { role = (JSON.parse(localStorage.getItem('session') || '{}').role) || ''; }
+        catch (e) { role = ''; }
+      }
+      return String(role || '');
+    }
+
     setupStudio();
     (function load() {
       var bearer = token();
+      if (viewerRole() !== 'regulator') {
+        var creds = document.getElementById('credentials');
+        if (creds) creds.style.display = 'none';
+      }
       var storedName = sessionStorage.getItem('username');
       if (storedName) {
         document.getElementById('viewer-name').textContent = storedName;

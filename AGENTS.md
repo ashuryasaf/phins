@@ -554,9 +554,10 @@ Environment variables commonly used:
   `PHINS_TRADING_GLOBAL_DAILY_LOSS_ABS` (currency amount, `0` = off);
   runtime halt/resume/promote via `/api/terminal/autopilot/{halt,resume,promote}`
 - **Regulation viewer:** `PHINS_REGULATOR_PASSWORD` (username `regulator`,
-  role `regulator`). `GET /api/regulator/outline` and
-  `/regulator-dashboard.html` are the only data surfaces; the role cannot
-  call other APIs or write. Outline totals reconcile to
+  role `regulator`). `GET /api/regulator/outline` is the only data surface
+  for that role; admin and actuary may read the same sealed outline from
+  their dashboard headers. The regulator role cannot call other APIs or
+  write, except its own credential change. Outline totals reconcile to
   `compute_unified_financial_metrics` and are refused if an identifier
   survives redaction (`services/regulator_outline.py`,
   `docs/regulator_view.md`).

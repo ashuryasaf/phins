@@ -16,6 +16,7 @@ left to right direction
 skinparam actorStyle awesome
 
 actor "Regulation viewer" as Regulator
+actor "Admin / actuary" as Staff
 
 rectangle "PHINS Platform" {
   component "Regulation dashboard\n/regulator-dashboard.html" as Dash
@@ -27,6 +28,7 @@ rectangle "PHINS Platform" {
 }
 
 Regulator --> Dash : username regulator\nrole regulator
+Staff --> Dash : read the same outline
 Dash --> API : bearer, GET only
 API --> Svc : aggregate + redact + hash
 Svc --> Kernel : current version,\nbasic premiums
@@ -114,7 +116,7 @@ R -> P : POST /api/login
 P --> R : role=regulator, token
 R -> D : open /regulator-dashboard.html
 D -> P : GET /api/regulator/outline
-P -> P : role gate (regulator only)
+P -> P : role gate (regulator, admin, actuary)
 P -> B : read current version and books
 B --> P : records
 P -> S : build outline
@@ -145,7 +147,10 @@ package "services" {
 
 package "access" {
   [role regulator] --> [GET outline]
+  [role admin] --> [GET outline]
+  [role actuary] --> [GET outline]
   [role regulator] --> [POST logout]
+  [role regulator] --> [POST own credentials]
   [role regulator] ..> [other APIs] : denied
 }
 

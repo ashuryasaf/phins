@@ -230,6 +230,13 @@ def test_regulator_login_lands_on_the_outline():
     page = requests.get(f"{BASE_URL}/regulator-dashboard.html", timeout=30)
     assert page.status_code == 200
     assert "READ ONLY" in page.text
+    assert "viewerRole" in page.text
+    admin_page = requests.get(f"{BASE_URL}/admin.html", timeout=30)
+    assert admin_page.status_code == 200
+    assert 'href="/regulator-dashboard.html"' in admin_page.text
+    actuary_page = requests.get(f"{BASE_URL}/actuary-dashboard.html", timeout=30)
+    assert actuary_page.status_code == 200
+    assert 'href="/regulator-dashboard.html"' in actuary_page.text
     assert "/api/regulator/outline" in page.text
     assert "Download report" in page.text
     assert "chart-type" in page.text
@@ -266,7 +273,35 @@ def test_regulator_login_lands_on_the_outline():
     admin = _login("admin", "admin123")
     assert admin.status_code == 200, admin.text
     admin_headers = {"Authorization": f"Bearer {admin.json()['token']}"}
-    blocked = requests.get(f"{BASE_URL}/api/regulator/outline", headers=admin_headers, timeout=30)
+    admin_outline = requests.get(f"{BASE_URL}/api/regulator/outline", headers=admin_headers, timeout=60)
+    assert admin_outline.status_code == 200, admin_outline.text
+    actuary = _login("actuary", "actuary123")
+    assert actuary.status_code == 200, actuary.text
+    actuary_outline = requests.get(
+        f"{BASE_URL}/api/regulator/outline",
+        headers={"Authorization": f"Bearer {actuary.json()['token']}"},
+        timeout=60,
+    )
+    assert actuary_outline.status_code == 200, actuary_outline.text
+
+    def _book(body):
+        copied = dict(body)
+        copied.pop("generated_at", None)
+        copied.pop("integrity", None)
+        return copied
+
+    assert _book(admin_outline.json()) == _book(payload)
+    assert _book(actuary_outline.json()) == _book(payload)
+    assert admin_outline.json()["integrity"]["reconciled"] is True
+    assert actuary_outline.json()["integrity"]["reconciled"] is True
+
+    outsider = _login("underwriter", "under123")
+    assert outsider.status_code == 200, outsider.text
+    blocked = requests.get(
+        f"{BASE_URL}/api/regulator/outline",
+        headers={"Authorization": f"Bearer {outsider.json()['token']}"},
+        timeout=30,
+    )
     assert blocked.status_code == 403
     stolen = requests.post(
         f"{BASE_URL}/api/regulator/credentials",
