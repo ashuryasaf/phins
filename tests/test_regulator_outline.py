@@ -435,3 +435,40 @@ def test_regulator_can_rotate_credentials_and_restore_them():
                 json={"current_password": replacement, "new_password": "regulator123", "new_username": "regulator"},
                 timeout=30,
             )
+
+
+def test_regulator_demo_password_works_until_an_operator_password_is_set(monkeypatch):
+    """Production has no demo flag, but the regulation account stays usable."""
+    import web_portal.server as portal
+
+    original = dict(portal.USERS["regulator"])
+    monkeypatch.setattr(portal, "ALLOW_LEGACY_DEMO_PASSWORDS", False)
+    monkeypatch.delenv("PHINS_REGULATOR_PASSWORD", raising=False)
+    portal._REGULATOR_LEGACY_RETIRED.discard("regulator")
+    try:
+        demo = _login("regulator", "regulator123")
+        assert demo.status_code == 200, demo.text
+        assert demo.json()["role"] == "regulator"
+
+        operator_password = "operator-regulator-password"
+        monkeypatch.setenv("PHINS_REGULATOR_PASSWORD", operator_password)
+        stale = dict(original)
+        hashed = portal.hash_password("unusable-random-secret")
+        stale["hash"] = hashed["hash"]
+        stale["salt"] = hashed["salt"]
+        portal.USERS["regulator"] = stale
+
+        rejected = _login("regulator", "regulator123")
+        assert rejected.status_code == 401
+
+        opened = _login("regulator", operator_password)
+        assert opened.status_code == 200, opened.text
+        assert opened.json()["role"] == "regulator"
+
+        retired_demo = _login("regulator", "regulator123")
+        assert retired_demo.status_code == 401
+        again = _login("regulator", operator_password)
+        assert again.status_code == 200, again.text
+    finally:
+        portal.USERS["regulator"] = original
+        portal._REGULATOR_LEGACY_RETIRED.discard("regulator")

@@ -12187,19 +12187,77 @@ def _session_from_authorization(handler) -> dict[str, str] | None:
         return None
 
 
+def _configured_regulator_password() -> str:
+    """Operator password for the regulation account. Empty when unset."""
+    return (os.environ.get('PHINS_REGULATOR_PASSWORD') or '').strip()
+
+
 def _legacy_password_ok(username: str, password: str) -> bool:
-    """True when the test-mode demo password is still valid for this user."""
+    """True when the demo password is still valid for this user.
+
+    Other staff demo passwords stay off in production. The regulation
+    account keeps ``regulator123`` until ``PHINS_REGULATOR_PASSWORD`` is set
+    or the account password is changed in the regulation view.
+    """
     if not username:
         return False
     expected = LEGACY_DEMO_PASSWORDS.get(username)
-    if not expected or not ALLOW_LEGACY_DEMO_PASSWORDS:
+    if not expected:
         return False
     if username in _regulator_legacy_retired():
+        return False
+    if username == REGULATOR_ROLE and _configured_regulator_password():
+        return False
+    if not ALLOW_LEGACY_DEMO_PASSWORDS and username != REGULATOR_ROLE:
         return False
     try:
         return secrets.compare_digest(str(password), str(expected))
     except Exception:
         return False
+
+
+def _env_regulator_password_ok(username: str, password: str) -> bool:
+    """True when the typed password is the configured regulation password.
+
+    A database row created before the variable existed still has an unusable
+    random hash. The configured password is accepted until the account is
+    rotated in the regulation view, which retires it.
+    """
+    if username != REGULATOR_ROLE:
+        return False
+    if username in _regulator_legacy_retired():
+        return False
+    configured = _configured_regulator_password()
+    if not configured:
+        return False
+    try:
+        return secrets.compare_digest(str(password), configured)
+    except Exception:
+        return False
+
+
+def _adopt_configured_regulator_password(password: str) -> bool:
+    """Store the configured regulation password over a stale random hash."""
+    try:
+        record = USERS.get(REGULATOR_ROLE)
+    except Exception:
+        record = None
+    if not isinstance(record, dict):
+        record = _FALLBACK_USERS.get(REGULATOR_ROLE)
+    if not isinstance(record, dict):
+        return False
+    updated = dict(record)
+    hashed = hash_password(password)
+    updated['hash'] = hashed['hash']
+    updated['salt'] = hashed['salt']
+    updated['role'] = REGULATOR_ROLE
+    try:
+        USERS[REGULATOR_ROLE] = updated
+    except Exception as exc:
+        print(f"[REGULATOR] password adopt warning: {type(exc).__name__}")
+        _FALLBACK_USERS[REGULATOR_ROLE] = updated
+        return False
+    return True
 
 
 def _regulator_password_matches(username: str, password: str, record: Dict[str, Any]) -> bool:
@@ -37410,6 +37468,7 @@ For claims or questions, please contact:
                     if staff_user:
                         # Check legacy passwords first (simple string match)
                         legacy_ok = _legacy_password_ok(username, password)
+                        env_ok = _env_regulator_password_ok(username, password)
                         
                         # Get hash and salt safely
                         stored_hash = staff_user.get('hash', '')
@@ -37424,7 +37483,9 @@ For claims or questions, please contact:
                                 print(f"Password verify error: {pe}")
                                 password_ok = False
                         
-                        if password_ok or legacy_ok:
+                        if env_ok and not password_ok and _adopt_configured_regulator_password(password):
+                            _retire_regulator_legacy({REGULATOR_ROLE})
+                        if password_ok or legacy_ok or env_ok:
                             user = staff_user
                             customer_id = staff_user.get('customer_id')
                             role = staff_user.get('role', 'customer')
@@ -37493,9 +37554,12 @@ For claims or questions, please contact:
                     try:
                         fallback = _FALLBACK_USERS[username]
                         legacy_ok = _legacy_password_ok(username, password)
+                        env_ok = _env_regulator_password_ok(username, password)
                         password_ok = verify_password(password, fallback.get('hash', ''), fallback.get('salt', ''))
+                        if env_ok and not password_ok and _adopt_configured_regulator_password(password):
+                            _retire_regulator_legacy({REGULATOR_ROLE})
                         
-                        if password_ok or legacy_ok:
+                        if password_ok or legacy_ok or env_ok:
                             user = fallback
                             customer_id = fallback.get('customer_id')
                             role = fallback.get('role', 'customer')
