@@ -13,6 +13,12 @@
   - wallet-safe marketplace and external payer domain model
   - coverage-aware purchase, settlement, and reimbursement sequence
   - marketplace financial lifecycle state machine
+- `docs/uml/regulator_view.puml` — read-only regulation viewer
+  (see `docs/regulator_view.md`):
+  - system context
+  - offer structure (pricing, underwriting, claims, investments, health, agents)
+  - sealed-read sequence
+  - component view
 - `docs/uml/agent_ecosystem.puml` — **proposed** agent/broker ecosystem ("AgentOS"),
   design/scoping for review (see `docs/agent_ecosystem_design.md`):
   - system context

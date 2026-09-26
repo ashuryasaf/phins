@@ -11560,6 +11560,7 @@ LEGACY_DEMO_PASSWORDS: Dict[str, str] = {
     'accountant': os.environ.get('PHINS_DEMO_ACCOUNTANT_PASSWORD', 'acct123'),
     'actuary': os.environ.get('PHINS_DEMO_ACTUARY_PASSWORD', 'actuary123'),
     'agent': os.environ.get('PHINS_DEMO_AGENT_PASSWORD', 'agent123'),
+    'regulator': os.environ.get('PHINS_DEMO_REGULATOR_PASSWORD', 'regulator123'),
 }
 
 # IMPORTANT:
@@ -12108,6 +12109,116 @@ def record_failed_login(client_ip: str, server_port: int | None = None):
 
         if (not PHINS_TEST_MODE) and FAILED_LOGINS[key]['count'] >= MAX_LOGIN_ATTEMPTS:
             FAILED_LOGINS[key]['lockout_until'] = datetime.now().timestamp() + LOCKOUT_DURATION
+
+REGULATOR_ROLE = 'regulator'
+REGULATOR_API_ALLOW = frozenset({
+    '/api/regulator/outline',
+    '/api/session/validate',
+})
+REGULATOR_WRITE_ALLOW = frozenset({
+    '/api/logout',
+})
+
+
+def _session_from_authorization(handler) -> dict[str, str] | None:
+    """Best-effort session from the bearer header. Never raises."""
+    try:
+        auth_header = handler.headers.get('Authorization', '') or ''
+    except Exception:
+        return None
+    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+    if not token:
+        return None
+    try:
+        return validate_session(token)
+    except Exception:
+        return None
+
+
+def reject_regulator_mutation(handler, path: str) -> bool:
+    """Block every write from the regulation viewer except logout.
+
+    Returns True when the response has already been sent.
+    """
+    if get_effective_role(_session_from_authorization(handler)) != REGULATOR_ROLE:
+        return False
+    if path in REGULATOR_WRITE_ALLOW:
+        return False
+    handler._set_json_headers(403)
+    handler.wfile.write(json.dumps({
+        'error': 'Regulation viewer is read-only',
+    }).encode('utf-8'))
+    return True
+
+
+def build_live_regulator_outline() -> Dict[str, Any]:
+    """Redacted executive outline from the same books the admin metrics use.
+
+    Suspended sandbox accounts are excluded before aggregation. Overlapping
+    totals are reconciled to ``compute_unified_financial_metrics`` and the
+    payload is refused if they diverge or if any identifier survives.
+    """
+    from services.regulator_outline import build_regulator_outline
+
+    def _visible(mapping, id_field: str = 'customer_id'):
+        rows = []
+        items = mapping.items() if hasattr(mapping, 'items') else enumerate(mapping)
+        for key, row in items:
+            if not isinstance(row, dict):
+                continue
+            customer_id = str(row.get(id_field) or key or '')
+            if is_suspended_account(customer_id):
+                continue
+            rows.append(row)
+        return rows
+
+    metrics = compute_unified_financial_metrics(exclude_suspended=True)
+    agents: list = []
+    commissions: list = []
+    try:
+        from services import agent_ecosystem_service as agent_svc
+        agents = list(agent_svc.list_agents() or [])
+        commissions = list(agent_svc.COMMISSIONS.values())
+    except Exception as exc:
+        print(f"[REGULATOR] agent book unavailable: {exc}")
+        agents = []
+        commissions = []
+
+    try:
+        from services.actuarial_service import get_actuarial_store
+        store = get_actuarial_store()
+    except Exception as exc:
+        print(f"[REGULATOR] pricing kernel unavailable: {exc}")
+        raise
+
+    return build_regulator_outline(
+        actuarial_store=store,
+        policies=_visible(POLICIES),
+        claims=_visible(CLAIMS),
+        underwriting=_visible(UNDERWRITING_APPLICATIONS),
+        health_wallets=_visible(HEALTH_WALLETS),
+        investment_accounts=_visible(INVESTMENT_ACCOUNTS),
+        agents=agents,
+        commissions=commissions,
+        algo_balance=safe_float(metrics.get('total_algo_balance'), 0.0),
+        pipeline_cash=safe_float(metrics.get('total_pipeline_cash'), 0.0),
+        canonical={
+            'claims_disbursed_amount': metrics.get('claims_disbursed_amount'),
+            'claims_paid_amount': metrics.get('claims_paid_amount'),
+            'pending_claims_liability': metrics.get('pending_claims_liability'),
+            'total_claims': metrics.get('total_claims'),
+            'total_policies': metrics.get('total_policies'),
+            'active_policies': metrics.get('active_policies'),
+            'total_revenue': metrics.get('total_revenue'),
+            'total_coverage_amount': metrics.get('total_coverage_amount'),
+            'total_investment_value': metrics.get('total_investment_value'),
+            'total_applications': metrics.get('total_applications'),
+            'pending_applications': metrics.get('pending_applications'),
+            'approved_applications': metrics.get('approved_applications'),
+            'rejected_applications': metrics.get('rejected_applications'),
+        },
+    )
+
 
 def require_role(session: dict[str, str] | None, allowed_roles: list[str]) -> bool:
     """Check if user has required role"""
@@ -13801,6 +13912,7 @@ def validate_amount(amount: Any) -> bool:
 #   PHINS_CLAIMS_PASSWORD - Claims adjuster password
 #   PHINS_ACCOUNTANT_PASSWORD - Accountant password
 #   PHINS_ACTUARY_PASSWORD - Actuary password
+#   PHINS_REGULATOR_PASSWORD - Read-only regulation viewer password
 #   PHINS_SUPPLIER_PASSWORD - Supplier password
 #   PHINS_MEDIA_PASSWORD - Media admin password
 #   PHINS_USER_{EMAIL}_PASSWORD - For specific user accounts (replace @ with _AT_ and . with _DOT_)
@@ -13835,6 +13947,7 @@ def _build_fallback_users() -> Dict[str, Dict[str, Any]]:
         'claims_adjuster': {**_get_secure_password('PHINS_CLAIMS_PASSWORD', 'claims_adjuster'), 'role': 'claims', 'name': 'Jane Claims'},
         'accountant': {**_get_secure_password('PHINS_ACCOUNTANT_PASSWORD', 'accountant'), 'role': 'accountant', 'name': 'Bob Accountant'},
         'actuary': {**_get_secure_password('PHINS_ACTUARY_PASSWORD', 'actuary'), 'role': 'actuary', 'name': 'Actuary User'},
+        'regulator': {**_get_secure_password('PHINS_REGULATOR_PASSWORD', 'regulator'), 'role': 'regulator', 'name': 'Regulation Viewer'},
         'supplier': {**_get_secure_password('PHINS_SUPPLIER_PASSWORD', 'supplier'), 'role': 'supplier', 'name': 'Supplier User'},
         'media_ad': {**_get_secure_password('PHINS_MEDIA_PASSWORD', 'media_ad'), 'role': 'media', 'name': 'Media Admin'},
         # Agent ecosystem ("AgentOS") demo login. Profile auto-provisions on first
@@ -17012,6 +17125,36 @@ For claims or questions, please contact:
         token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
         session = validate_session(token) if token else None
         is_authenticated = session is not None
+
+        # Regulation viewer: one read-only outline. Every other API, including
+        # executive BI and customer records, stays closed.
+        if get_effective_role(session) == REGULATOR_ROLE and path.startswith('/api/'):
+            if path not in REGULATOR_API_ALLOW:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Regulation viewer is limited to the read-only outline',
+                }).encode('utf-8'))
+                return
+
+        if path == '/api/regulator/outline':
+            if get_effective_role(session) != REGULATOR_ROLE:
+                self._set_json_headers(401 if not session else 403)
+                self.wfile.write(json.dumps({
+                    'error': 'Authentication required' if not session else 'Regulation viewer access required',
+                }).encode('utf-8'))
+                return
+            try:
+                payload = build_live_regulator_outline()
+            except Exception as outline_exc:
+                print(f"[REGULATOR] outline refused: {type(outline_exc).__name__}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({
+                    'error': 'Regulator outline integrity check failed',
+                }).encode('utf-8'))
+                return
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
         
         # Session validation endpoint (GET) - validates token and returns user info
         if path == '/api/session/validate':
@@ -19175,7 +19318,7 @@ For claims or questions, please contact:
                     checks_passed += 1
                 
                 # Check 6: Users have valid roles
-                invalid_roles = [u for u in USERS.values() if not u.get('role') or u['role'] not in ['admin', 'underwriter', 'claims', 'claims_adjuster', 'accountant', 'actuary', 'supplier', 'customer']]
+                invalid_roles = [u for u in USERS.values() if not u.get('role') or u['role'] not in ['admin', 'underwriter', 'claims', 'claims_adjuster', 'accountant', 'actuary', 'supplier', 'customer', 'regulator']]
                 if invalid_roles:
                     warnings.append({'category': 'users', 'severity': 'warning', 'message': f'{len(invalid_roles)} users with invalid or missing roles'})
                 else:
@@ -32784,6 +32927,9 @@ For claims or questions, please contact:
         parsed = urlparse.urlparse(self.path)
         path = parsed.path
         qs_post = urlparse.parse_qs(parsed.query)
+
+        if reject_regulator_mutation(self, path):
+            return
 
         # Chat apply is a static page. POSTs here are form-fallback or
         # crawler hits (seen repeatedly as 404 in production after PR #603).
@@ -55971,6 +56117,9 @@ For claims or questions, please contact:
         """Handle PUT requests for updates"""
         parsed = urlparse.urlparse(self.path)
         path = parsed.path
+
+        if reject_regulator_mutation(self, path):
+            return
         
         # Get client IP
         client_ip = self.client_address[0]
@@ -56076,6 +56225,9 @@ For claims or questions, please contact:
         """Handle DELETE requests"""
         parsed = urlparse.urlparse(self.path)
         path = parsed.path
+
+        if reject_regulator_mutation(self, path):
+            return
 
         # ── Security guards (aligned with do_GET / do_POST) ──
         client_ip = self.client_address[0]

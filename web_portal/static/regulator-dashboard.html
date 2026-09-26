@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <title>PHINS Regulation View</title>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+    :root {
+      --primary: #1a365d;
+      --secondary: #2b6cb0;
+      --accent: #4299e1;
+      --success: #38a169;
+      --warning: #d69e2e;
+      --danger: #e53e3e;
+      --bg: #f7fafc;
+      --card-bg: #ffffff;
+      --text: #2d3748;
+      --text-light: #718096;
+      --border: #e2e8f0;
+      --phins-navy: #060d1f;
+      --phins-gold: #e3bf6f;
+      --phins-line: rgba(127, 178, 255, 0.16);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(180deg, #f5f9fc 0%, #e3f2fd 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .header {
+      background:
+        radial-gradient(700px 180px at 85% -60%, rgba(21, 68, 155, 0.5), transparent 70%),
+        rgba(6, 13, 31, 0.96);
+      border-bottom: 1px solid var(--phins-line);
+      color: white;
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 1000;
+      height: 60px;
+      box-shadow: 0 8px 30px rgba(2, 8, 23, 0.35);
+    }
+    .brand {
+      display: flex; align-items: center; gap: 10px;
+      font-family: 'Space Grotesk', Inter, sans-serif;
+      font-weight: 600; letter-spacing: 0.08em; font-size: 1.05rem;
+      background: linear-gradient(180deg, #ffffff 0%, #b7d3ff 100%);
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .brand img { width: 30px; height: 30px; }
+    .badge {
+      border: 1px solid rgba(227, 191, 111, 0.65);
+      color: var(--phins-gold);
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 0.66rem;
+      letter-spacing: 0.1em;
+      font-weight: 600;
+    }
+    .user-info { display: flex; align-items: center; gap: 14px; font-size: 0.85rem; }
+    .user-info button {
+      background: transparent; color: white; border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 8px; padding: 6px 12px; cursor: pointer;
+    }
+    main { padding: 84px 24px 48px; max-width: 1180px; margin: 0 auto; }
+    .banner {
+      background: white; border: 1px solid var(--border); border-left: 4px solid var(--phins-gold);
+      border-radius: 12px; padding: 16px 18px; margin-bottom: 18px;
+    }
+    .banner h1 { font-size: 1.25rem; color: var(--primary); margin-bottom: 6px; }
+    .banner p { color: var(--text-light); font-size: 0.92rem; line-height: 1.45; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 18px; }
+    .card {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px;
+      padding: 16px 18px; box-shadow: 0 8px 24px rgba(26, 54, 93, 0.04);
+    }
+    .card h2 { font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-light); margin-bottom: 8px; }
+    .metric { font-family: 'Space Grotesk', Inter, sans-serif; font-size: 1.6rem; color: var(--primary); }
+    .sub { color: var(--text-light); font-size: 0.82rem; margin-top: 4px; }
+    section { margin-bottom: 18px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); }
+    th { color: var(--text-light); font-weight: 600; font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; }
+    .hash { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; word-break: break-all; color: var(--primary); }
+    .error { color: var(--danger); }
+    .ok { color: var(--success); font-weight: 600; }
+    nav.outline { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 18px; }
+    nav.outline a {
+      text-decoration: none; color: var(--primary); background: white; border: 1px solid var(--border);
+      border-radius: 999px; padding: 6px 12px; font-size: 0.82rem;
+    }
+    @media (max-width: 720px) {
+      .header { height: auto; flex-wrap: wrap; gap: 8px; }
+      main { padding-top: 108px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="brand"><img src="/phins-logo.svg" alt="PHINS"> PHINS</div>
+    <span class="badge">READ ONLY · REGULATION VIEW</span>
+    <div class="user-info">
+      <span id="viewer-name">Regulation Viewer</span>
+      <button type="button" id="logout-btn">Sign out</button>
+    </div>
+  </header>
+  <main>
+    <div class="banner">
+      <h1>Executive outline</h1>
+      <p>Active kernel version and published basic premiums, with book totals for underwriting, claims, investments, health, and agent intelligence. Customer identifiers, medical notes, and credentials are not part of this view. Totals reconcile to the platform books before the outline is sealed.</p>
+    </div>
+    <nav class="outline">
+      <a href="#pricing">Pricing kernel</a>
+      <a href="#underwriting">Underwriting</a>
+      <a href="#claims">Claims</a>
+      <a href="#investments">Investments</a>
+      <a href="#health">Health</a>
+      <a href="#agents">Agent BI</a>
+      <a href="#integrity">Integrity</a>
+    </nav>
+    <div id="status" class="sub">Loading outline…</div>
+    <div id="content" hidden>
+      <div class="grid" id="summary"></div>
+      <section class="card" id="pricing"></section>
+      <section class="card" id="underwriting"></section>
+      <section class="card" id="claims"></section>
+      <section class="card" id="investments"></section>
+      <section class="card" id="health"></section>
+      <section class="card" id="agents"></section>
+      <section class="card" id="integrity"></section>
+    </div>
+  </main>
+  <script>
+    function token() {
+      return sessionStorage.getItem('phins_token') || localStorage.getItem('phins_token') || '';
+    }
+    function money(value) {
+      var n = Number(value || 0);
+      return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function esc(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function pairs(obj) {
+      var rows = '';
+      Object.keys(obj || {}).forEach(function (key) {
+        rows += '<tr><td>' + esc(key) + '</td><td>' + esc(obj[key]) + '</td></tr>';
+      });
+      return rows || '<tr><td colspan="2">No records</td></tr>';
+    }
+    function render(data) {
+      var pricing = data.pricing || {};
+      var premiums = (pricing.basic_premiums || {}).rows || [];
+      var claims = data.claims || {};
+      var uw = data.underwriting || {};
+      var inv = data.investments || {};
+      var health = data.health || {};
+      var agents = data.agents || {};
+      var integrity = data.integrity || {};
+      document.getElementById('summary').innerHTML = [
+        ['Kernel version', pricing.current_version || '—', pricing.config_version || ''],
+        ['Active premium', money(data.policies && data.policies.annual_premium_active), 'annual, in force'],
+        ['Claims disbursed', money(claims.disbursed_amount), claims.total + ' claims'],
+        ['Investments', money(inv.account_balance), inv.account_count + ' accounts'],
+        ['Health wallets', money(health.wallet_balance), health.health_policies + ' health policies'],
+        ['Agents', String(agents.agent_count || 0), money(agents.commission_amount) + ' commission']
+      ].map(function (item) {
+        return '<article class="card"><h2>' + esc(item[0]) + '</h2><div class="metric">' + esc(item[1]) + '</div><div class="sub">' + esc(item[2]) + '</div></article>';
+      }).join('');
+
+      var premiumRows = premiums.map(function (row) {
+        return '<tr><td>' + esc(row.age) + '</td><td>' + money(row.annual_premium) + '</td><td>' + money(row.monthly_premium) + '</td><td>' + money(row.risk_premium_annual) + '</td><td>' + esc(row.tables_version) + '</td></tr>';
+      }).join('');
+      var versions = (pricing.versions || []).map(function (row) {
+        return '<tr><td>' + esc(row.version) + '</td><td>' + (row.is_current ? 'current' : esc(row.status || '')) + '</td><td class="hash">' + esc(row.integrity_hash) + '</td></tr>';
+      }).join('');
+      document.getElementById('pricing').innerHTML =
+        '<h2>Pricing kernel</h2>' +
+        '<p class="sub">Published standard nonsmoker tariff on ' + esc((pricing.basic_premiums || {}).product_id) +
+        ', coverage ' + money((pricing.basic_premiums || {}).coverage) + ', term ' + esc((pricing.basic_premiums || {}).term_years) +
+        ' years, ADL ' + esc((pricing.basic_premiums || {}).adl_level) + '. Not a customer quote.</p>' +
+        '<table><thead><tr><th>Age</th><th>Annual</th><th>Monthly</th><th>Risk premium</th><th>Version</th></tr></thead><tbody>' +
+        premiumRows + '</tbody></table>' +
+        '<h2 style="margin-top:16px">Version catalog</h2>' +
+        '<table><thead><tr><th>Version</th><th>Status</th><th>Integrity</th></tr></thead><tbody>' + versions + '</tbody></table>';
+
+      document.getElementById('underwriting').innerHTML =
+        '<h2>Underwriting decisions</h2>' +
+        '<p class="sub">Counts only. No applicant identity or medical detail.</p>' +
+        '<table><thead><tr><th>Decision</th><th>Count</th></tr></thead><tbody>' + pairs(uw.by_status) + '</tbody></table>' +
+        '<h2 style="margin-top:16px">Risk bands</h2>' +
+        '<table><thead><tr><th>Band</th><th>Count</th></tr></thead><tbody>' + pairs(uw.risk_bands) + '</tbody></table>';
+
+      document.getElementById('claims').innerHTML =
+        '<h2>Claims in total</h2>' +
+        '<p class="sub">Loss ratio on disbursed paid claims / active premium: ' + esc(data.claims_loss_ratio) + '</p>' +
+        '<table><thead><tr><th>Measure</th><th>Value</th></tr></thead><tbody>' +
+        '<tr><td>Count</td><td>' + esc(claims.total) + '</td></tr>' +
+        '<tr><td>Claimed</td><td>' + money(claims.claimed_amount) + '</td></tr>' +
+        '<tr><td>Disbursed</td><td>' + money(claims.disbursed_amount) + '</td></tr>' +
+        '<tr><td>Paid or closed</td><td>' + money(claims.paid_amount) + '</td></tr>' +
+        '<tr><td>Pending liability</td><td>' + money(claims.pending_liability) + '</td></tr>' +
+        '</tbody></table>' +
+        '<h2 style="margin-top:16px">By status</h2>' +
+        '<table><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>' + pairs(claims.by_status) + '</tbody></table>';
+
+      document.getElementById('investments').innerHTML =
+        '<h2>Investments in total</h2>' +
+        '<table><thead><tr><th>Measure</th><th>Value</th></tr></thead><tbody>' +
+        '<tr><td>Accounts</td><td>' + esc(inv.account_count) + '</td></tr>' +
+        '<tr><td>Account balance</td><td>' + money(inv.account_balance) + '</td></tr>' +
+        '<tr><td>Policy investment value</td><td>' + money(inv.policy_investment_value) + '</td></tr>' +
+        '<tr><td>Algo balance</td><td>' + money(inv.algo_balance) + '</td></tr>' +
+        '<tr><td>Pipeline cash</td><td>' + money(inv.pipeline_cash) + '</td></tr>' +
+        '<tr><td>Assets under management</td><td>' + money(inv.assets_under_management) + '</td></tr>' +
+        '</tbody></table>' +
+        '<h2 style="margin-top:16px">By route</h2>' +
+        '<table><thead><tr><th>Route</th><th>Balance</th></tr></thead><tbody>' + pairs(inv.by_route) + '</tbody></table>';
+
+      document.getElementById('health').innerHTML =
+        '<h2>Health</h2>' +
+        '<table><thead><tr><th>Measure</th><th>Value</th></tr></thead><tbody>' +
+        '<tr><td>Health policies</td><td>' + esc(health.health_policies) + '</td></tr>' +
+        '<tr><td>Health annual premium</td><td>' + money(health.health_annual_premium) + '</td></tr>' +
+        '<tr><td>Life policies</td><td>' + esc(health.life_policies) + '</td></tr>' +
+        '<tr><td>Wallets</td><td>' + esc(health.wallet_count) + '</td></tr>' +
+        '<tr><td>Active wallets</td><td>' + esc(health.active_wallets) + '</td></tr>' +
+        '<tr><td>Wallet balance</td><td>' + money(health.wallet_balance) + '</td></tr>' +
+        '</tbody></table>';
+
+      document.getElementById('agents').innerHTML =
+        '<h2>Agent BI</h2>' +
+        '<p class="sub">Headcount, status, and commission totals. Names and contact details stay off this view.</p>' +
+        '<table><thead><tr><th>Measure</th><th>Value</th></tr></thead><tbody>' +
+        '<tr><td>Agents</td><td>' + esc(agents.agent_count) + '</td></tr>' +
+        '<tr><td>Active</td><td>' + esc(agents.active_agents) + '</td></tr>' +
+        '<tr><td>Average commission rate</td><td>' + esc(agents.average_commission_rate) + '</td></tr>' +
+        '<tr><td>Commission count</td><td>' + esc(agents.commission_count) + '</td></tr>' +
+        '<tr><td>Commission amount</td><td>' + money(agents.commission_amount) + '</td></tr>' +
+        '</tbody></table>' +
+        '<h2 style="margin-top:16px">Agents by status</h2>' +
+        '<table><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>' + pairs(agents.agents_by_status) + '</tbody></table>';
+
+      document.getElementById('integrity').innerHTML =
+        '<h2>Integrity</h2>' +
+        '<p class="' + (integrity.reconciled ? 'ok' : 'sub') + '">' +
+        (integrity.reconciled ? 'Reconciled to the executive books.' : 'Sealed without a canonical cross-check.') +
+        '</p>' +
+        '<p class="sub">Tables ' + esc(integrity.tables_version) + ' · config ' + esc(integrity.config_version) + '</p>' +
+        '<p class="hash">' + esc(integrity.outline_sha256) + '</p>' +
+        '<table><thead><tr><th>Source</th><th>Count</th></tr></thead><tbody>' + pairs(integrity.source_counts) + '</tbody></table>';
+      document.getElementById('content').hidden = false;
+    }
+
+    document.getElementById('logout-btn').addEventListener('click', function () {
+      var bearer = token();
+      fetch('/api/logout', { method: 'POST', headers: bearer ? { Authorization: 'Bearer ' + bearer } : {} })
+        .finally(function () {
+          sessionStorage.clear();
+          localStorage.removeItem('phins_token');
+          window.location.href = '/login.html';
+        });
+    });
+
+    (function load() {
+      var bearer = token();
+      if (!bearer) {
+        window.location.href = '/login.html';
+        return;
+      }
+      fetch('/api/regulator/outline', { headers: { Authorization: 'Bearer ' + bearer } })
+        .then(function (response) {
+          if (response.status === 401 || response.status === 403) {
+            window.location.href = '/login.html';
+            return null;
+          }
+          return response.json().then(function (body) {
+            if (!response.ok) throw new Error(body.error || 'Outline unavailable');
+            return body;
+          });
+        })
+        .then(function (body) {
+          if (!body) return;
+          document.getElementById('status').textContent = 'Generated ' + (body.generated_at || '');
+          render(body);
+        })
+        .catch(function (err) {
+          document.getElementById('status').innerHTML = '<span class="error">' + esc(err.message || 'Outline unavailable') + '</span>';
+        });
+    })();
+  </script>
+</body>
+</html>

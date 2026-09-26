@@ -553,6 +553,13 @@ Environment variables commonly used:
   `PHINS_TRADING_GLOBAL_DAILY_LOSS_PCT` (default `0.05` of portfolio),
   `PHINS_TRADING_GLOBAL_DAILY_LOSS_ABS` (currency amount, `0` = off);
   runtime halt/resume/promote via `/api/terminal/autopilot/{halt,resume,promote}`
+- **Regulation viewer:** `PHINS_REGULATOR_PASSWORD` (username `regulator`,
+  role `regulator`). `GET /api/regulator/outline` and
+  `/regulator-dashboard.html` are the only data surfaces; the role cannot
+  call other APIs or write. Outline totals reconcile to
+  `compute_unified_financial_metrics` and are refused if an identifier
+  survives redaction (`services/regulator_outline.py`,
+  `docs/regulator_view.md`).
 - **Security:** `SESSION_SECRET_KEY`, `PHINS_ENCRYPTION_KEY`,
   `PHINS_ENFORCE_SECRET_POLICY`, `PHINS_EMERGENCY_UNLOCK_KEY`,
   `ALLOW_LEGACY_DEMO_PASSWORDS`
