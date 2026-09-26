@@ -277,6 +277,65 @@ def test_regulator_login_lands_on_the_outline():
     assert stolen.status_code == 403
 
 
+def test_regulator_gate_covers_the_apis_handled_before_it():
+    login = _login("regulator", "regulator123")
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['token']}"}
+
+    for path in (
+        "/api/confidential/shares",
+        "/api/meetings/notes",
+        "/api/legal-docs/registry?doc_id=founders-agreement",
+    ):
+        response = requests.get(f"{BASE_URL}{path}", headers=headers, timeout=30)
+        assert response.status_code == 403, f"{path}: {response.text}"
+        assert "read-only outline" in response.json()["error"]
+
+
+def test_a_replaced_regulator_login_is_retired_not_deleted():
+    import web_portal.server as portal
+
+    old_name = "regulator.rotation-probe"
+    new_name = "regulator.rotation-probe2"
+    record = {
+        **portal.hash_password("rotation-pass-1"),
+        "role": "regulator",
+        "name": "Rotation Probe",
+    }
+    portal.USERS[old_name] = record
+    portal._FALLBACK_USERS[old_name] = record
+    try:
+        status, payload = portal.update_regulator_credentials(
+            {"username": old_name, "role": "regulator"},
+            {
+                "current_password": "rotation-pass-1",
+                "new_password": "rotation-pass-2",
+                "new_username": new_name,
+            },
+        )
+        assert status == 200, payload
+        assert payload["username"] == new_name
+
+        # The replaced login keeps a record (so a seed pass or a fallback lookup
+        # cannot resurrect it) that no password opens.
+        retired = portal.USERS.get(old_name)
+        assert retired is not None
+        assert not portal.verify_password("rotation-pass-1", retired["hash"], retired["salt"])
+        assert not portal.verify_password("rotation-pass-2", retired["hash"], retired["salt"])
+        assert old_name in portal._regulator_legacy_retired()
+
+        rotated = portal.USERS.get(new_name)
+        assert portal.verify_password("rotation-pass-2", rotated["hash"], rotated["salt"])
+    finally:
+        for name in (old_name, new_name):
+            portal._FALLBACK_USERS.pop(name, None)
+            try:
+                del portal.USERS[name]
+            except Exception:
+                pass
+            portal._REGULATOR_LEGACY_RETIRED.discard(name)
+
+
 def test_regulator_can_rotate_credentials_and_restore_them():
     login = _login("regulator", "regulator123")
     assert login.status_code == 200, login.text

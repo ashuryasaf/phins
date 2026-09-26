@@ -25,8 +25,10 @@ numbers do not change.
 `POST /api/regulator/credentials` changes this account's username and
 password. The current password is required, the role stays `regulator`, and
 an existing username cannot be taken. After a change the previous demo
-password stops working. A new token is returned so the dashboard stays
-signed in.
+password stops working; in database mode that retirement is recorded durably,
+so a restart or another replica cannot bring the old secret back, and a
+replaced username stays retired instead of becoming free again. A new token is
+returned so the dashboard stays signed in.
 
 ## Offer structure
 

@@ -12120,9 +12120,53 @@ REGULATOR_WRITE_ALLOW = frozenset({
     '/api/regulator/credentials',
 })
 # Usernames whose demo password was replaced by the regulator. The legacy
-# demo secret must not keep opening the account after that change.
+# demo secret must not keep opening the account after that change, so in
+# database mode the set is mirrored into a durable artifact: a restart or a
+# second replica rebuilds this process-local set empty.
 _REGULATOR_LEGACY_RETIRED: set[str] = set()
+_REGULATOR_RETIRED_ARTIFACT = 'REGULATOR-CREDENTIALS-RETIRED'
+_REGULATOR_RETIRED_AGENT = 'regulator_credentials'
 _REGULATOR_USERNAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._@+-]{2,63}$')
+
+
+def _regulator_legacy_retired() -> set[str]:
+    """Usernames whose demo secret was retired, including the durable record."""
+    retired = set(_REGULATOR_LEGACY_RETIRED)
+    if USE_DATABASE and database_enabled:
+        try:
+            from database.manager import DatabaseManager
+            with DatabaseManager() as db:
+                payload = db.agent_artifacts.get_payload(_REGULATOR_RETIRED_ARTIFACT) or {}
+            retired.update(str(name) for name in payload.get('usernames') or [])
+        except Exception as exc:
+            print(f"[REGULATOR] retired credential read warning: {type(exc).__name__}")
+    return retired
+
+
+def _retire_regulator_legacy(usernames: set[str]) -> bool:
+    """Record that these usernames' demo secret no longer opens the account.
+
+    Returns False when the record could not be made durable, so the caller can
+    refuse the rotation instead of promising a retirement that a restart undoes.
+    """
+    names = {str(name) for name in usernames if name}
+    if USE_DATABASE and database_enabled:
+        try:
+            from database.manager import DatabaseManager
+            with DatabaseManager() as db:
+                payload = db.agent_artifacts.get_payload(_REGULATOR_RETIRED_ARTIFACT) or {}
+                stored = {str(name) for name in payload.get('usernames') or []}
+                db.agent_artifacts.upsert(
+                    _REGULATOR_RETIRED_ARTIFACT,
+                    agent_id=_REGULATOR_RETIRED_AGENT,
+                    kind='retired_credentials',
+                    payload={'usernames': sorted(stored | names)},
+                )
+        except Exception as exc:
+            print(f"[REGULATOR] retired credential write failed: {type(exc).__name__}")
+            return False
+    _REGULATOR_LEGACY_RETIRED.update(names)
+    return True
 
 
 def _session_from_authorization(handler) -> dict[str, str] | None:
@@ -12142,10 +12186,12 @@ def _session_from_authorization(handler) -> dict[str, str] | None:
 
 def _legacy_password_ok(username: str, password: str) -> bool:
     """True when the test-mode demo password is still valid for this user."""
-    if not username or username in _REGULATOR_LEGACY_RETIRED:
+    if not username:
         return False
     expected = LEGACY_DEMO_PASSWORDS.get(username)
     if not expected or not ALLOW_LEGACY_DEMO_PASSWORDS:
+        return False
+    if username in _regulator_legacy_retired():
         return False
     try:
         return secrets.compare_digest(str(password), str(expected))
@@ -12196,6 +12242,11 @@ def update_regulator_credentials(session: Dict[str, Any] | None, body: Dict[str,
     if new_username != current_username and (new_username in USERS or new_username in _FALLBACK_USERS):
         return 409, {'error': 'That username is already in use'}
 
+    # Retire the demo secret durably *before* the swap: a rotation that cannot
+    # record the retirement would come back with the old password on restart.
+    if not _retire_regulator_legacy({current_username, new_username}):
+        return 503, {'error': 'Credential change could not be recorded'}
+
     updated = dict(record)
     hashed = hash_password(new_password)
     updated['hash'] = hashed['hash']
@@ -12209,22 +12260,17 @@ def update_regulator_credentials(session: Dict[str, Any] | None, body: Dict[str,
     except Exception as exc:
         print(f"[REGULATOR] credential store warning: {type(exc).__name__}")
     if new_username != current_username:
-        _FALLBACK_USERS.pop(current_username, None)
+        # The replaced login is kept as an unusable record instead of being
+        # deleted: a deleted row is recreated by the startup seed pass and, until
+        # then, served from _FALLBACK_USERS with the configured demo secret.
+        retired = dict(updated)
+        retired.update(hash_password(secrets.token_urlsafe(32)))
+        _FALLBACK_USERS[current_username] = retired
         try:
-            if hasattr(USERS, '__delitem__'):
-                del USERS[current_username]
-        except Exception:
-            pass
-        if USE_DATABASE and database_enabled:
-            try:
-                from database.manager import DatabaseManager
-                with DatabaseManager() as db:
-                    db.users.delete(current_username)
-            except Exception as exc:
-                print(f"[REGULATOR] previous username retire warning: {type(exc).__name__}")
+            USERS[current_username] = retired
+        except Exception as exc:
+            print(f"[REGULATOR] previous username retire warning: {type(exc).__name__}")
 
-    _REGULATOR_LEGACY_RETIRED.add(current_username)
-    _REGULATOR_LEGACY_RETIRED.add(new_username)
     _revoke_user_sessions(current_username)
     if new_username != current_username:
         _revoke_user_sessions(new_username)
@@ -17140,6 +17186,24 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
                     return
 
+        # Session validation
+        auth_header = self.headers.get('Authorization', '')
+        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+        session = validate_session(token) if token else None
+        is_authenticated = session is not None
+
+        # Regulation viewer: one read-only outline. Every other API, including
+        # executive BI, customer records and the staff document registries
+        # handled below, stays closed. The gate runs before the first /api/
+        # route so no handler can answer ahead of it.
+        if get_effective_role(session) == REGULATOR_ROLE and path.startswith('/api/'):
+            if path not in REGULATOR_API_ALLOW:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Regulation viewer is limited to the read-only outline',
+                }).encode('utf-8'))
+                return
+
         # Confidential share-link management (staff). Listed before the gate so
         # the JSON API itself is never treated as a confidential HTML document.
         if path == '/api/confidential/shares':
@@ -17238,22 +17302,6 @@ For claims or questions, please contact:
             self._set_json_headers(200)
             self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             return
-
-        # Session validation
-        auth_header = self.headers.get('Authorization', '')
-        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
-        session = validate_session(token) if token else None
-        is_authenticated = session is not None
-
-        # Regulation viewer: one read-only outline. Every other API, including
-        # executive BI and customer records, stays closed.
-        if get_effective_role(session) == REGULATOR_ROLE and path.startswith('/api/'):
-            if path not in REGULATOR_API_ALLOW:
-                self._set_json_headers(403)
-                self.wfile.write(json.dumps({
-                    'error': 'Regulation viewer is limited to the read-only outline',
-                }).encode('utf-8'))
-                return
 
         if path == '/api/regulator/outline':
             if get_effective_role(session) != REGULATOR_ROLE:
