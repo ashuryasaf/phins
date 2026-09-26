@@ -10083,6 +10083,9 @@ def _format_business_inquiry_admin_email(record: Dict[str, Any]) -> Tuple[str, s
 
     inquiry_type = str(record.get('inquiry_type') or 'contact').strip().lower()
     type_label = 'Demo request' if inquiry_type == 'demo' else 'Business inquiry'
+    from_regulator = _business_inquiry_from_regulator(record)
+    if from_regulator:
+        type_label = 'Regulation inquiry'
     inquiry_id = str(record.get('id') or '')
     name = str(record.get('name') or '')
     email = str(record.get('email') or '')
@@ -10094,8 +10097,12 @@ def _format_business_inquiry_admin_email(record: Dict[str, Any]) -> Tuple[str, s
     status = str(record.get('status') or 'new')
 
     subject = f"PHINS Business Relations: new {type_label.lower()} — {audience}/{interest} ({inquiry_id})"
+    origin = (
+        "filed in Business Relations from the regulation dashboard"
+        if from_regulator else "received via the public solutions page"
+    )
     content = (
-        f"{type_label} received via the public solutions page.\n\n"
+        f"{type_label} {origin}.\n\n"
         f"Inquiry ID: {inquiry_id}\n"
         f"Type: {inquiry_type}\n"
         f"Status: {status}\n"
@@ -10125,8 +10132,7 @@ def _format_business_inquiry_admin_email(record: Dict[str, Any]) -> Tuple[str, s
     }.items()}
     html_content = (
         f"<h2>PHINS Business Relations — {h['type_label']}</h2>"
-        f"<p>A new <strong>{h['inquiry_type']}</strong> submission was received from the "
-        f"public solutions page.</p>"
+        f"<p>A new <strong>{h['inquiry_type']}</strong> submission was {_html.escape(origin)}.</p>"
         f"<table style='border-collapse:collapse;font-family:sans-serif;font-size:14px'>"
         f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Inquiry ID</td>"
         f"<td><code>{h['inquiry_id']}</code></td></tr>"
@@ -10157,6 +10163,7 @@ _BUSINESS_INQUIRY_AUDIENCE_LABELS = {
     'investor': 'Investor',
     'partner': 'Partner / MGA',
     'other': 'Other',
+    'regulations contact': 'Regulations contact',
 }
 _BUSINESS_INQUIRY_INTEREST_LABELS = {
     'underwriting': 'Underwriting',
@@ -10168,6 +10175,17 @@ _BUSINESS_INQUIRY_INTEREST_LABELS = {
     'mga_solutions': 'MGA Solutions',
     'platform': 'Full Platform',
 }
+
+
+def _business_inquiry_from_regulator(record: Dict[str, Any]) -> bool:
+    return str(record.get('audience') or '').strip().lower() == 'regulations contact'
+
+
+def _business_inquiry_interest_label(interest: str) -> str:
+    if interest.startswith('regulator:'):
+        from services.regulator_inquiries import SUBJECT_LABELS
+        return SUBJECT_LABELS.get(interest.split(':', 1)[1], interest)
+    return _BUSINESS_INQUIRY_INTEREST_LABELS.get(interest, interest or '(n/a)')
 
 
 def _format_business_inquiry_sender_confirmation_email(
@@ -10187,7 +10205,10 @@ def _format_business_inquiry_sender_confirmation_email(
     message = str(record.get('message') or '').strip() or '(no message provided)'
     created_at = str(record.get('created_at') or '')
     audience_label = _BUSINESS_INQUIRY_AUDIENCE_LABELS.get(audience, audience or '(n/a)')
-    interest_label = _BUSINESS_INQUIRY_INTEREST_LABELS.get(interest, interest or '(n/a)')
+    interest_label = _business_inquiry_interest_label(interest)
+    from_regulator = _business_inquiry_from_regulator(record)
+    if from_regulator:
+        type_label = 'regulation inquiry'
     reply_to = (
         str(os.environ.get('EMAIL_REPLY_TO') or '').strip()
         or str(os.environ.get('EMAIL_FROM_ADDRESS') or '').strip()
@@ -10198,7 +10219,9 @@ def _format_business_inquiry_sender_confirmation_email(
     content = (
         f"Hello {name},\n\n"
         f"Thank you for contacting PHINS Business Relations. "
-        f"This email confirms we received your {type_label} and our team will follow up shortly.\n\n"
+        f"This email confirms we received your {type_label}"
+        f"{' from the regulation dashboard' if from_regulator else ''} "
+        f"and our team will follow up shortly.\n\n"
         f"Your reference ID: {inquiry_id}\n"
         f"Submitted: {created_at}\n\n"
         f"Details we have on file:\n"
@@ -10233,7 +10256,8 @@ def _format_business_inquiry_sender_confirmation_email(
         f"<h2 style='margin:0 0 12px'>Welcome — we received your {h['type_label']}</h2>"
         f"<p>Hello {h['name']},</p>"
         f"<p>Thank you for contacting <strong>PHINS Business Relations</strong>. "
-        f"This email confirms we received your {h['type_label']} and our team will "
+        f"This email confirms we received your {h['type_label']}"
+        f"{' from the regulation dashboard' if from_regulator else ''} and our team will "
         f"follow up shortly.</p>"
         f"<p><strong>Your reference ID:</strong> <code>{h['inquiry_id']}</code><br>"
         f"<strong>Submitted:</strong> {h['created_at']}</p>"
@@ -10404,7 +10428,10 @@ def _notify_business_inquiry_received(record: Dict[str, Any]) -> Dict[str, Any]:
         result['attempted'] = True
         metadata = {
             'category': 'business_inquiry',
-            'event': 'inquiry_received',
+            'event': (
+                'regulator_inquiry_received'
+                if _business_inquiry_from_regulator(record) else 'inquiry_received'
+            ),
             'inquiry_id': record.get('id'),
             'inquiry_type': record.get('inquiry_type'),
             'audience': record.get('audience'),
@@ -12502,126 +12529,66 @@ def generate_regulator_inquiry_id() -> str:
     return f"RINQ-{timestamp}-{secrets.token_hex(4).upper()}"
 
 
-def _format_regulator_inquiry_email(record: Dict[str, Any], action: str) -> Tuple[str, str, str]:
-    """Staff notice for a regulator inquiry. No outline figures, no customer ids."""
-    import html as html_lib
-    from services.regulator_inquiries import PUBLIC_CONVERSATION_URL
+def _persist_regulator_registration(
+    regulator_id: str,
+    regulator_record: Dict[str, Any],
+    business_id: str,
+    business_record: Dict[str, Any],
+    previous_business: Dict[str, Any] | None = None,
+) -> bool:
+    """Write the Business Relations row and the regulator thread together.
 
-    inquiry_id = str(record.get('id') or '')
-    subject_label = str(record.get('subject_label') or record.get('subject') or '')
-    opened_by = str(record.get('opened_by') or '')
-    messages = list(record.get('messages') or [])
-    shown = messages[-12:]
-    omitted = len(messages) - len(shown)
-    lines = []
-    html_turns = []
-    for turn in shown:
-        body = str((turn or {}).get('body') or '')
-        at = str((turn or {}).get('at') or '')
-        by = str((turn or {}).get('by') or '')
-        lines.append(f"[{at}] {by}\n{body}")
-        html_turns.append(
-            f"<p style='margin:0 0 12px'><strong>{html_lib.escape(by)}</strong> "
-            f"<span style='color:#555'>{html_lib.escape(at)}</span><br>"
-            f"{html_lib.escape(body).replace(chr(10), '<br>')}</p>"
-        )
-    omitted_line = f"\n({omitted} earlier message(s) remain on the inquiry record.)\n" if omitted else ""
-    verb = 'opened' if action == 'created' else 'updated'
-    subject = f"PHINS regulator inquiry {inquiry_id} — {subject_label}"
-    content = (
-        f"A regulation account {verb} an inquiry from the regulation dashboard.\n\n"
-        f"This notice uses the solutions notification path. The inquiry itself is "
-        f"stored separately from public solutions contact submissions.\n\n"
-        f"Inquiry: {inquiry_id}\n"
-        f"Subject: {subject_label}\n"
-        f"Opened by: {opened_by}\n"
-        f"Channel: regulator\n"
-        f"Status: open\n"
-        f"{omitted_line}\n"
-        f"Conversation:\n" + "\n\n".join(lines) + "\n\n"
-        f"Public visitors continue at {PUBLIC_CONVERSATION_URL}. "
-        f"That conversation is a different process.\n"
-    )
-    html_content = (
-        f"<div style='font-family:sans-serif;line-height:1.45;color:#1a202c'>"
-        f"<p>A regulation account {html_lib.escape(verb)} an inquiry from the "
-        f"regulation dashboard.</p>"
-        f"<p>This notice uses the solutions notification path. The inquiry itself "
-        f"is stored separately from public solutions contact submissions.</p>"
-        f"<table style='border-collapse:collapse;font-size:14px'>"
-        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Inquiry</td><td>{html_lib.escape(inquiry_id)}</td></tr>"
-        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Subject</td><td>{html_lib.escape(subject_label)}</td></tr>"
-        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Opened by</td><td>{html_lib.escape(opened_by)}</td></tr>"
-        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Channel</td><td>regulator</td></tr>"
-        f"</table>"
-        f"<h3 style='margin:20px 0 8px;font-size:16px'>Conversation</h3>"
-        + "".join(html_turns) +
-        f"<p style='margin-top:16px;color:#555'>Public visitors continue at "
-        f"<a href='{PUBLIC_CONVERSATION_URL}'>{PUBLIC_CONVERSATION_URL}</a>. "
-        f"That conversation is a different process.</p></div>"
-    )
-    return subject, content, html_content
-
-
-def _notify_regulator_inquiry(record: Dict[str, Any], action: str, client_ip: str = '') -> Dict[str, Any]:
-    """Best-effort staff email after a durable regulator inquiry write.
-
-    Recipients and the sender are the solutions inquiry notification path.
-    The rate-limit bucket and the email category stay on the regulator side,
-    and no visitor confirmation is sent.
+    Neither cache is updated here. A failed regulator write restores the
+    previous Business Relations row when one existed.
     """
-    result: Dict[str, Any] = {
+    if not _persist_business_inquiry(business_id, business_record):
+        return False
+    if _persist_regulator_inquiry(regulator_id, regulator_record):
+        return True
+    if not _regulator_inquiry_db_enabled():
+        return False
+    if previous_business:
+        _persist_business_inquiry(business_id, previous_business)
+        return False
+    try:
+        from database.manager import DatabaseManager
+        with DatabaseManager() as db:
+            db.business_inquiries.delete(business_id)
+    except Exception as exc:
+        print(f"[REGULATOR] inquiry compensation failed for {business_id}: {type(exc).__name__}")
+    return False
+
+
+def _notify_regulator_inquiry(business_record: Dict[str, Any]) -> Dict[str, Any]:
+    """Business Relations staff alert plus acknowledgement to the contact email.
+
+    The contact address is the only recipient echoed back. Admin mailboxes stay
+    off the regulation response. No source IP is attached, so this does not
+    spend the public visitor rate-limit bucket.
+    """
+    safe: Dict[str, Any] = {
         'attempted': False,
         'sent_count': 0,
         'skipped': None,
+        'acknowledgement': {'attempted': False, 'sent': False, 'recipient': None},
     }
     try:
-        rate_key = f"{record.get('opened_by')}:{record.get('subject')}"
-        if not business_inquiry_notify_allowed('regulator', rate_key):
-            result['skipped'] = 'rate_limited'
-            return result
-        source_ip = str(client_ip or '').strip()
-        if source_ip and not business_inquiry_notify_allowed('regulator_ip', source_ip):
-            result['skipped'] = 'rate_limited'
-            return result
-        recipients = _resolve_business_inquiry_notify_emails()
-        if not recipients:
-            print(
-                f"[REGULATOR] inquiry {record.get('id')} saved; "
-                "no solutions notify recipients configured"
-            )
-            return result
-        subject, content, html_content = _format_regulator_inquiry_email(record, action)
-        result['attempted'] = True
-        metadata = {
-            'category': 'regulator_inquiry',
-            'event': 'inquiry_opened' if action == 'created' else 'inquiry_message',
-            'inquiry_id': record.get('id'),
-            'subject': record.get('subject'),
-            'channel': 'regulator',
+        notify_record = dict(business_record)
+        notify_record.pop('_source_ip', None)
+        raw = _notify_business_inquiry_received(notify_record)
+        ack = raw.get('sender_confirmation') or {}
+        safe['attempted'] = bool(raw.get('attempted') or ack.get('attempted'))
+        safe['sent_count'] = len(raw.get('sent') or [])
+        safe['skipped'] = raw.get('skipped')
+        safe['acknowledgement'] = {
+            'attempted': bool(ack.get('attempted')),
+            'sent': bool(ack.get('sent')),
+            'recipient': ack.get('recipient'),
         }
-        sent = 0
-        for recipient in recipients:
-            if not business_inquiry_notify_allowed('mailbox', recipient):
-                continue
-            ok, error = _send_business_inquiry_email(
-                recipient=recipient,
-                subject=subject,
-                content=content,
-                html_content=html_content,
-                metadata=metadata,
-            )
-            if ok:
-                sent += 1
-            else:
-                print(f"[REGULATOR] inquiry notify failed for {record.get('id')}: {error}")
-        result['sent_count'] = sent
-        if sent:
-            print(f"[REGULATOR] inquiry notify sent for {record.get('id')} ({sent})")
     except Exception as exc:
         print(f"[REGULATOR] inquiry notify error: {type(exc).__name__}")
-        result['skipped'] = 'notify_error'
-    return result
+        safe['skipped'] = 'notify_error'
+    return safe
 
 
 def list_regulator_inquiries(session: Dict[str, Any] | None) -> Tuple[int, Dict[str, Any]]:
@@ -12657,7 +12624,12 @@ def open_regulator_inquiry(
     client_ip: str = '',
 ) -> Tuple[int, Dict[str, Any]]:
     """Open or continue an inquiry. The cache updates only after a durable write."""
-    from services.regulator_inquiries import InquiryError, apply_open_inquiry, clone_record
+    from services.regulator_inquiries import (
+        InquiryError,
+        apply_open_inquiry,
+        business_relations_row,
+        clone_record,
+    )
 
     if not session:
         return 401, {'error': 'Authentication required'}
@@ -12670,42 +12642,64 @@ def open_regulator_inquiry(
         return 400, {'error': 'Invalid request body'}
     subject_raw = body.get('subject')
     message_raw = body.get('message')
-    if not isinstance(subject_raw, str) or not isinstance(message_raw, str):
-        return 400, {'error': 'Subject and message are required'}
+    name_raw = body.get('name')
+    email_raw = body.get('email')
+    if not all(isinstance(value, str) for value in (subject_raw, message_raw, name_raw, email_raw)):
+        return 400, {'error': 'Full name, email, subject, and message are required'}
     # The injection detectors are deliberately not run on this conversation:
     # they read ordinary prose (';', '|', '--') as an attack and block the
     # caller IP. The subject is matched against the outlined catalog, the
-    # message is stripped of controls and capped, and every render escapes it.
+    # name, email, and message are cleaned and capped, and every render escapes them.
 
     try:
         with STATE_LOCK:
             _hydrate_regulator_inquiries(force=True)
+            _hydrate_business_inquiries(force=True)
             snapshot = _copy_regulator_inquiries()
             new_id = generate_regulator_inquiry_id()
             while new_id in snapshot or new_id in REGULATOR_INQUIRIES:
                 new_id = generate_regulator_inquiry_id()
+            now_iso = datetime.now(timezone.utc).isoformat()
             action, record = apply_open_inquiry(
                 snapshot, username, subject_raw, message_raw,
-                datetime.now(timezone.utc).isoformat(), new_id,
+                now_iso, new_id, name_raw, email_raw,
             )
             if action == 'duplicate':
                 stored = clone_record(record)
-                notify = None
+                business_record = None
             else:
-                if not _persist_regulator_inquiry(record['id'], record):
+                business_id = str(record.get('business_inquiry_id') or '').strip()
+                previous_business = BUSINESS_INQUIRIES.get(business_id) if business_id else None
+                if not business_id:
+                    business_id = generate_business_inquiry_id()
+                    while business_id in BUSINESS_INQUIRIES:
+                        business_id = generate_business_inquiry_id()
+                    record['business_inquiry_id'] = business_id
+                business_record = business_relations_row(
+                    record, business_id, now_iso, previous_business,
+                )
+                if not _persist_regulator_registration(
+                    record['id'], record, business_id, business_record, previous_business,
+                ):
                     return 503, {'error': 'Inquiry could not be recorded'}
                 stored = clone_record(record)
                 REGULATOR_INQUIRIES[stored['id']] = stored
-                notify = 'pending'
+                BUSINESS_INQUIRIES[business_id] = business_record
     except InquiryError as exc:
         return exc.status, {'error': str(exc)}
 
     notification = None
-    if notify == 'pending':
-        notification = _notify_regulator_inquiry(stored, action, client_ip)
+    if business_record is not None:
+        notification = _notify_regulator_inquiry(business_record)
     return (201 if action == 'created' else 200), {
         'action': action,
         'inquiry': stored,
+        'business_inquiry': {
+            'id': business_record['id'],
+            'organization': business_record['organization'],
+            'audience': business_record['audience'],
+            'email': business_record['email'],
+        } if business_record else None,
         'notification': notification,
     }
 
