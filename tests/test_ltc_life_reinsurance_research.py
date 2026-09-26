@@ -314,7 +314,7 @@ def test_research_pdf_hebrew_is_full_translation():
     assert pdf_bytes.startswith(b'%PDF')
     text = _pdf_text(pdf_bytes)
     phrases = (
-        STUDY_TITLE_HE,
+        'פרמיות סיכון חיים ונכות סיעודית',
         'נרטיב המחקר',
         'מתודולוגיה והיקף',
         'תיאבון ביטוח משנה',
