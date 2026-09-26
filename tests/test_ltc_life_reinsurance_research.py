@@ -22,6 +22,7 @@ from services.ltc_life_reinsurance_research import (
     STUDY_ID,
     STUDY_TITLE,
     STUDY_TITLE_HE,
+    TABLE_COLUMNS,
     build_ltc_life_research,
     clear_staged_research_overlay,
     get_staged_research_overlay,
@@ -31,7 +32,12 @@ from services.ltc_life_reinsurance_research import (
     stage_research_overlay,
 )
 from services.phins_pdf_brand import BRAND_NAME, BRAND_TAGLINE, PHINS_GOLD, PHINS_NAVY
-from services.ltc_life_reinsurance_research_pdf import bidi_text, build_research_pdf
+from services.ltc_life_reinsurance_research_pdf import (
+    PDF_TABLE_GROUPS,
+    bidi_text,
+    build_research_pdf,
+    research_chart_size,
+)
 
 
 def _base_url() -> str:
@@ -301,6 +307,30 @@ def _has_phrase(text: str, phrase: str, rtl: bool = False) -> bool:
     return False
 
 
+def test_research_pdf_covers_every_study_column():
+    covered = {
+        column
+        for groups in PDF_TABLE_GROUPS.values()
+        for group in groups
+        for column in group
+        if column != 'age_band'
+    }
+    expected = {column for columns in TABLE_COLUMNS.values() for column in columns}
+    assert expected <= covered
+    assert set(PDF_TABLE_GROUPS) == set(TABLE_COLUMNS)
+
+
+def test_research_chart_uses_landscape_a4_proportion():
+    width, height = research_chart_size(420)
+    assert abs((width / height) - (297 / 210)) < 1e-9
+
+
+def _mediabox(pdf_bytes: bytes):
+    from pypdf import PdfReader
+    box = PdfReader(io.BytesIO(pdf_bytes)).pages[0].mediabox
+    return float(box.width), float(box.height)
+
+
 def test_research_pdf_english_is_full_study():
     pack = build_ltc_life_research({})
     filename, pdf_bytes = build_research_pdf(pack, lang='en')
@@ -318,6 +348,16 @@ def test_research_pdf_english_is_full_study():
     assert 'Affiliated sources' in text
     assert 'Integrity' in text
     assert 'hybrid' in text.lower() or 'Hybrid' in text
+    assert 'Life premium index' in text
+    assert 'Index (1990 = 100)' in text
+    assert 'Coverage mix %' in text
+    assert 'Book total' in text
+    assert 'Era note' in text
+    assert 'Life mortality rates' in text
+    assert '3+ADL disability rates' in text
+    width, height = _mediabox(pdf_bytes)
+    assert height > width
+    assert abs((width / height) - (210 / 297)) < 0.01
 
 
 def test_research_pdf_hebrew_is_full_translation():
@@ -338,11 +378,17 @@ def test_research_pdf_hebrew_is_full_translation():
         'שלמות הנתונים',
         'סיכון צולב',
         'שכבת תמחור',
+        'מדד פרמיית חיים',
+        'תמהיל כיסוי',
+        'סך הספר',
     )
     missing = [phrase for phrase in phrases if not _has_phrase(text, phrase, rtl=True)]
     assert not missing, f'Hebrew PDF missing {missing}. Extracted excerpt: {text[:800]}'
     # English study title must not be the Hebrew document title.
     assert STUDY_TITLE not in text
+    width, height = _mediabox(pdf_bytes)
+    assert height > width
+    assert abs((width / height) - (210 / 297)) < 0.01
 
 
 def test_research_download_pdf_english_and_hebrew(admin_token):

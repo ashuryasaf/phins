@@ -136,7 +136,26 @@ COPY = {
             'coverage_forecast': 'Forecast — coverage-type mix and hedge stack',
             'pricing_overlay': 'Pricing overlay — technical rates for analysis',
             'adl_mortality_multipliers': 'ADL mortality multipliers',
+            'mortality_rates': 'Life mortality rates (upload format)',
+            'disability_incidence_rates': '3+ADL disability rates (upload format)',
         },
+        'continued': 'Continued',
+        'exposure_totals': (
+            'Book total — expected life {life} · expected 3+ADL {ltc} · '
+            'net ceded {net} · 99% tail {tail}.'
+        ),
+        'chart_history': (
+            'Chart — Life premium index and 3+ADL premium index '
+            '(left axis: Index (1990 = 100)); Life appetite %, 3+ADL appetite %, '
+            'Hybrid appetite % (right axis: Appetite %).'
+        ),
+        'chart_forecast': (
+            'Chart — Coverage mix %: Standalone, Indemnity, Reimbursement, '
+            'Hybrid life+LTC, ADB rider.'
+        ),
+        'chart_index_axis': 'Index (1990 = 100)',
+        'chart_appetite_axis': 'Appetite %',
+        'chart_mix_axis': 'Coverage mix %',
         'kpi_labels': {
             'life_premium_index_end': 'Life premium index (end)',
             'ltc3_premium_index_end': '3+ADL LTC premium index (end)',
@@ -281,7 +300,25 @@ COPY = {
             'coverage_forecast': 'תחזית — תמהיל סוגי כיסוי ומחסנית גידור',
             'pricing_overlay': 'שכבת תמחור — שיעורים טכניים לניתוח',
             'adl_mortality_multipliers': 'מכפילי תמותה לפי פעולות יומיום',
+            'mortality_rates': 'שיעורי תמותת חיים (תבנית העלאה)',
+            'disability_incidence_rates': 'שיעורי נכות 3+ פעולות יומיום (תבנית העלאה)',
         },
+        'continued': 'המשך',
+        'exposure_totals': (
+            'סך הספר — תביעות חיים צפויות {life} · תביעות 3+ צפויות {ltc} · '
+            'מועבר נטו {net} · זנב 99% {tail}.'
+        ),
+        'chart_history': (
+            'תרשים — מדד פרמיית חיים ומדד פרמיית 3+ '
+            '(ציר שמאל: מדד (1990 = 100)); תיאבון חיים %, תיאבון 3+ %, '
+            'תיאבון משולב % (ציר ימין: תיאבון %).'
+        ),
+        'chart_forecast': (
+            'תרשים — תמהיל כיסוי %: עצמאי, פיצוי, החזר, משולב, הקדמת תגמולים.'
+        ),
+        'chart_index_axis': 'מדד (1990 = 100)',
+        'chart_appetite_axis': 'תיאבון %',
+        'chart_mix_axis': 'תמהיל כיסוי %',
         'kpi_labels': {
             'life_premium_index_end': 'מדד פרמיית חיים (סוף)',
             'ltc3_premium_index_end': 'מדד פרמיית סיעוד 3+ פעולות יומיום (סוף)',
@@ -392,42 +429,99 @@ COPY = {
     },
 }
 
-# Compact column sets so landscape pages stay readable.
-PDF_TABLE_COLUMNS: Dict[str, List[str]] = {
+# Portrait A4 holds about seven columns. Each on-screen table is split into
+# groups; the key column repeats so a continuation stays readable. Every
+# TABLE_COLUMNS field is present (age_band is the on-screen label for the
+# age_min/age_max pair, which is also printed).
+PDF_TABLE_GROUPS: Dict[str, List[List[str]]] = {
     'historical_appetite': [
-        'year', 'era', 'life_premium_index', 'ltc3_premium_index',
-        'life_appetite_pct', 'ltc3_appetite_pct', 'hybrid_appetite_pct',
-        'preferred_structure',
+        [
+            'year', 'era', 'life_premium_index', 'ltc3_premium_index',
+            'life_appetite_pct', 'ltc3_appetite_pct', 'hybrid_appetite_pct',
+        ],
+        [
+            'year', 'joint_appetite_pct', 'capacity_index',
+            'life_to_ltc_premium_ratio', 'preferred_structure', 'era_note',
+        ],
     ],
     'age_cover_matrix': [
-        'age_band', 'recommended_life_cover', 'recommended_ltc_annual_cover',
-        'life_rate_per_1000', 'ltc3_rate_per_1000', 'life_annual_premium',
-        'ltc3_annual_premium', 'combined_annual_premium',
+        [
+            'age_band', 'recommended_life_cover', 'recommended_ltc_annual_cover',
+            'life_rate_per_1000', 'ltc3_rate_per_1000', 'life_annual_premium',
+            'ltc3_annual_premium',
+        ],
+        [
+            'age_band', 'combined_annual_premium', 'expected_ltc_claim_cost',
+            'coverage_type', 'attained_age', 'age_min', 'age_max',
+        ],
     ],
     'cross_risk_adl_mortality': [
-        'age_band', 'healthy_life_expectancy', 'remaining_le_after_3adl',
-        'le_reduction_years', 'excess_mortality_multiple',
-        'p_death_within_5y_given_3adl', 'frailty_correlation', 'hedge_implication',
+        [
+            'age_band', 'healthy_life_expectancy', 'remaining_le_after_3adl',
+            'le_reduction_years', 'excess_mortality_multiple',
+            'p_death_within_5y_given_3adl', 'frailty_correlation',
+        ],
+        [
+            'age_band', 'life_qx', 'ltc3_incidence', 'joint_year1_probability',
+            'adl_threshold', 'attained_age', 'hedge_implication',
+        ],
+        ['age_band', 'age_min', 'age_max'],
     ],
     'reinsurance_exposure': [
-        'age_band', 'band_lives', 'expected_life_claims', 'expected_ltc_claims',
-        'ceded_life_exposure', 'ceded_ltc_exposure', 'joint_credit',
-        'net_ceded_exposure', 'tail_99_exposure', 'mean_claim_duration_years',
+        [
+            'age_band', 'band_lives', 'expected_life_claims', 'expected_ltc_claims',
+            'ceded_life_exposure', 'ceded_ltc_exposure', 'joint_credit',
+        ],
+        [
+            'age_band', 'net_ceded_exposure', 'tail_99_exposure',
+            'mean_claim_duration_years', 'life_face', 'ltc_annual_cover',
+            'hedge_share_pct',
+        ],
+        [
+            'age_band', 'life_appetite_pct', 'ltc3_appetite_pct',
+            'attained_age', 'age_min', 'age_max',
+        ],
     ],
     'coverage_forecast': [
-        'year', 'mix_standalone_ltc', 'mix_indemnity', 'mix_reimbursement',
-        'mix_hybrid_life_ltc', 'mix_adb_rider', 'life_appetite_pct',
-        'ltc3_appetite_pct', 'recommended_hedge',
+        [
+            'year', 'mix_standalone_ltc', 'mix_indemnity', 'mix_reimbursement',
+            'mix_hybrid_life_ltc', 'mix_adb_rider', 'recommended_hedge',
+        ],
+        [
+            'year', 'life_appetite_pct', 'ltc3_appetite_pct', 'hybrid_appetite_pct',
+            'selected_coverage_type', 'forecast_note',
+        ],
     ],
     'pricing_overlay': [
-        'age_band', 'life_rate_per_1000', 'ltc3_rate_per_1000',
-        'life_technical_rate_per_1000', 'ltc3_technical_rate_per_1000',
-        'joint_credit', 'reinsurance_load', 'mean_claim_duration_years',
+        [
+            'age_band', 'life_rate_per_1000', 'ltc3_rate_per_1000',
+            'life_technical_rate_per_1000', 'ltc3_technical_rate_per_1000',
+            'joint_credit', 'reinsurance_load',
+        ],
+        [
+            'age_band', 'mean_claim_duration_years', 'rate_per_1000',
+            'life_appetite_pct', 'ltc3_appetite_pct', 'age_min', 'age_max',
+        ],
     ],
     'adl_mortality_multipliers': [
-        'adl', 'multiplier', 'trigger', 'note',
+        ['adl', 'multiplier', 'trigger', 'note'],
+    ],
+    'mortality_rates': [
+        ['age_min', 'age_max', 'rate_per_1000'],
+    ],
+    'disability_incidence_rates': [
+        ['age_min', 'age_max', 'rate_per_1000'],
     ],
 }
+
+# Landscape A4 is 297×210. A chart drawn at that ratio sits proportionally
+# on a portrait A4 page.
+A4_CHART_ASPECT = 297.0 / 210.0
+
+
+def research_chart_size(usable_width: float) -> Tuple[float, float]:
+    width = max(120.0, float(usable_width))
+    return width, width / A4_CHART_ASPECT
 
 MONEY_KEYS = {
     'recommended_life_cover', 'recommended_ltc_annual_cover', 'life_face',
@@ -609,14 +703,197 @@ def _maybe_reverse(values: List[Any], rtl: bool) -> List[Any]:
     return list(reversed(values)) if rtl else values
 
 
+_HISTORY_SERIES = (
+    ('life_premium_index', '#2b6cb0', 'index'),
+    ('ltc3_premium_index', '#d69e2e', 'index'),
+    ('life_appetite_pct', '#38a169', 'appetite'),
+    ('ltc3_appetite_pct', '#e53e3e', 'appetite'),
+    ('hybrid_appetite_pct', '#805ad5', 'appetite'),
+)
+_FORECAST_SERIES = (
+    ('mix_standalone_ltc', (229, 62, 62), 0.65),
+    ('mix_indemnity', (214, 158, 46), 0.65),
+    ('mix_reimbursement', (66, 153, 225), 0.55),
+    ('mix_hybrid_life_ltc', (56, 161, 105), 0.70),
+    ('mix_adb_rider', (128, 90, 213), 0.70),
+)
+
+
+def _chart_label(text: str, rtl: bool) -> str:
+    return bidi_text(text, rtl=True) if rtl else str(text or '')
+
+
+def _history_chart(rows: Sequence[Dict[str, Any]], copy: Dict[str, Any],
+                   font: str, rtl: bool, usable: float):
+    """Dual-axis line chart matching the research-bar history canvas."""
+    from reportlab.graphics.shapes import Drawing, Line, PolyLine, Rect, String
+    from reportlab.lib import colors
+
+    width, height = research_chart_size(usable)
+    drawing = Drawing(width, height)
+    left, right, top, bottom = 46.0, 46.0, 18.0, 26.0
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+    drawing.add(Rect(
+        left, bottom, plot_w, plot_h,
+        fillColor=colors.HexColor('#f7fafc'),
+        strokeColor=colors.HexColor('#e2e8f0'),
+        strokeWidth=0.6,
+    ))
+    years = [int(row.get('year') or 0) for row in rows]
+    if len(years) < 2 or years[-1] == years[0]:
+        return drawing
+
+    def _vals(key: str) -> List[float]:
+        out: List[float] = []
+        for row in rows:
+            try:
+                out.append(float(row.get(key) or 0))
+            except (TypeError, ValueError):
+                out.append(0.0)
+        return out
+
+    index_peak = max(_vals('life_premium_index') + _vals('ltc3_premium_index') + [1.0])
+    appetite_peak = max(
+        _vals('life_appetite_pct') + _vals('ltc3_appetite_pct')
+        + _vals('hybrid_appetite_pct') + [100.0]
+    )
+    index_max = index_peak * 1.08
+    appetite_max = appetite_peak * 1.05
+    x0, x1 = years[0], years[-1]
+
+    def x_of(year: int) -> float:
+        return left + (year - x0) / float(x1 - x0) * plot_w
+
+    def y_of(value: float, scale_max: float) -> float:
+        return bottom + (value / scale_max) * plot_h
+
+    for step in range(5):
+        yy = bottom + plot_h * step / 4.0
+        drawing.add(Line(
+            left, yy, left + plot_w, yy,
+            strokeColor=colors.HexColor('#e2e8f0'), strokeWidth=0.4,
+        ))
+        drawing.add(String(
+            left - 4, yy - 2, f'{index_max * step / 4.0:.0f}',
+            fontName=font, fontSize=6, fillColor=colors.HexColor('#2b6cb0'),
+            textAnchor='end',
+        ))
+        drawing.add(String(
+            left + plot_w + 4, yy - 2, f'{appetite_max * step / 4.0:.0f}',
+            fontName=font, fontSize=6, fillColor=colors.HexColor('#38a169'),
+            textAnchor='start',
+        ))
+
+    for key, color, kind in _HISTORY_SERIES:
+        scale = index_max if kind == 'index' else appetite_max
+        points: List[float] = []
+        for row, year in zip(rows, years):
+            try:
+                value = float(row.get(key) or 0)
+            except (TypeError, ValueError):
+                value = 0.0
+            points.extend((x_of(year), y_of(value, scale)))
+        drawing.add(PolyLine(points, strokeColor=colors.HexColor(color), strokeWidth=1.5))
+
+    for year in years:
+        if year % 5 == 0 or year in (years[0], years[-1]):
+            drawing.add(String(
+                x_of(year), 8, str(year),
+                fontName=font, fontSize=6, fillColor=colors.HexColor('#4a5568'),
+                textAnchor='middle',
+            ))
+
+    drawing.add(String(
+        left, height - 8, _chart_label(copy['chart_index_axis'], rtl),
+        fontName=font, fontSize=7, fillColor=colors.HexColor('#2b6cb0'),
+        textAnchor='start',
+    ))
+    drawing.add(String(
+        left + plot_w, height - 8, _chart_label(copy['chart_appetite_axis'], rtl),
+        fontName=font, fontSize=7, fillColor=colors.HexColor('#38a169'),
+        textAnchor='end',
+    ))
+    return drawing
+
+
+def _forecast_chart(rows: Sequence[Dict[str, Any]], copy: Dict[str, Any],
+                    font: str, rtl: bool, usable: float):
+    """Stacked coverage-mix bars matching the research-bar forecast canvas."""
+    from reportlab.graphics.shapes import Drawing, Line, Rect, String
+    from reportlab.lib.colors import Color
+    from reportlab.lib import colors
+
+    width, height = research_chart_size(usable)
+    drawing = Drawing(width, height)
+    left, right, top, bottom = 42.0, 16.0, 18.0, 26.0
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+    drawing.add(Rect(
+        left, bottom, plot_w, plot_h,
+        fillColor=colors.HexColor('#f7fafc'),
+        strokeColor=colors.HexColor('#e2e8f0'),
+        strokeWidth=0.6,
+    ))
+    count = len(rows)
+    if count < 1:
+        return drawing
+    gap = 3.0
+    bar_w = max(2.0, (plot_w - gap * (count + 1)) / count)
+    for step in range(5):
+        yy = bottom + plot_h * step / 4.0
+        drawing.add(Line(
+            left, yy, left + plot_w, yy,
+            strokeColor=colors.HexColor('#e2e8f0'), strokeWidth=0.4,
+        ))
+        drawing.add(String(
+            left - 4, yy - 2, f'{100 * step / 4.0:.0f}',
+            fontName=font, fontSize=6, fillColor=colors.HexColor('#4a5568'),
+            textAnchor='end',
+        ))
+
+    for index, row in enumerate(rows):
+        x = left + gap + index * (bar_w + gap)
+        cursor = bottom
+        for key, rgb, alpha in _FORECAST_SERIES:
+            try:
+                share = float(row.get(key) or 0)
+            except (TypeError, ValueError):
+                share = 0.0
+            bar_h = max(0.0, share) * plot_h
+            if bar_h <= 0:
+                continue
+            red, green, blue = rgb
+            drawing.add(Rect(
+                x, cursor, bar_w, bar_h,
+                fillColor=Color(red / 255.0, green / 255.0, blue / 255.0, alpha=alpha),
+                strokeColor=None, strokeWidth=0,
+            ))
+            cursor += bar_h
+        year = int(row.get('year') or 0)
+        if count <= 12 or year % 5 == 0 or index in (0, count - 1):
+            drawing.add(String(
+                x + bar_w / 2.0, 8, str(year),
+                fontName=font, fontSize=6, fillColor=colors.HexColor('#4a5568'),
+                textAnchor='middle',
+            ))
+
+    drawing.add(String(
+        left, height - 8, _chart_label(copy['chart_mix_axis'], rtl),
+        fontName=font, fontSize=7, fillColor=colors.HexColor('#2b6cb0'),
+        textAnchor='start',
+    ))
+    return drawing
+
+
 def build_research_pdf(pack: Dict[str, Any], lang: str = 'en') -> Tuple[str, bytes]:
     """Render the full study. Returns ``(filename, pdf_bytes)``."""
     from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
     from reportlab.platypus import (
-        PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+        KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer,
     )
 
     lang = normalize_pdf_lang(lang)
@@ -629,12 +906,14 @@ def build_research_pdf(pack: Dict[str, Any], lang: str = 'en') -> Tuple[str, byt
     light = colors.HexColor(PHINS_WASH)
 
     buf = io.BytesIO()
-    pagesize = landscape(A4)
-    usable = pagesize[0] - 22 * mm
+    # Portrait A4 (210 × 297 mm). Charts use the landscape A4 ratio inside
+    # that page so the plot matches a standard sheet.
+    pagesize = A4
+    usable = pagesize[0] - 24 * mm
     doc = SimpleDocTemplate(
         buf, pagesize=pagesize,
-        leftMargin=11 * mm, rightMargin=11 * mm,
-        topMargin=24 * mm, bottomMargin=14 * mm,
+        leftMargin=12 * mm, rightMargin=12 * mm,
+        topMargin=24 * mm, bottomMargin=16 * mm,
         title=title,
         author=BRAND_NAME,
     )
@@ -725,19 +1004,43 @@ def build_research_pdf(pack: Dict[str, Any], lang: str = 'en') -> Tuple[str, byt
         kpi_rows.append([label, rendered])
     story.append(_kv_table(kpi_rows, copy, font, font_bold, navy, gold, light, cell, cell_hdr, rtl, usable * 0.62))
 
-    for table_name, columns in PDF_TABLE_COLUMNS.items():
+    for table_name, groups in PDF_TABLE_GROUPS.items():
         rows = extract_research_table(pack, table_name)
         story.append(PageBreak())
-        story.append(_paragraph(copy['table_titles'][table_name], h2, rtl, usable))
+        block: List[Any] = [_paragraph(copy['table_titles'][table_name], h2, rtl, usable)]
+        if table_name == 'historical_appetite' and rows:
+            block.append(_history_chart(rows, copy, font, rtl, usable))
+            block.append(Spacer(1, 4))
+            block.append(_paragraph(copy['chart_history'], meta, rtl, usable))
+        elif table_name == 'coverage_forecast' and rows:
+            block.append(_forecast_chart(rows, copy, font, rtl, usable))
+            block.append(Spacer(1, 4))
+            block.append(_paragraph(copy['chart_forecast'], meta, rtl, usable))
         if table_name == 'pricing_overlay':
             note = PRICING_NOTE_HE if rtl else (pack.get('pricing_use') or {}).get('note')
             if note:
-                story.append(_paragraph(str(note), meta, rtl, usable))
-                story.append(Spacer(1, 4))
-        story.append(_data_table(
-            columns, rows, copy, lang, font, navy, gold, light,
-            cell, cell_hdr, rtl, usable, table_name,
-        ))
+                block.append(Spacer(1, 4))
+                block.append(_paragraph(str(note), meta, rtl, usable))
+        story.append(KeepTogether(block))
+        for index, columns in enumerate(groups):
+            if index:
+                story.append(Spacer(1, 8))
+                story.append(_paragraph(copy['continued'], meta, rtl, usable))
+                story.append(Spacer(1, 3))
+            story.append(_data_table(
+                columns, rows, copy, lang, font, navy, gold, light,
+                cell, cell_hdr, rtl, usable, table_name,
+            ))
+        if table_name == 'reinsurance_exposure':
+            totals = pack.get('exposure_totals') or {}
+            line = copy['exposure_totals'].format(
+                life=_money(totals.get('expected_life_claims')),
+                ltc=_money(totals.get('expected_ltc_claims')),
+                net=_money(totals.get('net_ceded_exposure')),
+                tail=_money(totals.get('tail_99_exposure')),
+            )
+            story.append(Spacer(1, 6))
+            story.append(_paragraph(line, meta, rtl, usable))
 
     story.append(PageBreak())
     story.append(_paragraph(copy['sources_title'], h2, rtl, usable))

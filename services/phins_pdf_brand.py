@@ -142,6 +142,34 @@ def _visual(text: str, rtl: bool, bidi_fn: Optional[Callable[[str], str]] = None
     return value
 
 
+def _text_width(text: str, font_name: str, size: float) -> float:
+    try:
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+        return float(stringWidth(str(text or ''), font_name, size))
+    except Exception:
+        return len(str(text or '')) * size * 0.5
+
+
+def _fit_text(text: str, font_name: str, size: float, max_width: float) -> str:
+    """Truncate with an ellipsis so header lines stay inside a portrait A4 bar."""
+    value = str(text or '')
+    if max_width <= 4 or not value:
+        return ''
+    if _text_width(value, font_name, size) <= max_width:
+        return value
+    ellipsis = '…'
+    lo, hi = 0, len(value)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        trial = value[:mid].rstrip() + ellipsis
+        if _text_width(trial, font_name, size) <= max_width:
+            lo = mid
+        else:
+            hi = mid - 1
+    trimmed = value[:lo].rstrip()
+    return (trimmed + ellipsis) if trimmed else ellipsis
+
+
 def draw_report_bar(
     canvas,
     pagesize: Tuple[float, float],
@@ -175,40 +203,69 @@ def draw_report_bar(
         canvas.setFillColor(_hex(PHINS_GOLD_STRONG))
         canvas.setFont(bold, 15 if first_page else 8)
         canvas.drawRightString(text_x, emblem_y + (16 if first_page else 3), BRAND_NAME)
+        name_size = 15 if first_page else 8
+        name_w = _text_width(BRAND_NAME, bold, name_size)
         if first_page:
+            badge_size = 7
+            title_size = 9
+            tag_size = 6.6
+            title_room = max(24.0, text_x - name_w - 12 - inset)
+            badge_room = max(24.0, text_x - name_w - 12 - inset)
+            title_draw = _fit_text(title_text, bold, title_size, title_room)
+            badge_draw = _fit_text(badge_text, font, badge_size, badge_room)
+            badge_w = _text_width(badge_draw, font, badge_size)
+            tag_room = max(24.0, text_x - inset - badge_w - 14)
+            tag_draw = _fit_text(tagline, font, tag_size, tag_room)
             canvas.setFillColor(_hex(PHINS_INK))
-            canvas.setFont(font, 6.6)
-            canvas.drawRightString(text_x, emblem_y + 4, tagline)
+            canvas.setFont(font, tag_size)
+            canvas.drawRightString(text_x, emblem_y + 4, tag_draw)
             canvas.setFillColor(_hex(PHINS_INK))
-            canvas.setFont(bold, 9)
-            canvas.drawString(inset, emblem_y + 16, title_text[:110])
+            canvas.setFont(bold, title_size)
+            canvas.drawString(inset, emblem_y + 16, title_draw)
             canvas.setFillColor(_hex(PHINS_CYAN))
-            canvas.setFont(font, 7)
-            canvas.drawString(inset, emblem_y + 4, badge_text)
+            canvas.setFont(font, badge_size)
+            canvas.drawString(inset, emblem_y + 4, badge_draw)
         else:
+            run_size = 7.5
+            run_room = max(24.0, (text_x - 52) - inset)
             canvas.setFillColor(_hex(PHINS_INK))
-            canvas.setFont(font, 7.5)
-            canvas.drawRightString(text_x - 52, emblem_y + 3, title_text[:110])
+            canvas.setFont(font, run_size)
+            canvas.drawRightString(text_x - 52, emblem_y + 3, _fit_text(title_text, font, run_size, run_room))
     else:
         _draw_logo(canvas, inset, emblem_y, emblem)
         text_x = inset + emblem + 10
+        name_size = 15 if first_page else 8
         canvas.setFillColor(_hex(PHINS_GOLD_STRONG))
-        canvas.setFont(bold, 15 if first_page else 8)
+        canvas.setFont(bold, name_size)
         canvas.drawString(text_x, emblem_y + (16 if first_page else 3), BRAND_NAME)
+        name_w = _text_width(BRAND_NAME, bold, name_size)
         if first_page:
+            badge_size = 7
+            title_size = 9
+            tag_size = 6.6
+            title_room = max(24.0, (width - inset) - (text_x + name_w + 12))
+            badge_room = max(24.0, (width - inset) - (text_x + name_w + 12))
+            title_draw = _fit_text(title_text, bold, title_size, title_room)
+            badge_draw = _fit_text(badge_text, font, badge_size, badge_room)
+            badge_w = _text_width(badge_draw, font, badge_size)
+            tag_room = max(24.0, (width - inset - badge_w - 14) - text_x)
+            tag_draw = _fit_text(tagline, font, tag_size, tag_room)
             canvas.setFillColor(_hex(PHINS_INK))
-            canvas.setFont(font, 6.6)
-            canvas.drawString(text_x, emblem_y + 4, tagline)
+            canvas.setFont(font, tag_size)
+            canvas.drawString(text_x, emblem_y + 4, tag_draw)
             canvas.setFillColor(_hex(PHINS_INK))
-            canvas.setFont(bold, 9)
-            canvas.drawRightString(width - inset, emblem_y + 16, title_text[:110])
+            canvas.setFont(bold, title_size)
+            canvas.drawRightString(width - inset, emblem_y + 16, title_draw)
             canvas.setFillColor(_hex(PHINS_CYAN))
-            canvas.setFont(font, 7)
-            canvas.drawRightString(width - inset, emblem_y + 4, badge_text)
+            canvas.setFont(font, badge_size)
+            canvas.drawRightString(width - inset, emblem_y + 4, badge_draw)
         else:
+            run_size = 7.5
+            run_x = text_x + 52
+            run_room = max(24.0, (width - inset) - run_x)
             canvas.setFillColor(_hex(PHINS_INK))
-            canvas.setFont(font, 7.5)
-            canvas.drawString(text_x + 52, emblem_y + 3, title_text[:110])
+            canvas.setFont(font, run_size)
+            canvas.drawString(run_x, emblem_y + 3, _fit_text(title_text, font, run_size, run_room))
     canvas.restoreState()
 
 
