@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <!-- Build stamp: bumped whenever a substantive pricing change ships so
        cached browsers can tell users they are running an old UI. -->
-  <meta name="phins-actuary-dashboard-build" content="2026-09-24.age-adl-acceptance">
+  <meta name="phins-actuary-dashboard-build" content="2026-09-26.phins-report-brand">
   <!-- Chart.js for the Annuity Reserves forecast bar/line charts. Loaded
        from the same CDN as risk-reports-dashboard.html for consistency. -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -531,6 +531,24 @@
       text-decoration: none;
       font-weight: 600;
     }
+
+    #section-ltc-life-research .ltc-chart-wrap {
+      position: relative;
+      height: 280px;
+      margin-top: 8px;
+    }
+    #section-ltc-life-research .ltc-source-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    #section-ltc-life-research .ltc-source-list li {
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.86rem;
+    }
+    #section-ltc-life-research .ltc-source-list li:last-child { border-bottom: none; }
+    #section-ltc-life-research .ltc-table-scroll { overflow-x: auto; }
     
     .badge-soft {
       display: inline-block;
@@ -838,16 +856,12 @@
     .age-adl-chart-wrap { position: relative; height: 280px; margin-top: 8px; }
     .age-adl-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 
-    /* ========== Annual Regulatory Report Bar ==========
-       A first-class regulator-grade report that aggregates the
-       simulation, sandbox, reserves and valuation pipeline into a
-       single jurisdiction-aware filing (US 10-K / NAIC, Canada
-       OSFI/CSA, Israel ISA/CMISA + IFRS 17).
-
-       Redesigned on the unified PHINS identity: shield emblem +
-       Space Grotesk wordmark, deep-navy gradients with gold/cyan
-       accents (screen), and the gold #c9a04e / navy #0e2f63
-       letterhead double rule for the document itself. */
+    /* ========== Unified PHINS report bar ==========
+       Shared by Annual Regulatory Report and every Research & Audit
+       report surface (valuation, risk reference, LTC study, exports).
+       Shield emblem + Space Grotesk wordmark, deep-navy gradients
+       with gold/cyan accents (screen), and the gold #c9a04e / navy
+       #0e2f63 letterhead double rule for the downloaded documents. */
     .annual-brand-banner {
       position: relative;
       overflow: hidden;
@@ -1472,6 +1486,9 @@
           </div>
           <div class="nav-item" onclick="showSection('risk-reference')">
             <span>Risk Reference</span>
+          </div>
+          <div class="nav-item" onclick="showSection('ltc-life-research')">
+            <span>LTC 3+ADL &amp; Life Research</span>
           </div>
           <div class="nav-item" onclick="showSection('uploaded')">
             <span>Uploaded Tables</span>
@@ -2724,7 +2741,21 @@
 
         <!-- Risk Reference Section -->
         <section id="section-risk-reference" class="section">
-          <h2 class="section-title">Risk Reference (Locked Source)</h2>
+          <div class="annual-brand-banner">
+            <div class="brand-row">
+              <img src="/phins-logo.svg" alt="PHINS emblem" class="brand-emblem">
+              <div>
+                <span class="brand-wordmark">PHINS</span>
+                <div class="brand-tagline">Personal Health Insurance &amp; Savings · AI-Operated Insurance Platform</div>
+              </div>
+              <div class="brand-divider"></div>
+              <div>
+                <div class="brand-title">Risk Reference (Locked Source)</div>
+                <div class="brand-tagline">Public one-pager · dashboard · audit reports share one registered profile</div>
+              </div>
+              <span class="header-badge">Research &amp; Audit</span>
+            </div>
+          </div>
           <div class="alert alert-warning">
             This panel reproduces the locked actuarial source block published on the PHINS public risk one-pager. Every figure is computed server-side from a registered risk-reference profile so the dashboard, audit reports, and the public document always agree.
           </div>
@@ -2775,6 +2806,308 @@
             <div id="risk-reference-results">
               <p style="color:var(--text-light);">Loading…</p>
             </div>
+          </div>
+        </section>
+
+        <!-- LTC 3+ADL & Life Reinsurance Research (Research & Audit) -->
+        <section id="section-ltc-life-research" class="section">
+          <div class="annual-brand-banner">
+            <div class="brand-row">
+              <img src="/phins-logo.svg" alt="PHINS emblem" class="brand-emblem">
+              <div>
+                <span class="brand-wordmark">PHINS</span>
+                <div class="brand-tagline">Personal Health Insurance &amp; Savings · AI-Operated Insurance Platform</div>
+              </div>
+              <div class="brand-divider"></div>
+              <div>
+                <div class="brand-title">LTC 3+ADL &amp; Life Reinsurance Research</div>
+                <div class="brand-tagline">1975–2025 · 3+ ADL trigger · life risk premiums · reinsurance appetite</div>
+              </div>
+              <span class="header-badge">Research &amp; Audit</span>
+            </div>
+          </div>
+          <div class="alert alert-warning">
+            Fifty-year study of long-term-care disability at a <strong>3+ ADL</strong> trigger, life risk premiums, and reinsurance appetite.
+            Tables are rebuilt from the sliders so they can be used for analysis, pricing overlays, and hedge design.
+            Figures are research indices calibrated to SOA / LIMRA / NAIC / Swiss Re / Munich Re sources and the live PHINS rate bands — not a carrier experience study.
+            Promoting a table replaces the live band and is an explicit actuary decision.
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">Life premium index (end)</div>
+              <div class="stat-value" id="ltc-kpi-life-index">—</div>
+            </div>
+            <div class="stat-card warning">
+              <div class="stat-label">3+ADL LTC premium index (end)</div>
+              <div class="stat-value" id="ltc-kpi-ltc-index">—</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Life reinsurance appetite</div>
+              <div class="stat-value" id="ltc-kpi-life-app">—</div>
+            </div>
+            <div class="stat-card success">
+              <div class="stat-label">Hybrid / combo appetite</div>
+              <div class="stat-value" id="ltc-kpi-hybrid-app">—</div>
+            </div>
+            <div class="stat-card warning">
+              <div class="stat-label">Standalone 3+ADL appetite</div>
+              <div class="stat-value" id="ltc-kpi-ltc-app">—</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Net ceded exposure</div>
+              <div class="stat-value" id="ltc-kpi-ceded">—</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Adjustable Study Controls</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              Change ages, covers, trigger, hedge share, region, or coverage type and recalculate. Every table and chart is deterministic for the same slider set (integrity hash on the output).
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">History from</label>
+                <input type="number" id="ltc-year-from" class="form-input" value="1975" min="1975" max="2025">
+              </div>
+              <div class="form-group">
+                <label class="form-label">History to</label>
+                <input type="number" id="ltc-year-to" class="form-input" value="2025" min="1975" max="2025">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Forecast end</label>
+                <input type="number" id="ltc-forecast-end" class="form-input" value="2040" min="2025" max="2060">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Region</label>
+                <select id="ltc-region" class="form-input">
+                  <option value="us">United States</option>
+                  <option value="oecd">OECD average</option>
+                  <option value="il">Israel</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Age min</label>
+                <input type="number" id="ltc-age-min" class="form-input" value="30" min="18" max="90">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Age max</label>
+                <input type="number" id="ltc-age-max" class="form-input" value="85" min="25" max="100">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Life cover ($)</label>
+                <input type="number" id="ltc-life-cover" class="form-input" value="500000" min="10000" step="10000">
+              </div>
+              <div class="form-group">
+                <label class="form-label">LTC annual cover ($)</label>
+                <input type="number" id="ltc-ltc-cover" class="form-input" value="60000" min="1200" step="1200">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">ADL threshold</label>
+                <select id="ltc-adl" class="form-input">
+                  <option value="2">2+ ADL (typical US LTC)</option>
+                  <option value="3" selected>3+ ADL (PHINS permanent disability)</option>
+                  <option value="4">4+ ADL</option>
+                  <option value="5">5+ ADL</option>
+                  <option value="6">6 ADL (total)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Coverage type</label>
+                <select id="ltc-coverage-type" class="form-input">
+                  <option value="hybrid_life_ltc">Hybrid life + LTC (shared pool)</option>
+                  <option value="standalone_ltc">Standalone LTC indemnity</option>
+                  <option value="adb_rider">Accelerated death benefit rider</option>
+                  <option value="indemnity">Cash indemnity LTC</option>
+                  <option value="reimbursement">Reimbursement LTC</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Hedge share (%)</label>
+                <input type="number" id="ltc-hedge" class="form-input" value="35" min="0" max="95" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Lives in book</label>
+                <input type="number" id="ltc-lives" class="form-input" value="10000" min="1" step="100">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Mortality improvement % / yr</label>
+                <input type="number" id="ltc-mort-imp" class="form-input" value="0.5" min="-2" max="3" step="0.1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">3+ADL incidence load %</label>
+                <input type="number" id="ltc-inc-load" class="form-input" value="0" min="-30" max="80" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Duration stress %</label>
+                <input type="number" id="ltc-dur-stress" class="form-input" value="0" min="-20" max="80" step="1">
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-primary" onclick="PhinsLtcLifeResearch.load()">Recalculate study</button>
+                <button class="btn btn-outline" onclick="PhinsLtcLifeResearch.reset()">Reset sliders</button>
+              </div>
+            </div>
+            <p id="ltc-research-status" class="research-note" style="margin-top:12px;">Open this bar to load the 50-year study.</p>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Study narrative</div>
+            <div id="ltc-narrative">
+              <p style="color:var(--text-light);">Recalculate to load the research narrative.</p>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Download the full study</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              Download the complete research document (narrative, methodology, KPIs, every table, sources, and integrity hashes) as a PDF.
+              The Hebrew file is a full translation of that document — titles, labels, table headers, and source notes — not an English PDF with a Hebrew cover.
+            </p>
+            <div class="form-row">
+              <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-success" onclick="PhinsLtcLifeResearch.downloadPdf('en')">Download PDF</button>
+                <button class="btn btn-primary" onclick="PhinsLtcLifeResearch.downloadPdf('he')">Download PDF — עברית</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Reinsurance appetite &amp; premium indices (50 years)</div>
+            <div class="ltc-chart-wrap"><canvas id="ltc-history-chart"></canvas></div>
+            <div class="ltc-table-scroll" style="margin-top:16px;">
+              <table class="data-table" id="ltc-history-table">
+                <thead>
+                  <tr>
+                    <th>Year</th><th>Era</th><th>Life idx</th><th>3+ADL idx</th>
+                    <th>Life appetite</th><th>3+ADL appetite</th><th>Hybrid appetite</th>
+                    <th>Capacity</th><th>Structure</th>
+                  </tr>
+                </thead>
+                <tbody><tr><td colspan="9" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Ages vs covers — life face, 3+ADL annual indemnity, and premiums</div>
+            <div class="ltc-table-scroll">
+              <table class="data-table" id="ltc-age-cover-table">
+                <thead>
+                  <tr>
+                    <th>Age band</th><th>Life cover</th><th>LTC annual</th>
+                    <th>Life / 1,000</th><th>3+ADL / 1,000</th>
+                    <th>Life premium</th><th>3+ADL premium</th><th>Combined</th>
+                  </tr>
+                </thead>
+                <tbody><tr><td colspan="8" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Cross-risk — 3+ADL trigger to death expectancy</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              Remaining life expectancy after a 3+ADL trigger, excess mortality versus a healthy life, and the probability of death within five years of trigger. Hybrid and ADB products credit the life benefit against the care claim; standalone books pay both.
+            </p>
+            <div class="ltc-table-scroll">
+              <table class="data-table" id="ltc-cross-risk-table">
+                <thead>
+                  <tr>
+                    <th>Age band</th><th>Healthy LE</th><th>LE after 3+ADL</th>
+                    <th>LE lost</th><th>Excess mort.</th><th>P(death ≤5y | 3+ADL)</th>
+                    <th>Frailty ρ</th><th>Hedge implication</th>
+                  </tr>
+                </thead>
+                <tbody><tr><td colspan="8" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Expected reinsurance exposure</div>
+            <div class="ltc-table-scroll">
+              <table class="data-table" id="ltc-exposure-table">
+                <thead>
+                  <tr>
+                    <th>Age band</th><th>Lives</th><th>E[life claims]</th><th>E[3+ADL claims]</th>
+                    <th>Ceded life</th><th>Ceded LTC</th><th>Joint credit</th>
+                    <th>Net ceded</th><th>99% tail</th><th>Duration</th>
+                  </tr>
+                </thead>
+                <tbody><tr><td colspan="10" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+            <p id="ltc-exposure-totals" class="research-note" style="margin-top:12px;"></p>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Forecast — coverage type mix and hedge stack</div>
+            <div class="ltc-chart-wrap"><canvas id="ltc-forecast-chart"></canvas></div>
+            <div class="ltc-table-scroll" style="margin-top:16px;">
+              <table class="data-table" id="ltc-forecast-table">
+                <thead>
+                  <tr>
+                    <th>Year</th><th>Standalone</th><th>Indemnity</th><th>Reimburse</th>
+                    <th>Hybrid</th><th>ADB</th><th>Life app.</th><th>3+ADL app.</th>
+                    <th>Recommended hedge</th>
+                  </tr>
+                </thead>
+                <tbody><tr><td colspan="9" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Pricing overlay — download or promote into live tables</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              Technical rates are upload-compatible (<code>age_min, age_max, rate_per_1000</code>). Stage keeps them for further use without changing quotes. Promote writes a new actuarial sub-version (restore from Version History if needed).
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Download table</label>
+                <select id="ltc-download-table" class="form-input">
+                  <option value="pricing_overlay">Pricing overlay</option>
+                  <option value="disability_incidence_rates">3+ADL disability rates (upload format)</option>
+                  <option value="mortality_rates">Life mortality rates (upload format)</option>
+                  <option value="historical_appetite">Historical appetite</option>
+                  <option value="age_cover_matrix">Ages vs covers</option>
+                  <option value="cross_risk_adl_mortality">Cross-risk 3+ADL → death</option>
+                  <option value="reinsurance_exposure">Reinsurance exposure</option>
+                  <option value="coverage_forecast">Coverage forecast</option>
+                  <option value="adl_mortality_multipliers">ADL mortality multipliers</option>
+                </select>
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-success" onclick="PhinsLtcLifeResearch.download('csv')">Download CSV</button>
+                <button class="btn btn-outline" onclick="PhinsLtcLifeResearch.download('json')">Download JSON</button>
+                <button class="btn btn-primary" onclick="PhinsLtcLifeResearch.stage()">Stage overlay</button>
+                <button class="btn btn-warning" onclick="PhinsLtcLifeResearch.promote()">Promote 3+ADL rates</button>
+              </div>
+            </div>
+            <div class="ltc-table-scroll" style="margin-top:16px;">
+              <table class="data-table" id="ltc-pricing-table">
+                <thead>
+                  <tr>
+                    <th>Age band</th><th>Life / 1,000</th><th>3+ADL / 1,000</th>
+                    <th>Life technical</th><th>3+ADL technical</th>
+                    <th>Joint credit</th><th>Reins. load</th><th>Duration</th>
+                  </tr>
+                </thead>
+                <tbody><tr><td colspan="8" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+            <p id="ltc-integrity" class="research-note" style="margin-top:12px;"></p>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Affiliated sources (1975–2025)</div>
+            <ul class="ltc-source-list" id="ltc-sources"></ul>
           </div>
         </section>
 
@@ -2888,7 +3221,21 @@
 
         <!-- Portfolio Valuation Section -->
         <section id="section-valuation" class="section">
-          <h2 class="section-title">Portfolio Actuary Valuation</h2>
+          <div class="annual-brand-banner">
+            <div class="brand-row">
+              <img src="/phins-logo.svg" alt="PHINS emblem" class="brand-emblem">
+              <div>
+                <span class="brand-wordmark">PHINS</span>
+                <div class="brand-tagline">Personal Health Insurance &amp; Savings · AI-Operated Insurance Platform</div>
+              </div>
+              <div class="brand-divider"></div>
+              <div>
+                <div class="brand-title">Portfolio Actuary Valuation</div>
+                <div class="brand-tagline">Best estimate vs conservative · insurance · risk · company</div>
+              </div>
+              <span class="header-badge">Research &amp; Audit</span>
+            </div>
+          </div>
           <div class="alert alert-warning">
             Best Estimate vs Conservative valuation of (i) the Insurance Portfolio, (ii) the Risk Portfolio liability, and (iii) the Company (PHINS Technologies). Every knob below is adjustable; each priced policy and reserve projection feeds into the valuation deterministically. The integrity hash on the output ties the valuation back to the saved simulation snapshot for audit.
           </div>
@@ -2976,7 +3323,21 @@
 
         <!-- Reports & Exports Section -->
         <section id="section-reports" class="section">
-          <h2 class="section-title">Reports &amp; Exports</h2>
+          <div class="annual-brand-banner">
+            <div class="brand-row">
+              <img src="/phins-logo.svg" alt="PHINS emblem" class="brand-emblem">
+              <div>
+                <span class="brand-wordmark">PHINS</span>
+                <div class="brand-tagline">Personal Health Insurance &amp; Savings · AI-Operated Insurance Platform</div>
+              </div>
+              <div class="brand-divider"></div>
+              <div>
+                <div class="brand-title">Reports &amp; Exports</div>
+                <div class="brand-tagline">Audit-ready Excel and PDF · simulation · reserves · risk reference</div>
+              </div>
+              <span class="header-badge">Research &amp; Audit</span>
+            </div>
+          </div>
 
           <div class="alert alert-warning">
             Reports bundle the saved simulation, reserve projection, risk reference data, and data-integrity checks into a single Excel workbook or PDF that internal/external auditors can verify line-by-line.
@@ -3909,6 +4270,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         .find(n => (n.getAttribute('onclick') || '').includes(`showSection('${sectionId}')`));
       if (nav) nav.classList.add('active');
       section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (sectionId === 'ltc-life-research' && window.PhinsLtcLifeResearch) {
+        window.PhinsLtcLifeResearch.load();
+      }
     }
     window.addEventListener('hashchange', openSectionFromHash);
     
@@ -3934,6 +4298,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           && typeof Chart !== 'undefined'
           && (!annuityReserveChart || !annuityVsDepositsChart)) {
         renderAnnuityReserveForecast(annuityReserveLastResponse);
+      }
+      if (sectionId === 'ltc-life-research' && window.PhinsLtcLifeResearch) {
+        window.PhinsLtcLifeResearch.load();
       }
     }
     
@@ -12547,6 +12914,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       } catch (e) { /* ignore — page may be partially loaded */ }
     });
   </script>
+  <script src="/ltc-life-research.js"></script>
   <script src="/ui-clarity.js"></script>
 </body>
 </html>

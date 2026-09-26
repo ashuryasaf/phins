@@ -331,7 +331,26 @@ def classify_reinsurance_risk_band(loss_ratio_pct: float) -> str:
 
 
 def get_reinsurance_research_library() -> List[Dict[str, Any]]:
-    return [dict(item) for item in REINSURANCE_RESEARCH_LIBRARY]
+    """Affiliate sources used by the hedge panel and the 50-year LTC/life study."""
+    merged = [dict(item) for item in REINSURANCE_RESEARCH_LIBRARY]
+    seen = {item.get('id') for item in merged}
+    try:
+        from services.ltc_life_reinsurance_research import RESEARCH_SOURCES
+        for item in RESEARCH_SOURCES:
+            if item.get('id') in seen:
+                continue
+            merged.append({
+                'id': item.get('id'),
+                'source': item.get('source'),
+                'published_year': item.get('published_year'),
+                'headline_metric': item.get('headline_metric'),
+                'relevance': item.get('relevance'),
+                'url': item.get('url'),
+            })
+            seen.add(item.get('id'))
+    except Exception:
+        pass
+    return merged
 
 
 def calculate_reinsurance_program(

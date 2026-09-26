@@ -11144,20 +11144,25 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak,
     )
     import io as _io
+    from services.phins_pdf_brand import BRAND_NAME, BRAND_TAGLINE, PHINS_NAVY, page_callbacks
 
     buf = _io.BytesIO()
+    pagesize = landscape(A4)
     doc = SimpleDocTemplate(
-        buf, pagesize=landscape(A4),
+        buf, pagesize=pagesize,
         leftMargin=12 * mm, rightMargin=12 * mm,
-        topMargin=12 * mm, bottomMargin=12 * mm,
+        topMargin=24 * mm, bottomMargin=14 * mm,
+        title='PHINS Actuarial Report',
+        author=BRAND_NAME,
     )
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('title', parent=styles['Title'], textColor=colors.HexColor('#1A365D'))
-    h2 = ParagraphStyle('h2', parent=styles['Heading2'], textColor=colors.HexColor('#1A365D'))
+    title_style = ParagraphStyle('title', parent=styles['Title'], textColor=colors.HexColor(PHINS_NAVY))
+    h2 = ParagraphStyle('h2', parent=styles['Heading2'], textColor=colors.HexColor(PHINS_NAVY))
     body = styles['BodyText']
 
     story = [
         Paragraph('PHINS Actuarial Report', title_style),
+        Paragraph(BRAND_TAGLINE, styles['BodyText']),
         Spacer(1, 6),
         Paragraph(
             f"Simulation: <b>{simulation.get('simulation_id', '')}</b> &nbsp;|&nbsp; "
@@ -11184,7 +11189,7 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
     story.append(Paragraph('Portfolio Summary', h2))
     summary = Table([['Metric', 'Value']] + summary_rows, hAlign='LEFT')
     summary.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A365D')),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(PHINS_NAVY)),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
@@ -11217,7 +11222,7 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
         ])
     res_table = Table(rows, hAlign='LEFT', repeatRows=1)
     res_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A365D')),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(PHINS_NAVY)),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
@@ -11248,7 +11253,7 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
         ])
     ref_table = Table(ref_rows, hAlign='LEFT', repeatRows=1)
     ref_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A365D')),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(PHINS_NAVY)),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
@@ -11278,7 +11283,7 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
         integrity_rows.append([f'savings_allocation.{k}', str(v)])
     integrity_table = Table(integrity_rows, hAlign='LEFT', repeatRows=1)
     integrity_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A365D')),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(PHINS_NAVY)),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
@@ -11311,7 +11316,7 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
             ])
         val_table = Table(val_rows, hAlign='LEFT', repeatRows=1)
         val_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A365D')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(PHINS_NAVY)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
@@ -11354,7 +11359,7 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
             ])
         csm_table = Table(csm_rows, hAlign='LEFT', repeatRows=1)
         csm_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A365D')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(PHINS_NAVY)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
@@ -11399,7 +11404,7 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
             ])
         aum_table = Table(aum_rows, hAlign='LEFT', repeatRows=1)
         aum_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A365D')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(PHINS_NAVY)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
@@ -11418,7 +11423,13 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
             body,
         ))
 
-    doc.build(story)
+    on_first, on_later = page_callbacks(
+        pagesize,
+        title='PHINS Actuarial Report',
+        badge='Research & Audit',
+        footer_note=f'{BRAND_NAME} — Confidential actuarial document · Research & Audit',
+    )
+    doc.build(story, onFirstPage=on_first, onLaterPages=on_later)
     return buf.getvalue(), 'application/pdf', 'pdf'
 
 
@@ -19836,6 +19847,135 @@ For claims or questions, please contact:
                     )
                 self._set_json_headers()
                 self.wfile.write(json.dumps(payload).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # =====================================================================
+        # ACTUARIAL: LTC 3+ADL / life reinsurance research (50-year study)
+        # Research & Audit bar — adjustable tables for pricing and hedge design.
+        # =====================================================================
+        if path == '/api/actuarial/ltc-life-research':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.ltc_life_reinsurance_research import build_ltc_life_research
+                knobs = {key: (values[0] if values else None) for key, values in qs.items()}
+                pack = build_ltc_life_research(knobs)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(pack).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/actuarial/ltc-life-research/tables':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.ltc_life_reinsurance_research import (
+                    build_ltc_life_research,
+                    extract_research_table,
+                    list_research_tables,
+                )
+                knobs = {key: (values[0] if values else None) for key, values in qs.items()}
+                table_name = str(knobs.pop('table', None) or knobs.pop('table_name', None) or '').strip()
+                pack = build_ltc_life_research(knobs)
+                if not table_name:
+                    items = []
+                    for name in list_research_tables():
+                        try:
+                            rows = extract_research_table(pack, name)
+                        except KeyError:
+                            rows = []
+                        items.append({'name': name, 'row_count': len(rows)})
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'items': items,
+                        'page': 1,
+                        'page_size': len(items),
+                        'total': len(items),
+                        'integrity': pack.get('integrity'),
+                    }).encode('utf-8'))
+                    return
+                try:
+                    rows = extract_research_table(pack, table_name)
+                except KeyError:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': f'Unknown table: {table_name}',
+                    }).encode('utf-8'))
+                    return
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'items': rows,
+                    'page': 1,
+                    'page_size': len(rows),
+                    'total': len(rows),
+                    'table': table_name,
+                    'params': pack.get('params'),
+                    'integrity': pack.get('integrity'),
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/actuarial/ltc-life-research/download':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.ltc_life_reinsurance_research import (
+                    build_ltc_life_research,
+                    research_table_csv,
+                    research_table_json,
+                )
+                knobs = {key: (values[0] if values else None) for key, values in qs.items()}
+                table_name = str(knobs.pop('table', None) or knobs.pop('table_name', None) or 'pricing_overlay').strip()
+                fmt = str(knobs.pop('format', None) or 'csv').strip().lower()
+                lang = str(knobs.pop('lang', None) or knobs.pop('language', None) or 'en').strip().lower()
+                knobs.pop('download', None)
+                if lang in ('hebrew', 'iw', 'he-il'):
+                    lang = 'he'
+                if lang not in ('en', 'he'):
+                    lang = 'en'
+                if fmt not in ('csv', 'json', 'pdf'):
+                    fmt = 'csv'
+                pack = build_ltc_life_research(knobs)
+                if fmt == 'pdf':
+                    from services.ltc_life_reinsurance_research_pdf import build_research_pdf
+                    filename, body_bytes = build_research_pdf(pack, lang=lang)
+                    content_type = 'application/pdf'
+                elif fmt == 'json':
+                    filename, body_bytes = research_table_json(pack, table_name)
+                    content_type = 'application/json; charset=utf-8'
+                else:
+                    filename, body_bytes = research_table_csv(pack, table_name)
+                    content_type = 'text/csv; charset=utf-8'
+                integrity_hash = str((pack.get('integrity') or {}).get('tables_hash') or '')
+                self.send_response(200)
+                self.send_header('Content-Type', content_type)
+                self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+                self.send_header('X-Phins-Table-Integrity', integrity_hash)
+                if fmt == 'pdf':
+                    self.send_header('Content-Language', 'he' if lang == 'he' else 'en')
+                    self.send_header('Content-Length', str(len(body_bytes)))
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.send_header('Cache-Control', 'no-store')
+                self.end_headers()
+                self.wfile.write(body_bytes)
+            except KeyError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
@@ -33729,6 +33869,88 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
         
+        # POST /api/actuarial/ltc-life-research/stage — stage 3+ADL/life overlay
+        # without mutating live rate tables (Research & Audit further-use path).
+        if path == '/api/actuarial/ltc-life-research/stage':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                payload = json.loads(body or '{}')
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            try:
+                from services.ltc_life_reinsurance_research import (
+                    build_ltc_life_research,
+                    stage_research_overlay,
+                )
+                pack = build_ltc_life_research(payload if isinstance(payload, dict) else {})
+                result = stage_research_overlay(pack, session.get('username', 'admin'))
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # POST /api/actuarial/ltc-life-research/promote — explicit live-table write
+        if path == '/api/actuarial/ltc-life-research/promote':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                payload = json.loads(body or '{}')
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            if not isinstance(payload, dict):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'JSON object required'}).encode('utf-8'))
+                return
+            table_types = payload.get('table_types') or payload.get('table_type')
+            if isinstance(table_types, str):
+                table_types = [table_types]
+            try:
+                from services.ltc_life_reinsurance_research import (
+                    build_ltc_life_research,
+                    promote_research_overlay,
+                )
+                knobs = {k: v for k, v in payload.items() if k not in ('table_types', 'table_type')}
+                pack = build_ltc_life_research(knobs)
+                result = promote_research_overlay(
+                    pack,
+                    table_types=table_types,
+                    user=session.get('username', 'admin'),
+                )
+                if not result.get('success'):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': result.get('error', 'Promote failed'),
+                        **result,
+                    }).encode('utf-8'))
+                    return
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
         # POST /api/actuarial/table-update - Update a specific table within current version
         if path == '/api/actuarial/table-update':
             auth_header = self.headers.get('Authorization', '')
