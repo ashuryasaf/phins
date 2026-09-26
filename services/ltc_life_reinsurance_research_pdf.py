@@ -16,6 +16,15 @@ import re
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
+from services.phins_pdf_brand import (
+    BRAND_NAME,
+    BRAND_TAGLINE,
+    BRAND_TAGLINE_HE,
+    PHINS_GOLD,
+    PHINS_NAVY,
+    PHINS_WASH,
+    page_callbacks,
+)
 from services.ltc_life_reinsurance_research import (
     ADL_NAMES_HE,
     COVER_LABELS_HE,
@@ -34,9 +43,6 @@ from services.ltc_life_reinsurance_research import (
 )
 
 _HEBREW_RE = re.compile(r'[\u0590-\u05FF]')
-_NAVY = '#1A365D'
-_GOLD = '#C9A227'
-_LIGHT = '#F4F1EA'
 
 try:
     from bidi.algorithm import get_display as _bidi_get_display
@@ -94,7 +100,7 @@ def _register_fonts() -> Tuple[str, str]:
 
 COPY = {
     'en': {
-        'brand': 'PHINS Actuarial Research',
+        'brand': BRAND_NAME,
         'subtitle': 'Research & Audit — long-term-care disability and life reinsurance appetite',
         'generated': 'Generated',
         'study_id': 'Study ID',
@@ -240,7 +246,7 @@ COPY = {
         },
     },
     'he': {
-        'brand': 'מחקר אקטוארי פינס',
+        'brand': BRAND_NAME,
         'subtitle': 'מחקר וביקורת — נכות סיעודית ותיאבון ביטוח משנה לחיים',
         'generated': 'הופק',
         'study_id': 'מזהה מחקר',
@@ -610,9 +616,9 @@ def build_research_pdf(pack: Dict[str, Any], lang: str = 'en') -> Tuple[str, byt
     copy = COPY[lang]
     title = STUDY_TITLE_HE if rtl else (pack.get('title') or STUDY_TITLE)
     font, font_bold = _register_fonts()
-    navy = colors.HexColor(_NAVY)
-    gold = colors.HexColor(_GOLD)
-    light = colors.HexColor(_LIGHT)
+    navy = colors.HexColor(PHINS_NAVY)
+    gold = colors.HexColor(PHINS_GOLD)
+    light = colors.HexColor(PHINS_WASH)
 
     buf = io.BytesIO()
     pagesize = landscape(A4)
@@ -620,13 +626,12 @@ def build_research_pdf(pack: Dict[str, Any], lang: str = 'en') -> Tuple[str, byt
     doc = SimpleDocTemplate(
         buf, pagesize=pagesize,
         leftMargin=11 * mm, rightMargin=11 * mm,
-        topMargin=16 * mm, bottomMargin=14 * mm,
+        topMargin=24 * mm, bottomMargin=14 * mm,
         title=title,
-        author='PHINS',
+        author=BRAND_NAME,
     )
 
     styles = getSampleStyleSheet()
-    align = 'RIGHT' if rtl else 'LEFT'
     title_style = ParagraphStyle(
         'LtcTitle', parent=styles['Title'], fontName=font_bold, fontSize=16,
         textColor=navy, alignment=2 if rtl else 0, leading=20, spaceAfter=4,
@@ -654,8 +659,8 @@ def build_research_pdf(pack: Dict[str, Any], lang: str = 'en') -> Tuple[str, byt
     )
 
     story: List[Any] = []
-    story.append(_paragraph(copy['brand'], meta, rtl, usable))
     story.append(_paragraph(title, title_style, rtl, usable))
+    story.append(_paragraph(BRAND_TAGLINE_HE if rtl else BRAND_TAGLINE, meta, rtl, usable))
     story.append(_paragraph(copy['subtitle'], body, rtl, usable))
     generated = pack.get('generated_at') or datetime.utcnow().isoformat()
     meta_line = (
@@ -755,30 +760,23 @@ def build_research_pdf(pack: Dict[str, Any], lang: str = 'en') -> Tuple[str, byt
         integ_rows.append([label, str(value)])
     story.append(_kv_table(integ_rows, copy, font, font_bold, navy, gold, light, cell, cell_hdr, rtl, usable * 0.85))
 
-    def _on_page(canvas, doc_obj):
-        canvas.saveState()
-        canvas.setFillColor(navy)
-        canvas.rect(0, pagesize[1] - 10 * mm, pagesize[0], 10 * mm, fill=1, stroke=0)
-        canvas.setFillColor(gold)
-        canvas.setFont(font_bold, 8)
-        running = bidi_text(title, rtl=True) if rtl else title
-        if rtl:
-            canvas.drawRightString(pagesize[0] - 12 * mm, pagesize[1] - 6.5 * mm, running[:110])
-        else:
-            canvas.drawString(12 * mm, pagesize[1] - 6.5 * mm, running[:110])
-        canvas.setFillColor(navy)
-        canvas.rect(0, 0, pagesize[0], 9 * mm, fill=1, stroke=0)
-        canvas.setFillColor(gold)
-        canvas.setFont(font, 7.5)
-        footer = f"{copy['brand']}  ·  {copy['page']} {doc_obj.page}"
-        footer = bidi_text(footer, rtl=True) if rtl else footer
-        if rtl:
-            canvas.drawRightString(pagesize[0] - 12 * mm, 3.5 * mm, footer)
-        else:
-            canvas.drawString(12 * mm, 3.5 * mm, footer)
-        canvas.restoreState()
-
-    doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
+    footer_note = (
+        'פינס — מסמך אקטוארי סודי · מחקר וביקורת'
+        if rtl else
+        f'{BRAND_NAME} — Confidential actuarial document · Research & Audit'
+    )
+    on_first, on_later = page_callbacks(
+        pagesize,
+        title=title,
+        rtl=rtl,
+        font=font,
+        bold=font_bold,
+        badge='מחקר וביקורת' if rtl else 'Research & Audit',
+        footer_note=footer_note,
+        page_label=copy['page'],
+        bidi_fn=(lambda text: bidi_text(text, rtl=True)) if rtl else None,
+    )
+    doc.build(story, onFirstPage=on_first, onLaterPages=on_later)
     filename = f'phins-{STUDY_ID}-{lang}.pdf'
     return filename, buf.getvalue()
 

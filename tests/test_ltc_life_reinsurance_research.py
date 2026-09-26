@@ -30,6 +30,7 @@ from services.ltc_life_reinsurance_research import (
     research_table_csv,
     stage_research_overlay,
 )
+from services.phins_pdf_brand import BRAND_NAME, BRAND_TAGLINE, PHINS_GOLD, PHINS_NAVY
 from services.ltc_life_reinsurance_research_pdf import bidi_text, build_research_pdf
 
 
@@ -213,6 +214,18 @@ def test_dashboard_wires_research_and_audit_bar():
     assert 'Download PDF — עברית' in html
     assert 'downloadPdf' in js
     assert 'format: \'pdf\'' in js or 'format: "pdf"' in js
+    assert 'annual-brand-banner' in html
+    assert 'src="/phins-logo.svg"' in html
+    assert 'Personal Health Insurance &amp; Savings' in html
+    assert 'brand-wordmark">PHINS' in html
+    ltc_block = html.split('id="section-ltc-life-research"', 1)[1].split('id="section-uploaded"', 1)[0]
+    assert 'annual-brand-banner' in ltc_block
+    assert 'brand-emblem' in ltc_block
+    assert 'Research &amp; Audit' in ltc_block
+    reports_block = html.split('id="section-reports"', 1)[1].split('id="section-automation"', 1)[0]
+    assert 'annual-brand-banner' in reports_block
+    assert PHINS_NAVY.lstrip('#') in html or '#0e2f63' in html
+    assert PHINS_GOLD.lstrip('#') in html or '#c9a04e' in html
 
 
 def test_research_endpoint_requires_actuary_role():
@@ -297,6 +310,8 @@ def test_research_pdf_english_is_full_study():
     assert STUDY_TITLE in text or 'Reinsurance Appetite' in text
     assert 'Study narrative' in text
     assert 'Methodology and scope' in text
+    assert BRAND_NAME in text
+    assert 'Personal Health Insurance' in text or BRAND_TAGLINE in text
     assert 'Key results on this slider set' in text
     assert 'Ages vs covers' in text
     assert 'Cross-risk' in text

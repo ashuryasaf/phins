@@ -11144,20 +11144,25 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak,
     )
     import io as _io
+    from services.phins_pdf_brand import BRAND_NAME, BRAND_TAGLINE, PHINS_NAVY, page_callbacks
 
     buf = _io.BytesIO()
+    pagesize = landscape(A4)
     doc = SimpleDocTemplate(
-        buf, pagesize=landscape(A4),
+        buf, pagesize=pagesize,
         leftMargin=12 * mm, rightMargin=12 * mm,
-        topMargin=12 * mm, bottomMargin=12 * mm,
+        topMargin=24 * mm, bottomMargin=14 * mm,
+        title='PHINS Actuarial Report',
+        author=BRAND_NAME,
     )
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('title', parent=styles['Title'], textColor=colors.HexColor('#1A365D'))
-    h2 = ParagraphStyle('h2', parent=styles['Heading2'], textColor=colors.HexColor('#1A365D'))
+    title_style = ParagraphStyle('title', parent=styles['Title'], textColor=colors.HexColor(PHINS_NAVY))
+    h2 = ParagraphStyle('h2', parent=styles['Heading2'], textColor=colors.HexColor(PHINS_NAVY))
     body = styles['BodyText']
 
     story = [
         Paragraph('PHINS Actuarial Report', title_style),
+        Paragraph(BRAND_TAGLINE, styles['BodyText']),
         Spacer(1, 6),
         Paragraph(
             f"Simulation: <b>{simulation.get('simulation_id', '')}</b> &nbsp;|&nbsp; "
@@ -11184,7 +11189,7 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
     story.append(Paragraph('Portfolio Summary', h2))
     summary = Table([['Metric', 'Value']] + summary_rows, hAlign='LEFT')
     summary.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A365D')),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(PHINS_NAVY)),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
@@ -11217,7 +11222,7 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
         ])
     res_table = Table(rows, hAlign='LEFT', repeatRows=1)
     res_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A365D')),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(PHINS_NAVY)),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
@@ -11248,7 +11253,7 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
         ])
     ref_table = Table(ref_rows, hAlign='LEFT', repeatRows=1)
     ref_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A365D')),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(PHINS_NAVY)),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
@@ -11278,7 +11283,7 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
         integrity_rows.append([f'savings_allocation.{k}', str(v)])
     integrity_table = Table(integrity_rows, hAlign='LEFT', repeatRows=1)
     integrity_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A365D')),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(PHINS_NAVY)),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
@@ -11311,7 +11316,7 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
             ])
         val_table = Table(val_rows, hAlign='LEFT', repeatRows=1)
         val_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A365D')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(PHINS_NAVY)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
@@ -11354,7 +11359,7 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
             ])
         csm_table = Table(csm_rows, hAlign='LEFT', repeatRows=1)
         csm_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A365D')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(PHINS_NAVY)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
@@ -11399,7 +11404,7 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
             ])
         aum_table = Table(aum_rows, hAlign='LEFT', repeatRows=1)
         aum_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A365D')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(PHINS_NAVY)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
@@ -11418,7 +11423,13 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
             body,
         ))
 
-    doc.build(story)
+    on_first, on_later = page_callbacks(
+        pagesize,
+        title='PHINS Actuarial Report',
+        badge='Research & Audit',
+        footer_note=f'{BRAND_NAME} — Confidential actuarial document · Research & Audit',
+    )
+    doc.build(story, onFirstPage=on_first, onLaterPages=on_later)
     return buf.getvalue(), 'application/pdf', 'pdf'
 
 

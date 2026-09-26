@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <!-- Build stamp: bumped whenever a substantive pricing change ships so
        cached browsers can tell users they are running an old UI. -->
-  <meta name="phins-actuary-dashboard-build" content="2026-09-26.ltc-life-research-pdf">
+  <meta name="phins-actuary-dashboard-build" content="2026-09-26.phins-report-brand">
   <!-- Chart.js for the Annuity Reserves forecast bar/line charts. Loaded
        from the same CDN as risk-reports-dashboard.html for consistency. -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -856,16 +856,12 @@
     .age-adl-chart-wrap { position: relative; height: 280px; margin-top: 8px; }
     .age-adl-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 
-    /* ========== Annual Regulatory Report Bar ==========
-       A first-class regulator-grade report that aggregates the
-       simulation, sandbox, reserves and valuation pipeline into a
-       single jurisdiction-aware filing (US 10-K / NAIC, Canada
-       OSFI/CSA, Israel ISA/CMISA + IFRS 17).
-
-       Redesigned on the unified PHINS identity: shield emblem +
-       Space Grotesk wordmark, deep-navy gradients with gold/cyan
-       accents (screen), and the gold #c9a04e / navy #0e2f63
-       letterhead double rule for the document itself. */
+    /* ========== Unified PHINS report bar ==========
+       Shared by Annual Regulatory Report and every Research & Audit
+       report surface (valuation, risk reference, LTC study, exports).
+       Shield emblem + Space Grotesk wordmark, deep-navy gradients
+       with gold/cyan accents (screen), and the gold #c9a04e / navy
+       #0e2f63 letterhead double rule for the downloaded documents. */
     .annual-brand-banner {
       position: relative;
       overflow: hidden;
@@ -2745,7 +2741,21 @@
 
         <!-- Risk Reference Section -->
         <section id="section-risk-reference" class="section">
-          <h2 class="section-title">Risk Reference (Locked Source)</h2>
+          <div class="annual-brand-banner">
+            <div class="brand-row">
+              <img src="/phins-logo.svg" alt="PHINS emblem" class="brand-emblem">
+              <div>
+                <span class="brand-wordmark">PHINS</span>
+                <div class="brand-tagline">Personal Health Insurance &amp; Savings · AI-Operated Insurance Platform</div>
+              </div>
+              <div class="brand-divider"></div>
+              <div>
+                <div class="brand-title">Risk Reference (Locked Source)</div>
+                <div class="brand-tagline">Public one-pager · dashboard · audit reports share one registered profile</div>
+              </div>
+              <span class="header-badge">Research &amp; Audit</span>
+            </div>
+          </div>
           <div class="alert alert-warning">
             This panel reproduces the locked actuarial source block published on the PHINS public risk one-pager. Every figure is computed server-side from a registered risk-reference profile so the dashboard, audit reports, and the public document always agree.
           </div>
@@ -2801,7 +2811,21 @@
 
         <!-- LTC 3+ADL & Life Reinsurance Research (Research & Audit) -->
         <section id="section-ltc-life-research" class="section">
-          <h2 class="section-title">LTC 3+ADL &amp; Life Reinsurance Research (1975–2025)</h2>
+          <div class="annual-brand-banner">
+            <div class="brand-row">
+              <img src="/phins-logo.svg" alt="PHINS emblem" class="brand-emblem">
+              <div>
+                <span class="brand-wordmark">PHINS</span>
+                <div class="brand-tagline">Personal Health Insurance &amp; Savings · AI-Operated Insurance Platform</div>
+              </div>
+              <div class="brand-divider"></div>
+              <div>
+                <div class="brand-title">LTC 3+ADL &amp; Life Reinsurance Research</div>
+                <div class="brand-tagline">1975–2025 · 3+ ADL trigger · life risk premiums · reinsurance appetite</div>
+              </div>
+              <span class="header-badge">Research &amp; Audit</span>
+            </div>
+          </div>
           <div class="alert alert-warning">
             Fifty-year study of long-term-care disability at a <strong>3+ ADL</strong> trigger, life risk premiums, and reinsurance appetite.
             Tables are rebuilt from the sliders so they can be used for analysis, pricing overlays, and hedge design.
@@ -3197,7 +3221,21 @@
 
         <!-- Portfolio Valuation Section -->
         <section id="section-valuation" class="section">
-          <h2 class="section-title">Portfolio Actuary Valuation</h2>
+          <div class="annual-brand-banner">
+            <div class="brand-row">
+              <img src="/phins-logo.svg" alt="PHINS emblem" class="brand-emblem">
+              <div>
+                <span class="brand-wordmark">PHINS</span>
+                <div class="brand-tagline">Personal Health Insurance &amp; Savings · AI-Operated Insurance Platform</div>
+              </div>
+              <div class="brand-divider"></div>
+              <div>
+                <div class="brand-title">Portfolio Actuary Valuation</div>
+                <div class="brand-tagline">Best estimate vs conservative · insurance · risk · company</div>
+              </div>
+              <span class="header-badge">Research &amp; Audit</span>
+            </div>
+          </div>
           <div class="alert alert-warning">
             Best Estimate vs Conservative valuation of (i) the Insurance Portfolio, (ii) the Risk Portfolio liability, and (iii) the Company (PHINS Technologies). Every knob below is adjustable; each priced policy and reserve projection feeds into the valuation deterministically. The integrity hash on the output ties the valuation back to the saved simulation snapshot for audit.
           </div>
@@ -3285,7 +3323,21 @@
 
         <!-- Reports & Exports Section -->
         <section id="section-reports" class="section">
-          <h2 class="section-title">Reports &amp; Exports</h2>
+          <div class="annual-brand-banner">
+            <div class="brand-row">
+              <img src="/phins-logo.svg" alt="PHINS emblem" class="brand-emblem">
+              <div>
+                <span class="brand-wordmark">PHINS</span>
+                <div class="brand-tagline">Personal Health Insurance &amp; Savings · AI-Operated Insurance Platform</div>
+              </div>
+              <div class="brand-divider"></div>
+              <div>
+                <div class="brand-title">Reports &amp; Exports</div>
+                <div class="brand-tagline">Audit-ready Excel and PDF · simulation · reserves · risk reference</div>
+              </div>
+              <span class="header-badge">Research &amp; Audit</span>
+            </div>
+          </div>
 
           <div class="alert alert-warning">
             Reports bundle the saved simulation, reserve projection, risk reference data, and data-integrity checks into a single Excel workbook or PDF that internal/external auditors can verify line-by-line.
