@@ -555,13 +555,17 @@ Environment variables commonly used:
   runtime halt/resume/promote via `/api/terminal/autopilot/{halt,resume,promote}`
 - **Regulation viewer:** username `regulator`, role `regulator`. Demo
   password `regulator123` works until `PHINS_REGULATOR_PASSWORD` is set or
-  the password is changed in the regulation view. `GET /api/regulator/outline` is the only data surface
-  for that role; admin and actuary may read the same sealed outline from
-  their dashboard headers. The regulator role cannot call other APIs or
-  write, except its own credential change. Outline totals reconcile to
+  the password is changed in the regulation view. `GET /api/regulator/outline`
+  is the sealed book; admin and actuary may read it from their dashboard
+  headers. The regulator role cannot call other APIs or write, except its
+  own credential change and `GET`/`POST /api/regulator/inquiries` (one open
+  inquiry per outlined subject, stored in `agent_artifacts` as
+  `regulator_inquiry` / `inquiry`, never in `business_inquiries`). Staff
+  mail reuses the solutions inquiry sender and recipient list with category
+  `regulator_inquiry`. Outline totals reconcile to
   `compute_unified_financial_metrics` and are refused if an identifier
   survives redaction (`services/regulator_outline.py`,
-  `docs/regulator_view.md`).
+  `services/regulator_inquiries.py`, `docs/regulator_view.md`).
 - **Security:** `SESSION_SECRET_KEY`, `PHINS_ENCRYPTION_KEY`,
   `PHINS_ENFORCE_SECRET_POLICY`, `PHINS_EMERGENCY_UNLOCK_KEY`,
   `ALLOW_LEGACY_DEMO_PASSWORDS`

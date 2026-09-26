@@ -33,6 +33,33 @@ so a restart or another replica cannot bring the old secret back, and a
 replaced username stays retired instead of becoming free again. A new token is
 returned so the dashboard stays signed in.
 
+## Ask for inquiry
+
+The regulation account can open a conversation on any outlined subject from
+the dashboard card **Ask for inquiry**. The subjects are the seven sections
+above. Admin and actuary do not see the card and cannot call the inquiry API.
+
+`GET /api/regulator/inquiries` returns that account's inquiries and the
+subject catalog. `POST /api/regulator/inquiries` with `{ "subject", "message" }`
+opens one inquiry per account and subject. A later message appends. The same
+text as the latest turn is a duplicate and adds nothing. `opened_by` is the
+signed-in username. The body cannot set a customer, a name, or an email.
+
+Records live in `REGULATOR_INQUIRIES`. In database mode each inquiry is an
+`agent_artifacts` row (`agent_id` `regulator_inquiry`, `kind` `inquiry`) with
+a checksum checked on load. The cache updates only after that write commits.
+A failed write leaves the previous record in place and returns 503.
+
+Staff email uses the solutions inquiry recipient list and sender
+(`PHINS_BUSINESS_INQUIRY_NOTIFY_EMAILS`, then admin mailboxes, then
+`EMAIL_REPLY_TO`). The message category is `regulator_inquiry`, the rate-limit
+bucket is separate, and no visitor confirmation is sent. Public submissions
+stay on `POST /api/business/inquiries` and in `business_inquiries`. The
+dashboard links to `/solutions.html#contact` so the two conversations stay
+visible as different processes.
+
+Inquiry text is not copied into the sealed outline.
+
 ## Offer structure
 
 The dashboard is one sealed document, `GET /api/regulator/outline`:
@@ -50,10 +77,10 @@ Suspended sandbox accounts are excluded before the totals are built. Overlapping
 ## Access
 
 - `GET /api/regulator/outline` accepts roles `regulator`, `admin`, and `actuary`. All three read the same sealed document.
-- The admin header and the actuary header link to `/regulator-dashboard.html`. The credential form on that page is shown only for the `regulator` role.
+- The admin header and the actuary header link to `/regulator-dashboard.html`. The credential form and the inquiry card on that page are shown only for the `regulator` role.
 - Every other API returns 403 for the `regulator` role.
-- `POST`, `PUT`, and `DELETE` return 403 for that role except `POST /api/logout` and `POST /api/regulator/credentials`.
-- Admin and actuary cannot change the regulator password.
+- `POST`, `PUT`, and `DELETE` return 403 for that role except `POST /api/logout`, `POST /api/regulator/credentials`, and `POST /api/regulator/inquiries`.
+- Admin and actuary cannot change the regulator password or open a regulator inquiry.
 - The role is not a staff role for `/internal/` or `/legal/` documents.
 
 UML: `docs/uml/regulator_view.puml`.

@@ -12116,12 +12116,24 @@ REGULATOR_ROLE = 'regulator'
 REGULATOR_OUTLINE_ROLES = frozenset({'regulator', 'admin', 'actuary'})
 REGULATOR_API_ALLOW = frozenset({
     '/api/regulator/outline',
+    '/api/regulator/inquiries',
     '/api/session/validate',
 })
 REGULATOR_WRITE_ALLOW = frozenset({
     '/api/logout',
     '/api/regulator/credentials',
+    '/api/regulator/inquiries',
 })
+# Regulator inquiries are their own store. They never share BUSINESS_INQUIRIES
+# or the business_inquiries table. DB mode keeps each row in agent_artifacts.
+REGULATOR_INQUIRIES: Dict[str, Dict[str, Any]] = {}
+_REGULATOR_INQUIRY_LAST_HYDRATE = 0.0
+_REGULATOR_INQUIRY_AGENT = 'regulator_inquiry'
+_REGULATOR_INQUIRY_KIND = 'inquiry'
+try:
+    _REGULATOR_INQUIRY_HYDRATE_TTL = float(os.environ.get('PHINS_REGULATOR_INQUIRY_HYDRATE_TTL', '1.5'))
+except (TypeError, ValueError):
+    _REGULATOR_INQUIRY_HYDRATE_TTL = 1.5
 # Usernames whose demo password was replaced by the regulator. The legacy
 # demo secret must not keep opening the account after that change, so in
 # database mode the set is mirrored into a durable artifact: a restart or a
@@ -12377,8 +12389,297 @@ def update_regulator_credentials(session: Dict[str, Any] | None, body: Dict[str,
     }
 
 
+def _regulator_inquiry_db_enabled() -> bool:
+    return bool(USE_DATABASE and database_enabled)
+
+
+def _copy_regulator_inquiries() -> Dict[str, Dict[str, Any]]:
+    from services.regulator_inquiries import clone_record
+    return {
+        inquiry_id: clone_record(record)
+        for inquiry_id, record in REGULATOR_INQUIRIES.items()
+        if isinstance(record, dict)
+    }
+
+
+def _hydrate_regulator_inquiries(force: bool = False) -> None:
+    """Refresh REGULATOR_INQUIRIES from agent_artifacts. Never reads business inquiries.
+
+    The cache swap stays under STATE_LOCK so a reader cannot replace a write
+    that just committed. Callers that already hold the lock re-enter it.
+    """
+    global _REGULATOR_INQUIRY_LAST_HYDRATE
+    if not _regulator_inquiry_db_enabled():
+        return
+    with STATE_LOCK:
+        now = time.monotonic()
+        if not force and (now - _REGULATOR_INQUIRY_LAST_HYDRATE) < _REGULATOR_INQUIRY_HYDRATE_TTL:
+            return
+        try:
+            from database.manager import DatabaseManager
+            from services.regulator_inquiries import clone_record
+            with DatabaseManager() as db:
+                loaded: Dict[str, Dict[str, Any]] = {}
+                for artifact_id, payload, _updated, _meta in db.agent_artifacts.iter_payloads(
+                    _REGULATOR_INQUIRY_AGENT, _REGULATOR_INQUIRY_KIND,
+                ):
+                    if not isinstance(payload, dict) or not payload.get('id'):
+                        continue
+                    record = clone_record(payload)
+                    record['id'] = str(artifact_id)
+                    loaded[str(artifact_id)] = record
+            REGULATOR_INQUIRIES.clear()
+            REGULATOR_INQUIRIES.update(loaded)
+            _REGULATOR_INQUIRY_LAST_HYDRATE = now
+        except Exception as exc:
+            print(f"[REGULATOR] inquiry hydrate warning: {type(exc).__name__}")
+
+
+def _persist_regulator_inquiry(inquiry_id: str, data: Dict[str, Any]) -> bool:
+    """Durable write before the cache is updated.
+
+    In-memory mode the dict is the store. DB mode commits the checksummed
+    artifact and returns False when that commit does not succeed.
+    """
+    if not _regulator_inquiry_db_enabled():
+        return True
+    try:
+        from database.manager import DatabaseManager
+        from services.regulator_inquiries import clone_record
+        payload = clone_record(data)
+        with DatabaseManager() as db:
+            db.agent_artifacts.upsert(
+                inquiry_id,
+                agent_id=_REGULATOR_INQUIRY_AGENT,
+                kind=_REGULATOR_INQUIRY_KIND,
+                payload=payload,
+                subject_type='regulator_subject',
+                subject_id=str(payload.get('subject') or ''),
+            )
+        return True
+    except Exception as exc:
+        print(f"[REGULATOR] inquiry persist failed for {inquiry_id}: {type(exc).__name__}")
+        return False
+
+
+def generate_regulator_inquiry_id() -> str:
+    """RINQ ids never collide with public BRI business-inquiry ids."""
+    timestamp = datetime.now().strftime('%Y%m')
+    return f"RINQ-{timestamp}-{secrets.token_hex(4).upper()}"
+
+
+def _format_regulator_inquiry_email(record: Dict[str, Any], action: str) -> Tuple[str, str, str]:
+    """Staff notice for a regulator inquiry. No outline figures, no customer ids."""
+    import html as html_lib
+    from services.regulator_inquiries import PUBLIC_CONVERSATION_URL
+
+    inquiry_id = str(record.get('id') or '')
+    subject_label = str(record.get('subject_label') or record.get('subject') or '')
+    opened_by = str(record.get('opened_by') or '')
+    messages = list(record.get('messages') or [])
+    shown = messages[-12:]
+    omitted = len(messages) - len(shown)
+    lines = []
+    html_turns = []
+    for turn in shown:
+        body = str((turn or {}).get('body') or '')
+        at = str((turn or {}).get('at') or '')
+        by = str((turn or {}).get('by') or '')
+        lines.append(f"[{at}] {by}\n{body}")
+        html_turns.append(
+            f"<p style='margin:0 0 12px'><strong>{html_lib.escape(by)}</strong> "
+            f"<span style='color:#555'>{html_lib.escape(at)}</span><br>"
+            f"{html_lib.escape(body).replace(chr(10), '<br>')}</p>"
+        )
+    omitted_line = f"\n({omitted} earlier message(s) remain on the inquiry record.)\n" if omitted else ""
+    verb = 'opened' if action == 'created' else 'updated'
+    subject = f"PHINS regulator inquiry {inquiry_id} — {subject_label}"
+    content = (
+        f"A regulation account {verb} an inquiry from the regulation dashboard.\n\n"
+        f"This notice uses the solutions notification path. The inquiry itself is "
+        f"stored separately from public solutions contact submissions.\n\n"
+        f"Inquiry: {inquiry_id}\n"
+        f"Subject: {subject_label}\n"
+        f"Opened by: {opened_by}\n"
+        f"Channel: regulator\n"
+        f"Status: open\n"
+        f"{omitted_line}\n"
+        f"Conversation:\n" + "\n\n".join(lines) + "\n\n"
+        f"Public visitors continue at {PUBLIC_CONVERSATION_URL}. "
+        f"That conversation is a different process.\n"
+    )
+    html_content = (
+        f"<div style='font-family:sans-serif;line-height:1.45;color:#1a202c'>"
+        f"<p>A regulation account {html_lib.escape(verb)} an inquiry from the "
+        f"regulation dashboard.</p>"
+        f"<p>This notice uses the solutions notification path. The inquiry itself "
+        f"is stored separately from public solutions contact submissions.</p>"
+        f"<table style='border-collapse:collapse;font-size:14px'>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Inquiry</td><td>{html_lib.escape(inquiry_id)}</td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Subject</td><td>{html_lib.escape(subject_label)}</td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Opened by</td><td>{html_lib.escape(opened_by)}</td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>Channel</td><td>regulator</td></tr>"
+        f"</table>"
+        f"<h3 style='margin:20px 0 8px;font-size:16px'>Conversation</h3>"
+        + "".join(html_turns) +
+        f"<p style='margin-top:16px;color:#555'>Public visitors continue at "
+        f"<a href='{PUBLIC_CONVERSATION_URL}'>{PUBLIC_CONVERSATION_URL}</a>. "
+        f"That conversation is a different process.</p></div>"
+    )
+    return subject, content, html_content
+
+
+def _notify_regulator_inquiry(record: Dict[str, Any], action: str, client_ip: str = '') -> Dict[str, Any]:
+    """Best-effort staff email after a durable regulator inquiry write.
+
+    Recipients and the sender are the solutions inquiry notification path.
+    The rate-limit bucket and the email category stay on the regulator side,
+    and no visitor confirmation is sent.
+    """
+    result: Dict[str, Any] = {
+        'attempted': False,
+        'sent_count': 0,
+        'skipped': None,
+    }
+    try:
+        rate_key = f"{record.get('opened_by')}:{record.get('subject')}"
+        if not business_inquiry_notify_allowed('regulator', rate_key):
+            result['skipped'] = 'rate_limited'
+            return result
+        source_ip = str(client_ip or '').strip()
+        if source_ip and not business_inquiry_notify_allowed('regulator_ip', source_ip):
+            result['skipped'] = 'rate_limited'
+            return result
+        recipients = _resolve_business_inquiry_notify_emails()
+        if not recipients:
+            print(
+                f"[REGULATOR] inquiry {record.get('id')} saved; "
+                "no solutions notify recipients configured"
+            )
+            return result
+        subject, content, html_content = _format_regulator_inquiry_email(record, action)
+        result['attempted'] = True
+        metadata = {
+            'category': 'regulator_inquiry',
+            'event': 'inquiry_opened' if action == 'created' else 'inquiry_message',
+            'inquiry_id': record.get('id'),
+            'subject': record.get('subject'),
+            'channel': 'regulator',
+        }
+        sent = 0
+        for recipient in recipients:
+            if not business_inquiry_notify_allowed('mailbox', recipient):
+                continue
+            ok, error = _send_business_inquiry_email(
+                recipient=recipient,
+                subject=subject,
+                content=content,
+                html_content=html_content,
+                metadata=metadata,
+            )
+            if ok:
+                sent += 1
+            else:
+                print(f"[REGULATOR] inquiry notify failed for {record.get('id')}: {error}")
+        result['sent_count'] = sent
+        if sent:
+            print(f"[REGULATOR] inquiry notify sent for {record.get('id')} ({sent})")
+    except Exception as exc:
+        print(f"[REGULATOR] inquiry notify error: {type(exc).__name__}")
+        result['skipped'] = 'notify_error'
+    return result
+
+
+def list_regulator_inquiries(session: Dict[str, Any] | None) -> Tuple[int, Dict[str, Any]]:
+    """This account's inquiries plus the outlined subject catalog."""
+    from services.regulator_inquiries import PUBLIC_CONVERSATION_URL, clone_record, subject_catalog
+
+    if not session:
+        return 401, {'error': 'Authentication required'}
+    if get_effective_role(session) != REGULATOR_ROLE:
+        return 403, {'error': 'Regulation viewer access required'}
+    username = str(session.get('username') or '').strip()
+    if not username:
+        return 401, {'error': 'Authentication required'}
+    with STATE_LOCK:
+        _hydrate_regulator_inquiries(force=False)
+        items = [
+            clone_record(record)
+            for record in REGULATOR_INQUIRIES.values()
+            if isinstance(record, dict) and record.get('opened_by') == username
+        ]
+    items.sort(key=lambda record: str(record.get('updated_at') or ''), reverse=True)
+    return 200, {
+        'subjects': subject_catalog(),
+        'items': items,
+        'channel': 'regulator',
+        'public_conversation': PUBLIC_CONVERSATION_URL,
+    }
+
+
+def open_regulator_inquiry(
+    session: Dict[str, Any] | None,
+    body: Dict[str, Any],
+    client_ip: str = '',
+) -> Tuple[int, Dict[str, Any]]:
+    """Open or continue an inquiry. The cache updates only after a durable write."""
+    from services.regulator_inquiries import InquiryError, apply_open_inquiry, clone_record
+
+    if not session:
+        return 401, {'error': 'Authentication required'}
+    if get_effective_role(session) != REGULATOR_ROLE:
+        return 403, {'error': 'Regulation viewer access required'}
+    username = str(session.get('username') or '').strip()
+    if not username:
+        return 401, {'error': 'Authentication required'}
+    if not isinstance(body, dict):
+        return 400, {'error': 'Invalid request body'}
+    subject_raw = body.get('subject')
+    message_raw = body.get('message')
+    if not isinstance(subject_raw, str) or not isinstance(message_raw, str):
+        return 400, {'error': 'Subject and message are required'}
+    for field, value in (('subject', subject_raw), ('message', message_raw)):
+        is_valid, error = validate_input_security(
+            value, client_ip or '0.0.0.0', f'regulator_inquiry_{field}',
+        )
+        if not is_valid:
+            return 400, {'error': error or 'Invalid input detected'}
+
+    try:
+        with STATE_LOCK:
+            _hydrate_regulator_inquiries(force=True)
+            snapshot = _copy_regulator_inquiries()
+            new_id = generate_regulator_inquiry_id()
+            while new_id in snapshot or new_id in REGULATOR_INQUIRIES:
+                new_id = generate_regulator_inquiry_id()
+            action, record = apply_open_inquiry(
+                snapshot, username, subject_raw, message_raw,
+                datetime.now(timezone.utc).isoformat(), new_id,
+            )
+            if action == 'duplicate':
+                stored = clone_record(record)
+                notify = None
+            else:
+                if not _persist_regulator_inquiry(record['id'], record):
+                    return 503, {'error': 'Inquiry could not be recorded'}
+                stored = clone_record(record)
+                REGULATOR_INQUIRIES[stored['id']] = stored
+                notify = 'pending'
+    except InquiryError as exc:
+        return exc.status, {'error': str(exc)}
+
+    notification = None
+    if notify == 'pending':
+        notification = _notify_regulator_inquiry(stored, action, client_ip)
+    return (201 if action == 'created' else 200), {
+        'action': action,
+        'inquiry': stored,
+        'notification': notification,
+    }
+
+
 def reject_regulator_mutation(handler, path: str) -> bool:
-    """Block every write from the regulation viewer except logout and own credentials.
+    """Block regulator writes except logout, own credentials, and own inquiries.
 
     Returns True when the response has already been sent.
     """
@@ -17272,10 +17573,10 @@ For claims or questions, please contact:
         session = validate_session(token) if token else None
         is_authenticated = session is not None
 
-        # Regulation viewer: one read-only outline. Every other API, including
-        # executive BI, customer records and the staff document registries
-        # handled below, stays closed. The gate runs before the first /api/
-        # route so no handler can answer ahead of it.
+        # Regulation viewer: the sealed outline and that role's own inquiries.
+        # Every other API, including executive BI, customer records and the
+        # staff document registries handled below, stays closed. The gate runs
+        # before the first /api/ route so no handler can answer ahead of it.
         if get_effective_role(session) == REGULATOR_ROLE and path.startswith('/api/'):
             if path not in REGULATOR_API_ALLOW:
                 self._set_json_headers(403)
@@ -17401,6 +17702,12 @@ For claims or questions, please contact:
                 return
             self._set_json_headers(200)
             self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/regulator/inquiries':
+            status_code, inquiry_payload = list_regulator_inquiries(session)
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(inquiry_payload, default=str).encode('utf-8'))
             return
         
         # Session validation endpoint (GET) - validates token and returns user info
@@ -33194,6 +33501,26 @@ For claims or questions, please contact:
             status_code, payload = update_regulator_credentials(cred_session, cred_body)
             self._set_json_headers(status_code)
             self.wfile.write(json.dumps(payload).encode('utf-8'))
+            return
+
+        if path == '/api/regulator/inquiries':
+            inquiry_session = _session_from_authorization(self)
+            try:
+                raw_body = self.rfile.read(content_length).decode('utf-8') if content_length else ''
+                inquiry_body = json.loads(raw_body) if raw_body else {}
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            if not isinstance(inquiry_body, dict):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request body'}).encode('utf-8'))
+                return
+            status_code, inquiry_payload = open_regulator_inquiry(
+                inquiry_session, inquiry_body, client_ip,
+            )
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(inquiry_payload, default=str).encode('utf-8'))
             return
 
         # Chat apply is a static page. POSTs here are form-fallback or

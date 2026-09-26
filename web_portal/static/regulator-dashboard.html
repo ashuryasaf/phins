@@ -136,9 +136,13 @@
     .checks label, .field label { font-size: 0.84rem; color: var(--text); display: inline-flex; gap: 6px; align-items: center; }
     .controls { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: end; margin-top: 12px; }
     .field { display: flex; flex-direction: column; gap: 4px; min-width: 160px; }
-    .field input, .field select {
+    .field input, .field select, .field textarea {
       border: 1px solid #cbd5e0; border-radius: 8px; padding: 8px 10px; font: inherit; background: white;
     }
+    .field textarea { min-height: 96px; resize: vertical; }
+    .inquiry-thread { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
+    .inquiry-thread h3 { font-size: 0.92rem; color: var(--primary); margin: 0 0 6px; }
+    .inquiry-thread p { margin: 0 0 10px; white-space: pre-wrap; }
     .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
     .metric-card {
@@ -251,6 +255,22 @@
       <section class="card" id="health"></section>
       <section class="card" id="agents"></section>
       <section class="card" id="integrity"></section>
+      <section class="card no-print" id="inquiry">
+        <h2>Ask for inquiry</h2>
+        <p class="sub">Open a conversation on one outlined subject. This path belongs to the regulation account. The public solutions conversation is a separate process and uses a different record.</p>
+        <form class="cred-form" id="inquiry-form">
+          <label class="field">Subject
+            <select id="inquiry-subject" name="subject" required></select>
+          </label>
+          <label class="field" style="grid-column: 1 / -1">Message
+            <textarea id="inquiry-message" name="message" maxlength="2000" required placeholder="Ask about this outlined subject"></textarea>
+          </label>
+          <button type="submit">Ask for inquiry</button>
+        </form>
+        <div id="inquiry-status" class="note"></div>
+        <p class="note">Public visitors use <a href="/solutions.html#contact" target="_blank" rel="noopener">the solutions contact conversation</a>. That form does not open a regulator inquiry.</p>
+        <div id="inquiry-list"></div>
+      </section>
       <section class="card no-print" id="credentials">
         <h2>Regulator credentials</h2>
         <p class="sub">Change the username and password for this regulation account. The role stays read-only. The current password is required, and the previous demo password stops working after a change.</p>
@@ -604,6 +624,72 @@
         });
     });
 
+    var inquirySubject = document.getElementById('inquiry-subject');
+    SECTIONS.forEach(function (section) {
+      var option = document.createElement('option');
+      option.value = section.id;
+      option.textContent = section.label;
+      inquirySubject.appendChild(option);
+    });
+
+    function renderInquiries(payload) {
+      var list = document.getElementById('inquiry-list');
+      var items = (payload && payload.items) || [];
+      if (!items.length) {
+        list.innerHTML = '<p class="note">No open inquiries on this account.</p>';
+        return;
+      }
+      list.innerHTML = items.map(function (item) {
+        var turns = (item.messages || []).map(function (msg) {
+          return '<p><strong>' + esc(msg.by) + '</strong> <span class="note">' + esc(msg.at) + '</span><br>' + esc(msg.body) + '</p>';
+        }).join('');
+        return '<article class="inquiry-thread"><h3>' + esc(item.subject_label) + ' · ' + esc(item.id) + '</h3>' + turns + '</article>';
+      }).join('');
+    }
+
+    function loadInquiries(bearer) {
+      return fetch('/api/regulator/inquiries', { headers: { Authorization: 'Bearer ' + bearer } })
+        .then(function (response) {
+          return response.json().then(function (body) { return { ok: response.ok, body: body }; });
+        })
+        .then(function (result) {
+          if (!result.ok) throw new Error(result.body.error || 'Inquiries unavailable');
+          renderInquiries(result.body);
+          return result.body;
+        })
+        .catch(function (err) {
+          document.getElementById('inquiry-status').innerHTML = '<span class="error">' + esc(err.message || 'Inquiries unavailable') + '</span>';
+        });
+    }
+
+    document.getElementById('inquiry-form').addEventListener('submit', function (event) {
+      event.preventDefault();
+      var status = document.getElementById('inquiry-status');
+      var message = document.getElementById('inquiry-message').value;
+      status.textContent = 'Opening inquiry…';
+      fetch('/api/regulator/inquiries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token() },
+        body: JSON.stringify({
+          subject: document.getElementById('inquiry-subject').value,
+          message: message
+        })
+      }).then(function (response) {
+        return response.json().then(function (body) { return { ok: response.ok, status: response.status, body: body }; });
+      }).then(function (result) {
+        if (!result.ok) throw new Error(result.body.error || 'Inquiry was not opened');
+        document.getElementById('inquiry-message').value = '';
+        var action = result.body.action;
+        var note = 'Inquiry opened. The solutions notification path was used for this regulator conversation.';
+        if (action === 'appended') note = 'Message added to the open inquiry for that subject.';
+        if (action === 'duplicate') note = 'That message is already the latest turn on this subject.';
+        status.innerHTML = '<span class="ok">' + esc(note) + '</span>';
+        return loadInquiries(token());
+      }).catch(function (err) {
+        status.innerHTML = '<span class="error">' + esc(err.message || 'Inquiry was not opened') + '</span>';
+      });
+    });
+
     document.getElementById('cred-form').addEventListener('submit', function (event) {
       event.preventDefault();
       var status = document.getElementById('cred-status');
@@ -653,9 +739,12 @@
     setupStudio();
     (function load() {
       var bearer = token();
-      if (viewerRole() !== 'regulator') {
+      var isRegulator = viewerRole() === 'regulator';
+      if (!isRegulator) {
         var creds = document.getElementById('credentials');
+        var inquiryCard = document.getElementById('inquiry');
         if (creds) creds.style.display = 'none';
+        if (inquiryCard) inquiryCard.style.display = 'none';
       }
       var storedName = sessionStorage.getItem('username');
       if (storedName) {
@@ -684,6 +773,7 @@
           if (!body) return;
           document.getElementById('status').textContent = 'Generated ' + (body.generated_at || '');
           render(body);
+          if (isRegulator) loadInquiries(bearer);
         })
         .catch(function (err) {
           document.getElementById('status').innerHTML = '<span class="error">' + esc(err.message || 'Outline unavailable') + '</span>';
