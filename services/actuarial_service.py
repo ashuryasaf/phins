@@ -2512,6 +2512,14 @@ class PortfolioSimulator:
             'components_match': abs(totals['annual_premium'] - calculated_gross) < max(1.0, math.sqrt(accepted_count) * 0.50)
         }
         
+        # Accepted-book average only. Scores at or above the decline
+        # threshold are rejected and must not raise this mean.
+        from services.adl_mapping import mean_from_score_counts, round_internal_mean
+        score_mean, score_count = mean_from_score_counts(
+            demographics['adl_distribution'],
+            below=int(self.tables.config.decline_threshold),
+        )
+
         # Build result
         duration = (datetime.now() - start_time).total_seconds()
         age_adl_matrix = finalize_age_adl_matrix(
@@ -2550,6 +2558,10 @@ class PortfolioSimulator:
                 'avg_premium': round(totals['annual_premium'] / accepted_count, 2) if accepted_count > 0 else 0,
                 'avg_risk_premium': round(totals['risk_premium'] / accepted_count, 2) if accepted_count > 0 else 0,
                 'avg_savings_premium': round(totals['savings_premium'] / accepted_count, 2) if accepted_count > 0 else 0,
+                'internal_score_mean': round_internal_mean(score_mean) if score_mean is not None else None,
+                'internal_score_assessed_count': score_count,
+                'internal_score_is_average': score_mean is not None,
+                'decline_threshold': int(self.tables.config.decline_threshold),
             },
             
             'demographics': demographics,
@@ -4145,8 +4157,10 @@ def reconcile_simulation_with_kernel(simulation: Dict[str, Any]) -> Dict[str, An
     avg_coverage = float(portfolio.get('avg_coverage', 0.0) or 0.0)
     avg_premium = float(portfolio.get('avg_premium', 0.0) or 0.0)
 
-    # Use the simulation's mean age / mid-band ADL / fixed-or-mean term as the
-    # representative customer for the reconciliation pass.
+    # Age and term follow the simulation. The internal score follows the
+    # accepted-life distribution when that distribution is on the snapshot.
+    # Score 5 is only the kernel input when no assessed distribution exists,
+    # and then it is not described as the average.
     if str(params.get('policy_term_mode', 'random')).lower() == 'fixed':
         rep_term = int(params.get('policy_term_fixed', 20) or 20)
     else:
@@ -4157,7 +4171,39 @@ def reconcile_simulation_with_kernel(simulation: Dict[str, Any]) -> Dict[str, An
             ) / 2
         ))
     rep_age = int(round(float(params.get('age_mean', 35.0) or 35.0)))
-    rep_adl = 5
+    from services.adl_mapping import (
+        INTERNAL_UNDERWRITING_SCORE_DISCLAIMER,
+        internal_score_status,
+        mean_from_score_counts,
+        nearest_internal_score,
+        round_internal_mean,
+    )
+    distribution = (simulation.get('demographics') or {}).get('adl_distribution')
+    matrix = simulation.get('age_adl_matrix') or {}
+    snapshot_threshold = (
+        portfolio.get('decline_threshold')
+        or matrix.get('decline_threshold')
+        or (simulation.get('parameters') or {}).get('decline_threshold')
+    )
+    try:
+        decline_line = int(snapshot_threshold) if snapshot_threshold is not None else None
+    except (TypeError, ValueError):
+        decline_line = None
+    measured_mean, assessed_count = mean_from_score_counts(
+        distribution, below=decline_line,
+    )
+    if measured_mean is None:
+        # No assessed distribution on this snapshot. Keep the ×1.0 table
+        # unit as the pricing input and do not call it the average.
+        rep_adl = 5
+        shown_mean = None
+        score_is_average = False
+        score_basis = 'kernel_score_input'
+    else:
+        shown_mean = round_internal_mean(measured_mean)
+        rep_adl = nearest_internal_score(shown_mean)
+        score_is_average = abs(shown_mean - rep_adl) < 1e-9
+        score_basis = 'measured_mean_rounded'
     rep_coverage = avg_coverage if avg_coverage > 0 else float(params.get('coverage_median', 250000.0) or 250000.0)
 
     # Lazy import to avoid module-load circular import.
@@ -4241,6 +4287,12 @@ def reconcile_simulation_with_kernel(simulation: Dict[str, Any]) -> Dict[str, An
         'representative_customer': {
             'age': rep_age,
             'adl_level': rep_adl,
+            'adl_status': internal_score_status(rep_adl),
+            'adl_basis': score_basis,
+            'internal_score_mean': shown_mean,
+            'internal_score_assessed_count': assessed_count,
+            'internal_score_is_average': score_is_average,
+            'internal_score_disclaimer': INTERNAL_UNDERWRITING_SCORE_DISCLAIMER,
             'coverage': rep_coverage,
             'term_years': rep_term,
         },

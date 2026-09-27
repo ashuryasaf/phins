@@ -436,19 +436,48 @@
       var bands = ((pricing.rate_bands || {}).mortality_rates || []).map(function (row) {
         return '<tr><td>' + esc(row.age_min) + '–' + esc(row.age_max) + '</td><td>' + esc(row.rate_per_1000) + '</td></tr>';
       }).join('') || '<tr><td colspan="2">No records</td></tr>';
+      var tariff = pricing.basic_premiums || {};
+      var scoreDisclaimer = tariff.internal_score_disclaimer ||
+        'PHINS internal underwriting score on a 1-10 scale. Score 10 is a fully disabled customer and meets global ADL 3+ (unable to perform 3 or more of 6 activities of daily living). Score 5 is the multiplier-table unit (mortality ×1.0, disability incidence ×1.0) and is not assumed to be the average internal score.';
       document.getElementById('pricing').innerHTML =
         '<h2>Pricing kernel</h2>' +
-        '<p class="sub">Published standard nonsmoker tariff on ' + esc((pricing.basic_premiums || {}).product_id) +
-        ', coverage ' + money((pricing.basic_premiums || {}).coverage) + ', term ' + esc((pricing.basic_premiums || {}).term_years) +
-        ' years, ADL ' + esc((pricing.basic_premiums || {}).adl_level) + '. Not a customer quote.</p>' +
+        '<p class="sub">Published standard nonsmoker tariff on ' + esc(tariff.product_id) +
+        ', coverage ' + money(tariff.coverage) + ', term ' + esc(tariff.term_years) +
+        ' years. Premiums use PHINS internal underwriting score ' + esc(tariff.adl_level) +
+        ' (' + esc(tariff.adl_status || tariff.adl_label || 'Internal score 5 (×1.0 multipliers; not the average)') +
+        '). Underwriting rule ADL ' + esc(tariff.decline_threshold) + '+ declines new applications' +
+        (Number(tariff.decline_threshold) === 6 ? ' (strict)' : '') +
+        '. Highest score still accepted: ' + esc(tariff.accepted_score_ceiling) +
+        '. That ceiling is not the accepted-book average, and score ' + esc(tariff.adl_level) +
+        ' is not that average. ' +
+        esc(scoreDisclaimer) + ' Not a customer quote.</p>' +
         '<div class="split"><div><div class="chart-box"><canvas id="chart-pricing"></canvas></div></div>' +
         '<div><table><thead><tr><th>Age</th><th>Annual</th><th>Monthly</th><th>Risk premium</th><th>Version</th></tr></thead><tbody>' +
         premiumRows + '</tbody></table></div></div>' +
         '<h2>Basic mortality rates</h2><table><thead><tr><th>Age band</th><th>Rate per 1,000</th></tr></thead><tbody>' + bands + '</tbody></table>' +
         '<h2>Version catalog</h2><table><thead><tr><th>Version</th><th>Status</th><th>Integrity</th></tr></thead><tbody>' + versions + '</tbody></table>';
 
+      var assessedCount = Number(uw.internal_score_accepted_count || 0);
+      var ruleText = (uw.decline_threshold == null) ? '' : (
+        'Underwriting rule: ADL ' + esc(uw.decline_threshold) + '+ declines new applications' +
+        (Number(uw.decline_threshold) === 6 ? ' (strict)' : '') +
+        ' to reduce risk from unhealthy customers. Highest score still accepted: ' +
+        esc(uw.accepted_score_ceiling) + '. That ceiling is not the average. '
+      );
+      var excluded = Number(uw.internal_score_declined_by_rule || 0);
+      var meanText = ruleText + ((uw.internal_score_mean == null)
+        ? 'No assessed score below the decline line, so no accepted-book average is stated.'
+        : ('Accepted-book average of ' + assessedCount + ' assessed score' +
+          (assessedCount === 1 ? '' : 's') + ' below the decline line: ' +
+          esc(uw.internal_score_mean) + '.'));
+      if (excluded > 0) {
+        meanText += ' ' + excluded + ' assessed score' + (excluded === 1 ? '' : 's') +
+          ' at or above the decline line ' + (excluded === 1 ? 'is' : 'are') + ' excluded.';
+      }
+      var uwDisclaimer = uw.internal_score_disclaimer || scoreDisclaimer;
       document.getElementById('underwriting').innerHTML =
-        '<h2>Underwriting decisions</h2><p class="sub">Counts only. No applicant identity or medical detail.</p>' +
+        '<h2>Underwriting decisions</h2><p class="sub">Counts only. No applicant identity or medical detail. ' +
+        meanText + ' ' + esc(uwDisclaimer) + '</p>' +
         '<div class="split"><div><div class="chart-box"><canvas id="chart-underwriting"></canvas></div></div>' +
         '<div><table><thead><tr><th>Decision</th><th>Count</th></tr></thead><tbody>' + pairs(uw.by_status) + '</tbody></table>' +
         '<h2>Risk bands</h2><table><thead><tr><th>Band</th><th>Count</th></tr></thead><tbody>' + pairs(uw.risk_bands) + '</tbody></table></div></div>';

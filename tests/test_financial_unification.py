@@ -751,6 +751,13 @@ def test_monthly_distribution_uses_kernel_pin_not_quote_override():
         assert dist["actuarial_data"]["total_savings_premium"] == 200.0
         assert dist["actuarial_data"]["data_source"] == "pricing_kernel_pin"
         assert dist["active_policies"][0]["integrity_hash"] == "pin-hash"
+        portal.POLICIES[policy_id]["adl_level"] = 5
+        portal.POLICIES[policy_id]["adl_level_source"] = "unspecified_baseline"
+        labeled = portal.calculate_monthly_distribution(customer_id)
+        assert labeled["active_policies"][0]["adl_level"] is None
+        assert labeled["actuarial_data"]["total_risk_premium"] == 800.0
+        assert portal.POLICIES[policy_id]["monthly_premium"] == 83.33
+        assert portal.POLICIES[policy_id]["adl_level"] == 5
         # Cash split still follows customer allocation on the issued monthly.
         assert abs(dist["distribution"]["risk_coverage"] + dist["distribution"]["total_savings"]
                    - dist["total_monthly_premium"]) < 0.01

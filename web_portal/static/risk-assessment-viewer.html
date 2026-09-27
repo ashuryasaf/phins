@@ -385,11 +385,18 @@
                             <span class="quick-stat-label">Smoking:</span>
                             <span class="quick-stat-value">${formatSmokingStatus(report.medical_assessment?.smoking_status)}</span>
                         </div>
-                        ${report.applicant?.adl_level != null || report.medical_assessment?.adl_level != null ? `
-                        <div class="quick-stat">
-                            <span class="quick-stat-label">ADL Level:</span>
-                            <span class="quick-stat-value">${escapeHtml(String(report.applicant?.adl_level ?? report.medical_assessment?.adl_level))}</span>
-                        </div>` : ''}
+                        ${(function () {
+                            var adlSource = report.applicant?.adl_level_source || report.medical_assessment?.adl_level_source;
+                            var adlValue = report.applicant?.adl_level ?? report.medical_assessment?.adl_level;
+                            if (adlValue == null || adlSource === 'unspecified_baseline') return '';
+                            var adlStatus = report.applicant?.adl_status || report.medical_assessment?.adl_status || '';
+                            var adlNote = report.applicant?.internal_score_disclaimer || report.medical_assessment?.internal_score_disclaimer || 'PHINS internal underwriting score on a 1-10 scale. Score 10 is a fully disabled customer and meets global ADL 3+. Score 5 is not the average internal score.';
+                            return `<div class="quick-stat">
+                            <span class="quick-stat-label">PHINS internal underwriting score:</span>
+                            <span class="quick-stat-value">${escapeHtml(String(adlValue))}${adlStatus ? ' — ' + escapeHtml(String(adlStatus)) : ''}</span>
+                            <div class="quick-stat-label" style="display:block;margin-top:4px;">${escapeHtml(adlNote)}</div>
+                        </div>`;
+                        })()}
                         <div class="quick-stat">
                             <span class="quick-stat-label">Risk:</span>
                             <span class="quick-stat-value ${riskClass}">${riskCategory}</span>

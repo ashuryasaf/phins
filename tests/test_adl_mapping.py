@@ -119,3 +119,147 @@ def test_pin_does_not_store_unspecified_baseline_as_clinical_adl():
     })
     assert issued["adl_level"] == 1
     assert issued["adl_pricing_level"] == 1
+
+
+def test_stored_baseline_stamp_is_not_reread_as_clinical_adl_five():
+    """A row that already says the 5 is the priced baseline stays unassessed.
+
+    The pricing level is unchanged, so a later quote at that band does not move.
+    An explicit stated 5 remains a clinical finding.
+    """
+    stamped = resolve_adl_evidence(
+        adl_level=5, adl_level_source=SOURCE_UNSPECIFIED
+    )
+    assert stamped.clinical_level is None
+    assert stamped.pricing_level == 5
+    assert stamped.source == SOURCE_UNSPECIFIED
+
+    stated = resolve_adl_evidence(adl_level=5, adl_level_source="stated")
+    assert stated.clinical_level == 5
+    assert stated.pricing_level == 5
+    assert stated.source == SOURCE_STATED
+
+
+def test_integrity_check_does_not_invent_adl_five_from_medium_risk():
+    from services.financial_reporting_service import FinancialReportingService
+
+    policies = {
+        "POL-MED": {
+            "id": "POL-MED",
+            "customer_id": "CUST-1",
+            "type": "life",
+            "status": "active",
+            "risk_score": "medium",
+            "coverage_amount": 100000,
+            "annual_premium": 400,
+        },
+        "POL-BASE": {
+            "id": "POL-BASE",
+            "customer_id": "CUST-1",
+            "type": "health",
+            "status": "active",
+            "risk_score": "medium",
+            "coverage_amount": 100000,
+            "annual_premium": 400,
+            "adl_level": 5,
+            "adl_level_source": SOURCE_UNSPECIFIED,
+        },
+        "POL-STATED": {
+            "id": "POL-STATED",
+            "customer_id": "CUST-1",
+            "type": "life",
+            "status": "active",
+            "risk_score": "high",
+            "coverage_amount": 100000,
+            "annual_premium": 400,
+            "adl_level": 5,
+            "adl_level_source": "stated",
+        },
+    }
+    customers = {"CUST-1": {"id": "CUST-1", "dob": "1986-01-01"}}
+    report = FinancialReportingService(
+        policies=policies, claims={}, billing={}, customers=customers, underwriting={}
+    ).validate_data_integrity()
+    details = {
+        row["policy_id"]: row
+        for row in report["actuarial_validation"]["details"]
+    }
+    assert details["POL-MED"]["adl_level"] is None
+    assert details["POL-MED"]["adl_is_health_status"] is False
+    assert details["POL-BASE"]["adl_level"] is None
+    assert details["POL-BASE"]["adl_basis"] == SOURCE_UNSPECIFIED
+    assert details["POL-STATED"]["adl_level"] == 5
+    assert details["POL-STATED"]["adl_is_health_status"] is True
+    assert details["POL-STATED"]["internal_score_is_average"] is False
+    assert "not the average" in details["POL-STATED"]["adl_status"]
+    assert details["POL-MED"]["adl_status"] is None
+    assert details["POL-BASE"]["internal_score_disclaimer"] is None
+    # The ratio check still runs. Inventing an ADL must not change pass/fail.
+    assert details["POL-MED"]["status"] == "PASS"
+    assert details["POL-STATED"]["premium_ratio"] == details["POL-MED"]["premium_ratio"]
+
+
+def test_projection_label_for_score_five_is_not_the_average():
+    from services.adl_mapping import (
+        INTERNAL_UNDERWRITING_SCORE_DISCLAIMER,
+        published_adl_label,
+    )
+    from services.financial_reporting_service import FinancialReportingService
+
+    svc = FinancialReportingService(
+        policies={}, claims={}, billing={}, customers={}, underwriting={}
+    )
+    label = published_adl_label(5)
+    assert label == "Internal score 5 (×1.0 multipliers; not the average)"
+    assert "Baseline" not in label
+    assert "average" not in label.lower() or "not the average" in label.lower()
+    assert published_adl_label(10) == "Fully disabled (global ADL 3+)"
+    assert "Significant Assistance" not in svc._get_adl_description(5)
+    scenario = svc.generate_customer_projection(adl_level=5)["scenario"]
+    assert scenario["adl_level"] == 5
+    assert scenario["adl_is_health_status"] is False
+    assert scenario["internal_score_is_average"] is False
+    assert scenario["adl_risk"] == label
+    assert "not assumed to be the average" in scenario["internal_score_disclaimer"]
+    assert scenario["internal_score_disclaimer"] == INTERNAL_UNDERWRITING_SCORE_DISCLAIMER
+
+
+def test_assessed_mean_ignores_unsourced_fives():
+    from services.adl_mapping import assessed_internal_score, mean_from_score_counts
+
+    assert assessed_internal_score({"adl_level": 5}) is None
+    assert assessed_internal_score({
+        "adl_level": 5,
+        "adl_level_source": "unspecified_baseline",
+    }) is None
+    assert assessed_internal_score({
+        "adl_level": 5,
+        "adl_level_source": "stated",
+    }) == 5
+    assert assessed_internal_score({"daily_function": "full"}) == 1
+    assert assessed_internal_score({
+        "adl_level": 10,
+        "adl_level_source": "stated",
+    }) == 10
+    mean, count = mean_from_score_counts({"1": 3, 2: 1, "junk": 4, 5: 0})
+    assert count == 4
+    assert mean == 1.25
+    assert mean_from_score_counts({}) == (None, 0)
+
+
+def test_assessed_score_reads_the_questionnaire_form():
+    from services.adl_mapping import assessed_internal_score
+
+    assert assessed_internal_score({
+        "questionnaire_responses": {"adl_level_source": "stated", "adl_level": 7},
+    }) == 7
+    # The underwriting read path sometimes stores the form as a JSON string.
+    assert assessed_internal_score({
+        "questionnaire_responses": '{"daily_function": "moderate"}',
+    }) == 4
+    assert assessed_internal_score({
+        "questionnaire_responses": '{"adl_level_source": "stated", "adl_level": 9}',
+    }) == 9
+    # An unsourced form number is still not an assessment.
+    assert assessed_internal_score({"questionnaire_responses": '{"adl_level": 5}'}) is None
+    assert assessed_internal_score({"questionnaire_responses": "not json", "adl_level": 5}) is None

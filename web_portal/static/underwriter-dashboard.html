@@ -577,9 +577,10 @@
                             <span style="color: #666; font-size: 0.85rem;">Policy Status</span><br>
                             <strong style="color: #6c757d;">${(app.policy_status || (app.policy_id ? 'pending' : 'not created')).replace('_', ' ')}</strong>
                         </div>
-                        ${app.adl_level != null ? `<div>
-                            <span style="color: #666; font-size: 0.85rem;">ADL Level</span><br>
-                            <strong style="color: #333;">${escapeHtml(String(app.adl_level))}</strong>
+                        ${app.adl_level != null && app.adl_level_source !== 'unspecified_baseline' ? `<div>
+                            <span style="color: #666; font-size: 0.85rem;">PHINS internal underwriting score</span><br>
+                            <strong style="color: #333;">${escapeHtml(String(app.adl_level))}${app.adl_status ? ' — ' + escapeHtml(String(app.adl_status)) : ''}</strong>
+                            <div style="color: #666; font-size: 0.75rem; margin-top: 4px;">${escapeHtml(app.internal_score_disclaimer || 'PHINS internal underwriting score on a 1-10 scale. Score 10 is a fully disabled customer and meets global ADL 3+. Score 5 is not the average internal score.')}</div>
                         </div>` : ''}
                     </div>
                     

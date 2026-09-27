@@ -3398,7 +3398,7 @@
             const meta = [];
             if (age !== undefined && age !== null && age !== '') meta.push(`Age ${age}`);
             if (policies !== '') meta.push(`${policies} ${Number(policies) === 1 ? 'policy' : 'policies'}`);
-            if (actuarial.adl_level) meta.push(`ADL ${actuarial.adl_level}`);
+            if (actuarial.adl_level) meta.push(`Internal score ${actuarial.adl_level} (not an average)`);
             setPipelineText('actuarialPolicyMeta', meta.length ? meta.join(' · ') : 'Live from /api/investment/unified');
         }
 
