@@ -128,6 +128,9 @@ def aggregate_underwriting(applications: Iterable[Mapping[str, Any]]) -> Dict[st
     }
 
 
+_OPEN_CLAIM_STATUSES = frozenset({"pending", "under_review"})
+
+
 def aggregate_claims(claims: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
     rows = _as_list(claims)
     by_status = _count_status(rows)
@@ -140,7 +143,7 @@ def aggregate_claims(claims: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
     pending_liability = 0.0
     for row in rows:
         status = _status(row)
-        claimed = _money(row.get("claimed_amount", row.get("amount", 0)))
+        claimed = _money(row.get("claimed_amount", 0))
         approved = _money(row.get("approved_amount", row.get("amount_approved", 0)))
         claimed_buckets[status] = claimed_buckets.get(status, 0.0) + claimed
         approved_buckets[status] = approved_buckets.get(status, 0.0) + approved
@@ -150,7 +153,7 @@ def aggregate_claims(claims: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
             disbursed += approved
         if status in {"paid", "closed"}:
             paid_or_closed += _money(row.get("paid_amount", row.get("approved_amount", row.get("amount_approved", 0))))
-        if status in {"pending", "under_review"}:
+        if status in _OPEN_CLAIM_STATUSES:
             pending_liability += claimed
     return {
         "total": len(rows),
@@ -161,7 +164,7 @@ def aggregate_claims(claims: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
         "disbursed_amount": _round2(disbursed),
         "paid_amount": _round2(paid_or_closed),
         "pending_liability": _round2(pending_liability),
-        "pending": by_status.get("pending", 0) + by_status.get("under_review", 0) + by_status.get("medical_assessment", 0),
+        "pending": by_status.get("pending", 0) + by_status.get("under_review", 0),
         "approved": by_status.get("approved", 0),
         "rejected": by_status.get("rejected", 0),
     }
@@ -248,6 +251,59 @@ def aggregate_investments(
         "pipeline_cash": _round2(pipeline_cash),
         "noted_health_placeholder": health_placeholder,
     }
+
+
+_BILLING_OPEN_STATUSES = frozenset({"outstanding", "pending", "partial", "overdue"})
+_LEDGER_FIELDS = (
+    "ledger_premium_collected",
+    "ledger_claims_paid",
+    "accounting_premium_posted",
+    "accounting_claims_posted",
+    "economic_claims_reserve",
+)
+
+
+def aggregate_billing(bills: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
+    """Same billing totals ``compute_unified_financial_metrics`` publishes."""
+    rows = _as_list(bills)
+    total_billed = 0.0
+    total_collected = 0.0
+    outstanding = 0.0
+    paid_count = 0
+    pending_count = 0
+    overdue_count = 0
+    for row in rows:
+        amount = _money(row.get("amount", row.get("amount_due", 0)))
+        paid = _money(row.get("amount_paid", 0))
+        total_billed += amount
+        total_collected += paid
+        status = _status(row)
+        if status in _BILLING_OPEN_STATUSES:
+            outstanding += max(0.0, amount - paid)
+        if status == "paid":
+            paid_count += 1
+        if status in {"outstanding", "pending"}:
+            pending_count += 1
+        if status == "overdue":
+            overdue_count += 1
+    billed = _round2(total_billed)
+    collected = _round2(total_collected)
+    return {
+        "total_billed": billed,
+        "total_collected": collected,
+        "outstanding_balance": _round2(outstanding),
+        "paid_count": paid_count,
+        "pending_count": pending_count,
+        "overdue_count": overdue_count,
+        "total_transactions": len(rows),
+        "collection_rate": round((collected / billed * 100) if billed else 0.0, 1),
+    }
+
+
+def ledger_totals(ledger: Optional[Mapping[str, Any]]) -> Dict[str, float]:
+    """Cash and posted-book figures the billing stats and balance sheet use."""
+    source = ledger or {}
+    return {key: _round2(_money(source.get(key, 0))) for key in _LEDGER_FIELDS}
 
 
 def aggregate_agents(
@@ -399,12 +455,35 @@ def _reconcile(outline: Mapping[str, Any], canonical: Mapping[str, Any]) -> None
         ("claims", "disbursed_amount", "claims_disbursed_amount"),
         ("claims", "paid_amount", "claims_paid_amount"),
         ("claims", "pending_liability", "pending_claims_liability"),
+        ("claims", "pending", "pending_claims"),
+        ("claims", "approved", "approved_claims"),
+        ("claims", "rejected", "rejected_claims"),
         ("claims", "total", "total_claims"),
         ("policies", "total", "total_policies"),
         ("policies", "active", "active_policies"),
         ("policies", "annual_premium_active", "total_revenue"),
         ("policies", "coverage_active", "total_coverage_amount"),
         ("policies", "investment_value", "total_investment_value"),
+        ("investments", "account_balance", "total_investment_balance"),
+        ("investments", "algo_balance", "total_algo_balance"),
+        ("investments", "pipeline_cash", "total_pipeline_cash"),
+        ("investments", "assets_under_management", "total_aum"),
+        ("health", "wallet_balance", "total_health_wallet"),
+        ("health", "wallet_deposits", "total_deposits"),
+        ("health", "active_wallets", "active_wallets"),
+        ("billing", "total_billed", "total_billed"),
+        ("billing", "total_collected", "total_collected"),
+        ("billing", "outstanding_balance", "outstanding_balance"),
+        ("billing", "collection_rate", "collection_rate"),
+        ("billing", "paid_count", "paid_count"),
+        ("billing", "pending_count", "pending_count"),
+        ("billing", "overdue_count", "overdue_count"),
+        ("billing", "total_transactions", "total_transactions"),
+        ("books", "ledger_premium_collected", "ledger_premium_collected"),
+        ("books", "ledger_claims_paid", "ledger_claims_paid"),
+        ("books", "accounting_premium_posted", "accounting_premium_posted"),
+        ("books", "accounting_claims_posted", "accounting_claims_posted"),
+        ("books", "economic_claims_reserve", "economic_claims_reserve"),
         ("underwriting", "total", "total_applications"),
         ("underwriting", "pending", "pending_applications"),
         ("underwriting", "approved", "approved_applications"),
@@ -453,10 +532,12 @@ def build_regulator_outline(
     underwriting: Optional[Iterable[Mapping[str, Any]]] = None,
     health_wallets: Optional[Iterable[Mapping[str, Any]]] = None,
     investment_accounts: Optional[Iterable[Mapping[str, Any]]] = None,
+    billing: Optional[Iterable[Mapping[str, Any]]] = None,
     agents: Optional[Iterable[Mapping[str, Any]]] = None,
     commissions: Optional[Iterable[Mapping[str, Any]]] = None,
     algo_balance: float = 0.0,
     pipeline_cash: float = 0.0,
+    ledger: Optional[Mapping[str, Any]] = None,
     canonical: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Return the redacted regulation outline for the supplied books.
@@ -469,6 +550,8 @@ def build_regulator_outline(
     claim_totals = aggregate_claims(claims or [])
     underwriting_totals = aggregate_underwriting(underwriting or [])
     health = aggregate_health(policy_totals, health_wallets or [])
+    billing_totals = aggregate_billing(billing or [])
+    books = ledger_totals(ledger)
     investments = aggregate_investments(
         investment_accounts or [],
         policy_totals,
@@ -502,6 +585,8 @@ def build_regulator_outline(
         "claims_loss_ratio": loss_ratio,
         "investments": investments,
         "health": health,
+        "billing": billing_totals,
+        "books": books,
         "agents": agent_totals,
         "policies": {
             "total": policy_totals["total"],
@@ -525,6 +610,7 @@ def build_regulator_outline(
             "underwriting": underwriting_totals["total"],
             "health_wallets": health["wallet_count"],
             "investment_accounts": investments["account_count"],
+            "billing": billing_totals["total_transactions"],
             "agents": agent_totals["agent_count"],
             "commissions": agent_totals["commission_count"],
         },
