@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <!-- Build stamp: bumped whenever a substantive pricing change ships so
        cached browsers can tell users they are running an old UI. -->
-  <meta name="phins-actuary-dashboard-build" content="2026-09-27.acceptance-age-65">
+  <meta name="phins-actuary-dashboard-build" content="2026-09-27.full-simulation-pdf">
   <!-- Chart.js for the Annuity Reserves forecast bar/line charts. Loaded
        from the same CDN as risk-reports-dashboard.html for consistency. -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -4170,6 +4170,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
   </div>
   
   <script src="/sandbox-portfolio-snapshot.js"></script>
+  <script src="/simulation-report.js"></script>
   <script>
     // Global state
     let token = localStorage.getItem('phins_token');
@@ -5744,6 +5745,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             <button class="btn btn-primary" type="button" onclick="downloadAgeAdlReport('html')">Download report (HTML)</button>
             <button class="btn btn-outline" type="button" onclick="downloadAgeAdlReport('pdf')">Download report (PDF)</button>
           </div>
+          <p style="color:var(--text-light);margin-top:8px;">The PDF is the full simulation for this run: portfolio, premium reconciliation, risk, profitability, demographics, declines, reinsurance, and the age ledger. Figures are the snapshot totals. The download says PASS only when those sections still reconcile.</p>
         </div>
       `;
     }
@@ -5869,7 +5871,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `phins_age_adl_acceptance_${sim.simulation_id || 'simulation'}.html`;
+      a.download = `phins_portfolio_simulation_${sim.simulation_id || 'simulation'}.html`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -5881,10 +5883,16 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const levels = matrix.adl_levels || [];
       const bands = matrix.bands || [];
       const totals = matrix.totals || {};
-      const pass = !!(matrix.integrity && matrix.integrity.all_checks_pass);
+      const model = simulationReportModel(sim, {
+        money: fmtCurrency,
+        count: fmtCount,
+        pct: fmtPctValue,
+        num: fmtNumber,
+      });
+      const pass = model.allPass;
       const sample = (matrix.distribution || {}).sample || {};
       const params = (matrix.distribution || {}).parameters || {};
-      const model = (matrix.distribution || {}).generating_model || '';
+      const generatingModel = (matrix.distribution || {}).generating_model || '';
       const head = `<tr><th>Age band</th><th class="num">Applied</th>${levels.map(l => `<th class="num">ADL ${l} accepted</th>`).join('')}<th class="num">Accepted</th><th class="num">Rejected</th></tr>`;
       const body = bands.map(band => {
         const cells = levels.map(level => `<td class="num">${fmtCount(((band.by_adl || {})[String(level)] || {}).accepted || 0)}</td>`).join('');
@@ -5893,10 +5901,16 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const foot = `<tr><td>Total</td><td class="num">${fmtCount(totals.applied)}</td>${levels.map(level => `<td class="num">${fmtCount(bands.reduce((acc, band) => acc + Number(((band.by_adl || {})[String(level)] || {}).accepted || 0), 0))}</td>`).join('')}<td class="num">${fmtCount(totals.accepted)}</td><td class="num">${fmtCount(totals.rejected)}</td></tr>`;
       const rejected = (matrix.rejected || []).map(row => `<tr><td>Ages ${escapeHtml(row.age_band)}</td><td class="num">${row.adl}</td><td class="num">${fmtCount(row.applied)}</td><td class="num">${fmtCount(row.rejected)}</td><td>${escapeHtml(row.reason || '')}</td></tr>`).join('')
         || '<tr><td colspan="5">No lives were rejected in this run.</td></tr>';
-      const checks = Object.entries((matrix.integrity || {}).checks || {}).map(([name, ok]) => `<li>${ok ? 'PASS' : 'FAIL'} — ${escapeHtml(name.replace(/_/g, ' '))}</li>`).join('');
+      const checks = model.checks.map((item) => `<li>${item.ok ? 'PASS' : 'FAIL'} — ${escapeHtml(item.name)}</li>`).join('');
+      const reportTables = model.tables.map((table) => {
+        const headCells = table.columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('');
+        const bodyRows = table.rows.map((row) => `<tr>${row.map((cell, index) => `<td class="${index ? 'num' : ''}">${escapeHtml(String(cell))}</td>`).join('')}</tr>`).join('');
+        const note = table.note ? `<p class="note">${escapeHtml(table.note)}</p>` : '';
+        return `<h2>${escapeHtml(table.title)}</h2>${note}<table><thead><tr>${headCells}</tr></thead><tbody>${bodyRows}</tbody></table>`;
+      }).join('');
       const logo = ANNUAL_BRAND_LOGO_SVG.replace('class="lh-logo"', 'class="brand-emblem"');
       return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
-        <title>PHINS Age × ADL Acceptance — ${escapeHtml(sim.simulation_id || '')}</title>
+        <title>PHINS Portfolio Simulation — ${escapeHtml(sim.simulation_id || '')}</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
         <style>
           body { font-family: 'Inter', sans-serif; max-width: 1100px; margin: 20px auto; color: #1a2740; padding: 0 20px 40px; line-height: 1.5; }
@@ -5923,18 +5937,20 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         </style></head><body>
         <header class="brand"><div class="brand-row">${logo}
           <div><div class="brand-wordmark">PHINS</div><div class="brand-tag">${escapeHtml(ANNUAL_BRAND_TAGLINE)}</div></div>
-          <div><div class="brand-title">Age × ADL Acceptance</div><div class="brand-sub">Portfolio Simulator · ${escapeHtml(sim.simulation_id || '')}</div></div>
+          <div><div class="brand-title">Portfolio Simulation Report</div><div class="brand-sub">Full run · ${escapeHtml(sim.simulation_id || '')}</div></div>
         </div></header>
         <p>Run at ${escapeHtml(sim.run_at || '')}. Tables ${escapeHtml(sim.tables_version || '')}. Decline threshold ADL ${matrix.decline_threshold}+.
         Applied ${fmtCount(totals.applied)}, accepted ${fmtCount(totals.accepted)}, rejected ${fmtCount(totals.rejected)}.</p>
-        <div class="integrity"><strong>${pass ? 'Data integrity: all checks passed.' : 'Data integrity: one or more checks failed.'}</strong><ul>${checks}</ul></div>
+        <div class="integrity"><strong>${pass ? 'Data integrity: PASS. Every published section reconciles to this run.' : 'Data integrity: FAIL. Do not rely on this report until the failed checks are resolved.'}</strong><ul>${checks}</ul></div>
+        <p>Accepted customers ${escapeHtml(model.headline.accepted)}. Gross annual premium ${escapeHtml(model.headline.grossPremium)}. Applied ${escapeHtml(model.headline.applied)}. Rejected ${escapeHtml(model.headline.rejected)}.</p>
+        ${reportTables}
         <h2>Acceptance by age band and ADL</h2>
         <p class="note">ADL columns count accepted lives only. A life whose coverage was reduced still counts as accepted. Rejection is an underwriting decline, recorded in the next table.</p>
         <table><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>
         <h2>Rejected lives</h2>
         <table><thead><tr><th>Age band</th><th class="num">ADL</th><th class="num">Applied in cell</th><th class="num">Rejected</th><th>Reason</th></tr></thead><tbody>${rejected}</tbody></table>
         <h2>Statistical distribution</h2>
-        <p>Generating model <strong>${escapeHtml(model)}</strong>, input mean ${params.age_mean}, input sd ${params.age_std}, ages drawn inside ${params.age_min}–${params.age_max} (resampled, not piled onto the maximum). Acceptance stops at age ${Number(matrix.max_acceptance_age != null ? matrix.max_acceptance_age : 65)}.
+        <p>Generating model <strong>${escapeHtml(generatingModel)}</strong>, input mean ${params.age_mean}, input sd ${params.age_std}, ages drawn inside ${params.age_min}–${params.age_max} (resampled, not piled onto the maximum). Acceptance stops at age ${Number(matrix.max_acceptance_age != null ? matrix.max_acceptance_age : 65)}.
         This run: n ${fmtCount(sample.n)}, sample mean ${Number(sample.mean || 0).toFixed(4)}, sample sd ${Number(sample.std || 0).toFixed(4)}.
         ${escapeHtml((matrix.distribution || {}).curve_note || '')}</p>
         <div class="chart-card">${ageAdlBellSvg(matrix)}</div>
@@ -5944,9 +5960,20 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     function downloadAgeAdlPdf(sim) {
       const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
       if (!jsPDFCtor) { alert('PDF library still loading — try again in a moment.'); return; }
-      const matrix = sim.age_adl_matrix;
+      if (typeof simulationReportModel !== 'function') {
+        alert('Simulation report script is still loading — try again in a moment.');
+        return;
+      }
+      const model = simulationReportModel(sim, {
+        money: fmtCurrency,
+        count: fmtCount,
+        pct: fmtPctValue,
+        num: fmtNumber,
+      });
+      const matrix = sim.age_adl_matrix || {};
       const doc = new jsPDFCtor({ unit: 'pt', format: 'a4', orientation: 'landscape' });
       const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
       const margin = 36;
       const NAVY = [14, 47, 99];
       const GOLD = [201, 160, 78];
@@ -5957,56 +5984,109 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       doc.setTextColor(247, 226, 160);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(16);
-      doc.text('PHINS', margin, 30);
+      doc.text('PHINS', margin, 28);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
       doc.setTextColor(183, 211, 255);
-      doc.text('Personal Health Insurance & Savings', margin, 44);
+      doc.text('Personal Health Insurance & Savings', margin, 42);
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(14);
-      doc.text('Age x ADL Acceptance', margin, 64);
+      doc.text('Portfolio Simulation Report', margin, 62);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
-      doc.text(String(sim.simulation_id || ''), pageW - margin, 64, { align: 'right' });
-      const totals = matrix.totals || {};
-      const pass = !!(matrix.integrity && matrix.integrity.all_checks_pass);
+      doc.text(String(sim.simulation_id || ''), pageW - margin, 62, { align: 'right' });
+
       doc.setTextColor(...NAVY);
-      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
       let y = 100;
-      doc.text(`Applied ${fmtCount(totals.applied)}   Accepted ${fmtCount(totals.accepted)}   Rejected ${fmtCount(totals.rejected)}   Decline ADL ${matrix.decline_threshold}+   Integrity ${pass ? 'PASS' : 'FAIL'}`, margin, y);
+      doc.text(`Data integrity: ${model.allPass ? 'PASS' : 'FAIL'}`, margin, y);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      y += 16;
+      doc.text(`Run ${model.headline.runAt}    Tables ${model.headline.tablesVersion}    Duration ${model.headline.duration}s`, margin, y);
+      y += 14;
+      doc.text(`Accepted customers: ${model.headline.accepted}`, margin, y);
+      y += 14;
+      doc.text(`Gross annual premium: ${model.headline.grossPremium}`, margin, y);
+      y += 14;
+      doc.text(`Total coverage: ${model.headline.totalCoverage}`, margin, y);
+      y += 14;
+      doc.text(`Applied ${model.headline.applied}    Rejected ${model.headline.rejected}    Acceptance cap age ${model.cap}`, margin, y);
+      if (!model.allPass) {
+        y += 16;
+        const failed = model.checks.filter((item) => !item.ok).map((item) => item.name).join('; ');
+        const lines = doc.splitTextToSize(`Failed checks: ${failed}`, pageW - margin * 2);
+        doc.setTextColor(155, 44, 44);
+        doc.text(lines, margin, y);
+        y += lines.length * 12;
+        doc.setTextColor(...NAVY);
+      }
+
+      const addTable = (title, columns, rows, startY) => {
+        let top = startY;
+        if (top > pageH - 96) {
+          doc.addPage();
+          top = margin;
+        }
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor(...NAVY);
+        doc.text(title, margin, top);
+        doc.autoTable({
+          startY: top + 6,
+          head: [columns],
+          body: rows.length ? rows : [columns.map((_, index) => (index ? '—' : 'None'))],
+          styles: { fontSize: 8, cellPadding: 3, textColor: NAVY },
+          headStyles: { fillColor: NAVY, textColor: [247, 226, 160] },
+          margin: { left: margin, right: margin, bottom: 32, top: margin },
+        });
+        return (doc.lastAutoTable.finalY || top) + 16;
+      };
+
+      y = addTable(
+        'Integrity checks',
+        ['Check', 'Result'],
+        model.checks.map((item) => [item.name, item.ok ? 'PASS' : 'FAIL']),
+        y + 10
+      );
+      model.tables.forEach((table) => {
+        y = addTable(table.title, table.columns, table.rows, y);
+      });
+
       const levels = matrix.adl_levels || [];
-      const head = ['Age band', 'Applied', ...levels.map(l => 'ADL ' + l), 'Accepted', 'Rejected'];
-      const body = (matrix.bands || []).map(band => [
+      const bands = matrix.bands || [];
+      const totals = matrix.totals || {};
+      const head = ['Age band', 'Applied', ...levels.map((level) => 'ADL ' + level), 'Accepted', 'Rejected'];
+      const body = bands.map((band) => [
         'Ages ' + band.age_band,
         fmtCount(band.applied),
-        ...levels.map(level => fmtCount(((band.by_adl || {})[String(level)] || {}).accepted || 0)),
+        ...levels.map((level) => fmtCount(((band.by_adl || {})[String(level)] || {}).accepted || 0)),
         fmtCount(band.accepted),
         fmtCount(band.rejected),
       ]);
-      body.push(['Total', fmtCount(totals.applied), ...levels.map(level => fmtCount((matrix.bands || []).reduce((acc, band) => acc + Number(((band.by_adl || {})[String(level)] || {}).accepted || 0), 0))), fmtCount(totals.accepted), fmtCount(totals.rejected)]);
-      doc.autoTable({
-        startY: y + 12,
-        head: [head],
-        body,
-        styles: { fontSize: 8, cellPadding: 3, textColor: NAVY },
-        headStyles: { fillColor: NAVY, textColor: [247, 226, 160] },
-        margin: { left: margin, right: margin },
-      });
-      const rejected = (matrix.rejected || []).map(row => ['Ages ' + row.age_band, String(row.adl), fmtCount(row.applied), fmtCount(row.rejected), row.reason || '']);
-      doc.autoTable({
-        startY: (doc.lastAutoTable.finalY || y) + 18,
-        head: [['Age band', 'ADL', 'Applied in cell', 'Rejected', 'Reason']],
-        body: rejected.length ? rejected : [['—', '—', '—', '0', 'No lives were rejected in this run.']],
-        styles: { fontSize: 8, cellPadding: 3 },
-        headStyles: { fillColor: [155, 44, 44], textColor: 255 },
-        margin: { left: margin, right: margin },
-      });
+      body.push(['Total', fmtCount(totals.applied), ...levels.map((level) => fmtCount(bands.reduce((acc, band) => acc + Number(((band.by_adl || {})[String(level)] || {}).accepted || 0), 0))), fmtCount(totals.accepted), fmtCount(totals.rejected)]);
+      y = addTable('Age x ADL acceptance', head, body, y);
+      const rejected = (matrix.rejected || []).map((row) => [
+        'Ages ' + row.age_band,
+        String(row.adl),
+        fmtCount(row.applied),
+        fmtCount(row.rejected),
+        row.reason || '',
+      ]);
+      y = addTable(
+        'Rejected lives',
+        ['Age band', 'ADL', 'Applied in cell', 'Rejected', 'Reason'],
+        rejected.length ? rejected : [['—', '—', '—', '0', 'No lives were rejected in this run.']],
+        y
+      );
+
       const canvas = document.getElementById('age-adl-bell-chart');
       if (canvas && canvas.toDataURL) {
         const img = canvas.toDataURL('image/png');
-        let chartY = (doc.lastAutoTable.finalY || 140) + 16;
-        if (chartY > doc.internal.pageSize.getHeight() - 200) {
+        let chartY = y;
+        if (chartY > pageH - 210) {
           doc.addPage();
           chartY = margin;
         }
@@ -6015,7 +6095,20 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         doc.text('Age distribution (accepted, rejected, fitted normal)', margin, chartY + 10);
         doc.addImage(img, 'PNG', margin, chartY + 16, pageW - margin * 2, 180);
       }
-      doc.save(`phins_age_adl_acceptance_${sim.simulation_id || 'simulation'}.pdf`);
+
+      const pages = doc.internal.getNumberOfPages();
+      for (let page = 1; page <= pages; page += 1) {
+        doc.setPage(page);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(91, 107, 130);
+        doc.text(
+          `${model.headline.simulationId}    Portfolio simulation report    ${model.allPass ? 'PASS' : 'FAIL'}    ${page} / ${pages}`,
+          margin,
+          pageH - 18
+        );
+      }
+      doc.save(`phins_portfolio_simulation_${sim.simulation_id || 'simulation'}.pdf`);
     }
     
     // Automation metrics
