@@ -922,6 +922,11 @@ def test_actuary_dashboard_portfolio_snapshot_tab():
     assert "managementFeePctOfAum: aum.managementFeePctOfAum" in content
     assert "sandboxSavingsShare" in content
     assert "managementFeeOnContributions" in content
+    # The AUM fee/yield controls must rebuild the forecast rows, otherwise the
+    # snapshot labels the new rate beside horizon fee/net built at the old one.
+    for input_id in ("reserve-mgmt-fee", "reserve-savings-yield"):
+        line = next(ln for ln in content.splitlines() if f'id="{input_id}"' in ln)
+        assert "recomputeSandboxForecast()" in line
 
 
 def test_actuary_dashboard_overview_has_no_hardcoded_stats():
