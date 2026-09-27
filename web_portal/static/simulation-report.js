@@ -106,6 +106,8 @@
 
     const autoPct = (process) => pct(num(process && process.total_automation_pct) * 100);
     const autoManual = (process, key) => pct(num(process && process[key]) * 100);
+    // Kernel and parameter rates are stored as 0-1 fractions; the report prints percents.
+    const fracPct = (value) => (value != null ? pct(num(value) * 100) : '');
 
     const tables = [
       {
@@ -192,7 +194,7 @@
           ['Female percent', pct(params.female_pct)],
           ['Smoker percent', pct(params.smoker_pct)],
           ['Former smoker percent', pct(params.former_smoker_pct)],
-          ['Savings rate', String(params.savings_rate != null ? params.savings_rate : '')],
+          ['Savings rate', fracPct(params.savings_rate)],
           ['Savings formula', String(params.savings_formula || '')],
           ['Product', String(params.product_id || kernel.product_id || '')],
         ],
@@ -265,12 +267,12 @@
           ['Product', String(kernel.product_id || '')],
           ['Age curve', String(kernel.age_curve_id || '')],
           ['Savings formula', String(kernel.savings_formula || '')],
-          ['Savings rate', String(kernel.savings_rate != null ? kernel.savings_rate : '')],
+          ['Savings rate', fracPct(kernel.savings_rate)],
           ['Claim model', String(kernel.claim_model || '')],
           ['Tables version', String(kernel.tables_version || sim.tables_version || '')],
           ['Config version', String(kernel.config_version || '')],
-          ['Expense loading', String(kernel.expense_loading_pct != null ? kernel.expense_loading_pct : '')],
-          ['Profit margin', String(kernel.profit_margin_pct != null ? kernel.profit_margin_pct : '')],
+          ['Expense loading', fracPct(kernel.expense_loading_pct)],
+          ['Profit margin', fracPct(kernel.profit_margin_pct)],
           ['Discount rate', String(kernel.discount_rate != null ? kernel.discount_rate : '')],
           ['Disability share of life', String(kernel.disability_share_of_life != null ? kernel.disability_share_of_life : '')],
           ['Disability band age', String(kernel.disability_band_age != null ? kernel.disability_band_age : '')],

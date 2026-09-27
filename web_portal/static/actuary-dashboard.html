@@ -6024,7 +6024,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         doc.setTextColor(...NAVY);
       }
 
-      const addTable = (title, columns, rows, startY) => {
+      const addTable = (title, columns, rows, startY, note) => {
         let top = startY;
         if (top > pageH - 96) {
           doc.addPage();
@@ -6034,6 +6034,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         doc.setFontSize(11);
         doc.setTextColor(...NAVY);
         doc.text(title, margin, top);
+        if (note) {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          const noteLines = doc.splitTextToSize(String(note), pageW - margin * 2);
+          doc.text(noteLines, margin, top + 12);
+          top += noteLines.length * 10 + 4;
+        }
         doc.autoTable({
           startY: top + 6,
           head: [columns],
@@ -6052,7 +6059,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         y + 10
       );
       model.tables.forEach((table) => {
-        y = addTable(table.title, table.columns, table.rows, y);
+        y = addTable(table.title, table.columns, table.rows, y, table.note);
       });
 
       const levels = matrix.adl_levels || [];
