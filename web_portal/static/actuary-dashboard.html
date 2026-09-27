@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <!-- Build stamp: bumped whenever a substantive pricing change ships so
        cached browsers can tell users they are running an old UI. -->
-  <meta name="phins-actuary-dashboard-build" content="2026-09-26.ltc-study-a4">
+  <meta name="phins-actuary-dashboard-build" content="2026-09-27.acceptance-age-65">
   <!-- Chart.js for the Annuity Reserves forecast bar/line charts. Loaded
        from the same CDN as risk-reports-dashboard.html for consistency. -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -2209,6 +2209,7 @@
               <div class="form-group">
                 <label class="form-label">Maximum Age</label>
                 <input type="number" id="sim-age-max" class="form-input" value="55" min="0" max="100">
+                <small style="color:var(--text-light);">Draw window only. Acceptance stops at age 65: older applicants are declined, even when this value is higher. Ages outside the window are redrawn, so the maximum age does not collect extra acceptances.</small>
               </div>
               <div class="form-group">
                 <label class="form-label">Mean Age</label>
@@ -5709,7 +5710,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           <p style="color:var(--text-light);margin-bottom:8px;">
             Each ADL column is lives <strong>accepted</strong> at that ADL. Applied is every life drawn in the band.
             Rejected lives are kept out of the ADL columns and listed underneath.
-            Decline rule: ADL ${matrix.decline_threshold}+ is declined.
+            Decline rules: ADL ${matrix.decline_threshold}+ is declined, and age above ${Number(matrix.max_acceptance_age != null ? matrix.max_acceptance_age : 65)} is declined.
           </p>
           <div class="alert ${pass ? 'alert-success' : 'alert-danger'}" style="margin-bottom:10px;">
             ${pass
@@ -5732,9 +5733,11 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           </div>
           <h4 style="margin-top:18px;">Age distribution</h4>
           <p style="color:var(--text-light);margin-bottom:6px;">
-            Bars are the lives actually drawn (accepted stacked on rejected). The curve is a normal fitted to this run
+            Bars are the lives actually drawn (accepted stacked on rejected). Draws outside ${params.age_min}–${params.age_max} are resampled, so the maximum age does not collect the tail.
+            Acceptance stops at age ${Number(matrix.max_acceptance_age != null ? matrix.max_acceptance_age : 65)}: an older applicant is rejected even when Maximum Age is higher.
+            The curve is a normal fitted to this run
             (sample mean ${Number(sample.mean || 0).toFixed(2)}, sample sd ${Number(sample.std || 0).toFixed(2)}, n ${fmtCount(sample.n)}).
-            Generating model: ${escapeHtml(model)} (input mean ${params.age_mean}, sd ${params.age_std}, clamped to ${params.age_min}–${params.age_max}).
+            Generating model: ${escapeHtml(model)} (input mean ${params.age_mean}, sd ${params.age_std}, drawn inside ${params.age_min}–${params.age_max}).
           </p>
           <div class="age-adl-chart-wrap"><canvas id="age-adl-bell-chart"></canvas></div>
           <div class="age-adl-actions">
@@ -5931,7 +5934,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         <h2>Rejected lives</h2>
         <table><thead><tr><th>Age band</th><th class="num">ADL</th><th class="num">Applied in cell</th><th class="num">Rejected</th><th>Reason</th></tr></thead><tbody>${rejected}</tbody></table>
         <h2>Statistical distribution</h2>
-        <p>Generating model <strong>${escapeHtml(model)}</strong>, input mean ${params.age_mean}, input sd ${params.age_std}, ages clamped to ${params.age_min}–${params.age_max}.
+        <p>Generating model <strong>${escapeHtml(model)}</strong>, input mean ${params.age_mean}, input sd ${params.age_std}, ages drawn inside ${params.age_min}–${params.age_max} (resampled, not piled onto the maximum). Acceptance stops at age ${Number(matrix.max_acceptance_age != null ? matrix.max_acceptance_age : 65)}.
         This run: n ${fmtCount(sample.n)}, sample mean ${Number(sample.mean || 0).toFixed(4)}, sample sd ${Number(sample.std || 0).toFixed(4)}.
         ${escapeHtml((matrix.distribution || {}).curve_note || '')}</p>
         <div class="chart-card">${ageAdlBellSvg(matrix)}</div>
@@ -8074,8 +8077,15 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // Acceptance ages still come from the simulation Age Parameters.
       const disabilityBandAge = Number(kernel.disability_band_age != null ? kernel.disability_band_age : 65);
       const disabilityMaxAge = disabilityBandAge; // retained key for older report readers
+      const maxAcceptanceAge = Number(
+        (sim.age_adl_matrix && sim.age_adl_matrix.max_acceptance_age != null)
+          ? sim.age_adl_matrix.max_acceptance_age
+          : 65
+      );
       const acceptedAgeMin = ageMin;
-      const acceptedAgeMax = ageMax;
+      // Issued ages stop at the acceptance cap even when the simulation
+      // Maximum Age (the draw window) is higher.
+      const acceptedAgeMax = Math.min(ageMax, maxAcceptanceAge);
 
       // Reset before regenerating so re-clicking Generate is idempotent.
       stopSandboxLifecycle();
@@ -8111,8 +8121,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         avg_term_years: Number(rm.avg_term_years || 0),
         disability_band_age: disabilityBandAge,
         disability_max_age: disabilityMaxAge,
+        max_acceptance_age: maxAcceptanceAge,
         age_min: acceptedAgeMin,
         age_max: acceptedAgeMax,
+        draw_age_max: ageMax,
       };
       window.actuarySandbox.simulationSummary = {
         accepted: portfolio.accepted_customers || 0,
@@ -8135,14 +8147,16 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const familyNames = ['Levi', 'Cohen', 'Mizrachi', 'Friedman', 'Patel', 'Garcia', 'Smith', 'Wong', 'Kim', 'Okafor', 'Rossi', 'Silva'];
 
       const sampleAge = () => {
-        let a;
-        if (ageDist === 'uniform') {
-          a = sandboxRandInt(ageMin, ageMax);
-        } else {
-          // Normal distribution honouring age_mean / age_std, clipped to band.
-          a = Math.round(sandboxGaussian(ageMean, ageStd));
+        const lo = Math.min(ageMin, ageMax);
+        const hi = Math.max(ageMin, ageMax);
+        // Redraw outside the window. Clamping piled the tail onto Maximum Age.
+        for (let attempt = 0; attempt < 32; attempt++) {
+          const draw = ageDist === 'uniform'
+            ? sandboxRandInt(lo, hi)
+            : Math.trunc(sandboxGaussian(ageMean, ageStd));
+          if (draw >= lo && draw <= hi) return draw;
         }
-        return Math.max(ageMin, Math.min(ageMax, a));
+        return sandboxRandInt(lo, hi);
       };
       const sampleCoverage = () => {
         let c;
@@ -8172,7 +8186,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         const health = Math.max(1, Math.min(10, ageHealth));
         // Risk: scales with health and age, plus jitter.
         const risk = Math.max(1, Math.min(100, Math.round(health * 6 + (age - ageMin) * 0.8 + (Math.random() * 20 - 10))));
-        const uw_status = risk >= 80 ? 'declined' : (risk >= 65 ? 'pending' : 'approved');
+        let uw_status = risk >= 80 ? 'declined' : (risk >= 65 ? 'pending' : 'approved');
+        if (age > maxAcceptanceAge) uw_status = 'declined';
         const cov = sampleCoverage();
         const term = sampleTerm();
         // ----- Premium build (mirrors the simulator's component chain) -----
@@ -8487,11 +8502,15 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (action === 'new_customer' && customers.length < 100000) {
         const idx = customers.length + 1;
         const id = `CUST-TESTSIM-${String(idx).padStart(6, '0')}`;
-        // Live joiners respect the same accepted Age Parameters band.
-        const age = sandboxRandInt(bandMin, bandMax);
+        // Live joiners respect the accepted age band (capped at max acceptance age).
+        const joinLo = Math.min(bandMin, bandMax);
+        const joinHi = Math.max(bandMin, bandMax);
+        const age = sandboxRandInt(joinLo, joinHi);
         const health = sandboxRandInt(1, 10);
-        const risk = Math.max(1, Math.min(100, Math.round(health * 6 + (age - bandMin) * 0.8 + sandboxRandInt(-10, 10))));
-        const uw_status = risk >= 80 ? 'declined' : (risk >= 65 ? 'pending' : 'approved');
+        const risk = Math.max(1, Math.min(100, Math.round(health * 6 + (age - joinLo) * 0.8 + sandboxRandInt(-10, 10))));
+        const acceptanceCap = Number(contract.max_acceptance_age != null ? contract.max_acceptance_age : 65);
+        let uw_status = risk >= 80 ? 'declined' : (risk >= 65 ? 'pending' : 'approved');
+        if (age > acceptanceCap) uw_status = 'declined';
         const cov = sandboxRandInt(50000, 1000000);
         // Price the new joiner through the same component chain as Generate
         // so the contract being priced stays consistent across the book.

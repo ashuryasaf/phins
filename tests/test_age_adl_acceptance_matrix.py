@@ -13,10 +13,12 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.actuarial_service import (
+    MAX_ACCEPTANCE_AGE,
     ActuarialTablesStore,
     PortfolioSimulator,
     SimulationParams,
     finalize_age_adl_matrix,
+    sample_simulation_age,
 )
 
 
@@ -60,7 +62,9 @@ def test_rejections_are_only_the_declined_adl_cells():
     random.seed(7)
     store = ActuarialTablesStore()
     store.config.decline_threshold = 7
-    params = SimulationParams(customer_count=800, age_min=18, age_max=70, age_mean=40, age_std=12)
+    # Stay inside the acceptance cap so every rejection in this test is an
+    # ADL decline. Ages past the cap are covered separately.
+    params = SimulationParams(customer_count=800, age_min=18, age_max=MAX_ACCEPTANCE_AGE, age_mean=40, age_std=12)
     result = PortfolioSimulator(store).generate_portfolio(params)
     assert result['declined']['count'] > 0
     matrix = result['age_adl_matrix']
@@ -136,6 +140,84 @@ def len_applied(hist):
 def weighted_mean(hist):
     n = len_applied(hist)
     return sum(row['age'] * row['applied'] for row in hist) / n
+
+
+@pytest.mark.parametrize('age_max', [42, 50, 55])
+def test_normal_draw_does_not_pile_acceptances_on_maximum_age(age_max):
+    """The maximum age used to absorb the whole right-hand tail.
+
+    Whatever Maximum Age was chosen, that single year then showed far more
+    lives (and, while it was still inside the acceptance cap, far more
+    acceptances) than the year beside it.
+    """
+    random.seed(20260927 + age_max)
+    counts = {}
+    for _ in range(6000):
+        age = sample_simulation_age(18, age_max, 35.0, 12.0, 'normal')
+        counts[age] = counts.get(age, 0) + 1
+    assert min(counts) >= 18
+    assert max(counts) <= age_max
+    boundary = counts[age_max]
+    previous = counts[age_max - 1]
+    assert previous > 0
+    assert boundary < previous * 2
+
+
+def test_simulation_declines_ages_above_65_when_maximum_age_is_higher():
+    random.seed(11)
+    store = ActuarialTablesStore()
+    params = SimulationParams(
+        customer_count=2500,
+        age_min=40,
+        age_max=80,
+        age_mean=62,
+        age_std=8,
+        age_distribution='normal',
+    )
+    result = PortfolioSimulator(store).generate_portfolio(params)
+    matrix = result['age_adl_matrix']
+    hist = matrix['distribution']['histogram']
+    older = [row for row in hist if row['age'] > MAX_ACCEPTANCE_AGE]
+
+    assert matrix['max_acceptance_age'] == MAX_ACCEPTANCE_AGE == 65
+    assert matrix['integrity']['all_checks_pass'] is True
+    assert older, 'the draw window extends past 65, so some applicants must be older'
+    assert all(row['accepted'] == 0 and row['rejected'] == row['applied'] for row in older)
+    assert all(row['accepted'] == 0 or row['age'] <= MAX_ACCEPTANCE_AGE for row in hist)
+    assert max(row['age'] for row in hist if row['accepted']) <= MAX_ACCEPTANCE_AGE
+
+    reason = f'Age exceeds maximum acceptance age {MAX_ACCEPTANCE_AGE}'
+    assert result['declined']['reasons'][reason] == sum(row['applied'] for row in older)
+    assert result['portfolio_summary']['accepted_customers'] == sum(row['accepted'] for row in hist)
+    assert result['portfolio_summary']['accepted_customers'] + result['declined']['count'] == 2500
+    assert result['premium_reconciliation']['all_identities_pass'] is True
+
+    by_age = {row['age']: row for row in hist}
+    # Age 80 must not be a dump of everyone the normal draw wanted to place past it.
+    if by_age.get(79, {}).get('applied', 0) > 0:
+        assert by_age[80]['applied'] < by_age[79]['applied'] * 2.5
+    assert by_age.get(80, {}).get('accepted', 0) == 0
+
+
+def test_window_entirely_above_acceptance_age_accepts_nobody():
+    random.seed(3)
+    params = SimulationParams(
+        customer_count=180,
+        age_min=70,
+        age_max=85,
+        age_mean=76,
+        age_std=3,
+        age_distribution='normal',
+    )
+    result = PortfolioSimulator(ActuarialTablesStore()).generate_portfolio(params)
+    summary = result['portfolio_summary']
+    matrix = result['age_adl_matrix']
+    assert summary['accepted_customers'] == 0
+    assert summary['total_annual_premium'] == 0
+    assert result['declined']['count'] == 180
+    assert matrix['integrity']['all_checks_pass'] is True
+    assert all(row['accepted'] == 0 for row in matrix['distribution']['histogram'])
+    assert result['premium_reconciliation']['all_identities_pass'] is True
 
 
 @pytest.mark.parametrize('count', [50, 200])
