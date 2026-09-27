@@ -27,6 +27,59 @@ document.addEventListener('DOMContentLoaded', function () {
   const captchaAnswer = document.getElementById('captcha-answer');
   const captchaId = document.getElementById('captcha-id');
   const captchaRefreshBtn = document.getElementById('captcha-refresh');
+  const captchaKind = document.getElementById('captcha-kind');
+  const captchaOptions = document.getElementById('captcha-options');
+  const captchaHint = document.getElementById('captcha-hint');
+  const CAPTCHA_KIND_LABELS = {
+    math: 'Quick sum',
+    steps: 'Two-step sum',
+    sequence: 'What comes next',
+    compare: 'Compare the numbers',
+    pattern: 'Spot the pattern',
+    fact: 'Everyday question',
+    count: 'Letter count'
+  };
+  var CAPTCHA_OPTION_HE = {
+    blue: 'כחול',
+    green: 'ירוק',
+    red: 'אדום',
+    yellow: 'צהוב',
+    three: 'שלוש',
+    four: 'ארבע',
+    five: 'חמש',
+    six: 'שש',
+    seven: 'שבע',
+    eight: 'שמונה',
+    ten: 'עשר',
+    eleven: 'אחת עשרה',
+    twelve: 'שתים עשרה',
+    two: 'שתיים',
+    paris: 'פריז',
+    london: 'לונדון',
+    rome: 'רומא',
+    berlin: 'ברלין',
+    earth: 'כדור הארץ',
+    mars: 'מאדים',
+    venus: 'נוגה',
+    jupiter: 'צדק',
+    'twenty-four': 'עשרים וארבע',
+    'forty-eight': 'ארבעים ושמונה',
+    cold: 'קר',
+    warm: 'חם',
+    wet: 'רטוב',
+    bright: 'בהיר',
+    tuesday: 'יום שלישי',
+    wednesday: 'יום רביעי',
+    friday: 'יום שישי',
+    sunday: 'יום ראשון',
+    sixty: 'שישים',
+    thirty: 'שלושים',
+    forty: 'ארבעים',
+    ninety: 'תשעים',
+    'one hundred': 'מאה',
+    fifty: 'חמישים',
+    'one thousand': 'אלף'
+  };
   
   // OTP elements
   const otpDigits = document.querySelectorAll('.otp-digit');
@@ -95,7 +148,159 @@ document.addEventListener('DOMContentLoaded', function () {
     return new Promise(function (resolve) { setTimeout(resolve, ms); });
   }
 
+  function captchaLanguage() {
+    try {
+      return window.localStorage.getItem('phins_language') === 'he' ? 'he' : 'en';
+    } catch (err) {
+      return 'en';
+    }
+  }
+
+  function captchaOptionLabel(value) {
+    var text = String(value);
+    if (/^\d+$/.test(text)) return text;
+    if (captchaLanguage() === 'he' && CAPTCHA_OPTION_HE[text]) return CAPTCHA_OPTION_HE[text];
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function numericCaptchaOptions(answer) {
+    var target = parseInt(answer, 10);
+    var chosen = {};
+    chosen[target] = true;
+    var guard = 0;
+    while (Object.keys(chosen).length < 4 && guard < 30) {
+      guard++;
+      var delta = Math.floor(Math.random() * 9) + 1;
+      var candidate = Math.random() < 0.5 ? target + delta : target - delta;
+      if (candidate >= 0) chosen[candidate] = true;
+    }
+    var bump = 1;
+    while (Object.keys(chosen).length < 4) {
+      chosen[target + bump] = true;
+      bump++;
+    }
+    var pool = Object.keys(chosen);
+    for (var i = pool.length - 1; i > 0; i--) {
+      var swap = Math.floor(Math.random() * (i + 1));
+      var hold = pool[i];
+      pool[i] = pool[swap];
+      pool[swap] = hold;
+    }
+    return pool;
+  }
+
+  function setCaptchaChoiceMode(enabled) {
+    if (!captchaSection) return;
+    captchaSection.classList.toggle('is-choice', enabled);
+    if (captchaHint) captchaHint.hidden = !enabled;
+    if (enabled) {
+      captchaAnswer.setAttribute('tabindex', '-1');
+      captchaAnswer.setAttribute('aria-hidden', 'true');
+    } else {
+      captchaAnswer.removeAttribute('tabindex');
+      captchaAnswer.removeAttribute('aria-hidden');
+    }
+  }
+
+  function clearCaptchaOptions() {
+    if (captchaOptions) {
+      captchaOptions.innerHTML = '';
+      captchaOptions.hidden = true;
+    }
+    if (captchaKind) {
+      captchaKind.textContent = '';
+      captchaKind.hidden = true;
+    }
+    setCaptchaChoiceMode(false);
+  }
+
+  function selectCaptchaOption(button) {
+    if (!button || !captchaOptions) return;
+    var buttons = captchaOptions.querySelectorAll('.captcha-option');
+    for (var i = 0; i < buttons.length; i++) {
+      var selected = buttons[i] === button;
+      buttons[i].classList.toggle('selected', selected);
+      buttons[i].setAttribute('aria-checked', selected ? 'true' : 'false');
+    }
+    captchaAnswer.value = button.getAttribute('data-value') || '';
+    captchaSection.classList.remove('captcha-shake');
+  }
+
+  function renderCaptchaOptions(options) {
+    if (!captchaOptions) return;
+    captchaOptions.innerHTML = '';
+    var list = Array.isArray(options) ? options.filter(function (item) {
+      return item !== null && item !== undefined && String(item) !== '';
+    }) : [];
+    if (list.length < 2) {
+      captchaOptions.hidden = true;
+      setCaptchaChoiceMode(false);
+      return;
+    }
+    list.forEach(function (option, index) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'captcha-option';
+      button.setAttribute('role', 'radio');
+      button.setAttribute('aria-checked', 'false');
+      button.tabIndex = index === 0 ? 0 : -1;
+      button.setAttribute('data-value', String(option));
+      button.textContent = captchaOptionLabel(option);
+      button.style.animationDelay = (index * 45) + 'ms';
+      button.addEventListener('click', function () { selectCaptchaOption(button); });
+      captchaOptions.appendChild(button);
+    });
+    captchaOptions.hidden = false;
+    setCaptchaChoiceMode(true);
+  }
+
+  function renderCaptchaPrompt(prompt) {
+    prompt = prompt || {};
+    captchaQuestion.classList.remove('loading');
+    captchaQuestion.textContent = prompt.question || '';
+    captchaQuestion.title = prompt.title || '';
+    if (captchaKind) {
+      var label = CAPTCHA_KIND_LABELS[prompt.kind] || '';
+      captchaKind.textContent = label;
+      captchaKind.hidden = !label;
+    }
+    renderCaptchaOptions(prompt.options);
+  }
+
   function generateLocalCaptchaChallenge() {
+    var roll = Math.floor(Math.random() * 3);
+    if (roll === 0) {
+      var start = Math.floor(Math.random() * 8) + 1;
+      var step = Math.floor(Math.random() * 3) + 1;
+      var series = [start, start + step, start + step * 2, start + step * 3];
+      var next = start + step * 4;
+      return {
+        question: 'What comes next: ' + series.join(', ') + ', ?',
+        answer: String(next),
+        options: numericCaptchaOptions(next),
+        kind: 'sequence'
+      };
+    }
+    if (roll === 1) {
+      var pool = [];
+      while (pool.length < 4) {
+        var candidate = Math.floor(Math.random() * 40) + 1;
+        if (pool.indexOf(candidate) === -1) pool.push(candidate);
+      }
+      var largest = Math.max.apply(null, pool);
+      for (var i = pool.length - 1; i > 0; i--) {
+        var swap = Math.floor(Math.random() * (i + 1));
+        var hold = pool[i];
+        pool[i] = pool[swap];
+        pool[swap] = hold;
+      }
+      return {
+        question: 'Which number is the largest: ' + pool.join(', ') + '?',
+        answer: String(largest),
+        options: pool.map(String),
+        kind: 'compare'
+      };
+    }
     var a = Math.floor(Math.random() * 20) + 10;
     var b = Math.floor(Math.random() * 15) + 5;
     var ops = [
@@ -106,9 +311,12 @@ document.addEventListener('DOMContentLoaded', function () {
     var op = ops[Math.floor(Math.random() * ops.length)];
     if (op.symbol === '-' && b > a) { var tmp = a; a = b; b = tmp; }
     if (op.symbol === 'x') { a = Math.floor(Math.random() * 9) + 2; b = Math.floor(Math.random() * 9) + 2; }
+    var answer = op.fn(a, b);
     return {
       question: 'What is ' + a + ' ' + op.symbol + ' ' + b + '?',
-      answer: String(op.fn(a, b))
+      answer: String(answer),
+      options: numericCaptchaOptions(answer),
+      kind: 'math'
     };
   }
 
@@ -118,9 +326,13 @@ document.addEventListener('DOMContentLoaded', function () {
     captchaVerifiedToken = null;
     captchaAnswer.value = '';
     captchaId.value = '';
-    captchaQuestion.classList.remove('loading');
-    captchaQuestion.textContent = localChallenge.question;
-    captchaQuestion.title = message || 'Using built-in verification';
+    captchaSection.classList.remove('captcha-shake');
+    renderCaptchaPrompt({
+      question: localChallenge.question,
+      options: localChallenge.options,
+      kind: localChallenge.kind,
+      title: message || 'Using built-in verification'
+    });
     captchaSection.style.display = '';
   }
   
@@ -172,6 +384,8 @@ document.addEventListener('DOMContentLoaded', function () {
     captchaQuestion.textContent = 'Loading verification...';
     captchaQuestion.title = '';
     captchaQuestion.classList.add('loading');
+    captchaSection.classList.remove('captcha-shake');
+    clearCaptchaOptions();
     captchaSection.style.display = '';
     if (captchaExpiryTimer) { clearInterval(captchaExpiryTimer); captchaExpiryTimer = null; }
 
@@ -185,10 +399,12 @@ document.addEventListener('DOMContentLoaded', function () {
       
       if (response.ok && data.success && data.challenge) {
         captchaId.value = data.challenge.challenge_id;
-        captchaQuestion.classList.remove('loading');
         if (data.challenge.challenge_type === 'simple') {
-          captchaQuestion.textContent = data.challenge.challenge_question;
-          captchaQuestion.title = '';
+          renderCaptchaPrompt({
+            question: data.challenge.challenge_question,
+            options: data.challenge.options,
+            kind: data.challenge.challenge_kind
+          });
         } else {
           showLocalCaptcha('Advanced CAPTCHA fallback is active');
         }
@@ -210,6 +426,26 @@ document.addEventListener('DOMContentLoaded', function () {
     captchaRefreshBtn.addEventListener('click', function (e) {
       e.preventDefault();
       loadCaptcha();
+    });
+  }
+
+  if (captchaOptions) {
+    captchaOptions.addEventListener('keydown', function (e) {
+      var buttons = Array.prototype.slice.call(captchaOptions.querySelectorAll('.captcha-option'));
+      if (!buttons.length) return;
+      var index = buttons.indexOf(document.activeElement);
+      var next = -1;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        next = (index + 1 + buttons.length) % buttons.length;
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        next = (index - 1 + buttons.length) % buttons.length;
+      }
+      if (next < 0) return;
+      e.preventDefault();
+      buttons.forEach(function (button, buttonIndex) {
+        button.tabIndex = buttonIndex === next ? 0 : -1;
+      });
+      buttons[next].focus();
     });
   }
   
@@ -521,7 +757,9 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!captchaValue) {
         msg.textContent = 'Please complete the verification';
         msg.style.color = '#dc3545';
-        captchaAnswer.focus();
+        var firstOption = captchaOptions && captchaOptions.querySelector('.captcha-option');
+        if (firstOption && captchaSection.classList.contains('is-choice')) firstOption.focus();
+        else captchaAnswer.focus();
         return;
       }
     }
@@ -571,7 +809,19 @@ document.addEventListener('DOMContentLoaded', function () {
           loadCaptcha();
         } else if (/not accepted/i.test(errText)) {
           captchaAnswer.value = '';
-          captchaAnswer.focus();
+          if (captchaOptions) {
+            var chosen = captchaOptions.querySelectorAll('.captcha-option');
+            for (var optionIndex = 0; optionIndex < chosen.length; optionIndex++) {
+              chosen[optionIndex].classList.remove('selected');
+              chosen[optionIndex].setAttribute('aria-checked', 'false');
+            }
+          }
+          captchaSection.classList.remove('captcha-shake');
+          void captchaSection.offsetWidth;
+          captchaSection.classList.add('captcha-shake');
+          var retryOption = captchaOptions && captchaOptions.querySelector('.captcha-option');
+          if (retryOption && captchaSection.classList.contains('is-choice')) retryOption.focus();
+          else captchaAnswer.focus();
         }
       }
       
