@@ -1826,6 +1826,13 @@ class AutomationMetrics:
 # PORTFOLIO SIMULATION ENGINE
 # =============================================================================
 
+# Hard ceiling on acceptance. The simulator's Maximum Age only sets the
+# applicant draw window. A life older than this is declined: it stays in
+# the applied histogram and the declined ledger, and it never enters the
+# accepted book, the premium totals, or the accepted bars. Age 65 itself
+# is still acceptable.
+MAX_ACCEPTANCE_AGE = 65
+
 # Age bands used by the portfolio simulator. Labels match
 # PortfolioSimulator._get_age_bracket so the acceptance matrix reconciles
 # with demographics.age_distribution.
@@ -1858,6 +1865,65 @@ def _normal_bin_count(age: int, mean: float, std: float, n: int) -> float:
     return n * (_std_normal_cdf(hi) - _std_normal_cdf(lo))
 
 
+def sample_simulation_age(
+    age_min: int,
+    age_max: int,
+    mean: float,
+    std: float,
+    distribution: str = 'normal',
+) -> int:
+    """Draw one integer age inside ``[age_min, age_max]``.
+
+    A normal draw used to be clamped onto the nearer endpoint. Every life
+    the distribution wanted to place past Maximum Age landed on that single
+    year, so the Age distribution chart showed extra acceptances on
+    whatever maximum was chosen. Draws outside the window are discarded
+    and redrawn, which keeps the boundary year at its own bin.
+    """
+    lo = int(age_min)
+    hi = int(age_max)
+    if lo > hi:
+        lo, hi = hi, lo
+    if distribution != 'normal':
+        return random.randint(lo, hi)
+    mu = float(mean)
+    sigma = float(std)
+    if sigma <= 0 or lo == hi:
+        return max(lo, min(hi, int(mu)))
+    for _ in range(32):
+        draw = int(random.gauss(mu, sigma))
+        if lo <= draw <= hi:
+            return draw
+    return _sample_truncated_integer_age(mu, sigma, lo, hi)
+
+
+def _sample_truncated_integer_age(mean: float, std: float, age_min: int, age_max: int) -> int:
+    """Inverse-CDF sample on the one-year bins inside the window.
+
+    Used when rejection sampling does not hit the window quickly (the
+    requested ages sit in a thin tail). Weights are the normal bin
+    probabilities, so the sample still cannot pile the whole tail onto
+    the maximum age.
+    """
+    ages = list(range(int(age_min), int(age_max) + 1))
+    weights = [_normal_bin_count(age, mean, std, 1) for age in ages]
+    total = sum(weights)
+    if total <= 0.0:
+        weights = [math.exp(-0.5 * ((age - mean) / std) ** 2) for age in ages]
+        total = sum(weights)
+    if total <= 0.0:
+        return min(ages, key=lambda age: (abs(age - mean), age))
+    roll = random.random() * total
+    acc = 0.0
+    chosen = ages[-1]
+    for age, weight in zip(ages, weights):
+        acc += weight
+        chosen = age
+        if roll <= acc:
+            return age
+    return chosen
+
+
 def finalize_age_adl_matrix(
     cells: Dict[Tuple[str, int], Dict[str, int]],
     age_hist: Dict[int, Dict[str, int]],
@@ -1873,6 +1939,7 @@ def finalize_age_adl_matrix(
     age_std: float,
     age_min: int,
     age_max: int,
+    max_acceptance_age: int = MAX_ACCEPTANCE_AGE,
 ) -> Dict[str, Any]:
     """Turn per-applicant tallies into the age × ADL acceptance matrix.
 
@@ -1888,6 +1955,8 @@ def finalize_age_adl_matrix(
     accepted_by_band: Dict[str, int] = {}
     accepted_by_adl: Dict[int, int] = {level: 0 for level in adl_levels}
     cell_identity_ok = True
+    reason_split_ok = True
+    acceptance_cap = int(max_acceptance_age)
 
     for label, lo, hi in AGE_ADL_BANDS:
         by_adl: Dict[str, Dict[str, int]] = {}
@@ -1899,16 +1968,45 @@ def finalize_age_adl_matrix(
             rejected = int(raw.get('rejected', 0))
             if applied != accepted + rejected:
                 cell_identity_ok = False
-            by_adl[str(level)] = {
+            has_reason_split = 'rejected_age' in raw or 'rejected_adl' in raw
+            rejected_age = int(raw.get('rejected_age', 0))
+            rejected_adl = int(raw.get('rejected_adl', 0))
+            if has_reason_split and rejected_age + rejected_adl != rejected:
+                reason_split_ok = False
+            slot = {
                 'applied': applied,
                 'accepted': accepted,
                 'rejected': rejected,
             }
+            if has_reason_split:
+                slot['rejected_age'] = rejected_age
+                slot['rejected_adl'] = rejected_adl
+            by_adl[str(level)] = slot
             band_applied += applied
             band_accepted += accepted
             band_rejected += rejected
             accepted_by_adl[level] += accepted
             if rejected > 0:
+                if has_reason_split:
+                    parts = []
+                    if rejected_age > 0:
+                        parts.append(
+                            f'Age exceeds maximum acceptance age {acceptance_cap}'
+                        )
+                    if rejected_adl > 0:
+                        if level >= int(decline_threshold):
+                            parts.append(
+                                f'ADL {level} meets or exceeds decline threshold {int(decline_threshold)}'
+                            )
+                        else:
+                            parts.append(f'ADL {level} declined')
+                    reason = '; '.join(parts) if parts else f'ADL {level} declined'
+                else:
+                    reason = (
+                        f'ADL {level} meets or exceeds decline threshold {int(decline_threshold)}'
+                        if level >= int(decline_threshold)
+                        else f'ADL {level} declined'
+                    )
                 rejected_rows.append({
                     'age_band': label,
                     'age_min': lo,
@@ -1917,11 +2015,7 @@ def finalize_age_adl_matrix(
                     'applied': applied,
                     'accepted': accepted,
                     'rejected': rejected,
-                    'reason': (
-                        f'ADL {level} meets or exceeds decline threshold {int(decline_threshold)}'
-                        if level >= int(decline_threshold)
-                        else f'ADL {level} declined'
-                    ),
+                    'reason': reason,
                 })
         if band_applied <= 0:
             continue
@@ -2023,6 +2117,11 @@ def finalize_age_adl_matrix(
         'accepted_matches_age_distribution': age_demo_ok,
         'accepted_matches_adl_distribution': adl_demo_ok,
         'rejected_rows_sum_to_declined': sum(row['rejected'] for row in rejected_rows) == sum_rejected,
+        'accepted_ages_at_or_under_cap': all(
+            int(row['accepted']) == 0 or int(row['age']) <= acceptance_cap
+            for row in histogram
+        ),
+        'rejection_reasons_partition_rejections': reason_split_ok,
     }
     active_adls = [
         level for level in adl_levels
@@ -2031,6 +2130,7 @@ def finalize_age_adl_matrix(
 
     return {
         'decline_threshold': int(decline_threshold),
+        'max_acceptance_age': acceptance_cap,
         'adl_levels': active_adls,
         'bands': by_band,
         'rejected': rejected_rows,
@@ -2046,6 +2146,7 @@ def finalize_age_adl_matrix(
                 'age_std': float(age_std),
                 'age_min': int(age_min),
                 'age_max': int(age_max),
+                'max_acceptance_age': acceptance_cap,
             },
             'sample': {
                 'n': n,
@@ -2057,11 +2158,15 @@ def finalize_age_adl_matrix(
             },
             'curve_basis': 'normal_fitted_to_sample_mean_and_sample_std',
             'curve_note': (
-                'Each draw is taken from the selected age distribution and then '
-                'clamped to [age_min, age_max]. The bell is a normal curve fitted '
+                'Each draw is taken from the selected age distribution and kept '
+                'only when it falls inside [age_min, age_max]. Draws outside that '
+                'window are resampled, so the tail beyond the maximum age is not '
+                'piled onto that single year. The bell is a normal curve fitted '
                 'to the ages actually produced in this run (sample mean and sample '
                 'standard deviation), scaled so each point is the expected count '
-                'in that one-year bin. It describes this run; it is not a second book of lives.'
+                'in that one-year bin. It describes this run; it is not a second book of lives. '
+                f'Lives older than {acceptance_cap} are declined and are not accepted, '
+                'even when age_max is higher.'
             ),
             'histogram': histogram,
             'normal_curve': normal_curve,
@@ -2221,7 +2326,10 @@ class PortfolioSimulator:
             age_years = int(customer['age'])
             cell = age_adl_cells.get((band, adl_level))
             if cell is None:
-                cell = {'applied': 0, 'accepted': 0, 'rejected': 0}
+                cell = {
+                    'applied': 0, 'accepted': 0, 'rejected': 0,
+                    'rejected_age': 0, 'rejected_adl': 0,
+                }
                 age_adl_cells[(band, adl_level)] = cell
             hist = age_hist.get(age_years)
             if hist is None:
@@ -2240,6 +2348,10 @@ class PortfolioSimulator:
                 declined['reasons'][reason] = declined['reasons'].get(reason, 0) + 1
                 cell['rejected'] += 1
                 hist['rejected'] += 1
+                if uw_result.get('reason_code') == 'age':
+                    cell['rejected_age'] += 1
+                else:
+                    cell['rejected_adl'] += 1
                 continue
             cell['accepted'] += 1
             hist['accepted'] += 1
@@ -2416,6 +2528,7 @@ class PortfolioSimulator:
             age_std=float(params.age_std),
             age_min=int(params.age_min),
             age_max=int(params.age_max),
+            max_acceptance_age=MAX_ACCEPTANCE_AGE,
         )
 
         result = {
@@ -2561,12 +2674,16 @@ class PortfolioSimulator:
     
     def _generate_customer(self, params: SimulationParams) -> Dict:
         """Generate a single customer with random demographics"""
-        # Age
-        if params.age_distribution == 'normal':
-            age = int(random.gauss(params.age_mean, params.age_std))
-            age = max(params.age_min, min(params.age_max, age))
-        else:
-            age = random.randint(params.age_min, params.age_max)
+        # Age. Resample outside the window; do not clamp onto age_max.
+        # Clamping piled the right-hand tail onto Maximum Age and made that
+        # year look more accepted than the ages next to it.
+        age = sample_simulation_age(
+            params.age_min,
+            params.age_max,
+            params.age_mean,
+            params.age_std,
+            params.age_distribution,
+        )
         
         # Coverage
         if params.coverage_distribution == 'log_normal':
@@ -2646,10 +2763,25 @@ class PortfolioSimulator:
         config = self.tables.config
         adl = customer['adl']
         coverage = customer['coverage']
-        
+        age = int(customer['age'])
+
+        # Acceptance stops at MAX_ACCEPTANCE_AGE even when the simulation
+        # draw window (age_max) extends past it. The life is still counted
+        # as applied and as declined.
+        if age > MAX_ACCEPTANCE_AGE:
+            return {
+                'accepted': False,
+                'reason': f'Age exceeds maximum acceptance age {MAX_ACCEPTANCE_AGE}',
+                'reason_code': 'age',
+            }
+
         # Check ADL threshold
         if adl >= config.decline_threshold:
-            return {'accepted': False, 'reason': f'ADL {adl} exceeds threshold {config.decline_threshold}'}
+            return {
+                'accepted': False,
+                'reason': f'ADL {adl} exceeds threshold {config.decline_threshold}',
+                'reason_code': 'adl',
+            }
         
         # Check coverage limits
         if adl in config.coverage_limits:
@@ -2668,7 +2800,8 @@ class PortfolioSimulator:
         return {
             'accepted': True,
             'loading': loading,
-            'exclude_disability': exclude_disability
+            'exclude_disability': exclude_disability,
+            'reason_code': 'accepted',
         }
     
     def _calculate_premium(self, customer: Dict, uw_result: Dict,
