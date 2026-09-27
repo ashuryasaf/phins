@@ -169,9 +169,7 @@ def test_totals_match_the_books():
     assert outline["underwriting"]["rejected"] == 1
     assert outline["underwriting"]["risk_bands"]["low"] == 1
     assert outline["underwriting"]["risk_bands"]["76_100"] == 1
-    assert outline["underwriting"]["internal_score_mean"] is None
-    assert outline["underwriting"]["internal_score_assessed_count"] == 0
-    assert outline["underwriting"]["internal_score_is_average"] is False
+    assert outline["policies"]["coverage_active"] == 70000
 
 
 def test_basic_premiums_follow_the_active_kernel_version():
@@ -183,16 +181,22 @@ def test_basic_premiums_follow_the_active_kernel_version():
     assert {row["config_version"] for row in rows} == {store.config.config_version}
     assert all(row["annual_premium"] > 0 for row in rows)
     premiums = first["pricing"]["basic_premiums"]
-    assert premiums["adl_level"] == 5
-    assert premiums["adl_basis"] == "kernel_score_input"
-    assert premiums["adl_label"] == "Internal score 5 (×1.0 multipliers; not the average)"
-    assert "Baseline" not in premiums["adl_label"]
-    assert premiums["adl_is_health_status"] is False
-    assert premiums["internal_score_is_average"] is False
-    assert "not assumed to be the average" in premiums["internal_score_disclaimer"]
-    assert {row["adl_is_health_status"] for row in rows} == {False}
-    assert {row["internal_score_is_average"] for row in rows} == {False}
-    assert {row["adl_level"] for row in rows} == {5}
+    assert premiums["product_id"] == "phins_pure_risk_adjustable"
+    assert premiums["coverage"] == 100000
+    assert premiums["term_years"] == 20
+    assert "adl_level" not in premiums
+    assert "internal_score_disclaimer" not in premiums
+    assert "adl_level" not in rows[0]
+    disability = first["pricing"]["rate_bands"]["disability_incidence_rates"]
+    source_disability = store.get_current_tables()["disability_incidence_rates"]
+    assert [row["rate_per_1000"] for row in disability] == [
+        row["rate_per_1000"] for row in source_disability
+    ]
+    assert [row["age_min"] for row in disability] == [row["age_min"] for row in source_disability]
+    published = str(first).lower()
+    assert "internal underwriting score" not in published
+    assert "fully disabled" not in published
+    assert "not the average" not in published
     age_40 = rows[1]["annual_premium"]
 
     band = next(
@@ -206,73 +210,71 @@ def test_basic_premiums_follow_the_active_kernel_version():
     assert second["pricing"]["current_version"] == store.current_version
 
 
-def test_underwriting_mean_stays_below_the_strict_decline_line():
-    """ADL 6+ (strict) declines new applications. Those scores are not the average."""
-    from services.regulator_outline import aggregate_underwriting
+def test_outline_omits_underwriting_score_detail_and_keeps_the_tariff():
+    from services.pricing_kernel import (
+        PricingCustomer,
+        get_product,
+        price_policy,
+        pricing_config_from_underwriting,
+        table_set_from_store,
+    )
 
-    totals = aggregate_underwriting([
-        {"status": "approved", "adl_level": 5},
-        {"status": "approved", "adl_level": 5, "adl_level_source": "unspecified_baseline"},
-        {"status": "approved", "adl_level": 8, "adl_level_source": "stated"},
-        {"status": "pending", "daily_function": "full"},
-        {"status": "approved", "adl_level": 10, "adl_level_source": "stated"},
-        {"status": "approved", "adl_level": 2, "adl_level_source": "stated"},
-        {"status": "rejected", "adl_level": 1, "adl_level_source": "stated"},
-    ], decline_threshold=6)
-    # Trusted assessments: 8, 1 (full), 10, 2, and the rejected 1.
-    assert totals["decline_threshold"] == 6
-    assert totals["accepted_score_ceiling"] == 5
-    assert totals["internal_score_assessed_count"] == 5
-    # 8 and 10 are declined by the strict rule. The rejected 1 is not in the book.
-    assert totals["internal_score_declined_by_rule"] == 2
-    assert totals["internal_score_accepted_count"] == 2
-    assert totals["internal_score_mean"] == round((1 + 2) / 2, 4)
-    assert totals["internal_score_mean"] < 5
-    assert totals["internal_score_mean"] < totals["decline_threshold"]
-    assert totals["internal_score_is_average"] is True
-    assert "below that line" in totals["internal_score_disclaimer"]
-
-    only_declined = aggregate_underwriting([
-        {"status": "approved", "adl_level": 8, "adl_level_source": "stated"},
-        {"status": "approved", "adl_level": 10, "adl_level_source": "stated"},
-    ], decline_threshold=6)
-    assert only_declined["internal_score_mean"] is None
-    assert only_declined["internal_score_is_average"] is False
-    assert only_declined["internal_score_declined_by_rule"] == 2
-
-    empty = aggregate_underwriting([
-        {"status": "approved", "risk_assessment": "medium"},
-        {"status": "approved", "adl_level": 5, "adl_level_source": "unspecified_baseline"},
-    ], decline_threshold=6)
-    assert empty["internal_score_mean"] is None
-    assert empty["internal_score_assessed_count"] == 0
-    assert empty["internal_score_is_average"] is False
-
-
-def test_outline_uses_the_configured_decline_threshold():
     store = _store()
-    store.config.decline_threshold = 6
     outline = build_regulator_outline(
         actuarial_store=store,
-        underwriting=[
-            {"status": "approved", "adl_level": 4, "adl_level_source": "stated"},
-            {"status": "approved", "adl_level": 1, "adl_level_source": "stated"},
-            {"status": "approved", "adl_level": 9, "adl_level_source": "stated"},
-        ],
+        policies=[{
+            "type": "life",
+            "status": "active",
+            "annual_premium": 100,
+            "coverage_amount": 250000,
+        }, {
+            "type": "life",
+            "status": "lapsed",
+            "annual_premium": 80,
+            "coverage_amount": 900000,
+        }],
+        underwriting=[{
+            "status": "approved",
+            "adl_level": 8,
+            "adl_level_source": "stated",
+            "risk_assessment": "low",
+        }],
     )
-    uw = outline["underwriting"]
-    assert uw["decline_threshold"] == 6
-    assert uw["accepted_score_ceiling"] == 5
-    assert uw["internal_score_mean"] == 2.5
-    assert uw["internal_score_mean"] < 5
-    assert uw["internal_score_declined_by_rule"] == 1
-    premiums = outline["pricing"]["basic_premiums"]
-    assert premiums["decline_threshold"] == 6
-    assert premiums["accepted_score_ceiling"] == 5
-    assert premiums["adl_level"] == 5
-    assert premiums["illustration_score_is_ceiling"] is True
-    assert premiums["internal_score_is_average"] is False
-    assert premiums["rows"][1]["annual_premium"] > 0
+    assert outline["policies"]["coverage_active"] == 250000
+    assert outline["underwriting"]["approved"] == 1
+    assert "internal_score_mean" not in outline["underwriting"]
+    assert "decline_threshold" not in outline["pricing"]["rules_in_force"]
+    priced = price_policy(
+        PricingCustomer(age=40, coverage=100000, term_years=20, adl_level=5, smoking_status="nonsmoker"),
+        get_product("phins_pure_risk_adjustable"),
+        table_set_from_store(store),
+        pricing_config_from_underwriting(store.config),
+    )
+    age_40 = outline["pricing"]["basic_premiums"]["rows"][1]["annual_premium"]
+    assert age_40 == round(priced.annual_premium, 2)
+
+
+def test_regulator_dashboard_captions_omit_score_detail():
+    """The published view describes each chart in one sentence and keeps scores off it."""
+    page = os.path.join(
+        os.path.dirname(__file__), "..", "web_portal", "static", "regulator-dashboard.html"
+    )
+    text = open(page, encoding="utf-8").read().lower()
+    for needle in (
+        "internal underwriting score",
+        "fully disabled",
+        "not the average",
+        "highest score still accepted",
+        "decline line",
+        "adl 6+",
+    ):
+        assert needle not in text
+    assert "total coverage" in text
+    assert "policies.coverage_active" in text
+    assert "basic disability rates" in text
+    assert "disability_incidence_rates" in text
+    assert "underwriting decisions by status." in text
+    assert "not a customer quote." in text
 
 
 def test_divergent_books_are_refused():
