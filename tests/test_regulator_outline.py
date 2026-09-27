@@ -222,6 +222,45 @@ def test_open_claims_match_the_claims_dashboard_set():
     assert totals["claimed_amount"] == 115
 
 
+def test_claims_paid_follows_the_admin_total_paid_out():
+    """Admin Claims Paid is ledger cash, not the approved amount on paid files."""
+    books = _books()
+    books["ledger"] = {
+        "ledger_premium_collected": 0,
+        "ledger_claims_paid": 127450,
+        "accounting_premium_posted": 0,
+        "accounting_claims_posted": 708950,
+        "economic_claims_reserve": 0,
+    }
+    books["canonical"]["ledger_claims_paid"] = 127450
+    outline = build_regulator_outline(
+        actuarial_store=_store(),
+        policies=books["policies"],
+        claims=books["claims"],
+        underwriting=books["underwriting"],
+        health_wallets=books["health_wallets"],
+        investment_accounts=books["investment_accounts"],
+        agents=books["agents"],
+        commissions=books["commissions"],
+        ledger=books["ledger"],
+        canonical=books["canonical"],
+    )
+    assert outline["claims"]["disbursed_amount"] == 250
+    assert outline["claims"]["paid_out"] == 127450
+    assert outline["books"]["ledger_claims_paid"] == 127450
+    assert outline["claims_loss_ratio"] == round(127450 / 2000, 2)
+
+    books["canonical"]["ledger_claims_paid"] = 708950
+    with pytest.raises(RegulatorIntegrityError):
+        build_regulator_outline(
+            actuarial_store=_store(),
+            policies=books["policies"],
+            claims=books["claims"],
+            ledger=books["ledger"],
+            canonical=books["canonical"],
+        )
+
+
 def test_billing_and_aum_must_match_the_canonical_books():
     books = _books()
     books["billing"] = [{
@@ -299,7 +338,12 @@ def test_live_outline_matches_admin_accounting_and_billing_books():
     assert outline["billing"]["total_billed"] == metrics["total_billed"]
     assert outline["billing"]["total_collected"] == metrics["total_collected"]
     assert outline["billing"]["outstanding_balance"] == metrics["outstanding_balance"]
+    assert outline["claims"]["paid_out"] == metrics["ledger_claims_paid"]
     assert outline["books"]["ledger_claims_paid"] == metrics["ledger_claims_paid"]
+    assert outline["claims_loss_ratio"] == round(
+        (metrics["ledger_claims_paid"] / metrics["total_revenue"]) if metrics["total_revenue"] else 0.0,
+        2,
+    )
     assert outline["books"]["ledger_premium_collected"] == metrics["ledger_premium_collected"]
     assert outline["integrity"]["reconciled"] is True
 

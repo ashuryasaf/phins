@@ -418,7 +418,7 @@
       document.getElementById('summary').innerHTML = [
         ['Kernel version', pricing.current_version || '—', pricing.config_version || ''],
         ['Active premium', money(policies.annual_premium_active), 'annual, in force'],
-        ['Claims disbursed', money(claims.disbursed_amount), (claims.pending || 0) + ' open'],
+        ['Claims paid', money(books.ledger_claims_paid), 'Total paid out'],
         ['Investments', money(inv.assets_under_management), 'assets under management'],
         ['Billing outstanding', money(billing.outstanding_balance), money(billing.total_collected) + ' collected'],
         ['Health wallets', money(health.wallet_balance), (health.health_policies || 0) + ' health policies'],
@@ -454,16 +454,16 @@
         '<h2>Risk bands</h2><table><thead><tr><th>Band</th><th>Count</th></tr></thead><tbody>' + pairs(uw.risk_bands) + '</tbody></table></div></div>';
 
       document.getElementById('claims').innerHTML =
-        '<h2>Claims in total</h2><p class="sub">Disbursed claims and pending liability use the same open set as the claims dashboard and accounting BI. Loss ratio on disbursed paid claims / active premium: ' + esc(data.claims_loss_ratio) + '. Ledger claims paid is the cash figure on billing stats.</p>' +
+        '<h2>Claims in total</h2><p class="sub">Claims paid is the admin balance-sheet total paid out: customer-ledger cash. Approved amounts on paid claim files are a separate record total. Open claims are pending and under review. Loss ratio on claims paid / active premium: ' + esc(data.claims_loss_ratio) + '.</p>' +
         '<div class="split"><div><div class="chart-box"><canvas id="chart-claims"></canvas></div></div><div>' +
         '<table><thead><tr><th>Measure</th><th>Value</th></tr></thead><tbody>' +
+        '<tr><td>Claims paid</td><td>' + money(claims.paid_out != null ? claims.paid_out : books.ledger_claims_paid) + '</td></tr>' +
         '<tr><td>Count</td><td>' + esc(claims.total) + '</td></tr>' +
         '<tr><td>Open claims</td><td>' + esc(claims.pending) + '</td></tr>' +
         '<tr><td>Claimed</td><td>' + money(claims.claimed_amount) + '</td></tr>' +
-        '<tr><td>Disbursed</td><td>' + money(claims.disbursed_amount) + '</td></tr>' +
-        '<tr><td>Paid or closed</td><td>' + money(claims.paid_amount) + '</td></tr>' +
+        '<tr><td>Approved on paid records</td><td>' + money(claims.disbursed_amount) + '</td></tr>' +
+        '<tr><td>Paid or closed records</td><td>' + money(claims.paid_amount) + '</td></tr>' +
         '<tr><td>Pending liability</td><td>' + money(claims.pending_liability) + '</td></tr>' +
-        '<tr><td>Ledger claims paid</td><td>' + money(books.ledger_claims_paid) + '</td></tr>' +
         '</tbody></table><h2>By status</h2><table><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>' +
         pairs(claims.by_status) + '</tbody></table></div></div>';
 
@@ -516,7 +516,7 @@
         '<tr><td>Open bills</td><td>' + esc(billing.pending_count) + '</td></tr>' +
         '<tr><td>Overdue bills</td><td>' + esc(billing.overdue_count) + '</td></tr>' +
         '<tr><td>Ledger premium collected</td><td>' + money(books.ledger_premium_collected) + '</td></tr>' +
-        '<tr><td>Ledger claims paid</td><td>' + money(books.ledger_claims_paid) + '</td></tr>' +
+        '<tr><td>Claims paid</td><td>' + money(books.ledger_claims_paid) + '</td></tr>' +
         '<tr><td>Premium posted</td><td>' + money(books.accounting_premium_posted) + '</td></tr>' +
         '<tr><td>Claims posted</td><td>' + money(books.accounting_claims_posted) + '</td></tr>' +
         '<tr><td>Economic claims reserve</td><td>' + money(books.economic_claims_reserve) + '</td></tr>' +
