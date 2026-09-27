@@ -9,12 +9,10 @@ Provides comprehensive financial reporting with:
 - Data integrity validation (bottom-up)
 - Cross-dashboard data validation
 
-ADL Levels (Activities of Daily Living):
-- Level 1: Independent (lowest risk)
-- Level 2-3: Mild impairment
-- Level 4-5: Moderate impairment (medium risk)
-- Level 6-7: Severe impairment
-- Level 8+: Total dependence (highest risk)
+ADL bands follow the published actuary scale (see services.adl_mapping).
+Level 5 is "Baseline (Medium)": mortality ×1.0 and disability incidence ×1.0.
+It is the pricing baseline, not a default health finding and not
+"significant assistance". A missing assessment stays unassessed.
 """
 
 from datetime import datetime, timedelta
@@ -829,6 +827,8 @@ class FinancialReportingService:
                 'savings_allocation': f"{savings_pct * 100}%",
                 'adl_level': adl_level,
                 'adl_risk': self._get_adl_description(adl_level),
+                'adl_basis': 'scenario_input',
+                'adl_is_health_status': False,
                 'term_years': term_years,
                 'customer_age': age
             },
@@ -846,20 +846,9 @@ class FinancialReportingService:
         }
     
     def _get_adl_description(self, adl_level: int) -> str:
-        """Get human-readable ADL description"""
-        descriptions = {
-            1: 'Fully Independent (Very Low Risk)',
-            2: 'Independent with Supervision (Low Risk)',
-            3: 'Minimal Assistance (Low-Medium Risk)',
-            4: 'Moderate Assistance (Medium Risk)',
-            5: 'Significant Assistance (Medium Risk)',
-            6: 'Extensive Assistance (Medium-High Risk)',
-            7: 'Maximum Assistance (High Risk)',
-            8: 'Total Dependence - Some Areas (High Risk)',
-            9: 'Total Dependence - Most Areas (Very High Risk)',
-            10: 'Complete Dependence (Highest Risk)'
-        }
-        return descriptions.get(adl_level, 'Unknown')
+        """Published band name. Level 5 is the pricing baseline, not an impairment."""
+        from services.adl_mapping import published_adl_label
+        return published_adl_label(adl_level)
     
     def _calculate_age(self, dob: str) -> int:
         """Calculate age from date of birth string"""
@@ -893,14 +882,10 @@ class FinancialReportingService:
             'details': []
         }
         
-        # Map risk_score to ADL level (same as server.py)
-        RISK_TO_ADL_MAP = {
-            'low': 3,
-            'medium': 5,
-            'high': 7,
-            'very_high': 9,
-        }
-        
+        # A risk band is not an ADL finding. "medium" must not be reported
+        # as clinical ADL 5. Only a resolved clinical level is a health status.
+        from services.adl_mapping import SOURCE_UNSPECIFIED, resolve_adl_evidence
+
         # 1. Policy validation with actuarial checks
         for policy_id, policy in self._policies.items():
             # Check required fields
@@ -924,44 +909,52 @@ class FinancialReportingService:
                 customer = self._customers.get(customer_id, {})
                 age = self._calculate_age(customer.get('dob'))
                 
-                # Get risk score and convert to ADL
                 risk_score = policy.get('risk_score', 'medium')
-                adl_level = RISK_TO_ADL_MAP.get(risk_score, 5)
+                resolution = resolve_adl_evidence(
+                    adl_level=policy.get('adl_level'),
+                    adl_level_source=policy.get('adl_level_source'),
+                    daily_function=policy.get('daily_function'),
+                    health_score=policy.get('health_score'),
+                )
+                clinical_adl = (
+                    None
+                    if resolution.source == SOURCE_UNSPECIFIED
+                    else resolution.clinical_level
+                )
                 
                 # Get coverage and premium
                 coverage = policy.get('coverage_amount', 0)
                 stored_premium = policy.get('annual_premium', 0)
                 
-                # Calculate expected premium using actuarial tables
+                # Premium-ratio check uses the issued premium and coverage only.
+                # It does not invent an ADL multiplier from the risk band.
                 if coverage > 0 and stored_premium > 0:
-                    # Simple check: premium should be proportional to coverage and risk
                     expected_ratio = stored_premium / coverage  # Premium per dollar of coverage
-                    adl_mult = self.get_adl_multiplier(adl_level)
                     
                     # Expected ratio should be higher for older/higher-risk customers
                     # Typical range: 0.002 (low risk) to 0.015 (high risk)
                     min_expected_ratio = 0.001
                     max_expected_ratio = 0.02
+                    detail = {
+                        'policy_id': policy_id,
+                        'risk_score': risk_score,
+                        'adl_level': clinical_adl,
+                        'adl_basis': resolution.source,
+                        'adl_is_health_status': clinical_adl is not None,
+                        'premium_ratio': round(expected_ratio, 6),
+                    }
                     
                     if min_expected_ratio <= expected_ratio <= max_expected_ratio:
                         actuarial_checks['passed'] += 1
-                        actuarial_checks['details'].append({
-                            'policy_id': policy_id,
-                            'status': 'PASS',
-                            'risk_score': risk_score,
-                            'adl_level': adl_level,
-                            'premium_ratio': round(expected_ratio, 6)
-                        })
+                        detail['status'] = 'PASS'
+                        actuarial_checks['details'].append(detail)
                     else:
                         actuarial_checks['failed'] += 1
-                        actuarial_checks['details'].append({
-                            'policy_id': policy_id,
-                            'status': 'REVIEW',
-                            'risk_score': risk_score,
-                            'adl_level': adl_level,
-                            'premium_ratio': round(expected_ratio, 6),
-                            'note': f"Premium ratio {expected_ratio:.4f} outside expected range"
-                        })
+                        detail['status'] = 'REVIEW'
+                        detail['note'] = (
+                            f"Premium ratio {expected_ratio:.4f} outside expected range"
+                        )
+                        actuarial_checks['details'].append(detail)
                         warnings.append(f"Policy {policy_id}: Premium ratio may need actuarial review")
         
         # 2. Billing validation

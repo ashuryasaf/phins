@@ -6720,7 +6720,7 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
     total_risk_premium = 0
     total_savings_premium = 0
     active_policies = []
-    from services.adl_mapping import clamp_adl
+    from services.adl_mapping import SOURCE_UNSPECIFIED, resolve_adl_evidence
     from services.financial_unification_service import kernel_components_from_policy
     
     for policy in POLICIES.values():
@@ -6730,7 +6730,17 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
             policy_type = policy.get('type', 'life')
             
             risk_score = policy.get('risk_score', 'medium')
-            adl_level = clamp_adl(policy.get('adl_level'))
+            resolved_adl = resolve_adl_evidence(
+                adl_level=policy.get('adl_level'),
+                adl_level_source=policy.get('adl_level_source'),
+                daily_function=policy.get('daily_function'),
+                health_score=policy.get('health_score'),
+            )
+            adl_level = (
+                None
+                if resolved_adl.source == SOURCE_UNSPECIFIED
+                else resolved_adl.clinical_level
+            )
 
             # Issued premium is the identity. Prefer the kernel pin on the
             # policy (or its snapshot). Never re-price through the quote
@@ -23643,6 +23653,31 @@ For claims or questions, please contact:
                 files_count = sum(1 for f in UNDERWRITING_FILES.values() if f.get('application_id') == app_id)
                 enriched['files_count'] = files_count
                 enriched['has_documents'] = files_count > 0
+
+                # Show a clinical ADL only. A stored pricing baseline (often 5)
+                # stays on the issued row and is not presented as health status.
+                # Issued premiums are not rewritten.
+                try:
+                    from services.adl_mapping import (
+                        SOURCE_UNSPECIFIED,
+                        resolve_application_adl,
+                    )
+                    questionnaire = coerce_json_container(
+                        app.get('questionnaire_responses') or app.get('questionnaire') or {},
+                        {},
+                    )
+                    if not isinstance(questionnaire, dict):
+                        questionnaire = {}
+                    resolved = resolve_application_adl(app, questionnaire)
+                    enriched['adl_level_source'] = resolved.source
+                    enriched['adl_pricing_level'] = resolved.pricing_level
+                    enriched['adl_legacy_corrected'] = resolved.legacy_corrected
+                    if resolved.source == SOURCE_UNSPECIFIED or resolved.clinical_level is None:
+                        enriched['adl_level'] = None
+                    else:
+                        enriched['adl_level'] = resolved.clinical_level
+                except Exception:
+                    pass
                 
                 # Ensure application/issuance date is set (for pipeline integrity)
                 if not enriched.get('application_date'):
@@ -23751,6 +23786,10 @@ For claims or questions, please contact:
                 adl_level = _risk_inputs.get("adl_level")
                 adl_source = _risk_inputs.get("adl_level_source")
                 adl_legacy_corrected = bool(_risk_inputs.get("adl_legacy_corrected"))
+                # The priced baseline is not a health finding. Drop it before
+                # the rationale, the factors, and the report payload are built.
+                if adl_source == "unspecified_baseline":
+                    adl_level = None
 
                 age_risk = _assessment.get("age_risk") or 0
                 medical_risk = _assessment.get("medical_risk") or 0

@@ -82,10 +82,34 @@ CLEAN_HEALTH_MIN_100 = 80
 
 PRICING_BASELINE_ADL = 5
 
+# Published names from the actuary dashboard. Level 5 is the multiplier
+# baseline (mortality ×1.0, disability incidence ×1.0), not "significant
+# assistance" and not a default health finding.
+PUBLISHED_ADL_LABELS = {
+    1: "Fully Independent",
+    2: "Minor Assistance",
+    3: "Mild Impairment",
+    4: "Moderate Assistance",
+    5: "Baseline (Medium)",
+    6: "Significant Help",
+    7: "Major Impairment",
+    8: "Severe Impairment",
+    9: "Near Total Dependence",
+    10: "Total Dependence",
+}
+
 SOURCE_STATED = "stated"
 SOURCE_DAILY_FUNCTION = "daily_function"
 SOURCE_HEALTH_SCORE = "health_score"
 SOURCE_UNSPECIFIED = "unspecified_baseline"
+
+
+def published_adl_label(level: Any) -> str:
+    """Return the published band name, or ``Unknown`` when the level is junk."""
+    parsed = clamp_adl(level)
+    if parsed is None:
+        return "Unknown"
+    return PUBLISHED_ADL_LABELS.get(parsed, "Unknown")
 
 
 @dataclass(frozen=True)
@@ -176,6 +200,10 @@ def resolve_adl_evidence(
         return AdlResolution(mapped, mapped, SOURCE_DAILY_FUNCTION, False)
 
     if explicit is not None:
+        if source_hint == SOURCE_UNSPECIFIED:
+            # The row already says this number is the priced baseline.
+            # Do not promote it back into a clinical finding on read.
+            return AdlResolution(None, explicit, SOURCE_UNSPECIFIED, False)
         origin = source_hint or SOURCE_STATED
         return AdlResolution(explicit, explicit, origin, False)
 

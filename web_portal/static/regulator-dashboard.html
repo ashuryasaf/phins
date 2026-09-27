@@ -440,7 +440,10 @@
         '<h2>Pricing kernel</h2>' +
         '<p class="sub">Published standard nonsmoker tariff on ' + esc((pricing.basic_premiums || {}).product_id) +
         ', coverage ' + money((pricing.basic_premiums || {}).coverage) + ', term ' + esc((pricing.basic_premiums || {}).term_years) +
-        ' years, ADL ' + esc((pricing.basic_premiums || {}).adl_level) + '. Not a customer quote.</p>' +
+        ' years. Priced on the published baseline band (' +
+        esc((pricing.basic_premiums || {}).adl_label || 'Baseline (Medium)') +
+        ', actuarial ADL ' + esc((pricing.basic_premiums || {}).adl_level) +
+        ', multipliers ×1.0). Not a recorded health status. Not a customer quote.</p>' +
         '<div class="split"><div><div class="chart-box"><canvas id="chart-pricing"></canvas></div></div>' +
         '<div><table><thead><tr><th>Age</th><th>Annual</th><th>Monthly</th><th>Risk premium</th><th>Version</th></tr></thead><tbody>' +
         premiumRows + '</tbody></table></div></div>' +

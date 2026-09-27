@@ -2431,14 +2431,15 @@
                         html += `<h4>Policy Actuarial Details</h4>
                         <div style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 8px;">
                             <table style="margin: 0;">
-                                <thead><tr><th>Policy ID</th><th>Risk Score</th><th>ADL Level</th><th>Premium Ratio</th><th>Status</th></tr></thead>
+                                <thead><tr><th>Policy ID</th><th>Risk Score</th><th>Assessed ADL</th><th>Premium Ratio</th><th>Status</th></tr></thead>
                                 <tbody>`;
                         av.details.forEach(d => {
                             const statusColor = d.status === 'PASS' ? '#28a745' : '#ffc107';
+                            const adlShown = (d.adl_is_health_status && d.adl_level != null) ? d.adl_level : 'Not assessed';
                             html += `<tr>
                                 <td>${d.policy_id}</td>
                                 <td>${d.risk_score}</td>
-                                <td>${d.adl_level}</td>
+                                <td>${adlShown}</td>
                                 <td>${(d.premium_ratio * 100).toFixed(4)}%</td>
                                 <td style="color: ${statusColor}; font-weight: 600;">${d.status}</td>
                             </tr>`;
@@ -3482,14 +3483,15 @@
                         html += `<h4>Policy Actuarial Details</h4>
                         <div style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 8px;">
                             <table style="margin: 0;">
-                                <thead><tr><th>Policy ID</th><th>Risk Score</th><th>ADL Level</th><th>Premium Ratio</th><th>Status</th></tr></thead>
+                                <thead><tr><th>Policy ID</th><th>Risk Score</th><th>Assessed ADL</th><th>Premium Ratio</th><th>Status</th></tr></thead>
                                 <tbody>`;
                         av.details.forEach(d => {
                             const statusColor = d.status === 'PASS' ? '#28a745' : '#ffc107';
+                            const adlShown = (d.adl_is_health_status && d.adl_level != null) ? d.adl_level : 'Not assessed';
                             html += `<tr>
                                 <td>${d.policy_id}</td>
                                 <td>${d.risk_score}</td>
-                                <td>${d.adl_level}</td>
+                                <td>${adlShown}</td>
                                 <td>${(d.premium_ratio * 100).toFixed(4)}%</td>
                                 <td style="color: ${statusColor}; font-weight: 600;">${d.status}</td>
                             </tr>`;

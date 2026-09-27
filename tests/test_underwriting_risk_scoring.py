@@ -408,3 +408,66 @@ class TestReportParity:
         assert portal.POLICIES[pol_id]["annual_premium"] == before["annual_premium"]
         assert portal.POLICIES[pol_id]["adl_level"] == 5
         assert report["medical_assessment"]["conditions"] == []
+
+    def test_unspecified_baseline_is_not_shown_as_adl_five(self):
+        """A stored pricing baseline must not appear as a health status.
+
+        The issued premium and the stored ADL column stay as written.
+        """
+        import web_portal.server as portal
+
+        headers = self._admin_headers()
+        app_id = "UW-BASELINE-ADL-001"
+        cust_id = "CUST-BASELINE-ADL-001"
+        pol_id = "POL-BASELINE-ADL-001"
+        portal.CUSTOMERS[cust_id] = {"id": cust_id, "name": "Unassessed Applicant"}
+        portal.POLICIES[pol_id] = {
+            "id": pol_id,
+            "customer_id": cust_id,
+            "type": "phins_unified",
+            "coverage_amount": 100000,
+            "status": "pending_underwriting",
+            "adl_level": 5,
+            "adl_level_source": "unspecified_baseline",
+            "monthly_premium": 80,
+            "annual_premium": 960,
+            "pricing_source": "pricing_kernel",
+            "risk_premium_annual": 960,
+            "risk_score": "medium",
+        }
+        portal.UNDERWRITING_APPLICATIONS[app_id] = {
+            "id": app_id,
+            "customer_id": cust_id,
+            "policy_id": pol_id,
+            "status": "pending",
+            "age": 40,
+            "smoking_status": "never",
+            "risk_score": "medium",
+            "adl_level": 5,
+            "adl_level_source": "unspecified_baseline",
+        }
+        before = dict(portal.POLICIES[pol_id])
+        resp = requests.get(
+            f"{BASE_URL}/api/risk-assessment/report",
+            params={"application_id": app_id},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        report = resp.json()
+        rationale = report["recommendation"]["rationale"]
+        assert report["applicant"]["adl_level"] is None
+        assert report["medical_assessment"]["adl_level"] is None
+        assert report["applicant"]["adl_level_source"] == "unspecified_baseline"
+        assert "ADL functional level 5" not in rationale
+        assert "ADL 5" not in rationale
+        assert portal.POLICIES[pol_id]["monthly_premium"] == before["monthly_premium"]
+        assert portal.POLICIES[pol_id]["annual_premium"] == before["annual_premium"]
+        assert portal.POLICIES[pol_id]["adl_level"] == 5
+
+        listed = requests.get(f"{BASE_URL}/api/underwriting", headers=headers)
+        assert listed.status_code == 200, listed.text
+        row = next(item for item in listed.json() if item.get("id") == app_id)
+        assert row.get("adl_level") is None
+        assert row.get("adl_level_source") == "unspecified_baseline"
+        assert row.get("adl_pricing_level") == 5
+        assert portal.UNDERWRITING_APPLICATIONS[app_id]["adl_level"] == 5

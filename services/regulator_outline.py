@@ -25,12 +25,16 @@ class RegulatorIntegrityError(RuntimeError):
 
 
 # Published tariff used to illustrate the active kernel. This is not a
-# customer: age/coverage/term/ADL are fixed, smoking is the standard
-# nonsmoker base, and gender/ethnicity are left unset so demographic
-# multipliers stay neutral.
+# customer: age/coverage/term are fixed, smoking is the standard nonsmoker
+# base, and gender/ethnicity are left unset so demographic multipliers stay
+# neutral. REFERENCE_ADL is the published pricing baseline (mortality ×1.0,
+# disability incidence ×1.0, label "Baseline (Medium)"). It is the band the
+# illustration is priced on. It is not a recorded health status.
 REFERENCE_COVERAGE = 100_000.0
 REFERENCE_TERM_YEARS = 20
 REFERENCE_ADL = 5
+REFERENCE_ADL_BASIS = "published_pricing_baseline"
+REFERENCE_ADL_LABEL = "Baseline (Medium)"
 REFERENCE_AGES: Sequence[int] = (30, 40, 50, 60)
 REFERENCE_PRODUCT_ID = "phins_pure_risk_adjustable"
 
@@ -404,6 +408,9 @@ def kernel_pricing_outline(store: Any) -> Dict[str, Any]:
             "coverage": REFERENCE_COVERAGE,
             "term_years": REFERENCE_TERM_YEARS,
             "adl_level": REFERENCE_ADL,
+            "adl_basis": REFERENCE_ADL_BASIS,
+            "adl_label": REFERENCE_ADL_LABEL,
+            "adl_is_health_status": False,
             "smoking_status": "nonsmoker",
             "annual_premium": _round2(priced.annual_premium),
             "monthly_premium": _round2(priced.monthly_premium),
@@ -444,7 +451,11 @@ def kernel_pricing_outline(store: Any) -> Dict[str, Any]:
             "profile": "published_standard_nonsmoker",
             "coverage": REFERENCE_COVERAGE,
             "term_years": REFERENCE_TERM_YEARS,
+            # Kernel input for this illustration. Not a customer health status.
             "adl_level": REFERENCE_ADL,
+            "adl_basis": REFERENCE_ADL_BASIS,
+            "adl_label": REFERENCE_ADL_LABEL,
+            "adl_is_health_status": False,
             "rows": premiums,
         },
     }

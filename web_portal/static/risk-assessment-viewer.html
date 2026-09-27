@@ -385,11 +385,15 @@
                             <span class="quick-stat-label">Smoking:</span>
                             <span class="quick-stat-value">${formatSmokingStatus(report.medical_assessment?.smoking_status)}</span>
                         </div>
-                        ${report.applicant?.adl_level != null || report.medical_assessment?.adl_level != null ? `
-                        <div class="quick-stat">
+                        ${(function () {
+                            var adlSource = report.applicant?.adl_level_source || report.medical_assessment?.adl_level_source;
+                            var adlValue = report.applicant?.adl_level ?? report.medical_assessment?.adl_level;
+                            if (adlValue == null || adlSource === 'unspecified_baseline') return '';
+                            return `<div class="quick-stat">
                             <span class="quick-stat-label">ADL Level:</span>
-                            <span class="quick-stat-value">${escapeHtml(String(report.applicant?.adl_level ?? report.medical_assessment?.adl_level))}</span>
-                        </div>` : ''}
+                            <span class="quick-stat-value">${escapeHtml(String(adlValue))}</span>
+                        </div>`;
+                        })()}
                         <div class="quick-stat">
                             <span class="quick-stat-label">Risk:</span>
                             <span class="quick-stat-value ${riskClass}">${riskCategory}</span>

@@ -179,6 +179,13 @@ def test_basic_premiums_follow_the_active_kernel_version():
     assert {row["tables_version"] for row in rows} == {store.current_version}
     assert {row["config_version"] for row in rows} == {store.config.config_version}
     assert all(row["annual_premium"] > 0 for row in rows)
+    premiums = first["pricing"]["basic_premiums"]
+    assert premiums["adl_level"] == 5
+    assert premiums["adl_basis"] == "published_pricing_baseline"
+    assert premiums["adl_label"] == "Baseline (Medium)"
+    assert premiums["adl_is_health_status"] is False
+    assert {row["adl_is_health_status"] for row in rows} == {False}
+    assert {row["adl_level"] for row in rows} == {5}
     age_40 = rows[1]["annual_premium"]
 
     band = next(

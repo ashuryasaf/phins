@@ -577,7 +577,7 @@
                             <span style="color: #666; font-size: 0.85rem;">Policy Status</span><br>
                             <strong style="color: #6c757d;">${(app.policy_status || (app.policy_id ? 'pending' : 'not created')).replace('_', ' ')}</strong>
                         </div>
-                        ${app.adl_level != null ? `<div>
+                        ${app.adl_level != null && app.adl_level_source !== 'unspecified_baseline' ? `<div>
                             <span style="color: #666; font-size: 0.85rem;">ADL Level</span><br>
                             <strong style="color: #333;">${escapeHtml(String(app.adl_level))}</strong>
                         </div>` : ''}

@@ -119,3 +119,92 @@ def test_pin_does_not_store_unspecified_baseline_as_clinical_adl():
     })
     assert issued["adl_level"] == 1
     assert issued["adl_pricing_level"] == 1
+
+
+def test_stored_baseline_stamp_is_not_reread_as_clinical_adl_five():
+    """A row that already says the 5 is the priced baseline stays unassessed.
+
+    The pricing level is unchanged, so a later quote at that band does not move.
+    An explicit stated 5 remains a clinical finding.
+    """
+    stamped = resolve_adl_evidence(
+        adl_level=5, adl_level_source=SOURCE_UNSPECIFIED
+    )
+    assert stamped.clinical_level is None
+    assert stamped.pricing_level == 5
+    assert stamped.source == SOURCE_UNSPECIFIED
+
+    stated = resolve_adl_evidence(adl_level=5, adl_level_source="stated")
+    assert stated.clinical_level == 5
+    assert stated.pricing_level == 5
+    assert stated.source == SOURCE_STATED
+
+
+def test_integrity_check_does_not_invent_adl_five_from_medium_risk():
+    from services.financial_reporting_service import FinancialReportingService
+
+    policies = {
+        "POL-MED": {
+            "id": "POL-MED",
+            "customer_id": "CUST-1",
+            "type": "life",
+            "status": "active",
+            "risk_score": "medium",
+            "coverage_amount": 100000,
+            "annual_premium": 400,
+        },
+        "POL-BASE": {
+            "id": "POL-BASE",
+            "customer_id": "CUST-1",
+            "type": "health",
+            "status": "active",
+            "risk_score": "medium",
+            "coverage_amount": 100000,
+            "annual_premium": 400,
+            "adl_level": 5,
+            "adl_level_source": SOURCE_UNSPECIFIED,
+        },
+        "POL-STATED": {
+            "id": "POL-STATED",
+            "customer_id": "CUST-1",
+            "type": "life",
+            "status": "active",
+            "risk_score": "high",
+            "coverage_amount": 100000,
+            "annual_premium": 400,
+            "adl_level": 5,
+            "adl_level_source": "stated",
+        },
+    }
+    customers = {"CUST-1": {"id": "CUST-1", "dob": "1986-01-01"}}
+    report = FinancialReportingService(
+        policies=policies, claims={}, billing={}, customers=customers, underwriting={}
+    ).validate_data_integrity()
+    details = {
+        row["policy_id"]: row
+        for row in report["actuarial_validation"]["details"]
+    }
+    assert details["POL-MED"]["adl_level"] is None
+    assert details["POL-MED"]["adl_is_health_status"] is False
+    assert details["POL-BASE"]["adl_level"] is None
+    assert details["POL-BASE"]["adl_basis"] == SOURCE_UNSPECIFIED
+    assert details["POL-STATED"]["adl_level"] == 5
+    assert details["POL-STATED"]["adl_is_health_status"] is True
+    # The ratio check still runs. Inventing an ADL must not change pass/fail.
+    assert details["POL-MED"]["status"] == "PASS"
+    assert details["POL-STATED"]["premium_ratio"] == details["POL-MED"]["premium_ratio"]
+
+
+def test_projection_label_for_band_five_is_the_published_baseline():
+    from services.adl_mapping import published_adl_label
+    from services.financial_reporting_service import FinancialReportingService
+
+    svc = FinancialReportingService(
+        policies={}, claims={}, billing={}, customers={}, underwriting={}
+    )
+    assert published_adl_label(5) == "Baseline (Medium)"
+    assert "Significant Assistance" not in svc._get_adl_description(5)
+    scenario = svc.generate_customer_projection(adl_level=5)["scenario"]
+    assert scenario["adl_level"] == 5
+    assert scenario["adl_is_health_status"] is False
+    assert scenario["adl_risk"] == "Baseline (Medium)"
