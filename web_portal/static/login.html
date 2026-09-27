@@ -243,6 +243,107 @@
       border-color: #c9a24b;
       outline: none;
     }
+    .captcha-kind,
+    .captcha-options,
+    .captcha-hint {
+      display: none;
+    }
+    .captcha-kind:not([hidden]) {
+      display: inline-flex;
+      align-items: center;
+      margin-top: 10px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: rgba(20, 80, 158, 0.1);
+      color: #14509e;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .captcha-options:not([hidden]) {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .captcha-option {
+      appearance: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 48px;
+      padding: 10px 12px;
+      border: 1.5px solid #d7e4f7;
+      border-radius: 10px;
+      background: #fff;
+      color: #0d2a5c;
+      font: inherit;
+      font-size: 0.98rem;
+      font-weight: 600;
+      line-height: 1.25;
+      text-align: center;
+      cursor: pointer;
+      animation: captcha-option-in 0.28s ease both;
+      transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .captcha-option:hover {
+      border-color: #c9a24b;
+      transform: translateY(-1px);
+    }
+    .captcha-option:focus-visible {
+      outline: 2px solid #14509e;
+      outline-offset: 2px;
+    }
+    .captcha-option.selected {
+      border-color: #b8893b;
+      background: #fdf8ec;
+      box-shadow: 0 0 0 3px rgba(201, 162, 75, 0.22);
+    }
+    .captcha-option.selected::after {
+      content: '\2713';
+      color: #8a6d2e;
+      font-weight: 700;
+    }
+    .captcha-hint:not([hidden]) {
+      display: block;
+      margin: 8px 0 0;
+      text-align: center;
+      font-size: 0.78rem;
+      color: #5a6b85;
+    }
+    .captcha-box.is-choice .captcha-input {
+      display: none;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .captcha-option,
+      .captcha-box.captcha-shake {
+        animation: none;
+      }
+      .captcha-option:hover {
+        transform: none;
+      }
+    }
+    .captcha-box.captcha-shake {
+      animation: captcha-shake 0.35s ease;
+    }
+    @keyframes captcha-option-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes captcha-shake {
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-4px); }
+      40% { transform: translateX(4px); }
+      60% { transform: translateX(-3px); }
+      80% { transform: translateX(3px); }
+    }
+    @media screen and (max-width: 380px) {
+      .captcha-options:not([hidden]) {
+        grid-template-columns: 1fr;
+      }
+    }
     
     /* OTP Verification Styles */
     .otp-box {
@@ -420,7 +521,10 @@
               <label>Human Verification</label>
               <a href="#" class="captcha-refresh" id="captcha-refresh" title="Get a new challenge">&#x21bb;</a>
             </div>
-            <div class="captcha-question" id="captcha-question">Loading...</div>
+            <div class="captcha-kind" id="captcha-kind" hidden></div>
+            <div class="captcha-question" id="captcha-question" aria-live="polite">Loading...</div>
+            <div class="captcha-options" id="captcha-options" role="radiogroup" aria-labelledby="captcha-question" data-no-i18n hidden></div>
+            <p class="captcha-hint" id="captcha-hint" hidden>Choose one answer</p>
             <input type="text" class="captcha-input" id="captcha-answer" placeholder="Your answer" autocomplete="off" />
             <input type="hidden" id="captcha-id" />
           </div>
@@ -466,7 +570,7 @@
     </div>
   </div>
   
-  <script src="/login.js?v=20260926e"></script>
+  <script src="/login.js?v=20260927a"></script>
   <script>
     function normalizeHexColor(color, fallback) {
       if (typeof color !== 'string') return fallback;

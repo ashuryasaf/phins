@@ -130,19 +130,26 @@ class CaptchaChallenge:
     challenge_question: Optional[str] = None
     expected_answer: Optional[str] = None  # For simple CAPTCHA
     site_key: Optional[str] = None  # For hCaptcha/reCAPTCHA
+    options: Optional[List[str]] = None  # Shuffled choices; the answer is one of them
+    challenge_kind: Optional[str] = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc) + timedelta(minutes=5))
     verified: bool = False
     
     def to_client_dict(self) -> Dict[str, Any]:
         """Return client-safe data (no answer)"""
-        return {
+        payload = {
             'challenge_id': self.challenge_id,
             'challenge_type': self.challenge_type,
             'challenge_question': self.challenge_question,
             'site_key': self.site_key,
             'expires_at': self.expires_at.isoformat()
         }
+        if self.options:
+            payload['options'] = list(self.options)
+        if self.challenge_kind:
+            payload['challenge_kind'] = self.challenge_kind
+        return payload
 
 
 @dataclass
@@ -309,47 +316,255 @@ def _mask_phone(phone: Optional[str]) -> str:
 # SIMPLE CAPTCHA GENERATOR
 # ============================================================================
 
+@dataclass(frozen=True)
+class CaptchaPrompt:
+    """One human-verification prompt and the choices shown with it."""
+    question: str
+    answer: str
+    options: Tuple[str, ...]
+    kind: str
+
+
 class SimpleCaptchaGenerator:
-    """CAPTCHA generator with multi-step math and contextual challenges"""
-    
+    """CAPTCHA generator with mixed interactive challenges.
+
+    Every prompt is still answerable by typing the canonical value. The
+    login page also shows ``options`` as tappable choices. ``answers[0]``
+    stays the stored expected value; later aliases (including Hebrew) are
+    accepted by ``verify`` and the signed ticket.
+    """
+
     OPERATIONS = ['+', '-', 'x']
     TEMPLATES = [
         "What is {} {} {}?",
         "Calculate: {} {} {}",
         "Solve: {} {} {} = ?",
     ]
-    
+    OPTION_COUNT = 4
+    _BUILDERS = (
+        'math',
+        'steps',
+        'sequence',
+        'compare',
+        'pattern',
+        'fact',
+        'count',
+    )
+
     # Hebrew synonyms are accepted alongside English so the localized UI
     # (see web_portal/static/locales/he.json) can present these questions
     # in Hebrew without changing the stored expected answer (answers[0]).
-    TEXT_QUESTIONS = [
-        ("What color is the sky on a clear day?", ["blue", "azure", "כחול", "תכלת"]),
-        ("What comes after 'one, two, ...'?", ["three", "3", "שלוש"]),
-        ("Enter the current year:", [str(datetime.now().year)]),
-        ("How many days are in a week?", ["seven", "7", "שבעה", "שבע"]),
-        ("What is the capital of France?", ["paris", "פריז", "פריס"]),
-        ("How many months are in a year?", ["twelve", "12", "שנים עשר", "שתים עשרה"]),
-        ("What planet do we live on?", ["earth", "כדור הארץ", "הארץ"]),
+    # Distractors are shown as the other choices and are not accepted.
+    _YEAR = datetime.now().year
+    FACT_SPECS = [
+        {
+            'question': 'What color is the sky on a clear day?',
+            'answers': ['blue', 'azure', 'כחול', 'תכלת'],
+            'distractors': ['green', 'red', 'yellow'],
+        },
+        {
+            'question': "What comes after 'one, two, ...'?",
+            'answers': ['three', '3', 'שלוש'],
+            'distractors': ['four', 'five', 'six'],
+        },
+        {
+            'question': 'Enter the current year:',
+            'answers': [str(_YEAR)],
+            'distractors': [str(_YEAR - 1), str(_YEAR + 1), str(_YEAR - 2)],
+        },
+        {
+            'question': 'How many days are in a week?',
+            'answers': ['seven', '7', 'שבעה', 'שבע'],
+            'distractors': ['five', 'six', 'eight'],
+        },
+        {
+            'question': 'What is the capital of France?',
+            'answers': ['paris', 'פריז', 'פריס'],
+            'distractors': ['london', 'rome', 'berlin'],
+        },
+        {
+            'question': 'How many months are in a year?',
+            'answers': ['twelve', '12', 'שנים עשר', 'שתים עשרה'],
+            'distractors': ['ten', 'eleven', 'six'],
+        },
+        {
+            'question': 'What planet do we live on?',
+            'answers': ['earth', 'כדור הארץ', 'הארץ'],
+            'distractors': ['mars', 'venus', 'jupiter'],
+        },
+        {
+            'question': 'How many hours are in a day?',
+            'answers': ['twenty-four', '24', 'עשרים וארבע'],
+            'distractors': ['twelve', 'six', 'forty-eight'],
+        },
+        {
+            'question': "What is the opposite of 'hot'?",
+            'answers': ['cold', 'קר'],
+            'distractors': ['warm', 'wet', 'bright'],
+        },
+        {
+            'question': 'Which day comes after Monday?',
+            'answers': ['tuesday', 'יום שלישי'],
+            'distractors': ['wednesday', 'friday', 'sunday'],
+        },
+        {
+            'question': 'How many seconds are in a minute?',
+            'answers': ['sixty', '60', 'שישים'],
+            'distractors': ['thirty', 'forty', 'ninety'],
+        },
+        {
+            'question': 'How many cents are in one dollar?',
+            'answers': ['one hundred', '100', 'מאה'],
+            'distractors': ['ten', 'fifty', 'one thousand'],
+        },
+        {
+            'question': 'How many seasons are in a year?',
+            'answers': ['four', '4', 'ארבע'],
+            'distractors': ['two', 'three', 'five'],
+        },
+        {
+            'question': 'What color is a ripe banana?',
+            'answers': ['yellow', 'צהוב'],
+            'distractors': ['blue', 'red', 'green'],
+        },
     ]
-    
+    TEXT_QUESTIONS = [(item['question'], list(item['answers'])) for item in FACT_SPECS]
+    _COUNT_WORDS = (
+        ('PHINS', 5),
+        ('TREE', 4),
+        ('MONTH', 5),
+        ('SKY', 3),
+        ('GOLD', 4),
+        ('RIVER', 5),
+        ('CLOUD', 5),
+        ('STAR', 4),
+    )
+
+    @staticmethod
+    def _shuffle(items: List[Any]) -> List[Any]:
+        pool = list(items)
+        for index in range(len(pool) - 1, 0, -1):
+            swap = secrets.randbelow(index + 1)
+            pool[index], pool[swap] = pool[swap], pool[index]
+        return pool
+
+    @classmethod
+    def _numeric_options(cls, answer: int) -> List[str]:
+        """Four distinct non-negative choices, one of them ``answer``."""
+        answer = int(answer)
+        chosen = {answer}
+        for delta in cls._shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12]):
+            for candidate in (answer + delta, answer - delta):
+                if candidate >= 0 and candidate not in chosen:
+                    chosen.add(candidate)
+                if len(chosen) == cls.OPTION_COUNT:
+                    return [str(number) for number in cls._shuffle(list(chosen))]
+        bump = 1
+        while len(chosen) < cls.OPTION_COUNT:
+            chosen.add(answer + bump)
+            bump += 1
+        return [str(number) for number in cls._shuffle(list(chosen))]
+
+    @classmethod
+    def _fact_options(cls, answers: List[str], distractors: List[str]) -> List[str]:
+        banned = {str(item).lower().strip() for item in answers}
+        chosen = [str(answers[0])]
+        seen = {chosen[0].lower().strip()}
+        for raw in distractors:
+            key = str(raw).lower().strip()
+            if not key or key in banned or key in seen:
+                continue
+            chosen.append(str(raw))
+            seen.add(key)
+            if len(chosen) == cls.OPTION_COUNT:
+                break
+        if len(chosen) != cls.OPTION_COUNT:
+            raise ValueError('captcha fact is missing unique distractors')
+        return cls._shuffle(chosen)
+
     @classmethod
     def generate(cls) -> Tuple[str, str]:
-        """Generate a CAPTCHA challenge, biased toward math"""
-        roll = secrets.randbelow(100)
-        if roll < 50:
-            return cls._generate_math_question()
-        elif roll < 80:
-            return cls._generate_two_step_math()
+        """Generate a CAPTCHA challenge. Returns ``(question, canonical answer)``."""
+        prompt = cls.generate_prompt()
+        return prompt.question, prompt.answer
+
+    @classmethod
+    def generate_prompt(cls) -> CaptchaPrompt:
+        """Generate one prompt. Each kind is equally likely."""
+        kind = secrets.choice(cls._BUILDERS)
+        builder = getattr(cls, f'_prompt_{kind}')
+        return builder()
+
+    @classmethod
+    def _prompt_math(cls) -> CaptchaPrompt:
+        question, answer = cls._generate_math_question()
+        return CaptchaPrompt(question, answer, tuple(cls._numeric_options(int(answer))), 'math')
+
+    @classmethod
+    def _prompt_steps(cls) -> CaptchaPrompt:
+        question, answer = cls._generate_two_step_math()
+        return CaptchaPrompt(question, answer, tuple(cls._numeric_options(int(answer))), 'steps')
+
+    @classmethod
+    def _prompt_sequence(cls) -> CaptchaPrompt:
+        start = secrets.randbelow(9) + 1
+        step = secrets.randbelow(4) + 1
+        series = [start + index * step for index in range(4)]
+        answer = start + 4 * step
+        listed = ', '.join(str(number) for number in series)
+        question = f'What comes next: {listed}, ?'
+        return CaptchaPrompt(question, str(answer), tuple(cls._numeric_options(answer)), 'sequence')
+
+    @classmethod
+    def _prompt_compare(cls) -> CaptchaPrompt:
+        numbers: List[int] = []
+        while len(numbers) < cls.OPTION_COUNT:
+            candidate = secrets.randbelow(50) + 1
+            if candidate not in numbers:
+                numbers.append(candidate)
+        want_largest = secrets.randbelow(2) == 0
+        answer = max(numbers) if want_largest else min(numbers)
+        shown = cls._shuffle(numbers)
+        listed = ', '.join(str(number) for number in shown)
+        if want_largest:
+            question = f'Which number is the largest: {listed}?'
         else:
-            return cls._generate_text_question()
-    
+            question = f'Which number is the smallest: {listed}?'
+        options = [str(number) for number in cls._shuffle(numbers)]
+        return CaptchaPrompt(question, str(answer), tuple(options), 'compare')
+
+    @classmethod
+    def _prompt_pattern(cls) -> CaptchaPrompt:
+        base = secrets.choice((2, 3, 4, 5))
+        multiples = [base * factor for factor in (2, 3, 4)]
+        intruder = multiples[-1] + 1
+        if intruder % base == 0:
+            intruder += 1
+        shown = cls._shuffle(multiples + [intruder])
+        listed = ', '.join(str(number) for number in shown)
+        question = f'Which of {listed} is not a multiple of {base}?'
+        options = [str(number) for number in cls._shuffle(list(shown))]
+        return CaptchaPrompt(question, str(intruder), tuple(options), 'pattern')
+
+    @classmethod
+    def _prompt_fact(cls) -> CaptchaPrompt:
+        spec = secrets.choice(cls.FACT_SPECS)
+        options = cls._fact_options(spec['answers'], spec['distractors'])
+        return CaptchaPrompt(spec['question'], spec['answers'][0], tuple(options), 'fact')
+
+    @classmethod
+    def _prompt_count(cls) -> CaptchaPrompt:
+        word, count = secrets.choice(cls._COUNT_WORDS)
+        question = f'How many letters are in the word "{word}"?'
+        return CaptchaPrompt(question, str(count), tuple(cls._numeric_options(count)), 'count')
+
     @classmethod
     def _generate_math_question(cls) -> Tuple[str, str]:
         """Generate a single-operation math CAPTCHA with wider ranges"""
         a = secrets.randbelow(40) + 5   # 5-44
         b = secrets.randbelow(30) + 3   # 3-32
         op = secrets.choice(cls.OPERATIONS)
-        
+
         if op == '-' and b > a:
             a, b = b, a
         if op == 'x':
@@ -363,9 +578,9 @@ class SimpleCaptchaGenerator:
             answer = a - b
         else:
             answer = a * b
-        
+
         return template.format(a, op, b), str(answer)
-    
+
     @classmethod
     def _generate_two_step_math(cls) -> Tuple[str, str]:
         """Generate a two-operation math challenge, e.g. (a + b) x c"""
@@ -379,13 +594,13 @@ class SimpleCaptchaGenerator:
         answer = step1 * c
         question = f"({a} {op1} {b}) x {c} = ?"
         return question, str(answer)
-    
+
     @classmethod
     def _generate_text_question(cls) -> Tuple[str, str]:
         """Generate a text CAPTCHA"""
         question, answers = secrets.choice(cls.TEXT_QUESTIONS)
         return question, answers[0]
-    
+
     @classmethod
     def verify(cls, expected: str, provided: str) -> bool:
         """Verify CAPTCHA answer with timing-safe comparison for numeric answers"""
@@ -555,6 +770,26 @@ class OTPSecurityService:
         for cid in expired:
             del self._challenges[cid]
 
+    def _build_simple_challenge(self, expires_at: datetime) -> CaptchaChallenge:
+        """Mint a simple challenge whose choices do not mark the answer."""
+        prompt = SimpleCaptchaGenerator.generate_prompt()
+        challenge_id = generate_id("CAPTCHA")
+        if _captcha_key():
+            challenge_id = _sign_ticket(_CHALLENGE_PREFIX, {
+                "exp": int(expires_at.timestamp()),
+                "n": secrets.token_hex(8),
+                "ah": _answer_digests(prompt.answer),
+            })
+        return CaptchaChallenge(
+            challenge_id=challenge_id,
+            challenge_type='simple',
+            challenge_question=prompt.question,
+            expected_answer=prompt.answer,
+            expires_at=expires_at,
+            options=list(prompt.options),
+            challenge_kind=prompt.kind,
+        )
+
     def create_captcha_challenge(
         self,
         action: str,
@@ -571,25 +806,9 @@ class OTPSecurityService:
         
         challenge_type = OTPSecurityConfig.CAPTCHA_TYPE
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
-        question = None
-        answer = None
 
         if challenge_type == 'simple':
-            question, answer = SimpleCaptchaGenerator.generate()
-            challenge_id = generate_id("CAPTCHA")
-            if _captcha_key():
-                challenge_id = _sign_ticket(_CHALLENGE_PREFIX, {
-                    "exp": int(expires_at.timestamp()),
-                    "n": secrets.token_hex(8),
-                    "ah": _answer_digests(answer),
-                })
-            challenge = CaptchaChallenge(
-                challenge_id=challenge_id,
-                challenge_type='simple',
-                challenge_question=question,
-                expected_answer=answer,
-                expires_at=expires_at,
-            )
+            challenge = self._build_simple_challenge(expires_at)
         elif challenge_type == 'hcaptcha':
             challenge_id = generate_id("CAPTCHA")
             challenge = CaptchaChallenge(
@@ -607,22 +826,9 @@ class OTPSecurityService:
                 expires_at=expires_at,
             )
         else:
-            question, answer = SimpleCaptchaGenerator.generate()
-            challenge_id = generate_id("CAPTCHA")
-            if _captcha_key():
-                challenge_id = _sign_ticket(_CHALLENGE_PREFIX, {
-                    "exp": int(expires_at.timestamp()),
-                    "n": secrets.token_hex(8),
-                    "ah": _answer_digests(answer),
-                })
-            challenge = CaptchaChallenge(
-                challenge_id=challenge_id,
-                challenge_type='simple',
-                challenge_question=question,
-                expected_answer=answer,
-                expires_at=expires_at,
-            )
-        
+            challenge = self._build_simple_challenge(expires_at)
+
+        challenge_id = challenge.challenge_id
         with self._lock:
             if len(self._challenges) > 100:
                 self._cleanup_expired_challenges()
