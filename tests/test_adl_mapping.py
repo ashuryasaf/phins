@@ -245,3 +245,21 @@ def test_assessed_mean_ignores_unsourced_fives():
     assert count == 4
     assert mean == 1.25
     assert mean_from_score_counts({}) == (None, 0)
+
+
+def test_assessed_score_reads_the_questionnaire_form():
+    from services.adl_mapping import assessed_internal_score
+
+    assert assessed_internal_score({
+        "questionnaire_responses": {"adl_level_source": "stated", "adl_level": 7},
+    }) == 7
+    # The underwriting read path sometimes stores the form as a JSON string.
+    assert assessed_internal_score({
+        "questionnaire_responses": '{"daily_function": "moderate"}',
+    }) == 4
+    assert assessed_internal_score({
+        "questionnaire_responses": '{"adl_level_source": "stated", "adl_level": 9}',
+    }) == 9
+    # An unsourced form number is still not an assessment.
+    assert assessed_internal_score({"questionnaire_responses": '{"adl_level": 5}'}) is None
+    assert assessed_internal_score({"questionnaire_responses": "not json", "adl_level": 5}) is None
