@@ -20,6 +20,7 @@ SUBJECTS: Tuple[Tuple[str, str], ...] = (
     ("investments", "Investments"),
     ("health", "Health"),
     ("agents", "Agent BI"),
+    ("billing", "Billing"),
     ("integrity", "Integrity"),
 )
 SUBJECT_LABELS = dict(SUBJECTS)

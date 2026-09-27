@@ -209,6 +209,142 @@ def test_identifier_in_a_status_is_refused():
         )
 
 
+def test_open_claims_match_the_claims_dashboard_set():
+    totals = aggregate_claims([
+        {"status": "pending", "claimed_amount": 10, "approved_amount": 0},
+        {"status": "under_review", "claimed_amount": 5, "approved_amount": 0},
+        {"status": "medical_assessment", "claimed_amount": 80, "approved_amount": 0},
+        {"status": "paid", "claimed_amount": 20, "approved_amount": 12, "paid_amount": 12},
+    ])
+    assert totals["pending"] == 2
+    assert totals["pending_liability"] == 15
+    assert totals["disbursed_amount"] == 12
+    assert totals["claimed_amount"] == 115
+
+
+def test_billing_and_aum_must_match_the_canonical_books():
+    books = _books()
+    books["billing"] = [{
+        "amount": 100,
+        "amount_paid": 40,
+        "status": "partial",
+    }, {
+        "amount": 50,
+        "amount_paid": 50,
+        "status": "paid",
+    }]
+    books["ledger"] = {
+        "ledger_premium_collected": 40,
+        "ledger_claims_paid": 250,
+        "accounting_premium_posted": 40,
+        "accounting_claims_posted": 250,
+        "economic_claims_reserve": 10,
+    }
+    books["canonical"].update({
+        "pending_claims": 1,
+        "approved_claims": 0,
+        "rejected_claims": 0,
+        "total_investment_balance": 1000,
+        "total_algo_balance": 0,
+        "total_pipeline_cash": 0,
+        "total_health_wallet": 80,
+        "total_deposits": 80,
+        "active_wallets": 1,
+        "total_aum": 350 + 80 + 1000,
+        "total_billed": 150,
+        "total_collected": 90,
+        "outstanding_balance": 60,
+        "collection_rate": 60.0,
+        "paid_count": 1,
+        "pending_count": 0,
+        "overdue_count": 0,
+        "total_transactions": 2,
+        **books["ledger"],
+    })
+    outline = build_regulator_outline(actuarial_store=_store(), **{
+        key: books[key] for key in (
+            "policies", "claims", "underwriting", "health_wallets",
+            "investment_accounts", "billing", "agents", "commissions", "ledger",
+        )
+    }, canonical=books["canonical"])
+    assert outline["billing"]["outstanding_balance"] == 60
+    assert outline["billing"]["total_collected"] == 90
+    assert outline["books"]["ledger_claims_paid"] == 250
+    assert outline["investments"]["assets_under_management"] == 1430
+    assert outline["claims"]["pending"] == 1
+
+    books["canonical"]["total_aum"] = 1
+    with pytest.raises(RegulatorIntegrityError):
+        build_regulator_outline(actuarial_store=_store(), **{
+            key: books[key] for key in (
+                "policies", "claims", "underwriting", "health_wallets",
+                "investment_accounts", "billing", "agents", "commissions", "ledger",
+            )
+        }, canonical=books["canonical"])
+
+
+def test_live_outline_matches_admin_accounting_and_billing_books():
+    import web_portal.server as portal
+
+    metrics = portal.compute_unified_financial_metrics(exclude_suspended=True)
+    outline = portal.build_live_regulator_outline()
+    assert outline["claims"]["disbursed_amount"] == metrics["claims_disbursed_amount"]
+    assert outline["claims"]["paid_amount"] == metrics["claims_paid_amount"]
+    assert outline["claims"]["pending_liability"] == metrics["pending_claims_liability"]
+    assert outline["claims"]["pending"] == metrics["pending_claims"]
+    assert outline["investments"]["account_balance"] == metrics["total_investment_balance"]
+    assert outline["investments"]["assets_under_management"] == metrics["total_aum"]
+    assert outline["health"]["wallet_balance"] == metrics["total_health_wallet"]
+    assert outline["health"]["wallet_deposits"] == metrics["total_deposits"]
+    assert outline["billing"]["total_billed"] == metrics["total_billed"]
+    assert outline["billing"]["total_collected"] == metrics["total_collected"]
+    assert outline["billing"]["outstanding_balance"] == metrics["outstanding_balance"]
+    assert outline["books"]["ledger_claims_paid"] == metrics["ledger_claims_paid"]
+    assert outline["books"]["ledger_premium_collected"] == metrics["ledger_premium_collected"]
+    assert outline["integrity"]["reconciled"] is True
+
+
+def test_suspended_wallet_and_investment_balances_stay_out_of_the_books():
+    import web_portal.server as portal
+
+    customer_id = "CUST-SUSPEND-BOOK-77"
+    added = customer_id not in portal.SUSPENDED_TEST_ACCOUNTS
+    previous_wallet = portal.HEALTH_WALLETS.get(customer_id)
+    previous_account = portal.INVESTMENT_ACCOUNTS.get(customer_id)
+    portal.SUSPENDED_TEST_ACCOUNTS.add(customer_id)
+    try:
+        before = portal.compute_unified_financial_metrics(exclude_suspended=True)
+        portal.HEALTH_WALLETS[customer_id] = {
+            "customer_id": customer_id,
+            "balance": 999,
+            "transactions": [{"type": "deposit", "amount": 999}],
+        }
+        portal.INVESTMENT_ACCOUNTS[customer_id] = {
+            "customer_id": customer_id,
+            "balance": 888,
+        }
+        hidden = portal.compute_unified_financial_metrics(exclude_suspended=True)
+        assert hidden["total_health_wallet"] == before["total_health_wallet"]
+        assert hidden["total_deposits"] == before["total_deposits"]
+        assert hidden["total_investment_balance"] == before["total_investment_balance"]
+        assert hidden["total_aum"] == before["total_aum"]
+        portal.SUSPENDED_TEST_ACCOUNTS.discard(customer_id)
+        shown = portal.compute_unified_financial_metrics(exclude_suspended=True)
+        assert round(shown["total_health_wallet"] - before["total_health_wallet"], 2) == 999
+        assert round(shown["total_investment_balance"] - before["total_investment_balance"], 2) == 888
+    finally:
+        if previous_wallet is None:
+            portal.HEALTH_WALLETS.pop(customer_id, None)
+        else:
+            portal.HEALTH_WALLETS[customer_id] = previous_wallet
+        if previous_account is None:
+            portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        else:
+            portal.INVESTMENT_ACCOUNTS[customer_id] = previous_account
+        if added:
+            portal.SUSPENDED_TEST_ACCOUNTS.discard(customer_id)
+
+
 def test_claim_buckets_match_the_running_total():
     totals = aggregate_claims([
         {"status": "paid", "claimed_amount": 10, "approved_amount": 4},
@@ -442,6 +578,7 @@ def test_regulator_demo_password_works_until_an_operator_password_is_set(monkeyp
     import web_portal.server as portal
 
     original = dict(portal.USERS["regulator"])
+    fallback_original = dict(portal._FALLBACK_USERS.get("regulator") or original)
     monkeypatch.setattr(portal, "ALLOW_LEGACY_DEMO_PASSWORDS", False)
     monkeypatch.delenv("PHINS_REGULATOR_PASSWORD", raising=False)
     portal._REGULATOR_LEGACY_RETIRED.discard("regulator")
@@ -456,7 +593,11 @@ def test_regulator_demo_password_works_until_an_operator_password_is_set(monkeyp
         hashed = portal.hash_password("unusable-random-secret")
         stale["hash"] = hashed["hash"]
         stale["salt"] = hashed["salt"]
+        # Login accepts the fallback record when the primary hash does not
+        # match. A credential rotation copies that record, so both stores have
+        # to carry the unusable hash or the demo secret still opens the view.
         portal.USERS["regulator"] = stale
+        portal._FALLBACK_USERS["regulator"] = dict(stale)
 
         rejected = _login("regulator", "regulator123")
         assert rejected.status_code == 401
@@ -471,6 +612,7 @@ def test_regulator_demo_password_works_until_an_operator_password_is_set(monkeyp
         assert again.status_code == 200, again.text
     finally:
         portal.USERS["regulator"] = original
+        portal._FALLBACK_USERS["regulator"] = fallback_original
         portal._REGULATOR_LEGACY_RETIRED.discard("regulator")
 
 

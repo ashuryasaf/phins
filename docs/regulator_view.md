@@ -36,8 +36,9 @@ returned so the dashboard stays signed in.
 ## Ask for inquiry
 
 The regulation account can open a conversation on any outlined subject from
-the dashboard card **Ask for inquiry**. The subjects are the seven sections
-above. Admin and actuary do not see the card and cannot call the inquiry API.
+the dashboard card **Ask for inquiry**. The subjects are pricing, underwriting,
+claims, investments, health, agents, billing, and integrity. Admin and actuary
+do not see the card and cannot call the inquiry API.
 
 `GET /api/regulator/inquiries` returns that account's inquiries and the
 subject catalog. `POST /api/regulator/inquiries` with
@@ -73,13 +74,14 @@ The dashboard is one sealed document, `GET /api/regulator/outline`:
 
 1. **Pricing kernel** — active tables version, config version, version catalog with integrity hashes, and basic premiums from `price_policy` on the published standard nonsmoker tariff (`phins_pure_risk_adjustable`, coverage 100,000, term 20 years, ADL 5, ages 30/40/50/60).
 2. **Underwriting** — decision counts and risk bands. No applicant identity or medical detail.
-3. **Claims** — counts and amounts in total, including disbursed, pending liability, and loss ratio.
-4. **Investments** — account balances by route, policy investment value, and assets under management.
-5. **Health** — health policy count and premium, plus health-wallet balance.
+3. **Claims** — counts and amounts in total. Open claims are `pending` and `under_review` only, the same set as the claims dashboard and accounting BI. Disbursed, pending liability, and ledger claims paid are shown separately. Loss ratio is disbursed paid claims over active premium.
+4. **Investments** — account balances by route, policy investment value, and assets under management. AUM is policy investment value plus health wallets, investment accounts, algo balance, and pipeline cash.
+5. **Health** — health policy count and premium, plus health-wallet balance and deposits.
 6. **Agent BI** — headcount, status mix, and commission totals.
-7. **Integrity** — `outline_sha256`, source counts, and a reconciled flag.
+7. **Billing** — billed, collected, outstanding, and collection rate from the billing stats, plus ledger premium collected, ledger claims paid, posted premium and claims, and the economic claims reserve.
+8. **Integrity** — `outline_sha256`, source counts, and a reconciled flag.
 
-Suspended sandbox accounts are excluded before the totals are built. Overlapping totals must match `compute_unified_financial_metrics`. A mismatch, or any identifier that survives redaction, refuses the response.
+Suspended sandbox accounts are excluded before the totals are built, including health wallets, investment accounts, algo balances, and pipeline cash. Overlapping totals must match `compute_unified_financial_metrics`, which is what the admin dashboard, accounting BI, claims counts, and billing stats use. A mismatch, or any identifier that survives redaction, refuses the response.
 
 ## Access
 

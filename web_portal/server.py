@@ -643,8 +643,10 @@ def compute_unified_financial_metrics(
       status, ``max(0, amount - amount_paid)``.
     - ``total_deposits``: sum of ``amount`` for health-wallet deposit
       transactions (``deposit`` or ``initial_deposit``).
-    - ``total_health_wallet``: sum of wallet balances.
-    - ``total_investment_balance``: sum of investment account balances.
+    - ``total_health_wallet``: sum of wallet balances. Suspended customers
+      are left out when ``exclude_suspended`` is set, same as policies.
+    - ``total_investment_balance``: sum of investment account balances,
+      with the same suspended-customer exclusion.
     - ``total_investment_value``: sum of ``investment_value`` field on policies.
     - ``total_coverage_amount``: sum of ``coverage_amount`` on active policies.
     - ``total_aum``: ``total_investment_value`` + unified wallet balance (health
@@ -654,7 +656,9 @@ def compute_unified_financial_metrics(
     - ``claims_disbursed_amount``: approved amounts for claims actually in
       ``paid`` status.
     - ``pending_claims_liability``: sum of ``claimed_amount`` for claims still
-      in ``pending`` or ``under_review``.
+      in ``pending`` or ``under_review``. ``medical_assessment`` is not part
+      of that open set, matching the claims dashboard and ``/api/metrics``.
+    - ``pending_claims``: the count of that same open set.
     """
     # --- Billing ---
     bills = [
@@ -700,24 +704,39 @@ def compute_unified_financial_metrics(
         for c in claims if status_in(c, ['pending', 'under_review'])
     ), 2)
 
+    def _in_book(customer_id: Any) -> bool:
+        if not exclude_suspended:
+            return True
+        return not is_suspended_account(str(customer_id or ''))
+
     # --- Health wallets ---
-    total_health_wallet = round(sum(safe_float(w.get('balance', 0), 0.0) for w in HEALTH_WALLETS.values()), 2)
+    health_rows = [
+        wallet for customer_id, wallet in HEALTH_WALLETS.items()
+        if isinstance(wallet, dict) and _in_book(wallet.get('customer_id') or customer_id)
+    ]
+    total_health_wallet = round(sum(safe_float(w.get('balance', 0), 0.0) for w in health_rows), 2)
     total_deposits = round(sum(
         safe_float(t.get('amount', 0), 0.0)
-        for w in HEALTH_WALLETS.values()
+        for w in health_rows
         for t in w.get('transactions', [])
-        if t.get('type') in ('deposit', 'initial_deposit')
+        if isinstance(t, dict) and t.get('type') in ('deposit', 'initial_deposit')
     ), 2)
-    active_wallets = sum(1 for w in HEALTH_WALLETS.values() if safe_float(w.get('balance', 0), 0.0) > 0)
+    active_wallets = sum(1 for w in health_rows if safe_float(w.get('balance', 0), 0.0) > 0)
 
     # --- Investment accounts ---
-    total_investment_balance = round(sum(safe_float(acc.get('balance', 0), 0.0) for acc in INVESTMENT_ACCOUNTS.values()), 2)
+    investment_rows = [
+        account for customer_id, account in INVESTMENT_ACCOUNTS.items()
+        if isinstance(account, dict) and _in_book(account.get('customer_id') or customer_id)
+    ]
+    total_investment_balance = round(sum(safe_float(acc.get('balance', 0), 0.0) for acc in investment_rows), 2)
 
     # --- Algo trading ---
     total_algo_balance = 0.0
     try:
         if unified_balance_enabled and unified_balance_service:
-            for _cid, algo_data in unified_balance_service.algo_trading_balances.items():
+            for customer_id, algo_data in unified_balance_service.algo_trading_balances.items():
+                if not isinstance(algo_data, dict) or not _in_book(customer_id):
+                    continue
                 total_algo_balance += safe_float(algo_data.get('balance', algo_data.get('available', 0)), 0.0)
     except Exception:
         pass
@@ -727,7 +746,10 @@ def compute_unified_financial_metrics(
     total_pipeline_cash = 0.0
     try:
         if savings_pipeline_enabled and savings_pipeline_service:
-            for account in savings_pipeline_service.accounts.values():
+            for customer_id, account in savings_pipeline_service.accounts.items():
+                owner = getattr(account, 'customer_id', None) or customer_id
+                if not _in_book(owner):
+                    continue
                 total_pipeline_cash += safe_float(getattr(account, 'cash_balance', 0), 0.0)
     except Exception:
         pass
@@ -759,7 +781,7 @@ def compute_unified_financial_metrics(
     rejected_applications = sum(1 for a in apps if status_eq(a, 'rejected'))
 
     # --- Claims counts ---
-    pending_claims = sum(1 for c in claims if status_in(c, ['pending', 'under_review', 'medical_assessment']))
+    pending_claims = sum(1 for c in claims if status_in(c, ['pending', 'under_review']))
     approved_claims = sum(1 for c in claims if status_eq(c, 'approved'))
     rejected_claims = sum(1 for c in claims if status_eq(c, 'rejected'))
 
@@ -12770,18 +12792,49 @@ def build_live_regulator_outline() -> Dict[str, Any]:
         investment_accounts=_visible(INVESTMENT_ACCOUNTS),
         agents=agents,
         commissions=commissions,
+        billing=_visible(BILLING),
         algo_balance=safe_float(metrics.get('total_algo_balance'), 0.0),
         pipeline_cash=safe_float(metrics.get('total_pipeline_cash'), 0.0),
+        ledger={
+            'ledger_premium_collected': metrics.get('ledger_premium_collected'),
+            'ledger_claims_paid': metrics.get('ledger_claims_paid'),
+            'accounting_premium_posted': metrics.get('accounting_premium_posted'),
+            'accounting_claims_posted': metrics.get('accounting_claims_posted'),
+            'economic_claims_reserve': metrics.get('economic_claims_reserve'),
+        },
         canonical={
             'claims_disbursed_amount': metrics.get('claims_disbursed_amount'),
             'claims_paid_amount': metrics.get('claims_paid_amount'),
             'pending_claims_liability': metrics.get('pending_claims_liability'),
+            'pending_claims': metrics.get('pending_claims'),
+            'approved_claims': metrics.get('approved_claims'),
+            'rejected_claims': metrics.get('rejected_claims'),
             'total_claims': metrics.get('total_claims'),
             'total_policies': metrics.get('total_policies'),
             'active_policies': metrics.get('active_policies'),
             'total_revenue': metrics.get('total_revenue'),
             'total_coverage_amount': metrics.get('total_coverage_amount'),
             'total_investment_value': metrics.get('total_investment_value'),
+            'total_investment_balance': metrics.get('total_investment_balance'),
+            'total_algo_balance': metrics.get('total_algo_balance'),
+            'total_pipeline_cash': metrics.get('total_pipeline_cash'),
+            'total_aum': metrics.get('total_aum'),
+            'total_health_wallet': metrics.get('total_health_wallet'),
+            'total_deposits': metrics.get('total_deposits'),
+            'active_wallets': metrics.get('active_wallets'),
+            'total_billed': metrics.get('total_billed'),
+            'total_collected': metrics.get('total_collected'),
+            'outstanding_balance': metrics.get('outstanding_balance'),
+            'collection_rate': metrics.get('collection_rate'),
+            'paid_count': metrics.get('paid_count'),
+            'pending_count': metrics.get('pending_count'),
+            'overdue_count': metrics.get('overdue_count'),
+            'total_transactions': metrics.get('total_transactions'),
+            'ledger_premium_collected': metrics.get('ledger_premium_collected'),
+            'ledger_claims_paid': metrics.get('ledger_claims_paid'),
+            'accounting_premium_posted': metrics.get('accounting_premium_posted'),
+            'accounting_claims_posted': metrics.get('accounting_claims_posted'),
+            'economic_claims_reserve': metrics.get('economic_claims_reserve'),
             'total_applications': metrics.get('total_applications'),
             'pending_applications': metrics.get('pending_applications'),
             'approved_applications': metrics.get('approved_applications'),

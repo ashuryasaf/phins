@@ -255,6 +255,7 @@
       <section class="card" id="investments"></section>
       <section class="card" id="health"></section>
       <section class="card" id="agents"></section>
+      <section class="card" id="billing"></section>
       <section class="card" id="integrity"></section>
       <section class="card no-print" id="inquiry">
         <h2>Ask for inquiry</h2>
@@ -314,6 +315,7 @@
       { id: 'investments', label: 'Investments' },
       { id: 'health', label: 'Health' },
       { id: 'agents', label: 'Agent BI' },
+      { id: 'billing', label: 'Billing' },
       { id: 'integrity', label: 'Integrity' }
     ];
     var PALETTE = ['#0e2f63', '#2b6cb0', '#e3bf6f', '#4fd8ff', '#38a169', '#d69e2e', '#805ad5', '#e53e3e'];
@@ -410,12 +412,15 @@
       var agents = data.agents || {};
       var integrity = data.integrity || {};
       var policies = data.policies || {};
+      var billing = data.billing || {};
+      var books = data.books || {};
       document.getElementById('version-pill').textContent = (pricing.current_version || 'Kernel') + ' · ' + (pricing.config_version || '');
       document.getElementById('summary').innerHTML = [
         ['Kernel version', pricing.current_version || '—', pricing.config_version || ''],
         ['Active premium', money(policies.annual_premium_active), 'annual, in force'],
-        ['Claims disbursed', money(claims.disbursed_amount), (claims.total || 0) + ' claims'],
-        ['Investments', money(inv.account_balance), (inv.account_count || 0) + ' accounts'],
+        ['Claims disbursed', money(claims.disbursed_amount), (claims.pending || 0) + ' open'],
+        ['Investments', money(inv.assets_under_management), 'assets under management'],
+        ['Billing outstanding', money(billing.outstanding_balance), money(billing.total_collected) + ' collected'],
         ['Health wallets', money(health.wallet_balance), (health.health_policies || 0) + ' health policies'],
         ['Agents', String(agents.agent_count || 0), money(agents.commission_amount) + ' commission']
       ].map(function (item) {
@@ -449,14 +454,16 @@
         '<h2>Risk bands</h2><table><thead><tr><th>Band</th><th>Count</th></tr></thead><tbody>' + pairs(uw.risk_bands) + '</tbody></table></div></div>';
 
       document.getElementById('claims').innerHTML =
-        '<h2>Claims in total</h2><p class="sub">Loss ratio on disbursed paid claims / active premium: ' + esc(data.claims_loss_ratio) + '</p>' +
+        '<h2>Claims in total</h2><p class="sub">Disbursed claims and pending liability use the same open set as the claims dashboard and accounting BI. Loss ratio on disbursed paid claims / active premium: ' + esc(data.claims_loss_ratio) + '. Ledger claims paid is the cash figure on billing stats.</p>' +
         '<div class="split"><div><div class="chart-box"><canvas id="chart-claims"></canvas></div></div><div>' +
         '<table><thead><tr><th>Measure</th><th>Value</th></tr></thead><tbody>' +
         '<tr><td>Count</td><td>' + esc(claims.total) + '</td></tr>' +
+        '<tr><td>Open claims</td><td>' + esc(claims.pending) + '</td></tr>' +
         '<tr><td>Claimed</td><td>' + money(claims.claimed_amount) + '</td></tr>' +
         '<tr><td>Disbursed</td><td>' + money(claims.disbursed_amount) + '</td></tr>' +
         '<tr><td>Paid or closed</td><td>' + money(claims.paid_amount) + '</td></tr>' +
         '<tr><td>Pending liability</td><td>' + money(claims.pending_liability) + '</td></tr>' +
+        '<tr><td>Ledger claims paid</td><td>' + money(books.ledger_claims_paid) + '</td></tr>' +
         '</tbody></table><h2>By status</h2><table><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>' +
         pairs(claims.by_status) + '</tbody></table></div></div>';
 
@@ -469,6 +476,7 @@
         '<tr><td>Algo balance</td><td>' + money(inv.algo_balance) + '</td></tr>' +
         '<tr><td>Pipeline cash</td><td>' + money(inv.pipeline_cash) + '</td></tr>' +
         '<tr><td>Assets under management</td><td>' + money(inv.assets_under_management) + '</td></tr>' +
+        '<tr><td>Health wallet balance</td><td>' + money(health.wallet_balance) + '</td></tr>' +
         '</tbody></table><h2>By route</h2><table><thead><tr><th>Route</th><th>Balance</th></tr></thead><tbody>' +
         pairs(inv.by_route, true) + '</tbody></table></div></div>';
 
@@ -481,6 +489,7 @@
         '<tr><td>Wallets</td><td>' + esc(health.wallet_count) + '</td></tr>' +
         '<tr><td>Active wallets</td><td>' + esc(health.active_wallets) + '</td></tr>' +
         '<tr><td>Wallet balance</td><td>' + money(health.wallet_balance) + '</td></tr>' +
+        '<tr><td>Wallet deposits</td><td>' + money(health.wallet_deposits) + '</td></tr>' +
         '</tbody></table></div></div>';
 
       document.getElementById('agents').innerHTML =
@@ -494,6 +503,24 @@
         '<tr><td>Commission amount</td><td>' + money(agents.commission_amount) + '</td></tr>' +
         '</tbody></table><h2>Agents by status</h2><table><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>' +
         pairs(agents.agents_by_status) + '</tbody></table></div></div>';
+
+      document.getElementById('billing').innerHTML =
+        '<h2>Billing</h2><p class="sub">Same billed, collected, and outstanding figures as the admin dashboard and billing stats. Ledger cash is the balance-sheet identity.</p>' +
+        '<div class="split"><div><div class="chart-box"><canvas id="chart-billing"></canvas></div></div><div>' +
+        '<table><thead><tr><th>Measure</th><th>Value</th></tr></thead><tbody>' +
+        '<tr><td>Billed</td><td>' + money(billing.total_billed) + '</td></tr>' +
+        '<tr><td>Collected</td><td>' + money(billing.total_collected) + '</td></tr>' +
+        '<tr><td>Outstanding</td><td>' + money(billing.outstanding_balance) + '</td></tr>' +
+        '<tr><td>Collection rate</td><td>' + esc(billing.collection_rate) + '%</td></tr>' +
+        '<tr><td>Paid bills</td><td>' + esc(billing.paid_count) + '</td></tr>' +
+        '<tr><td>Open bills</td><td>' + esc(billing.pending_count) + '</td></tr>' +
+        '<tr><td>Overdue bills</td><td>' + esc(billing.overdue_count) + '</td></tr>' +
+        '<tr><td>Ledger premium collected</td><td>' + money(books.ledger_premium_collected) + '</td></tr>' +
+        '<tr><td>Ledger claims paid</td><td>' + money(books.ledger_claims_paid) + '</td></tr>' +
+        '<tr><td>Premium posted</td><td>' + money(books.accounting_premium_posted) + '</td></tr>' +
+        '<tr><td>Claims posted</td><td>' + money(books.accounting_claims_posted) + '</td></tr>' +
+        '<tr><td>Economic claims reserve</td><td>' + money(books.economic_claims_reserve) + '</td></tr>' +
+        '</tbody></table></div></div>';
 
       document.getElementById('integrity').innerHTML =
         '<h2>Integrity</h2><p class="' + (integrity.reconciled ? 'ok' : 'sub') + '">' +
@@ -516,6 +543,7 @@
       var agentEntries = objectEntries(agents.agents_by_status);
       if (!agentEntries.length) agentEntries = [['agents', Number(agents.agent_count || 0)]];
       drawChart('chart-agents', agentEntries.map(function (row) { return row[0]; }), agentEntries.map(function (row) { return row[1]; }), 'Agents');
+      drawChart('chart-billing', ['Billed', 'Collected', 'Outstanding'], [Number(billing.total_billed || 0), Number(billing.total_collected || 0), Number(billing.outstanding_balance || 0)], 'Billing');
       applyVisibility();
       document.getElementById('content').hidden = false;
     }
