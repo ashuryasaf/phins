@@ -454,6 +454,7 @@ def _reconcile(outline: Mapping[str, Any], canonical: Mapping[str, Any]) -> None
     checks = (
         ("claims", "disbursed_amount", "claims_disbursed_amount"),
         ("claims", "paid_amount", "claims_paid_amount"),
+        ("claims", "paid_out", "ledger_claims_paid"),
         ("claims", "pending_liability", "pending_claims_liability"),
         ("claims", "pending", "pending_claims"),
         ("claims", "approved", "approved_claims"),
@@ -573,7 +574,12 @@ def build_regulator_outline(
     investments["assets_under_management"] = aum
 
     premium = policy_totals["annual_premium_active"]
-    loss_ratio = _round2(claim_totals["disbursed_amount"] / premium) if premium else 0.0
+    # Admin "Claims Paid / Total Paid Out" is customer-ledger cash, not the
+    # approved amount sitting on paid claim files.
+    paid_out = books["ledger_claims_paid"]
+    claim_totals = dict(claim_totals)
+    claim_totals["paid_out"] = paid_out
+    loss_ratio = _round2(paid_out / premium) if premium else 0.0
 
     outline: Dict[str, Any] = {
         "view": "regulator_outline",
