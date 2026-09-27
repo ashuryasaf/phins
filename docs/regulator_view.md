@@ -72,14 +72,15 @@ Inquiry text is not copied into the sealed outline.
 
 The dashboard is one sealed document, `GET /api/regulator/outline`:
 
-1. **Pricing kernel** — active tables version, config version, version catalog with integrity hashes, and basic premiums from `price_policy` on the published standard nonsmoker tariff (`phins_pure_risk_adjustable`, coverage 100,000, term 20 years, ages 30/40/50/60). The illustration is priced at PHINS internal underwriting score 5, the multiplier-table unit (mortality ×1.0, disability incidence ×1.0). Score 5 is not the average internal score. Score 10 on this 1–10 scale is a fully disabled customer and meets global ADL 3+ (unable to perform 3 or more of 6 activities of daily living). The illustration is not a recorded health status and not a customer quote.
-2. **Underwriting** — decision counts, risk bands, and the accepted-book mean of internal underwriting scores. The mean uses assessed scores below the active decline threshold only (ADL 6+ when Underwriting Rules is set to Strict). Scores at or above that line are declined new applications and are excluded, so the average is lower than the highest score still accepted. The mean is null when no accepted score was assessed. It is not filled with score 5. No applicant identity or medical detail.
-3. **Claims** — counts and amounts in total. **Claims paid** is the admin balance-sheet “Claims Paid / Total Paid Out” figure: customer-ledger cash (`ledger_claims_paid`). Approved amounts on paid claim files stay on a separate row and do not replace that cash total. Open claims are `pending` and `under_review` only. Loss ratio is claims paid over active premium.
-4. **Investments** — account balances by route, policy investment value, and assets under management. AUM is policy investment value plus health wallets, investment accounts, algo balance, and pipeline cash.
-5. **Health** — health policy count and premium, plus health-wallet balance and deposits.
-6. **Agent BI** — headcount, status mix, and commission totals.
-7. **Billing** — billed, collected, outstanding, and collection rate from the billing stats, plus ledger premium collected, ledger claims paid, posted premium and claims, and the economic claims reserve.
-8. **Integrity** — `outline_sha256`, source counts, and a reconciled flag.
+1. **Pricing kernel** — active tables version, config version, version catalog with integrity hashes, basic premiums from `price_policy` on the published standard nonsmoker tariff (`phins_pure_risk_adjustable`, coverage 100,000, term 20 years, ages 30/40/50/60), and the basic mortality and disability incidence rates. The chart caption is one sentence and does not describe underwriting scores. The illustration is not a customer quote.
+2. **Underwriting** — decision counts and risk bands. The caption is one sentence. No applicant identity and no underwriting-score detail.
+3. **Policies** — active count, active annual premium, and total coverage accumulated on in-force policies (`coverage_active`, the same sum as `total_coverage_amount`).
+4. **Claims** — counts and amounts in total. **Claims paid** is the admin balance-sheet “Claims Paid / Total Paid Out” figure: customer-ledger cash (`ledger_claims_paid`). Approved amounts on paid claim files stay on a separate row and do not replace that cash total. Open claims are `pending` and `under_review` only. Loss ratio is claims paid over active premium.
+5. **Investments** — account balances by route, policy investment value, and assets under management. AUM is policy investment value plus health wallets, investment accounts, algo balance, and pipeline cash.
+6. **Health** — health policy count and premium, plus health-wallet balance and deposits.
+7. **Agent BI** — headcount, status mix, and commission totals.
+8. **Billing** — billed, collected, outstanding, and collection rate from the billing stats, plus ledger premium collected, ledger claims paid, posted premium and claims, and the economic claims reserve.
+9. **Integrity** — `outline_sha256`, source counts, and a reconciled flag.
 
 Suspended sandbox accounts are excluded before the totals are built, including health wallets, investment accounts, algo balances, and pipeline cash. Overlapping totals must match `compute_unified_financial_metrics`, which is what the admin dashboard, accounting BI, claims counts, and billing stats use. A mismatch, or any identifier that survives redaction, refuses the response.
 
