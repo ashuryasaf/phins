@@ -273,6 +273,86 @@ def test_reconciler_proves_simulation_components_match_kernel():
     assert abs(report['portfolio_reconciliation']['delta']) < 1.0
     assert 'representative_integrity_hash' in report
     assert report['representative_components']['integrity_checks']['components_sum_to_total']
+    measured = sim['portfolio_summary']['internal_score_mean']
+    rep = report['representative_customer']
+    assert measured is not None
+    assert rep['internal_score_mean'] == measured
+    assert rep['internal_score_assessed_count'] == sim['portfolio_summary']['internal_score_assessed_count']
+    assert 'not assumed to be the average' in rep['internal_score_disclaimer']
+    # The priced integer is the measured mean only when that mean is already a score.
+    if abs(measured - round(measured)) < 1e-9:
+        assert rep['adl_level'] == int(round(measured))
+        assert rep['internal_score_is_average'] is True
+    else:
+        assert rep['internal_score_is_average'] is False
+
+
+def test_reconciler_does_not_call_score_five_the_average_without_a_distribution():
+    from services.actuarial_service import reconcile_simulation_with_kernel
+
+    report = reconcile_simulation_with_kernel({
+        'pricing_kernel': {
+            'savings_formula': 'risk_premium_markup',
+            'product_id': 'phins_pure_risk_adjustable',
+            'savings_rate': 0.0,
+        },
+        'parameters': {
+            'policy_term_mode': 'fixed',
+            'policy_term_fixed': 20,
+            'age_mean': 40,
+        },
+        'profitability': {
+            'components_match': True,
+            'risk_premium': 1,
+            'savings_premium': 1,
+            'expense_loading': 1,
+            'profit_margin': 1,
+            'gross_premium': 4,
+        },
+        'portfolio_summary': {
+            'accepted_customers': 1,
+            'avg_coverage': 100000,
+            'avg_premium': 4,
+        },
+        'demographics': {'adl_distribution': {1: 0, 5: 0}},
+    })
+    rep = report['representative_customer']
+    assert rep['adl_level'] == 5
+    assert rep['adl_basis'] == 'kernel_score_input'
+    assert rep['internal_score_mean'] is None
+    assert rep['internal_score_is_average'] is False
+    assert 'not the average' in rep['adl_status']
+
+    measured = reconcile_simulation_with_kernel({
+        'pricing_kernel': {
+            'savings_formula': 'risk_premium_markup',
+            'product_id': 'phins_pure_risk_adjustable',
+            'savings_rate': 0.0,
+        },
+        'parameters': {
+            'policy_term_mode': 'fixed',
+            'policy_term_fixed': 20,
+            'age_mean': 40,
+        },
+        'profitability': {
+            'components_match': True,
+            'risk_premium': 1,
+            'savings_premium': 1,
+            'expense_loading': 1,
+            'profit_margin': 1,
+            'gross_premium': 4,
+        },
+        'portfolio_summary': {
+            'accepted_customers': 4,
+            'avg_coverage': 100000,
+            'avg_premium': 4,
+        },
+        'demographics': {'adl_distribution': {'1': 3, '2': 1}},
+    })['representative_customer']
+    assert measured['internal_score_mean'] == 1.25
+    assert measured['adl_level'] == 1
+    assert measured['internal_score_is_average'] is False
+    assert measured['adl_basis'] == 'measured_mean_rounded'
 
 
 def test_kernel_with_simulator_end_to_end():

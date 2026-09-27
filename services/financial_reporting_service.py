@@ -9,10 +9,12 @@ Provides comprehensive financial reporting with:
 - Data integrity validation (bottom-up)
 - Cross-dashboard data validation
 
-ADL bands follow the published actuary scale (see services.adl_mapping).
-Level 5 is "Baseline (Medium)": mortality ×1.0 and disability incidence ×1.0.
-It is the pricing baseline, not a default health finding and not
-"significant assistance". A missing assessment stays unassessed.
+ADL figures are the PHINS internal underwriting score (1-10). Score 10
+is a fully disabled customer and meets global ADL 3+. Score 5 is the
+×1.0 multiplier-table unit. It is not the average internal score and
+not a default health finding. A missing assessment stays unassessed.
+A scenario priced at score 5 discloses that input; it does not relabel
+the premium with a different score.
 """
 
 from datetime import datetime, timedelta
@@ -790,7 +792,8 @@ class FinancialReportingService:
         """
         Generate detailed projection for a specific customer scenario.
         
-        Default: $250,000 coverage, 50% savings, ADL level 5 (medium risk), 25 years
+        Default: $250,000 coverage, 50% savings, internal score 5 as a
+        pricing input (not the average), 25 years.
         """
         # If customer_id provided, get their actual data
         if customer_id:
@@ -821,14 +824,19 @@ class FinancialReportingService:
             coverage, savings_pct, adl_level, years_paid, total_premiums
         )
         
+        from services.adl_mapping import INTERNAL_UNDERWRITING_SCORE_DISCLAIMER
+        score_status = self._get_adl_description(adl_level)
         return {
             'scenario': {
                 'coverage': coverage,
                 'savings_allocation': f"{savings_pct * 100}%",
                 'adl_level': adl_level,
-                'adl_risk': self._get_adl_description(adl_level),
+                'adl_risk': score_status,
+                'adl_status': score_status,
                 'adl_basis': 'scenario_input',
                 'adl_is_health_status': False,
+                'internal_score_is_average': False,
+                'internal_score_disclaimer': INTERNAL_UNDERWRITING_SCORE_DISCLAIMER,
                 'term_years': term_years,
                 'customer_age': age
             },
@@ -846,7 +854,7 @@ class FinancialReportingService:
         }
     
     def _get_adl_description(self, adl_level: int) -> str:
-        """Published band name. Level 5 is the pricing baseline, not an impairment."""
+        """Internal-score status. Score 5 is not described as the average."""
         from services.adl_mapping import published_adl_label
         return published_adl_label(adl_level)
     
@@ -884,7 +892,12 @@ class FinancialReportingService:
         
         # A risk band is not an ADL finding. "medium" must not be reported
         # as clinical ADL 5. Only a resolved clinical level is a health status.
-        from services.adl_mapping import SOURCE_UNSPECIFIED, resolve_adl_evidence
+        from services.adl_mapping import (
+            INTERNAL_UNDERWRITING_SCORE_DISCLAIMER,
+            SOURCE_UNSPECIFIED,
+            internal_score_status,
+            resolve_adl_evidence,
+        )
 
         # 1. Policy validation with actuarial checks
         for policy_id, policy in self._policies.items():
@@ -921,7 +934,6 @@ class FinancialReportingService:
                     if resolution.source == SOURCE_UNSPECIFIED
                     else resolution.clinical_level
                 )
-                
                 # Get coverage and premium
                 coverage = policy.get('coverage_amount', 0)
                 stored_premium = policy.get('annual_premium', 0)
@@ -939,8 +951,18 @@ class FinancialReportingService:
                         'policy_id': policy_id,
                         'risk_score': risk_score,
                         'adl_level': clinical_adl,
+                        'adl_status': (
+                            internal_score_status(clinical_adl)
+                            if clinical_adl is not None else None
+                        ),
                         'adl_basis': resolution.source,
                         'adl_is_health_status': clinical_adl is not None,
+                        # One policy score is never the book's average.
+                        'internal_score_is_average': False,
+                        'internal_score_disclaimer': (
+                            INTERNAL_UNDERWRITING_SCORE_DISCLAIMER
+                            if clinical_adl is not None else None
+                        ),
                         'premium_ratio': round(expected_ratio, 6),
                     }
                     

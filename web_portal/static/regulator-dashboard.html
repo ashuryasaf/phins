@@ -436,22 +436,32 @@
       var bands = ((pricing.rate_bands || {}).mortality_rates || []).map(function (row) {
         return '<tr><td>' + esc(row.age_min) + '–' + esc(row.age_max) + '</td><td>' + esc(row.rate_per_1000) + '</td></tr>';
       }).join('') || '<tr><td colspan="2">No records</td></tr>';
+      var tariff = pricing.basic_premiums || {};
+      var scoreDisclaimer = tariff.internal_score_disclaimer ||
+        'PHINS internal underwriting score on a 1-10 scale. Score 10 is a fully disabled customer and meets global ADL 3+ (unable to perform 3 or more of 6 activities of daily living). Score 5 is the multiplier-table unit (mortality ×1.0, disability incidence ×1.0) and is not assumed to be the average internal score.';
       document.getElementById('pricing').innerHTML =
         '<h2>Pricing kernel</h2>' +
-        '<p class="sub">Published standard nonsmoker tariff on ' + esc((pricing.basic_premiums || {}).product_id) +
-        ', coverage ' + money((pricing.basic_premiums || {}).coverage) + ', term ' + esc((pricing.basic_premiums || {}).term_years) +
-        ' years. Priced on the published baseline band (' +
-        esc((pricing.basic_premiums || {}).adl_label || 'Baseline (Medium)') +
-        ', actuarial ADL ' + esc((pricing.basic_premiums || {}).adl_level) +
-        ', multipliers ×1.0). Not a recorded health status. Not a customer quote.</p>' +
+        '<p class="sub">Published standard nonsmoker tariff on ' + esc(tariff.product_id) +
+        ', coverage ' + money(tariff.coverage) + ', term ' + esc(tariff.term_years) +
+        ' years. Premiums use PHINS internal underwriting score ' + esc(tariff.adl_level) +
+        ' (' + esc(tariff.adl_status || tariff.adl_label || 'Internal score 5 (×1.0 multipliers; not the average)') +
+        '). This score is the kernel pricing input. It is not the average internal score. ' +
+        esc(scoreDisclaimer) + ' Not a customer quote.</p>' +
         '<div class="split"><div><div class="chart-box"><canvas id="chart-pricing"></canvas></div></div>' +
         '<div><table><thead><tr><th>Age</th><th>Annual</th><th>Monthly</th><th>Risk premium</th><th>Version</th></tr></thead><tbody>' +
         premiumRows + '</tbody></table></div></div>' +
         '<h2>Basic mortality rates</h2><table><thead><tr><th>Age band</th><th>Rate per 1,000</th></tr></thead><tbody>' + bands + '</tbody></table>' +
         '<h2>Version catalog</h2><table><thead><tr><th>Version</th><th>Status</th><th>Integrity</th></tr></thead><tbody>' + versions + '</tbody></table>';
 
+      var assessedCount = Number(uw.internal_score_assessed_count || 0);
+      var meanText = (uw.internal_score_mean == null)
+        ? 'No assessed internal underwriting score on this book, so no average is stated.'
+        : ('Average of ' + assessedCount + ' assessed internal underwriting score' +
+          (assessedCount === 1 ? '' : 's') + ': ' + esc(uw.internal_score_mean) + '.');
+      var uwDisclaimer = uw.internal_score_disclaimer || scoreDisclaimer;
       document.getElementById('underwriting').innerHTML =
-        '<h2>Underwriting decisions</h2><p class="sub">Counts only. No applicant identity or medical detail.</p>' +
+        '<h2>Underwriting decisions</h2><p class="sub">Counts only. No applicant identity or medical detail. ' +
+        meanText + ' ' + esc(uwDisclaimer) + '</p>' +
         '<div class="split"><div><div class="chart-box"><canvas id="chart-underwriting"></canvas></div></div>' +
         '<div><table><thead><tr><th>Decision</th><th>Count</th></tr></thead><tbody>' + pairs(uw.by_status) + '</tbody></table>' +
         '<h2>Risk bands</h2><table><thead><tr><th>Band</th><th>Count</th></tr></thead><tbody>' + pairs(uw.risk_bands) + '</tbody></table></div></div>';

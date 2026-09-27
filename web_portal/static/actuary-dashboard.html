@@ -1799,7 +1799,8 @@
         
         <!-- ADL Multipliers Section -->
         <section id="section-adl" class="section">
-          <h2 class="section-title">ADL Multipliers</h2>
+          <h2 class="section-title">Internal underwriting score multipliers</h2>
+          <p style="margin-bottom:16px;color:var(--text-light);">PHINS internal underwriting score on a 1-10 scale. Score 10 is a fully disabled customer and meets global ADL 3+ (unable to perform 3 or more of 6 activities of daily living). Score 5 is the ×1.0 multiplier point. It is not the average internal score.</p>
           
           <div class="tabs">
             <div class="tab active" onclick="showADLTab('mortality')">Mortality Multipliers</div>
@@ -4183,17 +4184,18 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     let currentValuation = null;
     let currentRecommendedQuote = null;
     
+    const ADL_SCORE_DISCLAIMER = 'PHINS internal underwriting score on a 1-10 scale. Score 10 is a fully disabled customer and meets global ADL 3+ (unable to perform 3 or more of 6 activities of daily living). Score 5 is the multiplier-table unit (mortality ×1.0, disability incidence ×1.0) and is not assumed to be the average internal score.';
     const ADL_DESCRIPTIONS = {
-      1: 'Fully Independent',
-      2: 'Minor Assistance',
-      3: 'Mild Impairment',
-      4: 'Moderate Assistance',
-      5: 'Baseline (Medium)',
-      6: 'Significant Help',
-      7: 'Major Impairment',
-      8: 'Severe Impairment',
-      9: 'Near Total Dependence',
-      10: 'Total Dependence'
+      1: 'Fully independent',
+      2: 'Minor assistance',
+      3: 'Mild impairment',
+      4: 'Moderate assistance',
+      5: 'Internal score 5 (×1.0 multipliers; not the average)',
+      6: 'Significant help',
+      7: 'Major impairment',
+      8: 'Severe impairment',
+      9: 'Near total dependence',
+      10: 'Fully disabled (global ADL 3+)'
     };
     
     // Initialize
@@ -7906,7 +7908,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             </div>
           </div>
           <h4 style="margin-top:16px;">Representative Customer</h4>
-          <p style="color:var(--text-light);">age ${rep.age}, ADL ${rep.adl_level}, coverage ${fmtCurrency(rep.coverage)}, term ${rep.term_years} years</p>
+          <p style="color:var(--text-light);">age ${rep.age}, PHINS internal underwriting score ${rep.adl_level}${rep.adl_status ? ' (' + rep.adl_status + ')' : ''}${rep.internal_score_mean == null ? '. No assessed-score distribution on this snapshot, so score ' + rep.adl_level + ' is a pricing input and is not the average' : '. Measured average of ' + (rep.internal_score_assessed_count || 0) + ' accepted scores: ' + rep.internal_score_mean + (rep.internal_score_is_average ? '' : '. The priced score is the nearest score to that average and is not itself the average')}, coverage ${fmtCurrency(rep.coverage)}, term ${rep.term_years} years. ${rep.internal_score_disclaimer || ADL_SCORE_DISCLAIMER}</p>
           <table class="data-table">
             <tr><th>Component</th><th>Annual</th></tr>
             <tr><td>Risk premium</td><td>${fmtCurrency(repComponents.risk_premium_annual)}</td></tr>

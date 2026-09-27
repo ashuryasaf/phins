@@ -190,21 +190,58 @@ def test_integrity_check_does_not_invent_adl_five_from_medium_risk():
     assert details["POL-BASE"]["adl_basis"] == SOURCE_UNSPECIFIED
     assert details["POL-STATED"]["adl_level"] == 5
     assert details["POL-STATED"]["adl_is_health_status"] is True
+    assert details["POL-STATED"]["internal_score_is_average"] is False
+    assert "not the average" in details["POL-STATED"]["adl_status"]
+    assert details["POL-MED"]["adl_status"] is None
+    assert details["POL-BASE"]["internal_score_disclaimer"] is None
     # The ratio check still runs. Inventing an ADL must not change pass/fail.
     assert details["POL-MED"]["status"] == "PASS"
     assert details["POL-STATED"]["premium_ratio"] == details["POL-MED"]["premium_ratio"]
 
 
-def test_projection_label_for_band_five_is_the_published_baseline():
-    from services.adl_mapping import published_adl_label
+def test_projection_label_for_score_five_is_not_the_average():
+    from services.adl_mapping import (
+        INTERNAL_UNDERWRITING_SCORE_DISCLAIMER,
+        published_adl_label,
+    )
     from services.financial_reporting_service import FinancialReportingService
 
     svc = FinancialReportingService(
         policies={}, claims={}, billing={}, customers={}, underwriting={}
     )
-    assert published_adl_label(5) == "Baseline (Medium)"
+    label = published_adl_label(5)
+    assert label == "Internal score 5 (×1.0 multipliers; not the average)"
+    assert "Baseline" not in label
+    assert "average" not in label.lower() or "not the average" in label.lower()
+    assert published_adl_label(10) == "Fully disabled (global ADL 3+)"
     assert "Significant Assistance" not in svc._get_adl_description(5)
     scenario = svc.generate_customer_projection(adl_level=5)["scenario"]
     assert scenario["adl_level"] == 5
     assert scenario["adl_is_health_status"] is False
-    assert scenario["adl_risk"] == "Baseline (Medium)"
+    assert scenario["internal_score_is_average"] is False
+    assert scenario["adl_risk"] == label
+    assert "not assumed to be the average" in scenario["internal_score_disclaimer"]
+    assert scenario["internal_score_disclaimer"] == INTERNAL_UNDERWRITING_SCORE_DISCLAIMER
+
+
+def test_assessed_mean_ignores_unsourced_fives():
+    from services.adl_mapping import assessed_internal_score, mean_from_score_counts
+
+    assert assessed_internal_score({"adl_level": 5}) is None
+    assert assessed_internal_score({
+        "adl_level": 5,
+        "adl_level_source": "unspecified_baseline",
+    }) is None
+    assert assessed_internal_score({
+        "adl_level": 5,
+        "adl_level_source": "stated",
+    }) == 5
+    assert assessed_internal_score({"daily_function": "full"}) == 1
+    assert assessed_internal_score({
+        "adl_level": 10,
+        "adl_level_source": "stated",
+    }) == 10
+    mean, count = mean_from_score_counts({"1": 3, 2: 1, "junk": 4, 5: 0})
+    assert count == 4
+    assert mean == 1.25
+    assert mean_from_score_counts({}) == (None, 0)

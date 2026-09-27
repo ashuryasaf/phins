@@ -169,6 +169,9 @@ def test_totals_match_the_books():
     assert outline["underwriting"]["rejected"] == 1
     assert outline["underwriting"]["risk_bands"]["low"] == 1
     assert outline["underwriting"]["risk_bands"]["76_100"] == 1
+    assert outline["underwriting"]["internal_score_mean"] is None
+    assert outline["underwriting"]["internal_score_assessed_count"] == 0
+    assert outline["underwriting"]["internal_score_is_average"] is False
 
 
 def test_basic_premiums_follow_the_active_kernel_version():
@@ -181,10 +184,14 @@ def test_basic_premiums_follow_the_active_kernel_version():
     assert all(row["annual_premium"] > 0 for row in rows)
     premiums = first["pricing"]["basic_premiums"]
     assert premiums["adl_level"] == 5
-    assert premiums["adl_basis"] == "published_pricing_baseline"
-    assert premiums["adl_label"] == "Baseline (Medium)"
+    assert premiums["adl_basis"] == "kernel_score_input"
+    assert premiums["adl_label"] == "Internal score 5 (×1.0 multipliers; not the average)"
+    assert "Baseline" not in premiums["adl_label"]
     assert premiums["adl_is_health_status"] is False
+    assert premiums["internal_score_is_average"] is False
+    assert "not assumed to be the average" in premiums["internal_score_disclaimer"]
     assert {row["adl_is_health_status"] for row in rows} == {False}
+    assert {row["internal_score_is_average"] for row in rows} == {False}
     assert {row["adl_level"] for row in rows} == {5}
     age_40 = rows[1]["annual_premium"]
 
@@ -197,6 +204,31 @@ def test_basic_premiums_follow_the_active_kernel_version():
     assert second["pricing"]["basic_premiums"]["rows"][1]["annual_premium"] != age_40
     assert second["pricing"]["versions"][0]["integrity_hash"] != first["pricing"]["versions"][0]["integrity_hash"]
     assert second["pricing"]["current_version"] == store.current_version
+
+
+def test_underwriting_mean_uses_assessed_scores_only():
+    from services.regulator_outline import aggregate_underwriting
+
+    totals = aggregate_underwriting([
+        {"status": "approved", "adl_level": 5},
+        {"status": "approved", "adl_level": 5, "adl_level_source": "unspecified_baseline"},
+        {"status": "approved", "adl_level": 8, "adl_level_source": "stated"},
+        {"status": "pending", "daily_function": "full"},
+        {"status": "approved", "adl_level": 10, "adl_level_source": "stated"},
+    ])
+    assert totals["internal_score_assessed_count"] == 3
+    assert totals["internal_score_mean"] == round((8 + 1 + 10) / 3, 4)
+    assert totals["internal_score_mean"] != 5
+    assert totals["internal_score_is_average"] is True
+    assert "not assumed to be the average" in totals["internal_score_disclaimer"]
+
+    empty = aggregate_underwriting([
+        {"status": "approved", "risk_assessment": "medium"},
+        {"status": "approved", "adl_level": 5, "adl_level_source": "unspecified_baseline"},
+    ])
+    assert empty["internal_score_mean"] is None
+    assert empty["internal_score_assessed_count"] == 0
+    assert empty["internal_score_is_average"] is False
 
 
 def test_divergent_books_are_refused():

@@ -27,14 +27,15 @@ class RegulatorIntegrityError(RuntimeError):
 # Published tariff used to illustrate the active kernel. This is not a
 # customer: age/coverage/term are fixed, smoking is the standard nonsmoker
 # base, and gender/ethnicity are left unset so demographic multipliers stay
-# neutral. REFERENCE_ADL is the published pricing baseline (mortality ×1.0,
-# disability incidence ×1.0, label "Baseline (Medium)"). It is the band the
-# illustration is priced on. It is not a recorded health status.
+# neutral. REFERENCE_ADL is the kernel input for this illustration
+# (mortality ×1.0, disability incidence ×1.0). It is not a recorded health
+# status and it is not the average internal underwriting score. Premiums
+# stay on this input; a book average is computed separately from assessed
+# scores and is null when none were assessed.
 REFERENCE_COVERAGE = 100_000.0
 REFERENCE_TERM_YEARS = 20
 REFERENCE_ADL = 5
-REFERENCE_ADL_BASIS = "published_pricing_baseline"
-REFERENCE_ADL_LABEL = "Baseline (Medium)"
+REFERENCE_ADL_BASIS = "kernel_score_input"
 REFERENCE_AGES: Sequence[int] = (30, 40, 50, 60)
 REFERENCE_PRODUCT_ID = "phins_pure_risk_adjustable"
 
@@ -116,12 +117,25 @@ def _risk_band(item: Mapping[str, Any]) -> str:
 
 
 def aggregate_underwriting(applications: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
+    from services.adl_mapping import (
+        INTERNAL_UNDERWRITING_SCORE_DISCLAIMER,
+        assessed_internal_score,
+        round_internal_mean,
+    )
+
     rows = _as_list(applications)
     by_status = _count_status(rows)
     bands: Dict[str, int] = {}
+    assessed: List[int] = []
     for row in rows:
         band = _risk_band(row)
         bands[band] = bands.get(band, 0) + 1
+        score = assessed_internal_score(row)
+        if score is not None:
+            assessed.append(score)
+    assessed_count = len(assessed)
+    # Mean of assessed scores only. Never substitute the ×1.0 table unit.
+    mean = round_internal_mean(sum(assessed) / assessed_count) if assessed_count else None
     return {
         "total": len(rows),
         "by_status": by_status,
@@ -129,6 +143,10 @@ def aggregate_underwriting(applications: Iterable[Mapping[str, Any]]) -> Dict[st
         "pending": by_status.get("pending", 0),
         "rejected": by_status.get("rejected", 0),
         "risk_bands": dict(sorted(bands.items())),
+        "internal_score_assessed_count": assessed_count,
+        "internal_score_mean": mean,
+        "internal_score_is_average": assessed_count > 0,
+        "internal_score_disclaimer": INTERNAL_UNDERWRITING_SCORE_DISCLAIMER,
     }
 
 
@@ -382,9 +400,15 @@ def kernel_pricing_outline(store: Any) -> Dict[str, Any]:
         })
     versions.sort(key=lambda item: (not item["is_current"], str(item["version"])))
 
+    from services.adl_mapping import (
+        INTERNAL_UNDERWRITING_SCORE_DISCLAIMER,
+        internal_score_status,
+    )
+
     table_set = table_set_from_store(store)
     pricing_config = pricing_config_from_underwriting(config)
     product = get_product(REFERENCE_PRODUCT_ID)
+    score_status = internal_score_status(REFERENCE_ADL)
     premiums = []
     for age in REFERENCE_AGES:
         priced = price_policy(
@@ -409,8 +433,10 @@ def kernel_pricing_outline(store: Any) -> Dict[str, Any]:
             "term_years": REFERENCE_TERM_YEARS,
             "adl_level": REFERENCE_ADL,
             "adl_basis": REFERENCE_ADL_BASIS,
-            "adl_label": REFERENCE_ADL_LABEL,
+            "adl_label": score_status,
+            "adl_status": score_status,
             "adl_is_health_status": False,
+            "internal_score_is_average": False,
             "smoking_status": "nonsmoker",
             "annual_premium": _round2(priced.annual_premium),
             "monthly_premium": _round2(priced.monthly_premium),
@@ -451,11 +477,15 @@ def kernel_pricing_outline(store: Any) -> Dict[str, Any]:
             "profile": "published_standard_nonsmoker",
             "coverage": REFERENCE_COVERAGE,
             "term_years": REFERENCE_TERM_YEARS,
-            # Kernel input for this illustration. Not a customer health status.
+            # Kernel input for this illustration. Not a customer health status
+            # and not the average of assessed internal scores.
             "adl_level": REFERENCE_ADL,
             "adl_basis": REFERENCE_ADL_BASIS,
-            "adl_label": REFERENCE_ADL_LABEL,
+            "adl_label": score_status,
+            "adl_status": score_status,
             "adl_is_health_status": False,
+            "internal_score_is_average": False,
+            "internal_score_disclaimer": INTERNAL_UNDERWRITING_SCORE_DISCLAIMER,
             "rows": premiums,
         },
     }

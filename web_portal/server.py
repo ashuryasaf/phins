@@ -23659,7 +23659,9 @@ For claims or questions, please contact:
                 # Issued premiums are not rewritten.
                 try:
                     from services.adl_mapping import (
+                        INTERNAL_UNDERWRITING_SCORE_DISCLAIMER,
                         SOURCE_UNSPECIFIED,
+                        internal_score_status,
                         resolve_application_adl,
                     )
                     questionnaire = coerce_json_container(
@@ -23674,8 +23676,16 @@ For claims or questions, please contact:
                     enriched['adl_legacy_corrected'] = resolved.legacy_corrected
                     if resolved.source == SOURCE_UNSPECIFIED or resolved.clinical_level is None:
                         enriched['adl_level'] = None
+                        enriched['adl_status'] = None
+                        enriched['internal_score_disclaimer'] = None
                     else:
                         enriched['adl_level'] = resolved.clinical_level
+                        enriched['adl_status'] = internal_score_status(resolved.clinical_level)
+                        enriched['internal_score_disclaimer'] = (
+                            INTERNAL_UNDERWRITING_SCORE_DISCLAIMER
+                        )
+                    # One applicant's score is never the book's average.
+                    enriched['internal_score_is_average'] = False
                 except Exception:
                     pass
                 
@@ -23836,13 +23846,18 @@ For claims or questions, please contact:
                     eligible_flag = (quote_summary or {}).get('eligible')
 
                 # Build rationale from ACTUAL data only
+                from services.adl_mapping import (
+                    INTERNAL_UNDERWRITING_SCORE_DISCLAIMER,
+                    internal_score_status,
+                )
                 rationale_parts = []
                 if applicant_age is not None:
                     rationale_parts.append(f"Applicant age of {applicant_age} years")
                 if adl_level is not None and adl_source != "unspecified_baseline":
-                    source_label = str(adl_source or "stated").replace("_", " ")
                     rationale_parts.append(
-                        f"ADL functional level {adl_level} ({source_label})"
+                        f"PHINS internal underwriting score {adl_level} "
+                        f"({internal_score_status(adl_level)}). "
+                        f"{INTERNAL_UNDERWRITING_SCORE_DISCLAIMER}"
                     )
                 if adl_legacy_corrected:
                     stamped = target_app.get("adl_level")
@@ -23854,8 +23869,9 @@ For claims or questions, please contact:
                         stamped_n = None
                     if stamped_n is not None and stamped_n != adl_level:
                         rationale_parts.append(
-                            f"Issued record still carries ADL {stamped_n} from the "
-                            "previous fully-independent default; that premium is not recalculated"
+                            f"Issued record still carries internal underwriting score {stamped_n} "
+                            "from the previous fully-independent default; that premium is not "
+                            "recalculated. That stored score is not the average internal score"
                         )
                 if disability_pct:
                     rationale_parts.append(f"{disability_pct}% disability rating")
@@ -23900,13 +23916,14 @@ For claims or questions, please contact:
                     })
                 if adl_level is not None and adl_level >= 6:
                     risk_factors.append({
-                        'name': 'ADL Functional Level',
+                        'name': 'PHINS internal underwriting score',
                         'category': 'medical',
                         'impact': {6: 0.05, 7: 0.12, 8: 0.20, 9: 0.30, 10: 0.40}.get(int(adl_level), 0.08),
                         'direction': 'increase',
                         'explanation': (
-                            f'Activities of daily living level {adl_level} '
-                            f'(chat answer: {(target_app.get("questionnaire_responses") or {}).get("daily_function") or "n/a"})'
+                            f'PHINS internal underwriting score {adl_level} '
+                            f'({internal_score_status(adl_level)}). '
+                            f'{INTERNAL_UNDERWRITING_SCORE_DISCLAIMER}'
                         )
                     })
                 if disability_pct and disability_pct > 0:
@@ -24025,6 +24042,14 @@ For claims or questions, please contact:
                         'customer_id': customer_id,
                         'adl_level': adl_level,
                         'adl_level_source': adl_source,
+                        'adl_status': (
+                            internal_score_status(adl_level) if adl_level is not None else None
+                        ),
+                        'internal_score_is_average': False,
+                        'internal_score_disclaimer': (
+                            INTERNAL_UNDERWRITING_SCORE_DISCLAIMER
+                            if adl_level is not None else None
+                        ),
                     },
                     'policy_type': product_id,
                     'product_id': product_id,
@@ -24054,6 +24079,14 @@ For claims or questions, please contact:
                         'disability_type': target_app.get('disability_type') if disability_pct else None,
                         'adl_level': adl_level,
                         'adl_level_source': adl_source,
+                        'adl_status': (
+                            internal_score_status(adl_level) if adl_level is not None else None
+                        ),
+                        'internal_score_is_average': False,
+                        'internal_score_disclaimer': (
+                            INTERNAL_UNDERWRITING_SCORE_DISCLAIMER
+                            if adl_level is not None else None
+                        ),
                         'disability_excluded': disability_excluded,
                         'bmi_category': bmi_category_str,
                         'bmi': bmi,

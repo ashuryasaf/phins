@@ -401,8 +401,10 @@ class TestReportParity:
         assert report["applicant"]["adl_level"] == 1
         assert report["applicant"]["adl_level_source"] == "daily_function"
         assert report["medical_assessment"]["adl_level"] == 1
-        assert "ADL functional level 1" in rationale
+        assert "PHINS internal underwriting score 1" in rationale
+        assert "Fully independent" in rationale
         assert "ADL functional level 5" not in rationale
+        assert "not assumed to be the average" in rationale
         assert "premium is not recalculated" in rationale
         assert portal.POLICIES[pol_id]["monthly_premium"] == before["monthly_premium"]
         assert portal.POLICIES[pol_id]["annual_premium"] == before["annual_premium"]
@@ -460,6 +462,7 @@ class TestReportParity:
         assert report["applicant"]["adl_level_source"] == "unspecified_baseline"
         assert "ADL functional level 5" not in rationale
         assert "ADL 5" not in rationale
+        assert "PHINS internal underwriting score 5" not in rationale
         assert portal.POLICIES[pol_id]["monthly_premium"] == before["monthly_premium"]
         assert portal.POLICIES[pol_id]["annual_premium"] == before["annual_premium"]
         assert portal.POLICIES[pol_id]["adl_level"] == 5

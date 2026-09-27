@@ -478,19 +478,20 @@
                         <input type="number" id="proj-savings" value="50" min="0" max="100" step="5">
                     </div>
                     <div class="form-group">
-                        <label>ADL level (1-10)</label>
+                        <label>PHINS internal underwriting score (1-10)</label>
                         <select id="proj-adl">
                             <option value="1">1 - Fully independent</option>
-                            <option value="2">2 - Independent with supervision</option>
-                            <option value="3">3 - Minimal assistance</option>
+                            <option value="2">2 - Minor assistance</option>
+                            <option value="3">3 - Mild impairment</option>
                             <option value="4">4 - Moderate assistance</option>
-                            <option value="5" selected>5 - Significant assistance</option>
-                            <option value="6">6 - Extensive assistance</option>
-                            <option value="7">7 - Maximum assistance</option>
-                            <option value="8">8 - Total dependence (some)</option>
-                            <option value="9">9 - Total dependence (most)</option>
-                            <option value="10">10 - Complete dependence</option>
+                            <option value="5" selected>5 - Score 5 (×1.0 multipliers; not the average)</option>
+                            <option value="6">6 - Significant help</option>
+                            <option value="7">7 - Major impairment</option>
+                            <option value="8">8 - Severe impairment</option>
+                            <option value="9">9 - Near total dependence</option>
+                            <option value="10">10 - Fully disabled (global ADL 3+)</option>
                         </select>
+                        <p style="margin:6px 0 0 0;color:#666;font-size:0.8rem;">Pricing input only. Score 10 is a fully disabled customer and meets global ADL 3+. Score 5 is not the average internal score.</p>
                     </div>
                     <div class="form-group">
                         <label>Term (years)</label>
@@ -1640,7 +1641,7 @@
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; font-size: 0.9rem;">
                             <div><strong>Coverage:</strong> ${formatCurrency(data.scenario.coverage)}</div>
                             <div><strong>Savings:</strong> ${data.scenario.savings_allocation}</div>
-                            <div><strong>ADL Level:</strong> ${data.scenario.adl_level} (${data.scenario.adl_risk})</div>
+                            <div><strong>PHINS internal underwriting score:</strong> ${data.scenario.adl_level} (${data.scenario.adl_risk}). Not the average. ${data.scenario.internal_score_disclaimer || ''}</div>
                             <div><strong>Term:</strong> ${data.scenario.term_years} years</div>
                             <div><strong>Customer Age:</strong> ${data.scenario.customer_age}</div>
                         </div>
@@ -2431,11 +2432,13 @@
                         html += `<h4>Policy Actuarial Details</h4>
                         <div style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 8px;">
                             <table style="margin: 0;">
-                                <thead><tr><th>Policy ID</th><th>Risk Score</th><th>Assessed ADL</th><th>Premium Ratio</th><th>Status</th></tr></thead>
+                                <thead><tr><th>Policy ID</th><th>Risk Score</th><th>Assessed internal score</th><th>Premium Ratio</th><th>Status</th></tr></thead>
                                 <tbody>`;
                         av.details.forEach(d => {
                             const statusColor = d.status === 'PASS' ? '#28a745' : '#ffc107';
-                            const adlShown = (d.adl_is_health_status && d.adl_level != null) ? d.adl_level : 'Not assessed';
+                            const adlShown = (d.adl_is_health_status && d.adl_level != null)
+                                ? (d.adl_level + (d.adl_status ? ' — ' + d.adl_status : ''))
+                                : 'Not assessed';
                             html += `<tr>
                                 <td>${d.policy_id}</td>
                                 <td>${d.risk_score}</td>
@@ -2445,6 +2448,7 @@
                             </tr>`;
                         });
                         html += `</tbody></table></div>`;
+                        html += `<p style="margin-top:8px;color:#666;font-size:0.85rem;">PHINS internal underwriting score on a 1-10 scale. Score 10 is a fully disabled customer and meets global ADL 3+ (unable to perform 3 or more of 6 activities of daily living). Score 5 is not the average internal score. Unassessed policies stay "Not assessed".</p>`;
                     }
                 }
                 
@@ -2962,7 +2966,7 @@
                     <div class="summary-box">
                         <h3>Scenario Parameters</h3>
                         <p><strong>Coverage:</strong> ${formatCurrency(s.coverage)} | <strong>Term:</strong> ${s.term_years} years | <strong>Age:</strong> ${s.customer_age}</p>
-                        <p><strong>ADL Level:</strong> ${s.adl_level} (${s.adl_risk}) | <strong>Savings:</strong> ${s.savings_allocation}</p>
+                        <p><strong>PHINS internal underwriting score:</strong> ${s.adl_level} (${s.adl_risk}). Not the average. ${s.internal_score_disclaimer || ''} | <strong>Savings:</strong> ${s.savings_allocation}</p>
                         <p><strong>Data Source:</strong> ${dataSource === 'real_customer' ? 'Real Customer Data' : 'Manual Input'}</p>
                     </div>
                     <div class="summary-box">
@@ -3343,7 +3347,7 @@
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; font-size: 0.9rem;">
                             <div><strong>Coverage:</strong> ${formatCurrency(data.scenario.coverage)}</div>
                             <div><strong>Savings:</strong> ${data.scenario.savings_allocation}</div>
-                            <div><strong>ADL Level:</strong> ${data.scenario.adl_level} - ${data.scenario.adl_risk}</div>
+                            <div><strong>PHINS internal underwriting score:</strong> ${data.scenario.adl_level} — ${data.scenario.adl_risk}. Not the average. ${data.scenario.internal_score_disclaimer || ''}</div>
                             <div><strong>Term:</strong> ${data.scenario.term_years} years</div>
                             <div><strong>Start Age:</strong> ${data.scenario.customer_age}</div>
                         </div>
@@ -3483,11 +3487,13 @@
                         html += `<h4>Policy Actuarial Details</h4>
                         <div style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 8px;">
                             <table style="margin: 0;">
-                                <thead><tr><th>Policy ID</th><th>Risk Score</th><th>Assessed ADL</th><th>Premium Ratio</th><th>Status</th></tr></thead>
+                                <thead><tr><th>Policy ID</th><th>Risk Score</th><th>Assessed internal score</th><th>Premium Ratio</th><th>Status</th></tr></thead>
                                 <tbody>`;
                         av.details.forEach(d => {
                             const statusColor = d.status === 'PASS' ? '#28a745' : '#ffc107';
-                            const adlShown = (d.adl_is_health_status && d.adl_level != null) ? d.adl_level : 'Not assessed';
+                            const adlShown = (d.adl_is_health_status && d.adl_level != null)
+                                ? (d.adl_level + (d.adl_status ? ' — ' + d.adl_status : ''))
+                                : 'Not assessed';
                             html += `<tr>
                                 <td>${d.policy_id}</td>
                                 <td>${d.risk_score}</td>
@@ -3497,6 +3503,7 @@
                             </tr>`;
                         });
                         html += `</tbody></table></div>`;
+                        html += `<p style="margin-top:8px;color:#666;font-size:0.85rem;">PHINS internal underwriting score on a 1-10 scale. Score 10 is a fully disabled customer and meets global ADL 3+ (unable to perform 3 or more of 6 activities of daily living). Score 5 is not the average internal score. Unassessed policies stay "Not assessed".</p>`;
                     }
                 }
                 
