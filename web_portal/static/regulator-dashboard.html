@@ -614,7 +614,7 @@
       if (!outline) return;
       var ids = selectedIds();
       var images = '';
-      ['chart-pricing', 'chart-underwriting', 'chart-claims', 'chart-investments', 'chart-health', 'chart-agents'].forEach(function (id) {
+      ['chart-pricing', 'chart-underwriting', 'chart-claims', 'chart-investments', 'chart-health', 'chart-agents', 'chart-billing'].forEach(function (id) {
         var canvas = document.getElementById(id);
         var section = canvas && canvas.closest('section');
         if (!canvas || !section || ids.indexOf(section.id) < 0 || section.hidden) return;
