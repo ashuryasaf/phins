@@ -64,6 +64,7 @@ assessment read path and labeled; the pinned kernel components stay.
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional, Tuple
@@ -308,22 +309,37 @@ def resolve_application_adl(
     )
 
 
+def _questionnaire_form(record: Mapping[str, Any]) -> Dict[str, Any]:
+    """Questionnaire form off one row. A stored JSON string is parsed."""
+    raw = record.get("questionnaire_responses") or record.get("questionnaire")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            raw = json.loads(raw)
+        except (TypeError, ValueError):
+            return {}
+    return dict(raw) if isinstance(raw, Mapping) else {}
+
+
 def assessed_internal_score(record: Optional[Mapping[str, Any]]) -> Optional[int]:
     """Return one assessed internal score, or None when the row was not assessed.
 
     Trusted evidence is an explicit ``stated`` source, a ``daily_function``
-    answer, or a clean health score. An unsourced number is not an
-    assessment: the resolver would otherwise relabel it ``stated``, and a
-    stored 5 would then be treated as the book's health. The ×1.0 table
-    unit is not filled in.
+    answer, or a clean health score, on the row or on its questionnaire
+    form. An unsourced number is not an assessment: the resolver would
+    otherwise relabel it ``stated``, and a stored 5 would then be treated
+    as the book's health. The ×1.0 table unit is not filled in.
     """
     if not isinstance(record, Mapping):
         return None
-    stored_source = str(record.get("adl_level_source") or "").strip().lower()
-    questionnaire = record.get("questionnaire_responses") or record.get("questionnaire") or {}
-    if not isinstance(questionnaire, Mapping):
-        questionnaire = {}
-    resolution = resolve_application_adl(dict(record), dict(questionnaire))
+    questionnaire = _questionnaire_form(record)
+    stored_source = str(
+        _first_present(
+            record.get("adl_level_source"),
+            questionnaire.get("adl_level_source"),
+        )
+        or ""
+    ).strip().lower()
+    resolution = resolve_application_adl(dict(record), questionnaire)
     if resolution.clinical_level is None or resolution.source == SOURCE_UNSPECIFIED:
         return None
     if resolution.source in (SOURCE_DAILY_FUNCTION, SOURCE_HEALTH_SCORE):
