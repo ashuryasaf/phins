@@ -445,7 +445,11 @@
         ', coverage ' + money(tariff.coverage) + ', term ' + esc(tariff.term_years) +
         ' years. Premiums use PHINS internal underwriting score ' + esc(tariff.adl_level) +
         ' (' + esc(tariff.adl_status || tariff.adl_label || 'Internal score 5 (×1.0 multipliers; not the average)') +
-        '). This score is the kernel pricing input. It is not the average internal score. ' +
+        '). Underwriting rule ADL ' + esc(tariff.decline_threshold) + '+ declines new applications' +
+        (Number(tariff.decline_threshold) === 6 ? ' (strict)' : '') +
+        '. Highest score still accepted: ' + esc(tariff.accepted_score_ceiling) +
+        '. That ceiling is not the accepted-book average, and score ' + esc(tariff.adl_level) +
+        ' is not that average. ' +
         esc(scoreDisclaimer) + ' Not a customer quote.</p>' +
         '<div class="split"><div><div class="chart-box"><canvas id="chart-pricing"></canvas></div></div>' +
         '<div><table><thead><tr><th>Age</th><th>Annual</th><th>Monthly</th><th>Risk premium</th><th>Version</th></tr></thead><tbody>' +
@@ -453,11 +457,23 @@
         '<h2>Basic mortality rates</h2><table><thead><tr><th>Age band</th><th>Rate per 1,000</th></tr></thead><tbody>' + bands + '</tbody></table>' +
         '<h2>Version catalog</h2><table><thead><tr><th>Version</th><th>Status</th><th>Integrity</th></tr></thead><tbody>' + versions + '</tbody></table>';
 
-      var assessedCount = Number(uw.internal_score_assessed_count || 0);
-      var meanText = (uw.internal_score_mean == null)
-        ? 'No assessed internal underwriting score on this book, so no average is stated.'
-        : ('Average of ' + assessedCount + ' assessed internal underwriting score' +
-          (assessedCount === 1 ? '' : 's') + ': ' + esc(uw.internal_score_mean) + '.');
+      var assessedCount = Number(uw.internal_score_accepted_count || 0);
+      var ruleText = (uw.decline_threshold == null) ? '' : (
+        'Underwriting rule: ADL ' + esc(uw.decline_threshold) + '+ declines new applications' +
+        (Number(uw.decline_threshold) === 6 ? ' (strict)' : '') +
+        ' to reduce risk from unhealthy customers. Highest score still accepted: ' +
+        esc(uw.accepted_score_ceiling) + '. That ceiling is not the average. '
+      );
+      var excluded = Number(uw.internal_score_declined_by_rule || 0);
+      var meanText = ruleText + ((uw.internal_score_mean == null)
+        ? 'No assessed score below the decline line, so no accepted-book average is stated.'
+        : ('Accepted-book average of ' + assessedCount + ' assessed score' +
+          (assessedCount === 1 ? '' : 's') + ' below the decline line: ' +
+          esc(uw.internal_score_mean) + '.'));
+      if (excluded > 0) {
+        meanText += ' ' + excluded + ' assessed score' + (excluded === 1 ? '' : 's') +
+          ' at or above the decline line ' + (excluded === 1 ? 'is' : 'are') + ' excluded.';
+      }
       var uwDisclaimer = uw.internal_score_disclaimer || scoreDisclaimer;
       document.getElementById('underwriting').innerHTML =
         '<h2>Underwriting decisions</h2><p class="sub">Counts only. No applicant identity or medical detail. ' +

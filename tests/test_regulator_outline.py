@@ -206,7 +206,8 @@ def test_basic_premiums_follow_the_active_kernel_version():
     assert second["pricing"]["current_version"] == store.current_version
 
 
-def test_underwriting_mean_uses_assessed_scores_only():
+def test_underwriting_mean_stays_below_the_strict_decline_line():
+    """ADL 6+ (strict) declines new applications. Those scores are not the average."""
     from services.regulator_outline import aggregate_underwriting
 
     totals = aggregate_underwriting([
@@ -215,20 +216,63 @@ def test_underwriting_mean_uses_assessed_scores_only():
         {"status": "approved", "adl_level": 8, "adl_level_source": "stated"},
         {"status": "pending", "daily_function": "full"},
         {"status": "approved", "adl_level": 10, "adl_level_source": "stated"},
-    ])
-    assert totals["internal_score_assessed_count"] == 3
-    assert totals["internal_score_mean"] == round((8 + 1 + 10) / 3, 4)
-    assert totals["internal_score_mean"] != 5
+        {"status": "approved", "adl_level": 2, "adl_level_source": "stated"},
+        {"status": "rejected", "adl_level": 1, "adl_level_source": "stated"},
+    ], decline_threshold=6)
+    # Trusted assessments: 8, 1 (full), 10, 2, and the rejected 1.
+    assert totals["decline_threshold"] == 6
+    assert totals["accepted_score_ceiling"] == 5
+    assert totals["internal_score_assessed_count"] == 5
+    # 8 and 10 are declined by the strict rule. The rejected 1 is not in the book.
+    assert totals["internal_score_declined_by_rule"] == 2
+    assert totals["internal_score_accepted_count"] == 2
+    assert totals["internal_score_mean"] == round((1 + 2) / 2, 4)
+    assert totals["internal_score_mean"] < 5
+    assert totals["internal_score_mean"] < totals["decline_threshold"]
     assert totals["internal_score_is_average"] is True
-    assert "not assumed to be the average" in totals["internal_score_disclaimer"]
+    assert "below that line" in totals["internal_score_disclaimer"]
+
+    only_declined = aggregate_underwriting([
+        {"status": "approved", "adl_level": 8, "adl_level_source": "stated"},
+        {"status": "approved", "adl_level": 10, "adl_level_source": "stated"},
+    ], decline_threshold=6)
+    assert only_declined["internal_score_mean"] is None
+    assert only_declined["internal_score_is_average"] is False
+    assert only_declined["internal_score_declined_by_rule"] == 2
 
     empty = aggregate_underwriting([
         {"status": "approved", "risk_assessment": "medium"},
         {"status": "approved", "adl_level": 5, "adl_level_source": "unspecified_baseline"},
-    ])
+    ], decline_threshold=6)
     assert empty["internal_score_mean"] is None
     assert empty["internal_score_assessed_count"] == 0
     assert empty["internal_score_is_average"] is False
+
+
+def test_outline_uses_the_configured_decline_threshold():
+    store = _store()
+    store.config.decline_threshold = 6
+    outline = build_regulator_outline(
+        actuarial_store=store,
+        underwriting=[
+            {"status": "approved", "adl_level": 4, "adl_level_source": "stated"},
+            {"status": "approved", "adl_level": 1, "adl_level_source": "stated"},
+            {"status": "approved", "adl_level": 9, "adl_level_source": "stated"},
+        ],
+    )
+    uw = outline["underwriting"]
+    assert uw["decline_threshold"] == 6
+    assert uw["accepted_score_ceiling"] == 5
+    assert uw["internal_score_mean"] == 2.5
+    assert uw["internal_score_mean"] < 5
+    assert uw["internal_score_declined_by_rule"] == 1
+    premiums = outline["pricing"]["basic_premiums"]
+    assert premiums["decline_threshold"] == 6
+    assert premiums["accepted_score_ceiling"] == 5
+    assert premiums["adl_level"] == 5
+    assert premiums["illustration_score_is_ceiling"] is True
+    assert premiums["internal_score_is_average"] is False
+    assert premiums["rows"][1]["annual_premium"] > 0
 
 
 def test_divergent_books_are_refused():

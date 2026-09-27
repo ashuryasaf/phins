@@ -112,7 +112,10 @@ INTERNAL_UNDERWRITING_SCORE_DISCLAIMER = (
     "Score 10 is a fully disabled customer and meets global ADL 3+ "
     "(unable to perform 3 or more of 6 activities of daily living). "
     "Score 5 is the multiplier-table unit (mortality ×1.0, disability incidence ×1.0) "
-    "and is not assumed to be the average internal score."
+    "and is not assumed to be the average internal score. "
+    "New applications at or above the underwriting decline threshold are rejected. "
+    "The accepted-book average counts only assessed scores below that line, "
+    "so it is lower than the highest score still accepted."
 )
 
 SOURCE_STATED = "stated"
@@ -331,10 +334,19 @@ def assessed_internal_score(record: Optional[Mapping[str, Any]]) -> Optional[int
     return None
 
 
-def mean_from_score_counts(distribution: Any) -> Tuple[Optional[float], int]:
-    """Mean of a ``{score: count}`` map. Empty or junk counts return ``(None, 0)``."""
+def mean_from_score_counts(
+    distribution: Any,
+    *,
+    below: Optional[int] = None,
+) -> Tuple[Optional[float], int]:
+    """Mean of a ``{score: count}`` map. Empty or junk counts return ``(None, 0)``.
+
+    ``below`` is the underwriting decline threshold. Scores at or above it
+    are declined and are not part of the accepted-book average.
+    """
     if not isinstance(distribution, Mapping):
         return None, 0
+    ceiling = int(below) if below is not None else None
     total = 0
     count = 0
     for key, raw_n in distribution.items():
@@ -344,6 +356,8 @@ def mean_from_score_counts(distribution: Any) -> Tuple[Optional[float], int]:
         except (TypeError, ValueError):
             continue
         if level is None or n <= 0:
+            continue
+        if ceiling is not None and level >= ceiling:
             continue
         total += level * n
         count += n

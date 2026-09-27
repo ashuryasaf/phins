@@ -116,7 +116,23 @@ def _risk_band(item: Mapping[str, Any]) -> str:
     return "76_100"
 
 
-def aggregate_underwriting(applications: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
+# A rejected file is not in the accepted book, even when its score is healthy.
+_NOT_IN_ACCEPTED_BOOK = frozenset({"rejected", "declined", "decline", "cancelled", "canceled"})
+
+
+def aggregate_underwriting(
+    applications: Iterable[Mapping[str, Any]],
+    *,
+    decline_threshold: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Decision counts plus the accepted-book internal-score average.
+
+    The average uses assessed scores that are still acceptable under the
+    underwriting decline rule. A score at or above ``decline_threshold``
+    is a declined application (ADL 6+ when the rule is Strict) and does
+    not pull the average up. The result is therefore below that line, and
+    it is not filled with score 5.
+    """
     from services.adl_mapping import (
         INTERNAL_UNDERWRITING_SCORE_DISCLAIMER,
         assessed_internal_score,
@@ -126,16 +142,30 @@ def aggregate_underwriting(applications: Iterable[Mapping[str, Any]]) -> Dict[st
     rows = _as_list(applications)
     by_status = _count_status(rows)
     bands: Dict[str, int] = {}
-    assessed: List[int] = []
+    accepted_scores: List[int] = []
+    assessed_count = 0
+    declined_by_rule = 0
+    threshold = int(decline_threshold) if decline_threshold is not None else None
     for row in rows:
         band = _risk_band(row)
         bands[band] = bands.get(band, 0) + 1
         score = assessed_internal_score(row)
-        if score is not None:
-            assessed.append(score)
-    assessed_count = len(assessed)
-    # Mean of assessed scores only. Never substitute the ×1.0 table unit.
-    mean = round_internal_mean(sum(assessed) / assessed_count) if assessed_count else None
+        if score is None:
+            continue
+        assessed_count += 1
+        if _status(row) in _NOT_IN_ACCEPTED_BOOK:
+            continue
+        if threshold is not None and score >= threshold:
+            declined_by_rule += 1
+            continue
+        accepted_scores.append(score)
+    accepted_count = len(accepted_scores)
+    # Mean of scores the decline rule still accepts. Never substitute 5.
+    mean = (
+        round_internal_mean(sum(accepted_scores) / accepted_count)
+        if accepted_count else None
+    )
+    ceiling = (threshold - 1) if threshold is not None else None
     return {
         "total": len(rows),
         "by_status": by_status,
@@ -143,9 +173,13 @@ def aggregate_underwriting(applications: Iterable[Mapping[str, Any]]) -> Dict[st
         "pending": by_status.get("pending", 0),
         "rejected": by_status.get("rejected", 0),
         "risk_bands": dict(sorted(bands.items())),
+        "decline_threshold": threshold,
+        "accepted_score_ceiling": ceiling,
         "internal_score_assessed_count": assessed_count,
+        "internal_score_accepted_count": accepted_count,
+        "internal_score_declined_by_rule": declined_by_rule,
         "internal_score_mean": mean,
-        "internal_score_is_average": assessed_count > 0,
+        "internal_score_is_average": accepted_count > 0,
         "internal_score_disclaimer": INTERNAL_UNDERWRITING_SCORE_DISCLAIMER,
     }
 
@@ -405,6 +439,8 @@ def kernel_pricing_outline(store: Any) -> Dict[str, Any]:
         internal_score_status,
     )
 
+    decline_threshold = int(getattr(config, "decline_threshold", 9) or 9)
+    accepted_ceiling = decline_threshold - 1
     table_set = table_set_from_store(store)
     pricing_config = pricing_config_from_underwriting(config)
     product = get_product(REFERENCE_PRODUCT_ID)
@@ -437,6 +473,8 @@ def kernel_pricing_outline(store: Any) -> Dict[str, Any]:
             "adl_status": score_status,
             "adl_is_health_status": False,
             "internal_score_is_average": False,
+            "decline_threshold": decline_threshold,
+            "accepted_score_ceiling": accepted_ceiling,
             "smoking_status": "nonsmoker",
             "annual_premium": _round2(priced.annual_premium),
             "monthly_premium": _round2(priced.monthly_premium),
@@ -485,6 +523,11 @@ def kernel_pricing_outline(store: Any) -> Dict[str, Any]:
             "adl_status": score_status,
             "adl_is_health_status": False,
             "internal_score_is_average": False,
+            "decline_threshold": decline_threshold,
+            "accepted_score_ceiling": accepted_ceiling,
+            # True when this illustration is the last score the decline rule
+            # still accepts. That ceiling is not the accepted-book average.
+            "illustration_score_is_ceiling": REFERENCE_ADL == accepted_ceiling,
             "internal_score_disclaimer": INTERNAL_UNDERWRITING_SCORE_DISCLAIMER,
             "rows": premiums,
         },
@@ -590,7 +633,12 @@ def build_regulator_outline(
     """
     policy_totals = aggregate_policies(policies or [])
     claim_totals = aggregate_claims(claims or [])
-    underwriting_totals = aggregate_underwriting(underwriting or [])
+    uw_config = getattr(actuarial_store, "config", None)
+    decline_threshold = int(getattr(uw_config, "decline_threshold", 9) or 9)
+    underwriting_totals = aggregate_underwriting(
+        underwriting or [],
+        decline_threshold=decline_threshold,
+    )
     health = aggregate_health(policy_totals, health_wallets or [])
     billing_totals = aggregate_billing(billing or [])
     books = ledger_totals(ledger)

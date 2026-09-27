@@ -2512,9 +2512,13 @@ class PortfolioSimulator:
             'components_match': abs(totals['annual_premium'] - calculated_gross) < max(1.0, math.sqrt(accepted_count) * 0.50)
         }
         
-        # Measured average of accepted internal scores. Not filled with 5.
+        # Accepted-book average only. Scores at or above the decline
+        # threshold are rejected and must not raise this mean.
         from services.adl_mapping import mean_from_score_counts, round_internal_mean
-        score_mean, score_count = mean_from_score_counts(demographics['adl_distribution'])
+        score_mean, score_count = mean_from_score_counts(
+            demographics['adl_distribution'],
+            below=int(self.tables.config.decline_threshold),
+        )
 
         # Build result
         duration = (datetime.now() - start_time).total_seconds()
@@ -2557,6 +2561,7 @@ class PortfolioSimulator:
                 'internal_score_mean': round_internal_mean(score_mean) if score_mean is not None else None,
                 'internal_score_assessed_count': score_count,
                 'internal_score_is_average': score_mean is not None,
+                'decline_threshold': int(self.tables.config.decline_threshold),
             },
             
             'demographics': demographics,
@@ -4174,7 +4179,19 @@ def reconcile_simulation_with_kernel(simulation: Dict[str, Any]) -> Dict[str, An
         round_internal_mean,
     )
     distribution = (simulation.get('demographics') or {}).get('adl_distribution')
-    measured_mean, assessed_count = mean_from_score_counts(distribution)
+    matrix = simulation.get('age_adl_matrix') or {}
+    snapshot_threshold = (
+        portfolio.get('decline_threshold')
+        or matrix.get('decline_threshold')
+        or (simulation.get('parameters') or {}).get('decline_threshold')
+    )
+    try:
+        decline_line = int(snapshot_threshold) if snapshot_threshold is not None else None
+    except (TypeError, ValueError):
+        decline_line = None
+    measured_mean, assessed_count = mean_from_score_counts(
+        distribution, below=decline_line,
+    )
     if measured_mean is None:
         # No assessed distribution on this snapshot. Keep the ×1.0 table
         # unit as the pricing input and do not call it the average.
