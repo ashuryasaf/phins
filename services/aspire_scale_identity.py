@@ -382,3 +382,162 @@ def parse_identity_query(query: Dict[str, Any]) -> Dict[str, Any]:
     if addon_pct is not None:
         kwargs["savings_addon"] = addon_pct / 100.0
     return kwargs
+
+
+# ---------------------------------------------------------------------------
+# Scenario Lab lives-mode premium — same kernel, every market
+# ---------------------------------------------------------------------------
+# Layer B (PHINS planning) quotes ``quote_risk_premium`` and converts ILS →
+# local currency at a pinned planning FX (the pitch-dashboard USD crosses).
+# That quote is the lives-mode annual premium.
+#
+# It is never written back into Layer A (public evidence). Public averages
+# such as Sweden's implied vårdförsäkring SEK 6,312, Japan's JPY 6,225
+# monthly LTC levy, or Bulgaria's BGN 870 million life GWP stay in the
+# evidence column only.
+#
+# Israel is the identity check: age 42 + published tables = ILS 4,518, which
+# is also the pinned Investor Meeting book. Other markets may change the
+# planning age (Bulgaria uses NSI mean age 45.4 → 45) but not the tables,
+# the ILS 1,000,000 / 250,000 face, or the Israel book.
+
+# Same USD crosses as pitch-dashboard ``pitchCountryDefaults``. Planning pins
+# — not live FX, not a public statistic, never written into evidence.
+FX_USD: Dict[str, float] = {
+    "ILS": 3.68,
+    "USD": 1.00,
+    "CAD": 1.36,
+    "EUR": 0.92,
+    "AED": 3.67,
+    "JPY": 154.50,
+    "AUD": 1.53,
+    "SEK": 10.85,
+}
+
+PUBLISHED_LIFE_RATE = 0.25
+PUBLISHED_DISABILITY_RATE = 0.20
+SPECIMEN_FACE_ILS = 1_000_000.0
+SPECIMEN_DISABILITY_SHARE = 0.25
+ISRAEL_BOOK_AGE = 42
+ISRAEL_BOOK_PREMIUM = 4518
+
+# Planning issue age per lab market. Only Bulgaria substitutes a documented
+# official mean age; everyone else keeps the Israel specimen so the product
+# is comparable. Ages at or above 65 are refused (post-cut-off).
+MARKET_SPECS: Dict[str, Dict[str, Any]] = {
+    "israel": {
+        "currency": "ILS",
+        "age": 42,
+        "age_basis": "israel_book_specimen",
+    },
+    "usa": {
+        "currency": "USD",
+        "age": 42,
+        "age_basis": "israel_book_specimen",
+    },
+    "canada": {
+        "currency": "CAD",
+        "age": 42,
+        "age_basis": "israel_book_specimen",
+    },
+    "wneurope": {
+        "currency": "EUR",
+        "age": 42,
+        "age_basis": "israel_book_specimen",
+    },
+    "middleeast": {
+        "currency": "AED",
+        "age": 42,
+        "age_basis": "israel_book_specimen",
+    },
+    "japan": {
+        "currency": "JPY",
+        "age": 42,
+        "age_basis": "israel_book_specimen",
+    },
+    "australia": {
+        "currency": "AUD",
+        "age": 42,
+        "age_basis": "israel_book_specimen",
+    },
+    "sweden": {
+        "currency": "SEK",
+        "age": 42,
+        "age_basis": "israel_book_specimen",
+    },
+    "portugal": {
+        "currency": "EUR",
+        "age": 42,
+        "age_basis": "israel_book_specimen",
+    },
+    "bulgaria": {
+        "currency": "EUR",
+        "age": 45,
+        "age_basis": "nsi_2025_mean_age_45_4",
+    },
+}
+
+
+def fx_per_ils(currency: str) -> float:
+    code = str(currency or "ILS").upper()
+    if code not in FX_USD:
+        raise ValueError(f"unpinned Scenario Lab currency: {currency}")
+    return FX_USD[code] / FX_USD["ILS"]
+
+
+def convert_ils(amount_ils: float, currency: str) -> int:
+    """Nearest-integer local amount. JPY included (no minor-unit split here)."""
+    return int(round(float(amount_ils) * fx_per_ils(currency)))
+
+
+def quote_market(market_id: str, *, age: Optional[int] = None) -> Dict[str, Any]:
+    """Kernel quote for one Scenario Lab market, in ILS and local currency."""
+    spec = MARKET_SPECS.get(market_id)
+    if spec is None:
+        raise KeyError(f"unknown Scenario Lab market: {market_id}")
+    issue_age = int(age if age is not None else spec["age"])
+    if issue_age >= 65:
+        raise ValueError("Scenario Lab kernel quote stays inside issue ages 3–64")
+    raw = quote_risk_premium(
+        avg_age=issue_age,
+        face=SPECIMEN_FACE_ILS,
+        life_rate_per_1000=PUBLISHED_LIFE_RATE,
+        disability_rate_per_1000=PUBLISHED_DISABILITY_RATE,
+        disability_share_pre=SPECIMEN_DISABILITY_SHARE,
+    )
+    currency = spec["currency"]
+    local = convert_ils(raw["annual_premium"], currency)
+    return {
+        "market_id": market_id,
+        "currency": currency,
+        "age": issue_age,
+        "age_basis": spec["age_basis"],
+        "age_factor": raw["age_factor"],
+        "life_rate_per_1000": PUBLISHED_LIFE_RATE,
+        "disability_rate_per_1000": PUBLISHED_DISABILITY_RATE,
+        "face_ils": SPECIMEN_FACE_ILS,
+        "disability_face_ils": SPECIMEN_FACE_ILS * SPECIMEN_DISABILITY_SHARE,
+        "ils_annual": raw["annual_premium"],
+        "ils_monthly": raw["total_monthly"],
+        "local_annual": local,
+        "fx_usd": dict(FX_USD),
+        "fx_per_ils": fx_per_ils(currency),
+        "pricing_source": "pricing_kernel",
+        "table_id": "risk_reference_v1",
+        "layer": "phins_planning",
+        "writes_public_evidence": False,
+    }
+
+
+def all_market_quotes() -> Dict[str, Dict[str, Any]]:
+    return {market_id: quote_market(market_id) for market_id in MARKET_SPECS}
+
+
+def israel_book_holds() -> bool:
+    quote = quote_market("israel")
+    return (
+        quote["age"] == ISRAEL_BOOK_AGE
+        and quote["ils_annual"] == float(ISRAEL_BOOK_PREMIUM)
+        and quote["local_annual"] == ISRAEL_BOOK_PREMIUM
+        and risk_reference_v1_factor(ISRAEL_BOOK_AGE) == 1.255
+    )

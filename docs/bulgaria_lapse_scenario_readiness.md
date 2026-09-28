@@ -201,8 +201,9 @@ Public amounts that **must stay out of the premium pool**:
 Implied 2025 life premium per working-age person
 (`870e6 / 3,764,842`) = **BGN 231 / year** (EUR 118). That is a
 **penetration identity**, not a product price. The Scenario Lab
-specimen premium for Bulgaria is a **EUR 720** planning input
-(income-adjusted vs Portugal’s EUR 1,900), labelled lab calibration.
+lives-mode premium is the actuarial kernel quote at age 45:
+**EUR 1,170** (ILS 4,680 × pinned EUR/ILS 0.25). It is not an FSC
+average and it is not the implied BGN 231 life spend.
 
 **Read for PHINS:** households already pay a large *public* premium
 (pension + health + pillar 2). Willingness to add a *private* fence is
@@ -349,24 +350,31 @@ statistic.
 
 ## 3. Scenario Lab planning layer (not public evidence)
 
-Pinned so the dashboard and this memo cannot drift.
+Pinned so the dashboard and this memo cannot drift. Lives-mode premium is
+the **actuarial kernel** (`risk_reference_v1`, published tables life 0.25 /
+disability 0.20, ILS 1,000,000 / 250,000 face) at Bulgaria's official mean
+age 45.4 → **45** (`f=1.300` → ILS 4,680), converted at the pinned planning
+FX EUR/ILS = 0.92 / 3.68 = 0.25 → **EUR 1,170**. That quote is Layer B.
+It is not an FSC average and it does not replace the Israel book (age 42 /
+ILS 4,518).
 
 | Input | Value | Basis |
 |---|---|---|
 | Addressable lives | **3,764,842** | NSI working-age stock 31.12.2025 (legal retirement ages) |
 | Attach rate | 1.2% | Conservative vs Portugal 1.8% — thinner private life |
-| Annual premium | EUR 720 | Lab calibration, income-adjusted vs Portugal EUR 1,900. **Not** a filed price |
-| Market premium pool | EUR 444,824,000 | FY2025 life GWP BGN 870m / 1.95583 |
+| Annual premium | **EUR 1,170** | Kernel quote at age 45. **Not** a filed price and **not** the FY2025 life GWP |
+| Market premium pool | EUR 444,824,000 | FY2025 life GWP BGN 870m / 1.95583 (premium-share mode only) |
 | Target share | 2.0% | Planning |
 | Cession | 22% | SII planning; replace with a quote |
 | Loss ratio | 60% | Planning |
 | Expense ratio | 18% | Planning (higher than DZI-class; digital still has ID-friction) |
-| Lives TAM (lab) | ≈ EUR 32.5m | `3,764,842 × 1.2% × 720` |
+| Lives TAM (lab) | ≈ EUR 52.9m | `3,764,842 × 1.2% × 1,170` |
 | Premium-mode TAM (lab) | ≈ EUR 8.9m | `444,824,000 × 2.0%` |
 
 Use **lives mode** as the default, consistent with other ageing / public-depth
 markets. The 65+ stock (1,557,851) stays in the *demand* column; it is
-not the issue-age pool.
+not the issue-age pool. The retired EUR 720 stub was an income-adjusted
+guess and is no longer used.
 
 ---
 
@@ -416,5 +424,9 @@ lapse table.
 3. **Missing stays missing.** No national disability-pensioner stock, no
    private LTC insured-lives count, no disability cession ratio, no
    country lapse table.
-4. **TAM is a scenario.** EUR 32.5m lives-mode / EUR 8.9m premium-mode
-   are lab outputs. They do not appear in the evidence table as facts.
+4. **TAM is a scenario.** EUR 52.9m lives-mode (kernel EUR 1,170) /
+   EUR 8.9m premium-mode are lab outputs. They do not appear in the
+   evidence table as facts.
+5. **Lives premium is the kernel.** EUR 1,170 is `risk_reference_v1` at
+   age 45, FX-converted. It is not written into the FSC / NSI / NSSI
+   evidence strings. The Israel book stays ILS 4,518 at age 42.

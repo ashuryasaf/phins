@@ -234,7 +234,9 @@ def test_sweden_replaces_albania_on_scenario_lab():
     assert "352,000 people aged 65+" in block
     assert "808,000 people" in block
     assert "SEK 5.1 billion" in block
-    assert "annualPremium: 6312" in block
+    assert "SEK 6,312" in block
+    assert "annualPremium: 13321" in block
+    assert "annualPremium: 6312" not in block
     assert round(5_100_000_000 / 808_000) == 6312
     lab = _lab()
     assert "sweden: 'שוודיה'" in lab
@@ -252,17 +254,16 @@ def test_bulgaria_lapse_scenario_uses_official_public_private_split():
     assert "2,061,409 pensioners" in block
     assert "BGN 5.25 billion" in block
     assert "BGN 870 million" in block
-    assert "annualPremium: 720" in block
+    assert "annualPremium: 1170" in block
+    assert "annualPremium: 720" not in block
     assert "marketPremiumPool: 444824000" in block
     assert "addressableLives: 3764842" in block
-    assert "lab calibration" in block
-    assert "not a PHINS product price" in block
+    assert "actuarial kernel quote" in block
     assert "NSSI and NHIF levies are public funding, not commercial premium" in block
     # Official irrevocable rate BGN 1.95583 = EUR 1.
     # 870,000,000 / 1.95583 ≈ EUR 444,823,964; the lab stores 444,824,000.
     life_gwp_eur = Decimal(870_000_000) / Decimal("1.95583")
     assert Decimal("444823000") < life_gwp_eur < Decimal("444825000")
-    assert 3_764_842 * 12 * 720 // 1000 == 32_528_234
     assert "priority: 66" in block
     assert "demand: 82" in block
     assert "privateAccess: 44" in block
