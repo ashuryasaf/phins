@@ -968,17 +968,29 @@ class SupplierManagementService:
         # Sort by created date (newest first)
         orders.sort(key=lambda x: x.get('created_date', ''), reverse=True)
         
-        # Paginate
+        # Paginate. Money totals cover the filtered book, not this page.
         total = len(orders)
         start = (page - 1) * page_size
         end = start + page_size
         items = orders[start:end]
-        
+
+        def _order_amount(order: Dict, key: str) -> float:
+            try:
+                return float(order.get(key) or 0)
+            except (TypeError, ValueError):
+                return 0.0
+
         return {
             'items': items,
             'page': page,
             'page_size': page_size,
-            'total': total
+            'total': total,
+            'totals': {
+                'order_count': total,
+                'order_value': round(sum(_order_amount(order, 'total_amount') for order in orders), 2),
+                'platform_fees': round(sum(_order_amount(order, 'platform_fee') for order in orders), 2),
+                'supplier_payouts': round(sum(_order_amount(order, 'supplier_payout') for order in orders), 2),
+            },
         }
     
     # =========================================================================

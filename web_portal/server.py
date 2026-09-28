@@ -885,6 +885,109 @@ def compute_unified_financial_metrics(
     }
 
 
+def billing_stats_payload() -> Dict[str, Any]:
+    """One billing-stats shape for GET and POST.
+
+    Cash identity is the customer ledger. ``total_revenue`` stays the issued
+    annual premium (kernel/policy), not collected cash. Accounting postings
+    are reported beside the ledger; a gap is flagged and never rewritten here.
+    """
+    metrics = compute_unified_financial_metrics(exclude_suspended=True)
+    bills = [
+        bill for bill in BILLING.values()
+        if not is_suspended_account(bill.get('customer_id', ''))
+    ]
+    successful = sum(1 for bill in bills if status_in(bill, ['paid', 'partial']))
+    failed = sum(1 for bill in bills if status_eq(bill, 'failed'))
+    ledger_premium = safe_float(
+        metrics.get('ledger_premium_collected', metrics.get('total_collected')), 0.0
+    )
+    ledger_claims = safe_float(
+        metrics.get('ledger_claims_paid', metrics.get('claims_paid_amount')), 0.0
+    )
+    accounting_premium = safe_float(metrics.get('accounting_premium_posted'), 0.0)
+    accounting_claims = safe_float(metrics.get('accounting_claims_posted'), 0.0)
+    books_cash_tied = (
+        abs(ledger_premium - accounting_premium) < 0.01
+        and abs(ledger_claims - accounting_claims) < 0.01
+    )
+    return {
+        'total_revenue': metrics['total_revenue'],
+        'monthly_premium_income': metrics['monthly_premium_income'],
+        'total_billed': metrics['total_billed'],
+        'total_collected': metrics['total_collected'],
+        'ledger_premium_collected': ledger_premium,
+        'outstanding_balance': metrics['outstanding_balance'],
+        'outstanding_receivables': metrics['outstanding_balance'],
+        'claims_paid': ledger_claims,
+        'claims_paid_records': metrics['claims_paid_amount'],
+        'ledger_claims_paid': ledger_claims,
+        'claims_paid_this_month': ledger_claims,
+        'investment_returns': 0,
+        'total_transactions': metrics['total_transactions'],
+        'successful_payments': successful,
+        'failed_payments': failed,
+        'paid_count': metrics['paid_count'],
+        'pending_count': metrics['pending_count'],
+        'overdue_count': metrics['overdue_count'],
+        'pending_alerts': 0,
+        'collection_rate': metrics['collection_rate'],
+        'accounting_premium_posted': accounting_premium,
+        'accounting_claims_posted': accounting_claims,
+        'economic_claims_reserve': safe_float(metrics.get('economic_claims_reserve'), 0.0),
+        'books_cash_tied': books_cash_tied,
+    }
+
+
+def issued_premium_view(policy: Any, application: Any, quote_summary: Any) -> Dict[str, Any]:
+    """Issued premium identity for the risk report.
+
+    Reads the policy pin, then the application, then the quote. A loading
+    percentage is not a premium, so missing money fields stay absent.
+    """
+    policy = policy if isinstance(policy, dict) else {}
+    application = application if isinstance(application, dict) else {}
+    quote = quote_summary if isinstance(quote_summary, dict) else {}
+    pricing: Dict[str, Any] = {}
+    for field in (
+        'annual_premium',
+        'monthly_premium',
+        'risk_premium_annual',
+        'savings_premium_annual',
+    ):
+        for source in (policy, application, quote):
+            raw = source.get(field)
+            if raw is None or raw == '':
+                continue
+            pricing[field] = round(safe_float(raw, 0.0), 2)
+            break
+
+    def _has_money(container: Dict[str, Any], *keys: str) -> bool:
+        return any(container.get(key) not in (None, '') for key in keys)
+
+    if _has_money(policy, 'risk_premium_annual', 'savings_premium_annual'):
+        identity = 'kernel_pin'
+    elif _has_money(quote, 'risk_premium_annual', 'savings_premium_annual'):
+        identity = 'quote'
+    elif pricing:
+        identity = 'issued_record'
+    else:
+        identity = 'unavailable'
+    pricing['identity'] = identity
+    return pricing
+
+
+def supplier_order_money_totals(orders: Any) -> Dict[str, Any]:
+    """Sum order money across the full filtered book, not one page."""
+    rows = list(orders or [])
+    return {
+        'order_count': len(rows),
+        'order_value': round(sum(safe_float(row.get('total_amount'), 0.0) for row in rows), 2),
+        'platform_fees': round(sum(safe_float(row.get('platform_fee'), 0.0) for row in rows), 2),
+        'supplier_payouts': round(sum(safe_float(row.get('supplier_payout'), 0.0) for row in rows), 2),
+    }
+
+
 def _savings_pipeline_accounts():
     try:
         if savings_pipeline_enabled and savings_pipeline_service:
@@ -21965,6 +22068,8 @@ For claims or questions, please contact:
                         'page': page,
                         'page_size': page_size,
                         'total': total,
+                        'totals': supplier_order_money_totals(items),
+                        'book': 'supply_chain',
                     }
                 elif supplier_service_enabled:
                     result = supplier_service.get_orders(
@@ -21972,6 +22077,7 @@ For claims or questions, please contact:
                         page=page,
                         page_size=page_size,
                     )
+                    result['book'] = 'supplier_service'
                 else:
                     self._set_json_headers(503)
                     self.wfile.write(json.dumps({'error': 'Supplier service unavailable'}).encode('utf-8'))
@@ -24105,6 +24211,7 @@ For claims or questions, please contact:
                         'conditions_of_approval': conditions_of_approval,
                         'review_period_months': 12 if risk_category in ['very_low', 'low'] else 6
                     },
+                    'pricing': issued_premium_view(target_policy, target_app, quote_summary),
                     'metadata': {
                         'assessment_date': datetime.now().isoformat(),
                         'model_version': ENGINE_VERSION,
@@ -25531,28 +25638,8 @@ For claims or questions, please contact:
         
         # Billing stats for admin dashboard (fallback when billing_engine unavailable)
         if path == '/api/billing/stats':
-            m = compute_unified_financial_metrics(exclude_suspended=True)
-            
             self._set_json_headers()
-            self.wfile.write(json.dumps({
-                'total_revenue': m['total_revenue'],
-                'monthly_premium_income': m['monthly_premium_income'],
-                'total_billed': m['total_billed'],
-                'total_collected': m['total_collected'],
-                'ledger_premium_collected': m.get('ledger_premium_collected', m['total_collected']),
-                'outstanding_balance': m['outstanding_balance'],
-                'outstanding_receivables': m['outstanding_balance'],
-                'claims_paid': m.get('ledger_claims_paid', m['claims_paid_amount']),
-                'claims_paid_records': m['claims_paid_amount'],
-                'ledger_claims_paid': m.get('ledger_claims_paid', m['claims_paid_amount']),
-                'claims_paid_this_month': m.get('ledger_claims_paid', m['claims_paid_amount']),
-                'investment_returns': 0,
-                'total_transactions': m['total_transactions'],
-                'paid_count': m['paid_count'],
-                'pending_count': m['pending_count'],
-                'overdue_count': m['overdue_count'],
-                'collection_rate': m['collection_rate']
-            }).encode('utf-8'))
+            self.wfile.write(json.dumps(billing_stats_payload()).encode('utf-8'))
             return
         
         # ========== SERVICE TRANSACTIONS API (for Marketplace & Service Transactions tab) ==========
@@ -49359,24 +49446,8 @@ For claims or questions, please contact:
             # Get billing stats for dashboard
             if path == '/api/billing/stats':
                 try:
-                    m = compute_unified_financial_metrics(exclude_suspended=True)
-                    bills = [b for b in BILLING.values()
-                             if not is_suspended_account(b.get('customer_id', ''))]
-                    successful = sum(1 for b in bills if status_in(b, ['paid', 'partial']))
-                    failed = sum(1 for b in bills if status_eq(b, 'failed'))
-                    
                     self._set_json_headers()
-                    self.wfile.write(json.dumps({
-                        'total_transactions': m['total_transactions'],
-                        'successful_payments': successful,
-                        'failed_payments': failed,
-                        'total_revenue': m['total_revenue'],
-                        'total_collected': m['total_collected'],
-                        'ledger_premium_collected': m.get('ledger_premium_collected', m['total_collected']),
-                        'claims_paid': m.get('ledger_claims_paid', m.get('claims_paid_amount', 0)),
-                        'ledger_claims_paid': m.get('ledger_claims_paid', 0),
-                        'pending_alerts': 0
-                    }).encode('utf-8'))
+                    self.wfile.write(json.dumps(billing_stats_payload()).encode('utf-8'))
                 except Exception as e:
                     self._set_json_headers(500)
                     self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))

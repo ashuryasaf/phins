@@ -1177,13 +1177,22 @@ class FoundationService:
     def get_foundation_members(
         self,
         foundation_id: str,
-        include_pending: bool = False
+        include_pending: bool = False,
+        include_inactive: bool = False
     ) -> List[Dict[str, Any]]:
-        """Get all members of a foundation"""
+        """Get all members of a foundation.
+
+        ``include_inactive`` also returns members who left or were removed;
+        their contributions stay in the fund, so lifetime giving needs them.
+        """
         members = []
         for member in self._members.values():
             if member['foundation_id'] == foundation_id:
-                if member['status'] == 'active' or (include_pending and member['status'] == 'pending'):
+                if (
+                    include_inactive
+                    or member['status'] == 'active'
+                    or (include_pending and member['status'] == 'pending')
+                ):
                     members.append(member)
         
         # Sort by role (founder first, then admin, then member)
