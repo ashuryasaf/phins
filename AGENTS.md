@@ -8,17 +8,18 @@ override this document.
 
 PHINS is a Python platform built around:
 
-- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~50k lines)
-- optional extension routing in `web_portal/api_extensions.py` (~3450 lines)
+- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~58k lines)
+- optional extension routing in `web_portal/api_extensions.py` (~3950 lines)
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`, `api_agent_ecosystem.py`,
-  `api_assessment_center.py`)
-- service-layer logic in `services/` (113 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
+  `api_assessment_center.py`, `api_customer_identity.py`,
+  `api_chat_application.py`, `api_claims_chat.py`)
+- service-layer logic in `services/` (122 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (233 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (252 files) and root-level `test_*.py` (11 files)
 - one generalized job queue (`services/agent_job_queue.py`, table
  `document_processing_jobs`, rows keyed by `subject_type`/`subject_id` and
  `submitted_by`; retries, dead-letter, idempotency keys, handler registry —
@@ -180,6 +181,9 @@ Preferred file-by-task:
 | Customer messaging / consent / escalation | `services/customer_agent/`, `web_portal/server.py` (`/api/admin/customers/{id}/contact`, `.../consent`, `.../interactions`) |
 | Agent ecosystem API | `web_portal/api_agent_ecosystem.py`, `services/agent_ecosystem_service.py` |
 | Assessment center API | `web_portal/api_assessment_center.py`, `services/assessment_center_service.py` |
+| Customer identity API | `web_portal/api_customer_identity.py`, `services/customer_identity_service.py` |
+| Chat application flow (Phin, new-policy) | `web_portal/api_chat_application.py`, `services/chat_application_service.py`, `services/chat_application_i18n.py` |
+| Claims chat flow | `web_portal/api_claims_chat.py`, `services/claims_chat_service.py` |
 | Business rule/workflow | `services/`, then the route or engine that calls it |
 | Database/schema/repository | `database/models.py`, `database/manager.py`, `database/repositories/`, `database/config.py` |
 | Billing/accounting behavior | `billing_engine.py`, `accounting_engine.py`, related tests |
@@ -192,7 +196,7 @@ Preferred file-by-task:
 | LLM prompts / structured output | `prompts/`, `schemas/*.json`, `services/llm_providers.py`, `services/assessment_ai_service.py`; refresh `tests/golden/assessment_ai/` deliberately |
 | Underwriting Bot / Claims Bot evidence | `services/evidence_facts.py`, `services/underwriting_bot/*.py`, `services/claims_bot_service.py`, `services/model_shadow.py`; tests in `tests/test_evidence_pipeline.py` |
 | Mislaka / pension parsing | `services/pension/{schema,parsers,cache,agent}.py` (facade `services/pension_data_agent.py`); tests in `tests/test_pension_agent.py` |
-| Risk Reports intake / analysis / report text | `services/risk_reports/{parsers,analysis,render,charts,service}.py` (facade `services/ai_risk_reports_service.py`); tests in `tests/test_risk_reports_package.py`, `tests/test_ai_risk_reports.py` |
+| Risk Reports intake / analysis / report text | `services/risk_reports/{parsers,analysis,render,charts,pdf_export,service}.py` (facade `services/ai_risk_reports_service.py`); tests in `tests/test_risk_reports_package.py`, `tests/test_ai_risk_reports.py` |
 
 ## 2) High-Value Paths
 
@@ -217,6 +221,9 @@ Preferred file-by-task:
 |  |- api_delivery_bidding.py
 |  |- api_agent_ecosystem.py
 |  |- api_assessment_center.py
+|  |- api_customer_identity.py         # customer identity master HTTP surface
+|  |- api_chat_application.py          # Phin new-policy chat flow
+|  |- api_claims_chat.py               # Phin claims chat flow
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
 |                                        # (includes `static/locales/he.json` Hebrew i18n)
@@ -224,7 +231,7 @@ Preferred file-by-task:
 |- prompts/                             # versioned LLM prompt templates (sha256 provenance)
 |  `- assessment/                       # narrative v1 (free text) + v2 (structured); onboarding/service/termination v1
 |- schemas/                             # JSON schemas for structured LLM output
-|- services/                            # 111 service modules
+|- services/                            # 122 top-level service modules + 6 packages
 |  |- agent_eval.py                     # A6 replay / propose_thresholds / golden sets
 |  |- automation/                       # B2 pure rules: quoting, underwriting_gate, fraud, claims_gate, billing_schedule
 |  |- underwriting_bot/                 # B1 package: report (model+engine), features (analyzers), service
@@ -233,7 +240,7 @@ Preferred file-by-task:
 |  |- model_shadow.py                   # B1 shadow scoring + drift monitor (never decides)
 |  |- pension/                          # B5 package: schema (mapping + CompiledFields), parsers (tree + iterparse), cache, report, agent
 |  |- pension_data_agent.py             # facade re-exporting the package
-|  |- risk_reports/                     # B9 package: models, parsers (DocumentProcessingService text), analysis, charts, render, service
+|  |- risk_reports/                     # B9 package: models, parsers (DocumentProcessingService text), analysis, charts, render, pdf_export, service
 |  |- ai_risk_reports_service.py        # facade (two-way forwarding of AI_REPORTS_DATA_FILE / singleton)
 |  |- customer_agent/                   # B6 package: communication + service_desk facades, interaction_log, consent, escalation
 |  |- customer_communication_agent.py   # shim -> customer_agent.communication
@@ -274,7 +281,7 @@ Preferred file-by-task:
 |- scripts/                             # operational utilities
 |  |- run_agent_eval.py                 # golden sets + decision replay CLI
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/worker/db-init)
-|- tests/                               # 225 test files
+|- tests/                               # 252 test files under tests/ (+ 11 root-level test_*.py)
 |  `- golden/<agent>/*.json             # frozen agent outputs ({name, input, expected})
 |- docs/
 |  |- platform_data_architecture.md
@@ -371,7 +378,8 @@ When changing or adding an API endpoint:
 2. Check whether the endpoint belongs in `server.py`,
    `web_portal/api_extensions.py`, `web_portal/api_bi_analytics.py`,
    `web_portal/api_delivery_bidding.py`, `web_portal/api_agent_ecosystem.py`,
-   or `web_portal/api_assessment_center.py`.
+   `web_portal/api_assessment_center.py`, `web_portal/api_customer_identity.py`,
+   `web_portal/api_chat_application.py`, or `web_portal/api_claims_chat.py`.
 3. Verify the extension is actually wired; `server.py` imports extension
    dispatchers conditionally and can run without them.
 4. Reuse service-layer logic from `services/` instead of embedding new business
@@ -390,6 +398,17 @@ Watch-outs:
 - `api_extensions.py` covers foundations, OTP/CAPTCHA, contribution payments,
   community messaging, wallet, admin foundation routes, backup/persistence,
   invitation handling, and media/video processing jobs and webhooks.
+- `api_customer_identity.py` is the only HTTP surface for the personal-ID
+  master (`/api/identity/*`, `/api/customer/identity`,
+  `/api/admin/customers/identity{,/report}`); all writes route through
+  `services/customer_identity_service.py` and responses never contain the
+  plaintext ID.
+- `api_chat_application.py` (Phin new-policy chat) and
+  `api_claims_chat.py` (Phin claims chat) both finalise submissions by
+  internally looping back into the existing `/api/policies/create` and
+  `/api/claims/create` endpoints, so policy, underwriting, billing,
+  wallet, claim and ledger flows remain unchanged; changes to those
+  chat routes must preserve the loopback contract.
 
 ## 6) Database Task Playbook
 
@@ -652,7 +671,7 @@ Important test harness facts:
 - Golden fixtures only freeze the keys listed under `expected`; adding output
   keys never breaks one, changing a frozen value does — update the fixture
   in the same PR as the behaviour change and say why
-- 233 test files under `tests/`, 11 root-level `test_*.py` files
+- 252 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -761,4 +780,4 @@ If you update this file again:
 
 ---
 
-Last updated: September 15, 2026
+Last updated: September 28, 2026
