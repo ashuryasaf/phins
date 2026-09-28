@@ -6,6 +6,7 @@
 
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#060d1f">
   <title>PHINS - Admin Supplier Management</title>
   <link rel="stylesheet" href="/styles.css">
   <style>
@@ -323,24 +324,37 @@
     }
   </style>
   <link rel="stylesheet" href="/phins-theme.css">
+  <link rel="stylesheet" href="/phins-surface.css">
 </head>
-<body>
-  <header class="topbar">
-    <div class="container">
-      <div>
-        <h1 class="brand">PHINS - Supplier Management</h1>
-        <div class="muted-text" id="whoami">Loading session...</div>
-      </div>
-      <nav class="nav">
-        <a href="/admin.html">Admin Portal</a>
+<body class="phins-unified">
+  <header class="phins-header">
+    <div class="phins-header-inner">
+      <a href="/admin.html" class="phins-logo">
+        <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem"></div>
+        <span class="phins-logo-text">PHINS</span>
+      </a>
+      <button class="mobile-menu-btn" type="button" onclick="toggleMobileMenu()">Menu</button>
+      <nav class="phins-nav" id="mobile-nav">
+        <a href="/admin.html">Admin</a>
+        <a href="/admin-supplier-dashboard.html" class="active">Suppliers</a>
         <a href="/actuary-dashboard.html">Actuary</a>
+        <a href="/billing.html">Billing</a>
         <a href="/dashboard.html">Client</a>
-        <a href="/login.html" class="btn-login">Login</a>
+        <a href="/login.html" class="btn-logout">Logout</a>
       </nav>
     </div>
   </header>
+  <script>
+    function toggleMobileMenu() {
+      document.getElementById('mobile-nav').classList.toggle('open');
+    }
+  </script>
 
   <main class="container" style="padding-top:24px">
+    <div class="page-header" style="margin-bottom:16px;">
+      <h1 style="margin:0;">Supplier Management</h1>
+      <div class="muted-text" id="whoami">Loading session...</div>
+    </div>
     <!-- Dashboard Stats -->
     <div class="dashboard-grid">
       <div class="stat-card">
@@ -359,9 +373,9 @@
         <div class="change muted-text" id="stat-active-change"></div>
       </div>
       <div class="stat-card">
-        <div class="label">Platform Revenue</div>
+        <div class="label">Platform fees</div>
         <div class="value" id="stat-revenue">-</div>
-        <div class="change muted-text">From commissions</div>
+        <div class="change muted-text">Supplier book commissions</div>
       </div>
     </div>
 
@@ -696,17 +710,18 @@
         <div style="margin-top:16px; padding:16px; background:var(--bg-card); border-radius:8px;">
           <div style="display:flex; gap:32px; flex-wrap:wrap;">
             <div>
-              <span class="muted-text">Total Revenue:</span>
+              <span class="muted-text">Order value (full book):</span>
               <strong id="total-revenue">$0.00</strong>
             </div>
             <div>
-              <span class="muted-text">Platform Fees:</span>
+              <span class="muted-text">Platform fees (full book):</span>
               <strong id="total-fees">$0.00</strong>
             </div>
             <div>
-              <span class="muted-text">Supplier Payouts:</span>
+              <span class="muted-text">Supplier payouts (full book):</span>
               <strong id="total-payouts">$0.00</strong>
             </div>
+            <div class="muted-text" id="order-book-note"></div>
           </div>
         </div>
       </div>
@@ -714,6 +729,7 @@
 
     <!-- Tab: AI/BI Analytics -->
     <div class="tab-content" id="tab-analytics">
+      <div id="books-tieout" class="phins-books-note">Loading supplier and BI books...</div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
         <!-- Left Column -->
         <div>
@@ -998,20 +1014,25 @@
         const data = await apiGet('/api/admin/suppliers/orders');
         const items = data.items || [];
         
+        const totals = data.totals || null;
+        const bookName = data.book === 'supply_chain' ? 'supply-chain order book' : 'supplier order book';
         if (!items.length) {
           tbody.innerHTML = '<tr><td colspan="8" class="muted-text">No transactions found</td></tr>';
-          document.getElementById('total-revenue').textContent = '$0.00';
-          document.getElementById('total-fees').textContent = '$0.00';
-          document.getElementById('total-payouts').textContent = '$0.00';
+          document.getElementById('total-revenue').textContent = formatCurrency(totals ? totals.order_value : 0);
+          document.getElementById('total-fees').textContent = formatCurrency(totals ? totals.platform_fees : 0);
+          document.getElementById('total-payouts').textContent = formatCurrency(totals ? totals.supplier_payouts : 0);
+          document.getElementById('order-book-note').textContent = totals
+            ? `Totals cover the full ${bookName} (${totals.order_count || 0} orders).`
+            : '';
           return;
         }
         
-        let totalRevenue = 0, totalFees = 0, totalPayouts = 0;
+        let pageRevenue = 0, pageFees = 0, pagePayouts = 0;
         
         tbody.innerHTML = items.map(o => {
-          totalRevenue += parseFloat(o.total_amount) || 0;
-          totalFees += parseFloat(o.platform_fee) || 0;
-          totalPayouts += parseFloat(o.supplier_payout) || 0;
+          pageRevenue += parseFloat(o.total_amount) || 0;
+          pageFees += parseFloat(o.platform_fee) || 0;
+          pagePayouts += parseFloat(o.supplier_payout) || 0;
           return `
             <tr>
               <td>${esc(o.id)}</td>
@@ -1026,12 +1047,47 @@
           `;
         }).join('');
         
-        document.getElementById('total-revenue').textContent = formatCurrency(totalRevenue);
-        document.getElementById('total-fees').textContent = formatCurrency(totalFees);
-        document.getElementById('total-payouts').textContent = formatCurrency(totalPayouts);
+        const full = totals || {
+          order_value: pageRevenue,
+          platform_fees: pageFees,
+          supplier_payouts: pagePayouts,
+          order_count: items.length
+        };
+        document.getElementById('total-revenue').textContent = formatCurrency(full.order_value);
+        document.getElementById('total-fees').textContent = formatCurrency(full.platform_fees);
+        document.getElementById('total-payouts').textContent = formatCurrency(full.supplier_payouts);
+        const shown = items.length;
+        const bookTotal = data.total != null ? data.total : shown;
+        document.getElementById('order-book-note').textContent = totals
+          ? `Totals cover the full ${bookName} (${full.order_count} orders). This page shows ${shown} of ${bookTotal}.`
+          : `Totals are this page only (${shown} orders).`;
       } catch (e) {
         tbody.innerHTML = `<tr><td colspan="8" class="text-danger">Failed: ${esc(e.message)}</td></tr>`;
       }
+    }
+
+    function renderBooksTieout(analytics, bi) {
+      const note = document.getElementById('books-tieout');
+      if (!note) return;
+      const operationalOrders = Number(analytics.total_orders || 0);
+      const operationalFees = Number(analytics.total_platform_fees || 0);
+      const biOrders = bi && bi.orders ? Number(bi.orders.total_orders || 0) : null;
+      const biValue = bi && bi.orders ? Number(bi.orders.total_order_value || 0) : null;
+      let text = `Supplier book: ${operationalOrders} orders, ${formatCurrency(operationalFees)} platform fees.`;
+      note.classList.remove('gap');
+      if (biOrders == null) {
+        text += ' Canonical BI supplier analytics did not load.';
+        note.classList.add('gap');
+      } else {
+        text += ` BI book: ${biOrders} orders, ${formatCurrency(biValue)} order value.`;
+        if (biOrders !== operationalOrders) {
+          text += ' The two order counts differ. Each figure stays on its own book.';
+          note.classList.add('gap');
+        } else {
+          text += ' Order counts match.';
+        }
+      }
+      note.textContent = text;
     }
 
     async function loadAnalytics() {
@@ -1040,6 +1096,13 @@
           apiGet('/api/admin/suppliers/analytics'),
           apiGet('/api/admin/suppliers/insights')
         ]);
+        let bi = null;
+        try {
+          bi = await apiGet('/api/bi/supplier-analytics');
+        } catch (biError) {
+          bi = null;
+        }
+        renderBooksTieout(analytics, bi);
         
         // Type Distribution
         const typeColors = {
@@ -1130,6 +1193,11 @@
         insightsDiv.innerHTML = insightsHtml;
       } catch (e) {
         console.error('Failed to load analytics:', e);
+        const note = document.getElementById('books-tieout');
+        if (note) {
+          note.classList.add('gap');
+          note.textContent = 'Supplier analytics did not load.';
+        }
       }
     }
 

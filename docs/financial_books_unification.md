@@ -51,7 +51,7 @@ Cash posting and reconciliation require every collected premium and every paid c
 - Boot reconstructs the in-memory accounting book from durable ledger cash (`hydrate_accounting_book_from_ledger`) once, not as a GET side effect.
 - Demo seed does **not** create the false Asaf/Efrat/Asi/Shosh policies (`POL-ASAF-LIFE-001`, `POL-ASAF-HEALTH-001`, `POL-EFRAT-UNIFIED-001`, `POL-ASI-UNIFIED-001`, `POL-SHOSH-UNIFIED-001`) or `POL-ASAF-AUTO-001`. Restart seed removes those known IDs and every bill/claim/UW/demo-ledger row keyed to them. Live PHINS customers (Asaf/Efrat/Asi/Shosh) and unrelated persisted wallets stay. The three QA seed customers (`CUST-TEST-100` / Sarah Cohen, `CUST-TEST-101` / David Levy, `CUST-TEST-102` / Rachel Green) and their policies (`POL-TEST-100/101/102`), bills, claims, UW, wallets, and ledger rows are also removed and are not recreated. Unknown real customers and policies are never swept.
 - `/api/admin/balance-sheet/fix-reserve?auto_fix=true` derives the same counters; it no longer rewrites seed capital.
-- Billing stats (`/api/billing/stats`, `billing.html`) prefer `ledger_premium_collected` / `ledger_claims_paid`.
+- Billing stats (`/api/billing/stats`, `billing.html`) prefer `ledger_premium_collected` / `ledger_claims_paid`. GET and POST return the same payload, including accounting postings and `books_cash_tied`. The billing page shows those figures and does not overwrite them from another summary.
 - Claims APIs enrich `ledger_paid_amount`; `dashboard.html#claims` displays ledger cash when present.
 - Pipeline auto-approve writes `claim_payment_received` onto the attached customer ledger so a wallet credit cannot skip cash identity.
 - Accountant FRS `claims_paid` / `total_collected` use ledger cash when a ledger is attached.

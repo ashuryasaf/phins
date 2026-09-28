@@ -539,53 +539,54 @@ async function loadStats() {
       const data = await response.json();
       stats = { ...stats, ...data };
     }
-    
-    // Try to get additional stats from financial service
-    try {
-      const finResponse = await fetch('/api/financial/dashboard-summary?type=billing', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('phins_token')}` }
-      });
-      if (finResponse.ok) {
-        const finData = await finResponse.json();
-        stats.total_revenue = finData.total_revenue || stats.total_revenue;
-        stats.collection_rate = finData.collection_rate || stats.collection_rate || 
-          (stats.total_revenue > 0 ? Math.round((stats.successful_payments / Math.max(stats.total_transactions, 1)) * 100) : 0);
-      }
-    } catch (e) {
-      // Calculate collection rate from available data
-      stats.collection_rate = stats.total_transactions > 0 
-        ? Math.round((stats.successful_payments / stats.total_transactions) * 100) 
-        : 0;
+
+    // Collection rate is billed-vs-collected from the unified metrics.
+    // Do not replace it with another dashboard summary.
+    if (stats.collection_rate == null) {
+      const billed = Number(stats.total_billed) || 0;
+      const collected = Number(stats.total_collected) || 0;
+      stats.collection_rate = billed > 0 ? Math.round((collected / billed) * 1000) / 10 : 0;
     }
-    
+    window.__phinsBillingStats = stats;
+
+    const money = (value) => '$' + Number(value || 0).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+    const ledgerPremium = stats.ledger_premium_collected != null
+      ? stats.ledger_premium_collected
+      : (stats.total_collected || 0);
+    const ledgerClaims = stats.ledger_claims_paid != null
+      ? stats.ledger_claims_paid
+      : (stats.claims_paid || 0);
+
     const grid = document.getElementById('stats-grid');
     if (!grid) return;
-    
-    // Compact stat card design with gradients
+
     grid.innerHTML = `
-      <div class="stat-card compact" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-        <div class="stat-value">${stats.total_transactions}</div>
-        <div class="stat-label">Transactions</div>
+      <div class="stat-card compact phins-tile">
+        <div class="stat-value">${money(ledgerPremium)}</div>
+        <div class="stat-label">Ledger premiums</div>
       </div>
-      <div class="stat-card compact" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
-        <div class="stat-value">${stats.successful_payments}</div>
-        <div class="stat-label">Successful</div>
+      <div class="stat-card compact phins-tile">
+        <div class="stat-value">${money(stats.total_collected)}</div>
+        <div class="stat-label">Bills collected</div>
       </div>
-      <div class="stat-card compact" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);">
-        <div class="stat-value">${stats.failed_payments}</div>
-        <div class="stat-label">Failed</div>
+      <div class="stat-card compact phins-tile">
+        <div class="stat-value">${money(stats.outstanding_balance)}</div>
+        <div class="stat-label">Outstanding</div>
       </div>
-      <div class="stat-card compact" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);">
-        <div class="stat-value">$${Number(stats.total_revenue).toLocaleString()}</div>
-        <div class="stat-label">Revenue</div>
+      <div class="stat-card compact phins-tile">
+        <div class="stat-value">${money(ledgerClaims)}</div>
+        <div class="stat-label">Ledger claims paid</div>
       </div>
-      <div class="stat-card compact" style="background: linear-gradient(135deg, ${stats.collection_rate >= 90 ? '#28a745' : stats.collection_rate >= 70 ? '#ffc107' : '#dc3545'} 0%, ${stats.collection_rate >= 90 ? '#20c997' : stats.collection_rate >= 70 ? '#e0a800' : '#c82333'} 100%);">
-        <div class="stat-value">${stats.collection_rate}%</div>
-        <div class="stat-label">Collection Rate</div>
+      <div class="stat-card compact phins-tile">
+        <div class="stat-value">${money(stats.accounting_premium_posted)}</div>
+        <div class="stat-label">Accounting premiums</div>
       </div>
-      <div class="stat-card compact" style="background: linear-gradient(135deg, ${stats.pending_alerts > 0 ? '#dc3545' : '#6c757d'} 0%, ${stats.pending_alerts > 0 ? '#c82333' : '#5a6268'} 100%);">
-        <div class="stat-value">${stats.pending_alerts}</div>
-        <div class="stat-label">Alerts</div>
+      <div class="stat-card compact phins-tile">
+        <div class="stat-value">${Number(stats.collection_rate).toLocaleString(undefined, { maximumFractionDigits: 1 })}%</div>
+        <div class="stat-label">Collection rate</div>
       </div>
     `;
     
@@ -3160,19 +3161,21 @@ async function validatePipelineConnection() {
     ]);
     
     const successCount = checks.filter(c => c.status === 'fulfilled' && c.value.ok).length;
-    
-    if (successCount === 3) {
-      statusText.textContent = ' All Systems Connected';
-      statusText.style.color = '#28a745';
-      statusElement.style.background = '#d4edda';
-    } else if (successCount > 0) {
-      statusText.textContent = `️ Partial (${successCount}/3 services)`;
-      statusText.style.color = '#856404';
-      statusElement.style.background = '#fff3cd';
+    const books = window.__phinsBillingStats || {};
+    statusElement.classList.remove('gap');
+    if (successCount === 0) {
+      statusText.textContent = 'Billing stats unavailable';
+      statusElement.classList.add('gap');
+    } else if (books.books_cash_tied === false) {
+      statusText.textContent = 'Ledger cash and the accounting book differ. Figures are reported as-is. Repair is on the accountant dashboard.';
+      statusElement.classList.add('gap');
+    } else if (books.books_cash_tied === true) {
+      statusText.textContent = 'Cash identity is the customer ledger. Accounting premiums and claims match that ledger.';
+    } else if (successCount === 3) {
+      statusText.textContent = 'Billing, customers, and policies responded. Ledger tie-out was not on the stats payload.';
     } else {
-      statusText.textContent = ' Disconnected';
-      statusText.style.color = '#dc3545';
-      statusElement.style.background = '#f8d7da';
+      statusText.textContent = `Partial response (${successCount}/3 services).`;
+      statusElement.classList.add('gap');
     }
     
     if (lastSync) {

@@ -2735,6 +2735,10 @@ def handle_admin_foundations_stats(session: Dict) -> Tuple[int, Dict]:
             "total_foundations": 0,
             "total_members": 0,
             "total_funds": 0,
+            "fund_ledger_balance": 0,
+            "member_contributions": 0,
+            "fund_balance_mismatches": 0,
+            "fund_books_tied": True,
             "active_votes": 0
         }
     
@@ -2745,12 +2749,34 @@ def handle_admin_foundations_stats(session: Dict) -> Tuple[int, Dict]:
     foundations = service.list_foundations(limit=1000)
     
     total_members = sum(f.get('current_members', 0) for f in foundations)
-    total_funds = sum(f.get('total_fund_balance', 0) for f in foundations)
+    total_funds = sum(float(f.get('total_fund_balance') or 0) for f in foundations)
+    fund_ledger_balance = 0.0
+    member_contributions = 0.0
+    fund_balance_mismatches = 0
+    for foundation in foundations:
+        foundation_id = foundation.get('id')
+        recorded = round(float(foundation.get('total_fund_balance') or 0), 2)
+        funds = service.get_foundation_funds(foundation_id) if foundation_id else []
+        fund_sum = round(sum(float(fund.get('balance') or 0) for fund in funds), 2)
+        fund_ledger_balance += fund_sum
+        members = service.get_foundation_members(foundation_id) if foundation_id else []
+        member_contributions += sum(float(member.get('total_contributed') or 0) for member in members)
+        # A recorded balance with no fund rows, or a sum that disagrees, is a
+        # book gap. Empty foundations (both zero) are tied. Contributions are
+        # reported separately: claim payouts reduce the fund without reducing
+        # lifetime contributions.
+        if funds or recorded:
+            if abs(fund_sum - recorded) > 0.01:
+                fund_balance_mismatches += 1
     
     return 200, {
         "total_foundations": len(foundations),
         "total_members": total_members,
-        "total_funds": total_funds,
+        "total_funds": round(total_funds, 2),
+        "fund_ledger_balance": round(fund_ledger_balance, 2),
+        "member_contributions": round(member_contributions, 2),
+        "fund_balance_mismatches": fund_balance_mismatches,
+        "fund_books_tied": fund_balance_mismatches == 0,
         "active_votes": 0  # Would need to aggregate from votes
     }
 

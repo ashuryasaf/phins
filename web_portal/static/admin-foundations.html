@@ -6,6 +6,7 @@
 
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#060d1f">
   <title>PHINS Admin - Community Foundations</title>
   <link rel="stylesheet" href="/styles.css">
   <style>
@@ -662,14 +663,16 @@
     }
   </style>
   <link rel="stylesheet" href="/phins-theme.css">
+  <link rel="stylesheet" href="/phins-surface.css">
 </head>
-<body>
+<body class="phins-unified">
   <div class="admin-container">
     <!-- Sidebar -->
     <aside class="sidebar">
-      <div class="sidebar-logo">
-        ️ PHINS Admin
-      </div>
+      <a href="/admin.html" class="sidebar-logo">
+        <img src="/phins-logo.svg" alt="PHINS emblem">
+        <span>PHINS</span>
+      </a>
       <ul class="sidebar-menu">
         <li><a href="/admin.html">Dashboard</a></li>
         <li><a href="/customer-management.html">Customers</a></li>
@@ -678,7 +681,7 @@
         <li><a href="/admin-supplier-dashboard.html">Suppliers</a></li>
         <li><a href="/admin-foundations.html" class="active">Foundations</a></li>
         <li><a href="/billing.html">Billing</a></li>
-        <li><a href="/settings.html">️ Settings</a></li>
+        <li><a href="/settings.html">Settings</a></li>
       </ul>
     </aside>
     
@@ -693,26 +696,23 @@
       <!-- Stats -->
       <div class="stats-grid">
         <div class="stat-card">
-          <div class="stat-card-icon purple">️</div>
           <div class="stat-card-value" id="total-foundations">0</div>
           <div class="stat-card-label">Total Foundations</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon blue"></div>
           <div class="stat-card-value" id="total-members">0</div>
           <div class="stat-card-label">Total Members</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon green"></div>
           <div class="stat-card-value" id="total-funds">$0</div>
-          <div class="stat-card-label">Total Fund Balance</div>
+          <div class="stat-card-label">Recorded fund balance</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon orange"></div>
-          <div class="stat-card-value" id="active-votes">0</div>
-          <div class="stat-card-label">Active Votes</div>
+          <div class="stat-card-value" id="fund-ledger">$0</div>
+          <div class="stat-card-label">Fund ledger</div>
         </div>
       </div>
+      <p id="fund-books-note" class="phins-books-note">Checking foundation fund books...</p>
       
       <!-- Foundations Table -->
       <div class="data-card">
@@ -963,7 +963,19 @@
         document.getElementById('total-foundations').textContent = data.total_foundations || 0;
         document.getElementById('total-members').textContent = data.total_members || 0;
         document.getElementById('total-funds').textContent = '$' + formatNumber(data.total_funds || 0);
-        document.getElementById('active-votes').textContent = data.active_votes || 0;
+        const ledgerEl = document.getElementById('fund-ledger');
+        if (ledgerEl) ledgerEl.textContent = '$' + formatNumber(data.fund_ledger_balance || 0);
+        const note = document.getElementById('fund-books-note');
+        if (note) {
+          const mismatches = Number(data.fund_balance_mismatches || 0);
+          const contributions = Number(data.member_contributions || 0);
+          note.classList.toggle('gap', data.fund_books_tied === false);
+          if (data.fund_books_tied === false) {
+            note.textContent = `Recorded fund balance and the fund ledger differ on ${mismatches} foundation${mismatches === 1 ? '' : 's'}. Neither figure is rewritten. Lifetime member contributions: $${formatNumber(contributions)}.`;
+          } else {
+            note.textContent = `Recorded fund balance matches the fund ledger. Lifetime member contributions: $${formatNumber(contributions)}. Contributions stay visible after claim payouts.`;
+          }
+        }
       } catch (e) {
         console.error('Error loading stats:', e);
       }

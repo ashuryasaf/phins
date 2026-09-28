@@ -1,0 +1,174 @@
+/* PHINS surface for operational dashboards.
+   Loaded after each page stylesheet and phins-theme.css.
+   Opt in with <body class="phins-unified">. */
+
+body.phins-unified {
+  font-family: 'Inter', sans-serif;
+  background:
+    radial-gradient(900px 280px at 100% -10%, rgba(21, 68, 155, 0.16), transparent 60%),
+    linear-gradient(180deg, #eef3fb 0%, #e6eef8 100%);
+  color: #12203a;
+}
+
+body.phins-unified h1,
+body.phins-unified h2,
+body.phins-unified h3,
+body.phins-unified .brand,
+body.phins-unified .page-header h1,
+body.phins-unified .page-title-bar h1,
+body.phins-unified .fixed-header h1,
+body.phins-unified .sidebar-logo span {
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  letter-spacing: 0.01em;
+}
+
+body.phins-unified .phins-header-inner {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 0.75rem 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+body.phins-unified .phins-logo-icon img,
+body.phins-unified .sidebar-logo img,
+body.phins-unified .fixed-header img.phins-mark {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 4px 14px rgba(79, 216, 255, 0.3));
+}
+
+body.phins-unified .page-title-bar,
+body.phins-unified .fixed-header,
+body.phins-unified .sidebar {
+  background:
+    radial-gradient(700px 180px at 85% -60%, rgba(21, 68, 155, 0.5), transparent 70%),
+    #060d1f !important;
+  color: #eaf1ff !important;
+  border-bottom: 1px solid rgba(127, 178, 255, 0.16);
+}
+
+body.phins-unified .page-title-bar h1,
+body.phins-unified .fixed-header h1,
+body.phins-unified .fixed-header .report-meta,
+body.phins-unified .sidebar,
+body.phins-unified .sidebar-menu a {
+  color: #eaf1ff;
+}
+
+body.phins-unified .sidebar-logo {
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  letter-spacing: 0.18em;
+  text-decoration: none;
+  color: #eaf1ff;
+}
+
+body.phins-unified .sidebar-menu a.active,
+body.phins-unified .tab.active {
+  background: linear-gradient(180deg, #f7e2a0 0%, #e3bf6f 100%) !important;
+  color: #071022 !important;
+  border-color: transparent !important;
+}
+
+body.phins-unified .page-header h1 {
+  color: #0e2f63;
+}
+
+body.phins-unified .stat-card,
+body.phins-unified .phins-tile {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%),
+    #071022 !important;
+  color: #eaf1ff !important;
+  border: 1px solid rgba(127, 178, 255, 0.16) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 18px rgba(2, 8, 23, 0.18);
+}
+
+body.phins-unified .stat-card .value,
+body.phins-unified .stat-card .stat-value,
+body.phins-unified .stat-card-value,
+body.phins-unified .phins-tile .stat-value {
+  font-family: 'Space Grotesk', 'Inter', sans-serif !important;
+  color: #ffffff !important;
+}
+
+body.phins-unified .stat-card .label,
+body.phins-unified .stat-card .stat-label,
+body.phins-unified .stat-card-label,
+body.phins-unified .phins-tile .stat-label {
+  font-family: 'Inter', sans-serif !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.68rem !important;
+  color: rgba(234, 241, 255, 0.66) !important;
+}
+
+body.phins-unified .stat-card .change,
+body.phins-unified .stat-card .muted-text {
+  color: rgba(234, 241, 255, 0.55) !important;
+}
+
+body.phins-unified .stat-card .value.warning { color: #ffbe76 !important; }
+body.phins-unified .stat-card .value.success { color: #6fe0b8 !important; }
+
+body.phins-unified .phins-books-note {
+  margin: 0 0 16px 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(7, 15, 34, 0.92);
+  color: #eaf1ff;
+  border: 1px solid rgba(227, 191, 111, 0.45);
+  font-size: 0.85rem;
+}
+
+body.phins-unified .phins-books-note.gap {
+  border-color: rgba(255, 158, 138, 0.7);
+}
+
+body.phins-unified .report-banner {
+  background:
+    radial-gradient(520px 160px at 90% -40%, rgba(227, 191, 111, 0.35), transparent 70%),
+    linear-gradient(135deg, #060d1f 0%, #12315f 100%) !important;
+  border-bottom: 3px solid #e3bf6f !important;
+}
+
+body.phins-unified .section-title {
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  color: #0e2f63 !important;
+}
+
+body.phins-unified .section-title::before {
+  background: #e3bf6f !important;
+}
+
+body.phins-unified .premium-box {
+  background: linear-gradient(135deg, #0e2f63 0%, #12315f 55%, #e3bf6f 160%) !important;
+}
+
+body.phins-unified .mobile-menu-btn {
+  display: none;
+}
+
+@media screen and (max-width: 1024px) {
+  body.phins-unified .mobile-menu-btn {
+    display: block;
+  }
+  body.phins-unified #mobile-nav.phins-nav {
+    display: none;
+  }
+  body.phins-unified #mobile-nav.phins-nav.open {
+    display: flex !important;
+    position: fixed;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    z-index: 999;
+  }
+}
