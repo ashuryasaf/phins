@@ -20149,11 +20149,32 @@ For claims or questions, please contact:
                 return
             try:
                 years = int(qs.get('years', [25])[0])
+                customer_id = qs.get('customer_id', [None])[0] or None
+
+                def _optional_factor(name):
+                    raw = qs.get(name, [None])[0]
+                    if raw is None or raw == '':
+                        return None
+                    try:
+                        return float(raw)
+                    except ValueError:
+                        raise ValueError(f'{name} must be a number')
+
                 from services.financial_reporting_service import FinancialReportingService
                 svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS, transaction_ledger=TRANSACTION_LEDGER, health_wallets=HEALTH_WALLETS)
-                report = svc.generate_forecast_report(years=years)
+                report = svc.generate_forecast_report(
+                    years=years,
+                    customer_id=customer_id,
+                    growth_rate=_optional_factor('growth_rate'),
+                    inflation_rate=_optional_factor('inflation_rate'),
+                    claim_rate=_optional_factor('claim_rate'),
+                    lapse_rate=_optional_factor('lapse_rate'),
+                )
                 self._set_json_headers()
                 self.wfile.write(json.dumps(report).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))

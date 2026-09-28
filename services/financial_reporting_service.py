@@ -39,6 +39,67 @@ def _status_in(item: Dict, statuses: list) -> bool:
     return item_status in [s.lower().replace(' ', '_') for s in statuses]
 
 
+def _risk_band(score: Any) -> str:
+    """Map a policy risk label onto the four portfolio bands.
+
+    Missing scores stay ``medium`` (the historical default). Any other
+    label stays in ``very_high``, which is where the portfolio report
+    already sent unrecognised scores. Spelling and case are normalised
+    so ``Very High`` and ``very_high`` count as the same band.
+    """
+    if score is None:
+        raw = 'medium'
+    else:
+        raw = str(score).strip().lower().replace('-', ' ').replace('_', ' ')
+        raw = ' '.join(raw.split())
+    if raw == 'low':
+        return 'low'
+    if raw == 'medium':
+        return 'medium'
+    if raw == 'high':
+        return 'high'
+    if raw in ('very high', 'veryhigh'):
+        return 'very_high'
+    return 'very_high'
+
+
+def _policy_coverage(policy: Dict) -> float:
+    """Face amount of a policy, whichever key it is stored under."""
+    coverage = policy.get('coverage_amount')
+    if coverage is None:
+        coverage = policy.get('coverage', 0)
+    return coverage or 0
+
+
+# Planning-case defaults. Adjustable factors must stay inside these bounds
+# so a forecast cannot be driven by an unbounded rate. Omitted factors use
+# the default and reproduce the historical projection.
+FORECAST_FACTOR_BOUNDS = {
+    'growth_rate': (0.0, 0.50, 0.10),
+    'inflation_rate': (-0.05, 0.20, 0.03),
+    'claim_rate': (0.0, 0.50, 0.02),
+    'lapse_rate': (0.0, 0.40, 0.03),
+}
+
+
+def _coerce_forecast_factor(name: str, value: Any) -> Tuple[float, str]:
+    """Return (rate, source) for one forecast factor.
+
+    ``source`` is ``default`` when the caller omitted the factor and
+    ``request`` when a number inside the published bounds was supplied.
+    """
+    lo, hi, default = FORECAST_FACTOR_BOUNDS[name]
+    if value is None or value == '':
+        return default, 'default'
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f'{name} must be a number between {lo} and {hi}')
+    if math.isnan(number) or math.isinf(number) or number < lo or number > hi:
+        raise ValueError(f'{name} must be between {lo} and {hi}')
+    return number, 'request'
+
+
 # ==============================================================================
 # ACTUARIAL CONSTANTS & TABLES (V2 - Corrected Risk Model)
 # ==============================================================================
@@ -643,6 +704,7 @@ class FinancialReportingService:
         total_claims_liability = 0.0
         total_savings_liability = 0.0
         risk_distribution = {'low': 0, 'medium': 0, 'high': 0, 'very_high': 0}
+        risk_exposure = {'low': 0.0, 'medium': 0.0, 'high': 0.0, 'very_high': 0.0}
         coverage_by_type = {}
         age_distribution = {}
         
@@ -652,11 +714,12 @@ class FinancialReportingService:
             if policy.get('status') != 'active':
                 continue
                 
-            coverage = policy.get('coverage_amount', 0)
+            coverage = _policy_coverage(policy)
             annual_premium = policy.get('annual_premium', 0)
-            policy_type = policy.get('type', 'life')
+            policy_type = policy.get('type') or policy.get('policy_type') or 'life'
             risk_score = policy.get('risk_score', 'medium')
-            
+            risk_band = _risk_band(risk_score)
+
             total_coverage += coverage
             total_premiums += annual_premium
             
@@ -665,15 +728,10 @@ class FinancialReportingService:
             customer = self._customers.get(customer_id, {})
             age = self._calculate_age(customer.get('dob'))
             
-            # Risk distribution
-            if risk_score in ['low']:
-                risk_distribution['low'] += 1
-            elif risk_score in ['medium']:
-                risk_distribution['medium'] += 1
-            elif risk_score in ['high']:
-                risk_distribution['high'] += 1
-            else:
-                risk_distribution['very_high'] += 1
+            # Risk distribution — same bands as before. Exposure is the
+            # coverage already added into total_coverage, split by band.
+            risk_distribution[risk_band] += 1
+            risk_exposure[risk_band] += float(coverage or 0)
             
             # Coverage by type
             coverage_by_type[policy_type] = coverage_by_type.get(policy_type, 0) + coverage
@@ -715,49 +773,136 @@ class FinancialReportingService:
                 'solvency_ratio': round(total_premiums * 3 / max(total_claims_liability + total_savings_liability, 1), 2)
             },
             'risk_distribution': risk_distribution,
+            # Coverage by the same band as risk_distribution. Rounded per
+            # band; total_coverage remains the unsplit sum.
+            'risk_exposure': {band: round(amount, 2) for band, amount in risk_exposure.items()},
             'coverage_by_type': coverage_by_type,
             'age_distribution': age_distribution,
             'generated_at': datetime.now().isoformat()
         }
     
-    def generate_forecast_report(self, years: int = 25) -> Dict[str, Any]:
+    def generate_forecast_report(
+        self,
+        years: int = 25,
+        customer_id: Optional[str] = None,
+        growth_rate: Optional[float] = None,
+        inflation_rate: Optional[float] = None,
+        claim_rate: Optional[float] = None,
+        lapse_rate: Optional[float] = None,
+    ) -> Dict[str, Any]:
         """
-        Generate long-term forecast for the portfolio (case-insensitive status checks).
+        Generate a long-term forecast from the current active book.
+
+        Omitted factors use the planning-case defaults (10% new-business
+        growth, 3% premium inflation, 2% claim incidence, 3% lapse) and
+        reproduce the historical projection. Supplied factors are scenario
+        inputs only: they never rewrite premiums, bills, or the ledger.
+
+        ``customer_id`` limits the opening book to that customer's active
+        policies. When that book is empty the projection is empty rather
+        than substituted with the portfolio.
         """
-        current_premiums = sum(p.get('annual_premium', 0) for p in self._policies.values() 
-                               if _status_eq(p, 'active'))
-        current_policies = len([p for p in self._policies.values() if _status_eq(p, 'active')])
-        
-        # Growth assumptions
-        new_policy_growth = 0.10  # 10% annual new policy growth
-        premium_inflation = 0.03  # 3% annual premium inflation
-        claim_rate = 0.02  # 2% of policies claim per year
-        avg_claim_amount = sum(p.get('coverage_amount', 0) for p in self._policies.values()) / max(current_policies, 1) * 0.3
-        
+        try:
+            years = int(years)
+        except (TypeError, ValueError):
+            raise ValueError('years must be an integer between 1 and 50')
+        if years < 1 or years > 50:
+            raise ValueError('years must be an integer between 1 and 50')
+
+        new_policy_growth, growth_source = _coerce_forecast_factor('growth_rate', growth_rate)
+        premium_inflation, inflation_source = _coerce_forecast_factor('inflation_rate', inflation_rate)
+        claim_incidence, claim_source = _coerce_forecast_factor('claim_rate', claim_rate)
+        lapse, lapse_source = _coerce_forecast_factor('lapse_rate', lapse_rate)
+        factor_source = (
+            'default'
+            if {growth_source, inflation_source, claim_source, lapse_source} == {'default'}
+            else 'request'
+        )
+
+        active = [
+            p for p in self._policies.values()
+            if _status_eq(p, 'active') and (
+                not customer_id or str(p.get('customer_id') or '') == str(customer_id)
+            )
+        ]
+        current_premiums = sum(p.get('annual_premium', 0) for p in active)
+        current_policies = len(active)
+        opening_coverage = sum(_policy_coverage(p) for p in active)
+
+        assumptions = {
+            'new_policy_growth_rate': f"{new_policy_growth * 100}%",
+            'premium_inflation_rate': f"{premium_inflation * 100}%",
+            'claim_rate': f"{claim_incidence * 100}%",
+            'lapse_rate': f"{lapse * 100}%",
+            'avg_claim_amount': round(
+                (opening_coverage / max(current_policies, 1)) * 0.3, 2
+            ),
+            'applied': {
+                'growth_rate': new_policy_growth,
+                'inflation_rate': premium_inflation,
+                'claim_rate': claim_incidence,
+                'lapse_rate': lapse,
+                'source': factor_source,
+            },
+            'basis': (
+                'Scenario on the current active book. Factors change this '
+                'projection only and do not post to premiums, bills, or the ledger.'
+            ),
+        }
+
+        empty_customer = bool(customer_id) and current_policies == 0
+        if empty_customer:
+            return {
+                'forecast_years': years,
+                'customer_id': str(customer_id),
+                'empty_reason': 'no_active_policies',
+                'assumptions': assumptions,
+                'projections': [],
+                'summary': {
+                    'year_25_policies': 0,
+                    'year_25_revenue': 0,
+                    'year_25_profit': 0,
+                    'terminal_year': years,
+                    'terminal_policies': 0,
+                    'terminal_revenue': 0,
+                    'terminal_profit': 0,
+                },
+                'opening_book': {
+                    'active_policies': 0,
+                    'annual_premium': 0.0,
+                    'customer_id': str(customer_id),
+                },
+                'generated_at': datetime.now().isoformat(),
+            }
+
+        # The loop uses the unrounded average so a default run matches the
+        # historical projection. The displayed assumption stays rounded.
+        avg_claim_unrounded = (opening_coverage / max(current_policies, 1)) * 0.3
+
         yearly_projections = []
         cumulative_revenue = 0.0
         cumulative_claims = 0.0
-        policies = current_policies
+        # The count is carried unrounded and rounded only for display. A
+        # truncated step wipes a small book (one policy steps to
+        # int(1 * 0.97) == 0) while premiums keep inflating.
+        policies = float(current_policies)
         premiums = current_premiums
-        
+
         for year in range(1, years + 1):
-            # Project growth
-            new_policies = int(policies * new_policy_growth)
-            policies += new_policies
-            policies = int(policies * (1 - 0.03))  # 3% lapse
-            
+            new_policies = policies * new_policy_growth
+            policies = (policies + new_policies) * (1 - lapse)
+
             premiums = premiums * (1 + premium_inflation) + new_policies * (premiums / max(current_policies, 1))
-            
-            # Claims projection
-            expected_claims = policies * claim_rate * avg_claim_amount
-            
+
+            expected_claims = policies * claim_incidence * avg_claim_unrounded
+
             cumulative_revenue += premiums
             cumulative_claims += expected_claims
-            
+
             yearly_projections.append({
                 'year': year,
                 'projected_date': (datetime.now() + timedelta(days=365 * year)).strftime('%Y-%m-%d'),
-                'active_policies': policies,
+                'active_policies': int(round(policies)),
                 'annual_premium_revenue': round(premiums, 2),
                 'expected_claims': round(expected_claims, 2),
                 'net_income': round(premiums - expected_claims, 2),
@@ -765,23 +910,34 @@ class FinancialReportingService:
                 'cumulative_claims': round(cumulative_claims, 2),
                 'cumulative_profit': round(cumulative_revenue - cumulative_claims, 2)
             })
-        
-        return {
+
+        last = yearly_projections[-1] if yearly_projections else None
+        report = {
             'forecast_years': years,
-            'assumptions': {
-                'new_policy_growth_rate': f"{new_policy_growth * 100}%",
-                'premium_inflation_rate': f"{premium_inflation * 100}%",
-                'claim_rate': f"{claim_rate * 100}%",
-                'avg_claim_amount': round(avg_claim_amount, 2)
-            },
+            'assumptions': assumptions,
             'projections': yearly_projections,
             'summary': {
-                'year_25_policies': yearly_projections[-1]['active_policies'] if yearly_projections else 0,
-                'year_25_revenue': yearly_projections[-1]['cumulative_revenue'] if yearly_projections else 0,
-                'year_25_profit': yearly_projections[-1]['cumulative_profit'] if yearly_projections else 0
+                'year_25_policies': last['active_policies'] if last else 0,
+                'year_25_revenue': last['cumulative_revenue'] if last else 0,
+                'year_25_profit': last['cumulative_profit'] if last else 0,
+                'terminal_year': years,
+                'terminal_policies': last['active_policies'] if last else 0,
+                'terminal_revenue': last['cumulative_revenue'] if last else 0,
+                'terminal_profit': last['cumulative_profit'] if last else 0,
+            },
+            'opening_book': {
+                'active_policies': current_policies,
+                'annual_premium': round(float(current_premiums or 0), 2),
+                'customer_id': str(customer_id) if customer_id else None,
             },
             'generated_at': datetime.now().isoformat()
         }
+        if customer_id:
+            report['customer_id'] = str(customer_id)
+        # avg_claim_amount on assumptions is the rounded display figure.
+        # Keep the key equal to the historical rounded value.
+        assumptions['avg_claim_amount'] = round(avg_claim_unrounded, 2)
+        return report
     
     def generate_customer_projection(self, customer_id: str = None, 
                                      coverage: float = 250000,
