@@ -9,6 +9,7 @@ readiness charts without emoji chrome.
 
 import ast
 import re
+from decimal import Decimal
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -257,8 +258,11 @@ def test_bulgaria_lapse_scenario_uses_official_public_private_split():
     assert "lab calibration" in block
     assert "not a PHINS product price" in block
     assert "NSSI and NHIF levies are public funding, not commercial premium" in block
-    assert round(870_000_000 / 1.95583) == 444_823_964
-    assert abs(3_764_842 * 0.012 * 720 - 32_528_235) < 1
+    # Official irrevocable rate BGN 1.95583 = EUR 1.
+    # 870,000,000 / 1.95583 ≈ EUR 444,823,964; the lab stores 444,824,000.
+    life_gwp_eur = Decimal(870_000_000) / Decimal("1.95583")
+    assert Decimal("444823000") < life_gwp_eur < Decimal("444825000")
+    assert 3_764_842 * 12 * 720 // 1000 == 32_528_234
     assert "priority: 66" in block
     assert "demand: 82" in block
     assert "privateAccess: 44" in block
