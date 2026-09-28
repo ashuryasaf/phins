@@ -59,22 +59,21 @@ def _historical_projection(policies, years=2, growth=0.10, inflation=0.03, claim
     current_policies = len(active)
     opening_coverage = sum(p.get("coverage_amount", 0) for p in active)
     avg_claim = (opening_coverage / max(current_policies, 1)) * 0.3
-    count = current_policies
+    count = float(current_policies)
     premiums = current_premiums
     cumulative_revenue = 0.0
     cumulative_claims = 0.0
     rows = []
     for year in range(1, years + 1):
-        new_policies = int(count * growth)
-        count += new_policies
-        count = int(count * (1 - lapse))
+        new_policies = count * growth
+        count = (count + new_policies) * (1 - lapse)
         premiums = premiums * (1 + inflation) + new_policies * (premiums / max(current_policies, 1))
         expected = count * claim * avg_claim
         cumulative_revenue += premiums
         cumulative_claims += expected
         rows.append({
             "year": year,
-            "active_policies": count,
+            "active_policies": int(round(count)),
             "annual_premium_revenue": round(premiums, 2),
             "expected_claims": round(expected, 2),
             "cumulative_profit": round(cumulative_revenue - cumulative_claims, 2),
@@ -144,10 +143,34 @@ def test_customer_forecast_uses_that_book_and_does_not_invent_one():
     assert report["customer_id"] == "CUST-A"
     # Lapsed POL-C is not pulled back into the opening book.
     assert report["assumptions"]["avg_claim_amount"] == round(100_000 * 0.3, 2)
+    # A one-policy book survives the lapse step instead of collapsing to zero.
+    assert report["projections"][0]["active_policies"] == 1
+    assert report["projections"][0]["expected_claims"] > 0
     empty = svc.generate_forecast_report(years=5, customer_id="CUST-MISSING")
     assert empty["projections"] == []
     assert empty["empty_reason"] == "no_active_policies"
     assert empty["summary"]["terminal_profit"] == 0
+
+
+def test_forecast_reads_coverage_under_either_key():
+    svc = FinancialReportingService(
+        {
+            "POL-D": {
+                "status": "active",
+                "customer_id": "CUST-D",
+                "coverage": 200_000,
+                "annual_premium": 2_000,
+                "policy_type": "life",
+            }
+        },
+        {},
+        {},
+        {},
+        {},
+    )
+    report = svc.generate_forecast_report(years=1, customer_id="CUST-D")
+    assert report["assumptions"]["avg_claim_amount"] == round(200_000 * 0.3, 2)
+    assert report["projections"][0]["expected_claims"] > 0
 
 
 def test_risk_exposure_is_the_coverage_already_in_the_total():

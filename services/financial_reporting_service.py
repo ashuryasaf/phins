@@ -63,6 +63,14 @@ def _risk_band(score: Any) -> str:
     return 'very_high'
 
 
+def _policy_coverage(policy: Dict) -> float:
+    """Face amount of a policy, whichever key it is stored under."""
+    coverage = policy.get('coverage_amount')
+    if coverage is None:
+        coverage = policy.get('coverage', 0)
+    return coverage or 0
+
+
 # Planning-case defaults. Adjustable factors must stay inside these bounds
 # so a forecast cannot be driven by an unbounded rate. Omitted factors use
 # the default and reproduce the historical projection.
@@ -706,9 +714,7 @@ class FinancialReportingService:
             if policy.get('status') != 'active':
                 continue
                 
-            coverage = policy.get('coverage_amount')
-            if coverage is None:
-                coverage = policy.get('coverage', 0) or 0
+            coverage = _policy_coverage(policy)
             annual_premium = policy.get('annual_premium', 0)
             policy_type = policy.get('type') or policy.get('policy_type') or 'life'
             risk_score = policy.get('risk_score', 'medium')
@@ -821,7 +827,7 @@ class FinancialReportingService:
         ]
         current_premiums = sum(p.get('annual_premium', 0) for p in active)
         current_policies = len(active)
-        opening_coverage = sum(p.get('coverage_amount', 0) for p in active)
+        opening_coverage = sum(_policy_coverage(p) for p in active)
 
         assumptions = {
             'new_policy_growth_rate': f"{new_policy_growth * 100}%",
@@ -876,13 +882,15 @@ class FinancialReportingService:
         yearly_projections = []
         cumulative_revenue = 0.0
         cumulative_claims = 0.0
-        policies = current_policies
+        # The count is carried unrounded and rounded only for display. A
+        # truncated step wipes a small book (one policy steps to
+        # int(1 * 0.97) == 0) while premiums keep inflating.
+        policies = float(current_policies)
         premiums = current_premiums
 
         for year in range(1, years + 1):
-            new_policies = int(policies * new_policy_growth)
-            policies += new_policies
-            policies = int(policies * (1 - lapse))
+            new_policies = policies * new_policy_growth
+            policies = (policies + new_policies) * (1 - lapse)
 
             premiums = premiums * (1 + premium_inflation) + new_policies * (premiums / max(current_policies, 1))
 
@@ -894,7 +902,7 @@ class FinancialReportingService:
             yearly_projections.append({
                 'year': year,
                 'projected_date': (datetime.now() + timedelta(days=365 * year)).strftime('%Y-%m-%d'),
-                'active_policies': policies,
+                'active_policies': int(round(policies)),
                 'annual_premium_revenue': round(premiums, 2),
                 'expected_claims': round(expected_claims, 2),
                 'net_income': round(premiums - expected_claims, 2),
