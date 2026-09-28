@@ -186,6 +186,7 @@ def MARKET_IDS_IN_HEBREW_COPY(lab: str) -> bool:
         "japan",
         "australia",
         "portugal",
+        "bulgaria",
     ):
         assert f"{market_id}:" in block, market_id
     assert "albania" not in block
@@ -238,6 +239,39 @@ def test_sweden_replaces_albania_on_scenario_lab():
     assert "sweden: 'שוודיה'" in lab
     assert "albania" not in lab
     assert "sweden: 'stageTopup'" in lab
+
+
+def test_bulgaria_lapse_scenario_uses_official_public_private_split():
+    html = _html()
+    start = html.index('id: "bulgaria"')
+    end = html.index("    ];", start)
+    block = html[start:end]
+    assert "1,557,851 people aged 65+" in block
+    assert "3,764,842" in block
+    assert "2,061,409 pensioners" in block
+    assert "BGN 5.25 billion" in block
+    assert "BGN 870 million" in block
+    assert "annualPremium: 720" in block
+    assert "marketPremiumPool: 444824000" in block
+    assert "addressableLives: 3764842" in block
+    assert "lab calibration" in block
+    assert "not a PHINS product price" in block
+    assert "NSSI and NHIF levies are public funding, not commercial premium" in block
+    assert round(870_000_000 / 1.95583) == 444_823_964
+    assert abs(3_764_842 * 0.012 * 720 - 32_528_235) < 1
+    assert "priority: 66" in block
+    assert "demand: 82" in block
+    assert "privateAccess: 44" in block
+    assert "fit: 63" in block
+    assert "color: \"amber\"" in block
+    readiness = round(63 * 0.4 + 44 * 0.3 + 82 * 0.3)
+    assert readiness == 63
+    lab = _lab()
+    assert "bulgaria: 'בולגריה'" in lab
+    assert "bulgaria: 'stageTopup'" in lab
+    assert "nsi_bulgaria_2025" in html
+    assert "nssi_bulgaria_2025" in html
+    assert "fsc_bulgaria_2025" in html
 
 
 def test_regulator_brief_is_research_only_without_business_plan():
