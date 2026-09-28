@@ -340,7 +340,7 @@
         <a href="/actuary-dashboard.html">Actuary</a>
         <a href="/billing.html">Billing</a>
         <a href="/dashboard.html">Client</a>
-        <a href="/login.html" class="btn-logout">Logout</a>
+        <a href="/login.html" class="btn-logout" onclick="logout(event)">Logout</a>
       </nav>
     </div>
   </header>
@@ -846,6 +846,19 @@
     }
 
     // Session Management
+    function logout(event) {
+      if (event) event.preventDefault();
+      const token = getToken();
+      fetch('/api/logout', {
+        method: 'POST',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      }).finally(() => {
+        localStorage.removeItem('phins_token');
+        sessionStorage.removeItem('phins_token');
+        window.location.href = '/login.html';
+      });
+    }
+
     async function loadSession() {
       const who = document.getElementById('whoami');
       const token = getToken();

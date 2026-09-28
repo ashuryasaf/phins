@@ -2759,7 +2759,12 @@ def handle_admin_foundations_stats(session: Dict) -> Tuple[int, Dict]:
         funds = service.get_foundation_funds(foundation_id) if foundation_id else []
         fund_sum = round(sum(float(fund.get('balance') or 0) for fund in funds), 2)
         fund_ledger_balance += fund_sum
-        members = service.get_foundation_members(foundation_id) if foundation_id else []
+        # Lifetime giving counts members who have since left: their money stays
+        # in the fund rows and in the recorded balance.
+        members = (
+            service.get_foundation_members(foundation_id, include_inactive=True)
+            if foundation_id else []
+        )
         member_contributions += sum(float(member.get('total_contributed') or 0) for member in members)
         # A recorded balance with no fund rows, or a sum that disagrees, is a
         # book gap. Empty foundations (both zero) are tied. Contributions are

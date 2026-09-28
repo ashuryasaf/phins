@@ -3161,7 +3161,13 @@ async function validatePipelineConnection() {
     ]);
     
     const successCount = checks.filter(c => c.status === 'fulfilled' && c.value.ok).length;
-    const books = window.__phinsBillingStats || {};
+    // Read the tie-out from this stats response so the note does not depend on
+    // whether loadStats has published its payload yet.
+    let books = window.__phinsBillingStats || {};
+    const statsCheck = checks[0];
+    if (statsCheck.status === 'fulfilled' && statsCheck.value.ok) {
+      books = (await statsCheck.value.json().catch(() => null)) || books;
+    }
     statusElement.classList.remove('gap');
     if (successCount === 0) {
       statusText.textContent = 'Billing stats unavailable';

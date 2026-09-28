@@ -91,8 +91,11 @@ def test_foundation_stats_report_a_fund_ledger_gap(monkeypatch):
             assert foundation_id == "FND-GAP"
             return [{"balance": 40, "status": "active"}]
 
-        def get_foundation_members(self, foundation_id):
-            return [{"total_contributed": 100, "status": "active"}]
+        def get_foundation_members(self, foundation_id, include_inactive=False):
+            members = [{"total_contributed": 60, "status": "active"}]
+            if include_inactive:
+                members.append({"total_contributed": 40, "status": "removed"})
+            return members
 
     monkeypatch.setattr("web_portal.api_extensions.FOUNDATION_SERVICE_AVAILABLE", True)
     monkeypatch.setattr("web_portal.api_extensions.get_foundation_service", lambda: _Service())
