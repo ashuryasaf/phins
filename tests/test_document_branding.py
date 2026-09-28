@@ -159,6 +159,7 @@ console.log(JSON.stringify(samples));
 def test_pitch_dashboard_loads_brand_helper():
     pd = _read(STATIC / "pitch-dashboard.html")
     assert '<script src="/phins-pdf-brand.js"></script>' in pd
+    assert '<script src="/phins-scenario-lab-kernel.js"></script>' in pd
     assert '<script src="/phins-scenario-lab-pdf.js"></script>' in pd
 
 

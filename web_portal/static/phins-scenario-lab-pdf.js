@@ -124,7 +124,14 @@
       product: 'Product frame: Permanent 3+ ADL benefit with optional severe cognitive trigger and care-navigation layer.',
       vr: 'VR layer: return-to-function and vocational rehabilitation for working-age claimants.',
       dist: 'Distribution: Israel first; USA and Canada for private and employer channels; Portugal as EU Solvency II gateway; Sweden, broader Europe and Japan for top-up; UAE/GCC for capital-light partnerships.',
-      actuarial: 'Actuarial caution: before filing, replace scenario ratios with country-specific incidence, lapse, recovery, selection, and reinsurance quote data.',
+      actuarial: 'Actuarial caution: before filing, replace scenario ratios with country-specific incidence, lapse, recovery, selection, and reinsurance quote data. Lives-mode premium is the published-tables kernel quote converted at a pinned planning FX — not a public average.',
+      kernel: 'Actuarial kernel quote (Layer B)',
+      kernelAge: 'Kernel issue age',
+      kernelIls: 'Kernel ILS annual',
+      kernelLocal: 'Kernel local annual',
+      kernelMatch: 'Live premium matches kernel',
+      kernelYes: 'Yes — lives premium is the kernel quote',
+      kernelNo: 'No — operator override; public evidence unchanged',
       evidence: 'Evidence matrix (reported public layer — source language preserved)',
       evidenceNote: 'Public quotes are kept in their source language so official wording is not paraphrased. PHINS read-through remains in the document language.',
       market: 'Market',
@@ -275,7 +282,14 @@
       product: 'מסגרת המוצר: הטבת נכות קבועה בטריגר 3+ פעולות יומיום (ADL), עם טריגר קוגניטיבי חמור אופציונלי (תשישות נפש) ושכבת תיאום שירותי טיפול. המוצר הוא סיכון טהור: ללא חיסכון, ללא ערך פדיון וללא ערך מסולק.',
       vr: 'שכבת שיקום תעסוקתי: חזרה לתפקוד ושיקום מקצועי לתובעים בגיל עבודה — ניהול תביעה, לא הגדלת פרמיית השיא.',
       dist: 'הפצה: ישראל תחילה; ארצות הברית וקנדה לערוצים פרטיים ומעסיקים; פורטוגל כשער סולבנסי II באיחוד האירופי; שוודיה, אירופה הרחבה ויפן כשכבת השלמה; איחוד האמירויות / המפרץ לשותפויות דלות-הון.',
-      actuarial: 'זהירות אקטוארית: לפני הגשה לרשות, יש להחליף את יחסי התרחיש בנתוני היארעות, ביטולים, החלמה, בחירה נגדית והצעות ביטוח משנה ספציפיים למדינה. היחסים במעבדה הם מצייני תכנון.',
+      actuarial: 'זהירות אקטוארית: לפני הגשה לרשות, יש להחליף את יחסי התרחיש בנתוני היארעות, ביטולים, החלמה, בחירה נגדית והצעות ביטוח משנה ספציפיים למדינה. היחסים במעבדה הם מצייני תכנון. הפרמיה במצב מבוטחים היא ציטוט הליבה האקטוארית בטבלאות המפורסמות, מומר בשער תכנון נעוץ — לא ממוצע ציבורי.',
+      kernel: 'ציטוט הליבה האקטוארית (שכבה ב)',
+      kernelAge: 'גיל הנפקה בליבה',
+      kernelIls: 'פרמיה שנתית בליבה (ש"ח)',
+      kernelLocal: 'פרמיה שנתית מקומית בליבה',
+      kernelMatch: 'הפרמיה החיה תואמת את הליבה',
+      kernelYes: 'כן — הפרמיה במצב מבוטחים היא ציטוט הליבה',
+      kernelNo: 'לא — דריסת מפעיל; הראיה הציבורית לא השתנתה',
       evidence: 'מטריצת ראיות — שכבה א (שפת המקור נשמרת)',
       evidenceNote: 'ציטוטי ביקוש, פרמיה וביטוח משנה נשמרים בשפת המקור כדי שלא יפורפרזו נוסחי הפרסום הרשמי. עמודת המשמעות לפינס מנוסחת בעברית. אין בטבלה זו נתוני תיק ישראל הקבוע.',
       market: 'שוק',
@@ -400,7 +414,8 @@
     middleeast: 'המזרח התיכון',
     japan: 'יפן',
     australia: 'אוסטרליה',
-    portugal: 'פורטוגל'
+    portugal: 'פורטוגל',
+    bulgaria: 'בולגריה'
   };
 
   var SOURCE_TYPE_HE = {
@@ -470,6 +485,11 @@
       insight: 'פורטוגל היא נקודת כניסה מחייבת תחת סולבנסי II: אוכלוסייה מזדקנת עם פער סיעודי מתרחב, אימוץ ביטוח בריאות פרטי גדל, יישור רגולטורי לגישה לשוק האיחוד, וכוח עבודה צעיר דיגיטלי שיוצר הזדמנות הפצה למוצר דיגיטלי-ראשון.',
       reins: 'פורטוגל פועלת תחת סולבנסי II. שיעורי המסירה הם הנחות תכנון; יש להחליפם בהגשות מוצר תואמות ASF ובהצעות ביטוח משנה חיות לפני כניסה לשוק.',
       interp: 'פורטוגל היא שוק שער לאיחוד עם רוח גבית דמוגרפית לסיעוד, בגישה של מוצרים דיגיטליים תואמי סולבנסי II אל הפער בין כיסוי SNS הציבורי לבין עלות טיפול פרטי עולה.'
+    },
+    bulgaria: {
+      insight: 'בולגריה היא שוק השלמה ושותפות בגוש היורו במרכז ומזרח אירופה: לחץ הקריסה של מערכת נכות ופנסיה ציבורית גלוי כמו בפורטוגל, אך ספר החיים הפרטי דק והרכב המנוע עדיין שולט. פינס צריכה להצטרף כשכבת נכות קבועה לגיל העבודה דרך בנק-ביטוח או MGA של קבוצה בין-לאומית, לא ככותבת חבות חובה לרכב ולא כתחליף למוסד הלאומי לביטוח או לקופת החולים.',
+      reins: 'אין במערך הראיות הנוכחי אמת מידה מפורסמת לשיעור מסירה בנכות או בסיעוד בולגרי. שיעור ברירת המחדל של 22% הוא קלט תכנון תחת סולבנסי II; יש להחליפו בהצעת חוזה חיה. קרן הערובה אחרי דאלבוג אינה אנלוגיה לחוזה ביטוח משנה.',
+      interp: 'בולגריה מוכיחה את תזת הקריסה בצד הציבורי ויתד מסחרי דק בצד הפרטי. הכניסה היא השלמה בהובלת שותף — לא החלפת חובה סטטוטורית ולא משחק רכב.'
     }
   };
 
@@ -482,7 +502,8 @@
     middleeast: 'stagePartner',
     japan: 'stageTopup',
     australia: 'stageCaution',
-    portugal: 'stageTopup'
+    portugal: 'stageTopup',
+    bulgaria: 'stageTopup'
   };
 
   function readinessOf(row) {
@@ -790,6 +811,13 @@
       var retainedPct = pct(100 - (Number(assumptions.cessionRate) || 0));
       var ceded = money(outputs.cededPremium, currency);
       var net = money(outputs.netPremium, currency);
+      var kernel = payload.kernel || {};
+      var kernelLine = kernel.localAnnual != null
+        ? (C.kernel + ': ' + money(kernel.ilsAnnual, 'ILS') + ' → ' + money(kernel.localAnnual, currency) +
+          ' · age ' + String(kernel.age || '') +
+          ' · f=' + (kernel.ageFactor != null ? Number(kernel.ageFactor).toFixed(3) : '') +
+          ' · ' + (kernel.matchesLivePremium ? C.kernelYes : C.kernelNo))
+        : C.kernel;
       var rows;
       if (mode === 'premium') {
         rows = [
@@ -804,6 +832,7 @@
           [C.addressable, lives],
           [C.attach, attach],
           [C.annualPremium, prem],
+          [C.kernel, kernelLine],
           [C.gwp, lives + ' × ' + attach + ' × ' + prem + ' = ' + gwp]
         ];
       }

@@ -6027,7 +6027,14 @@
           </div>
           <div class="priority-item">
             <div class="priority-head">
-              <div class="priority-name">6. UAE / GCC and Australia</div>
+              <div class="priority-name">6. Bulgaria</div>
+              <div class="priority-score">CEE eurozone top-up / partner</div>
+            </div>
+            <div class="priority-body">Same 24% aged-65+ pressure as Portugal, but a thinner private life book (16.6% of GWP) and a deep PAYG NSSI / NHIF fence. Enter as bancassurance or MGA on a VIG / KBC / Generali / Allianz licence — not as an MTPL writer, and not as a replacement for public disability.</div>
+          </div>
+          <div class="priority-item">
+            <div class="priority-head">
+              <div class="priority-name">7. UAE / GCC and Australia</div>
               <div class="priority-score">Capital-light adjacencies</div>
             </div>
             <div class="priority-body">UAE offers strong premium flow and visible reinsurance retention/cession structure; Australia offers a large disabled population but requires strict pricing governance because DII sustainability has already been a regulator focus.</div>
@@ -6121,6 +6128,7 @@
             <li><strong>Sweden</strong> is the Nordic top-up market: official home-care intensity is high, and a measured private health-insurance overlay already exists through employer and group channels.</li>
             <li><strong>Europe</strong> and <strong>Japan</strong> validate need and payment logic, but mostly as supplemental or orchestration markets.</li>
             <li><strong>Portugal</strong> is a compelling EU Solvency II gateway with one of Europe's fastest-aging populations, a widening public LTC gap, and growing private health insurance adoption.</li>
+            <li><strong>Bulgaria</strong> is the CEE eurozone top-up: NSI 24.3% aged 65+ and 2.06 million NSSI pensioners validate the lapse thesis, but commercial life GWP is only BGN 870 million — partner, do not replace the public scheme.</li>
             <li><strong>Middle East</strong> is strategically interesting because the capital structure is visible even when morbidity disclosure is thinner.</li>
           </ul>
         </article>
@@ -6188,6 +6196,10 @@
           <h4>4. TAM is scenario-based</h4>
           <p>TAM, ceded premium, and underwriting contribution are modeled outputs. They are useful for planning, but they are not shown as reported market facts.</p>
         </div>
+        <div class="integrity-card">
+          <h4>5. Lives premium is the actuarial kernel</h4>
+          <p>Every market's lives-mode annual premium is the published-tables quote (age curve <code>risk_reference_v1</code>, life 0.25 / disability 0.20 per 1,000 / month, ILS 1,000,000 / 250,000 face) converted at a pinned planning FX. Public market averages stay in the evidence column and are never used as the PHINS product price. The Israel book remains ILS 4,518 at age 42.</p>
+        </div>
       </div>
     </section>
 
@@ -6238,8 +6250,10 @@
                 <input id="attach-rate" type="number" min="0" max="100" step="0.1">
               </div>
               <div class="control-group">
-                <label for="annual-premium">Annual premium</label>
+                <label for="annual-premium">Annual premium (kernel)</label>
                 <input id="annual-premium" type="number" min="0" step="1">
+                <div class="helper-note" id="kernel-premium-note">Lives-mode default is the actuarial kernel quote, not a public average.</div>
+                <button type="button" id="reset-kernel-premium" class="exec-dl-btn" style="margin-top:6px;font-size:7.6pt;">Reset to kernel quote</button>
               </div>
             </div>
           </div>
@@ -6356,7 +6370,7 @@
               <div class="detail-list">
                 <div><strong>Product frame:</strong> Permanent 3+ ADL benefit with optional severe cognitive trigger and care-navigation layer.</div>
                 <div><strong>VR layer:</strong> Use return-to-function and vocational rehabilitation workflows for working-age claimants to reduce false permanence and improve employer value.</div>
-                <div><strong>Distribution frame:</strong> Israel first; USA and Canada for private and employer channels; Portugal as EU Solvency II gateway; Europe and Japan for top-up positioning; UAE/GCC for capital-light partnerships.</div>
+                <div><strong>Distribution frame:</strong> Israel first; USA and Canada for private and employer channels; Portugal as EU Solvency II gateway; Bulgaria as CEE eurozone top-up / partner; Europe and Japan for top-up positioning; UAE/GCC for capital-light partnerships.</div>
                 <div><strong>Actuarial caution:</strong> Before filing, replace scenario ratios with country-specific incidence, lapse, recovery, selection, and reinsurance quote data.</div>
               </div>
             </div>
@@ -6420,6 +6434,7 @@
         West and North Europe is shown as a clearly labeled regional proxy using Germany and the Netherlands because
         those are the strongest public LTC anchors in the available source set. No blended regional premium number is invented.
         Portugal is shown as a standalone country entry with its own ASF, Banco de Portugal, OECD, and INE source references.
+        Bulgaria is shown as a standalone country entry with its own NSI, FSC, NSSI, XPRIMM-relayed FSC totals, and Economic.bg RATE source references. Public NSSI / NHIF amounts stay out of the commercial premium column.
       </p>
     </section>
 
@@ -7001,6 +7016,7 @@
   <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
   <script src="/platform-facts.js"></script>
   <script src="/phins-pdf-brand.js"></script>
+  <script src="/phins-scenario-lab-kernel.js"></script>
   <script src="/phins-scenario-lab-pdf.js"></script>
   <script>
     const IL_PLANNING_BOOK = {
@@ -7233,6 +7249,41 @@
         note: "Used for Portuguese population aging profile, disability prevalence estimates, and demographic dependency ratio.",
         sourceType: "official",
         evidenceStrength: "official release"
+      },
+      nsi_bulgaria_2025: {
+        title: "NSI Bulgaria — Population and Demographic processes 2025 (final)",
+        url: "https://www.nsi.bg/en/press-release/population-and-demographic-processes-9002",
+        note: "Used for Bulgaria's 31 December 2025 population (6,423,207), share aged 65+ (1,557,851 / 24.3%), working-age stock (3,764,842), mean age 45.4, and the 61.6% age-dependency ratio.",
+        sourceType: "official",
+        evidenceStrength: "official release"
+      },
+      fsc_bulgaria_2025: {
+        title: "FSC Bulgaria — Insurance statistics (2025 non-life files and hub)",
+        url: "https://www.fsc.bg/en/insurance-activity/statistics/",
+        note: "Official supervisory statistics hub. FY2025 market totals used in the evidence table are the FSC figures as published through this series and relayed by XPRIMM.",
+        sourceType: "official",
+        evidenceStrength: "official release"
+      },
+      xprimm_bulgaria_fy2025: {
+        title: "XPRIMM — Bulgaria FY2025 GWP (citing FSC)",
+        url: "https://www.xprimm.com/life/involvement/STATISTICS--BULGARIA-FY2025-Motor-insurance-remained-the-market-driver-both-in-GWP-and-paid-claims-terms-articol-15-24665.htm",
+        note: "Used for the FY2025 FSC totals: BGN 5.25 billion GWP, life BGN 870 million, non-life BGN 4.38 billion, property BGN 542.13 million, and DZI Life's 29.44% life share.",
+        sourceType: "industry",
+        evidenceStrength: "market release"
+      },
+      nssi_bulgaria_2025: {
+        title: "NSSI — October 2025 social-security budget execution",
+        url: "https://noi.bg/news-budget-october-05122025/",
+        note: "Used for the public-funded lapse layer: 2,061,409 pensioners in October 2025, average pension BGN 1,006.92, and BGN 19,859.2 million pension outlays for January–October 2025.",
+        sourceType: "official",
+        evidenceStrength: "official release"
+      },
+      economic_bg_bulgaria_2025: {
+        title: "Economic.bg RATE — Largest players in Bulgaria's insurance market in 2025",
+        url: "https://www.economic.bg/en/a/view/rate-the-largest-players-in-bulgaria-s-insurance-market-in-2025",
+        note: "Used for the 2025 non-life ranking (Euroins, Bulstrad VIG, DZI, Lev Ins, Armeec, Generali, OZK, Allianz, Bul Ins, Groupama) and ABZ comments on motor concentration and missing income-protection depth. Not a substitute for FSC line-level files.",
+        sourceType: "industry",
+        evidenceStrength: "industry analysis"
       }
     };
 
@@ -7255,7 +7306,7 @@
         assumptionDefaults: {
           addressableLives: 5000000,
           attachRate: 2.4,
-          annualPremium: 4518,
+          annualPremium: 4518, // kernel risk_reference_v1 · age 42 · ILS book identity
           // Lab calibration only: 5,000,000 × 2.4% × ₪4,518. Not a reported public pool.
           marketPremiumPool: 542160000,
           targetShare: 10.0,
@@ -7264,7 +7315,7 @@
           expenseRatio: 18.0,
           takeRate: 25.0
         },
-        basisNote: "Default lives basis uses Israel's reported private LTC insured population as a conservative current-market proxy rather than total population. Annual premium defaults to the canonical Israel book specimen ILS 4,518 (published tables) — the same planning basis as the Investor Meeting section. The 2027–2029 persistency book (24,000 / 94,080 / 230,554 EoY) is a separate pinned identity, not this TAM attach-rate snapshot. Premium-share mode, if selected, uses the current lives TAM (5,000,000 × 2.4% × ₪4,518 = ₪542,160,000) as a lab calibration — not a reported public premium statistic.",
+        basisNote: "Default lives basis uses Israel's reported private LTC insured population as a conservative current-market proxy rather than total population. Annual premium is the actuarial kernel quote at the pinned Israel specimen (age 42 · f=1.255 · published tables life 0.25 / disability 0.20 · ILS 4,518) — the same planning basis as the Investor Meeting book. The 2027–2029 persistency book (24,000 / 94,080 / 230,554 EoY) is a separate pinned identity, not this TAM attach-rate snapshot. Premium-share mode, if selected, uses the current lives TAM (5,000,000 × 2.4% × ₪4,518 = ₪542,160,000) as a lab calibration — not a reported public premium statistic.",
         reinsuranceNote: "Use quoted treaty terms, not market folklore. Public Israeli LTC cession disclosure was not located in the current evidence set.",
         interpretationNote: "The model reflects a severity-layer attachment on top of an already educated LTC market."
       },
@@ -7286,14 +7337,14 @@
         assumptionDefaults: {
           addressableLives: 5800000,
           attachRate: 3.5,
-          annualPremium: 5500,
+          annualPremium: 1228, // kernel ILS 4,518 × USD 1.00 / ILS 3.68
           marketPremiumPool: 5500000000,
           targetShare: 4.0,
           cessionRate: 25.0,
           lossRatio: 60.0,
           expenseRatio: 17.0
         },
-        basisNote: "Default lives basis uses reported stand-alone LTC covered lives as a conservative insured-pool anchor, not the full national disability population.",
+        basisNote: "Default lives basis uses reported stand-alone LTC covered lives as a conservative insured-pool anchor, not the full national disability population. Lives-mode premium is the actuarial kernel quote (USD 1,228 = ILS 4,518 at the pinned USD/ILS planning FX), not the Gen Re / LIMRA public premium anchors in the evidence column.",
         reinsuranceNote: "Cession defaults are planning placeholders. Replace them with state-approved product wording and live treaty quotes before any real underwriting decision.",
         interpretationNote: "This is the best market to prove that PHINS can turn a strict ADL trigger into a scalable premium and treaty story."
       },
@@ -7315,14 +7366,14 @@
         assumptionDefaults: {
           addressableLives: 27000000,
           attachRate: 1.0,
-          annualPremium: 1800,
+          annualPremium: 1670, // kernel ILS 4,518 × CAD 1.36 / ILS 3.68
           marketPremiumPool: 65900000000,
           targetShare: 0.7,
           cessionRate: 20.0,
           lossRatio: 61.0,
           expenseRatio: 16.0
         },
-        basisNote: "Default lives basis uses reported health-insured lives because Canada is primarily an employer and group-distribution opportunity in the current evidence set.",
+        basisNote: "Default lives basis uses reported health-insured lives because Canada is primarily an employer and group-distribution opportunity in the current evidence set. Lives-mode premium is the actuarial kernel quote (CAD 1,670 = ILS 4,518 at the pinned CAD/ILS planning FX). The CAD 65.9 billion health-premium pool stays in premium-share mode and in the evidence column.",
         reinsuranceNote: "Treat any ceded-share assumption as a PHINS planning input until OSFI-facing or treaty-specific block data is available.",
         interpretationNote: "Canada supports a group-distribution thesis better than a direct retail LTC-only story."
       },
@@ -7344,14 +7395,15 @@
         assumptionDefaults: {
           addressableLives: 5700000,
           attachRate: 4.0,
-          annualPremium: 2700,
-          marketPremiumPool: 615600000,
+          annualPremium: 1130, // kernel ILS 4,518 × EUR 0.92 / ILS 3.68
+          // Lab calibration only: 5,700,000 × 4.0% × €1,130. Not a reported public pool.
+          marketPremiumPool: 257640000,
           targetShare: 5.0,
           cessionRate: 22.0,
           lossRatio: 58.0,
           expenseRatio: 16.0
         },
-        basisNote: "Default lives basis uses Germany's reported care-dependent population as a conservative regional proxy. It is not a full West/North Europe population estimate.",
+        basisNote: "Default lives basis uses Germany's reported care-dependent population as a conservative regional proxy. It is not a full West/North Europe population estimate. Lives-mode premium is the actuarial kernel quote (EUR 1,130 = ILS 4,518 at the pinned EUR/ILS planning FX). The premium-share pool is the lives TAM (5,700,000 × 4.0% × €1,130), a lab calibration, not a blended regional public premium.",
         reinsuranceNote: "Regional disclosure is uneven. Keep treaty economics quote-based and market-specific.",
         interpretationNote: "Europe proves need, but commercial entry depends on narrow product placement around public systems."
       },
@@ -7373,14 +7425,14 @@
         assumptionDefaults: {
           addressableLives: 2000000,
           attachRate: 2.0,
-          annualPremium: 1500,
+          annualPremium: 4506, // kernel ILS 4,518 × AED 3.67 / ILS 3.68
           marketPremiumPool: 31300000000,
           targetShare: 1.2,
           cessionRate: 46.9,
           lossRatio: 60.0,
           expenseRatio: 15.0
         },
-        basisNote: "Default mode is premium-share because a reported UAE premium pool exists, while a comparable regional disability-insured-lives number does not.",
+        basisNote: "Default mode is premium-share because a reported UAE premium pool exists, while a comparable regional disability-insured-lives number does not. If lives mode is selected, the annual premium is the actuarial kernel quote (AED 4,506 = ILS 4,518 at the pinned AED/ILS planning FX), not the AED 31.3 billion public health-turnover figure.",
         reinsuranceNote: "Unlike other rows, the default cession assumption is tied to a published UAE retention ratio benchmark.",
         interpretationNote: "This is a partnership and capital-structure opportunity first, not yet the cleanest morbidity data market."
       },
@@ -7402,14 +7454,14 @@
         assumptionDefaults: {
           addressableLives: 6900000,
           attachRate: 1.8,
-          annualPremium: 84000,
+          annualPremium: 189682, // kernel ILS 4,518 × JPY 154.50 / ILS 3.68
           marketPremiumPool: 515430000000,
           targetShare: 1.2,
           cessionRate: 12.0,
           lossRatio: 57.0,
           expenseRatio: 14.0
         },
-        basisNote: "Default lives basis uses reported public LTC service users as a top-up target pool, not the full Japanese senior population.",
+        basisNote: "Default lives basis uses reported public LTC service users as a top-up target pool, not the full Japanese senior population. Lives-mode premium is the actuarial kernel quote (JPY 189,682 = ILS 4,518 at the pinned JPY/ILS planning FX). The public FY2024-26 LTC levy of JPY 6,225 / month stays in the evidence column and is not the PHINS product price.",
         reinsuranceNote: "Reinsurance assumptions should only be applied to the private supplemental layer because the public LTC scheme is the dominant funding platform.",
         interpretationNote: "Japan validates demand intensity and payment discipline more than it validates open commercial premium capture."
       },
@@ -7431,14 +7483,14 @@
         assumptionDefaults: {
           addressableLives: 12400000,
           attachRate: 1.4,
-          annualPremium: 2200,
+          annualPremium: 1878, // kernel ILS 4,518 × AUD 1.53 / ILS 3.68
           marketPremiumPool: 38192000000,
           targetShare: 0.8,
           cessionRate: 23.0,
           lossRatio: 63.0,
           expenseRatio: 17.0
         },
-        basisNote: "Default lives basis uses APRA's current insured pool as the commercial anchor because public DII premium granularity was not cleanly surfaced.",
+        basisNote: "Default lives basis uses APRA's current insured pool as the commercial anchor because public DII premium granularity was not cleanly surfaced. Lives-mode premium is the actuarial kernel quote (AUD 1,878 = ILS 4,518 at the pinned AUD/ILS planning FX), not an APRA DII average.",
         reinsuranceNote: "APRA's DII sustainability review is the key warning signal: assume tighter pricing and treaty appetite than a casual market narrative suggests.",
         interpretationNote: "Australia is attractive, but only after the PHINS product language and claims engine are proven elsewhere."
       },
@@ -7460,14 +7512,14 @@
         assumptionDefaults: {
           addressableLives: 352000,
           attachRate: 4.0,
-          annualPremium: 6312,
+          annualPremium: 13321, // kernel ILS 4,518 × SEK 10.85 / ILS 3.68
           marketPremiumPool: 5100000000,
           targetShare: 5.0,
           cessionRate: 20.0,
           lossRatio: 57.0,
           expenseRatio: 15.0
         },
-        basisNote: "Default lives basis uses Socialstyrelsen's reported 352,000 people aged 65+ with a social-service decision as a conservative need-pool proxy, not the full Swedish population. The SEK 6,312 annual-premium default is the implied 2024 vårdförsäkring average (SEK 5.1 billion / 808,000 lives) and is a planning input, not a PHINS product price.",
+        basisNote: "Default lives basis uses Socialstyrelsen's reported 352,000 people aged 65+ with a social-service decision as a conservative need-pool proxy, not the full Swedish population. The implied 2024 vårdförsäkring average (SEK 5.1 billion / 808,000 lives = SEK 6,312) stays in the evidence column. Lives-mode premium is the actuarial kernel quote (SEK 13,321 = ILS 4,518 at the pinned SEK/ILS planning FX), not that public overlay average.",
         reinsuranceNote: "No published Swedish disability or LTC cession benchmark is in the current evidence set. Keep treaty economics quote-based.",
         interpretationNote: "Sweden proves Nordic home-care demand and a modest private overlay. Commercial entry is a top-up and group-channel story, not a statutory replacement."
       },
@@ -7489,16 +7541,47 @@
         assumptionDefaults: {
           addressableLives: 2500000,
           attachRate: 1.8,
-          annualPremium: 1900,
+          annualPremium: 1130, // kernel ILS 4,518 × EUR 0.92 / ILS 3.68
           marketPremiumPool: 4700000000,
           targetShare: 2.0,
           cessionRate: 22.0,
           lossRatio: 59.0,
           expenseRatio: 17.0
         },
-        basisNote: "Default lives basis uses estimated Portuguese adults aged 65+ as the primary addressable pool for severity-layer LTC and disability products, reflecting the country's acute aging demographic.",
+        basisNote: "Default lives basis uses estimated Portuguese adults aged 65+ as the primary addressable pool for severity-layer LTC and disability products, reflecting the country's acute aging demographic. Lives-mode premium is the actuarial kernel quote (EUR 1,130 = ILS 4,518 at the pinned EUR/ILS planning FX), not a slice of the EUR 11.2 billion public GWP figure.",
         reinsuranceNote: "Portugal operates under Solvency II. Cession defaults are planning assumptions; replace with ASF-compliant product filings and live reinsurance quotes before market entry.",
         interpretationNote: "Portugal is an EU gateway market with strong demographic tailwinds for LTC, best approached through Solvency II-compliant digital products targeting the gap between SNS public coverage and escalating private care costs."
+      },
+      {
+        id: "bulgaria",
+        name: "Bulgaria",
+        flag: "🇧🇬",
+        scope: "Country",
+        focus: "PAYG public fence with a thin private life book",
+        currency: "EUR",
+        tags: ["public", "private"],
+        demand: "NSI final 2025: population 6,423,207; 1,557,851 people aged 65+ (24.3%); working-age stock 3,764,842 (58.6%); mean age 45.4; age-dependency 61.6%. NSSI reported 2,061,409 pensioners in October 2025 and BGN 19,859.2 million of pension outlays for January–October. A national stock of disability pensioners was not published in the current evidence set.",
+        premium: "FSC FY2025 GWP was BGN 5.25 billion (EUR 2.68 billion), +12% y/y: non-life BGN 4.38 billion, life BGN 870 million (16.6%). Property grew 24.3% to BGN 542.13 million. Penetration is about 2.3% of 2025 GDP. Home insurance covers about 10% of dwellings. NSSI and NHIF levies are public funding, not commercial premium.",
+        reinsurance: "No published Bulgarian disability or LTC cession ratio is in the current evidence set. The market is Solvency II and, since 1 January 2026, euro-denominated. Treaty assumptions stay quote-driven. The June 2026 DallBogg licence withdrawal is a pricing-and-trust event, not a cession benchmark.",
+        insight: "Bulgaria is a CEE eurozone top-up / partner market: public-scheme lapse pressure is as visible as Portugal's, but the private life book is thin and motor still dominates. PHINS should attach as a working-age severity fence through bancassurance or an international-group MGA (DZI/KBC, VIG, Generali, Allianz), not as an MTPL writer and not as a replacement for NSSI or NHIF.",
+        sources: ["nsi_bulgaria_2025", "fsc_bulgaria_2025", "xprimm_bulgaria_fy2025", "nssi_bulgaria_2025", "economic_bg_bulgaria_2025", "oecd_2025"],
+        defaultMode: "lives",
+        investorScores: { priority: 66, demand: 82, monetization: 48, publicDepth: 88, privateAccess: 44, fit: 63, color: "amber" },
+        assumptionDefaults: {
+          addressableLives: 3764842,
+          attachRate: 1.2,
+          annualPremium: 1170, // kernel age 45 · f=1.300 · ILS 4,680 × EUR 0.92 / ILS 3.68
+          // Premium-mode pool is FY2025 life GWP BGN 870m / 1.95583 = €444,823,963.59, rounded.
+          // Public life GWP — not a lives TAM and not a kernel product pool.
+          marketPremiumPool: 444824000,
+          targetShare: 2.0,
+          cessionRate: 22.0,
+          lossRatio: 60.0,
+          expenseRatio: 18.0
+        },
+        basisNote: "Default lives basis uses NSI's official 3,764,842 working-age persons (31.12.2025 legal retirement ages) as the issue-age pool for a 3–65 severity fence. The 1,557,851 people aged 65+ stay in the demand column; they are not the issue-age pool. Lives-mode premium is the actuarial kernel quote at Bulgaria's official mean age 45.4 → 45 (f=1.300 · ILS 4,680 · EUR 1,170 at the pinned EUR/ILS planning FX). That is not an FSC average and not the retired income-adjusted €720 stub. Premium-share mode uses FY2025 life GWP only.",
+        reinsuranceNote: "No published Bulgarian disability or LTC cession benchmark is in the current evidence set. Keep the 22% default as a Solvency II planning input and replace it with a live quote. Do not treat the DallBogg Guarantee Fund tail as a treaty analogue.",
+        interpretationNote: "Bulgaria proves the lapse thesis on the public side and a thin commercial wedge on the private side. Entry is a partner-led top-up — bancassurance or MGA — not a statutory replacement and not a motor play."
       }
     ];
 
@@ -7516,6 +7599,8 @@
     const downloadCsvBtn = document.getElementById("download-csv");
     const downloadPdfBtn = document.getElementById("download-pdf");
     const downloadPdfHeBtn = document.getElementById("download-pdf-he");
+    const kernelPremiumNote = document.getElementById("kernel-premium-note");
+    const resetKernelPremiumBtn = document.getElementById("reset-kernel-premium");
     const exportStatusEl = document.getElementById("export-status");
 
     let currentScenarioState = null;
@@ -7695,7 +7780,8 @@
           middleeast: "Partnership / capital-light",
           japan: "Top-up / orchestration",
           australia: "Pricing caution",
-          portugal: "Top-up / orchestration"
+          portugal: "Top-up / orchestration",
+          bulgaria: "Top-up / partner"
         };
         readinessBarChart.innerHTML = marketData.map((row) => {
           const score = window.PhinsScenarioLabPdf && typeof window.PhinsScenarioLabPdf.readinessOf === "function"
@@ -7726,9 +7812,46 @@
       return String(text).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
     }
 
+    function kernelQuoteFor(regionId) {
+      if (!window.PhinsScenarioLabKernel || typeof window.PhinsScenarioLabKernel.quoteMarket !== "function") {
+        return null;
+      }
+      try {
+        return window.PhinsScenarioLabKernel.quoteMarket(regionId);
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function renderKernelNote(region) {
+      const quote = kernelQuoteFor(region.id);
+      if (!kernelPremiumNote || !quote) {
+        return quote;
+      }
+      const live = numericValue(controls.annualPremium);
+      const matches = live === quote.localAnnual;
+      const desc = window.PhinsScenarioLabKernel.describe(quote);
+      kernelPremiumNote.textContent = matches
+        ? desc
+        : `${desc} · current input ${region.currency} ${formatInteger(live)} differs from the kernel (planning override; public evidence is unchanged).`;
+      return quote;
+    }
+
+    function resetKernelPremium() {
+      const region = getRegion(regionSelect.value);
+      const quote = kernelQuoteFor(region.id);
+      if (!quote) {
+        return;
+      }
+      controls.annualPremium.value = quote.localAnnual;
+      updateScenario();
+    }
+
     function buildScenarioState() {
       const region = getRegion(regionSelect.value);
       const mode = currentMode();
+      const kernel = kernelQuoteFor(region.id);
+      const annualPremium = numericValue(controls.annualPremium);
       return {
         exportedAt: new Date().toISOString(),
         region: {
@@ -7741,17 +7864,29 @@
         assumptions: {
           addressableLives: numericValue(controls.addressableLives),
           attachRate: numericValue(controls.attachRate),
-          annualPremium: numericValue(controls.annualPremium),
+          annualPremium: annualPremium,
           marketPremiumPool: numericValue(controls.marketPremiumPool),
           targetShare: numericValue(controls.targetShare),
           cessionRate: numericValue(controls.cessionRate),
           lossRatio: numericValue(controls.lossRatio),
           expenseRatio: numericValue(controls.expenseRatio)
         },
+        kernel: kernel ? {
+          pricingSource: kernel.pricingSource,
+          tableId: kernel.tableId,
+          age: kernel.age,
+          ageBasis: kernel.ageBasis,
+          ageFactor: kernel.ageFactor,
+          ilsAnnual: kernel.ilsAnnual,
+          localAnnual: kernel.localAnnual,
+          fxPerIls: kernel.fxPerIls,
+          matchesLivePremium: annualPremium === kernel.localAnnual,
+          writesPublicEvidence: false
+        } : null,
         outputs: currentScenarioState ? currentScenarioState.outputs : null,
         sources: region.sources.map((key) => sourceRegistry[key]).filter(Boolean),
         integrity: {
-          note: "Reported public evidence is separate from PHINS scenario assumptions and from the pinned Israel book planning basis."
+          note: "Reported public evidence is separate from PHINS scenario assumptions and from the pinned Israel book planning basis. Lives-mode premium is the actuarial kernel quote unless the operator overrides it; overrides never write back into public statistics."
         },
         israelBook: region.id === "israel" ? IL_PLANNING_BOOK : null
       };
@@ -7800,6 +7935,10 @@
         ["addressable_lives", payload.assumptions.addressableLives],
         ["attach_rate_pct", payload.assumptions.attachRate],
         ["annual_premium", payload.assumptions.annualPremium],
+        ["kernel_ils_annual", payload.kernel ? payload.kernel.ilsAnnual : ""],
+        ["kernel_local_annual", payload.kernel ? payload.kernel.localAnnual : ""],
+        ["kernel_age", payload.kernel ? payload.kernel.age : ""],
+        ["kernel_matches_live", payload.kernel ? payload.kernel.matchesLivePremium : ""],
         ["market_premium_pool", payload.assumptions.marketPremiumPool],
         ["target_share_pct", payload.assumptions.targetShare],
         ["cession_rate_pct", payload.assumptions.cessionRate],
@@ -7915,6 +8054,7 @@
 
       document.querySelector(`input[name="scenario-mode"][value="${region.defaultMode}"]`).checked = true;
       toggleMode(region.defaultMode);
+      renderKernelNote(region);
       updateScenario();
     }
 
@@ -7969,7 +8109,8 @@
       const insuranceTake = isIsrael ? grossWrittenPremium * IL_PLANNING_BOOK.insuranceTakeRate : null;
 
       outputs.title.textContent = `${region.name} — ${mode === "lives" ? "Lives-based" : "Premium-share"} PHINS scenario`;
-      outputs.subtitle.textContent = `Currency preserved in ${currency}. Reported market facts remain fixed; only PHINS planning assumptions below affect these outputs.`;
+      outputs.subtitle.textContent = `Currency preserved in ${currency}. Reported market facts remain fixed; only PHINS planning assumptions below affect these outputs. Lives-mode premium is the actuarial kernel unless overridden.`;
+      renderKernelNote(region);
 
       outputs.gwpValue.textContent = formatMoney(grossWrittenPremium, currency);
       outputs.gwpFoot.textContent = grossFoot;
@@ -8063,6 +8204,9 @@
       Object.values(controls).forEach((input) => {
         input.addEventListener("input", updateScenario);
       });
+      if (resetKernelPremiumBtn) {
+        resetKernelPremiumBtn.addEventListener("click", resetKernelPremium);
+      }
 
       loadRegion(regionSelect.value);
       if (downloadJsonBtn) {
@@ -8462,6 +8606,7 @@
       emirates:     { flag: "🇦🇪", name: "UAE / Emirates", sym: "AED", rate: 3.67,   market: "AED 59B",   gap: 15,  addressable: 2.0,   attachRate: 2.0, cessionRate: 46.9, lossRatio: 60.0, expenseRatio: 15.0, date: "2026-02" },
       dubai:        { flag: "🇦🇪", name: "Dubai",         sym: "AED", rate: 3.67,   market: "AED 59B",   gap: 15,  addressable: 1.0,   attachRate: 2.5, cessionRate: 46.9, lossRatio: 60.0, expenseRatio: 15.0, date: "2026-02" },
       portugal:     { flag: "🇵🇹", name: "Portugal",      sym: "€",   rate: 0.92,   market: "€11.2B",    gap: 34,  addressable: 2.8,   attachRate: 1.8, cessionRate: 22.0, lossRatio: 59.0, expenseRatio: 17.0, date: "2026-02" },
+      bulgaria:     { flag: "🇧🇬", name: "Bulgaria",      sym: "€",   rate: 0.92,   market: "€2.68B",    gap: 55,  addressable: 3.76,  attachRate: 1.2, cessionRate: 22.0, lossRatio: 60.0, expenseRatio: 18.0, date: "2026-09" },
       albania:      { flag: "🇦🇱", name: "Albania",       sym: "ALL", rate: 96.50,  market: "ALL 30B",   gap: 72,  addressable: 1.2,   attachRate: 1.5, cessionRate: 30.0, lossRatio: 58.0, expenseRatio: 20.0, date: "2026-02" }
     };
 
