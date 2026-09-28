@@ -188,6 +188,7 @@
             padding: 24px;
             margin-bottom: 18px;
             border: 1px solid rgba(18, 32, 58, 0.08);
+            border-left: 3px solid var(--acct-gold);
             box-shadow: 0 8px 22px rgba(18, 32, 58, 0.05);
         }
         .section h2 {
@@ -248,6 +249,63 @@
         .bar { background: linear-gradient(180deg, #1a3a78 0%, #0a1630 100%); border-radius: 4px 4px 0 0; min-width: 40px; position: relative; }
         .bar-label { position: absolute; bottom: -25px; left: 50%; transform: translateX(-50%); font-size: 0.75rem; white-space: nowrap; }
         .bar-value { position: absolute; top: -25px; left: 50%; transform: translateX(-50%); font-size: 0.8rem; font-weight: 600; }
+        .chart-frame {
+            background: #f6f8fc;
+            border: 1px solid #e1e7f0;
+            border-radius: 12px;
+            padding: 14px 14px 10px;
+            margin: 12px 0 18px;
+        }
+        .chart-plot {
+            display: grid;
+            align-items: end;
+            gap: 12px;
+            height: 180px;
+            padding: 0 4px;
+            border-bottom: 1px solid #d5deea;
+            box-sizing: border-box;
+        }
+        .chart-col {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            height: 100%;
+            min-width: 0;
+        }
+        .chart-bar {
+            width: min(64px, 78%);
+            border-radius: 6px 6px 2px 2px;
+            min-height: 0;
+        }
+        .chart-bar.is-zero { height: 2px !important; background: #d5deea !important; }
+        .chart-captions {
+            display: grid;
+            gap: 12px;
+            margin-top: 8px;
+        }
+        .chart-caption {
+            text-align: center;
+            font-size: 0.75rem;
+            color: #5b6d8a;
+            line-height: 1.35;
+            overflow-wrap: normal;
+            word-break: normal;
+        }
+        .chart-caption strong {
+            display: block;
+            color: #12203a;
+            font-size: 0.82rem;
+            white-space: nowrap;
+        }
+        .books-flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 16px; }
+        .outline-kicker {
+            margin: 0 0 6px;
+            font-size: 0.72rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #8a7340;
+        }
         .projection-table { max-height: 400px; overflow-y: auto; }
         .highlight-row { background: #eef4ff !important; }
 
@@ -394,12 +452,41 @@
                         <div class="stat-label">Savings landed (investments + pipeline)</div>
                     </div>
                 </div>
+                <div id="ctl-books-flow"></div>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;">
                     <button class="btn btn-primary" onclick="loadControlTower()">Refresh control</button>
                     <button class="btn btn-success" onclick="showTab('integrity', document.querySelector('[data-tab=integrity]')); loadBooksReconcile();">Reconcile books</button>
                     <button class="btn btn-secondary" onclick="showTab('integrity', document.querySelector('[data-tab=integrity]')); loadIntegrityReport();">Run ISA-style tests</button>
                     <button class="btn btn-primary" onclick="repairFinancialBooks(true)">Preview repair</button>
                     <button class="btn btn-success" onclick="repairFinancialBooks(false)">Repair books</button>
+                </div>
+            </div>
+            <div class="section" id="books-outline">
+                <p class="outline-kicker">Main outline</p>
+                <h2>Books outline</h2>
+                <p>Statement lines taken from the balance sheet and the reconcile pipeline. Each line is a reported amount. Nothing on this outline is estimated.</p>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;">
+                    <div class="ifrs-col">
+                        <h3>I. Financial position</h3>
+                        <div class="ifrs-row"><span>Technical provisions (economic)</span><strong id="ol-economic">$0</strong></div>
+                        <div class="ifrs-row"><span>Seed capital (disclosed only)</span><strong id="ol-seed">$0</strong></div>
+                        <div class="ifrs-row"><span>Operating reserve</span><strong id="ol-operating">$0</strong></div>
+                        <div class="ifrs-row"><span>Own-fund balances</span><strong id="ol-own-funds">$0</strong></div>
+                    </div>
+                    <div class="ifrs-col">
+                        <h3>II. Profit or loss</h3>
+                        <div class="ifrs-row"><span>Insurance revenue (ledger cash)</span><strong id="ol-revenue">$0</strong></div>
+                        <div class="ifrs-row"><span>Insurance service expense</span><strong id="ol-claims">$0</strong></div>
+                        <div class="ifrs-row"><span>Period result</span><strong id="ol-result">$0</strong></div>
+                        <div class="ifrs-row"><span>Loss ratio</span><strong id="ol-loss">0%</strong></div>
+                    </div>
+                    <div class="ifrs-col">
+                        <h3>III. Cash identity</h3>
+                        <div class="ifrs-row"><span>Bills collected</span><strong id="ol-bills">$0</strong></div>
+                        <div class="ifrs-row"><span>Customer ledger premiums</span><strong id="ol-ledger">$0</strong></div>
+                        <div class="ifrs-row"><span>Accounting book premiums</span><strong id="ol-book">$0</strong></div>
+                        <div class="ifrs-row"><span>Statement premium income</span><strong id="ol-statement">$0</strong></div>
+                    </div>
                 </div>
             </div>
             <div class="section">
@@ -542,10 +629,32 @@
                         <button class="btn btn-secondary" onclick="useProjectionCustomer()">Use from kernel tab</button>
                     </div>
                 </div>
+                <div class="acct-panel">
+                    <h3>Adjustable factors</h3>
+                    <p class="acct-note">Applied only to this projection. Issued premiums, bills, and the ledger stay unchanged. Defaults are the planning case: 10% new business, 3% premium inflation, 2% claim incidence, 3% lapse.</p>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>New business growth (% / year)</label>
+                            <input type="number" id="forecast-growth" value="10" min="0" max="50" step="0.5">
+                        </div>
+                        <div class="form-group">
+                            <label>Premium inflation (% / year)</label>
+                            <input type="number" id="forecast-inflation" value="3" min="-5" max="20" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>Claim incidence (% of policies)</label>
+                            <input type="number" id="forecast-claim-rate" value="2" min="0" max="50" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>Lapse (% / year)</label>
+                            <input type="number" id="forecast-lapse" value="3" min="0" max="40" step="0.1">
+                        </div>
+                    </div>
+                </div>
                 <div style="display:flex;gap:15px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;">
                     <div class="form-group" style="min-width:120px;">
                         <label>Forecast years</label>
-                        <input type="number" id="forecast-years" value="25" min="5" max="50" step="5">
+                        <input type="number" id="forecast-years" value="25" min="1" max="50" step="1">
                     </div>
                     <button class="btn btn-primary" onclick="loadForecast()">Generate forecast</button>
                     <button class="btn btn-secondary" onclick="exportForecast('csv')">Export CSV</button>
@@ -751,6 +860,209 @@
         function formatCurrency(amount) {
             return '$' + Number(amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
         }
+
+        function renderScaledBars(series) {
+            const values = series.map(s => Math.abs(Number(s.value) || 0));
+            const max = values.reduce((m, v) => Math.max(m, v), 0);
+            const cols = Math.max(series.length, 1);
+            const template = `repeat(${cols}, minmax(0, 1fr))`;
+            const bars = series.map((s, i) => {
+                const mag = values[i];
+                const pct = max > 0 ? (mag / max) * 100 : 0;
+                const zero = mag === 0;
+                const color = s.color || '#0a1630';
+                return `<div class="chart-col"><div class="chart-bar${zero ? ' is-zero' : ''}" style="height:${zero ? 0 : pct}%;background:${color};"></div></div>`;
+            }).join('');
+            const captions = series.map(s => `
+                <div class="chart-caption">
+                    <strong>${s.display}</strong>
+                    ${s.label}${s.share ? `<br>${s.share}` : ''}
+                </div>
+            `).join('');
+            return `
+                <div class="chart-frame">
+                    <div class="chart-plot" style="grid-template-columns:${template};">${bars}</div>
+                    <div class="chart-captions" style="grid-template-columns:${template};">${captions}</div>
+                </div>
+            `;
+        }
+
+        function renderRiskDistribution(dist, exposure) {
+            const order = [
+                ['low', 'Low', '#0f766e'],
+                ['medium', 'Medium', '#b45309'],
+                ['high', 'High', '#c2410c'],
+                ['very_high', 'Very high', '#b42318'],
+            ];
+            const counts = order.map(([key]) => Number((dist || {})[key] || 0));
+            const total = counts.reduce((sum, n) => sum + n, 0);
+            const countSeries = order.map(([key, label, color], i) => {
+                const count = counts[i];
+                const share = total ? `${((count / total) * 100).toFixed(1)}% of policies` : '0% of policies';
+                return { label, value: count, color, display: String(count), share };
+            });
+            let html = `
+                <h3>Risk distribution</h3>
+                <p class="acct-note">Bar length is the policy count relative to the largest band. The caption is that band's share of active policies. A zero band stays on the axis.</p>
+                ${renderScaledBars(countSeries)}
+            `;
+            if (exposure) {
+                const expSeries = order.map(([key, label, color]) => {
+                    const amount = Number(exposure[key] || 0);
+                    return { label, value: amount, color, display: formatCurrency(amount), amount };
+                });
+                const expTotal = expSeries.reduce((sum, row) => sum + row.amount, 0);
+                expSeries.forEach(row => {
+                    row.share = expTotal ? `${((row.amount / expTotal) * 100).toFixed(1)}% of coverage` : '0% of coverage';
+                });
+                html += `
+                    <h3>Risk exposure</h3>
+                    <p class="acct-note">Coverage summed in the same pass as total coverage, split by the same risk band. Bar length is relative to the largest band.</p>
+                    ${renderScaledBars(expSeries)}
+                `;
+            }
+            return html;
+        }
+
+        function renderCountChart(title, note, entries, color) {
+            const rows = Object.entries(entries || {});
+            if (!rows.length) return '';
+            const series = rows.map(([label, count]) => ({
+                label,
+                value: Number(count) || 0,
+                color: color || '#1a3a78',
+                display: String(Number(count) || 0),
+            }));
+            const total = series.reduce((sum, row) => sum + row.value, 0);
+            series.forEach(row => {
+                row.share = total ? `${((row.value / total) * 100).toFixed(1)}%` : '0%';
+            });
+            return `<h3>${title}</h3><p class="acct-note">${note}</p>${renderScaledBars(series)}`;
+        }
+
+        function ledgerTotal(node) {
+            if (node && typeof node === 'object') return Number(node.total || 0);
+            return Number(node || 0);
+        }
+
+        function renderBooksFlow(rec) {
+            const prem = rec.premiums || {};
+            const clm = rec.claims || {};
+            const sav = rec.savings || {};
+            const res = rec.reserves || {};
+            const bills = Number(prem.bills_collected || 0);
+            const ledgerPrem = ledgerTotal(prem.customer_ledger);
+            const bookPrem = Number(prem.accounting_book || 0);
+            const statementPrem = Number(prem.balance_sheet || 0);
+            const kernelAnnual = Number(prem.kernel_or_issued_annual || 0);
+            const storedAnnual = Number(prem.stored_annual || 0);
+            const recordsPaid = Number(clm.records_paid || 0);
+            const ledgerClm = ledgerTotal(clm.customer_ledger);
+            const bookClm = Number(clm.accounting_book || 0);
+            const statementClm = Number(clm.balance_sheet || 0);
+            const riskCash = Number(res.risk_cash_collected || 0);
+            const claimCash = Number(res.claim_cash_paid || 0);
+            const economic = Number(res.economic_claims_reserve || 0);
+            const seed = Number(res.seed_claims_reserve || 0);
+            setText('ol-bills', formatCurrency(bills));
+            setText('ol-ledger', formatCurrency(ledgerPrem));
+            setText('ol-book', formatCurrency(bookPrem));
+            setText('ol-statement', formatCurrency(statementPrem));
+            const cashSeries = [
+                { label: 'Bills collected', value: bills, display: formatCurrency(bills), color: '#1a3a78' },
+                { label: 'Customer ledger', value: ledgerPrem, display: formatCurrency(ledgerPrem), color: '#0f766e' },
+                { label: 'Accounting book', value: bookPrem, display: formatCurrency(bookPrem), color: '#0a1630' },
+                { label: 'Statement', value: statementPrem, display: formatCurrency(statementPrem), color: '#8a7340' },
+            ];
+            const annualSeries = [
+                { label: 'Kernel annual', value: kernelAnnual, display: formatCurrency(kernelAnnual), color: '#1a3a78' },
+                { label: 'Stored annual', value: storedAnnual, display: formatCurrency(storedAnnual), color: '#0a1630' },
+            ];
+            const claimSeries = [
+                { label: 'Claim records', value: recordsPaid, display: formatCurrency(recordsPaid), color: '#b42318' },
+                { label: 'Customer ledger', value: ledgerClm, display: formatCurrency(ledgerClm), color: '#c2410c' },
+                { label: 'Accounting book', value: bookClm, display: formatCurrency(bookClm), color: '#7a271a' },
+                { label: 'Statement', value: statementClm, display: formatCurrency(statementClm), color: '#b45309' },
+            ];
+            const savingsSeries = [
+                { label: 'Kernel savings cash', value: Number(sav.kernel_savings_cash || 0), display: formatCurrency(sav.kernel_savings_cash), color: '#0f766e' },
+                { label: 'Booked savings', value: Number(sav.accounting_savings_posted || 0), display: formatCurrency(sav.accounting_savings_posted), color: '#1a3a78' },
+                { label: 'Allocations', value: Number(sav.investment_premium_allocations || 0), display: formatCurrency(sav.investment_premium_allocations), color: '#0a1630' },
+                { label: 'Pipeline cash', value: Number(sav.pipeline_cash || 0), display: formatCurrency(sav.pipeline_cash), color: '#8a7340' },
+                { label: 'Landed', value: Number(sav.savings_landed || 0), display: formatCurrency(sav.savings_landed), color: '#115e59' },
+            ];
+            const reserveSeries = [
+                { label: 'Risk cash collected', value: riskCash, display: formatCurrency(riskCash), color: '#1a3a78' },
+                { label: 'Claim cash paid', value: claimCash, display: formatCurrency(claimCash), color: '#b42318' },
+                { label: 'Economic reserve', value: economic, display: formatCurrency(economic), color: economic < 0 ? '#b42318' : '#0f766e' },
+                { label: 'Seed capital', value: seed, display: formatCurrency(seed), color: '#8a7340' },
+            ];
+            const discrepancies = rec.discrepancies || [];
+            let paper = '';
+            if (discrepancies.length) {
+                paper = `<h3>Reconciling items</h3><table><thead><tr><th>Check</th><th>Left</th><th>Right</th><th>Difference</th></tr></thead><tbody>`;
+                discrepancies.forEach(d => {
+                    const left = d.left != null ? formatCurrency(d.left) : '—';
+                    const right = d.right != null ? formatCurrency(d.right) : '—';
+                    const diff = d.difference != null ? formatCurrency(d.difference) : (d.count != null ? String(d.count) : '—');
+                    paper += `<tr><td>${d.check || ''}<br><span class="acct-note">${d.description || ''}</span></td><td>${left}</td><td>${right}</td><td>${diff}</td></tr>`;
+                });
+                paper += '</tbody></table>';
+            } else {
+                paper = '<p class="acct-note">No reconciling items. Bills, the customer ledger, the accounting book, and the statement agree within tolerance.</p>';
+            }
+            return `
+                <h3>Pipeline books</h3>
+                <p class="acct-note">Cash identity runs bills → customer ledger → accounting book → statement. Annual premium identity is a separate basis and is not drawn on the cash scale. Bar length is relative to the largest amount in that chart.</p>
+                <div class="books-flow">
+                    <div>
+                        <h4>Premium cash tie-out</h4>
+                        ${renderScaledBars(cashSeries)}
+                    </div>
+                    <div>
+                        <h4>Annual premium identity</h4>
+                        ${renderScaledBars(annualSeries)}
+                    </div>
+                    <div>
+                        <h4>Claims cash tie-out</h4>
+                        ${renderScaledBars(claimSeries)}
+                    </div>
+                    <div>
+                        <h4>Savings rollforward</h4>
+                        <p class="acct-note">Landed is investment allocations plus pipeline cash. Unlanded savings cash: ${formatCurrency(sav.unlanded_savings_cash)}.</p>
+                        ${renderScaledBars(savingsSeries)}
+                    </div>
+                    <div>
+                        <h4>Reserve bridge</h4>
+                        <p class="acct-note">Economic reserve is risk cash collected minus claim cash. Seed capital is disclosed beside it and is not added into the reserve.</p>
+                        ${renderScaledBars(reserveSeries)}
+                    </div>
+                </div>
+                ${paper}
+            `;
+        }
+
+        function forecastRequestUrl() {
+            const years = document.getElementById('forecast-years').value;
+            const customerId = document.getElementById('forecast-customer-select').value;
+            const params = new URLSearchParams();
+            params.set('years', years || '25');
+            if (customerId) params.set('customer_id', customerId);
+            const factors = [
+                ['forecast-growth', 'growth_rate'],
+                ['forecast-inflation', 'inflation_rate'],
+                ['forecast-claim-rate', 'claim_rate'],
+                ['forecast-lapse', 'lapse_rate'],
+            ];
+            factors.forEach(([id, key]) => {
+                const el = document.getElementById(id);
+                if (!el || el.value === '') return;
+                const pct = Number(el.value);
+                if (!Number.isFinite(pct)) return;
+                params.set(key, String(pct / 100));
+            });
+            return `/api/financial/forecast?${params.toString()}`;
+        }
         
         // Load quick stats
         async function loadQuickStats() {
@@ -774,6 +1086,7 @@
                 document.getElementById('loss-ratio').textContent = lossRatio + '%';
                 
                 // Color code loss ratio
+                setText('ol-loss', lossRatio + '%');
                 const lossRatioEl = document.getElementById('loss-ratio');
                 const lossRatioVal = parseFloat(lossRatio);
                 if (lossRatioVal > 80) {
@@ -1842,17 +2155,19 @@
             resultsDiv.innerHTML = '<div class="loading">Generating forecast...</div>';
             
             try {
-                // Build URL with optional customer filter
-                let url = `/api/financial/forecast?years=${years}`;
-                if (customerId) url += `&customer_id=${encodeURIComponent(customerId)}`;
-                
-                const response = await fetch(url, {
+                const response = await fetch(forecastRequestUrl(), {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await response.json();
                 
-                if (data.error) {
-                    resultsDiv.innerHTML = `<div class="error">${data.error}</div>`;
+                if (!response.ok || data.error) {
+                    resultsDiv.innerHTML = `<div class="error">${data.error || 'Forecast request failed'}</div>`;
+                    return;
+                }
+
+                if (data.empty_reason === 'no_active_policies') {
+                    lastForecastData = data;
+                    resultsDiv.innerHTML = `<div class="error">This customer has no active policies. The forecast is empty so the portfolio book is not substituted.</div>`;
                     return;
                 }
                 
@@ -1882,8 +2197,25 @@
                     `;
                 }
                 
+                const applied = (data.assumptions && data.assumptions.applied) || {};
+                const terminalYear = (data.summary && data.summary.terminal_year) || years;
+                const milestones = (data.projections || []).filter(p => p.year === 1 || p.year === data.projections.length || p.year % 5 === 0);
+                const profitChart = renderScaledBars(milestones.map(p => ({
+                    label: `Yr ${p.year}`,
+                    value: p.cumulative_profit,
+                    display: formatCurrency(p.cumulative_profit),
+                    color: p.cumulative_profit >= 0 ? '#0f766e' : '#b42318',
+                })));
+                const revenueChart = renderScaledBars(milestones.map(p => ({
+                    label: `Yr ${p.year}`,
+                    value: p.annual_premium_revenue,
+                    display: formatCurrency(p.annual_premium_revenue),
+                    color: '#1a3a78',
+                    share: `Claims ${formatCurrency(p.expected_claims)}`,
+                })));
                 let html = customerHeader + `
-                    <h3>Forecast Assumptions</h3>
+                    <h3>Forecast assumptions</h3>
+                    <p class="acct-note">${(data.assumptions && data.assumptions.basis) || ''} Source: ${applied.source || 'default'}.</p>
                     <div class="stats-grid">
                         <div class="stat-card">
                             <div class="stat-value">${data.assumptions.new_policy_growth_rate}</div>
@@ -1898,12 +2230,16 @@
                             <div class="stat-label">Annual Claim Rate</div>
                         </div>
                         <div class="stat-card">
+                            <div class="stat-value">${data.assumptions.lapse_rate || '3.0%'}</div>
+                            <div class="stat-label">Lapse Rate</div>
+                        </div>
+                        <div class="stat-card">
                             <div class="stat-value">${formatCurrency(data.assumptions.avg_claim_amount)}</div>
                             <div class="stat-label">Avg Claim Amount</div>
                         </div>
                     </div>
                     
-                    <h3>Year ${years} Summary</h3>
+                    <h3>Year ${terminalYear} Summary</h3>
                     <div class="stats-grid">
                         <div class="stat-card">
                             <div class="stat-value">${data.summary.year_25_policies.toLocaleString()}</div>
@@ -1918,6 +2254,12 @@
                             <div class="stat-label">Cumulative Profit</div>
                         </div>
                     </div>
+
+                    <h3>Cumulative profit</h3>
+                    <p class="acct-note">Bar length is the magnitude relative to the largest milestone. Colour marks the sign. Milestones are year 1, every fifth year, and the final year.</p>
+                    ${profitChart}
+                    <h3>Annual premium revenue</h3>
+                    ${revenueChart}
                     
                     <h3>Year-by-Year Projections</h3>
                     <div class="projection-table">
@@ -2049,25 +2391,7 @@
                         </div>
                     </div>
                     
-                    <h3>Risk Distribution</h3>
-                    <div class="stats-grid">
-                        <div class="stat-card">
-                            <div class="stat-value">${data.risk_distribution.low || 0}</div>
-                            <div class="stat-label">Low Risk</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value">${data.risk_distribution.medium || 0}</div>
-                            <div class="stat-label">Medium Risk</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value">${data.risk_distribution.high || 0}</div>
-                            <div class="stat-label">High Risk</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value">${data.risk_distribution.very_high || 0}</div>
-                            <div class="stat-label">Very High Risk</div>
-                        </div>
-                    </div>
+                    ${renderRiskDistribution(data.risk_distribution, data.risk_exposure)}
                     
                     <h3>Coverage by Type</h3>
                     <table>
@@ -2092,6 +2416,12 @@
                 });
                 
                 html += `</tbody></table>`;
+                html += renderCountChart(
+                    'Age distribution chart',
+                    'Bar length is the policy count relative to the largest age band.',
+                    data.age_distribution,
+                    '#1a3a78'
+                );
                 
                 // Add customer breakdown if enabled
                 if (showCustomers && customerData.length > 0) {
@@ -2230,6 +2560,9 @@
                         ? 'Financial books are in balance. Cash identity is the customer ledger; premium identity is the actuarial kernel pin.'
                         : 'Financial books have discrepancies. Review the Integrity tab — amounts are not silently rewritten.';
                 }
+                const flowHtml = renderBooksFlow(rec);
+                const flowHost = document.getElementById('ctl-books-flow');
+                if (flowHost) flowHost.innerHTML = flowHtml;
                 if (silent && resultsDiv && !resultsDiv.dataset.userRan) {
                     resultsDiv.innerHTML = '<div class="loading">Run validation or reconcile books to see the full working papers.</div>';
                     return;
@@ -2248,14 +2581,7 @@
                         <div class="stat-card"><div class="stat-value">$${((rec.savings && rec.savings.savings_landed) || 0).toLocaleString()}</div><div class="stat-label">Savings landed</div></div>
                     </div>
                 `;
-                if ((rec.discrepancies || []).length) {
-                    html += '<h3>Discrepancies</h3><ul>';
-                    for (const d of rec.discrepancies) {
-                        html += `<li><strong>${d.check}</strong> — ${d.description || ''} ${d.difference != null ? `(diff ${d.difference})` : ''}</li>`;
-                    }
-                    html += '</ul>';
-                }
-                if (resultsDiv) resultsDiv.innerHTML = html;
+                if (resultsDiv) resultsDiv.innerHTML = html + flowHtml;
             } catch (err) {
                 const statusEl = document.getElementById('ctl-books-status');
                 if (statusEl) {
@@ -2331,6 +2657,7 @@
                     resultsDiv.innerHTML = `<div class="error">${data.error}</div>`;
                     return;
                 }
+                lastIntegrityData = data;
                 
                 const statusClass = data.status === 'healthy' ? 'integrity-healthy' : 
                     data.issues_count > 0 ? 'integrity-issues' : 'integrity-warnings';
@@ -2452,7 +2779,7 @@
                     }
                 }
                 
-                if (data.issues.length > 0) {
+                if ((data.issues || []).length > 0) {
                     html += `<h3>Issues (${data.issues_count})</h3><ul style="color: #721c24;">`;
                     data.issues.forEach(issue => {
                         html += `<li>${issue}</li>`;
@@ -2460,7 +2787,7 @@
                     html += '</ul>';
                 }
                 
-                if (data.warnings.length > 0) {
+                if ((data.warnings || []).length > 0) {
                     html += `<h3>Warnings (${data.warnings_count})</h3><ul style="color: #856404;">`;
                     data.warnings.forEach(warning => {
                         html += `<li>${warning}</li>`;
@@ -2826,6 +3153,11 @@
                         data.push({ Metric: `Risk Level: ${risk}`, Value: count });
                     });
                 }
+                if (lastPortfolioData.risk_exposure) {
+                    Object.entries(lastPortfolioData.risk_exposure).forEach(([risk, amount]) => {
+                        data.push({ Metric: `Risk Exposure: ${risk}`, Value: amount });
+                    });
+                }
                 
                 // Add coverage by type
                 if (lastPortfolioData.coverage_by_type) {
@@ -2885,7 +3217,7 @@
                 const content = `
                     <div class="summary-box">
                         <h3>Forecast Assumptions</h3>
-                        <p><strong>Growth Rate:</strong> ${a.new_policy_growth_rate} | <strong>Inflation:</strong> ${a.premium_inflation_rate} | <strong>Claim Rate:</strong> ${a.claim_rate}</p>
+                        <p><strong>Growth Rate:</strong> ${a.new_policy_growth_rate} | <strong>Inflation:</strong> ${a.premium_inflation_rate} | <strong>Claim Rate:</strong> ${a.claim_rate} | <strong>Lapse:</strong> ${a.lapse_rate || ''}</p>
                     </div>
                     <h3>${lastForecastData.forecast_years}-Year Projections</h3>
                     <table>
@@ -3164,157 +3496,6 @@
             }
         }
         
-        // Override load functions to store data for exports
-        const originalLoadPortfolioReport = loadPortfolioReport;
-        loadPortfolioReport = async function() {
-            const resultsDiv = document.getElementById('portfolio-results');
-            resultsDiv.innerHTML = '<div class="loading">Loading portfolio report...</div>';
-            
-            try {
-                const response = await fetch('/api/financial/portfolio-report', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await response.json();
-                lastPortfolioData = data; // Store for export
-                
-                if (data.error) {
-                    resultsDiv.innerHTML = `<div class="error">${data.error}</div>`;
-                    return;
-                }
-                
-                const s = data.summary || {};
-                let html = `
-                    <div class="stats-grid">
-                        <div class="stat-card"><div class="stat-value">${s.total_policies || 0}</div><div class="stat-label">Total Policies</div></div>
-                        <div class="stat-card"><div class="stat-value">${formatCurrency(s.total_coverage)}</div><div class="stat-label">Total Coverage</div></div>
-                        <div class="stat-card"><div class="stat-value">${formatCurrency(s.total_annual_premiums)}</div><div class="stat-label">Annual Premiums</div></div>
-                        <div class="stat-card"><div class="stat-value">${formatCurrency(s.reserve_requirement)}</div><div class="stat-label" title="${s.reserve_requirement_basis || ''}">${s.reserve_requirement_label || 'Capital Indication (5% coverage + savings)'}</div></div>
-                        <div class="stat-card" style="background: linear-gradient(135deg, ${s.solvency_ratio >= 1 ? '#d4edda' : '#f8d7da'} 0%, #f8f9fa 100%);">
-                            <div class="stat-value" style="color: ${s.solvency_ratio >= 1 ? '#28a745' : '#dc3545'};">${(s.solvency_ratio || 0).toFixed(2)}</div>
-                            <div class="stat-label">Solvency Ratio</div>
-                        </div>
-                    </div>
-                    
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 20px;">
-                        <div class="report-section">
-                            <h3>Risk Distribution</h3>
-                            <div class="chart-container">
-                                <div class="bar-chart" style="justify-content: center; padding-bottom: 30px;">
-                                    ${Object.entries(data.risk_distribution || {}).map(([risk, count]) => {
-                                        const colors = { low: '#28a745', medium: '#ffc107', high: '#fd7e14', very_high: '#dc3545' };
-                                        const height = Math.max(count * 30, 20);
-                                        return `<div class="bar" style="height: ${height}px; background: ${colors[risk] || '#6c757d'}; min-width: 60px;">
-                                            <span class="bar-value">${count}</span>
-                                            <span class="bar-label">${risk}</span>
-                                        </div>`;
-                                    }).join('')}
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="report-section">
-                            <h3>Coverage by Type</h3>
-                            <table>
-                                <thead><tr><th>Type</th><th>Coverage Amount</th></tr></thead>
-                                <tbody>
-                                    ${Object.entries(data.coverage_by_type || {}).map(([type, amount]) => 
-                                        `<tr><td style="text-transform: capitalize;">${type}</td><td>${formatCurrency(amount)}</td></tr>`
-                                    ).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                    
-                    <p style="color: #666; margin-top: 20px;">Report generated: ${data.generated_at}</p>
-                `;
-                
-                resultsDiv.innerHTML = html;
-            } catch (err) {
-                resultsDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;
-            }
-        };
-        
-        // Store forecast data
-        const originalLoadForecast = loadForecast;
-        loadForecast = async function() {
-            const years = document.getElementById('forecast-years').value;
-            const resultsDiv = document.getElementById('forecast-results');
-            resultsDiv.innerHTML = '<div class="loading">Generating forecast...</div>';
-            
-            try {
-                const response = await fetch(`/api/financial/forecast?years=${years}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await response.json();
-                lastForecastData = data; // Store for export
-                
-                if (data.error) {
-                    resultsDiv.innerHTML = `<div class="error">${data.error}</div>`;
-                    return;
-                }
-                
-                const a = data.assumptions || {};
-                let html = `
-                    <div class="report-section" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                        <h4 style="margin: 0 0 10px 0;">Forecast Assumptions</h4>
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
-                            <div><strong>Growth Rate:</strong> ${a.new_policy_growth_rate}</div>
-                            <div><strong>Inflation:</strong> ${a.premium_inflation_rate}</div>
-                            <div><strong>Claim Rate:</strong> ${a.claim_rate}</div>
-                            <div><strong>Avg Claim:</strong> ${formatCurrency(a.avg_claim_amount)}</div>
-                        </div>
-                    </div>
-                    
-                    <div class="chart-container" style="height: 200px;">
-                        <div class="bar-chart" style="align-items: flex-end; justify-content: space-around;">
-                            ${data.projections.slice(0, 10).map(p => {
-                                const maxProfit = Math.max(...data.projections.map(x => x.cumulative_profit));
-                                const height = Math.max((p.cumulative_profit / maxProfit) * 150, 10);
-                                const color = p.cumulative_profit >= 0 ? '#28a745' : '#dc3545';
-                                return `<div class="bar" style="height: ${height}px; background: ${color}; min-width: 30px;">
-                                    <span class="bar-value" style="font-size: 0.7rem;">${formatCurrency(p.cumulative_profit).replace('$', '')}</span>
-                                    <span class="bar-label">Yr ${p.year}</span>
-                                </div>`;
-                            }).join('')}
-                        </div>
-                    </div>
-                    
-                    <div class="projection-table" style="margin-top: 20px;">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Year</th>
-                                    <th>Policies</th>
-                                    <th>Revenue</th>
-                                    <th>Claims</th>
-                                    <th>Net Income</th>
-                                    <th>Cumulative Profit</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${data.projections.map((p, i) => `
-                                    <tr class="${i % 5 === 4 ? 'highlight-row' : ''}">
-                                        <td><strong>${p.year}</strong></td>
-                                        <td>${p.active_policies}</td>
-                                        <td>${formatCurrency(p.annual_premium_revenue)}</td>
-                                        <td style="color: #dc3545;">${formatCurrency(p.expected_claims)}</td>
-                                        <td style="color: ${p.net_income >= 0 ? '#28a745' : '#dc3545'};">${formatCurrency(p.net_income)}</td>
-                                        <td style="font-weight: 600; color: ${p.cumulative_profit >= 0 ? '#28a745' : '#dc3545'};">${formatCurrency(p.cumulative_profit)}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <p style="color: #666; margin-top: 20px;">Forecast generated: ${data.generated_at}</p>
-                `;
-                
-                resultsDiv.innerHTML = html;
-            } catch (err) {
-                resultsDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;
-            }
-        };
-        
         // Store projection data
         const originalCalculateProjection = calculateProjection;
         calculateProjection = async function() {
@@ -3413,120 +3594,6 @@
             }
         };
         
-        // Store integrity data
-        const originalLoadIntegrityReport = loadIntegrityReport;
-        loadIntegrityReport = async function() {
-            const resultsDiv = document.getElementById('integrity-results');
-            resultsDiv.innerHTML = '<div class="loading">Running validation...</div>';
-            
-            try {
-                const response = await fetch('/api/financial/data-integrity', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await response.json();
-                lastIntegrityData = data; // Store for export
-                
-                // Use original rendering logic from before
-                const statusClass = data.status === 'healthy' ? 'integrity-healthy' : 
-                                   data.issues_count > 0 ? 'integrity-issues' : 'integrity-warnings';
-                const statusIcon = data.status === 'healthy' ? '' : data.issues_count > 0 ? '' : '';
-                
-                let html = `
-                    <div class="integrity-status ${statusClass}">
-                        <h3>${statusIcon} Data Integrity: ${data.status?.toUpperCase()}</h3>
-                        <p>Issues: ${data.issues_count} | Warnings: ${data.warnings_count}</p>
-                    </div>
-                    
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0;">
-                        ${Object.entries(data.data_counts || {}).map(([key, value]) => `
-                            <div class="stat-card">
-                                <div class="stat-value">${value}</div>
-                                <div class="stat-label">${key.replace(/_/g, ' ')}</div>
-                            </div>
-                        `).join('')}
-                    </div>
-                    
-                    <h3>Financial Reconciliation</h3>
-                    <table>
-                        <tr><th>Metric</th><th>Value</th></tr>
-                        ${Object.entries(data.financial_reconciliation || {}).map(([key, value]) => `
-                            <tr>
-                                <td>${key.replace(/_/g, ' ')}</td>
-                                <td>${typeof value === 'number' && key.includes('rate') ? value + '%' : 
-                                      typeof value === 'number' ? formatCurrency(value) : value}</td>
-                            </tr>
-                        `).join('')}
-                    </table>
-                `;
-                
-                // Actuarial validation section
-                if (data.actuarial_validation) {
-                    const av = data.actuarial_validation;
-                    html += `
-                        <h3>Actuarial Validation</h3>
-                        <div style="background: ${av.status === 'COMPLIANT' ? '#d4edda' : '#fff3cd'}; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
-                            <p><strong>Source:</strong> ${av.source} | <strong>Status:</strong> ${av.status}</p>
-                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 10px;">
-                                <div class="stat-card">
-                                    <div class="stat-value">${av.policies_checked}</div>
-                                    <div class="stat-label">Policies Checked</div>
-                                </div>
-                                <div class="stat-card" style="background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);">
-                                    <div class="stat-value">${av.passed}</div>
-                                    <div class="stat-label">Actuarially Sound</div>
-                                </div>
-                                <div class="stat-card" style="background: ${av.needs_review > 0 ? 'linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%)' : '#f8f9fa'};">
-                                    <div class="stat-value">${av.needs_review}</div>
-                                    <div class="stat-label">Needs Review</div>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    
-                    if (av.details && av.details.length > 0) {
-                        html += `<h4>Policy Actuarial Details</h4>
-                        <div style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 8px;">
-                            <table style="margin: 0;">
-                                <thead><tr><th>Policy ID</th><th>Risk Score</th><th>Assessed internal score</th><th>Premium Ratio</th><th>Status</th></tr></thead>
-                                <tbody>`;
-                        av.details.forEach(d => {
-                            const statusColor = d.status === 'PASS' ? '#28a745' : '#ffc107';
-                            const adlShown = (d.adl_is_health_status && d.adl_level != null)
-                                ? (d.adl_level + (d.adl_status ? ' — ' + d.adl_status : ''))
-                                : 'Not assessed';
-                            html += `<tr>
-                                <td>${d.policy_id}</td>
-                                <td>${d.risk_score}</td>
-                                <td>${adlShown}</td>
-                                <td>${(d.premium_ratio * 100).toFixed(4)}%</td>
-                                <td style="color: ${statusColor}; font-weight: 600;">${d.status}</td>
-                            </tr>`;
-                        });
-                        html += `</tbody></table></div>`;
-                        html += `<p style="margin-top:8px;color:#666;font-size:0.85rem;">PHINS internal underwriting score on a 1-10 scale. Score 10 is a fully disabled customer and meets global ADL 3+ (unable to perform 3 or more of 6 activities of daily living). Score 5 is not the average internal score. Unassessed policies stay "Not assessed".</p>`;
-                    }
-                }
-                
-                if (data.issues?.length > 0) {
-                    html += `<h3>Issues (${data.issues_count})</h3><ul style="color: #721c24;">`;
-                    data.issues.forEach(issue => html += `<li>${issue}</li>`);
-                    html += '</ul>';
-                }
-                
-                if (data.warnings?.length > 0) {
-                    html += `<h3>Warnings (${data.warnings_count})</h3><ul style="color: #856404;">`;
-                    data.warnings.forEach(warning => html += `<li>${warning}</li>`);
-                    html += '</ul>';
-                }
-                
-                html += `<p style="color: #666; margin-top: 20px;">Validated at: ${data.validated_at}</p>`;
-                
-                resultsDiv.innerHTML = html;
-            } catch (err) {
-                resultsDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;
-            }
-        };
-        
         // Load PHINS Balance Sheet (General Reserves)
         async function loadBalanceSheet() {
             try {
@@ -3543,23 +3610,28 @@
                     
                     // Main balances
                     document.getElementById('bs-total-balance').textContent = fmt(bs.total_balance);
+                    setText('ol-own-funds', fmt(bs.total_balance));
+                    setText('ol-operating', fmt(bs.operating_reserve));
+                    setText('ol-result', fmt(bs.net_income));
                     document.getElementById('bs-claims-reserve').textContent = fmt(
                         bs.economic_claims_reserve != null ? bs.economic_claims_reserve : bs.claims_reserve
                     );
                     const economic = bs.economic_claims_reserve != null ? bs.economic_claims_reserve : bs.claims_reserve;
                     setText('ctl-economic-reserve', fmt(economic));
                     setText('sv-economic-tp', fmt(economic));
+                    setText('ol-economic', fmt(economic));
                     if (bs.seed_claims_reserve != null) {
                         setText('ctl-seed-reserve', fmt(bs.seed_claims_reserve));
                         setText('sv-seed-capital', fmt(bs.seed_claims_reserve));
+                        setText('ol-seed', fmt(bs.seed_claims_reserve));
                     }
                     document.getElementById('bs-operating-reserve').textContent = fmt(bs.operating_reserve);
-                    document.getElementById('bs-total-revenue').textContent = fmt(
-                        bs.ledger_premium_collected != null ? bs.ledger_premium_collected : (bs.cumulative_premium || bs.total_revenue)
-                    );
-                    document.getElementById('bs-claims-paid').textContent = fmt(
-                        bs.ledger_claims_paid != null ? bs.ledger_claims_paid : (bs.expense_breakdown?.claims_paid || 0)
-                    );
+                    const revenueShown = bs.ledger_premium_collected != null ? bs.ledger_premium_collected : (bs.cumulative_premium || bs.total_revenue);
+                    const claimsShown = bs.ledger_claims_paid != null ? bs.ledger_claims_paid : (bs.expense_breakdown?.claims_paid || 0);
+                    document.getElementById('bs-total-revenue').textContent = fmt(revenueShown);
+                    document.getElementById('bs-claims-paid').textContent = fmt(claimsShown);
+                    setText('ol-revenue', fmt(revenueShown));
+                    setText('ol-claims', fmt(claimsShown));
                     document.getElementById('bs-net-income').textContent = fmt(bs.net_income);
                     
                     // Revenue breakdown — premium identity is customer-ledger cash
