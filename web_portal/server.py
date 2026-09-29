@@ -25242,6 +25242,27 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
 
+        # GET /api/documents/durability-test — admin capability check, no writes.
+        if path == '/api/documents/durability-test':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            if (get_effective_role(session) or '').strip().lower() != 'admin':
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            from services.document_durability_agent import AGENT_ID, LAUNCH_DATE
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'success': True,
+                'agent_id': AGENT_ID,
+                'ready': True,
+                'writes_customer_documents': False,
+                'launch_date': LAUNCH_DATE,
+            }).encode('utf-8'))
+            return
+
         # ========== ENTITY DOCUMENT BUNDLE (application / claim scoped) ==========
         # GET /api/entity-documents?entity_type=underwriting&entity_id=UW-...
         # GET /api/entity-documents?entity_type=claim&entity_id=CLM-...
@@ -43430,6 +43451,53 @@ For claims or questions, please contact:
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'AI assessment failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # POST /api/documents/durability-test — admin-only pipeline probe.
+        # Reads the archive and seals one reserved probe file, then deletes it.
+        # The request body is ignored so this route cannot upload a caller file.
+        if path == '/api/documents/durability-test':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            if (get_effective_role(session) or '').strip().lower() != 'admin':
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            try:
+                from services.audit_service import AuditService
+                from services.document_durability_agent import run_durability_test
+                actor = str((session or {}).get('username') or 'admin')
+                report = run_durability_test(
+                    vault=_build_customer_document_vault(),
+                    doc_service=get_document_service(),
+                    actor=actor,
+                )
+                try:
+                    AuditService().log(
+                        actor,
+                        'document_durability_test',
+                        'document',
+                        report.get('agent_id') or 'document_durability',
+                        {
+                            'passed': report.get('passed'),
+                            'archive_consistent': report.get('archive_consistent'),
+                            'probe_sha256': (report.get('pipeline') or {}).get('probe_sha256'),
+                            'probe_removed': (report.get('pipeline') or {}).get('probe_removed'),
+                            'siblings_checked': (report.get('pipeline') or {}).get('siblings_checked'),
+                        },
+                    )
+                except Exception:
+                    pass
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(report, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
 
         # ========== GENERAL DOCUMENT UPLOAD ENDPOINT ==========

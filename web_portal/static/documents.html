@@ -512,6 +512,19 @@
 
   <!-- ── Tab: Platform Archive (staff) — every historical upload ── -->
   <div class="tab-panel" id="tab-archive">
+    <div class="card" id="durability-agent" style="display:none;">
+      <div class="card-title">
+        Durability test
+        <span id="durability-status" style="margin-left:auto;font-size:0.8rem;font-weight:600;"></span>
+      </div>
+      <div style="color:#546e7a;font-size:0.88rem;margin-bottom:0.85rem;line-height:1.45;">
+        Admin-only check of the document pipeline. It counts uploads since the December 2025 launch
+        against what is still stored, then seals one reserved text file, reads it back, and deletes it.
+        Customer documents are not modified.
+      </div>
+      <button type="button" class="btn btn-primary" id="durability-run" onclick="runDurabilityTest()">Run durability test</button>
+      <div id="durability-report" style="margin-top:1rem;"></div>
+    </div>
     <div class="card">
       <div class="card-title">
          <span id="archive-list-title">Platform Document Archive</span>
@@ -1387,6 +1400,8 @@
         return;
       }
       DURABLE_VAULT = json;
+      const agentCard = document.getElementById('durability-agent');
+      if (agentCard) agentCard.style.display = (json.viewer_role === 'admin') ? '' : 'none';
       document.getElementById('archive-list-title').textContent =
         tag ? `Platform Archive — #${tag}` : 'Platform Document Archive';
       const s = json.summary || {};
@@ -1446,6 +1461,113 @@
     } catch (e) {
       document.getElementById('archive-container').innerHTML =
         `<div class="empty-state"><div class="empty-state-icon"></div><div>Network error: ${escHtml(e.message)}</div></div>`;
+    }
+  }
+
+  function mediaLine(counts) {
+    const c = counts || {};
+    return `${c.document || 0} documents, ${c.voice || 0} voice, ${c.video || 0} video, ${c.image || 0} images`;
+  }
+
+  function renderCensusTable(title, book) {
+    const rows = (book && book.rows) || [];
+    const totals = (book && book.totals) || {};
+    if (!rows.length) {
+      return `<h4 style="margin:0.9rem 0 0.35rem;color:#1a237e;">${escHtml(title)}</h4>
+        <div style="color:#78909c;font-size:0.86rem;">No documents in this window.</div>`;
+    }
+    const body = rows.map(row => `
+      <tr>
+        <td style="font-weight:600;color:#1a237e;">${escHtml(row.label || row.process)}</td>
+        <td>${row.uploaded}</td>
+        <td style="font-size:0.8rem;color:#546e7a;">${escHtml(mediaLine(row.by_media))}</td>
+        <td>${row.stored}</td>
+        <td style="font-size:0.8rem;color:#546e7a;">${escHtml(mediaLine(row.stored_by_media))}</td>
+      </tr>`).join('');
+    const integrity = (book && book.integrity) || {};
+    return `
+      <h4 style="margin:0.9rem 0 0.35rem;color:#1a237e;">${escHtml(title)}</h4>
+      <div style="overflow-x:auto;">
+      <table class="docs-table">
+        <thead>
+          <tr>
+            <th>Process</th><th>Uploaded</th><th>Type distribution</th><th>Stored</th><th>Still stored</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${body}
+          <tr>
+            <td style="font-weight:700;">Total</td>
+            <td style="font-weight:700;">${totals.uploaded || 0}</td>
+            <td style="font-size:0.8rem;">${escHtml(mediaLine(totals.by_media))}</td>
+            <td style="font-weight:700;">${totals.stored || 0}</td>
+            <td style="font-size:0.8rem;">${escHtml(mediaLine(totals.stored_by_media))}</td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+      <div style="font-size:0.78rem;color:#78909c;margin-top:0.25rem;">
+        Integrity: ok ${integrity.ok || 0}, unverified ${integrity.unverified || 0},
+        missing ${integrity.missing || 0}, mismatch ${integrity.mismatch || 0}
+      </div>`;
+  }
+
+  function renderDurabilityReport(report) {
+    const box = document.getElementById('durability-report');
+    const status = document.getElementById('durability-status');
+    const passed = !!report.passed;
+    status.textContent = passed ? 'Passed' : 'Needs attention';
+    status.style.color = passed ? '#2e7d32' : '#b71c1c';
+    const census = report.census || {};
+    const pipeline = report.pipeline || {};
+    const steps = (pipeline.steps || []).map(step => {
+      const mark = step.passed ? 'Pass' : 'Fail';
+      const color = step.passed ? '#2e7d32' : '#b71c1c';
+      return `<li style="margin:0.2rem 0;"><span style="color:${color};font-weight:700;">${mark}</span> ${escHtml(step.detail || step.id)}</li>`;
+    }).join('');
+    const issues = [];
+    ['since_launch', 'undated', 'all_time'].forEach(key => {
+      ((census[key] || {}).issues || []).forEach(issue => issues.push(issue));
+    });
+    const issueHtml = issues.length
+      ? `<div style="margin-top:0.6rem;font-size:0.82rem;color:#b71c1c;">${issues.slice(0, 12).map(issue =>
+          escHtml(`${issue.integrity_status}: ${issue.process} ${issue.name || issue.id}`)).join('<br>')}</div>`
+      : '';
+    box.innerHTML = `
+      <div style="font-size:0.86rem;color:#546e7a;">Checked ${escHtml(report.generated_at || '')}. Customer files were not written.</div>
+      ${renderCensusTable('Since launch (December 2025)', census.since_launch)}
+      ${(census.undated && census.undated.totals && census.undated.totals.uploaded)
+        ? renderCensusTable('Undated records', census.undated) : ''}
+      ${renderCensusTable('Full archive', census.all_time)}
+      <h4 style="margin:0.9rem 0 0.35rem;color:#1a237e;">Pipeline</h4>
+      <ul style="margin:0;padding-left:1.1rem;">${steps}</ul>
+      ${issueHtml}`;
+  }
+
+  async function runDurabilityTest() {
+    const btn = document.getElementById('durability-run');
+    const box = document.getElementById('durability-report');
+    const status = document.getElementById('durability-status');
+    btn.disabled = true;
+    status.textContent = 'Running…';
+    status.style.color = '#546e7a';
+    box.innerHTML = '<div style="color:#546e7a;font-size:0.86rem;">Sealing a probe file and checking the archive…</div>';
+    try {
+      const res = await API('/api/documents/durability-test', { method: 'POST', body: '{}' });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        status.textContent = 'Failed';
+        status.style.color = '#b71c1c';
+        box.innerHTML = `<div style="color:#b71c1c;">${escHtml(json.error || 'Durability test failed')}</div>`;
+        return;
+      }
+      renderDurabilityReport(json);
+    } catch (e) {
+      status.textContent = 'Failed';
+      status.style.color = '#b71c1c';
+      box.innerHTML = `<div style="color:#b71c1c;">Network error: ${escHtml(e.message)}</div>`;
+    } finally {
+      btn.disabled = false;
     }
   }
 
