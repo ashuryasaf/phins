@@ -27,6 +27,7 @@ from services.customer_document_vault_service import (
     DURABILITY_PROBE_ENTITY,
     decode_document_bytes,
     fingerprint_upload,
+    is_durability_probe,
 )
 
 AGENT_ID = "document_durability"
@@ -90,6 +91,8 @@ def process_bucket(record: Dict[str, Any]) -> str:
     if entity == "billing":
         return "billing"
     tag = str(record.get("process_hashtag") or "").strip().lower()
+    if tag in {"claim", "claims"}:
+        return "claims"
     if tag in PROCESS_LABELS:
         return tag
     if tag:
@@ -116,9 +119,7 @@ def build_census(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     for record in records:
         if not isinstance(record, dict):
             continue
-        if str(record.get("entity_type") or "").strip().lower() == DURABILITY_PROBE_ENTITY:
-            continue
-        if str(record.get("document_type") or "").strip().lower() == DURABILITY_PROBE_ENTITY:
+        if is_durability_probe(record):
             continue
         process = process_bucket(record)
         media = media_kind(record)
@@ -341,8 +342,7 @@ def reap_own_probes(doc_service: Any) -> Dict[str, List[str]]:
                 continue
             doc_id = str(item.get("id") or "")
             digest = str(item.get("sha256_checksum") or "")
-            entity = str(item.get("entity_type") or "")
-            if entity == DURABILITY_PROBE_ENTITY and digest == PROBE_SHA256 and doc_id:
+            if is_durability_probe(item) and digest == PROBE_SHA256 and doc_id:
                 if _remove_probe(doc_service, doc_id, str(item.get("storage_path") or "")):
                     reaped.append(doc_id)
                 else:

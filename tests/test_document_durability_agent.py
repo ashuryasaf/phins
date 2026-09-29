@@ -55,6 +55,7 @@ def test_media_and_process_buckets():
     assert process_bucket(_record(entity_type="chat_application")) == "apply_chat"
     assert process_bucket(_record(entity_type="policy")) == "policy_documents"
     assert process_bucket(_record(entity_type="claim")) == "claims"
+    assert process_bucket(_record(entity_type="", process_hashtag="claim")) == "claims"
 
 
 def test_census_splits_launch_window_and_stored_bytes():
@@ -158,6 +159,15 @@ def test_reap_removes_only_the_known_probe(tmp_path):
         document_type="durability_probe",
         skip_processing=True,
     )
+    claimed = svc.upload_document(
+        file_name="phins-durability-probe.txt",
+        file_data_b64=base64.b64encode(PROBE_TEXT).decode("ascii"),
+        mime_type="text/plain",
+        entity_type="durability_probe",
+        document_type="durability_probe",
+        customer_id="CUST-1",
+        skip_processing=True,
+    )
     customer = svc.upload_document(
         file_name="real.txt",
         file_data_b64=base64.b64encode(b"real").decode("ascii"),
@@ -169,10 +179,13 @@ def test_reap_removes_only_the_known_probe(tmp_path):
     result = reap_own_probes(svc)
     assert own.document_id in result["reaped"]
     assert foreign.document_id in result["foreign"]
+    assert claimed.document_id in result["foreign"]
     assert svc.get_document(own.document_id) is None
     assert svc.get_document(foreign.document_id) is not None
+    assert svc.get_document(claimed.document_id) is not None
     assert svc.get_document(customer.document_id)["sha256_checksum"] == hashlib.sha256(b"real").hexdigest()
     svc.delete_document(foreign.document_id, hard=True)
+    svc.delete_document(claimed.document_id, hard=True)
     svc.delete_document(customer.document_id, hard=True)
 
 
@@ -197,15 +210,26 @@ def test_archive_hides_the_probe_lane():
             "data": base64.b64encode(PROBE_TEXT).decode("ascii"),
             "entity_type": "durability_probe",
             "document_type": "durability_probe",
+        },
+        # A customer file cannot be hidden by claiming the reserved lane.
+        "DOC-CLAIMED": {
+            "id": "DOC-CLAIMED",
+            "name": "receipt.txt",
+            "type": "text/plain",
+            "size": 8,
+            "data": base64.b64encode(b"claimed!").decode("ascii"),
+            "entity_type": "durability_probe",
+            "document_type": "durability_probe",
             "uploaded_by_customer": "CUST-1",
         },
     })
     archive = vault.get_platform_archive(viewer_role="admin", verify_integrity=False)
     ids = {row["id"] for row in archive["documents"]}
     assert "DOC-REAL" in ids
+    assert "DOC-CLAIMED" in ids
     assert "DOC-PROBE" not in ids
     customer = vault.get_vault("CUST-1", verify_integrity=False)
-    assert {row["id"] for row in customer["documents"]} == {"DOC-REAL"}
+    assert {row["id"] for row in customer["documents"]} == {"DOC-REAL", "DOC-CLAIMED"}
 
 
 def _admin_token() -> str:
