@@ -15500,19 +15500,29 @@ def ingest_claim_file_to_assessment(file_id: str, file_record: Dict[str, Any]) -
         # 2+3) Persist + assess (reuses the unified Assessment Center path).
         from services.assessment_center_service import get_assessment_center
         center = get_assessment_center()
-        assessment = center.upload_and_assess(
-            file_name=file_name,
-            file_data_b64=data_b64,
-            mime_type=mime_type,
-            category='claim',
-            customer_id=customer_id or None,
-            entity_type='claim',
-            entity_id=claim_id,
-            uploaded_by=file_record.get('uploaded_by') or 'claim_submission',
-            uploaded_by_role='customer',
-            description=f"Claim attachment for {claim_id}",
-            source_context='claim_upload',
-        )
+        sealed_doc_id = str(file_record.get('persistent_doc_id') or '')
+        if sealed_doc_id:
+            # Bytes were already sealed into the document store at intake;
+            # assess that object instead of writing a second copy of the file.
+            assessment = center.assess_document(
+                sealed_doc_id,
+                customer_id=customer_id or None,
+                source_context='claim_upload',
+            )
+        else:
+            assessment = center.upload_and_assess(
+                file_name=file_name,
+                file_data_b64=data_b64,
+                mime_type=mime_type,
+                category='claim',
+                customer_id=customer_id or None,
+                entity_type='claim',
+                entity_id=claim_id,
+                uploaded_by=file_record.get('uploaded_by') or 'claim_submission',
+                uploaded_by_role='customer',
+                description=f"Claim attachment for {claim_id}",
+                source_context='claim_upload',
+            )
         file_record['persistent_doc_id'] = assessment.document_id
         file_record['assessed_facts'] = len(assessment.facts)
     except Exception as ingest_err:

@@ -131,9 +131,10 @@ def infer_process_hashtag(
 
     entity = _norm_lower(entity_type)
     src = _norm_lower(source)
-    if entity == "claim" or src in ("claim_attachments", "claim"):
+    if entity in ("claim", "claims_chat") or src in ("claim_attachments", "claim"):
         return "claim"
-    if entity == "underwriting" or src in ("underwriting_attachments", "underwriting"):
+    if entity in ("underwriting", "chat_application") or src in (
+            "underwriting_attachments", "underwriting"):
         return "underwriting"
     if entity == "billing" or src in ("billing",):
         return "billing"

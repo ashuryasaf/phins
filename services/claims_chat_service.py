@@ -1010,7 +1010,6 @@ class ClaimsChatService:
                 "duration_seconds": duration_seconds,
                 "uploaded_at": _utc_now_iso(),
             }
-            item.update(self._persist_media_blob(session, item, raw_b64))
             session["media"].append(item)
             label = {"voice": "voice note", "video": "video", "document": "document", "image": "image"}[kind]
             user_entry = self._transcript_add(
@@ -1026,8 +1025,14 @@ class ClaimsChatService:
                     "media_id": media_id, "kind": kind, "sha256": item["sha256"], "size": item["size"]}),
                 self._ledger_message(session, bot_entry),
             ]
+        # The durable write does disk and document-store I/O, so it runs after
+        # the item is recorded and outside the service-wide lock - one large
+        # attachment must not stall every other claimant's session.
+        persistence = self._persist_media_blob(session, item, raw_b64)
+        with self._lock:
+            item.update(persistence)
             public = {k: v for k, v in item.items() if k != "data_b64"}
-            return {"ok": True, "media": public, "messages": [bot_entry], "ledger_events": events}
+        return {"ok": True, "media": public, "messages": [bot_entry], "ledger_events": events}
 
     def _persist_media_blob(self, session: Dict[str, Any], item: Dict[str, Any],
                             raw_b64: str) -> Dict[str, Any]:
@@ -1288,11 +1293,20 @@ class ClaimsChatService:
         return problems
 
     def intake_catalog(self) -> List[Dict[str, Any]]:
-        """Claims-chat files with sealed evidence fingerprints. No identity numbers."""
+        """Claims-chat files with sealed evidence fingerprints. No identity numbers.
+
+        Filed sessions that already have a claim id are omitted; those rows
+        live on the claims book.
+        """
         with self._lock:
             sessions = list(self._sessions.values())
         rows: List[Dict[str, Any]] = []
         for session in sessions:
+            submission = session.get("submission") or {}
+            if session.get("status") == "submitted" and (
+                submission.get("claim_id") or session.get("claim_id")
+            ):
+                continue
             contact = session.get("contact") or {}
             media = []
             for item in session.get("media") or []:
