@@ -62,6 +62,20 @@ PROCESS_HASHTAGS = (
     "general",
 )
 
+# Reserved lane for the admin durability probe. These rows are not customer
+# documents and must never appear in the archive or a customer vault.
+DURABILITY_PROBE_ENTITY = "durability_probe"
+
+
+def is_durability_probe(
+    entity_type: Optional[str] = None,
+    document_type: Optional[str] = None,
+) -> bool:
+    """True for the internal durability probe, which is not a customer file."""
+    entity = str(entity_type or "").strip().lower()
+    doc_type = str(document_type or "").strip().lower()
+    return entity == DURABILITY_PROBE_ENTITY or doc_type == DURABILITY_PROBE_ENTITY
+
 _DOC_TYPE_TO_HASHTAG = {
     "id": "identity",
     "identity": "identity",
@@ -460,6 +474,10 @@ class CustomerDocumentVault:
                     if pid:
                         seen_persistent.add(pid)
 
+        records = [
+            row for row in records
+            if not is_durability_probe(row.get("entity_type"), row.get("document_type"))
+        ]
         records = self._dedupe_by_checksum(records)
         for record in records:
             self._annotate_process(record)
@@ -931,7 +949,9 @@ class CustomerDocumentVault:
         out.extend(self._collect_claim_files(customer_id))
         out.extend(self._collect_underwriting_files(customer_id))
         out.extend(self._collect_persistent_documents(customer_id, out))
-        return out
+        return [row for row in out if not is_durability_probe(
+            row.get("entity_type"), row.get("document_type")
+        )]
 
     def _collect_policy_documents(self, customer_id: str) -> List[Dict[str, Any]]:
         out: List[Dict[str, Any]] = []
