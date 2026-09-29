@@ -518,8 +518,9 @@
         <span id="archive-count" style="margin-left:auto;font-size:0.8rem;color:#78909c;font-weight:400;"></span>
       </div>
       <div style="color:#546e7a;font-size:0.88rem;margin-bottom:0.85rem;line-height:1.45;">Every document uploaded since day one — identity, medical, risk assessment, claims,
-        billing, underwriting, and more — tagged with stable process hashtags for integrity-preserving
-        BI and underwriting review. File bytes are never rewritten; SHA-256 fingerprints are checked on read.
+        billing, underwriting, and more — tagged with stable process hashtags and a SHA-256 that
+        labels the bytes forever. Staff see the slice of the archive their role is responsible for.
+        <a href="/risk-assessment-viewer.html">Open the application book</a>.
       </div>
       <div class="form-row" style="margin-bottom:0.75rem;">
         <div class="form-group">
@@ -1345,7 +1346,7 @@
               <td>
                 <span>${fileIcon(d.name)}</span>
                 <span style="font-weight:500;color:#1a237e;">${escHtml(d.name)}</span><br>
-                <small style="color:#90a4ae;">${formatSize(d.size)} · sha256 ${escHtml((d.sha256 || '').slice(0, 10))}…</small>
+                <small style="color:#90a4ae;word-break:break-all;">${formatSize(d.size)} · sha256 ${escHtml(d.sha256 || 'unlabeled')}</small>
               </td>
               <td><span class="badge ${docTypeBadgeClass(d.document_type)}">${docTypeLabel(d.document_type)}</span></td>
               <td><span class="badge badge-doctype-general">${escHtml(d.process_tag || ('#' + (d.process_hashtag || 'general')))}</span></td>
@@ -1399,6 +1400,7 @@
           <div style="display:flex;flex-wrap:wrap;gap:0.4rem 0.75rem;align-items:center;">
             <strong style="color:#1a237e;">${json.total || 0} document(s) total</strong>
             <span style="color:#78909c;">· showing ${(json.documents || []).length}</span>
+            <span style="color:#546e7a;">· ${escHtml(json.viewer_role || 'staff')} scope ${escHtml((json.archive_scope || []).join(', ') || 'all')}</span>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-top:0.5rem;">${hashtagChips}</div>
         </div>`;
@@ -1415,7 +1417,7 @@
         <table class="docs-table">
           <thead>
             <tr>
-              <th>File</th><th>Process</th><th>Customer</th><th>Affiliation</th>
+              <th>File</th><th>SHA-256</th><th>Process</th><th>Customer</th><th>Affiliation</th>
               <th>Source</th><th>Integrity</th><th>Uploaded</th><th>Actions</th>
             </tr>
           </thead>
@@ -1427,6 +1429,7 @@
                   <span style="font-weight:500;color:#1a237e;">${escHtml(d.name)}</span><br>
                   <small style="color:#90a4ae;">${formatSize(d.size)}</small>
                 </td>
+                <td><code style="font-size:0.72rem;word-break:break-all;" title="${escHtml(d.sha256 || '')}">${escHtml(d.sha256 || 'unlabeled')}</code></td>
                 <td><span class="badge badge-doctype-general">${escHtml(d.process_tag || ('#' + (d.process_hashtag || 'general')))}</span></td>
                 <td style="font-size:0.8rem;color:#546e7a;">${escHtml(d.uploaded_by_customer || '—')}</td>
                 <td><span class="badge badge-${escHtml(d.entity_type || 'general')}">${escHtml(d.entity_type || 'general')}</span> ${escHtml(d.entity_id || '')}</td>

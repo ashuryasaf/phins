@@ -1010,6 +1010,7 @@ class ClaimsChatService:
                 "duration_seconds": duration_seconds,
                 "uploaded_at": _utc_now_iso(),
             }
+            item.update(self._persist_media_blob(session, item, raw_b64))
             session["media"].append(item)
             label = {"voice": "voice note", "video": "video", "document": "document", "image": "image"}[kind]
             user_entry = self._transcript_add(
@@ -1027,6 +1028,50 @@ class ClaimsChatService:
             ]
             public = {k: v for k, v in item.items() if k != "data_b64"}
             return {"ok": True, "media": public, "messages": [bot_entry], "ledger_events": events}
+
+    def _persist_media_blob(self, session: Dict[str, Any], item: Dict[str, Any],
+                            raw_b64: str) -> Dict[str, Any]:
+        """Seal claim evidence into the durable document store immediately.
+
+        The chat session is in-memory. Without this write a restart drops the
+        bytes before finalize. A checksum mismatch is not recorded as stored.
+        """
+        name = str(item.get("name") or item.get("id") or "evidence")
+        try:
+            from services.document_processing_service import get_document_service
+
+            result = get_document_service().upload_document(
+                file_name=name,
+                file_data_b64=raw_b64,
+                mime_type=item.get("mime_type"),
+                document_type=item.get("kind") or "claim",
+                description=f"Claims chat {item.get('kind') or 'evidence'} attachment",
+                entity_type="claims_chat",
+                entity_id=session.get("id") or "",
+                customer_id=session.get("customer_id") or "",
+                uploaded_by=(session.get("contact") or {}).get("email") or session.get("id") or "",
+                uploaded_by_role="claimant",
+                skip_processing=True,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Claims media persistence failed for %s: %s", item.get("id"), exc,
+            )
+            return {"persistence_status": "memory_only", "persistent_doc_id": None}
+        stored_sha = str(getattr(result, "sha256", "") or "")
+        if stored_sha and stored_sha != item.get("sha256"):
+            logger.error(
+                "Claims media checksum mismatch for %s: session=%s store=%s",
+                item.get("id"), item.get("sha256"), stored_sha,
+            )
+            return {"persistence_status": "integrity_mismatch", "persistent_doc_id": None}
+        return {
+            "persistence_status": (
+                "stored" if getattr(result, "status", "") == "uploaded" else "degraded"
+            ),
+            "persistent_doc_id": getattr(result, "document_id", None),
+            "storage_path": getattr(result, "storage_path", None),
+        }
 
     def pause_session(self, application_id: str) -> Dict[str, Any]:
         with self._lock:
@@ -1156,6 +1201,10 @@ class ClaimsChatService:
                 "type": item["mime_type"],
                 "size": item["size"],
                 "data": item["data_b64"],
+                "sha256": item["sha256"],
+                "kind": item.get("kind"),
+                "persistent_doc_id": item.get("persistent_doc_id"),
+                "storage_path": item.get("storage_path"),
                 "note": f"sha256:{item['sha256']}",
             })
         document = session.get("document_html") or ""
@@ -1237,6 +1286,50 @@ class ClaimsChatService:
         if facts.get("national_id_hash") and ref.get("national_id_hash") != facts.get("national_id_hash"):
             problems.append("identity hash not stamped on claim")
         return problems
+
+    def intake_catalog(self) -> List[Dict[str, Any]]:
+        """Claims-chat files with sealed evidence fingerprints. No identity numbers."""
+        with self._lock:
+            sessions = list(self._sessions.values())
+        rows: List[Dict[str, Any]] = []
+        for session in sessions:
+            contact = session.get("contact") or {}
+            media = []
+            for item in session.get("media") or []:
+                media.append({
+                    "name": item.get("name"),
+                    "kind": item.get("kind"),
+                    "sha256": item.get("sha256"),
+                    "persistent_doc_id": item.get("persistent_doc_id"),
+                    "size": item.get("size"),
+                    "persistence_status": item.get("persistence_status"),
+                })
+            if session.get("document_sha256"):
+                media.append({
+                    "name": "first-notice-of-loss.html",
+                    "kind": "document",
+                    "sha256": session.get("document_sha256"),
+                    "persistent_doc_id": None,
+                    "size": None,
+                })
+            rows.append({
+                "application_id": session.get("id"),
+                "customer_id": session.get("customer_id"),
+                "customer_name": contact.get("name") or "Claim intake",
+                "customer_email": contact.get("email") or "",
+                "policy_type": "claim",
+                "coverage_amount": None,
+                "risk_score": None,
+                "status": session.get("status") or "in_progress",
+                "created_date": session.get("created_at") or "",
+                "channel": "claims_chat",
+                "source": "claims_chat",
+                "has_report": False,
+                "claim_id": session.get("claim_id"),
+                "document_count": len(media),
+                "document_hashes": media,
+            })
+        return rows
 
     def remember_claim(self, application_id: str, claim_id: str) -> None:
         session = self._get(application_id)

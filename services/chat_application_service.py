@@ -1903,6 +1903,7 @@ class ChatPolicyApplicationService:
                 description=f"Chat application {item['kind']} attachment",
                 entity_type="chat_application",
                 entity_id=session["id"],
+                customer_id=session.get("customer_id") or "",
                 uploaded_by=session["contact"].get("email") or session["id"],
                 uploaded_by_role="applicant",
                 skip_processing=True,
@@ -2652,6 +2653,51 @@ class ChatPolicyApplicationService:
                       "decline_reason": (session.get("quote") or {}).get("decline_reason"),
                       "adl_level": (session.get("quote") or {}).get("adl_level")})]
             return {"ok": True, "underwriting_id": underwriting_id, "ledger_events": events}
+
+    def intake_catalog(self) -> List[Dict[str, Any]]:
+        """In-progress chat applications with sealed attachment fingerprints.
+
+        Submitted sessions that already have an underwriting id are omitted;
+        those rows live on ``UNDERWRITING_APPLICATIONS``. No card data.
+        """
+        with self._lock:
+            sessions = list(self._sessions.values())
+        rows: List[Dict[str, Any]] = []
+        for session in sessions:
+            submission = session.get("submission") or {}
+            if session.get("status") == "submitted" and (
+                submission.get("underwriting_id") or submission.get("policy_id")
+            ):
+                continue
+            contact = session.get("contact") or {}
+            media = []
+            for item in session.get("media") or []:
+                media.append({
+                    "name": item.get("name"),
+                    "kind": item.get("kind"),
+                    "sha256": item.get("sha256"),
+                    "persistent_doc_id": item.get("persistent_doc_id"),
+                    "size": item.get("size"),
+                    "persistence_status": item.get("persistence_status"),
+                })
+            rows.append({
+                "application_id": session.get("id"),
+                "customer_id": session.get("customer_id"),
+                "customer_name": contact.get("name") or "In progress",
+                "customer_email": contact.get("email") or "",
+                "policy_type": "phins_unified",
+                "coverage_amount": (session.get("quote") or {}).get("coverage_amount"),
+                "risk_score": (session.get("assessment") or {}).get("risk_category"),
+                "status": session.get("status") or "in_progress",
+                "created_date": session.get("created_at") or "",
+                "channel": "chat",
+                "source": "apply_chat",
+                "has_report": False,
+                "document_count": len(media),
+                "document_hashes": media,
+                "chat_application_id": session.get("id"),
+            })
+        return rows
 
     def funnel_snapshot(self) -> Dict[str, Any]:
         with self._lock:
