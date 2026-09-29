@@ -1821,29 +1821,37 @@ async function fileToBase64(file) {
     });
 }
 
+async function sha256HexOfFile(file) {
+    if (!window.crypto || !crypto.subtle) return '';
+    const bytes = await file.arrayBuffer();
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function prepareFilesForSubmission() {
     const filesData = [];
     for (let file of applicationFiles) {
         try {
-            // Only include base64 for files under 2MB to avoid payload issues
-            if (file.size < 2 * 1024 * 1024) {
-                const base64 = await fileToBase64(file);
-                filesData.push({
-                    name: file.name,
-                    type: file.type,
-                    size: file.size,
-                    data: base64
-                });
-            } else {
-                // For larger files, just include metadata
-                filesData.push({
-                    name: file.name,
-                    type: file.type,
-                    size: file.size,
-                    data: null,
-                    note: 'File too large for inline upload'
-                });
+            // Every accepted file (up to the 5MB picker limit) is sent as raw
+            // base64 plus its SHA-256 so the platform can keep the bytes and
+            // label them forever. The data-URL prefix is not part of the file.
+            const dataUrl = await fileToBase64(file);
+            const comma = String(dataUrl).indexOf(',');
+            const raw = comma >= 0 ? String(dataUrl).slice(comma + 1) : String(dataUrl);
+            let sha256 = '';
+            try {
+                sha256 = await sha256HexOfFile(file);
+            } catch (hashError) {
+                console.warn('Could not hash file client-side:', file.name, hashError);
             }
+            filesData.push({
+                name: file.name,
+                type: file.type,
+                size: file.size,
+                data: raw,
+                sha256: sha256,
+                kind: file.type && file.type.indexOf('image/') === 0 ? 'image' : 'document'
+            });
         } catch (e) {
             console.warn('Error encoding file:', file.name, e);
             filesData.push({

@@ -13360,6 +13360,88 @@ def store_policy_document(
     return doc
 
 
+def canonical_upload_bytes(file_info: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize an intake file to raw base64 plus the SHA-256 of its bytes.
+
+    Data-URL wrappers are stripped before hashing so the fingerprint matches
+    the durable document store. Pointer-only uploads (bytes already sealed
+    under ``persistent_doc_id``) keep the recorded digest.
+    """
+    from services.customer_document_vault_service import (
+        decode_document_bytes,
+        fingerprint_upload,
+    )
+
+    info = file_info if isinstance(file_info, dict) else {}
+    raw = decode_document_bytes(info.get("data"))
+    recorded = fingerprint_upload(None, info.get("sha256") or info.get("note"))
+    if not raw:
+        return {
+            "data_b64": "",
+            "size": safe_int(info.get("size"), 0),
+            "sha256": recorded,
+            "has_bytes": False,
+        }
+    digest = hashlib.sha256(raw).hexdigest()
+    return {
+        "data_b64": base64.b64encode(raw).decode("ascii"),
+        "size": len(raw),
+        "sha256": digest,
+        "has_bytes": True,
+    }
+
+
+def mirror_upload_to_document_store(
+    *,
+    file_name: str,
+    data_b64: str,
+    sha256: str,
+    mime_type: str,
+    document_type: str,
+    entity_type: str,
+    entity_id: str,
+    customer_id: str,
+    uploaded_by: str,
+    uploaded_by_role: str,
+    description: str,
+) -> Dict[str, str]:
+    """Copy bytes into the durable document store. Empty dict on failure.
+
+    A checksum mismatch is refused: the inline copy stays, but no pointer is
+    attached that would claim the disk object is this file.
+    """
+    if not data_b64 or not sha256:
+        return {}
+    try:
+        upload_result = get_document_service().upload_document(
+            file_name=file_name or "upload.bin",
+            file_data_b64=data_b64,
+            mime_type=mime_type or "application/octet-stream",
+            document_type=document_type or "general",
+            description=description or "",
+            entity_type=entity_type or "",
+            entity_id=entity_id or "",
+            customer_id=customer_id or "",
+            uploaded_by=uploaded_by or "system",
+            uploaded_by_role=uploaded_by_role or "",
+            skip_processing=True,
+        )
+    except Exception as exc:
+        print(f"[doc-service] Intake mirror skipped for {file_name}: {exc}")
+        return {}
+    stored = str(getattr(upload_result, "sha256", "") or "")
+    if stored and stored != sha256:
+        print(
+            f"[doc-service] Intake checksum mismatch for {file_name}: "
+            f"payload={sha256} store={stored}"
+        )
+        return {}
+    return {
+        "persistent_doc_id": str(getattr(upload_result, "document_id", "") or ""),
+        "storage_path": str(getattr(upload_result, "storage_path", "") or ""),
+    }
+
+
 def _build_customer_document_vault():
     """Construct a CustomerDocumentVault wired to live in-memory stores.
 
@@ -14810,6 +14892,158 @@ SUSPENDED_TEST_ACCOUNTS: set = set()
 SANDBOX_PUSHED_CUSTOMERS: set = set()
 
 
+def _application_evidence(app: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Hash-labeled documents for one underwriting application.
+
+    Reads the application index and the live attachment store. Does not invent
+    verification or authenticity scores.
+    """
+    from services.customer_document_vault_service import fingerprint_upload
+
+    app_id = str((app or {}).get("id") or "")
+    entries: List[Dict[str, Any]] = []
+    seen = set()
+
+    def _add(doc: Dict[str, Any], source: str) -> None:
+        if not isinstance(doc, dict):
+            return
+        sha = fingerprint_upload(doc.get("data"), doc.get("sha256") or doc.get("note"))
+        name = str(doc.get("name") or doc.get("type") or doc.get("document_type") or "document")
+        key = sha or f"{name}|{doc.get('id')}|{source}"
+        if key in seen:
+            return
+        seen.add(key)
+        verified = doc.get("verified") if "verified" in doc else None
+        entries.append({
+            "id": doc.get("id"),
+            "type": doc.get("type") or doc.get("document_type") or doc.get("kind") or "unknown",
+            "name": doc.get("name"),
+            "sha256": sha or None,
+            "persistent_doc_id": doc.get("persistent_doc_id") or None,
+            "verified": _coerce_verified_flag(verified) if "verified" in doc else None,
+            "authenticity_score": doc.get("authenticity_score"),
+            "expiry_status": doc.get("expiry_status"),
+            "flags": doc.get("flags"),
+            "source": doc.get("source") or source,
+            "size": doc.get("size"),
+        })
+
+    for key in ("documents", "files"):
+        items = coerce_json_container(app.get(key), [])
+        if isinstance(items, list):
+            for doc in items:
+                _add(doc, key)
+    if app_id:
+        for fid, finfo in list(UNDERWRITING_FILES.items()):
+            if not isinstance(finfo, dict):
+                continue
+            if str(finfo.get("application_id") or "") != app_id:
+                continue
+            _add(finfo, "underwriting_attachments")
+    return entries
+
+
+def _catalog_document_hashes(app: Dict[str, Any]) -> List[Dict[str, Any]]:
+    rows = []
+    for doc in _application_evidence(app):
+        if not doc.get("sha256") and not doc.get("name"):
+            continue
+        rows.append({
+            "name": doc.get("name"),
+            "sha256": doc.get("sha256"),
+            "kind": doc.get("type"),
+            "persistent_doc_id": doc.get("persistent_doc_id"),
+        })
+    return rows
+
+
+def _build_risk_assessment_catalog() -> List[Dict[str, Any]]:
+    """Every application the risk viewer should list, with document fingerprints.
+
+    Submitted underwriting files (classic apply, chat finalize, senior
+    referrals) come from ``UNDERWRITING_APPLICATIONS``. In-progress chat
+    applications and claims-chat intakes are included so their sealed
+    uploads are visible before a policy or claim row exists. Suspended
+    sandbox accounts stay off the book.
+    """
+    reports: List[Dict[str, Any]] = []
+    seen_ids = set()
+
+    def _coverage(app: Dict[str, Any], policy: Dict[str, Any]) -> Any:
+        if app.get("coverage_amount") not in (None, ""):
+            return app.get("coverage_amount")
+        if policy.get("coverage_amount") not in (None, ""):
+            return policy.get("coverage_amount")
+        return None
+
+    for app_id, app in list(UNDERWRITING_APPLICATIONS.items()):
+        if not isinstance(app, dict):
+            continue
+        customer_id = app.get("customer_id")
+        if is_suspended_account(str(customer_id or "")):
+            continue
+        customer = CUSTOMERS.get(customer_id, {}) if customer_id else {}
+        policy = POLICIES.get(app.get("policy_id"), {}) if app.get("policy_id") else {}
+        hashes = _catalog_document_hashes(app)
+        channel = app.get("application_channel") or (
+            "chat" if app.get("chat_application_id") or app.get("source") == "chat_adl_referral" else "classic"
+        )
+        stored_score = app.get("risk_score")
+        if stored_score in ("", None):
+            stored_score = app.get("risk_assessment")
+        if stored_score in ("", None):
+            stored_score = None
+        reports.append({
+            "application_id": app_id,
+            "customer_id": customer_id,
+            "customer_name": (
+                customer.get("name") or customer.get("full_name")
+                or app.get("customer_name") or "Unknown"
+            ),
+            "customer_email": customer.get("email") or app.get("customer_email") or "",
+            "policy_type": policy.get("type") or app.get("policy_type") or app.get("product_id"),
+            "coverage_amount": _coverage(app, policy if isinstance(policy, dict) else {}),
+            "risk_score": stored_score,
+            "status": app.get("status") or "pending",
+            "created_date": app.get("created_date") or app.get("submitted_date") or "",
+            "channel": channel,
+            "source": app.get("source") or channel,
+            "has_report": True,
+            "document_count": len(hashes),
+            "document_hashes": hashes,
+            "chat_application_id": app.get("chat_application_id"),
+        })
+        seen_ids.add(app_id)
+        if app.get("chat_application_id"):
+            seen_ids.add(app.get("chat_application_id"))
+
+    try:
+        from services.chat_application_service import get_chat_application_service
+        for row in get_chat_application_service().intake_catalog():
+            if row.get("application_id") in seen_ids:
+                continue
+            if is_suspended_account(str(row.get("customer_id") or "")):
+                continue
+            reports.append(row)
+            seen_ids.add(row.get("application_id"))
+    except Exception as exc:
+        print(f"[risk-catalog] chat intake note: {exc}")
+
+    try:
+        from services.claims_chat_service import get_claims_chat_service
+        for row in get_claims_chat_service().intake_catalog():
+            if row.get("application_id") in seen_ids:
+                continue
+            if is_suspended_account(str(row.get("customer_id") or "")):
+                continue
+            reports.append(row)
+    except Exception as exc:
+        print(f"[risk-catalog] claims intake note: {exc}")
+
+    reports.sort(key=lambda row: str(row.get("created_date") or ""), reverse=True)
+    return reports
+
+
 def is_suspended_account(customer_id: str) -> bool:
     """Check if a customer_id is in the suspended test accounts list.
 
@@ -15266,19 +15500,29 @@ def ingest_claim_file_to_assessment(file_id: str, file_record: Dict[str, Any]) -
         # 2+3) Persist + assess (reuses the unified Assessment Center path).
         from services.assessment_center_service import get_assessment_center
         center = get_assessment_center()
-        assessment = center.upload_and_assess(
-            file_name=file_name,
-            file_data_b64=data_b64,
-            mime_type=mime_type,
-            category='claim',
-            customer_id=customer_id or None,
-            entity_type='claim',
-            entity_id=claim_id,
-            uploaded_by=file_record.get('uploaded_by') or 'claim_submission',
-            uploaded_by_role='customer',
-            description=f"Claim attachment for {claim_id}",
-            source_context='claim_upload',
-        )
+        sealed_doc_id = str(file_record.get('persistent_doc_id') or '')
+        if sealed_doc_id:
+            # Bytes were already sealed into the document store at intake;
+            # assess that object instead of writing a second copy of the file.
+            assessment = center.assess_document(
+                sealed_doc_id,
+                customer_id=customer_id or None,
+                source_context='claim_upload',
+            )
+        else:
+            assessment = center.upload_and_assess(
+                file_name=file_name,
+                file_data_b64=data_b64,
+                mime_type=mime_type,
+                category='claim',
+                customer_id=customer_id or None,
+                entity_type='claim',
+                entity_id=claim_id,
+                uploaded_by=file_record.get('uploaded_by') or 'claim_submission',
+                uploaded_by_role='customer',
+                description=f"Claim attachment for {claim_id}",
+                source_context='claim_upload',
+            )
         file_record['persistent_doc_id'] = assessment.document_id
         file_record['assessed_facts'] = len(assessment.facts)
     except Exception as ingest_err:
@@ -24106,26 +24350,10 @@ For claims or questions, please contact:
                         'explanation': f'{len(customer_claims)} previous claims filed'
                     })
             
-                # Build document list ONLY from what's indicated in application
-                # (stored as a JSON string in the database, as a list in-memory)
-                documents = []
-                app_documents = coerce_json_container(target_app.get('documents'), [])
-                if isinstance(app_documents, list) and app_documents:
-                    for doc in app_documents:
-                        if isinstance(doc, dict):
-                            # Preserve only fields that were actually recorded — never
-                            # invent authenticity/verification scores for missing evidence.
-                            entry = {
-                                'type': doc.get('type') or doc.get('document_type') or 'unknown',
-                                'verified': _coerce_verified_flag(doc.get('verified')) if 'verified' in doc else None,
-                                'authenticity_score': doc.get('authenticity_score'),
-                                'expiry_status': doc.get('expiry_status'),
-                                'flags': doc.get('flags'),
-                                'source': doc.get('source') or 'application',
-                            }
-                            documents.append(entry)
-                # When the application has no document records, leave the list empty.
-                # Callers/UI must treat missing evidence as unknown — not verified.
+                # Documents actually stored on the application or its attachment
+                # store. Hashes are labels of the bytes. Missing evidence stays
+                # empty — never marked verified.
+                documents = _application_evidence(target_app)
 
                 # Determine BMI category string
                 bmi_category_str = None
@@ -24280,27 +24508,13 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
                 return
             
-            # Build list of all applications with basic risk info
-            reports = []
-            for app_id, app in UNDERWRITING_APPLICATIONS.items():
-                customer_id = app.get('customer_id')
-                customer = CUSTOMERS.get(customer_id, {})
-                policy = POLICIES.get(app.get('policy_id'), {})
-                
-                reports.append({
-                    'application_id': app_id,
-                    'customer_name': customer.get('name') or customer.get('full_name', 'Unknown'),
-                    'customer_email': customer.get('email', ''),
-                    'policy_type': policy.get('type') or app.get('policy_type', 'N/A'),
-                    'coverage_amount': policy.get('coverage_amount') or app.get('coverage_amount', 0),
-                    'risk_score': app.get('risk_score') or app.get('risk_assessment', 'medium'),
-                    'status': app.get('status', 'pending'),
-                    'created_date': app.get('created_date', ''),
-                    'has_report': True
-                })
-            
+            reports = _build_risk_assessment_catalog()
             self._set_json_headers()
-            self.wfile.write(json.dumps({'reports': reports, 'total': len(reports)}).encode('utf-8'))
+            self.wfile.write(json.dumps({
+                'reports': reports,
+                'total': len(reports),
+                'viewer_role': get_effective_role(session),
+            }, default=str).encode('utf-8'))
             return
         
         # =====================================================================
@@ -24620,6 +24834,11 @@ For claims or questions, please contact:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'File data not available'}).encode('utf-8'))
                     return
+
+                # Inline copies are stored as raw base64. Browsers open a data URL.
+                if data_source == 'inline' and not str(payload_data).lstrip().lower().startswith('data:'):
+                    mime = file_data.get('type') or 'application/octet-stream'
+                    payload_data = f"data:{mime};base64,{payload_data}"
 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
@@ -25011,6 +25230,7 @@ For claims or questions, please contact:
                     limit=limit,
                     offset=offset,
                     verify_integrity=True,
+                    viewer_role=eff_role,
                 )
                 payload['is_staff'] = True
                 payload['viewer_role'] = eff_role
@@ -46017,47 +46237,82 @@ For claims or questions, please contact:
                 files_data = data.get('files', [])
                 files_count = data.get('files_count', len(files_data) if files_data else 0)
                 files_metadata = []
+                documents_index = []
                 
                 if files_data:
+                    from services.customer_document_vault_service import (
+                        format_process_tag,
+                        infer_process_hashtag,
+                    )
                     for i, file_info in enumerate(files_data[:10]):  # Limit to 10 files
+                        if not isinstance(file_info, dict):
+                            continue
+                        sealed = canonical_upload_bytes(file_info)
                         file_id = f"UW-FILE-{uw_id}-{i+1:03d}"
+                        file_name = file_info.get('name', f'file_{i+1}')
+                        mime_type = file_info.get('type', 'application/octet-stream')
+                        kind = file_info.get('kind') or file_info.get('document_type') or ''
+                        persistent_id = str(file_info.get('persistent_doc_id') or '')
+                        storage_path = str(file_info.get('storage_path') or '')
+                        # Bytes that are not already sealed get a durable copy.
+                        # The inline payload stays so a vault outage cannot drop them.
+                        if sealed['has_bytes'] and not persistent_id:
+                            mirrored = mirror_upload_to_document_store(
+                                file_name=file_name,
+                                data_b64=sealed['data_b64'],
+                                sha256=sealed['sha256'],
+                                mime_type=mime_type,
+                                document_type=kind or 'underwriting',
+                                entity_type='underwriting',
+                                entity_id=uw_id,
+                                customer_id=customer_id,
+                                uploaded_by=customer_email or customer_id or 'applicant',
+                                uploaded_by_role='applicant',
+                                description=f'Underwriting application {uw_id} attachment',
+                            )
+                            persistent_id = mirrored.get('persistent_doc_id') or ''
+                            storage_path = mirrored.get('storage_path') or storage_path
+                        process_hashtag = infer_process_hashtag(
+                            document_type=kind,
+                            entity_type='underwriting',
+                            source='underwriting_attachments',
+                            name=file_name,
+                            kind=kind,
+                        )
                         file_meta = {
                             'id': file_id,
-                            'name': file_info.get('name', f'file_{i+1}'),
-                            'type': file_info.get('type', 'application/octet-stream'),
-                            'size': file_info.get('size', 0),
-                            'uploaded_at': datetime.now().isoformat()
+                            'name': file_name,
+                            'type': mime_type,
+                            'size': sealed['size'] or file_info.get('size', 0),
+                            'uploaded_at': datetime.now().isoformat(),
+                            'sha256': sealed['sha256'],
+                            'persistent_doc_id': persistent_id,
+                            'process_hashtag': process_hashtag,
+                            'process_tag': format_process_tag(process_hashtag),
                         }
                         files_metadata.append(file_meta)
-                        
-                        # Store full file data in UNDERWRITING_FILES
-                        raw_data = file_info.get('data')
-                        sha256 = ''
-                        try:
-                            if raw_data:
-                                import hashlib as _hashlib_pol
-                                import base64 as _b64_pol
-                                sha256 = _hashlib_pol.sha256(
-                                    _b64_pol.b64decode(raw_data, validate=False)
-                                ).hexdigest()
-                        except Exception:
-                            sha256 = str(file_info.get('sha256') or '')
+                        if sealed['sha256'] or persistent_id:
+                            documents_index.append({
+                                'type': kind or 'application',
+                                'name': file_name,
+                                'sha256': sealed['sha256'],
+                                'persistent_doc_id': persistent_id or None,
+                                'source': 'application',
+                                'size': file_meta['size'],
+                            })
                         UNDERWRITING_FILES[file_id] = {
                             **file_meta,
                             'application_id': uw_id,
                             'customer_id': customer_id,
-                            'data': raw_data,  # Base64 encoded
-                            'sha256': sha256 or str(file_info.get('sha256') or ''),
-                            'kind': file_info.get('kind', ''),
-                            # Durable pointer for attachments too large to inline
-                            # (chat voice notes / video messages live here).
-                            'persistent_doc_id': file_info.get('persistent_doc_id') or '',
-                            'storage_path': file_info.get('storage_path') or '',
+                            # Canonical raw base64 (no data-URL wrapper).
+                            'data': sealed['data_b64'] or None,
+                            'kind': kind,
+                            'storage_path': storage_path,
                             'duration_seconds': file_info.get('duration_seconds'),
                             'note': file_info.get('note', ''),
-                            'error': file_info.get('error', '')
+                            'error': file_info.get('error', ''),
                         }
-                        print(f"   📄 Stored UW file {file_id}: {file_meta['name']} ({file_meta['size']} bytes)")
+                        print(f"   📄 Stored UW file {file_id}: {file_meta['name']} ({file_meta['size']} bytes) sha256={sealed['sha256'][:12]}")
                 
                 submitted_at = datetime.now().isoformat()
                 
@@ -46124,6 +46379,9 @@ For claims or questions, please contact:
                     # Files attached to application
                     'files': files_metadata,
                     'files_count': files_count,
+                    # Hash-labeled index the risk report and archive read.
+                    # Verification flags are never invented here.
+                    'documents': documents_index,
                     # Payment and billing info (stored securely)
                     # Include savings_percentage from payment_setup request for data integrity tracking
                     'payment_setup': {
@@ -47838,30 +48096,69 @@ For claims or questions, please contact:
                 # Store file metadata AND file data in CLAIM_FILES
                 files_metadata = []
                 if files_data:
+                    from services.customer_document_vault_service import (
+                        format_process_tag as _claim_format_tag,
+                        infer_process_hashtag as _claim_infer_tag,
+                    )
                     for i, file_info in enumerate(files_data[:10]):  # Limit to 10 files
+                        if not isinstance(file_info, dict):
+                            continue
+                        sealed = canonical_upload_bytes(file_info)
                         file_id = f"FILE-{claim_id}-{i+1:03d}"
+                        file_name = file_info.get('name', f'file_{i+1}')
+                        mime_type = file_info.get('type', 'application/octet-stream')
+                        kind = file_info.get('kind') or file_info.get('document_type') or 'claim'
+                        persistent_id = str(file_info.get('persistent_doc_id') or '')
+                        storage_path = str(file_info.get('storage_path') or '')
+                        if sealed['has_bytes'] and not persistent_id:
+                            mirrored = mirror_upload_to_document_store(
+                                file_name=file_name,
+                                data_b64=sealed['data_b64'],
+                                sha256=sealed['sha256'],
+                                mime_type=mime_type,
+                                document_type=kind or 'claim',
+                                entity_type='claim',
+                                entity_id=claim_id,
+                                customer_id=str(data.get('customer_id') or ''),
+                                uploaded_by=str(data.get('customer_id') or 'claimant'),
+                                uploaded_by_role=role or 'customer',
+                                description=f'Claim {claim_id} attachment',
+                            )
+                            persistent_id = mirrored.get('persistent_doc_id') or ''
+                            storage_path = mirrored.get('storage_path') or storage_path
+                        process_hashtag = _claim_infer_tag(
+                            document_type=kind,
+                            entity_type='claim',
+                            source='claim_attachments',
+                            name=file_name,
+                            kind=kind,
+                        )
+                        note = file_info.get('note', '')
+                        if sealed['sha256'] and not str(note).lower().startswith('sha256:'):
+                            note = f"sha256:{sealed['sha256']}"
                         file_meta = {
                             'id': file_id,
-                            'name': file_info.get('name', f'file_{i+1}'),
-                            'type': file_info.get('type', 'application/octet-stream'),
-                            'size': file_info.get('size', 0),
-                            'uploaded_at': datetime.now().isoformat()
+                            'name': file_name,
+                            'type': mime_type,
+                            'size': sealed['size'] or file_info.get('size', 0),
+                            'uploaded_at': datetime.now().isoformat(),
+                            'sha256': sealed['sha256'],
+                            'persistent_doc_id': persistent_id,
+                            'process_hashtag': process_hashtag,
+                            'process_tag': _claim_format_tag(process_hashtag),
                         }
                         files_metadata.append(file_meta)
-                        
-                        # Store full file data including base64 in CLAIM_FILES for persistence.
-                        # Recording customer_id directly on the file record keeps the
-                        # Customer Document Vault correct even if the parent claim
-                        # is later modified or migrated to another store.
+                        # Canonical raw base64 so the sealed note matches the bytes.
                         CLAIM_FILES[file_id] = {
                             **file_meta,
                             'claim_id': claim_id,
                             'customer_id': data.get('customer_id'),
-                            'data': file_info.get('data'),  # Base64 encoded file content
-                            'note': file_info.get('note', ''),
-                            'error': file_info.get('error', '')
+                            'data': sealed['data_b64'] or file_info.get('data'),
+                            'storage_path': storage_path,
+                            'note': note,
+                            'error': file_info.get('error', ''),
                         }
-                        print(f"   📄 Stored file {file_id}: {file_meta['name']} ({file_meta['size']} bytes)")
+                        print(f"   📄 Stored file {file_id}: {file_meta['name']} ({file_meta['size']} bytes) sha256={(sealed['sha256'] or '')[:12]}")
 
                         # LOOP CLOSURE: scan + persist + mine facts from the
                         # attachment so its content can inform adjudication

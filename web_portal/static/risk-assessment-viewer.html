@@ -116,6 +116,14 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         .error-box { background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 8px; padding: 30px; text-align: center; color: #721c24; margin: 20px 0; }
         .no-data { color: #666; font-style: italic; }
+        .catalog-intro { color: #455a64; margin-bottom: 16px; line-height: 1.5; }
+        .catalog-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        .catalog-table th, .catalog-table td { padding: 10px 12px; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
+        .catalog-table th { background: #f8f9fa; }
+        .catalog-table tr.clickable { cursor: pointer; }
+        .catalog-table tr.clickable:hover td { background: #f4f7fd; }
+        .hash { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: #37474f; word-break: break-all; }
+        .channel-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #e8eaf6; color: #1a237e; font-size: 12px; font-weight: 600; }
         
         /* Quick Stats Bar */
         .quick-stats {
@@ -211,8 +219,123 @@
         const customerEmail = urlParams.get('email');
         
         const startTime = Date.now();
+        let catalogRows = [];
+
+        function openCatalog() {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('id');
+            url.searchParams.delete('app_id');
+            url.searchParams.delete('customer_id');
+            url.searchParams.delete('email');
+            window.location.href = url.pathname;
+        }
+
+        async function loadCatalog() {
+            const container = document.getElementById('report-container');
+            document.getElementById('header-meta').textContent = 'Every application on file';
+            document.getElementById('header-actions').innerHTML =
+                '<button class="header-btn back" onclick="window.location.href=\'/underwriter-dashboard.html\'">Dashboards</button>';
+            try {
+                const response = await fetch('/api/risk-assessment/list', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (response.status === 401) {
+                    window.location.href = '/login.html';
+                    return;
+                }
+                if (!response.ok) {
+                    const message = await readServerError(response) || 'Could not load applications.';
+                    container.innerHTML = `<div class="report"><div class="error-box"><h3>Applications unavailable</h3><p>${escapeHtml(message)}</p></div></div>`;
+                    return;
+                }
+                const payload = await response.json();
+                catalogRows = payload.reports || [];
+                renderCatalog(catalogRows, payload.viewer_role || '');
+            } catch (error) {
+                container.innerHTML = `<div class="report"><div class="error-box"><h3>Applications unavailable</h3><p>${escapeHtml(error.message || 'Network error')}</p></div></div>`;
+            }
+        }
+
+        function renderCatalog(rows, viewerRole) {
+            const container = document.getElementById('report-container');
+            const body = rows.length ? rows.map((row, index) => {
+                const hashes = (row.document_hashes || []).map((doc) =>
+                    `<div class="hash">${escapeHtml(doc.name || doc.kind || 'file')} · ${escapeHtml(doc.sha256 || 'unlabeled')}</div>`
+                ).join('') || '<span class="no-data">No sealed files yet</span>';
+                const coverage = row.coverage_amount == null || row.coverage_amount === ''
+                    ? '—'
+                    : ('$' + Number(row.coverage_amount).toLocaleString());
+                return `<tr class="clickable" data-index="${index}">
+                    <td><strong>${escapeHtml(row.application_id || '')}</strong><br><span class="channel-pill">${escapeHtml(row.channel || 'classic')}</span></td>
+                    <td>${escapeHtml(row.customer_name || 'Unknown')}<br><span class="no-data">${escapeHtml(row.customer_email || '')}</span></td>
+                    <td>${escapeHtml(String(row.status || ''))}</td>
+                    <td>${escapeHtml(row.risk_score == null ? '—' : String(row.risk_score))}</td>
+                    <td>${coverage}</td>
+                    <td>${row.document_count || 0}<br>${hashes}</td>
+                    <td>${row.has_report ? 'Open report' : 'Evidence only'}</td>
+                </tr>`;
+            }).join('') : '<tr><td colspan="7" class="no-data">No applications are on file for this role.</td></tr>';
+            container.innerHTML = `
+                <div class="report">
+                    <div class="report-banner">
+                        <h2>APPLICATION BOOK</h2>
+                        <div class="subtitle">Underwriting applications, chat intakes, and claims-chat evidence. Each file keeps its SHA-256.</div>
+                    </div>
+                    <div class="section">
+                        <p class="catalog-intro">Signed in as <strong>${escapeHtml(viewerRole || 'staff')}</strong>. Open a submitted application for the risk report. In-progress chats stay listed with the fingerprints of everything already uploaded.</p>
+                        <div style="overflow-x:auto;">
+                        <table class="catalog-table">
+                            <thead>
+                                <tr><th>Application</th><th>Applicant</th><th>Status</th><th>Risk</th><th>Coverage</th><th>Sealed documents</th><th></th></tr>
+                            </thead>
+                            <tbody>${body}</tbody>
+                        </table>
+                        </div>
+                    </div>
+                </div>`;
+            container.querySelectorAll('tr.clickable').forEach((tr) => {
+                tr.addEventListener('click', () => openCatalogRow(Number(tr.getAttribute('data-index'))));
+            });
+        }
+
+        function openCatalogRow(index) {
+            const row = catalogRows[index];
+            if (!row) return;
+            if (row.has_report && row.application_id) {
+                window.location.href = '/risk-assessment-viewer.html?id=' + encodeURIComponent(row.application_id);
+                return;
+            }
+            const hashes = (row.document_hashes || []).map((doc) => `
+                <tr>
+                    <td>${escapeHtml(doc.name || 'file')}</td>
+                    <td>${escapeHtml(doc.kind || '')}</td>
+                    <td class="hash">${escapeHtml(doc.sha256 || 'not sealed')}</td>
+                    <td class="hash">${escapeHtml(doc.persistent_doc_id || '—')}</td>
+                </tr>`).join('');
+            document.getElementById('header-meta').textContent = row.application_id || 'Intake';
+            document.getElementById('report-container').innerHTML = `
+                <div class="report">
+                    <div class="report-banner">
+                        <h2>${escapeHtml((row.channel || 'intake').replace(/_/g, ' ').toUpperCase())}</h2>
+                        <div class="subtitle">${escapeHtml(row.customer_name || '')} · ${escapeHtml(row.status || '')}</div>
+                        <div class="report-id">${escapeHtml(row.application_id || '')}</div>
+                    </div>
+                    <div class="section">
+                        <p class="catalog-intro">This file is still in progress, so there is no scored underwriting report yet. Uploaded evidence is already sealed and labeled.</p>
+                        <table class="catalog-table">
+                            <thead><tr><th>File</th><th>Kind</th><th>SHA-256</th><th>Durable id</th></tr></thead>
+                            <tbody>${hashes || '<tr><td colspan="4" class="no-data">No files uploaded yet.</td></tr>'}</tbody>
+                        </table>
+                        <p style="margin-top:16px;"><button class="header-btn back" style="background:#1a237e;color:white;" onclick="loadCatalog()">All applications</button></p>
+                    </div>
+                </div>`;
+        }
         
         async function loadReport() {
+            if (!applicationId && !customerId && !customerEmail) {
+                await loadCatalog();
+                return;
+            }
             const container = document.getElementById('report-container');
             
             try {
@@ -348,7 +471,7 @@
             // Update header actions
             const headerActions = document.getElementById('header-actions');
             headerActions.innerHTML = `
-                <button class="header-btn back" onclick="window.history.back()">← Back</button>
+                <button class="header-btn back" onclick="openCatalog()">All applications</button>
                 <button class="header-btn print" onclick="window.print()">Print</button>
                 ${report.recommendation?.type?.includes('approve') ? `
                     <button class="header-btn approve" onclick="approveApplication()">Approve</button>
@@ -518,25 +641,25 @@
                     <!-- Document Verification -->
                     ${report.documents && report.documents.length > 0 ? `
                     <div class="section">
-                        <div class="section-title">Document Verification</div>
+                        <div class="section-title">Sealed documents</div>
                         <table>
                             <thead>
                                 <tr>
-                                    <th>Document Type</th>
+                                    <th>File</th>
+                                    <th>Type</th>
+                                    <th>SHA-256</th>
                                     <th>Status</th>
-                                    <th>Authenticity</th>
-                                    <th>Expiry</th>
                                     <th>Flags</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 ${report.documents.map(d => `
                                     <tr>
+                                        <td>${escapeHtml(d.name || formatDocType(d.type))}</td>
                                         <td>${formatDocType(d.type)}</td>
+                                        <td class="hash">${escapeHtml(d.sha256 || 'not sealed')}</td>
                                         <td><span class="document-status ${d.verified === true ? 'document-verified' : d.verified === false ? 'document-failed' : 'document-pending'}">${formatVerified(d.verified)}</span></td>
-                                        <td>${formatAuthenticity(d.authenticity_score)}</td>
-                                        <td>${capitalizeFirst(d.expiry_status || 'N/A')}</td>
-                                        <td>${d.flags || '-'}</td>
+                                        <td>${escapeHtml(d.flags || '—')}</td>
                                     </tr>
                                 `).join('')}
                             </tbody>

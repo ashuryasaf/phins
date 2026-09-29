@@ -131,9 +131,10 @@ def infer_process_hashtag(
 
     entity = _norm_lower(entity_type)
     src = _norm_lower(source)
-    if entity == "claim" or src in ("claim_attachments", "claim"):
+    if entity in ("claim", "claims_chat") or src in ("claim_attachments", "claim"):
         return "claim"
-    if entity == "underwriting" or src in ("underwriting_attachments", "underwriting"):
+    if entity in ("underwriting", "chat_application") or src in (
+            "underwriting_attachments", "underwriting"):
         return "underwriting"
     if entity == "billing" or src in ("billing",):
         return "billing"
@@ -167,17 +168,85 @@ def _safe_size(value: Any) -> int:
         return 0
 
 
-def _sha256_b64(data_b64: Optional[str]) -> str:
-    """Compute SHA-256 of base64-encoded payload without raising."""
-    if not data_b64:
-        return ""
+def decode_document_bytes(data: Any) -> bytes:
+    """Decode a stored upload into the original file bytes.
+
+    Accepts raw base64 or a ``data:<mime>;base64,`` URL. A data-URL prefix
+    is not part of the file, so hashing the wrapper would label the document
+    with a fingerprint that does not match the bytes on disk. Returns ``b''``
+    when the payload is missing or not decodable. Never raises.
+    """
+    if data is None:
+        return b""
+    if isinstance(data, (bytes, bytearray)):
+        return bytes(data)
+    text = str(data).strip()
+    if not text:
+        return b""
+    if text.lower().startswith("data:") and "," in text:
+        text = text.split(",", 1)[1].strip()
     try:
         import base64
 
-        raw = base64.b64decode(data_b64, validate=False)
-        return hashlib.sha256(raw).hexdigest()
+        return base64.b64decode(text, validate=False)
     except Exception:
+        return b""
+
+
+def _sha256_b64(data_b64: Optional[str]) -> str:
+    """SHA-256 of the file bytes inside a base64 or data-URL payload."""
+    raw = decode_document_bytes(data_b64)
+    if not raw:
         return ""
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _recorded_digest(value: Any) -> str:
+    """Accept a hex digest or a ``sha256:<hex>`` note. Empty when invalid."""
+    text = _norm_str(value).lower()
+    if text.startswith("sha256:"):
+        text = text.split(":", 1)[1].strip()
+    if len(text) == 64 and all(c in "0123456789abcdef" for c in text):
+        return text
+    return ""
+
+
+def fingerprint_upload(data: Any, recorded: Any = None) -> str:
+    """Label an upload with the SHA-256 of its bytes.
+
+    The payload wins when bytes are present. A previously recorded digest is
+    used only for pointer-only records whose bytes live in the durable store.
+    """
+    digest = _sha256_b64(data)
+    if digest:
+        return digest
+    return _recorded_digest(recorded)
+
+
+# Staff archive visibility. ``None`` means the full book. Customers never
+# reach this map — they read their own vault. Claims roles see claim evidence
+# and the underwriting file it depends on. Accountants see billing records.
+_CLAIMS_ARCHIVE_TAGS = frozenset({
+    "claim", "identity", "medical", "authority", "receipt",
+    "underwriting", "risk_assessment", "general",
+})
+_ACCOUNTING_ARCHIVE_TAGS = frozenset({"billing", "receipt", "general"})
+_FULL_ARCHIVE_ROLES = frozenset({"admin", "actuary", "underwriter"})
+
+
+def archive_hashtags_for_role(role: Optional[str]) -> Optional[frozenset]:
+    """Process hashtags this role may see in the platform archive.
+
+    ``None`` means every hashtag. An empty set means no archive rows.
+    """
+    key = _norm_lower(role)
+    if not key or key in _FULL_ARCHIVE_ROLES:
+        return None
+    if key in ("claims", "claims_adjuster", "adjuster"):
+        return _CLAIMS_ARCHIVE_TAGS
+    if key == "accountant":
+        return _ACCOUNTING_ARCHIVE_TAGS
+    return frozenset()
 
 
 def _coerce_iso(value: Any) -> str:
@@ -309,6 +378,7 @@ class CustomerDocumentVault:
         limit: int = 500,
         offset: int = 0,
         verify_integrity: bool = True,
+        viewer_role: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Staff-only archive of every document across every store.
 
@@ -346,7 +416,9 @@ class CustomerDocumentVault:
                 )
             records.append(self._normalize_underwriting_file(file_id, uf, owner))
 
-        # Persistent store: collect per known customer owner, skip mirrors.
+        # Persistent store: collect per known customer owner, then intake
+        # entities (chat applications, claims chat, underwriting, claims)
+        # whose bytes were sealed before a customer id existed. Skip mirrors.
         seen_persistent = {
             _norm_str(r.get("persistent_doc_id"))
             for r in records
@@ -358,10 +430,20 @@ class CustomerDocumentVault:
                 for r in records
                 if _norm_str(r.get("uploaded_by_customer"))
             }
-            for cid in sorted(customer_ids):
+            queries: List[Dict[str, Any]] = [
+                {"customer_id": cid} for cid in sorted(customer_ids)
+            ]
+            for intake_type in (
+                "chat_application",
+                "claims_chat",
+                "underwriting",
+                "claim",
+            ):
+                queries.append({"entity_type": intake_type})
+            for query in queries:
                 try:
                     page = self._document_service.list_documents(
-                        customer_id=cid, page=1, page_size=self.DEFAULT_LIMIT
+                        page=1, page_size=self.DEFAULT_LIMIT, **query
                     )
                 except Exception:
                     continue
@@ -371,7 +453,9 @@ class CustomerDocumentVault:
                     pid = _norm_str(item.get("id"))
                     if pid and pid in seen_persistent:
                         continue
-                    owner = _norm_str(item.get("customer_id")) or cid
+                    owner = _norm_str(item.get("customer_id")) or _norm_str(
+                        query.get("customer_id")
+                    )
                     records.append(self._normalize_persistent_doc(item, owner))
                     if pid:
                         seen_persistent.add(pid)
@@ -391,6 +475,13 @@ class CustomerDocumentVault:
                 process_hashtag
             ).lstrip("#")
             records = [r for r in records if _norm_lower(r.get("process_hashtag")) == tag]
+
+        allowed_tags = archive_hashtags_for_role(viewer_role)
+        if allowed_tags is not None:
+            records = [
+                r for r in records
+                if (r.get("process_hashtag") or "general") in allowed_tags
+            ]
 
         records.sort(key=lambda r: r.get("uploaded_at") or "", reverse=True)
         total = len(records)
@@ -424,6 +515,8 @@ class CustomerDocumentVault:
             "offset": offset,
             "limit": limit,
             "process_hashtags": list(PROCESS_HASHTAGS),
+            "viewer_role": _norm_lower(viewer_role),
+            "archive_scope": sorted(allowed_tags) if allowed_tags is not None else ["*"],
         }
 
     def get_summary(self, customer_id: str) -> Dict[str, Any]:
@@ -926,7 +1019,7 @@ class CustomerDocumentVault:
     def _normalize_general_doc(
         self, doc_id: str, doc: Dict[str, Any], owner_customer_id: str
     ) -> Dict[str, Any]:
-        sha = _norm_str(doc.get("sha256")) or _sha256_b64(doc.get("data"))
+        sha = fingerprint_upload(doc.get("data"), doc.get("sha256"))
         return {
             "id": _norm_str(doc.get("id") or doc_id),
             "name": _norm_str(doc.get("name")),
@@ -958,7 +1051,7 @@ class CustomerDocumentVault:
     def _normalize_claim_file(
         self, file_id: str, cf: Dict[str, Any], owner_customer_id: str
     ) -> Dict[str, Any]:
-        sha = _sha256_b64(cf.get("data"))
+        sha = fingerprint_upload(cf.get("data"), cf.get("sha256") or cf.get("note"))
         claim_id = _norm_str(cf.get("claim_id"))
         return {
             "id": _norm_str(cf.get("id") or file_id),
@@ -973,11 +1066,11 @@ class CustomerDocumentVault:
             "uploaded_at": _coerce_iso(cf.get("uploaded_at")),
             "uploaded_by": _norm_str(cf.get("uploaded_by")) or "customer",
             "uploaded_by_customer": owner_customer_id,
-            "has_data": bool(cf.get("data")),
+            "has_data": bool(cf.get("data")) or bool(cf.get("persistent_doc_id")) or bool(cf.get("storage_path")),
             "ai_analysis": None,
             "assessment_summary": None,
-            "persistent_doc_id": "",
-            "storage_path": "",
+            "persistent_doc_id": _norm_str(cf.get("persistent_doc_id")),
+            "storage_path": _norm_str(cf.get("storage_path")),
             "source": self.SOURCE_CLAIM,
             # Browser-friendly query-style endpoint mirrors the
             # /api/documents/view?id=... convention so the "Open" link in the
@@ -988,7 +1081,7 @@ class CustomerDocumentVault:
     def _normalize_underwriting_file(
         self, file_id: str, uf: Dict[str, Any], owner_customer_id: str
     ) -> Dict[str, Any]:
-        sha = _sha256_b64(uf.get("data"))
+        sha = fingerprint_upload(uf.get("data"), uf.get("sha256") or uf.get("note"))
         app_id = _norm_str(uf.get("application_id"))
         return {
             "id": _norm_str(uf.get("id") or file_id),
@@ -1006,7 +1099,11 @@ class CustomerDocumentVault:
             "uploaded_by_customer": owner_customer_id,
             # Chat voice/video attachments store bytes in the document vault
             # rather than inline, so a persistent id also counts as retrievable.
-            "has_data": bool(uf.get("data")) or bool(uf.get("persistent_doc_id")),
+            "has_data": (
+                bool(uf.get("data"))
+                or bool(uf.get("persistent_doc_id"))
+                or bool(uf.get("storage_path"))
+            ),
             "ai_analysis": None,
             "assessment_summary": None,
             "persistent_doc_id": _norm_str(uf.get("persistent_doc_id")),
