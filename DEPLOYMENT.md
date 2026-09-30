@@ -65,7 +65,7 @@ Render offers free web services with easy GitHub integration.
 **Monthly auto-pay cron (recommended):**
 
 - The repo now includes `scripts/run_monthly_auto_pay.py`
-- Schedule it for **00:00 UTC on the 1st of every month**
+- Schedule it **daily** (Render uses `15 6 * * *`). The due day is the 1st; a later run is catch-up and does not open the next period early
 - Set `MONTHLY_AUTO_PAY_COMMAND_TOKEN` in both the web service and the cron job
 - The command exits after processing and writes a persisted batch report into the
   main ledger persistence file
@@ -174,10 +174,10 @@ sudo systemctl start phins
 
 **Monthly auto-pay with cron:**
 
-Add a first-of-month cron entry for the same app environment:
+Add a daily cron entry for the same app environment. The 1st is the due day; other days collect anything already due:
 
 ```bash
-0 0 1 * * cd /var/www/phins && MONTHLY_AUTO_PAY_COMMAND_TOKEN=your-token /usr/bin/python3 scripts/run_monthly_auto_pay.py >> /var/log/phins-monthly-autopay.log 2>&1
+15 6 * * * cd /var/www/phins && MONTHLY_AUTO_PAY_COMMAND_TOKEN=your-token /usr/bin/python3 scripts/run_monthly_auto_pay.py >> /var/log/phins-monthly-autopay.log 2>&1
 ```
 
 Set up nginx reverse proxy for port 80/443
@@ -393,7 +393,14 @@ This command:
 - processes due premium payments
 - updates billing, ledgers, balance sheet, investment/client wallet flows, and
   persisted reporting
-- sends customer notifications when configuration or payment state changes
+- sends one payment receipt per bill that actually settles
+
+The due day is the 1st of the billing period (month, quarter, or year). The
+Render cron runs every day at 06:15 UTC so a missed 1st still collects. A
+later run pays bills whose due date has arrived and does not open the next
+period early. Installment amounts match the quoted statement: monthly premium,
+quarterly at 3% off three months, and the full annual premium (no second
+discount). Schedule normalization does not email the customer.
 
 Use platform scheduling rather than an in-process background thread so the job
 does not run multiple times on horizontally scaled web instances.

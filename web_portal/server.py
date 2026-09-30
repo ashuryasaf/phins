@@ -7041,6 +7041,7 @@ def _normalize_billing_frequency(value: Any) -> str:
         'quarterly': 'quarterly',
         'year': 'annual',
         'yearly': 'annual',
+        'annually': 'annual',
         'annual': 'annual',
     }
     return aliases.get(freq, 'monthly')
@@ -7053,6 +7054,171 @@ def _months_for_frequency(frequency: str) -> int:
     if frequency == 'annual':
         return 12
     return 1
+
+
+def _policy_monthly_premium(policy: Dict[str, Any]) -> float:
+    """Quoted monthly premium, or annual/12 when only the annual figure is stored."""
+    monthly = safe_float(policy.get('monthly_premium'), 0.0)
+    if monthly > 0:
+        return monthly
+    annual = safe_float(policy.get('annual_premium'), 0.0)
+    if annual > 0:
+        return round(annual / 12.0, 2)
+    return 0.0
+
+
+def _policy_billing_frequency(policy: Dict[str, Any]) -> str:
+    """Frequency the underwriting application quoted, then the policy billing block."""
+    payment_setup = policy.get('payment_setup') or {}
+    billing = policy.get('billing') or {}
+    raw = (
+        payment_setup.get('billing_frequency')
+        or billing.get('frequency')
+        or billing.get('billing_frequency')
+        or policy.get('billing_frequency')
+    )
+    if not raw:
+        uw_id = str(policy.get('underwriting_id') or '')
+        app = UNDERWRITING_APPLICATIONS.get(uw_id) if uw_id else None
+        if isinstance(app, dict):
+            raw = (app.get('payment_setup') or {}).get('billing_frequency')
+    return _normalize_billing_frequency(raw or 'monthly')
+
+
+def premium_installment_amount(policy: Dict[str, Any], frequency: Optional[str] = None) -> float:
+    """Installment matching the customer statement for this frequency.
+
+    Quarterly is the quoted quarter (3% off three months). Annual is the
+    quoted annual premium — the application tile shows that figure as
+    "per year", so auto-pay must not take a second 10% off it. Monthly is
+    the quoted monthly premium.
+    """
+    frequency = _normalize_billing_frequency(frequency or _policy_billing_frequency(policy))
+    monthly = _policy_monthly_premium(policy)
+    if frequency == 'quarterly':
+        quoted = safe_float(policy.get('quarterly_premium'), 0.0)
+        if quoted > 0:
+            return round(quoted, 2)
+        return round(monthly * 3 * 0.97, 2)
+    if frequency == 'annual':
+        quoted = safe_float(policy.get('annual_premium'), 0.0)
+        if quoted > 0:
+            return round(quoted, 2)
+        return round(monthly * 12.0, 2)
+    return round(monthly, 2)
+
+
+def upcoming_statement_due(reference: datetime, frequency: str) -> datetime:
+    """Next statement due date: the 1st of the frequency period, never in the past.
+
+    Monthly and annual follow ``invoice_due_date``, then step forward when
+    that 1st has already passed. Quarterly is the current quarter start when
+    ``reference`` is that day, otherwise the next quarter start — so a bill
+    opened on April 1 is due April 1, and one opened on March 15 is due April 1.
+    """
+    from services.automation.billing_schedule import (
+        current_quarter_start,
+        invoice_due_date,
+        next_quarter_start,
+    )
+    frequency = _normalize_billing_frequency(frequency)
+    if frequency == 'quarterly':
+        quarter_start = current_quarter_start(reference)
+        due_day = quarter_start if quarter_start >= reference.date() else next_quarter_start(reference)
+        return datetime.combine(due_day, datetime.min.time())
+    due = datetime.combine(invoice_due_date(frequency, reference), datetime.min.time())
+    if due.date() < reference.date():
+        due = _add_months_first_day(_first_of_month(due), _months_for_frequency(frequency))
+    return _first_of_month(due)
+
+
+def _next_cycle_due(cycle_moment: datetime, frequency: str) -> datetime:
+    """First day of the billing period after the one containing ``cycle_moment``."""
+    frequency = _normalize_billing_frequency(frequency)
+    anchor = _first_of_month(cycle_moment)
+    if frequency == 'quarterly':
+        from services.automation.billing_schedule import next_quarter_start
+        return datetime.combine(next_quarter_start(anchor), datetime.min.time())
+    if frequency == 'annual':
+        return datetime(anchor.year + 1, 1, 1)
+    return _add_months_first_day(anchor, 1)
+
+
+def build_premium_statement_bill(
+    policy: Dict[str, Any],
+    *,
+    customer_id: str,
+    frequency: str,
+    auto_pay: bool,
+    reference: datetime,
+    payment_setup: Optional[Dict[str, Any]] = None,
+    customer_name: str = '',
+    customer_email: str = '',
+    description_prefix: str = 'Premium',
+) -> Dict[str, Any]:
+    """One statement bill at the quoted installment, due on the period's 1st."""
+    frequency = _normalize_billing_frequency(frequency)
+    amount = premium_installment_amount(policy, frequency)
+    due = upcoming_statement_due(reference, frequency)
+    next_due = _next_cycle_due(due, frequency)
+    cycle_key = _compute_billing_cycle_key(due, frequency)
+    bill_id = f"BILL-{reference.strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+    setup = payment_setup or {}
+    bill: Dict[str, Any] = {
+        'id': bill_id,
+        'policy_id': policy.get('id'),
+        'customer_id': customer_id,
+        'customer_name': customer_name,
+        'customer_email': customer_email,
+        'amount': amount,
+        'amount_due': amount,
+        'amount_paid': 0.0,
+        'status': 'outstanding',
+        'billing_frequency': frequency,
+        'auto_pay': bool(auto_pay),
+        'billing_cycle_key': cycle_key,
+        'billing_period_start': due.isoformat(),
+        'billing_period_end': (next_due - timedelta(seconds=1)).isoformat(),
+        'due_date': due.isoformat(),
+        'created_date': reference.isoformat(),
+        'updated_date': reference.isoformat(),
+        'description': f"{description_prefix} for policy {policy.get('id')} ({frequency})",
+    }
+    card_last4 = setup.get('card_last4')
+    if card_last4:
+        bill['payment_method'] = {
+            'type': 'card',
+            'card_last4': card_last4,
+            'card_type': setup.get('card_type'),
+        }
+    return bill
+
+
+def stamp_policy_statement_schedule(
+    policy: Dict[str, Any],
+    frequency: str,
+    due: datetime,
+    auto_pay: bool,
+    payment_setup: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Keep the policy schedule on the same 1st and frequency as its statement bill."""
+    frequency = _normalize_billing_frequency(frequency)
+    due_iso = _first_of_month(due).isoformat()
+    billing = policy.setdefault('billing', {})
+    billing['frequency'] = frequency
+    billing['auto_pay'] = bool(auto_pay)
+    billing['billing_day'] = 1
+    billing['next_billing_date'] = due_iso
+    setup = policy.setdefault('payment_setup', {})
+    setup['billing_frequency'] = frequency
+    setup['auto_pay'] = bool(auto_pay)
+    setup['billing_day'] = 1
+    setup['next_billing_date'] = due_iso
+    if isinstance(payment_setup, dict):
+        for key in ('card_last4', 'card_type', 'payment_token', 'cardholder_name'):
+            if payment_setup.get(key):
+                setup[key] = payment_setup.get(key)
+    return policy
 
 
 def _first_of_month(moment: datetime) -> datetime:
@@ -7434,23 +7600,13 @@ def _prepare_auto_pay_bill(
         ):
             legacy_bill = bill
 
-    # Fallback: grab any outstanding bill without cycle key (old behavior)
-    if not legacy_bill:
-        for bill_id, bill in BILLING.items():
-            if bill.get('policy_id') != policy_id:
-                continue
-            if (
-                status_in(bill, ['outstanding', 'partial', 'pending'])
-                and not bill.get('billing_cycle_key')
-            ):
-                legacy_bill = bill
-                break
-
     if legacy_bill:
+        # Keep the statement amount and due date. Stamping the cycle key is
+        # enough for idempotency; rewriting either figure would collect a
+        # different cash amount than the customer was billed.
         legacy_bill['billing_cycle_key'] = cycle_key
         legacy_bill['auto_pay'] = True
-        legacy_bill['billing_frequency'] = frequency
-        legacy_bill['due_date'] = due_date.isoformat()
+        legacy_bill.setdefault('billing_frequency', frequency)
         legacy_bill['updated_date'] = now.isoformat()
         BILLING[str(legacy_bill.get('id') or '')] = legacy_bill
         return legacy_bill, 'legacy_reused'
@@ -7782,7 +7938,9 @@ def process_customer_premium_payment(
         post_integrity = integrity_service.validate_customer_integrity(customer_id, auto_correct=True)
 
     notification_result = None
-    if notify_customer and policy_id:
+    # A receipt only when cash actually settled a bill. Configuration
+    # normalization and a zero-applied charge must not email the customer.
+    if notify_customer and policy_id and amount_applied_to_bills > 0:
         due_date = ''
         if specific_bill_lookup:
             paid_bill = BILLING.get(next(iter(specific_bill_lookup), ''), {})
@@ -7867,6 +8025,263 @@ def process_customer_premium_payment(
     return response
 
 
+def _policy_bill_rows(policy_id: str) -> List[Dict[str, Any]]:
+    return [b for b in BILLING.values() if str(b.get('policy_id') or '') == str(policy_id)]
+
+
+def _bill_cycle_key_for(bill: Dict[str, Any], frequency: str) -> str:
+    stamped = str(bill.get('billing_cycle_key') or '').strip()
+    if stamped:
+        return stamped
+    moment = _parse_iso_datetime(
+        bill.get('due_date') or bill.get('billing_period_start') or bill.get('created_date')
+    )
+    if not moment:
+        return ''
+    return _compute_billing_cycle_key(moment, frequency)
+
+
+def _cycle_already_billed(policy_id: str, frequency: str, cycle_key: str) -> bool:
+    """True when a live bill already represents this frequency cycle."""
+    if not cycle_key:
+        return False
+    for bill in _policy_bill_rows(policy_id):
+        if status_eq(bill, 'voided', 'cancelled', 'refunded'):
+            continue
+        if _bill_cycle_key_for(bill, frequency) == cycle_key:
+            return True
+    return False
+
+
+def _advance_schedule_after_payment(
+    policy: Dict[str, Any],
+    bill: Dict[str, Any],
+    frequency: str,
+) -> datetime:
+    """Move the next due date forward after a cycle is settled. Never backward."""
+    frequency = _normalize_billing_frequency(frequency)
+    moment = _parse_iso_datetime(bill.get('due_date') or bill.get('billing_period_start')) or datetime.now()
+    cycle_key = _bill_cycle_key_for(bill, frequency) or _compute_billing_cycle_key(moment, frequency)
+    nxt = _next_cycle_due(moment, frequency)
+    payment_setup = policy.setdefault('payment_setup', {})
+    billing = policy.setdefault('billing', {})
+    config = billing.setdefault('auto_pay_config', {})
+    existing = _parse_iso_datetime(
+        payment_setup.get('next_billing_date') or billing.get('next_billing_date')
+    )
+    if not existing or nxt.date() >= existing.date():
+        payment_setup['next_billing_date'] = nxt.isoformat()
+        billing['next_billing_date'] = nxt.isoformat()
+        config['next_billing_date'] = nxt.isoformat()
+    previous = str(config.get('last_processed_cycle') or '')
+    scheduled_key = _compute_billing_cycle_key(existing, frequency) if existing else ''
+    if not previous or cycle_key == scheduled_key or cycle_key >= previous:
+        config['last_processed_cycle'] = cycle_key
+    bill['billing_cycle_key'] = cycle_key
+    bill['auto_pay'] = True
+    bill['billing_frequency'] = frequency
+    return nxt
+
+
+def _duplicate_open_bill_ids(policy_id: str, frequency: str) -> List[str]:
+    """Later unpaid twins of the same cycle and the same amount."""
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for bill in _policy_bill_rows(policy_id):
+        if not _is_outstanding_bill(bill):
+            continue
+        key = _bill_cycle_key_for(bill, frequency)
+        if not key:
+            continue
+        groups.setdefault(key, []).append(bill)
+    duplicate_ids: List[str] = []
+    for bills in groups.values():
+        if len(bills) < 2:
+            continue
+        bills.sort(key=lambda row: _created_date_sort_key(row.get('created_date')))
+        keeper_amount = safe_float(bills[0].get('amount', bills[0].get('amount_due', 0)), 0.0)
+        for twin in bills[1:]:
+            twin_amount = safe_float(twin.get('amount', twin.get('amount_due', 0)), 0.0)
+            if abs(keeper_amount - twin_amount) > 0.02:
+                continue
+            if safe_float(twin.get('amount_paid'), 0.0) > 0.01:
+                continue
+            bill_id = str(twin.get('id') or '')
+            if bill_id:
+                duplicate_ids.append(bill_id)
+    return duplicate_ids
+
+
+def _suppress_duplicate_open_bills(policy_id: str, frequency: str, now: datetime) -> List[str]:
+    """Cancel a later unpaid twin. No cash movement and no customer email."""
+    cancelled: List[str] = []
+    for bill_id in _duplicate_open_bill_ids(policy_id, frequency):
+        twin = BILLING.get(bill_id)
+        if not twin:
+            continue
+        twin['status'] = 'cancelled'
+        twin['cancelled_reason'] = 'duplicate_statement_cycle'
+        twin['updated_date'] = now.isoformat()
+        BILLING[bill_id] = twin
+        cancelled.append(bill_id)
+    return cancelled
+
+
+def _collect_bill_via_autopay(
+    policy: Dict[str, Any],
+    bill: Dict[str, Any],
+    *,
+    frequency: str,
+    now: datetime,
+    trigger: str,
+    notify_users: bool,
+    dry_run: bool,
+    report_id: str,
+    use_pipeline: bool = True,
+) -> Dict[str, Any]:
+    """Settle one statement bill once, for its outstanding balance only."""
+    policy_id = str(policy.get('id') or bill.get('policy_id') or '')
+    customer_id = str(policy.get('customer_id') or bill.get('customer_id') or '')
+    bill_id = str(bill.get('id') or '')
+    outstanding = _bill_outstanding_amount(bill)
+    payment_setup = policy.get('payment_setup') or {}
+    billing_config = policy.get('billing') or {}
+    max_amount = safe_float((billing_config.get('auto_pay_config') or {}).get('max_amount'), 0.0)
+    cycle_key = _bill_cycle_key_for(bill, frequency)
+    card_last4 = payment_setup.get('card_last4') or DEFAULT_AUTO_PAY_CARD_NUMBER[-4:]
+    card_type = payment_setup.get('card_type') or 'mastercard'
+    payment_method_display = _build_card_display(str(card_type), str(card_last4))
+    due_text = str(bill.get('due_date') or '')[:10]
+    if outstanding <= 0:
+        return {'collected': False, 'amount': 0.0, 'bill_id': bill_id}
+    if max_amount and outstanding > max_amount + 0.001:
+        return {
+            'collected': False,
+            'amount': outstanding,
+            'bill_id': bill_id,
+            'error': f'Amount ${outstanding:.2f} exceeds max limit ${max_amount:.2f}',
+            'customer_id': customer_id,
+            'policy_id': policy_id,
+            'due_date': due_text,
+        }
+    if dry_run:
+        return {
+            'collected': True,
+            'dry_run': True,
+            'amount': outstanding,
+            'bill_id': bill_id,
+            'policy_id': policy_id,
+            'customer_id': customer_id,
+            'customer_name': get_customer_display_name(customer_id),
+            'billing_cycle_key': cycle_key,
+            'payment_method': payment_method_display,
+            'due_date': due_text,
+            'status': 'due',
+        }
+    payment_result = process_customer_premium_payment(
+        customer_id=customer_id,
+        amount=outstanding,
+        payment_method='credit_card',
+        policy_id=policy_id or None,
+        allocate_to_investments=False,
+        debug=False,
+        use_pipeline=use_pipeline,
+        specific_bill_ids=[bill_id] if bill_id else None,
+        extra_metadata={
+            'auto_pay': True,
+            'auto_pay_trigger': trigger,
+            'billing_cycle_key': cycle_key,
+            'charge_reference': f"CHARGE-{report_id}-{policy_id}-{bill_id}",
+            'payment_token': payment_setup.get('payment_token') or _build_default_auto_pay_token(customer_id),
+        },
+        notify_customer=notify_users,
+        reference_datetime=now,
+    )
+    bill_after = BILLING.get(bill_id, bill)
+    nxt = _advance_schedule_after_payment(policy, bill_after, frequency)
+    bill_after['payment_method'] = 'credit_card'
+    bill_after['auto_pay_trigger'] = trigger
+    bill_after['updated_date'] = now.isoformat()
+    if bill_id:
+        BILLING[bill_id] = bill_after
+    policy['last_auto_pay_at'] = now.isoformat()
+    if policy_id:
+        POLICIES[policy_id] = policy
+    audit_tx = record_transaction(
+        customer_id=customer_id,
+        tx_type='auto_pay_execution',
+        amount=outstanding,
+        description=f"Auto-pay premium ${outstanding:.2f} for policy {policy_id}",
+        metadata={
+            'policy_id': policy_id,
+            'bill_id': bill_id,
+            'billing_cycle_key': cycle_key,
+            'payment_method': 'credit_card',
+            'card_last4': card_last4,
+            'card_type': card_type,
+            'billing_frequency': frequency,
+            'next_billing_date': nxt.isoformat(),
+            'trigger': trigger,
+            'premium_payment_tx_id': (payment_result.get('payment') or {}).get('transaction_id'),
+        },
+    )
+    return {
+        'collected': True,
+        'amount': outstanding,
+        'bill_id': bill_id,
+        'policy_id': policy_id,
+        'customer_id': customer_id,
+        'customer_name': get_customer_display_name(customer_id),
+        'billing_cycle_key': cycle_key,
+        'payment_method': payment_method_display,
+        'next_billing_date': nxt.strftime('%Y-%m-%d'),
+        'premium_payment_tx_id': (payment_result.get('payment') or {}).get('transaction_id'),
+        'auto_pay_tx_id': audit_tx.get('id'),
+        'nft_token_id': audit_tx.get('nft_token_id'),
+        'integrity': payment_result.get('integrity'),
+        'notification': payment_result.get('notification'),
+        'due_date': due_text,
+        'status': 'paid',
+    }
+
+
+def _open_cycle_statement_bill(
+    policy: Dict[str, Any],
+    *,
+    frequency: str,
+    due: datetime,
+    now: datetime,
+) -> Dict[str, Any]:
+    """Create the installment bill for a due cycle that has no statement yet."""
+    policy_id = str(policy.get('id') or '')
+    customer_id = str(policy.get('customer_id') or '')
+    amount = premium_installment_amount(policy, frequency)
+    cycle_key = _compute_billing_cycle_key(due, frequency)
+    next_due = _next_cycle_due(due, frequency)
+    bill_id = f"AUTOPAY-{due.strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+    bill = {
+        'id': bill_id,
+        'policy_id': policy_id,
+        'customer_id': customer_id,
+        'customer_name': get_customer_display_name(customer_id),
+        'amount': amount,
+        'amount_due': amount,
+        'amount_paid': 0.0,
+        'status': 'outstanding',
+        'payment_method': 'credit_card',
+        'auto_pay': True,
+        'billing_frequency': frequency,
+        'billing_cycle_key': cycle_key,
+        'billing_period_start': due.isoformat(),
+        'billing_period_end': (next_due - timedelta(seconds=1)).isoformat(),
+        'due_date': due.isoformat(),
+        'created_date': now.isoformat(),
+        'updated_date': now.isoformat(),
+        'description': f"Premium for policy {policy_id} ({frequency})",
+    }
+    BILLING[bill_id] = bill
+    return bill
+
+
 def run_monthly_auto_pay(
     reference_datetime: Optional[datetime] = None,
     specific_policy: Optional[str] = None,
@@ -7877,25 +8292,18 @@ def run_monthly_auto_pay(
     actor: str = 'system_monthly_autopay',
     enforce_first_day: bool = True
 ) -> Dict[str, Any]:
-    """Process all due first-of-month auto-pay collections with persistent reporting."""
-    now = reference_datetime or datetime.now()
-    if enforce_first_day and now.day != 1:
-        return {
-            'success': False,
-            'error': 'Monthly auto-pay runs are restricted to the 1st of the month',
-            'executed_at': now.isoformat(),
-            'processed': 0,
-            'failed': [],
-            'payments': [],
-        }
+    """Collect due statement installments. The due day is the 1st of the period.
 
-    normalization = ensure_monthly_auto_pay_portfolio_defaults(
-        reference_datetime=now,
-        notify_changes=notify_users,
-        specific_policy=specific_policy,
-        specific_customer=specific_customer,
-        actor=actor,
-    )
+    A run on any later day settles bills whose due date has already arrived
+    (a missed 1st, or a legacy statement date). It does not open the next
+    period early. Schedule normalization is silent — customers get one
+    payment receipt per bill that actually settles, never a settings email.
+    ``enforce_first_day`` is retained for callers; it no longer refuses the
+    run, because a missed 1st must still collect.
+    """
+    import copy
+    now = reference_datetime or datetime.now()
+    catch_up = bool(enforce_first_day and now.day != 1)
 
     report_id = f"AUTOPAY-RUN-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
     report = {
@@ -7909,11 +8317,70 @@ def run_monthly_auto_pay(
         'total_amount': 0.0,
         'payments': [],
         'failed': [],
-        'notifications': list(normalization.get('notifications', [])),
-        'policy_updates': normalization.get('updates', []),
+        'notifications': [],
+        'policy_updates': [],
+        'duplicates_cancelled': [],
         'scheduled_for_day': 1,
+        'catch_up': catch_up,
         'billing_cycle': now.strftime('%Y-%m'),
     }
+
+    def _record_collection(policy: Dict[str, Any], bill: Dict[str, Any], frequency: str) -> None:
+        customer_id = str(policy.get('customer_id') or '')
+        policy_id = str(policy.get('id') or '')
+        try:
+            result = _collect_bill_via_autopay(
+                policy,
+                bill,
+                frequency=frequency,
+                now=now,
+                trigger=trigger,
+                notify_users=notify_users and not dry_run,
+                dry_run=dry_run,
+                report_id=report_id,
+                use_pipeline=True,
+            )
+        except Exception as exc:
+            report['failed'].append({
+                'policy_id': policy_id,
+                'customer_id': customer_id,
+                'bill_id': str(bill.get('id') or ''),
+                'error': str(exc),
+                'billing_cycle_key': _bill_cycle_key_for(bill, frequency),
+            })
+            report['failed_count'] += 1
+            if notify_users and not dry_run:
+                report['notifications'].append(
+                    _send_auto_pay_billing_notification(
+                        customer_id=customer_id,
+                        policy_id=policy_id,
+                        amount=_bill_outstanding_amount(bill),
+                        due_date=str(bill.get('due_date') or '')[:10],
+                        event_name='failed',
+                    )
+                )
+            return
+        if result.get('error'):
+            report['failed'].append(result)
+            report['failed_count'] += 1
+            if notify_users and not dry_run:
+                report['notifications'].append(
+                    _send_auto_pay_billing_notification(
+                        customer_id=customer_id,
+                        policy_id=policy_id,
+                        amount=safe_float(result.get('amount'), 0.0),
+                        due_date=str(result.get('due_date') or '')[:10],
+                        event_name='failed',
+                    )
+                )
+            return
+        if not result.get('collected'):
+            return
+        if result.get('notification'):
+            report['notifications'].append(result['notification'])
+        report['payments'].append(result)
+        report['processed'] += 1
+        report['total_amount'] = round(report['total_amount'] + safe_float(result.get('amount'), 0.0), 2)
 
     for policy_id, policy in list(POLICIES.items()):
         if specific_policy and policy_id != specific_policy:
@@ -7925,186 +8392,84 @@ def run_monthly_auto_pay(
         if not status_eq(policy, 'active', 'approved'):
             continue
 
-        payment_setup = policy.get('payment_setup', {})
-        billing_config = policy.get('billing', {})
-        auto_pay_enabled = payment_setup.get('auto_pay', False) or billing_config.get('auto_pay', False)
-        if not auto_pay_enabled:
-            continue
-
-        frequency = _normalize_billing_frequency(
-            payment_setup.get('billing_frequency') or billing_config.get('frequency') or 'monthly'
+        working = copy.deepcopy(policy) if dry_run else policy
+        normalized = ensure_policy_auto_pay_defaults(
+            working,
+            reference_datetime=now,
+            notify_changes=False,
+            actor=actor,
         )
-        due_date = _parse_iso_datetime(
+        working = normalized['policy']
+        if not dry_run:
+            POLICIES[policy_id] = working
+            if normalized.get('changed'):
+                report['policy_updates'].append({
+                    'policy_id': policy_id,
+                    'customer_id': working.get('customer_id'),
+                    'changes': normalized.get('changes', []),
+                    'default_card_assigned': normalized.get('default_card_assigned'),
+                })
+
+        frequency = _policy_billing_frequency(working)
+        payment_setup = working.get('payment_setup') or {}
+        billing_config = working.get('billing') or {}
+        scheduled = _parse_iso_datetime(
             payment_setup.get('next_billing_date') or billing_config.get('next_billing_date')
         )
-        if not due_date:
-            due_date = _coerce_first_day_schedule(None, frequency, reference_datetime=now)
-        due_date = _first_of_month(due_date)
-        if due_date.date() > now.date():
-            continue
+        if not scheduled:
+            scheduled = upcoming_statement_due(now, frequency)
+        scheduled = _first_of_month(scheduled)
+        cycle_key = _compute_billing_cycle_key(scheduled, frequency)
+        last_processed = str((billing_config.get('auto_pay_config') or {}).get('last_processed_cycle') or '')
 
-        customer_id = str(policy.get('customer_id') or '').strip()
-        cycle_key = _compute_billing_cycle_key(due_date, frequency)
-
-        # Idempotency guard: skip if this cycle was already processed for this policy
-        last_processed = (billing_config.get('auto_pay_config') or {}).get('last_processed_cycle', '')
-        if last_processed == cycle_key:
-            continue
-
-        monthly_premium = safe_float(policy.get('monthly_premium', 0), 0.0) or (
-            safe_float(policy.get('annual_premium', 0), 0.0) / 12.0
-        )
-        if frequency == 'quarterly':
-            amount = round(monthly_premium * 3 * 0.97, 2)
-        elif frequency == 'annual':
-            amount = round(monthly_premium * 12 * 0.90, 2)
+        duplicate_ids = _duplicate_open_bill_ids(policy_id, frequency)
+        if dry_run:
+            report['duplicates_cancelled'].extend(duplicate_ids)
         else:
-            amount = round(monthly_premium, 2)
+            report['duplicates_cancelled'].extend(
+                _suppress_duplicate_open_bills(policy_id, frequency, now)
+            )
+        skip_ids = set(duplicate_ids)
 
-        max_amount = safe_float((billing_config.get('auto_pay_config') or {}).get('max_amount'), 0.0)
-        if max_amount and amount > max_amount:
-            failure = {
-                'policy_id': policy_id,
-                'customer_id': customer_id,
-                'error': f'Amount ${amount:.2f} exceeds max limit ${max_amount:.2f}',
-            }
-            report['failed'].append(failure)
-            report['failed_count'] += 1
-            if notify_users:
-                report['notifications'].append(
-                    _send_auto_pay_billing_notification(
-                        customer_id=customer_id,
-                        policy_id=policy_id,
-                        amount=amount,
-                        due_date=due_date.strftime('%Y-%m-%d'),
-                        event_name='failed',
-                    )
-                )
+        for bill in sorted(
+            _policy_bill_rows(policy_id),
+            key=lambda row: str(row.get('due_date') or ''),
+        ):
+            if not _is_outstanding_bill(bill):
+                continue
+            if str(bill.get('id') or '') in skip_ids:
+                continue
+            due = _parse_iso_datetime(bill.get('due_date'))
+            if due and due.date() > now.date():
+                continue
+            _record_collection(working, bill, frequency)
+
+        if scheduled.date() > now.date():
             continue
-
-        bill, bill_state = _prepare_auto_pay_bill(
-            policy_id=policy_id,
-            customer_id=customer_id,
-            due_date=due_date,
-            amount=amount,
-            frequency=frequency,
-            reference_datetime=now,
-        )
-        bill_id = str(bill.get('id') or '')
-        if status_eq(bill, 'paid'):
-            next_due = _add_months_first_day(due_date, _months_for_frequency(frequency))
-            policy.setdefault('payment_setup', {})['next_billing_date'] = next_due.isoformat()
-            policy.setdefault('billing', {})['next_billing_date'] = next_due.isoformat()
-            policy.setdefault('billing', {}).setdefault('auto_pay_config', {})['last_processed_cycle'] = cycle_key
-            POLICIES[policy_id] = policy
+        if last_processed == cycle_key or _cycle_already_billed(policy_id, frequency, cycle_key):
             continue
-
-        payment_method_display = _build_card_display(
-            str(payment_setup.get('card_type') or 'mastercard'),
-            str(payment_setup.get('card_last4') or DEFAULT_AUTO_PAY_CARD_NUMBER[-4:]),
-        )
+        installment = premium_installment_amount(working, frequency)
+        if installment <= 0:
+            continue
         if dry_run:
             report['payments'].append({
                 'policy_id': policy_id,
-                'customer_id': customer_id,
-                'customer_name': get_customer_display_name(customer_id),
-                'bill_id': bill_id,
-                'amount': amount,
+                'customer_id': working.get('customer_id'),
+                'customer_name': get_customer_display_name(working.get('customer_id')),
+                'amount': installment,
                 'billing_cycle_key': cycle_key,
-                'payment_method': payment_method_display,
+                'billing_frequency': frequency,
                 'dry_run': True,
-                'bill_state': bill_state,
+                'bill_state': 'would_create',
+                'status': 'due',
             })
             report['processed'] += 1
-            report['total_amount'] = round(report['total_amount'] + amount, 2)
+            report['total_amount'] = round(report['total_amount'] + installment, 2)
             continue
-
-        try:
-            payment_result = process_customer_premium_payment(
-                customer_id=customer_id,
-                amount=amount,
-                payment_method='credit_card',
-                policy_id=policy_id,
-                allocate_to_investments=False,
-                debug=False,
-                use_pipeline=True,
-                specific_bill_ids=[bill_id],
-                extra_metadata={
-                    'auto_pay': True,
-                    'auto_pay_trigger': trigger,
-                    'billing_cycle_key': cycle_key,
-                    'charge_reference': f"CHARGE-{report_id}-{policy_id}",
-                    'payment_token': payment_setup.get('payment_token') or _build_default_auto_pay_token(customer_id),
-                },
-                notify_customer=notify_users,
-                reference_datetime=now,
-            )
-
-            next_due = _add_months_first_day(due_date, _months_for_frequency(frequency))
-            policy.setdefault('payment_setup', {})['next_billing_date'] = next_due.isoformat()
-            policy.setdefault('billing', {})['next_billing_date'] = next_due.isoformat()
-            policy.setdefault('billing', {}).setdefault('auto_pay_config', {})['last_processed_cycle'] = cycle_key
-            policy['last_auto_pay_at'] = now.isoformat()
-            POLICIES[policy_id] = policy
-
-            audit_tx = record_transaction(
-                customer_id=customer_id,
-                tx_type='auto_pay_execution',
-                amount=amount,
-                description=f"Auto-pay premium ${amount:.2f} for policy {policy_id}",
-                metadata={
-                    'policy_id': policy_id,
-                    'bill_id': bill_id,
-                    'billing_cycle_key': cycle_key,
-                    'payment_method': 'credit_card',
-                    'card_last4': payment_setup.get('card_last4') or DEFAULT_AUTO_PAY_CARD_NUMBER[-4:],
-                    'card_type': payment_setup.get('card_type') or 'mastercard',
-                    'billing_frequency': frequency,
-                    'next_billing_date': next_due.isoformat(),
-                    'trigger': trigger,
-                }
-            )
-
-            payment_entry = {
-                'policy_id': policy_id,
-                'customer_id': customer_id,
-                'customer_name': get_customer_display_name(customer_id),
-                'bill_id': bill_id,
-                'amount': amount,
-                'status': 'paid',
-                'billing_cycle_key': cycle_key,
-                'payment_method': payment_method_display,
-                'next_billing_date': next_due.strftime('%Y-%m-%d'),
-                'premium_payment_tx_id': payment_result.get('payment', {}).get('transaction_id'),
-                'auto_pay_tx_id': audit_tx.get('id'),
-                'nft_token_id': audit_tx.get('nft_token_id'),
-                'integrity': payment_result.get('integrity'),
-            }
-            if payment_result.get('notification'):
-                report['notifications'].append(payment_result['notification'])
-            report['payments'].append(payment_entry)
-            report['processed'] += 1
-            report['total_amount'] = round(report['total_amount'] + amount, 2)
-        except Exception as exc:
-            failure = {
-                'policy_id': policy_id,
-                'customer_id': customer_id,
-                'bill_id': bill_id,
-                'error': str(exc),
-                'billing_cycle_key': cycle_key,
-            }
-            report['failed'].append(failure)
-            report['failed_count'] += 1
-            if notify_users:
-                report['notifications'].append(
-                    _send_auto_pay_billing_notification(
-                        customer_id=customer_id,
-                        policy_id=policy_id,
-                        amount=amount,
-                        due_date=due_date.strftime('%Y-%m-%d'),
-                        event_name='failed',
-                    )
-                )
+        created = _open_cycle_statement_bill(
+            working, frequency=frequency, due=scheduled, now=now,
+        )
+        _record_collection(working, created, frequency)
 
     AUTO_PAY_RUN_REPORTS[report_id] = report
     if len(AUTO_PAY_RUN_REPORTS) > AUTO_PAY_REPORT_RETENTION:
@@ -8302,7 +8667,7 @@ def repair_billing_pending_pipeline(
                     result = ensure_policy_auto_pay_defaults(
                         policy=policy,
                         reference_datetime=now,
-                        notify_changes=notify_users,
+                        notify_changes=False,
                         actor=actor,
                     )
                     POLICIES[policy_id] = result['policy']
@@ -8358,68 +8723,34 @@ def repair_billing_pending_pipeline(
                 continue
 
             try:
-                payment_result = process_customer_premium_payment(
-                    customer_id=cid,
-                    amount=outstanding_amount,
-                    payment_method='credit_card',
-                    policy_id=bill_policy_id or None,
-                    allocate_to_investments=False,
+                frequency = _policy_billing_frequency(policy_for_bill) if policy_for_bill else (
+                    _normalize_billing_frequency(bill.get('billing_frequency') or 'monthly')
+                )
+                if bill_id in _duplicate_open_bill_ids(bill_policy_id, frequency):
+                    _suppress_duplicate_open_bills(bill_policy_id, frequency, now)
+                    continue
+                result = _collect_bill_via_autopay(
+                    policy_for_bill or {'id': bill_policy_id, 'customer_id': cid},
+                    bill,
+                    frequency=frequency,
+                    now=now,
+                    trigger='admin_billing_pending_repair',
+                    notify_users=notify_users,
+                    dry_run=False,
+                    report_id=report_id,
                     use_pipeline=False,
-                    specific_bill_ids=[bill_id],
-                    extra_metadata={
-                        'auto_pay': True,
-                        'auto_pay_trigger': 'admin_billing_pending_repair',
-                        'repair_report_id': report_id,
-                        'card_last4': card_last4,
-                        'card_type': card_type,
-                        'payment_token': payment_setup.get('payment_token')
-                        or _build_default_auto_pay_token(cid),
-                    },
-                    notify_customer=notify_users,
-                    reference_datetime=now,
                 )
-
-                bill_after = BILLING.get(bill_id, {})
-                bill_after['auto_pay'] = True
-                bill_after['auto_pay_trigger'] = 'admin_billing_pending_repair'
-                bill_after['payment_method'] = 'credit_card'
-                bill_after['updated_date'] = now.isoformat()
-                BILLING[bill_id] = bill_after
-
-                if bill_policy_id and bill_policy_id in POLICIES:
-                    POLICIES[bill_policy_id]['last_auto_pay_at'] = now.isoformat()
-
-                audit_tx = record_transaction(
-                    customer_id=cid,
-                    tx_type='auto_pay_execution',
-                    amount=outstanding_amount,
-                    description=(
-                        f"Admin repair auto-pay ${outstanding_amount:.2f} for bill "
-                        f"{bill_id} (policy {bill_policy_id or 'N/A'})"
-                    ),
-                    metadata={
-                        'policy_id': bill_policy_id,
-                        'bill_id': bill_id,
-                        'payment_method': 'credit_card',
-                        'card_last4': card_last4,
-                        'card_type': card_type,
-                        'trigger': 'admin_billing_pending_repair',
-                        'repair_report_id': report_id,
-                        'premium_payment_tx_id': (
-                            payment_result.get('payment', {}) or {}
-                        ).get('transaction_id'),
-                    },
-                )
-
+                if result.get('error'):
+                    raise RuntimeError(result['error'])
+                if not result.get('collected'):
+                    continue
                 customer_record['settled_bills'].append({
                     'bill_id': bill_id,
                     'policy_id': bill_policy_id,
                     'amount': outstanding_amount,
                     'payment_method': _build_card_display(card_type, card_last4),
-                    'premium_payment_tx_id': (
-                        payment_result.get('payment', {}) or {}
-                    ).get('transaction_id'),
-                    'auto_pay_tx_id': (audit_tx or {}).get('id'),
+                    'premium_payment_tx_id': result.get('premium_payment_tx_id'),
+                    'auto_pay_tx_id': result.get('auto_pay_tx_id'),
                 })
                 customer_record['autopay_run']['processed'] += 1
                 customer_record['autopay_run']['total_amount'] = round(
@@ -15236,44 +15567,31 @@ def maybe_auto_issue_policy(app, policy, customer=None):
         policy['auto_issued'] = True
         policy['underwriting_rule_version'] = rule_version
 
-        # First bill, honoring the application's billing setup.
+        # First bill matches the quoted installment and is due on the period's 1st.
         payment_setup = app.get('payment_setup', {}) or {}
-        billing_frequency = payment_setup.get('billing_frequency', 'monthly')
+        billing_frequency = _normalize_billing_frequency(
+            payment_setup.get('billing_frequency', 'monthly')
+        )
         auto_pay = payment_setup.get('auto_pay', True)
-        monthly_premium = policy.get('monthly_premium', 0) or (policy.get('annual_premium', 0) / 12)
-        if billing_frequency == 'quarterly':
-            billing_amount = monthly_premium * 3 * 0.97
-            due_days = 90
-        elif billing_frequency == 'annual':
-            billing_amount = monthly_premium * 12 * 0.90
-            due_days = 365
-        else:
-            billing_amount = monthly_premium
-            due_days = 30
-        bill_id = f"BILL-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
-        BILLING[bill_id] = {
-            'id': bill_id,
-            'policy_id': policy.get('id'),
-            'customer_id': customer_id,
-            'customer_name': app.get('customer_name', ''),
-            'customer_email': app.get('customer_email', ''),
-            'amount': round(float(billing_amount), 2),
-            'amount_paid': 0.0,
-            'status': 'outstanding',
-            'billing_frequency': billing_frequency,
-            'auto_pay': auto_pay,
-            'payment_method': {
-                'type': 'card',
-                'card_last4': payment_setup.get('card_last4'),
-                'card_type': payment_setup.get('card_type'),
-            } if payment_setup.get('card_last4') else None,
-            'due_date': (now + timedelta(days=due_days)).isoformat(),
-            'billing_period_start': now.isoformat(),
-            'billing_period_end': (now + timedelta(days=due_days)).isoformat(),
-            'created_date': now.isoformat(),
-            'updated_date': now.isoformat(),
-            'description': f"Premium for policy {policy.get('id')} ({billing_frequency})",
-        }
+        bill = build_premium_statement_bill(
+            policy,
+            customer_id=customer_id,
+            frequency=billing_frequency,
+            auto_pay=auto_pay,
+            reference=now,
+            payment_setup=payment_setup,
+            customer_name=app.get('customer_name', ''),
+            customer_email=app.get('customer_email', ''),
+        )
+        bill_id = bill['id']
+        BILLING[bill_id] = bill
+        stamp_policy_statement_schedule(
+            policy,
+            billing_frequency,
+            _parse_iso_datetime(bill['due_date']) or now,
+            auto_pay,
+            payment_setup,
+        )
 
         # Health wallet activation mirrors the manual approve pipeline.
         health_wallet_info = app.get('health_wallet', {}) or {}
@@ -15632,21 +15950,34 @@ def run_pipeline_for_customer(customer_id: str, auto_advance: bool = True) -> Di
                 policy['effective_date'] = now.isoformat()
                 POLICIES[policy_id] = policy
 
-                bill_id = f"BILL-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
-                monthly_premium = policy.get('monthly_premium', 0) or (policy.get('annual_premium', 0) / 12)
-
-                BILLING[bill_id] = {
-                    'id': bill_id,
-                    'policy_id': policy_id,
-                    'customer_id': customer_id,
-                    'customer_name': customer.get('name', ''),
-                    'amount': round(float(monthly_premium), 2),
-                    'amount_paid': 0.0,
-                    'status': 'outstanding',
-                    'due_date': (now + timedelta(days=30)).isoformat(),
-                    'created_date': now.isoformat(),
-                    'description': f"Premium for policy {policy_id}",
-                }
+                payment_setup = app.get('payment_setup') or {}
+                billing_frequency = _normalize_billing_frequency(
+                    (policy.get('payment_setup') or {}).get('billing_frequency')
+                    or (policy.get('billing') or {}).get('frequency')
+                    or payment_setup.get('billing_frequency')
+                    or 'monthly'
+                )
+                auto_pay = payment_setup.get('auto_pay', True)
+                bill = build_premium_statement_bill(
+                    policy,
+                    customer_id=customer_id,
+                    frequency=billing_frequency,
+                    auto_pay=auto_pay,
+                    reference=now,
+                    payment_setup=payment_setup,
+                    customer_name=customer.get('name', ''),
+                    customer_email=customer.get('email', ''),
+                )
+                bill_id = bill['id']
+                BILLING[bill_id] = bill
+                stamp_policy_statement_schedule(
+                    policy,
+                    billing_frequency,
+                    _parse_iso_datetime(bill['due_date']) or now,
+                    auto_pay,
+                    payment_setup,
+                )
+                POLICIES[policy_id] = policy
 
                 result['actions_taken'].append(f'Generated billing {bill_id}')
 
@@ -23360,10 +23691,20 @@ For claims or questions, please contact:
                 story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#e3f2fd')))
                 
                 billing_config = policy.get('billing', {})
-                freq_labels = {'monthly': 'Monthly', 'quarterly': 'Quarterly (3% Discount)', 'annual': 'Annual (10% Discount)'}
-                
+                freq_labels = {
+                    'monthly': 'Monthly',
+                    'quarterly': 'Quarterly (3% Discount)',
+                    'annual': 'Annual (per year)',
+                }
+                contract_frequency = _normalize_billing_frequency(
+                    billing_config.get('frequency', payment_setup.get('billing_frequency', 'monthly'))
+                )
+                contract_installment = premium_installment_amount(policy, contract_frequency)
+
                 billing_data = [
-                    ['Billing Frequency:', freq_labels.get(billing_config.get('frequency', payment_setup.get('billing_frequency', 'monthly')), 'Monthly')],
+                    ['Billing Frequency:', freq_labels.get(contract_frequency, 'Monthly')],
+                    ['Installment Amount:', f"${contract_installment:,.2f}"],
+                    ['Collection Day:', '1st of the billing period'],
                     ['Auto-Pay Enabled:', 'Yes ✓' if billing_config.get('auto_pay', payment_setup.get('auto_pay')) else 'No'],
                     ['Payment Method:', f"{(payment_setup.get('card_type', 'Card')).title()} ending in {payment_setup.get('card_last4', '****')}" if payment_setup.get('card_last4') else 'Not Configured'],
                     ['Cardholder Name:', payment_setup.get('cardholder_name', 'N/A')],
@@ -33133,15 +33474,20 @@ For claims or questions, please contact:
                 monthly_premium = float(policy.get('monthly_premium', 0) or policy.get('premium', 0) or 0)
                 annual_premium = float(policy.get('annual_premium', 0) or 0)
                 
-                # Calculate billing amount based on billing frequency
-                billing_frequency = policy.get('billing_frequency', 'monthly').lower()
-                if billing_frequency == 'annual':
-                    bill_amount = annual_premium if annual_premium > 0 else monthly_premium * 12
-                elif billing_frequency == 'quarterly':
-                    bill_amount = (annual_premium / 4) if annual_premium > 0 else monthly_premium * 3
-                else:  # monthly (default)
-                    bill_amount = monthly_premium if monthly_premium > 0 else (annual_premium / 12 if annual_premium > 0 else 0)
-                
+                # Quoted installment for the frequency the customer selected.
+                billing_frequency = _policy_billing_frequency(policy)
+                bill_amount = premium_installment_amount(policy, billing_frequency)
+                statement_due = upcoming_statement_due(datetime.now(), billing_frequency)
+                cycle_key = _compute_billing_cycle_key(statement_due, billing_frequency)
+                if _cycle_already_billed(policy_id, billing_frequency, cycle_key):
+                    billing_results['already_billed'] += 1
+                    billing_results['policies_skipped'].append({
+                        'policy_id': policy_id,
+                        'reason': 'cycle_already_billed',
+                        'billing_cycle_key': cycle_key,
+                    })
+                    continue
+
                 if bill_amount <= 0:
                     billing_results['skipped'] += 1
                     billing_results['skipped_no_premium'] += 1
@@ -33155,27 +33501,28 @@ For claims or questions, please contact:
                     continue
                 
                 try:
-                    # 5. Create the bill
-                    bill_id = f"BILL-{datetime.now().strftime('%Y%m%d')}-{random.randint(10000, 99999)}"
-                    due_days = 30 if billing_frequency == 'monthly' else (90 if billing_frequency == 'quarterly' else 365)
-                    
-                    bill = {
-                        'id': bill_id,
-                        'bill_id': bill_id,
-                        'policy_id': policy_id,
-                        'customer_id': customer_id,
-                        'amount': round(bill_amount, 2),
-                        'amount_due': round(bill_amount, 2),
-                        'amount_paid': 0.0,
-                        'status': 'outstanding',
-                        'billing_frequency': billing_frequency,
-                        'billing_period': datetime.now().strftime('%Y-%m'),
-                        'created_date': datetime.now().isoformat(),
-                        'due_date': (datetime.now() + timedelta(days=due_days)).isoformat(),
-                        'description': f"Premium billing for policy {policy_id}",
-                        'generated_by': 'ai_insights_bill_all',
-                        'actor': actor
-                    }
+                    # 5. Create the statement bill due on the period's 1st.
+                    bill = build_premium_statement_bill(
+                        policy,
+                        customer_id=customer_id,
+                        frequency=billing_frequency,
+                        auto_pay=bool((policy.get('billing') or {}).get('auto_pay', True)),
+                        reference=datetime.now(),
+                        payment_setup=policy.get('payment_setup') or {},
+                        description_prefix='Premium billing',
+                    )
+                    bill_id = bill['id']
+                    bill['bill_id'] = bill_id
+                    bill['generated_by'] = 'ai_insights_bill_all'
+                    bill['actor'] = actor
+                    stamp_policy_statement_schedule(
+                        policy,
+                        billing_frequency,
+                        statement_due,
+                        bool(bill.get('auto_pay')),
+                        policy.get('payment_setup') or {},
+                    )
+                    POLICIES[policy_id] = policy
                     
                     # Store the bill
                     BILLING[bill_id] = bill
@@ -46199,7 +46546,9 @@ For claims or questions, please contact:
                         except Exception as e:
                             print(f"Payment processing error: {e}")
                     
-                    billing_frequency = payment_info.get('billing_frequency', 'monthly')
+                    billing_frequency = _normalize_billing_frequency(
+                        payment_info.get('billing_frequency', 'monthly')
+                    )
                     auto_pay = payment_info.get('auto_pay', True)
                 
                 # Process health wallet setup
@@ -46508,6 +46857,7 @@ For claims or questions, please contact:
                 premium_data = calculate_premium(data)
                 if internal_chat_loopback:
                     premium_data = _apply_accepted_quote_provenance(premium_data, data)
+                statement_due = upcoming_statement_due(datetime.now(), billing_frequency)
                 
                 # Create policy
                 policy = {
@@ -46517,6 +46867,7 @@ For claims or questions, please contact:
                     'coverage_amount': data.get('coverage_amount', 100000),
                     'annual_premium': premium_data['annual'],
                     'monthly_premium': premium_data['monthly'],
+                    'quarterly_premium': premium_data.get('quarterly'),
                     'status': 'pending_underwriting',
                     'underwriting_id': uw_id,
                     'risk_score': data.get('risk_score', 'medium'),
@@ -46548,16 +46899,27 @@ For claims or questions, please contact:
                     'underwriting_loading': premium_data.get('underwriting_loading'),
                     'life_sum_used': premium_data.get('life_sum_used'),
                     'disability_sum_used': premium_data.get('disability_sum_used'),
-                    # Billing configuration (from application Step 4)
+                    # Billing configuration (from application Step 4). Due day is the 1st.
+                    'payment_setup': {
+                        'card_last4': card_last4,
+                        'card_type': card_type,
+                        'cardholder_name': payment_info.get('cardholder_name', '') if payment_info else '',
+                        'billing_frequency': billing_frequency,
+                        'auto_pay': auto_pay,
+                        'billing_day': 1,
+                        'payment_token': payment_token,
+                        'next_billing_date': statement_due.isoformat(),
+                    },
                     'billing': {
                         'frequency': billing_frequency,
                         'auto_pay': auto_pay,
+                        'billing_day': 1,
                         'payment_method': {
                             'type': 'card',
                             'card_last4': card_last4,
                             'card_type': card_type
                         } if card_last4 else None,
-                        'next_billing_date': (datetime.now() + timedelta(days=30)).isoformat()
+                        'next_billing_date': statement_due.isoformat()
                     },
                     # Health wallet with allocation percentage - critical for data integrity
                     'health_wallet': {
@@ -47401,50 +47763,32 @@ For claims or questions, please contact:
                 policy['application_date'] = app.get('submitted_date') or app.get('created_date') or now.isoformat()
                 policy['issuance_date'] = app.get('submitted_date') or app.get('created_date') or now.isoformat()
                 
-                # PIPELINE STEP: Generate billing record
-                bill_id = f"BILL-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
-                monthly_premium = policy.get('monthly_premium', 0) or policy.get('annual_premium', 0) / 12
-                
-                # Get billing configuration from application
-                payment_setup = app.get('payment_setup', {})
-                billing_frequency = payment_setup.get('billing_frequency', 'monthly')
+                # PIPELINE STEP: Generate the statement bill at the quoted installment.
+                payment_setup = app.get('payment_setup', {}) or {}
+                billing_frequency = _normalize_billing_frequency(
+                    payment_setup.get('billing_frequency', 'monthly')
+                )
                 auto_pay = payment_setup.get('auto_pay', True)
-                
-                # Calculate billing amount based on frequency
-                if billing_frequency == 'quarterly':
-                    billing_amount = monthly_premium * 3 * 0.97  # 3% discount
-                    due_days = 90
-                elif billing_frequency == 'annual':
-                    billing_amount = monthly_premium * 12 * 0.90  # 10% discount
-                    due_days = 365
-                else:
-                    billing_amount = monthly_premium
-                    due_days = 30
-                
-                bill = {
-                    'id': bill_id,
-                    'policy_id': policy_id,
-                    'customer_id': customer_id,
-                    'customer_name': app.get('customer_name', ''),
-                    'customer_email': app.get('customer_email', ''),
-                    'amount': round(float(billing_amount), 2),
-                    'amount_paid': 0.0,
-                    'status': 'outstanding',
-                    'billing_frequency': billing_frequency,
-                    'auto_pay': auto_pay,
-                    'payment_method': {
-                        'type': 'card',
-                        'card_last4': payment_setup.get('card_last4'),
-                        'card_type': payment_setup.get('card_type')
-                    } if payment_setup.get('card_last4') else None,
-                    'due_date': (now + timedelta(days=due_days)).isoformat(),
-                    'billing_period_start': now.isoformat(),
-                    'billing_period_end': (now + timedelta(days=due_days)).isoformat(),
-                    'created_date': now.isoformat(),
-                    'updated_date': now.isoformat(),
-                    'description': f"Premium for policy {policy_id} ({billing_frequency})"
-                }
+                bill = build_premium_statement_bill(
+                    policy,
+                    customer_id=customer_id,
+                    frequency=billing_frequency,
+                    auto_pay=auto_pay,
+                    reference=now,
+                    payment_setup=payment_setup,
+                    customer_name=app.get('customer_name', ''),
+                    customer_email=app.get('customer_email', ''),
+                )
+                bill_id = bill['id']
                 BILLING[bill_id] = bill
+                stamp_policy_statement_schedule(
+                    policy,
+                    billing_frequency,
+                    _parse_iso_datetime(bill['due_date']) or now,
+                    auto_pay,
+                    payment_setup,
+                )
+                POLICIES[policy_id] = policy
                 
                 # PIPELINE STEP: Activate health wallet if enabled
                 health_wallet_info = app.get('health_wallet', {})
@@ -55327,7 +55671,7 @@ For claims or questions, please contact:
             - card_last4: Last 4 digits of card (for display)
             - card_type: Card type (visa, mastercard, amex, etc.)
             - billing_frequency: monthly, quarterly, annual
-            - billing_day: Day of month for billing (1-28)
+            - billing_day: ignored; collection is always the 1st of the period
             - max_amount: Maximum auto-pay amount (optional safety limit)
             - notify_before: Days before to send notification (default 3)
             - ai_optimization: Enable AI to optimize payment timing (default true)
@@ -55372,26 +55716,29 @@ For claims or questions, please contact:
                 payment_method = data.get('payment_method', 'credit_card')
                 card_last4 = data.get('card_last4', '4444')  # Default to 4444 if not provided
                 card_type = data.get('card_type', 'visa')
-                billing_frequency = data.get('billing_frequency', 'monthly')
-                billing_day = int(data.get('billing_day', 1))
+                billing_frequency = _normalize_billing_frequency(
+                    data.get('billing_frequency', 'monthly')
+                )
+                # Premiums are collected on the 1st. A caller-supplied day is not stored.
+                billing_day = 1
                 max_amount = data.get('max_amount')
                 notify_before = int(data.get('notify_before', 3))
                 ai_optimization = data.get('ai_optimization', True)
-                
-                # Validate billing day (1-28 for safety)
-                if billing_day < 1 or billing_day > 28:
-                    billing_day = 1
-                
-                # Calculate next billing date
+
                 now = datetime.now()
-                if now.day <= billing_day:
-                    next_billing = now.replace(day=billing_day)
+                existing_next = _parse_iso_datetime(
+                    (policy.get('payment_setup') or {}).get('next_billing_date')
+                    or (policy.get('billing') or {}).get('next_billing_date')
+                )
+                same_frequency = _policy_billing_frequency(policy) == billing_frequency
+                if (
+                    same_frequency
+                    and existing_next
+                    and _first_of_month(existing_next).date() >= now.date()
+                ):
+                    next_billing = _first_of_month(existing_next)
                 else:
-                    # Next month
-                    if now.month == 12:
-                        next_billing = now.replace(year=now.year + 1, month=1, day=billing_day)
-                    else:
-                        next_billing = now.replace(month=now.month + 1, day=billing_day)
+                    next_billing = upcoming_statement_due(now, billing_frequency)
                 
                 # Build auto-pay configuration
                 auto_pay_config = {
@@ -55615,7 +55962,7 @@ For claims or questions, please contact:
             - customer_id: Specific customer to process (optional)
             - dry_run: If true, show what would be paid without executing
             - notify_users: If true, send customer notices (default true)
-            - force: Allow execution on non-1st day for admin/manual use
+            - force: Run is allowed any day. force marks an off-1st run as intentional rather than catch-up
             """
             try:
                 data = json.loads(body) if body else {}

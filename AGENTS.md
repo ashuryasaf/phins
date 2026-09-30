@@ -592,7 +592,8 @@ Operational notes:
 - `Dockerfile` is multi-stage on `python:3.12-slim`, healthcheck hits
   `/api/health`, entrypoint is `./scripts/entrypoint.sh serve`
 - `render.yaml` includes a cron service `phins-monthly-auto-pay`
-  (`./scripts/entrypoint.sh cron`)
+  (`./scripts/entrypoint.sh cron`, daily `15 6 * * *` catch-up; due day is
+  the 1st and a missed 1st still collects)
 - `entrypoint.sh db-init` refuses to seed demo data when
   `PHINS_ENVIRONMENT=production` (forces `POPULATE_DEMO_DATA=false`)
 

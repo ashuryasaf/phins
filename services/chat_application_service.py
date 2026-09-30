@@ -1613,7 +1613,7 @@ class ChatPolicyApplicationService:
             quote = {
                 "monthly": monthly,
                 "quarterly": round(monthly * 3 * 0.97, 2),
-                "annual": round(monthly * 12 * 0.90, 2),
+                "annual": round(monthly * 12, 2),
                 "pricing_source": "flat_fallback",
                 "savings_rate_used": savings_rate,
                 "adl_level": adl.pricing_level,
@@ -1644,7 +1644,7 @@ class ChatPolicyApplicationService:
         annual = quote.get("annual") or 0
         parts = [
             f"Here's your personalized quote, priced by {src}: "
-            f"${monthly:,.2f}/month, or ${annual:,.2f}/year if you pay annually (10% off)."
+            f"${monthly:,.2f}/month, or ${annual:,.2f} if you pay the full year."
         ]
         if kernel:
             risk = float(quote.get("risk_premium_annual") or 0)

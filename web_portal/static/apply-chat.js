@@ -261,7 +261,7 @@
                 <div class="quote-tile featured">
                     <div class="quote-tile-label">Annual</div>
                     <div class="quote-tile-value">${fmtMoney(quote.annual)}</div>
-                    <div class="quote-tile-save">Save 10%</div>
+                    <div class="quote-tile-save">Per year</div>
                 </div>
             </div>
             <div class="quote-meta">${fmtMoney(quote.coverage_amount, 0)} coverage · ${escapeHtml(String(quote.coverage_years || 20))} years · ${meta}</div>

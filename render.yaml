@@ -18,7 +18,7 @@ services:
   - type: cron
     name: phins-monthly-auto-pay
     env: python
-    schedule: "0 0 1 * *"
+    schedule: "15 6 * * *"
     buildCommand: pip install -r requirements.txt && chmod +x scripts/entrypoint.sh
     startCommand: ./scripts/entrypoint.sh cron
     envVars:
