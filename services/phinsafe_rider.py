@@ -716,6 +716,41 @@ def anchor_book(ledger: Any, book: Mapping[str, Any], *, actor: str) -> Dict[str
     }
 
 
+def _policy_savings_cents(policy: Mapping[str, Any], annual_cents: int) -> int:
+    """Savings share of the parent premium, as the platform persists it.
+
+    `savings_premium` only exists on in-memory records. An issued policy keeps
+    the actuarial pin as `savings_premium_annual` or, failing that, the
+    health-wallet allocation percentage of the annual premium.
+    """
+    for key in ('savings_premium', 'savings_premium_annual'):
+        raw = policy.get(key)
+        if raw is not None:
+            return money_cents(raw)
+    wallet = policy.get('health_wallet')
+    if isinstance(wallet, str):
+        try:
+            wallet = json.loads(wallet or '{}')
+        except json.JSONDecodeError:
+            wallet = {}
+    if isinstance(wallet, Mapping) and wallet.get('allocation_percentage') is not None:
+        try:
+            share = Decimal(str(wallet.get('allocation_percentage')))
+        except Exception as exc:
+            raise PhinSafeIntegrityError(
+                f"policy {policy.get('id') or ''} health wallet allocation is not a number"
+            ) from exc
+        if not share.is_finite() or share < 0 or share > 100:
+            raise PhinSafeIntegrityError(
+                f"policy {policy.get('id') or ''} health wallet allocation must be between 0 and 100"
+            )
+        allocated = (Decimal(int(annual_cents)) * share / Decimal(100)).quantize(
+            Decimal('1'), rounding=ROUND_HALF_UP
+        )
+        return int(allocated)
+    return 0
+
+
 def _policy_money(policy: Mapping[str, Any]) -> Tuple[int, int, int]:
     coverage = policy.get('coverage_amount', policy.get('coverage'))
     annual = policy.get('annual_premium')
@@ -727,11 +762,7 @@ def _policy_money(policy: Mapping[str, Any]) -> Tuple[int, int, int]:
     annual_cents = money_cents(annual)
     if coverage_cents <= 0 or annual_cents < 0:
         raise PhinSafeIntegrityError(f"policy {policy.get('id') or ''} has no insured benefit")
-    savings_raw = policy.get('savings_premium')
-    if savings_raw is None:
-        savings_cents = 0
-    else:
-        savings_cents = money_cents(savings_raw)
+    savings_cents = _policy_savings_cents(policy, annual_cents)
     if savings_cents > annual_cents:
         raise PhinSafeIntegrityError(
             f"policy {policy.get('id') or ''} savings premium exceeds annual premium"
@@ -789,6 +820,20 @@ def installment_bill_id(rider_id: str, year: int, month: int) -> str:
     return _entry_id('BILL-PS', f'{rider_id}|{int(year):04d}-{int(month):02d}', limit=50)
 
 
+def _rider_annual_cents(rider: Mapping[str, Any]) -> int:
+    """Whole-rider annual premium. A policy stamp carries it as a total."""
+    if rider.get('total_annual_premium_cents') is not None:
+        return int(rider.get('total_annual_premium_cents') or 0)
+    return int(rider.get('annual_premium_cents') or money_cents(rider.get('annual_premium') or 0))
+
+
+def _rider_savings_cents(rider: Mapping[str, Any]) -> int:
+    """Whole-rider savings add-on. A policy stamp carries it as a total."""
+    if rider.get('total_savings_premium_cents') is not None:
+        return int(rider.get('total_savings_premium_cents') or 0)
+    return int(rider.get('savings_premium_cents') or money_cents(rider.get('savings_premium') or 0))
+
+
 def build_installment(
     rider: Mapping[str, Any],
     *,
@@ -799,8 +844,8 @@ def build_installment(
     index = (int(year) - join.year) * 12 + (int(month) - join.month)
     if index < 0:
         return None
-    annual_cents = int(rider.get('annual_premium_cents') or money_cents(rider.get('annual_premium') or 0))
-    savings_cents = int(rider.get('savings_premium_cents') or money_cents(rider.get('savings_premium') or 0))
+    annual_cents = _rider_annual_cents(rider)
+    savings_cents = _rider_savings_cents(rider)
     amount = installment_cents(annual_cents, index)
     savings = installment_cents(savings_cents, index)
     if amount < savings:
@@ -893,7 +938,7 @@ def bind_rider(
         if status not in ('active', 'in_force', 'approved'):
             raise PhinSafeIntegrityError(f'policy {policy_id} is not an in-force parent policy')
         existing = _existing_rider(policy)
-        if existing and existing.get('document_hash') and existing.get('book_hash') not in (None, book_hash):
+        if existing and existing.get('document_hash'):
             raise PhinSafeIntegrityError(
                 f'policy {policy_id} already has a permanent PhinSafe settlement',
                 status=409,
@@ -965,6 +1010,7 @@ def bind_rider(
         'monthly_savings_premium': cents_to_dollars(installment_cents(savings_total, 0)),
         'primary_policy_id': sorted(policy_ids)[0],
         'open_claims_cents': 0,
+        'open_claim_ids': [],
     }
     patches = {}
     for policy, slice_ in zip(policies, slices):
@@ -988,9 +1034,13 @@ def bind_rider(
             'total_benefit': cents_to_dollars(benefit_total),
             'total_benefit_cents': benefit_total,
             'annual_premium': slice_['annual_premium'],
-            'annual_premium_cents': annual_total,
+            'annual_premium_cents': slice_['annual_premium_cents'],
+            'total_annual_premium': cents_to_dollars(annual_total),
+            'total_annual_premium_cents': annual_total,
             'savings_premium': slice_['savings_premium'],
-            'savings_premium_cents': savings_total,
+            'savings_premium_cents': slice_['savings_premium_cents'],
+            'total_savings_premium': cents_to_dollars(savings_total),
+            'total_savings_premium_cents': savings_total,
             'monthly_premium': cents_to_dollars(installment_cents(slice_['annual_premium_cents'], 0)),
             'monthly_savings_premium': cents_to_dollars(installment_cents(slice_['savings_premium_cents'], 0)),
             'join_date': joined.isoformat(),
@@ -1003,6 +1053,7 @@ def bind_rider(
             'policy_ids': sorted(policy_ids),
             'first_pregnancy_start': pregnancy.isoformat() if pregnancy else None,
             'open_claims_cents': 0,
+            'open_claim_ids': [],
         }
         billing = _billing_dict(policy)
         billing['phinsafe'] = {
@@ -1072,7 +1123,7 @@ def anchor_rider(ledger: Any, bound: Mapping[str, Any], *, actor: str) -> Dict[s
         'entry_id': str(entry.get('id') or spec.get('entry_id')),
         'entry_hash': str(entry.get('entry_hash') or ''),
         'sequence_no': entry.get('sequence_no'),
-        'event_type': RIDER_EVENT,
+        'event_type': str(spec.get('event_type') or RIDER_EVENT),
     }
 
 
@@ -1082,6 +1133,8 @@ def rider_from_policy(policy: Mapping[str, Any]) -> Dict[str, Any]:
     if not existing or not existing.get('rider_id'):
         raise PhinSafeIntegrityError('this policy has no PhinSafe rider')
     benefit_cents = int(existing.get('total_benefit_cents') or existing.get('benefit_cents') or 0)
+    annual_cents = _rider_annual_cents(existing)
+    savings_cents = _rider_savings_cents(existing)
     return {
         'rider_id': existing.get('rider_id'),
         'document_hash': existing.get('document_hash'),
@@ -1090,21 +1143,22 @@ def rider_from_policy(policy: Mapping[str, Any]) -> Dict[str, Any]:
         'benefit_cents': benefit_cents,
         'benefit': existing.get('total_benefit') or existing.get('benefit'),
         'open_claims_cents': int(existing.get('open_claims_cents') or 0),
+        'open_claim_ids': [str(item) for item in (existing.get('open_claim_ids') or [])],
         'first_pregnancy_start': existing.get('first_pregnancy_start'),
         'primary_policy_id': existing.get('primary_policy_id') or policy.get('id'),
         'customer_id': existing.get('customer_id') or policy.get('customer_id'),
-        'annual_premium_cents': existing.get('annual_premium_cents'),
-        'savings_premium_cents': existing.get('savings_premium_cents'),
-        'annual_premium': existing.get('annual_premium'),
-        'savings_premium': existing.get('savings_premium'),
+        'annual_premium_cents': annual_cents,
+        'savings_premium_cents': savings_cents,
+        'annual_premium': cents_to_dollars(annual_cents),
+        'savings_premium': cents_to_dollars(savings_cents),
         'policy_ids': list(existing.get('policy_ids') or []),
         'status': existing.get('status'),
     }
 
 
 def savings_fraction(rider: Mapping[str, Any]) -> float:
-    annual = int(rider.get('annual_premium_cents') or money_cents(rider.get('annual_premium') or 0))
-    savings = int(rider.get('savings_premium_cents') or money_cents(rider.get('savings_premium') or 0))
+    annual = _rider_annual_cents(rider)
+    savings = _rider_savings_cents(rider)
     if annual <= 0 or savings <= 0:
         return 0.0
     return savings / annual
@@ -1136,8 +1190,6 @@ def open_claim(
         raise PhinSafeIntegrityError('claim amount must be positive')
     benefit = int(rider.get('benefit_cents') or money_cents(rider.get('benefit') or 0))
     open_cents = int(rider.get('open_claims_cents') or 0)
-    if open_cents + amount_cents > benefit:
-        raise PhinSafeIntegrityError('claim exceeds the remaining PhinSafe benefit', status=409)
     claim_core = {
         'rider_id': rider.get('rider_id'),
         'document_hash': rider.get('document_hash'),
@@ -1147,6 +1199,14 @@ def open_claim(
         'benefit_cents': benefit,
     }
     claim_id = _entry_id('CLM-PS', canonical_json(claim_core), limit=50)
+    # A retried request carries the same claim id, so the benefit it already
+    # reserved is not reserved a second time.
+    open_claim_ids = [str(item) for item in (rider.get('open_claim_ids') or [])]
+    if claim_id not in open_claim_ids:
+        if open_cents + amount_cents > benefit:
+            raise PhinSafeIntegrityError('claim exceeds the remaining PhinSafe benefit', status=409)
+        open_cents += amount_cents
+        open_claim_ids.append(claim_id)
     return {
         'claim': {
             'id': claim_id,
@@ -1162,7 +1222,8 @@ def open_claim(
             'pregnancy_start': pregnancy.isoformat(),
             'document_hash': document_hash(claim_core),
         },
-        'open_claims_cents': open_cents + amount_cents,
+        'open_claims_cents': open_cents,
+        'open_claim_ids': open_claim_ids,
         'first_pregnancy_start': pregnancy.isoformat(),
         'ledger': {
             'event_type': CLAIM_EVENT,

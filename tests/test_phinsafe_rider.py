@@ -16,8 +16,11 @@ from services.phinsafe_rider import (
     anchor_book,
     anchor_rider,
     bind_rider,
+    build_installment,
+    money_cents,
     open_claim,
     project_book,
+    rider_from_policy,
 )
 from services.process_pipeline_orchestrator import ProcessPipelineOrchestrator
 
@@ -259,6 +262,100 @@ def test_claim_stays_inside_the_settled_benefit_after_the_wait():
         )
 
 
+def test_a_retried_claim_reserves_the_benefit_once():
+    book = project_book(_snapshot(), parent_max_age=40, market_share_pct=10)
+    bound = bind_rider(
+        book=book, customer=_parent(), policies=_policies(),
+        community_id='all-communities', join_date='2026-06-01',
+    )
+    rider = bound['rider']
+    first = open_claim(
+        rider, amount=1000, incident_date='2028-01-15', pregnancy_start='2027-07-01',
+    )
+    assert first['open_claims_cents'] == 100000
+    rider['open_claims_cents'] = first['open_claims_cents']
+    rider['open_claim_ids'] = first['open_claim_ids']
+    rider['first_pregnancy_start'] = first['first_pregnancy_start']
+    again = open_claim(
+        rider, amount=1000, incident_date='2028-01-15', pregnancy_start='2027-07-01',
+    )
+    assert again['claim']['id'] == first['claim']['id']
+    assert again['open_claims_cents'] == 100000
+    assert again['open_claim_ids'] == first['open_claim_ids']
+
+    ledger = _Ledger()
+    anchor = anchor_rider(ledger, first, actor='claims_adjuster')
+    assert anchor['event_type'] == 'phinsafe_claim_opened'
+    assert ledger.events[0]['event_type'] == 'phinsafe_claim_opened'
+
+
+def test_a_settled_policy_cannot_be_bound_again():
+    book = project_book(_snapshot(), parent_max_age=40, market_share_pct=10)
+    bound = bind_rider(
+        book=book, customer=_parent(), policies=_policies(),
+        community_id='all-communities', join_date='2026-06-01',
+    )
+    settled = _policies()
+    for policy in settled:
+        policy['riders'] = bound['policy_patches'][policy['id']]['riders']
+    with pytest.raises(PhinSafeIntegrityError, match='already has a permanent'):
+        bind_rider(
+            book=book, customer=_parent(), policies=settled,
+            community_id='all-communities', join_date='2026-09-01',
+        )
+    with pytest.raises(PhinSafeIntegrityError, match='already has a permanent'):
+        bind_rider(
+            book=book, customer=_parent(), policies=settled[:1],
+            community_id='all-communities', join_date='2026-06-01',
+        )
+
+
+def test_rider_savings_reads_the_persisted_parent_premium():
+    book = project_book(_snapshot(), parent_max_age=40, market_share_pct=10)
+
+    def _bind(policy):
+        return bind_rider(
+            book=book, customer=_parent(), policies=[policy],
+            community_id='all-communities', join_date='2026-06-01',
+        )['rider']
+
+    pinned = _bind({
+        'id': 'POL-PIN', 'customer_id': 'CUST-PARENT', 'status': 'active',
+        'coverage_amount': 250000, 'annual_premium': 1200,
+        'savings_premium_annual': 300, 'billing': {},
+    })
+    assert pinned['savings_premium'] == 60.0
+    allocated = _bind({
+        'id': 'POL-HW', 'customer_id': 'CUST-PARENT', 'status': 'active',
+        'coverage_amount': 250000, 'annual_premium': 1200,
+        'health_wallet': '{"allocation_percentage": 25}', 'billing': {},
+    })
+    assert allocated['savings_premium'] == 60.0
+    assert allocated['savings_premium_cents'] == 6000
+
+
+def test_policy_stamp_premium_agrees_in_dollars_and_cents():
+    book = project_book(_snapshot(), parent_max_age=40, market_share_pct=10)
+    bound = bind_rider(
+        book=book, customer=_parent(), policies=_policies(),
+        community_id='all-communities', join_date='2026-06-01',
+    )
+    stamp = bound['policy_patches']['POL-A']['riders']['phinsafe']
+    assert stamp['annual_premium_cents'] == money_cents(stamp['annual_premium']) == 24000
+    assert stamp['savings_premium_cents'] == money_cents(stamp['savings_premium']) == 6000
+    assert stamp['total_annual_premium_cents'] == money_cents(stamp['total_annual_premium']) == 36000
+    assert stamp['total_savings_premium_cents'] == money_cents(stamp['total_savings_premium']) == 6000
+    # The installment is one rider, not one policy, so it bills the whole book.
+    bill = build_installment(stamp, year=2026, month=6)
+    assert bill['amount'] == 30.0
+    assert bill['premium_breakdown']['phinsafe_savings_amount'] == 5.0
+    view = rider_from_policy({'id': 'POL-A', 'customer_id': 'CUST-PARENT',
+                              'riders': {'phinsafe': stamp}})
+    assert view['annual_premium_cents'] == 36000
+    assert view['annual_premium'] == 360.0
+    assert view['savings_premium_cents'] == 6000
+
+
 def test_generated_simulation_slice_keeps_its_identities():
     params = SimulationParams(
         customer_count=80,
@@ -439,6 +536,17 @@ def test_actuary_dashboard_api_anchors_then_binds():
         assert status == 200, claim
         assert claim['claim']['status'] == 'pending'
         assert claim['claim']['id'] in portal.CLAIMS
+        assert claim['ledger']['event_type'] == 'phinsafe_claim_opened'
+        assert portal.POLICIES['POL-SAFE-1']['riders']['phinsafe']['open_claims_cents'] == 250000
+
+        retried, status = _post(base + '/api/actuarial/phinsafe/claim', {
+            'policy_id': 'POL-SAFE-1',
+            'amount': 2500,
+            'incident_date': '2028-05-01',
+            'pregnancy_start': '2027-04-01',
+        }, token)
+        assert status == 200, retried
+        assert retried['claim']['id'] == claim['claim']['id']
         assert portal.POLICIES['POL-SAFE-1']['riders']['phinsafe']['open_claims_cents'] == 250000
     finally:
         server.shutdown()

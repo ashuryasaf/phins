@@ -11222,7 +11222,8 @@ def _persist_phinsafe_bill(bill: Dict[str, Any], anchor: Dict[str, Any]) -> None
 
 
 def _persist_phinsafe_claim(claim: Dict[str, Any], anchor: Dict[str, Any], policy_ids: List[str],
-                            open_claims_cents: int, pregnancy_start: str) -> None:
+                            open_claims_cents: int, open_claim_ids: List[str],
+                            pregnancy_start: str) -> None:
     stored = dict(claim)
     stored['ledger_entry_id'] = anchor.get('entry_id')
     stored['filed_date'] = datetime.now().isoformat()
@@ -11241,6 +11242,7 @@ def _persist_phinsafe_claim(claim: Dict[str, Any], anchor: Dict[str, Any], polic
         if not isinstance(riders, dict) or not isinstance(riders.get('phinsafe'), dict):
             continue
         riders['phinsafe']['open_claims_cents'] = int(open_claims_cents)
+        riders['phinsafe']['open_claim_ids'] = [str(claim_id) for claim_id in (open_claim_ids or [])]
         riders['phinsafe']['first_pregnancy_start'] = pregnancy_start
         current['riders'] = riders
         POLICIES[policy_id] = current
@@ -36125,6 +36127,7 @@ For claims or questions, please contact:
                     anchor,
                     list(rider.get('policy_ids') or [policy_id]),
                     int(opened['open_claims_cents']),
+                    list(opened.get('open_claim_ids') or []),
                     str(opened['first_pregnancy_start']),
                 )
                 claim = opened['claim']
