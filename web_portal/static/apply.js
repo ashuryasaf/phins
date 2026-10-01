@@ -1404,7 +1404,7 @@ function populateReview() {
     
     // Payment Information
     const cardLabels = { visa: 'Visa', mastercard: 'Mastercard', amex: 'American Express', discover: 'Discover' };
-    const billingFreqLabels = { monthly: 'Monthly', quarterly: 'Quarterly (Save 3%)', annual: 'Annual (Save 10%)' };
+    const billingFreqLabels = { monthly: 'Monthly', quarterly: 'Quarterly (Save 3%)', annual: 'Annual (per year)' };
     
     const paymentHtml = `
         <div class="review-item">

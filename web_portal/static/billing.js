@@ -2806,7 +2806,7 @@ function populateBillingFormFields() {
   if (selectedBillingPolicy) {
     const monthly = selectedBillingPolicy.monthly_premium || 0;
     const annual = selectedBillingPolicy.annual_premium || (monthly * 12);
-    const quarterly = selectedBillingPolicy.quarterly_premium || (monthly * 3);
+    const quarterly = selectedBillingPolicy.quarterly_premium || (monthly * 3 * 0.97);
     
     switch (paymentType) {
       case 'premium':
@@ -4474,7 +4474,7 @@ async function runAutoPayAll() {
     if (result.success || result.processed > 0) {
       const count = result.processed || 0;
       const total = result.total_amount || 0;
-      const failed = result.failed || 0;
+      const failed = result.failed_count || (Array.isArray(result.failed) ? result.failed.length : 0);
       let html = `<div style="color:white;">
         <div style="font-size:1.1rem; font-weight:700; margin-bottom:8px;"> Auto-Pay Complete</div>
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(120px,1fr)); gap:8px; margin-bottom:8px;">

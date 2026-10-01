@@ -8905,7 +8905,7 @@
           <ul style="margin: 8px 0 0 16px; color: #555; font-size: 0.9rem;">
             <li>Never miss a payment</li>
             <li>Automatic investment allocation</li>
-            <li>5% discount on annual payments</li>
+            <li>Collected on the 1st of the billing period</li>
           </ul>
         </div>
         
@@ -8921,16 +8921,14 @@
           <select id="billing-frequency" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px;">
             <option value="monthly">Monthly</option>
             <option value="quarterly">Quarterly (3% discount)</option>
-            <option value="annually">Annually (5% discount)</option>
+            <option value="annual">Annually (per year)</option>
           </select>
         </div>
         
         <div style="margin-bottom: 16px;">
           <label style="display: block; margin-bottom: 8px; font-weight: 500;">Payment Day</label>
           <select id="payment-day" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px;">
-            <option value="1">1st of the month</option>
-            <option value="15">15th of the month</option>
-            <option value="last">Last day of the month</option>
+            <option value="1">1st of the billing period</option>
           </select>
         </div>
         
@@ -8945,13 +8943,61 @@
     async function saveAutoPaySettings() {
       const enabled = document.getElementById('autopay-enabled').checked;
       const frequency = document.getElementById('billing-frequency').value;
-      const day = document.getElementById('payment-day').value;
-      
-      // Record settings change on NFT
-      await recordCustomerAction('settings_change', 0, `Auto-pay ${enabled ? 'enabled' : 'disabled'}, ${frequency} billing`);
-      
+      const cid = customerId || sessionStorage.getItem('customer_id');
+      const policies = (customerDataCache.policies || []).filter(function(policy) {
+        const status = String(policy.status || '').toLowerCase();
+        return status === 'active' || status === 'approved';
+      });
+      if (!cid || policies.length === 0) {
+        showNotification('No active policy is available to schedule.', 'error');
+        return;
+      }
+      const failures = [];
+      for (const policy of policies) {
+        const setup = policy.payment_setup || {};
+        const method = (policy.billing || {}).payment_method || {};
+        const cardLast4 = setup.card_last4 || method.card_last4;
+        const payload = {
+          customer_id: cid,
+          policy_id: policy.id || policy.policy_id,
+          enabled: enabled,
+          billing_frequency: frequency,
+          billing_day: 1,
+          payment_method: 'credit_card'
+        };
+        if (cardLast4) {
+          payload.card_last4 = cardLast4;
+          payload.card_type = setup.card_type || method.card_type || 'visa';
+        }
+        try {
+          const response = await fetch('/api/billing/auto-pay/configure', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify(payload)
+          });
+          const result = await response.json();
+          if (!response.ok || result.error) {
+            failures.push(result.error || payload.policy_id);
+          }
+        } catch (err) {
+          failures.push(err.message);
+        }
+      }
+      if (failures.length) {
+        showNotification('Auto-pay was not saved: ' + failures[0], 'error');
+        return;
+      }
+      await recordCustomerAction('settings_change', 0, `Auto-pay ${enabled ? 'enabled' : 'disabled'}, ${frequency} billing on the 1st`);
       closeSettingsModal();
-      showNotification(` Auto-pay settings saved! ${enabled ? 'Auto-pay is now enabled.' : 'Auto-pay is disabled.'}`, 'success');
+      showNotification(
+        enabled
+          ? 'Auto-pay is on. Premiums collect on the 1st of the billing period.'
+          : 'Auto-pay is off for your active policies.',
+        'success'
+      );
     }
     
     // Show change password modal
