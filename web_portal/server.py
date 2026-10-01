@@ -7140,7 +7140,7 @@ def _next_cycle_due(cycle_moment: datetime, frequency: str) -> datetime:
         from services.automation.billing_schedule import next_quarter_start
         return datetime.combine(next_quarter_start(anchor), datetime.min.time())
     if frequency == 'annual':
-        return datetime(anchor.year + 1, 1, 1)
+        return _add_months_first_day(anchor, 12)
     return _add_months_first_day(anchor, 1)
 
 
@@ -8390,6 +8390,14 @@ def run_monthly_auto_pay(
         if is_suspended_account(policy.get('customer_id', '')):
             continue
         if not status_eq(policy, 'active', 'approved'):
+            continue
+        # A recorded opt-out is the customer's choice. Skip before normalization,
+        # which would otherwise switch auto-pay back on and collect anyway.
+        auto_pay_flags = [
+            (policy.get('payment_setup') or {}).get('auto_pay'),
+            (policy.get('billing') or {}).get('auto_pay'),
+        ]
+        if any(flag is not None for flag in auto_pay_flags) and not any(auto_pay_flags):
             continue
 
         working = copy.deepcopy(policy) if dry_run else policy

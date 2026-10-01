@@ -104,6 +104,12 @@ def test_frequency_alias_and_quoted_installments():
     ) == 1200.0
 
 
+def test_next_cycle_due_advances_a_full_year_from_the_settled_due_date():
+    assert portal._next_cycle_due(datetime(2026, 1, 1), "annual") == datetime(2027, 1, 1)
+    assert portal._next_cycle_due(datetime(2026, 6, 1), "annual") == datetime(2027, 6, 1)
+    assert portal._next_cycle_due(datetime(2026, 12, 1), "annual") == datetime(2027, 12, 1)
+
+
 def test_upcoming_statement_due_is_the_next_first():
     march = datetime(2026, 3, 15, 12, 0, 0)
     april_first = datetime(2026, 4, 1, 8, 0, 0)
@@ -202,6 +208,70 @@ def test_quarterly_and_annual_collect_the_quoted_installment_once():
     assert report["total_amount"] == 1200.0
     paid = [b for b in portal.BILLING.values() if b.get("policy_id") == "POL-Y"]
     assert len(paid) == 1 and paid[0]["amount"] == 1200.0
+
+
+def test_a_mid_year_annual_policy_is_rescheduled_a_year_out():
+    _seed_policy(
+        policy_id="POL-ANN-MID",
+        customer_id="CUST-ANN-MID",
+        frequency="annual",
+        annual=1200.0,
+        next_due="2026-06-01T00:00:00",
+    )
+
+    report = portal.run_monthly_auto_pay(
+        reference_datetime=datetime(2026, 6, 1, 8, 0, 0),
+        specific_policy="POL-ANN-MID",
+        dry_run=False,
+        notify_users=False,
+    )
+
+    assert report["processed"] == 1
+    assert report["total_amount"] == 1200.0
+    assert portal.POLICIES["POL-ANN-MID"]["payment_setup"]["next_billing_date"].startswith(
+        "2027-06-01"
+    )
+
+    january = portal.run_monthly_auto_pay(
+        reference_datetime=datetime(2027, 1, 1, 8, 0, 0),
+        specific_policy="POL-ANN-MID",
+        dry_run=False,
+        notify_users=False,
+    )
+    assert january["processed"] == 0
+    assert len(_txs("premium_payment")) == 1
+
+
+def test_an_opted_out_policy_is_neither_re_enabled_nor_charged():
+    _seed_policy(
+        policy_id="POL-MANUAL",
+        customer_id="CUST-MANUAL",
+        next_due="2026-04-01T00:00:00",
+    )
+    portal.POLICIES["POL-MANUAL"]["payment_setup"]["auto_pay"] = False
+    portal.POLICIES["POL-MANUAL"]["billing"]["auto_pay"] = False
+    _open_bill(
+        "BILL-MANUAL",
+        amount=100.0,
+        due="2026-04-01T00:00:00",
+        cycle="2026-04",
+        policy_id="POL-MANUAL",
+        customer_id="CUST-MANUAL",
+    )
+
+    report = portal.run_monthly_auto_pay(
+        reference_datetime=datetime(2026, 4, 1, 8, 0, 0),
+        specific_policy="POL-MANUAL",
+        dry_run=False,
+        notify_users=False,
+    )
+
+    assert report["processed"] == 0
+    assert portal.BILLING["BILL-MANUAL"]["status"] == "outstanding"
+    assert _txs("premium_payment") == []
+    policy = portal.POLICIES["POL-MANUAL"]
+    assert policy["payment_setup"]["auto_pay"] is False
+    assert policy["billing"]["auto_pay"] is False
 
 
 def test_off_first_collects_overdue_and_leaves_future_bills():
