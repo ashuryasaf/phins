@@ -426,6 +426,7 @@ def prepare_customer_download_charts(charts: Optional[List[Dict[str, Any]]]) -> 
 # Uploaded risk-cover types a consultant walks through with the customer.
 # Only rows with an uploaded amount or cost are shown — never invented.
 _COVER_FIELD_SPECS = (
+    ('death_lump_sum', 'death_lump_sum', '', 'סכום ביטוח למקרה מוות – חד פעמי', 'Lump-sum death benefit'),
     ('life', 'death_coverage', 'death_premium', 'ביטוח חיים', 'Life Insurance'),
     ('disability_work', 'disability_coverage', 'disability_premium', 'אבדן כושר עבודה', 'Loss of Work Capacity'),
     ('disability_work', 'work_disability_coverage', 'work_disability_premium', 'אבדן כושר עבודה', 'Loss of Work Capacity'),
@@ -446,6 +447,7 @@ _COVER_CODE_LABELS = {
 }
 
 ACCOUNT_COVER_COPY_KEYS = (
+    'death_lump_sum',
     'death_coverage', 'death_premium',
     'disability_coverage', 'disability_premium',
     'work_disability_coverage', 'work_disability_premium',
@@ -478,8 +480,13 @@ def _as_cover_number(value: Any) -> float:
 
 def classify_cover_type(code: Any, name: Any) -> Tuple[str, str, str]:
     """Map an uploaded cover code/name to a consultant-facing type."""
+    from services.pension.schema import DEATH_LUMP_SUM_LABEL, normalize_hebrew_header
+
     label = str(name or '').strip()
     code_text = str(code or '').strip()
+    normalized = normalize_hebrew_header(label)
+    if 'למקרה מוות' in normalized and 'חד פעמי' in normalized:
+        return 'death_lump_sum', DEATH_LUMP_SUM_LABEL, 'Lump-sum death benefit'
     mapped = _COVER_CODE_LABELS.get(code_text)
     if mapped and not label:
         return mapped

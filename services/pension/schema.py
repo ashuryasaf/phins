@@ -299,6 +299,11 @@ class MislakaSchemaMapping:
         'KitzbaChodshit': 'monthly_pension',
         'KISUY-MAVET': 'death_coverage',
         'KisuyMavet': 'death_coverage',
+        # SchumeiBituahYesodi: the lump-sum death benefit. The agent column is
+        # "סכום ביטוח למקרה מוות – חד פעמי". It is a face amount, not צבירה.
+        'SCHUM-BITUH-LEMAVET': 'death_lump_sum',
+        'SCHUM-BITUACH-LEMAVET': 'death_lump_sum',
+        'SCHUM-BITUH-LEMIKRE-MAVET': 'death_lump_sum',
         'KISUY-NECHUT': 'disability_coverage',
         'KisuyNechut': 'disability_coverage',
         'DMEY-BITUACH-MAVET': 'death_premium',
@@ -472,7 +477,7 @@ class CompiledFields:
         'total_balance', 'savings_balance', 'severance_balance',
         'employer_severance', 'compensation_balance', 'coverage_amount',
         'monthly_pension', 'management_fee_savings', 'management_fee_deposits',
-        'death_coverage', 'disability_coverage', 'death_premium', 'disability_premium',
+        'death_coverage', 'death_lump_sum', 'disability_coverage', 'death_premium', 'disability_premium',
         'work_disability_coverage', 'work_disability_premium',
         'invalidity_coverage', 'invalidity_premium',
         'waiver_coverage', 'waiver_premium',
@@ -580,6 +585,9 @@ HEBREW_COLUMN_FIELDS: Dict[str, str] = {
     'שם מעסיק': 'employer_name',
     'ביטוח חיים': 'death_coverage',
     'כיסוי מוות': 'death_coverage',
+    # Exact column from insurer / Swiftness grids. Longer than ביטוח חיים so
+    # the substring pass cannot fold it into the generic life cover.
+    'סכום ביטוח למקרה מוות - חד פעמי': 'death_lump_sum',
     'פרמיה ביטוח חיים': 'death_premium',
     'פרמיית ביטוח חיים': 'death_premium',
     'עלות ביטוח חיים': 'death_premium',
@@ -638,11 +646,25 @@ _HEBREW_PUNCT_TRANSLATION = str.maketrans({
 })
 
 _HEADER_SPACE_RE = re.compile(r'\s+')
+_HEADER_DASH_RE = re.compile(r'\s*-\s*')
+# Hyphen, en dash, em dash, minus — the death-benefit column uses "–".
+_DASH_TRANSLATION = str.maketrans({
+    '\u2010': '-',
+    '\u2011': '-',
+    '\u2012': '-',
+    '\u2013': '-',
+    '\u2014': '-',
+    '\u2212': '-',
+})
+
+# Consultant label for SCHUM-BITUH-LEMAVET when payment is a single sum.
+DEATH_LUMP_SUM_LABEL = 'סכום ביטוח למקרה מוות – חד פעמי'
 
 
 def normalize_hebrew_header(name: str) -> str:
     """Collapse Swiftness/Mislaka header punctuation so ``סה״כ צבירה`` matches ``סה"כ צבירה``."""
-    text = str(name or '').strip().translate(_HEBREW_PUNCT_TRANSLATION)
+    text = str(name or '').strip().translate(_HEBREW_PUNCT_TRANSLATION).translate(_DASH_TRANSLATION)
+    text = _HEADER_DASH_RE.sub(' - ', text)
     text = _HEADER_SPACE_RE.sub(' ', text)
     if text.endswith('.'):
         text = text[:-1].rstrip()
@@ -678,7 +700,7 @@ SPREADSHEET_MONEY_FIELDS = frozenset({
     'total_balance', 'savings_balance', 'balance', 'tagmulim_balance',
     'severance_balance',
     'management_fee', 'management_fee_savings', 'management_fee_deposits',
-    'death_coverage', 'death_premium',
+    'death_coverage', 'death_lump_sum', 'death_premium',
     'disability_coverage', 'disability_premium',
     'work_disability_coverage', 'work_disability_premium',
     'invalidity_coverage', 'invalidity_premium',
@@ -690,7 +712,7 @@ SPREADSHEET_MONEY_FIELDS = frozenset({
 })
 
 COVER_FACE_FIELDS = (
-    'death_coverage', 'disability_coverage', 'work_disability_coverage',
+    'death_lump_sum', 'death_coverage', 'disability_coverage', 'work_disability_coverage',
     'invalidity_coverage', 'waiver_coverage', 'survivors_coverage', 'ltc_coverage',
 )
 
@@ -855,7 +877,7 @@ __all__ = [
     'MislakaSchemaMapping', 'CompiledFields', 'tag_variants',
     'HEBREW_COLUMN_FIELDS', 'normalize_hebrew_header', 'map_hebrew_column',
     'looks_like_pension_table', 'PENSION_TABULAR_INDICATORS',
-    'SPREADSHEET_MONEY_FIELDS', 'COVER_FACE_FIELDS', 'parse_money',
+    'SPREADSHEET_MONEY_FIELDS', 'COVER_FACE_FIELDS', 'DEATH_LUMP_SUM_LABEL', 'parse_money',
     'account_accumulation', 'tagmulim_amount', 'deduped_sum',
     'accumulation_by', 'accumulation_by_provider', 'cover_face_total',
     'unique_policy_count',

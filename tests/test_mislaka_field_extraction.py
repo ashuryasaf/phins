@@ -190,6 +190,11 @@ class TestHebrewHeaderNormalization(unittest.TestCase):
         self.assertEqual(map_hebrew_column('ת.ז'), 'id_number')
         self.assertEqual(map_hebrew_column('פיצויים'), 'severance_balance')
         self.assertEqual(map_hebrew_column('ביטוח חיים'), 'death_coverage')
+        self.assertEqual(map_hebrew_column('סכום ביטוח למקרה מוות – חד פעמי'), 'death_lump_sum')
+        self.assertEqual(map_hebrew_column('סכום ביטוח למקרה מוות - חד פעמי'), 'death_lump_sum')
+        self.assertEqual(map_hebrew_column('סכום ביטוח למקרה מוות-חד פעמי'), 'death_lump_sum')
+        self.assertNotEqual(map_hebrew_column('סכום ביטוח למקרה מוות – חד פעמי'), 'death_coverage')
+        self.assertNotEqual(map_hebrew_column('סכום ביטוח למקרה מוות – חד פעמי'), 'total_balance')
         self.assertEqual(map_hebrew_column('אבדן כושר עבודה'), 'disability_coverage')
         self.assertEqual(map_hebrew_column('שחרור'), 'waiver_coverage')
         self.assertEqual(map_hebrew_column('שארים'), 'survivors_coverage')
@@ -529,6 +534,87 @@ class TestHoldingsSpreadsheetAccumulation(unittest.TestCase):
         self.assertEqual(totals['total_balance'], 420808.64)
         self.assertEqual(totals['by_provider']['הכשרה ביטוח'], 420808.64)
         self.assertEqual(totals['account_count'], 1)
+
+
+# Face amounts from a holdings grid column "סכום ביטוח למקרה מוות – חד פעמי".
+# They are the lump-sum death benefit, not צבירה.
+LUMP_SUM_DEATH_AMOUNTS = (
+    3491.00,
+    1181862.00,
+    1194850.00,
+    593289.00,
+    0.00,
+    1635322.00,
+)
+
+
+class TestLumpSumDeathBenefit(unittest.TestCase):
+    """SCHUM-BITUH-LEMAVET / the חד פעמי death column stays a cover face amount."""
+
+    def test_spreadsheet_column_keeps_each_uploaded_amount_out_of_accumulation(self):
+        header = 'מספר פוליסה,יצרן,סה״כ חיסכון,סכום ביטוח למקרה מוות – חד פעמי'
+        lines = [header]
+        for index, amount in enumerate(LUMP_SUM_DEATH_AMOUNTS, start=1):
+            lines.append(f'POL-D{index},הכשרה ביטוח,{index * 10},"{amount:,.2f}"')
+        payload = ('\n'.join(lines) + '\n').encode('utf-8')
+        service = init_ai_reports_service()
+        parsed, _ = service.parse_content('lump-death.csv', payload, 'csv')
+        pension = parsed.get('pension_data') or {}
+        accounts = pension.get('accounts') or []
+        totals = pension.get('totals') or {}
+        self.assertEqual(len(accounts), 6)
+        parsed_amounts = [account.get('death_lump_sum') for account in accounts]
+        self.assertEqual(parsed_amounts, list(LUMP_SUM_DEATH_AMOUNTS))
+        positive = [amount for amount in LUMP_SUM_DEATH_AMOUNTS if amount > 0]
+        self.assertEqual(sum(positive), 4608814.00)
+        self.assertEqual(totals.get('total_balance'), 210.0)
+        self.assertLess(totals.get('total_balance'), 4608814.00)
+        for account in accounts:
+            self.assertNotEqual(account.get('total_balance'), account.get('death_lump_sum'))
+            self.assertNotEqual(account.get('savings_balance'), account.get('death_lump_sum') or None)
+
+        from services.risk_reports.pdf_export import collect_uploaded_risk_covers
+        covers = collect_uploaded_risk_covers(accounts)
+        lump = [row for row in covers if row.get('type_key') == 'death_lump_sum']
+        self.assertEqual(
+            sorted(row['amount'] for row in lump),
+            sorted(positive),
+        )
+        self.assertTrue(all(row['title_he'] == 'סכום ביטוח למקרה מוות – חד פעמי' for row in lump))
+        self.assertEqual(sum(row['amount'] for row in lump), 4608814.00)
+
+    def test_xml_schum_bituh_lemavet_is_the_same_field(self):
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Mimshak>
+  <YeshutYatzran>
+    <SHEM-YATZRAN>הכשרה ביטוח</SHEM-YATZRAN>
+    <Mutzar>
+      <HeshbonOPolisa>
+        <MISPAR-POLISA-O-HESHBON>POL-XML-LUMP</MISPAR-POLISA-O-HESHBON>
+        <TOTAL-CHISACHON>10</TOTAL-CHISACHON>
+        <SchumeiBituahYesodi>
+          <SCHUM-BITUH-LEMAVET>1181862.00</SCHUM-BITUH-LEMAVET>
+          <OFEN-TASHLUM-SCHUM-BITUAH>1</OFEN-TASHLUM-SCHUM-BITUAH>
+        </SchumeiBituahYesodi>
+        <Kisuyim>
+          <Kisuy>
+            <SHEM-KISUY>סכום ביטוח למקרה מוות – חד פעמי</SHEM-KISUY>
+            <SCHUM-KISUY>3491</SCHUM-KISUY>
+          </Kisuy>
+        </Kisuyim>
+      </HeshbonOPolisa>
+    </Mutzar>
+  </YeshutYatzran>
+</Mimshak>
+""".encode('utf-8')
+        data = _agent()._parse_mislaka_xml(xml)
+        account = data['accounts'][0]
+        self.assertEqual(account.get('death_lump_sum'), 1181862.00)
+        self.assertEqual(account.get('total_balance'), 10.0)
+        nested = account.get('risk_covers') or []
+        named = next(item for item in nested if item.get('amount') == 3491)
+        self.assertIn('למקרה מוות', named.get('name') or '')
+        self.assertIn('חד פעמי', named.get('name') or '')
 
 
 class TestFacadeStillResolves(unittest.TestCase):

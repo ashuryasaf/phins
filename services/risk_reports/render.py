@@ -436,6 +436,7 @@ Factors Affecting Score:
                     'סה״כ פרמיה חודשית' if is_hebrew else 'Monthly Premium': acct.get('monthly_premium', 0),
                     'אחוז במסלול' if is_hebrew else 'Track Percent': acct.get('track_percent', 0),
                     'תשואה' if is_hebrew else 'Yield': acct.get('yield_rate', 0),
+                    'סכום ביטוח למקרה מוות – חד פעמי' if is_hebrew else 'Lump-sum death benefit': acct.get('death_lump_sum', 0),
                     'ביטוח חיים' if is_hebrew else 'Life Cover': acct.get('death_coverage', 0),
                     'פרמיה ביטוח חיים' if is_hebrew else 'Life Premium': acct.get('death_premium', 0),
                     'אבדן כושר עבודה' if is_hebrew else 'Work Disability': acct.get('disability_coverage', 0) or acct.get('work_disability_coverage', 0),
