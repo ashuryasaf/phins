@@ -185,6 +185,8 @@ class Policy(Base):
     # JSON fields stored as text
     billing = Column(Text)  # JSON string for billing configuration
     health_wallet = Column(Text)  # JSON string for health wallet config
+    # Attached riders (PhinSafe and later endorsements). JSON object keyed by product id.
+    riders = Column(Text)
     
     # Relationships
     customer = relationship("Customer", back_populates="policies")
@@ -222,7 +224,8 @@ class Policy(Base):
             'updated_date': self.updated_date.isoformat() if self.updated_date else None,
             'uw_status': self.uw_status,
             'billing': safe_json_loads(self.billing),
-            'health_wallet': safe_json_loads(self.health_wallet)
+            'health_wallet': safe_json_loads(self.health_wallet),
+            'riders': safe_json_loads(self.riders),
         }
 
 

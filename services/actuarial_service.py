@@ -2307,6 +2307,10 @@ class PortfolioSimulator:
         age_adl_cells: Dict[Tuple[str, int], Dict[str, int]] = {}
         age_hist: Dict[int, Dict[str, int]] = {}
         
+        # Accepted-only money by integer age. Declined applicants stay out
+        # so the sums reconcile to the premium totals below.
+        age_money: Dict[int, Dict[str, float]] = {}
+
         # Financial totals
         totals = {
             'coverage': 0,
@@ -2374,6 +2378,33 @@ class PortfolioSimulator:
             totals['pv_mortality_claims'] += customer['pv_mortality']
             totals['pv_disability_claims'] += customer['pv_disability']
             totals['expected_claims_year1'] += customer['expected_claims_year1']
+
+            # Per-age money of the accepted book. PhinSafe (and any later
+            # rider that must slice parents under a maximum age) reads this
+            # ledger instead of drawing a second portfolio.
+            money = age_money.get(age_years)
+            if money is None:
+                money = {
+                    'accepted': 0,
+                    'term_years': 0,
+                    'coverage': 0.0,
+                    'annual_premium': 0.0,
+                    'risk_premium': 0.0,
+                    'savings_premium': 0.0,
+                    'pv_mortality': 0.0,
+                    'pv_disability': 0.0,
+                    'expected_claims_year1': 0.0,
+                }
+                age_money[age_years] = money
+            money['accepted'] += 1
+            money['term_years'] += int(customer['term'])
+            money['coverage'] += float(customer['coverage'])
+            money['annual_premium'] += float(customer['annual_premium'])
+            money['risk_premium'] += float(customer['risk_premium'])
+            money['savings_premium'] += float(customer['savings_premium'])
+            money['pv_mortality'] += float(customer['pv_mortality'])
+            money['pv_disability'] += float(customer['pv_disability'])
+            money['expected_claims_year1'] += float(customer['expected_claims_year1'])
             
             # Update demographics
             age_bracket = self._get_age_bracket(customer['age'])
@@ -2521,6 +2552,10 @@ class PortfolioSimulator:
         )
 
         # Build result
+        from services.phinsafe_rider import finalize_accepted_money_by_age
+        accepted_money = finalize_accepted_money_by_age(
+            age_money, totals, accepted_count,
+        )
         duration = (datetime.now() - start_time).total_seconds()
         age_adl_matrix = finalize_age_adl_matrix(
             age_adl_cells,
@@ -2567,6 +2602,8 @@ class PortfolioSimulator:
             'demographics': demographics,
             'declined': declined,
             'age_adl_matrix': age_adl_matrix,
+            'accepted_money_by_age': accepted_money['rows'],
+            'accepted_money_integrity': accepted_money['integrity'],
             'risk_metrics': risk_metrics,
             'profitability': profitability,
             'automation': automation,
@@ -2576,7 +2613,8 @@ class PortfolioSimulator:
                 'health_wallet': True,
                 'investments': True,
                 'communities': True,
-                'reinsurance': True
+                'reinsurance': True,
+                'phinsafe': True,
             },
             # Verifiable arithmetic chain so the dashboard, audit, and
             # external auditors can prove the simulation totals add up:

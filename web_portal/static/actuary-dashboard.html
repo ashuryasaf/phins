@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <!-- Build stamp: bumped whenever a substantive pricing change ships so
        cached browsers can tell users they are running an old UI. -->
-  <meta name="phins-actuary-dashboard-build" content="2026-09-27.full-simulation-pdf">
+  <meta name="phins-actuary-dashboard-build" content="2026-10-01.phinsafe-rider">
   <!-- Chart.js for the Annuity Reserves forecast bar/line charts. Loaded
        from the same CDN as risk-reports-dashboard.html for consistency. -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -1463,6 +1463,9 @@
           <div class="nav-item" onclick="showSection('simulator')">
             <span>Portfolio Simulator</span>
           </div>
+          <div class="nav-item" onclick="showSection('phinsafe')">
+            <span>PhinSafe Rider</span>
+          </div>
           <div class="nav-item" onclick="showSection('reserves')">
             <span>Reserves &amp; IFRS 17</span>
           </div>
@@ -2348,6 +2351,84 @@
           </button>
           
           <div id="sim-results" class="results-panel" style="display:none;"></div>
+        </section>
+
+        <section id="section-phinsafe" class="section">
+          <div class="annual-brand-banner" id="phinsafe-banner">
+            <div class="brand-row">
+              <img src="/phins-logo.svg" alt="PHINS emblem" class="brand-emblem">
+              <div>
+                <div class="brand-wordmark">PHINS</div>
+                <div class="brand-title">PhinSafe</div>
+              </div>
+            </div>
+            <p class="brand-sub" style="margin:12px 0 0;max-width:760px;line-height:1.45;">
+              Child catastrophe hedge for parents-to-be. Risk plus a savings add-on,
+              settled permanently at one fifth of each attached parent policy.
+              The parent joins at or under a community maximum age, and that maximum
+              stays below this simulator’s maximum age. A first pregnancy is covered
+              only after one year.
+            </p>
+          </div>
+
+          <div class="alert alert-warning">
+            The testing book is a slice of the portfolio simulation above it.
+            It does not draw a second set of lives. Market share applies only to
+            accepted parents from age 18 through the PhinSafe maximum age.
+          </div>
+
+          <div class="card">
+            <div class="card-title">PhinSafe test</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Simulation ID</label>
+                <input type="text" id="phinsafe-simulation-id" class="form-input" placeholder="Run the portfolio simulator first">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Parent maximum joining age</label>
+                <input type="number" id="phinsafe-parent-max-age" class="form-input" value="40" min="18" max="64">
+                <small style="color:var(--text-light);">Must be lower than the simulator maximum age.</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Market share of eligible parents (%)</label>
+                <input type="number" id="phinsafe-market-share" class="form-input" value="10" min="0" max="100" step="0.01">
+              </div>
+            </div>
+
+            <h4 style="margin:8px 0 12px;">Community age program</h4>
+            <p style="color:var(--text-light);margin:0 0 12px;">
+              Each community sets its own maximum joining age, at or under the
+              parent maximum above. Member weights are the share of eligible
+              parents in that community and must sum to 100.
+            </p>
+            <div id="phinsafe-communities">
+              <div class="form-row phinsafe-community">
+                <div class="form-group">
+                  <label class="form-label">Community ID</label>
+                  <input type="text" class="form-input phinsafe-community-id" value="open-community">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Label</label>
+                  <input type="text" class="form-input phinsafe-community-label" value="Open community">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Max joining age</label>
+                  <input type="number" class="form-input phinsafe-community-max" value="40" min="18" max="64">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Member weight %</label>
+                  <input type="number" class="form-input phinsafe-community-weight" value="100" min="0.01" max="100" step="0.01">
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;">
+              <button class="btn btn-outline" type="button" onclick="addPhinsafeCommunity()">Add community</button>
+              <button class="btn btn-primary" type="button" id="phinsafe-run-btn" onclick="runPhinsafeTest()">Run PhinSafe test</button>
+              <button class="btn btn-outline" type="button" onclick="showSection('simulator')">Back to simulator</button>
+            </div>
+          </div>
+
+          <div id="phinsafe-results" class="results-panel" style="display:none;"></div>
         </section>
 
         <!-- Reinsurance Section -->
@@ -4281,6 +4362,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (sectionId === 'ltc-life-research' && window.PhinsLtcLifeResearch) {
         window.PhinsLtcLifeResearch.load();
       }
+      if (sectionId === 'phinsafe' && typeof syncPhinsafeFromSimulation === 'function') {
+        syncPhinsafeFromSimulation();
+      }
     }
     window.addEventListener('hashchange', openSectionFromHash);
     
@@ -4309,6 +4393,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
       if (sectionId === 'ltc-life-research' && window.PhinsLtcLifeResearch) {
         window.PhinsLtcLifeResearch.load();
+      }
+      if (sectionId === 'phinsafe' && typeof syncPhinsafeFromSimulation === 'function') {
+        syncPhinsafeFromSimulation();
       }
     }
     
@@ -5467,6 +5554,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           if (reportIdField) reportIdField.value = data.simulation.simulation_id;
           const reinsIdField = document.getElementById('reins-simulation-id');
           if (reinsIdField) reinsIdField.value = data.simulation.simulation_id;
+          if (typeof syncPhinsafeFromSimulation === 'function') syncPhinsafeFromSimulation();
           // Pre-fill the reserve savings allocation field from the simulator input
           const simSavings = document.getElementById('sim-savings-allocation');
           const reserveSavings = document.getElementById('reserve-savings-alloc');
@@ -13079,6 +13167,164 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
       const filename = `${(p.issuer.name || 'issuer').replace(/[^a-z0-9]+/gi, '_')}_FY${p.issuer.fy}_annual_report.pdf`;
       doc.save(filename);
+    }
+
+    function phinsafeEsc(value) {
+      return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[ch]));
+    }
+
+    function syncPhinsafeFromSimulation() {
+      const sim = (typeof currentSimulation !== 'undefined') ? currentSimulation : null;
+      const idEl = document.getElementById('phinsafe-simulation-id');
+      if (sim && idEl && sim.simulation_id) idEl.value = sim.simulation_id;
+      const simMax = sim && sim.parameters ? parseInt(sim.parameters.age_max, 10) : NaN;
+      const maxEl = document.getElementById('phinsafe-parent-max-age');
+      if (maxEl && Number.isFinite(simMax)) {
+        const ceiling = Math.max(18, simMax - 1);
+        maxEl.max = String(ceiling);
+        const current = parseInt(maxEl.value, 10);
+        if (!Number.isFinite(current) || current >= simMax || current < 18) {
+          maxEl.value = String(Math.min(40, ceiling));
+        }
+      }
+      document.querySelectorAll('.phinsafe-community-max').forEach((input) => {
+        if (!Number.isFinite(simMax)) return;
+        input.max = String(Math.max(18, simMax - 1));
+      });
+    }
+
+    function addPhinsafeCommunity() {
+      const host = document.getElementById('phinsafe-communities');
+      if (!host) return;
+      const row = document.createElement('div');
+      row.className = 'form-row phinsafe-community';
+      row.innerHTML = `
+        <div class="form-group">
+          <label class="form-label">Community ID</label>
+          <input type="text" class="form-input phinsafe-community-id" value="">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Label</label>
+          <input type="text" class="form-input phinsafe-community-label" value="">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Max joining age</label>
+          <input type="number" class="form-input phinsafe-community-max" value="35" min="18" max="64">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Member weight %</label>
+          <input type="number" class="form-input phinsafe-community-weight" value="0" min="0.01" max="100" step="0.01">
+        </div>`;
+      host.appendChild(row);
+      syncPhinsafeFromSimulation();
+    }
+
+    function readPhinsafeCommunities() {
+      return Array.from(document.querySelectorAll('.phinsafe-community')).map((row) => ({
+        community_id: (row.querySelector('.phinsafe-community-id') || {}).value || '',
+        label: (row.querySelector('.phinsafe-community-label') || {}).value || '',
+        max_joining_age: parseInt((row.querySelector('.phinsafe-community-max') || {}).value, 10),
+        member_weight_pct: parseFloat((row.querySelector('.phinsafe-community-weight') || {}).value)
+      })).filter((row) => row.community_id);
+    }
+
+    function renderPhinsafeBook(book) {
+      const host = document.getElementById('phinsafe-results');
+      if (!host) return;
+      host.style.display = 'block';
+      const rider = book.rider_book || {};
+      const eligible = book.eligible_parents || {};
+      const params = book.parameters || {};
+      const checks = (book.integrity || {}).checks || {};
+      const checkRows = Object.keys(checks).map((name) => {
+        const ok = !!checks[name];
+        return `<tr><td>${phinsafeEsc(name.replace(/_/g, ' '))}</td><td>${ok ? 'Pass' : 'Fail'}</td></tr>`;
+      }).join('');
+      const communities = (book.communities || []).map((row) => `
+        <tr>
+          <td>${phinsafeEsc(row.label)}</td>
+          <td>${phinsafeEsc(row.community_id)}</td>
+          <td>${phinsafeEsc(row.max_joining_age)}</td>
+          <td>${phinsafeEsc(row.member_weight_pct)}</td>
+          <td>${fmtCount(row.accepted_parents)}</td>
+          <td>${fmtCurrency(row.coverage)}</td>
+          <td>${fmtCurrency(row.annual_premium)}</td>
+          <td>${fmtCurrency(row.savings_premium)}</td>
+        </tr>`).join('');
+      const ledger = book.ledger || {};
+      host.innerHTML = `
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Eligible parents</div>
+            <div class="stat-value">${fmtCount(eligible.count)}</div>
+          </div>
+          <div class="stat-card success">
+            <div class="stat-label">Settled benefit (1/5)</div>
+            <div class="stat-value">${fmtCurrency(rider.coverage)}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Rider annual premium</div>
+            <div class="stat-value">${fmtCurrency(rider.annual_premium)}</div>
+          </div>
+          <div class="stat-card warning">
+            <div class="stat-label">Savings add-on</div>
+            <div class="stat-value">${fmtCurrency(rider.savings_premium)}</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Contract</div>
+          <p>Permanent settlement. Waiting period ${phinsafeEsc(params.waiting_years)} year before a first pregnancy. Parent maximum age ${phinsafeEsc(params.parent_max_age)}, simulator maximum age ${phinsafeEsc(params.simulator_age_max)}. Market share ${phinsafeEsc(params.market_share_pct)}%.</p>
+          <p style="color:var(--text-light);">Ledger ${phinsafeEsc(ledger.event_type || '')} ${phinsafeEsc(ledger.entry_id || '')}</p>
+          <p style="color:var(--text-light);">Document ${phinsafeEsc(book.document_hash || '')}</p>
+        </div>
+        <div class="card">
+          <div class="card-title">Communities</div>
+          <table class="data-table">
+            <thead><tr><th>Community</th><th>ID</th><th>Max age</th><th>Weight %</th><th>Parents</th><th>Benefit</th><th>Premium</th><th>Savings</th></tr></thead>
+            <tbody>${communities}</tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-title">Integrity</div>
+          <table class="data-table"><tbody>${checkRows}</tbody></table>
+        </div>`;
+    }
+
+    async function runPhinsafeTest() {
+      const btn = document.getElementById('phinsafe-run-btn');
+      const host = document.getElementById('phinsafe-results');
+      if (btn) { btn.disabled = true; btn.textContent = 'Pricing PhinSafe…'; }
+      if (host) {
+        host.style.display = 'block';
+        host.innerHTML = '<div class="loading"><div class="spinner"></div><p>Slicing the published simulation…</p></div>';
+      }
+      const body = {
+        simulation_id: (document.getElementById('phinsafe-simulation-id') || {}).value || '',
+        parent_max_age: parseInt((document.getElementById('phinsafe-parent-max-age') || {}).value, 10),
+        market_share_pct: parseFloat((document.getElementById('phinsafe-market-share') || {}).value),
+        communities: readPhinsafeCommunities()
+      };
+      try {
+        const res = await fetch('/api/actuarial/phinsafe/project', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          if (host) host.innerHTML = `<div class="alert alert-danger">${phinsafeEsc(data.error || 'PhinSafe projection failed')}</div>`;
+        } else {
+          renderPhinsafeBook(data.book);
+        }
+      } catch (err) {
+        if (host) host.innerHTML = `<div class="alert alert-danger">${phinsafeEsc(err.message)}</div>`;
+      }
+      if (btn) { btn.disabled = false; btn.textContent = 'Run PhinSafe test'; }
     }
 
     // Boot the annual report bar on first paint so the cap-table and

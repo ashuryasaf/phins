@@ -11181,6 +11181,85 @@ def get_actuarial_simulation_snapshot(simulation_id: Optional[str]) -> Optional[
     return _copy_json_value(snapshot) if isinstance(snapshot, dict) else None
 
 
+def _phinsafe_copy_record(store: Dict[str, Any], record_id: str) -> Optional[Dict[str, Any]]:
+    """Detach one policy or customer so a later write replaces the whole row."""
+    if not record_id:
+        return None
+    try:
+        record = store.get(record_id)
+    except Exception:
+        return None
+    if not isinstance(record, dict):
+        return None
+    copied = dict(record)
+    copied.setdefault('id', record_id)
+    return copied
+
+
+def _persist_phinsafe_policies(patches: Dict[str, Dict[str, Any]], anchor: Dict[str, Any]) -> None:
+    """Write rider stamps onto each parent policy. Ledger anchor already succeeded."""
+    for policy_id, patch in (patches or {}).items():
+        current = _phinsafe_copy_record(POLICIES, policy_id) or {'id': policy_id}
+        riders = patch.get('riders') or {}
+        phinsafe = riders.get('phinsafe') if isinstance(riders, dict) else None
+        if isinstance(phinsafe, dict):
+            phinsafe['ledger_entry_id'] = anchor.get('entry_id')
+            phinsafe['ledger_entry_hash'] = anchor.get('entry_hash')
+        current['riders'] = riders
+        current['billing'] = patch.get('billing') or {}
+        POLICIES[policy_id] = current
+
+
+def _persist_phinsafe_bill(bill: Dict[str, Any], anchor: Dict[str, Any]) -> None:
+    if not bill or not bill.get('id'):
+        return
+    stored = dict(bill)
+    stored['ledger_entry_id'] = anchor.get('entry_id')
+    stored['created_date'] = datetime.now().isoformat()
+    stored.setdefault('amount_paid', 0.0)
+    stored.setdefault('status', 'outstanding')
+    BILLING[stored['id']] = stored
+
+
+def _persist_phinsafe_claim(claim: Dict[str, Any], anchor: Dict[str, Any], policy_ids: List[str],
+                            open_claims_cents: int, open_claim_ids: List[str],
+                            pregnancy_start: str) -> None:
+    stored = dict(claim)
+    stored['ledger_entry_id'] = anchor.get('entry_id')
+    stored['filed_date'] = datetime.now().isoformat()
+    stored['created_date'] = stored['filed_date']
+    CLAIMS[stored['id']] = stored
+    for policy_id in policy_ids:
+        current = _phinsafe_copy_record(POLICIES, policy_id)
+        if not current:
+            continue
+        riders = current.get('riders')
+        if isinstance(riders, str):
+            try:
+                riders = json.loads(riders or '{}')
+            except json.JSONDecodeError:
+                riders = {}
+        if not isinstance(riders, dict) or not isinstance(riders.get('phinsafe'), dict):
+            continue
+        riders['phinsafe']['open_claims_cents'] = int(open_claims_cents)
+        riders['phinsafe']['open_claim_ids'] = [str(claim_id) for claim_id in (open_claim_ids or [])]
+        riders['phinsafe']['first_pregnancy_start'] = pregnancy_start
+        current['riders'] = riders
+        POLICIES[policy_id] = current
+
+
+def _phinsafe_savings_fraction(policy_id: Optional[str]) -> float:
+    """Contractual savings share of a PhinSafe installment. Zero when unset."""
+    policy = _phinsafe_copy_record(POLICIES, str(policy_id or ''))
+    if not policy:
+        return 0.0
+    try:
+        from services.phinsafe_rider import rider_from_policy, savings_fraction
+        return float(savings_fraction(rider_from_policy(policy)))
+    except Exception:
+        return 0.0
+
+
 def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any],
                           reference: Dict[str, Any], generated_by: str,
                           generated_at: str,
@@ -35907,6 +35986,172 @@ For claims or questions, please contact:
                 }).encode('utf-8'))
                 return
 
+        # PhinSafe child rider: testing book, permanent settlement, claim intake.
+        # The book is anchored on the platform ledger before it is stored.
+        if path in (
+            '/api/actuarial/phinsafe/project',
+            '/api/actuarial/phinsafe/bind',
+            '/api/actuarial/phinsafe/claim',
+        ):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if path == '/api/actuarial/phinsafe/claim':
+                allowed = ['admin', 'actuary', 'claims', 'claims_adjuster', 'underwriter']
+            elif path == '/api/actuarial/phinsafe/bind':
+                allowed = ['admin', 'actuary', 'underwriter']
+            else:
+                allowed = ['admin', 'actuary']
+            if not require_role(session, allowed):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Access denied. Required role: ' + ', '.join(allowed) + '.'
+                }).encode('utf-8'))
+                return
+            length = int(self.headers.get('Content-Length', 0) or 0)
+            raw_body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                payload = json.loads(raw_body or '{}')
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            if not isinstance(payload, dict):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            actor = str((session or {}).get('username') or 'actuary')
+            try:
+                from services.phinsafe_rider import (
+                    PhinSafeIntegrityError,
+                    anchor_book,
+                    anchor_rider,
+                    bind_rider,
+                    open_claim,
+                    project_book,
+                    rider_from_policy,
+                )
+                if path == '/api/actuarial/phinsafe/project':
+                    simulation_id = str(payload.get('simulation_id') or '').strip()
+                    simulation = get_actuarial_simulation_snapshot(simulation_id)
+                    if not simulation:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({
+                            'error': 'Unknown simulation_id. Run the portfolio simulator first.'
+                        }).encode('utf-8'))
+                        return
+                    book = project_book(
+                        simulation,
+                        parent_max_age=payload.get('parent_max_age'),
+                        market_share_pct=payload.get('market_share_pct'),
+                        communities=payload.get('communities'),
+                    )
+                    anchor = anchor_book(platform_event_ledger, book, actor=actor)
+                    book['ledger'] = anchor
+                    with STATE_LOCK:
+                        stored = ACTUARIAL_SIMULATIONS.get(simulation_id)
+                        if isinstance(stored, dict):
+                            stored['phinsafe_book'] = book
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({'success': True, 'book': book}).encode('utf-8'))
+                    return
+
+                if path == '/api/actuarial/phinsafe/bind':
+                    simulation_id = str(payload.get('simulation_id') or '').strip()
+                    simulation = get_actuarial_simulation_snapshot(simulation_id)
+                    book = (simulation or {}).get('phinsafe_book') if simulation else None
+                    if not book:
+                        self._set_json_headers(409)
+                        self.wfile.write(json.dumps({
+                            'error': 'No anchored PhinSafe book for this simulation. Run the PhinSafe test first.'
+                        }).encode('utf-8'))
+                        return
+                    customer_id = str(payload.get('customer_id') or '').strip()
+                    customer = _phinsafe_copy_record(CUSTOMERS, customer_id)
+                    if not customer:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Parent customer was not found.'}).encode('utf-8'))
+                        return
+                    policy_ids = payload.get('policy_ids') or []
+                    if isinstance(policy_ids, str):
+                        policy_ids = [policy_ids]
+                    policies = []
+                    for policy_id in policy_ids:
+                        policy = _phinsafe_copy_record(POLICIES, str(policy_id))
+                        if not policy:
+                            self._set_json_headers(404)
+                            self.wfile.write(json.dumps({
+                                'error': f'Policy {policy_id} was not found.'
+                            }).encode('utf-8'))
+                            return
+                        policies.append(policy)
+                    bound = bind_rider(
+                        book=book,
+                        customer=customer,
+                        policies=policies,
+                        community_id=str(payload.get('community_id') or ''),
+                        join_date=payload.get('join_date'),
+                        pregnancy_start=payload.get('pregnancy_start'),
+                    )
+                    anchor = anchor_rider(platform_event_ledger, bound, actor=actor)
+                    _persist_phinsafe_policies(bound.get('policy_patches') or {}, anchor)
+                    _persist_phinsafe_bill(bound.get('bill') or {}, anchor)
+                    rider = bound['rider']
+                    rider['ledger_entry_id'] = anchor.get('entry_id')
+                    rider['ledger_entry_hash'] = anchor.get('entry_hash')
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'rider': rider,
+                        'bill': bound.get('bill'),
+                        'ledger': anchor,
+                    }).encode('utf-8'))
+                    return
+
+                policy_id = str(payload.get('policy_id') or '').strip()
+                policy = _phinsafe_copy_record(POLICIES, policy_id)
+                if not policy:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Policy was not found.'}).encode('utf-8'))
+                    return
+                rider = rider_from_policy(policy)
+                opened = open_claim(
+                    rider,
+                    amount=payload.get('amount'),
+                    incident_date=payload.get('incident_date'),
+                    pregnancy_start=payload.get('pregnancy_start'),
+                )
+                anchor = anchor_rider(platform_event_ledger, opened, actor=actor)
+                _persist_phinsafe_claim(
+                    opened['claim'],
+                    anchor,
+                    list(rider.get('policy_ids') or [policy_id]),
+                    int(opened['open_claims_cents']),
+                    list(opened.get('open_claim_ids') or []),
+                    str(opened['first_pregnancy_start']),
+                )
+                claim = opened['claim']
+                claim['ledger_entry_id'] = anchor.get('entry_id')
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'claim': claim,
+                    'ledger': anchor,
+                }).encode('utf-8'))
+                return
+            except PhinSafeIntegrityError as exc:
+                self._set_json_headers(int(getattr(exc, 'status', 400) or 400))
+                self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                return
+            except Exception as exc:
+                import traceback
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({
+                    'error': str(exc),
+                    'traceback': traceback.format_exc(),
+                }).encode('utf-8'))
+                return
+
         # =====================================================================
         # ACTUARIAL: Reserve projection (IBNR / IFRS 17 / dividends / tax)
         # POST body: { simulation_id, dividends_pct, tax_pct, ibnr_pct,
@@ -50866,21 +51111,41 @@ For claims or questions, please contact:
                             # Force save to ensure persistence
                             save_ledger_data()
                             
-                            # Route savings portion through pipeline if configured
+                            # Route savings portion through pipeline if configured.
+                            # A PhinSafe installment deposits its own contractual
+                            # savings amount, not the parent's generic savings %.
                             if savings_pipeline_enabled and savings_pipeline_service:
                                 try:
-                                    customer_alloc = get_customer_allocation(customer_id)
-                                    savings_pct = customer_alloc.get('savings_pct', DEFAULT_CUSTOMER_ALLOCATION['savings_pct'])
-                                    savings_amount = amount * (savings_pct / 100)
-                                    
+                                    is_phinsafe = (
+                                        str(bill.get('type') or '') == 'phinsafe_rider'
+                                        or str(bill.get('component') or '') == 'phinsafe'
+                                        or str(bill_id).startswith('BILL-PS-')
+                                    )
+                                    if is_phinsafe:
+                                        source = 'phinsafe_rider'
+                                        if bill.get('status') == 'paid':
+                                            fraction = bill.get('savings_fraction')
+                                            if fraction is None:
+                                                fraction = _phinsafe_savings_fraction(bill.get('policy_id'))
+                                            savings_amount = round(float(bill_amount) * float(fraction or 0), 2)
+                                        else:
+                                            savings_amount = 0
+                                    else:
+                                        customer_alloc = get_customer_allocation(customer_id)
+                                        savings_pct = customer_alloc.get('savings_pct', DEFAULT_CUSTOMER_ALLOCATION['savings_pct'])
+                                        savings_amount = amount * (savings_pct / 100)
+                                        source = 'premium_payment'
+
                                     if savings_amount > 0:
                                         savings_pipeline_service.deposit_to_pipeline(
                                             customer_id=customer_id,
                                             amount=savings_amount,
-                                            source='premium_payment',
+                                            source=source,
                                             auto_allocate=True
                                         )
                                         payment_result['savings_allocated'] = savings_amount
+                                        if is_phinsafe:
+                                            payment_result['phinsafe_savings_deposited'] = savings_amount
                                 except Exception as pipe_err:
                                     print(f"Pipeline allocation note: {pipe_err}")
                         else:
