@@ -688,6 +688,18 @@ class ProcessPipelineOrchestrator:
 
         self.billing[bill_id] = bill
 
+        phinsafe_bill = None
+        try:
+            from services.phinsafe_rider import build_installment
+            rider = (policy.get('riders') or {}).get('phinsafe') if isinstance(policy.get('riders'), dict) else None
+            if isinstance(rider, dict) and rider.get('rider_id'):
+                stamp = now.astimezone(timezone.utc) if now.tzinfo else now.replace(tzinfo=timezone.utc)
+                phinsafe_bill = build_installment(rider, year=stamp.year, month=stamp.month)
+                if phinsafe_bill and phinsafe_bill['id'] not in self.billing:
+                    self.billing[phinsafe_bill['id']] = phinsafe_bill
+        except Exception:
+            phinsafe_bill = None
+
         self._log_automation('billing_generation', {
             'bill_id': bill_id,
             'policy_id': policy_id,
@@ -696,13 +708,17 @@ class ProcessPipelineOrchestrator:
             'savings_amount': savings_amount
         })
 
-        return {
+        result = {
             'success': True,
             'bill_id': bill_id,
             'bill': bill,
             'premium_breakdown': bill['premium_breakdown'],
             'next_step': 'await_payment'
         }
+        if phinsafe_bill:
+            result['phinsafe_bill_id'] = phinsafe_bill['id']
+            result['phinsafe_bill'] = phinsafe_bill
+        return result
 
     def process_billing_payment(self, bill_id: str, amount: float,
                                  payment_method: str = "auto") -> Dict[str, Any]:
@@ -737,6 +753,21 @@ class ProcessPipelineOrchestrator:
                 reference_id=bill_id
             )
 
+        phinsafe_savings = float(breakdown.get('phinsafe_savings_amount') or 0)
+        pipeline_deposit = None
+        if (
+            phinsafe_savings > 0
+            and customer_id
+            and bill['status'] == 'paid'
+            and self.savings_pipeline is not None
+        ):
+            pipeline_deposit = self.savings_pipeline.deposit_to_pipeline(
+                customer_id=customer_id,
+                amount=phinsafe_savings,
+                source='phinsafe_rider',
+                auto_allocate=True,
+            )
+
         self._log_automation('billing_payment', {
             'bill_id': bill_id,
             'amount_paid': amount,
@@ -749,7 +780,8 @@ class ProcessPipelineOrchestrator:
             'bill_id': bill_id,
             'status': bill['status'],
             'amount_paid': bill['amount_paid'],
-            'wallet_credit': wallet_credit
+            'wallet_credit': wallet_credit,
+            'phinsafe_savings_deposit': pipeline_deposit,
         }
 
     def _credit_health_wallet(self, customer_id: str, amount: float,

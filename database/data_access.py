@@ -93,8 +93,8 @@ def convert_datetime_strings(data: Dict[str, Any]) -> Dict[str, Any]:
     
     # Fields that should be stored as JSON strings
     json_fields = [
-        'questionnaire_responses', 'payment_setup', 'health_wallet', 
-        'billing', 'metadata', 'additional_data',
+        'questionnaire_responses', 'payment_setup', 'health_wallet',
+        'billing', 'riders', 'metadata', 'additional_data',
         'medical_conditions', 'documents', 'data_sources'
     ]
     

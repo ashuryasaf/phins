@@ -247,6 +247,8 @@ _UPGRADE_NEW_COLUMNS = [
     ('customers', 'identity_captured_at', 'VARCHAR(40)', None),
     ('customers', 'identity_source', 'VARCHAR(30)', None),
     ('customers', 'identity_history', 'TEXT', None),
+    # PhinSafe and later endorsements, keyed by product id.
+    ('policies', 'riders', 'TEXT', None),
     # Agent ecosystem §C: per-renewal period + payout sweep on commissions.
     ('agent_commissions', 'period', 'VARCHAR(40)', "''"),
     ('agent_commissions', 'payout_id', 'VARCHAR(80)', None),
