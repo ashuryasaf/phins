@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
@@ -35,8 +36,16 @@ SHARE_SCALE = 10_000  # 100.00% -> 10000
 BOOK_EVENT = 'phinsafe_book_anchored'
 RIDER_EVENT = 'phinsafe_rider_bound'
 CLAIM_EVENT = 'phinsafe_claim_opened'
+PORTFOLIO_EVENT = 'phinsafe_portfolio_projected'
 LEDGER_ENTITY = 'phinsafe_rider'
 SOURCE_SYSTEM = 'phinsafe'
+OFFSPRING_BIRTH_AGE = 0
+BENEFIT_TERMINATION_AGE_MIN = 1
+BENEFIT_TERMINATION_AGE_MAX = 40
+BENEFIT_TERMINATION_AGE_DEFAULT = 18
+PREMIUM_PCT_MAX = 500
+CLAIMS_PCT_MAX = 1000
+SAVINGS_PCT_MAX = 100
 
 
 class PhinSafeIntegrityError(ValueError):
@@ -713,6 +722,411 @@ def anchor_book(ledger: Any, book: Mapping[str, Any], *, actor: str) -> Dict[str
         'entry_hash': str(entry.get('entry_hash') or ''),
         'sequence_no': entry.get('sequence_no'),
         'event_type': BOOK_EVENT,
+    }
+
+
+def _percent_units(value: Any, *, field: str, maximum: int) -> int:
+    try:
+        dec = Decimal(str(value))
+    except Exception as exc:
+        raise PhinSafeIntegrityError(f'{field} must be a number') from exc
+    if not dec.is_finite():
+        raise PhinSafeIntegrityError(f'{field} must be finite')
+    quantized = dec.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    if quantized < 0 or quantized > maximum:
+        raise PhinSafeIntegrityError(f'{field} must be between 0 and {maximum}')
+    return int(quantized * 100)
+
+
+def _termination_age(value: Any) -> int:
+    if value is None or value == '':
+        return BENEFIT_TERMINATION_AGE_DEFAULT
+    try:
+        age = int(value)
+    except (TypeError, ValueError) as exc:
+        raise PhinSafeIntegrityError(
+            'benefit termination age must be a whole number of years'
+        ) from exc
+    if age < BENEFIT_TERMINATION_AGE_MIN or age > BENEFIT_TERMINATION_AGE_MAX:
+        raise PhinSafeIntegrityError(
+            'benefit termination age must be from '
+            f'{BENEFIT_TERMINATION_AGE_MIN} through {BENEFIT_TERMINATION_AGE_MAX}'
+        )
+    return age
+
+
+def _verified_book_body(book: Mapping[str, Any]) -> Dict[str, Any]:
+    if not isinstance(book, Mapping):
+        raise PhinSafeIntegrityError('PhinSafe book is missing', status=409)
+    if not (book.get('integrity') or {}).get('all_checks_pass'):
+        raise PhinSafeIntegrityError('PhinSafe book failed integrity checks', status=409)
+    doc_hash = str(book.get('document_hash') or '')
+    published = {
+        key: value for key, value in book.items()
+        if key not in ('document_hash', 'integrity', 'ledger')
+    }
+    if not doc_hash or document_hash(published) != doc_hash:
+        raise PhinSafeIntegrityError('PhinSafe book document hash does not verify', status=409)
+    return published
+
+
+def _face_sum_squares(benefit: int, offspring: int) -> int:
+    if offspring < 0 or benefit < 0:
+        raise PhinSafeIntegrityError('offspring portfolio cannot be negative')
+    if offspring == 0:
+        if benefit != 0:
+            raise PhinSafeIntegrityError(
+                'settled benefit has no offspring to carry it', status=409
+            )
+        return 0
+    face = benefit // offspring
+    remainder = benefit % offspring
+    return (offspring - remainder) * face * face + remainder * (face + 1) * (face + 1)
+
+
+def _bernoulli_variance(benefit: int, offspring: int, claims: int) -> int:
+    """Variance of one year of claims, in cents squared.
+
+    Each offspring claims its own face or nothing. Faces of the settled
+    benefit differ by at most one cent. Probability is claims / benefit.
+    """
+    if claims < 0 or benefit < 0:
+        raise PhinSafeIntegrityError('claims and benefit must be zero or positive')
+    if claims > benefit:
+        raise PhinSafeIntegrityError(
+            'expected annual claims cannot exceed the settled benefit in force'
+        )
+    sum_squares = _face_sum_squares(benefit, offspring)
+    if benefit == 0 or claims == 0 or claims == benefit:
+        return 0
+    numer = sum_squares * claims * (benefit - claims)
+    denom = benefit * benefit
+    return (numer + denom // 2) // denom
+
+
+def _claims_band(mean: int, std_error: int, cap: int) -> Tuple[int, int]:
+    half = int(std_error) * 196 // 100
+    low = int(mean) - half
+    if low < 0:
+        low = 0
+    high = int(mean) + half
+    if high > cap:
+        high = cap
+    if low > mean or mean > high:
+        raise PhinSafeIntegrityError('claims band does not contain its mean')
+    return low, high
+
+
+def _default_savings_units(premium_cents: int, savings_cents: int) -> int:
+    if premium_cents < 0 or savings_cents < 0:
+        raise PhinSafeIntegrityError('published premium and savings must be zero or positive')
+    if premium_cents == 0:
+        return 0
+    units = (int(savings_cents) * SHARE_SCALE) // int(premium_cents)
+    if units > SHARE_SCALE:
+        return SHARE_SCALE
+    return units
+
+
+def develop_portfolio(
+    book: Mapping[str, Any],
+    *,
+    benefit_termination_age: Any = None,
+    premium_pct: Any = None,
+    savings_pct_of_premium: Any = None,
+    claims_pct_of_published: Any = None,
+) -> Dict[str, Any]:
+    """Develop the offspring portfolio from birth to benefit termination.
+
+    The period is not typed separately. It is the termination age minus
+    age 0 at birth. Premium, savings, and claims are adjustable percentages
+    of the published rider book. The settled benefit stays the book's face.
+    """
+    published_book = _verified_book_body(book)
+    rider = published_book.get('rider_book') or {}
+    try:
+        benefit = int(rider.get('coverage_cents'))
+        book_premium = int(rider.get('annual_premium_cents'))
+        book_savings = int(rider.get('savings_premium_cents'))
+        offspring = int(rider.get('accepted_parents'))
+    except (TypeError, ValueError) as exc:
+        raise PhinSafeIntegrityError('PhinSafe book is missing its cent ledger', status=409) from exc
+    book_claims = money_cents(rider.get('annual_expected_claims') or 0)
+    if min(benefit, book_premium, book_savings, book_claims, offspring) < 0:
+        raise PhinSafeIntegrityError('PhinSafe book has a negative amount', status=409)
+
+    termination = _termination_age(benefit_termination_age)
+    birth = OFFSPRING_BIRTH_AGE
+    period_years = termination - birth
+    premium_units = (
+        SHARE_SCALE if premium_pct is None or premium_pct == ''
+        else _percent_units(premium_pct, field='premium percent', maximum=PREMIUM_PCT_MAX)
+    )
+    if savings_pct_of_premium is None or savings_pct_of_premium == '':
+        savings_units = _default_savings_units(book_premium, book_savings)
+    else:
+        savings_units = _percent_units(
+            savings_pct_of_premium,
+            field='savings percent of premium',
+            maximum=SAVINGS_PCT_MAX,
+        )
+    claims_units = (
+        SHARE_SCALE if claims_pct_of_published is None or claims_pct_of_published == ''
+        else _percent_units(
+            claims_pct_of_published,
+            field='claims percent of published expected claims',
+            maximum=CLAIMS_PCT_MAX,
+        )
+    )
+
+    annual_premium = _scale(book_premium, premium_units, SHARE_SCALE)
+    annual_savings = _scale(annual_premium, savings_units, SHARE_SCALE)
+    annual_risk = annual_premium - annual_savings
+    annual_claims = _scale(book_claims, claims_units, SHARE_SCALE)
+    if annual_claims > benefit:
+        raise PhinSafeIntegrityError(
+            'expected annual claims cannot exceed the settled benefit in force'
+        )
+    variance = _bernoulli_variance(benefit, offspring, annual_claims)
+    std_error = math.isqrt(variance)
+    low, high = _claims_band(annual_claims, std_error, benefit)
+    ratio_savings = _scale(book_premium, savings_units, SHARE_SCALE)
+    savings_gap = book_savings - ratio_savings
+
+    schedule: List[Dict[str, Any]] = []
+    for age in range(period_years):
+        year = age + 1
+        cum_premium = annual_premium * year
+        cum_savings = annual_savings * year
+        cum_risk = annual_risk * year
+        cum_claims = annual_claims * year
+        cum_variance = variance * year
+        cum_se = math.isqrt(cum_variance)
+        cum_low, cum_high = _claims_band(cum_claims, cum_se, benefit * year)
+        schedule.append({
+            'offspring_age': age,
+            'policy_year': year,
+            'benefit_in_force_cents': benefit,
+            'premium_cents': annual_premium,
+            'savings_cents': annual_savings,
+            'risk_premium_cents': annual_risk,
+            'expected_claims_cents': annual_claims,
+            'claims_std_error_cents': std_error,
+            'claims_low_95_cents': low,
+            'claims_high_95_cents': high,
+            'cumulative_premium_cents': cum_premium,
+            'cumulative_savings_cents': cum_savings,
+            'cumulative_risk_premium_cents': cum_risk,
+            'cumulative_expected_claims_cents': cum_claims,
+            'cumulative_claims_std_error_cents': cum_se,
+            'cumulative_claims_low_95_cents': cum_low,
+            'cumulative_claims_high_95_cents': cum_high,
+            'savings_account_cents': cum_savings,
+            'cumulative_underwriting_cents': cum_risk - cum_claims,
+        })
+
+    ages_ok = [row['offspring_age'] for row in schedule] == list(range(period_years))
+    years_ok = all(row['policy_year'] == row['offspring_age'] + 1 for row in schedule)
+    benefit_locked = all(row['benefit_in_force_cents'] == benefit for row in schedule)
+    partition_ok = all(
+        row['risk_premium_cents'] + row['savings_cents'] == row['premium_cents']
+        and 0 <= row['savings_cents'] <= row['premium_cents']
+        for row in schedule
+    )
+    last = schedule[-1]
+    sums_ok = (
+        last['cumulative_premium_cents'] == annual_premium * period_years
+        and last['cumulative_savings_cents'] == annual_savings * period_years
+        and last['cumulative_expected_claims_cents'] == annual_claims * period_years
+        and last['cumulative_risk_premium_cents'] + last['cumulative_savings_cents']
+        == last['cumulative_premium_cents']
+        and last['cumulative_underwriting_cents']
+        == last['cumulative_risk_premium_cents'] - last['cumulative_expected_claims_cents']
+        and last['savings_account_cents'] == last['cumulative_savings_cents']
+    )
+    variance_ok = variance == _bernoulli_variance(benefit, offspring, annual_claims)
+    sqrt_ok = std_error * std_error <= variance < (std_error + 1) * (std_error + 1)
+    band_ok = all(
+        0 <= row['claims_low_95_cents'] <= row['expected_claims_cents'] <= row['claims_high_95_cents'] <= benefit
+        for row in schedule
+    )
+    cumulative_band_ok = all(
+        row['cumulative_claims_std_error_cents'] == math.isqrt(variance * row['policy_year'])
+        and 0 <= row['cumulative_claims_low_95_cents']
+        <= row['cumulative_expected_claims_cents']
+        <= row['cumulative_claims_high_95_cents']
+        <= benefit * row['policy_year']
+        for row in schedule
+    )
+    checks = {
+        'birth_age_is_zero': birth == 0,
+        'period_is_termination_minus_birth': period_years == termination - birth and period_years == len(schedule),
+        'schedule_covers_every_age_in_the_period': ages_ok and years_ok,
+        'benefit_stays_the_settled_face': benefit_locked and benefit == int(rider.get('coverage_cents')),
+        'premium_savings_and_risk_partition': partition_ok,
+        'savings_does_not_exceed_premium': annual_savings <= annual_premium,
+        'level_amounts_sum_across_the_period': sums_ok,
+        'cumulative_columns_match_the_sums': sums_ok,
+        'claims_do_not_exceed_the_benefit': annual_claims <= benefit,
+        'variance_matches_the_bernoulli_faces': variance_ok,
+        'std_error_is_the_integer_square_root': sqrt_ok,
+        'band_contains_the_mean_inside_the_benefit': band_ok,
+        'cumulative_band_uses_independent_years': cumulative_band_ok,
+        'source_book_hash_verifies': document_hash(published_book) == str(book.get('document_hash')),
+    }
+    if not all(checks.values()):
+        failed = [name for name, ok in checks.items() if not ok]
+        raise PhinSafeIntegrityError(
+            'PhinSafe offspring portfolio failed integrity checks: ' + ', '.join(failed),
+            status=409,
+        )
+
+    def _dollars(cents: int) -> float:
+        return cents_to_dollars(int(cents))
+
+    view_rows = []
+    for row in schedule:
+        view = {
+            'offspring_age': row['offspring_age'],
+            'policy_year': row['policy_year'],
+        }
+        for key, value in row.items():
+            if key.endswith('_cents'):
+                name = key[:-6]
+                view[name] = _dollars(value)
+                view[key] = value
+        view_rows.append(view)
+
+    simulation_id = str(published_book.get('simulation_id') or '')
+    body: Dict[str, Any] = {
+        'product_id': PRODUCT_ID,
+        'product_name': PRODUCT_NAME,
+        'simulation_id': simulation_id,
+        'source_book_hash': str(book.get('document_hash')),
+        'parameters': {
+            'birth_age': birth,
+            'benefit_termination_age': termination,
+            'period_years': period_years,
+            'period_rule': (
+                f'Issued automatically from age {birth} at birth through age '
+                f'{termination - 1}, {period_years} year'
+                f'{"s" if period_years != 1 else ""}. Benefit terminates at age {termination}.'
+            ),
+            'premium_pct': premium_units / 100.0,
+            'savings_pct_of_premium': savings_units / 100.0,
+            'claims_pct_of_published': claims_units / 100.0,
+            'published_savings_ratio_gap_cents': savings_gap,
+        },
+        'portfolio': {
+            'offspring_count': offspring,
+            'benefit_in_force': _dollars(benefit),
+            'benefit_in_force_cents': benefit,
+            'annual_premium': _dollars(annual_premium),
+            'annual_premium_cents': annual_premium,
+            'annual_savings': _dollars(annual_savings),
+            'annual_savings_cents': annual_savings,
+            'annual_risk_premium': _dollars(annual_risk),
+            'annual_risk_premium_cents': annual_risk,
+            'annual_expected_claims': _dollars(annual_claims),
+            'annual_expected_claims_cents': annual_claims,
+        },
+        'totals': {
+            'premium': _dollars(last['cumulative_premium_cents']),
+            'premium_cents': last['cumulative_premium_cents'],
+            'savings_account': _dollars(last['savings_account_cents']),
+            'savings_account_cents': last['savings_account_cents'],
+            'expected_claims': _dollars(last['cumulative_expected_claims_cents']),
+            'expected_claims_cents': last['cumulative_expected_claims_cents'],
+            'underwriting': _dollars(last['cumulative_underwriting_cents']),
+            'underwriting_cents': last['cumulative_underwriting_cents'],
+        },
+        'statistics': {
+            'model': (
+                'One offspring per eligible parent. Faces split the settled '
+                'benefit and differ by at most one cent. Each year of age is an '
+                'independent Bernoulli claim of that face. The 95% band is the '
+                'normal approximation, floored at zero and capped at the benefit.'
+            ),
+            'offspring_count': offspring,
+            'annual_variance_cents2': variance,
+            'annual_std_error_cents': std_error,
+            'term_variance_cents2': variance * period_years,
+            'term_std_error_cents': math.isqrt(variance * period_years),
+            'z_95': '1.96',
+        },
+        'schedule': view_rows,
+        'chart': {
+            'labels': [f'Age {row["offspring_age"]}' for row in schedule],
+            'premium': [row['premium'] for row in view_rows],
+            'savings': [row['savings'] for row in view_rows],
+            'expected_claims': [row['expected_claims'] for row in view_rows],
+            'claims_low_95': [row['claims_low_95'] for row in view_rows],
+            'claims_high_95': [row['claims_high_95'] for row in view_rows],
+            'cumulative_premium': [row['cumulative_premium'] for row in view_rows],
+            'savings_account': [row['savings_account'] for row in view_rows],
+            'cumulative_expected_claims': [row['cumulative_expected_claims'] for row in view_rows],
+            'cumulative_claims_low_95': [row['cumulative_claims_low_95'] for row in view_rows],
+            'cumulative_claims_high_95': [row['cumulative_claims_high_95'] for row in view_rows],
+        },
+    }
+    body['document_hash'] = document_hash(body)
+    body['integrity'] = {
+        'checks': checks,
+        'all_checks_pass': True,
+        'document_hash': body['document_hash'],
+    }
+    return body
+
+
+def anchor_portfolio(ledger: Any, portfolio: Mapping[str, Any], *, actor: str) -> Dict[str, Any]:
+    """Append the developed-portfolio anchor before it is stored."""
+    doc_hash = str(portfolio.get('document_hash') or '')
+    simulation_id = str(portfolio.get('simulation_id') or '')
+    if not doc_hash or not simulation_id:
+        raise PhinSafeIntegrityError('portfolio is missing its document hash', status=409)
+    published = {k: v for k, v in portfolio.items() if k not in ('document_hash', 'integrity')}
+    if document_hash(published) != doc_hash:
+        raise PhinSafeIntegrityError('portfolio document hash does not verify', status=409)
+    source = str(portfolio.get('source_book_hash') or '')
+    entry_id = _entry_id('PHINSAFE-PORTFOLIO', f'{simulation_id}|{source}|{doc_hash}')
+    totals = portfolio.get('totals') or {}
+    try:
+        entry = ledger.append_event(
+            event_type=PORTFOLIO_EVENT,
+            entity_type=LEDGER_ENTITY,
+            entity_id=simulation_id,
+            actor=actor or 'actuary',
+            amount=round(float(totals.get('premium') or 0), 2),
+            status='anchored',
+            source_system=SOURCE_SYSTEM,
+            entry_id=entry_id,
+            payload={
+                'product_id': PRODUCT_ID,
+                'simulation_id': simulation_id,
+                'document_hash': doc_hash,
+                'source_book_hash': source,
+                'benefit_termination_age': (portfolio.get('parameters') or {}).get('benefit_termination_age'),
+                'period_years': (portfolio.get('parameters') or {}).get('period_years'),
+                'birth_age': OFFSPRING_BIRTH_AGE,
+                'premium_pct': (portfolio.get('parameters') or {}).get('premium_pct'),
+                'savings_pct_of_premium': (portfolio.get('parameters') or {}).get('savings_pct_of_premium'),
+                'claims_pct_of_published': (portfolio.get('parameters') or {}).get('claims_pct_of_published'),
+                'term_premium': totals.get('premium'),
+                'term_savings_account': totals.get('savings_account'),
+                'term_expected_claims': totals.get('expected_claims'),
+            },
+        )
+    except PhinSafeIntegrityError:
+        raise
+    except Exception as exc:
+        raise PhinSafeIntegrityError(
+            f'ledger refused the PhinSafe portfolio anchor: {exc}', status=503
+        ) from exc
+    return {
+        'entry_id': str(entry.get('id') or entry_id),
+        'entry_hash': str(entry.get('entry_hash') or ''),
+        'sequence_no': entry.get('sequence_no'),
+        'event_type': PORTFOLIO_EVENT,
     }
 
 
