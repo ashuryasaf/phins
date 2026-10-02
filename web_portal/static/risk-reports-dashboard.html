@@ -1,24 +1,29 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <link rel="apple-touch-icon" href="/phins-logo.svg">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#060d1f">
   <title>PHINS - Swiftness Risk Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root {
-      --primary: #0d47a1;
-      --primary-light: #1976d2;
-      --accent: #ff6b35;
+      --primary: #0e2f63;
+      --primary-light: #15449b;
+      --accent: #e3bf6f;
       --success: #10b981;
       --warning: #f59e0b;
       --danger: #ef4444;
       --bg-light: #f5f7fa;
       --text-dark: #1a1a2e;
       --text-muted: #64748b;
-      --purple: #7c3aed;
-      --purple-light: #8b5cf6;
+      --purple: #12315f;
+      --purple-light: #15449b;
     }
     
     * {
@@ -129,8 +134,8 @@
     }
 
     .research-badge {
-      background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
-      color: white;
+      background: linear-gradient(180deg, #f7e2a0 0%, #e3bf6f 100%);
+      color: #071022;
       padding: 6px 14px;
       border-radius: 20px;
       font-size: 0.85rem;
@@ -492,14 +497,14 @@
     }
     
     .btn-primary {
-      background: linear-gradient(135deg, var(--accent) 0%, #e55a2b 100%);
-      color: white;
-      box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3);
+      background: linear-gradient(180deg, #f7e2a0 0%, #e3bf6f 100%);
+      color: #071022;
+      box-shadow: 0 4px 12px rgba(227, 191, 111, 0.35);
     }
     
     .btn-primary:hover:not(:disabled) {
       transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(255, 107, 53, 0.4);
+      box-shadow: 0 6px 20px rgba(227, 191, 111, 0.5);
     }
     
     .btn-primary:disabled {
@@ -667,9 +672,19 @@
       margin-bottom: 2rem;
     }
     
+    .insights-header,
+    .report-header,
+    .recommendations-header,
+    .mislaka-header,
+    .history-header {
+      background:
+        radial-gradient(520px 160px at 90% -40%, rgba(227, 191, 111, 0.35), transparent 70%),
+        linear-gradient(135deg, #060d1f 0%, #12315f 100%);
+      color: #eaf1ff;
+      border-bottom: 3px solid #e3bf6f;
+    }
+
     .insights-header {
-      background: linear-gradient(135deg, var(--purple) 0%, var(--purple-light) 100%);
-      color: white;
       padding: 1.5rem 2rem;
     }
     
@@ -755,29 +770,50 @@
       margin-bottom: 2rem;
     }
     
+    .charts-heading {
+      grid-column: 1 / -1;
+      padding: 0.25rem 0.25rem 0.5rem;
+    }
+
+    .charts-heading h3 {
+      font-family: 'Space Grotesk', 'Heebo', sans-serif;
+      color: #0e2f63;
+      font-size: 1.25rem;
+    }
+
+    .charts-heading p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-top: 0.25rem;
+    }
+
     .chart-card {
       background: white;
       border-radius: 12px;
       padding: 1.5rem;
       box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      border-top: 3px solid #e3bf6f;
     }
     
     .chart-card h4 {
       margin-bottom: 0.35rem;
-      color: var(--text-dark);
+      color: #0e2f63;
       text-align: center;
+      font-family: 'Heebo', 'Space Grotesk', sans-serif;
     }
 
     .chart-total {
       margin: 0 0 0.85rem;
       text-align: center;
       font-weight: 700;
-      color: var(--primary, #0d47a1);
+      color: #0e2f63;
+      font-family: 'Heebo', 'Inter', sans-serif;
+      line-height: 1.45;
     }
     
     .chart-wrapper {
       position: relative;
-      height: 250px;
+      height: 280px;
     }
     
     /* Risk Gauge */
@@ -830,8 +866,6 @@
     }
     
     .report-header {
-      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
-      color: white;
       padding: 1.5rem 2rem;
       display: flex;
       justify-content: space-between;
@@ -1552,8 +1586,6 @@
     }
     
     .recommendations-header {
-      background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
-      color: white;
       padding: 1.5rem 2rem;
     }
     
@@ -1635,8 +1667,6 @@
     }
     
     .mislaka-header {
-      background: linear-gradient(135deg, #059669 0%, #047857 100%);
-      color: white;
       padding: 1.5rem 2rem;
     }
     
@@ -1693,10 +1723,10 @@
     }
     
     .btn-mislaka {
-      background: linear-gradient(135deg, #059669 0%, #047857 100%);
-      color: white;
+      background: linear-gradient(135deg, #0e2f63 0%, #12315f 100%);
+      color: #f7e2a0;
       padding: 12px 24px;
-      border: none;
+      border: 1px solid rgba(227, 191, 111, 0.55);
       border-radius: 8px;
       font-weight: 600;
       cursor: pointer;
@@ -1708,7 +1738,7 @@
     
     .btn-mislaka:hover:not(:disabled) {
       transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+      box-shadow: 0 4px 12px rgba(14, 47, 99, 0.28);
     }
     
     .btn-mislaka:disabled {
@@ -1787,8 +1817,6 @@
     }
     
     .history-header {
-      background: linear-gradient(135deg, #475569 0%, #334155 100%);
-      color: white;
       padding: 1.5rem 2rem;
       display: flex;
       justify-content: space-between;
@@ -1941,15 +1969,65 @@
     }
   </style>
   <link rel="stylesheet" href="/phins-theme.css">
+  <link rel="stylesheet" href="/phins-surface.css">
+  <style>
+    body.phins-unified {
+      font-family: 'Heebo', 'Inter', sans-serif;
+    }
+    body.phins-unified .page-title h2 {
+      color: #0e2f63;
+    }
+    body.phins-unified .page-title p,
+    body.phins-unified .chart-total,
+    body.phins-unified .charts-heading p {
+      font-family: 'Heebo', 'Inter', sans-serif;
+    }
+    body.phins-unified .stat-card h5,
+    body.phins-unified .stat-card small {
+      color: rgba(234, 241, 255, 0.72) !important;
+    }
+    body.phins-unified .insight-card {
+      background: #f8f4ea !important;
+      border: 1px solid rgba(14, 47, 99, 0.12) !important;
+      border-inline-start: 4px solid #e3bf6f !important;
+      color: #12203a;
+    }
+    body.phins-unified .insight-card h5 {
+      color: #0e2f63 !important;
+    }
+    body.phins-unified .workbench-banner {
+      background:
+        radial-gradient(520px 160px at 90% -40%, rgba(227, 191, 111, 0.35), transparent 70%),
+        linear-gradient(135deg, #060d1f 0%, #12315f 100%);
+      color: #eaf1ff;
+      border: 1px solid rgba(227, 191, 111, 0.45);
+      border-radius: 14px;
+      padding: 14px 18px;
+      margin-bottom: 18px;
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    body.phins-unified .workbench-banner a {
+      background: linear-gradient(180deg, #f7e2a0 0%, #e3bf6f 100%);
+      color: #071022;
+      padding: 9px 16px;
+      border-radius: 8px;
+      font-weight: 700;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+  </style>
   <script src="/agent-jobs.js"></script>
 </head>
-<body>
+<body class="phins-unified">
   <!-- Header — PR #433 navy/gold chrome -->
   <header class="phins-header">
     <div class="phins-header-inner" style="max-width:1400px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:0.75rem 1.5rem;flex-wrap:wrap;gap:0.5rem;">
       <a href="/dashboard.html" class="phins-logo" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:white;">
         <div class="phins-logo-icon" style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;">
-          <img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;">
+        <img class="phins-mark" src="/phins-logo.svg" alt="PHINS emblem" style="width:36px;height:36px;object-fit:contain;display:block;">
         </div>
         <span class="phins-logo-text">PHINS</span>
       </a>
@@ -1966,17 +2044,17 @@
   <main class="container">
     <!-- Page Title -->
     <div class="page-title fade-in">
-      <h2>Risk Intelligence & Advanced Reports</h2>
-      <p>Generate Mislaka-ready assessments, Swiftness Safe imports, and AI-driven insights</p>
+      <h2>PHINS Risk Intelligence</h2>
+      <p>Mislaka assessments, Swiftness imports, and affiliated accumulation charts</p>
     </div>
 
     <!-- Workbench shortcut -->
-    <div style="background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); color: white; border-radius: 14px; padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
-<div style="flex: 1; min-width: 200px;">
+    <div class="workbench-banner">
+      <div style="flex: 1; min-width: 200px;">
         <div style="font-weight: 700;">Use any uploaded document for further analysis</div>
         <div style="font-size: 0.85rem; opacity: 0.9;">The Assessment Workbench unifies upload, fact extraction, BI charts, risk scoring and downloadable CSV/XLSX/PDF reports - all in one screen.</div>
       </div>
-      <a href="/unified-workbench.html#assessment" style="background: white; color: #2e7d32; padding: 9px 16px; border-radius: 8px; font-weight: 700; text-decoration: none; white-space: nowrap;">Open Assessments Workbench →</a>
+      <a href="/unified-workbench.html#assessment">Open Assessments Workbench →</a>
     </div>
 
     <!-- Upload Section -->
@@ -2082,7 +2160,7 @@
           <button class="btn-mislaka" id="mislakaImportBtn" onclick="importFromMislaka()">
             Import & Analyze
           </button>
-          <button class="btn-mislaka" id="mislakaDownloadBtn" onclick="downloadMislakaReport()" style="background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);">
+          <button class="btn-mislaka" id="mislakaDownloadBtn" onclick="downloadMislakaReport()">
             Download Report
           </button>
         </div>
@@ -4199,6 +4277,22 @@
         });
       }
       charts = {};
+
+      const concentrationTitles = [
+        'צבירה לפי יצרן', 'תגמולים מול פיצויים', 'כיסויים ביטוחיים',
+        'ריכוז סכומי הצבירה לפי סוגי המוצרים', 'חיסכון מול כיסוי',
+        'Savings by Provider', 'Savings vs Severance', 'Insurance Coverage',
+        'Accumulation by Product Type', 'Savings vs Cover'
+      ];
+      const showsConcentration = (chartConfigs || []).some((config) => (
+        config && concentrationTitles.indexOf(config.title) !== -1
+      ));
+      if (showsConcentration) {
+        const heading = document.createElement('div');
+        heading.className = 'charts-heading';
+        heading.innerHTML = '<h3>ריכוז הצבירה</h3><p>הסכומים מחושבים מתוך הצבירה הכוללת והכיסויים שבקובץ</p>';
+        container.appendChild(heading);
+      }
       
       // Check if Chart.js is available
       if (typeof Chart === 'undefined') {
@@ -4276,6 +4370,10 @@
     }
 
     function chartTotalLine(config) {
+      const data = (config && config.data) || {};
+      if (data.caption) {
+        return `<p class="chart-total">${escapeHtml(data.caption)}</p>`;
+      }
       const options = (config && config.options) || {};
       if (!options.currency || config.type === 'gauge') return '';
       const total = chartSliceTotal(config);
@@ -4302,7 +4400,7 @@
             datasets: [{
               data: values,
               backgroundColor: options.colors || [
-                '#0d47a1', '#ff6b35', '#10b981', '#7c3aed', '#f59e0b', '#06b6d4'
+                '#0e2f63', '#e3bf6f', '#15449b', '#0b5c82', '#c9a04e', '#7fb2ff', '#12315f', '#f7e2a0'
               ],
               borderWidth: 2,
               borderColor: '#fff'
@@ -4314,7 +4412,9 @@
             plugins: {
               legend: {
                 position: chartType === 'bar' ? 'top' : 'bottom',
-                labels: currency ? {
+                labels: Object.assign({
+                  font: { family: "'Heebo', 'Inter', sans-serif", size: 12 }
+                }, currency ? {
                   generateLabels: function(chart) {
                     const items = chart.data.labels || [];
                     const series = (chart.data.datasets[0] && chart.data.datasets[0].data) || [];
@@ -4325,12 +4425,13 @@
                         text: `${label}  ${formatChartMoney(series[index], symbol)}`,
                         fillStyle: color,
                         strokeStyle: color,
+                        fontColor: '#12203a',
                         hidden: false,
                         index: index
                       };
                     });
                   }
-                } : {}
+                } : {})
               },
               tooltip: currency ? {
                 callbacks: {
@@ -4340,7 +4441,11 @@
                 }
               } : {}
             },
-            indexAxis: (chartType === 'bar' && options.horizontal) ? 'y' : 'x'
+            indexAxis: (chartType === 'bar' && options.horizontal) ? 'y' : 'x',
+            scales: chartType === 'bar' || chartType === 'line' ? {
+              x: { ticks: { font: { family: "'Heebo', 'Inter', sans-serif" } } },
+              y: { ticks: { font: { family: "'Heebo', 'Inter', sans-serif" } } }
+            } : {}
           }
         });
       } catch (e) {

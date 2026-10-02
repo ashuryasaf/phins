@@ -1457,6 +1457,9 @@ def _chart_value_caption(chart: Dict[str, Any], style, rtl: bool, max_width: flo
             parts.append(f'{label}: {value_text}')
         elif value_text:
             parts.append(value_text)
+    note = _as_str(chart.get('caption'))
+    if note:
+        parts.append(note)
     return _safe_paragraph('  ·  '.join(parts), style, rtl=rtl, max_width=max_width)
 
 
