@@ -4372,7 +4372,8 @@
     function formatChartMoney(value, symbol) {
       const amount = Number(value) || 0;
       const formatted = amount.toLocaleString('he-IL', { maximumFractionDigits: 2 });
-      return `${symbol || '₪'}${formatted}`;
+      // LTR mark keeps ₪ and the digits in order on a Hebrew canvas.
+      return `\u200E${symbol || '₪'}${formatted}`;
     }
 
     function chartSliceTotal(config) {
