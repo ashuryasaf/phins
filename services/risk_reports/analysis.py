@@ -412,25 +412,34 @@ def rate_column_anomaly(column: str, numbers: List[float]) -> Optional[Anomaly]:
     accumulation = any(marker in name.lower() for marker in _ACCUMULATION_FEE_MARKERS)
     if median <= 0.2:
         cap = 0.02 if accumulation else 0.06
-        scale = 'fraction'
+        absurd_floor = 0.2
     elif median <= 20:
         cap = 2.0 if accumulation else 6.0
-        scale = 'percent'
+        absurd_floor = 20
     else:
         cap = None
-        scale = 'amount'
-    if scale == 'amount':
+        absurd_floor = None
+    absurd = [value for value in positives if absurd_floor is None or value > absurd_floor]
+    if cap is None or (absurd and absurd_floor is not None and any(value > 20 for value in absurd)):
         if hebrew:
-            description = (
-                f"העמודה '{name}' נראית כסכום בשקלים (חציון {median:,.2f}), לא כשיעור דמי ניהול"
-            )
+            if cap is None:
+                description = (
+                    f"העמודה '{name}' נראית כסכום בשקלים (חציון {median:,.2f}), לא כשיעור דמי ניהול"
+                )
+            else:
+                description = (
+                    f"העמודה '{name}' מערבת שיעורים עם {len(absurd)} סכומים בשקלים"
+                )
             recommendation = (
-                f"שיעור דמי ניהול נשמר כאחוז. יש לקרוא את '{name}' רק כשיעור, ולא לסכום אותו עם צבירה."
+                f"שיעור דמי ניהול נשמר כאחוז. סכום בשקלים ב'{name}' אינו נספר בתוך הצבירה."
             )
         else:
-            description = f"'{name}' looks like a shekel amount (median {median:,.2f}), not a fee rate"
-            recommendation = f"Read '{name}' as a percent. Do not add it to accumulation."
-        return _anomaly('rate_unit', Severity.HIGH, description, name, recommendation, {'median': median})
+            if cap is None:
+                description = f"'{name}' looks like a shekel amount (median {median:,.2f}), not a fee rate"
+            else:
+                description = f"'{name}' mixes fee rates with {len(absurd)} shekel amounts"
+            recommendation = f"Keep '{name}' as a percent. A shekel amount in that column is not part of accumulation."
+        return _anomaly('rate_unit', Severity.HIGH, description, name, recommendation, {'median': median, 'count': len(absurd)})
 
     above = [value for value in positives if value > cap + 1e-9]
     if not above:
