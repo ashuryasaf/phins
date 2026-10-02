@@ -1065,6 +1065,25 @@ SIBLING_YITRAT_HOLDINGS = """<?xml version="1.0" encoding="UTF-8"?>
 """.encode('utf-8')
 
 
+ALIAS_PITZUIM_HOLDINGS = """<?xml version="1.0" encoding="UTF-8"?>
+<Mimshak xmlns="http://www.swiftness.co.il/mivneachid/holdings">
+  <YeshutYatzran>
+    <SHEM-YATZRAN>מגדל</SHEM-YATZRAN>
+    <Mutzar>
+      <SUG-MUTZAR>7</SUG-MUTZAR>
+      <HeshbonOPolisa>
+        <MISPAR-POLISA-O-HESHBON>POL-ALIAS</MISPAR-POLISA-O-HESHBON>
+        <TOTAL-CHISACHON-MTZBR>88000</TOTAL-CHISACHON-MTZBR>
+        <YITRAT-PITZUIM>12000</YITRAT-PITZUIM>
+        <TOTAL-CHISACHON-PITZUIM>12000</TOTAL-CHISACHON-PITZUIM>
+        <ERECH-PIDYON-PITZUIM>11500</ERECH-PIDYON-PITZUIM>
+      </HeshbonOPolisa>
+    </Mutzar>
+  </YeshutYatzran>
+</Mimshak>
+""".encode('utf-8')
+
+
 WRAPPER_PITZUIM = """<?xml version="1.0" encoding="UTF-8"?>
 <Mimshak xmlns="http://www.swiftness.co.il/mivneachid/pitzuim">
   <KoteretKovetz><SUG-MIMSHAK>17</SUG-MIMSHAK></KoteretKovetz>
@@ -1130,6 +1149,12 @@ class TestAffiliatedConcentrationCharts(unittest.TestCase):
         self.assertEqual(result['data']['totals']['total_severance'], 20000)
         self.assertEqual(account['product_type_display'], 'ביטוח מנהלים')
         self.assertNotEqual(account['product_type_display'], 'מסלול כללי')
+
+    def test_alias_pitzuim_views_keep_the_highest_instead_of_adding(self):
+        result = self.agent.process_xml_content(ALIAS_PITZUIM_HOLDINGS)
+        account = result['data']['accounts'][0]
+        self.assertEqual(account_severance(account), 12000)
+        self.assertEqual(result['data']['totals']['total_severance'], 12000)
 
     def test_wrapper_pitzuim_remainder_is_kept(self):
         data = self.agent._parse_mislaka_xml(WRAPPER_PITZUIM)

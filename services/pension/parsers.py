@@ -76,14 +76,18 @@ class MislakaParserMixin:
         'SACH-YITRA', 'SachYitra', 'SCHUM', 'Saldo', 'SALDO',
     )
     YITRA_TYPE_TAGS = ('KOD-SUG-HAFRASHA', 'KodSugHafrasha', 'SUG-YITRA', 'SUG-HAFRASHA')
-    # Balance tags that name a פיצויים pot. SACH-PITZUIM is a deposit/interface
-    # total and is read only as a wrapper remainder, never as another pot.
-    SEVERANCE_BALANCE_TAGS = frozenset({
-        'YITRAT-PITZUIM', 'YitratPitzuim', 'YITRA-PITZUIM', 'YitraPitzuim',
-        'TOTAL-CHISACHON-PITZUIM', 'TotalChisachonPitzuim',
-        'ERECH-PIDYON-PITZUIM', 'ErechPidyonPitzuim',
-        'KFIFA-PITZUIM', 'KfifaPitzuim',
-    })
+    # Balance tags that name a פיצויים pot, keyed by the view they express.
+    # Ledger balance, total severance savings, redemption value and envelope
+    # are manufacturer aliases for the same money, so the views never add to
+    # each other. SACH-PITZUIM is a deposit/interface total and is read only
+    # as a wrapper remainder, never as another pot.
+    SEVERANCE_BALANCE_TAGS = {
+        'YITRAT-PITZUIM': 'yitra', 'YitratPitzuim': 'yitra',
+        'YITRA-PITZUIM': 'yitra', 'YitraPitzuim': 'yitra',
+        'TOTAL-CHISACHON-PITZUIM': 'chisachon', 'TotalChisachonPitzuim': 'chisachon',
+        'ERECH-PIDYON-PITZUIM': 'pidyon', 'ErechPidyonPitzuim': 'pidyon',
+        'KFIFA-PITZUIM': 'kfifa', 'KfifaPitzuim': 'kfifa',
+    }
     WRAPPER_OWN_TOTAL_TAGS = frozenset({
         'SACH-PITZUIM', 'SachPitzuim', 'TOTAL-PITZUIM', 'TotalPitzuim',
         'KSF-PITZUIM-TZVUR', 'KsfPitzuimTzvur', 'SCHUM-PITZUIM', 'SchumPitzuim',
@@ -1280,23 +1284,35 @@ class MislakaParserMixin:
                 account['total_balance'] = composed
 
     def _harvest_severance_balance_tags(self, elem, account: Dict[str, Any]) -> None:
-        """Every YITRAT-PITZUIM sibling is a pot. ``_find_text`` keeps only the first."""
-        skip = set(self.YITRA_BLOCK_TAGS) | set(self.COVER_BLOCK_TAGS) | set(self.COVER_WRAPPER_TAGS)
-        found: List[float] = []
+        """Every YITRAT-PITZUIM sibling is a pot. ``_find_text`` keeps only the first.
+
+        Siblings of one spelling add up, but the alias views of the same pot
+        are weighed against each other instead, so a redemption value a few
+        percent below the ledger balance never lands on top of it. The פיצויים
+        blocks are left to ``_parse_severance``, which owns the employer pots.
+        """
+        skip = (
+            set(self.YITRA_BLOCK_TAGS) | set(self.COVER_BLOCK_TAGS)
+            | set(self.COVER_WRAPPER_TAGS) | set(self.SEVERANCE_TAGS)
+        )
+        found: Dict[str, List[float]] = {}
         stack = list(elem)
         while stack:
             node = stack.pop()
             local = self._local_tag(node.tag)
             if local in skip:
                 continue
-            if local in self.SEVERANCE_BALANCE_TAGS:
+            view = self.SEVERANCE_BALANCE_TAGS.get(local)
+            if view:
                 text = (node.text or '').strip()
                 if text:
-                    found.append(self._parse_number(text))
+                    found.setdefault(view, []).append(self._parse_number(text))
                 continue
             stack.extend(list(node))
-        if found:
-            apply_component_severance(account, found)
+        for amounts in found.values():
+            # Only a larger pot replaces the account's, so this keeps the
+            # highest view rather than their sum.
+            apply_component_severance(account, amounts)
 
     def _own_direct_amount(self, elem, tags) -> float:
         """Amount on a direct child only, so a wrapper total is not the first employer pot."""
