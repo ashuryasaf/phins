@@ -35990,6 +35990,7 @@ For claims or questions, please contact:
         # The book is anchored on the platform ledger before it is stored.
         if path in (
             '/api/actuarial/phinsafe/project',
+            '/api/actuarial/phinsafe/develop',
             '/api/actuarial/phinsafe/bind',
             '/api/actuarial/phinsafe/claim',
         ):
@@ -36025,8 +36026,10 @@ For claims or questions, please contact:
                 from services.phinsafe_rider import (
                     PhinSafeIntegrityError,
                     anchor_book,
+                    anchor_portfolio,
                     anchor_rider,
                     bind_rider,
+                    develop_portfolio,
                     open_claim,
                     project_book,
                     rider_from_policy,
@@ -36054,6 +36057,36 @@ For claims or questions, please contact:
                             stored['phinsafe_book'] = book
                     self._set_json_headers(200)
                     self.wfile.write(json.dumps({'success': True, 'book': book}).encode('utf-8'))
+                    return
+
+                if path == '/api/actuarial/phinsafe/develop':
+                    simulation_id = str(payload.get('simulation_id') or '').strip()
+                    simulation = get_actuarial_simulation_snapshot(simulation_id)
+                    book = (simulation or {}).get('phinsafe_book') if simulation else None
+                    if not book:
+                        self._set_json_headers(409)
+                        self.wfile.write(json.dumps({
+                            'error': 'No anchored PhinSafe book for this simulation. Run the PhinSafe test first.'
+                        }).encode('utf-8'))
+                        return
+                    portfolio = develop_portfolio(
+                        book,
+                        benefit_termination_age=payload.get('benefit_termination_age'),
+                        premium_pct=payload.get('premium_pct'),
+                        savings_pct_of_premium=payload.get('savings_pct_of_premium'),
+                        claims_pct_of_published=payload.get('claims_pct_of_published'),
+                    )
+                    anchor = anchor_portfolio(platform_event_ledger, portfolio, actor=actor)
+                    portfolio['ledger'] = anchor
+                    with STATE_LOCK:
+                        stored = ACTUARIAL_SIMULATIONS.get(simulation_id)
+                        if isinstance(stored, dict):
+                            stored['phinsafe_portfolio'] = portfolio
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'portfolio': portfolio,
+                    }).encode('utf-8'))
                     return
 
                 if path == '/api/actuarial/phinsafe/bind':

@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <!-- Build stamp: bumped whenever a substantive pricing change ships so
        cached browsers can tell users they are running an old UI. -->
-  <meta name="phins-actuary-dashboard-build" content="2026-10-01.phinsafe-rider">
+  <meta name="phins-actuary-dashboard-build" content="2026-10-01.phinsafe-portfolio">
   <!-- Chart.js for the Annuity Reserves forecast bar/line charts. Loaded
        from the same CDN as risk-reports-dashboard.html for consistency. -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -2367,7 +2367,8 @@
               settled permanently at one fifth of each attached parent policy.
               The parent joins at or under a community maximum age, and that maximum
               stays below this simulator’s maximum age. A first pregnancy is covered
-              only after one year.
+              only after one year. The offspring portfolio then runs from birth to
+              an adjustable benefit-termination age, and that age issues the period.
             </p>
           </div>
 
@@ -2429,6 +2430,38 @@
           </div>
 
           <div id="phinsafe-results" class="results-panel" style="display:none;"></div>
+
+          <div class="card" id="phinsafe-portfolio-card">
+            <div class="card-title">Offspring portfolio</div>
+            <p style="color:var(--text-light);margin:0 0 12px;">
+              Savings, claims, and premium are adjustable shares of the published
+              PhinSafe book. The settled benefit stays locked. The projection
+              period is issued from age 0 at birth through the year before
+              benefit termination.
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Benefit termination age</label>
+                <input type="number" id="phinsafe-termination-age" class="form-input" value="18" min="1" max="40" oninput="updatePhinsafePeriodHint()">
+                <small id="phinsafe-period-hint" style="color:var(--text-light);">Issued automatically: age 0 at birth through age 17, 18 years. Benefit terminates at age 18.</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Premium, % of published rider premium</label>
+                <input type="number" id="phinsafe-premium-pct" class="form-input" value="100" min="0" max="500" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Savings, % of that premium</label>
+                <input type="number" id="phinsafe-savings-pct" class="form-input" value="0" min="0" max="100" step="0.01">
+                <small id="phinsafe-savings-hint" style="color:var(--text-light);">Filled from the published savings ratio after the PhinSafe test.</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Claims, % of published expected claims</label>
+                <input type="number" id="phinsafe-claims-pct" class="form-input" value="100" min="0" max="1000" step="0.01">
+              </div>
+            </div>
+            <button class="btn btn-primary" type="button" id="phinsafe-develop-btn" onclick="runPhinsafePortfolio()">Develop portfolio</button>
+          </div>
+          <div id="phinsafe-portfolio-results" class="results-panel" style="display:none;"></div>
         </section>
 
         <!-- Reinsurance Section -->
@@ -13320,11 +13353,217 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           if (host) host.innerHTML = `<div class="alert alert-danger">${phinsafeEsc(data.error || 'PhinSafe projection failed')}</div>`;
         } else {
           renderPhinsafeBook(data.book);
+          syncPhinsafeSavingsDefault(data.book);
         }
       } catch (err) {
         if (host) host.innerHTML = `<div class="alert alert-danger">${phinsafeEsc(err.message)}</div>`;
       }
       if (btn) { btn.disabled = false; btn.textContent = 'Run PhinSafe test'; }
+    }
+
+    let phinsafeFlowChart = null;
+    let phinsafeCumulativeChart = null;
+
+    function updatePhinsafePeriodHint() {
+      const hint = document.getElementById('phinsafe-period-hint');
+      const raw = parseInt((document.getElementById('phinsafe-termination-age') || {}).value, 10);
+      if (!hint) return;
+      if (!Number.isFinite(raw) || raw < 1) {
+        hint.textContent = 'The period is issued from age 0 at birth to the termination age.';
+        return;
+      }
+      const years = raw === 1 ? '1 year' : `${raw} years`;
+      hint.textContent = `Issued automatically: age 0 at birth through age ${raw - 1}, ${years}. Benefit terminates at age ${raw}.`;
+    }
+
+    function syncPhinsafeSavingsDefault(book) {
+      const rider = (book && book.rider_book) || {};
+      const premium = Number(rider.annual_premium_cents || 0);
+      const savings = Number(rider.savings_premium_cents || 0);
+      const input = document.getElementById('phinsafe-savings-pct');
+      const hint = document.getElementById('phinsafe-savings-hint');
+      const pct = premium > 0 ? Math.floor((savings * 10000) / premium) / 100 : 0;
+      if (input) input.value = pct.toFixed(2);
+      if (hint) {
+        hint.textContent = `Published book: premium ${fmtCurrency(rider.annual_premium)} , savings ${fmtCurrency(rider.savings_premium)} , expected claims ${fmtCurrency(rider.annual_expected_claims)} .`;
+      }
+    }
+
+    function destroyPhinsafeCharts() {
+      if (phinsafeFlowChart) { phinsafeFlowChart.destroy(); phinsafeFlowChart = null; }
+      if (phinsafeCumulativeChart) { phinsafeCumulativeChart.destroy(); phinsafeCumulativeChart = null; }
+    }
+
+    function drawPhinsafeChart(canvasId, datasets) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas || typeof Chart === 'undefined') return null;
+      return new Chart(canvas, {
+        type: 'line',
+        data: { labels: datasets.labels, datasets: datasets.series },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${fmtCurrency(ctx.parsed.y)}` } }
+          },
+          scales: {
+            x: { title: { display: true, text: 'Offspring age' } },
+            y: { title: { display: true, text: 'Amount' }, ticks: { callback: (value) => fmtCurrency(value) } }
+          }
+        }
+      });
+    }
+
+    function renderPhinsafePortfolio(portfolio) {
+      const host = document.getElementById('phinsafe-portfolio-results');
+      if (!host) return;
+      destroyPhinsafeCharts();
+      host.style.display = 'block';
+      const params = portfolio.parameters || {};
+      const summary = portfolio.portfolio || {};
+      const totals = portfolio.totals || {};
+      const stats = portfolio.statistics || {};
+      const checks = (portfolio.integrity || {}).checks || {};
+      const ledger = portfolio.ledger || {};
+      const rows = (portfolio.schedule || []).map((row) => `
+        <tr>
+          <td>${phinsafeEsc(row.offspring_age)}</td>
+          <td>${phinsafeEsc(row.policy_year)}</td>
+          <td>${fmtCurrency(row.benefit_in_force)}</td>
+          <td>${fmtCurrency(row.premium)}</td>
+          <td>${fmtCurrency(row.savings)}</td>
+          <td>${fmtCurrency(row.risk_premium)}</td>
+          <td>${fmtCurrency(row.expected_claims)}</td>
+          <td>${fmtCurrency(row.claims_low_95)}</td>
+          <td>${fmtCurrency(row.claims_high_95)}</td>
+          <td>${fmtCurrency(row.savings_account)}</td>
+          <td>${fmtCurrency(row.cumulative_underwriting)}</td>
+        </tr>`).join('');
+      const checkRows = Object.keys(checks).map((name) => {
+        const ok = !!checks[name];
+        return `<tr><td>${phinsafeEsc(name.replace(/_/g, ' '))}</td><td>${ok ? 'Pass' : 'Fail'}</td></tr>`;
+      }).join('');
+      host.innerHTML = `
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Projection period</div>
+            <div class="stat-value">${fmtCount(params.period_years)} yrs</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Offspring</div>
+            <div class="stat-value">${fmtCount(summary.offspring_count)}</div>
+          </div>
+          <div class="stat-card success">
+            <div class="stat-label">Term premium</div>
+            <div class="stat-value">${fmtCurrency(totals.premium)}</div>
+          </div>
+          <div class="stat-card warning">
+            <div class="stat-label">Savings account</div>
+            <div class="stat-value">${fmtCurrency(totals.savings_account)}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Term expected claims</div>
+            <div class="stat-value">${fmtCurrency(totals.expected_claims)}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Term underwriting</div>
+            <div class="stat-value">${fmtCurrency(totals.underwriting)}</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Developed portfolio</div>
+          <p>${phinsafeEsc(params.period_rule || '')}</p>
+          <p style="color:var(--text-light);">Premium ${phinsafeEsc(params.premium_pct)}% of the published rider premium. Savings ${phinsafeEsc(params.savings_pct_of_premium)}% of that premium. Claims ${phinsafeEsc(params.claims_pct_of_published)}% of published expected claims. Benefit in force ${fmtCurrency(summary.benefit_in_force)}.</p>
+          <p style="color:var(--text-light);">Ledger ${phinsafeEsc(ledger.event_type || '')} ${phinsafeEsc(ledger.entry_id || '')}</p>
+        </div>
+        <div class="card">
+          <div class="card-title">Annual flows and 95% claims band</div>
+          <div class="age-adl-chart-wrap"><canvas id="phinsafe-chart-flows"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Cumulative premium, savings account, and claims</div>
+          <div class="age-adl-chart-wrap"><canvas id="phinsafe-chart-cumulative"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Schedule from birth to termination</div>
+          <div class="age-adl-wrap">
+            <table class="data-table age-adl-table">
+              <thead><tr>
+                <th>Age</th><th>Year</th><th>Benefit</th><th>Premium</th><th>Savings</th>
+                <th>Risk premium</th><th>Expected claims</th><th>95% low</th><th>95% high</th>
+                <th>Savings account</th><th>Cumulative underwriting</th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+          <p style="color:var(--text-light);margin-top:8px;">${phinsafeEsc(stats.model || '')} Term standard error ${fmtCurrency((stats.term_std_error_cents || 0) / 100)}.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">Portfolio integrity</div>
+          <table class="data-table"><tbody>${checkRows}</tbody></table>
+        </div>`;
+      const chart = portfolio.chart || {};
+      const labels = chart.labels || [];
+      phinsafeFlowChart = drawPhinsafeChart('phinsafe-chart-flows', {
+        labels,
+        series: [
+          { label: 'Premium', data: chart.premium || [], borderColor: '#0e2f63', backgroundColor: 'rgba(14,47,99,0.08)', tension: 0.15, pointRadius: 2, fill: false },
+          { label: 'Savings', data: chart.savings || [], borderColor: '#c9a04e', backgroundColor: 'rgba(201,160,78,0.12)', tension: 0.15, pointRadius: 2, fill: false },
+          { label: 'Expected claims', data: chart.expected_claims || [], borderColor: '#9b2c2c', tension: 0.15, pointRadius: 2, fill: false },
+          { label: 'Claims 95% low', data: chart.claims_low_95 || [], borderColor: '#4fd8ff', borderDash: [4, 4], pointRadius: 0, fill: false },
+          { label: 'Claims 95% high', data: chart.claims_high_95 || [], borderColor: '#4fd8ff', borderDash: [4, 4], pointRadius: 0, fill: false }
+        ]
+      });
+      phinsafeCumulativeChart = drawPhinsafeChart('phinsafe-chart-cumulative', {
+        labels,
+        series: [
+          { label: 'Cumulative premium', data: chart.cumulative_premium || [], borderColor: '#0e2f63', tension: 0.15, pointRadius: 2, fill: false },
+          { label: 'Savings account', data: chart.savings_account || [], borderColor: '#c9a04e', tension: 0.15, pointRadius: 2, fill: false },
+          { label: 'Cumulative expected claims', data: chart.cumulative_expected_claims || [], borderColor: '#9b2c2c', tension: 0.15, pointRadius: 2, fill: false },
+          { label: 'Cumulative claims 95% low', data: chart.cumulative_claims_low_95 || [], borderColor: '#4fd8ff', borderDash: [4, 4], pointRadius: 0, fill: false },
+          { label: 'Cumulative claims 95% high', data: chart.cumulative_claims_high_95 || [], borderColor: '#4fd8ff', borderDash: [4, 4], pointRadius: 0, fill: false }
+        ]
+      });
+    }
+
+    async function runPhinsafePortfolio() {
+      const btn = document.getElementById('phinsafe-develop-btn');
+      const host = document.getElementById('phinsafe-portfolio-results');
+      if (btn) { btn.disabled = true; btn.textContent = 'Developing portfolio…'; }
+      if (host) {
+        destroyPhinsafeCharts();
+        host.style.display = 'block';
+        host.innerHTML = '<div class="loading"><div class="spinner"></div><p>Projecting from birth to benefit termination…</p></div>';
+      }
+      const body = {
+        simulation_id: (document.getElementById('phinsafe-simulation-id') || {}).value || '',
+        benefit_termination_age: parseInt((document.getElementById('phinsafe-termination-age') || {}).value, 10),
+        premium_pct: parseFloat((document.getElementById('phinsafe-premium-pct') || {}).value),
+        savings_pct_of_premium: parseFloat((document.getElementById('phinsafe-savings-pct') || {}).value),
+        claims_pct_of_published: parseFloat((document.getElementById('phinsafe-claims-pct') || {}).value)
+      };
+      try {
+        const res = await fetch('/api/actuarial/phinsafe/develop', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          destroyPhinsafeCharts();
+          if (host) host.innerHTML = `<div class="alert alert-danger">${phinsafeEsc(data.error || 'PhinSafe portfolio failed')}</div>`;
+        } else {
+          renderPhinsafePortfolio(data.portfolio);
+        }
+      } catch (err) {
+        destroyPhinsafeCharts();
+        if (host) host.innerHTML = `<div class="alert alert-danger">${phinsafeEsc(err.message)}</div>`;
+      }
+      if (btn) { btn.disabled = false; btn.textContent = 'Develop portfolio'; }
     }
 
     // Boot the annual report bar on first paint so the cap-table and

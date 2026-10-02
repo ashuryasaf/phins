@@ -13,10 +13,13 @@ from services.actuarial_service import SimulationParams, get_portfolio_simulator
 from services.phinsafe_rider import (
     BENEFIT_DENOMINATOR,
     PhinSafeIntegrityError,
+    _bernoulli_variance,
     anchor_book,
+    anchor_portfolio,
     anchor_rider,
     bind_rider,
     build_installment,
+    develop_portfolio,
     money_cents,
     open_claim,
     project_book,
@@ -432,6 +435,114 @@ def _post(url, payload, token=None):
         return json.loads(exc.read().decode('utf-8')), exc.code
 
 
+def _portfolio_book():
+    return project_book(_snapshot(), parent_max_age=40, market_share_pct=10)
+
+
+def test_offspring_period_is_issued_from_birth_to_termination():
+    book = _portfolio_book()
+    portfolio = develop_portfolio(
+        book,
+        benefit_termination_age=18,
+        premium_pct=100,
+        savings_pct_of_premium=10,
+        claims_pct_of_published=100,
+    )
+    params = portfolio['parameters']
+    assert portfolio['integrity']['all_checks_pass'] is True
+    assert params['birth_age'] == 0
+    assert params['benefit_termination_age'] == 18
+    assert params['period_years'] == 18
+    assert params['period_rule'].startswith('Issued automatically from age 0')
+    schedule = portfolio['schedule']
+    assert len(schedule) == 18
+    assert schedule[0]['offspring_age'] == 0
+    assert schedule[-1]['offspring_age'] == 17
+    assert schedule[-1]['policy_year'] == 18
+    benefit = book['rider_book']['coverage_cents']
+    premium = book['rider_book']['annual_premium_cents']
+    savings = book['rider_book']['savings_premium_cents']
+    claims = money_cents(book['rider_book']['annual_expected_claims'])
+    assert benefit == 800_000
+    assert premium == 8_000
+    assert savings == 800
+    assert all(row['benefit_in_force_cents'] == benefit for row in schedule)
+    assert schedule[-1]['cumulative_premium_cents'] == premium * 18
+    assert schedule[-1]['cumulative_savings_cents'] == savings * 18
+    assert schedule[-1]['cumulative_expected_claims_cents'] == claims * 18
+    assert schedule[-1]['cumulative_risk_premium_cents'] + schedule[-1]['cumulative_savings_cents'] == premium * 18
+    assert portfolio['totals']['premium_cents'] == premium * 18
+    assert portfolio['chart']['labels'][0] == 'Age 0'
+    assert portfolio['chart']['labels'][-1] == 'Age 17'
+    assert portfolio['statistics']['term_std_error_cents'] ** 2 <= portfolio['statistics']['term_variance_cents2']
+    longer = develop_portfolio(
+        book,
+        benefit_termination_age=21,
+        premium_pct=100,
+        savings_pct_of_premium=10,
+        claims_pct_of_published=100,
+    )
+    assert longer['parameters']['period_years'] == 21
+    assert longer['totals']['premium_cents'] == premium * 21
+    assert longer['schedule'][-1]['offspring_age'] == 20
+
+
+def test_adjustable_premium_savings_and_claims_keep_the_settled_benefit():
+    book = _portfolio_book()
+    portfolio = develop_portfolio(
+        book,
+        benefit_termination_age=1,
+        premium_pct=50,
+        savings_pct_of_premium=25,
+        claims_pct_of_published=200,
+    )
+    row = portfolio['schedule'][0]
+    assert portfolio['parameters']['period_years'] == 1
+    assert row['offspring_age'] == 0
+    assert row['benefit_in_force_cents'] == 800_000
+    assert row['premium_cents'] == 4_000
+    assert row['savings_cents'] == 1_000
+    assert row['risk_premium_cents'] == 3_000
+    published_claims = money_cents(book['rider_book']['annual_expected_claims'])
+    assert row['expected_claims_cents'] == published_claims * 2
+    assert row['cumulative_underwriting_cents'] == 3_000 - published_claims * 2
+    assert row['claims_low_95_cents'] <= row['expected_claims_cents'] <= row['claims_high_95_cents']
+    variance = _bernoulli_variance(800_000, 4, published_claims * 2)
+    assert portfolio['statistics']['annual_variance_cents2'] == variance
+    se = portfolio['statistics']['annual_std_error_cents']
+    assert se * se <= variance < (se + 1) * (se + 1)
+
+
+def test_portfolio_refuses_a_period_or_assumption_that_breaks_the_book():
+    book = _portfolio_book()
+    with pytest.raises(PhinSafeIntegrityError, match='termination age'):
+        develop_portfolio(book, benefit_termination_age=0)
+    with pytest.raises(PhinSafeIntegrityError, match='termination age'):
+        develop_portfolio(book, benefit_termination_age=41)
+    with pytest.raises(PhinSafeIntegrityError, match='savings percent'):
+        develop_portfolio(book, savings_pct_of_premium=101)
+    with pytest.raises(PhinSafeIntegrityError, match='cannot exceed the settled benefit'):
+        _bernoulli_variance(100, 1, 101)
+    tampered = json.loads(json.dumps(book))
+    tampered['rider_book']['coverage_cents'] += 1
+    with pytest.raises(PhinSafeIntegrityError, match='hash'):
+        develop_portfolio(tampered, benefit_termination_age=18)
+
+
+def test_portfolio_anchor_is_idempotent():
+    book = _portfolio_book()
+    portfolio = develop_portfolio(book, benefit_termination_age=18, premium_pct=100, savings_pct_of_premium=10)
+    ledger = _Ledger()
+    first = anchor_portfolio(ledger, portfolio, actor='actuary')
+    second = anchor_portfolio(ledger, portfolio, actor='actuary')
+    assert first['entry_id'] == second['entry_id']
+    assert first['event_type'] == 'phinsafe_portfolio_projected'
+    assert len(ledger.events) == 1
+    portfolio['totals']['premium_cents'] += 1
+    with pytest.raises(PhinSafeIntegrityError, match='hash'):
+        anchor_portfolio(ledger, portfolio, actor='actuary')
+
+
 def test_actuary_dashboard_api_anchors_then_binds():
     import web_portal.server as portal
 
@@ -482,6 +593,31 @@ def test_actuary_dashboard_api_anchors_then_binds():
         assert book['integrity']['all_checks_pass'] is True
         assert book['ledger']['event_type'] == 'phinsafe_book_anchored'
         assert book['parameters']['parent_max_age'] < book['parameters']['simulator_age_max']
+
+        missing_portfolio, status = _post(base + '/api/actuarial/phinsafe/develop', {
+            'simulation_id': 'missing',
+            'benefit_termination_age': 18,
+        }, token)
+        assert status == 409
+        assert 'error' in missing_portfolio
+
+        developed, status = _post(base + '/api/actuarial/phinsafe/develop', {
+            'simulation_id': simulation_id,
+            'benefit_termination_age': 18,
+            'premium_pct': 100,
+            'savings_pct_of_premium': 10,
+            'claims_pct_of_published': 100,
+        }, token)
+        assert status == 200, developed
+        portfolio = developed['portfolio']
+        assert portfolio['integrity']['all_checks_pass'] is True
+        assert portfolio['parameters']['birth_age'] == 0
+        assert portfolio['parameters']['period_years'] == 18
+        assert portfolio['schedule'][0]['offspring_age'] == 0
+        assert portfolio['schedule'][-1]['offspring_age'] == 17
+        assert portfolio['ledger']['event_type'] == 'phinsafe_portfolio_projected'
+        assert len(portfolio['chart']['labels']) == 18
+        assert portal.ACTUARIAL_SIMULATIONS[simulation_id]['phinsafe_portfolio']['document_hash'] == portfolio['document_hash']
 
         portal.CUSTOMERS['CUST-SAFE'] = {
             'id': 'CUST-SAFE',
