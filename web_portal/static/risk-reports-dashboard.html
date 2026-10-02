@@ -2991,10 +2991,11 @@
     }
 
     function dedupedAccountSum(accounts, field) {
+      const valueOf = typeof field === 'function' ? field : (account) => account[field];
       const grouped = {};
       let loose = 0;
       (accounts || []).forEach((account) => {
-        const amount = parseFloat(account[field]) || 0;
+        const amount = parseFloat(valueOf(account)) || 0;
         if (amount <= 0) return;
         const policy = String(account.policy_number || '').trim();
         const rounded = Math.round(amount * 100) / 100;
@@ -3026,7 +3027,7 @@
       
       // סכום חד פעמי is deduped per policy — repeated track rows count once.
       const totalDeathCoverage = totals.total_death_lump_sum || dedupedAccountSum(accounts, 'death_coverage');
-      const totalDisabilityCoverage = dedupedAccountSum(accounts, 'disability_coverage') || dedupedAccountSum(accounts, 'work_disability_coverage');
+      const totalDisabilityCoverage = dedupedAccountSum(accounts, (a) => a.disability_coverage || a.work_disability_coverage);
       
       document.getElementById('statsGrid').innerHTML = `
         <div class="stat-card fade-in" style="grid-column: span 2; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
