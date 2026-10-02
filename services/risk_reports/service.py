@@ -787,6 +787,9 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
             }
             if chart_data.get('total') is not None:
                 chart_summary['total'] = chart_data.get('total')
+            for key in ('caption', 'matches_accumulation', 'accumulation'):
+                if chart_data.get(key) is not None:
+                    chart_summary[key] = chart_data.get(key)
             chart_summaries.append(chart_summary)
 
         recommendations = [{

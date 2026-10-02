@@ -137,6 +137,16 @@ class TestCustomerDownloadHelpers(unittest.TestCase):
         ])
         self.assertEqual([chart['title'] for chart in prepared], ['Savings vs Cover'])
 
+    def test_chart_caption_survives_customer_preparation(self):
+        prepared = prepare_customer_download_charts([
+            {'title': 'צבירה לפי יצרן', 'type': 'bar', 'caption': 'מסתכם לצבירה כוללת',
+             'accumulation': 125000, 'matches_accumulation': True,
+             'series': [{'label': 'מנורה', 'value': 125000}]},
+        ])
+        self.assertEqual(prepared[0]['caption'], 'מסתכם לצבירה כוללת')
+        self.assertEqual(prepared[0]['accumulation'], 125000)
+        self.assertTrue(prepared[0]['matches_accumulation'])
+
     def test_staff_data_quality_recommendations_are_excluded(self):
         prepared = prepare_customer_download_recommendations([
             {'title': 'Review cover gap', 'description': 'Walk through the cover gap with your advisor.'},

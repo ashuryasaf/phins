@@ -7,19 +7,59 @@ is a few hundred microseconds on the pension fixture (measured in
 report rather than lazily on view.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from services.risk_reports.models import AnalysisResult, ChartConfig, ChartType
 from services.risk_reports.pdf_export import classify_cover_type
 
+# Same navy/gold sequence the customer PDF drawings use.
+PHINS_CHART_COLORS = [
+    '#0e2f63', '#e3bf6f', '#15449b', '#0b5c82', '#c9a04e', '#7fb2ff', '#12315f', '#f7e2a0',
+]
 
-def _currency_payload(labels, values) -> Dict[str, Any]:
+
+def _shekel(amount: float) -> str:
+    value = round(float(amount or 0), 2)
+    if abs(value - round(value)) < 0.005:
+        return f'₪{value:,.0f}'
+    return f'₪{value:,.2f}'
+
+
+def _currency_payload(
+    labels,
+    values,
+    *,
+    accumulation: Optional[float] = None,
+    caption: Optional[str] = None,
+    matches_accumulation: Optional[bool] = None,
+) -> Dict[str, Any]:
     """Slice labels plus their sum, so the dashboard can show the affiliated total."""
     amounts = [round(float(value or 0), 2) for value in values]
-    return {
+    payload: Dict[str, Any] = {
         'labels': list(labels),
         'values': amounts,
         'total': round(sum(amounts), 2),
     }
+    if accumulation is not None:
+        payload['accumulation'] = round(float(accumulation), 2)
+    if matches_accumulation is not None:
+        payload['matches_accumulation'] = bool(matches_accumulation)
+    if caption:
+        payload['caption'] = caption
+    return payload
+
+
+def _accumulation_note(total: float, tzvira: float, is_hebrew: bool) -> Tuple[str, bool]:
+    """Say whether this chart's slices already equal צבירה כוללת."""
+    matches = tzvira > 0 and abs(float(total) - float(tzvira)) < 0.05
+    if matches:
+        caption = (
+            f'סה״כ {_shekel(total)} · מסתכם לצבירה כוללת'
+            if is_hebrew else
+            f'Total {_shekel(total)} · sums to total accumulation'
+        )
+    else:
+        caption = f'סה״כ {_shekel(total)}' if is_hebrew else f'Total {_shekel(total)}'
+    return caption, matches
 
 
 def _reconciled_breakdown(stored: Any, expected: float) -> Optional[Dict[str, float]]:
@@ -59,15 +99,27 @@ class ChartsMixin:
         id_rows = int(summary.get('id_row_coverage', 0) or 0)
 
         if total_savings > 0 or total_cover > 0:
+            savings_label = 'חיסכון' if is_hebrew else 'Savings'
+            cover_label = 'כיסוי' if is_hebrew else 'Cover'
+            # The two bars are different kinds of money. The caption names
+            # חיסכון as צבירה כוללת and leaves כיסוי beside it.
+            caption = (
+                f'חיסכון {_shekel(total_savings)} = צבירה כוללת · כיסוי {_shekel(total_cover)}'
+                if is_hebrew else
+                f'Savings {_shekel(total_savings)} = total accumulation · Cover {_shekel(total_cover)}'
+            )
             charts.append(ChartConfig(
                 type=ChartType.BAR,
                 title='חיסכון מול כיסוי' if is_hebrew else 'Savings vs Cover',
                 data=_currency_payload(
-                    ['חיסכון' if is_hebrew else 'Savings', 'כיסוי' if is_hebrew else 'Cover'],
+                    [savings_label, cover_label],
                     [total_savings, total_cover],
+                    accumulation=total_savings,
+                    caption=caption,
+                    matches_accumulation=False,
                 ),
                 options={
-                    'colors': ['#10b981', '#1a237e'],
+                    'colors': PHINS_CHART_COLORS[:2],
                     'currency': True,
                     'currency_symbol': '₪'
                 }
@@ -204,13 +256,23 @@ class ChartsMixin:
             provider_totals = accumulation_by_provider(accounts)
         
         if provider_totals:
+            provider_values = list(provider_totals.values())
+            provider_caption, provider_matches = _accumulation_note(
+                sum(provider_values), tzvira, is_hebrew,
+            )
             charts.append(ChartConfig(
                 type=ChartType.BAR,
                 title='צבירה לפי יצרן' if is_hebrew else 'Savings by Provider',
-                data=_currency_payload(list(provider_totals.keys()), list(provider_totals.values())),
+                data=_currency_payload(
+                    list(provider_totals.keys()),
+                    provider_values,
+                    accumulation=tzvira,
+                    caption=provider_caption,
+                    matches_accumulation=provider_matches,
+                ),
                 options={
                     'horizontal': False,
-                    'colors': ['#2196F3', '#4CAF50', '#FF9800', '#9C27B0', '#00BCD4'],
+                    'colors': PHINS_CHART_COLORS,
                     'currency': True,
                     'currency_symbol': '₪'
                 }
@@ -236,12 +298,37 @@ class ChartsMixin:
         
         if total_tagmulim > 0 or total_severance > 0:
             labels = ['תגמולים', 'פיצויים'] if is_hebrew else ['Savings', 'Severance']
+            values = [total_tagmulim, total_severance]
+            covered = round(total_tagmulim + total_severance, 2)
+            # Named pots can be shorter than צבירה כוללת. The unlabeled
+            # remainder stays on the doughnut so the slices sum to it.
+            # A larger פיצויים pot (affiliated pitzuim outside the holdings
+            # total) is kept as uploaded; it is not clipped to צבירה.
+            if tzvira > covered + 0.05:
+                values.append(round(tzvira - covered, 2))
+                labels.append('יתרת צבירה' if is_hebrew else 'Remaining accumulation')
+                split_caption, split_matches = _accumulation_note(sum(values), tzvira, is_hebrew)
+            elif tzvira > 0 and covered > tzvira + 0.05:
+                split_caption = (
+                    f'פיצויים כולל סכומים מחוץ לצבירה הכוללת ({_shekel(tzvira)})'
+                    if is_hebrew else
+                    f'Severance includes pots outside total accumulation ({_shekel(tzvira)})'
+                )
+                split_matches = False
+            else:
+                split_caption, split_matches = _accumulation_note(covered, tzvira, is_hebrew)
             charts.append(ChartConfig(
                 type=ChartType.DOUGHNUT,
                 title='תגמולים מול פיצויים' if is_hebrew else 'Savings vs Severance',
-                data=_currency_payload(labels, [total_tagmulim, total_severance]),
+                data=_currency_payload(
+                    labels,
+                    values,
+                    accumulation=tzvira,
+                    caption=split_caption,
+                    matches_accumulation=split_matches,
+                ),
                 options={
-                    'colors': ['#4CAF50', '#FF9800'],
+                    'colors': PHINS_CHART_COLORS,
                     'currency': True,
                     'currency_symbol': '₪'
                 }
@@ -314,12 +401,25 @@ class ChartsMixin:
                     cost_totals[label] = cost_totals.get(label, 0) + cost
         
         if coverage_totals:
+            cover_values = list(coverage_totals.values())
+            cover_total = round(sum(cover_values), 2)
+            cover_caption = (
+                f'סכום כיסויים {_shekel(cover_total)}'
+                if is_hebrew else
+                f'Cover face amounts {_shekel(cover_total)}'
+            )
             charts.append(ChartConfig(
                 type=ChartType.PIE,
                 title='כיסויים ביטוחיים' if is_hebrew else 'Insurance Coverage',
-                data=_currency_payload(list(coverage_totals.keys()), list(coverage_totals.values())),
+                data=_currency_payload(
+                    list(coverage_totals.keys()),
+                    cover_values,
+                    accumulation=tzvira,
+                    caption=cover_caption,
+                    matches_accumulation=False,
+                ),
                 options={
-                    'colors': ['#E91E63', '#3F51B5', '#009688', '#795548', '#607D8B', '#FF5722'],
+                    'colors': PHINS_CHART_COLORS,
                     'currency': True,
                     'currency_symbol': '₪'
                 }
@@ -342,12 +442,22 @@ class ChartsMixin:
             product_balances = accumulation_by_product(accounts)
 
         if product_balances:
+            product_values = list(product_balances.values())
+            product_caption, product_matches = _accumulation_note(
+                sum(product_values), tzvira, is_hebrew,
+            )
             charts.append(ChartConfig(
                 type=ChartType.PIE,
                 title='ריכוז סכומי הצבירה לפי סוגי המוצרים' if is_hebrew else 'Accumulation by Product Type',
-                data=_currency_payload(list(product_balances.keys()), list(product_balances.values())),
+                data=_currency_payload(
+                    list(product_balances.keys()),
+                    product_values,
+                    accumulation=tzvira,
+                    caption=product_caption,
+                    matches_accumulation=product_matches,
+                ),
                 options={
-                    'colors': ['#009688', '#795548', '#607D8B', '#FF5722', '#673AB7'],
+                    'colors': PHINS_CHART_COLORS,
                     'currency': True,
                     'currency_symbol': '₪'
                 }
