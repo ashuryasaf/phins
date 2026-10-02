@@ -912,19 +912,30 @@ def _style_table(table, header_color: str = PHINS_NAVY, rtl: bool = False):
 
     align = 'RIGHT' if rtl else 'LEFT'
     table.hAlign = 'RIGHT' if rtl else 'LEFT'
+    # A wide holdings grid scales columns under the page width. Padding must
+    # stay inside the narrowest column or ReportLab refuses the table.
+    raw_widths = getattr(table, '_colWidths', None) or getattr(table, 'colWidths', None) or []
+    numeric = []
+    for width in raw_widths:
+        try:
+            numeric.append(float(width))
+        except (TypeError, ValueError):
+            continue
+    narrowest = min(numeric) if numeric else 48.0
+    side_pad = 8.0 if narrowest >= 28.0 else max(2.0, (narrowest - 4.0) / 2.0)
     table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(header_color)),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor(PHINS_GOLD_STRONG)),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor(PHINS_ICE)),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f4ea')]),
         ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor(PHINS_INK)),
-        ('LINEBELOW', (0, 0), (-1, 0), 1.2, colors.HexColor(PHINS_GOLD)),
-        ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#d7e2f5')),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LINEBELOW', (0, 0), (-1, 0), 1.6, colors.HexColor(PHINS_GOLD)),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('ALIGN', (0, 0), (-1, -1), align),
-        ('LEFTPADDING', (0, 0), (-1, -1), 6),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-        ('TOPPADDING', (0, 0), (-1, -1), 5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING', (0, 0), (-1, -1), side_pad),
+        ('RIGHTPADDING', (0, 0), (-1, -1), side_pad),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ('FONTSIZE', (0, 0), (-1, -1), 8),
     ]))
     return table
@@ -1440,9 +1451,16 @@ def _chart_drawing(chart: Dict[str, Any], width: float, height: float, rtl: bool
     bar.categoryAxis.labels.boxAnchor = 'n'
     bar.categoryAxis.labels.textAnchor = 'middle'
     bar.categoryAxis.labels.dy = -2
+    bar.groupSpacing = 14
+    bar.barSpacing = 6
     bar.valueAxis.valueMin = 0
     bar.valueAxis.labels.fontName = font_name
     bar.valueAxis.labels.fontSize = 7
+    bar.valueAxis.visibleGrid = 1
+    bar.valueAxis.gridStrokeColor = colors.HexColor('#e6eef8')
+    bar.valueAxis.gridStrokeWidth = 0.4
+    bar.valueAxis.visibleAxis = 0
+    bar.categoryAxis.visibleAxis = 0
     bar.bars[0].fillColor = colors.HexColor(PHINS_NAVY)
     bar.bars.strokeWidth = 0
     for index, _value in enumerate(values):
@@ -1499,13 +1517,15 @@ def _chart_card(
     card = Table([[title], [drawing], [legend]], colWidths=[width])
     card.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 6),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-        ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(PHINS_ICE)),
-        ('BOX', (0, 0), (-1, -1), 0.7, colors.HexColor('#d7e2f5')),
-        ('LINEBELOW', (0, 0), (-1, 0), 0.8, colors.HexColor(PHINS_GOLD)),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, 0), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 2),
+        ('TOPPADDING', (0, -1), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, -1), (-1, -1), 8),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fffdf8')),
+        ('BOX', (0, 0), (-1, -1), 0.6, colors.HexColor('#e3d7b4')),
+        ('LINEABOVE', (0, 0), (-1, 0), 2.2, colors.HexColor(PHINS_GOLD)),
     ]))
     return card
 

@@ -760,61 +760,82 @@
     
     .stat-detail:last-child { border-bottom: none; }
     .stat-detail .label { color: var(--text-muted); }
-    .stat-detail .val { font-weight: 600; color: var(--text-dark); }
+    .stat-detail .val {
+      font-weight: 600;
+      color: #0e2f63;
+      font-variant-numeric: tabular-nums;
+      font-family: 'Heebo', 'Inter', sans-serif;
+    }
     
     /* Charts Container */
     .charts-container {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 1.5rem;
+      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+      gap: 1.15rem;
       margin-bottom: 2rem;
     }
     
     .charts-heading {
       grid-column: 1 / -1;
-      padding: 0.25rem 0.25rem 0.5rem;
+      padding: 0.15rem 0.15rem 0.35rem;
     }
 
     .charts-heading h3 {
       font-family: 'Space Grotesk', 'Heebo', sans-serif;
       color: #0e2f63;
-      font-size: 1.25rem;
+      font-size: 1.35rem;
+      font-weight: 600;
     }
 
     .charts-heading p {
-      color: var(--text-muted);
-      font-size: 0.9rem;
-      margin-top: 0.25rem;
+      color: #5b6b82;
+      font-size: 0.92rem;
+      margin-top: 0.2rem;
     }
 
     .chart-card {
-      background: linear-gradient(180deg, #fffdf8 0%, #ffffff 42%);
-      border-radius: 14px;
-      padding: 1.25rem 1.35rem 1.1rem;
-      box-shadow: 0 10px 28px rgba(6, 13, 31, 0.06);
+      background: linear-gradient(180deg, #fffdf8 0%, #ffffff 38%);
+      border-radius: 16px;
+      padding: 1.15rem 1.2rem 0.85rem;
+      box-shadow: 0 14px 34px rgba(6, 13, 31, 0.07);
       border: 1px solid rgba(14, 47, 99, 0.08);
       border-top: 3px solid #e3bf6f;
     }
     
     .chart-card h4 {
-      margin-bottom: 0.35rem;
+      margin: 0;
       color: #0e2f63;
       text-align: center;
       font-family: 'Heebo', 'Space Grotesk', sans-serif;
+      font-size: 1.02rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+
+    .chart-card h4::after {
+      content: '';
+      display: block;
+      width: 42px;
+      height: 2px;
+      margin: 0.45rem auto 0.35rem;
+      border-radius: 2px;
+      background: linear-gradient(90deg, #c9a04e, #f7e2a0);
     }
 
     .chart-total {
-      margin: 0 0 0.85rem;
+      margin: 0 0 0.55rem;
       text-align: center;
-      font-weight: 700;
-      color: #0e2f63;
+      font-weight: 500;
+      font-size: 0.84rem;
+      color: #3e5274;
       font-family: 'Heebo', 'Inter', sans-serif;
       line-height: 1.45;
+      font-variant-numeric: tabular-nums;
     }
     
     .chart-wrapper {
       position: relative;
-      height: 300px;
+      height: 320px;
     }
     
     /* Risk Gauge */
@@ -1896,19 +1917,24 @@
     /* Data Table — cells wrap to the words instead of overflowing the card */
     .table-scroll {
       width: 100%;
-      overflow-x: auto;
+      overflow: auto;
       margin-top: 1rem;
+      border: 1px solid rgba(14, 47, 99, 0.1);
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: 0 8px 22px rgba(6, 13, 31, 0.04);
     }
 
     .data-table {
       width: 100%;
-      border-collapse: collapse;
+      border-collapse: separate;
+      border-spacing: 0;
       table-layout: auto;
       font-family: 'Heebo', 'Inter', sans-serif;
     }
     
     .data-table th, .data-table td {
-      padding: 8px 10px;
+      padding: 9px 12px;
       text-align: start;
       vertical-align: top;
       border-bottom: 1px solid #e6eef8;
@@ -1921,13 +1947,41 @@
     }
     
     .data-table th {
-      background: #f4f0e6;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #0e2f63;
       font-weight: 600;
-      color: #0e2f63;
+      color: #f7e2a0;
+      letter-spacing: 0.01em;
+      border-bottom: 2px solid #e3bf6f;
+    }
+
+    .data-table tbody tr:nth-child(even) {
+      background: #f8f4ea;
     }
     
     .data-table tr:hover {
-      background: #f8fafc;
+      background: #eef3fb;
+    }
+
+    .data-table td.num {
+      direction: ltr;
+      unicode-bidi: isolate;
+      text-align: right;
+      font-weight: 600;
+      color: #0e2f63;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+      max-width: none;
+    }
+
+    .data-table th:first-child {
+      border-start-start-radius: 11px;
+    }
+
+    .data-table th:last-child {
+      border-start-end-radius: 11px;
     }
     
     /* RTL Support */
@@ -1970,6 +2024,14 @@
       
       .stats-grid {
         grid-template-columns: repeat(2, 1fr);
+      }
+
+      .charts-container {
+        grid-template-columns: 1fr;
+      }
+
+      .chart-wrapper {
+        height: 280px;
       }
     }
     
@@ -2032,6 +2094,13 @@
       font-weight: 700;
       text-decoration: none;
       white-space: nowrap;
+    }
+    body.phins-unified .phins-header,
+    body.phins-unified .phins-logo,
+    body.phins-unified .phins-nav,
+    body.phins-unified .phins-logo-text {
+      direction: ltr;
+      unicode-bidi: isolate;
     }
   </style>
   <script src="/agent-jobs.js"></script>
@@ -4376,6 +4445,26 @@
       return `\u200E${symbol || '₪'}${formatted}`;
     }
 
+    function formatChartAxis(value, symbol) {
+      const amount = Number(value) || 0;
+      const abs = Math.abs(amount);
+      const sign = amount < 0 ? '-' : '';
+      const sym = symbol || '₪';
+      if (abs >= 1000000) {
+        return `\u200E${sign}${sym}${(abs / 1000000).toLocaleString('he-IL', { maximumFractionDigits: 1 })}M`;
+      }
+      if (abs >= 1000) {
+        return `\u200E${sign}${sym}${(abs / 1000).toLocaleString('he-IL', { maximumFractionDigits: 0 })}K`;
+      }
+      return formatChartMoney(amount, sym);
+    }
+
+    function isNumericCell(value) {
+      if (typeof value === 'number' && Number.isFinite(value)) return true;
+      if (typeof value !== 'string') return false;
+      return /^[₪$€]?\s?-?\d[\d,.\s]*%?$/.test(value.trim());
+    }
+
     function chartSliceTotal(config) {
       const data = config && config.data ? config.data : {};
       if (data.total !== undefined && data.total !== null && data.total !== '') {
@@ -4408,9 +4497,33 @@
       const values = (config.data && config.data.values) ? config.data.values : [];
       const labels = (config.data && config.data.labels) ? config.data.labels : [];
       
+      const centerTotal = chartType === 'doughnut' ? {
+        id: 'phinsCenterTotal',
+        afterDraw: function(chart) {
+          const meta = chart.getDatasetMeta(0);
+          const arc = meta && meta.data && meta.data[0];
+          if (!arc) return;
+          const total = (config.data && config.data.accumulation != null)
+            ? Number(config.data.accumulation)
+            : chartSliceTotal(config);
+          const draw = chart.ctx;
+          draw.save();
+          draw.textAlign = 'center';
+          draw.textBaseline = 'middle';
+          draw.fillStyle = '#5b6b82';
+          draw.font = "500 11px 'Heebo', 'Inter', sans-serif";
+          draw.fillText('סה״כ', arc.x, arc.y - 11);
+          draw.fillStyle = '#0e2f63';
+          draw.font = "600 13px 'Heebo', 'Inter', sans-serif";
+          draw.fillText(formatChartMoney(total, symbol), arc.x, arc.y + 8);
+          draw.restore();
+        }
+      } : null;
+
       try {
         return new Chart(ctx, {
           type: chartType,
+          plugins: centerTotal ? [centerTotal] : [],
           data: {
             labels: labels,
             datasets: [{
@@ -4418,12 +4531,13 @@
               backgroundColor: options.colors || [
                 '#0e2f63', '#e3bf6f', '#15449b', '#0b5c82', '#c9a04e', '#7fb2ff', '#12315f', '#f7e2a0'
               ],
-              borderWidth: chartType === 'bar' ? 0 : 3,
+              borderWidth: chartType === 'bar' ? 0 : 2,
               borderColor: '#fffdf8',
-              borderRadius: chartType === 'bar' ? 5 : 0,
-              hoverOffset: chartType === 'bar' ? 0 : 6,
-              barPercentage: 0.62,
-              categoryPercentage: 0.72
+              borderRadius: chartType === 'bar' ? 6 : 0,
+              spacing: chartType === 'bar' ? 0 : 3,
+              hoverOffset: chartType === 'bar' ? 0 : 8,
+              barPercentage: 0.55,
+              categoryPercentage: 0.68
             }]
           },
           options: {
@@ -4496,7 +4610,7 @@
                   font: { family: "'Heebo', 'Inter', sans-serif", size: 11 },
                   maxTicksLimit: 6,
                   callback: currency ? function(value) {
-                    return formatChartMoney(value, symbol);
+                    return formatChartAxis(value, symbol);
                   } : undefined
                 }
               }
@@ -4534,7 +4648,7 @@
             <tbody>
               ${cappedRows.map(row => `
                 <tr>
-                  ${resolvedColumns.map(col => `<td>${formatTableCell(row?.[col])}</td>`).join('')}
+                  ${resolvedColumns.map(col => `<td${isNumericCell(row?.[col]) ? ' class="num"' : ''}>${formatTableCell(row?.[col])}</td>`).join('')}
                 </tr>
               `).join('')}
             </tbody>
@@ -4566,7 +4680,7 @@
             ${keys.map(key => `
               <tr>
                 <td>${escapeHtml(formatMetricName(key))}</td>
-                <td>${formatTableCell(data[key])}</td>
+                <td${isNumericCell(data[key]) ? ' class="num"' : ''}>${formatTableCell(data[key])}</td>
               </tr>
             `).join('')}
           </tbody>
