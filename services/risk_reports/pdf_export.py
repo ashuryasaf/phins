@@ -415,11 +415,16 @@ def prepare_customer_download_charts(charts: Optional[List[Dict[str, Any]]]) -> 
             })
         if not series:
             continue
-        prepared.append({
+        prepared_chart = {
             'title': title,
             'type': chart_type or 'bar',
             'series': series[:12],
-        })
+        }
+        # The reconciliation note travels with the chart into the PDF legend.
+        for key in ('caption', 'matches_accumulation', 'accumulation'):
+            if chart.get(key) is not None:
+                prepared_chart[key] = chart.get(key)
+        prepared.append(prepared_chart)
     return prepared
 
 
