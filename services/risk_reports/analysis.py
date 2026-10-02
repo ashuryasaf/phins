@@ -342,8 +342,10 @@ _MONEY_MARKERS = (
     'balance', 'deposit', 'premium', 'coverage', 'severance', 'savings', 'amount',
 )
 # Rate markers win over money markers: שיעור דמי ניהול מחיסכון is a percent.
+# Only a named fee counts: a generic percent header such as אחוז במסלול holds
+# allocation weights, not management fees.
 _RATE_MARKERS = (
-    'שיעור', 'אחוז', '%', 'percent', 'דמי ניהול', 'management fee', 'fee rate',
+    'דמי ניהול', 'management fee', 'fee rate',
 )
 _ACCUMULATION_FEE_MARKERS = ('מחיסכון', 'מצבירה', 'צבור', 'צבירה', 'accumulation', 'savings')
 
@@ -410,10 +412,10 @@ def rate_column_anomaly(column: str, numbers: List[float]) -> Optional[Anomaly]:
         return None
     median = positives[len(positives) // 2]
     accumulation = any(marker in name.lower() for marker in _ACCUMULATION_FEE_MARKERS)
-    if median <= 0.2:
-        cap = 0.02 if accumulation else 0.06
-        absurd_floor = 0.2
-    elif median <= 20:
+    # Fees are read on the percent scale. A default fund charges 0.1-0.22 from
+    # accumulation, so a sub-1 median is a legal rate, never a decimal fraction
+    # to measure against a 0.02 cap.
+    if median <= 20:
         cap = 2.0 if accumulation else 6.0
         absurd_floor = 20
     else:

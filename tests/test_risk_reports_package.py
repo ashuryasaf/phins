@@ -677,6 +677,16 @@ def test_pension_columns_are_judged_by_sign_and_fee_band_not_zscore():
     )
     assert legal_rates == []
 
+    cheap_rates = anomalies_for(
+        'שיעור דמי ניהול שנתי מחיסכון צבור',
+        [0.1] * 200 + [0.15] * 6,
+    )
+    assert cheap_rates == []
+
+    track_shares = anomalies_for('אחוז במסלול', [100] * 200 + [40] * 3 + [60] * 3)
+    assert not any(item.type.startswith('rate_') for item in track_shares)
+    assert not any(item.severity.value in ('high', 'critical') for item in track_shares)
+
     mixed_units = anomalies_for(
         'שיעור דמי ניהול שנתי מחיסכון צבור',
         [0.5] * 20 + [250000] * 10,
