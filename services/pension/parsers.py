@@ -301,10 +301,9 @@ class MislakaParserMixin:
                 if contrib:
                     acc.contributions.append((self.CONTRIBUTION_TAGS.index(tag), pos_of(elem), contrib))
 
-        for tag in self.SEVERANCE_TAGS:
-            for elem in descendants(tag):
-                for sev in self._severance_rows_from_elem(elem):
-                    acc.severance.append((self.SEVERANCE_TAGS.index(tag), pos_of(elem), sev))
+        for order, elem in self._severance_root_elems(block):
+            for sev in self._severance_rows_from_elem(elem):
+                acc.severance.append((order, pos_of(elem), sev))
 
         for elem in descendants(self.EMPLOYER_TAG):
             emp_name = self._find_text(elem, 'SHEM-MAASIK') or self._find_text(elem, 'ShemMaasik')
@@ -1014,13 +1013,31 @@ class MislakaParserMixin:
                     contrib[field_name] = value
         return contrib
 
+    def _severance_root_elems(self, root) -> List[Tuple[int, Any]]:
+        """``(tag order, element)`` for each outermost פיצויים block.
+
+        A nested alias tag (``PirteiPitzuim`` inside ``NetuneiPitzuim``) holds
+        the same employer pots as its parent, so parsing it again would
+        double-count them.
+        """
+        found = [
+            (self.SEVERANCE_TAGS.index(tag), elem)
+            for tag in self.SEVERANCE_TAGS
+            for elem in self._descendants_named(root, tag)
+        ]
+        nested = {
+            id(child)
+            for _order, elem in found
+            for child in self._descendants_named(elem, *self.SEVERANCE_TAGS)
+        }
+        return [(order, elem) for order, elem in found if id(elem) not in nested]
+
     def _parse_severance(self, root, interface_code: int) -> List[Dict[str, Any]]:
         """Parse severance data (NetuneiPitzuim), one row per employer pot."""
         severance_list = []
-        for tag in self.SEVERANCE_TAGS:
-            for elem in self._descendants_named(root, tag):
-                severance_list.extend(self._severance_rows_from_elem(elem))
-                self._forget_index(elem)
+        for _order, elem in self._severance_root_elems(root):
+            severance_list.extend(self._severance_rows_from_elem(elem))
+            self._forget_index(elem)
         return severance_list
 
     def _severance_rows_from_elem(self, elem) -> List[Dict[str, Any]]:

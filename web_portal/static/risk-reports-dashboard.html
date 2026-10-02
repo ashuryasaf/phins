@@ -3016,6 +3016,20 @@
       return Math.abs((parseFloat(left) || 0) - (parseFloat(right) || 0)) < 0.021;
     }
 
+    function isRiskOnlyProduct(account) {
+      const code = String(account?.product_type_code || account?.product_type || '').trim();
+      const family = String(account?.product_type_name || account?.product_type || '');
+      const riskFamily = code === '8' || code === '11' || code === '12'
+        || family.includes('ביטוח חיים') || family.includes('ריסק') || family.includes('אובדן כושר עבודה');
+      if (!riskFamily) return false;
+      const savings = parseFloat(account?.savings_balance) || 0;
+      const tagmulim = parseFloat(account?.tagmulim_balance) || 0;
+      const severance = parseFloat(account?.severance_balance) || 0;
+      if (savings <= 0 && tagmulim <= 0 && severance <= 0) return true;
+      const death = parseFloat(account?.death_coverage) || 0;
+      return death > 0 && savings > 0 && amountsClose(savings, death) && tagmulim <= 0;
+    }
+
     function deathLumpSum(account) {
       let fromCovers = 0;
       (account?.risk_covers || []).forEach((item) => {
@@ -3034,7 +3048,10 @@
       const officialSavings = savings > 0 ? savings : ((total > 0 && !amountsClose(total, explicit)) ? total : 0);
       if (fromCovers > 0) return fromCovers;
       if (explicit <= 0) return 0;
-      if (officialSavings > 0 && amountsClose(explicit, officialSavings)) return 0;
+      // A ריסק row whose savings face equals the cover still reports the face.
+      if (officialSavings > 0 && amountsClose(explicit, officialSavings)) {
+        return isRiskOnlyProduct(account) ? explicit : 0;
+      }
       if (officialSavings > 0 && explicit > officialSavings + 0.021) {
         const remainder = Math.round((explicit - officialSavings) * 100) / 100;
         if (

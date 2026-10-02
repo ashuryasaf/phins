@@ -744,9 +744,9 @@ Factors Affecting Score:
             from services.pension.schema import (
                 COVER_FACE_FIELDS,
                 account_accumulation,
-                account_severance,
                 cover_face_total,
                 deduped_sum,
+                severance_sum,
             )
             accounts = list(pension_data.get('accounts', []) or [])
             client_data = pension_data.get('client', {})
@@ -757,7 +757,7 @@ Factors Affecting Score:
                 shared_client_id = str(client_data.get('id_number', '') or '').strip()
 
             total_savings = deduped_sum(accounts, account_accumulation)
-            total_severance = deduped_sum(accounts, account_severance)
+            total_severance = severance_sum(accounts)
             total_cover = cover_face_total(accounts)
             seen_savings_policies = set()
             seen_cover_policies = set()
@@ -786,10 +786,10 @@ Factors Affecting Score:
             from services.pension.schema import (
                 COVER_FACE_FIELDS,
                 account_accumulation,
-                account_severance,
                 cover_face_total,
                 deduped_sum,
                 map_hebrew_column,
+                severance_sum,
             )
             column_fields = {
                 col: map_hebrew_column(str(col))
@@ -824,7 +824,7 @@ Factors Affecting Score:
                             'reference': str(account.get('policy_number') or ''),
                         })
                 total_savings = deduped_sum(pseudo_accounts, account_accumulation)
-                total_severance = deduped_sum(pseudo_accounts, account_severance)
+                total_severance = severance_sum(pseudo_accounts)
                 total_cover = cover_face_total(pseudo_accounts)
                 records_with_savings = len({
                     str(account.get('policy_number') or index)

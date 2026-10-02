@@ -15,6 +15,7 @@ from services.pension.schema import (
     death_lump_sum,
     deduped_sum,
     portfolio_totals,
+    severance_sum,
 )
 
 
@@ -208,7 +209,7 @@ class PensionReportMixin:
         if total_balance == 0 and accounts:
             total_balance = deduped_sum(accounts, account_accumulation)
         if total_severance == 0 and accounts:
-            total_severance = deduped_sum(accounts, account_severance)
+            total_severance = severance_sum(accounts)
         
         # Death lump sum (סכום חד פעמי) is deduped the same way as צבירה.
         total_death = totals.get('total_death_lump_sum') or deduped_sum(accounts, death_lump_sum)
