@@ -763,9 +763,16 @@
     }
     
     .chart-card h4 {
-      margin-bottom: 1rem;
+      margin-bottom: 0.35rem;
       color: var(--text-dark);
       text-align: center;
+    }
+
+    .chart-total {
+      margin: 0 0 0.85rem;
+      text-align: center;
+      font-weight: 700;
+      color: var(--primary, #0d47a1);
     }
     
     .chart-wrapper {
@@ -4205,8 +4212,10 @@
         const chartId = `chart-${index}`;
         const wrapper = document.createElement('div');
         wrapper.className = 'chart-card fade-in';
+        const totalLine = chartTotalLine(config);
         wrapper.innerHTML = `
-          <h4>${config.title || 'Chart'}</h4>
+          <h4>${escapeHtml(config.title || 'Chart')}</h4>
+          ${totalLine}
           <div class="chart-wrapper">
             ${config.type === 'gauge' ? renderGauge(config) : `<canvas id="${chartId}"></canvas>`}
           </div>
@@ -4251,19 +4260,48 @@
       `;
     }
     
+    function formatChartMoney(value, symbol) {
+      const amount = Number(value) || 0;
+      const formatted = amount.toLocaleString('he-IL', { maximumFractionDigits: 2 });
+      return `${symbol || '₪'}${formatted}`;
+    }
+
+    function chartSliceTotal(config) {
+      const data = config && config.data ? config.data : {};
+      if (data.total !== undefined && data.total !== null && data.total !== '') {
+        return Number(data.total) || 0;
+      }
+      const values = Array.isArray(data.values) ? data.values : [];
+      return values.reduce((sum, value) => sum + (Number(value) || 0), 0);
+    }
+
+    function chartTotalLine(config) {
+      const options = (config && config.options) || {};
+      if (!options.currency || config.type === 'gauge') return '';
+      const total = chartSliceTotal(config);
+      if (!total) return '';
+      const symbol = options.currency_symbol || '₪';
+      return `<p class="chart-total">סה״כ ${escapeHtml(formatChartMoney(total, symbol))}</p>`;
+    }
+
     function createChart(ctx, config) {
       if (!ctx || !config) return null;
       
       const chartType = config.type === 'doughnut' ? 'doughnut' : (config.type || 'bar');
+      const options = config.options || {};
+      const currency = !!options.currency;
+      const symbol = options.currency_symbol || '₪';
+      const values = (config.data && config.data.values) ? config.data.values : [];
+      const labels = (config.data && config.data.labels) ? config.data.labels : [];
       
       try {
         return new Chart(ctx, {
           type: chartType,
           data: {
-            labels: (config.data && config.data.labels) ? config.data.labels : [],
+            labels: labels,
             datasets: [{
-              data: (config.data && config.data.values) ? config.data.values : [],
-              backgroundColor: (config.options && config.options.colors) ? config.options.colors : [
+              data: values,
+              backgroundColor: options.colors || [
                 '#0d47a1', '#ff6b35', '#10b981', '#7c3aed', '#f59e0b', '#06b6d4'
               ],
               borderWidth: 2,
@@ -4274,9 +4312,35 @@
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-              legend: { position: chartType === 'bar' ? 'top' : 'bottom' }
+              legend: {
+                position: chartType === 'bar' ? 'top' : 'bottom',
+                labels: currency ? {
+                  generateLabels: function(chart) {
+                    const items = chart.data.labels || [];
+                    const series = (chart.data.datasets[0] && chart.data.datasets[0].data) || [];
+                    const colors = (chart.data.datasets[0] && chart.data.datasets[0].backgroundColor) || [];
+                    return items.map(function(label, index) {
+                      const color = Array.isArray(colors) ? colors[index % colors.length] : colors;
+                      return {
+                        text: `${label}  ${formatChartMoney(series[index], symbol)}`,
+                        fillStyle: color,
+                        strokeStyle: color,
+                        hidden: false,
+                        index: index
+                      };
+                    });
+                  }
+                } : {}
+              },
+              tooltip: currency ? {
+                callbacks: {
+                  label: function(item) {
+                    return `${item.label}: ${formatChartMoney(item.raw, symbol)}`;
+                  }
+                }
+              } : {}
             },
-            indexAxis: (chartType === 'bar' && config.options && config.options.horizontal) ? 'y' : 'x'
+            indexAxis: (chartType === 'bar' && options.horizontal) ? 'y' : 'x'
           }
         });
       } catch (e) {

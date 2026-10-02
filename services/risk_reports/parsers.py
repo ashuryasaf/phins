@@ -241,14 +241,30 @@ class ParserMixin:
         return (non_text / max(len(sample), 1)) > 0.10
     
     def _parse_csv(self, text_content: str) -> Dict[str, Any]:
-        """Parse CSV content"""
+        """Parse CSV content. Repeated headers stay on each row's ``_cells``."""
+        from services.pension.schema import spreadsheet_row
+
+        def _rows_from_reader(raw_rows):
+            if not raw_rows:
+                return [], []
+            columns = [str(col).strip().strip('"') for col in raw_rows[0]]
+            parsed = []
+            for values in raw_rows[1:]:
+                if not any(str(value).strip() for value in values):
+                    continue
+                pairs = []
+                for index, value in enumerate(values):
+                    if index < len(columns):
+                        pairs.append((columns[index], str(value).strip()))
+                parsed.append(spreadsheet_row(pairs))
+            return columns, parsed
+
         # Try different delimiters
         for delimiter in [',', ';', '\t', '|']:
             try:
-                reader = csv.DictReader(io.StringIO(text_content), delimiter=delimiter)
-                rows = list(reader)
-                if rows and len(rows[0]) > 1:
-                    columns = list(rows[0].keys()) if rows else []
+                raw_rows = list(csv.reader(io.StringIO(text_content), delimiter=delimiter))
+                columns, rows = _rows_from_reader(raw_rows)
+                if rows and len(columns) > 1:
                     return {
                         'columns': columns,
                         'rows': rows,
@@ -260,11 +276,15 @@ class ParserMixin:
         # Fallback: simple line parsing
         lines = text_content.strip().split('\n')
         if lines:
-            columns = lines[0].split(',')
+            columns = [col.strip() for col in lines[0].split(',')]
             rows = []
             for line in lines[1:]:
                 values = line.split(',')
-                rows.append(dict(zip(columns, values)))
+                pairs = [
+                    (columns[index], values[index] if index < len(values) else '')
+                    for index in range(len(columns))
+                ]
+                rows.append(spreadsheet_row(pairs))
             return {'columns': columns, 'rows': rows, 'delimiter': ','}
         
         return {'columns': [], 'rows': [], 'delimiter': ','}
@@ -291,6 +311,7 @@ class ParserMixin:
                     import openpyxl
                     from openpyxl import load_workbook
                     
+                    from services.pension.schema import spreadsheet_row
                     wb = load_workbook(filename=io.BytesIO(content), data_only=True)
                     sheet_names = wb.sheetnames
                     parse_method = 'openpyxl'
@@ -314,18 +335,17 @@ class ParserMixin:
                         # Process data rows
                         for row in sheet_rows[1:]:
                             if row and any(cell is not None for cell in row):
-                                row_dict = {}
+                                pairs = []
                                 for i, cell in enumerate(row):
                                     if i < len(sheet_columns):
-                                        col_name = sheet_columns[i]
-                                        # Convert dates, numbers etc. to string representation
                                         if cell is None:
-                                            row_dict[col_name] = ''
+                                            value = ''
                                         elif hasattr(cell, 'isoformat'):
-                                            row_dict[col_name] = cell.isoformat()
+                                            value = cell.isoformat()
                                         else:
-                                            row_dict[col_name] = cell
-                                rows.append(row_dict)
+                                            value = cell
+                                        pairs.append((sheet_columns[i], value))
+                                rows.append(spreadsheet_row(pairs))
                     
                     wb.close()
                     print(f"[AI_REPORTS] Successfully parsed XLSX '{filename}': "
@@ -341,6 +361,7 @@ class ParserMixin:
                 # Use xlrd for older .xls files
                 try:
                     import xlrd
+                    from services.pension.schema import spreadsheet_row
                     
                     wb = xlrd.open_workbook(file_contents=content)
                     parse_method = 'xlrd'
@@ -365,12 +386,11 @@ class ParserMixin:
                         for row_idx in range(1, sheet.nrows):
                             row = sheet.row_values(row_idx)
                             if row and any(cell for cell in row):
-                                row_dict = {}
+                                pairs = []
                                 for i, cell in enumerate(row):
                                     if i < len(sheet_columns):
-                                        col_name = sheet_columns[i]
-                                        row_dict[col_name] = cell if cell else ''
-                                rows.append(row_dict)
+                                        pairs.append((sheet_columns[i], cell if cell else ''))
+                                rows.append(spreadsheet_row(pairs))
                     
                     print(f"[AI_REPORTS] Successfully parsed XLS '{filename}': "
                           f"{len(sheet_names)} sheets, {len(columns)} columns, {len(rows)} rows")
@@ -413,6 +433,7 @@ class ParserMixin:
                 is_pension_account_row,
                 looks_like_pension_table,
                 map_hebrew_column,
+                iter_spreadsheet_cells,
                 note_spreadsheet_value,
                 parse_money,
                 portfolio_totals,
@@ -429,6 +450,7 @@ class ParserMixin:
             is_pension_account_row = None
             portfolio_totals = None
             stamp_account_accumulation = None
+            iter_spreadsheet_cells = None
             note_spreadsheet_value = None
             finalize_uploaded_amounts = None
 
@@ -455,7 +477,10 @@ class ParserMixin:
         for row in rows:
             account = {}
             
-            for original_col, value in row.items():
+            cells = iter_spreadsheet_cells(row) if iter_spreadsheet_cells else (
+                (key, val) for key, val in row.items() if key != '_cells'
+            )
+            for original_col, value in cells:
                 if original_col in mapped_columns:
                     mapped_name = mapped_columns[original_col]
                     

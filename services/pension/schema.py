@@ -738,15 +738,47 @@ def note_spreadsheet_value(account: Dict[str, Any], header: str, mapped_name: st
     amount = parse_money(value)
     role = header_money_role(header)
     if role:
-        account.setdefault('_money_notes', []).append((role, amount))
+        account.setdefault('_money_notes', []).append((role, amount, header or ''))
         return
     if mapped_name in {'total_balance', 'savings_balance', 'balance', 'death_coverage', 'severance_balance'}:
-        account.setdefault('_money_notes', []).append((mapped_name, amount))
+        account.setdefault('_money_notes', []).append((mapped_name, amount, header or ''))
         return
     if mapped_name in SPREADSHEET_MONEY_FIELDS:
         account[mapped_name] = amount
         return
     account[mapped_name] = value
+
+
+def spreadsheet_row(pairs) -> Dict[str, Any]:
+    """One uploaded row. Repeated headers stay on ``_cells``; a dict would keep only the last."""
+    row: Dict[str, Any] = {}
+    cells: List[tuple] = []
+    for header, value in pairs or []:
+        name = str(header if header is not None else '')
+        cells.append((name, value))
+        row[name] = value
+    row['_cells'] = cells
+    return row
+
+
+def iter_spreadsheet_cells(row: Any):
+    """Yield ``(header, value)`` for every cell, including duplicate headers."""
+    if isinstance(row, dict):
+        cells = row.get('_cells')
+        if isinstance(cells, (list, tuple)) and cells:
+            for item in cells:
+                if isinstance(item, (list, tuple)) and len(item) >= 2 and str(item[0]) != '_cells':
+                    yield str(item[0]), item[1]
+            return
+        for header, value in row.items():
+            if header == '_cells':
+                continue
+            yield header, value
+        return
+    if isinstance(row, (list, tuple)):
+        for item in row:
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                yield str(item[0]), item[1]
 
 
 def _sum_distinct_pots(amounts: List[float]) -> float:
@@ -762,18 +794,63 @@ def _sum_distinct_pots(amounts: List[float]) -> float:
     return round(sum(kept), 2)
 
 
+_GENERIC_SEVERANCE_TOKENS = (
+    'סה"כ', 'סך הכל', 'סך-הכל', 'כולל',
+    'יתרת', 'יתרה', 'סכום', 'פיצויים', 'פיצויי', 'פיטורין',
+)
+
+
+def severance_pot_identity(header: str) -> str:
+    """Empty for an alias of the generic פיצויים column; otherwise the distinguishing words.
+
+    ``פיצויים`` and ``יתרת פיצויים`` are one pot. ``פיצויים מעסיק קודם`` is another.
+    """
+    text = normalize_hebrew_header(header or '')
+    for token in _GENERIC_SEVERANCE_TOKENS:
+        text = text.replace(token, ' ')
+    identity = ' '.join(text.split())
+    if identity in {'מעסיק', 'נוכחי'}:
+        return ''
+    return identity
+
+
+def _sum_header_pots(pairs: List[tuple]) -> float:
+    """Sum פיצויים columns. Generic aliases of one amount count once; named pots add."""
+    generic: List[float] = []
+    specific: Dict[str, List[float]] = {}
+    for pair in pairs or []:
+        header = pair[0] if len(pair) > 1 else ''
+        amount = pair[-1]
+        value = parse_money(amount)
+        if value <= 0:
+            continue
+        identity = severance_pot_identity(str(header or ''))
+        bucket = generic if not identity else specific.setdefault(identity, [])
+        if any(money_close(value, seen) for seen in bucket):
+            continue
+        bucket.append(value)
+    total = sum(generic) + sum(sum(bucket) for bucket in specific.values())
+    return round(total, 2)
+
+
 def finalize_uploaded_amounts(account: Dict[str, Any]) -> None:
     """Split uploaded צבירה כוללת from ביטוח חיים and sum every פיצויים column."""
-    notes = account.pop('_money_notes', None) or []
-    if not notes:
+    raw_notes = account.pop('_money_notes', None) or []
+    if not raw_notes:
         return
-    tzvira = [amount for role, amount in notes if role == 'tzvira' and amount > 0]
-    pidyon = [amount for role, amount in notes if role in {'pidyon', 'total_balance', 'savings_balance'} and amount > 0]
-    ledgers = [amount for role, amount in notes if role in {'yitra', 'balance'} and amount > 0]
-    faces = [amount for role, amount in notes if role in {'death_face', 'death_coverage'} and amount > 0]
-    sums = [amount for role, amount in notes if role == 'death_sum' and amount > 0]
-    sev_parts = [amount for role, amount in notes if role == 'severance_part' and amount > 0]
-    sev_totals = [amount for role, amount in notes if role in {'severance_total', 'severance_balance'} and amount > 0]
+    notes = []
+    for note in raw_notes:
+        if len(note) >= 3:
+            notes.append((note[0], note[1], note[2]))
+        else:
+            notes.append((note[0], note[1], ''))
+    tzvira = [amount for role, amount, _header in notes if role == 'tzvira' and amount > 0]
+    pidyon = [amount for role, amount, _header in notes if role in {'pidyon', 'total_balance', 'savings_balance'} and amount > 0]
+    ledgers = [amount for role, amount, _header in notes if role in {'yitra', 'balance'} and amount > 0]
+    faces = [amount for role, amount, _header in notes if role in {'death_face', 'death_coverage'} and amount > 0]
+    sums = [amount for role, amount, _header in notes if role == 'death_sum' and amount > 0]
+    sev_parts = [(header, amount) for role, amount, header in notes if role == 'severance_part' and amount > 0]
+    sev_totals = [amount for role, amount, _header in notes if role in {'severance_total', 'severance_balance'} and amount > 0]
 
     ledger = ledgers[0] if ledgers else 0.0
     combined = max(sums) if sums else 0.0
@@ -835,7 +912,7 @@ def finalize_uploaded_amounts(account: Dict[str, Any]) -> None:
     if death_value > 0:
         account['death_coverage'] = death_value
 
-    part_sum = _sum_distinct_pots(sev_parts)
+    part_sum = _sum_header_pots(sev_parts)
     if sev_totals:
         official = max(sev_totals)
         if part_sum <= 0 or money_close(official, part_sum):
@@ -1014,18 +1091,24 @@ def _candidate_is_cover_face(account: Dict[str, Any], candidate: float, death: f
     return True
 
 
+def _has_hebrew(text: str) -> bool:
+    return any('\u0590' <= ch <= '\u05FF' for ch in str(text or ''))
+
+
 def apply_uploaded_product_type(account: Dict[str, Any]) -> None:
-    """Keep the file's סוג מוצר / SHEM-MUTZAR when that text names a product."""
+    """Keep the file's סוג מוצר. A plan name is copied only when it names a product family."""
     if not isinstance(account, dict):
         return
     uploaded = str(account.get('product_type') or '').strip()
     shem = str(account.get('product_name') or '').strip()
-    if uploaded and not uploaded.isdigit() and _family_from_text(uploaded):
+    current = str(account.get('product_type_name') or '').strip()
+    if uploaded and not uploaded.isdigit() and _has_hebrew(uploaded):
         account['product_type_name'] = uploaded
         return
     if shem and not shem.isdigit() and _family_from_text(shem):
-        if not uploaded or uploaded.isdigit() or not _family_from_text(uploaded):
-            account['product_type_name'] = shem
+        if not current or current.isdigit() or not _has_hebrew(current):
+            if not uploaded or uploaded.isdigit() or not _has_hebrew(uploaded):
+                account['product_type_name'] = shem
 
 
 def apply_component_severance(account: Dict[str, Any], component_amounts: List[float]) -> None:
@@ -1199,12 +1282,12 @@ _PRODUCT_FAMILY_ALIASES = (
     (('קופה מרכזית', 'מרכזית לפיצויים'), 'קופה מרכזית לפיצויים'),
     (('משולב חיסכון', 'ביטוח מנהלים', 'מנהלים ושכירים', 'managers insurance'), 'ביטוח מנהלים'),
     (('סיכון טהור', 'ביטוח סיכונים', 'ביטוח ריסק', 'ריסק', 'risk insurance'), 'ביטוח ריסק'),
-    (('חיסכון טהור', 'חיסכון פיננסי', 'פוליסת חיסכון', 'savings policy'), 'פוליסת חיסכון'),
+    (('חיסכון לכל ילד', 'חיסכון טהור', 'חיסכון פיננסי', 'פוליסת חיסכון', 'savings policy'), 'פוליסת חיסכון'),
     (('קרן פנסיה', 'פנסיה מקיפה', 'פנסיה חדשה', 'פנסיה כללית', 'פנסיה ותיקה', 'pension fund', 'pension'), 'קרן פנסיה'),
     (('קופת גמל', 'קופות גמל', 'provident', 'gemel'), 'קופת גמל'),
     (('קרן השתלמות', 'השתלמות', 'education fund'), 'קרן השתלמות'),
     (('אובדן כושר', 'אבדן כושר', 'disability insurance'), 'ביטוח אובדן כושר עבודה'),
-    (('ביטוח חיים משכנתא', 'משכנתא', 'ביטוח יסודי', 'ביטוח חיים', 'life insurance'), 'ביטוח חיים'),
+    (('ביטוח חיים משכנתא', 'משכנתא', 'ביטוח יסודי', 'ביטוח חיים', 'פוליסת ביטוח', 'life insurance'), 'ביטוח חיים'),
 )
 
 
@@ -1251,13 +1334,15 @@ def product_family_label(account: Any, unknown: str = 'לא ידוע') -> str:
 
 
 def product_type_display(account: Any, unknown: str = 'לא ידוע') -> str:
-    """סוג מוצר as the file wrote it, when that text is a real product type."""
+    """סוג מוצר as the file wrote it, including phrases outside the code table."""
     if not isinstance(account, dict):
         return unknown
-    for key in ('product_type_name', 'product_type'):
-        raw = str(account.get(key) or '').strip()
-        if raw and not raw.isdigit() and _family_from_text(raw):
-            return raw
+    uploaded = str(account.get('product_type') or '').strip()
+    named = str(account.get('product_type_name') or '').strip()
+    if uploaded and not uploaded.isdigit() and _has_hebrew(uploaded):
+        return uploaded
+    if named and not named.isdigit() and _has_hebrew(named):
+        return named
     return product_family_label(account, unknown=unknown)
 
 
@@ -1528,7 +1613,8 @@ __all__ = [
     'product_family_label', 'product_type_display', 'apply_uploaded_product_type',
     'PRODUCT_FAMILY_BY_CODE', 'death_lump_sum',
     'header_money_role', 'note_spreadsheet_value', 'finalize_uploaded_amounts',
-    'apply_component_severance',
+    'spreadsheet_row', 'iter_spreadsheet_cells',
+    'apply_component_severance', 'severance_pot_identity',
     'cover_face_total', 'portfolio_totals',
     'unique_policy_count',
 ]

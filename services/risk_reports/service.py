@@ -780,11 +780,14 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
                 series = [{'label': 'value', 'value': chart_data.get('value')}]
 
             chart_type = chart.type.value if isinstance(chart.type, Enum) else str(chart.type)
-            chart_summaries.append({
+            chart_summary = {
                 'title': chart.title,
                 'type': chart_type,
                 'series': series
-            })
+            }
+            if chart_data.get('total') is not None:
+                chart_summary['total'] = chart_data.get('total')
+            chart_summaries.append(chart_summary)
 
         recommendations = [{
             'priority': rec.priority.value if isinstance(rec.priority, Enum) else str(rec.priority),

@@ -1034,5 +1034,153 @@ class TestFacadeStillResolves(unittest.TestCase):
         self.assertEqual(data['client']['id_number'], '123456782')
 
 
+DUP_PITZUIM_CSV = (
+    'מספר פוליסה,יצרן,סוג מוצר,צבירה כוללת,פיצויים,פיצויים\n'
+    'POL-DUP,מגדל,פוליסת ביטוח,100000,12000,8000\n'
+).encode('utf-8')
+
+
+SAME_AMOUNT_EMPLOYERS_CSV = (
+    'מספר פוליסה,יצרן,סוג מוצר,צבירה כוללת,פיצויים מעסיק א,פיצויים מעסיק קודם\n'
+    'POL-EMP,כלל,חיסכון לכל ילד,40000,12000,12000\n'
+).encode('utf-8')
+
+
+SIBLING_YITRAT_HOLDINGS = """<?xml version="1.0" encoding="UTF-8"?>
+<Mimshak xmlns="http://www.swiftness.co.il/mivneachid/holdings">
+  <YeshutYatzran>
+    <SHEM-YATZRAN>מגדל</SHEM-YATZRAN>
+    <Mutzar>
+      <SUG-MUTZAR>7</SUG-MUTZAR>
+      <SHEM-MUTZAR>מסלול כללי</SHEM-MUTZAR>
+      <HeshbonOPolisa>
+        <MISPAR-POLISA-O-HESHBON>POL-SIB</MISPAR-POLISA-O-HESHBON>
+        <TOTAL-CHISACHON-MTZBR>88000.50</TOTAL-CHISACHON-MTZBR>
+        <YITRAT-PITZUIM>12000</YITRAT-PITZUIM>
+        <YITRAT-PITZUIM>8000</YITRAT-PITZUIM>
+      </HeshbonOPolisa>
+    </Mutzar>
+  </YeshutYatzran>
+</Mimshak>
+""".encode('utf-8')
+
+
+WRAPPER_PITZUIM = """<?xml version="1.0" encoding="UTF-8"?>
+<Mimshak xmlns="http://www.swiftness.co.il/mivneachid/pitzuim">
+  <KoteretKovetz><SUG-MIMSHAK>17</SUG-MIMSHAK></KoteretKovetz>
+  <NetuneiPitzuim>
+    <SACH-PITZUIM>20000</SACH-PITZUIM>
+    <YeshutMaasik>
+      <SHEM-MAASIK>מעסיק אלפא</SHEM-MAASIK>
+      <SACH-PITZUIM>12000</SACH-PITZUIM>
+    </YeshutMaasik>
+  </NetuneiPitzuim>
+</Mimshak>
+""".encode('utf-8')
+
+
+def _chart_by_title(charts, title):
+    for chart in charts or []:
+        if getattr(chart, 'title', None) == title or (isinstance(chart, dict) and chart.get('title') == title):
+            return chart
+    return None
+
+
+class TestAffiliatedConcentrationCharts(unittest.TestCase):
+    """Repeated פיצויים pots sum, סוג מוצר stays the file's words, charts match צבירה."""
+
+    def setUp(self):
+        self.service = init_ai_reports_service()
+        self.agent = _agent()
+
+    def test_duplicate_severance_headers_sum_and_product_wording_is_kept(self):
+        parsed, _ = self.service.parse_content('dup.csv', DUP_PITZUIM_CSV, 'csv')
+        pension = parsed.get('pension_data') or {}
+        account = pension['accounts'][0]
+        self.assertEqual(account_accumulation(account), 100000)
+        self.assertEqual(account_severance(account), 20000)
+        self.assertEqual(account['product_type_display'], 'פוליסת ביטוח')
+        self.assertEqual(product_family_label(account), 'ביטוח חיים')
+        self.assertEqual(pension['totals']['total_balance'], 100000)
+        self.assertEqual(pension['totals']['total_severance'], 20000)
+
+    def test_same_amount_named_employer_pots_sum(self):
+        parsed, _ = self.service.parse_content('employers.csv', SAME_AMOUNT_EMPLOYERS_CSV, 'csv')
+        account = (parsed.get('pension_data') or {})['accounts'][0]
+        self.assertEqual(account_severance(account), 24000)
+        self.assertEqual(account['product_type_display'], 'חיסכון לכל ילד')
+        self.assertEqual(product_family_label(account), 'פוליסת חיסכון')
+
+    def test_unrecognized_product_phrase_is_shown_as_written(self):
+        account = {
+            'product_type': 'תוכנית חיסכון אישית',
+            'product_name': 'מסלול כללי',
+            'policy_number': 'POL-PHRASE',
+            'total_balance': 15000,
+        }
+        stamp_account_accumulation(account)
+        self.assertEqual(account['product_type_display'], 'תוכנית חיסכון אישית')
+        self.assertEqual(product_type_display(account), 'תוכנית חיסכון אישית')
+
+    def test_sibling_yitrat_pitzuim_amounts_sum(self):
+        result = self.agent.process_xml_content(SIBLING_YITRAT_HOLDINGS)
+        account = result['data']['accounts'][0]
+        self.assertEqual(account['total_balance'], 88000.50)
+        self.assertEqual(account_severance(account), 20000)
+        self.assertEqual(result['data']['totals']['total_severance'], 20000)
+        self.assertEqual(account['product_type_display'], 'ביטוח מנהלים')
+        self.assertNotEqual(account['product_type_display'], 'מסלול כללי')
+
+    def test_wrapper_pitzuim_remainder_is_kept(self):
+        data = self.agent._parse_mislaka_xml(WRAPPER_PITZUIM)
+        amounts = sorted(float(row.get('total_severance') or 0) for row in data.get('severance') or [])
+        self.assertEqual(amounts, [8000.0, 12000.0])
+        result = self.agent.process_xml_content(WRAPPER_PITZUIM)
+        self.assertEqual(result['data']['totals']['total_severance'], 20000.0)
+
+    def _charts_for(self, filename, content, ext):
+        parsed = self.service.parse_file(
+            filename, content, ext, owner_id='CUST-OWNER-001', owner_role='customer',
+        )
+        analysis = self.service.analyze(parsed['document_id'])
+        report = self.service.generate_report(analysis.id, language='hebrew')
+        return report.charts, parsed['parsed_data']['pension_data']
+
+    def test_holdings_charts_sum_to_the_affiliated_figures(self):
+        charts, pension = self._charts_for('holdings.csv', HOLDINGS_SPREADSHEET, 'csv')
+        tzvira = pension['totals']['total_balance']
+        by_provider = _chart_by_title(charts, 'צבירה לפי יצרן')
+        by_product = _chart_by_title(charts, 'ריכוז סכומי הצבירה לפי סוגי המוצרים')
+        split = _chart_by_title(charts, 'תגמולים מול פיצויים')
+        covers = _chart_by_title(charts, 'כיסויים ביטוחיים')
+        savings = _chart_by_title(charts, 'חיסכון מול כיסוי')
+        self.assertIsNotNone(by_provider)
+        self.assertIsNotNone(by_product)
+        self.assertIsNotNone(split)
+        self.assertIsNotNone(covers)
+        self.assertIsNotNone(savings)
+        self.assertEqual(by_provider.data['total'], tzvira)
+        self.assertEqual(by_product.data['total'], tzvira)
+        self.assertEqual(sum(by_provider.data['values']), tzvira)
+        self.assertEqual(sum(by_product.data['values']), tzvira)
+        self.assertEqual(split.data['values'], [184000, 92000])
+        self.assertEqual(split.data['total'], 276000)
+        life = dict(zip(covers.data['labels'], covers.data['values']))
+        self.assertEqual(life.get('ביטוח למקרה מוות'), 500000)
+        self.assertEqual(covers.data['total'], 940000)
+        self.assertEqual(savings.data['values'][0], tzvira)
+        self.assertEqual(savings.data['values'][1], 940000)
+
+    def test_swap_charts_split_tzvira_and_keep_every_severance_pot(self):
+        charts, pension = self._charts_for('swap.csv', SWAP_AND_SEVERANCE_CSV, 'csv')
+        tzvira = pension['totals']['total_balance']
+        split = _chart_by_title(charts, 'תגמולים מול פיצויים')
+        by_product = _chart_by_title(charts, 'ריכוז סכומי הצבירה לפי סוגי המוצרים')
+        self.assertEqual(tzvira, 133000.50)
+        self.assertEqual(split.data['values'][1], 65000)
+        self.assertEqual(split.data['total'], tzvira)
+        self.assertEqual(by_product.data['total'], tzvira)
+
+
 if __name__ == '__main__':
     unittest.main()
