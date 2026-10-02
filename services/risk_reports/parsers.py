@@ -409,7 +409,7 @@ class ParserMixin:
                 account_accumulation,
                 death_lump_sum,
                 deduped_sum,
-                is_holdings_summary_row,
+                is_pension_account_row,
                 looks_like_pension_table,
                 map_hebrew_column,
                 parse_money,
@@ -424,7 +424,7 @@ class ParserMixin:
             account_accumulation = None
             deduped_sum = None
             death_lump_sum = None
-            is_holdings_summary_row = None
+            is_pension_account_row = None
             portfolio_totals = None
             stamp_account_accumulation = None
 
@@ -469,14 +469,14 @@ class ParserMixin:
             # יתרה stays on ``balance``. It is not copied onto total_balance,
             # so a ledger balance cannot stand in for סה"כ חיסכון.
             # דוח מרוכז footer rows (סה״כ / צבירה כוללת) are the affiliated
-            # total already, not another holding.
-            if is_holdings_summary_row and is_holdings_summary_row(account):
-                continue
-            if (
+            # total already, not another holding. Employer-only פיצויים rows stay.
+            keep_row = is_pension_account_row(account) if is_pension_account_row else (
                 account.get('provider') or account.get('policy_number')
+                or account.get('employer_name') or account.get('severance_balance')
                 or account.get('total_balance') or account.get('savings_balance')
                 or account.get('balance')
-            ):
+            )
+            if keep_row:
                 if stamp_account_accumulation:
                     stamp_account_accumulation(account)
                 accounts.append(account)
@@ -733,6 +733,7 @@ class ParserMixin:
         """Collapse Swiftness affiliated views of the same policy (XML + concentrated CSV)."""
         from services.pension.schema import (
             is_holdings_summary_row,
+            merge_holdings_account,
             stamp_account_accumulation,
         )
         merged_rows: List[Dict[str, Any]] = []
@@ -748,19 +749,7 @@ class ParserMixin:
             # concentrated CSV of the same policy (no track) still collapse.
             key = (policy, provider, track)
             if policy and key in index:
-                existing = merged_rows[index[key]]
-                for field, value in account.items():
-                    if field in self._ACCOUNT_AMOUNT_FIELDS:
-                        existing[field] = max(
-                            self._to_float_amount(existing.get(field)),
-                            self._to_float_amount(value),
-                        )
-                    elif value not in (None, '') and (
-                        not existing.get(field)
-                        or (field in {'product_type', 'product_type_name'} and str(existing.get(field)).isdigit())
-                    ):
-                        existing[field] = value
-                stamp_account_accumulation(existing)
+                merge_holdings_account(merged_rows[index[key]], account)
                 continue
             merged_rows.append(dict(account))
             if policy:

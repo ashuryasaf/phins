@@ -728,13 +728,13 @@ def _active_holdings_table(specs, records):
 
 
 def _holdings_money_specs(is_hebrew: bool):
-    from services.pension.schema import account_accumulation, tagmulim_amount
+    from services.pension.schema import account_accumulation, account_severance, tagmulim_amount
     return [
         ('פוליסה' if is_hebrew else 'Policy', lambda account: account.get('policy_number'), 'id'),
         ('יצרן' if is_hebrew else 'Provider', lambda account: account.get('provider'), 'id'),
         ('סה״כ חיסכון' if is_hebrew else 'Accumulation', account_accumulation, 'money'),
         ('תגמולים' if is_hebrew else 'Tagmulim', tagmulim_amount, 'money'),
-        ('פיצויים' if is_hebrew else 'Severance', lambda account: account.get('severance_balance'), 'money'),
+        ('פיצויים' if is_hebrew else 'Severance', account_severance, 'money'),
         ('יתרה' if is_hebrew else 'Balance', lambda account: account.get('balance'), 'money'),
     ]
 

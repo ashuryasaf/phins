@@ -384,7 +384,12 @@ Factors Affecting Score:
             ))
 
         if accounts:
-            from services.pension.schema import account_accumulation, tagmulim_amount
+            from services.pension.schema import (
+                account_accumulation,
+                account_severance,
+                death_lump_sum,
+                tagmulim_amount,
+            )
             status_rows = []
             for acct in accounts[:80]:
                 status_rows.append({
@@ -396,7 +401,7 @@ Factors Affecting Score:
                     'מסלול השקעה' if is_hebrew else 'Investment Track': acct.get('investment_track', ''),
                     'סה״כ חיסכון' if is_hebrew else 'Accumulation': account_accumulation(acct),
                     'תגמולים' if is_hebrew else 'Tagmulim': tagmulim_amount(acct),
-                    'פיצויים' if is_hebrew else 'Severance': acct.get('severance_balance', 0),
+                    'פיצויים' if is_hebrew else 'Severance': account_severance(acct),
                     'יתרה' if is_hebrew else 'Balance': acct.get('balance', 0),
                     'מעסיק' if is_hebrew else 'Employer': acct.get('employer_name', ''),
                     'סעיף 14' if is_hebrew else 'Section 14': (
@@ -436,7 +441,7 @@ Factors Affecting Score:
                     'סה״כ פרמיה חודשית' if is_hebrew else 'Monthly Premium': acct.get('monthly_premium', 0),
                     'אחוז במסלול' if is_hebrew else 'Track Percent': acct.get('track_percent', 0),
                     'תשואה' if is_hebrew else 'Yield': acct.get('yield_rate', 0),
-                    'ביטוח חיים' if is_hebrew else 'Life Cover': acct.get('death_coverage', 0),
+                    'ביטוח חיים' if is_hebrew else 'Life Cover': death_lump_sum(acct),
                     'פרמיה ביטוח חיים' if is_hebrew else 'Life Premium': acct.get('death_premium', 0),
                     'אבדן כושר עבודה' if is_hebrew else 'Work Disability': acct.get('disability_coverage', 0) or acct.get('work_disability_coverage', 0),
                     'פרמיה אבדן כושר' if is_hebrew else 'Work Disability Premium': acct.get('disability_premium', 0) or acct.get('work_disability_premium', 0),
@@ -739,6 +744,7 @@ Factors Affecting Score:
             from services.pension.schema import (
                 COVER_FACE_FIELDS,
                 account_accumulation,
+                account_severance,
                 cover_face_total,
                 deduped_sum,
             )
@@ -751,7 +757,7 @@ Factors Affecting Score:
                 shared_client_id = str(client_data.get('id_number', '') or '').strip()
 
             total_savings = deduped_sum(accounts, account_accumulation)
-            total_severance = deduped_sum(accounts, lambda account: account.get('severance_balance'))
+            total_severance = deduped_sum(accounts, account_severance)
             total_cover = cover_face_total(accounts)
             seen_savings_policies = set()
             seen_cover_policies = set()
@@ -780,6 +786,7 @@ Factors Affecting Score:
             from services.pension.schema import (
                 COVER_FACE_FIELDS,
                 account_accumulation,
+                account_severance,
                 cover_face_total,
                 deduped_sum,
                 map_hebrew_column,
@@ -817,7 +824,7 @@ Factors Affecting Score:
                             'reference': str(account.get('policy_number') or ''),
                         })
                 total_savings = deduped_sum(pseudo_accounts, account_accumulation)
-                total_severance = deduped_sum(pseudo_accounts, lambda account: account.get('severance_balance'))
+                total_severance = deduped_sum(pseudo_accounts, account_severance)
                 total_cover = cover_face_total(pseudo_accounts)
                 records_with_savings = len({
                     str(account.get('policy_number') or index)

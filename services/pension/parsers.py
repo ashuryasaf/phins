@@ -27,7 +27,7 @@ from services.pension.schema import (
     SPREADSHEET_MONEY_FIELDS,
     CompiledFields,
     MislakaSchemaMapping,
-    is_holdings_summary_row,
+    is_pension_account_row,
     looks_like_pension_table,
     map_hebrew_column,
     parse_money,
@@ -58,6 +58,7 @@ class MislakaParserMixin:
     STANDALONE_ACCOUNT_TAGS = ('HeshbonOPolisa', 'Account', 'Policy')
     CONTRIBUTION_TAGS = ('NetuneiHafrasha', 'PirteiHafrasha', 'Hafrasha', 'ReshimatHafrashot', 'Peula', 'Event', 'Transaction')
     SEVERANCE_TAGS = ('NetuneiPitzuim', 'PirteiPitzuim', 'Pitzuim', 'SeveranceDetails')
+    PITZUIM_EMPLOYER_TAGS = ('YeshutMaasik', 'PirteiMaasik', 'PerutPitzuim', 'Maasik')
     EMPLOYER_TAG = 'YeshutMaasik'
     YITRA_BLOCK_TAGS = (
         'Yitra', 'PerutYitra', 'PerutYitraLeFiSugHafrasha',
@@ -302,8 +303,7 @@ class MislakaParserMixin:
 
         for tag in self.SEVERANCE_TAGS:
             for elem in descendants(tag):
-                sev = self._severance_from_elem(elem)
-                if sev:
+                for sev in self._severance_rows_from_elem(elem):
                     acc.severance.append((self.SEVERANCE_TAGS.index(tag), pos_of(elem), sev))
 
         for elem in descendants(self.EMPLOYER_TAG):
@@ -634,13 +634,7 @@ class MislakaParserMixin:
                         account[mapped_name] = value_str
             
             # Only add if we have some account data
-            if is_holdings_summary_row(account):
-                continue
-            if (
-                account.get('provider') or account.get('policy_number')
-                or account.get('total_balance') or account.get('savings_balance')
-                or account.get('balance')
-            ):
+            if is_pension_account_row(account):
                 stamp_account_accumulation(account)
                 accounts.append(account)
         
@@ -855,13 +849,16 @@ class MislakaParserMixin:
     # Lump sum ("סכום חד פעמי") is not a monthly annuity. Official Mislaka
     # Kisuy blocks put the one-time death face on SCHUM-HAD-PEAMI and the
     # monthly death/disability annuity on KITZBA-CHODSHIT.
-    COVER_LUMP_SUM_TAGS = (
+    COVER_HAD_PEAMI_TAGS = (
         'SCHUM-HAD-PEAMI', 'SchumHadPeami',
         'SCHUM-KISUY-HAD-PEAMI', 'SchumKisuyHadPeami',
         'SCHUM-HAD-PEAMI-MAVET', 'SchumHadPeamiMavet',
+    )
+    COVER_GENERIC_LUMP_TAGS = (
         'SCHUM-KISUY', 'SACH-KISUY', 'SCHUM-BITUACH', 'SACH-BITUACH',
         'SchumKisuy', 'SachKisuy',
     )
+    COVER_LUMP_SUM_TAGS = COVER_HAD_PEAMI_TAGS + COVER_GENERIC_LUMP_TAGS
     COVER_MONTHLY_TAGS = (
         'KITZBA-CHODSHIT', 'KitzbaChodshit',
         'KITZBA-CHODSHIT-MAVET', 'KitzbaChodshitMavet',
@@ -924,7 +921,15 @@ class MislakaParserMixin:
             code = str(cover.get('code') or '').strip()
             name = str(cover.get('name') or '')
             if _cover_looks_like_death(cover):
-                death_lumps += lump
+                # סכום ביטוח כולל on a "ביטוח חיים" rider is often cash+face.
+                # Only a genuine סכום חד פעמי / code 1 / מוות lump is death cover.
+                if (
+                    cover.get('had_peami')
+                    or str(cover.get('code') or '').strip() in {'1', '01'}
+                    or 'מוות' in name
+                    or 'death' in name.lower()
+                ):
+                    death_lumps += lump
                 death_monthly += monthly
                 death_cost += cost
                 continue
@@ -942,10 +947,17 @@ class MislakaParserMixin:
 
     def _cover_from_elem(self, elem) -> Optional[Dict[str, Any]]:
         amount_text = None
-        for tag in self.COVER_LUMP_SUM_TAGS:
+        had_peami = False
+        for tag in self.COVER_HAD_PEAMI_TAGS:
             amount_text = self._direct_text(elem, tag) or self._find_text(elem, tag)
             if amount_text:
+                had_peami = True
                 break
+        if not amount_text:
+            for tag in self.COVER_GENERIC_LUMP_TAGS:
+                amount_text = self._direct_text(elem, tag) or self._find_text(elem, tag)
+                if amount_text:
+                    break
         monthly_text = None
         for tag in self.COVER_MONTHLY_TAGS:
             monthly_text = self._direct_text(elem, tag) or self._find_text(elem, tag)
@@ -977,6 +989,7 @@ class MislakaParserMixin:
             'amount': amount or 0,
             'monthly': monthly or 0,
             'cost': cost or 0,
+            'had_peami': had_peami,
         }
 
     def _parse_contributions(self, root) -> List[Dict[str, Any]]:
@@ -1002,15 +1015,32 @@ class MislakaParserMixin:
         return contrib
 
     def _parse_severance(self, root, interface_code: int) -> List[Dict[str, Any]]:
-        """Parse severance data (NetuneiPitzuim)."""
+        """Parse severance data (NetuneiPitzuim), one row per employer pot."""
         severance_list = []
         for tag in self.SEVERANCE_TAGS:
             for elem in self._descendants_named(root, tag):
-                sev = self._severance_from_elem(elem)
+                severance_list.extend(self._severance_rows_from_elem(elem))
                 self._forget_index(elem)
-                if sev:
-                    severance_list.append(sev)
         return severance_list
+
+    def _severance_rows_from_elem(self, elem) -> List[Dict[str, Any]]:
+        """Each employer child is its own פיצויים pot; a wrapper total is not double-counted."""
+        children: List[Any] = []
+        for tag in self.PITZUIM_EMPLOYER_TAGS:
+            for child in self._descendants_named(elem, tag):
+                if any(self._descendants_named(child, *self.PITZUIM_EMPLOYER_TAGS)):
+                    continue
+                children.append(child)
+        rows: List[Dict[str, Any]] = []
+        if children:
+            for child in children:
+                sev = self._severance_from_elem(child)
+                if sev:
+                    rows.append(sev)
+            if rows:
+                return rows
+        sev = self._severance_from_elem(elem)
+        return [sev] if sev else []
 
     def _severance_from_elem(self, elem) -> Dict[str, Any]:
         sev = {}
@@ -1024,6 +1054,8 @@ class MislakaParserMixin:
                     sev[field_name] = value in CompiledFields.TRUTHY
                 else:
                     sev[field_name] = value
+        if not sev.get('total_severance') and sev.get('available_severance'):
+            sev['total_severance'] = sev['available_severance']
         return sev
 
     def _parse_employers(self, root, accounts: List[Dict]) -> List[Dict[str, Any]]:
@@ -1195,8 +1227,15 @@ class MislakaParserMixin:
             account['savings_balance'] = savings
         if not account.get('severance_balance'):
             account['severance_balance'] = severance
-        if not account.get('total_balance'):
-            account['total_balance'] = savings + severance
+        composed = savings + severance
+        current_total = parse_money(account.get('total_balance'))
+        if not current_total:
+            account['total_balance'] = composed
+        elif composed > 0:
+            from services.pension.schema import death_lump_sum, money_close
+            death = death_lump_sum(account)
+            if death > 0 and money_close(current_total, death) and not money_close(composed, death):
+                account['total_balance'] = composed
 
     def _recover_client_identity(self, data: Dict[str, Any]) -> None:
         """Fill client.id_number from nested / raw affiliated tags when the header block omitted it."""

@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Tuple
 
 from services.pension.schema import (
     account_accumulation,
+    account_severance,
     accumulation_by_product,
     death_lump_sum,
     deduped_sum,
@@ -207,7 +208,7 @@ class PensionReportMixin:
         if total_balance == 0 and accounts:
             total_balance = deduped_sum(accounts, account_accumulation)
         if total_severance == 0 and accounts:
-            total_severance = deduped_sum(accounts, lambda account: account.get('severance_balance'))
+            total_severance = deduped_sum(accounts, account_severance)
         
         # Death lump sum (סכום חד פעמי) is deduped the same way as צבירה.
         total_death = totals.get('total_death_lump_sum') or deduped_sum(accounts, death_lump_sum)
@@ -359,14 +360,14 @@ class PensionReportMixin:
                 
                 balance = account_accumulation(acct)
                 savings = float(acct.get('savings_balance', 0) or 0)
-                severance_bal = float(acct.get('severance_balance', 0) or 0)
+                severance_bal = account_severance(acct)
                 emp_savings = float(acct.get('employee_contribution', 0) or 0)
                 emp_sav_employer = float(acct.get('employer_contribution', 0) or 0)
                 
                 mgmt_fee = float(acct.get('management_fee_savings', 0) or 0)
                 mgmt_fee_deposits = float(acct.get('management_fee_deposits', 0) or 0)
                 
-                death_coverage = float(acct.get('death_coverage', 0) or 0)
+                death_coverage = death_lump_sum(acct)
                 disability_coverage = float(acct.get('disability_coverage', 0) or 0)
                 disability_cost = float(acct.get('disability_premium', 0) or 0)
                 death_cost = float(acct.get('death_premium', 0) or 0)
@@ -462,7 +463,7 @@ class PensionReportMixin:
             
             # Balance breakdown by type
             total_savings_comp = sum(float(a.get('savings_balance', 0) or 0) for a in accounts)
-            total_sev_comp = sum(float(a.get('severance_balance', 0) or 0) for a in accounts)
+            total_sev_comp = sum(account_severance(a) for a in accounts)
             
             if total_savings_comp > 0 or total_sev_comp > 0:
                 lines.extend([
@@ -725,9 +726,9 @@ class PensionReportMixin:
                 'סוג מוצר': acct.get('product_type_name', acct.get('product_type', '')),
                 'שם מוצר': acct.get('product_name', ''),
                 'סטטוס': acct.get('status', 'פעיל'),
-                'יתרה כוללת': acct.get('total_balance', 0),
+                'יתרה כוללת': account_accumulation(acct),
                 'חיסכון': acct.get('savings_balance', 0),
-                'פיצויים': acct.get('severance_balance', 0),
+                'פיצויים': account_severance(acct),
                 'מעסיק': acct.get('employer_name', ''),
                 'סעיף 14': 'כן' if acct.get('section14') else 'לא'
             })

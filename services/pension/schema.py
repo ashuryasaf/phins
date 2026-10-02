@@ -392,9 +392,14 @@ class MislakaSchemaMapping:
         'KsfPitzuimTzvur': 'total_severance',
         'SACH-PITZUIM': 'total_severance',
         'SachPitzuim': 'total_severance',
+        'SCHUM-PITZUIM': 'total_severance',
+        'SchumPitzuim': 'total_severance',
         'YITRAT-PITZUIM': 'total_severance',
         'YitratPitzuim': 'total_severance',
         'TOTAL-PITZUIM': 'total_severance',
+        'TOTAL-CHISACHON-PITZUIM': 'total_severance',
+        'KFIFA-PITZUIM': 'total_severance',
+        'ITZBARUT-PITZUIM': 'total_severance',
         'ERECH-PIDYON-PITZUIM': 'total_severance',
         'ERECH-PIDYON-PITZUIM-MAASEK-NOCHECHI': 'total_severance',
         'PITZUIM-LMSHICHA': 'available_severance',
@@ -752,15 +757,39 @@ _SUMMARY_ROW_COMPACT = frozenset(
 )
 
 
+_ACCOUNT_IDENTITY_KEYS = (
+    'policy_number', 'provider', 'product_type', 'product_type_name', 'product_name',
+    'employer_name', 'employer_id',
+)
+_RISK_ONLY_FAMILIES = frozenset({
+    'ביטוח חיים', 'ביטוח ריסק', 'ביטוח אובדן כושר עבודה',
+})
+_CENTRAL_SEVERANCE_FAMILY = 'קופה מרכזית לפיצויים'
+_MONEY_EPS = 0.021
+
+
+def money_close(left: Any, right: Any, eps: float = _MONEY_EPS) -> bool:
+    """True when two holdings amounts are the same to the affiliated report's ore."""
+    return abs(parse_money(left) - parse_money(right)) < eps
+
+
+def _row_has_money(account: Dict[str, Any]) -> bool:
+    for key in (
+        'total_balance', 'savings_balance', 'balance', 'tagmulim_balance',
+        'severance_balance', 'employer_severance', 'death_coverage',
+        'coverage_amount',
+    ):
+        if parse_money(account.get(key)) > 0:
+            return True
+    return False
+
+
 def is_holdings_summary_row(account: Any) -> bool:
     """True for a דוח מרוכז footer (סה״כ / צבירה כוללת), not a real policy."""
     if not isinstance(account, dict):
         return False
-    identity_keys = (
-        'policy_number', 'provider', 'product_type', 'product_type_name', 'product_name',
-    )
     saw_identity = False
-    for key in identity_keys:
+    for key in _ACCOUNT_IDENTITY_KEYS:
         raw = str(account.get(key) or '').strip()
         if not raw:
             continue
@@ -770,18 +799,87 @@ def is_holdings_summary_row(account: Any) -> bool:
             return True
     if saw_identity:
         return False
-    return account_accumulation(account) > 0
+    return _row_has_money(account)
+
+
+def is_pension_account_row(account: Any) -> bool:
+    """True for a real holding or employer פיצויים row, not a footer."""
+    if not isinstance(account, dict) or is_holdings_summary_row(account):
+        return False
+    if any(str(account.get(key) or '').strip() for key in _ACCOUNT_IDENTITY_KEYS):
+        return _row_has_money(account) or bool(
+            account.get('provider') or account.get('policy_number')
+        )
+    return False
+
+
+def _raw_savings_candidate(account: Dict[str, Any]) -> float:
+    total = parse_money(account.get('total_balance'))
+    if total > 0:
+        return total
+    savings = parse_money(account.get('savings_balance'))
+    if savings > 0:
+        return savings
+    return parse_money(account.get('balance'))
+
+
+def _is_risk_only_product(account: Dict[str, Any]) -> bool:
+    family = product_family_label(account)
+    if family in _RISK_ONLY_FAMILIES:
+        savings = parse_money(account.get('savings_balance'))
+        tagmulim = parse_money(account.get('tagmulim_balance'))
+        severance = parse_money(account.get('severance_balance'))
+        if savings <= 0 and tagmulim <= 0 and severance <= 0:
+            return True
+        death = parse_money(account.get('death_coverage'))
+        if death > 0 and savings > 0 and money_close(savings, death) and tagmulim <= 0:
+            return True
+    return False
+
+
+def _candidate_is_cover_face(account: Dict[str, Any], candidate: float, death: float = 0.0) -> bool:
+    """True when SALDO / יתרה / סה״כ is the life-cover face, not חיסכון."""
+    if candidate <= 0:
+        return False
+    if death <= 0:
+        death = death_lump_sum(account)
+    cover = parse_money(account.get('coverage_amount'))
+    matches_death = death > 0 and money_close(candidate, death)
+    matches_cover = cover > 0 and money_close(candidate, cover)
+    if not (matches_death or matches_cover):
+        return False
+    savings = parse_money(account.get('savings_balance'))
+    tagmulim = parse_money(account.get('tagmulim_balance'))
+    severance = parse_money(account.get('severance_balance'))
+    if savings > 0 and not money_close(savings, candidate) and not money_close(savings, death):
+        return False
+    if tagmulim > 0 and not money_close(tagmulim, candidate) and not money_close(tagmulim, death):
+        return False
+    if severance > 0 and not money_close(severance, candidate) and not money_close(severance, death):
+        return False
+    return True
 
 
 def stamp_account_accumulation(account: Dict[str, Any]) -> float:
-    """Write official צבירה כוללת onto ``total_balance`` for every consumer."""
+    """Write official צבירה כוללת / ביטוח חיים so cover face never lands on savings."""
+    if not isinstance(account, dict):
+        return 0.0
+    death = death_lump_sum(account)
+    raw_total = parse_money(account.get('total_balance'))
+    explicit_death = parse_money(account.get('death_coverage'))
+    if death > 0:
+        account['death_coverage'] = death
+    elif explicit_death > 0:
+        account['death_coverage'] = 0.0
     amount = account_accumulation(account)
     if amount > 0:
-        if parse_money(account.get('total_balance')) <= 0:
+        if raw_total <= 0:
             # Stamped from סה"כ חיסכון / יתרה, so the row never carried a
             # תגמולים split and tagmulim_amount must not read one into it.
             account['accumulation_from_savings'] = True
         account['total_balance'] = amount
+    elif raw_total > 0 and _candidate_is_cover_face(account, raw_total, death=death):
+        account['total_balance'] = 0.0
     return amount
 
 
@@ -802,17 +900,24 @@ def account_accumulation(account: Dict[str, Any]) -> float:
     An explicit official total (XML ``TOTAL-CHISACHON`` or a ``סה״כ צבירה`` /
     ``צבירה כוללת`` column) wins. Otherwise the spreadsheet ``סה"כ חיסכון``
     column (``savings_balance``) is the accumulation. Bare ``יתרה`` is only a
-    fallback. Cover amounts, premiums, תגמולים and פיצויים are never added.
+    fallback, and never when it equals the death-cover face. Cover amounts,
+    premiums, תגמולים and פיצויים are never added.
     """
     if not isinstance(account, dict):
         return 0.0
-    total = parse_money(account.get('total_balance'))
-    if total > 0:
-        return total
+    death = death_lump_sum(account)
     savings = parse_money(account.get('savings_balance'))
-    if savings > 0:
+    total = parse_money(account.get('total_balance'))
+    yitra = parse_money(account.get('balance'))
+    if death > 0 and savings > 0 and total > 0 and money_close(total, savings + death):
         return savings
-    return parse_money(account.get('balance'))
+    if total > 0 and not _candidate_is_cover_face(account, total, death=death):
+        return total
+    if savings > 0 and not _candidate_is_cover_face(account, savings, death=death):
+        return savings
+    if yitra > 0 and not _candidate_is_cover_face(account, yitra, death=death):
+        return yitra
+    return 0.0
 
 
 def tagmulim_amount(account: Dict[str, Any]) -> float:
@@ -962,22 +1067,25 @@ def _cover_looks_like_death(item: Dict[str, Any]) -> bool:
     )
 
 
-def death_lump_sum(account: Dict[str, Any]) -> float:
-    """סכום חד פעמי for death cover on one holdings row.
+def _is_genuine_death_cover(item: Dict[str, Any]) -> bool:
+    """Kisuy that carries סכום חד פעמי, not סכום ביטוח כולל (cash + face)."""
+    if not isinstance(item, dict):
+        return False
+    code = str(item.get('code') or '').strip()
+    name = str(item.get('name') or '')
+    lowered = name.lower()
+    if item.get('had_peami'):
+        return True
+    if code in {'1', '01'}:
+        return True
+    return 'מוות' in name or 'death' in lowered
 
-    Prefers the uploaded ``death_coverage`` / ``סכום חד פעמי`` figure. Nested
-    Kisuy blocks classified as death/life contribute their lump amount when
-    the account-level field is empty. Monthly death annuity is never added.
-    """
-    if not isinstance(account, dict):
-        return 0.0
-    explicit = parse_money(account.get('death_coverage'))
-    if explicit > 0:
-        return explicit
+
+def _death_from_risk_covers(account: Dict[str, Any]) -> float:
     total = 0.0
     seen: set = set()
     for item in account.get('risk_covers') or []:
-        if not isinstance(item, dict) or not _cover_looks_like_death(item):
+        if not isinstance(item, dict) or not _is_genuine_death_cover(item):
             continue
         lump = parse_money(item.get('amount'))
         if lump <= 0:
@@ -988,6 +1096,130 @@ def death_lump_sum(account: Dict[str, Any]) -> float:
         seen.add(key)
         total += lump
     return total
+
+
+def death_lump_sum(account: Dict[str, Any]) -> float:
+    """סכום חד פעמי for death cover on one holdings row.
+
+    Prefers a genuine Kisuy lump (``SCHUM-HAD-PEAMI`` / code 1 / מוות).
+    Account-level ``ביטוח חיים`` is used when it is not the savings figure
+    and not ``צבירה + כיסוי``. Monthly death annuity is never added.
+    """
+    if not isinstance(account, dict):
+        return 0.0
+    from_covers = _death_from_risk_covers(account)
+    explicit = parse_money(account.get('death_coverage'))
+    savings = parse_money(account.get('savings_balance'))
+    total = parse_money(account.get('total_balance'))
+    yitra = parse_money(account.get('balance'))
+    cover = parse_money(account.get('coverage_amount'))
+    official_savings = 0.0
+    if savings > 0:
+        official_savings = savings
+    elif total > 0 and not (explicit > 0 and money_close(total, explicit)):
+        official_savings = total
+
+    if from_covers > 0:
+        if explicit > 0 and official_savings > 0 and money_close(explicit, official_savings + from_covers):
+            return from_covers
+        return from_covers
+
+    if explicit <= 0:
+        return 0.0
+    if official_savings > 0 and money_close(explicit, official_savings):
+        if _is_risk_only_product(account):
+            return explicit
+        return 0.0
+    if official_savings > 0 and explicit > official_savings + _MONEY_EPS:
+        remainder = round(explicit - official_savings, 2)
+        if (
+            (yitra > 0 and money_close(remainder, yitra))
+            or (cover > 0 and money_close(remainder, cover))
+            or (total > 0 and money_close(remainder, total) and not money_close(total, official_savings))
+        ):
+            return remainder
+    return explicit
+
+
+def account_severance(account: Dict[str, Any]) -> float:
+    """פיצויים for one holdings row, including type-5 central funds."""
+    if not isinstance(account, dict):
+        return 0.0
+    explicit = parse_money(account.get('severance_balance'))
+    employer = parse_money(account.get('employer_severance'))
+    pots = 0.0
+    for pot in account.get('severance_pots') or []:
+        if isinstance(pot, dict):
+            pots += parse_money(pot.get('severance_balance') or pot.get('amount'))
+    family = product_family_label(account)
+    if family == _CENTRAL_SEVERANCE_FAMILY or str(account.get('product_type_code') or '').strip() == '5':
+        return max(explicit, employer, pots, account_accumulation(account))
+    if explicit > 0 and employer > 0 and money_close(explicit, employer):
+        return explicit + pots
+    return explicit + employer + pots
+
+
+def severance_sum(accounts, extra_severance: Any = 0) -> float:
+    """Sum affiliated פיצויים. Same employer+policy+amount counts once; pots add."""
+    grouped: Dict[Tuple[str, str], Dict[float, float]] = {}
+    loose = 0.0
+    for account in accounts or []:
+        if not isinstance(account, dict) or is_holdings_summary_row(account):
+            continue
+        amount = account_severance(account)
+        if amount <= 0:
+            continue
+        policy = str(account.get('policy_number') or '').strip()
+        employer = str(account.get('employer_name') or account.get('employer_id') or '').strip()
+        rounded = round(amount, 2)
+        if not policy and not employer:
+            loose += rounded
+            continue
+        grouped.setdefault((policy, employer), {})[rounded] = rounded
+    holdings = loose + sum(sum(bucket.values()) for bucket in grouped.values())
+    extra = parse_money(extra_severance)
+    if extra > 0 and not money_close(extra, holdings):
+        holdings += extra
+    return round(holdings, 2)
+
+
+_MAX_MERGE_AMOUNT_FIELDS = frozenset({
+    'total_balance', 'savings_balance', 'balance', 'tagmulim_balance',
+    'death_coverage', 'disability_coverage', 'coverage_amount',
+    'work_disability_coverage', 'invalidity_coverage', 'waiver_coverage',
+    'survivors_coverage', 'ltc_coverage',
+    'death_premium', 'disability_premium', 'work_disability_premium',
+    'invalidity_premium', 'waiver_premium', 'survivors_premium', 'ltc_premium',
+    'monthly_premium', 'last_deposit', 'track_percent', 'yield_rate',
+    'management_fee', 'management_fee_savings', 'management_fee_deposits',
+})
+
+
+def merge_holdings_account(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+    """Collapse XML + concentrated views of one policy without dropping פיצויים pots."""
+    exist_emp = str(existing.get('employer_name') or existing.get('employer_id') or '').strip()
+    new_emp = str(incoming.get('employer_name') or incoming.get('employer_id') or '').strip()
+    for field, value in incoming.items():
+        if field in {'severance_balance', 'employer_severance'}:
+            exist_amt = parse_money(existing.get(field))
+            new_amt = parse_money(value)
+            if exist_emp and new_emp and exist_emp != new_emp and exist_amt > 0 and new_amt > 0:
+                pots = list(existing.get('severance_pots') or [])
+                pots.append({'employer_name': new_emp, 'severance_balance': new_amt})
+                existing['severance_pots'] = pots
+            else:
+                existing[field] = max(exist_amt, new_amt)
+        elif field == 'severance_pots' and value:
+            existing[field] = list(existing.get(field) or []) + list(value or [])
+        elif field in _MAX_MERGE_AMOUNT_FIELDS:
+            existing[field] = max(parse_money(existing.get(field)), parse_money(value))
+        elif value not in (None, '') and (
+            not existing.get(field)
+            or (field in {'product_type', 'product_type_name'} and str(existing.get(field)).isdigit())
+        ):
+            existing[field] = value
+    stamp_account_accumulation(existing)
+    return existing
 
 
 def cover_face_total(accounts) -> float:
@@ -1021,11 +1253,7 @@ def portfolio_totals(accounts, extra_severance: Any = 0) -> Dict[str, Any]:
     total_savings = deduped_sum(material, lambda account: account.get('savings_balance'))
     total_tagmulim = deduped_sum(material, tagmulim_amount)
     total_yitra = deduped_sum(material, lambda account: account.get('balance'))
-    total_severance = round(
-        deduped_sum(material, lambda account: account.get('severance_balance'))
-        + parse_money(extra_severance),
-        2,
-    )
+    total_severance = severance_sum(material, extra_severance=extra_severance)
     by_provider = accumulation_by_provider(material)
     by_product = accumulation_by_product(material)
     product_sum = round(sum(by_product.values()), 2)
@@ -1077,7 +1305,9 @@ __all__ = [
     'looks_like_pension_table', 'PENSION_TABULAR_INDICATORS',
     'SPREADSHEET_MONEY_FIELDS', 'COVER_FACE_FIELDS', 'parse_money',
     'account_accumulation', 'stamp_account_accumulation', 'holdings_accounts',
-    'is_holdings_summary_row', 'tagmulim_amount', 'deduped_sum',
+    'is_holdings_summary_row', 'is_pension_account_row', 'tagmulim_amount',
+    'account_severance', 'severance_sum', 'merge_holdings_account',
+    'money_close', 'deduped_sum',
     'accumulation_by', 'accumulation_by_provider', 'accumulation_by_product',
     'product_family_label', 'PRODUCT_FAMILY_BY_CODE', 'death_lump_sum',
     'cover_face_total', 'portfolio_totals',
