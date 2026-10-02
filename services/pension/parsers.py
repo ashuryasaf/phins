@@ -30,10 +30,12 @@ from services.pension.schema import (
     apply_component_severance,
     finalize_uploaded_amounts,
     is_pension_account_row,
+    iter_spreadsheet_cells,
     looks_like_pension_table,
     map_hebrew_column,
     note_spreadsheet_value,
     parse_money,
+    spreadsheet_row,
     stamp_account_accumulation,
     tag_variants,
 )
@@ -74,6 +76,22 @@ class MislakaParserMixin:
         'SACH-YITRA', 'SachYitra', 'SCHUM', 'Saldo', 'SALDO',
     )
     YITRA_TYPE_TAGS = ('KOD-SUG-HAFRASHA', 'KodSugHafrasha', 'SUG-YITRA', 'SUG-HAFRASHA')
+    # Balance tags that name a פיצויים pot, keyed by the view they express.
+    # Ledger balance, total severance savings, redemption value and envelope
+    # are manufacturer aliases for the same money, so the views never add to
+    # each other. SACH-PITZUIM is a deposit/interface total and is read only
+    # as a wrapper remainder, never as another pot.
+    SEVERANCE_BALANCE_TAGS = {
+        'YITRAT-PITZUIM': 'yitra', 'YitratPitzuim': 'yitra',
+        'YITRA-PITZUIM': 'yitra', 'YitraPitzuim': 'yitra',
+        'TOTAL-CHISACHON-PITZUIM': 'chisachon', 'TotalChisachonPitzuim': 'chisachon',
+        'ERECH-PIDYON-PITZUIM': 'pidyon', 'ErechPidyonPitzuim': 'pidyon',
+        'KFIFA-PITZUIM': 'kfifa', 'KfifaPitzuim': 'kfifa',
+    }
+    WRAPPER_OWN_TOTAL_TAGS = frozenset({
+        'SACH-PITZUIM', 'SachPitzuim', 'TOTAL-PITZUIM', 'TotalPitzuim',
+        'KSF-PITZUIM-TZVUR', 'KsfPitzuimTzvur', 'SCHUM-PITZUIM', 'SchumPitzuim',
+    })
     TOTAL_BALANCE_VARIANTS = tuple(
         variants for _tag, field, variants in CompiledFields.ACCOUNT if field == 'total_balance'
     )
@@ -456,12 +474,11 @@ class MislakaParserMixin:
                         # Process data rows
                         for row in sheet_rows[1:]:
                             if row and any(cell is not None for cell in row):
-                                row_dict = {}
+                                pairs = []
                                 for i, cell in enumerate(row):
                                     if i < len(sheet_columns):
-                                        col_name = sheet_columns[i]
-                                        row_dict[col_name] = cell if cell is not None else ''
-                                rows.append(row_dict)
+                                        pairs.append((sheet_columns[i], cell if cell is not None else ''))
+                                rows.append(spreadsheet_row(pairs))
                     
                     wb.close()
                     
@@ -495,12 +512,11 @@ class MislakaParserMixin:
                         for row_idx in range(1, sheet.nrows):
                             row = sheet.row_values(row_idx)
                             if row and any(cell for cell in row):
-                                row_dict = {}
+                                pairs = []
                                 for i, cell in enumerate(row):
                                     if i < len(sheet_columns):
-                                        col_name = sheet_columns[i]
-                                        row_dict[col_name] = cell if cell else ''
-                                rows.append(row_dict)
+                                        pairs.append((sheet_columns[i], cell if cell else ''))
+                                rows.append(spreadsheet_row(pairs))
                     
                 except ImportError:
                     logger.warning("xlrd not available for xls parsing")
@@ -561,11 +577,11 @@ class MislakaParserMixin:
             for values in raw_rows[1:]:
                 if not any(str(v).strip() for v in values):
                     continue
-                row_dict = {}
+                pairs = []
                 for i, val in enumerate(values):
                     if i < len(columns):
-                        row_dict[columns[i]] = str(val).strip()
-                rows.append(row_dict)
+                        pairs.append((columns[i], str(val).strip()))
+                rows.append(spreadsheet_row(pairs))
             
             if not rows:
                 return None
@@ -610,7 +626,7 @@ class MislakaParserMixin:
                 'source_file': filename
             }
             
-            for original_col, value in row.items():
+            for original_col, value in iter_spreadsheet_cells(row):
                 if value is None or str(value).strip() == '':
                     continue
                     
@@ -850,6 +866,7 @@ class MislakaParserMixin:
         self._drop_component_total(elem, account)
         self._drop_nested_cover_fields(elem, account)
         self._harvest_component_balances(elem, account)
+        self._harvest_severance_balance_tags(elem, account)
         self._harvest_risk_covers(elem, account)
         stamp_account_accumulation(account)
         return account
@@ -1066,6 +1083,7 @@ class MislakaParserMixin:
                 if sev:
                     rows.append(sev)
             if rows:
+                self._append_wrapper_remainder(elem, rows)
                 return rows
         sev = self._severance_from_elem(elem)
         return [sev] if sev else []
@@ -1264,6 +1282,54 @@ class MislakaParserMixin:
             death = death_lump_sum(account)
             if death > 0 and money_close(current_total, death) and not money_close(composed, death):
                 account['total_balance'] = composed
+
+    def _harvest_severance_balance_tags(self, elem, account: Dict[str, Any]) -> None:
+        """Every YITRAT-PITZUIM sibling is a pot. ``_find_text`` keeps only the first.
+
+        Siblings of one spelling add up, but the alias views of the same pot
+        are weighed against each other instead, so a redemption value a few
+        percent below the ledger balance never lands on top of it. The פיצויים
+        blocks are left to ``_parse_severance``, which owns the employer pots.
+        """
+        skip = (
+            set(self.YITRA_BLOCK_TAGS) | set(self.COVER_BLOCK_TAGS)
+            | set(self.COVER_WRAPPER_TAGS) | set(self.SEVERANCE_TAGS)
+        )
+        found: Dict[str, List[float]] = {}
+        stack = list(elem)
+        while stack:
+            node = stack.pop()
+            local = self._local_tag(node.tag)
+            if local in skip:
+                continue
+            view = self.SEVERANCE_BALANCE_TAGS.get(local)
+            if view:
+                text = (node.text or '').strip()
+                if text:
+                    found.setdefault(view, []).append(self._parse_number(text))
+                continue
+            stack.extend(list(node))
+        for amounts in found.values():
+            # Only a larger pot replaces the account's, so this keeps the
+            # highest view rather than their sum.
+            apply_component_severance(account, amounts)
+
+    def _own_direct_amount(self, elem, tags) -> float:
+        """Amount on a direct child only, so a wrapper total is not the first employer pot."""
+        wanted = set(tags)
+        best = 0.0
+        for child in list(elem):
+            if self._local_tag(child.tag) in wanted and child.text and str(child.text).strip():
+                best = max(best, self._parse_number(child.text))
+        return best
+
+    def _append_wrapper_remainder(self, elem, rows: List[Dict[str, Any]]) -> None:
+        """When employer pots sum to less than the wrapper's own total, keep the gap."""
+        child_sum = sum(self._parse_number(str(row.get('total_severance') or 0)) for row in rows)
+        wrapper = self._own_direct_amount(elem, self.WRAPPER_OWN_TOTAL_TAGS)
+        gap = round(wrapper - child_sum, 2)
+        if gap > 0.02:
+            rows.append({'total_severance': gap})
 
     def _recover_client_identity(self, data: Dict[str, Any]) -> None:
         """Fill client.id_number from nested / raw affiliated tags when the header block omitted it."""

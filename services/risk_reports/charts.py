@@ -12,6 +12,32 @@ from services.risk_reports.models import AnalysisResult, ChartConfig, ChartType
 from services.risk_reports.pdf_export import classify_cover_type
 
 
+def _currency_payload(labels, values) -> Dict[str, Any]:
+    """Slice labels plus their sum, so the dashboard can show the affiliated total."""
+    amounts = [round(float(value or 0), 2) for value in values]
+    return {
+        'labels': list(labels),
+        'values': amounts,
+        'total': round(sum(amounts), 2),
+    }
+
+
+def _reconciled_breakdown(stored: Any, expected: float) -> Optional[Dict[str, float]]:
+    """Use the assessment's own concentration when its slices already sum to צבירה."""
+    if not isinstance(stored, dict) or not stored:
+        return None
+    cleaned = {
+        str(name): round(float(amount or 0), 2)
+        for name, amount in stored.items()
+        if float(amount or 0) > 0
+    }
+    if not cleaned or expected <= 0:
+        return None
+    if abs(sum(cleaned.values()) - float(expected)) < 0.05:
+        return cleaned
+    return None
+
+
 class ChartsMixin:
     """Chart configuration builders."""
 
@@ -36,10 +62,10 @@ class ChartsMixin:
             charts.append(ChartConfig(
                 type=ChartType.BAR,
                 title='חיסכון מול כיסוי' if is_hebrew else 'Savings vs Cover',
-                data={
-                    'labels': ['חיסכון' if is_hebrew else 'Savings', 'כיסוי' if is_hebrew else 'Cover'],
-                    'values': [total_savings, total_cover]
-                },
+                data=_currency_payload(
+                    ['חיסכון' if is_hebrew else 'Savings', 'כיסוי' if is_hebrew else 'Cover'],
+                    [total_savings, total_cover],
+                ),
                 options={
                     'colors': ['#10b981', '#1a237e'],
                     'currency': True,
@@ -157,33 +183,31 @@ class ChartsMixin:
         accounts = pension_data.get('accounts', [])
         
         from services.pension.schema import (
+            account_accumulation,
             accumulation_by_product,
             accumulation_by_provider,
+            death_lump_sum,
             deduped_sum,
+            money_close,
+            parse_money,
             severance_sum,
             tagmulim_amount,
         )
 
-        # 1. Cumulative savings by provider. Repeated track rows of one
-        # policy contribute their סה"כ חיסכון once.
-        provider_totals = accumulation_by_provider(accounts)
+        tzvira = float((totals or {}).get('total_balance') or 0)
+        if tzvira <= 0:
+            tzvira = deduped_sum(accounts, account_accumulation)
+
+        # 1. צבירה לפי יצרן. Prefer the assessment breakdown when it sums to צבירה.
+        provider_totals = _reconciled_breakdown((totals or {}).get('by_provider'), tzvira)
         if not provider_totals:
-            stored = (totals or {}).get('by_provider') or {}
-            if isinstance(stored, dict):
-                provider_totals = {
-                    str(name): float(amount or 0)
-                    for name, amount in stored.items()
-                    if float(amount or 0) > 0
-                }
+            provider_totals = accumulation_by_provider(accounts)
         
         if provider_totals:
             charts.append(ChartConfig(
                 type=ChartType.BAR,
                 title='צבירה לפי יצרן' if is_hebrew else 'Savings by Provider',
-                data={
-                    'labels': list(provider_totals.keys()),
-                    'values': list(provider_totals.values())
-                },
+                data=_currency_payload(list(provider_totals.keys()), list(provider_totals.values())),
                 options={
                     'horizontal': False,
                     'colors': ['#2196F3', '#4CAF50', '#FF9800', '#9C27B0', '#00BCD4'],
@@ -192,22 +216,30 @@ class ChartsMixin:
                 }
             ))
         
-        # 2. Tagmulim vs severance. סה"כ חיסכון is not drawn as תגמולים.
-        total_savings = deduped_sum(accounts, tagmulim_amount)
-        total_severance = severance_sum(accounts)
-        if not total_savings and not total_severance:
-            total_savings = float(totals.get('total_tagmulim') or totals.get('total_savings_balance') or 0)
-            total_severance = float(totals.get('total_severance') or totals.get('total_severance_balance') or 0)
+        # 2. תגמולים מול פיצויים. פיצויים includes affiliated pitzuim pots.
+        # An explicit תגמולים column is kept. Otherwise a savings figure that
+        # is the whole צבירה is not relabelled as תגמולים; the slice is
+        # צבירה minus the פיצויים already inside it.
+        explicit_tagmulim = deduped_sum(accounts, lambda account: account.get('tagmulim_balance'))
+        inferred_tagmulim = deduped_sum(accounts, tagmulim_amount)
+        account_severance = severance_sum(accounts)
+        stored_severance = float((totals or {}).get('total_severance') or (totals or {}).get('total_severance_balance') or 0)
+        total_severance = stored_severance if stored_severance > account_severance + 0.02 else account_severance
+        if explicit_tagmulim > 0:
+            total_tagmulim = explicit_tagmulim
+        elif inferred_tagmulim > 0 and tzvira > 0 and inferred_tagmulim < tzvira - 0.02 and not money_close(inferred_tagmulim, tzvira):
+            total_tagmulim = inferred_tagmulim
+        elif account_severance > 0 and tzvira + 0.02 >= account_severance:
+            total_tagmulim = round(tzvira - account_severance, 2)
+        else:
+            total_tagmulim = 0.0
         
-        if total_savings > 0 or total_severance > 0:
+        if total_tagmulim > 0 or total_severance > 0:
             labels = ['תגמולים', 'פיצויים'] if is_hebrew else ['Savings', 'Severance']
             charts.append(ChartConfig(
                 type=ChartType.DOUGHNUT,
                 title='תגמולים מול פיצויים' if is_hebrew else 'Savings vs Severance',
-                data={
-                    'labels': labels,
-                    'values': [total_savings, total_severance]
-                },
+                data=_currency_payload(labels, [total_tagmulim, total_severance]),
                 options={
                     'colors': ['#4CAF50', '#FF9800'],
                     'currency': True,
@@ -219,40 +251,61 @@ class ChartsMixin:
         coverage_totals = {}
         cost_totals = {}
         cover_fields = (
-            ('death_coverage', 'death_premium', 'ביטוח למקרה מוות', 'Death Cover'),
-            ('disability_coverage', 'disability_premium', 'אבדן כושר עבודה', 'Loss of Work Capacity'),
-            ('work_disability_coverage', 'work_disability_premium', 'אבדן כושר עבודה', 'Loss of Work Capacity'),
-            ('invalidity_coverage', 'invalidity_premium', 'נכות', 'Disability'),
-            ('waiver_coverage', 'waiver_premium', 'שחרור', 'Premium Waiver'),
-            ('survivors_coverage', 'survivors_premium', 'שארים', 'Survivors'),
-            ('ltc_coverage', 'ltc_premium', 'סיעוד', 'Long-Term Care'),
+            ('death_coverage', 'death_premium', 'ביטוח למקרה מוות', 'Death Cover', 'life'),
+            ('disability_coverage', 'disability_premium', 'אבדן כושר עבודה', 'Loss of Work Capacity', 'disability_work'),
+            ('work_disability_coverage', 'work_disability_premium', 'אבדן כושר עבודה', 'Loss of Work Capacity', 'disability_work'),
+            ('invalidity_coverage', 'invalidity_premium', 'נכות', 'Disability', 'invalidity'),
+            ('waiver_coverage', 'waiver_premium', 'שחרור', 'Premium Waiver', 'waiver'),
+            ('survivors_coverage', 'survivors_premium', 'שארים', 'Survivors', 'survivors'),
+            ('ltc_coverage', 'ltc_premium', 'סיעוד', 'Long-Term Care', 'ltc'),
         )
         seen_cover_amounts = set()
         seen_cover_costs = set()
+        life_label = 'ביטוח למקרה מוות' if is_hebrew else 'Death Cover'
         for acct in accounts:
             policy = str(acct.get('policy_number') or '')
-            nested = [item for item in (acct.get('risk_covers') or []) if isinstance(item, dict)]
-            if nested:
-                for item in nested:
-                    _key, title_he, title_en = classify_cover_type(item.get('code'), item.get('name'))
-                    amount = float(item.get('amount') or 0)
-                    cost = float(item.get('cost') or 0)
-                    label = title_he if is_hebrew else title_en
-                    amount_key = (policy, label, round(amount, 2))
-                    cost_key = (policy, label, round(cost, 2))
-                    if amount > 0 and amount_key not in seen_cover_amounts:
-                        seen_cover_amounts.add(amount_key)
-                        coverage_totals[label] = coverage_totals.get(label, 0) + amount
-                    if cost > 0 and cost_key not in seen_cover_costs:
-                        seen_cover_costs.add(cost_key)
-                        cost_totals[label] = cost_totals.get(label, 0) + cost
-                continue
-            for amount_field, cost_field, he_label, en_label in cover_fields:
+            lump = death_lump_sum(acct)
+            if lump > 0:
+                amount_key = (policy, life_label, round(lump, 2))
+                if amount_key not in seen_cover_amounts:
+                    seen_cover_amounts.add(amount_key)
+                    coverage_totals[life_label] = coverage_totals.get(life_label, 0) + lump
+            death_cost = parse_money(acct.get('death_premium'))
+            if death_cost > 0:
+                cost_key = (policy, life_label, round(death_cost, 2))
+                if cost_key not in seen_cover_costs:
+                    seen_cover_costs.add(cost_key)
+                    cost_totals[life_label] = cost_totals.get(life_label, 0) + death_cost
+            nested_types = set()
+            for item in (acct.get('risk_covers') or []):
+                if not isinstance(item, dict):
+                    continue
+                type_key, title_he, title_en = classify_cover_type(item.get('code'), item.get('name'))
+                if type_key == 'life':
+                    # Nested סכום ביטוח כולל can be צבירה + כיסוי. The life
+                    # slice is the סכום חד פעמי already taken above.
+                    nested_types.add(type_key)
+                    continue
+                nested_types.add(type_key)
+                amount = float(item.get('amount') or 0)
+                cost = float(item.get('cost') or 0)
+                label = title_he if is_hebrew else title_en
+                amount_key = (policy, label, round(amount, 2))
+                cost_key = (policy, label, round(cost, 2))
+                if amount > 0 and amount_key not in seen_cover_amounts:
+                    seen_cover_amounts.add(amount_key)
+                    coverage_totals[label] = coverage_totals.get(label, 0) + amount
+                if cost > 0 and cost_key not in seen_cover_costs:
+                    seen_cover_costs.add(cost_key)
+                    cost_totals[label] = cost_totals.get(label, 0) + cost
+            for amount_field, cost_field, he_label, en_label, type_key in cover_fields:
+                if type_key == 'life' or type_key in nested_types:
+                    continue
                 amount = float(acct.get(amount_field) or 0)
                 cost = float(acct.get(cost_field) or 0)
                 label = he_label if is_hebrew else en_label
-                amount_key = (policy, amount_field, round(amount, 2))
-                cost_key = (policy, cost_field, round(cost, 2))
+                amount_key = (policy, label, round(amount, 2))
+                cost_key = (policy, label, round(cost, 2))
                 if amount > 0 and amount_key not in seen_cover_amounts:
                     seen_cover_amounts.add(amount_key)
                     coverage_totals[label] = coverage_totals.get(label, 0) + amount
@@ -264,12 +317,9 @@ class ChartsMixin:
             charts.append(ChartConfig(
                 type=ChartType.PIE,
                 title='כיסויים ביטוחיים' if is_hebrew else 'Insurance Coverage',
-                data={
-                    'labels': list(coverage_totals.keys()),
-                    'values': list(coverage_totals.values())
-                },
+                data=_currency_payload(list(coverage_totals.keys()), list(coverage_totals.values())),
                 options={
-                    'colors': ['#E91E63', '#3F51B5'],
+                    'colors': ['#E91E63', '#3F51B5', '#009688', '#795548', '#607D8B', '#FF5722'],
                     'currency': True,
                     'currency_symbol': '₪'
                 }
@@ -278,10 +328,7 @@ class ChartsMixin:
             charts.append(ChartConfig(
                 type=ChartType.BAR,
                 title='עלות הכיסויים' if is_hebrew else 'Cover Costs',
-                data={
-                    'labels': list(cost_totals.keys()),
-                    'values': list(cost_totals.values())
-                },
+                data=_currency_payload(list(cost_totals.keys()), list(cost_totals.values())),
                 options={
                     'colors': ['#c9a04e', '#0e2f63'],
                     'currency': True,
@@ -290,24 +337,15 @@ class ChartsMixin:
             ))
         
         # 4. Official Mislaka product-family concentration (always, even one type)
-        product_balances = accumulation_by_product(accounts)
+        product_balances = _reconciled_breakdown((totals or {}).get('by_product'), tzvira)
         if not product_balances:
-            stored_products = (totals or {}).get('by_product') or {}
-            if isinstance(stored_products, dict):
-                product_balances = {
-                    str(name): float(amount or 0)
-                    for name, amount in stored_products.items()
-                    if float(amount or 0) > 0
-                }
+            product_balances = accumulation_by_product(accounts)
 
         if product_balances:
             charts.append(ChartConfig(
                 type=ChartType.PIE,
                 title='ריכוז סכומי הצבירה לפי סוגי המוצרים' if is_hebrew else 'Accumulation by Product Type',
-                data={
-                    'labels': list(product_balances.keys()),
-                    'values': list(product_balances.values())
-                },
+                data=_currency_payload(list(product_balances.keys()), list(product_balances.values())),
                 options={
                     'colors': ['#009688', '#795548', '#607D8B', '#FF5722', '#673AB7'],
                     'currency': True,

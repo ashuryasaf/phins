@@ -756,9 +756,17 @@ Factors Affecting Score:
             if isinstance(client_data, dict):
                 shared_client_id = str(client_data.get('id_number', '') or '').strip()
 
-            total_savings = deduped_sum(accounts, account_accumulation)
-            total_severance = severance_sum(accounts)
+            stored_totals = pension_data.get('totals') if isinstance(pension_data.get('totals'), dict) else {}
+            computed_savings = deduped_sum(accounts, account_accumulation)
+            stored_savings = float(stored_totals.get('total_balance') or 0)
+            total_savings = stored_savings if stored_savings > 0 else computed_savings
+            computed_severance = severance_sum(accounts)
+            stored_severance = float(stored_totals.get('total_severance') or stored_totals.get('total_severance_balance') or 0)
+            total_severance = stored_severance if stored_severance > computed_severance + 0.02 else computed_severance
             total_cover = cover_face_total(accounts)
+            stored_cover = float(stored_totals.get('total_coverage') or 0)
+            if stored_cover > total_cover + 0.02:
+                total_cover = stored_cover
             seen_savings_policies = set()
             seen_cover_policies = set()
             for account in accounts:
