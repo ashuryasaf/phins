@@ -1419,10 +1419,7 @@ def merge_holdings_account(existing: Dict[str, Any], incoming: Dict[str, Any]) -
         if field in {'severance_balance', 'employer_severance'}:
             exist_amt = parse_money(existing.get(field))
             new_amt = parse_money(value)
-            if exist_amt > 0 and new_amt > 0 and (
-                (exist_emp and new_emp and exist_emp != new_emp)
-                or not money_close(exist_amt, new_amt)
-            ):
+            if exist_emp and new_emp and exist_emp != new_emp and exist_amt > 0 and new_amt > 0:
                 pots = list(existing.get('severance_pots') or [])
                 pots.append({'employer_name': new_emp, 'severance_balance': new_amt})
                 existing['severance_pots'] = pots

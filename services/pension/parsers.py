@@ -651,9 +651,7 @@ class MislakaParserMixin:
         # Numeric סוג מוצר falls back to the code table. A Hebrew type or
         # SHEM-MUTZAR already stamped on the row stays as the file wrote it.
         for account in accounts:
-            if account.get('product_type_name'):
-                continue
-            if account.get('product_type'):
+            if not account.get('product_type_name') and account.get('product_type'):
                 pt = account['product_type']
                 for code, info in self.schema_mapping.PRODUCT_TYPE_CODES.items():
                     if pt in [info['he'], info['en'], code]:
