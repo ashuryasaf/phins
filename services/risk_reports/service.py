@@ -817,6 +817,7 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
                         'provider': acct.get('provider', ''),
                         'product_type': acct.get('product_type', ''),
                         'product_type_name': acct.get('product_type_name', ''),
+                        'product_type_display': acct.get('product_type_display', ''),
                         'product_name': acct.get('product_name', ''),
                         'status': acct.get('status', ''),
                         'total_balance': acct.get('total_balance', 0) or 0,

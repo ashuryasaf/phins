@@ -32,7 +32,7 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger('services.pension_data_agent')
 
-PARSER_VERSION = '7'
+PARSER_VERSION = '8'
 AGENT_ID = 'pension_data_agent'
 KIND = 'parse_result'
 

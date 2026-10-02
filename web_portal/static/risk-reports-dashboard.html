@@ -3018,9 +3018,14 @@
 
     function isRiskOnlyProduct(account) {
       const code = String(account?.product_type_code || account?.product_type || '').trim();
-      const family = String(account?.product_type_name || account?.product_type || '');
-      const riskFamily = code === '8' || code === '11' || code === '12'
-        || family.includes('ביטוח חיים') || family.includes('ריסק') || family.includes('אובדן כושר עבודה');
+      const family = String(account?.product_type_display || account?.product_type_name || account?.product_type || '');
+      const savingsFamily = family.includes('משולב') || family.includes('מנהלים') || family.includes('פנסיה')
+        || family.includes('גמל') || family.includes('השתלמות') || family.includes('חיסכון');
+      const riskFamily = !savingsFamily && (
+        code === '8' || code === '11' || code === '12'
+        || family.includes('ביטוח חיים') || family.includes('ריסק') || family.includes('סיכון')
+        || family.includes('אובדן כושר') || family.includes('אבדן כושר')
+      );
       if (!riskFamily) return false;
       const savings = parseFloat(account?.savings_balance) || 0;
       const tagmulim = parseFloat(account?.tagmulim_balance) || 0;
@@ -3046,11 +3051,17 @@
       const yitra = parseFloat(account?.balance) || 0;
       const cover = parseFloat(account?.coverage_amount) || 0;
       const officialSavings = savings > 0 ? savings : ((total > 0 && !amountsClose(total, explicit)) ? total : 0);
-      if (fromCovers > 0) return fromCovers;
+      if (fromCovers > 0) {
+        if (explicit > 0 && officialSavings > 0 && amountsClose(explicit, officialSavings + fromCovers)) return fromCovers;
+        return fromCovers;
+      }
       if (explicit <= 0) return 0;
       // A ריסק row whose savings face equals the cover still reports the face.
       if (officialSavings > 0 && amountsClose(explicit, officialSavings)) {
         return isRiskOnlyProduct(account) ? explicit : 0;
+      }
+      if (savings > 0 && total > 0 && explicit > 0 && amountsClose(explicit, savings + total) && !amountsClose(savings, total)) {
+        return total < explicit ? total : savings;
       }
       if (officialSavings > 0 && explicit > officialSavings + 0.021) {
         const remainder = Math.round((explicit - officialSavings) * 100) / 100;
@@ -3070,7 +3081,10 @@
       const total = parseFloat(account?.total_balance) || 0;
       const savings = parseFloat(account?.savings_balance) || 0;
       const yitra = parseFloat(account?.balance) || 0;
-      const isCover = (value) => value > 0 && death > 0 && amountsClose(value, death);
+      if (death > 0 && savings > 0 && total > 0 && amountsClose(total, death) && !amountsClose(savings, death)) return savings;
+      if (death > 0 && savings > 0 && total > 0 && amountsClose(total, savings + death)) return savings;
+      const isCover = (value) => value > 0 && death > 0 && amountsClose(value, death)
+        && !(savings > 0 && !amountsClose(savings, value) && !amountsClose(savings, death));
       if (total > 0 && !isCover(total)) return total;
       if (savings > 0 && !isCover(savings)) return savings;
       if (yitra > 0 && !isCover(yitra)) return yitra;
@@ -3225,7 +3239,7 @@
             <h5 style="color: #1e40af;">פוליסה ${idx + 1}: ${escapeHtml(acct.provider || 'לא ידוע')}</h5>
             <div class="insight-detail" style="direction: rtl; text-align: right;">
               <div class="stat-detail"><span class="label">מספר פוליסה</span><span class="val" style="font-family: monospace;">${escapeHtml(acct.policy_number || '-')}</span></div>
-              <div class="stat-detail"><span class="label">סוג מוצר</span><span class="val">${escapeHtml(acct.product_type_name || acct.product_type || '-')}</span></div>
+              <div class="stat-detail"><span class="label">סוג מוצר</span><span class="val">${escapeHtml(acct.product_type_display || acct.product_type_name || acct.product_type || '-')}</span></div>
               <div class="stat-detail"><span class="label">סטטוס</span><span class="val">${acct.status || 'פעיל'}</span></div>
               ${balance > 0 ? `<div class="stat-detail"><span class="label">צבירה כוללת</span><span class="val" style="color: #059669; font-weight: bold;">₪${balance.toLocaleString('he-IL')}</span></div>` : ''}
               ${savings > 0 && savings !== balance ? `<div class="stat-detail"><span class="label">תגמולים</span><span class="val">₪${savings.toLocaleString('he-IL')}</span></div>` : ''}

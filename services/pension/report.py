@@ -19,6 +19,16 @@ from services.pension.schema import (
 )
 
 
+def _product_type_text(acct: Dict[str, Any]) -> str:
+    """סוג מוצר as uploaded, then the code-table label."""
+    return str(
+        acct.get('product_type_display')
+        or acct.get('product_type_name')
+        or acct.get('product_type')
+        or ''
+    )
+
+
 class PensionReportMixin:
     """Derived metrics + report text. Pure functions of the parsed ``data``
     (and the clock, for the report date / age)."""
@@ -313,7 +323,7 @@ class PensionReportMixin:
                 
                 for i, acct in enumerate(savings_policies, 1):
                     provider = acct.get('provider', '')[:15]
-                    product = (acct.get('product_type_name', '') or acct.get('product_type', ''))[:18]
+                    product = _product_type_text(acct)[:18]
                     policy = str(acct.get('policy_number', ''))[:12]
                     tenure = acct.get('start_date', '')
                     if tenure and len(str(tenure)) >= 8:
@@ -335,7 +345,7 @@ class PensionReportMixin:
                 ])
                 for i, acct in enumerate(risk_policies, 1):
                     provider = acct.get('provider', '')[:15]
-                    product = (acct.get('product_type_name', '') or acct.get('product_type', ''))[:18]
+                    product = _product_type_text(acct)[:18]
                     policy = str(acct.get('policy_number', ''))[:12]
                     status = acct.get('status', 'פעיל')[:6]
                     lines.append(f"{i:2} │ {provider:<15} │ {product:<19} │ {policy:<11} │ {status}")
@@ -355,7 +365,7 @@ class PensionReportMixin:
             for i, acct in enumerate(accounts, 1):
                 provider = acct.get('provider', 'לא זמין')
                 policy_num = acct.get('policy_number', '')
-                product_type = acct.get('product_type_name', '') or acct.get('product_type', '')
+                product_type = _product_type_text(acct)
                 status = acct.get('status', 'פעיל')
                 tenure = acct.get('start_date', '')
                 
@@ -454,7 +464,7 @@ class PensionReportMixin:
                 balance = account_accumulation(acct)
                 if balance > 0:
                     provider = acct.get('provider', '')[:15]
-                    product = (acct.get('product_type_name', '') or acct.get('product_type', ''))[:18]
+                    product = _product_type_text(acct)[:18]
                     total_pension += balance
                     lines.append(f"{i:2} │ {provider:<15} │ {product:<19} │ ₪{balance:>10,.0f} │ ₪{balance:>10,.0f}")
             
@@ -514,7 +524,7 @@ class PensionReportMixin:
                     seen_death.add(key)
                     row_i += 1
                     provider = acct.get('provider', '')[:10]
-                    product = (acct.get('product_type_name', '') or acct.get('product_type', ''))[:20]
+                    product = _product_type_text(acct)[:20]
                     cost = float(acct.get('death_premium', 0) or 0)
                     desc = f"{provider} {product} {policy[:10]}"[:36]
                     
@@ -542,7 +552,7 @@ class PensionReportMixin:
                 total_dis_cost = 0
                 for i, (acct, dis) in enumerate(disability_coverages, 1):
                     provider = acct.get('provider', '')[:10]
-                    product = (acct.get('product_type_name', '') or acct.get('product_type', ''))[:20]
+                    product = _product_type_text(acct)[:20]
                     policy = str(acct.get('policy_number', ''))[:10]
                     cost = float(acct.get('disability_premium', 0) or 0)
                     desc = f"{provider} {product} {policy}"[:36]
@@ -572,7 +582,7 @@ class PensionReportMixin:
             
             for i, acct in enumerate(accounts, 1):
                 provider = acct.get('provider', '')[:10]
-                product = (acct.get('product_type_name', '') or '')[:12]
+                product = _product_type_text(acct)[:12]
                 policy = str(acct.get('policy_number', ''))
                 employer = acct.get('employer_name', '')[:18]
                 
@@ -724,7 +734,7 @@ class PensionReportMixin:
             rows.append({
                 'מספר פוליסה': acct.get('policy_number', ''),
                 'יצרן': acct.get('provider', ''),
-                'סוג מוצר': acct.get('product_type_name', acct.get('product_type', '')),
+                'סוג מוצר': _product_type_text(acct),
                 'שם מוצר': acct.get('product_name', ''),
                 'סטטוס': acct.get('status', 'פעיל'),
                 'יתרה כוללת': account_accumulation(acct),

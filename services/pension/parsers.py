@@ -27,9 +27,12 @@ from services.pension.schema import (
     SPREADSHEET_MONEY_FIELDS,
     CompiledFields,
     MislakaSchemaMapping,
+    apply_component_severance,
+    finalize_uploaded_amounts,
     is_pension_account_row,
     looks_like_pension_table,
     map_hebrew_column,
+    note_spreadsheet_value,
     parse_money,
     stamp_account_accumulation,
     tag_variants,
@@ -615,9 +618,11 @@ class MislakaParserMixin:
                     mapped_name = mapped_columns[original_col]
                     value_str = str(value).strip()
                     
-                    # Convert value based on field type
+                    # Convert value based on field type. Cover and צבירה
+                    # columns are reconciled together so a later סה״כ ביטוח חיים
+                    # cannot overwrite the face or the savings total.
                     if mapped_name in SPREADSHEET_MONEY_FIELDS:
-                        account[mapped_name] = parse_money(value_str)
+                        note_spreadsheet_value(account, original_col, mapped_name, value_str)
                     elif mapped_name == 'section14':
                         account[mapped_name] = value_str.lower() in ['כן', 'yes', '1', 'true', 'v', '✓', 'y']
                     elif mapped_name in ['full_name', 'first_name', 'last_name', 'id_number', 
@@ -632,6 +637,7 @@ class MislakaParserMixin:
                     else:
                         account[mapped_name] = value_str
             
+            finalize_uploaded_amounts(account)
             # Only add if we have some account data
             if is_pension_account_row(account):
                 stamp_account_accumulation(account)
@@ -642,14 +648,18 @@ class MislakaParserMixin:
             parts = [client_info.get('first_name', ''), client_info.get('last_name', '')]
             client_info['full_name'] = ' '.join(p for p in parts if p)
         
-        # Translate product types
+        # Numeric סוג מוצר falls back to the code table. A Hebrew type or
+        # SHEM-MUTZAR already stamped on the row stays as the file wrote it.
         for account in accounts:
+            if account.get('product_type_name'):
+                continue
             if account.get('product_type'):
                 pt = account['product_type']
                 for code, info in self.schema_mapping.PRODUCT_TYPE_CODES.items():
                     if pt in [info['he'], info['en'], code]:
                         account['product_type_name'] = info['he']
                         account['product_type_en'] = info['en']
+                        account['product_type_display'] = info['he']
                         break
             
             # Set default status if not present
@@ -819,12 +829,15 @@ class MislakaParserMixin:
                 else:
                     account[field_name] = value
 
-        # Translate product type
-        product_type_code = account.get('product_type_code', '') or account.get('product_type', '')
+        # SHEM-MUTZAR is the file's סוג מוצר. The numeric code table is only
+        # the English label and a fallback when the file has no Hebrew name.
+        product_type_code = str(account.get('product_type_code', '') or account.get('product_type', '')).strip()
+        shem = str(account.get('product_name') or '').strip()
         if product_type_code in self.schema_mapping.PRODUCT_TYPE_CODES:
             type_info = self.schema_mapping.PRODUCT_TYPE_CODES[product_type_code]
-            account['product_type_name'] = type_info['he']
             account['product_type_en'] = type_info['en']
+            if not shem or shem.isdigit():
+                account['product_type_name'] = type_info['he']
 
         # Translate status
         status_code = account.get('status_code', '')
@@ -1223,7 +1236,7 @@ class MislakaParserMixin:
     def _harvest_component_balances(self, elem, account: Dict[str, Any]) -> None:
         """Read official Yitra / PerutYitra children (KOD-SUG-HAFRASHA 1/2/3)."""
         savings = 0.0
-        severance = 0.0
+        severance_amounts: List[float] = []
         found = False
         for yitra in self._descendants_named(elem, *self.YITRA_BLOCK_TAGS):
             if any(self._descendants_named(yitra, *self.YITRA_BLOCK_TAGS)):
@@ -1235,15 +1248,15 @@ class MislakaParserMixin:
             found = True
             code = (self._direct_text(yitra, *self.YITRA_TYPE_TAGS) or '').strip().lower()
             if code in {'3', '03', 'פיצויים', 'pitzuim', 'severance'}:
-                severance += amount
+                severance_amounts.append(amount)
             else:
                 savings += amount
         if not found:
             return
         if not account.get('savings_balance'):
             account['savings_balance'] = savings
-        if not account.get('severance_balance'):
-            account['severance_balance'] = severance
+        apply_component_severance(account, severance_amounts)
+        severance = parse_money(account.get('severance_balance'))
         composed = savings + severance
         current_total = parse_money(account.get('total_balance'))
         if not current_total:

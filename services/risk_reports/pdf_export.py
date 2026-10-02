@@ -744,7 +744,7 @@ def _holdings_detail_specs(is_hebrew: bool):
     policy = ('פוליסה' if is_hebrew else 'Policy', lambda account: account.get('policy_number'), 'id')
     dates = [
         policy,
-        ('סוג מוצר' if is_hebrew else 'Product Type', lambda account: account.get('product_type_name') or account.get('product_type'), 'text'),
+        ('סוג מוצר' if is_hebrew else 'Product Type', lambda account: account.get('product_type_display') or account.get('product_type_name') or account.get('product_type'), 'text'),
         ('שם מוצר' if is_hebrew else 'Product Name', lambda account: account.get('product_name'), 'text'),
         ('סטטוס' if is_hebrew else 'Status', lambda account: account.get('status'), 'text'),
         ('מסלול' if is_hebrew else 'Track', lambda account: account.get('investment_track'), 'text'),

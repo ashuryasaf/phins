@@ -409,9 +409,11 @@ class ParserMixin:
                 account_accumulation,
                 death_lump_sum,
                 deduped_sum,
+                finalize_uploaded_amounts,
                 is_pension_account_row,
                 looks_like_pension_table,
                 map_hebrew_column,
+                note_spreadsheet_value,
                 parse_money,
                 portfolio_totals,
                 stamp_account_accumulation,
@@ -427,6 +429,8 @@ class ParserMixin:
             is_pension_account_row = None
             portfolio_totals = None
             stamp_account_accumulation = None
+            note_spreadsheet_value = None
+            finalize_uploaded_amounts = None
 
         if looks_like_pension_table is not None:
             if not looks_like_pension_table(columns):
@@ -457,7 +461,9 @@ class ParserMixin:
                     
                     # Convert value
                     if value is not None and value != '':
-                        if parse_money and mapped_name in SPREADSHEET_MONEY_FIELDS:
+                        if note_spreadsheet_value and mapped_name in SPREADSHEET_MONEY_FIELDS:
+                            note_spreadsheet_value(account, original_col, mapped_name, value)
+                        elif parse_money and mapped_name in SPREADSHEET_MONEY_FIELDS:
                             account[mapped_name] = parse_money(value)
                         elif mapped_name == 'section14':
                             account[mapped_name] = str(value).lower() in ['כן', 'yes', '1', 'true', 'v', '✓']
@@ -470,6 +476,8 @@ class ParserMixin:
             # so a ledger balance cannot stand in for סה"כ חיסכון.
             # דוח מרוכז footer rows (סה״כ / צבירה כוללת) are the affiliated
             # total already, not another holding. Employer-only פיצויים rows stay.
+            if finalize_uploaded_amounts:
+                finalize_uploaded_amounts(account)
             keep_row = is_pension_account_row(account) if is_pension_account_row else (
                 account.get('provider') or account.get('policy_number')
                 or account.get('employer_name') or account.get('severance_balance')

@@ -395,7 +395,7 @@ Factors Affecting Score:
                 status_rows.append({
                     'מספר פוליסה' if is_hebrew else 'Policy Number': acct.get('policy_number', ''),
                     'יצרן' if is_hebrew else 'Provider': acct.get('provider', ''),
-                    'סוג מוצר' if is_hebrew else 'Product Type': acct.get('product_type_name', acct.get('product_type', '')),
+                    'סוג מוצר' if is_hebrew else 'Product Type': acct.get('product_type_display') or acct.get('product_type_name') or acct.get('product_type', ''),
                     'שם מוצר' if is_hebrew else 'Product Name': acct.get('product_name', ''),
                     'סטטוס' if is_hebrew else 'Status': acct.get('status', acct.get('status_en', '')),
                     'מסלול השקעה' if is_hebrew else 'Investment Track': acct.get('investment_track', ''),
@@ -1388,7 +1388,10 @@ Factors Affecting Score:
                         if acct.get('provider'):
                             content_lines.append(f"   • יצרן: {acct.get('provider')}")
                         if acct.get('product_type_name') or acct.get('product_name') or acct.get('product_type'):
-                            content_lines.append(f"   • סוג מוצר: {acct.get('product_type_name', acct.get('product_name', acct.get('product_type', 'לא ידוע')))}")
+                            content_lines.append(
+                                "   • סוג מוצר: "
+                                + str(acct.get('product_type_display') or acct.get('product_type_name') or acct.get('product_name') or acct.get('product_type') or 'לא ידוע')
+                            )
                         if acct.get('status'):
                             content_lines.append(f"   • סטטוס: {acct.get('status')}")
                         if acct.get('investment_track'):
