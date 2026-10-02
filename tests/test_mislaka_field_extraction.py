@@ -12,6 +12,8 @@ import unittest
 from services.pension.agent import PensionDataAgent, get_pension_agent
 from services.pension.cache import ParseResultCache
 from services.pension.schema import (
+    account_accumulation,
+    account_severance,
     accumulation_by_product,
     death_lump_sum,
     is_holdings_summary_row,
@@ -735,6 +737,176 @@ class TestOfficialMislakaConcentrationAndDeathLump(unittest.TestCase):
         self.assertTrue(all(
             account.get('total_balance') for account in result['data']['accounts']
         ))
+
+
+RISK_ONLY_SALDO_HOLDINGS = """<?xml version="1.0" encoding="UTF-8"?>
+<Mimshak xmlns="http://www.swiftness.co.il/mivneachid/holdings">
+  <YeshutYatzran>
+    <SHEM-YATZRAN>הראל</SHEM-YATZRAN>
+    <Mutzar>
+      <SUG-MUTZAR>11</SUG-MUTZAR>
+      <SHEM-MUTZAR>ביטוח סיכונים</SHEM-MUTZAR>
+      <HeshbonOPolisa>
+        <MISPAR-POLISA-O-HESHBON>POL-RISK-1</MISPAR-POLISA-O-HESHBON>
+        <SALDO>500000</SALDO>
+        <Kisuyim>
+          <Kisuy>
+            <KOD-SUG-KISUY>1</KOD-SUG-KISUY>
+            <SHEM-KISUY>ביטוח למקרה מוות</SHEM-KISUY>
+            <SCHUM-HAD-PEAMI>500000</SCHUM-HAD-PEAMI>
+          </Kisuy>
+        </Kisuyim>
+      </HeshbonOPolisa>
+    </Mutzar>
+    <Mutzar>
+      <SUG-MUTZAR>1</SUG-MUTZAR>
+      <SHEM-MUTZAR>קרן פנסיה מקיפה</SHEM-MUTZAR>
+      <HeshbonOPolisa>
+        <MISPAR-POLISA-O-HESHBON>POL-SAV-1</MISPAR-POLISA-O-HESHBON>
+        <TOTAL-CHISACHON-MTZBR>88000.50</TOTAL-CHISACHON-MTZBR>
+        <YITRAT-PITZUIM>12000</YITRAT-PITZUIM>
+      </HeshbonOPolisa>
+    </Mutzar>
+  </YeshutYatzran>
+</Mimshak>
+""".encode('utf-8')
+
+
+LIFE_SUM_COVER_HOLDINGS = """<?xml version="1.0" encoding="UTF-8"?>
+<Mimshak xmlns="http://www.swiftness.co.il/mivneachid/holdings">
+  <YeshutYatzran>
+    <SHEM-YATZRAN>מגדל</SHEM-YATZRAN>
+    <Mutzar>
+      <SUG-MUTZAR>7</SUG-MUTZAR>
+      <SHEM-MUTZAR>ביטוח מנהלים</SHEM-MUTZAR>
+      <HeshbonOPolisa>
+        <MISPAR-POLISA-O-HESHBON>POL-LIFE-SUM</MISPAR-POLISA-O-HESHBON>
+        <TOTAL-CHISACHON-MTZBR>88000.50</TOTAL-CHISACHON-MTZBR>
+        <Kisuyim>
+          <Kisuy>
+            <SHEM-KISUY>ביטוח חיים</SHEM-KISUY>
+            <SACH-KISUY>588000.50</SACH-KISUY>
+          </Kisuy>
+          <Kisuy>
+            <KOD-SUG-KISUY>1</KOD-SUG-KISUY>
+            <SHEM-KISUY>ביטוח למקרה מוות</SHEM-KISUY>
+            <SCHUM-HAD-PEAMI>500000</SCHUM-HAD-PEAMI>
+          </Kisuy>
+        </Kisuyim>
+      </HeshbonOPolisa>
+    </Mutzar>
+  </YeshutYatzran>
+</Mimshak>
+""".encode('utf-8')
+
+
+MULTI_EMPLOYER_PITZUIM = """<?xml version="1.0" encoding="UTF-8"?>
+<Mimshak xmlns="http://www.swiftness.co.il/mivneachid/pitzuim">
+  <KoteretKovetz>
+    <SUG-MIMSHAK>17</SUG-MIMSHAK>
+  </KoteretKovetz>
+  <YeshutLakoach>
+    <MISPAR-ZIHUI-LAKOACH>123456782</MISPAR-ZIHUI-LAKOACH>
+  </YeshutLakoach>
+  <NetuneiPitzuim>
+    <YeshutMaasik>
+      <SHEM-MAASIK>מעסיק אלפא</SHEM-MAASIK>
+      <SACH-PITZUIM>12000</SACH-PITZUIM>
+    </YeshutMaasik>
+    <YeshutMaasik>
+      <SHEM-MAASIK>מעסיק ביתא</SHEM-MAASIK>
+      <SACH-PITZUIM>8000</SACH-PITZUIM>
+    </YeshutMaasik>
+    <YeshutMaasik>
+      <SHEM-MAASIK>מעסיק גמא</SHEM-MAASIK>
+      <SACH-PITZUIM>4500</SACH-PITZUIM>
+    </YeshutMaasik>
+  </NetuneiPitzuim>
+</Mimshak>
+""".encode('utf-8')
+
+
+SWAP_AND_SEVERANCE_CSV = (
+    'מספר פוליסה,סוג מוצר,יצרן,סה״כ חיסכון,יתרה,ביטוח חיים,פיצויים,מעסיק\n'
+    'POL-LIFE,ביטוח מנהלים,מגדל,88000.50,500000,588000.50,12000,מעסיק אלפא\n'
+    'POL-RISK,ביטוח סיכונים,הראל,0,500000,500000,0,\n'
+    ',פיצויים,,0,0,0,8000,מעסיק ביתא\n'
+    'POL-CENTRAL,קופה מרכזית לפיצויים,כלל,45000,45000,0,0,מעסיק גמא\n'
+).encode('utf-8')
+
+
+class TestSavingsCoverSeparationAndSeveranceSum(unittest.TestCase):
+    """צבירה כוללת is savings only; ביטוח חיים is death face; פיצויים sums every pot."""
+
+    def setUp(self):
+        self.agent = _agent()
+        self.service = init_ai_reports_service()
+
+    def test_risk_saldo_is_not_tzvira_kolelet(self):
+        result = self.agent.process_xml_content(RISK_ONLY_SALDO_HOLDINGS)
+        totals = result['data']['totals']
+        by_policy = {account['policy_number']: account for account in result['data']['accounts']}
+        self.assertEqual(account_accumulation(by_policy['POL-RISK-1']), 0)
+        self.assertEqual(by_policy['POL-RISK-1']['death_coverage'], 500000)
+        self.assertEqual(by_policy['POL-SAV-1']['total_balance'], 88000.50)
+        self.assertEqual(totals['total_balance'], 88000.50)
+        self.assertEqual(totals['total_death_lump_sum'], 500000)
+        self.assertNotIn('ביטוח ריסק', totals.get('by_product') or {})
+
+    def test_life_sach_kisuy_sum_is_not_death_cover(self):
+        result = self.agent.process_xml_content(LIFE_SUM_COVER_HOLDINGS)
+        account = result['data']['accounts'][0]
+        self.assertEqual(account_accumulation(account), 88000.50)
+        self.assertEqual(death_lump_sum(account), 500000)
+        self.assertEqual(account['death_coverage'], 500000)
+        self.assertEqual(result['data']['totals']['total_balance'], 88000.50)
+        self.assertEqual(result['data']['totals']['total_death_lump_sum'], 500000)
+
+    def test_spreadsheet_swap_and_severance_pots_sum(self):
+        parsed, _ = self.service.parse_content('swap.csv', SWAP_AND_SEVERANCE_CSV, 'csv')
+        totals = (parsed.get('pension_data') or {}).get('totals') or {}
+        accounts = (parsed.get('pension_data') or {}).get('accounts') or []
+        by_policy = {account.get('policy_number'): account for account in accounts}
+        self.assertEqual(account_accumulation(by_policy['POL-LIFE']), 88000.50)
+        self.assertEqual(death_lump_sum(by_policy['POL-LIFE']), 500000)
+        self.assertEqual(account_accumulation(by_policy['POL-RISK']), 0)
+        self.assertEqual(death_lump_sum(by_policy['POL-RISK']), 500000)
+        self.assertEqual(account_severance(by_policy['POL-CENTRAL']), 45000)
+        self.assertEqual(totals['total_balance'], 133000.50)
+        self.assertEqual(totals['total_death_lump_sum'], 1000000)
+        self.assertEqual(totals['total_severance'], 65000)
+        self.assertTrue(totals['integrity']['accumulation_reconciles'])
+
+    def test_multi_employer_pitzuim_xml_sums_every_pot(self):
+        data = self.agent._parse_mislaka_xml(MULTI_EMPLOYER_PITZUIM)
+        amounts = sorted(float(row.get('total_severance') or 0) for row in data.get('severance') or [])
+        self.assertEqual(amounts, [4500.0, 8000.0, 12000.0])
+        result = self.agent.process_xml_content(MULTI_EMPLOYER_PITZUIM)
+        self.assertEqual(result['data']['totals']['total_severance'], 24500.0)
+
+    def test_same_policy_two_employers_same_amount_still_sum(self):
+        snap = portfolio_totals([
+            {'policy_number': 'POL-P', 'employer_name': 'מעסיק א', 'severance_balance': 5000, 'total_balance': 20000, 'product_type': '1'},
+            {'policy_number': 'POL-P', 'employer_name': 'מעסיק ב', 'severance_balance': 5000, 'total_balance': 20000, 'product_type': '1'},
+        ])
+        self.assertEqual(snap['total_balance'], 20000)
+        self.assertEqual(snap['total_severance'], 10000)
+
+    def test_employer_only_pitzuim_row_is_not_a_footer(self):
+        self.assertFalse(is_holdings_summary_row({
+            'employer_name': 'מעסיק ביתא',
+            'severance_balance': 8000,
+        }))
+        stamped = {
+            'policy_number': 'POL-LIFE',
+            'savings_balance': 88000.50,
+            'balance': 500000,
+            'death_coverage': 588000.50,
+            'product_type': '7',
+        }
+        self.assertEqual(stamp_account_accumulation(stamped), 88000.50)
+        self.assertEqual(stamped['total_balance'], 88000.50)
+        self.assertEqual(stamped['death_coverage'], 500000)
 
 
 class TestFacadeStillResolves(unittest.TestCase):

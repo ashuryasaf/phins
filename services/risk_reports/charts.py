@@ -160,6 +160,7 @@ class ChartsMixin:
             accumulation_by_product,
             accumulation_by_provider,
             deduped_sum,
+            severance_sum,
             tagmulim_amount,
         )
 
@@ -193,7 +194,7 @@ class ChartsMixin:
         
         # 2. Tagmulim vs severance. סה"כ חיסכון is not drawn as תגמולים.
         total_savings = deduped_sum(accounts, tagmulim_amount)
-        total_severance = deduped_sum(accounts, lambda account: account.get('severance_balance'))
+        total_severance = severance_sum(accounts)
         if not total_savings and not total_severance:
             total_savings = float(totals.get('total_tagmulim') or totals.get('total_savings_balance') or 0)
             total_severance = float(totals.get('total_severance') or totals.get('total_severance_balance') or 0)

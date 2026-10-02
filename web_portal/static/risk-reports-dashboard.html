@@ -2992,7 +2992,7 @@
 
     function isHoldingsSummaryRow(account) {
       const labels = ['סה"כ', 'סה״כ', 'סהכ', 'סך הכל', 'total', 'totals', 'צבירה כוללת', 'סיכום'];
-      const keys = ['policy_number', 'provider', 'product_type', 'product_type_name', 'product_name'];
+      const keys = ['policy_number', 'provider', 'product_type', 'product_type_name', 'product_name', 'employer_name', 'employer_id'];
       let sawIdentity = false;
       for (const key of keys) {
         const raw = String(account?.[key] || '').trim();
@@ -3003,15 +3003,91 @@
           return true;
         }
       }
-      return !sawIdentity && accountAccumulation(account) > 0;
+      if (sawIdentity) return false;
+      return accountMoney(account) > 0;
+    }
+
+    function accountMoney(account) {
+      return ['total_balance', 'savings_balance', 'balance', 'severance_balance', 'employer_severance', 'death_coverage']
+        .some((key) => (parseFloat(account?.[key]) || 0) > 0);
+    }
+
+    function amountsClose(left, right) {
+      return Math.abs((parseFloat(left) || 0) - (parseFloat(right) || 0)) < 0.021;
+    }
+
+    function isRiskOnlyProduct(account) {
+      const code = String(account?.product_type_code || account?.product_type || '').trim();
+      const family = String(account?.product_type_name || account?.product_type || '');
+      const riskFamily = code === '8' || code === '11' || code === '12'
+        || family.includes('ביטוח חיים') || family.includes('ריסק') || family.includes('אובדן כושר עבודה');
+      if (!riskFamily) return false;
+      const savings = parseFloat(account?.savings_balance) || 0;
+      const tagmulim = parseFloat(account?.tagmulim_balance) || 0;
+      const severance = parseFloat(account?.severance_balance) || 0;
+      if (savings <= 0 && tagmulim <= 0 && severance <= 0) return true;
+      const death = parseFloat(account?.death_coverage) || 0;
+      return death > 0 && savings > 0 && amountsClose(savings, death) && tagmulim <= 0;
+    }
+
+    function deathLumpSum(account) {
+      let fromCovers = 0;
+      (account?.risk_covers || []).forEach((item) => {
+        const code = String(item?.code || '').trim();
+        const name = String(item?.name || '');
+        const genuine = item?.had_peami || code === '1' || code === '01' || name.includes('מוות') || /death/i.test(name);
+        if (!genuine) return;
+        const lump = parseFloat(item?.amount) || 0;
+        if (lump > 0) fromCovers += lump;
+      });
+      const explicit = parseFloat(account?.death_coverage) || 0;
+      const savings = parseFloat(account?.savings_balance) || 0;
+      const total = parseFloat(account?.total_balance) || 0;
+      const yitra = parseFloat(account?.balance) || 0;
+      const cover = parseFloat(account?.coverage_amount) || 0;
+      const officialSavings = savings > 0 ? savings : ((total > 0 && !amountsClose(total, explicit)) ? total : 0);
+      if (fromCovers > 0) return fromCovers;
+      if (explicit <= 0) return 0;
+      // A ריסק row whose savings face equals the cover still reports the face.
+      if (officialSavings > 0 && amountsClose(explicit, officialSavings)) {
+        return isRiskOnlyProduct(account) ? explicit : 0;
+      }
+      if (officialSavings > 0 && explicit > officialSavings + 0.021) {
+        const remainder = Math.round((explicit - officialSavings) * 100) / 100;
+        if (
+          (yitra > 0 && amountsClose(remainder, yitra))
+          || (cover > 0 && amountsClose(remainder, cover))
+          || (total > 0 && amountsClose(remainder, total) && !amountsClose(total, officialSavings))
+        ) {
+          return remainder;
+        }
+      }
+      return explicit;
     }
 
     function accountAccumulation(account) {
+      const death = deathLumpSum(account);
       const total = parseFloat(account?.total_balance) || 0;
-      if (total > 0) return total;
       const savings = parseFloat(account?.savings_balance) || 0;
-      if (savings > 0) return savings;
-      return parseFloat(account?.balance) || 0;
+      const yitra = parseFloat(account?.balance) || 0;
+      const isCover = (value) => value > 0 && death > 0 && amountsClose(value, death);
+      if (total > 0 && !isCover(total)) return total;
+      if (savings > 0 && !isCover(savings)) return savings;
+      if (yitra > 0 && !isCover(yitra)) return yitra;
+      return 0;
+    }
+
+    function accountSeverance(account) {
+      const explicit = parseFloat(account?.severance_balance) || 0;
+      const employer = parseFloat(account?.employer_severance) || 0;
+      const pots = (account?.severance_pots || []).reduce((sum, pot) => sum + (parseFloat(pot?.severance_balance || pot?.amount) || 0), 0);
+      const product = String(account?.product_type_code || account?.product_type || '');
+      const family = String(account?.product_type_name || account?.product_type || '');
+      if (product === '5' || family.includes('מרכזית')) {
+        return Math.max(explicit, employer, pots, accountAccumulation(account));
+      }
+      if (explicit > 0 && employer > 0 && amountsClose(explicit, employer)) return explicit + pots;
+      return explicit + employer + pots;
     }
 
     function dedupedAccountSum(accounts, field) {
@@ -3054,12 +3130,12 @@
         ? Number(totals.total_severance)
         : (Number(affiliated.total_severance) > 0
           ? Number(affiliated.total_severance)
-          : dedupedAccountSum(accounts, 'severance_balance'));
+          : dedupedAccountSum(accounts, accountSeverance));
       const accountCount = totals.account_count || accounts.length;
       const providers = [...new Set(accounts.map(a => a.provider).filter(p => p))];
       
       // סכום חד פעמי is deduped per policy — repeated track rows count once.
-      const totalDeathCoverage = totals.total_death_lump_sum || dedupedAccountSum(accounts, 'death_coverage');
+      const totalDeathCoverage = totals.total_death_lump_sum || dedupedAccountSum(accounts, deathLumpSum);
       const totalDisabilityCoverage = dedupedAccountSum(accounts, (a) => a.disability_coverage || a.work_disability_coverage);
       
       document.getElementById('statsGrid').innerHTML = `
@@ -3137,11 +3213,11 @@
       accounts.forEach((acct, idx) => {
         if (isHoldingsSummaryRow(acct)) return;
         const balance = accountAccumulation(acct);
-        const severance = parseFloat(acct.severance_balance) || 0;
+        const severance = accountSeverance(acct);
         const savings = parseFloat(acct.savings_balance) || 0;
         const mgmtFee = parseFloat(acct.management_fee_savings) || 0;
         const mgmtFeeDeposits = parseFloat(acct.management_fee_deposits) || 0;
-        const deathCoverage = parseFloat(acct.death_coverage) || 0;
+        const deathCoverage = deathLumpSum(acct);
         const disabilityCoverage = parseFloat(acct.disability_coverage) || 0;
         
         html += `
@@ -3205,7 +3281,7 @@
         `;
       }
 
-      const deathLump = totals.total_death_lump_sum || dedupedAccountSum(accounts, 'death_coverage');
+      const deathLump = totals.total_death_lump_sum || dedupedAccountSum(accounts, deathLumpSum);
       if (deathLump > 0) {
         html += `
           <div class="insight-card fade-in" style="background: #fdf2f8; border: 2px solid #db2777;">

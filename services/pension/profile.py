@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Set
 
 from services.pension.schema import (
     is_holdings_summary_row,
+    merge_holdings_account,
     portfolio_totals,
     stamp_account_accumulation,
 )
@@ -107,19 +108,7 @@ class ClientProfile:
                 None,
             )
             if existing:
-                for field, value in acct.items():
-                    if field in {
-                        'total_balance', 'savings_balance', 'severance_balance',
-                        'death_coverage', 'disability_coverage', 'coverage_amount',
-                    }:
-                        try:
-                            existing[field] = max(float(existing.get(field) or 0), float(value or 0))
-                        except (TypeError, ValueError):
-                            if value and not existing.get(field):
-                                existing[field] = value
-                    elif value and not existing.get(field):
-                        existing[field] = value
-                stamp_account_accumulation(existing)
+                merge_holdings_account(existing, acct)
             else:
                 self.accounts.append(acct)
             if acct.get('provider'):
