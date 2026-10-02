@@ -20,6 +20,7 @@ from services.pension.schema import (
     portfolio_totals,
     product_family_label,
     stamp_account_accumulation,
+    tagmulim_amount,
 )
 from services.ai_risk_reports_service import init_ai_reports_service  # noqa: E402
 
@@ -695,11 +696,16 @@ class TestOfficialMislakaConcentrationAndDeathLump(unittest.TestCase):
         stamped = {'policy_number': 'POL-H', 'savings_balance': 420808.64}
         self.assertEqual(stamp_account_accumulation(stamped), 420808.64)
         self.assertEqual(stamped['total_balance'], 420808.64)
+        # A stamped סה"כ חיסכון stays חיסכון; only a תגמולים column is תגמולים.
+        self.assertEqual(tagmulim_amount(stamped), 0.0)
+        self.assertEqual(tagmulim_amount({'total_balance': 100000, 'savings_balance': 50000}), 50000)
         snap = portfolio_totals([
             {'policy_number': 'POL-H', 'savings_balance': 420808.64, 'product_type': '10'},
             {'policy_number': 'סה״כ', 'total_balance': 420808.64, 'product_type': 'צבירה כוללת'},
         ])
         self.assertEqual(snap['total_balance'], 420808.64)
+        self.assertEqual(snap['total_savings'], 420808.64)
+        self.assertEqual(snap['total_tagmulim'], 0)
         self.assertTrue(snap['integrity']['accumulation_reconciles'])
 
     def test_pension_agent_affiliated_zip_uses_official_tzvira(self):

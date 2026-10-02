@@ -777,6 +777,10 @@ def stamp_account_accumulation(account: Dict[str, Any]) -> float:
     """Write official צבירה כוללת onto ``total_balance`` for every consumer."""
     amount = account_accumulation(account)
     if amount > 0:
+        if parse_money(account.get('total_balance')) <= 0:
+            # Stamped from סה"כ חיסכון / יתרה, so the row never carried a
+            # תגמולים split and tagmulim_amount must not read one into it.
+            account['accumulation_from_savings'] = True
         account['total_balance'] = amount
     return amount
 
@@ -818,6 +822,8 @@ def tagmulim_amount(account: Dict[str, Any]) -> float:
     explicit = parse_money(account.get('tagmulim_balance'))
     if explicit > 0:
         return explicit
+    if account.get('accumulation_from_savings'):
+        return 0.0
     total = parse_money(account.get('total_balance'))
     savings = parse_money(account.get('savings_balance'))
     # XML stores the tagmulim component on savings_balance beside the official total.
