@@ -788,10 +788,11 @@
     }
 
     .chart-card {
-      background: white;
-      border-radius: 12px;
-      padding: 1.5rem;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      background: linear-gradient(180deg, #fffdf8 0%, #ffffff 42%);
+      border-radius: 14px;
+      padding: 1.25rem 1.35rem 1.1rem;
+      box-shadow: 0 10px 28px rgba(6, 13, 31, 0.06);
+      border: 1px solid rgba(14, 47, 99, 0.08);
       border-top: 3px solid #e3bf6f;
     }
     
@@ -813,7 +814,7 @@
     
     .chart-wrapper {
       position: relative;
-      height: 280px;
+      height: 300px;
     }
     
     /* Risk Gauge */
@@ -1892,23 +1893,37 @@
       font-weight: 500;
     }
     
-    /* Data Table */
+    /* Data Table — cells wrap to the words instead of overflowing the card */
+    .table-scroll {
+      width: 100%;
+      overflow-x: auto;
+      margin-top: 1rem;
+    }
+
     .data-table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 1rem;
+      table-layout: auto;
+      font-family: 'Heebo', 'Inter', sans-serif;
     }
     
     .data-table th, .data-table td {
-      padding: 12px 16px;
-      text-align: left;
-      border-bottom: 1px solid #e2e8f0;
+      padding: 8px 10px;
+      text-align: start;
+      vertical-align: top;
+      border-bottom: 1px solid #e6eef8;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      max-width: 18rem;
+      line-height: 1.4;
+      font-size: 0.86rem;
     }
     
     .data-table th {
-      background: #f8fafc;
+      background: #f4f0e6;
       font-weight: 600;
-      color: var(--text-dark);
+      color: #0e2f63;
     }
     
     .data-table tr:hover {
@@ -4402,18 +4417,30 @@
               backgroundColor: options.colors || [
                 '#0e2f63', '#e3bf6f', '#15449b', '#0b5c82', '#c9a04e', '#7fb2ff', '#12315f', '#f7e2a0'
               ],
-              borderWidth: 2,
-              borderColor: '#fff'
+              borderWidth: chartType === 'bar' ? 0 : 3,
+              borderColor: '#fffdf8',
+              borderRadius: chartType === 'bar' ? 5 : 0,
+              hoverOffset: chartType === 'bar' ? 0 : 6,
+              barPercentage: 0.62,
+              categoryPercentage: 0.72
             }]
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
+            cutout: chartType === 'doughnut' ? '68%' : undefined,
+            layout: { padding: { top: 6, bottom: 2, left: 2, right: 2 } },
             plugins: {
               legend: {
                 position: chartType === 'bar' ? 'top' : 'bottom',
                 labels: Object.assign({
-                  font: { family: "'Heebo', 'Inter', sans-serif", size: 12 }
+                  font: { family: "'Heebo', 'Inter', sans-serif", size: 12 },
+                  color: '#12203a',
+                  boxWidth: 10,
+                  boxHeight: 10,
+                  padding: 14,
+                  usePointStyle: true,
+                  pointStyle: 'rectRounded'
                 }, currency ? {
                   generateLabels: function(chart) {
                     const items = chart.data.labels || [];
@@ -4426,6 +4453,7 @@
                         fillStyle: color,
                         strokeStyle: color,
                         fontColor: '#12203a',
+                        pointStyle: 'rectRounded',
                         hidden: false,
                         index: index
                       };
@@ -4433,18 +4461,44 @@
                   }
                 } : {})
               },
-              tooltip: currency ? {
-                callbacks: {
+              tooltip: {
+                backgroundColor: '#060d1f',
+                titleColor: '#f7e2a0',
+                bodyColor: '#eaf1ff',
+                padding: 12,
+                cornerRadius: 8,
+                displayColors: true,
+                boxPadding: 4,
+                titleFont: { family: "'Heebo', 'Inter', sans-serif", weight: '600' },
+                bodyFont: { family: "'Heebo', 'Inter', sans-serif" },
+                callbacks: currency ? {
                   label: function(item) {
                     return `${item.label}: ${formatChartMoney(item.raw, symbol)}`;
                   }
-                }
-              } : {}
+                } : {}
+              }
             },
             indexAxis: (chartType === 'bar' && options.horizontal) ? 'y' : 'x',
             scales: chartType === 'bar' || chartType === 'line' ? {
-              x: { ticks: { font: { family: "'Heebo', 'Inter', sans-serif" } } },
-              y: { ticks: { font: { family: "'Heebo', 'Inter', sans-serif" } } }
+              x: {
+                grid: { display: false, drawBorder: false },
+                border: { display: false },
+                ticks: { color: '#5b6b82', font: { family: "'Heebo', 'Inter', sans-serif", size: 11 } }
+              },
+              y: {
+                beginAtZero: true,
+                grace: '8%',
+                grid: { color: 'rgba(14, 47, 99, 0.08)', drawBorder: false },
+                border: { display: false },
+                ticks: {
+                  color: '#5b6b82',
+                  font: { family: "'Heebo', 'Inter', sans-serif", size: 11 },
+                  maxTicksLimit: 6,
+                  callback: currency ? function(value) {
+                    return formatChartMoney(value, symbol);
+                  } : undefined
+                }
+              }
             } : {}
           }
         });
@@ -4469,6 +4523,7 @@
         const cappedRows = rows.slice(0, 120);
 
         return `
+          <div class="table-scroll">
           <table class="data-table">
             <thead>
               <tr>
@@ -4483,6 +4538,7 @@
               `).join('')}
             </tbody>
           </table>
+          </div>
           ${rows.length > cappedRows.length
             ? `<p style="color: var(--text-muted); margin-top: 0.5rem;">Showing ${cappedRows.length} of ${rows.length} rows.</p>`
             : ''}
@@ -4497,6 +4553,7 @@
       if (keys.length === 0) return '';
 
       return `
+        <div class="table-scroll">
         <table class="data-table">
           <thead>
             <tr>
@@ -4513,6 +4570,7 @@
             `).join('')}
           </tbody>
         </table>
+        </div>
       `;
     }
 

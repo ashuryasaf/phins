@@ -863,7 +863,14 @@ def text_adjusted_col_widths(
     for col in columns:
         widest = 0.0
         for cell in col:
-            widest = max(widest, _measure_text_width(cell, font, size))
+            text = str(cell or '')
+            full = _measure_text_width(text, font, size)
+            tokens = [part for part in text.replace('\n', ' ').split(' ') if part]
+            token = max((_measure_text_width(part, font, size) for part in tokens), default=0.0)
+            # Keep a short cell on one line. A long Hebrew header wraps at
+            # the word, so the column follows the text instead of one
+            # unbroken line that then gets crushed.
+            widest = max(widest, max(token, min(full, 168.0)))
         natural.append(max(min_width, widest + padding))
     total = sum(natural)
     if total <= 0:
@@ -1392,10 +1399,10 @@ def _chart_drawing(chart: Dict[str, Any], width: float, height: float, rtl: bool
         # after bidi, so a long product type lost its first letter.
         pie.labels = [''] * len(values)
         pie.simpleLabels = 1
-        pie.slices.strokeWidth = 0.6
-        pie.slices.strokeColor = colors.white
+        pie.slices.strokeWidth = 1.4
+        pie.slices.strokeColor = colors.HexColor('#f7f4ea')
         if chart_type == 'doughnut':
-            pie.innerRadiusFraction = 0.48
+            pie.innerRadiusFraction = 0.64
         for index, _value in enumerate(values):
             pie.slices[index].fillColor = palette[index % len(palette)]
         text_width = max(48.0, width - size - 28)

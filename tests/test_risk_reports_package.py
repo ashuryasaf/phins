@@ -648,3 +648,52 @@ class TestZipPassword:
         assert 'file_password' in html
         assert 'If the ZIP has one' in html
 
+
+def test_pension_columns_are_judged_by_sign_and_fee_band_not_zscore():
+    """הפקדות מעסיק is a skewed money column. A fee rate is a percent, not a shekel."""
+    from services.risk_reports.analysis import AnalysisMixin
+    from services.risk_reports.models import DataType, Factor
+    from services.risk_reports.render import RenderMixin
+
+    mixin = AnalysisMixin()
+
+    def anomalies_for(column, values):
+        rows = [{column: value} for value in values]
+        profiles = mixin._profile_columns([column], rows)
+        return mixin._detect_anomalies_advanced(rows, DataType.INSURANCE, profiles)
+
+    deposits = anomalies_for('הפקדות מעסיק', [1000] * 200 + [100000] * 6)
+    assert not any(item.type == 'statistical_outlier' for item in deposits)
+    assert not any(item.severity.value == 'critical' for item in deposits)
+
+    signed = anomalies_for('הפקדות מעסיק', [1000] * 5 + [-50])
+    assert len(signed) == 1
+    assert signed[0].type == 'money_sign'
+    assert 'שליליים' in signed[0].description
+
+    legal_rates = anomalies_for(
+        'שיעור דמי ניהול שנתי מחיסכון צבור',
+        [0.5] * 200 + [1.05] * 6,
+    )
+    assert legal_rates == []
+
+    mixed_units = anomalies_for(
+        'שיעור דמי ניהול שנתי מחיסכון צבור',
+        [0.5] * 20 + [250000] * 10,
+    )
+    assert len(mixed_units) == 1
+    assert mixed_units[0].type == 'rate_unit'
+    assert 'שקלים' in mixed_units[0].description
+    assert 'standard deviations' not in mixed_units[0].description
+
+    text = RenderMixin._generate_hebrew_insurance_section(
+        RenderMixin(),
+        [
+            Factor(name='נתונים כספיים', value={'פרמיה': '1'}, importance=0.95, category='hebrew_insurance'),
+            Factor(name='פרטי מבוטח', value={'שם': 'א'}, importance=0.8, category='hebrew_insurance'),
+        ],
+        True,
+    )
+    assert 'רמת חשיבות' not in text
+    assert 'לא ציון חשיבות' in text
+

@@ -1604,13 +1604,13 @@ Factors Affecting Score:
             
             content_lines.append("")
         
-        # Add importance rating
+        # The factor weights are internal extraction ranks. Averaging them
+        # produced "רמת חשיבות ממוצעת: 88%", which reads as a file score.
         if hebrew_factors:
-            avg_importance = sum(f.importance for f in hebrew_factors) / len(hebrew_factors)
             if is_hebrew:
-                content_lines.append(f"📈 רמת חשיבות ממוצעת: {avg_importance:.0%}")
+                content_lines.append("השדות שלמעלה נקראו מהקובץ. זהו פירוט החילוץ, לא ציון חשיבות ולא ציון סיכון.")
             else:
-                content_lines.append(f"📈 Average Importance: {avg_importance:.0%}")
+                content_lines.append("The fields above were read from the file. This is the extraction, not an importance score and not a risk score.")
         
         return '\n'.join(content_lines)
 
