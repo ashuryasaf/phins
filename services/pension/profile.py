@@ -6,6 +6,12 @@ Moved verbatim from ``services/pension_data_agent.py`` (B5).
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Set
 
+from services.pension.schema import (
+    is_holdings_summary_row,
+    portfolio_totals,
+    stamp_account_accumulation,
+)
+
 
 @dataclass
 class ClientProfile:
@@ -84,14 +90,20 @@ class ClientProfile:
             if client.get('email'):
                 self.email = client['email']
         
-        # Merge accounts — same policy + provider from affiliated XML/CSV is one holding
+        # Merge accounts — same policy + provider + track from affiliated
+        # XML/CSV is one holding. Distinct investment-track slices stay.
         for acct in data.get('accounts', []):
+            if not isinstance(acct, dict) or is_holdings_summary_row(acct):
+                continue
+            stamp_account_accumulation(acct)
             policy = str(acct.get('policy_number') or '').strip()
             provider = str(acct.get('provider') or '').strip()
+            track = str(acct.get('investment_track') or '').strip()
             existing = next(
                 (row for row in self.accounts
                  if policy and str(row.get('policy_number') or '').strip() == policy
-                 and str(row.get('provider') or '').strip() == provider),
+                 and str(row.get('provider') or '').strip() == provider
+                 and str(row.get('investment_track') or '').strip() == track),
                 None,
             )
             if existing:
@@ -107,6 +119,7 @@ class ClientProfile:
                                 existing[field] = value
                     elif value and not existing.get(field):
                         existing[field] = value
+                stamp_account_accumulation(existing)
             else:
                 self.accounts.append(acct)
             if acct.get('provider'):
@@ -148,29 +161,23 @@ class ClientProfile:
     
     def finalize(self):
         """Compute derived totals after all merges."""
-        self.total_balance = 0.0
-        self.total_savings = 0.0
-        self.total_severance = 0.0
-        self.total_coverage = 0.0
-        
+        snap = portfolio_totals(self.accounts, extra_severance=self.severance_balance)
+        self.total_balance = snap['total_balance']
+        self.total_savings = snap['total_savings']
+        self.total_severance = snap['total_severance']
+        self.total_coverage = snap['total_coverage']
+        self._totals_snapshot = snap
+
         for acct in self.accounts:
-            self.total_balance += float(acct.get('total_balance', 0) or 0)
-            self.total_savings += float(acct.get('savings_balance', 0) or 0)
-            self.total_severance += float(acct.get('severance_balance', 0) or 0)
-            self.total_coverage += float(acct.get('coverage_amount', 0) or 0)
-            
-            # Check for Section 14
             if acct.get('section14'):
                 self.section14 = True
-        
-        # Add external severance balance
-        self.total_severance += self.severance_balance
-        
-        # Check for anomalies
+
         if self.total_balance < 0:
             self.anomalies.append("Total balance is negative")
         if not self.accounts:
             self.anomalies.append("No accounts found")
+        if not snap.get('integrity', {}).get('accumulation_reconciles', True):
+            self.anomalies.append("צבירה כוללת does not reconcile to product-family totals")
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -185,13 +192,14 @@ class ClientProfile:
             },
             'accounts': self.accounts,
             'contributions': self.contributions,
-            'severance': [{
-                'total_severance': self.total_severance,
+            'severance': ([{
+                'total_severance': self.severance_balance,
                 'section14': self.section14,
-            }],
+            }] if self.severance_balance or self.section14 else []),
             'providers': list(self.providers),
-            'employers': list(self.employers),
+            'employers': [{'name': name} for name in self.employers if name],
             'totals': {
+                **getattr(self, '_totals_snapshot', {}),
                 'total_balance': self.total_balance,
                 'total_balance_formatted': f"₪{self.total_balance:,.2f}",
                 'total_savings': self.total_savings,
@@ -199,7 +207,9 @@ class ClientProfile:
                 'total_severance': self.total_severance,
                 'total_severance_formatted': f"₪{self.total_severance:,.2f}",
                 'total_coverage': self.total_coverage,
-                'account_count': len(self.accounts),
+                'account_count': getattr(self, '_totals_snapshot', {}).get(
+                    'account_count', len(self.accounts)
+                ),
                 'provider_count': len(self.providers),
                 'providers': list(self.providers),
                 'section14_coverage': self.section14,

@@ -14,9 +14,12 @@ from services.pension.cache import ParseResultCache
 from services.pension.schema import (
     accumulation_by_product,
     death_lump_sum,
+    is_holdings_summary_row,
     map_hebrew_column,
     normalize_hebrew_header,
+    portfolio_totals,
     product_family_label,
+    stamp_account_accumulation,
 )
 from services.ai_risk_reports_service import init_ai_reports_service  # noqa: E402
 
@@ -186,6 +189,12 @@ CONCENTRATED_CSV = (
     'ישראל ישראלי,123456782,"88,000.50",12000,מגדל,POL-HOLD-1,קרן פנסיה מקיפה\n'
 ).encode('utf-8')
 
+CONCENTRATED_CSV_WITH_FOOTER = (
+    'שם מלא,ת.ז.,סה״כ צבירה,פיצויים,יצרן,מספר פוליסה,סוג מוצר\n'
+    'ישראל ישראלי,123456782,"88,000.50",12000,מגדל,POL-HOLD-1,קרן פנסיה מקיפה\n'
+    'סה״כ,,88000.50,12000,,סה״כ,צבירה כוללת\n'
+).encode('utf-8')
+
 
 class TestHebrewHeaderNormalization(unittest.TestCase):
     def test_gershayim_and_id_aliases_map_to_canonical_fields(self):
@@ -313,7 +322,9 @@ class TestSwiftnessAffiliatedShowcase(unittest.TestCase):
         pension = parse_result['parsed_data']['pension_data']
         self.assertEqual(pension['client']['id_number'], '123456782')
         self.assertEqual(pension['totals']['total_balance'], 88000.50)
+        self.assertTrue(pension['totals'].get('integrity', {}).get('accumulation_reconciles', True))
         self.assertEqual(pension['totals']['account_count'], 1)
+        self.assertEqual(pension['accounts'][0].get('total_balance'), 88000.50)
         # Holdings פיצויים 12,000 plus the affiliated pitzuim row 4,500.
         self.assertEqual(pension['totals']['total_severance'], 16500.0)
         integrity = parse_result['parsed_data']['integrity']
@@ -357,13 +368,12 @@ class TestSwiftnessAffiliatedShowcase(unittest.TestCase):
         self.assertEqual(assessment.get('client', {}).get('id_number'), '123456782')
         self.assertEqual(assessment.get('totals', {}).get('total_balance'), 88000.50)
         self.assertEqual(assessment.get('totals', {}).get('total_severance'), 16500.0)
-        self.assertEqual(assessment.get('totals', {}).get('account_count'), 1)
         export_titles = [section.get('title') for section in export_payload.get('assessment_sections') or []]
         self.assertNotIn('פרופיל נתונים', export_titles)
         self.assertNotIn('Data Profile', export_titles)
 
         from pypdf import PdfReader
-        from services.risk_reports.pdf_export import build_report_pdf_bytes
+        from services.risk_reports.pdf_export import build_report_pdf_bytes, bidi_text
         pdf_bytes = build_report_pdf_bytes(export_payload)
         self.assertTrue(pdf_bytes.startswith(b'%PDF'))
         pdf_text = '\n'.join(
@@ -397,7 +407,6 @@ class TestSwiftnessAffiliatedShowcase(unittest.TestCase):
                 for title in chart_titles)
         )
         self.assertNotIn('כיסוי שדות זיהוי', chart_titles)
-        from services.risk_reports.pdf_export import bidi_text
         chart_tokens = (
             'צבירה לפי יצרן',
             'Savings by Provider',
@@ -408,6 +417,33 @@ class TestSwiftnessAffiliatedShowcase(unittest.TestCase):
             any(token in pdf_text for token in chart_tokens)
             or any(bidi_text(token, rtl=True) in pdf_text for token in chart_tokens)
         )
+
+    def test_concentrated_footer_is_not_another_holding(self):
+        parsed, _ = self.service.parse_content(
+            'doch_merukaz.csv', CONCENTRATED_CSV_WITH_FOOTER, 'csv'
+        )
+        pension = parsed.get('pension_data') or {}
+        self.assertEqual(len(pension.get('accounts') or []), 1)
+        self.assertEqual(pension['totals']['total_balance'], 88000.50)
+        self.assertEqual(pension['accounts'][0]['total_balance'], 88000.50)
+        self.assertTrue(pension['totals']['integrity']['accumulation_reconciles'])
+
+    def test_affiliated_zip_with_footer_keeps_official_tzvira(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr('holdings_mivneachid.xml', OFFICIAL_HOLDINGS)
+            zf.writestr('doch_merukaz.csv', CONCENTRATED_CSV_WITH_FOOTER)
+        parse_result = self.service.parse_file(
+            'swiftness_footer.zip',
+            buf.getvalue(),
+            'zip',
+            owner_id='CUST-OWNER-001',
+            owner_role='customer',
+        )
+        pension = parse_result['parsed_data']['pension_data']
+        self.assertEqual(pension['totals']['total_balance'], 88000.50)
+        self.assertEqual(sum(pension['totals']['by_product'].values()), 88000.50)
+        self.assertEqual(len(pension['accounts']), 1)
 
 
 class TestMislakaAssessmentPdfHelpers(unittest.TestCase):
@@ -478,7 +514,7 @@ class TestHoldingsSpreadsheetAccumulation(unittest.TestCase):
         self.assertEqual(hachshara['tagmulim_balance'], 180000)
         self.assertEqual(hachshara['severance_balance'], 90000)
         self.assertEqual(hachshara['balance'], 900000)
-        self.assertNotIn('total_balance', hachshara)
+        self.assertEqual(hachshara['total_balance'], 420808.64)
         self.assertEqual(hachshara['death_coverage'], 500000)
         self.assertEqual(hachshara['death_premium'], 120)
         self.assertEqual(hachshara['disability_premium'], 40)
@@ -645,6 +681,54 @@ class TestOfficialMislakaConcentrationAndDeathLump(unittest.TestCase):
         self.assertEqual(accumulation_by_product(accounts)['ביטוח ריסק'], 10000)
         from services.pension.schema import deduped_sum
         self.assertEqual(deduped_sum(accounts, death_lump_sum), 500000)
+
+    def test_summary_footer_and_stamp_keep_affiliated_tzvira(self):
+        self.assertTrue(is_holdings_summary_row({
+            'policy_number': 'סה״כ',
+            'total_balance': 88000.50,
+        }))
+        self.assertFalse(is_holdings_summary_row({
+            'policy_number': 'POL-HOLD-1',
+            'savings_balance': 88000.50,
+            'product_type': 'קרן פנסיה',
+        }))
+        stamped = {'policy_number': 'POL-H', 'savings_balance': 420808.64}
+        self.assertEqual(stamp_account_accumulation(stamped), 420808.64)
+        self.assertEqual(stamped['total_balance'], 420808.64)
+        snap = portfolio_totals([
+            {'policy_number': 'POL-H', 'savings_balance': 420808.64, 'product_type': '10'},
+            {'policy_number': 'סה״כ', 'total_balance': 420808.64, 'product_type': 'צבירה כוללת'},
+        ])
+        self.assertEqual(snap['total_balance'], 420808.64)
+        self.assertTrue(snap['integrity']['accumulation_reconciles'])
+
+    def test_pension_agent_affiliated_zip_uses_official_tzvira(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr('holdings_mivneachid.xml', OFFICIAL_HOLDINGS)
+            zf.writestr('pitzuim.xml', SEVERANCE_XML)
+            zf.writestr('doch_merukaz.csv', CONCENTRATED_CSV_WITH_FOOTER)
+        result = _agent().process_zip_content(buf.getvalue())
+        totals = result['data']['totals']
+        self.assertEqual(totals['total_balance'], 88000.50)
+        self.assertEqual(totals['total_severance'], 16500.0)
+        self.assertEqual(len(result['data']['accounts']), 1)
+        self.assertEqual(result['data']['accounts'][0]['total_balance'], 88000.50)
+        self.assertTrue(totals['integrity']['accumulation_reconciles'])
+        self.assertIn('צבירה', result['report'])
+
+    def test_pension_agent_spreadsheet_zip_stamps_tzvira_kolelet(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr('holdings.csv', HOLDINGS_SPREADSHEET)
+        result = _agent().process_zip_content(buf.getvalue())
+        totals = result['data']['totals']
+        self.assertEqual(totals['total_balance'], 430808.64)
+        self.assertEqual(totals['by_product']['פוליסת חיסכון'], 420808.64)
+        self.assertEqual(totals['by_product']['ביטוח ריסק'], 10000)
+        self.assertTrue(all(
+            account.get('total_balance') for account in result['data']['accounts']
+        ))
 
 
 class TestFacadeStillResolves(unittest.TestCase):

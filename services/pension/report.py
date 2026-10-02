@@ -11,12 +11,9 @@ from typing import Any, Dict, List, Tuple
 from services.pension.schema import (
     account_accumulation,
     accumulation_by_product,
-    accumulation_by_provider,
-    cover_face_total,
     death_lump_sum,
     deduped_sum,
-    tagmulim_amount,
-    unique_policy_count,
+    portfolio_totals,
 )
 
 
@@ -36,22 +33,8 @@ class PensionReportMixin:
         
         totals = data['totals']
         
-        # צבירה is the official total when present, otherwise סה"כ חיסכון.
-        # Repeated track rows of one policy count once. תגמולים, פיצויים and
-        # יתרה stay their own totals and are not added into צבירה.
-        totals['total_balance'] = deduped_sum(accounts, account_accumulation)
-        totals['total_savings'] = deduped_sum(accounts, lambda account: account.get('savings_balance'))
-        totals['total_tagmulim'] = deduped_sum(accounts, tagmulim_amount)
-        totals['total_yitra'] = deduped_sum(accounts, lambda account: account.get('balance'))
-        totals['total_severance'] = deduped_sum(accounts, lambda account: account.get('severance_balance'))
-        totals['total_severance'] += sum(float(s.get('total_severance', 0) or 0) for s in severance)
-        totals['total_coverage'] = cover_face_total(accounts)
-        totals['total_death_lump_sum'] = deduped_sum(accounts, death_lump_sum)
-        totals['by_provider'] = accumulation_by_provider(accounts)
-        totals['by_product'] = accumulation_by_product(accounts)
-        totals['account_count'] = unique_policy_count(accounts)
-        totals['provider_count'] = len(set(a.get('provider', '') for a in accounts if a.get('provider')))
-        totals['providers'] = list(set(a.get('provider', '') for a in accounts if a.get('provider')))
+        extra_severance = sum(float(row.get('total_severance', 0) or 0) for row in severance)
+        totals.update(portfolio_totals(accounts, extra_severance=extra_severance))
         
         # Format totals
         totals['total_balance_formatted'] = f"₪{totals['total_balance']:,.2f}"
@@ -307,8 +290,8 @@ class PensionReportMixin:
         # ═══════════════════════════════════════════════════════════════════
         if accounts:
             # Group by type
-            savings_policies = [a for a in accounts if float(a.get('total_balance', 0) or 0) > 0]
-            risk_policies = [a for a in accounts if float(a.get('total_balance', 0) or 0) == 0 and (float(a.get('death_coverage', 0) or 0) > 0 or float(a.get('disability_coverage', 0) or 0) > 0)]
+            savings_policies = [a for a in accounts if account_accumulation(a) > 0]
+            risk_policies = [a for a in accounts if account_accumulation(a) == 0 and (float(a.get('death_coverage', 0) or 0) > 0 or float(a.get('disability_coverage', 0) or 0) > 0)]
             
             lines.extend([
                 "╔══════════════════════════════════════════════════════════════════════╗",
@@ -336,7 +319,7 @@ class PensionReportMixin:
                     else:
                         tenure = ''
                     status = acct.get('status', 'פעיל')[:6]
-                    balance = float(acct.get('total_balance', 0) or 0)
+                    balance = account_accumulation(acct)
                     
                     lines.append(f"{i:2} │ {provider:<15} │ {product:<19} │ {policy:<11} │ {tenure:<9} │ {status:<5} │ ₪{balance:,.0f}")
                 
@@ -374,7 +357,7 @@ class PensionReportMixin:
                 status = acct.get('status', 'פעיל')
                 tenure = acct.get('start_date', '')
                 
-                balance = float(acct.get('total_balance', 0) or 0)
+                balance = account_accumulation(acct)
                 savings = float(acct.get('savings_balance', 0) or 0)
                 severance_bal = float(acct.get('severance_balance', 0) or 0)
                 emp_savings = float(acct.get('employee_contribution', 0) or 0)
@@ -454,7 +437,7 @@ class PensionReportMixin:
         # ═══════════════════════════════════════════════════════════════════
         # SECTION 5: SAVINGS BREAKDOWN (מהכספים שחסכתי - כמה מיועד להון וכמה לקצבה)
         # ═══════════════════════════════════════════════════════════════════
-        if accounts and any(float(a.get('total_balance', 0) or 0) > 0 for a in accounts):
+        if accounts and any(account_accumulation(a) > 0 for a in accounts):
             lines.extend([
                 "╔══════════════════════════════════════════════════════════════════════╗",
                 "║           מהכספים שחסכתי עד היום - כמה מיועד להון וכמה לקצבה?        ║",
@@ -466,7 +449,7 @@ class PensionReportMixin:
             
             total_pension = 0
             for i, acct in enumerate(accounts, 1):
-                balance = float(acct.get('total_balance', 0) or 0)
+                balance = account_accumulation(acct)
                 if balance > 0:
                     provider = acct.get('provider', '')[:15]
                     product = (acct.get('product_type_name', '') or acct.get('product_type', ''))[:18]
@@ -617,7 +600,11 @@ class PensionReportMixin:
                 "",
             ])
             
-            for i, emp in enumerate(employer_names or [e.get('name', '') for e in employers], 1):
+            employer_fallback = [
+                (e.get('name', '') if isinstance(e, dict) else str(e or ''))
+                for e in (employers or [])
+            ]
+            for i, emp in enumerate(employer_names or employer_fallback, 1):
                 if emp:
                     lines.append(f"  {i}. {emp}")
             
