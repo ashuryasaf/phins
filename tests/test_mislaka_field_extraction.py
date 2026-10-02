@@ -16,11 +16,15 @@ from services.pension.schema import (
     account_severance,
     accumulation_by_product,
     death_lump_sum,
+    finalize_uploaded_amounts,
+    header_money_role,
     is_holdings_summary_row,
     map_hebrew_column,
     normalize_hebrew_header,
+    note_spreadsheet_value,
     portfolio_totals,
     product_family_label,
+    product_type_display,
     stamp_account_accumulation,
     tagmulim_amount,
 )
@@ -907,6 +911,120 @@ class TestSavingsCoverSeparationAndSeveranceSum(unittest.TestCase):
         self.assertEqual(stamp_account_accumulation(stamped), 88000.50)
         self.assertEqual(stamped['total_balance'], 88000.50)
         self.assertEqual(stamped['death_coverage'], 500000)
+
+
+UPLOADED_SUM_CSV = (
+    'מספר פוליסה,סוג מוצר,שם מוצר,יצרן,צבירה כוללת,ביטוח חיים,סה״כ ביטוח חיים,'
+    'פיצויים,פיצויים מעסיק קודם,יתרת פיצויים,מעסיק\n'
+    'POL-MIX,פוליסת ביטוח חיים משולב חיסכון,מסלול כללי,מגדל,88000.50,500000,588000.50,'
+    '12000,8000,12000,מעסיק אלפא\n'
+    'POL-PURE,פוליסת סיכון טהור,ריסק,הראל,0,250000,250000,0,0,0,\n'
+    'POL-PENS,קרן פנסיה חדשה מקיפה,מקיפה,מנורה,45000,0,0,4500,3000,4500,מעסיק ביתא\n'
+).encode('utf-8')
+
+
+PARTIAL_PITZUIM_HOLDINGS = """<?xml version="1.0" encoding="UTF-8"?>
+<Mimshak xmlns="http://www.swiftness.co.il/mivneachid/holdings">
+  <YeshutYatzran>
+    <SHEM-YATZRAN>מגדל</SHEM-YATZRAN>
+    <Mutzar>
+      <SUG-MUTZAR>1</SUG-MUTZAR>
+      <SHEM-MUTZAR>פוליסת ביטוח חיים משולב חיסכון</SHEM-MUTZAR>
+      <HeshbonOPolisa>
+        <MISPAR-POLISA-O-HESHBON>POL-PART-1</MISPAR-POLISA-O-HESHBON>
+        <TOTAL-CHISACHON-MTZBR>88000.50</TOTAL-CHISACHON-MTZBR>
+        <YITRAT-PITZUIM>12000</YITRAT-PITZUIM>
+        <Yitrot>
+          <Yitra>
+            <KOD-SUG-HAFRASHA>3</KOD-SUG-HAFRASHA>
+            <SCHUM-TZVIRA>12000</SCHUM-TZVIRA>
+          </Yitra>
+          <Yitra>
+            <KOD-SUG-HAFRASHA>3</KOD-SUG-HAFRASHA>
+            <SCHUM-TZVIRA>8000</SCHUM-TZVIRA>
+          </Yitra>
+          <Yitra>
+            <KOD-SUG-HAFRASHA>3</KOD-SUG-HAFRASHA>
+            <SCHUM-TZVIRA>4500</SCHUM-TZVIRA>
+          </Yitra>
+        </Yitrot>
+      </HeshbonOPolisa>
+    </Mutzar>
+  </YeshutYatzran>
+</Mimshak>
+""".encode('utf-8')
+
+
+class TestUploadedSumFaceAndProductWording(unittest.TestCase):
+    """צבירה כוללת stays savings, ביטוח חיים stays the face, every פיצויים pot counts."""
+
+    def setUp(self):
+        self.service = init_ai_reports_service()
+        self.agent = _agent()
+
+    def test_headers_separate_face_sum_and_tzvira(self):
+        self.assertEqual(header_money_role('צבירה כוללת'), 'tzvira')
+        self.assertEqual(header_money_role('ביטוח חיים'), 'death_face')
+        self.assertEqual(header_money_role('סה״כ ביטוח חיים'), 'death_sum')
+        self.assertEqual(header_money_role('פיצויים'), 'severance_part')
+        self.assertEqual(header_money_role('סה״כ פיצויים'), 'severance_total')
+        self.assertIsNone(header_money_role('פרמיה ביטוח חיים'))
+
+    def test_uploaded_sum_column_does_not_replace_tzvira_or_face(self):
+        parsed, _ = self.service.parse_content('uploaded_sum.csv', UPLOADED_SUM_CSV, 'csv')
+        pension = parsed.get('pension_data') or {}
+        totals = pension.get('totals') or {}
+        by_policy = {account.get('policy_number'): account for account in pension.get('accounts') or []}
+        mixed = by_policy['POL-MIX']
+        self.assertEqual(account_accumulation(mixed), 88000.50)
+        self.assertEqual(mixed['total_balance'], 88000.50)
+        self.assertEqual(death_lump_sum(mixed), 500000)
+        self.assertEqual(mixed['death_coverage'], 500000)
+        self.assertEqual(account_severance(mixed), 20000)
+        self.assertEqual(mixed['product_type_display'], 'פוליסת ביטוח חיים משולב חיסכון')
+        self.assertEqual(product_family_label(mixed), 'ביטוח מנהלים')
+        pure = by_policy['POL-PURE']
+        self.assertEqual(account_accumulation(pure), 0)
+        self.assertEqual(death_lump_sum(pure), 250000)
+        self.assertEqual(pure['product_type_display'], 'פוליסת סיכון טהור')
+        self.assertEqual(product_family_label(pure), 'ביטוח ריסק')
+        pension_row = by_policy['POL-PENS']
+        self.assertEqual(account_accumulation(pension_row), 45000)
+        self.assertEqual(account_severance(pension_row), 7500)
+        self.assertEqual(pension_row['product_type_display'], 'קרן פנסיה חדשה מקיפה')
+        self.assertEqual(product_family_label(pension_row), 'קרן פנסיה')
+        self.assertEqual(totals['total_balance'], 133000.50)
+        self.assertEqual(totals['total_death_lump_sum'], 750000)
+        self.assertEqual(totals['total_severance'], 27500)
+        self.assertTrue(totals['integrity']['accumulation_reconciles'])
+
+    def test_repeated_severance_column_is_not_added_twice(self):
+        account = {}
+        note_spreadsheet_value(account, 'פיצויים', 'severance_balance', '12000')
+        note_spreadsheet_value(account, 'יתרת פיצויים', 'severance_balance', '12000')
+        finalize_uploaded_amounts(account)
+        self.assertEqual(account['severance_balance'], 12000)
+
+    def test_partial_yitrat_pitzuim_keeps_the_other_code3_pots(self):
+        result = self.agent.process_xml_content(PARTIAL_PITZUIM_HOLDINGS)
+        account = result['data']['accounts'][0]
+        self.assertEqual(account['total_balance'], 88000.50)
+        self.assertEqual(account_severance(account), 24500)
+        self.assertEqual(result['data']['totals']['total_severance'], 24500)
+        self.assertEqual(account['product_type_display'], 'פוליסת ביטוח חיים משולב חיסכון')
+        self.assertEqual(product_family_label(account), 'ביטוח מנהלים')
+        self.assertEqual(product_type_display(account), 'פוליסת ביטוח חיים משולב חיסכון')
+
+    def test_plan_name_does_not_replace_uploaded_product_type(self):
+        account = {
+            'product_type': 'ביטוח סיכונים - חד פעמי',
+            'product_name': 'קופת גמל',
+            'policy_number': 'POL-R',
+            'total_balance': 10000,
+        }
+        stamp_account_accumulation(account)
+        self.assertEqual(account['product_type_display'], 'ביטוח סיכונים - חד פעמי')
+        self.assertEqual(product_family_label(account), 'ביטוח ריסק')
 
 
 class TestFacadeStillResolves(unittest.TestCase):

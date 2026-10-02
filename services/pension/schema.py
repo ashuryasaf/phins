@@ -692,6 +692,160 @@ def map_hebrew_column(column_name: str) -> Optional[str]:
     return None
 
 
+_SUM_HEADER_MARKERS = ('סה"כ', 'סך הכל', 'סך-הכל', 'כולל')
+_TZVIRA_HEADER_MARKERS = (
+    'צבירה כוללת', 'סה"כ צבירה', 'סך הכל צבירה', 'סכום צבירה', 'סך צבירה',
+    'סה"כ חיסכון', 'סך חיסכון', 'סך הכל חיסכון', 'חיסכון צבור',
+)
+
+
+def header_money_role(column_name: str) -> Optional[str]:
+    """What an uploaded holdings header is for, before last-column-wins.
+
+    A ``ביטוח חיים`` column is the face. A header that says סה״כ / כולל together
+    with that cover is the uploaded sum of צבירה + ביטוח חיים. ``צבירה כוללת``
+    stays savings even when a later cover column would otherwise overwrite it.
+    """
+    normalized = normalize_hebrew_header(column_name)
+    if not normalized:
+        return None
+    if any(word in normalized for word in ('פרמיה', 'עלות', 'דמי ניהול', 'ד"נ')):
+        return None
+    if 'תגמולים' in normalized:
+        return None
+    has_sum = any(marker in normalized for marker in _SUM_HEADER_MARKERS)
+    has_cover = any(word in normalized for word in ('ביטוח חיים', 'כיסוי', 'מוות', 'סכום ביטוח'))
+    has_tzvira = 'צבירה' in normalized or 'חיסכון' in normalized
+    if 'פיצויים' in normalized or 'פיצויי' in normalized:
+        return 'severance_total' if has_sum else 'severance_part'
+    if has_cover and (has_sum or (has_tzvira and ('וביטוח' in normalized or 'וכיסוי' in normalized))):
+        return 'death_sum'
+    if any(marker in normalized for marker in ('סכום חד פעמי', 'למקרה מוות', 'כיסוי מוות')):
+        return 'death_face'
+    if 'ביטוח חיים' in normalized:
+        return 'death_face'
+    if any(marker in normalized for marker in _TZVIRA_HEADER_MARKERS) or (has_tzvira and not has_cover):
+        return 'tzvira'
+    if 'ערך פדיון' in normalized:
+        return 'pidyon'
+    if 'יתרה' in normalized:
+        return 'yitra'
+    return None
+
+
+def note_spreadsheet_value(account: Dict[str, Any], header: str, mapped_name: str, value: Any) -> None:
+    """Record one uploaded cell. Cover and צבירה are reconciled in ``finalize_uploaded_amounts``."""
+    amount = parse_money(value)
+    role = header_money_role(header)
+    if role:
+        account.setdefault('_money_notes', []).append((role, amount))
+        return
+    if mapped_name in {'total_balance', 'savings_balance', 'balance', 'death_coverage', 'severance_balance'}:
+        account.setdefault('_money_notes', []).append((mapped_name, amount))
+        return
+    if mapped_name in SPREADSHEET_MONEY_FIELDS:
+        account[mapped_name] = amount
+        return
+    account[mapped_name] = value
+
+
+def _sum_distinct_pots(amounts: List[float]) -> float:
+    """Add פיצויים pots. The same amount repeated on one row counts once."""
+    kept: List[float] = []
+    for amount in amounts:
+        value = parse_money(amount)
+        if value <= 0:
+            continue
+        if any(money_close(value, seen) for seen in kept):
+            continue
+        kept.append(value)
+    return round(sum(kept), 2)
+
+
+def finalize_uploaded_amounts(account: Dict[str, Any]) -> None:
+    """Split uploaded צבירה כוללת from ביטוח חיים and sum every פיצויים column."""
+    notes = account.pop('_money_notes', None) or []
+    if not notes:
+        return
+    tzvira = [amount for role, amount in notes if role == 'tzvira' and amount > 0]
+    pidyon = [amount for role, amount in notes if role in {'pidyon', 'total_balance', 'savings_balance'} and amount > 0]
+    ledgers = [amount for role, amount in notes if role in {'yitra', 'balance'} and amount > 0]
+    faces = [amount for role, amount in notes if role in {'death_face', 'death_coverage'} and amount > 0]
+    sums = [amount for role, amount in notes if role == 'death_sum' and amount > 0]
+    sev_parts = [amount for role, amount in notes if role == 'severance_part' and amount > 0]
+    sev_totals = [amount for role, amount in notes if role in {'severance_total', 'severance_balance'} and amount > 0]
+
+    ledger = ledgers[0] if ledgers else 0.0
+    combined = max(sums) if sums else 0.0
+    # A later cover column can be the uploaded sum (צבירה + ביטוח חיים) even
+    # when its header does not say סה״כ. Drop any "face" that is that sum.
+    bare_faces = []
+    for candidate in faces:
+        is_sum = False
+        for other in faces + ([combined] if combined else []):
+            if money_close(candidate, other):
+                continue
+            if any(money_close(candidate, savings + other) for savings in tzvira + pidyon):
+                is_sum = True
+                combined = max(combined, candidate)
+                break
+            if ledger and any(money_close(candidate, savings + ledger) for savings in tzvira + pidyon):
+                is_sum = True
+                combined = max(combined, candidate)
+                break
+        if not is_sum:
+            bare_faces.append(candidate)
+    death = bare_faces[0] if bare_faces else 0.0
+    if not death and combined and ledger and combined > ledger + _MONEY_EPS:
+        death = ledger
+
+    accum = 0.0
+    for candidate in tzvira:
+        if death and money_close(candidate, death):
+            continue
+        if combined and death and money_close(combined, candidate + death):
+            accum = candidate
+            break
+        if not accum:
+            accum = candidate
+    if not accum:
+        for candidate in pidyon:
+            if death and money_close(candidate, death):
+                continue
+            accum = candidate
+            break
+
+    if death and combined and combined > death + _MONEY_EPS:
+        if not accum:
+            accum = round(combined - death, 2)
+        death_value = death
+    elif death and accum and ledger and money_close(death, accum + ledger) and ledger > accum + _MONEY_EPS:
+        # The ביטוח חיים cell is the uploaded sum; יתרה is the face.
+        death_value = ledger
+    elif combined and not death and accum and combined > accum + _MONEY_EPS:
+        death_value = round(combined - accum, 2)
+    else:
+        death_value = death or combined
+
+    if accum > 0:
+        account['savings_balance'] = accum
+        account['total_balance'] = accum
+    if ledger > 0:
+        account['balance'] = ledger
+    if death_value > 0:
+        account['death_coverage'] = death_value
+
+    part_sum = _sum_distinct_pots(sev_parts)
+    if sev_totals:
+        official = max(sev_totals)
+        if part_sum <= 0 or money_close(official, part_sum):
+            account['severance_balance'] = official
+        else:
+            account['severance_balance'] = max(official, part_sum)
+    elif part_sum > 0:
+        account['severance_balance'] = part_sum
+
+
 # Money columns on a holdings spreadsheet. Cover face amounts and premiums
 # are parsed as numbers but are never part of צבירה.
 SPREADSHEET_MONEY_FIELDS = frozenset({
@@ -860,10 +1014,37 @@ def _candidate_is_cover_face(account: Dict[str, Any], candidate: float, death: f
     return True
 
 
+def apply_uploaded_product_type(account: Dict[str, Any]) -> None:
+    """Keep the file's סוג מוצר / SHEM-MUTZAR when that text names a product."""
+    if not isinstance(account, dict):
+        return
+    uploaded = str(account.get('product_type') or '').strip()
+    shem = str(account.get('product_name') or '').strip()
+    if uploaded and not uploaded.isdigit() and _family_from_text(uploaded):
+        account['product_type_name'] = uploaded
+        return
+    if shem and not shem.isdigit() and _family_from_text(shem):
+        if not uploaded or uploaded.isdigit() or not _family_from_text(uploaded):
+            account['product_type_name'] = shem
+
+
+def apply_component_severance(account: Dict[str, Any], component_amounts: List[float]) -> None:
+    """Keep every distinct code-3 פיצויים pot, including ones above YITRAT-PITZUIM."""
+    if not isinstance(account, dict):
+        return
+    component = _sum_distinct_pots(component_amounts)
+    existing = parse_money(account.get('severance_balance'))
+    if component > existing + _MONEY_EPS:
+        account['severance_balance'] = component
+    elif existing <= 0 and component > 0:
+        account['severance_balance'] = component
+
+
 def stamp_account_accumulation(account: Dict[str, Any]) -> float:
     """Write official צבירה כוללת / ביטוח חיים so cover face never lands on savings."""
     if not isinstance(account, dict):
         return 0.0
+    apply_uploaded_product_type(account)
     death = death_lump_sum(account)
     raw_total = parse_money(account.get('total_balance'))
     explicit_death = parse_money(account.get('death_coverage'))
@@ -871,6 +1052,7 @@ def stamp_account_accumulation(account: Dict[str, Any]) -> float:
         account['death_coverage'] = death
     elif explicit_death > 0:
         account['death_coverage'] = 0.0
+    account['product_type_display'] = product_type_display(account)
     amount = account_accumulation(account)
     if amount > 0:
         if raw_total <= 0:
@@ -909,6 +1091,8 @@ def account_accumulation(account: Dict[str, Any]) -> float:
     savings = parse_money(account.get('savings_balance'))
     total = parse_money(account.get('total_balance'))
     yitra = parse_money(account.get('balance'))
+    if death > 0 and savings > 0 and total > 0 and money_close(total, death) and not money_close(savings, death):
+        return savings
     if death > 0 and savings > 0 and total > 0 and money_close(total, savings + death):
         return savings
     if total > 0 and not _candidate_is_cover_face(account, total, death=death):
@@ -1009,25 +1193,45 @@ PRODUCT_FAMILY_BY_CODE = {
     '12': 'ביטוח אובדן כושר עבודה',
 }
 
-# Longer needles first so "קופת גמל להשקעה" is not swallowed by "קופת גמל".
+# Longer needles first so "קופת גמל להשקעה" and "משולב חיסכון" win.
 _PRODUCT_FAMILY_ALIASES = (
     (('קופת גמל להשקעה', 'גמל להשקעה'), 'קופת גמל להשקעה'),
     (('קופה מרכזית', 'מרכזית לפיצויים'), 'קופה מרכזית לפיצויים'),
-    (('קרן פנסיה', 'פנסיה מקיפה', 'פנסיה חדשה', 'פנסיה ותיקה', 'pension fund', 'pension'), 'קרן פנסיה'),
+    (('משולב חיסכון', 'ביטוח מנהלים', 'מנהלים ושכירים', 'managers insurance'), 'ביטוח מנהלים'),
+    (('סיכון טהור', 'ביטוח סיכונים', 'ביטוח ריסק', 'ריסק', 'risk insurance'), 'ביטוח ריסק'),
+    (('חיסכון טהור', 'חיסכון פיננסי', 'פוליסת חיסכון', 'savings policy'), 'פוליסת חיסכון'),
+    (('קרן פנסיה', 'פנסיה מקיפה', 'פנסיה חדשה', 'פנסיה כללית', 'פנסיה ותיקה', 'pension fund', 'pension'), 'קרן פנסיה'),
     (('קופת גמל', 'קופות גמל', 'provident', 'gemel'), 'קופת גמל'),
     (('קרן השתלמות', 'השתלמות', 'education fund'), 'קרן השתלמות'),
-    (('ביטוח מנהלים', 'מנהלים ושכירים', 'managers insurance', 'managers'), 'ביטוח מנהלים'),
-    (('ביטוח סיכונים', 'ביטוח ריסק', 'ריסק', 'risk insurance'), 'ביטוח ריסק'),
-    (('פוליסת חיסכון', 'savings policy'), 'פוליסת חיסכון'),
     (('אובדן כושר', 'אבדן כושר', 'disability insurance'), 'ביטוח אובדן כושר עבודה'),
-    (('ביטוח יסודי', 'ביטוח חיים', 'life insurance'), 'ביטוח חיים'),
+    (('ביטוח חיים משכנתא', 'משכנתא', 'ביטוח יסודי', 'ביטוח חיים', 'life insurance'), 'ביטוח חיים'),
 )
 
 
+def _family_from_text(text: str) -> str:
+    blob = str(text or '').strip().lower()
+    if not blob:
+        return ''
+    for needles, family in _PRODUCT_FAMILY_ALIASES:
+        if any(needle.lower() in blob for needle in needles):
+            return family
+    return ''
+
+
 def product_family_label(account: Any, unknown: str = 'לא ידוע') -> str:
-    """Official concentrated-report product family for one holdings row."""
+    """Official concentrated-report product family for one holdings row.
+
+    A Hebrew ``סוג מוצר`` / ``SHEM-MUTZAR`` from the file wins over a numeric
+    code, so a code-table mismatch cannot relabel the policy.
+    """
     if not isinstance(account, dict):
         return unknown
+    for key in ('product_type', 'product_type_name'):
+        raw = str(account.get(key) or '').strip()
+        if raw and not raw.isdigit() and raw not in PRODUCT_FAMILY_BY_CODE:
+            family = _family_from_text(raw)
+            if family:
+                return family
     for raw in (account.get('product_type_code'), account.get('product_type')):
         code = str(raw or '').strip()
         if code in PRODUCT_FAMILY_BY_CODE:
@@ -1038,14 +1242,23 @@ def product_family_label(account: Any, unknown: str = 'לא ידוע') -> str:
         for code, info in MislakaSchemaMapping.PRODUCT_TYPE_CODES.items():
             if candidate in {info.get('he', ''), info.get('en', ''), info.get('name', '')}:
                 return PRODUCT_FAMILY_BY_CODE.get(code, info.get('he') or unknown)
-    # Official "לפי סוגי המוצרים" uses סוג מוצר, never the plan/product name.
-    # A risk policy named "קופת גמל" must stay under its type, not גמל.
-    blob = f'{raw_name} {raw_type}'.strip()
-    blob_lower = blob.lower()
-    for needles, family in _PRODUCT_FAMILY_ALIASES:
-        if any(needle.lower() in blob_lower for needle in needles):
+    # No type text: the plan name is only a fallback, never an override.
+    for candidate in (raw_name, str(account.get('product_name') or '').strip()):
+        family = _family_from_text(candidate)
+        if family:
             return family
     return raw_name or raw_type or unknown
+
+
+def product_type_display(account: Any, unknown: str = 'לא ידוע') -> str:
+    """סוג מוצר as the file wrote it, when that text is a real product type."""
+    if not isinstance(account, dict):
+        return unknown
+    for key in ('product_type_name', 'product_type'):
+        raw = str(account.get(key) or '').strip()
+        if raw and not raw.isdigit() and _family_from_text(raw):
+            return raw
+    return product_family_label(account, unknown=unknown)
 
 
 def accumulation_by_product(accounts) -> Dict[str, float]:
@@ -1130,6 +1343,9 @@ def death_lump_sum(account: Dict[str, Any]) -> float:
         if _is_risk_only_product(account):
             return explicit
         return 0.0
+    if savings > 0 and total > 0 and explicit > 0 and money_close(explicit, savings + total) and not money_close(savings, total):
+        # Uploaded ביטוח חיים is צבירה + כיסוי. The other total is the face.
+        return total if total < explicit else savings
     if official_savings > 0 and explicit > official_savings + _MONEY_EPS:
         remainder = round(explicit - official_savings, 2)
         if (
@@ -1309,7 +1525,10 @@ __all__ = [
     'account_severance', 'severance_sum', 'merge_holdings_account',
     'money_close', 'deduped_sum',
     'accumulation_by', 'accumulation_by_provider', 'accumulation_by_product',
-    'product_family_label', 'PRODUCT_FAMILY_BY_CODE', 'death_lump_sum',
+    'product_family_label', 'product_type_display', 'apply_uploaded_product_type',
+    'PRODUCT_FAMILY_BY_CODE', 'death_lump_sum',
+    'header_money_role', 'note_spreadsheet_value', 'finalize_uploaded_amounts',
+    'apply_component_severance',
     'cover_face_total', 'portfolio_totals',
     'unique_policy_count',
 ]
