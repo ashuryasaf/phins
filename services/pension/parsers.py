@@ -12,6 +12,7 @@ changes are confined to *how* the XML is walked, never to the output shape:
   largest provider block rather than the whole document.
 """
 
+import csv
 import io
 import logging
 import os
@@ -26,9 +27,11 @@ from services.pension.schema import (
     SPREADSHEET_MONEY_FIELDS,
     CompiledFields,
     MislakaSchemaMapping,
+    is_holdings_summary_row,
     looks_like_pension_table,
     map_hebrew_column,
     parse_money,
+    stamp_account_accumulation,
     tag_variants,
 )
 
@@ -537,33 +540,30 @@ class MislakaParserMixin:
             
             rows = []
             columns = []
-            
-            lines = text_content.strip().split('\n')
-            if not lines:
+            sample = text_content[:4096]
+            try:
+                dialect = csv.Sniffer().sniff(sample, delimiters=',;\t|')
+                delimiter = dialect.delimiter
+            except csv.Error:
+                delimiter = ','
+                for delim in [',', '\t', ';', '|']:
+                    if delim in sample.splitlines()[0] if sample.splitlines() else '':
+                        delimiter = delim
+                        break
+
+            reader = csv.reader(io.StringIO(text_content), delimiter=delimiter)
+            raw_rows = list(reader)
+            if not raw_rows:
                 return None
-            
-            # Detect delimiter
-            first_line = lines[0]
-            delimiter = ','
-            for delim in [',', '\t', ';', '|']:
-                if delim in first_line:
-                    delimiter = delim
-                    break
-            
-            # Parse header
-            columns = [col.strip().strip('"') for col in first_line.split(delimiter)]
-            
-            # Parse data rows
-            for line in lines[1:]:
-                if not line.strip():
+            columns = [col.strip().strip('"') for col in raw_rows[0]]
+            for values in raw_rows[1:]:
+                if not any(str(v).strip() for v in values):
                     continue
-                values = [v.strip().strip('"') for v in line.split(delimiter)]
-                if values and any(v for v in values):
-                    row_dict = {}
-                    for i, val in enumerate(values):
-                        if i < len(columns):
-                            row_dict[columns[i]] = val
-                    rows.append(row_dict)
+                row_dict = {}
+                for i, val in enumerate(values):
+                    if i < len(columns):
+                        row_dict[columns[i]] = str(val).strip()
+                rows.append(row_dict)
             
             if not rows:
                 return None
@@ -634,11 +634,14 @@ class MislakaParserMixin:
                         account[mapped_name] = value_str
             
             # Only add if we have some account data
+            if is_holdings_summary_row(account):
+                continue
             if (
                 account.get('provider') or account.get('policy_number')
                 or account.get('total_balance') or account.get('savings_balance')
                 or account.get('balance')
             ):
+                stamp_account_accumulation(account)
                 accounts.append(account)
         
         # Build full name if we have parts
@@ -844,6 +847,7 @@ class MislakaParserMixin:
         self._drop_nested_cover_fields(elem, account)
         self._harvest_component_balances(elem, account)
         self._harvest_risk_covers(elem, account)
+        stamp_account_accumulation(account)
         return account
 
     COVER_BLOCK_TAGS = ('Kisuy', 'PirteiKisuy', 'Coverage', 'KisuyBituach')

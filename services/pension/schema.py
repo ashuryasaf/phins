@@ -7,7 +7,7 @@ recomputes hyphen-stripped or CamelCase spellings per element.
 """
 
 import re
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class MislakaSchemaMapping:
@@ -739,12 +739,69 @@ def parse_money(value: Any) -> float:
         return 0.0
 
 
-def account_accumulation(account: Dict[str, Any]) -> float:
-    """צבירה for one holdings row.
+# Official concentrated-report footer labels. A row titled סה״כ / צבירה כוללת
+# is the already-summed affiliated total, not another holding.
+_SUMMARY_ROW_LABELS = frozenset({
+    'סה"כ', 'סה״כ', 'סהכ', 'סך הכל', 'סך-הכל', 'סךהכל',
+    'total', 'totals', 'grand total', 'grandtotal',
+    'צבירה כוללת', 'סה"כ צבירה', 'סה״כ צבירה', 'סך צבירה',
+    'סיכום', 'סיכום כולל',
+})
+_SUMMARY_ROW_COMPACT = frozenset(
+    label.lower().replace(' ', '') for label in _SUMMARY_ROW_LABELS
+)
 
-    An explicit official total (XML ``TOTAL-CHISACHON`` or a ``סה״כ צבירה``
-    column) wins. Otherwise the spreadsheet ``סה"כ חיסכון`` column
-    (``savings_balance``) is the accumulation. Bare ``יתרה`` is only a
+
+def is_holdings_summary_row(account: Any) -> bool:
+    """True for a דוח מרוכז footer (סה״כ / צבירה כוללת), not a real policy."""
+    if not isinstance(account, dict):
+        return False
+    identity_keys = (
+        'policy_number', 'provider', 'product_type', 'product_type_name', 'product_name',
+    )
+    saw_identity = False
+    for key in identity_keys:
+        raw = str(account.get(key) or '').strip()
+        if not raw:
+            continue
+        saw_identity = True
+        compact = normalize_hebrew_header(raw).lower().replace(' ', '')
+        if raw in _SUMMARY_ROW_LABELS or compact in _SUMMARY_ROW_COMPACT:
+            return True
+    if saw_identity:
+        return False
+    return account_accumulation(account) > 0
+
+
+def stamp_account_accumulation(account: Dict[str, Any]) -> float:
+    """Write official צבירה כוללת onto ``total_balance`` for every consumer."""
+    amount = account_accumulation(account)
+    if amount > 0:
+        if parse_money(account.get('total_balance')) <= 0:
+            # Stamped from סה"כ חיסכון / יתרה, so the row never carried a
+            # תגמולים split and tagmulim_amount must not read one into it.
+            account['accumulation_from_savings'] = True
+        account['total_balance'] = amount
+    return amount
+
+
+def holdings_accounts(accounts) -> List[Dict[str, Any]]:
+    """Real holdings rows with צבירה כוללת stamped; summary footers dropped."""
+    material: List[Dict[str, Any]] = []
+    for account in accounts or []:
+        if not isinstance(account, dict) or is_holdings_summary_row(account):
+            continue
+        stamp_account_accumulation(account)
+        material.append(account)
+    return material
+
+
+def account_accumulation(account: Dict[str, Any]) -> float:
+    """צבירה כוללת for one holdings row.
+
+    An explicit official total (XML ``TOTAL-CHISACHON`` or a ``סה״כ צבירה`` /
+    ``צבירה כוללת`` column) wins. Otherwise the spreadsheet ``סה"כ חיסכון``
+    column (``savings_balance``) is the accumulation. Bare ``יתרה`` is only a
     fallback. Cover amounts, premiums, תגמולים and פיצויים are never added.
     """
     if not isinstance(account, dict):
@@ -765,6 +822,8 @@ def tagmulim_amount(account: Dict[str, Any]) -> float:
     explicit = parse_money(account.get('tagmulim_balance'))
     if explicit > 0:
         return explicit
+    if account.get('accumulation_from_savings'):
+        return 0.0
     total = parse_money(account.get('total_balance'))
     savings = parse_money(account.get('savings_balance'))
     # XML stores the tagmulim component on savings_balance beside the official total.
@@ -783,7 +842,7 @@ def deduped_sum(accounts, value_fn) -> float:
     grouped: Dict[str, Dict[float, float]] = {}
     loose = 0.0
     for account in accounts or []:
-        if not isinstance(account, dict):
+        if not isinstance(account, dict) or is_holdings_summary_row(account):
             continue
         amount = parse_money(value_fn(account))
         if amount <= 0:
@@ -803,7 +862,7 @@ def accumulation_by(accounts, key_fn) -> Dict[str, float]:
     grouped: Dict[Tuple[str, str], Dict[float, float]] = {}
     loose: Dict[str, float] = {}
     for account in accounts or []:
-        if not isinstance(account, dict):
+        if not isinstance(account, dict) or is_holdings_summary_row(account):
             continue
         amount = account_accumulation(account)
         if amount <= 0:
@@ -944,7 +1003,7 @@ def unique_policy_count(accounts) -> int:
     seen = set()
     count = 0
     for account in accounts or []:
-        if not isinstance(account, dict):
+        if not isinstance(account, dict) or is_holdings_summary_row(account):
             continue
         policy = str(account.get('policy_number') or '').strip()
         if policy:
@@ -953,6 +1012,48 @@ def unique_policy_count(accounts) -> int:
             seen.add(policy)
         count += 1
     return count
+
+
+def portfolio_totals(accounts, extra_severance: Any = 0) -> Dict[str, Any]:
+    """One affiliated snapshot: stamped צבירה כוללת, product families, integrity."""
+    material = holdings_accounts(accounts)
+    total_balance = deduped_sum(material, account_accumulation)
+    total_savings = deduped_sum(material, lambda account: account.get('savings_balance'))
+    total_tagmulim = deduped_sum(material, tagmulim_amount)
+    total_yitra = deduped_sum(material, lambda account: account.get('balance'))
+    total_severance = round(
+        deduped_sum(material, lambda account: account.get('severance_balance'))
+        + parse_money(extra_severance),
+        2,
+    )
+    by_provider = accumulation_by_provider(material)
+    by_product = accumulation_by_product(material)
+    product_sum = round(sum(by_product.values()), 2)
+    providers = sorted({
+        str(account.get('provider') or '').strip()
+        for account in material
+        if str(account.get('provider') or '').strip()
+    })
+    return {
+        'total_balance': total_balance,
+        'total_savings': total_savings,
+        'total_tagmulim': total_tagmulim,
+        'total_yitra': total_yitra,
+        'total_severance': total_severance,
+        'total_coverage': cover_face_total(material),
+        'total_death_lump_sum': deduped_sum(material, death_lump_sum),
+        'by_provider': by_provider,
+        'by_product': by_product,
+        'account_count': unique_policy_count(material),
+        'provider_count': len(providers),
+        'providers': providers,
+        'integrity': {
+            'product_sum': product_sum,
+            'accumulation_reconciles': abs(product_sum - total_balance) < 0.021,
+            'yitra_excluded': total_yitra <= 0 or abs(total_balance - total_yitra) > 0.021,
+            'summary_rows_excluded': True,
+        },
+    }
 
 
 PENSION_TABULAR_INDICATORS = (
@@ -975,9 +1076,10 @@ __all__ = [
     'HEBREW_COLUMN_FIELDS', 'normalize_hebrew_header', 'map_hebrew_column',
     'looks_like_pension_table', 'PENSION_TABULAR_INDICATORS',
     'SPREADSHEET_MONEY_FIELDS', 'COVER_FACE_FIELDS', 'parse_money',
-    'account_accumulation', 'tagmulim_amount', 'deduped_sum',
+    'account_accumulation', 'stamp_account_accumulation', 'holdings_accounts',
+    'is_holdings_summary_row', 'tagmulim_amount', 'deduped_sum',
     'accumulation_by', 'accumulation_by_provider', 'accumulation_by_product',
     'product_family_label', 'PRODUCT_FAMILY_BY_CODE', 'death_lump_sum',
-    'cover_face_total',
+    'cover_face_total', 'portfolio_totals',
     'unique_policy_count',
 ]

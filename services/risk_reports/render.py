@@ -742,7 +742,7 @@ Factors Affecting Score:
                 cover_face_total,
                 deduped_sum,
             )
-            accounts = (pension_data.get('accounts', []) or [])[:500]
+            accounts = list(pension_data.get('accounts', []) or [])
             client_data = pension_data.get('client', {})
             if isinstance(client_data, list):
                 client_data = client_data[0] if client_data else {}
@@ -769,12 +769,13 @@ Factors Affecting Score:
                     seen_cover_policies.add(policy or f'cover-{records_with_cover}')
                     records_with_cover += 1
                 if account_id or savings_value > 0 or cover_value > 0:
-                    sample_rows.append({
-                        'id': self._mask_identifier(account_id) if account_id else '',
-                        'savings': round(savings_value, 2),
-                        'cover': round(cover_value, 2),
-                        'reference': policy,
-                    })
+                    if len(sample_rows) < 120:
+                        sample_rows.append({
+                            'id': self._mask_identifier(account_id) if account_id else '',
+                            'savings': round(savings_value, 2),
+                            'cover': round(cover_value, 2),
+                            'reference': policy,
+                        })
         else:
             from services.pension.schema import (
                 COVER_FACE_FIELDS,

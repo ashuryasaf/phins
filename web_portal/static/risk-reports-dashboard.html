@@ -2990,11 +2990,36 @@
       };
     }
 
+    function isHoldingsSummaryRow(account) {
+      const labels = ['סה"כ', 'סה״כ', 'סהכ', 'סך הכל', 'total', 'totals', 'צבירה כוללת', 'סיכום'];
+      const keys = ['policy_number', 'provider', 'product_type', 'product_type_name', 'product_name'];
+      let sawIdentity = false;
+      for (const key of keys) {
+        const raw = String(account?.[key] || '').trim();
+        if (!raw) continue;
+        sawIdentity = true;
+        const compact = raw.toLowerCase().replace(/\s+/g, '');
+        if (labels.some((label) => label === raw || label.toLowerCase().replace(/\s+/g, '') === compact)) {
+          return true;
+        }
+      }
+      return !sawIdentity && accountAccumulation(account) > 0;
+    }
+
+    function accountAccumulation(account) {
+      const total = parseFloat(account?.total_balance) || 0;
+      if (total > 0) return total;
+      const savings = parseFloat(account?.savings_balance) || 0;
+      if (savings > 0) return savings;
+      return parseFloat(account?.balance) || 0;
+    }
+
     function dedupedAccountSum(accounts, field) {
       const valueOf = typeof field === 'function' ? field : (account) => account[field];
       const grouped = {};
       let loose = 0;
       (accounts || []).forEach((account) => {
+        if (isHoldingsSummaryRow(account)) return;
         const amount = parseFloat(valueOf(account)) || 0;
         if (amount <= 0) return;
         const policy = String(account.policy_number || '').trim();
@@ -3020,8 +3045,16 @@
       const clientName = client.full_name || 'לא זמין';
       const idNumber = client.id_number || 'לא זמין';
       const birthDate = normalizeBirthDateDisplay(client.birth_date) || 'לא זמין';
-      const totalBalance = totals.total_balance || affiliated.total_savings || accounts.reduce((sum, a) => sum + (parseFloat(a.total_balance) || 0), 0);
-      const totalSeverance = totals.total_severance || affiliated.total_severance || accounts.reduce((sum, a) => sum + (parseFloat(a.severance_balance) || 0), 0);
+      const totalBalance = Number(totals.total_balance) > 0
+        ? Number(totals.total_balance)
+        : (Number(affiliated.total_savings) > 0
+          ? Number(affiliated.total_savings)
+          : dedupedAccountSum(accounts, accountAccumulation));
+      const totalSeverance = Number(totals.total_severance) > 0
+        ? Number(totals.total_severance)
+        : (Number(affiliated.total_severance) > 0
+          ? Number(affiliated.total_severance)
+          : dedupedAccountSum(accounts, 'severance_balance'));
       const accountCount = totals.account_count || accounts.length;
       const providers = [...new Set(accounts.map(a => a.provider).filter(p => p))];
       
@@ -3032,9 +3065,9 @@
       document.getElementById('statsGrid').innerHTML = `
         <div class="stat-card fade-in" style="grid-column: span 2; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
           <h5 style="color: white;">פרטי לקוח</h5>
-          <div class="value" style="font-size: 1.5rem; color: white;">${clientName}</div>
-          <small style="color: rgba(255,255,255,0.9);">תעודת זהות / ת.ז: ${idNumber}</small>
-          <small style="color: rgba(255,255,255,0.9);">תאריך לידה: ${birthDate}</small>
+          <div class="value" style="font-size: 1.5rem; color: white;">${escapeHtml(clientName)}</div>
+          <small style="color: rgba(255,255,255,0.9);">תעודת זהות / ת.ז: ${escapeHtml(idNumber)}</small>
+          <small style="color: rgba(255,255,255,0.9);">תאריך לידה: ${escapeHtml(birthDate)}</small>
         </div>
         <div class="stat-card fade-in" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white;">
           <h5 style="color: white;">סה״כ צבירה</h5>
@@ -3053,7 +3086,7 @@
         </div>
         <div class="stat-card fade-in">
           <h5>יצרנים</h5>
-          <div class="value" style="font-size: 1rem;">${providers.slice(0, 3).join(', ')}</div>
+          <div class="value" style="font-size: 1rem;">${escapeHtml(providers.slice(0, 3).join(', '))}</div>
           <small>${providers.length > 3 ? `ועוד ${providers.length - 3}...` : ''}</small>
         </div>
         ${totalDeathCoverage > 0 ? `
@@ -3091,8 +3124,8 @@
         <div class="insight-card fade-in" style="background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%); border: 2px solid #667eea;">
           <h5>פרטי המבוטח</h5>
           <div class="insight-detail" style="direction: rtl; text-align: right;">
-            <div class="stat-detail"><span class="label">שם מלא</span><span class="val">${client.full_name || client.client_name || 'לא זמין'}</span></div>
-            <div class="stat-detail"><span class="label">תעודת זהות / ת.ז</span><span class="val">${client.id_number || 'לא זמין'}</span></div>
+            <div class="stat-detail"><span class="label">שם מלא</span><span class="val">${escapeHtml(client.full_name || client.client_name || 'לא זמין')}</span></div>
+            <div class="stat-detail"><span class="label">תעודת זהות / ת.ז</span><span class="val">${escapeHtml(client.id_number || 'לא זמין')}</span></div>
             ${birthDate ? `<div class="stat-detail"><span class="label">תאריך לידה</span><span class="val">${birthDate}</span></div>` : ''}
             ${client.phone ? `<div class="stat-detail"><span class="label">טלפון</span><span class="val">${client.phone}</span></div>` : ''}
           </div>
@@ -3102,7 +3135,8 @@
       
       // Each policy as a card
       accounts.forEach((acct, idx) => {
-        const balance = parseFloat(acct.total_balance) || 0;
+        if (isHoldingsSummaryRow(acct)) return;
+        const balance = accountAccumulation(acct);
         const severance = parseFloat(acct.severance_balance) || 0;
         const savings = parseFloat(acct.savings_balance) || 0;
         const mgmtFee = parseFloat(acct.management_fee_savings) || 0;
@@ -3112,10 +3146,10 @@
         
         html += `
           <div class="insight-card fade-in" style="background: #f8fafc; border: 1px solid #e2e8f0;">
-            <h5 style="color: #1e40af;">פוליסה ${idx + 1}: ${acct.provider || 'לא ידוע'}</h5>
+            <h5 style="color: #1e40af;">פוליסה ${idx + 1}: ${escapeHtml(acct.provider || 'לא ידוע')}</h5>
             <div class="insight-detail" style="direction: rtl; text-align: right;">
-              <div class="stat-detail"><span class="label">מספר פוליסה</span><span class="val" style="font-family: monospace;">${acct.policy_number || '-'}</span></div>
-              <div class="stat-detail"><span class="label">סוג מוצר</span><span class="val">${acct.product_type_name || acct.product_type || '-'}</span></div>
+              <div class="stat-detail"><span class="label">מספר פוליסה</span><span class="val" style="font-family: monospace;">${escapeHtml(acct.policy_number || '-')}</span></div>
+              <div class="stat-detail"><span class="label">סוג מוצר</span><span class="val">${escapeHtml(acct.product_type_name || acct.product_type || '-')}</span></div>
               <div class="stat-detail"><span class="label">סטטוס</span><span class="val">${acct.status || 'פעיל'}</span></div>
               ${balance > 0 ? `<div class="stat-detail"><span class="label">צבירה כוללת</span><span class="val" style="color: #059669; font-weight: bold;">₪${balance.toLocaleString('he-IL')}</span></div>` : ''}
               ${savings > 0 && savings !== balance ? `<div class="stat-detail"><span class="label">תגמולים</span><span class="val">₪${savings.toLocaleString('he-IL')}</span></div>` : ''}
@@ -3134,7 +3168,11 @@
       
       // Summary totals card
       const totals = pensionData.totals || {};
-      const summaryBalance = totals.total_balance || affiliated.total_savings || 0;
+      const summaryBalance = Number(totals.total_balance) > 0
+        ? Number(totals.total_balance)
+        : (Number(affiliated.total_savings) > 0
+          ? Number(affiliated.total_savings)
+          : dedupedAccountSum(accounts, accountAccumulation));
       const summarySeverance = totals.total_severance || affiliated.total_severance || 0;
       html += `
         <div class="insight-card fade-in" style="background: linear-gradient(135deg, #11998e15 0%, #38ef7d15 100%); border: 2px solid #11998e;">
@@ -3154,7 +3192,7 @@
       if (productEntries.length) {
         const productRows = productEntries
           .sort((a, b) => Number(b[1]) - Number(a[1]))
-          .map(([label, amount]) => `<div class="stat-detail"><span class="label">${label}</span><span class="val">₪${Number(amount).toLocaleString('he-IL')}</span></div>`)
+          .map(([label, amount]) => `<div class="stat-detail"><span class="label">${escapeHtml(label)}</span><span class="val">₪${Number(amount).toLocaleString('he-IL')}</span></div>`)
           .join('');
         html += `
           <div class="insight-card fade-in" style="background: #fff7ed; border: 2px solid #f97316;">
