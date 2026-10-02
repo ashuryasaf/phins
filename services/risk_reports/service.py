@@ -862,6 +862,8 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
                         totals.get('total_severance_balance', summary.get('total_severance', 0)),
                     ),
                     'by_provider': totals.get('by_provider') or {},
+                    'by_product': totals.get('by_product') or {},
+                    'total_death_lump_sum': totals.get('total_death_lump_sum', 0),
                     'account_count': totals.get('account_count', len(accounts)),
                 },
                 'accounts': accounts,

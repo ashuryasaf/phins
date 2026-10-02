@@ -426,7 +426,7 @@ def prepare_customer_download_charts(charts: Optional[List[Dict[str, Any]]]) -> 
 # Uploaded risk-cover types a consultant walks through with the customer.
 # Only rows with an uploaded amount or cost are shown — never invented.
 _COVER_FIELD_SPECS = (
-    ('life', 'death_coverage', 'death_premium', 'ביטוח חיים', 'Life Insurance'),
+    ('life', 'death_coverage', 'death_premium', 'ביטוח למקרה מוות', 'Death Cover'),
     ('disability_work', 'disability_coverage', 'disability_premium', 'אבדן כושר עבודה', 'Loss of Work Capacity'),
     ('disability_work', 'work_disability_coverage', 'work_disability_premium', 'אבדן כושר עבודה', 'Loss of Work Capacity'),
     ('invalidity', 'invalidity_coverage', 'invalidity_premium', 'נכות', 'Disability'),
@@ -437,7 +437,7 @@ _COVER_FIELD_SPECS = (
 )
 
 _COVER_CODE_LABELS = {
-    '1': ('life', 'ביטוח חיים', 'Life Insurance'),
+    '1': ('life', 'ביטוח למקרה מוות', 'Death Cover'),
     '2': ('disability_work', 'אבדן כושר עבודה', 'Loss of Work Capacity'),
     '3': ('invalidity', 'נכות', 'Disability'),
     '4': ('waiver', 'שחרור', 'Premium Waiver'),
@@ -446,7 +446,7 @@ _COVER_CODE_LABELS = {
 }
 
 ACCOUNT_COVER_COPY_KEYS = (
-    'death_coverage', 'death_premium',
+    'death_coverage', 'death_premium', 'death_monthly',
     'disability_coverage', 'disability_premium',
     'work_disability_coverage', 'work_disability_premium',
     'invalidity_coverage', 'invalidity_premium',
@@ -497,6 +497,8 @@ def classify_cover_type(code: Any, name: Any) -> Tuple[str, str, str]:
         return 'disability_work', 'אבדן כושר עבודה', 'Loss of Work Capacity'
     if ('נכות' in blob and 'כושר' not in blob) or (lowered == 'disability'):
         return 'invalidity', 'נכות', 'Disability'
+    if 'למקרה מוות' in blob or 'מקרה מוות' in blob:
+        return 'life', 'ביטוח למקרה מוות', 'Death Cover'
     if 'חיים' in blob or 'מוות' in blob or 'life' in lowered or 'death' in lowered:
         return 'life', 'ביטוח חיים', 'Life Insurance'
     if mapped:
@@ -1550,6 +1552,89 @@ def _append_customer_charts(
         story.append(Spacer(1, 8))
 
 
+def _product_accumulation_rows(totals: Dict[str, Any], is_hebrew: bool = True) -> List[List[str]]:
+    by_product = totals.get('by_product') or {}
+    if not isinstance(by_product, dict):
+        return []
+    rows = [
+        [_as_str(name), _as_money(amount)]
+        for name, amount in sorted(by_product.items(), key=lambda item: (-float(item[1] or 0), str(item[0])))
+        if _uploaded(amount)
+    ]
+    if len(rows) > 1:
+        total = sum(float(amount or 0) for amount in by_product.values() if _uploaded(amount))
+        rows.append(['סה״כ' if is_hebrew else 'Total', _as_money(total)])
+    return rows
+
+
+def _death_lump_from_payload(totals: Dict[str, Any], summary: Optional[Dict[str, Any]] = None) -> float:
+    try:
+        stored = float(totals.get('total_death_lump_sum') or 0)
+    except (TypeError, ValueError):
+        stored = 0.0
+    if stored > 0:
+        return stored
+    covers = (summary or {}).get('risk_covers') or []
+    total = 0.0
+    for cover in covers:
+        if cover.get('type_key') != 'life':
+            continue
+        total += _as_cover_number(cover.get('amount'))
+    return total
+
+
+def _append_product_accumulation(
+    story: List[Any],
+    totals: Dict[str, Any],
+    heading_style,
+    cell_style,
+    navy_cell_style,
+    is_hebrew: bool,
+    usable_width: float,
+) -> None:
+    from reportlab.platypus import Spacer
+
+    rows = _product_accumulation_rows(totals, is_hebrew=is_hebrew)
+    if not rows:
+        return
+    heading = 'ריכוז סכומי הצבירה לפי סוגי המוצרים' if is_hebrew else 'Accumulation by Product Type'
+    story.append(Spacer(1, 8))
+    story.append(_safe_paragraph(heading, heading_style, rtl=is_hebrew, max_width=usable_width))
+    headers = ['סוג מוצר' if is_hebrew else 'Product Type', 'סכום צבירה' if is_hebrew else 'Accumulation']
+    story.append(_build_text_table(
+        headers, rows,
+        cell_style=cell_style, header_style=navy_cell_style,
+        rtl=is_hebrew, usable_width=usable_width,
+        font=getattr(cell_style, 'fontName', 'Helvetica'),
+    ))
+
+
+def _append_death_lump_summary(
+    story: List[Any],
+    totals: Dict[str, Any],
+    summary: Dict[str, Any],
+    heading_style,
+    cell_style,
+    navy_cell_style,
+    is_hebrew: bool,
+    usable_width: float,
+) -> None:
+    from reportlab.platypus import Spacer
+
+    amount = _death_lump_from_payload(totals, summary)
+    if amount <= 0:
+        return
+    heading = 'ביטוח למקרה מוות' if is_hebrew else 'Death Cover'
+    story.append(Spacer(1, 8))
+    story.append(_safe_paragraph(heading, heading_style, rtl=is_hebrew, max_width=usable_width))
+    story.append(_build_kv_table(
+        [['סכום חד פעמי' if is_hebrew else 'Lump sum', _as_money(amount)]],
+        cell_style, navy_cell_style,
+        rtl=is_hebrew, usable_width=usable_width,
+        font=getattr(cell_style, 'fontName', 'Helvetica'),
+    ))
+
+
 def _append_risk_covers(
     story: List[Any],
     summary: Dict[str, Any],
@@ -1863,6 +1948,8 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
             rtl=is_hebrew, usable_width=usable_width,
             font=getattr(cell_style, 'fontName', 'Helvetica'),
         ))
+    _append_product_accumulation(story, display_totals, heading_style, cell_style, navy_cell_style, is_hebrew, usable_width)
+    _append_death_lump_summary(story, display_totals, summary, heading_style, cell_style, navy_cell_style, is_hebrew, usable_width)
     story.append(Spacer(1, 10))
     _append_customer_charts(story, summary, heading_style, is_hebrew, usable_width, base_font)
 
@@ -2111,6 +2198,19 @@ def build_report_csv_bytes(summary: Dict[str, Any]) -> bytes:
             for name, amount in by_provider.items():
                 if _uploaded(amount):
                     writer.writerow([name, amount])
+        by_product = totals.get('by_product') or {}
+        if isinstance(by_product, dict) and any(_uploaded(amount) for amount in by_product.values()):
+            writer.writerow([])
+            writer.writerow(['ריכוז סכומי הצבירה לפי סוגי המוצרים' if is_hebrew else 'Accumulation by Product Type'])
+            writer.writerow(['סוג מוצר' if is_hebrew else 'Product Type', 'סכום צבירה' if is_hebrew else 'Accumulation'])
+            for name, amount in by_product.items():
+                if _uploaded(amount):
+                    writer.writerow([name, amount])
+        death_lump = _death_lump_from_payload(totals, summary)
+        if death_lump > 0:
+            writer.writerow([])
+            writer.writerow(['ביטוח למקרה מוות' if is_hebrew else 'Death Cover'])
+            writer.writerow(['סכום חד פעמי' if is_hebrew else 'Lump sum', death_lump])
         writer.writerow([])
         accounts = pension.get('accounts') or []
         if accounts:

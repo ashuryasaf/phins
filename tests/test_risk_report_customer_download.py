@@ -207,7 +207,8 @@ class TestCustomerDownloadHelpers(unittest.TestCase):
         )
 
     def test_cover_type_labels_match_consultant_vocabulary(self):
-        self.assertEqual(classify_cover_type('1', ''), ('life', 'ביטוח חיים', 'Life Insurance'))
+        self.assertEqual(classify_cover_type('1', ''), ('life', 'ביטוח למקרה מוות', 'Death Cover'))
+        self.assertEqual(classify_cover_type('', 'ביטוח למקרה מוות')[0], 'life')
         self.assertEqual(classify_cover_type('', 'אבדן כושר עבודה')[0], 'disability_work')
         self.assertEqual(classify_cover_type('', 'שחרור')[0], 'waiver')
         self.assertEqual(classify_cover_type('', 'סיעוד')[0], 'ltc')
@@ -434,7 +435,7 @@ class TestCoverAndSignatureDownload(unittest.TestCase):
         pdf_text = '\n'.join(
             (page.extract_text() or '') for page in PdfReader(io.BytesIO(pdf_bytes)).pages
         )
-        for token in ('ביטוח חיים', 'אבדן כושר עבודה', 'שחרור', 'שארים', 'סיעוד', 'פיצויים', '400,000', '18,000', '123456782'):
+        for token in ('ביטוח למקרה מוות', 'אבדן כושר עבודה', 'שחרור', 'שארים', 'סיעוד', 'פיצויים', '400,000', '18,000', '123456782', 'סכום חד פעמי'):
             self.assertTrue(
                 token in pdf_text or bidi_text(token, rtl=True) in pdf_text,
                 msg=f'missing {token}',

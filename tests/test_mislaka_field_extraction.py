@@ -11,7 +11,13 @@ import unittest
 
 from services.pension.agent import PensionDataAgent, get_pension_agent
 from services.pension.cache import ParseResultCache
-from services.pension.schema import map_hebrew_column, normalize_hebrew_header
+from services.pension.schema import (
+    accumulation_by_product,
+    death_lump_sum,
+    map_hebrew_column,
+    normalize_hebrew_header,
+    product_family_label,
+)
 from services.ai_risk_reports_service import init_ai_reports_service  # noqa: E402
 
 
@@ -190,6 +196,9 @@ class TestHebrewHeaderNormalization(unittest.TestCase):
         self.assertEqual(map_hebrew_column('ת.ז'), 'id_number')
         self.assertEqual(map_hebrew_column('פיצויים'), 'severance_balance')
         self.assertEqual(map_hebrew_column('ביטוח חיים'), 'death_coverage')
+        self.assertEqual(map_hebrew_column('ביטוח למקרה מוות'), 'death_coverage')
+        self.assertEqual(map_hebrew_column('סכום חד פעמי'), 'death_coverage')
+        self.assertEqual(map_hebrew_column('סכום חד-פעמי במקרה מוות'), 'death_coverage')
         self.assertEqual(map_hebrew_column('אבדן כושר עבודה'), 'disability_coverage')
         self.assertEqual(map_hebrew_column('שחרור'), 'waiver_coverage')
         self.assertEqual(map_hebrew_column('שארים'), 'survivors_coverage')
@@ -487,6 +496,10 @@ class TestHoldingsSpreadsheetAccumulation(unittest.TestCase):
         self.assertEqual(totals['total_balance'], 430808.64)
         self.assertEqual(totals['by_provider']['הכשרה ביטוח'], 420808.64)
         self.assertEqual(totals['by_provider']['מנורה'], 10000)
+        self.assertEqual(totals['by_product']['פוליסת חיסכון'], 420808.64)
+        self.assertEqual(totals['by_product']['ביטוח ריסק'], 10000)
+        self.assertEqual(sum(totals['by_product'].values()), totals['total_balance'])
+        self.assertEqual(totals['total_death_lump_sum'], 500000)
         self.assertEqual(totals['total_tagmulim'], 184000)
         self.assertEqual(totals['total_severance'], 92000)
         self.assertEqual(totals['total_yitra'], 915000)
@@ -529,6 +542,109 @@ class TestHoldingsSpreadsheetAccumulation(unittest.TestCase):
         self.assertEqual(totals['total_balance'], 420808.64)
         self.assertEqual(totals['by_provider']['הכשרה ביטוח'], 420808.64)
         self.assertEqual(totals['account_count'], 1)
+
+
+DEATH_LUMP_HOLDINGS = """<?xml version="1.0" encoding="UTF-8"?>
+<Mimshak xmlns="http://www.swiftness.co.il/mivneachid/holdings">
+  <YeshutYatzran>
+    <SHEM-YATZRAN>הראל</SHEM-YATZRAN>
+    <Mutzar>
+      <SUG-MUTZAR>7</SUG-MUTZAR>
+      <SHEM-MUTZAR>ביטוח מנהלים</SHEM-MUTZAR>
+      <HeshbonOPolisa>
+        <MISPAR-POLISA-O-HESHBON>POL-DEATH-1</MISPAR-POLISA-O-HESHBON>
+        <TOTAL-CHISACHON-MTZBR>120000</TOTAL-CHISACHON-MTZBR>
+        <Kisuyim>
+          <Kisuy>
+            <KOD-SUG-KISUY>1</KOD-SUG-KISUY>
+            <SHEM-KISUY>ביטוח למקרה מוות</SHEM-KISUY>
+            <SCHUM-HAD-PEAMI>750000</SCHUM-HAD-PEAMI>
+            <KITZBA-CHODSHIT>2500</KITZBA-CHODSHIT>
+            <DMEY-BITUACH>60</DMEY-BITUACH>
+          </Kisuy>
+        </Kisuyim>
+      </HeshbonOPolisa>
+    </Mutzar>
+    <Mutzar>
+      <SUG-MUTZAR>1</SUG-MUTZAR>
+      <SHEM-MUTZAR>קרן פנסיה מקיפה</SHEM-MUTZAR>
+      <HeshbonOPolisa>
+        <MISPAR-POLISA-O-HESHBON>POL-PENS-1</MISPAR-POLISA-O-HESHBON>
+        <TOTAL-CHISACHON-MTZBR>80000</TOTAL-CHISACHON-MTZBR>
+        <KISUY-MAVET>200000</KISUY-MAVET>
+      </HeshbonOPolisa>
+    </Mutzar>
+    <Mutzar>
+      <SUG-MUTZAR>4</SUG-MUTZAR>
+      <SHEM-MUTZAR>קופת גמל</SHEM-MUTZAR>
+      <HeshbonOPolisa>
+        <MISPAR-POLISA-O-HESHBON>POL-GEMEL-1</MISPAR-POLISA-O-HESHBON>
+        <TOTAL-CHISACHON-MTZBR>45000</TOTAL-CHISACHON-MTZBR>
+      </HeshbonOPolisa>
+    </Mutzar>
+  </YeshutYatzran>
+</Mimshak>
+""".encode('utf-8')
+
+
+class TestOfficialMislakaConcentrationAndDeathLump(unittest.TestCase):
+    """ריכוז צבירה לפי סוג מוצר and סכום חד פעמי must match the official report."""
+
+    def setUp(self):
+        self.agent = _agent()
+
+    def test_product_family_collapses_pension_variants(self):
+        self.assertEqual(product_family_label({'product_type_code': '1'}), 'קרן פנסיה')
+        self.assertEqual(product_family_label({'product_type_code': '3'}), 'קרן פנסיה')
+        self.assertEqual(product_family_label({'product_type': '4'}), 'קופת גמל')
+        self.assertEqual(product_family_label({'product_type': 'ביטוח סיכונים - חד פעמי'}), 'ביטוח ריסק')
+        self.assertEqual(
+            product_family_label({
+                'product_type': 'ביטוח סיכונים - חד פעמי',
+                'product_name': 'קופת גמל',
+            }),
+            'ביטוח ריסק',
+        )
+        self.assertEqual(product_family_label({'product_type_name': 'קרן פנסיה מקיפה'}), 'קרן פנסיה')
+
+    def test_nested_schum_had_peami_is_death_lump_not_monthly(self):
+        data = self.agent._parse_mislaka_xml(DEATH_LUMP_HOLDINGS)
+        by_policy = {account['policy_number']: account for account in data['accounts']}
+        death_account = by_policy['POL-DEATH-1']
+        self.assertEqual(death_account['death_coverage'], 750000)
+        self.assertEqual(death_account['death_monthly'], 2500)
+        self.assertEqual(death_account['death_premium'], 60)
+        self.assertNotEqual(death_account.get('monthly_pension'), 2500)
+        covers = death_account.get('risk_covers') or []
+        self.assertEqual(len(covers), 1)
+        self.assertEqual(covers[0]['amount'], 750000)
+        self.assertEqual(covers[0]['monthly'], 2500)
+        self.assertEqual(death_lump_sum(death_account), 750000)
+
+    def test_enrichment_matches_official_concentration_and_death_totals(self):
+        result = self.agent.process_xml_content(DEATH_LUMP_HOLDINGS)
+        totals = result['data']['totals']
+        self.assertEqual(totals['total_balance'], 245000)
+        self.assertEqual(totals['by_product']['קרן פנסיה'], 80000)
+        self.assertEqual(totals['by_product']['ביטוח מנהלים'], 120000)
+        self.assertEqual(totals['by_product']['קופת גמל'], 45000)
+        self.assertEqual(sum(totals['by_product'].values()), totals['total_balance'])
+        self.assertEqual(totals['total_death_lump_sum'], 950000)
+        report = result['report']
+        self.assertIn('ריכוז סכומי הצבירה לפי סוגי המוצרים', report)
+        self.assertIn('ביטוח למקרה מוות', report)
+        self.assertIn('סכום חד פעמי', report)
+
+    def test_repeated_track_death_cover_counts_once(self):
+        accounts = [
+            {'policy_number': 'POL-H', 'death_coverage': 500000, 'total_balance': 420808.64, 'product_type': '10'},
+            {'policy_number': 'POL-H', 'death_coverage': 500000, 'total_balance': 420808.64, 'product_type': '10'},
+            {'policy_number': 'POL-B', 'death_coverage': 0, 'total_balance': 10000, 'product_type': '11'},
+        ]
+        self.assertEqual(accumulation_by_product(accounts)['פוליסת חיסכון'], 420808.64)
+        self.assertEqual(accumulation_by_product(accounts)['ביטוח ריסק'], 10000)
+        from services.pension.schema import deduped_sum
+        self.assertEqual(deduped_sum(accounts, death_lump_sum), 500000)
 
 
 class TestFacadeStillResolves(unittest.TestCase):

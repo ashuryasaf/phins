@@ -10,7 +10,10 @@ from typing import Any, Dict, List, Tuple
 
 from services.pension.schema import (
     account_accumulation,
+    accumulation_by_product,
     accumulation_by_provider,
+    cover_face_total,
+    death_lump_sum,
     deduped_sum,
     tagmulim_amount,
     unique_policy_count,
@@ -42,8 +45,10 @@ class PensionReportMixin:
         totals['total_yitra'] = deduped_sum(accounts, lambda account: account.get('balance'))
         totals['total_severance'] = deduped_sum(accounts, lambda account: account.get('severance_balance'))
         totals['total_severance'] += sum(float(s.get('total_severance', 0) or 0) for s in severance)
-        totals['total_coverage'] = sum(float(a.get('coverage_amount', 0) or 0) for a in accounts)
+        totals['total_coverage'] = cover_face_total(accounts)
+        totals['total_death_lump_sum'] = deduped_sum(accounts, death_lump_sum)
         totals['by_provider'] = accumulation_by_provider(accounts)
+        totals['by_product'] = accumulation_by_product(accounts)
         totals['account_count'] = unique_policy_count(accounts)
         totals['provider_count'] = len(set(a.get('provider', '') for a in accounts if a.get('provider')))
         totals['providers'] = list(set(a.get('provider', '') for a in accounts if a.get('provider')))
@@ -217,13 +222,13 @@ class PensionReportMixin:
         total_deposits = totals.get('contributions', {}).get('grand_total', 0)
         
         if total_balance == 0 and accounts:
-            total_balance = sum(float(a.get('total_balance', 0) or 0) for a in accounts)
+            total_balance = deduped_sum(accounts, account_accumulation)
         if total_severance == 0 and accounts:
-            total_severance = sum(float(a.get('severance_balance', 0) or 0) for a in accounts)
+            total_severance = deduped_sum(accounts, lambda account: account.get('severance_balance'))
         
-        # Calculate total insurance coverage
-        total_death = sum(float(a.get('death_coverage', 0) or 0) for a in accounts)
-        total_disability = sum(float(a.get('disability_coverage', 0) or 0) for a in accounts)
+        # Death lump sum (סכום חד פעמי) is deduped the same way as צבירה.
+        total_death = totals.get('total_death_lump_sum') or deduped_sum(accounts, death_lump_sum)
+        total_disability = deduped_sum(accounts, lambda account: account.get('disability_coverage') or account.get('work_disability_coverage'))
         
         # ═══════════════════════════════════════════════════════════════════
         # SECTION 1: COVER PAGE
@@ -261,10 +266,41 @@ class PensionReportMixin:
             f"│        ₪{total_deposits:,.0f}              │         ₪{total_severance:,.0f}            │",
             "├────────────────────────────┼────────────────────────────┤",
             "│   איזה כיסויים יש לי?      │    כיסוי אובדן כושר        │",
-            f"│    ביטוח חיים: ₪{total_death:,.0f}    │      ₪{total_disability:,.0f}/חודש       │",
+            f"│    ביטוח למקרה מוות: ₪{total_death:,.0f} │      ₪{total_disability:,.0f}/חודש       │",
             "└────────────────────────────┴────────────────────────────┘",
             "",
         ])
+
+        by_product = totals.get('by_product') or accumulation_by_product(accounts)
+        if by_product:
+            lines.extend([
+                "╔══════════════════════════════════════════════════════════════════════╗",
+                "║           ריכוז סכומי הצבירה לפי סוגי המוצרים                       ║",
+                "╚══════════════════════════════════════════════════════════════════════╝",
+                "",
+                "סוג מוצר                              │ סכום צבירה",
+                "──────────────────────────────────────┼────────────────────",
+            ])
+            product_total = 0.0
+            for label, amount in sorted(by_product.items(), key=lambda item: (-float(item[1] or 0), str(item[0]))):
+                value = float(amount or 0)
+                if value <= 0:
+                    continue
+                product_total += value
+                lines.append(f"{label:<38} │ ₪{value:>16,.0f}")
+            lines.append("──────────────────────────────────────┴────────────────────")
+            lines.append(f"{'סה״כ':<38} │ ₪{product_total:>16,.0f}")
+            lines.append("")
+
+        if total_death > 0:
+            lines.extend([
+                "╔══════════════════════════════════════════════════════════════════════╗",
+                "║                      ביטוח למקרה מוות                                ║",
+                "╚══════════════════════════════════════════════════════════════════════╝",
+                "",
+                f"  סכום חד פעמי: ₪{total_death:,.0f}",
+                "",
+            ])
         
         # ═══════════════════════════════════════════════════════════════════
         # SECTION 3: POLICY STATUS TABLE (סטטוס פוליסות)
@@ -459,8 +495,8 @@ class PensionReportMixin:
         # ═══════════════════════════════════════════════════════════════════
         # SECTION 6: INSURANCE COVERAGE DETAILS (הביטוחים וההגנות שלי)
         # ═══════════════════════════════════════════════════════════════════
-        coverages = [(a, float(a.get('death_coverage', 0) or 0), float(a.get('disability_coverage', 0) or 0)) 
-                     for a in accounts if float(a.get('death_coverage', 0) or 0) > 0 or float(a.get('disability_coverage', 0) or 0) > 0]
+        coverages = [(a, death_lump_sum(a), float(a.get('disability_coverage', 0) or a.get('work_disability_coverage', 0) or 0))
+                     for a in accounts if death_lump_sum(a) > 0 or float(a.get('disability_coverage', 0) or a.get('work_disability_coverage', 0) or 0) > 0]
         
         if coverages:
             lines.extend([
@@ -474,29 +510,37 @@ class PensionReportMixin:
             death_coverages = [(a, d) for a, d, _ in coverages if d > 0]
             if death_coverages:
                 lines.extend([
-                    "כיסוי למקרה מוות - במקרה של פטירה הכסף ישולם למוטבים שלך",
+                    "ביטוח למקרה מוות - סכום חד פעמי שישולם למוטבים",
                     "─────────────────────────────────────────────────────────────────────",
-                    "מס │ תוכנית                              │ סכום כיסוי    │ עלות",
+                    "מס │ תוכנית                              │ סכום חד פעמי  │ עלות",
                     "───┼──────────────────────────────────────┼───────────────┼──────────",
                 ])
                 
+                seen_death = set()
                 total_death_cover = 0
                 total_death_cost = 0
-                for i, (acct, death) in enumerate(death_coverages, 1):
+                row_i = 0
+                for acct, death in death_coverages:
+                    lump = death_lump_sum(acct) or death
+                    policy = str(acct.get('policy_number', ''))
+                    key = (policy, round(float(lump or 0), 2))
+                    if key in seen_death:
+                        continue
+                    seen_death.add(key)
+                    row_i += 1
                     provider = acct.get('provider', '')[:10]
                     product = (acct.get('product_type_name', '') or acct.get('product_type', ''))[:20]
-                    policy = str(acct.get('policy_number', ''))[:10]
                     cost = float(acct.get('death_premium', 0) or 0)
-                    desc = f"{provider} {product} {policy}"[:36]
+                    desc = f"{provider} {product} {policy[:10]}"[:36]
                     
-                    total_death_cover += death
+                    total_death_cover += lump
                     total_death_cost += cost
                     
                     cost_str = f"₪{cost:.0f}" if cost > 0 else "-"
-                    lines.append(f"{i:2} │ {desc:<36} │ ₪{death:>11,.0f} │ {cost_str}")
+                    lines.append(f"{row_i:2} │ {desc:<36} │ ₪{lump:>11,.0f} │ {cost_str}")
                 
                 lines.append(f"───┴──────────────────────────────────────┴───────────────┴──────────")
-                lines.append(f"סה\"כ סכום ביטוח מקרה מוות: ₪{total_death_cover:,.0f}  סה\"כ דמי ביטוח: ₪{total_death_cost:.0f}")
+                lines.append(f"סה\"כ סכום חד פעמי במקרה מוות: ₪{total_death_cover:,.0f}  סה\"כ דמי ביטוח: ₪{total_death_cost:.0f}")
                 lines.append("")
             
             # Disability coverage section

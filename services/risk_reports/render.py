@@ -565,6 +565,21 @@ Factors Affecting Score:
                         metric: f"צבירה — {provider_name}" if is_hebrew else f"Accumulation — {provider_name}",
                         value_key: provider_amount,
                     })
+            by_product = totals.get('by_product') or {}
+            if isinstance(by_product, dict):
+                for product_name, product_amount in by_product.items():
+                    if self._to_float_amount(product_amount) <= 0:
+                        continue
+                    totals_rows.append({
+                        metric: f"צבירה לפי סוג — {product_name}" if is_hebrew else f"Accumulation by type — {product_name}",
+                        value_key: product_amount,
+                    })
+            death_lump = self._to_float_amount(totals.get('total_death_lump_sum'))
+            if death_lump > 0:
+                totals_rows.append({
+                    metric: 'ביטוח למקרה מוות — סכום חד פעמי' if is_hebrew else 'Death cover — lump sum',
+                    value_key: death_lump,
+                })
             totals_rows.append({
                 metric: 'מספר פוליסות' if is_hebrew else 'Policy Count',
                 value_key: totals.get('account_count', len(accounts)),

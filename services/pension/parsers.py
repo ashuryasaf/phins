@@ -841,22 +841,48 @@ class MislakaParserMixin:
             account['status_en'] = 'Active'
 
         self._drop_component_total(elem, account)
+        self._drop_nested_cover_fields(elem, account)
         self._harvest_component_balances(elem, account)
         self._harvest_risk_covers(elem, account)
         return account
 
     COVER_BLOCK_TAGS = ('Kisuy', 'PirteiKisuy', 'Coverage', 'KisuyBituach')
     COVER_WRAPPER_TAGS = ('Kisuyim', 'NetuneiKisuy', 'ReshimatKisuyim')
-    COVER_AMOUNT_TAGS = (
+    # Lump sum ("סכום חד פעמי") is not a monthly annuity. Official Mislaka
+    # Kisuy blocks put the one-time death face on SCHUM-HAD-PEAMI and the
+    # monthly death/disability annuity on KITZBA-CHODSHIT.
+    COVER_LUMP_SUM_TAGS = (
+        'SCHUM-HAD-PEAMI', 'SchumHadPeami',
+        'SCHUM-KISUY-HAD-PEAMI', 'SchumKisuyHadPeami',
+        'SCHUM-HAD-PEAMI-MAVET', 'SchumHadPeamiMavet',
         'SCHUM-KISUY', 'SACH-KISUY', 'SCHUM-BITUACH', 'SACH-BITUACH',
-        'KITZBA-CHODSHIT', 'SchumKisuy', 'SachKisuy',
+        'SchumKisuy', 'SachKisuy',
     )
+    COVER_MONTHLY_TAGS = (
+        'KITZBA-CHODSHIT', 'KitzbaChodshit',
+        'KITZBA-CHODSHIT-MAVET', 'KitzbaChodshitMavet',
+    )
+    COVER_AMOUNT_TAGS = COVER_LUMP_SUM_TAGS
     COVER_COST_TAGS = (
         'DMEY-BITUACH', 'ALUT-KISUY', 'PREMIA', 'PREMIA-CHODSHIT',
         'DMEY-BITUACH-CHODSHIIM', 'DmeyBituach', 'AlutKisuy', 'Premia',
     )
     COVER_TYPE_CODE_TAGS = ('KOD-SUG-KISUY', 'KodSugKisuy', 'SUG-KISUY')
     COVER_TYPE_NAME_TAGS = ('SHEM-KISUY', 'ShemKisuy', 'SUG-KISUY', 'TEUR-KISUY')
+    ACCOUNT_LEVEL_COVER_FIELDS = (
+        ('death_coverage', (
+            'KISUY-MAVET', 'KisuyMavet',
+            'SCHUM-HAD-PEAMI', 'SchumHadPeami',
+            'SCHUM-KISUY-HAD-PEAMI', 'SchumKisuyHadPeami',
+            'SCHUM-HAD-PEAMI-MAVET', 'SchumHadPeamiMavet',
+        )),
+        ('coverage_amount', ('SACH-KISUY', 'SachKisuy')),
+        ('monthly_pension', ('KITZBA-CHODSHIT', 'KitzbaChodshit')),
+        ('disability_coverage', ('KISUY-NECHUT', 'KisuyNechut')),
+        ('work_disability_coverage', (
+            'KISUY-OVDAN-KOSHER', 'KisuyOvdanKosher', 'KISUY-AKW', 'KisuyAkw',
+        )),
+    )
 
     def _harvest_risk_covers(self, elem, account: Dict[str, Any]) -> None:
         """Collect uploaded insurance riders (life, AKW, waiver, survivors, LTC)."""
@@ -874,21 +900,62 @@ class MislakaParserMixin:
                     covers.append(cover)
         if covers:
             account['risk_covers'] = covers
+            self._stamp_cover_fields(account, covers)
+
+    def _stamp_cover_fields(self, account: Dict[str, Any], covers: List[Dict[str, Any]]) -> None:
+        """Copy nested Kisuy lump/monthly figures onto the account when missing.
+
+        Official files often put death face only on SCHUM-HAD-PEAMI inside a
+        Kisuy block (code 1 / ביטוח למקרה מוות) and never emit KISUY-MAVET.
+        """
+        from services.pension.schema import _cover_looks_like_death
+
+        death_lumps = 0.0
+        death_monthly = 0.0
+        death_cost = 0.0
+        for cover in covers:
+            lump = float(cover.get('amount') or 0)
+            monthly = float(cover.get('monthly') or 0)
+            cost = float(cover.get('cost') or 0)
+            code = str(cover.get('code') or '').strip()
+            name = str(cover.get('name') or '')
+            if _cover_looks_like_death(cover):
+                death_lumps += lump
+                death_monthly += monthly
+                death_cost += cost
+                continue
+            if code in {'2', '02'} or 'אובדן כושר' in name or 'אבדן כושר' in name:
+                if (lump > 0 or monthly > 0) and not account.get('disability_coverage') and not account.get('work_disability_coverage'):
+                    account['work_disability_coverage'] = monthly or lump
+                if cost > 0 and not account.get('work_disability_premium') and not account.get('disability_premium'):
+                    account['work_disability_premium'] = cost
+        if death_lumps > 0 and not account.get('death_coverage'):
+            account['death_coverage'] = death_lumps
+        if death_monthly > 0 and not account.get('death_monthly'):
+            account['death_monthly'] = death_monthly
+        if death_cost > 0 and not account.get('death_premium'):
+            account['death_premium'] = death_cost
 
     def _cover_from_elem(self, elem) -> Optional[Dict[str, Any]]:
         amount_text = None
-        for tag in self.COVER_AMOUNT_TAGS:
+        for tag in self.COVER_LUMP_SUM_TAGS:
             amount_text = self._direct_text(elem, tag) or self._find_text(elem, tag)
             if amount_text:
+                break
+        monthly_text = None
+        for tag in self.COVER_MONTHLY_TAGS:
+            monthly_text = self._direct_text(elem, tag) or self._find_text(elem, tag)
+            if monthly_text:
                 break
         cost_text = None
         for tag in self.COVER_COST_TAGS:
             cost_text = self._direct_text(elem, tag) or self._find_text(elem, tag)
             if cost_text:
                 break
-        amount = self._parse_number(amount_text) if amount_text else None
-        cost = self._parse_number(cost_text) if cost_text else None
-        if not amount and not cost:
+        amount = self._parse_number(amount_text) if amount_text else 0.0
+        monthly = self._parse_number(monthly_text) if monthly_text else 0.0
+        cost = self._parse_number(cost_text) if cost_text else 0.0
+        if not amount and not monthly and not cost:
             return None
         code = ''
         for tag in self.COVER_TYPE_CODE_TAGS:
@@ -904,6 +971,7 @@ class MislakaParserMixin:
             'code': str(code or ''),
             'name': str(name or ''),
             'amount': amount or 0,
+            'monthly': monthly or 0,
             'cost': cost or 0,
         }
 
@@ -1039,16 +1107,41 @@ class MislakaParserMixin:
         component subtrees so a component's amount is never read as the
         account's own figure."""
         index: Dict[str, Optional[str]] = {}
+        skip_subtrees = set(self.YITRA_BLOCK_TAGS + self.COVER_BLOCK_TAGS + self.COVER_WRAPPER_TAGS)
         stack = list(reversed(list(elem)))
         while stack:
             node = stack.pop()
             local = self._local_tag(node.tag)
-            if local in self.YITRA_BLOCK_TAGS:
+            if local in skip_subtrees:
                 continue
             if local not in index:
                 index[local] = node.text
             stack.extend(reversed(list(node)))
         return index
+
+    def _drop_nested_cover_fields(self, elem, account: Dict[str, Any]) -> None:
+        """Account-level cover tags must not pick up nested Kisuy children.
+
+        ``KITZBA-CHODSHIT`` inside a death-cover block is a monthly annuity,
+        not the account's pension estimate, and ``SACH-KISUY`` on a rider is
+        not the policy-level coverage total.
+        """
+        if self._first_named(elem, *self.COVER_BLOCK_TAGS, *self.COVER_WRAPPER_TAGS) is None:
+            return
+        index = self._account_level_index(elem)
+        for field, tags in self.ACCOUNT_LEVEL_COVER_FIELDS:
+            if field not in account:
+                continue
+            text = None
+            for tag in tags:
+                value = index.get(tag)
+                if value and str(value).strip():
+                    text = str(value).strip()
+                    break
+            if text is None:
+                account.pop(field, None)
+            else:
+                account[field] = self._parse_number(text)
 
     def _drop_component_total(self, elem, account: Dict[str, Any]) -> None:
         """Holdings aliases such as ``SACH-YITRA`` also name the amount inside a
