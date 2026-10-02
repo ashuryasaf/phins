@@ -598,6 +598,13 @@ class TestOfficialMislakaConcentrationAndDeathLump(unittest.TestCase):
         self.assertEqual(product_family_label({'product_type_code': '3'}), 'קרן פנסיה')
         self.assertEqual(product_family_label({'product_type': '4'}), 'קופת גמל')
         self.assertEqual(product_family_label({'product_type': 'ביטוח סיכונים - חד פעמי'}), 'ביטוח ריסק')
+        self.assertEqual(
+            product_family_label({
+                'product_type': 'ביטוח סיכונים - חד פעמי',
+                'product_name': 'קופת גמל',
+            }),
+            'ביטוח ריסק',
+        )
         self.assertEqual(product_family_label({'product_type_name': 'קרן פנסיה מקיפה'}), 'קרן פנסיה')
 
     def test_nested_schum_had_peami_is_death_lump_not_monthly(self):

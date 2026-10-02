@@ -869,22 +869,19 @@ def product_family_label(account: Any, unknown: str = 'לא ידוע') -> str:
         if code in PRODUCT_FAMILY_BY_CODE:
             return PRODUCT_FAMILY_BY_CODE[code]
     raw_type = str(account.get('product_type') or '').strip()
-    for code, info in MislakaSchemaMapping.PRODUCT_TYPE_CODES.items():
-        if raw_type in {info.get('he', ''), info.get('en', ''), info.get('name', '')}:
-            return PRODUCT_FAMILY_BY_CODE.get(code, info.get('he') or unknown)
-    blob = ' '.join(
-        str(account.get(key) or '')
-        for key in ('product_type_name', 'product_type', 'product_name')
-    )
+    raw_name = str(account.get('product_type_name') or '').strip()
+    for candidate in (raw_type, raw_name):
+        for code, info in MislakaSchemaMapping.PRODUCT_TYPE_CODES.items():
+            if candidate in {info.get('he', ''), info.get('en', ''), info.get('name', '')}:
+                return PRODUCT_FAMILY_BY_CODE.get(code, info.get('he') or unknown)
+    # Official "לפי סוגי המוצרים" uses סוג מוצר, never the plan/product name.
+    # A risk policy named "קופת גמל" must stay under its type, not גמל.
+    blob = f'{raw_name} {raw_type}'.strip()
     blob_lower = blob.lower()
     for needles, family in _PRODUCT_FAMILY_ALIASES:
         if any(needle.lower() in blob_lower for needle in needles):
             return family
-    return (
-        str(account.get('product_type_name') or '').strip()
-        or raw_type
-        or unknown
-    )
+    return raw_name or raw_type or unknown
 
 
 def accumulation_by_product(accounts) -> Dict[str, float]:
