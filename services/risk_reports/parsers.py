@@ -407,7 +407,9 @@ class ParserMixin:
             from services.pension.schema import (
                 SPREADSHEET_MONEY_FIELDS,
                 account_accumulation,
+                accumulation_by_product,
                 accumulation_by_provider,
+                death_lump_sum,
                 deduped_sum,
                 looks_like_pension_table,
                 map_hebrew_column,
@@ -424,6 +426,8 @@ class ParserMixin:
             deduped_sum = None
             tagmulim_amount = None
             accumulation_by_provider = None
+            accumulation_by_product = None
+            death_lump_sum = None
             unique_policy_count = None
 
         if looks_like_pension_table is not None:
@@ -495,6 +499,7 @@ class ParserMixin:
             total_severance = deduped_sum(accounts, lambda account: account.get('severance_balance'))
             total_yitra = deduped_sum(accounts, lambda account: account.get('balance'))
             by_provider = accumulation_by_provider(accounts)
+            by_product = accumulation_by_product(accounts) if accumulation_by_product else {}
             account_count = unique_policy_count(accounts)
         else:
             total_balance = sum(a.get('total_balance', 0) or 0 for a in accounts)
@@ -503,6 +508,7 @@ class ParserMixin:
             total_severance = sum(a.get('severance_balance', 0) or 0 for a in accounts)
             total_yitra = 0
             by_provider = {}
+            by_product = {}
             account_count = len(accounts)
 
         return {
@@ -518,6 +524,11 @@ class ParserMixin:
                 'total_severance': round(total_severance, 2),
                 'total_severance_formatted': f"₪{total_severance:,.2f}",
                 'by_provider': by_provider,
+                'by_product': by_product,
+                'total_death_lump_sum': (
+                    deduped_sum(accounts, death_lump_sum)
+                    if deduped_sum and death_lump_sum else 0
+                ),
                 'account_count': account_count,
                 'provider_count': len(set(a.get('provider', '') for a in accounts if a.get('provider'))),
                 'providers': list(set(a.get('provider', '') for a in accounts if a.get('provider'))),
@@ -874,7 +885,9 @@ class ParserMixin:
         # policy count once; cover premiums are not part of צבירה.
         from services.pension.schema import (
             account_accumulation,
+            accumulation_by_product,
             accumulation_by_provider,
+            death_lump_sum,
             deduped_sum,
             tagmulim_amount,
             unique_policy_count,
@@ -904,6 +917,8 @@ class ParserMixin:
             'total_severance': round(total_severance, 2),
             'total_severance_formatted': f"₪{total_severance:,.2f}",
             'by_provider': accumulation_by_provider(merged_accounts),
+            'by_product': accumulation_by_product(merged_accounts),
+            'total_death_lump_sum': deduped_sum(merged_accounts, death_lump_sum),
             'total_coverage': round(
                 sum(
                     self._to_float_amount(a.get('coverage_amount'))

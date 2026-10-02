@@ -2990,6 +2990,26 @@
       };
     }
 
+    function dedupedAccountSum(accounts, field) {
+      const grouped = {};
+      let loose = 0;
+      (accounts || []).forEach((account) => {
+        const amount = parseFloat(account[field]) || 0;
+        if (amount <= 0) return;
+        const policy = String(account.policy_number || '').trim();
+        const rounded = Math.round(amount * 100) / 100;
+        if (!policy) {
+          loose += rounded;
+          return;
+        }
+        grouped[policy] = grouped[policy] || {};
+        grouped[policy][rounded] = rounded;
+      });
+      return loose + Object.values(grouped).reduce((sum, bucket) => (
+        sum + Object.values(bucket).reduce((inner, value) => inner + value, 0)
+      ), 0);
+    }
+
     function renderPensionStats(pensionData, affiliated = {}) {
       // Extract real data from pension files
       const client = resolvePensionClient(pensionData, affiliated);
@@ -3001,12 +3021,12 @@
       const birthDate = normalizeBirthDateDisplay(client.birth_date) || 'לא זמין';
       const totalBalance = totals.total_balance || affiliated.total_savings || accounts.reduce((sum, a) => sum + (parseFloat(a.total_balance) || 0), 0);
       const totalSeverance = totals.total_severance || affiliated.total_severance || accounts.reduce((sum, a) => sum + (parseFloat(a.severance_balance) || 0), 0);
-      const accountCount = accounts.length;
+      const accountCount = totals.account_count || accounts.length;
       const providers = [...new Set(accounts.map(a => a.provider).filter(p => p))];
       
-      // Calculate total insurance coverage
-      const totalDeathCoverage = accounts.reduce((sum, a) => sum + (parseFloat(a.death_coverage) || 0), 0);
-      const totalDisabilityCoverage = accounts.reduce((sum, a) => sum + (parseFloat(a.disability_coverage) || 0), 0);
+      // סכום חד פעמי is deduped per policy — repeated track rows count once.
+      const totalDeathCoverage = totals.total_death_lump_sum || dedupedAccountSum(accounts, 'death_coverage');
+      const totalDisabilityCoverage = dedupedAccountSum(accounts, 'disability_coverage') || dedupedAccountSum(accounts, 'work_disability_coverage');
       
       document.getElementById('statsGrid').innerHTML = `
         <div class="stat-card fade-in" style="grid-column: span 2; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
@@ -3037,9 +3057,9 @@
         </div>
         ${totalDeathCoverage > 0 ? `
         <div class="stat-card fade-in">
-          <h5>ביטוח חיים</h5>
-          <div class="value" style="font-size: 1.3rem;">₪${totalDeathCoverage.toLocaleString('he-IL')}</div>
-          <small>סכום כיסוי מוות</small>
+          <h5>ביטוח למקרה מוות</h5>
+          <div class="value" style="font-size: 1.3rem;">₪${Number(totalDeathCoverage).toLocaleString('he-IL')}</div>
+          <small>סכום חד פעמי</small>
         </div>
         ` : ''}
         ${totalDisabilityCoverage > 0 ? `
@@ -3127,6 +3147,37 @@
           <span class="insight-badge" style="background: #11998e; color: white;">סיכום</span>
         </div>
       `;
+
+      const byProduct = totals.by_product || {};
+      const productEntries = Object.entries(byProduct).filter(([, amount]) => Number(amount) > 0);
+      if (productEntries.length) {
+        const productRows = productEntries
+          .sort((a, b) => Number(b[1]) - Number(a[1]))
+          .map(([label, amount]) => `<div class="stat-detail"><span class="label">${label}</span><span class="val">₪${Number(amount).toLocaleString('he-IL')}</span></div>`)
+          .join('');
+        html += `
+          <div class="insight-card fade-in" style="background: #fff7ed; border: 2px solid #f97316;">
+            <h5 style="color: #9a3412;">ריכוז סכומי הצבירה לפי סוגי המוצרים</h5>
+            <div class="insight-detail" style="direction: rtl; text-align: right;">
+              ${productRows}
+            </div>
+            <span class="insight-badge" style="background: #f97316; color: white;">צבירה</span>
+          </div>
+        `;
+      }
+
+      const deathLump = totals.total_death_lump_sum || dedupedAccountSum(accounts, 'death_coverage');
+      if (deathLump > 0) {
+        html += `
+          <div class="insight-card fade-in" style="background: #fdf2f8; border: 2px solid #db2777;">
+            <h5 style="color: #9d174d;">ביטוח למקרה מוות</h5>
+            <div class="insight-detail" style="direction: rtl; text-align: right;">
+              <div class="stat-detail"><span class="label">סכום חד פעמי</span><span class="val" style="font-weight: bold;">₪${Number(deathLump).toLocaleString('he-IL')}</span></div>
+            </div>
+            <span class="insight-badge" style="background: #db2777; color: white;">כיסוי</span>
+          </div>
+        `;
+      }
       
       container.innerHTML = html;
     }

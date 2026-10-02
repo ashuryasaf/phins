@@ -299,6 +299,13 @@ class MislakaSchemaMapping:
         'KitzbaChodshit': 'monthly_pension',
         'KISUY-MAVET': 'death_coverage',
         'KisuyMavet': 'death_coverage',
+        # Official Mislaka "סכום חד פעמי" on a death-cover / account block.
+        'SCHUM-HAD-PEAMI': 'death_coverage',
+        'SchumHadPeami': 'death_coverage',
+        'SCHUM-KISUY-HAD-PEAMI': 'death_coverage',
+        'SchumKisuyHadPeami': 'death_coverage',
+        'SCHUM-HAD-PEAMI-MAVET': 'death_coverage',
+        'SchumHadPeamiMavet': 'death_coverage',
         'KISUY-NECHUT': 'disability_coverage',
         'KisuyNechut': 'disability_coverage',
         'DMEY-BITUACH-MAVET': 'death_premium',
@@ -473,6 +480,7 @@ class CompiledFields:
         'employer_severance', 'compensation_balance', 'coverage_amount',
         'monthly_pension', 'management_fee_savings', 'management_fee_deposits',
         'death_coverage', 'disability_coverage', 'death_premium', 'disability_premium',
+        'death_monthly',
         'work_disability_coverage', 'work_disability_premium',
         'invalidity_coverage', 'invalidity_premium',
         'waiver_coverage', 'waiver_premium',
@@ -580,6 +588,13 @@ HEBREW_COLUMN_FIELDS: Dict[str, str] = {
     'שם מעסיק': 'employer_name',
     'ביטוח חיים': 'death_coverage',
     'כיסוי מוות': 'death_coverage',
+    'ביטוח למקרה מוות': 'death_coverage',
+    'כיסוי למקרה מוות': 'death_coverage',
+    'סכום חד פעמי': 'death_coverage',
+    'סכום חד-פעמי': 'death_coverage',
+    'סכום חד פעמי במקרה מוות': 'death_coverage',
+    'סכום חד-פעמי במקרה מוות': 'death_coverage',
+    'קצבה חודשית במקרה מוות': 'death_monthly',
     'פרמיה ביטוח חיים': 'death_premium',
     'פרמיית ביטוח חיים': 'death_premium',
     'עלות ביטוח חיים': 'death_premium',
@@ -678,7 +693,7 @@ SPREADSHEET_MONEY_FIELDS = frozenset({
     'total_balance', 'savings_balance', 'balance', 'tagmulim_balance',
     'severance_balance',
     'management_fee', 'management_fee_savings', 'management_fee_deposits',
-    'death_coverage', 'death_premium',
+    'death_coverage', 'death_premium', 'death_monthly',
     'disability_coverage', 'disability_premium',
     'work_disability_coverage', 'work_disability_premium',
     'invalidity_coverage', 'invalidity_premium',
@@ -812,6 +827,113 @@ def accumulation_by_provider(accounts) -> Dict[str, float]:
     return accumulation_by(accounts, lambda account: account.get('provider'))
 
 
+# Official Mislaka "ריכוז סכומי הצבירה לפי סוגי המוצרים" buckets. Codes 1–3
+# are pension-fund variants and collapse to one קרן פנסיה line, matching the
+# concentrated clearinghouse report rather than the 12 raw SUG-MUTZAR labels.
+PRODUCT_FAMILY_BY_CODE = {
+    '1': 'קרן פנסיה',
+    '2': 'קרן פנסיה',
+    '3': 'קרן פנסיה',
+    '4': 'קופת גמל',
+    '5': 'קופה מרכזית לפיצויים',
+    '6': 'קרן השתלמות',
+    '7': 'ביטוח מנהלים',
+    '8': 'ביטוח חיים',
+    '9': 'ביטוח פנסיוני',
+    '10': 'פוליסת חיסכון',
+    '11': 'ביטוח ריסק',
+    '12': 'ביטוח אובדן כושר עבודה',
+}
+
+# Longer needles first so "קופת גמל להשקעה" is not swallowed by "קופת גמל".
+_PRODUCT_FAMILY_ALIASES = (
+    (('קופת גמל להשקעה', 'גמל להשקעה'), 'קופת גמל להשקעה'),
+    (('קופה מרכזית', 'מרכזית לפיצויים'), 'קופה מרכזית לפיצויים'),
+    (('קרן פנסיה', 'פנסיה מקיפה', 'פנסיה חדשה', 'פנסיה ותיקה', 'pension fund', 'pension'), 'קרן פנסיה'),
+    (('קופת גמל', 'קופות גמל', 'provident', 'gemel'), 'קופת גמל'),
+    (('קרן השתלמות', 'השתלמות', 'education fund'), 'קרן השתלמות'),
+    (('ביטוח מנהלים', 'מנהלים ושכירים', 'managers insurance', 'managers'), 'ביטוח מנהלים'),
+    (('ביטוח סיכונים', 'ביטוח ריסק', 'ריסק', 'risk insurance'), 'ביטוח ריסק'),
+    (('פוליסת חיסכון', 'savings policy'), 'פוליסת חיסכון'),
+    (('אובדן כושר', 'אבדן כושר', 'disability insurance'), 'ביטוח אובדן כושר עבודה'),
+    (('ביטוח יסודי', 'ביטוח חיים', 'life insurance'), 'ביטוח חיים'),
+)
+
+
+def product_family_label(account: Any, unknown: str = 'לא ידוע') -> str:
+    """Official concentrated-report product family for one holdings row."""
+    if not isinstance(account, dict):
+        return unknown
+    for raw in (account.get('product_type_code'), account.get('product_type')):
+        code = str(raw or '').strip()
+        if code in PRODUCT_FAMILY_BY_CODE:
+            return PRODUCT_FAMILY_BY_CODE[code]
+    raw_type = str(account.get('product_type') or '').strip()
+    for code, info in MislakaSchemaMapping.PRODUCT_TYPE_CODES.items():
+        if raw_type in {info.get('he', ''), info.get('en', ''), info.get('name', '')}:
+            return PRODUCT_FAMILY_BY_CODE.get(code, info.get('he') or unknown)
+    blob = ' '.join(
+        str(account.get(key) or '')
+        for key in ('product_type_name', 'product_type', 'product_name')
+    )
+    blob_lower = blob.lower()
+    for needles, family in _PRODUCT_FAMILY_ALIASES:
+        if any(needle.lower() in blob_lower for needle in needles):
+            return family
+    return (
+        str(account.get('product_type_name') or '').strip()
+        or raw_type
+        or unknown
+    )
+
+
+def accumulation_by_product(accounts) -> Dict[str, float]:
+    """Deduped צבירה grouped the way the official Mislaka report groups it."""
+    return accumulation_by(accounts, product_family_label)
+
+
+def _cover_looks_like_death(item: Dict[str, Any]) -> bool:
+    code = str(item.get('code') or '').strip()
+    if code in {'1', '01'}:
+        return True
+    name = str(item.get('name') or '')
+    lowered = name.lower()
+    return (
+        'מוות' in name
+        or 'חיים' in name
+        or 'death' in lowered
+        or 'life' in lowered
+    )
+
+
+def death_lump_sum(account: Dict[str, Any]) -> float:
+    """סכום חד פעמי for death cover on one holdings row.
+
+    Prefers the uploaded ``death_coverage`` / ``סכום חד פעמי`` figure. Nested
+    Kisuy blocks classified as death/life contribute their lump amount when
+    the account-level field is empty. Monthly death annuity is never added.
+    """
+    if not isinstance(account, dict):
+        return 0.0
+    explicit = parse_money(account.get('death_coverage'))
+    if explicit > 0:
+        return explicit
+    total = 0.0
+    seen: set = set()
+    for item in account.get('risk_covers') or []:
+        if not isinstance(item, dict) or not _cover_looks_like_death(item):
+            continue
+        lump = parse_money(item.get('amount'))
+        if lump <= 0:
+            continue
+        key = (str(item.get('code') or ''), str(item.get('name') or ''), round(lump, 2))
+        if key in seen:
+            continue
+        seen.add(key)
+        total += lump
+    return total
+
+
 def cover_face_total(accounts) -> float:
     """Sum uploaded cover face amounts. Premiums are not included."""
     total = 0.0
@@ -857,6 +979,8 @@ __all__ = [
     'looks_like_pension_table', 'PENSION_TABULAR_INDICATORS',
     'SPREADSHEET_MONEY_FIELDS', 'COVER_FACE_FIELDS', 'parse_money',
     'account_accumulation', 'tagmulim_amount', 'deduped_sum',
-    'accumulation_by', 'accumulation_by_provider', 'cover_face_total',
+    'accumulation_by', 'accumulation_by_provider', 'accumulation_by_product',
+    'product_family_label', 'PRODUCT_FAMILY_BY_CODE', 'death_lump_sum',
+    'cover_face_total',
     'unique_policy_count',
 ]

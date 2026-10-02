@@ -157,7 +157,7 @@ class ChartsMixin:
         accounts = pension_data.get('accounts', [])
         
         from services.pension.schema import (
-            accumulation_by,
+            accumulation_by_product,
             accumulation_by_provider,
             deduped_sum,
             tagmulim_amount,
@@ -218,7 +218,7 @@ class ChartsMixin:
         coverage_totals = {}
         cost_totals = {}
         cover_fields = (
-            ('death_coverage', 'death_premium', 'ביטוח חיים', 'Life Insurance'),
+            ('death_coverage', 'death_premium', 'ביטוח למקרה מוות', 'Death Cover'),
             ('disability_coverage', 'disability_premium', 'אבדן כושר עבודה', 'Loss of Work Capacity'),
             ('work_disability_coverage', 'work_disability_premium', 'אבדן כושר עבודה', 'Loss of Work Capacity'),
             ('invalidity_coverage', 'invalidity_premium', 'נכות', 'Disability'),
@@ -288,19 +288,21 @@ class ChartsMixin:
                 }
             ))
         
-        # 4. Product Type Distribution (Pie Chart)
-        def _product_label(account):
-            return (
-                account.get('product_type_name')
-                or account.get('product_type')
-                or ('לא מוגדר' if is_hebrew else 'Undefined')
-            )
-        product_balances = accumulation_by(accounts, _product_label)
-        
-        if product_balances and len(product_balances) > 1:
+        # 4. Official Mislaka product-family concentration (always, even one type)
+        product_balances = accumulation_by_product(accounts)
+        if not product_balances:
+            stored_products = (totals or {}).get('by_product') or {}
+            if isinstance(stored_products, dict):
+                product_balances = {
+                    str(name): float(amount or 0)
+                    for name, amount in stored_products.items()
+                    if float(amount or 0) > 0
+                }
+
+        if product_balances:
             charts.append(ChartConfig(
                 type=ChartType.PIE,
-                title='צבירה לפי סוג מוצר' if is_hebrew else 'Savings by Product Type',
+                title='ריכוז סכומי הצבירה לפי סוגי המוצרים' if is_hebrew else 'Accumulation by Product Type',
                 data={
                     'labels': list(product_balances.keys()),
                     'values': list(product_balances.values())
