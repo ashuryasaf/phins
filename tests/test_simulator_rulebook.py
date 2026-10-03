@@ -156,6 +156,52 @@ if (!snap.premiumComponentsMatch({
   risk_premium: 100, savings_premium: 40, expense_loading: 15, profit_margin: 15.5,
   annual_premium: 999, issue_annual_premium: 170.5,
 })) process.exit(11);
+const referred = {
+  uw_status: 'pending', policy_status: 'active',
+  coverage_amount: 100000, annual_premium: 1200, monthly_premium: 100,
+  issue_annual_premium: 1200,
+  prob_mortality_year1: 0.12, prob_disability_year1: 0,
+  life_sum: 100000, disability_sum: 25000, disability_eligible: true,
+};
+if (!snap.isInForcePolicy(referred)) process.exit(12);
+if (snap.isInForcePolicy({ uw_status: 'pending', policy_status: 'pending' })) process.exit(13);
+if (snap.isInForcePolicy({ uw_status: 'declined', policy_status: 'declined' })) process.exit(14);
+if (snap.isInForcePolicy({ uw_status: 'approved', policy_status: 'terminated' })) process.exit(15);
+const book = snap.kernelBook([
+  referred,
+  { uw_status: 'declined', policy_status: 'declined', annual_premium: 999, coverage_amount: 1, prob_mortality_year1: 1, life_sum: 1 },
+]);
+if (book.active !== 1 || book.coverage !== 100000) process.exit(16);
+if (Math.abs(book.death - 12000) > 1e-6 || book.disability !== 0) process.exit(17);
+if (Math.abs(book.lossRatio - (12000 / 1200)) > 1e-9) process.exit(18);
+const lives = [];
+for (let i = 0; i < 1000; i++) lives.push(Object.assign({}, referred));
+const plan = snap.planOpeningClaims(lives);
+const incidence = 1000 * snap.annualToMonthlyProb(0.12);
+if (Math.abs(plan.incidence - incidence) > 1e-6) process.exit(19);
+if (Math.abs(plan.claims.length - Math.floor(incidence)) > 2) process.exit(20);
+if (!plan.claims.length || plan.claims[0].type !== 'mortality' || plan.claims[0].amount !== 100000) process.exit(21);
+const grown = snap.buildForecast({
+  startCustomers: 1000, growthPct: 10, premiumPerCustomer: 100,
+  lossRatioPct: 50, horizon: 3, mortalityShare: 0.6,
+});
+const forecast = snap.portfolioSnapshot({
+  annualPremiumBooked: 1200, lossRatioPct: 50, mortalityShare: 0.6,
+  growthPct: 10, startCustomers: 1000, originalActivePolicies: 1000,
+  portfolioCustomers: 96913, premiumPerCustomer: 100, rows: grown.rows,
+});
+if (!forecast.checks.ok || forecast.month1Customers !== 1000) process.exit(22);
+if (Math.abs(forecast.growthFactor - (forecast.endCustomers / 1000)) > 1e-12) process.exit(23);
+const labels = snap.snapshotLines(forecast).map(l => l.label);
+if (!labels.includes('Simulated accepted lives')) process.exit(24);
+if (!labels.includes('Original active policies')) process.exit(25);
+if (!labels.includes('Growth factor (final month / original active policies)')) process.exit(26);
+const drifted = snap.portfolioSnapshot({
+  annualPremiumBooked: 1200, lossRatioPct: 50, mortalityShare: 0.6,
+  growthPct: 10, startCustomers: 1000, originalActivePolicies: 40,
+  premiumPerCustomer: 100, rows: grown.rows,
+});
+if (drifted.checks.ok || drifted.checks.originalOpeningIdentity) process.exit(27);
 console.log('ok');
 """
     proc = subprocess.run(

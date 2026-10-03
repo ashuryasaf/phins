@@ -277,6 +277,20 @@ def test_actuary_dashboard_wires_100k_cap_and_5yr_forecast():
     assert "decision.disability_eligible !== false" in content
     assert "disability_band_age: disabilityBandAge" in content
     assert "age_min: acceptedAgeMin" in content
+    # Accepted book (auto + referred) is in force. Growth stays on the
+    # original active count, and opening claims follow kernel incidence.
+    assert "policy_status: inForce ? 'active' : decision.uw_status" in content
+    assert "planOpeningClaims" in content
+    assert "opening_inventory: true" in content
+    assert "originalActivePolicies" in content
+    assert "kernelBook" in content
+    assert "kind === 'multiple'" in content
+    assert "Forecast month 1 equals the original active policies" in content
+    # A lifecycle underwriting decision only touches a referred life that is
+    # still in force, so it cannot revive a lapsed or terminated policy, and a
+    # decline voids the opening claim as well as the open bills.
+    assert content.count("c.uw_status === 'pending' && c.policy_status === 'active'") == 2
+    assert content.count("sandboxVoidOpenClaims(target.id)") == 2
 
 
 def test_actuary_dashboard_renders_sandbox_stats_single_pass():
@@ -884,6 +898,20 @@ const realizedDouble = snap.managementFeeOnContributions(5000, 1, {
   savingsYieldPct: 0,
 });
 if (Math.abs(realizedDouble.fee - expectedFee * 2) > 1e-6) process.exit(37);
+if (view.month1Customers !== view.originalActivePolicies) process.exit(38);
+if (!view.checks.originalOpeningIdentity) process.exit(39);
+const driftedBase = snap.portfolioSnapshot({
+  annualPremiumBooked: 120000,
+  lossRatioPct: 50,
+  mortalityShare: 0.6,
+  growthPct: 10,
+  startCustomers: 100,
+  originalActivePolicies: 40,
+  premiumPerCustomer: 100,
+  monthsElapsed: 0,
+  rows: built.rows,
+});
+if (driftedBase.checks.ok || driftedBase.checks.originalOpeningIdentity) process.exit(40);
 process.exit(0);
 """
     proc = subprocess.run(

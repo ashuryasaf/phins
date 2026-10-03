@@ -7,11 +7,14 @@
  * Premium booked is the annual written premium of in-force policies.
  * Premium billed is invoice face: realized bills already issued, or the
  * in-force monthly premium in the forecast. Expected death and disability
- * are that booked premium times the simulation loss ratio, split by the
- * simulation's mortality / disability claim mix. The mix is normalised so
- * the two parts sum to expected claims exactly.
+ * are that booked premium times the loss ratio, split by the mortality /
+ * disability mix. The sandbox seeds both from the kernel year-1 book
+ * (life sum × q(x), disability sum × i(x)). The mix is normalised so the
+ * two parts sum to expected claims exactly.
  *
- * Monthly customer growth compounds the opening active book:
+ * Monthly customer growth compounds the original active-policy count
+ * frozen when the sandbox is generated. Later joiners and lapses do not
+ * change N:
  *   customers(m) = round(N * (1 + g) ^ (m - 1))
  * Forecast claims use the same loss ratio on premium billed (gross). That
  * is the simulator identity (expected claims / annual premium), not a
@@ -347,6 +350,13 @@
     const formulaEnd = rows.length
       ? Math.round(startCustomers * Math.pow(1 + growthPct / 100, rows.length - 1))
       : 0;
+    const originalActivePolicies = src.originalActivePolicies == null
+      ? startCustomers
+      : Math.max(0, num(src.originalActivePolicies, startCustomers));
+    const portfolioCustomers = src.portfolioCustomers == null
+      ? null
+      : Math.max(0, num(src.portfolioCustomers, 0));
+    const growthFactor = originalActivePolicies > 0 ? endCustomers / originalActivePolicies : 0;
 
     const annualisedOpeningBilled = openingMonthlyBilled * 12;
     const bookedVsBilledGap = annualBooked - annualisedOpeningBilled;
@@ -378,6 +388,9 @@
       rolled.horizonOperating - rolled.horizonClaims + rolled.horizonFee
     );
     const growthIdentity = rows.length === 0 || formulaEnd === endCustomers;
+    // Month 1 is the original in-force book. A forecast built from a
+    // different base is not the pre-regulation portfolio projection.
+    const originalOpeningIdentity = rows.length === 0 || month1Customers === originalActivePolicies;
     const year1Identity = !hasYear1 || near(
       year1Parts.death + year1Parts.disability,
       expectedClaimsYear1
@@ -413,6 +426,9 @@
       disabilityVariance: realizedDisability - rolled.toDateDisability,
       growthPct: growthPct,
       startCustomers: startCustomers,
+      originalActivePolicies: originalActivePolicies,
+      portfolioCustomers: portfolioCustomers,
+      growthFactor: growthFactor,
       month1Customers: month1Customers,
       endCustomers: endCustomers,
       horizon: rows.length,
@@ -440,11 +456,13 @@
         savingsIdentity: savingsIdentity,
         netIdentity: netIdentity,
         growthIdentity: growthIdentity,
+        originalOpeningIdentity: originalOpeningIdentity,
         year1Identity: year1Identity,
       },
     };
     snap.checks.ok = claimsIdentity && horizonIdentity && collectedIdentity
-      && savingsIdentity && netIdentity && growthIdentity && year1Identity;
+      && savingsIdentity && netIdentity && growthIdentity
+      && originalOpeningIdentity && year1Identity;
     return snap;
   }
 
@@ -481,7 +499,12 @@
       { section: 'Realized claims', label: 'Death variance (realized − expected to date)', value: snap.deathVariance, kind: 'money' },
       { section: 'Realized claims', label: 'Disability variance (realized − expected to date)', value: snap.disabilityVariance, kind: 'money' },
       { section: 'Lifecycle growth', label: 'Monthly customer growth', value: snap.growthPct, kind: 'points' },
+      { section: 'Lifecycle growth', label: 'Original active policies', value: snap.originalActivePolicies, kind: 'count' },
+      ...(snap.portfolioCustomers == null ? [] : [
+        { section: 'Lifecycle growth', label: 'Simulated accepted lives', value: snap.portfolioCustomers, kind: 'count' },
+      ]),
       { section: 'Lifecycle growth', label: 'Opening active customers', value: snap.startCustomers, kind: 'count' },
+      { section: 'Lifecycle growth', label: 'Growth factor (final month / original active policies)', value: snap.growthFactor, kind: 'multiple' },
       { section: 'Lifecycle growth', label: 'Expected customers, month 1', value: snap.month1Customers, kind: 'count' },
       { section: 'Lifecycle growth', label: 'Expected customers, final month', value: snap.endCustomers, kind: 'count' },
       { section: 'Lifecycle growth', label: 'Forecast horizon (months)', value: snap.horizon, kind: 'count' },
@@ -568,8 +591,7 @@
    */
   function kernelClaimEvent(life, draw) {
     const src = life || {};
-    if (src.uw_status !== 'approved') return null;
-    if (src.policy_status === 'terminated' || src.policy_status === 'cancelled') return null;
+    if (!isInForcePolicy(src)) return null;
     if (src.has_claim) return null;
     const u = num(draw, 1);
     const qDeath = annualToMonthlyProb(src.prob_mortality_year1);
@@ -605,6 +627,118 @@
     return Math.abs(sum - annual) < 0.05;
   }
 
+  /**
+   * In force for the portfolio forecast: the simulation's accepted book.
+   * Referred lives are pending automatic approval and are still priced
+   * policies. Declined, terminated and cancelled lives are not.
+   */
+  function isInForcePolicy(life) {
+    const src = life || {};
+    if (src.uw_status === 'declined') return false;
+    if (src.policy_status === 'terminated' || src.policy_status === 'cancelled' || src.policy_status === 'declined') {
+      return false;
+    }
+    return src.policy_status === 'active' || src.uw_status === 'approved';
+  }
+
+  /**
+   * Kernel year-1 cash on the in-force book.
+   * Death = life sum × q(x). Disability = contractual disability sum × i(x).
+   * The loss ratio is that expected claim total divided by annual premium.
+   */
+  function kernelBook(lives) {
+    const list = Array.isArray(lives) ? lives : [];
+    let active = 0;
+    let coverage = 0;
+    let annual = 0;
+    let monthly = 0;
+    let death = 0;
+    let disability = 0;
+    let monthlyIncidence = 0;
+    for (let i = 0; i < list.length; i++) {
+      const src = list[i];
+      if (!isInForcePolicy(src)) continue;
+      active += 1;
+      coverage += num(src.coverage_amount != null ? src.coverage_amount : src.coverage, 0);
+      const annualPrem = src.issue_annual_premium != null
+        ? num(src.issue_annual_premium, 0)
+        : num(src.annual_premium, 0);
+      annual += annualPrem;
+      monthly += num(src.monthly_premium, annualPrem / 12);
+      const qDeath = Math.min(1, Math.max(0, num(src.prob_mortality_year1, 0)));
+      const eligible = src.disability_eligible !== false && src.disability_excluded_at_issue !== true;
+      const qDisable = eligible ? Math.min(1, Math.max(0, num(src.prob_disability_year1, 0))) : 0;
+      death += num(src.life_sum, 0) * qDeath;
+      disability += num(src.disability_sum, 0) * qDisable;
+      monthlyIncidence += annualToMonthlyProb(qDeath) + (eligible ? annualToMonthlyProb(qDisable) : 0);
+    }
+    const expected = death + disability;
+    return {
+      active: active,
+      coverage: coverage,
+      annual: annual,
+      monthly: monthly,
+      death: death,
+      disability: disability,
+      expected: expected,
+      lossRatio: annual > 0 ? expected / annual : 0,
+      mortalityShare: expected > 0 ? death / expected : null,
+      monthlyIncidence: monthlyIncidence,
+    };
+  }
+
+  /**
+   * Opening claim inventory. One pending claim per crossing of the
+   * monthly kernel probability, so the open-claim count is the integer
+   * part of in-force exposure × incidence. Amounts are the contractual
+   * sums. A life carries at most one claim; a second cause stays in the
+   * accumulator for a later life.
+   */
+  function planOpeningClaims(lives) {
+    const list = Array.isArray(lives) ? lives : [];
+    let accDeath = 0;
+    let accDisable = 0;
+    let incidence = 0;
+    const claims = [];
+    const used = new Set();
+    for (let i = 0; i < list.length; i++) {
+      const src = list[i];
+      if (!isInForcePolicy(src) || src.has_claim) continue;
+      const qDeath = annualToMonthlyProb(src.prob_mortality_year1);
+      const eligible = src.disability_eligible !== false && src.disability_excluded_at_issue !== true;
+      const qDisable = eligible ? annualToMonthlyProb(src.prob_disability_year1) : 0;
+      incidence += qDeath + qDisable;
+      accDeath += qDeath;
+      accDisable += qDisable;
+      if (used.has(i)) continue;
+      if (accDeath >= 1) {
+        claims.push({
+          index: i,
+          type: 'mortality',
+          amount: Math.round(num(src.life_sum, 0) * 100) / 100,
+          cause: 'Death — natural or accidental',
+        });
+        used.add(i);
+        accDeath -= 1;
+      } else if (accDisable >= 1) {
+        claims.push({
+          index: i,
+          type: 'disability',
+          amount: Math.round(num(src.disability_sum, 0) * 100) / 100,
+          cause: 'Permanent total disability (3+ ADL)',
+        });
+        used.add(i);
+        accDisable -= 1;
+      }
+    }
+    return {
+      claims: claims,
+      incidence: incidence,
+      deathRemainder: accDeath,
+      disabilityRemainder: accDisable,
+    };
+  }
+
   return {
     COLLECTION_RATE: COLLECTION_RATE,
     claimMix: claimMix,
@@ -616,5 +750,8 @@
     issueFromRules: issueFromRules,
     kernelClaimEvent: kernelClaimEvent,
     premiumComponentsMatch: premiumComponentsMatch,
+    isInForcePolicy: isInForcePolicy,
+    kernelBook: kernelBook,
+    planOpeningClaims: planOpeningClaims,
   };
 });
