@@ -6633,12 +6633,16 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
         <h4 style="margin-top:16px;">Annual Reserve &amp; IFRS 17 Waterfall</h4>
         <p style="color:var(--text-light);">
-          Op Profit = Tax + After-tax. After-tax = Dividends + retained. Reserve Δ = retained × contribution %; the rest is undistributed earnings.
-          BEL<sub>y</sub> = BEL<sub>y−1</sub> × (1+i) − Claims. RA = RA % × BEL. CSM Δ is the net movement (accretion − release), so CSM<sub>y</sub> = CSM<sub>y−1</sub> + CSM Δ.
-          Savings Δ is the net fund movement (contribution + yield − fee), so Savings Closing = prior closing + Savings Δ.
+          Op Profit = Tax + After-tax. After-tax = Dividends + retained. Reserve Δ = retained × contribution %.
+          Claims, IBNR, BEL and RA use the pricing kernel's expected claim cash flows (${projection.ifrs17_methodology?.claims_cashflow_basis || 'kernel_expected_cash_flows'}), scaled so their present value equals the simulation BEL. IBNR = IBNR % × Claims.
+          BEL interest = round(BEL<sub>y−1</sub> × i). BEL<sub>y</sub> = BEL<sub>y−1</sub> + interest − Claims − rounding. Rounding is 0 except a final-coverage residual under $1, which runs the BEL off to zero without changing the locked-in interest.
+          RA = RA % × BEL. CSM Δ = accretion − release, so CSM<sub>y</sub> = CSM<sub>y−1</sub> + CSM Δ.
+          Savings Δ = contribution + yield − fee, so Savings Closing = prior closing + Savings Δ.
           Discount i = ${((projection.discount_rate || 0) * 100).toFixed(2)}%. Coverage = ${projection.coverage_years || projection.avg_term_years || ''} years.
-          Opening CSM ${fmtCurrency(projection.opening_balances?.csm || 0)}; loss component at initial recognition ${fmtCurrency(projection.opening_balances?.loss_component || 0)} (IFRS 17.47 when premiums do not cover the fulfilment cash flows).
+          Opening CSM ${fmtCurrency(projection.opening_balances?.csm || 0)}; loss component at initial recognition ${fmtCurrency(projection.opening_balances?.loss_component || 0)}.
+          Opening identity: CSM − loss component = PV of insurance premiums − BEL − risk adjustment.
         </p>
+        <div style="overflow-x:auto;">
         <table class="data-table">
           <thead>
             <tr>
@@ -6647,56 +6651,65 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           </thead>
           <tbody>${rows}</tbody>
         </table>
+        </div>
 
         ${(function () {
           const rec = projection.csm_reconciliation;
           if (!rec) return '';
+          const reserveCheckCell = (ok) => {
+            if (typeof ok !== 'boolean') return `<td>${ok}</td>`;
+            const label = ok ? 'PASS' : 'FAIL';
+            const color = ok ? 'var(--success)' : 'var(--danger)';
+            return `<td style="color:${color};font-weight:600;">${label}</td>`;
+          };
           const yearlyRows = (rec.yearly || []).map(r => {
             const checks = r.identity_checks || {};
             return `
               <tr>
                 <td>${r.year}</td>
                 <td>${fmtCurrency(r.opening_balance)}</td>
+                <td>${fmtCurrency(r.accretion)}</td>
                 <td>${fmtCurrency(r.release)}</td>
+                <td>${fmtCurrency(r.net_change)}</td>
                 <td>${(r.coverage_units_share * 100).toFixed(2)}%</td>
-                <td>${fmtCurrency(r.cumulative_release)}</td>
                 <td><strong>${fmtCurrency(r.closing_balance)}</strong></td>
-                <td>${checks.prev_minus_release_equals_balance ? '' : ''}</td>
-                <td>${checks.opening_minus_cumulative_equals_balance ? '' : ''}</td>
-                <td>${checks.coverage_units_share_holds ? '' : ''}</td>
+                ${reserveCheckCell(!!checks.prev_minus_release_equals_balance)}
+                ${reserveCheckCell(!!checks.opening_minus_cumulative_equals_balance)}
+                ${reserveCheckCell(!!checks.coverage_units_share_holds)}
               </tr>
             `;
           }).join('');
           const totals = rec.totals || {};
           const integrity = rec.data_integrity || {};
           const integrityRows = Object.entries(integrity).map(([k, v]) =>
-            `<tr><td>${k}</td><td>${v ? '' : ''}</td></tr>`).join('');
+            `<tr><td>${k}</td>${reserveCheckCell(v)}</tr>`).join('');
           const ident = rec.identities || {};
           const sumId = ident.sum_of_releases || {};
           return `
             <h4 style="margin-top:16px;">IFRS 17 CSM Reconciliation</h4>
             <p style="color:var(--text-light);">
               Release pattern: <strong>${rec.pattern}</strong> · Opening CSM: <strong>${fmtCurrency(rec.opening_csm)}</strong> · Projection: <strong>${rec.projection_years}</strong> yrs.
-              Each year the closing balance equals the prior balance plus accretion at the locked-in rate, minus the coverage release (IFRS 17.44). Opening + Σ accretion − Σ release equals the closing CSM.
+              Each year CSM Δ = accretion at the locked-in rate minus the coverage release, and closing CSM = opening + CSM Δ (IFRS 17.44). Opening + Σ accretion − Σ release equals the closing CSM.
             </p>
             <table class="data-table">
               <thead>
                 <tr>
                   <th>Yr</th>
                   <th>Opening</th>
-                  <th>Release (Δ)</th>
+                  <th>Accretion</th>
+                  <th>Release</th>
+                  <th>CSM Δ</th>
                   <th>Coverage-units share</th>
-                  <th>Cumulative Release</th>
                   <th>Closing</th>
-                  <th>balance − Δ </th>
-                  <th>opening − ΣΔ </th>
-                  <th>share </th>
+                  <th>open + accretion − release</th>
+                  <th>opening + Σ accretion − Σ release</th>
+                  <th>share</th>
                 </tr>
               </thead>
               <tbody>${yearlyRows}</tbody>
             </table>
             <p style="margin-top:8px;color:var(--text-light);">
-              <strong>Sum-of-releases identity:</strong> Σ release + closing = opening &nbsp;→&nbsp;
+              <strong>Roll-forward identity:</strong> ${sumId.formula || 'opening + Σ accretion − Σ release = closing'} &nbsp;→&nbsp;
               <strong>${fmtCurrency(sumId.computed)}</strong> vs expected
               <strong>${fmtCurrency(sumId.expected)}</strong>
               (Δ ${fmtCurrency(sumId.delta || 0)}).<br>
@@ -6736,8 +6749,11 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       `;
 
       const integrity = projection.data_integrity || {};
-      const integrityRows = Object.entries(integrity).map(([k, v]) =>
-        `<tr><td>${k}</td><td>${v ? '' : ''}</td></tr>`).join('');
+      const integrityRows = Object.entries(integrity).map(([k, v]) => {
+        const label = v ? 'PASS' : 'FAIL';
+        const color = v ? 'var(--success)' : 'var(--danger)';
+        return `<tr><td>${k}</td><td style="color:${color};font-weight:600;">${label}</td></tr>`;
+      }).join('');
       integrityEl.innerHTML = `
         <table class="data-table">
           <thead><tr><th>Check</th><th>Result</th></tr></thead>

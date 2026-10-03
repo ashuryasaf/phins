@@ -547,6 +547,12 @@ class PremiumComponents:
     # tables, before lapse). Basis for a year-1 "paid claims / premium" loss
     # ratio; distinct from pv_total_risk_claims / term (lifetime-annualised).
     expected_claims_year1: float = 0.0
+    # Undiscounted expected claim cash flows by policy year. Discounting
+    # this vector at ``discount_rate`` reproduces the claim PV (lapse is
+    # inside the cash flow only when the pricing config applies it). The
+    # reserve projection uses the portfolio sum as the BEL / IBNR claims
+    # path instead of a level annuity.
+    expected_claims_by_year: List[float] = field(default_factory=list)
     coverage_amount: float = 0.0
     term_years: int = 0
     age: int = 0
@@ -857,6 +863,7 @@ def _pv_claims_mutually_exclusive(
     pv_mortality = 0.0
     pv_disability = 0.0
     expected_claims_year1 = 0.0
+    cashflows: List[float] = []
     prob_alive_not_disabled = 1.0
 
     for year in range(1, term + 1):
@@ -878,20 +885,22 @@ def _pv_claims_mutually_exclusive(
             else 0.0
         )
 
-        discount = (1.0 + discount_rate) ** (-year)
+        lapse_survival = 1.0
         if config.apply_lapse_adjustment:
-            lapse_survival = 1.0
             for y in range(1, year + 1):
                 lapse_survival *= max(0.0, 1.0 - tables.lapse_rate(y))
-            discount *= lapse_survival
+        discount = (1.0 + discount_rate) ** (-year) * lapse_survival
 
         prob_die_this_year = prob_alive_not_disabled * qx
         prob_survive_death = prob_alive_not_disabled * max(0.0, 1.0 - qx)
         prob_disable_this_year = prob_survive_death * dx
 
         pv_mortality += life_sum * prob_die_this_year * discount
+        cashflow = life_sum * prob_die_this_year * lapse_survival
         if disability_active and benefit_pct > 0:
             pv_disability += disability_sum * benefit_pct * prob_disable_this_year * discount
+            cashflow += disability_sum * benefit_pct * prob_disable_this_year * lapse_survival
+        cashflows.append(cashflow)
         if year == 1:
             # Undiscounted, pre-lapse expected claims in the first policy year:
             # the year-1 basis for a "paid claims / premium" loss ratio.
@@ -905,6 +914,7 @@ def _pv_claims_mutually_exclusive(
         "pv_mortality": pv_mortality,
         "pv_disability": pv_disability,
         "expected_claims_year1": expected_claims_year1,
+        "expected_claims_by_year": cashflows,
     }
 
 
@@ -929,6 +939,7 @@ def _pv_claims_independent(
 
     pv_mortality = 0.0
     expected_claims_year1 = 0.0
+    cashflows = [0.0] * term
     for year in range(1, term + 1):
         current_age = age + year - 1
         qx = tables.mortality_qx(current_age, customer.cohort) * adl_mort_mult * demo_mort
@@ -940,13 +951,13 @@ def _pv_claims_independent(
                 1.0 - tables.mortality_qx(age + y, customer.cohort) * adl_mort_mult * demo_mort,
             )
         death_prob = px_prev * qx
-        discount = (1.0 + discount_rate) ** (-year)
+        lapse_survival = 1.0
         if config.apply_lapse_adjustment:
-            lapse_survival = 1.0
             for y in range(1, year + 1):
                 lapse_survival *= max(0.0, 1.0 - tables.lapse_rate(y))
-            discount *= lapse_survival
+        discount = (1.0 + discount_rate) ** (-year) * lapse_survival
         pv_mortality += life_sum * death_prob * discount
+        cashflows[year - 1] += life_sum * death_prob * lapse_survival
         if year == 1:
             expected_claims_year1 += life_sum * death_prob
 
@@ -968,13 +979,13 @@ def _pv_claims_independent(
             dis_rate = (
                 tables.disability_ix(current_age, customer.cohort) * adl_dis_mult * demo_dis
             )
-            discount = (1.0 + discount_rate) ** (-year)
+            lapse_survival = 1.0
             if config.apply_lapse_adjustment:
-                lapse_survival = 1.0
                 for y in range(1, year + 1):
                     lapse_survival *= max(0.0, 1.0 - tables.lapse_rate(y))
-                discount *= lapse_survival
+            discount = (1.0 + discount_rate) ** (-year) * lapse_survival
             pv_disability += survival * dis_rate * disability_sum * benefit_pct * discount
+            cashflows[year - 1] += survival * dis_rate * disability_sum * benefit_pct * lapse_survival
             if year == 1:
                 expected_claims_year1 += survival * dis_rate * disability_sum * benefit_pct
 
@@ -982,6 +993,7 @@ def _pv_claims_independent(
         "pv_mortality": pv_mortality,
         "pv_disability": pv_disability,
         "expected_claims_year1": expected_claims_year1,
+        "expected_claims_by_year": cashflows,
     }
 
 
@@ -1093,6 +1105,9 @@ def price_policy(
     pv_disability = pv_payload["pv_disability"]
     pv_total = pv_mortality + pv_disability
     expected_claims_year1 = float(pv_payload.get("expected_claims_year1", 0.0))
+    expected_claims_by_year = [
+        float(x) for x in (pv_payload.get("expected_claims_by_year") or [])
+    ]
 
     risk_premium = pv_total / term
     mortality_premium = pv_mortality / term
@@ -1157,6 +1172,7 @@ def price_policy(
         pv_disability_claims=round(pv_disability, 2),
         pv_total_risk_claims=round(pv_total, 2),
         expected_claims_year1=round(expected_claims_year1, 2),
+        expected_claims_by_year=expected_claims_by_year,
         eligible=True,
         coverage_amount=float(coverage),
         term_years=int(term),

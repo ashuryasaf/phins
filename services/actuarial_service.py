@@ -26,6 +26,7 @@ import json
 import hashlib
 import threading
 from datetime import datetime, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from enum import Enum
@@ -2320,6 +2321,9 @@ class PortfolioSimulator:
             'pv_mortality_claims': 0,
             'pv_disability_claims': 0,
             'expected_claims_year1': 0,
+            'expected_claims_by_year': [],
+            'insurance_premium_by_year': [],
+            'savings_premium_by_year': [],
         }
         
         # Generate each customer
@@ -2378,6 +2382,20 @@ class PortfolioSimulator:
             totals['pv_mortality_claims'] += customer['pv_mortality']
             totals['pv_disability_claims'] += customer['pv_disability']
             totals['expected_claims_year1'] += customer['expected_claims_year1']
+            _accumulate_year_vector(
+                totals['expected_claims_by_year'],
+                premium.get('expected_claims_by_year') or [],
+            )
+            term_years = int(customer['term'])
+            insurance_year = float(customer['annual_premium']) - float(customer['savings_premium'])
+            _accumulate_level(
+                totals['insurance_premium_by_year'], term_years, insurance_year,
+            )
+            _accumulate_level(
+                totals['savings_premium_by_year'],
+                term_years,
+                float(customer['savings_premium']),
+            )
 
             # Per-age money of the accepted book. PhinSafe (and any later
             # rider that must slice parents under a maximum age) reads this
@@ -2479,6 +2497,17 @@ class PortfolioSimulator:
             'total_expected_claims': round(total_expected_claims, 2),  # PV over full term
             'annual_expected_claims': round(annual_expected_claims, 2),  # Annualized
             'expected_claims_year1': round(expected_claims_year1, 2),  # Year-1, undiscounted
+            # Portfolio sum of the kernel's undiscounted claim cash flows.
+            # Discounting this vector at the pricing rate reproduces the BEL.
+            'expected_claims_by_year': [
+                float(x) for x in (totals.get('expected_claims_by_year') or [])
+            ],
+            'insurance_premium_by_year': [
+                round(float(x), 2) for x in (totals.get('insurance_premium_by_year') or [])
+            ],
+            'savings_premium_by_year': [
+                round(float(x), 2) for x in (totals.get('savings_premium_by_year') or [])
+            ],
             'total_risk_premium': round(totals['risk_premium'], 2),
             'total_savings_premium': round(totals['savings_premium'], 2),
             'loss_ratio': loss_ratio,  # Claims vs Total Premium (annual basis) - KEY METRIC
@@ -2919,6 +2948,7 @@ class PortfolioSimulator:
             'pv_mortality': components.pv_mortality_claims,
             'pv_disability': components.pv_disability_claims,
             'expected_claims_year1': components.expected_claims_year1,
+            'expected_claims_by_year': list(components.expected_claims_by_year or []),
             'integrity_hash': components.integrity_hash,
             'product_id': components.product_id,
             'age_curve_id': components.age_curve_id,
@@ -4038,9 +4068,46 @@ def _pct_auto(v: float) -> float:
     return v / 100.0 if abs(v) > 1.0 else v
 
 
+_CENT = Decimal('0.01')
+
+
+def _dec(value: Any) -> Decimal:
+    """Exact decimal from a number. Floats go through str so 0.10 stays 0.10."""
+    if isinstance(value, Decimal):
+        return value
+    if value is None or value is False:
+        return Decimal(0)
+    return Decimal(str(value))
+
+
+def _cents(value: Any) -> Decimal:
+    """Half-up to the cent. Money identities are equalities of these."""
+    return _dec(value).quantize(_CENT, rounding=ROUND_HALF_UP)
+
+
 def _money(value: float) -> float:
     """Publish a currency amount in cents. Identities are built from these."""
-    return round(float(value or 0.0), 2)
+    return float(_cents(value))
+
+
+def _accumulate_year_vector(bucket: List[float], amounts: List[Any]) -> None:
+    """Add a policy-year vector onto a portfolio vector, extending as needed."""
+    if len(bucket) < len(amounts):
+        bucket.extend([0.0] * (len(amounts) - len(bucket)))
+    for idx, amount in enumerate(amounts):
+        bucket[idx] += float(amount or 0.0)
+
+
+def _accumulate_level(bucket: List[float], years: int, annual_amount: float) -> None:
+    """Add a level annual amount to each of the first ``years`` portfolio years."""
+    years = max(0, int(years))
+    if years <= 0:
+        return
+    if len(bucket) < years:
+        bucket.extend([0.0] * (years - len(bucket)))
+    amount = float(annual_amount or 0.0)
+    for idx in range(years):
+        bucket[idx] += amount
 
 
 # =============================================================================
@@ -4389,276 +4456,303 @@ class ReserveCalculator:
             configured_rate = getattr(self.tables.config, 'discount_rate', None)
         discount_rate = 0.035 if configured_rate is None else float(configured_rate)
         discount_rate = max(-0.5, min(0.5, discount_rate))
-        # Coverage ends at the average policy term, even when the
-        # forecast window is longer or shorter.
-        coverage_years = max(1, int(round(avg_term)))
+        # Coverage runs to the last policy year on the kernel cash-flow
+        # vector. A snapshot without that vector keeps the average term.
+        raw_claim_cf = risk_metrics.get('expected_claims_by_year') or []
+        raw_insurance_prem = risk_metrics.get('insurance_premium_by_year') or []
+        raw_savings_prem = risk_metrics.get('savings_premium_by_year') or []
+        use_kernel_claims = (
+            isinstance(raw_claim_cf, list)
+            and any(float(x or 0.0) > 0.0 for x in raw_claim_cf)
+        )
+        use_premium_schedule = isinstance(raw_insurance_prem, list) and len(raw_insurance_prem) > 0
+        if use_kernel_claims:
+            coverage_years = max(1, len(raw_claim_cf))
+            claims_source = 'kernel_expected_cash_flows'
+        else:
+            coverage_years = max(1, int(round(avg_term)))
+            claims_source = 'level_annuity'
 
-        opening_reserve = config.initial_reserve
-        opening_savings = float(config.initial_savings_fund_balance or 0.0)
+        rate_d = _dec(discount_rate)
+        one = Decimal(1)
+        ra_pct_d = _dec(config.risk_adjustment_pct)
+        ibnr_pct_d = _dec(config.ibnr_pct)
+        tax_d = _dec(config.tax_pct)
+        div_d = _dec(config.dividends_pct)
+        reserve_pct_d = _dec(config.reserve_contribution_pct)
+        yield_d = _dec(config.savings_yield_pct)
+        fee_pct_d = _dec(config.management_fee_pct_of_aum)
+        alloc_d = _dec(config.savings_allocation_pct)
 
         yearly: List[Dict[str, Any]] = []
-        cumulative_tax = 0.0
-        cumulative_dividends = 0.0
-        cumulative_retained = 0.0
-        cumulative_reserve_contrib = 0.0
-        cumulative_savings_contrib = 0.0
-        cumulative_savings_yield = 0.0
-        cumulative_management_fee_income = 0.0
+        cumulative_tax = Decimal(0)
+        cumulative_dividends = Decimal(0)
+        cumulative_retained = Decimal(0)
+        cumulative_reserve_contrib = Decimal(0)
+        cumulative_savings_contrib = Decimal(0)
+        cumulative_savings_yield = Decimal(0)
+        cumulative_management_fee_income = Decimal(0)
 
-        # In-force survival through the longer of the forecast and the
-        # coverage term, so a 5-year window on a 10-year book still
-        # discounts the unexpired tail.
+        # Lapse survival through the longer of the forecast and the
+        # coverage term, so a short window still discounts the tail.
         horizon = max(projection_years, coverage_years)
         in_force_factors = [1.0]
         for y in range(1, horizon + 1):
             lr = self.tables.get_lapse_rate(y)
             in_force_factors.append(in_force_factors[-1] * max(0.0, 1.0 - lr))
 
-        annuity = 0.0
-        for t in range(1, coverage_years + 1):
-            annuity += in_force_factors[t - 1] / ((1.0 + discount_rate) ** t)
-        annuity = annuity or 1.0
-        # Nominal claims whose discounted, lapse-weighted PV equals the
-        # kernel's PV of claims. Annualising as PV/term does not unwind
-        # a present value.
-        nominal_claims_level = total_pv_claims / annuity
-        # Savings premium is the investment component (IFRS 17.B31). It
-        # is measured in the savings fund, not in fulfilment cash flows.
-        insurance_premium_annual = max(0.0, annual_premium - savings_premium)
-        pv_insurance_premiums = insurance_premium_annual * annuity
-        opening_bel = total_pv_claims
-        opening_ra = opening_bel * config.risk_adjustment_pct
-        # IFRS 17.38 initial recognition: CSM = max(0, −fulfilment cash flows).
-        fulfilment_net = pv_insurance_premiums - opening_bel - opening_ra
-        opening_csm = max(0.0, fulfilment_net)
-        loss_component_initial = max(0.0, -fulfilment_net)
+        def _scheduled(vector: List[Any], year_index: int) -> Decimal:
+            if year_index < 1 or year_index > len(vector):
+                return Decimal(0)
+            return _dec(vector[year_index - 1])
 
-        cumulative_csm_release = 0.0
-        cumulative_csm_accretion = 0.0
+        # PV of insurance premiums on the lapse curve (IFRS 17 inflows).
+        # Savings premium is the investment component (IFRS 17.B31) and
+        # stays in the savings fund, outside fulfilment cash flows.
+        pv_prem_d = Decimal(0)
+        for t in range(1, coverage_years + 1):
+            if use_premium_schedule:
+                premium_inflow = _scheduled(raw_insurance_prem, t)
+            else:
+                premium_inflow = _dec(max(0.0, annual_premium - savings_premium))
+            pv_prem_d += (
+                premium_inflow * _dec(in_force_factors[t - 1]) / ((one + rate_d) ** t)
+            )
+
+        if use_kernel_claims:
+            undiscounted = [_dec(x) for x in raw_claim_cf]
+            pv_vec = Decimal(0)
+            for t, cf in enumerate(undiscounted, start=1):
+                pv_vec += cf / ((one + rate_d) ** t)
+            published_pv = _dec(total_pv_claims)
+            if pv_vec > 0 and published_pv > 0:
+                cf_scale = published_pv / pv_vec
+            else:
+                cf_scale = Decimal(1)
+            claim_cashflows = [cf * cf_scale for cf in undiscounted]
+        else:
+            # Legacy snapshots have only a present value. Level payments
+            # whose lapse-weighted discounted PV equals that present value
+            # are the fallback, not the kernel incidence curve.
+            annuity = Decimal(0)
+            for t in range(1, coverage_years + 1):
+                annuity += _dec(in_force_factors[t - 1]) / ((one + rate_d) ** t)
+            if annuity == 0:
+                annuity = Decimal(1)
+            nominal = _dec(total_pv_claims) / annuity
+            claim_cashflows = [
+                nominal * _dec(in_force_factors[t - 1])
+                for t in range(1, coverage_years + 1)
+            ]
+            pv_vec = _dec(total_pv_claims)
+            cf_scale = Decimal(1)
+
+        # Initial recognition in cents, so
+        # CSM − loss component = PV premiums − BEL − RA exactly.
+        bel0 = _cents(total_pv_claims)
+        ra0 = _cents(bel0 * ra_pct_d)
+        pv_prem_c = _cents(pv_prem_d)
+        fulfilment_net = pv_prem_c - bel0 - ra0
+        if fulfilment_net >= 0:
+            csm0 = fulfilment_net
+            loss0 = Decimal(0)
+        else:
+            csm0 = Decimal(0)
+            loss0 = -fulfilment_net
+        opening_bel = float(bel0)
+        opening_ra = float(ra0)
+        opening_csm = float(csm0)
+        loss_component_initial = float(loss0)
+        pv_insurance_premiums = float(pv_prem_c)
+        claims_cashflow_meta = {
+            'source': claims_source,
+            'scale_to_published_pv': float(cf_scale),
+            'published_pv_claims': opening_bel,
+            'vector_pv_before_scale': float(_cents(pv_vec)),
+        }
+
         total_coverage_units = sum(
             in_force_factors[t - 1] for t in range(1, coverage_years + 1)
         ) or 1.0
-        bel_running = _money(opening_bel)
-        csm_running = _money(opening_csm)
-        loss_running = _money(loss_component_initial)
-        published_csm_release_cum = 0.0
-        reserve_running = _money(config.initial_reserve)
-        savings_running = _money(config.initial_savings_fund_balance)
+        bel_running = bel0
+        csm_running = csm0
+        loss_running = loss0
+        published_csm_release_cum = Decimal(0)
+        reserve_running = _cents(config.initial_reserve)
+        savings_running = _cents(config.initial_savings_fund_balance)
+        bel_terminal_unadjusted = None
 
         for year_index in range(1, projection_years + 1):
-            # Contracts mature at the coverage term. Later forecast years
-            # have no insurance cash flows left to project.
             if year_index <= coverage_years:
                 lapse_rate = self.tables.get_lapse_rate(year_index)
                 in_force_factor = in_force_factors[year_index - 1]
-                in_force_claims = nominal_claims_level * in_force_factor
             else:
                 lapse_rate = 0.0
                 in_force_factor = 0.0
-                in_force_claims = 0.0
-            in_force_premium = annual_premium * in_force_factor
+            surv_d = _dec(in_force_factor)
 
-            # Profit waterfall:
-            operating_profit = sim_net_profit * in_force_factor
-            tax_amount = operating_profit * config.tax_pct
-            after_tax_profit = operating_profit - tax_amount
-            dividends = after_tax_profit * config.dividends_pct
-            retained = after_tax_profit - dividends
+            if year_index > coverage_years:
+                premium_base = Decimal(0)
+                priced_sav_base = Decimal(0)
+            elif use_premium_schedule:
+                priced_sav_base = _scheduled(raw_savings_prem, year_index)
+                premium_base = _scheduled(raw_insurance_prem, year_index) + priced_sav_base
+            else:
+                premium_base = _dec(annual_premium)
+                priced_sav_base = _dec(savings_premium)
 
-            reserve_contribution = retained * config.reserve_contribution_pct
+            premium_p = _cents(premium_base * surv_d)
+            priced_sav_p = _cents(priced_sav_base * surv_d)
+            if year_index <= len(claim_cashflows):
+                claims_p = _cents(claim_cashflows[year_index - 1])
+            else:
+                claims_p = Decimal(0)
+            pricing_claims_p = _cents(_dec(annual_expected_claims) * surv_d)
+            post_hoc_p = _cents(premium_p * alloc_d)
 
-            # Savings contribution sources (cumulative AUM model):
-            # 1. The priced savings_premium component charged to each policy
-            #    (this is the modern path; equals 0 for a pure-risk product).
-            # 2. The legacy post-hoc allocation knob, kept for backwards
-            #    compatibility with existing reserve runs that set
-            #    savings_allocation_pct > 0.
-            priced_savings_contribution = savings_premium * in_force_factor
-            post_hoc_savings_contribution = (
-                in_force_premium * config.savings_allocation_pct
-            )
-            savings_contribution = (
-                priced_savings_contribution + post_hoc_savings_contribution
-            )
+            # Profit bridge stays on the lifetime-annualised claims basis
+            # (PV / term). The Claims column is the kernel cash flow used
+            # by BEL and IBNR; the two are different quantities.
+            op_p = premium_p - priced_sav_p - pricing_claims_p
+            tax_p = _cents(op_p * tax_d)
+            after_p = op_p - tax_p
+            div_p = _cents(after_p * div_d) if after_p > 0 else Decimal(0)
+            retained_p = after_p - div_p
+            reserve_p = _cents(retained_p * reserve_pct_d)
+            if reserve_running + reserve_p < 0:
+                reserve_p = -reserve_running
+            undist_p = retained_p - reserve_p
+            reserve_close_p = reserve_running + reserve_p
 
-            # IBNR provision: incurred-claims method (shared provision function)
-            ibnr = ibnr_provision(in_force_claims, config.ibnr_pct,
-                                  expected_claims_source='in_force_expected_claims')['ibnr']
+            # BEL_close = BEL_open + round(BEL_open × i) − expected claims.
+            # A final-year residual under $1 is an explicit rounding plug
+            # so interest stays equal to the locked-in rate.
+            bel_open_p = bel_running
+            bel_interest_p = _cents(bel_open_p * rate_d)
+            bel_unadj = bel_open_p + bel_interest_p - claims_p
+            bel_rounding_p = Decimal(0)
+            if year_index == coverage_years:
+                bel_terminal_unadjusted = bel_unadj
+                if abs(bel_unadj) < 1:
+                    bel_rounding_p = bel_unadj
+                    bel_close_p = Decimal(0)
+                else:
+                    bel_close_p = bel_unadj
+            else:
+                bel_close_p = bel_unadj
 
-            # IFRS 17 GMM roll-forward (paras 40–44, B96–B119).
-            # BEL_close = BEL_open × (1+i) − expected claims.
-            # RA is the percentage-of-BEL practical expedient (B91), so it
-            # moves with the BEL: RA_close = RA_open × (1+i) − RA release.
-            # CSM accretes at the locked-in rate, then releases by coverage
-            # units still to be provided (straight line = one unit per
-            # remaining coverage year).
-            bel_opening_year = bel_running
-            bel_interest = bel_opening_year * discount_rate
-            bel_balance = bel_opening_year + bel_interest - in_force_claims
-            if abs(bel_balance) < 0.01:
-                bel_balance = 0.0
-            ra_opening_year = bel_opening_year * config.risk_adjustment_pct
-            ra_balance = bel_balance * config.risk_adjustment_pct
-            ra_interest = ra_opening_year * discount_rate
-            ra_release = ra_opening_year + ra_interest - ra_balance
+            ra_open_p = _cents(bel_open_p * ra_pct_d)
+            ra_close_p = _cents(bel_close_p * ra_pct_d)
+            ra_interest_p = _cents(ra_open_p * rate_d)
+            ra_release_p = ra_open_p + ra_interest_p - ra_close_p
+            ibnr_p = _cents(claims_p * ibnr_pct_d)
 
-            csm_opening_year = csm_running
-            if year_index <= coverage_years and csm_opening_year > 1e-9:
-                csm_accretion = csm_opening_year * discount_rate
-                csm_after_accretion = csm_opening_year + csm_accretion
+            csm_open_p = csm_running
+            if year_index <= coverage_years and csm_open_p > 0:
                 if config.csm_release_pattern == 'coverage_units':
                     remaining_units = sum(
                         in_force_factors[t - 1]
                         for t in range(year_index, coverage_years + 1)
                     )
                     current_units = in_force_factors[year_index - 1]
-                    csm_share_basis = (
-                        current_units / remaining_units if remaining_units > 1e-12 else 1.0
+                    share = (
+                        _dec(current_units) / _dec(remaining_units)
+                        if remaining_units > 1e-12 else Decimal(1)
                     )
                 else:
                     years_left = max(1, coverage_years - year_index + 1)
-                    csm_share_basis = 1.0 / years_left
-                csm_release = min(csm_after_accretion, csm_after_accretion * csm_share_basis)
-                csm_balance = max(0.0, csm_after_accretion - csm_release)
-            else:
-                csm_accretion = 0.0
-                csm_release = 0.0
-                csm_share_basis = 0.0
-                csm_balance = 0.0 if year_index > coverage_years else csm_opening_year
-            csm_net_change = csm_balance - csm_opening_year
-            cumulative_csm_release += csm_release
-            cumulative_csm_accretion += csm_accretion
-            # LRC (BEL + RA + CSM) plus LIC (IBNR). IBNR is incurred-but-not
-            # paid and is not inside the remaining-coverage BEL.
-            ifrs17_total_liability = bel_balance + ra_balance + csm_balance + ibnr
-
-            closing_reserve = opening_reserve + reserve_contribution
-
-            # ----- Savings fund AUM accumulation (compounded annually) -----
-            # Sequence per actuarial convention: contribute at start, yield
-            # on the (opening + contribution) base over the year, then the
-            # management fee accrues on the year-end balance (the
-            # company's AUM-based fee income).
-            opening_savings_before = opening_savings
-            savings_yield_amount = (opening_savings + savings_contribution) * config.savings_yield_pct
-            gross_closing_aum = opening_savings + savings_contribution + savings_yield_amount
-            management_fee_income = gross_closing_aum * config.management_fee_pct_of_aum
-            closing_savings = gross_closing_aum - management_fee_income
-            monthly_contribution = savings_contribution / 12.0
-
-            # Published cents. Every closing balance below is defined from
-            # the rounded pieces, so the row reconciles to the cent.
-            premium_p = _money(annual_premium * in_force_factor)
-            claims_p = _money(in_force_claims)
-            pricing_claims_p = _money(annual_expected_claims * in_force_factor)
-            priced_sav_p = _money(savings_premium * in_force_factor)
-            post_hoc_p = _money(premium_p * config.savings_allocation_pct)
-            op_p = _money(premium_p - priced_sav_p - pricing_claims_p)
-            tax_p = _money(op_p * config.tax_pct)
-            after_p = _money(op_p - tax_p)
-            div_p = _money(after_p * config.dividends_pct) if after_p > 0 else 0.0
-            retained_p = _money(after_p - div_p)
-            reserve_p = _money(retained_p * config.reserve_contribution_pct)
-            if reserve_running + reserve_p < 0:
-                reserve_p = _money(-reserve_running)
-            undist_p = _money(retained_p - reserve_p)
-            reserve_close_p = _money(reserve_running + reserve_p)
-
-            bel_open_p = bel_running
-            bel_interest_p = _money(bel_open_p * discount_rate)
-            bel_close_p = _money(bel_open_p + bel_interest_p - claims_p)
-            if year_index == coverage_years and abs(bel_close_p) < 1.0:
-                bel_interest_p = _money(claims_p - bel_open_p)
-                bel_close_p = 0.0
-            ra_open_p = _money(bel_open_p * config.risk_adjustment_pct)
-            ra_close_p = _money(bel_close_p * config.risk_adjustment_pct)
-            ra_interest_p = _money(ra_open_p * discount_rate)
-            ra_release_p = _money(ra_open_p + ra_interest_p - ra_close_p)
-            ibnr_p = _money(claims_p * config.ibnr_pct)
-
-            csm_open_p = csm_running
-            if year_index <= coverage_years and csm_open_p > 0:
-                csm_accr_p = _money(csm_open_p * discount_rate)
-                csm_after_p = _money(csm_open_p + csm_accr_p)
-                csm_rel_p = _money(csm_after_p * csm_share_basis)
+                    share = Decimal(1) / Decimal(years_left)
+                csm_accr_p = _cents(csm_open_p * rate_d)
+                csm_after_p = csm_open_p + csm_accr_p
+                csm_rel_p = _cents(csm_after_p * share)
                 if year_index == coverage_years or csm_rel_p > csm_after_p:
                     csm_rel_p = csm_after_p
-                csm_close_p = _money(csm_after_p - csm_rel_p)
+                csm_close_p = csm_after_p - csm_rel_p
             else:
-                csm_accr_p = 0.0
-                csm_rel_p = 0.0
-                csm_close_p = 0.0
-            csm_net_p = _money(csm_close_p - csm_open_p)
+                share = Decimal(0)
+                csm_accr_p = Decimal(0)
+                csm_rel_p = Decimal(0)
+                csm_close_p = Decimal(0) if year_index > coverage_years else csm_open_p
+            csm_net_p = csm_close_p - csm_open_p
 
-            if year_index <= coverage_years and loss_running > 0:
-                lc_rel_p = _money(loss_running * (csm_share_basis or (1.0 / max(1, coverage_years - year_index + 1))))
-                if year_index == coverage_years or lc_rel_p > loss_running:
-                    lc_rel_p = loss_running
-                lc_close_p = _money(loss_running - lc_rel_p)
-            else:
-                lc_rel_p = 0.0
-                lc_close_p = 0.0
             lc_open_p = loss_running
+            if year_index <= coverage_years and lc_open_p > 0:
+                if share == 0:
+                    years_left = max(1, coverage_years - year_index + 1)
+                    lc_share = Decimal(1) / Decimal(years_left)
+                else:
+                    lc_share = share
+                lc_rel_p = _cents(lc_open_p * lc_share)
+                if year_index == coverage_years or lc_rel_p > lc_open_p:
+                    lc_rel_p = lc_open_p
+                lc_close_p = lc_open_p - lc_rel_p
+            else:
+                lc_rel_p = Decimal(0)
+                lc_close_p = Decimal(0)
 
             sav_open_p = savings_running
-            contrib_p = _money(priced_sav_p + post_hoc_p)
-            yield_p = _money((sav_open_p + contrib_p) * config.savings_yield_pct)
-            gross_p = _money(sav_open_p + contrib_p + yield_p)
-            fee_p = _money(gross_p * config.management_fee_pct_of_aum)
-            sav_close_p = _money(gross_p - fee_p)
-            sav_net_p = _money(sav_close_p - sav_open_p)
-            monthly_p = _money(contrib_p / 12.0)
-            liability_p = _money(bel_close_p + ra_close_p + csm_close_p + ibnr_p)
-            published_csm_release_cum = _money(published_csm_release_cum + csm_rel_p)
+            contrib_p = priced_sav_p + post_hoc_p
+            yield_p = _cents((sav_open_p + contrib_p) * yield_d)
+            gross_p = sav_open_p + contrib_p + yield_p
+            fee_p = _cents(gross_p * fee_pct_d)
+            sav_close_p = gross_p - fee_p
+            sav_net_p = sav_close_p - sav_open_p
+            monthly_p = _cents(contrib_p / Decimal(12))
+            liability_p = bel_close_p + ra_close_p + csm_close_p + ibnr_p
+            published_csm_release_cum += csm_rel_p
+
+            def _f(amount: Decimal) -> float:
+                return float(amount)
 
             yearly.append({
                 'year': year_index,
                 'in_force_factor': round(in_force_factor, 6),
                 'lapse_rate_used': round(lapse_rate, 4),
-                'in_force_premium': premium_p,
-                'in_force_expected_claims': claims_p,
-                'pricing_basis_claims': pricing_claims_p,
-                'operating_profit': op_p,
-                'tax': tax_p,
-                'after_tax_profit': after_p,
-                'dividends': div_p,
-                'retained_earnings': retained_p,
-                'reserve_contribution': reserve_p,
-                'closing_reserve': reserve_close_p,
-                'ibnr_provision': ibnr_p,
+                'in_force_premium': _f(premium_p),
+                'in_force_expected_claims': _f(claims_p),
+                'pricing_basis_claims': _f(pricing_claims_p),
+                'operating_profit': _f(op_p),
+                'tax': _f(tax_p),
+                'after_tax_profit': _f(after_p),
+                'dividends': _f(div_p),
+                'retained_earnings': _f(retained_p),
+                'reserve_contribution': _f(reserve_p),
+                'closing_reserve': _f(reserve_close_p),
+                'ibnr_provision': _f(ibnr_p),
                 'ifrs17': {
-                    'bel_opening': bel_open_p,
-                    'bel_interest': bel_interest_p,
-                    'bel_balance': bel_close_p,
-                    'risk_adjustment_opening': ra_open_p,
-                    'risk_adjustment_interest': ra_interest_p,
-                    'risk_adjustment_release': ra_release_p,
-                    'risk_adjustment': ra_close_p,
-                    'csm_release': csm_rel_p,
-                    'csm_accretion': csm_accr_p,
-                    'csm_net_change': csm_net_p,
-                    'csm_balance': csm_close_p,
-                    'csm_opening_year': csm_open_p,
-                    'csm_cumulative_release': published_csm_release_cum,
-                    'csm_share_of_coverage_units': round(csm_share_basis, 6),
-                    'loss_component_opening': lc_open_p,
-                    'loss_component_release': lc_rel_p,
-                    'loss_component_balance': lc_close_p,
-                    'total_liability': liability_p,
+                    'bel_opening': _f(bel_open_p),
+                    'bel_interest': _f(bel_interest_p),
+                    'bel_rounding': _f(bel_rounding_p),
+                    'bel_balance': _f(bel_close_p),
+                    'risk_adjustment_opening': _f(ra_open_p),
+                    'risk_adjustment_interest': _f(ra_interest_p),
+                    'risk_adjustment_release': _f(ra_release_p),
+                    'risk_adjustment': _f(ra_close_p),
+                    'csm_release': _f(csm_rel_p),
+                    'csm_accretion': _f(csm_accr_p),
+                    'csm_net_change': _f(csm_net_p),
+                    'csm_balance': _f(csm_close_p),
+                    'csm_opening_year': _f(csm_open_p),
+                    'csm_cumulative_release': _f(published_csm_release_cum),
+                    'csm_share_of_coverage_units': round(float(share), 10),
+                    'loss_component_opening': _f(lc_open_p),
+                    'loss_component_release': _f(lc_rel_p),
+                    'loss_component_balance': _f(lc_close_p),
+                    'total_liability': _f(liability_p),
                 },
                 'savings_fund': {
-                    'opening_balance': sav_open_p,
-                    'monthly_contribution': monthly_p,
-                    'contribution': contrib_p,
-                    'priced_savings_contribution': priced_sav_p,
-                    'post_hoc_allocation_contribution': post_hoc_p,
-                    'yield': yield_p,
-                    'gross_closing_aum_before_fee': gross_p,
-                    'management_fee_income': fee_p,
-                    'net_change': sav_net_p,
-                    'closing_balance': sav_close_p,
+                    'opening_balance': _f(sav_open_p),
+                    'monthly_contribution': _f(monthly_p),
+                    'contribution': _f(contrib_p),
+                    'priced_savings_contribution': _f(priced_sav_p),
+                    'post_hoc_allocation_contribution': _f(post_hoc_p),
+                    'yield': _f(yield_p),
+                    'gross_closing_aum_before_fee': _f(gross_p),
+                    'management_fee_income': _f(fee_p),
+                    'net_change': _f(sav_net_p),
+                    'closing_balance': _f(sav_close_p),
                 },
-                'undistributed_earnings': undist_p,
+                'undistributed_earnings': _f(undist_p),
             })
 
             reserve_running = reserve_close_p
@@ -4666,8 +4760,6 @@ class ReserveCalculator:
             bel_running = bel_close_p
             csm_running = csm_close_p
             loss_running = lc_close_p
-            opening_reserve = reserve_close_p
-            opening_savings = sav_close_p
             cumulative_tax += tax_p
             cumulative_dividends += div_p
             cumulative_retained += retained_p
@@ -4675,6 +4767,16 @@ class ReserveCalculator:
             cumulative_savings_contrib += contrib_p
             cumulative_savings_yield += yield_p
             cumulative_management_fee_income += fee_p
+
+        opening_reserve = float(reserve_running)
+        opening_savings = float(savings_running)
+        cumulative_tax = float(cumulative_tax)
+        cumulative_dividends = float(cumulative_dividends)
+        cumulative_retained = float(cumulative_retained)
+        cumulative_reserve_contrib = float(cumulative_reserve_contrib)
+        cumulative_savings_contrib = float(cumulative_savings_contrib)
+        cumulative_savings_yield = float(cumulative_savings_yield)
+        cumulative_management_fee_income = float(cumulative_management_fee_income)
 
         # Effective compounded savings yield over the projection horizon:
         # CAGR(closing_balance, sum_of_contributions, years).
@@ -4870,7 +4972,7 @@ class ReserveCalculator:
                     'applies': config.csm_release_pattern == 'coverage_units',
                 },
                 'bel': {
-                    'formula': 'bel_y = bel_{y-1} × (1+i) − expected_claims_y',
+                    'formula': 'bel_y = bel_{y-1} + round(bel_{y-1}×i, 2) − expected_claims_y − bel_rounding_y',
                 },
                 'risk_adjustment': {
                     'method': 'percentage_of_bel',
@@ -4895,13 +4997,13 @@ class ReserveCalculator:
             'yearly_projection': yearly,
             'totals': totals,
             'opening_balances': {
-                'reserve': round(config.initial_reserve, 2),
-                'bel': round(opening_bel, 2),
-                'risk_adjustment': round(opening_ra, 2),
-                'csm': round(opening_csm, 2),
-                'loss_component': round(loss_component_initial, 2),
-                'pv_insurance_premiums': round(pv_insurance_premiums, 2),
-                'savings_fund': round(config.initial_savings_fund_balance, 2),
+                'reserve': float(_cents(config.initial_reserve)),
+                'bel': float(_cents(opening_bel)),
+                'risk_adjustment': float(_cents(opening_ra)),
+                'csm': float(_cents(opening_csm)),
+                'loss_component': float(_cents(loss_component_initial)),
+                'pv_insurance_premiums': float(_cents(pv_insurance_premiums)),
+                'savings_fund': float(_cents(config.initial_savings_fund_balance)),
             },
             'savings_allocation': savings_allocation,
             'csm_reconciliation': csm_reconciliation,
@@ -4949,7 +5051,7 @@ class ReserveCalculator:
                 'csm_per_year_continuity_holds': csm_reconciliation['data_integrity']['per_year_continuity_pass'],
                 'csm_sum_reconciles_to_opening': csm_reconciliation['data_integrity']['sum_of_releases_plus_closing_equals_opening'],
                 'csm_release_non_negative': csm_reconciliation['data_integrity']['release_non_negative'],
-                # BEL_y = BEL_{y-1} × (1+i) − claims_y
+                # BEL_y = BEL_{y-1} + round(BEL_{y-1}×i) − claims_y − rounding_y
                 'bel_rollforward_holds': all(
                     abs(
                         row['ifrs17']['bel_balance']
@@ -4957,6 +5059,32 @@ class ReserveCalculator:
                             row['ifrs17']['bel_opening']
                             + row['ifrs17']['bel_interest']
                             - row['in_force_expected_claims']
+                            - row['ifrs17'].get('bel_rounding', 0.0)
+                        )
+                    ) < 0.001
+                    for row in yearly
+                ),
+                'bel_interest_equals_locked_in_rate': all(
+                    abs(
+                        row['ifrs17']['bel_interest']
+                        - _money(row['ifrs17']['bel_opening'] * discount_rate)
+                    ) < 0.001
+                    for row in yearly
+                ),
+                'bel_terminal_rounding_within_dollar': (
+                    bel_terminal_unadjusted is None
+                    or abs(float(bel_terminal_unadjusted)) < 1.0
+                ),
+                'opening_fulfilment_identity_holds': abs(
+                    (opening_csm - loss_component_initial)
+                    - (pv_insurance_premiums - opening_bel - opening_ra)
+                ) < 0.001,
+                'csm_net_change_equals_accretion_minus_release': all(
+                    abs(
+                        row['ifrs17']['csm_net_change']
+                        - (
+                            row['ifrs17']['csm_accretion']
+                            - row['ifrs17']['csm_release']
                         )
                     ) < 0.001
                     for row in yearly
@@ -5037,7 +5165,9 @@ class ReserveCalculator:
                 'csm_release_pattern': config.csm_release_pattern,
                 'investment_component': 'savings_premium_measured_in_savings_fund',
                 'csm_initial_recognition': 'max(0, pv_insurance_premiums - pv_claims - ra)',
-                'bel_rollforward': 'bel_close = bel_open * (1+i) - expected_claims',
+                'bel_rollforward': 'bel_close = bel_open + round(bel_open*i, 2) - expected_claims - bel_rounding',
+                'claims_cashflow_basis': claims_source,
+                'claims_cashflow': claims_cashflow_meta,
             },
             'ibnr_methodology': {
                 'method': 'incurred_claims_pct',
