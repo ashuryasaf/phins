@@ -3750,6 +3750,8 @@
                 </table>
               </div>
               <p id="sandbox-snapshot-integrity" class="micro-copy" style="margin-top:8px;"></p>
+              <h5 style="margin-top:12px;">Rate tables, underwriting and kernel claims</h5>
+              <div id="sandbox-rule-integrity"></div>
             </div>
 
             <div id="sandbox-tab-underwriting" class="sandbox-tab-panel">
@@ -5792,11 +5794,47 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           <p>Count: <strong>${fmt(sim.declined.count)}</strong> | Coverage Declined: <strong>${fmtCurrency(sim.declined.coverage_total)}</strong></p>
           <ul>${Object.entries(sim.declined.reasons || {}).map(([k,v]) => `<li>${k}: ${v}</li>`).join('')}</ul>
         </div>
+        ${renderSimulatorRuleIntegrity(sim)}
         ${renderAgeAdlPanel(sim)}
       `;
       
       resultsDiv.innerHTML = html;
       drawAgeAdlBell(sim);
+    }
+
+    function renderSimulatorRuleIntegrity(sim) {
+      const flags = (sim && sim.rule_integrity) || {};
+      const rules = (sim && sim.underwriting_rules) || {};
+      const issuance = (sim && sim.issuance) || {};
+      const keys = Object.keys(flags).filter(k => typeof flags[k] === 'boolean' && k !== 'all_checks_pass');
+      if (!keys.length) {
+        return `<div class="results-section"><h4>Rate Tables &amp; Underwriting Rules</h4><p style="color:var(--text-light);">This snapshot has no rule ledger. Re-run the portfolio simulation.</p></div>`;
+      }
+      const cell = (ok) => {
+        const label = ok ? 'PASS' : 'FAIL';
+        const color = ok ? 'var(--success)' : 'var(--danger)';
+        return `<td style="color:${color};font-weight:600;">${label}</td>`;
+      };
+      const rows = keys.map(k => `<tr><td>${k}</td>${cell(flags[k])}</tr>`).join('');
+      const autoOn = issuance.auto_approve_enabled === true;
+      return `
+        <div class="results-section">
+          <h4>Rate Tables &amp; Underwriting Rules</h4>
+          <p style="color:var(--text-light);">
+            Every accepted life is priced on tables ${escapeHtml(rules.tables_version || sim.tables_version || '')}.
+            ADL ${rules.decline_threshold}+ is declined. Acceptance stops at age ${rules.max_acceptance_age}.
+            Disability benefits stop at ADL ${rules.disability_exclusion_threshold}.
+            ${autoOn
+              ? `Automatic approval is on: max ADL ${rules.auto_approve_max_adl}, ages ${rules.auto_approve_min_age}–${rules.auto_approve_max_age}, max coverage ${fmtCurrency(rules.auto_approve_max_coverage)}, max kernel year-1 claim probability ${(Number(rules.auto_approve_max_risk_score || 0) * 100).toFixed(1)}%. Auto-issued ${fmtCount(issuance.auto_approved || 0)}, referred ${fmtCount(issuance.referred || 0)}.`
+              : `Automatic approval is off, so the accepted book is issued. Max ADL ${rules.auto_approve_max_adl} applies when automatic approval is turned on.`}
+            Year-1 claims equal life sum × mortality q plus disability sum × benefit × disability incidence.
+          </p>
+          <table class="data-table">
+            <thead><tr><th>Check</th><th>Result</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `;
     }
 
     function renderAgeAdlPanel(sim) {
@@ -6633,12 +6671,16 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
         <h4 style="margin-top:16px;">Annual Reserve &amp; IFRS 17 Waterfall</h4>
         <p style="color:var(--text-light);">
-          Op Profit = Tax + After-tax. After-tax = Dividends + retained. Reserve Δ = retained × contribution %; the rest is undistributed earnings.
-          BEL<sub>y</sub> = BEL<sub>y−1</sub> × (1+i) − Claims. RA = RA % × BEL. CSM Δ is the net movement (accretion − release), so CSM<sub>y</sub> = CSM<sub>y−1</sub> + CSM Δ.
-          Savings Δ is the net fund movement (contribution + yield − fee), so Savings Closing = prior closing + Savings Δ.
+          Op Profit = Tax + After-tax. After-tax = Dividends + retained. Reserve Δ = retained × contribution %.
+          Claims, IBNR, BEL and RA use the pricing kernel's expected claim cash flows (${projection.ifrs17_methodology?.claims_cashflow_basis || 'kernel_expected_cash_flows'}), scaled so their present value equals the simulation BEL. IBNR = IBNR % × Claims.
+          BEL interest = round(BEL<sub>y−1</sub> × i). BEL<sub>y</sub> = BEL<sub>y−1</sub> + interest − Claims − rounding. Rounding is 0 except a final-coverage residual under $1, which runs the BEL off to zero without changing the locked-in interest.
+          RA = RA % × BEL. CSM Δ = accretion − release, so CSM<sub>y</sub> = CSM<sub>y−1</sub> + CSM Δ.
+          Savings Δ = contribution + yield − fee, so Savings Closing = prior closing + Savings Δ.
           Discount i = ${((projection.discount_rate || 0) * 100).toFixed(2)}%. Coverage = ${projection.coverage_years || projection.avg_term_years || ''} years.
-          Opening CSM ${fmtCurrency(projection.opening_balances?.csm || 0)}; loss component at initial recognition ${fmtCurrency(projection.opening_balances?.loss_component || 0)} (IFRS 17.47 when premiums do not cover the fulfilment cash flows).
+          Opening CSM ${fmtCurrency(projection.opening_balances?.csm || 0)}; loss component at initial recognition ${fmtCurrency(projection.opening_balances?.loss_component || 0)}.
+          Opening identity: CSM − loss component = PV of insurance premiums − BEL − risk adjustment.
         </p>
+        <div style="overflow-x:auto;">
         <table class="data-table">
           <thead>
             <tr>
@@ -6647,56 +6689,65 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           </thead>
           <tbody>${rows}</tbody>
         </table>
+        </div>
 
         ${(function () {
           const rec = projection.csm_reconciliation;
           if (!rec) return '';
+          const reserveCheckCell = (ok) => {
+            if (typeof ok !== 'boolean') return `<td>${ok}</td>`;
+            const label = ok ? 'PASS' : 'FAIL';
+            const color = ok ? 'var(--success)' : 'var(--danger)';
+            return `<td style="color:${color};font-weight:600;">${label}</td>`;
+          };
           const yearlyRows = (rec.yearly || []).map(r => {
             const checks = r.identity_checks || {};
             return `
               <tr>
                 <td>${r.year}</td>
                 <td>${fmtCurrency(r.opening_balance)}</td>
+                <td>${fmtCurrency(r.accretion)}</td>
                 <td>${fmtCurrency(r.release)}</td>
+                <td>${fmtCurrency(r.net_change)}</td>
                 <td>${(r.coverage_units_share * 100).toFixed(2)}%</td>
-                <td>${fmtCurrency(r.cumulative_release)}</td>
                 <td><strong>${fmtCurrency(r.closing_balance)}</strong></td>
-                <td>${checks.prev_minus_release_equals_balance ? '' : ''}</td>
-                <td>${checks.opening_minus_cumulative_equals_balance ? '' : ''}</td>
-                <td>${checks.coverage_units_share_holds ? '' : ''}</td>
+                ${reserveCheckCell(!!checks.prev_minus_release_equals_balance)}
+                ${reserveCheckCell(!!checks.opening_minus_cumulative_equals_balance)}
+                ${reserveCheckCell(!!checks.coverage_units_share_holds)}
               </tr>
             `;
           }).join('');
           const totals = rec.totals || {};
           const integrity = rec.data_integrity || {};
           const integrityRows = Object.entries(integrity).map(([k, v]) =>
-            `<tr><td>${k}</td><td>${v ? '' : ''}</td></tr>`).join('');
+            `<tr><td>${k}</td>${reserveCheckCell(v)}</tr>`).join('');
           const ident = rec.identities || {};
           const sumId = ident.sum_of_releases || {};
           return `
             <h4 style="margin-top:16px;">IFRS 17 CSM Reconciliation</h4>
             <p style="color:var(--text-light);">
               Release pattern: <strong>${rec.pattern}</strong> · Opening CSM: <strong>${fmtCurrency(rec.opening_csm)}</strong> · Projection: <strong>${rec.projection_years}</strong> yrs.
-              Each year the closing balance equals the prior balance plus accretion at the locked-in rate, minus the coverage release (IFRS 17.44). Opening + Σ accretion − Σ release equals the closing CSM.
+              Each year CSM Δ = accretion at the locked-in rate minus the coverage release, and closing CSM = opening + CSM Δ (IFRS 17.44). Opening + Σ accretion − Σ release equals the closing CSM.
             </p>
             <table class="data-table">
               <thead>
                 <tr>
                   <th>Yr</th>
                   <th>Opening</th>
-                  <th>Release (Δ)</th>
+                  <th>Accretion</th>
+                  <th>Release</th>
+                  <th>CSM Δ</th>
                   <th>Coverage-units share</th>
-                  <th>Cumulative Release</th>
                   <th>Closing</th>
-                  <th>balance − Δ </th>
-                  <th>opening − ΣΔ </th>
-                  <th>share </th>
+                  <th>open + accretion − release</th>
+                  <th>opening + Σ accretion − Σ release</th>
+                  <th>share</th>
                 </tr>
               </thead>
               <tbody>${yearlyRows}</tbody>
             </table>
             <p style="margin-top:8px;color:var(--text-light);">
-              <strong>Sum-of-releases identity:</strong> Σ release + closing = opening &nbsp;→&nbsp;
+              <strong>Roll-forward identity:</strong> ${sumId.formula || 'opening + Σ accretion − Σ release = closing'} &nbsp;→&nbsp;
               <strong>${fmtCurrency(sumId.computed)}</strong> vs expected
               <strong>${fmtCurrency(sumId.expected)}</strong>
               (Δ ${fmtCurrency(sumId.delta || 0)}).<br>
@@ -6736,8 +6787,11 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       `;
 
       const integrity = projection.data_integrity || {};
-      const integrityRows = Object.entries(integrity).map(([k, v]) =>
-        `<tr><td>${k}</td><td>${v ? '' : ''}</td></tr>`).join('');
+      const integrityRows = Object.entries(integrity).map(([k, v]) => {
+        const label = v ? 'PASS' : 'FAIL';
+        const color = v ? 'var(--success)' : 'var(--danger)';
+        return `<tr><td>${k}</td><td style="color:${color};font-weight:600;">${label}</td></tr>`;
+      }).join('');
       integrityEl.innerHTML = `
         <table class="data-table">
           <thead><tr><th>Check</th><th>Result</th></tr></thead>
@@ -8233,12 +8287,12 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const portfolio = sim.portfolio_summary || {};
       const params = sim.parameters || {};
       const requestedCount = Number(params.customer_count || portfolio.accepted_customers || 0);
-      // Render up to SANDBOX_HARD_CAP detailed accounts in the browser
-      // (100,000) so a multi-million customer simulation does not freeze
-      // the dashboard. The sandbox stats still report the full simulation
-      // count.
+      const acceptedCount = Number(portfolio.accepted_customers || 0);
+      // Render up to SANDBOX_HARD_CAP kernel-priced accepted lives. A larger
+      // book is represented by cycling that sample. Declined applicants are
+      // appended from the simulation's declined sample and are never issued.
       const SANDBOX_HARD_CAP = 100000;
-      const materialize = Math.max(1, Math.min(requestedCount || 0, SANDBOX_HARD_CAP));
+      const materialize = Math.max(0, Math.min(acceptedCount || 0, SANDBOX_HARD_CAP));
 
       // Pull averages off the simulation so each sandbox account is
       // anchored in the actual portfolio shape.
@@ -8365,108 +8419,79 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const pushedBadge = document.getElementById('sandbox-pipeline-badge');
       if (pushedBadge) pushedBadge.style.display = 'none';
 
+      const rules = sim.underwriting_rules || null;
+      const prototypes = Array.isArray(sim.priced_lives) ? sim.priced_lives : [];
+      const Snap = window.PhinsSandboxSnapshot;
+      if (!rules || !prototypes.length || !Snap || typeof Snap.issueFromRules !== 'function') {
+        renderSandbox();
+        const msg = document.getElementById('sandbox-action-msg');
+        if (msg) msg.textContent = 'This simulation has no kernel-priced lives. Re-run Portfolio Simulation so the sandbox can follow the rate tables and underwriting rules.';
+        return;
+      }
+      window.actuarySandbox.rules = rules;
+      window.actuarySandbox.kernelLives = prototypes;
       const occupations = ['Engineer', 'Teacher', 'Driver', 'Nurse', 'Manager', 'Analyst', 'Technician', 'Sales', 'Cashier', 'Designer', 'Doctor', 'Cook'];
       const givenNames = ['Asaf', 'Maya', 'Noa', 'Daniel', 'Tomer', 'Yael', 'Amir', 'Lior', 'Shira', 'Ronen', 'Carlos', 'Anika', 'Jin', 'Hiro', 'Olu'];
       const familyNames = ['Levi', 'Cohen', 'Mizrachi', 'Friedman', 'Patel', 'Garcia', 'Smith', 'Wong', 'Kim', 'Okafor', 'Rossi', 'Silva'];
-
-      const sampleAge = () => {
-        const lo = Math.min(ageMin, ageMax);
-        const hi = Math.max(ageMin, ageMax);
-        // Redraw outside the window. Clamping piled the tail onto Maximum Age.
-        for (let attempt = 0; attempt < 32; attempt++) {
-          const draw = ageDist === 'uniform'
-            ? sandboxRandInt(lo, hi)
-            : Math.trunc(sandboxGaussian(ageMean, ageStd));
-          if (draw >= lo && draw <= hi) return draw;
-        }
-        return sandboxRandInt(lo, hi);
-      };
-      const sampleCoverage = () => {
-        let c;
-        if (covDist === 'uniform') {
-          c = covMin + Math.random() * Math.max(0, covMax - covMin);
-        } else {
-          // Log-normal around the coverage median (sigma derived from the
-          // configured band width) so the shape mirrors the simulator.
-          const sigma = 0.6;
-          c = covMedian * Math.exp(sandboxGaussian(0, sigma));
-        }
-        return Math.max(covMin, Math.min(covMax, Math.round(c)));
-      };
-      const sampleTerm = () => {
-        if (termMode === 'fixed') return termFixed;
-        return sandboxRandInt(termMin, termMax);
-      };
-
-      for (let i = 0; i < materialize; i++) {
-        const seq = String(i + 1).padStart(6, '0');
+      const pushKernelAccount = (src, seq, forced) => {
+        const decision = forced || Snap.issueFromRules(src, rules);
         const id = `CUST-TESTSIM-${seq}`;
-        const age = sampleAge();
-        const gender = (Math.random() * 100 < malePct) ? 'M' : 'F';
-        const ethnicity = sandboxWeighted(ethnicityWeights);
-        // Health score: 1..10 ADL-like banded around age.
-        const ageHealth = Math.round(2 + (age - ageMin) / Math.max(1, ageMax - ageMin) * 6 + (Math.random() * 2 - 1));
-        const health = Math.max(1, Math.min(10, ageHealth));
-        // Risk: scales with health and age, plus jitter.
-        const risk = Math.max(1, Math.min(100, Math.round(health * 6 + (age - ageMin) * 0.8 + (Math.random() * 20 - 10))));
-        let uw_status = risk >= 80 ? 'declined' : (risk >= 65 ? 'pending' : 'approved');
-        if (age > maxAcceptanceAge) uw_status = 'declined';
-        const cov = sampleCoverage();
-        const term = sampleTerm();
-        // ----- Premium build (mirrors the simulator's component chain) -----
-        // risk premium anchored on the simulation's average risk premium,
-        // scaled by the customer's coverage relative to the median and risk
-        // class, then the savings add-on, expense and profit loadings are
-        // applied exactly as the pricing kernel does.
-        const covFactor = covMedian > 0 ? (cov / covMedian) : 1;
-        const riskFactor = 1 + (risk - 50) / 200;
-        const riskPremium = Math.max(60, avgRiskPremium * covFactor * riskFactor * (0.85 + Math.random() * 0.3));
-        const savingsPremium = riskPremium * savingsRate;
-        const expenseLoading = riskPremium * expenseLoadingPct;
-        const profitMargin = (riskPremium + savingsPremium + expenseLoading) * profitMarginPct;
-        const annual = Math.round(riskPremium + savingsPremium + expenseLoading + profitMargin);
-        const monthly = Math.round(annual / 12);
-        const name = `${sandboxPick(givenNames)} ${sandboxPick(familyNames)}`;
-        const occupation = sandboxPick(occupations);
-        const reliablePayer = Math.random() < SANDBOX_COLLECTION_RATE;
+        const monthly = Number(src.monthly_premium);
+        const annual = Number(src.annual_premium) || 0;
+        const eligibleAtIssue = decision.disability_eligible !== false && src.disability_eligible !== false && !src.exclude_disability;
+        const reliablePayer = decision.uw_status === 'approved' && Math.random() < SANDBOX_COLLECTION_RATE;
         window.actuarySandbox.customers.push({
-          id, name, age, gender, ethnicity, occupation,
-          health_score: health,
-          coverage_amount: cov,
-          risk_premium: Math.round(riskPremium),
-          savings_premium: Math.round(savingsPremium),
-          expense_loading: Math.round(expenseLoading),
-          profit_margin: Math.round(profitMargin),
+          id,
+          name: `${sandboxPick(givenNames)} ${sandboxPick(familyNames)}`,
+          age: Number(src.age),
+          gender: src.gender,
+          ethnicity: src.ethnicity,
+          occupation: sandboxPick(occupations),
+          smoking_status: src.smoking_status || 'nonsmoker',
+          health_score: Number(src.adl),
+          coverage_amount: Number(decision.coverage != null ? decision.coverage : src.coverage) || 0,
+          risk_premium: Number(src.risk_premium) || 0,
+          savings_premium: Number(src.savings_premium) || 0,
+          expense_loading: Number(src.expense_loading) || 0,
+          profit_margin: Number(src.profit_margin) || 0,
           savings_rate: savingsRate,
           annual_premium: annual,
-          monthly_premium: monthly,
-          term_years: term,
-          risk_score: risk,
-          uw_status,
-          // Disability is lifelong (Draft 3.1); benefit sums use age bands.
-          disability_eligible: true,
+          monthly_premium: Number.isFinite(monthly) ? monthly : Math.round((annual / 12) * 100) / 100,
+          term_years: Number(src.term) || 0,
+          risk_score: Number(src.risk_score) || 0,
+          uw_status: decision.uw_status,
+          issuance: decision.issuance,
+          disability_eligible: eligibleAtIssue,
+          disability_excluded_at_issue: !eligibleAtIssue,
+          issue_annual_premium: annual,
+          prob_mortality_year1: Number(src.prob_mortality_year1) || 0,
+          prob_disability_year1: Number(src.prob_disability_year1) || 0,
+          life_sum: Number(src.life_sum) || 0,
+          disability_sum: Math.round((Number(src.disability_sum) || 0) * (Number.isFinite(Number(src.benefit_pct)) ? Number(src.benefit_pct) : 1) * 100) / 100,
+          benefit_pct: Number(src.benefit_pct) || 0,
+          expected_claims_year1: Number(src.expected_claims_year1) || 0,
+          year1_identity_holds: src.year1_identity_holds !== false,
+          integrity_hash: src.integrity_hash || '',
           disability_share_of_life: disabilityShare,
           disability_share_of_life_post65: disabilitySharePost,
           life_share_of_coverage: lifeShare,
           life_share_of_coverage_post65: lifeSharePost,
           disability_band_age: disabilityBandAge,
           disability_max_age: disabilityMaxAge,
-          policy_status: uw_status === 'approved' ? 'active' : uw_status,
+          policy_status: decision.uw_status === 'approved' ? 'active' : decision.uw_status,
           has_claim: false,
           claim_cause: null,
           reliable_payer: reliablePayer,
           created_at: sandboxNow().toISOString(),
         });
-        // First bill on policy issue. Reliable payers auto-pay immediately so
-        // most premiums are collected; the rest stay unpaid and the policy is
-        // cancelled after the 30-day grace (see sandboxCancelLapsedPolicies).
-        if (uw_status === 'approved') {
+        if (decision.uw_status === 'approved') {
+          const acct = window.actuarySandbox.customers[window.actuarySandbox.customers.length - 1];
           window.actuarySandbox.bills.push({
             id: `BILL-TESTSIM-${seq}-001`,
             customer_id: id,
             policy_id: `POL-TESTSIM-${seq}`,
-            amount: monthly,
-            amount_paid: reliablePayer ? monthly : 0,
+            amount: acct.monthly_premium,
+            amount_paid: reliablePayer ? acct.monthly_premium : 0,
             status: reliablePayer ? 'paid' : 'outstanding',
             issued_month: 0,
             due_date: new Date(Date.now() + 30 * 86400000).toISOString(),
@@ -8474,7 +8499,20 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             created_at: sandboxNow().toISOString(),
           });
         }
+      };
+      for (let i = 0; i < materialize; i++) {
+        pushKernelAccount(prototypes[i % prototypes.length], String(i + 1).padStart(6, '0'));
       }
+      const declinedSrc = Array.isArray(sim.declined_sample) ? sim.declined_sample : [];
+      declinedSrc.forEach((src, i) => {
+        pushKernelAccount(src, `D${String(i + 1).padStart(5, '0')}`, {
+          uw_status: 'declined',
+          issuance: 'declined',
+          reason: src.reason_code || 'declined',
+          disability_eligible: false,
+          coverage: Number(src.coverage) || 0,
+        });
+      });
 
       sandboxLogEvent(
         'sim',
@@ -8577,14 +8615,55 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       setText('sandbox-stat-claims-paid', sandboxFmtMoney(claimsPaid));
       setText('sandbox-stat-bills-outstanding', sandboxFmtMoney(outstanding));
       setText('sandbox-stat-loss-ratio', sandboxFmtPct(lossRatio));
+      const ruleEl = document.getElementById('sandbox-rule-integrity');
+      if (ruleEl) {
+        const rules = sb.rules || {};
+        const Snap = window.PhinsSandboxSnapshot;
+        const decline = Number(rules.decline_threshold != null ? rules.decline_threshold : 9);
+        const maxAge = Number(rules.max_acceptance_age != null ? rules.max_acceptance_age : 65);
+        const maxAdl = Number(rules.auto_approve_max_adl != null ? rules.auto_approve_max_adl : 3);
+        let hardBreach = 0, autoBreach = 0, premiumBreach = 0, claimBreach = 0, year1Breach = 0;
+        for (const c of customers) {
+          if (c.uw_status === 'declined') continue;
+          if (Number(c.health_score) >= decline || Number(c.age) > maxAge) hardBreach += 1;
+          if (c.issuance === 'auto' && Number(c.health_score) > maxAdl) autoBreach += 1;
+          if (Snap && !Snap.premiumComponentsMatch(c)) premiumBreach += 1;
+          if (c.year1_identity_holds === false) year1Breach += 1;
+        }
+        for (const claim of claims) {
+          const owner = customers.find(c => c.id === claim.customer_id);
+          if (!owner) { claimBreach += 1; continue; }
+          if (claim.type === 'disability' && owner.disability_excluded_at_issue) claimBreach += 1;
+          const contractual = claim.type === 'mortality' ? Number(owner.life_sum) : Number(owner.disability_sum);
+          if (claim.kernel_realized && Math.abs(Number(claim.amount) - contractual) > 0.02) claimBreach += 1;
+        }
+        const checks = [
+          ['Issued lives respect decline ADL and maximum acceptance age', hardBreach === 0],
+          ['Auto-issued lives respect maximum ADL', autoBreach === 0],
+          ['Premium components sum to the kernel annual premium', premiumBreach === 0],
+          ['Year-1 claims match kernel probabilities', year1Breach === 0],
+          ['Claim amounts match the contractual life or disability sum', claimBreach === 0],
+        ];
+        const autoNote = rules.auto_approve_enabled
+          ? `Automatic issue stops at ADL ${maxAdl}.`
+          : `Automatic approval is off, so accepted lives are issued. Maximum ADL ${maxAdl} applies when automatic approval is on.`;
+        ruleEl.innerHTML = `<p style="color:var(--text-light);margin-bottom:8px;">Decline at ADL ${decline}+ and above age ${maxAge}. ${autoNote} Premiums and claim amounts are the kernel prices and contractual sums.</p><table class="data-table"><thead><tr><th>Check</th><th>Result</th></tr></thead><tbody>${
+          checks.map(([label, ok]) => `<tr><td>${label}</td><td style="color:${ok ? 'var(--success)' : 'var(--danger)'};font-weight:600;">${ok ? 'PASS' : 'FAIL'}</td></tr>`).join('')
+        }</tbody></table>`;
+      }
 
       // Underwriting tab (counts already tallied in the single pass above)
       const uwApproved = uwApprovedAll;
-      const avgRisk = customers.length ? Math.round(riskSum / customers.length) : 0;
+      const meanRisk = customers.length ? riskSum / customers.length : 0;
+      // Kernel lives store year-1 claim probability in 0–1. Older invented
+      // scores were on a 0–100 scale. Show the probability as a percent.
+      const avgRiskLabel = !customers.length
+        ? '—'
+        : (meanRisk <= 1 ? (meanRisk * 100).toFixed(2) + '%' : String(Math.round(meanRisk)));
       setText('sandbox-uw-approved', sandboxFmtCount(uwApproved));
       setText('sandbox-uw-pending', sandboxFmtCount(uwPending));
       setText('sandbox-uw-declined', sandboxFmtCount(uwDeclined));
-      setText('sandbox-uw-avg-risk', customers.length ? String(avgRisk) : '—');
+      setText('sandbox-uw-avg-risk', avgRiskLabel);
       setText('sandbox-uw-total', sandboxFmtCount(customers.length));
       const uwBody = document.getElementById('sandbox-uw-body');
       if (uwBody) {
@@ -8597,7 +8676,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
               <td>${esc(c.age)}</td>
               <td>ADL ${esc(c.health_score)}</td>
               <td>${sandboxFmtMoney(c.coverage_amount)}</td>
-              <td>${esc(c.risk_score)}</td>
+              <td>${(Number(c.risk_score) <= 1 ? (Number(c.risk_score) * 100).toFixed(2) + '%' : esc(c.risk_score))}</td>
               <td><span class="sandbox-status ${esc(c.uw_status)}">${esc(c.uw_status)}</span></td>
             </tr>
           `).join('');
@@ -8675,6 +8754,112 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       renderSandboxProjection();
     }
 
+    function sandboxSettlePaidClaim(target, paidAt) {
+      const sb = window.actuarySandbox;
+      const customers = sb.customers || [];
+      const contract = sb.contract || {};
+      const owner = customers.find(c => c.id === target.customer_id);
+      if (!owner) return;
+      const ts = paidAt || sandboxNow().toISOString();
+      const bandAge = Number(contract.disability_band_age != null ? contract.disability_band_age : 65);
+      if (target.type === 'mortality') {
+        owner.policy_status = 'terminated';
+        owner.terminated_at = ts;
+        sb.bills.forEach(b => {
+          if (b.customer_id === owner.id && (b.status === 'outstanding' || b.status === 'overdue')) {
+            b.status = 'voided';
+          }
+        });
+        sandboxLogEvent('claim', `Death claim ${target.id} paid ${sandboxFmtMoney(target.paid_amount)} — policy ${target.policy_id} terminated.`, 'breaking');
+        return;
+      }
+      if (target.type !== 'disability') return;
+      const continues = contract.pre65_disability_continues_policy !== false;
+      const exclusivePost = contract.post65_claims_mutually_exclusive !== false;
+      const lifeRemainShare = Number(contract.post_disability_life_share_of_face != null ? contract.post_disability_life_share_of_face : 0.75);
+      const premFactor = Number(contract.post_disability_premium_factor != null ? contract.post_disability_premium_factor : 1.0);
+      const face = Number(owner.coverage_amount) || 0;
+      const combinedMonthly = Number(owner.monthly_premium) || 0;
+      const ageAtClaim = Number(owner.age) || 0;
+      const lifeShare = Number(contract.life_share_of_coverage != null ? contract.life_share_of_coverage : 1.0);
+      const lifeSharePost = Number(contract.life_share_of_coverage_post65 != null ? contract.life_share_of_coverage_post65 : 0.25);
+      const applyContinuation = (remainingLife, label) => {
+        const ongoingMonthly = Math.round(combinedMonthly * premFactor * 100) / 100;
+        owner.coverage_amount = remainingLife;
+        owner.life_sum = remainingLife;
+        owner.pre_disability_combined_monthly = combinedMonthly;
+        owner.post_disability_premium_factor = premFactor;
+        owner.monthly_premium = ongoingMonthly;
+        owner.annual_premium = Math.round(ongoingMonthly * 12);
+        owner.disability_layer_closed = true;
+        owner.disability_eligible = false;
+        owner.prob_disability_year1 = 0;
+        sandboxLogEvent(
+          'claim',
+          `Disability claim ${target.id} paid ${sandboxFmtMoney(target.paid_amount)}; ${label} life ${sandboxFmtMoney(remainingLife)} and premium ${sandboxFmtMoney(ongoingMonthly)}/mo (${(premFactor * 100).toFixed(0)}% of prior combined).`,
+          'info'
+        );
+      };
+      const terminatePolicy = (label) => {
+        owner.policy_status = 'terminated';
+        owner.terminated_at = ts;
+        sb.bills.forEach(b => {
+          if (b.customer_id === owner.id && (b.status === 'outstanding' || b.status === 'overdue')) {
+            b.status = 'voided';
+          }
+        });
+        sandboxLogEvent('claim', `${label} ${target.id} paid ${sandboxFmtMoney(target.paid_amount)} — policy terminated.`, 'breaking');
+      };
+      if (ageAtClaim < bandAge && continues) {
+        applyContinuation(Math.round(face * lifeRemainShare), 'policy continues with');
+      } else if (ageAtClaim < bandAge && !continues) {
+        terminatePolicy('Pre-65 disability claim (continuation off)');
+      } else if (ageAtClaim >= bandAge && exclusivePost) {
+        terminatePolicy('Post-65 disability claim (mutually exclusive)');
+      } else if (ageAtClaim >= bandAge && !exclusivePost && continues) {
+        const post = ageAtClaim >= bandAge;
+        applyContinuation(Math.round(face * (post ? lifeSharePost : lifeShare)), 'post-65 continuation with');
+      } else {
+        terminatePolicy('Disability claim');
+      }
+    }
+
+    function sandboxRealizeKernelClaims() {
+      const sb = window.actuarySandbox;
+      const Snap = window.PhinsSandboxSnapshot;
+      if (!Snap || typeof Snap.kernelClaimEvent !== 'function') return;
+      const month = (sb.projection && sb.projection.monthsElapsed) || 0;
+      const ts = sandboxNow().toISOString();
+      let opened = 0;
+      for (const cust of sb.customers) {
+        const event = Snap.kernelClaimEvent(cust, Math.random());
+        if (!event || !(event.amount >= 0)) continue;
+        const seq = String(cust.id || '').split('-').pop();
+        const claim = {
+          id: `CLM-TESTSIM-M${month}-${seq}`,
+          customer_id: cust.id,
+          policy_id: `POL-TESTSIM-${seq}`,
+          type: event.type,
+          cause: event.cause,
+          amount: event.amount,
+          approved_amount: event.amount,
+          paid_amount: event.amount,
+          status: 'paid',
+          kernel_realized: true,
+          reported_at: ts,
+          paid_at: ts,
+        };
+        sb.claims.push(claim);
+        cust.has_claim = true;
+        cust.claim_cause = event.type;
+        opened += 1;
+        sandboxSettlePaidClaim(claim, ts);
+      }
+      if (opened) {
+        sandboxLogEvent('claim', `Kernel month ${month}: realized ${opened} claim${opened === 1 ? '' : 's'} at the year-1 rate-table probabilities.`, 'info');
+      }
+    }
+
     function sandboxTickLifecycle() {
       const sb = window.actuarySandbox;
       const customers = sb.customers;
@@ -8685,7 +8870,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // billed against the forecast.
       const action = sandboxWeighted({
         new_customer: 8,
-        new_claim: 14,
+        // Claim incidence is the kernel year-1 probability, realized once
+        // per elapsed month. A random claim draw would ignore q(x) and i(x).
+        new_claim: 0,
         approve_claim: 10,
         pay_claim: 8,
         new_bill: 0,
@@ -8723,71 +8910,80 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
 
       if (action === 'new_customer' && customers.length < 100000) {
+        const prototypes = sb.kernelLives || [];
+        const Snap = window.PhinsSandboxSnapshot;
+        const rules = sb.rules;
+        if (!prototypes.length || !Snap || !rules) return;
+        const src = sandboxPick(prototypes);
+        const decision = Snap.issueFromRules(src, rules);
         const idx = customers.length + 1;
-        const id = `CUST-TESTSIM-${String(idx).padStart(6, '0')}`;
-        // Live joiners respect the accepted age band (capped at max acceptance age).
-        const joinLo = Math.min(bandMin, bandMax);
-        const joinHi = Math.max(bandMin, bandMax);
-        const age = sandboxRandInt(joinLo, joinHi);
-        const health = sandboxRandInt(1, 10);
-        const risk = Math.max(1, Math.min(100, Math.round(health * 6 + (age - joinLo) * 0.8 + sandboxRandInt(-10, 10))));
-        const acceptanceCap = Number(contract.max_acceptance_age != null ? contract.max_acceptance_age : 65);
-        let uw_status = risk >= 80 ? 'declined' : (risk >= 65 ? 'pending' : 'approved');
-        if (age > acceptanceCap) uw_status = 'declined';
-        const cov = sandboxRandInt(50000, 1000000);
-        // Price the new joiner through the same component chain as Generate
-        // so the contract being priced stays consistent across the book.
-        const riskPremium = Math.max(60, sandboxRandInt(600, 3400) * (1 + (risk - 50) / 200));
-        const savingsPremium = riskPremium * savingsRate;
-        const expenseLoading = riskPremium * expenseLoadingPct;
-        const profitMargin = (riskPremium + savingsPremium + expenseLoading) * profitMarginPct;
-        const annual = Math.round(riskPremium + savingsPremium + expenseLoading + profitMargin);
+        const seq = String(idx).padStart(6, '0');
+        const id = `CUST-TESTSIM-${seq}`;
+        const annual = Number(src.annual_premium) || 0;
+        const eligibleAtIssue = decision.disability_eligible !== false && src.disability_eligible !== false && src.exclude_disability !== true;
+        const monthly = Number.isFinite(Number(src.monthly_premium))
+          ? Number(src.monthly_premium)
+          : Math.round((annual / 12) * 100) / 100;
+        const reliable = decision.uw_status === 'approved' && Math.random() < SANDBOX_COLLECTION_RATE;
         customers.push({
-          id, name: `Sandbox ${idx}`, age, gender: Math.random() < 0.5 ? 'M' : 'F',
-          ethnicity: 'caucasian', occupation: 'Other',
-          health_score: health,
-          coverage_amount: cov,
-          risk_premium: Math.round(riskPremium),
-          savings_premium: Math.round(savingsPremium),
-          expense_loading: Math.round(expenseLoading),
-          profit_margin: Math.round(profitMargin),
+          id, name: `Sandbox ${idx}`,
+          age: Number(src.age),
+          gender: src.gender,
+          ethnicity: src.ethnicity || 'caucasian',
+          occupation: 'Other',
+          smoking_status: src.smoking_status || 'nonsmoker',
+          health_score: Number(src.adl),
+          coverage_amount: Number(decision.coverage != null ? decision.coverage : src.coverage) || 0,
+          risk_premium: Number(src.risk_premium) || 0,
+          savings_premium: Number(src.savings_premium) || 0,
+          expense_loading: Number(src.expense_loading) || 0,
+          profit_margin: Number(src.profit_margin) || 0,
           savings_rate: savingsRate,
           annual_premium: annual,
-          monthly_premium: Math.round(annual / 12),
-          term_years: sandboxRandInt(5, 30),
-          risk_score: risk,
-          uw_status,
-          disability_eligible: true,
+          monthly_premium: monthly,
+          term_years: Number(src.term) || 0,
+          risk_score: Number(src.risk_score) || 0,
+          uw_status: decision.uw_status,
+          issuance: decision.issuance,
+          disability_eligible: eligibleAtIssue,
+          disability_excluded_at_issue: !eligibleAtIssue,
+          issue_annual_premium: annual,
+          prob_mortality_year1: Number(src.prob_mortality_year1) || 0,
+          prob_disability_year1: Number(src.prob_disability_year1) || 0,
+          life_sum: Number(src.life_sum) || 0,
+          disability_sum: Math.round((Number(src.disability_sum) || 0) * (Number.isFinite(Number(src.benefit_pct)) ? Number(src.benefit_pct) : 1) * 100) / 100,
+          benefit_pct: Number(src.benefit_pct) || 0,
+          expected_claims_year1: Number(src.expected_claims_year1) || 0,
+          year1_identity_holds: src.year1_identity_holds !== false,
+          integrity_hash: src.integrity_hash || '',
           disability_share_of_life: disabilityShare,
           disability_share_of_life_post65: disabilitySharePost,
           life_share_of_coverage: lifeShare,
           life_share_of_coverage_post65: lifeSharePost,
           disability_band_age: disabilityBandAge,
           disability_max_age: disabilityMaxAge,
-          policy_status: uw_status === 'approved' ? 'active' : uw_status,
+          policy_status: decision.uw_status === 'approved' ? 'active' : decision.uw_status,
           has_claim: false,
           claim_cause: null,
-          reliable_payer: Math.random() < SANDBOX_COLLECTION_RATE,
+          reliable_payer: reliable,
           created_at: ts,
         });
-        if (uw_status === 'approved') {
+        if (decision.uw_status === 'approved') {
           const monthIndex = (sb.projection && sb.projection.monthsElapsed) || 0;
-          const autopaid = customers[customers.length - 1].reliable_payer !== false;
-          const monthly = customers[customers.length - 1].monthly_premium;
           sb.bills.push({
-            id: `BILL-TESTSIM-${String(idx).padStart(6, '0')}-M${monthIndex}`,
+            id: `BILL-TESTSIM-${seq}-M${monthIndex}`,
             customer_id: id,
-            policy_id: `POL-TESTSIM-${String(idx).padStart(6, '0')}`,
+            policy_id: `POL-TESTSIM-${seq}`,
             amount: monthly,
-            amount_paid: autopaid ? monthly : 0,
-            status: autopaid ? 'paid' : 'outstanding',
+            amount_paid: reliable ? monthly : 0,
+            status: reliable ? 'paid' : 'outstanding',
             issued_month: monthIndex,
             due_date: new Date(Date.now() + 30 * 86400000).toISOString(),
-            paid_at: autopaid ? ts : null,
+            paid_at: reliable ? ts : null,
             created_at: ts,
           });
         }
-        sandboxLogEvent('uw', `New sandbox customer ${id} onboarded — risk ${risk}, ADL ${health}, status ${uw_status}.`, 'info');
+        sandboxLogEvent('uw', `New sandbox customer ${id} cloned from a kernel-priced life — ADL ${src.adl}, status ${decision.uw_status} (${decision.issuance}).`, 'info');
         return;
       }
 
@@ -8802,29 +8998,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // both (mutual exclusivity); a paid mortality claim terminates the
       // policy. Disability continues for life; from the band age life=face÷4
       // and D=life (Draft 3.1).
-      if (action === 'new_claim'
-          && cust.uw_status === 'approved'
-          && cust.policy_status !== 'terminated'
-          && cust.policy_status !== 'cancelled'
-          && !cust.has_claim) {
-        const canDisable = cust.disability_eligible !== false;
-        const isMortality = !canDisable || (Math.random() < mortalityShare);
-        const sums = sandboxBenefitSums(cust.age, Number(cust.coverage_amount) || 0);
-        const claimType = isMortality ? 'mortality' : 'disability';
-        const cause = isMortality ? MORTALITY_CAUSE : DISABILITY_CAUSE;
-        const amount = isMortality
-          ? Math.round(sums.lifeSum)
-          : Math.round(sums.disabilitySum);
-        const seq = cust.id.split('-').pop();
-        const id = `CLM-TESTSIM-${Date.now()}-${sandboxRandInt(1000, 9999)}`;
-        sb.claims.push({
-          id, customer_id: cust.id, policy_id: `POL-TESTSIM-${seq}`,
-          type: claimType, cause, amount, status: 'pending', reported_at: ts,
-        });
-        cust.has_claim = true;
-        cust.claim_cause = claimType;
-        const sev = isMortality ? 'breaking' : (amount > cust.coverage_amount * 0.2 ? 'breaking' : 'info');
-        sandboxLogEvent('claim', `New ${claimType} claim ${id} for ${cust.id} — ${cause} — ${sandboxFmtMoney(amount)}.`, sev);
+      if (action === 'new_claim') {
+        // Incidence is applied in sandboxRealizeKernelClaims on each
+        // elapsed month, at the kernel year-1 probabilities.
         return;
       }
 
@@ -8846,68 +9022,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           target.status = 'paid';
           target.paid_amount = target.approved_amount || target.amount;
           target.paid_at = ts;
-          const owner = customers.find(c => c.id === target.customer_id);
-          if (owner && target.type === 'mortality') {
-            // Death always ends the policy.
-            owner.policy_status = 'terminated';
-            owner.terminated_at = ts;
-            sb.bills.forEach(b => {
-              if (b.customer_id === owner.id && (b.status === 'outstanding' || b.status === 'overdue')) {
-                b.status = 'voided';
-              }
-            });
-            sandboxLogEvent('claim', `Death claim ${target.id} paid ${sandboxFmtMoney(target.paid_amount)} — policy ${target.policy_id} terminated.`, 'breaking');
-          } else if (owner && target.type === 'disability') {
-            // Pre-65: acceleration — pay D, continue with remaining life and
-            // ongoing premium = factor × pre-claim combined (default 100%).
-            // Post-65: mutually exclusive — one claim settles (policy ends).
-            const bandAge = Number(contract.disability_band_age != null ? contract.disability_band_age : disabilityBandAge);
-            const continues = contract.pre65_disability_continues_policy !== false;
-            const exclusivePost = contract.post65_claims_mutually_exclusive !== false;
-            const lifeRemainShare = Number(contract.post_disability_life_share_of_face != null ? contract.post_disability_life_share_of_face : 0.75);
-            const premFactor = Number(contract.post_disability_premium_factor != null ? contract.post_disability_premium_factor : 1.0);
-            const face = Number(owner.coverage_amount) || 0;
-            const combinedMonthly = Number(owner.monthly_premium) || 0;
-            const ageAtClaim = Number(owner.age) || 0;
-            const applyContinuation = (remainingLife, label) => {
-              const ongoingMonthly = Math.round(combinedMonthly * premFactor * 100) / 100;
-              owner.coverage_amount = remainingLife;
-              owner.pre_disability_combined_monthly = combinedMonthly;
-              owner.post_disability_premium_factor = premFactor;
-              owner.monthly_premium = ongoingMonthly;
-              owner.annual_premium = Math.round(ongoingMonthly * 12);
-              owner.disability_layer_closed = true;
-              owner.disability_eligible = false;
-              sandboxLogEvent(
-                'claim',
-                `Disability claim ${target.id} paid ${sandboxFmtMoney(target.paid_amount)}; ${label} life ${sandboxFmtMoney(remainingLife)} and premium ${sandboxFmtMoney(ongoingMonthly)}/mo (${(premFactor * 100).toFixed(0)}% of prior combined).`,
-                'info'
-              );
-            };
-            const terminatePolicy = (label) => {
-              owner.policy_status = 'terminated';
-              owner.terminated_at = ts;
-              sb.bills.forEach(b => {
-                if (b.customer_id === owner.id && (b.status === 'outstanding' || b.status === 'overdue')) {
-                  b.status = 'voided';
-                }
-              });
-              sandboxLogEvent('claim', `${label} ${target.id} paid ${sandboxFmtMoney(target.paid_amount)} — policy terminated.`, 'breaking');
-            };
-            // Mirror resolve_disability_claim_outcome modes for all toggle combos.
-            if (ageAtClaim < bandAge && continues) {
-              applyContinuation(Math.round(face * lifeRemainShare), 'policy continues with');
-            } else if (ageAtClaim < bandAge && !continues) {
-              terminatePolicy('Pre-65 disability claim (continuation off)');
-            } else if (ageAtClaim >= bandAge && exclusivePost) {
-              terminatePolicy('Post-65 disability claim (mutually exclusive)');
-            } else if (ageAtClaim >= bandAge && !exclusivePost && continues) {
-              const sums = sandboxBenefitSums(ageAtClaim, face);
-              applyContinuation(Math.round(sums.lifeSum), 'post-65 continuation with');
-            } else {
-              terminatePolicy('Disability claim');
-            }
-          }
+          sandboxSettlePaidClaim(target, ts);
         }
         return;
       }
@@ -8941,9 +9056,25 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (action === 'approve_uw') {
         const target = customers.find(c => c.uw_status === 'pending');
         if (target) {
-          target.uw_status = 'approved';
-          target.policy_status = 'active';
-          sandboxLogEvent('uw', `Underwriting approved for ${target.id} (risk ${target.risk_score}).`, 'info');
+          const Snap = window.PhinsSandboxSnapshot;
+          const gate = (Snap && sb.rules) ? Snap.issueFromRules({
+            adl: target.health_score,
+            age: target.age,
+            coverage: target.coverage_amount,
+            risk_score: target.risk_score,
+            smoking_status: target.smoking_status,
+          }, sb.rules) : null;
+          if (gate && gate.uw_status === 'declined') {
+            target.uw_status = 'declined';
+            target.policy_status = 'declined';
+            target.issuance = 'declined';
+            sandboxLogEvent('uw', `Underwriting kept ${target.id} declined (${gate.reason}). Automation cannot issue past the decline rule.`, 'info');
+          } else {
+            target.uw_status = 'approved';
+            target.issuance = 'manual';
+            target.policy_status = 'active';
+            sandboxLogEvent('uw', `Manual underwriting issued ${target.id} (ADL ${target.health_score}).`, 'info');
+          }
         }
         return;
       }
@@ -9187,6 +9318,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // accumulation so the AI assessment can show "months of random
       // lifecycle accumulated claims" and the death/disability split.
       if (proj.monthsElapsed > prevElapsed) {
+        // Realize this month's claims from the kernel year-1 probabilities
+        // before billing, so a death in the month does not collect another premium.
+        sandboxRealizeKernelClaims();
         // One invoice per in-force policy for each new month, then cancel
         // anyone still unpaid from an earlier month. Realized premium billed
         // then lines up with the forecast's monthly billing expectancy,
